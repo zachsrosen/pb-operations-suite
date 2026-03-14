@@ -3,10 +3,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
 import { requireApiAuth } from "@/lib/api-auth";
 
-// pdf-parse v1: simple function(buffer) → { text }
+// Import pdf-parse/lib directly — the main index.js has a bug that tries
+// to read a test file on import when module.parent is falsy (serverless/ESM).
 async function extractPdfText(buffer: Buffer): Promise<string> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const pdfParse = (await import("pdf-parse") as any).default;
+  const pdfParse = (await import("pdf-parse/lib/pdf-parse.js" as any)).default;
   const data = await pdfParse(buffer);
   return data.text;
 }
