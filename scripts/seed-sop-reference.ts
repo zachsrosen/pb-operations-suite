@@ -672,19 +672,20 @@ async function seed() {
     }
   }
 
-  // 2. Delete old sections that no longer exist in the new definition
-  const newIds = new Set(sections.map(s => s.id));
-  const existingSections = await prisma.sopSection.findMany({
-    where: { tabId: TAB.id },
-    select: { id: true },
-  });
-  const toDelete = existingSections.filter(s => !newIds.has(s.id)).map(s => s.id);
-  if (toDelete.length > 0 && FORCE) {
-    // Delete revisions and suggestions first (foreign keys)
-    await prisma.sopRevision.deleteMany({ where: { sectionId: { in: toDelete } } });
-    await prisma.sopSuggestion.deleteMany({ where: { sectionId: { in: toDelete } } });
-    await prisma.sopSection.deleteMany({ where: { id: { in: toDelete } } });
-    console.log(`  - Deleted ${toDelete.length} old sections: ${toDelete.join(", ")}`);
+  // 2. In --force mode, wipe ALL existing sections for this tab to avoid
+  //    sortOrder unique-constraint conflicts, then recreate from scratch.
+  if (FORCE) {
+    const existingSections = await prisma.sopSection.findMany({
+      where: { tabId: TAB.id },
+      select: { id: true },
+    });
+    if (existingSections.length > 0) {
+      const existingIds = existingSections.map(s => s.id);
+      await prisma.sopRevision.deleteMany({ where: { sectionId: { in: existingIds } } });
+      await prisma.sopSuggestion.deleteMany({ where: { sectionId: { in: existingIds } } });
+      await prisma.sopSection.deleteMany({ where: { tabId: TAB.id } });
+      console.log(`  - Deleted ${existingSections.length} existing sections`);
+    }
   }
 
   // 3. Upsert sections
@@ -705,20 +706,9 @@ async function seed() {
     };
 
     if (FORCE) {
-      await prisma.sopSection.upsert({
-        where: { id: sec.id },
-        create: data,
-        update: {
-          tabId: data.tabId,
-          sidebarGroup: data.sidebarGroup,
-          title: data.title,
-          dotColor: data.dotColor,
-          sortOrder: data.sortOrder,
-          content: data.content,
-        },
-      });
+      await prisma.sopSection.create({ data });
       updated++;
-      console.log(`  ~ Section: ${sec.id} (${sec.title})`);
+      console.log(`  + Section: ${sec.id} (${sec.title})`);
     } else {
       const existing = await prisma.sopSection.findUnique({ where: { id: sec.id } });
       if (!existing) {
