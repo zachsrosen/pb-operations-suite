@@ -87,6 +87,8 @@ export async function POST(
   }
 
   const { id } = await params;
+
+  try {
   const push = await prisma.pendingCatalogPush.findUnique({ where: { id } });
   if (!push) return NextResponse.json({ error: "Not found" }, { status: 404 });
   if (push.status !== "PENDING") {
@@ -423,4 +425,18 @@ export async function POST(
     summary,
     retryable: !finalizeApproved,
   });
+
+  } catch (error) {
+    console.error("[catalog] Approval failed:", error);
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Approval failed unexpectedly",
+        push: null,
+        outcomes: {},
+        summary: { selected: 0, success: 0, failed: 1, skipped: 0, notImplemented: 0 },
+        retryable: true,
+      },
+      { status: 500 }
+    );
+  }
 }

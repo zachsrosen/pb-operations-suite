@@ -1,4 +1,5 @@
 "use client";
+import { useState, useRef } from "react";
 import CategoryFields from "./CategoryFields";
 import FieldTooltip from "./FieldTooltip";
 import type { CatalogFormState, CatalogFormAction } from "@/lib/catalog-form-state";
@@ -18,6 +19,45 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
   const isPrefilled = (field: string) => state.prefillFields.has(field);
   const fieldClass = (field: string) =>
     `${isPrefilled(field) ? "border-l-2 border-l-blue-400 pl-3" : ""}`;
+
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  async function handlePhotoUpload(file: File) {
+    setPhotoError(null);
+    setPhotoUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/catalog/upload-photo", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(err.error || "Upload failed");
+      }
+      const { url, fileName } = await res.json();
+      dispatch({ type: "SET_FIELD", field: "photoUrl", value: url });
+      dispatch({ type: "SET_FIELD", field: "photoFileName", value: fileName });
+    } catch (e) {
+      setPhotoError(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setPhotoUploading(false);
+    }
+  }
+
+  async function handlePhotoRemove() {
+    if (state.photoUrl) {
+      // Best-effort delete from blob storage
+      fetch("/api/catalog/upload-photo", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: state.photoUrl }),
+      }).catch(() => {});
+    }
+    dispatch({ type: "SET_FIELD", field: "photoUrl", value: "" });
+    dispatch({ type: "SET_FIELD", field: "photoFileName", value: "" });
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
 
   return (
     <div className="space-y-6">
@@ -206,6 +246,79 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
             <FieldTooltip text="Flag if lead times exceed 4+ weeks — affects project scheduling estimates" />
           </span>
         </div>
+      </div>
+
+      {/* Product Photo */}
+      <div className="bg-surface rounded-xl border border-t-border p-6 shadow-card">
+        <h3 className="text-lg font-semibold text-foreground mb-4">
+          Product Photo <OptionalBadge />
+        </h3>
+        <p className="text-xs text-muted mb-3">
+          Upload a product image to sync to Zoho Inventory. JPEG, PNG, WebP, or GIF up to 5MB.
+        </p>
+
+        {photoError && (
+          <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-3 text-sm text-red-400 mb-3">
+            {photoError}
+          </div>
+        )}
+
+        {state.photoUrl ? (
+          <div className="flex items-start gap-4">
+            <div className="relative w-24 h-24 rounded-lg border border-t-border overflow-hidden bg-surface-2 flex-shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={state.photoUrl}
+                alt="Product"
+                className="w-full h-full object-contain"
+              />
+            </div>
+            <div className="flex flex-col gap-2 min-w-0">
+              <span className="text-sm text-foreground truncate">{state.photoFileName}</span>
+              <button
+                type="button"
+                onClick={handlePhotoRemove}
+                className="text-xs text-red-400 hover:text-red-300 transition-colors self-start"
+              >
+                Remove photo
+              </button>
+            </div>
+          </div>
+        ) : (
+          <label
+            className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 cursor-pointer transition-colors ${
+              photoUploading
+                ? "border-cyan-500/30 bg-cyan-500/5 cursor-wait"
+                : "border-t-border hover:border-cyan-500/50 hover:bg-surface-2"
+            }`}
+          >
+            {photoUploading ? (
+              <>
+                <div className="w-6 h-6 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin mb-2" />
+                <span className="text-sm text-muted">Uploading...</span>
+              </>
+            ) : (
+              <>
+                <svg className="w-8 h-8 text-muted mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span className="text-sm font-medium text-foreground">Upload Product Photo</span>
+                <span className="text-xs text-muted mt-1">Click or drag an image here</span>
+              </>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              className="hidden"
+              disabled={photoUploading}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) handlePhotoUpload(file);
+              }}
+            />
+          </label>
+        )}
       </div>
 
       {/* Navigation */}

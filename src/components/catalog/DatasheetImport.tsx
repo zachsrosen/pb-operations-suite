@@ -8,6 +8,7 @@ export interface ExtractedProduct {
   description?: string;
   unitSpec?: string;
   unitLabel?: string;
+  sku?: string;
   specValues?: Record<string, unknown>;
   fieldCount?: number;
   totalFields?: number;
@@ -16,9 +17,11 @@ export interface ExtractedProduct {
 interface DatasheetImportProps {
   onExtracted: (product: ExtractedProduct) => void;
   onCancel: () => void;
+  /** Optional category hint to improve AI field extraction */
+  category?: string;
 }
 
-export default function DatasheetImport({ onExtracted, onCancel }: DatasheetImportProps) {
+export default function DatasheetImport({ onExtracted, onCancel, category }: DatasheetImportProps) {
   const [mode, setMode] = useState<"choose" | "paste">("choose");
   const [pasteText, setPasteText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -30,6 +33,14 @@ export default function DatasheetImport({ onExtracted, onCancel }: DatasheetImpo
     setError(null);
     try {
       const isFormData = body instanceof FormData;
+      // Pass category hint if available
+      if (category) {
+        if (isFormData) {
+          (body as FormData).append("category", category);
+        } else {
+          (body as Record<string, unknown>).category = category;
+        }
+      }
       const res = await fetch("/api/catalog/extract-from-datasheet", {
         method: "POST",
         ...(isFormData ? { body } : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
@@ -45,7 +56,7 @@ export default function DatasheetImport({ onExtracted, onCancel }: DatasheetImpo
     } finally {
       setLoading(false);
     }
-  }, [onExtracted]);
+  }, [onExtracted, category]);
 
   function handleFile(file: File) {
     if (!file.name.endsWith(".pdf")) {

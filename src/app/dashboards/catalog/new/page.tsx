@@ -198,8 +198,8 @@ function CatalogWizard() {
         width: state.width ? parseFloat(state.width) : null,
         weight: state.weight ? parseFloat(state.weight) : null,
         metadata:
-          Object.keys(state.specValues).length > 0
-            ? state.specValues
+          Object.keys(state.specValues).length > 0 || state.photoUrl
+            ? { ...state.specValues, ...(state.photoUrl ? { _photoUrl: state.photoUrl } : {}) }
             : null,
         systems: Array.from(state.systems),
         dealId: searchParams.get("dealId") || null,

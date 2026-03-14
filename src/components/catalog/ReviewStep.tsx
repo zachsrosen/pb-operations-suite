@@ -77,6 +77,20 @@ export default function ReviewStep({ state, dispatch, onBack, onSubmit, submitti
         <Row label="Hard to Procure" value={state.hardToProcure ? "Yes" : "No"} />
       </div>
 
+      {/* Product Photo */}
+      {state.photoUrl && (
+        <div className="bg-surface rounded-xl border border-t-border p-6 shadow-card">
+          <h3 className="text-lg font-semibold text-foreground mb-4">Product Photo</h3>
+          <div className="flex items-center gap-4">
+            <div className="w-20 h-20 rounded-lg border border-t-border overflow-hidden bg-surface-2 flex-shrink-0">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={state.photoUrl} alt="Product" className="w-full h-full object-contain" />
+            </div>
+            <span className="text-sm text-muted">{state.photoFileName || "Uploaded"}</span>
+          </div>
+        </div>
+      )}
+
       {/* Warnings */}
       {warnings.length > 0 && (
         <div className="rounded-lg bg-amber-500/10 border border-amber-500/30 p-3">

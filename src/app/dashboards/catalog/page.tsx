@@ -463,7 +463,12 @@ export default function CatalogPage() {
     setApprovingIds((prev) => new Set(prev).add(id));
     try {
       const res = await fetch(`/api/catalog/push-requests/${id}/approve`, { method: "POST" });
-      const data = await res.json() as ApproveResponse;
+      let data: ApproveResponse;
+      try {
+        data = await res.json() as ApproveResponse;
+      } catch {
+        throw new Error(res.ok ? "Unexpected empty response" : `Server error (${res.status})`);
+      }
       if (!res.ok) throw new Error(data.error);
       const isApproved = data.push?.status === "APPROVED";
       if (isApproved) {
