@@ -247,9 +247,12 @@ function coerceFieldValue(value: unknown, field: FieldDef): unknown {
   if (value === null || value === undefined || value === "") return undefined;
 
   if (field.type === "number") {
-    // Extract the first number from strings like "8-10" or "100W"
-    const raw = typeof value === "number" ? value : parseFloat(String(value).replace(/[^\d.\-]/g, ""));
-    return Number.isFinite(raw) ? raw : undefined;
+    if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
+    // Extract the highest number from strings like "8-10" or "100W"
+    const matches = String(value).match(/[\d.]+/g);
+    if (!matches) return undefined;
+    const max = Math.max(...matches.map(Number).filter(Number.isFinite));
+    return Number.isFinite(max) ? max : undefined;
   }
   if (field.type === "toggle") {
     if (typeof value === "boolean") return value;
