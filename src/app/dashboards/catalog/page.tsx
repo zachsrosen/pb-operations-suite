@@ -7,7 +7,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
-import { FORM_CATEGORIES } from "@/lib/catalog-fields";
+import { FORM_CATEGORIES, getCategoryFields } from "@/lib/catalog-fields";
 import { getZohoItemUrl, getHubSpotProductUrl, getZuperProductUrl } from "@/lib/external-links";
 import type { SyncSystem } from "@/lib/catalog-sync-confirmation";
 import SyncModal from "@/components/catalog/SyncModal";
@@ -129,6 +129,7 @@ interface PushRequest {
   length: number | null;
   width: number | null;
   weight: number | null;
+  metadata: Record<string, unknown> | null;
   systems: string[];
   requestedBy: string;
   dealId: string | null;
@@ -190,6 +191,7 @@ interface PushEditDraft {
   length: string;
   width: string;
   weight: string;
+  metadata: Record<string, unknown>;
   systems: string[];
 }
 
@@ -620,6 +622,7 @@ export default function CatalogPage() {
       length: push.length != null ? String(push.length) : "",
       width: push.width != null ? String(push.width) : "",
       weight: push.weight != null ? String(push.weight) : "",
+      metadata: push.metadata && typeof push.metadata === "object" ? { ...push.metadata as Record<string, unknown> } : {},
       systems: [...push.systems],
     });
   }
@@ -669,6 +672,7 @@ export default function CatalogPage() {
           length: pushEditDraft.length ? parseFloat(pushEditDraft.length) : null,
           width: pushEditDraft.width ? parseFloat(pushEditDraft.width) : null,
           weight: pushEditDraft.weight ? parseFloat(pushEditDraft.weight) : null,
+          metadata: Object.keys(pushEditDraft.metadata).length > 0 ? pushEditDraft.metadata : null,
           systems: pushEditDraft.systems,
         }),
       });
@@ -1748,6 +1752,56 @@ export default function CatalogPage() {
                           </label>
                         </div>
                       </div>
+
+                      {/* Category Specs (from metadata) */}
+                      {(() => {
+                        const specFields = getCategoryFields(pushEditDraft.category);
+                        if (specFields.length === 0) return null;
+                        return (
+                          <div>
+                            <div className={labelCls}>Category Specs</div>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                              {specFields.map((f) => (
+                                <div key={f.key}>
+                                  <div className="text-[11px] text-muted mb-0.5">{f.label}{f.unit ? ` (${f.unit})` : ""}</div>
+                                  {f.type === "dropdown" && f.options ? (
+                                    <select
+                                      value={String(pushEditDraft.metadata[f.key] ?? "")}
+                                      onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, metadata: { ...prev.metadata, [f.key]: e.target.value || undefined } } : prev)}
+                                      className={inputCls}
+                                    >
+                                      <option value="">—</option>
+                                      {f.options.map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+                                    </select>
+                                  ) : f.type === "toggle" ? (
+                                    <label className="inline-flex items-center gap-1.5 text-xs text-foreground cursor-pointer">
+                                      <input
+                                        type="checkbox"
+                                        checked={pushEditDraft.metadata[f.key] === true}
+                                        onChange={(e) => setPushEditDraft((prev) => prev ? { ...prev, metadata: { ...prev.metadata, [f.key]: e.target.checked } } : prev)}
+                                        className="rounded border-t-border"
+                                      />
+                                      Yes
+                                    </label>
+                                  ) : (
+                                    <input
+                                      type={f.type === "number" ? "number" : "text"}
+                                      step={f.type === "number" ? "any" : undefined}
+                                      value={String(pushEditDraft.metadata[f.key] ?? "")}
+                                      onChange={(e) => {
+                                        const val = f.type === "number" && e.target.value ? parseFloat(e.target.value) : e.target.value;
+                                        setPushEditDraft((prev) => prev ? { ...prev, metadata: { ...prev.metadata, [f.key]: val || undefined } } : prev);
+                                      }}
+                                      className={inputCls}
+                                      placeholder={f.label}
+                                    />
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Systems */}
                       <div>

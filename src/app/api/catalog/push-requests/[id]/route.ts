@@ -144,6 +144,11 @@ export async function PATCH(
     updateData.weight = parsed;
   }
 
+  // JSON metadata (spec values)
+  if ("metadata" in body) {
+    updateData.metadata = body.metadata === null ? null : body.metadata;
+  }
+
   // Boolean field
   if ("hardToProcure" in body) {
     if (typeof body.hardToProcure !== "boolean") {
