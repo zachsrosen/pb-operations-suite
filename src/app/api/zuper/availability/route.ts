@@ -230,26 +230,33 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     jobTypes: ["survey"],
   },
 
-  // TODO: Remove after 3/7/2026 — one-time DTC Friday survey availability for 3/6/2026 only
+  // Samuel Paro — mirrors former DPO slots
   {
-    name: "Mike Reso",
+    name: "Samuel Paro",
     location: "DTC",
     reportLocation: "DTC",
     schedule: [
-      { day: 5, startTime: "12:00", endTime: "16:00" }, // Fri 12-4pm
+      { day: 2, startTime: "12:00", endTime: "16:00" }, // Tue 12-4pm
     ],
     jobTypes: ["survey"],
-    onlyDates: ["2026-03-06"],
+  },
+  {
+    name: "Samuel Paro",
+    location: "Westminster",
+    reportLocation: "Westminster",
+    schedule: [
+      { day: 3, startTime: "12:00", endTime: "16:00" }, // Wed 12-4pm
+    ],
+    jobTypes: ["survey"],
   },
   {
     name: "Samuel Paro",
     location: "DTC",
     reportLocation: "DTC",
     schedule: [
-      { day: 5, startTime: "12:00", endTime: "16:00" }, // Fri 12-4pm
+      { day: 4, startTime: "12:00", endTime: "16:00" }, // Thu 12-4pm
     ],
     jobTypes: ["survey"],
-    onlyDates: ["2026-03-06"],
   },
 
   // ============================================
