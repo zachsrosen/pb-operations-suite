@@ -149,14 +149,19 @@ function SOPPageInner() {
   const canEdit = userRole === "ADMIN" || userRole === "OWNER";
   const canSuggest = !!userRole && userRole !== "VIEWER" && !canEdit;
 
-  // Fetch user role on mount
+  // Fetch user role on mount (cache-bust to respect impersonation)
+  const [effectiveName, setEffectiveName] = useState<string | null>(null);
   useEffect(() => {
     async function fetchRole() {
       try {
-        const res = await fetch("/api/auth/sync");
+        const res = await fetch("/api/auth/sync", { cache: "no-store" });
         if (res.ok) {
           const data = await res.json();
           setUserRole(data.role || null);
+          // Use impersonated user's name if impersonating
+          if (data.isImpersonating && data.impersonatedUser?.name) {
+            setEffectiveName(data.impersonatedUser.name);
+          }
         }
       } catch {
         // Non-critical — editing buttons just won't show
@@ -372,8 +377,8 @@ function SOPPageInner() {
       }, {})
     : {};
 
-  // User display name
-  const userName = session?.user?.name || session?.user?.email?.split("@")[0] || "";
+  // User display name (prefer impersonated name if active)
+  const userName = effectiveName || session?.user?.name || session?.user?.email?.split("@")[0] || "";
 
   if (loading) {
     return (
