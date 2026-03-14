@@ -3,9 +3,11 @@ import Anthropic from "@anthropic-ai/sdk";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
 import { requireApiAuth } from "@/lib/api-auth";
 
-// Dynamic import for pdf-parse (CommonJS module)
+// Dynamic import for pdf-parse — handle both CJS (.default) and ESM exports
 async function extractPdfText(buffer: Buffer): Promise<string> {
-  const pdfParse = (await import("pdf-parse")).default;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mod: any = await import("pdf-parse");
+  const pdfParse = typeof mod.default === "function" ? mod.default : mod;
   const data = await pdfParse(buffer);
   return data.text;
 }
