@@ -242,16 +242,41 @@ export function getSpecTableName(category: string): string | undefined {
   return CATEGORY_CONFIGS[category]?.specTable;
 }
 
-/** Filter metadata to only include keys defined in the category's field config. */
+/** Coerce a value to match the expected field type. Returns undefined if not coercible. */
+function coerceFieldValue(value: unknown, field: FieldDef): unknown {
+  if (value === null || value === undefined || value === "") return undefined;
+
+  if (field.type === "number") {
+    // Extract the first number from strings like "8-10" or "100W"
+    const raw = typeof value === "number" ? value : parseFloat(String(value).replace(/[^\d.\-]/g, ""));
+    return Number.isFinite(raw) ? raw : undefined;
+  }
+  if (field.type === "toggle") {
+    if (typeof value === "boolean") return value;
+    const s = String(value).toLowerCase();
+    if (s === "true" || s === "yes" || s === "1") return true;
+    if (s === "false" || s === "no" || s === "0") return false;
+    return undefined;
+  }
+  // text / dropdown — keep as string
+  return String(value);
+}
+
+/** Filter metadata to only include keys defined in the category's field config,
+ *  coercing values to match expected Prisma column types. */
 export function filterMetadataToSpecFields(
   category: string,
   metadata: Record<string, unknown>
 ): Record<string, unknown> {
-  const validKeys = new Set(getCategoryFields(category).map((f) => f.key));
+  const fields = getCategoryFields(category);
+  const fieldMap = new Map(fields.map((f) => [f.key, f]));
   const filtered: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(metadata)) {
-    if (validKeys.has(key) && value !== null && value !== undefined && value !== "") {
-      filtered[key] = value;
+    const field = fieldMap.get(key);
+    if (!field) continue;
+    const coerced = coerceFieldValue(value, field);
+    if (coerced !== undefined) {
+      filtered[key] = coerced;
     }
   }
   return filtered;
