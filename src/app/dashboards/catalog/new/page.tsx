@@ -104,15 +104,18 @@ function CatalogWizard() {
   useEffect(() => {
     const paramFields = ["category", "brand", "model", "description", "unitSpec", "unitLabel"] as const;
     let hasAny = false;
+    const explicitUnitLabel = searchParams.get("unitLabel");
 
     for (const field of paramFields) {
       const value = searchParams.get(field);
       if (value) {
         if (field === "category") {
           dispatch({ type: "SET_CATEGORY", category: value });
-          // Apply category defaults
+          // Apply category defaults — only fill unitLabel when URL didn't provide one
           const defaults = getCategoryDefaults(value);
-          dispatch({ type: "SET_FIELD", field: "unitLabel", value: defaults.unitLabel });
+          if (!explicitUnitLabel) {
+            dispatch({ type: "SET_FIELD", field: "unitLabel", value: defaults.unitLabel });
+          }
           dispatch({ type: "SET_FIELD", field: "systems", value: defaults.systems });
         } else {
           dispatch({ type: "SET_FIELD", field, value });
@@ -140,10 +143,12 @@ function CatalogWizard() {
   const handleClone = useCallback((product: CloneResult) => {
     const normalized = normalizeCloneResult(product);
     dispatch({ type: "PREFILL_FROM_PRODUCT", data: normalized, source: "clone" });
-    // Apply category defaults if clone has a category
+    // Apply category defaults — only fill unitLabel when the clone didn't provide one
     if (product.category) {
       const defaults = getCategoryDefaults(product.category);
-      dispatch({ type: "SET_FIELD", field: "unitLabel", value: defaults.unitLabel });
+      if (!normalized.unitLabel) {
+        dispatch({ type: "SET_FIELD", field: "unitLabel", value: defaults.unitLabel });
+      }
       dispatch({ type: "SET_FIELD", field: "systems", value: defaults.systems });
     }
     setCurrentStep("basics");
@@ -157,10 +162,12 @@ function CatalogWizard() {
         data: extracted as Partial<CatalogFormState>,
         source: "datasheet",
       });
-      // Apply category defaults if extraction included a category
+      // Apply category defaults — only fill unitLabel when extraction didn't provide one
       if (extracted.category) {
         const defaults = getCategoryDefaults(extracted.category);
-        dispatch({ type: "SET_FIELD", field: "unitLabel", value: defaults.unitLabel });
+        if (!extracted.unitLabel) {
+          dispatch({ type: "SET_FIELD", field: "unitLabel", value: defaults.unitLabel });
+        }
         dispatch({ type: "SET_FIELD", field: "systems", value: defaults.systems });
       }
       setCurrentStep("basics");

@@ -9,37 +9,35 @@ import { getCategoryDefaults } from "@/lib/catalog-fields";
 
 describe("Wizard prefill flows", () => {
   describe("URL query-param prefill", () => {
-    it("sets fields from URL params and should skip to basics step", () => {
-      // Simulate the URL param prefill logic from page.tsx
-      const params = {
-        category: "MODULE",
-        brand: "Hanwha",
-        model: "Q.PEAK DUO 400",
-        description: "400W Module",
-        unitSpec: "400",
-        unitLabel: "W",
-      };
-
+    it("sets fields from URL params and applies default unitLabel when not explicit", () => {
+      // Simulate URL param prefill WITHOUT explicit unitLabel
       let state = initialFormState;
-      // Replicate page.tsx logic: SET_CATEGORY for category, SET_FIELD for rest
-      state = catalogFormReducer(state, { type: "SET_CATEGORY", category: params.category });
-      const defaults = getCategoryDefaults(params.category);
+      state = catalogFormReducer(state, { type: "SET_CATEGORY", category: "MODULE" });
+      const defaults = getCategoryDefaults("MODULE");
+      // No explicit unitLabel → apply default
       state = catalogFormReducer(state, { type: "SET_FIELD", field: "unitLabel", value: defaults.unitLabel });
       state = catalogFormReducer(state, { type: "SET_FIELD", field: "systems", value: defaults.systems });
-      state = catalogFormReducer(state, { type: "SET_FIELD", field: "brand", value: params.brand });
-      state = catalogFormReducer(state, { type: "SET_FIELD", field: "model", value: params.model });
-      state = catalogFormReducer(state, { type: "SET_FIELD", field: "description", value: params.description });
-      state = catalogFormReducer(state, { type: "SET_FIELD", field: "unitSpec", value: params.unitSpec });
+      state = catalogFormReducer(state, { type: "SET_FIELD", field: "brand", value: "Hanwha" });
+      state = catalogFormReducer(state, { type: "SET_FIELD", field: "model", value: "Q.PEAK DUO 400" });
 
       expect(state.category).toBe("MODULE");
       expect(state.brand).toBe("Hanwha");
-      expect(state.model).toBe("Q.PEAK DUO 400");
-      expect(state.description).toBe("400W Module");
-      expect(state.unitSpec).toBe("400");
-      expect(state.unitLabel).toBe("W"); // from getCategoryDefaults
+      expect(state.unitLabel).toBe("W"); // default applied
       expect(state.systems.has("INTERNAL")).toBe(true);
       expect(state.systems.has("HUBSPOT")).toBe(true);
-      // currentStep would be "basics" in the component (not testable in reducer)
+    });
+
+    it("preserves explicit unitLabel from URL params instead of applying default", () => {
+      // Simulate URL param prefill WITH explicit unitLabel="kW AC"
+      let state = initialFormState;
+      state = catalogFormReducer(state, { type: "SET_CATEGORY", category: "INVERTER" });
+      const defaults = getCategoryDefaults("INVERTER");
+      // Explicit unitLabel present → skip default, apply explicit
+      state = catalogFormReducer(state, { type: "SET_FIELD", field: "systems", value: defaults.systems });
+      state = catalogFormReducer(state, { type: "SET_FIELD", field: "unitLabel", value: "kW AC" });
+
+      expect(state.category).toBe("INVERTER");
+      expect(state.unitLabel).toBe("kW AC"); // explicit, not default "kW"
     });
 
     it("partial URL params leave other fields at default", () => {
@@ -92,6 +90,50 @@ describe("Wizard prefill flows", () => {
       expect(state.prefillFields.has("brand")).toBe(true);
       expect(state.prefillFields.has("spec.wattage")).toBe(true);
       expect(state.prefillFields.has("spec.cellType")).toBe(true);
+    });
+
+    it("preserves clone unitLabel instead of clobbering with category default", () => {
+      // Clone provides "kW AC" — should NOT be overwritten with default "kW"
+      const normalized = {
+        category: "INVERTER",
+        brand: "Enphase",
+        model: "IQ8+",
+        unitLabel: "kW AC",
+      };
+
+      let state = catalogFormReducer(initialFormState, {
+        type: "PREFILL_FROM_PRODUCT",
+        data: normalized,
+        source: "clone",
+      });
+      // Simulate page.tsx conditional: only apply default when normalized.unitLabel is falsy
+      if (!normalized.unitLabel) {
+        const defaults = getCategoryDefaults(normalized.category);
+        state = catalogFormReducer(state, { type: "SET_FIELD", field: "unitLabel", value: defaults.unitLabel });
+      }
+
+      expect(state.unitLabel).toBe("kW AC"); // preserved, not "kW"
+    });
+
+    it("applies category default unitLabel when clone omits it", () => {
+      const normalized = {
+        category: "MODULE",
+        brand: "Hanwha",
+        model: "Q.PEAK 400",
+        // no unitLabel
+      };
+
+      let state = catalogFormReducer(initialFormState, {
+        type: "PREFILL_FROM_PRODUCT",
+        data: normalized,
+        source: "clone",
+      });
+      if (!normalized.unitLabel) {
+        const defaults = getCategoryDefaults(normalized.category);
+        state = catalogFormReducer(state, { type: "SET_FIELD", field: "unitLabel", value: defaults.unitLabel });
+      }
+
+      expect(state.unitLabel).toBe("W"); // default applied since clone didn't provide
     });
 
     it("second clone resets stale fields from first", () => {
@@ -149,6 +191,28 @@ describe("Wizard prefill flows", () => {
       // Datasheet doesn't clear SKU/vendorPartNumber (only clone does)
       expect(state.prefillFields.has("brand")).toBe(true);
       expect(state.prefillFields.has("spec.capacity")).toBe(true);
+    });
+
+    it("preserves extracted unitLabel instead of clobbering with category default", () => {
+      const extracted = {
+        category: "BATTERY",
+        brand: "Tesla",
+        model: "Powerwall 3",
+        unitLabel: "kWh usable",
+      };
+
+      let state = catalogFormReducer(initialFormState, {
+        type: "PREFILL_FROM_PRODUCT",
+        data: extracted,
+        source: "datasheet",
+      });
+      // Simulate page.tsx conditional: only apply default when extracted.unitLabel is falsy
+      if (!extracted.unitLabel) {
+        const defaults = getCategoryDefaults(extracted.category);
+        state = catalogFormReducer(state, { type: "SET_FIELD", field: "unitLabel", value: defaults.unitLabel });
+      }
+
+      expect(state.unitLabel).toBe("kWh usable"); // preserved, not "kWh"
     });
   });
 
