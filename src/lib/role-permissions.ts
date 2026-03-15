@@ -260,6 +260,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/command-center",
       "/dashboards/capacity",
       "/dashboards/forecast-accuracy",
+      "/dashboards/forecast-timeline",
+      "/api/forecasting",
       // Equipment catalog
       "/dashboards/catalog",
       "/dashboards/submit-product",
@@ -344,6 +346,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/locations",
       "/dashboards/command-center",
       "/dashboards/forecast-accuracy",
+      "/dashboards/forecast-timeline",
+      "/api/forecasting",
       // D&E Suite dashboards
       "/dashboards/de-overview",
       "/dashboards/plan-review",
@@ -691,6 +695,9 @@ export const ADMIN_ONLY_ROUTES: string[] = [
   "/dashboards/mobile",
   "/dashboards/inventory",
   "/dashboards/catalog",
+  "/dashboards/command-center",
+  "/dashboards/capacity",
+  "/dashboards/locations",
   // AI assistant chat — admin-only until per-deal access boundaries confirmed
   "/api/chat",
 ];
@@ -715,13 +722,13 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
   const permissions = ROLE_PERMISSIONS[effectiveRole];
   if (!permissions) return false;
 
-  // Check admin-only routes first — only ADMIN and OWNER can access these
+  // Check admin-only routes first — only ADMIN can access these
   // But allow specific sub-routes that are exempted (e.g. /dashboards/catalog/new)
   const isAdminOnly = ADMIN_ONLY_ROUTES.some((restricted) => route === restricted || route.startsWith(`${restricted}/`));
   if (isAdminOnly) {
     const isExempted = ADMIN_ONLY_EXCEPTIONS.some((exempted) => route === exempted || route.startsWith(`${exempted}/`));
     if (!isExempted) {
-      return effectiveRole === "ADMIN" || effectiveRole === "OWNER";
+      return effectiveRole === "ADMIN";
     }
   }
 

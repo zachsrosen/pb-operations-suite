@@ -2,6 +2,7 @@
 import { useState, useRef } from "react";
 import CategoryFields from "./CategoryFields";
 import FieldTooltip from "./FieldTooltip";
+import { getCategoryFields } from "@/lib/catalog-fields";
 import type { CatalogFormState, CatalogFormAction } from "@/lib/catalog-form-state";
 
 interface DetailsStepProps {
@@ -62,13 +63,16 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted">
-        These fields are optional — fill what you have, skip the rest.
+        {getCategoryFields(state.category).some((f) => f.required)
+          ? "Fields marked with * are required. Fill in what you have for the rest."
+          : "These fields are optional — fill what you have, skip the rest."}
       </p>
 
       {/* Category Specs */}
       <div className="bg-surface rounded-xl border border-t-border p-6 shadow-card">
         <h3 className="text-lg font-semibold text-foreground mb-4">
-          Category Specifications <OptionalBadge />
+          Category Specifications
+          {!getCategoryFields(state.category).some((f) => f.required) && <OptionalBadge />}
         </h3>
         <CategoryFields
           category={state.category}
@@ -330,22 +334,13 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
         >
           ← Back
         </button>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onNext}
-            className="text-sm text-cyan-400 hover:text-cyan-300 underline underline-offset-2"
-          >
-            Skip to Review
-          </button>
-          <button
-            type="button"
-            onClick={onNext}
-            className="px-6 py-2.5 text-sm font-semibold rounded-lg bg-cyan-600 text-white hover:bg-cyan-500 transition-colors"
-          >
-            Next: Review →
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onNext}
+          className="px-6 py-2.5 text-sm font-semibold rounded-lg bg-cyan-600 text-white hover:bg-cyan-500 transition-colors"
+        >
+          Next: Review →
+        </button>
       </div>
     </div>
   );

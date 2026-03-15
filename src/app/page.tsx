@@ -81,7 +81,7 @@ const SUITE_LINKS: SuiteLinkData[] = [
     description: "Risk analysis, QC metrics, and pipeline forecasting.",
     tag: "INTELLIGENCE",
     tagColor: "cyan",
-    visibility: "owner_admin",
+    visibility: "admin",
   },
   {
     href: "/suites/executive",
@@ -97,7 +97,7 @@ const SUITE_LINKS: SuiteLinkData[] = [
     description: "Service and D&R scheduling, equipment tracking, and deal management.",
     tag: "SERVICE + D&R",
     tagColor: "purple",
-    visibility: "all",
+    visibility: "admin",
   },
   {
     href: "/dashboards/ai",
@@ -566,10 +566,9 @@ export default function Home() {
                   const value = unfilteredStats.locationValues[location];
                   const isSelected = selectedLocations.includes(location);
                   return (
-                    <button
+                    <div
                       key={location}
-                      onClick={() => toggleLocation(location)}
-                      className={`rounded-lg p-4 text-center transition-all cursor-pointer border ${
+                      className={`relative rounded-lg p-4 text-center transition-all border ${
                         isSelected
                           ? "bg-orange-500/15 border-orange-500/50 ring-1 ring-orange-500/30 scale-[1.02]"
                           : selectedLocations.length > 0
@@ -577,16 +576,30 @@ export default function Home() {
                             : "bg-skeleton border-transparent hover:bg-surface-2/70"
                       }`}
                     >
-                      <div className={`text-2xl font-bold ${isSelected ? "text-orange-400" : "text-foreground"}`}>
-                        {count}
-                      </div>
-                      <div className={`text-sm ${isSelected ? "text-orange-300" : "text-muted"}`}>{location}</div>
-                      {value != null && (
-                        <div className="text-xs text-orange-400 mt-0.5">
-                          {formatMoney(value)}
+                      <button
+                        onClick={() => toggleLocation(location)}
+                        className="w-full cursor-pointer"
+                      >
+                        <div className={`text-2xl font-bold ${isSelected ? "text-orange-400" : "text-foreground"}`}>
+                          {count}
                         </div>
-                      )}
-                    </button>
+                        <div className={`text-sm ${isSelected ? "text-orange-300" : "text-muted"}`}>{location}</div>
+                        {value != null && (
+                          <div className="text-xs text-orange-400 mt-0.5">
+                            {formatMoney(value)}
+                          </div>
+                        )}
+                      </button>
+                      <Link
+                        href={`/dashboards/deals?location=${encodeURIComponent(location)}`}
+                        className="absolute top-1.5 right-1.5 text-muted/40 hover:text-orange-400 transition-colors"
+                        title={`View ${location} deals`}
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </Link>
+                    </div>
                   );
                 })}
               </div>
@@ -600,7 +613,15 @@ export default function Home() {
         ) : (
           stats?.stageCounts && (
             <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 mb-8 animate-fadeIn shadow-card backdrop-blur-sm">
-              <h2 className="text-lg font-semibold mb-4">Pipeline by Stage</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">Pipeline by Stage</h2>
+                <Link
+                  href="/dashboards/deals"
+                  className="text-sm text-muted hover:text-orange-400 transition-colors"
+                >
+                  View All Deals →
+                </Link>
+              </div>
               <div className="space-y-3">
                 {(() => {
                   const stageOrder = [
@@ -626,15 +647,23 @@ export default function Home() {
                       if (bIdx === -1) return -1;
                       return aIdx - bIdx;
                     })
-                    .map(([stage, count]) => (
-                      <StageBar
-                        key={stage}
-                        stage={stage}
-                        count={count as number}
-                        total={stats.totalProjects}
-                        value={stats.stageValues?.[stage]}
-                      />
-                    ));
+                    .map(([stage, count]) => {
+                      const dealsUrl = `/dashboards/deals?stage=${encodeURIComponent(stage)}${
+                        selectedLocations.length > 0
+                          ? `&location=${selectedLocations.map(encodeURIComponent).join(",")}`
+                          : ""
+                      }`;
+                      return (
+                        <StageBar
+                          key={stage}
+                          stage={stage}
+                          count={count as number}
+                          total={stats.totalProjects}
+                          value={stats.stageValues?.[stage]}
+                          linkHref={dealsUrl}
+                        />
+                      );
+                    });
                 })()}
               </div>
             </div>
@@ -672,16 +701,34 @@ export default function Home() {
         )}
 
         {/* Suites (for ADMIN/OWNER) */}
-        {visibleSuites.length > 0 && (
-          <div>
-            <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">Suites</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
-              {visibleSuites.map((suite) => (
-                <DashboardLink key={suite.href} {...suite} />
-              ))}
-            </div>
-          </div>
-        )}
+        {visibleSuites.length > 0 && (() => {
+          const mainSuites = visibleSuites.filter((s) => s.visibility !== "admin");
+          const adminSuites = visibleSuites.filter((s) => s.visibility === "admin");
+          return (
+            <>
+              {mainSuites.length > 0 && (
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">Suites</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
+                    {mainSuites.map((suite) => (
+                      <DashboardLink key={suite.href} {...suite} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {adminSuites.length > 0 && (
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">Admin</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
+                    {adminSuites.map((suite) => (
+                      <DashboardLink key={suite.href} {...suite} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {/* Browse All — uses canAccessRoute to prevent dead-end links */}
         {roleLandingCards && (
@@ -709,17 +756,19 @@ const StageBar = memo(function StageBar({
   count,
   total,
   value,
+  linkHref,
 }: {
   stage: string;
   count: number;
   total: number;
   value?: number;
+  linkHref?: string;
 }) {
   const percentage = (count / total) * 100;
   const colorClass = STAGE_COLORS[stage]?.tw || "bg-zinc-600";
 
-  return (
-    <div className="flex items-center gap-4">
+  const content = (
+    <div className={`flex items-center gap-4 ${linkHref ? "cursor-pointer hover:bg-surface-2/40 rounded-lg -mx-2 px-2 py-1 transition-colors" : ""}`}>
       <div className="w-40 text-sm text-muted truncate" title={stage}>
         {stage}
       </div>
@@ -741,6 +790,11 @@ const StageBar = memo(function StageBar({
       </div>
     </div>
   );
+
+  if (linkHref) {
+    return <Link href={linkHref}>{content}</Link>;
+  }
+  return content;
 });
 
 const DashboardLink = memo(function DashboardLink({

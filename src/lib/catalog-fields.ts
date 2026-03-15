@@ -33,7 +33,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
 
     specTable: "moduleSpec",
     fields: [
-      { key: "wattage", label: "DC Size (Wattage)", type: "number", unit: "W", hubspotProperty: "dc_size", tooltip: "Rated power output under STC (Standard Test Conditions)" },
+      { key: "wattage", label: "DC Size (Wattage)", type: "number", unit: "W", required: true, hubspotProperty: "dc_size", tooltip: "Rated power output under STC (Standard Test Conditions)" },
       { key: "efficiency", label: "Efficiency", type: "number", unit: "%", tooltip: "Module conversion efficiency percentage" },
       { key: "cellType", label: "Cell Type", type: "dropdown", options: ["Mono PERC", "TOPCon", "HJT", "Poly", "Thin Film"], tooltip: "Solar cell technology used in the module" },
       { key: "voc", label: "Voc (Open Circuit Voltage)", type: "number", unit: "V", tooltip: "Voltage when no load is connected" },
@@ -51,7 +51,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
 
     specTable: "inverterSpec",
     fields: [
-      { key: "acOutputKw", label: "AC Output Size", type: "number", unit: "kW", hubspotProperty: "ac_size", tooltip: "Rated AC power output of the inverter" },
+      { key: "acOutputKw", label: "AC Output Size", type: "number", unit: "kW", required: true, hubspotProperty: "ac_size", tooltip: "Rated AC power output of the inverter" },
       { key: "maxDcInput", label: "Max DC Input", type: "number", unit: "kW", tooltip: "Maximum DC input power the inverter can accept" },
       { key: "phase", label: "Phase", type: "dropdown", options: ["Single", "Three-phase"], tooltip: "Single-phase for residential, three-phase for commercial" },
       { key: "nominalAcVoltage", label: "Nominal AC Voltage", type: "dropdown", options: ["240V", "208V", "480V"], tooltip: "Grid-side AC voltage the inverter connects to" },
@@ -68,7 +68,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
 
     specTable: "batterySpec",
     fields: [
-      { key: "capacityKwh", label: "Capacity", type: "number", unit: "kWh", hubspotProperty: "size__kwh_", tooltip: "Total energy storage capacity of the battery" },
+      { key: "capacityKwh", label: "Capacity", type: "number", unit: "kWh", required: true, hubspotProperty: "size__kwh_", tooltip: "Total energy storage capacity of the battery" },
       { key: "energyStorageCapacity", label: "Energy Storage Capacity", type: "number", hubspotProperty: "energy_storage_capacity", tooltip: "HubSpot-specific energy storage value" },
       { key: "usableCapacityKwh", label: "Usable Capacity", type: "number", unit: "kWh", tooltip: "Actual usable energy after depth-of-discharge limits" },
       { key: "continuousPowerKw", label: "Continuous Power", type: "number", unit: "kW", hubspotProperty: "capacity__kw_", tooltip: "Sustained power output the battery can deliver" },
@@ -95,7 +95,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
 
     specTable: "evChargerSpec",
     fields: [
-      { key: "powerKw", label: "Charger Power", type: "number", unit: "kW", hubspotProperty: "capacity__kw_", tooltip: "Maximum charging power output" },
+      { key: "powerKw", label: "Charger Power", type: "number", unit: "kW", required: true, hubspotProperty: "capacity__kw_", tooltip: "Maximum charging power output" },
       { key: "connectorType", label: "Connector Type", type: "dropdown", options: ["J1772", "NACS", "CCS"], tooltip: "Physical plug type — NACS is Tesla/newer EVs" },
       { key: "amperage", label: "Amperage", type: "number", unit: "A", tooltip: "Maximum current draw of the charger" },
       { key: "voltage", label: "Voltage", type: "number", unit: "V", tooltip: "Operating voltage (240V typical for Level 2)" },

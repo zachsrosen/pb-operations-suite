@@ -1,4 +1,4 @@
-import { catalogFormReducer, initialFormState, type CatalogFormState } from "@/lib/catalog-form-state";
+import { catalogFormReducer, initialFormState, isBlank, validateRequiredSpecFields, validateCatalogForm, type CatalogFormState } from "@/lib/catalog-form-state";
 
 describe("catalogFormReducer", () => {
   it("returns initial state", () => {
@@ -172,5 +172,204 @@ describe("catalogFormReducer", () => {
     state = catalogFormReducer(state, { type: "SET_FIELD", field: "photoFileName", value: "photo.jpg" });
     expect(state.photoUrl).toBe("https://blob/photo.jpg");
     expect(state.photoFileName).toBe("photo.jpg");
+  });
+});
+
+describe("isBlank", () => {
+  it("returns true for undefined, null, empty string, whitespace", () => {
+    expect(isBlank(undefined)).toBe(true);
+    expect(isBlank(null)).toBe(true);
+    expect(isBlank("")).toBe(true);
+    expect(isBlank("   ")).toBe(true);
+    expect(isBlank("\t\n")).toBe(true);
+  });
+
+  it("returns false for 0, false, and non-empty strings", () => {
+    expect(isBlank(0)).toBe(false);
+    expect(isBlank(false)).toBe(false);
+    expect(isBlank("hello")).toBe(false);
+    expect(isBlank(42)).toBe(false);
+  });
+});
+
+describe("validateRequiredSpecFields", () => {
+  it("returns no errors for MODULE with wattage filled", () => {
+    const errors = validateRequiredSpecFields("MODULE", { wattage: 400 });
+    expect(errors).toEqual([]);
+  });
+
+  it("returns error for MODULE with wattage missing", () => {
+    const errors = validateRequiredSpecFields("MODULE", {});
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("spec.wattage");
+    expect(errors[0].section).toBe("details");
+  });
+
+  it("returns error for MODULE with wattage blank string", () => {
+    const errors = validateRequiredSpecFields("MODULE", { wattage: "" });
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("spec.wattage");
+  });
+
+  it("passes for MODULE with wattage = 0 (zero is not blank)", () => {
+    const errors = validateRequiredSpecFields("MODULE", { wattage: 0 });
+    expect(errors).toEqual([]);
+  });
+
+  it("returns no errors for RACKING (no required fields)", () => {
+    const errors = validateRequiredSpecFields("RACKING", {});
+    expect(errors).toEqual([]);
+  });
+
+  it("returns no errors for blank/unknown category", () => {
+    const errors = validateRequiredSpecFields("", {});
+    expect(errors).toEqual([]);
+    const errors2 = validateRequiredSpecFields("DOES_NOT_EXIST", {});
+    expect(errors2).toEqual([]);
+  });
+
+  it("returns error for BATTERY capacityKwh missing", () => {
+    const errors = validateRequiredSpecFields("BATTERY", {});
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("spec.capacityKwh");
+  });
+
+  it("returns error for BATTERY_EXPANSION capacityKwh missing (shared fields)", () => {
+    const errors = validateRequiredSpecFields("BATTERY_EXPANSION", {});
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("spec.capacityKwh");
+  });
+
+  it("ignores non-spec keys like _photoUrl in metadata", () => {
+    const errors = validateRequiredSpecFields("MODULE", { _photoUrl: "https://example.com/photo.jpg", wattage: 400 });
+    expect(errors).toEqual([]);
+  });
+
+  it("skips required fields hidden by showWhen conditions", () => {
+    const getCategoryFields = jest.requireActual("@/lib/catalog-fields").getCategoryFields;
+    const mockGetCategoryFields = jest.spyOn(
+      require("@/lib/catalog-fields"), "getCategoryFields"
+    ).mockImplementation((cat: string) => {
+      if (cat === "TEST_SHOW_WHEN") {
+        return [
+          { key: "toggleField", label: "Toggle", type: "toggle" },
+          { key: "conditionalField", label: "Conditional", type: "number", required: true, showWhen: { field: "toggleField", value: true } },
+        ];
+      }
+      return getCategoryFields(cat);
+    });
+
+    // showWhen NOT met — conditionalField is required but hidden, so no error
+    const errors1 = validateRequiredSpecFields("TEST_SHOW_WHEN", { toggleField: false });
+    expect(errors1).toEqual([]);
+
+    // showWhen IS met — conditionalField is visible and required, so error
+    const errors2 = validateRequiredSpecFields("TEST_SHOW_WHEN", { toggleField: true });
+    expect(errors2).toHaveLength(1);
+    expect(errors2[0].field).toBe("spec.conditionalField");
+
+    // showWhen IS met and field is filled — no error
+    const errors3 = validateRequiredSpecFields("TEST_SHOW_WHEN", { toggleField: true, conditionalField: 42 });
+    expect(errors3).toEqual([]);
+
+    mockGetCategoryFields.mockRestore();
+  });
+});
+
+describe("validateCatalogForm", () => {
+  function makeState(overrides: Partial<CatalogFormState> = {}): CatalogFormState {
+    return { ...initialFormState, ...overrides };
+  }
+
+  it("returns valid for a complete MODULE submission", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE",
+      brand: "Hanwha",
+      model: "Q.PEAK 400",
+      description: "400W Module",
+      specValues: { wattage: 400 },
+    }));
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("returns errors for missing top-level required fields", () => {
+    const result = validateCatalogForm(makeState({
+      category: "",
+      brand: "",
+      model: "",
+      description: "",
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.length).toBeGreaterThanOrEqual(4);
+    const fields = result.errors.map((e) => e.field);
+    expect(fields).toContain("category");
+    expect(fields).toContain("brand");
+    expect(fields).toContain("model");
+    expect(fields).toContain("description");
+  });
+
+  it("rejects whitespace-only top-level fields", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE",
+      brand: "  ",
+      model: "\t",
+      description: "\n",
+      specValues: { wattage: 400 },
+    }));
+    expect(result.valid).toBe(false);
+    const fields = result.errors.map((e) => e.field);
+    expect(fields).toContain("brand");
+    expect(fields).toContain("model");
+    expect(fields).toContain("description");
+  });
+
+  it("returns spec errors for MODULE missing wattage", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE",
+      brand: "Hanwha",
+      model: "Q.PEAK 400",
+      description: "400W Module",
+      specValues: {},
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.field === "spec.wattage")).toBe(true);
+  });
+
+  it("returns valid for RACKING with no spec fields", () => {
+    const result = validateCatalogForm(makeState({
+      category: "RACKING",
+      brand: "IronRidge",
+      model: "XR100",
+      description: "Roof mount",
+    }));
+    expect(result.valid).toBe(true);
+  });
+
+  it("returns warning (not error) for sell < cost", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE",
+      brand: "Hanwha",
+      model: "Q.PEAK 400",
+      description: "400W Module",
+      specValues: { wattage: 400 },
+      unitCost: "200",
+      sellPrice: "150",
+    }));
+    expect(result.valid).toBe(true); // warning, not error
+    expect(result.warnings.length).toBe(1);
+    expect(result.warnings[0].field).toBe("sellPrice");
+  });
+
+  it("blank category skips spec checks, returns only top-level error", () => {
+    const result = validateCatalogForm(makeState({
+      category: "",
+      brand: "Test",
+      model: "Test",
+      description: "Test",
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.length).toBe(1);
+    expect(result.errors[0].field).toBe("category");
   });
 });

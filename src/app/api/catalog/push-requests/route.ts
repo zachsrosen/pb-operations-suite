@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
+import { isBlank, validateRequiredSpecFields } from "@/lib/catalog-form-state";
 import { notifyAdminsOfNewCatalogRequest } from "@/lib/catalog-notify";
 
 const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
@@ -34,13 +35,38 @@ export async function POST(request: NextRequest) {
     systems, dealId,
   } = body as Record<string, unknown>;
 
-  if (!brand || !model || !description || !category) {
-    return NextResponse.json({ error: "brand, model, description, category are required" }, { status: 400 });
+  // Top-level required fields — use isBlank() so whitespace-only values are rejected
+  const topLevelRequired = { brand, model, description, category } as Record<string, unknown>;
+  const missingTopLevel = Object.entries(topLevelRequired)
+    .filter(([, v]) => isBlank(v))
+    .map(([k]) => k);
+  if (missingTopLevel.length > 0) {
+    return NextResponse.json(
+      { error: `Required fields missing: ${missingTopLevel.join(", ")}` },
+      { status: 400 }
+    );
   }
+
   const normalizedCategory = String(category).trim();
   if (!VALID_CATEGORIES.has(normalizedCategory)) {
     return NextResponse.json({ error: `Invalid category: ${normalizedCategory}` }, { status: 400 });
   }
+
+  // Required spec field validation
+  const specMetadata = metadata && typeof metadata === "object"
+    ? (metadata as Record<string, unknown>)
+    : {};
+  const specErrors = validateRequiredSpecFields(normalizedCategory, specMetadata);
+  if (specErrors.length > 0) {
+    return NextResponse.json(
+      {
+        error: `Required spec fields missing: ${specErrors.map((e) => e.message).join("; ")}`,
+        missingFields: specErrors.map((e) => e.field),
+      },
+      { status: 400 }
+    );
+  }
+
   if (!Array.isArray(systems) || systems.length === 0) {
     return NextResponse.json({ error: "systems must be a non-empty array" }, { status: 400 });
   }

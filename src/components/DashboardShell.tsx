@@ -24,6 +24,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/catalog": { href: "/suites/operations", label: "Operations" },
   "/dashboards/catalog/new": { href: "/suites/operations", label: "Operations" },
   "/dashboards/submit-product": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/deals": { href: "/suites/operations", label: "Operations" },
   // Field Execution (Operations Suite)
   "/dashboards/site-survey": { href: "/suites/operations", label: "Operations" },
   "/dashboards/construction": { href: "/suites/operations", label: "Operations" },
@@ -75,6 +76,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/locations": { href: "/suites/executive", label: "Executive" },
   "/dashboards/executive-calendar": { href: "/suites/executive", label: "Executive" },
   "/dashboards/forecast-accuracy": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/forecast-timeline": { href: "/suites/executive", label: "Executive" },
   // Service + D&R Suite
   "/dashboards/service-scheduler": { href: "/suites/service", label: "Service + D&R" },
   "/dashboards/service-backlog": { href: "/suites/service", label: "Service + D&R" },

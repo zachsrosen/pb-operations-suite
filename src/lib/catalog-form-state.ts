@@ -1,4 +1,4 @@
-import { getCategoryFields } from "./catalog-fields";
+import { getCategoryFields, getCategoryLabel } from "./catalog-fields";
 
 export interface CatalogFormState {
   // Step 1: Basics (also includes SKU/vendor for duplicate lookup)
@@ -149,4 +149,109 @@ export function catalogFormReducer(
     default:
       return state;
   }
+}
+
+// ── Validation ──────────────────────────────────────────────────────────────
+
+export interface ValidationError {
+  field: string;
+  message: string;
+  section: "basics" | "details" | "review";
+}
+
+export interface ValidationWarning {
+  field: string;
+  message: string;
+  section: "basics" | "details" | "review";
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: ValidationError[];
+  warnings: ValidationWarning[];
+}
+
+/**
+ * Returns true for undefined, null, empty string, or whitespace-only string.
+ * `0` and `false` are NOT blank — they are valid values.
+ */
+export function isBlank(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === "string") return value.trim().length === 0;
+  return false;
+}
+
+/**
+ * Check required spec fields for a category. Returns errors for any required
+ * FieldDef whose value in specValues is blank. Skips fields hidden by showWhen.
+ * Iterates from FieldDef[] keys, so non-spec keys in specValues are ignored.
+ */
+export function validateRequiredSpecFields(
+  category: string,
+  specValues: Record<string, unknown>
+): ValidationError[] {
+  const fields = getCategoryFields(category);
+  const errors: ValidationError[] = [];
+
+  for (const field of fields) {
+    if (!field.required) continue;
+
+    // Skip fields hidden by showWhen
+    if (field.showWhen) {
+      if (specValues[field.showWhen.field] !== field.showWhen.value) continue;
+    }
+
+    if (isBlank(specValues[field.key])) {
+      errors.push({
+        field: `spec.${field.key}`,
+        message: `${field.label} is required for ${getCategoryLabel(category)}`,
+        section: "details",
+      });
+    }
+  }
+
+  return errors;
+}
+
+/**
+ * Full client-side validation of the catalog form.
+ * Returns blocking errors and non-blocking warnings.
+ */
+export function validateCatalogForm(state: CatalogFormState): ValidationResult {
+  const errors: ValidationError[] = [];
+  const warnings: ValidationWarning[] = [];
+
+  // Top-level required fields
+  if (isBlank(state.category)) {
+    errors.push({ field: "category", message: "Category is required", section: "basics" });
+  }
+  if (isBlank(state.brand)) {
+    errors.push({ field: "brand", message: "Brand is required", section: "basics" });
+  }
+  if (isBlank(state.model)) {
+    errors.push({ field: "model", message: "Model is required", section: "basics" });
+  }
+  if (isBlank(state.description)) {
+    errors.push({ field: "description", message: "Description is required", section: "basics" });
+  }
+
+  // Spec required fields (only when category is known)
+  if (!isBlank(state.category)) {
+    errors.push(...validateRequiredSpecFields(state.category, state.specValues));
+  }
+
+  // Warnings (non-blocking)
+  if (state.unitCost && state.sellPrice) {
+    const cost = parseFloat(state.unitCost);
+    const sell = parseFloat(state.sellPrice);
+    if (Number.isFinite(cost) && Number.isFinite(sell) && sell < cost) {
+      warnings.push({
+        field: "sellPrice",
+        message: "Sell price is lower than unit cost",
+        section: "review",
+      });
+    }
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
 }
