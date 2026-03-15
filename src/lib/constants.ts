@@ -12,6 +12,7 @@ export const STAGE_ORDER = [
   "Permitting & Interconnection",
   "Design & Engineering",
   "Site Survey",
+  "On Hold",
   "Project Rejected - Needs Review",
 ] as const;
 

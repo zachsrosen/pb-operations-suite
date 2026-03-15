@@ -614,7 +614,7 @@ export default function Home() {
                     "Design & Engineering",
                     "Site Survey",
                     "On Hold",
-                    "Project Rejected",
+                    "Project Rejected - Needs Review",
                   ];
                   return Object.entries(stats.stageCounts)
                     .sort((a, b) => {
