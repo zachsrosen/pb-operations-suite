@@ -566,10 +566,9 @@ export default function Home() {
                   const value = unfilteredStats.locationValues[location];
                   const isSelected = selectedLocations.includes(location);
                   return (
-                    <button
+                    <div
                       key={location}
-                      onClick={() => toggleLocation(location)}
-                      className={`rounded-lg p-4 text-center transition-all cursor-pointer border ${
+                      className={`relative rounded-lg p-4 text-center transition-all border ${
                         isSelected
                           ? "bg-orange-500/15 border-orange-500/50 ring-1 ring-orange-500/30 scale-[1.02]"
                           : selectedLocations.length > 0
@@ -577,16 +576,30 @@ export default function Home() {
                             : "bg-skeleton border-transparent hover:bg-surface-2/70"
                       }`}
                     >
-                      <div className={`text-2xl font-bold ${isSelected ? "text-orange-400" : "text-foreground"}`}>
-                        {count}
-                      </div>
-                      <div className={`text-sm ${isSelected ? "text-orange-300" : "text-muted"}`}>{location}</div>
-                      {value != null && (
-                        <div className="text-xs text-orange-400 mt-0.5">
-                          {formatMoney(value)}
+                      <button
+                        onClick={() => toggleLocation(location)}
+                        className="w-full cursor-pointer"
+                      >
+                        <div className={`text-2xl font-bold ${isSelected ? "text-orange-400" : "text-foreground"}`}>
+                          {count}
                         </div>
-                      )}
-                    </button>
+                        <div className={`text-sm ${isSelected ? "text-orange-300" : "text-muted"}`}>{location}</div>
+                        {value != null && (
+                          <div className="text-xs text-orange-400 mt-0.5">
+                            {formatMoney(value)}
+                          </div>
+                        )}
+                      </button>
+                      <Link
+                        href={`/dashboards/deals?location=${encodeURIComponent(location)}`}
+                        className="absolute top-1.5 right-1.5 text-muted/40 hover:text-orange-400 transition-colors"
+                        title={`View ${location} deals`}
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </Link>
+                    </div>
                   );
                 })}
               </div>
@@ -600,7 +613,15 @@ export default function Home() {
         ) : (
           stats?.stageCounts && (
             <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 mb-8 animate-fadeIn shadow-card backdrop-blur-sm">
-              <h2 className="text-lg font-semibold mb-4">Pipeline by Stage</h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">Pipeline by Stage</h2>
+                <Link
+                  href="/dashboards/deals"
+                  className="text-sm text-muted hover:text-orange-400 transition-colors"
+                >
+                  View All Deals →
+                </Link>
+              </div>
               <div className="space-y-3">
                 {(() => {
                   const stageOrder = [
