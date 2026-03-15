@@ -5,9 +5,9 @@
 // not guess from internal labels.
 //
 // Status key:
-//   confirmed  — verified against live Zoho Inventory group list
-//   likely     — matches user-reported Zoho screenshot, awaiting final confirmation
-//   unresolved — no verified Zoho group; omitted from API calls until ops decides
+//   confirmed  — verified against live Zoho Inventory group list; shipped in API calls
+//   likely     — matches user-reported Zoho screenshot; NOT shipped until promoted to confirmed
+//   unresolved — no verified Zoho group; NOT shipped in API calls
 
 type MappingStatus = "confirmed" | "likely" | "unresolved";
 
@@ -22,9 +22,10 @@ interface ZohoCategoryMapping {
 /**
  * Internal category enum → Zoho Inventory item group name.
  *
- * Only `confirmed` and `likely` entries produce a `group_name` in the Zoho API
- * payload. Unresolved entries return `undefined` and log a warning so ops can
- * backfill mappings as they verify the full Zoho group tree.
+ * Only `confirmed` entries produce a `group_name` in the Zoho API payload.
+ * `likely` entries retain their candidate groupName in the map data (so it
+ * isn't lost when ops confirms), but `getZohoGroupName()` treats them the
+ * same as `unresolved` — returns `undefined` and logs a warning.
  */
 export const ZOHO_CATEGORY_MAP: Record<string, ZohoCategoryMapping> = {
   // ── Confirmed ──────────────────────────────────────────────────────────────
@@ -115,9 +116,9 @@ export const ZOHO_CATEGORY_MAP: Record<string, ZohoCategoryMapping> = {
 /**
  * Look up the Zoho Inventory `group_name` for an internal category enum.
  *
- * Returns the exact Zoho group name for confirmed/likely mappings.
- * Returns `undefined` for unresolved or unknown categories, and logs a
- * warning so ops can track which mappings still need verification.
+ * Returns the exact Zoho group name ONLY for `confirmed` mappings.
+ * Returns `undefined` for `likely`, `unresolved`, or unknown categories,
+ * and logs a warning so ops can track which mappings still need verification.
  */
 export function getZohoGroupName(category: string): string | undefined {
   const mapping = ZOHO_CATEGORY_MAP[category];
@@ -130,23 +131,23 @@ export function getZohoGroupName(category: string): string | undefined {
     return undefined;
   }
 
-  if (mapping.status === "unresolved") {
-    console.warn(
-      `[zoho-taxonomy] Category "${category}" has no verified Zoho group_name mapping (status: unresolved). ` +
-        `Item will be created without a group. ${mapping.note || ""}`
-    );
-    return undefined;
+  if (mapping.status === "confirmed") {
+    return mapping.groupName;
   }
 
-  // confirmed or likely — return the group name
-  return mapping.groupName;
+  // likely or unresolved — do not ship, log so ops can track
+  console.warn(
+    `[zoho-taxonomy] Category "${category}" has no confirmed Zoho group_name mapping (status: ${mapping.status}). ` +
+      `Item will be created without a group. ${mapping.note || ""}`
+  );
+  return undefined;
 }
 
 /**
- * Check whether a category has a verified (confirmed or likely) Zoho mapping.
+ * Check whether a category has a confirmed Zoho mapping that will be shipped.
  * Useful for UI hints or pre-submission validation.
  */
 export function hasVerifiedZohoMapping(category: string): boolean {
   const mapping = ZOHO_CATEGORY_MAP[category];
-  return !!mapping && mapping.status !== "unresolved" && !!mapping.groupName;
+  return !!mapping && mapping.status === "confirmed" && !!mapping.groupName;
 }

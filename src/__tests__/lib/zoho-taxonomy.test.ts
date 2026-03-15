@@ -7,13 +7,17 @@ describe("zoho-taxonomy", () => {
       expect(getZohoGroupName("INVERTER")).toBe("Inverter");
     });
 
-    it("returns exact Zoho name for likely categories", () => {
-      expect(getZohoGroupName("TESLA_SYSTEM_COMPONENTS")).toBe("Tesla");
-      expect(getZohoGroupName("ELECTRICAL_BOS")).toBe("Electrical Component");
-      expect(getZohoGroupName("RAPID_SHUTDOWN")).toBe("Electrical Component");
+    it("returns undefined for likely categories (not shipped until promoted)", () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+      expect(getZohoGroupName("TESLA_SYSTEM_COMPONENTS")).toBeUndefined();
+      expect(getZohoGroupName("ELECTRICAL_BOS")).toBeUndefined();
+      expect(getZohoGroupName("RAPID_SHUTDOWN")).toBeUndefined();
+      expect(warnSpy).toHaveBeenCalledTimes(3);
+      warnSpy.mockRestore();
     });
 
     it("returns undefined for unresolved categories", () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation();
       const unresolvedCategories = [
         "BATTERY",
         "BATTERY_EXPANSION",
@@ -31,6 +35,7 @@ describe("zoho-taxonomy", () => {
       for (const cat of unresolvedCategories) {
         expect(getZohoGroupName(cat)).toBeUndefined();
       }
+      warnSpy.mockRestore();
     });
 
     it("returns undefined and warns for completely unknown categories", () => {
@@ -51,21 +56,34 @@ describe("zoho-taxonomy", () => {
       warnSpy.mockRestore();
     });
 
-    it("does not log a warning for confirmed/likely categories", () => {
+    it("logs a warning for likely categories", () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+      getZohoGroupName("TESLA_SYSTEM_COMPONENTS");
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("likely")
+      );
+      warnSpy.mockRestore();
+    });
+
+    it("does not log a warning for confirmed categories", () => {
       const warnSpy = jest.spyOn(console, "warn").mockImplementation();
       getZohoGroupName("MODULE");
       getZohoGroupName("INVERTER");
-      getZohoGroupName("TESLA_SYSTEM_COMPONENTS");
       expect(warnSpy).not.toHaveBeenCalled();
       warnSpy.mockRestore();
     });
   });
 
   describe("hasVerifiedZohoMapping", () => {
-    it("returns true for confirmed and likely categories", () => {
+    it("returns true only for confirmed categories", () => {
       expect(hasVerifiedZohoMapping("MODULE")).toBe(true);
       expect(hasVerifiedZohoMapping("INVERTER")).toBe(true);
-      expect(hasVerifiedZohoMapping("ELECTRICAL_BOS")).toBe(true);
+    });
+
+    it("returns false for likely categories", () => {
+      expect(hasVerifiedZohoMapping("ELECTRICAL_BOS")).toBe(false);
+      expect(hasVerifiedZohoMapping("TESLA_SYSTEM_COMPONENTS")).toBe(false);
+      expect(hasVerifiedZohoMapping("RAPID_SHUTDOWN")).toBe(false);
     });
 
     it("returns false for unresolved categories", () => {
@@ -95,18 +113,32 @@ describe("zoho-taxonomy", () => {
 
     it("every entry has a valid status", () => {
       const validStatuses = ["confirmed", "likely", "unresolved"];
-      for (const [key, mapping] of Object.entries(ZOHO_CATEGORY_MAP)) {
+      for (const [, mapping] of Object.entries(ZOHO_CATEGORY_MAP)) {
         expect(validStatuses).toContain(mapping.status);
         // unresolved entries must have undefined groupName
         if (mapping.status === "unresolved") {
           expect(mapping.groupName).toBeUndefined();
         }
-        // confirmed/likely entries must have a non-empty groupName
+        // confirmed/likely entries retain a non-empty groupName in the map
+        // (likely entries keep the candidate name for when ops promotes them)
         if (mapping.status === "confirmed" || mapping.status === "likely") {
           expect(typeof mapping.groupName).toBe("string");
           expect((mapping.groupName as string).length).toBeGreaterThan(0);
         }
       }
+    });
+
+    it("only confirmed entries are shipped by getZohoGroupName", () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+      for (const [cat, mapping] of Object.entries(ZOHO_CATEGORY_MAP)) {
+        const result = getZohoGroupName(cat);
+        if (mapping.status === "confirmed") {
+          expect(result).toBe(mapping.groupName);
+        } else {
+          expect(result).toBeUndefined();
+        }
+      }
+      warnSpy.mockRestore();
     });
   });
 });
