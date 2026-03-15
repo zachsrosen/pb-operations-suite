@@ -119,12 +119,13 @@ export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps)
               <InfoRow label="Site Survey Scheduled" value={formatDate(deal.siteSurveyScheduleDate ?? null)} />
               <InfoRow label="Site Survey Completed" value={formatDate(deal.siteSurveyCompletionDate ?? null)} />
               <InfoRow label="Design Drafted" value={formatDate(deal.designDraftDate ?? null)} />
+              <InfoRow label="Design Approval Sent" value={formatDate(deal.designApprovalSentDate ?? null)} />
               <InfoRow label="Design Approved" value={formatDate(deal.designApprovalDate ?? null)} />
               <InfoRow label="Design Completed" value={formatDate(deal.designCompletionDate ?? null)} />
               <InfoRow label="Permit Submitted" value={formatDate(deal.permitSubmitDate ?? null)} />
               <InfoRow label="Permit Issued" value={formatDate(deal.permitIssueDate ?? null)} />
-              <InfoRow label="IC Submitted" value={formatDate(deal.interconnectionSubmitDate ?? null)} />
-              <InfoRow label="IC Approved" value={formatDate(deal.interconnectionApprovalDate ?? null)} />
+              <InfoRow label="Interconnection Submitted" value={formatDate(deal.interconnectionSubmitDate ?? null)} />
+              <InfoRow label="Interconnection Approved" value={formatDate(deal.interconnectionApprovalDate ?? null)} />
               <InfoRow label="Construction Scheduled" value={formatDate(deal.constructionScheduleDate ?? null)} />
               <InfoRow label="Construction Complete" value={formatDate(deal.constructionCompleteDate ?? null)} />
               <InfoRow label="Inspection Scheduled" value={formatDate(deal.inspectionScheduleDate ?? null)} />

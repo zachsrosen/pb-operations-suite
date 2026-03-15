@@ -40,6 +40,7 @@ export interface ProjectFields {
   siteSurveyScheduleDate: string | null;
   siteSurveyCompletionDate: string | null;
   designDraftDate: string | null;
+  designApprovalSentDate: string | null;
   designCompletionDate: string | null;
   designApprovalDate: string | null;
   permitSubmitDate: string | null;
@@ -92,6 +93,7 @@ export function projectToTableDeal(p: Project): TableDeal {
     siteSurveyScheduleDate: p.siteSurveyScheduleDate,
     siteSurveyCompletionDate: p.siteSurveyCompletionDate,
     designDraftDate: p.designDraftDate,
+    designApprovalSentDate: p.designApprovalSentDate,
     designCompletionDate: p.designCompletionDate,
     designApprovalDate: p.designApprovalDate,
     permitSubmitDate: p.permitSubmitDate,
