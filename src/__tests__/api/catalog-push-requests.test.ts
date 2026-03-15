@@ -57,6 +57,7 @@ describe("POST /api/catalog/push-requests", () => {
       description: "Powerwall 3",
       category: "BATTERY",
       systems: ["INTERNAL", "ZOHO"],
+      metadata: { capacityKwh: 13.5 },
     });
     const res = await postRequest(req);
 
@@ -75,6 +76,7 @@ describe("POST /api/catalog/push-requests", () => {
       description: "Microinverter",
       category: "INVERTER",
       systems: ["INTERNAL"],
+      metadata: { acOutputKw: 0.29 },
     });
     await postRequest(req);
 
@@ -171,6 +173,7 @@ describe("POST /api/catalog/push-requests", () => {
       description: "Inverter",
       category: "INVERTER",
       systems: ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"],
+      metadata: { acOutputKw: 7.6 },
     });
     const res = await postRequest(req);
 
@@ -192,6 +195,7 @@ describe("POST /api/catalog/push-requests", () => {
       length: 0,
       width: 0,
       weight: 0,
+      metadata: { capacityKwh: 13.5 },
     });
     const res = await postRequest(req);
 
@@ -202,6 +206,91 @@ describe("POST /api/catalog/push-requests", () => {
     expect(createArg.data.length).toBe(0);
     expect(createArg.data.width).toBe(0);
     expect(createArg.data.weight).toBe(0);
+  });
+
+  it("returns 400 when required spec field is missing for BATTERY", async () => {
+    const req = makeRequest({
+      brand: "Tesla",
+      model: "Powerwall 3",
+      description: "Battery",
+      category: "BATTERY",
+      systems: ["INTERNAL"],
+      metadata: {},
+    });
+    const res = await postRequest(req);
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("Capacity");
+    expect(data.missingFields).toContain("spec.capacityKwh");
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when required spec field is missing for MODULE", async () => {
+    const req = makeRequest({
+      brand: "Hanwha",
+      model: "Q.PEAK 400",
+      description: "Module",
+      category: "MODULE",
+      systems: ["INTERNAL"],
+      metadata: { efficiency: 21.5 },
+    });
+    const res = await postRequest(req);
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("Wattage");
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("passes when required spec field is present in metadata", async () => {
+    mockCreate.mockResolvedValue({ id: "push_5", status: "PENDING" });
+
+    const req = makeRequest({
+      brand: "Hanwha",
+      model: "Q.PEAK 400",
+      description: "400W Module",
+      category: "MODULE",
+      systems: ["INTERNAL"],
+      metadata: { wattage: 400, efficiency: 21.5 },
+    });
+    const res = await postRequest(req);
+
+    expect(res.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 400 for whitespace-only required fields", async () => {
+    const req = makeRequest({
+      brand: "  ",
+      model: "Test",
+      description: "Test",
+      category: "MODULE",
+      systems: ["INTERNAL"],
+      metadata: { wattage: 400 },
+    });
+    const res = await postRequest(req);
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("brand");
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("accepts RACKING without metadata (no required spec fields)", async () => {
+    mockCreate.mockResolvedValue({ id: "push_6", status: "PENDING" });
+
+    const req = makeRequest({
+      brand: "IronRidge",
+      model: "XR100",
+      description: "Roof mount",
+      category: "RACKING",
+      systems: ["INTERNAL"],
+    });
+    const res = await postRequest(req);
+
+    expect(res.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
   });
 });
 
