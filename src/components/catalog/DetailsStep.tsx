@@ -2,6 +2,7 @@
 import { useState, useRef } from "react";
 import CategoryFields from "./CategoryFields";
 import FieldTooltip from "./FieldTooltip";
+import { getCategoryFields } from "@/lib/catalog-fields";
 import type { CatalogFormState, CatalogFormAction } from "@/lib/catalog-form-state";
 
 interface DetailsStepProps {
@@ -62,13 +63,16 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
   return (
     <div className="space-y-6">
       <p className="text-sm text-muted">
-        These fields are optional — fill what you have, skip the rest.
+        {getCategoryFields(state.category).some((f) => f.required)
+          ? "Fields marked with * are required. Fill in what you have for the rest."
+          : "These fields are optional — fill what you have, skip the rest."}
       </p>
 
       {/* Category Specs */}
       <div className="bg-surface rounded-xl border border-t-border p-6 shadow-card">
         <h3 className="text-lg font-semibold text-foreground mb-4">
-          Category Specifications <OptionalBadge />
+          Category Specifications
+          {!getCategoryFields(state.category).some((f) => f.required) && <OptionalBadge />}
         </h3>
         <CategoryFields
           category={state.category}
