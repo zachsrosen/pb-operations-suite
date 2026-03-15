@@ -1,4 +1,4 @@
-import { catalogFormReducer, initialFormState, type CatalogFormState } from "@/lib/catalog-form-state";
+import { catalogFormReducer, initialFormState, isBlank, validateRequiredSpecFields, validateCatalogForm, type CatalogFormState } from "@/lib/catalog-form-state";
 
 describe("catalogFormReducer", () => {
   it("returns initial state", () => {
@@ -172,5 +172,106 @@ describe("catalogFormReducer", () => {
     state = catalogFormReducer(state, { type: "SET_FIELD", field: "photoFileName", value: "photo.jpg" });
     expect(state.photoUrl).toBe("https://blob/photo.jpg");
     expect(state.photoFileName).toBe("photo.jpg");
+  });
+});
+
+describe("isBlank", () => {
+  it("returns true for undefined, null, empty string, whitespace", () => {
+    expect(isBlank(undefined)).toBe(true);
+    expect(isBlank(null)).toBe(true);
+    expect(isBlank("")).toBe(true);
+    expect(isBlank("   ")).toBe(true);
+    expect(isBlank("\t\n")).toBe(true);
+  });
+
+  it("returns false for 0, false, and non-empty strings", () => {
+    expect(isBlank(0)).toBe(false);
+    expect(isBlank(false)).toBe(false);
+    expect(isBlank("hello")).toBe(false);
+    expect(isBlank(42)).toBe(false);
+  });
+});
+
+describe("validateRequiredSpecFields", () => {
+  it("returns no errors for MODULE with wattage filled", () => {
+    const errors = validateRequiredSpecFields("MODULE", { wattage: 400 });
+    expect(errors).toEqual([]);
+  });
+
+  it("returns error for MODULE with wattage missing", () => {
+    const errors = validateRequiredSpecFields("MODULE", {});
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("spec.wattage");
+    expect(errors[0].section).toBe("details");
+  });
+
+  it("returns error for MODULE with wattage blank string", () => {
+    const errors = validateRequiredSpecFields("MODULE", { wattage: "" });
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("spec.wattage");
+  });
+
+  it("passes for MODULE with wattage = 0 (zero is not blank)", () => {
+    const errors = validateRequiredSpecFields("MODULE", { wattage: 0 });
+    expect(errors).toEqual([]);
+  });
+
+  it("returns no errors for RACKING (no required fields)", () => {
+    const errors = validateRequiredSpecFields("RACKING", {});
+    expect(errors).toEqual([]);
+  });
+
+  it("returns no errors for blank/unknown category", () => {
+    const errors = validateRequiredSpecFields("", {});
+    expect(errors).toEqual([]);
+    const errors2 = validateRequiredSpecFields("DOES_NOT_EXIST", {});
+    expect(errors2).toEqual([]);
+  });
+
+  it("returns error for BATTERY capacityKwh missing", () => {
+    const errors = validateRequiredSpecFields("BATTERY", {});
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("spec.capacityKwh");
+  });
+
+  it("returns error for BATTERY_EXPANSION capacityKwh missing (shared fields)", () => {
+    const errors = validateRequiredSpecFields("BATTERY_EXPANSION", {});
+    expect(errors).toHaveLength(1);
+    expect(errors[0].field).toBe("spec.capacityKwh");
+  });
+
+  it("ignores non-spec keys like _photoUrl in metadata", () => {
+    const errors = validateRequiredSpecFields("MODULE", { _photoUrl: "https://example.com/photo.jpg", wattage: 400 });
+    expect(errors).toEqual([]);
+  });
+
+  it("skips required fields hidden by showWhen conditions", () => {
+    const getCategoryFields = jest.requireActual("@/lib/catalog-fields").getCategoryFields;
+    const mockGetCategoryFields = jest.spyOn(
+      require("@/lib/catalog-fields"), "getCategoryFields"
+    ).mockImplementation((cat: string) => {
+      if (cat === "TEST_SHOW_WHEN") {
+        return [
+          { key: "toggleField", label: "Toggle", type: "toggle" },
+          { key: "conditionalField", label: "Conditional", type: "number", required: true, showWhen: { field: "toggleField", value: true } },
+        ];
+      }
+      return getCategoryFields(cat);
+    });
+
+    // showWhen NOT met — conditionalField is required but hidden, so no error
+    const errors1 = validateRequiredSpecFields("TEST_SHOW_WHEN", { toggleField: false });
+    expect(errors1).toEqual([]);
+
+    // showWhen IS met — conditionalField is visible and required, so error
+    const errors2 = validateRequiredSpecFields("TEST_SHOW_WHEN", { toggleField: true });
+    expect(errors2).toHaveLength(1);
+    expect(errors2[0].field).toBe("spec.conditionalField");
+
+    // showWhen IS met and field is filled — no error
+    const errors3 = validateRequiredSpecFields("TEST_SHOW_WHEN", { toggleField: true, conditionalField: 42 });
+    expect(errors3).toEqual([]);
+
+    mockGetCategoryFields.mockRestore();
   });
 });

@@ -1,4 +1,4 @@
-import { getCategoryFields } from "./catalog-fields";
+import { getCategoryFields, getCategoryLabel } from "./catalog-fields";
 
 export interface CatalogFormState {
   // Step 1: Basics (also includes SKU/vendor for duplicate lookup)
@@ -149,4 +149,66 @@ export function catalogFormReducer(
     default:
       return state;
   }
+}
+
+// ── Validation ──────────────────────────────────────────────────────────────
+
+export interface ValidationError {
+  field: string;
+  message: string;
+  section: "basics" | "details" | "review";
+}
+
+export interface ValidationWarning {
+  field: string;
+  message: string;
+  section: "basics" | "details" | "review";
+}
+
+export interface ValidationResult {
+  valid: boolean;
+  errors: ValidationError[];
+  warnings: ValidationWarning[];
+}
+
+/**
+ * Returns true for undefined, null, empty string, or whitespace-only string.
+ * `0` and `false` are NOT blank — they are valid values.
+ */
+export function isBlank(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value === "string") return value.trim().length === 0;
+  return false;
+}
+
+/**
+ * Check required spec fields for a category. Returns errors for any required
+ * FieldDef whose value in specValues is blank. Skips fields hidden by showWhen.
+ * Iterates from FieldDef[] keys, so non-spec keys in specValues are ignored.
+ */
+export function validateRequiredSpecFields(
+  category: string,
+  specValues: Record<string, unknown>
+): ValidationError[] {
+  const fields = getCategoryFields(category);
+  const errors: ValidationError[] = [];
+
+  for (const field of fields) {
+    if (!field.required) continue;
+
+    // Skip fields hidden by showWhen
+    if (field.showWhen) {
+      if (specValues[field.showWhen.field] !== field.showWhen.value) continue;
+    }
+
+    if (isBlank(specValues[field.key])) {
+      errors.push({
+        field: `spec.${field.key}`,
+        message: `${field.label} is required for ${getCategoryLabel(category)}`,
+        section: "details",
+      });
+    }
+  }
+
+  return errors;
 }
