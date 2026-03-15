@@ -4,7 +4,7 @@ describe("canAccessRoute - new suite structure", () => {
   // Intelligence suite access
   it("allows OPERATIONS_MANAGER to access Intelligence dashboards", () => {
     expect(canAccessRoute("OPERATIONS_MANAGER", "/dashboards/at-risk")).toBe(true);
-    expect(canAccessRoute("OPERATIONS_MANAGER", "/dashboards/capacity")).toBe(true);
+    expect(canAccessRoute("OPERATIONS_MANAGER", "/dashboards/capacity")).toBe(false);
     expect(canAccessRoute("OPERATIONS_MANAGER", "/suites/intelligence")).toBe(true);
   });
 

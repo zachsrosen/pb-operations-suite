@@ -25,7 +25,7 @@ const LINKS: SuitePageCard[] = [
     description: "Real-time executive command center with live metrics and alerts.",
     tag: "LIVE",
     tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
-    section: "Executive Views",
+    section: "Admin",
   },
   {
     href: "/dashboards/capacity",
@@ -33,7 +33,7 @@ const LINKS: SuitePageCard[] = [
     description: "Crew capacity vs. forecasted installs by location and month.",
     tag: "CAPACITY",
     tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
-    section: "Executive Views",
+    section: "Admin",
   },
   {
     href: "/dashboards/locations",
@@ -41,7 +41,7 @@ const LINKS: SuitePageCard[] = [
     description: "Side-by-side location performance, capacity, and pipeline breakdown.",
     tag: "LOCATIONS",
     tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-    section: "Executive Views",
+    section: "Admin",
   },
   {
     href: "/dashboards/executive-calendar",
@@ -99,7 +99,6 @@ export default async function ExecutiveSuitePage() {
       cards={LINKS}
       role={user.role}
       hoverBorderClass="hover:border-orange-500/50"
-      columnsClassName="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
     />
   );
 }

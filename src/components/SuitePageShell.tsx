@@ -24,6 +24,23 @@ interface SuitePageShellProps {
   columnsClassName?: string;
 }
 
+type GridRow = { cols: string; cards: SuitePageCard[] };
+
+function getGridRows(cards: SuitePageCard[], defaultCols: string): GridRow[] {
+  const n = cards.length;
+  if (n === 2) return [{ cols: "grid grid-cols-1 md:grid-cols-2 gap-4", cards }];
+  if (n === 4) return [{ cols: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4", cards }];
+  if (n === 5) return [
+    { cols: "grid grid-cols-1 md:grid-cols-3 gap-4", cards: cards.slice(0, 3) },
+    { cols: "grid grid-cols-1 md:grid-cols-2 gap-4", cards: cards.slice(3) },
+  ];
+  if (n === 7) return [
+    { cols: "grid grid-cols-1 md:grid-cols-3 gap-4", cards: cards.slice(0, 3) },
+    { cols: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4", cards: cards.slice(3) },
+  ];
+  return [{ cols: defaultCols, cards }];
+}
+
 function groupCards(cards: SuitePageCard[]): Array<{ section: string; cards: SuitePageCard[] }> {
   const order: string[] = [];
   const bySection = new Map<string, SuitePageCard[]>();
@@ -119,54 +136,53 @@ export default function SuitePageShell({
           </div>
         )}
 
-        {sections.map(({ section, cards: sectionCards }) => (
-          <section key={section} className="mb-8">
-            <h2 className="text-lg font-semibold text-foreground/80 mb-4">{section}</h2>
-            <div className={
-              sectionCards.length === 4
-                ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
-                : sectionCards.length === 2
-                  ? "grid grid-cols-1 md:grid-cols-2 gap-4"
-                  : columnsClassName
-            }>
-              {sectionCards.map((item) => {
-                const className = `group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm ${hoverBorderClass} hover:bg-surface transition-all`;
-                const content = (
-                  <>
-                    <div className="flex items-center justify-between mb-1">
-                      <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
-                        {item.title}
-                      </h3>
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded border ${item.tagColor || tagColorClass}`}>
-                        {item.tag}
-                      </span>
-                    </div>
-                    <p className="text-sm text-muted">{item.description}</p>
-                  </>
-                );
+        {sections.map(({ section, cards: sectionCards }) => {
+          const rows = getGridRows(sectionCards, columnsClassName);
+          return (
+            <section key={section} className="mb-8">
+              <h2 className="text-lg font-semibold text-foreground/80 mb-4">{section}</h2>
+              {rows.map((row, rowIdx) => (
+                <div key={rowIdx} className={`${row.cols}${rowIdx > 0 ? " mt-4" : ""}`}>
+                  {row.cards.map((item) => {
+                    const cardClass = `group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm ${hoverBorderClass} hover:bg-surface transition-all`;
+                    const content = (
+                      <>
+                        <div className="flex items-center justify-between mb-1">
+                          <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
+                            {item.title}
+                          </h3>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded border ${item.tagColor || tagColorClass}`}>
+                            {item.tag}
+                          </span>
+                        </div>
+                        <p className="text-sm text-muted">{item.description}</p>
+                      </>
+                    );
 
-                if (item.hardNavigate) {
-                  return (
-                    <a key={item.href} href={item.href} className={className}>
-                      {content}
-                    </a>
-                  );
-                }
+                    if (item.hardNavigate) {
+                      return (
+                        <a key={item.href} href={item.href} className={cardClass}>
+                          {content}
+                        </a>
+                      );
+                    }
 
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    prefetch={false}
-                    className={className}
-                  >
-                    {content}
-                  </Link>
-                );
-              })}
-            </div>
-          </section>
-        ))}
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        prefetch={false}
+                        className={cardClass}
+                      >
+                        {content}
+                      </Link>
+                    );
+                  })}
+                </div>
+              ))}
+            </section>
+          );
+        })}
 
         {sections.length === 0 && (
           <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 text-sm text-muted shadow-card backdrop-blur-sm">

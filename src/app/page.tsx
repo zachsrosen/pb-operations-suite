@@ -81,7 +81,7 @@ const SUITE_LINKS: SuiteLinkData[] = [
     description: "Risk analysis, QC metrics, and pipeline forecasting.",
     tag: "INTELLIGENCE",
     tagColor: "cyan",
-    visibility: "owner_admin",
+    visibility: "admin",
   },
   {
     href: "/suites/executive",
@@ -97,7 +97,7 @@ const SUITE_LINKS: SuiteLinkData[] = [
     description: "Service and D&R scheduling, equipment tracking, and deal management.",
     tag: "SERVICE + D&R",
     tagColor: "purple",
-    visibility: "all",
+    visibility: "admin",
   },
   {
     href: "/dashboards/ai",
@@ -672,16 +672,34 @@ export default function Home() {
         )}
 
         {/* Suites (for ADMIN/OWNER) */}
-        {visibleSuites.length > 0 && (
-          <div>
-            <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">Suites</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
-              {visibleSuites.map((suite) => (
-                <DashboardLink key={suite.href} {...suite} />
-              ))}
-            </div>
-          </div>
-        )}
+        {visibleSuites.length > 0 && (() => {
+          const mainSuites = visibleSuites.filter((s) => s.visibility !== "admin");
+          const adminSuites = visibleSuites.filter((s) => s.visibility === "admin");
+          return (
+            <>
+              {mainSuites.length > 0 && (
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">Suites</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
+                    {mainSuites.map((suite) => (
+                      <DashboardLink key={suite.href} {...suite} />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {adminSuites.length > 0 && (
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">Admin</h2>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
+                    {adminSuites.map((suite) => (
+                      <DashboardLink key={suite.href} {...suite} />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
 
         {/* Browse All — uses canAccessRoute to prevent dead-end links */}
         {roleLandingCards && (

@@ -53,7 +53,7 @@ const NAV_MAP: Record<string, string> = {
   s: "/dashboards/scheduler",
   p: "/dashboards/pipeline",
   r: "/dashboards/revenue",
-  c: "/dashboards/command-center",
+  c: "/suites/executive",
   a: "/dashboards/alerts",
   i: "/dashboards/inventory",
   e: "/dashboards/executive",
