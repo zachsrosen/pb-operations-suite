@@ -3446,7 +3446,7 @@ function BomDashboardInner() {
                                         if (item.unitSpec != null) params.set("unitSpec", String(item.unitSpec));
                                         if (item.unitLabel) params.set("unitLabel", item.unitLabel);
                                         if (linkedProject?.hs_object_id) params.set("dealId", linkedProject.hs_object_id);
-                                        router.push(`/dashboards/catalog/new?${params.toString()}`);
+                                        router.push(`/dashboards/submit-product?${params.toString()}`);
                                       }}
                                       className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] leading-none font-semibold text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 bg-surface border border-t-border rounded px-0.5"
                                       title="Add to missing catalog"

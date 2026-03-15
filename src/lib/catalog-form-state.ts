@@ -1,3 +1,5 @@
+import { getCategoryFields } from "./catalog-fields";
+
 export interface CatalogFormState {
   // Step 1: Basics (also includes SKU/vendor for duplicate lookup)
   category: string;
@@ -94,16 +96,29 @@ export function catalogFormReducer(
       const base = { ...initialFormState };
       const filledFields = new Set<string>();
       const updates: Partial<CatalogFormState> = {};
+      // Determine valid spec keys for the target category so we only
+      // count/store fields the form will actually display.
+      const targetCategory = (action.data.category as string) || "";
+      const validSpecKeys = targetCategory
+        ? new Set(getCategoryFields(targetCategory).map((f) => f.key))
+        : null; // null = accept all (no category known yet)
       for (const [key, value] of Object.entries(action.data)) {
         if (value !== undefined && value !== null && value !== "") {
-          (updates as Record<string, unknown>)[key] = value;
-          // P2 fix: track individual spec keys as "spec.<key>" so the
-          // Details step can highlight/clear per-field, not as one blob.
           if (key === "specValues" && typeof value === "object" && value !== null) {
-            for (const specKey of Object.keys(value as Record<string, unknown>)) {
+            // P2 fix: track individual spec keys as "spec.<key>" so the
+            // Details step can highlight/clear per-field, not as one blob.
+            // Filter to only category-relevant keys.
+            const raw = value as Record<string, unknown>;
+            const filtered: Record<string, unknown> = {};
+            for (const [specKey, specVal] of Object.entries(raw)) {
+              if (specVal === undefined || specVal === null || specVal === "") continue;
+              if (validSpecKeys && !validSpecKeys.has(specKey)) continue;
+              filtered[specKey] = specVal;
               filledFields.add(`spec.${specKey}`);
             }
+            (updates as Record<string, unknown>).specValues = filtered;
           } else {
+            (updates as Record<string, unknown>)[key] = value;
             filledFields.add(key);
           }
         }

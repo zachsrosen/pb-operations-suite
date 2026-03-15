@@ -30,6 +30,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "MODULE",
     hubspotValue: "Module",
     zuperCategory: "Solar Panel",
+
     specTable: "moduleSpec",
     fields: [
       { key: "wattage", label: "DC Size (Wattage)", type: "number", unit: "W", hubspotProperty: "dc_size", tooltip: "Rated power output under STC (Standard Test Conditions)" },
@@ -47,6 +48,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "INVERTER",
     hubspotValue: "Inverter",
     zuperCategory: "Inverter",
+
     specTable: "inverterSpec",
     fields: [
       { key: "acOutputKw", label: "AC Output Size", type: "number", unit: "kW", hubspotProperty: "ac_size", tooltip: "Rated AC power output of the inverter" },
@@ -63,6 +65,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "BATTERY",
     hubspotValue: "Battery",
     zuperCategory: "Battery",
+
     specTable: "batterySpec",
     fields: [
       { key: "capacityKwh", label: "Capacity", type: "number", unit: "kWh", hubspotProperty: "size__kwh_", tooltip: "Total energy storage capacity of the battery" },
@@ -80,6 +83,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "BATTERY_EXPANSION",
     hubspotValue: "Battery Expansion",
     zuperCategory: "Battery Expansion",
+
     specTable: "batterySpec",
     fields: [],
   },
@@ -88,6 +92,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "EV_CHARGER",
     hubspotValue: "EV Charger",
     zuperCategory: "EV Charger",
+
     specTable: "evChargerSpec",
     fields: [
       { key: "powerKw", label: "Charger Power", type: "number", unit: "kW", hubspotProperty: "capacity__kw_", tooltip: "Maximum charging power output" },
@@ -103,6 +108,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "RACKING",
     hubspotValue: "Mounting Hardware",
     zuperCategory: "Mounting Hardware",
+
     specTable: "mountingHardwareSpec",
     fields: [
       { key: "mountType", label: "Mount Type", type: "dropdown", options: ["Roof", "Ground", "Carport", "Flat Roof"], tooltip: "Installation location type for the racking system" },
@@ -118,6 +124,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "ELECTRICAL_BOS",
     hubspotValue: "Electrical Hardware",
     zuperCategory: "Electrical Hardwire",
+
     specTable: "electricalHardwareSpec",
     fields: [
       { key: "componentType", label: "Component Type", type: "dropdown", options: ["Conduit", "Wire", "Disconnect", "Breaker", "Combiner"], tooltip: "Type of electrical balance-of-system component" },
@@ -131,6 +138,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "MONITORING",
     hubspotValue: "Relay Device",
     zuperCategory: "Relay Device",
+
     specTable: "relayDeviceSpec",
     fields: [
       { key: "deviceType", label: "Device Type", type: "dropdown", options: ["Gateway", "Meter", "CT", "Consumption Monitor"], tooltip: "Type of monitoring or relay device" },
@@ -143,6 +151,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "RAPID_SHUTDOWN",
     hubspotValue: "Rapid Shutdown",
     zuperCategory: "Electrical Hardwire",
+
     fields: [],
   },
   OPTIMIZER: {
@@ -150,6 +159,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "OPTIMIZER",
     hubspotValue: "Optimizer",
     zuperCategory: "Optimizer",
+
     fields: [],
   },
   GATEWAY: {
@@ -157,6 +167,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "GATEWAY",
     hubspotValue: "Gateway",
     zuperCategory: "Relay Device",
+
     fields: [],
   },
   D_AND_R: {
@@ -164,6 +175,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "D_AND_R",
     hubspotValue: "D&R",
     zuperCategory: "D&R",
+
     fields: [],
   },
   SERVICE: {
@@ -171,6 +183,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "SERVICE",
     hubspotValue: "Service",
     zuperCategory: "Service",
+
     fields: [],
   },
   ADDER_SERVICES: {
@@ -178,6 +191,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "ADDER_SERVICES",
     hubspotValue: "Adder",
     zuperCategory: "Service",
+
     fields: [],
   },
   TESLA_SYSTEM_COMPONENTS: {
@@ -185,6 +199,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "TESLA_SYSTEM_COMPONENTS",
     hubspotValue: "Tesla System Components",
     zuperCategory: "Tesla System Components",
+
     fields: [],
   },
   PROJECT_MILESTONES: {
@@ -192,6 +207,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     enumValue: "PROJECT_MILESTONES",
     hubspotValue: "Project Milestones",
     zuperCategory: "Service",
+
     fields: [],
   },
 };

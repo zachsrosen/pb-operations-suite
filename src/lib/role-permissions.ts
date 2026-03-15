@@ -134,6 +134,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/pi-timeline",
       // Equipment catalog
       "/dashboards/catalog",
+      "/dashboards/submit-product",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
@@ -188,6 +189,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/dnr",
       // Equipment catalog
       "/dashboards/catalog",
+      "/dashboards/submit-product",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
@@ -260,6 +262,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/forecast-accuracy",
       // Equipment catalog
       "/dashboards/catalog",
+      "/dashboards/submit-product",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
@@ -365,6 +368,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/pi-timeline",
       // Equipment catalog
       "/dashboards/catalog",
+      "/dashboards/submit-product",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
@@ -449,6 +453,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/pi-timeline",
       // Equipment catalog
       "/dashboards/catalog",
+      "/dashboards/submit-product",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
@@ -684,8 +689,21 @@ export const ADMIN_ONLY_ROUTES: string[] = [
   "/dashboards/zuper-compliance",
   "/dashboards/product-comparison",
   "/dashboards/mobile",
+  "/dashboards/inventory",
+  "/dashboards/catalog",
   // AI assistant chat — admin-only until per-deal access boundaries confirmed
   "/api/chat",
+];
+
+/**
+ * Sub-routes exempt from the admin-only restriction above.
+ * These are accessible to any role that has the parent route in their allowedRoutes.
+ */
+export const ADMIN_ONLY_EXCEPTIONS: string[] = [
+  "/dashboards/catalog/new",
+  "/api/catalog/push-requests",
+  "/api/catalog/extract-from-datasheet",
+  "/api/catalog/upload-photo",
 ];
 
 
@@ -698,8 +716,13 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
   if (!permissions) return false;
 
   // Check admin-only routes first — only ADMIN and OWNER can access these
-  if (ADMIN_ONLY_ROUTES.some((restricted) => route === restricted || route.startsWith(`${restricted}/`))) {
-    return effectiveRole === "ADMIN" || effectiveRole === "OWNER";
+  // But allow specific sub-routes that are exempted (e.g. /dashboards/catalog/new)
+  const isAdminOnly = ADMIN_ONLY_ROUTES.some((restricted) => route === restricted || route.startsWith(`${restricted}/`));
+  if (isAdminOnly) {
+    const isExempted = ADMIN_ONLY_EXCEPTIONS.some((exempted) => route === exempted || route.startsWith(`${exempted}/`));
+    if (!isExempted) {
+      return effectiveRole === "ADMIN" || effectiveRole === "OWNER";
+    }
   }
 
   // Roles with "*" can access all routes

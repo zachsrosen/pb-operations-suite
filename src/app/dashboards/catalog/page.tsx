@@ -932,7 +932,7 @@ export default function CatalogPage() {
   }
 
   return (
-    <DashboardShell title="Equipment Catalog" accentColor="cyan">
+    <DashboardShell title="Catalog Management" accentColor="cyan">
       {/* Tabs + Submit button */}
       <div className="flex items-center gap-1 mb-6 border-b border-t-border">
         {(["skus", "sync", "pending", ...(syncEnabled && isAdmin ? ["dedup" as Tab] : [])] as Tab[]).map((t) => (
@@ -962,7 +962,7 @@ export default function CatalogPage() {
         ))}
         <div className="ml-auto pb-px">
           <Link
-            href="/dashboards/catalog/new"
+            href="/dashboards/submit-product"
             className="px-4 py-1.5 rounded-lg bg-cyan-600 text-white text-sm font-medium hover:bg-cyan-700 transition-colors flex items-center gap-1.5"
           >
             + Submit New Product

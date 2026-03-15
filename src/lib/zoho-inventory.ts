@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { getZohoGroupName } from "./zoho-taxonomy";
 
 export interface ZohoInventoryLocationStock {
   location_id?: string;
@@ -45,6 +46,8 @@ export interface UpsertZohoItemInput {
   weight?: number | null;
   length?: number | null;
   width?: number | null;
+  /** Internal category enum (e.g. "MODULE", "INVERTER") — mapped to Zoho group_name */
+  category?: string | null;
 }
 
 export interface UpsertZohoItemResult {
@@ -719,12 +722,14 @@ export class ZohoInventoryClient {
     }
 
     const partNumber = vendorPartNumber || model;
+    const groupName = input.category ? getZohoGroupName(input.category) : undefined;
     // Core payload: identity + accounting defaults (must never be dropped on retry)
     const corePayload: Record<string, unknown> = {
       name,
       ...(sku ? { sku } : {}),
       ...(description ? { description } : {}),
       ...(partNumber ? { part_number: partNumber } : {}),
+      ...(groupName ? { group_name: groupName } : {}),
       item_type: "inventory",
       tax_preference: "taxable",
       inventory_account_name: "Inventory Asset",
