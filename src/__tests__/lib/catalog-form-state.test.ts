@@ -275,3 +275,101 @@ describe("validateRequiredSpecFields", () => {
     mockGetCategoryFields.mockRestore();
   });
 });
+
+describe("validateCatalogForm", () => {
+  function makeState(overrides: Partial<CatalogFormState> = {}): CatalogFormState {
+    return { ...initialFormState, ...overrides };
+  }
+
+  it("returns valid for a complete MODULE submission", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE",
+      brand: "Hanwha",
+      model: "Q.PEAK 400",
+      description: "400W Module",
+      specValues: { wattage: 400 },
+    }));
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("returns errors for missing top-level required fields", () => {
+    const result = validateCatalogForm(makeState({
+      category: "",
+      brand: "",
+      model: "",
+      description: "",
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.length).toBeGreaterThanOrEqual(4);
+    const fields = result.errors.map((e) => e.field);
+    expect(fields).toContain("category");
+    expect(fields).toContain("brand");
+    expect(fields).toContain("model");
+    expect(fields).toContain("description");
+  });
+
+  it("rejects whitespace-only top-level fields", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE",
+      brand: "  ",
+      model: "\t",
+      description: "\n",
+      specValues: { wattage: 400 },
+    }));
+    expect(result.valid).toBe(false);
+    const fields = result.errors.map((e) => e.field);
+    expect(fields).toContain("brand");
+    expect(fields).toContain("model");
+    expect(fields).toContain("description");
+  });
+
+  it("returns spec errors for MODULE missing wattage", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE",
+      brand: "Hanwha",
+      model: "Q.PEAK 400",
+      description: "400W Module",
+      specValues: {},
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.field === "spec.wattage")).toBe(true);
+  });
+
+  it("returns valid for RACKING with no spec fields", () => {
+    const result = validateCatalogForm(makeState({
+      category: "RACKING",
+      brand: "IronRidge",
+      model: "XR100",
+      description: "Roof mount",
+    }));
+    expect(result.valid).toBe(true);
+  });
+
+  it("returns warning (not error) for sell < cost", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE",
+      brand: "Hanwha",
+      model: "Q.PEAK 400",
+      description: "400W Module",
+      specValues: { wattage: 400 },
+      unitCost: "200",
+      sellPrice: "150",
+    }));
+    expect(result.valid).toBe(true); // warning, not error
+    expect(result.warnings.length).toBe(1);
+    expect(result.warnings[0].field).toBe("sellPrice");
+  });
+
+  it("blank category skips spec checks, returns only top-level error", () => {
+    const result = validateCatalogForm(makeState({
+      category: "",
+      brand: "Test",
+      model: "Test",
+      description: "Test",
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.length).toBe(1);
+    expect(result.errors[0].field).toBe("category");
+  });
+});

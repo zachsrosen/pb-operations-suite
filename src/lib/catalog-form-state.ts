@@ -212,3 +212,46 @@ export function validateRequiredSpecFields(
 
   return errors;
 }
+
+/**
+ * Full client-side validation of the catalog form.
+ * Returns blocking errors and non-blocking warnings.
+ */
+export function validateCatalogForm(state: CatalogFormState): ValidationResult {
+  const errors: ValidationError[] = [];
+  const warnings: ValidationWarning[] = [];
+
+  // Top-level required fields
+  if (isBlank(state.category)) {
+    errors.push({ field: "category", message: "Category is required", section: "basics" });
+  }
+  if (isBlank(state.brand)) {
+    errors.push({ field: "brand", message: "Brand is required", section: "basics" });
+  }
+  if (isBlank(state.model)) {
+    errors.push({ field: "model", message: "Model is required", section: "basics" });
+  }
+  if (isBlank(state.description)) {
+    errors.push({ field: "description", message: "Description is required", section: "basics" });
+  }
+
+  // Spec required fields (only when category is known)
+  if (!isBlank(state.category)) {
+    errors.push(...validateRequiredSpecFields(state.category, state.specValues));
+  }
+
+  // Warnings (non-blocking)
+  if (state.unitCost && state.sellPrice) {
+    const cost = parseFloat(state.unitCost);
+    const sell = parseFloat(state.sellPrice);
+    if (Number.isFinite(cost) && Number.isFinite(sell) && sell < cost) {
+      warnings.push({
+        field: "sellPrice",
+        message: "Sell price is lower than unit cost",
+        section: "review",
+      });
+    }
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
+}
