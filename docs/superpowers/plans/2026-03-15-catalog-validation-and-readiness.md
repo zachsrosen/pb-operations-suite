@@ -25,6 +25,7 @@
 | `src/app/api/catalog/push-requests/route.ts` | Server-side validation | Modify |
 | `src/__tests__/lib/catalog-form-state.test.ts` | Validator tests | Modify |
 | `src/__tests__/lib/catalog-readiness.test.ts` | Readiness tests | Create |
+| `src/__tests__/api/catalog-push-requests.test.ts` | Fix existing tests + add spec validation cases | Modify |
 
 ---
 
@@ -846,18 +847,19 @@ export default function ReviewStep({
   // Build a set of fields with errors for quick lookup
   const errorFields = new Set(errors.map((e) => e.field));
 
-  // Spec errors only (for the error summary)
-  const specErrors = errors.filter((e) => e.section === "details");
+  // Non-inline errors for the error summary banner (basics errors show inline,
+  // but also appear in the summary; spec errors show both inline and in summary)
+  const summaryErrors = errors;
 
   return (
     <div className="space-y-6">
       {/* Product Summary */}
       <div className="bg-surface rounded-xl border border-t-border p-6 shadow-card">
         <h3 className="text-lg font-semibold text-foreground mb-4">Product Summary</h3>
-        <Row label="Category" value={getCategoryLabel(state.category) || state.category} />
-        <Row label="Brand" value={state.brand} />
-        <Row label="Model" value={state.model} />
-        <Row label="Description" value={state.description} />
+        <Row label="Category" value={getCategoryLabel(state.category) || state.category} required missing={errorFields.has("category")} />
+        <Row label="Brand" value={state.brand} required missing={errorFields.has("brand")} />
+        <Row label="Model" value={state.model} required missing={errorFields.has("model")} />
+        <Row label="Description" value={state.description} required missing={errorFields.has("description")} />
         <Row label="SKU" value={state.sku} />
         <Row label="Vendor" value={state.vendorName} />
         <Row label="Vendor Part #" value={state.vendorPartNumber} />
@@ -995,12 +997,12 @@ export default function ReviewStep({
       )}
 
       {/* Validation Errors */}
-      {specErrors.length > 0 && (
+      {summaryErrors.length > 0 && (
         <div className="rounded-lg bg-red-500/10 border border-red-500/30 p-3">
           <p className="text-sm font-medium text-red-400 mb-1">
-            {specErrors.length} required field{specErrors.length > 1 ? "s" : ""} missing:
+            {summaryErrors.length} required field{summaryErrors.length > 1 ? "s" : ""} missing:
           </p>
-          {specErrors.map((e, i) => (
+          {summaryErrors.map((e, i) => (
             <p key={i} className="text-sm text-red-400">
               • {e.message}
             </p>
@@ -1262,7 +1264,176 @@ git commit -m "feat(catalog): add server-side isBlank + required spec field vali
 
 ---
 
-### Task 9: Final verification and cleanup commit
+### Task 9: Update API tests for required spec validation
+
+**Files:**
+- Modify: `src/__tests__/api/catalog-push-requests.test.ts`
+
+The server route now rejects BATTERY/INVERTER/MODULE/EV_CHARGER requests missing required spec fields. Several existing tests send these categories without metadata and expect `201`. They need to include the required spec field in their `metadata` payload. Additionally, new tests verify the 400 response for missing specs.
+
+- [ ] **Step 1: Fix existing tests that will break**
+
+In `src/__tests__/api/catalog-push-requests.test.ts`, update every test that submits a BATTERY, INVERTER, MODULE, or EV_CHARGER payload expecting `201` to include the required spec field in `metadata`:
+
+```typescript
+// Line 54-60 — "creates a push request with valid data" (BATTERY)
+// Add metadata with capacityKwh:
+const req = makeRequest({
+  brand: "Tesla",
+  model: "1707000-XX-Y",
+  description: "Powerwall 3",
+  category: "BATTERY",
+  systems: ["INTERNAL", "ZOHO"],
+  metadata: { capacityKwh: 13.5 },
+});
+
+// Line 72-77 — "passes correct fields to prisma create" (INVERTER)
+// Add metadata with acOutputKw:
+const req = makeRequest({
+  brand: "  Enphase  ",
+  model: "IQ8Plus",
+  description: "Microinverter",
+  category: "INVERTER",
+  systems: ["INTERNAL"],
+  metadata: { acOutputKw: 0.29 },
+});
+
+// Line 168-173 — "accepts all valid system names" (INVERTER)
+// Add metadata with acOutputKw:
+const req = makeRequest({
+  brand: "SolarEdge",
+  model: "SE7600H",
+  description: "Inverter",
+  category: "INVERTER",
+  systems: ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"],
+  metadata: { acOutputKw: 7.6 },
+});
+
+// Line 184-194 — "preserves zero numeric values" (BATTERY)
+// Add metadata with capacityKwh:
+const req = makeRequest({
+  brand: "Tesla",
+  model: "Powerwall 3",
+  description: "Battery",
+  category: "BATTERY",
+  systems: ["INTERNAL"],
+  unitCost: 0,
+  sellPrice: 0,
+  length: 0,
+  width: 0,
+  weight: 0,
+  metadata: { capacityKwh: 13.5 },
+});
+```
+
+Note: Tests for RACKING, invalid categories, empty systems, etc. need no changes because RACKING has no required spec fields and the other tests fail before spec validation.
+
+- [ ] **Step 2: Add new tests for required spec field rejection**
+
+Append to the `describe("POST /api/catalog/push-requests")` block:
+
+```typescript
+  it("returns 400 when required spec field is missing for BATTERY", async () => {
+    const req = makeRequest({
+      brand: "Tesla",
+      model: "Powerwall 3",
+      description: "Battery",
+      category: "BATTERY",
+      systems: ["INTERNAL"],
+      metadata: {},
+    });
+    const res = await postRequest(req);
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("capacityKwh");
+    expect(data.missingFields).toContain("spec.capacityKwh");
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 when required spec field is missing for MODULE", async () => {
+    const req = makeRequest({
+      brand: "Hanwha",
+      model: "Q.PEAK 400",
+      description: "Module",
+      category: "MODULE",
+      systems: ["INTERNAL"],
+      metadata: { efficiency: 21.5 },
+    });
+    const res = await postRequest(req);
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("wattage");
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("passes when required spec field is present in metadata", async () => {
+    mockCreate.mockResolvedValue({ id: "push_5", status: "PENDING" });
+
+    const req = makeRequest({
+      brand: "Hanwha",
+      model: "Q.PEAK 400",
+      description: "400W Module",
+      category: "MODULE",
+      systems: ["INTERNAL"],
+      metadata: { wattage: 400, efficiency: 21.5 },
+    });
+    const res = await postRequest(req);
+
+    expect(res.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns 400 for whitespace-only required fields", async () => {
+    const req = makeRequest({
+      brand: "  ",
+      model: "Test",
+      description: "Test",
+      category: "MODULE",
+      systems: ["INTERNAL"],
+      metadata: { wattage: 400 },
+    });
+    const res = await postRequest(req);
+
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toContain("brand");
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("accepts RACKING without metadata (no required spec fields)", async () => {
+    mockCreate.mockResolvedValue({ id: "push_6", status: "PENDING" });
+
+    const req = makeRequest({
+      brand: "IronRidge",
+      model: "XR100",
+      description: "Roof mount",
+      category: "RACKING",
+      systems: ["INTERNAL"],
+    });
+    const res = await postRequest(req);
+
+    expect(res.status).toBe(201);
+    expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+```
+
+- [ ] **Step 3: Run API tests to verify all pass**
+
+Run: `npx jest catalog-push-requests --verbose 2>&1 | tail -30`
+Expected: All existing (now-fixed) + new tests PASS
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add "src/__tests__/api/catalog-push-requests.test.ts"
+git commit -m "test(catalog): update API tests for required spec field server validation"
+```
+
+---
+
+### Task 10: Final verification and cleanup commit
 
 - [ ] **Step 1: Run full test suite**
 
