@@ -4,6 +4,53 @@ All notable changes to the PB Operations Suite are documented here.
 
 ---
 
+## 2026-03-14
+
+### Catalog Product Wizard (Major)
+- 4-step product wizard (Start Mode → Basics → Details → Review) replacing the 660-line monolithic form
+- Clone search with live search against /api/catalog/search and prefill confidence highlights
+- AI datasheet extraction via Claude API with category-aware tool schema for full spec extraction
+- Product photo upload via Vercel Blob with JPEG/PNG/WebP validation
+- Duplicate detection with debounced multi-field lookup and merge tool
+- Field tooltips, showWhen conditional fields, and category defaults
+- 24 unit tests covering reducer actions, prefill flows, and category defaults
+
+### SOP Operations Guide (Major)
+- Phase 3: DB-backed sections with CodeMirror HTML editor
+- Admin edit and non-admin suggest mode with optimistic locking and 409 conflict detection
+- Revision history and suggestion review workflow (submit → pending → approve/reject)
+- HTML sanitizer with class allowlist, cross-section deep links, URL-synced navigation
+
+### Master Scheduler
+- One-click reschedule for confirmed installs, surveys, and inspections
+- Auto-sync to Zuper, Google Calendar, and crew email on reschedule
+- Preserves existing crew assignments; pre-fills construction days from schedule duration
+
+### Catalog & Notifications
+- Admin email notifications on new catalog push requests
+- Approval warnings for partial syncs with pending tab deep links in notification URLs
+- Battery built-in inverter specs toggle for combo units (Powerwall 3, Enphase IQ)
+- Edit form fields now have visible labels instead of placeholder-only
+
+### Email & Infrastructure
+- Email routing consolidated through Google Workspace with Resend fallback (catalog + audit alerts)
+- Forecast accuracy API refactored to single-pass computation with caching (prevents Vercel timeout)
+
+### Zuper Integration
+- Dynamic category resolution via /product_categories API with 10-min TTL cache (replaces static map)
+- Enrichment capped at 50 jobs with concurrency=5 to prevent API blast radius
+- Duplicate detection excludes all terminal statuses to reduce false positives
+- Zoho inventory/accounting defaults (FIFO, correct account names) preserved on product creation
+
+### Bug Fixes
+- Catalog approval route always returns JSON (fixes "Unexpected end of JSON" toast)
+- pdf-parse pinned to v1.1.1 with direct lib import for serverless compatibility
+- Fixed RESEND_FROM_EMAIL env var (was reading undefined RESEND_FROM)
+- showWhen conditional fields clear stale data on toggle-off
+- Sam Paro survey slots updated in hardcoded availability fallback
+
+---
+
 ## 2026-03-07
 
 ### Solar Surveyor (Major)

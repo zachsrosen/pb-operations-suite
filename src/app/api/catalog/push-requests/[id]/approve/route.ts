@@ -278,6 +278,7 @@ export async function POST(
         weight: push.weight,
         length: push.length,
         width: push.width,
+        category: push.category,
       });
 
         await prisma.$transaction(async (tx) => {

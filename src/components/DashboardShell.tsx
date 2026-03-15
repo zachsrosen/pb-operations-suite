@@ -23,6 +23,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/catalog/review": { href: "/suites/operations", label: "Operations" },
   "/dashboards/catalog": { href: "/suites/operations", label: "Operations" },
   "/dashboards/catalog/new": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/submit-product": { href: "/suites/operations", label: "Operations" },
   // Field Execution (Operations Suite)
   "/dashboards/site-survey": { href: "/suites/operations", label: "Operations" },
   "/dashboards/construction": { href: "/suites/operations", label: "Operations" },

@@ -154,7 +154,8 @@ export const STAGE_ORDER = [
   "Permitting & Interconnection",
   "Design & Engineering",
   "Site Survey",
-  "Project Rejected",
+  "On Hold",
+  "Project Rejected - Needs Review",
 ];
 
 export const STAGE_COLORS: Record<string, string> = {
@@ -167,6 +168,8 @@ export const STAGE_COLORS: Record<string, string> = {
   Inspection: "#eab308",
   "Permission To Operate": "#06b6d4",
   "Close Out": "#22c55e",
+  "On Hold": "#ef4444",
+  "Project Rejected - Needs Review": "#71717a",
 };
 
 export const BACKLOG_STAGES = [

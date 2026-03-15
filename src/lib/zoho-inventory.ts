@@ -1,4 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
+import { getZohoGroupName } from "./zoho-taxonomy";
 
 export interface ZohoInventoryLocationStock {
   location_id?: string;
@@ -45,6 +46,8 @@ export interface UpsertZohoItemInput {
   weight?: number | null;
   length?: number | null;
   width?: number | null;
+  /** Internal category enum (e.g. "MODULE", "INVERTER") — mapped to Zoho group_name */
+  category?: string | null;
 }
 
 export interface UpsertZohoItemResult {
@@ -696,35 +699,59 @@ export class ZohoInventoryClient {
     const items = await this.listItems();
     const activeItems = items.filter((i) => !i.status || i.status === "active");
 
-    if (sku) {
+    let existingItemId: string | undefined;
+
+    if (!existingItemId && sku) {
       const skuNorm = normalizeName(sku);
       const bySku = activeItems.find((i) => i.sku && normalizeName(i.sku) === skuNorm);
-      if (bySku?.item_id) {
-        return { zohoItemId: bySku.item_id, created: false };
-      }
+      if (bySku?.item_id) existingItemId = bySku.item_id;
     }
 
-    if (model) {
+    if (!existingItemId && model) {
       const partNorm = normalizeName(model);
       const byPart = activeItems.find((i) => i.part_number && normalizeName(i.part_number) === partNorm);
-      if (byPart?.item_id) {
-        return { zohoItemId: byPart.item_id, created: false };
-      }
+      if (byPart?.item_id) existingItemId = byPart.item_id;
     }
 
-    const nameNorm = normalizeName(name);
-    const byName = activeItems.find((i) => normalizeName(i.name) === nameNorm);
-    if (byName?.item_id) {
-      return { zohoItemId: byName.item_id, created: false };
+    if (!existingItemId) {
+      const nameNorm = normalizeName(name);
+      const byName = activeItems.find((i) => normalizeName(i.name) === nameNorm);
+      if (byName?.item_id) existingItemId = byName.item_id;
+    }
+
+    if (existingItemId) {
+      // Apply confirmed group_name to existing items that may be missing it
+      const groupName = input.category ? getZohoGroupName(input.category) : undefined;
+      if (groupName) {
+        try {
+          const updateResult = await this.updateItem(existingItemId, { group_name: groupName });
+          if (updateResult.status !== "updated") {
+            console.warn(
+              `[zoho-inventory] Best-effort group_name update on existing item ${existingItemId} ` +
+                `returned status "${updateResult.status}": ${updateResult.message}`
+            );
+          }
+        } catch (error) {
+          // Truly unexpected errors (network failures, etc.)
+          console.warn(
+            `[zoho-inventory] Failed to update group_name on existing item ${existingItemId}: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      }
+      return { zohoItemId: existingItemId, created: false };
     }
 
     const partNumber = vendorPartNumber || model;
+    const groupName = input.category ? getZohoGroupName(input.category) : undefined;
     // Core payload: identity + accounting defaults (must never be dropped on retry)
     const corePayload: Record<string, unknown> = {
       name,
       ...(sku ? { sku } : {}),
       ...(description ? { description } : {}),
       ...(partNumber ? { part_number: partNumber } : {}),
+      ...(groupName ? { group_name: groupName } : {}),
       item_type: "inventory",
       tax_preference: "taxable",
       inventory_account_name: "Inventory Asset",

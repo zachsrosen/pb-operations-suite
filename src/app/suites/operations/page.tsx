@@ -60,13 +60,6 @@ const LINKS: SuitePageCard[] = [
     section: "Inventory & Equipment",
   },
   {
-    href: "/dashboards/inventory",
-    title: "Inventory Hub",
-    description: "Warehouse stock levels, receiving, and demand vs. supply gap analysis.",
-    tag: "INVENTORY",
-    section: "Inventory & Equipment",
-  },
-  {
     href: "/dashboards/bom",
     title: "Planset BOM",
     description: "Import a planset bill of materials, edit inline, and cross-reference against catalogs.",
@@ -76,12 +69,28 @@ const LINKS: SuitePageCard[] = [
     hardNavigate: true,
   },
   {
+    href: "/dashboards/submit-product",
+    title: "Submit New Product",
+    description: "Add a new equipment item to the catalog — fill in details or import from a datasheet with AI.",
+    tag: "NEW",
+    tagColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+    section: "Inventory & Equipment",
+  },
+  // Admin-only section
+  {
+    href: "/dashboards/inventory",
+    title: "Inventory Hub",
+    description: "Warehouse stock levels, receiving, and demand vs. supply gap analysis.",
+    tag: "INVENTORY",
+    section: "Admin",
+  },
+  {
     href: "/dashboards/catalog",
-    title: "Equipment Catalog",
-    description: "Manage equipment SKUs and review approval-gated requests to push new items to all systems.",
+    title: "Catalog Management",
+    description: "Manage equipment SKUs, sync health, pending approvals, and deduplication.",
     tag: "CATALOG",
     tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-    section: "Inventory & Equipment",
+    section: "Admin",
   },
   {
     href: "/dashboards/product-comparison",
@@ -89,7 +98,7 @@ const LINKS: SuitePageCard[] = [
     description: "Match and link Internal, HubSpot, Zuper, and Zoho products.",
     tag: "CATALOG",
     tagColor: "bg-amber-500/20 text-amber-300 border-amber-500/30",
-    section: "Inventory & Equipment",
+    section: "Admin",
   },
 ];
 

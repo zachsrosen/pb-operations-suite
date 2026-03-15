@@ -643,15 +643,35 @@ export class ZuperClient {
     userUids?: string[],
     teamUid?: string
   ): Promise<ZuperApiResponse<ZuperJob>> {
-    // First reschedule the job times
-    const scheduleResult = await this.request<ZuperJob>(`/jobs/schedule`, {
-      method: "PUT",
-      body: JSON.stringify({
-        job_uid: jobUid,
-        from_date: this.formatZuperDateTime(scheduledStartTime),
-        to_date: this.formatZuperDateTime(scheduledEndTime),
-      }),
-    });
+    // Fetch current job state first so we can skip the time update if unchanged
+    // and reuse the data for assignment reconciliation below.
+    const prefetchResult = await this.getJob(jobUid);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const prefetchJob = prefetchResult.type === "success" ? (prefetchResult.data as any) : null;
+
+    const newFromDate = this.formatZuperDateTime(scheduledStartTime);
+    const newToDate = this.formatZuperDateTime(scheduledEndTime);
+    const currentStartRaw = prefetchJob?.scheduled_start_time ?? prefetchJob?.scheduled_start_time_dt ?? null;
+    const currentEndRaw = prefetchJob?.scheduled_end_time ?? prefetchJob?.scheduled_end_time_dt ?? null;
+    const currentFromDate = currentStartRaw ? this.formatZuperDateTime(currentStartRaw) : null;
+    const currentToDate = currentEndRaw ? this.formatZuperDateTime(currentEndRaw) : null;
+    const timesChanged = newFromDate !== currentFromDate || newToDate !== currentToDate;
+
+    let scheduleResult: ZuperApiResponse<ZuperJob>;
+    if (timesChanged) {
+      // Reschedule the job times
+      scheduleResult = await this.request<ZuperJob>(`/jobs/schedule`, {
+        method: "PUT",
+        body: JSON.stringify({
+          job_uid: jobUid,
+          from_date: newFromDate,
+          to_date: newToDate,
+        }),
+      });
+    } else {
+      console.log(`[Zuper] Skipping time update for job ${jobUid} — times unchanged (${newFromDate} → ${newToDate})`);
+      scheduleResult = prefetchResult as ZuperApiResponse<ZuperJob>;
+    }
 
     // If user UIDs were provided, reconcile assignments (supports [] to clear all).
     let assignmentFailed = false;
@@ -662,7 +682,8 @@ export class ZuperClient {
       let resolvedTeamUid = teamUid;
       let currentAssignments: ZuperAssignmentRef[] = [];
       let hadOpaqueAssignments = false;
-      const jobResult = await this.getJob(jobUid);
+      // Reuse prefetched job data instead of fetching again
+      const jobResult = prefetchResult;
       if (jobResult.type === "success" && jobResult.data) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const jobData = jobResult.data as any;

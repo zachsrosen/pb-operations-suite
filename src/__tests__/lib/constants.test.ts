@@ -28,8 +28,12 @@ describe("STAGE_ORDER", () => {
     expect(STAGE_ORDER[0]).toBe("Close Out");
   });
 
-  it("has 10 stages", () => {
-    expect(STAGE_ORDER).toHaveLength(10);
+  it("includes On Hold", () => {
+    expect(STAGE_ORDER).toContain("On Hold");
+  });
+
+  it("has 11 stages", () => {
+    expect(STAGE_ORDER).toHaveLength(11);
   });
 });
 

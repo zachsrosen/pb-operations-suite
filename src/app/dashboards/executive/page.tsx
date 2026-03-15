@@ -163,7 +163,7 @@ function TimelineChart({
 /* ------------------------------------------------------------------ */
 
 const EXEC_STAGE_ORDER = STAGE_ORDER_ASC.filter(
-  (s) => s !== "Close Out" && s !== "Project Rejected - Needs Review"
+  (s) => s !== "Close Out"
 );
 
 /* ------------------------------------------------------------------ */

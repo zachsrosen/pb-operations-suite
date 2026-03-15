@@ -82,7 +82,7 @@ describe("catalogFormReducer", () => {
       brand: "Tesla",
       model: "Powerwall 3",
       description: "Home battery",
-      specValues: { capacity: 13.5 },
+      specValues: { capacityKwh: 13.5 },
     };
     const state = catalogFormReducer(initialFormState, {
       type: "PREFILL_FROM_PRODUCT",
@@ -92,8 +92,8 @@ describe("catalogFormReducer", () => {
     expect(state.prefillSource).toBe("datasheet");
     expect(state.prefillFields).toContain("brand");
     expect(state.prefillFields).not.toContain("sku"); // wasn't provided
-    // P2: individual spec key tracked
-    expect(state.prefillFields).toContain("spec.capacity");
+    // P2: individual spec key tracked (only category-valid keys are kept)
+    expect(state.prefillFields).toContain("spec.capacityKwh");
   });
 
   it("clears stale state when re-prefilling (P1)", () => {

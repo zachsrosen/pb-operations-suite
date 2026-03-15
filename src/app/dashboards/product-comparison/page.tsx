@@ -431,7 +431,12 @@ function ProductCell({ source, product }: { source: SourceName; product: Compara
           </span>
         )}
       </div>
-      {product.description && <div className="text-[11px] text-muted line-clamp-2">{product.description}</div>}
+      <div className="text-[11px] leading-relaxed">
+        <span className="text-muted/70">Desc:</span>{" "}
+        <span className={product.description ? "text-foreground/80" : "text-muted/50"}>
+          {product.description ? product.description : "—"}
+        </span>
+      </div>
       {product.url && (
         <a
           href={product.url}

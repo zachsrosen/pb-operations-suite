@@ -202,8 +202,9 @@ const STAGE_PRIORITY: Record<string, number> = {
 // Stages that are schedulable for construction
 const SCHEDULABLE_STAGES = ["Site Survey", "Ready To Build", "RTB - Blocked", "Construction", "Inspection"];
 
-// Stages that are active (not completed, on-hold, or cancelled)
-const ACTIVE_STAGES = [
+// Stages that are active (everything except completed and cancelled)
+export const ACTIVE_STAGES = [
+  "Project Rejected - Needs Review",
   "Site Survey",
   "Design & Engineering",
   "Permitting & Interconnection",
@@ -213,6 +214,7 @@ const ACTIVE_STAGES = [
   "Inspection",
   "Permission To Operate",
   "Close Out",
+  "On Hold",
 ];
 
 export interface Equipment {
@@ -1023,9 +1025,8 @@ export async function fetchAllProjects(options?: {
   // HubSpot search API truncates results when too many properties are
   // requested per deal (we need 63). Searching with just the ID is fast
   // and paginates reliably, then we batch-read full properties in Phase 2.
-  // On Hold (20440344) intentionally excluded — fetched with active projects so
-  // the home page On Hold stat card can count them.
-  const INACTIVE_STAGE_IDS = ["20440343", "68229433", "20461935"];
+  // Only Project Complete and Cancelled are inactive.
+  const INACTIVE_STAGE_IDS = ["20440343", "68229433"];
 
   // Build search filters
   const filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq | typeof FilterOperatorEnum.Neq; value: string }[] = [
@@ -2511,8 +2512,8 @@ export function filterProjectsForContext(
       return projects.filter((p) => p.isParticipateEnergy && p.isActive);
 
     case "executive":
-      // All active projects + On Hold for executive dashboard
-      return projects.filter((p) => p.isActive || p.stage === "On Hold");
+      // All active projects for executive dashboard
+      return projects.filter((p) => p.isActive);
 
     case "at-risk":
       // Projects that are overdue or blocked
