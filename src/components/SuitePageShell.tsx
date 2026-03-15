@@ -122,7 +122,13 @@ export default function SuitePageShell({
         {sections.map(({ section, cards: sectionCards }) => (
           <section key={section} className="mb-8">
             <h2 className="text-lg font-semibold text-foreground/80 mb-4">{section}</h2>
-            <div className={columnsClassName}>
+            <div className={
+              sectionCards.length === 4
+                ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4"
+                : sectionCards.length === 2
+                  ? "grid grid-cols-1 md:grid-cols-2 gap-4"
+                  : columnsClassName
+            }>
               {sectionCards.map((item) => {
                 const className = `group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm ${hoverBorderClass} hover:bg-surface transition-all`;
                 const content = (
