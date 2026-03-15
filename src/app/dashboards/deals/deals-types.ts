@@ -47,6 +47,7 @@ export interface ProjectFields {
   permitIssueDate: string | null;
   interconnectionSubmitDate: string | null;
   interconnectionApprovalDate: string | null;
+  readyToBuildDate: string | null;
   constructionScheduleDate: string | null;
   constructionCompleteDate: string | null;
   inspectionScheduleDate: string | null;
@@ -100,6 +101,7 @@ export function projectToTableDeal(p: Project): TableDeal {
     permitIssueDate: p.permitIssueDate,
     interconnectionSubmitDate: p.interconnectionSubmitDate,
     interconnectionApprovalDate: p.interconnectionApprovalDate,
+    readyToBuildDate: p.readyToBuildDate,
     constructionScheduleDate: p.constructionScheduleDate,
     constructionCompleteDate: p.constructionCompleteDate,
     inspectionScheduleDate: p.inspectionScheduleDate,
