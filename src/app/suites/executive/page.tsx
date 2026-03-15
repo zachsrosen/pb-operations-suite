@@ -83,6 +83,14 @@ const LINKS: SuitePageCard[] = [
     tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
     section: "Meta",
   },
+  {
+    href: "/dashboards/forecast-timeline",
+    title: "Forecast Timeline",
+    description: "All 10 milestone forecasts for every active project with variance tracking.",
+    tag: "FORECAST",
+    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    section: "Meta",
+  },
 ];
 
 export default async function ExecutiveSuitePage() {

@@ -57,6 +57,7 @@ const DASHBOARD_LINKS = [
   { name: "Command Center", path: "/suites/executive", description: "Real-time executive command center" },
   { name: "Executive Summary", path: "/dashboards/executive", description: "KPIs and charts for leadership" },
   { name: "Forecast Accuracy", path: "/dashboards/forecast-accuracy", description: "Forecasting model accuracy across milestones" },
+  { name: "Forecast Timeline", path: "/dashboards/forecast-timeline", description: "Milestone forecasts for all active projects" },
   { name: "Mobile Dashboard", path: "/dashboards/mobile", description: "Touch-optimized field view" },
   // Admin
   { name: "Zuper Compliance", path: "/dashboards/zuper-compliance", description: "Per-user compliance scorecards" },
