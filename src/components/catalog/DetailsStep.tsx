@@ -330,22 +330,13 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
         >
           ← Back
         </button>
-        <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={onNext}
-            className="text-sm text-cyan-400 hover:text-cyan-300 underline underline-offset-2"
-          >
-            Skip to Review
-          </button>
-          <button
-            type="button"
-            onClick={onNext}
-            className="px-6 py-2.5 text-sm font-semibold rounded-lg bg-cyan-600 text-white hover:bg-cyan-500 transition-colors"
-          >
-            Next: Review →
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onNext}
+          className="px-6 py-2.5 text-sm font-semibold rounded-lg bg-cyan-600 text-white hover:bg-cyan-500 transition-colors"
+        >
+          Next: Review →
+        </button>
       </div>
     </div>
   );
