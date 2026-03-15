@@ -2,7 +2,7 @@
 
 import { useEffect, useCallback } from "react";
 import StatusDot from "./StatusDot";
-import { STATUS_COLUMNS, isProjectPipeline, type TableDeal } from "./deals-types";
+import { STATUS_COLUMNS, isProjectPipeline, formatStatusValue, type TableDeal } from "./deals-types";
 import { STAGE_COLORS } from "@/lib/constants";
 import { formatMoney } from "@/lib/format";
 
@@ -105,7 +105,7 @@ export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps)
                     <span className="text-xs text-muted">{col.fullName}</span>
                     <span className="flex items-center gap-2 text-xs">
                       <StatusDot value={val} />
-                      <span className="text-foreground/80">{val || "Not Started"}</span>
+                      <span className="text-foreground/80">{formatStatusValue(val, col.key)}</span>
                     </span>
                   </div>
                 );
@@ -118,8 +118,9 @@ export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps)
             <Section title="Key Dates">
               <InfoRow label="Site Survey Scheduled" value={formatDate(deal.siteSurveyScheduleDate ?? null)} />
               <InfoRow label="Site Survey Completed" value={formatDate(deal.siteSurveyCompletionDate ?? null)} />
-              <InfoRow label="Design Completed" value={formatDate(deal.designCompletionDate ?? null)} />
+              <InfoRow label="Design Drafted" value={formatDate(deal.designDraftDate ?? null)} />
               <InfoRow label="Design Approved" value={formatDate(deal.designApprovalDate ?? null)} />
+              <InfoRow label="Design Completed" value={formatDate(deal.designCompletionDate ?? null)} />
               <InfoRow label="Permit Submitted" value={formatDate(deal.permitSubmitDate ?? null)} />
               <InfoRow label="Permit Issued" value={formatDate(deal.permitIssueDate ?? null)} />
               <InfoRow label="IC Submitted" value={formatDate(deal.interconnectionSubmitDate ?? null)} />
