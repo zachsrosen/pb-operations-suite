@@ -626,15 +626,23 @@ export default function Home() {
                       if (bIdx === -1) return -1;
                       return aIdx - bIdx;
                     })
-                    .map(([stage, count]) => (
-                      <StageBar
-                        key={stage}
-                        stage={stage}
-                        count={count as number}
-                        total={stats.totalProjects}
-                        value={stats.stageValues?.[stage]}
-                      />
-                    ));
+                    .map(([stage, count]) => {
+                      const dealsUrl = `/dashboards/deals?stage=${encodeURIComponent(stage)}${
+                        selectedLocations.length > 0
+                          ? `&location=${selectedLocations.map(encodeURIComponent).join(",")}`
+                          : ""
+                      }`;
+                      return (
+                        <StageBar
+                          key={stage}
+                          stage={stage}
+                          count={count as number}
+                          total={stats.totalProjects}
+                          value={stats.stageValues?.[stage]}
+                          linkHref={dealsUrl}
+                        />
+                      );
+                    });
                 })()}
               </div>
             </div>
@@ -727,17 +735,19 @@ const StageBar = memo(function StageBar({
   count,
   total,
   value,
+  linkHref,
 }: {
   stage: string;
   count: number;
   total: number;
   value?: number;
+  linkHref?: string;
 }) {
   const percentage = (count / total) * 100;
   const colorClass = STAGE_COLORS[stage]?.tw || "bg-zinc-600";
 
-  return (
-    <div className="flex items-center gap-4">
+  const content = (
+    <div className={`flex items-center gap-4 ${linkHref ? "cursor-pointer hover:bg-surface-2/40 rounded-lg -mx-2 px-2 py-1 transition-colors" : ""}`}>
       <div className="w-40 text-sm text-muted truncate" title={stage}>
         {stage}
       </div>
@@ -759,6 +769,11 @@ const StageBar = memo(function StageBar({
       </div>
     </div>
   );
+
+  if (linkHref) {
+    return <Link href={linkHref}>{content}</Link>;
+  }
+  return content;
 });
 
 const DashboardLink = memo(function DashboardLink({
