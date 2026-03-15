@@ -194,7 +194,7 @@ function DealsPageInner() {
 
   return (
     <DashboardShell
-      title="Deals"
+      title="Active Deals"
       accentColor="orange"
       lastUpdated={lastUpdated}
       fullWidth={true}
