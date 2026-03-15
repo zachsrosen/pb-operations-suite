@@ -70,26 +70,36 @@ function evaluateHubspot(category: string, specValues: Record<string, unknown>):
     };
   }
 
-  if (filledUnmappedNames.length === 0) {
+  if (filledMappedNames.length > 0 && filledUnmappedNames.length === 0) {
+    // All filled fields map to HubSpot — full sync
     return {
       system: "HUBSPOT",
       status: "ready",
+      details: [`Will sync ${filledMappedNames.join(", ")}`],
+    };
+  }
+
+  if (filledMappedNames.length > 0) {
+    // Some filled fields map, some don't
+    return {
+      system: "HUBSPOT",
+      status: "partial",
       details: [
-        filledMappedNames.length > 0
-          ? `Will sync ${filledMappedNames.join(", ")}`
-          : `${totalMapped} HubSpot-mapped field(s) available — none filled yet`,
+        `Will sync ${filledMappedNames.join(", ")}`,
+        `${filledUnmappedNames.length} filled field(s) won't sync to HubSpot (${filledUnmappedNames.join(", ")})`,
       ],
     };
   }
 
+  // Mapped fields exist but none are filled — nothing will actually sync
   return {
     system: "HUBSPOT",
-    status: "partial",
+    status: "limited",
     details: [
-      filledMappedNames.length > 0
-        ? `Will sync ${filledMappedNames.join(", ")}`
-        : "No HubSpot-mapped fields filled",
-      `${filledUnmappedNames.length} filled field(s) won't sync to HubSpot (${filledUnmappedNames.join(", ")})`,
+      `${totalMapped} HubSpot-mapped field(s) available — none filled yet`,
+      ...(filledUnmappedNames.length > 0
+        ? [`${filledUnmappedNames.length} filled field(s) won't sync (${filledUnmappedNames.join(", ")})`]
+        : []),
     ],
   };
 }

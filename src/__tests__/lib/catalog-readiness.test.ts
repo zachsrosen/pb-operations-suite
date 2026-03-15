@@ -104,6 +104,30 @@ describe("getDownstreamReadiness", () => {
     expect(findSystem(results, "ZUPER")).toBeUndefined();
   });
 
+  it("HUBSPOT returns limited when mapped fields exist but none are filled", () => {
+    // MODULE has hubspotProperty fields (dc_size for wattage) but specValues is empty
+    const results = getDownstreamReadiness({
+      category: "MODULE",
+      systems: allSystems,
+      specValues: {},
+    });
+    const hubspot = findSystem(results, "HUBSPOT");
+    expect(hubspot?.status).toBe("limited");
+    expect(hubspot?.details[0]).toContain("available");
+  });
+
+  it("HUBSPOT returns limited with unmapped note when only unmapped fields filled", () => {
+    // MODULE: efficiency (no hubspotProperty) filled, wattage (mapped) empty
+    const results = getDownstreamReadiness({
+      category: "MODULE",
+      systems: allSystems,
+      specValues: { efficiency: 21.5 },
+    });
+    const hubspot = findSystem(results, "HUBSPOT");
+    expect(hubspot?.status).toBe("limited");
+    expect(hubspot?.details.join(" ")).toContain("won't sync");
+  });
+
   it("HUBSPOT returns limited for category with no hubspotProperty fields", () => {
     // RACKING has fields but none have hubspotProperty
     const results = getDownstreamReadiness({
