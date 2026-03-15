@@ -32,7 +32,7 @@ interface LocationData {
 /* ------------------------------------------------------------------ */
 
 const COMPARE_STAGES = STAGE_ORDER_ASC.filter(
-  (s) => !["Close Out", "Project Complete", "Project Rejected"].includes(s)
+  (s) => !["Close Out", "Project Complete", "Project Rejected - Needs Review"].includes(s)
 );
 
 /* ------------------------------------------------------------------ */
