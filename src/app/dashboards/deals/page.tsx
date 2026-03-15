@@ -108,6 +108,7 @@ function DealsPageInner() {
   }, [filters.pipeline, filters.search]);
 
   useEffect(() => {
+    setSelectedDeal(null);
     fetchData();
     return () => abortRef.current?.abort();
   }, [fetchData]);
@@ -117,6 +118,11 @@ function DealsPageInner() {
     url: "/api/stream",
     cacheKeyFilter: isProjectPipeline(filters.pipeline) ? "projects" : "deals",
   });
+
+  // Sync search input from URL on browser navigation (back/forward)
+  useEffect(() => {
+    setSearchInput(filters.search);
+  }, [filters.search]);
 
   // Debounce search input → URL
   useEffect(() => {

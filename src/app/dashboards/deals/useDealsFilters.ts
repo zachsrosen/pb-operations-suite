@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 
 export interface DealsFilterState {
   pipeline: string;
@@ -29,7 +29,13 @@ export function useDealsFilters() {
   const router = useRouter();
   const pathname = usePathname();
 
+  // Track the latest params to avoid races between rapid calls
+  const pendingParamsRef = useRef<URLSearchParams | null>(null);
+
   const filters: DealsFilterState = useMemo(() => {
+    // Clear pending ref when searchParams updates (URL committed)
+    pendingParamsRef.current = null;
+
     const statusFilters: Record<string, string[]> = {};
     searchParams.forEach((value, key) => {
       if (key.startsWith("sf_")) {
@@ -52,7 +58,10 @@ export function useDealsFilters() {
 
   const setFilters = useCallback(
     (updates: Partial<DealsFilterState>) => {
-      const params = new URLSearchParams(searchParams.toString());
+      // Use pending params if a previous call hasn't committed to the URL yet
+      const params = new URLSearchParams(
+        (pendingParamsRef.current ?? searchParams).toString()
+      );
 
       if (updates.pipeline !== undefined) {
         if (updates.pipeline === "project") {
@@ -109,6 +118,9 @@ export function useDealsFilters() {
         }
       }
 
+      // Store pending params so the next rapid call reads from them
+      pendingParamsRef.current = params;
+
       const qs = params.toString();
       router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     },
@@ -117,9 +129,10 @@ export function useDealsFilters() {
 
   const setStatusFilter = useCallback(
     (field: string, values: string[]) => {
-      // Read current status filters from searchParams directly to avoid stale closure
+      // Read current status filters from pending or committed params
+      const source = pendingParamsRef.current ?? searchParams;
       const current: Record<string, string[]> = {};
-      searchParams.forEach((value, key) => {
+      source.forEach((value, key) => {
         if (key.startsWith("sf_")) {
           current[key.slice(3)] = parseCommaSep(value);
         }
