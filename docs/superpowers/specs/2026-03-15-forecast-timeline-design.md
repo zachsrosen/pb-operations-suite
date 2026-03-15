@@ -145,5 +145,4 @@ Walk `MILESTONE_CHAIN` in order. The first milestone where the project has no ac
 |------|--------|
 | `src/app/api/forecasting/timeline/route.ts` | Create — API route |
 | `src/app/dashboards/forecast-timeline/page.tsx` | Create — Dashboard page |
-| `src/lib/cache.ts` | Edit — Add FORECAST_TIMELINE cache key |
 | `src/components/DashboardShell.tsx` | Edit — Add SUITE_MAP entry |
