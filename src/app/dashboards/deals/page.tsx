@@ -170,6 +170,13 @@ function DealsPageInner() {
     return result;
   }, [allDeals, filters]);
 
+  // Clear detail panel if the selected deal gets filtered out
+  useEffect(() => {
+    if (selectedDeal && !filteredDeals.some((d) => d.id === selectedDeal.id)) {
+      setSelectedDeal(null);
+    }
+  }, [filteredDeals, selectedDeal]);
+
   // Summary stats
   const stats = useMemo(() => {
     const totalValue = filteredDeals.reduce((sum, d) => sum + d.amount, 0);
