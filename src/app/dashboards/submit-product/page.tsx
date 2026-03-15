@@ -12,6 +12,7 @@ import { getCategoryDefaults } from "@/lib/catalog-fields";
 import {
   catalogFormReducer,
   initialFormState,
+  validateCatalogForm,
   type CatalogFormState,
 } from "@/lib/catalog-form-state";
 import { useSearchParams, useRouter } from "next/navigation";
@@ -181,6 +182,16 @@ function CatalogWizard() {
     setSubmitting(true);
 
     try {
+      // Client-side validation gate — safety net against step navigation bypass
+      const validation = validateCatalogForm(state);
+      if (!validation.valid) {
+        setError(
+          `Missing required fields: ${validation.errors.map((e) => e.message).join("; ")}`
+        );
+        setSubmitting(false);
+        return;
+      }
+
       const payload = {
         brand: state.brand,
         model: state.model,
