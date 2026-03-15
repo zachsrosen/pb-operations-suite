@@ -724,9 +724,15 @@ export class ZohoInventoryClient {
       const groupName = input.category ? getZohoGroupName(input.category) : undefined;
       if (groupName) {
         try {
-          await this.updateItem(existingItemId, { group_name: groupName });
+          const updateResult = await this.updateItem(existingItemId, { group_name: groupName });
+          if (updateResult.status !== "updated") {
+            console.warn(
+              `[zoho-inventory] Best-effort group_name update on existing item ${existingItemId} ` +
+                `returned status "${updateResult.status}": ${updateResult.message}`
+            );
+          }
         } catch (error) {
-          // Non-fatal: item exists, group update is best-effort
+          // Truly unexpected errors (network failures, etc.)
           console.warn(
             `[zoho-inventory] Failed to update group_name on existing item ${existingItemId}: ${
               error instanceof Error ? error.message : String(error)

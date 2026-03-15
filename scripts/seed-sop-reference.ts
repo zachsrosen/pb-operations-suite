@@ -37,8 +37,13 @@ const args = process.argv.slice(2);
 const FORCE = args.includes("--force");
 const CONFIRM_PROD = args.includes("--confirm-production");
 
-if (FORCE && process.env.NODE_ENV === "production" && !CONFIRM_PROD) {
-  console.error("ERROR: --force in production requires --confirm-production flag");
+const dbUrl = process.env.DATABASE_URL || "";
+const looksLikeProduction =
+  process.env.NODE_ENV === "production" ||
+  (dbUrl.includes(".neon.tech") && !dbUrl.includes("dev") && !dbUrl.includes("staging"));
+
+if (FORCE && looksLikeProduction && !CONFIRM_PROD) {
+  console.error("ERROR: --force against a production database requires --confirm-production flag");
   process.exit(1);
 }
 
