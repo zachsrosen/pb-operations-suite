@@ -250,10 +250,10 @@ function CatalogWizard() {
           Your product has been submitted and is awaiting review.
         </p>
         <button
-          onClick={() => router.push("/dashboards/catalog")}
+          onClick={() => router.push("/suites/operations")}
           className="mt-4 rounded-lg bg-cyan-600 px-6 py-2 text-sm font-medium text-white hover:bg-cyan-500 transition-colors"
         >
-          Back to Catalog
+          Back to Operations
         </button>
       </div>
     );

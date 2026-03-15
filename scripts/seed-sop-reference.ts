@@ -672,47 +672,62 @@ async function seed() {
     }
   }
 
-  // 2. In --force mode, wipe ALL existing sections for this tab to avoid
-  //    sortOrder unique-constraint conflicts, then recreate from scratch.
-  if (FORCE) {
-    const existingSections = await prisma.sopSection.findMany({
-      where: { tabId: TAB.id },
-      select: { id: true },
-    });
-    if (existingSections.length > 0) {
-      const existingIds = existingSections.map(s => s.id);
-      await prisma.sopRevision.deleteMany({ where: { sectionId: { in: existingIds } } });
-      await prisma.sopSuggestion.deleteMany({ where: { sectionId: { in: existingIds } } });
-      await prisma.sopSection.deleteMany({ where: { tabId: TAB.id } });
-      console.log(`  - Deleted ${existingSections.length} existing sections`);
-    }
-  }
-
-  // 3. Upsert sections
+  // 2 & 3. Seed sections — in --force mode, delete + recreate is wrapped in a
+  //         single transaction to avoid partial state if the script fails midway.
   let created = 0;
   let skipped = 0;
   let updated = 0;
 
-  for (const sec of sections) {
-    const data = {
-      id: sec.id,
-      tabId: TAB.id,
-      sidebarGroup: sec.sidebarGroup,
-      title: sec.title,
-      dotColor: sec.dotColor,
-      sortOrder: sec.sortOrder,
-      content: sec.content.trim(),
-      version: 1,
-    };
+  if (FORCE) {
+    await prisma.$transaction(async (tx) => {
+      // Wipe ALL existing sections for this tab to avoid sortOrder
+      // unique-constraint conflicts, then recreate from scratch.
+      const existingSections = await tx.sopSection.findMany({
+        where: { tabId: TAB.id },
+        select: { id: true },
+      });
+      if (existingSections.length > 0) {
+        const existingIds = existingSections.map(s => s.id);
+        await tx.sopRevision.deleteMany({ where: { sectionId: { in: existingIds } } });
+        await tx.sopSuggestion.deleteMany({ where: { sectionId: { in: existingIds } } });
+        await tx.sopSection.deleteMany({ where: { tabId: TAB.id } });
+        console.log(`  - Deleted ${existingSections.length} existing sections`);
+      }
 
-    if (FORCE) {
-      await prisma.sopSection.create({ data });
-      updated++;
-      console.log(`  + Section: ${sec.id} (${sec.title})`);
-    } else {
+      for (const sec of sections) {
+        await tx.sopSection.create({
+          data: {
+            id: sec.id,
+            tabId: TAB.id,
+            sidebarGroup: sec.sidebarGroup,
+            title: sec.title,
+            dotColor: sec.dotColor,
+            sortOrder: sec.sortOrder,
+            content: sec.content.trim(),
+            version: 1,
+          },
+        });
+        updated++;
+        console.log(`  + Section: ${sec.id} (${sec.title})`);
+      }
+    });
+    console.log(`\n  Updated ${updated} sections`);
+  } else {
+    for (const sec of sections) {
       const existing = await prisma.sopSection.findUnique({ where: { id: sec.id } });
       if (!existing) {
-        await prisma.sopSection.create({ data });
+        await prisma.sopSection.create({
+          data: {
+            id: sec.id,
+            tabId: TAB.id,
+            sidebarGroup: sec.sidebarGroup,
+            title: sec.title,
+            dotColor: sec.dotColor,
+            sortOrder: sec.sortOrder,
+            content: sec.content.trim(),
+            version: 1,
+          },
+        });
         created++;
         console.log(`  + Section: ${sec.id} (${sec.title})`);
       } else {
@@ -720,11 +735,6 @@ async function seed() {
         console.log(`  = Section: ${sec.id} (exists, skipping)`);
       }
     }
-  }
-
-  if (FORCE) {
-    console.log(`\n  Updated ${updated} sections`);
-  } else {
     console.log(`\n  Created: ${created}, Skipped: ${skipped}`);
   }
 
