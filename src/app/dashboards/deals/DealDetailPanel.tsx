@@ -59,7 +59,7 @@ export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps)
               {deal.stage}
             </span>
           </div>
-          <button onClick={onClose} className="text-muted hover:text-foreground text-xl leading-none mt-0.5">
+          <button onClick={onClose} aria-label="Close" className="text-muted hover:text-foreground text-xl leading-none mt-0.5">
             ×
           </button>
         </div>

@@ -117,11 +117,18 @@ export function useDealsFilters() {
 
   const setStatusFilter = useCallback(
     (field: string, values: string[]) => {
+      // Read current status filters from searchParams directly to avoid stale closure
+      const current: Record<string, string[]> = {};
+      searchParams.forEach((value, key) => {
+        if (key.startsWith("sf_")) {
+          current[key.slice(3)] = parseCommaSep(value);
+        }
+      });
       setFilters({
-        statusFilters: { ...filters.statusFilters, [field]: values },
+        statusFilters: { ...current, [field]: values },
       });
     },
-    [filters.statusFilters, setFilters]
+    [searchParams, setFilters]
   );
 
   return { filters, setFilters, setStatusFilter };
