@@ -161,7 +161,8 @@ export function getStatusColor(value: string | null | undefined): StatusColor {
     lower.includes("done") ||
     lower.includes("issued") ||
     lower.includes("granted") ||
-    lower === "yes"
+    lower === "yes" ||
+    lower === "pto"
   ) return "green";
 
   // Blue — in progress/submitted/scheduled/active
@@ -181,11 +182,10 @@ export function getStatusColor(value: string | null | undefined): StatusColor {
     lower.includes("rejected") ||
     lower.includes("blocked") ||
     lower.includes("denied") ||
-    lower.includes("revision") ||
-    lower.includes("hold")
+    lower.includes("revision")
   ) return "red";
 
-  // Yellow — pending/waiting/needs review (default for unknown)
+  // Yellow — pending/waiting/on hold/needs review (default for unknown)
   return "yellow";
 }
 
@@ -374,10 +374,10 @@ export function formatStatusValue(value: string | null | undefined, field?: stri
 
 export const PIPELINE_OPTIONS = [
   { value: "project", label: "Project Pipeline" },
-  { value: "sales", label: "Sales" },
-  { value: "dnr", label: "D&R" },
-  { value: "service", label: "Service" },
-  { value: "roofing", label: "Roofing" },
+  { value: "sales", label: "Sales Pipeline" },
+  { value: "dnr", label: "D&R Pipeline" },
+  { value: "service", label: "Service Pipeline" },
+  { value: "roofing", label: "Roofing Pipeline" },
 ] as const;
 
 export function isProjectPipeline(pipeline: string): boolean {

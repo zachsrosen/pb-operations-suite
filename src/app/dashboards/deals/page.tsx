@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, Suspense } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import type { FilterOption } from "@/components/ui/MultiSelectFilter";
@@ -48,12 +48,21 @@ function DealsPageInner() {
   const { filters, setFilters, setStatusFilter } = useDealsFilters();
   const [allDeals, setAllDeals] = useState<TableDeal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [selectedDeal, setSelectedDeal] = useState<TableDeal | null>(null);
   const [searchInput, setSearchInput] = useState(filters.search);
 
+  // Abort controller ref to cancel in-flight requests on pipeline/search change
+  const abortRef = useRef<AbortController | null>(null);
+
   // Fetch data
   const fetchData = useCallback(async () => {
+    // Cancel any in-flight request before starting a new one
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       setLoading(true);
       let deals: TableDeal[];
@@ -64,7 +73,8 @@ function DealsPageInner() {
         const params = new URLSearchParams({ limit: "0" });
         if (filters.search) params.set("search", filters.search);
 
-        const res = await fetch(`/api/projects?${params}`);
+        const res = await fetch(`/api/projects?${params}`, { signal: controller.signal });
+        if (!res.ok) throw new Error(`Projects API error: ${res.status}`);
         const data = await res.json();
         deals = (data.projects as Project[]).map(projectToTableDeal);
         setLastUpdated(data.lastUpdated);
@@ -77,22 +87,29 @@ function DealsPageInner() {
         });
         if (filters.search) params.set("search", filters.search);
 
-        const res = await fetch(`/api/deals?${params}`);
+        const res = await fetch(`/api/deals?${params}`, { signal: controller.signal });
+        if (!res.ok) throw new Error(`Deals API error: ${res.status}`);
         const data = await res.json();
         deals = data.deals as SlimDeal[];
         setLastUpdated(data.lastUpdated);
       }
 
       setAllDeals(deals);
+      setError(null);
     } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") return;
       console.error("Failed to fetch deals:", err);
+      setAllDeals([]);
+      setLastUpdated(null);
+      setError("Failed to load deals. Try refreshing the page.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
   }, [filters.pipeline, filters.search]);
 
   useEffect(() => {
     fetchData();
+    return () => abortRef.current?.abort();
   }, [fetchData]);
 
   // SSE for real-time updates
@@ -293,6 +310,16 @@ function DealsPageInner() {
         <div className="flex items-center justify-center py-20 text-muted">
           <div className="animate-spin w-5 h-5 border-2 border-muted border-t-orange-400 rounded-full mr-3" />
           Loading deals...
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center py-20 text-muted gap-3">
+          <span className="text-red-400 text-sm">{error}</span>
+          <button
+            onClick={fetchData}
+            className="px-3 py-1.5 text-xs bg-orange-500/10 text-orange-400 border border-orange-500/30 rounded-lg hover:bg-orange-500/20 transition-colors"
+          >
+            Retry
+          </button>
         </div>
       ) : (
         <div className="bg-surface border border-t-border rounded-xl overflow-hidden shadow-card">
