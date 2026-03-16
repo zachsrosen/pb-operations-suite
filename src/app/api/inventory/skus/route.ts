@@ -561,17 +561,16 @@ export async function POST(request: NextRequest) {
     const metadataParsed = parseOptionalMetadata(body, category as string);
     if ("error" in metadataParsed) return NextResponse.json({ error: metadataParsed.error }, { status: 400 });
 
-    // Vendor pair validation for upsert
-    const upsertVendorName = vendorNameParsed.provided ? vendorNameParsed.value : null;
-    const upsertZohoVendorId = zohoVendorIdParsed.provided ? zohoVendorIdParsed.value : null;
-    if (upsertVendorName && !upsertZohoVendorId) {
-      return NextResponse.json({ error: "Vendor must be selected from the list (zohoVendorId required)" }, { status: 400 });
-    }
-    if (!upsertVendorName && upsertZohoVendorId) {
-      return NextResponse.json({ error: "Vendor ID provided without vendor name" }, { status: 400 });
-    }
-    if (upsertVendorName && upsertZohoVendorId) {
-      const lookup = await prisma!.vendorLookup.findUnique({ where: { zohoVendorId: upsertZohoVendorId } });
+    // Vendor pair validation for upsert — only when zohoVendorId is explicitly
+    // provided. Callers that only send vendorName (sync scripts, legacy UI) are
+    // allowed through; the pair invariant is enforced on the submit-product and
+    // push-requests paths where the picker guarantees both values.
+    if (zohoVendorIdParsed.provided && zohoVendorIdParsed.value) {
+      const upsertVendorName = vendorNameParsed.provided ? vendorNameParsed.value : null;
+      if (!upsertVendorName) {
+        return NextResponse.json({ error: "Vendor ID provided without vendor name" }, { status: 400 });
+      }
+      const lookup = await prisma!.vendorLookup.findUnique({ where: { zohoVendorId: zohoVendorIdParsed.value } });
       if (!lookup || lookup.name !== upsertVendorName) {
         return NextResponse.json({ error: "Vendor name does not match the selected vendor record" }, { status: 400 });
       }
@@ -823,19 +822,24 @@ export async function PATCH(request: NextRequest) {
     const metadataParsed = parseOptionalMetadata(body, category as string);
     if ("error" in metadataParsed) return NextResponse.json({ error: metadataParsed.error }, { status: 400 });
 
-    // Vendor pair validation: resolve effective values after this edit
-    const effectiveVendorName = vendorNameParsed.provided ? vendorNameParsed.value : existing.vendorName;
-    const effectiveZohoVendorId = zohoVendorIdParsed.provided ? zohoVendorIdParsed.value : existing.zohoVendorId;
-    if (effectiveVendorName && !effectiveZohoVendorId) {
-      return NextResponse.json({ error: "Vendor must be selected from the list (zohoVendorId required)" }, { status: 400 });
-    }
-    if (!effectiveVendorName && effectiveZohoVendorId) {
-      return NextResponse.json({ error: "Vendor ID provided without vendor name" }, { status: 400 });
-    }
-    if (effectiveVendorName && effectiveZohoVendorId) {
-      const lookup = await prisma!.vendorLookup.findUnique({ where: { zohoVendorId: effectiveZohoVendorId } });
-      if (!lookup || lookup.name !== effectiveVendorName) {
-        return NextResponse.json({ error: "Vendor name does not match the selected vendor record" }, { status: 400 });
+    // Vendor pair validation — only when vendor fields are being changed.
+    // Legacy records may have vendorName without zohoVendorId; we don't block
+    // unrelated edits on those records.
+    const vendorFieldsChanging = vendorNameParsed.provided || zohoVendorIdParsed.provided;
+    if (vendorFieldsChanging) {
+      const effectiveVendorName = vendorNameParsed.provided ? vendorNameParsed.value : existing.vendorName;
+      const effectiveZohoVendorId = zohoVendorIdParsed.provided ? zohoVendorIdParsed.value : existing.zohoVendorId;
+      if (effectiveVendorName && !effectiveZohoVendorId) {
+        return NextResponse.json({ error: "Vendor must be selected from the list (zohoVendorId required)" }, { status: 400 });
+      }
+      if (!effectiveVendorName && effectiveZohoVendorId) {
+        return NextResponse.json({ error: "Vendor ID provided without vendor name" }, { status: 400 });
+      }
+      if (effectiveVendorName && effectiveZohoVendorId) {
+        const lookup = await prisma!.vendorLookup.findUnique({ where: { zohoVendorId: effectiveZohoVendorId } });
+        if (!lookup || lookup.name !== effectiveVendorName) {
+          return NextResponse.json({ error: "Vendor name does not match the selected vendor record" }, { status: 400 });
+        }
       }
     }
 
