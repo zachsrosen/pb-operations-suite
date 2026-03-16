@@ -159,10 +159,8 @@ function SOPPageInner() {
    *   role-de  — Tech Ops        → TECH_OPS role
    *
    * ADMIN ONLY (shelved until content is finalized):
-   *   other    — Other Pipelines
-   *   zuper    — Zuper
-   *   role-ops — Operations
-   *   role-sales — Sales
+   *   other    — Other Pipelines (includes Sales Guide)
+   *   role-ops — Operations (includes Zuper)
    *
    * ADMIN-ONLY SECTIONS (within visible tabs):
    *   ref-user-roles — User Roles & Permissions (in Reference tab)

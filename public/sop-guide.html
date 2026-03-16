@@ -141,11 +141,9 @@ SOP Operations Guide
 <button class="active" onclick="switchTab('hubspot')">HubSpot Guide</button>
 <button onclick="switchTab('ops')">Project Pipeline</button>
 <button onclick="switchTab('other')">Other Pipelines</button>
-<button onclick="switchTab('zuper')">Zuper</button>
 <button onclick="switchTab('pm')">PM Guide</button>
 <button onclick="switchTab('role-ops')">Operations</button>
 <button onclick="switchTab('role-de')">Tech Ops</button>
-<button onclick="switchTab('role-sales')">Sales</button>
 <button onclick="switchTab('wf')">Workflows</button>
 </div>
 
@@ -188,6 +186,14 @@ SOP Operations Guide
 <a href="#" onclick="go('dr')" data-s="dr"><span class="dot dot-purple"></span>Detach &amp; Reset</a>
 <a href="#" onclick="go('roof')" data-s="roof"><span class="dot dot-pink"></span>Roofing Pipeline</a>
 </div>
+<div class="sidebar-section" data-tab="other">
+<div class="sidebar-section-title">Sales Guide</div>
+<a href="#" onclick="go('sales-overview')" data-s="sales-overview"><span class="dot dot-blue"></span>Role Overview</a>
+<a href="#" onclick="go('sales-deal')" data-s="sales-deal"><span class="dot dot-amber"></span>Your Deal Record</a>
+<a href="#" onclick="go('sales-survey')" data-s="sales-survey"><span class="dot dot-green"></span>Scheduling Surveys</a>
+<a href="#" onclick="go('sales-handoff')" data-s="sales-handoff"><span class="dot dot-green"></span>Sales → Ops Handoff</a>
+<a href="#" onclick="go('sales-tracking')" data-s="sales-tracking"><span class="dot dot-teal"></span>Tracking Your Projects</a>
+</div>
 <div class="sidebar-section" data-tab="ops">
 <div class="sidebar-section-title">Parallel Workflows</div>
 <a href="#" onclick="go('inc')" data-s="inc"><span class="dot dot-amber"></span>Incentives &amp; Rebates</a>
@@ -195,12 +201,6 @@ SOP Operations Guide
 <!-- Invoicing and Timing Metrics hidden for now -->
 <!--<a href="#" onclick="go('inv')" data-s="inv"><span class="dot dot-teal"></span>Invoicing</a>-->
 <!--<a href="#" onclick="go('met')" data-s="met"><span class="dot dot-teal"></span>Timing Metrics</a>-->
-</div>
-<div class="sidebar-section" data-tab="zuper">
-<div class="sidebar-section-title">Zuper (Field Service)</div>
-<a href="#" onclick="go('zuper-overview')" data-s="zuper-overview"><span class="dot dot-green"></span>Zuper Overview</a>
-<a href="#" onclick="go('zuper-jobs')" data-s="zuper-jobs"><span class="dot dot-green"></span>Job Categories &amp; Statuses</a>
-<a href="#" onclick="go('zuper-scheduling')" data-s="zuper-scheduling"><span class="dot dot-green"></span>Scheduling &amp; Crews</a>
 </div>
 <div class="sidebar-section" data-tab="ops">
 <div class="sidebar-section-title">Participate Energy</div>
@@ -221,6 +221,12 @@ SOP Operations Guide
 <a href="#" onclick="go('ops-inspections')" data-s="ops-inspections"><span class="dot dot-amber"></span>Inspections</a>
 <a href="#" onclick="go('ops-service')" data-s="ops-service"><span class="dot dot-teal"></span>Service &amp; Warranty</a>
 </div>
+<div class="sidebar-section" data-tab="role-ops">
+<div class="sidebar-section-title">Zuper (Field Service)</div>
+<a href="#" onclick="go('zuper-overview')" data-s="zuper-overview"><span class="dot dot-green"></span>Zuper Overview</a>
+<a href="#" onclick="go('zuper-jobs')" data-s="zuper-jobs"><span class="dot dot-green"></span>Job Categories &amp; Statuses</a>
+<a href="#" onclick="go('zuper-scheduling')" data-s="zuper-scheduling"><span class="dot dot-green"></span>Scheduling &amp; Crews</a>
+</div>
 <div class="sidebar-section" data-tab="role-de">
 <div class="sidebar-section-title">Tech Ops</div>
 <a href="#" onclick="go('de-overview')" data-s="de-overview"><span class="dot dot-blue"></span>Role Overview</a>
@@ -230,14 +236,6 @@ SOP Operations Guide
 <a href="#" onclick="go('de-interconnection')" data-s="de-interconnection"><span class="dot dot-amber"></span>Interconnection</a>
 <a href="#" onclick="go('de-ahj')" data-s="de-ahj"><span class="dot dot-purple"></span>AHJ &amp; Utility Tracking</a>
 <a href="#" onclick="go('de-tools')" data-s="de-tools"><span class="dot dot-teal"></span>Your Tools</a>
-</div>
-<div class="sidebar-section" data-tab="role-sales">
-<div class="sidebar-section-title">Sales Guide</div>
-<a href="#" onclick="go('sales-overview')" data-s="sales-overview"><span class="dot dot-blue"></span>Role Overview</a>
-<a href="#" onclick="go('sales-deal')" data-s="sales-deal"><span class="dot dot-amber"></span>Your Deal Record</a>
-<a href="#" onclick="go('sales-survey')" data-s="sales-survey"><span class="dot dot-green"></span>Scheduling Surveys</a>
-<a href="#" onclick="go('sales-handoff')" data-s="sales-handoff"><span class="dot dot-green"></span>Sales → Ops Handoff</a>
-<a href="#" onclick="go('sales-tracking')" data-s="sales-tracking"><span class="dot dot-teal"></span>Tracking Your Projects</a>
 </div>
 <div class="sidebar-section" data-tab="pm">
 <div class="sidebar-section-title">PM Procedures (CO)</div>
