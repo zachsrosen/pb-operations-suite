@@ -41,6 +41,9 @@ model InternalProduct {
   mountingHardwareSpec   MountingHardwareSpec?
   electricalHardwareSpec ElectricalHardwareSpec?
   relayDeviceSpec        RelayDeviceSpec?
+
+  // Inventory relation — FK column stays as skuId in DB
+  inventoryStocks        InventoryStock[]
 }
 ```
 
@@ -56,9 +59,21 @@ model ModuleSpec {
 
 Same pattern for all 7 spec tables (`InverterSpec`, `BatterySpec`, `EvChargerSpec`, `MountingHardwareSpec`, `ElectricalHardwareSpec`, `RelayDeviceSpec`).
 
+`InventoryStock` also has a `skuId` FK plus compound constraints:
+
+```prisma
+model InventoryStock {
+  internalProductId String          @map("skuId")
+  internalProduct   InternalProduct @relation(fields: [internalProductId], references: [id])
+  // ... rest unchanged ...
+  @@unique([internalProductId, location], map: "InventoryStock_skuId_location_key")
+  @@index([internalProductId], map: "InventoryStock_skuId_idx")
+}
+```
+
 ### Source Code Changes
 
-All references across ~34 source files:
+All references across ~38 source files (use grep to find the exact set — do not rely on this count):
 
 - `prisma.equipmentSku.*` → `prisma.internalProduct.*`
 - `EquipmentSku` type imports → `InternalProduct`
@@ -75,6 +90,10 @@ TypeScript catches Prisma query renames, but these must be found manually:
 - Analytics/reporting filters (if any)
 
 **Exception**: `entityType: "equipment_sku"` in audit logs stays as-is in this phase (see Audit Log Strategy below).
+
+Update `.claude/skills/` reference files that mention `EquipmentSku` — these are used by AI agents and should reflect current naming. Docs in `docs/plans/` and `docs/superpowers/` are historical artifacts and can be left as-is.
+
+All TypeScript type references to `EquipmentSku` are renamed in Phase 1, including those in dashboard page components. Phase 2 only covers user-visible string literals and labels.
 
 ### Audit Log Strategy
 
@@ -95,6 +114,7 @@ This can happen in Phase 2 or later.
 - App starts and loads the inventory/catalog pages without runtime errors
 - Prisma queries work against the existing DB with no migration needed
 - Grep for `EquipmentSku` and `equipmentSku` in source files (excluding `generated/`, `node_modules/`, `@@map`/`@map` annotations) returns zero results
+- Rollback: git revert the PR. No DB migration was created, so no DB rollback is needed
 
 ## Phase 2: UI Language
 
@@ -129,6 +149,10 @@ Move route implementations from `src/app/api/inventory/skus/` to `src/app/api/in
 - `/api/inventory/products/sync-hubspot-bulk` — HubSpot bulk sync
 - `/api/inventory/products/sync-hubspot-bulk/confirm` — confirm HubSpot sync
 
+Also rename the standalone route outside the `skus/` tree:
+
+- `/api/inventory/sync-skus` → `/api/inventory/sync-products` (with compatibility wrapper at old path)
+
 ### Compatibility Handlers
 
 Keep `/api/inventory/skus/**` as thin wrappers that call the same implementation — **not HTTP redirects**. POST/PATCH/DELETE redirects are unreliable across clients. Each old route file imports and re-exports the handler from the new location:
@@ -155,7 +179,7 @@ Update all `fetch("/api/inventory/skus/...")` calls in the app to use `/api/inve
 Only pursue if the `@@map`/`@map` indirection becomes annoying in practice.
 
 - Single Prisma migration renames table `EquipmentSku` → `InternalProduct`
-- Renames FK columns `skuId` → `internalProductId` on all 7 spec tables
+- Renames FK columns `skuId` → `internalProductId` on all 8 related tables (7 spec tables + `InventoryStock`)
 - Remove `@@map` and `@map` annotations from schema
 - Requires brief downtime or careful deploy ordering
 
