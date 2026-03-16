@@ -274,7 +274,7 @@ function productMatchesBomItem(product: ComparableProduct, item: BomItem): boole
   return tokenSimilarity(bomTokens, catalogTokens) >= 0.5;
 }
 
-/** Returns a numeric similarity score for internal SKU ↔ BOM item matching. */
+/** Returns a numeric similarity score for internal product ↔ BOM item matching. */
 function scoreSkuMatch(sku: InternalCatalogSku, item: BomItem): number {
   const modelNorm = normalizeText(item.model);
   const skuModelNorm = normalizeText(sku.model);
@@ -700,7 +700,7 @@ function SkuPickerDropdown({ skus, currentSku, category, onSelect, onClear, onCl
           ref={inputRef}
           type="text"
           className="flex-1 bg-transparent text-foreground text-xs px-1.5 py-1 focus:outline-none"
-          placeholder="Search SKUs…"
+          placeholder="Search products…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -725,7 +725,7 @@ function SkuPickerDropdown({ skus, currentSku, category, onSelect, onClear, onCl
           </button>
         )}
         {filtered.length === 0 ? (
-          <div className="px-3 py-2 text-muted">No matching SKUs</div>
+          <div className="px-3 py-2 text-muted">No matching products</div>
         ) : (
           filtered.map((s) => (
             <button
@@ -1094,7 +1094,7 @@ function BomDashboardInner() {
       }),
       fetch("/api/inventory/skus?active=false")
         .then((res) => {
-          if (!res.ok) throw new Error(`Inventory SKU fetch failed (${res.status})`);
+          if (!res.ok) throw new Error(`Inventory product fetch failed (${res.status})`);
           return res.json() as Promise<{ skus?: InternalCatalogSku[] }>;
         })
         .catch(() => ({ skus: [] })),
@@ -1912,7 +1912,7 @@ function BomDashboardInner() {
     try {
       const sku = effectiveSkuByItem.get(item.id);
       if (!sku) {
-        addToast({ type: "error", title: "No catalog SKU selected — pick one from the SKU picker" });
+        addToast({ type: "error", title: "No catalog product selected — pick one from the product picker" });
         return false;
       }
       const quantity = parsePositiveQty(item.qty);
@@ -1975,7 +1975,7 @@ function BomDashboardInner() {
     try {
       const sku = effectiveSkuByItem.get(item.id);
       if (!sku) {
-        addToast({ type: "error", title: "No catalog SKU selected — pick one from the SKU picker" });
+        addToast({ type: "error", title: "No catalog product selected — pick one from the product picker" });
         return false;
       }
       const quantity = parsePositiveQty(item.qty);
@@ -3297,7 +3297,7 @@ function BomDashboardInner() {
                                             type="button"
                                             onClick={() => setOpenSkuPickerItemId(isPickerOpen ? null : item.id)}
                                             className="text-[10px] text-muted hover:text-foreground shrink-0"
-                                            title="Change SKU match"
+                                            title="Change product match"
                                           >
                                             ✎
                                           </button>
@@ -3308,7 +3308,7 @@ function BomDashboardInner() {
                                           onClick={() => setOpenSkuPickerItemId(isPickerOpen ? null : item.id)}
                                           className="text-[10px] text-yellow-600 dark:text-yellow-400 hover:underline"
                                         >
-                                          No catalog match — select SKU
+                                          No catalog match — select product
                                         </button>
                                       )}
                                       {isPickerOpen && (

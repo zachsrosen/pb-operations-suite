@@ -237,10 +237,10 @@ const sections = [
     description:
       "Warehouse stock levels, receiving, and demand vs. supply gap analysis — track what you have, record what arrives, and know what to order.",
     features: [
-      "Stock Overview: sortable table with on-hand, demand, and gap indicators per SKU/location",
+      "Stock Overview: sortable table with on-hand, demand, and gap indicators per product/location",
       "Receive & Adjust: quick entry form for deliveries, returns, adjustments, and allocations",
       "Needs Report: stage-weighted demand vs. supply with expandable location detail and CSV export",
-      "Auto-sync SKU catalog from HubSpot project equipment data",
+      "Auto-sync product catalog from HubSpot project equipment data",
       "Multi-select filtering by location and equipment category",
     ],
   },

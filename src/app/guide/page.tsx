@@ -675,14 +675,14 @@ export default function GuidePage() {
           tagColor="cyan"
           purpose="Warehouse stock levels, receiving, and demand vs. supply gap analysis"
           features={[
-            "Stock Overview: sortable table with on-hand, demand, and gap indicators per SKU/location",
+            "Stock Overview: sortable table with on-hand, demand, and gap indicators per product/location",
             "Receive & Adjust: quick entry form for deliveries, returns, adjustments, and allocations",
             "Needs Report: stage-weighted demand vs. supply with expandable location detail",
-            "Auto-sync SKU catalog from HubSpot project equipment data",
+            "Auto-sync product catalog from HubSpot project equipment data",
             "CSV export for purchasing teams"
           ]}
           howToUse={[
-            "Click Sync SKUs to populate the catalog from HubSpot projects",
+            "Click Sync Products to populate the catalog from HubSpot projects",
             "Use the Receive tab to record incoming deliveries or adjust stock",
             "Check the Needs tab to see what to order based on pipeline demand",
             "Filter by location to view specific warehouse stock levels",
