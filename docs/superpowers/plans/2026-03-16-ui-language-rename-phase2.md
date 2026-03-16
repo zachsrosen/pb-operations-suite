@@ -111,11 +111,20 @@ git commit -m "copy: rename SKU → product in inventory dashboard user-facing t
 
 | Line | Old String | New String |
 |------|-----------|------------|
+| 103 | `"Missing SKU id"` | `"Missing product id"` |
+| 117 | `` `Failed to load SKUs (${res.status})` `` | `` `Failed to load products (${res.status})` `` |
 | 120 | `"SKU not found"` | `"Product not found"` |
+| 146 | `"Failed to load SKU"` | `"Failed to load product"` |
+| 204 | `` `Failed to update SKU (${res.status})` `` | `` `Failed to update product (${res.status})` `` |
 | 206 | `"SKU updated"` | `"Product updated"` |
+| 215 | `"Failed to update SKU"` | `"Failed to update product"` |
+| 216 | `"Failed to update SKU"` (toast) | `"Failed to update product"` |
+| 234 | `` `Failed to delete SKU (${res.status})` `` | `` `Failed to delete product (${res.status})` `` |
 | 236 | `` `Deleted ${body?.name \|\| "SKU"}` `` | `` `Deleted ${body?.name \|\| "product"}` `` |
+| 239 | `"Failed to delete SKU"` | `"Failed to delete product"` |
+| 540 | `This SKU is linked to` | `This product is linked to` |
 
-Also check for `"Failed to load SKU"` and `"Failed to update SKU"` error messages — rename those too.
+**DO NOT rename** line 322: `SKU` label for the `sku` field input — that's the vendor part number.
 
 - [ ] **Step 3: Commit**
 
@@ -158,6 +167,8 @@ This file has the most changes (~20+). **Critical:** "SKU mismatch", "SKU exact"
 | 2517 | `Add or match an Internal SKU to enable link confirmation.` | `Add or match an internal product to enable link confirmation.` |
 | 2671 | `Merge duplicate internal SKUs into this primary SKU to clean inventory links.` | `Merge duplicate internal products into this primary product to clean inventory links.` |
 | 2683 | `"Unnamed internal SKU"` | `"Unnamed internal product"` |
+| 1161 | `"Invalid duplicate SKU selected for merge."` | `"Invalid duplicate product selected for merge."` |
+| 1858 | `the primary SKU is kept. Missing fields on primary are filled from duplicate.` | `the primary product is kept. Missing fields on primary are filled from duplicate.` |
 
 **DO NOT rename** these (vendor part number comparison signals):
 - Line 256, 338, 391: `"SKU mismatch"` — vendor SKU values disagree across sources
@@ -189,7 +200,11 @@ git commit -m "copy: rename internal SKU → internal product in comparison dash
 | 277 | `internal SKU ↔ BOM item matching` (comment) | `internal product ↔ BOM item matching` |
 | 703 | `placeholder="Search SKUs…"` | `placeholder="Search products…"` |
 | 728 | `No matching SKUs` | `No matching products` |
+| 1097 | `` `Inventory SKU fetch failed (${res.status})` `` | `` `Inventory product fetch failed (${res.status})` `` |
+| 1915 | `"No catalog SKU selected — pick one from the SKU picker"` | `"No catalog product selected — pick one from the product picker"` |
+| 1978 | `"No catalog SKU selected — pick one from the SKU picker"` | `"No catalog product selected — pick one from the product picker"` |
 | 3300 | `title="Change SKU match"` | `title="Change product match"` |
+| 3311 | `No catalog match — select SKU` | `No catalog match — select product` |
 
 - [ ] **Step 2: Rename in guide/page.tsx**
 
@@ -235,6 +250,8 @@ git commit -m "copy: rename SKU → product in BOM, guide, handbook, and suite p
 
 These are error messages, console logs, and audit log descriptions returned from the API. Many surface directly in toast messages on the frontend.
 
+**Audit log entityType note:** The spec requires verifying consumers before switching the write-side value. Verified: the only consumer is `src/app/api/admin/activity/route.ts` which passes `entityType` as a dynamic filter from user input — no hardcoded `"equipment_sku"` string. Existing DB rows will retain `"equipment_sku"`; new rows will use `"internal_product"`. This is an accepted migration gap.
+
 - [ ] **Step 1: Rename in skus/route.ts**
 
 | Line | Old String | New String |
@@ -256,6 +273,7 @@ These are error messages, console logs, and audit log descriptions returned from
 | 983 | `"Error updating SKU"` | `"Error updating product"` |
 | 986 | `"Failed to update SKU"` | `"Failed to update product"` |
 | 1050 | `"SKU not found"` | `"Product not found"` |
+| 1080 | `"Permanently deleted SKU: ${existing.brand}..."` | `"Permanently deleted product: ${existing.brand}..."` |
 | 1083 | `entityType: "equipment_sku"` | `entityType: "internal_product"` |
 | 1108 | `"SKU not found"` | `"Product not found"` |
 | 1111 | `"Error deleting SKU"` | `"Error deleting product"` |
@@ -276,6 +294,7 @@ For `[id]/sync/route.ts`:
 - Line 55, 125: `"SKU not found"` → `"Product not found"`
 
 For `sync-bulk/route.ts`:
+- Line 361, 419: `"Run operation is not a SKU bulk sync"` → `"Run operation is not a product bulk sync"`
 - Line 558: `"SKU no longer exists or is inactive"` → `"Product no longer exists or is inactive"`
 
 For `sync-hubspot-bulk/route.ts`:
@@ -284,6 +303,8 @@ For `sync-hubspot-bulk/route.ts`:
 
 For `stats/route.ts`:
 - Line 55: `"[Inventory SKU Stats] Falling back to legacy query"` → `"[Inventory Product Stats] Falling back to legacy query"`
+- Line 125: `"Error fetching SKU stats:"` → `"Error fetching product stats:"`
+- Line 128: `"Failed to fetch SKU stats"` → `"Failed to fetch product stats"`
 
 - [ ] **Step 4: Commit**
 
@@ -300,6 +321,7 @@ git commit -m "copy: rename SKU → product in inventory API error messages and 
 - Modify: `src/app/api/products/cleanup/route.ts`
 - Modify: `src/app/api/products/cleanup/confirm/route.ts`
 - Modify: `src/app/api/products/comparison/create/route.ts`
+- Modify: `src/lib/product-cleanup-engine.ts`
 
 Only user-visible error/validation messages. Do NOT rename `"SKU exact"`, `"SKU partial"`, `"SKU differs"`, or `"SKU mismatch"` in the comparison route — those are match signals about the vendor part number field.
 
@@ -326,10 +348,17 @@ Check for user-visible error messages:
 - `"Internal SKU not found"` → `"Internal product not found"`
 - `"Internal SKU must have brand and model"` → `"Internal product must have brand and model"`
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 4: Rename in product-cleanup-engine.ts**
+
+This is the source of the cleanup messages. The route files import from here.
+
+- Line 197: `"Deactivated internal SKU."` → `"Deactivated internal product."`
+- Line 198: `"Internal SKU already inactive."` → `"Internal product already inactive."`
+
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/app/api/products/
+git add src/app/api/products/ src/lib/product-cleanup-engine.ts
 git commit -m "copy: rename SKU → product in products API error and validation messages"
 ```
 
@@ -349,12 +378,21 @@ These are release-note entries displayed on the Updates page. The terms appear i
 
 | Line | Old String | New String |
 |------|-----------|------------|
+| 124 | `Catalog SKU listing replaced with a responsive card layout` | `Catalog product listing replaced with a responsive card layout` |
+| 134 | `richer SKU management` | `richer product management` |
+| 145 | `full internal SKU edit surface` | `full internal product edit surface` |
+| 149 | `catalog SKU hard-delete` | `catalog product hard-delete` |
+| 188 | `legacy schema fallback for SKU lookup` | `legacy schema fallback for product lookup` |
+| 220 | `with SKU visibility` | `with product visibility` |
 | 248 | `` added `zohoItemId` on `EquipmentSku` `` | `` added `zohoItemId` on `InternalProduct` `` |
 | 253 | `` categories not stored in `EquipmentSku` `` | `` categories not stored in `InternalProduct` `` |
+| 616 | `SKU auto-sync: one-click catalog population` | `Product auto-sync: one-click catalog population` |
 | 620 | `Total SKUs` | `Total Products` |
 | 624 | `New Prisma models: EquipmentSku, InventoryStock` | `New Prisma models: InternalProduct, InventoryStock` |
 
-Also grep for any other `SKU` in this file that means "product record" vs. the vendor field. Line 616 `SKU auto-sync` means syncing product records — rename to `Product auto-sync`. Line 619 `CSV export of procurement needs report` has no SKU reference — skip.
+**DO NOT rename** these (historical API path references or vendor field references):
+- Line 167: `SKU/dimension fields` — refers to the actual `sku` database field alongside dimension fields
+- Line 625: `/api/inventory/sku-sync` — historical route path (Phase 3 territory)
 
 - [ ] **Step 2: Rename in catalog-readiness.ts**
 
@@ -387,10 +425,10 @@ Review results manually. Any remaining "SKU" in user-visible strings that means 
 
 ```bash
 grep -rn "EquipmentSku" --include="*.ts" --include="*.tsx" src/ | \
-  grep -v "node_modules\|generated\|@@map\|@map\|equipment_sku"
+  grep -v "node_modules\|generated\|@@map\|@map\|equipment_sku\|bom-snapshot"
 ```
 
-Expected: Zero results. All `EquipmentSku` references in source code were handled in Phase 1 and the deferred strings in Task 7.
+Expected: Zero results. All `EquipmentSku` references in source code were handled in Phase 1 and the deferred strings in Task 7. Note: `bom-snapshot.ts` contains `"EquipmentSku"` in raw SQL strings — these reference the physical DB table name and are correct.
 
 - [ ] **Step 3: Grep for remaining "equipment_sku" audit entity type**
 
