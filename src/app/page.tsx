@@ -217,8 +217,8 @@ export default function Home() {
   const [pipelineCache, setPipelineCache] = useState<
     Record<string, { stageCounts: Record<string, number>; stageValues: Record<string, number>; total: number; totalValue: number }>
   >({});
-  // Track which pipeline is currently being fetched (null = idle)
-  const [loadingPipeline, setLoadingPipeline] = useState<string | null>(null);
+  // Track which pipelines are currently being fetched
+  const [loadingPipelines, setLoadingPipelines] = useState<Set<string>>(new Set());
   // Ref mirrors cache keys + tracks in-flight — avoids stale closures in fetchPipelineData
   const pipelineFetchedRef = useRef<Set<string>>(new Set());
 
@@ -345,7 +345,7 @@ export default function Home() {
     // Skip if already cached or in-flight (ref is always current)
     if (pipelineFetchedRef.current.has(pipelineKey)) return;
     pipelineFetchedRef.current.add(pipelineKey);
-    setLoadingPipeline(pipelineKey);
+    setLoadingPipelines((prev) => new Set(prev).add(pipelineKey));
     try {
       // active=true is the API default; explicit here to lock the contract
       const res = await fetch(`/api/deals?pipeline=${pipelineKey}&active=true`);
@@ -370,9 +370,17 @@ export default function Home() {
       console.error(`Failed to fetch ${pipelineKey} pipeline data:`, err);
       // Remove from ref so user can retry by re-selecting
       pipelineFetchedRef.current.delete(pipelineKey);
+      // Store zero-sentinel so stat cards don't stay in permanent loading
+      setPipelineCache((prev) => prev[pipelineKey] ? prev : ({
+        ...prev,
+        [pipelineKey]: { stageCounts: {}, stageValues: {}, total: 0, totalValue: 0 },
+      }));
     } finally {
-      // Only clear loading if this pipeline is still the one being loaded
-      setLoadingPipeline((curr) => (curr === pipelineKey ? null : curr));
+      setLoadingPipelines((prev) => {
+        const next = new Set(prev);
+        next.delete(pipelineKey);
+        return next;
+      });
     }
   }, []);
 
@@ -716,12 +724,12 @@ export default function Home() {
                 View All Deals →
               </Link>
             </div>
-            {selectedPipeline !== "project" && !pipelineStageData && loadingPipeline !== selectedPipeline && (
+            {selectedPipeline !== "project" && !pipelineStageData && !loadingPipelines.has(selectedPipeline) && (
               <div className="text-center py-8 text-muted text-sm">
                 Failed to load pipeline data.
               </div>
             )}
-            {loadingPipeline === selectedPipeline ? (
+            {loadingPipelines.has(selectedPipeline) ? (
               <SkeletonSection />
             ) : pipelineStageData && Object.keys(pipelineStageData.stageCounts).length > 0 ? (
               <div className="space-y-3">
@@ -756,7 +764,7 @@ export default function Home() {
                     );
                   })}
               </div>
-            ) : loadingPipeline !== selectedPipeline && pipelineStageData ? (
+            ) : !loadingPipelines.has(selectedPipeline) && pipelineStageData ? (
               <div className="text-center py-8 text-muted text-sm">
                 No active deals in this pipeline.
               </div>
