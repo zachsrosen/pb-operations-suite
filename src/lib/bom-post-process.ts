@@ -80,6 +80,7 @@ const CATEGORY_ALIASES: Record<string, string> = {
 };
 
 const MODEL_TO_BRAND: Array<{ pattern: RegExp; brand: string }> = [
+  // ── Tesla part numbers ──
   { pattern: /^1707000/, brand: "Tesla" },
   { pattern: /^1807000/, brand: "Tesla" },
   { pattern: /^1624171/, brand: "Tesla" },
@@ -88,18 +89,45 @@ const MODEL_TO_BRAND: Array<{ pattern: RegExp; brand: string }> = [
   { pattern: /^1875157/, brand: "Tesla" },
   { pattern: /^1734411/, brand: "Tesla" },
   { pattern: /^2045796|^P2045794|^P2060713/, brand: "Tesla" },
+  { pattern: /^MCI-2/i, brand: "Tesla" },
+  // ── Enphase ──
   { pattern: /IQ8|Q-12-RAW|IQ-COMBINER/i, brand: "Enphase" },
+  { pattern: /^Q-SEAL|^Q-TERM/i, brand: "Enphase" },
+  // ── Panel manufacturers ──
+  { pattern: /^JKM\d/i, brand: "Jinko" },
+  { pattern: /^CS[67][NLR.]?[\d-]/i, brand: "Canadian Solar" },
+  { pattern: /^TSM-/i, brand: "Trina" },
+  { pattern: /^LR[567]-/i, brand: "LONGi" },
+  { pattern: /^JAM\d/i, brand: "JA Solar" },
+  { pattern: /^REC\d{3}/i, brand: "REC" },
+  { pattern: /^HI[NE]-[A-Z]/i, brand: "Hyundai" },
+  // ── SolarEdge inverters & optimizers ──
+  { pattern: /^SE\d{3,5}H/i, brand: "SolarEdge" },
+  { pattern: /^S[456]\d{2}$/i, brand: "SolarEdge" },
+  { pattern: /^P[3456]\d{2}$/i, brand: "SolarEdge" },
+  // ── Other inverter / hybrid manufacturers ──
+  { pattern: /^SB\d+\.\d|^SBSE\d/i, brand: "SMA" },
+  { pattern: /^Sol-?Ark/i, brand: "Sol-Ark" },
+  { pattern: /^APKE\d/i, brand: "Generac" },
+  // ── Optimizer / RSD manufacturers ──
+  { pattern: /^TS4-/i, brand: "Tigo" },
+  { pattern: /^RSD-[SDP]/i, brand: "APsmart" },
+  { pattern: /SI16-PEL/i, brand: "IMO" },
+  // ── Battery manufacturers ──
+  { pattern: /^aPower|^aGate|^AGT-R/i, brand: "FranklinWH" },
+  { pattern: /^eco[Ll]inx|^ECOLX/i, brand: "Sonnen" },
+  // ── Racking ──
   { pattern: /^XR-?10|^XR-?100/i, brand: "IronRidge" },
   { pattern: /^UFO-|^CAMO-|^ATH-|^BHW-|^LFT-/i, brand: "IronRidge" },
+  { pattern: /SBOXCOMP/i, brand: "Unirac" },
+  { pattern: /^SFM|^FLASHKIT/i, brand: "Unirac" },
+  // ── Electrical BOS ──
   { pattern: /TL270RCU|THQL21/i, brand: "GE" },
   { pattern: /DG222|TG3222|TGN3322/i, brand: "Eaton" },
   { pattern: /^HOM\d|HOMT\d/i, brand: "Square D" },
   { pattern: /^Q2\d{2}$|^Q1\d{2}$/i, brand: "Siemens" },
   { pattern: /^BR\d/i, brand: "Eaton" },
-  { pattern: /SI16-PEL/i, brand: "IMO" },
-  { pattern: /^MCI-2/i, brand: "Tesla" },
   { pattern: /^U4801|^U9701|^U9101/i, brand: "Milbank" },
-  { pattern: /SBOXCOMP/i, brand: "UNIRAC" },
   { pattern: /JB-1\.2|JB-2|JB-3/i, brand: "EZ Solar" },
   { pattern: /S6466|critter\s*guard/i, brand: "SolarEdge" },
   { pattern: /S6438|sunscreener/i, brand: "Heyco" },
