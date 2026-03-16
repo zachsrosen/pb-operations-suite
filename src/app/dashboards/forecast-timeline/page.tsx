@@ -7,6 +7,7 @@ import { StatCard } from "@/components/ui/MetricCard";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { ForecastBasisBadge } from "@/components/ui/ForecastBasisBadge";
+import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useSSE } from "@/hooks/useSSE";
 import { STAGE_COLORS } from "@/lib/constants";
@@ -197,33 +198,42 @@ export default function ForecastTimelinePage() {
 
   // ── Filter state ──
   const [search, setSearch] = useState("");
-  const [locationFilter, setLocationFilter] = useState("all");
-  const [stageFilter, setStageFilter] = useState("all");
-  const [ptoMonthFilter, setPtoMonthFilter] = useState("all");
-  const [varianceFilter, setVarianceFilter] = useState("all");
+  const [locationFilters, setLocationFilters] = useState<string[]>([]);
+  const [stageFilters, setStageFilters] = useState<string[]>([]);
+  const [ptoMonthFilters, setPtoMonthFilters] = useState<string[]>([]);
+  const [varianceFilters, setVarianceFilters] = useState<string[]>([]);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
   const [sortField, setSortField] = useState<string>("varianceDays");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
 
   // ── Derived filter options ──
-  const locations = useMemo(() => {
+  const locationOptions = useMemo<FilterOption[]>(() => {
     if (!data) return [];
-    return [...new Set(data.projects.map((p) => p.location))].filter(Boolean).sort();
+    return [...new Set(data.projects.map((p) => p.location))].filter(Boolean).sort()
+      .map((l) => ({ value: l, label: l }));
   }, [data]);
 
-  const stages = useMemo(() => {
+  const stageOptions = useMemo<FilterOption[]>(() => {
     if (!data) return [];
-    return [...new Set(data.projects.map((p) => p.currentStage))].filter(Boolean).sort();
+    return [...new Set(data.projects.map((p) => p.currentStage))].filter(Boolean).sort()
+      .map((s) => ({ value: s, label: s }));
   }, [data]);
 
-  const ptoMonths = useMemo(() => {
+  const ptoMonthOptions = useMemo<FilterOption[]>(() => {
     if (!data) return [];
     const months = new Set<string>();
     for (const p of data.projects) {
       if (p.forecastPto) months.add(p.forecastPto.substring(0, 7));
     }
-    return [...months].sort();
+    return [...months].sort().map((m) => ({ value: m, label: m }));
   }, [data]);
+
+  const varianceOptions = useMemo<FilterOption[]>(() => [
+    { value: "onTrack", label: "On Track" },
+    { value: "atRisk", label: "At Risk (8-14d)" },
+    { value: "behind", label: "Behind (>14d)" },
+    { value: "noForecast", label: "No Forecast" },
+  ], []);
 
   // ── Filtered + sorted projects ──
   const filteredProjects = useMemo(() => {
@@ -238,17 +248,21 @@ export default function ForecastTimelinePage() {
           p.customerName.toLowerCase().includes(q),
       );
     }
-    if (locationFilter !== "all") {
-      result = result.filter((p) => p.location === locationFilter);
+    if (locationFilters.length > 0) {
+      const set = new Set(locationFilters);
+      result = result.filter((p) => set.has(p.location));
     }
-    if (stageFilter !== "all") {
-      result = result.filter((p) => p.currentStage === stageFilter);
+    if (stageFilters.length > 0) {
+      const set = new Set(stageFilters);
+      result = result.filter((p) => set.has(p.currentStage));
     }
-    if (ptoMonthFilter !== "all") {
-      result = result.filter((p) => p.forecastPto?.startsWith(ptoMonthFilter));
+    if (ptoMonthFilters.length > 0) {
+      const set = new Set(ptoMonthFilters);
+      result = result.filter((p) => p.forecastPto && set.has(p.forecastPto.substring(0, 7)));
     }
-    if (varianceFilter !== "all") {
-      result = result.filter((p) => varianceBucket(p.varianceDays) === varianceFilter);
+    if (varianceFilters.length > 0) {
+      const set = new Set(varianceFilters);
+      result = result.filter((p) => set.has(varianceBucket(p.varianceDays)));
     }
 
     // Sort
@@ -289,7 +303,7 @@ export default function ForecastTimelinePage() {
     });
 
     return result;
-  }, [data, search, locationFilter, stageFilter, ptoMonthFilter, varianceFilter, sortField, sortDir]);
+  }, [data, search, locationFilters, stageFilters, ptoMonthFilters, varianceFilters, sortField, sortDir]);
 
   function handleSort(field: string) {
     if (sortField === field) {
@@ -319,11 +333,27 @@ export default function ForecastTimelinePage() {
     }));
   }, [filteredProjects]);
 
+  // ── Filtered summary (reactive to filters) ──
+  const summary = useMemo(() => {
+    const projects = filteredProjects;
+    const total = projects.length;
+    let onTrack = 0, atRisk = 0, behind = 0, noForecast = 0;
+    for (const p of projects) {
+      const bucket = varianceBucket(p.varianceDays);
+      if (bucket === "onTrack") onTrack++;
+      else if (bucket === "atRisk") atRisk++;
+      else if (bucket === "behind") behind++;
+      else noForecast++;
+    }
+    return { total, onTrack, atRisk, behind, noForecast };
+  }, [filteredProjects]);
+
+  const isFiltered = search || locationFilters.length > 0 || stageFilters.length > 0 ||
+    ptoMonthFilters.length > 0 || varianceFilters.length > 0;
+
   if (isLoading) return <LoadingSpinner message="Computing forecasts for all projects…" />;
   if (error || !data)
     return <ErrorState message={error ? String(error) : "Failed to load forecast data"} />;
-
-  const { summary } = data;
 
   return (
     <DashboardShell
@@ -339,9 +369,9 @@ export default function ForecastTimelinePage() {
         summary.noForecast > 0 ? "grid-cols-2 md:grid-cols-5" : "grid-cols-2 md:grid-cols-4"
       }`}>
         <StatCard
-          label="Active Projects"
+          label={isFiltered ? "Filtered Projects" : "Active Projects"}
           value={summary.total}
-          subtitle="With close date"
+          subtitle={isFiltered ? `of ${data.summary.total} total` : "With close date"}
           color="blue"
         />
         <StatCard
@@ -381,49 +411,40 @@ export default function ForecastTimelinePage() {
           onChange={(e) => setSearch(e.target.value)}
           className="bg-surface border border-t-border rounded-md px-3 py-1.5 text-sm text-foreground placeholder:text-muted w-48 outline-none focus:ring-1 focus:ring-blue-500"
         />
-        <select
-          value={locationFilter}
-          onChange={(e) => setLocationFilter(e.target.value)}
-          className="bg-surface border border-t-border rounded-md px-2 py-1.5 text-sm text-foreground outline-none"
-        >
-          <option value="all">All Locations</option>
-          {locations.map((l) => (
-            <option key={l} value={l}>{l}</option>
-          ))}
-        </select>
-        <select
-          value={stageFilter}
-          onChange={(e) => setStageFilter(e.target.value)}
-          className="bg-surface border border-t-border rounded-md px-2 py-1.5 text-sm text-foreground outline-none"
-        >
-          <option value="all">All Stages</option>
-          {stages.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
-        <select
-          value={ptoMonthFilter}
-          onChange={(e) => setPtoMonthFilter(e.target.value)}
-          className="bg-surface border border-t-border rounded-md px-2 py-1.5 text-sm text-foreground outline-none"
-        >
-          <option value="all">PTO: All Months</option>
-          {ptoMonths.map((m) => (
-            <option key={m} value={m}>{m}</option>
-          ))}
-        </select>
-        <select
-          value={varianceFilter}
-          onChange={(e) => setVarianceFilter(e.target.value)}
-          className="bg-surface border border-t-border rounded-md px-2 py-1.5 text-sm text-foreground outline-none"
-        >
-          <option value="all">All Variance</option>
-          <option value="onTrack">On Track</option>
-          <option value="atRisk">At Risk (8-14d)</option>
-          <option value="behind">Behind (14d+)</option>
-          <option value="noForecast">No Forecast</option>
-        </select>
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={locationFilters}
+          onChange={setLocationFilters}
+          placeholder="All Locations"
+          accentColor="blue"
+        />
+        <MultiSelectFilter
+          label="Stage"
+          options={stageOptions}
+          selected={stageFilters}
+          onChange={setStageFilters}
+          placeholder="All Stages"
+          accentColor="orange"
+        />
+        <MultiSelectFilter
+          label="PTO Month"
+          options={ptoMonthOptions}
+          selected={ptoMonthFilters}
+          onChange={setPtoMonthFilters}
+          placeholder="All Months"
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Variance"
+          options={varianceOptions}
+          selected={varianceFilters}
+          onChange={setVarianceFilters}
+          placeholder="All Variance"
+          accentColor="green"
+        />
         <span className="text-xs text-muted ml-auto">
-          Showing {filteredProjects.length} of {summary.total}
+          Showing {filteredProjects.length} of {data.summary.total}
         </span>
       </div>
 
