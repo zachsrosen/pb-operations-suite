@@ -2575,9 +2575,11 @@ export default function SchedulerPage() {
       "Schedule Date",
       "Days",
       "Crew",
+      "Event Type",
     ];
     let csv = headers.join(",") + "\n";
-    scheduledEvents.forEach((e) => {
+    const eventsToExport = showForecasts ? displayEvents : scheduledEvents;
+    eventsToExport.forEach((e) => {
       csv +=
         [
           getProjectId(e.name),
@@ -2590,6 +2592,7 @@ export default function SchedulerPage() {
           e.date,
           e.days || e.daysInstall || 2,
           e.crew || "",
+          e.isForecast ? "forecast" : e.eventType,
         ].join(",") + "\n";
     });
     const blob = new Blob([csv], { type: "text/csv" });
@@ -2600,12 +2603,12 @@ export default function SchedulerPage() {
     a.click();
     URL.revokeObjectURL(url);
     showToast("CSV exported");
-  }, [scheduledEvents, showToast]);
+  }, [scheduledEvents, displayEvents, showForecasts, showToast]);
 
   const exportICal = useCallback(() => {
     let ical =
       "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//PB Scheduler//EN\n";
-    scheduledEvents.forEach((e) => {
+    scheduledEvents.filter((e) => !e.isForecast).forEach((e) => {
       const start = e.date.replace(/-/g, "");
       const end = addDays(e.date, Math.ceil(e.days || 1)).replace(/-/g, "");
       ical += `BEGIN:VEVENT\nDTSTART;VALUE=DATE:${start}\nDTEND;VALUE=DATE:${end}\nSUMMARY:${getCustomerName(e.name)} - ${e.crew || "Unassigned"}\nDESCRIPTION:${e.address}\\n$${e.amount.toLocaleString()}\nEND:VEVENT\n`;
@@ -3493,6 +3496,26 @@ export default function SchedulerPage() {
                   {t.label}
                 </button>
               ))}
+              <button
+                onClick={toggleForecasts}
+                className={`flex items-center gap-1 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ml-1 ${
+                  showForecasts
+                    ? "border-blue-400 text-blue-400 bg-blue-500/10"
+                    : "border-t-border text-muted opacity-60 hover:border-muted"
+                }`}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${
+                  showForecasts ? "border-blue-400" : "border-t-border"
+                }`}>
+                  {showForecasts && <span className="w-1 h-1 rounded-full bg-blue-400" />}
+                </span>
+                Forecasts
+              </button>
+              {showForecasts && forecastGhostEvents.length > 0 && (
+                <span className="text-[0.55rem] text-blue-400/70 ml-0.5">
+                  {forecastGhostEvents.length} forecasted install{forecastGhostEvents.length !== 1 ? "s" : ""}
+                </span>
+              )}
             </div>
           </div>
 
