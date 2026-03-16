@@ -150,6 +150,7 @@ interface ScheduledEvent extends SchedulerProject {
   isInspectionFailed?: boolean;
   isTentative?: boolean;
   tentativeRecordId?: string;
+  isForecast?: boolean;
 }
 
 interface PendingSchedule {
@@ -557,6 +558,20 @@ export default function SchedulerPage() {
   const [typeFilters, setTypeFilters] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<"amount" | "date" | "days" | "location" | "type">("amount");
 
+  /* ---- forecast ghost toggle ---- */
+  const [showForecasts, setShowForecasts] = useState(false);
+  useEffect(() => {
+    const stored = localStorage.getItem("scheduler-show-forecasts");
+    if (stored === "true") setShowForecasts(true);
+  }, []);
+  const toggleForecasts = useCallback(() => {
+    setShowForecasts((prev) => {
+      const next = !prev;
+      localStorage.setItem("scheduler-show-forecasts", String(next));
+      return next;
+    });
+  }, []);
+
   /* ---- selection / scheduling ---- */
   const [selectedProject, setSelectedProject] = useState<SchedulerProject | null>(null);
   const [manualSchedules, setManualSchedules] = useState<Record<string, ManualSchedule>>({});
@@ -801,8 +816,37 @@ export default function SchedulerPage() {
     }
   }, [projectsQuery.data, projectsQuery.error]);
 
+  // ---- Forecast data for ghost events (conditional on toggle) ----
+  interface TimelineMilestone {
+    key: string;
+    liveForecast: string | null;
+    basis: string;
+    varianceDays: number | null;
+    name: string;
+  }
+  interface TimelineProject {
+    dealId: string;
+    projectNumber: string;
+    customerName: string;
+    location: string;
+    currentStage: string;
+    milestones: TimelineMilestone[];
+  }
+
+  const forecastQuery = useQuery<{ projects: TimelineProject[] }>({
+    queryKey: ["scheduler", "forecasts"],
+    queryFn: async () => {
+      const res = await fetch("/api/forecasting/timeline");
+      if (!res.ok) throw new Error("Failed to fetch forecasts");
+      return res.json();
+    },
+    enabled: showForecasts,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
   const fetchProjects = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["scheduler", "main-projects"] });
+    queryClient.invalidateQueries({ queryKey: ["scheduler", "forecasts"] });
   }, [queryClient]);
 
   // Check Zuper configuration status
