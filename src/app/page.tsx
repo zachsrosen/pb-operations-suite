@@ -573,12 +573,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Stats Grid */}
-        {(() => {
-          const locSuffix = selectedLocations.length > 0
-            ? `&location=${selectedLocations.map(encodeURIComponent).join(",")}`
-            : "";
-          return (
+        {/* Stats Grid — Active Projects is location-filtered; other pipelines are company-wide */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
           <StatCard
             label="Active Projects"
@@ -589,7 +584,7 @@ export default function Home() {
                 : null
             }
             color="orange"
-            href={`/dashboards/deals?pipeline=project${locSuffix}`}
+            href={`/dashboards/deals?pipeline=project${selectedLocations.length > 0 ? `&location=${selectedLocations.map(encodeURIComponent).join(",")}` : ""}`}
           />
           <StatCard
             label="Active D&R"
@@ -600,7 +595,7 @@ export default function Home() {
                 : null
             }
             color="blue"
-            href={`/dashboards/deals?pipeline=dnr${locSuffix}`}
+            href="/dashboards/deals?pipeline=dnr"
           />
           <StatCard
             label="Active Roofing"
@@ -611,7 +606,7 @@ export default function Home() {
                 : null
             }
             color="red"
-            href={`/dashboards/deals?pipeline=roofing${locSuffix}`}
+            href="/dashboards/deals?pipeline=roofing"
           />
           <StatCard
             label="Active Service"
@@ -622,11 +617,9 @@ export default function Home() {
                 : null
             }
             color="green"
-            href={`/dashboards/deals?pipeline=service${locSuffix}`}
+            href="/dashboards/deals?pipeline=service"
           />
         </div>
-          );
-        })()}
 
         {/* Location Filter */}
         {loading ? (
@@ -652,7 +645,7 @@ export default function Home() {
                   </button>
                 )}
               </div>
-              <p className="text-xs text-muted mb-3">Click a location to filter all data</p>
+              <p className="text-xs text-muted mb-3">Click a location to filter project data</p>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-4 stagger-grid">
                 {allLocations.map((location) => {
                   const count = unfilteredStats.locationCounts[location] || 0;
