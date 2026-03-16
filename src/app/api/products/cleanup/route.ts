@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
   if (internalSkuIds.length === 0 || internalSkuIds.length > PRODUCT_CLEANUP_MAX_BATCH) {
     return NextResponse.json(
       {
-        error: `Request must include between 1 and ${PRODUCT_CLEANUP_MAX_BATCH} unique SKU IDs.`,
+        error: `Request must include between 1 and ${PRODUCT_CLEANUP_MAX_BATCH} unique product IDs.`,
       },
       { status: 400 }
     );
@@ -165,7 +165,7 @@ export async function POST(request: NextRequest) {
     for (const internalSkuId of internalSkuIds) {
       const sku = skuById.get(internalSkuId);
       if (!sku) {
-        const message = "Internal SKU not found.";
+        const message = "Internal product not found.";
         const skipped = skippedRowDefaults(message);
         results.push({
           internalSkuId,
@@ -194,7 +194,7 @@ export async function POST(request: NextRequest) {
                   source,
                   externalId: "",
                   status: "skipped",
-                  message: `No ${source} link on internal SKU.`,
+                  message: `No ${source} link on internal product.`,
                 },
               ];
             }
@@ -270,7 +270,7 @@ export async function POST(request: NextRequest) {
 
     await logActivity({
       type: "FEATURE_USED",
-      description: `${payload.dryRun ? "Dry-run" : "Executed"} product cleanup for ${internalSkuIds.length} SKU${internalSkuIds.length === 1 ? "" : "s"}`,
+      description: `${payload.dryRun ? "Dry-run" : "Executed"} product cleanup for ${internalSkuIds.length} product${internalSkuIds.length === 1 ? "" : "s"}`,
       userEmail: authResult.email,
       userName: authResult.name,
       entityType: "product_cleanup",

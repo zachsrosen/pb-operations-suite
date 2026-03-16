@@ -194,8 +194,8 @@ export async function runInternalCleanupEngine(params: {
     message:
       actions.internal === "deactivate"
         ? willDeactivate
-          ? `${dryRun ? "Will deactivate" : "Deactivated"} internal SKU.`
-          : "Internal SKU already inactive."
+          ? `${dryRun ? "Will deactivate" : "Deactivated"} internal product.`
+          : "Internal product already inactive."
         : "Internal deactivation not selected.",
   };
 
