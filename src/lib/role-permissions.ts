@@ -146,6 +146,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/bugs",
       "/api/ahj",
       "/api/utility",
+      // Deals
+      "/dashboards/deals",
+      "/api/deals",
       // Design review
       "/dashboards/reviews",
       "/api/reviews",
@@ -199,6 +202,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/activity/log",
       "/api/inventory",
       "/api/bugs",
+      // Deals
+      "/dashboards/deals",
+      "/api/deals",
       // Install photo review
       "/dashboards/inspections",
       "/api/install-review",
@@ -276,6 +282,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/activity/log",
       "/api/inventory",
       "/api/bugs",
+      // Deals
+      "/dashboards/deals",
+      "/api/deals",
       // Design review
       "/dashboards/reviews",
       "/api/reviews",
@@ -386,6 +395,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/bugs",
       "/api/ahj",
       "/api/utility",
+      // Deals
+      "/dashboards/deals",
+      "/api/deals",
       // Design review
       "/dashboards/reviews",
       "/api/reviews",
@@ -471,6 +483,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/bugs",
       "/api/ahj",
       "/api/utility",
+      // Deals
+      "/dashboards/deals",
+      "/api/deals",
       // Design review
       "/dashboards/reviews",
       "/api/reviews",
@@ -538,6 +553,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/bugs",
       "/api/ahj",
       "/api/utility",
+      // Deals
+      "/dashboards/deals",
+      "/api/deals",
       // Design review
       "/dashboards/reviews",
       "/api/reviews",
@@ -598,6 +616,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/bugs",
       "/api/ahj",
       "/api/utility",
+      // Deals
+      "/dashboards/deals",
+      "/api/deals",
       // Solar Surveyor
       "/api/solar",
       // SOP Guide
@@ -617,7 +638,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
   VIEWER: {
     // Unassigned role (new users default here until explicitly assigned)
     allowedRoutes: [
+      "/",
       "/unassigned",
+      "/dashboards/deals",
+      "/api/deals",
+      "/api/projects",
       "/api/activity/log",
       "/api/user/me",
       "/api/solar",
@@ -640,7 +665,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/",
       "/dashboards/site-survey-scheduler",
       "/dashboards/sales",
-      "/api/deals/search",
+      "/dashboards/deals",
+      "/api/deals",
       "/api/projects",
       "/api/zuper/availability",
       "/api/zuper/status",
@@ -648,8 +674,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/zuper/jobs/schedule",
       "/api/zuper/my-availability",
       "/api/bugs",
-      // Solar Surveyor
-      "/api/solar",
       // SOP Guide
       "/sop",
       "/api/sop",
