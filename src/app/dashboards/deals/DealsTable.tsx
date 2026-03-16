@@ -9,6 +9,7 @@ import {
   type StatusColumn,
 } from "./deals-types";
 import { STAGE_COLORS, STAGE_ORDER } from "@/lib/constants";
+import { ACTIVE_STAGES } from "@/lib/deals-pipeline";
 import { formatMoney } from "@/lib/format";
 
 interface DealsTableProps {
@@ -28,13 +29,15 @@ function SortArrow({ active, order }: { active: boolean; order: "asc" | "desc" }
   return <span className="ml-1 text-orange-400">{order === "asc" ? "▲" : "▼"}</span>;
 }
 
-/** Custom stage sort using STAGE_ORDER (lower index = further along) */
-function stageSort(a: string, b: string, order: "asc" | "desc"): number {
-  const aIdx = STAGE_ORDER.indexOf(a as (typeof STAGE_ORDER)[number]);
-  const bIdx = STAGE_ORDER.indexOf(b as (typeof STAGE_ORDER)[number]);
-  const aPos = aIdx === -1 ? 999 : aIdx;
-  const bPos = bIdx === -1 ? 999 : bIdx;
-  return order === "asc" ? aPos - bPos : bPos - aPos;
+/** Custom stage sort — uses STAGE_ORDER for project, ACTIVE_STAGES for others */
+function stageSort(a: string, b: string, order: "asc" | "desc", pipeline: string): number {
+  const stageList: readonly string[] =
+    pipeline === "project" ? STAGE_ORDER : (ACTIVE_STAGES[pipeline] || []);
+  const aPos = stageList.indexOf(a);
+  const bPos = stageList.indexOf(b);
+  const aPosN = aPos === -1 ? 999 : aPos;
+  const bPosN = bPos === -1 ? 999 : bPos;
+  return order === "asc" ? aPosN - bPosN : bPosN - aPosN;
 }
 
 export default function DealsTable({
@@ -53,7 +56,7 @@ export default function DealsTable({
   const sorted = useMemo(() => {
     const copy = [...deals];
     if (sort === "stage") {
-      copy.sort((a, b) => stageSort(a.stage, b.stage, order));
+      copy.sort((a, b) => stageSort(a.stage, b.stage, order, pipeline));
     } else {
       copy.sort((a, b) => {
         const aVal = a[sort as keyof TableDeal];
@@ -67,7 +70,7 @@ export default function DealsTable({
       });
     }
     return copy;
-  }, [deals, sort, order]);
+  }, [deals, sort, order, pipeline]);
 
   // Collect unique status values per column (for filter popovers)
   const statusOptions = useMemo(() => {
