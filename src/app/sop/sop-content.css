@@ -10,9 +10,9 @@
 /* Design tokens                                                       */
 /* ------------------------------------------------------------------ */
 .sop-page {
-  --primary: #1a56db;
-  --primary-light: #e8eefb;
-  --primary-dark: #0f3a8e;
+  --primary: #ea580c;
+  --primary-light: #fff7ed;
+  --primary-dark: #c2410c;
   --gray-50: #f9fafb;
   --gray-100: #f3f4f6;
   --gray-200: #e5e7eb;
@@ -44,7 +44,7 @@
 
 /* ── Top bar ── */
 .sop-top-bar {
-  background: #fff;
+  background: #111827;
   padding: 10px 24px;
   display: flex;
   align-items: center;
@@ -52,13 +52,13 @@
   position: sticky;
   top: 0;
   z-index: 1000;
-  border-bottom: 1px solid var(--gray-100);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .sop-logo {
   font-weight: 700;
   font-size: 17px;
-  color: var(--primary);
+  color: #fff;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -68,8 +68,8 @@
 .sop-search-box {
   display: flex;
   align-items: center;
-  background: var(--gray-100);
-  border: 1px solid var(--gray-200);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: var(--radius);
   padding: 5px 12px;
   width: 320px;
@@ -82,17 +82,17 @@
   font-size: 13px;
   width: 100%;
   margin-left: 8px;
-  color: var(--gray-700);
+  color: #fff;
 }
 .sop-search-box input::placeholder {
-  color: var(--gray-400);
+  color: rgba(255, 255, 255, 0.5);
 }
 .sop-kbd {
   font-size: 10px;
-  background: var(--gray-200);
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
   padding: 1px 5px;
-  color: var(--gray-500);
+  color: var(--gray-400);
   font-family: monospace;
   white-space: nowrap;
 }
@@ -105,15 +105,15 @@
 .sop-user-name {
   font-size: 12px;
   font-weight: 600;
-  color: var(--gray-600);
+  color: var(--gray-400);
 }
 .sop-version {
   font-size: 11px;
-  color: var(--gray-500);
+  color: var(--gray-400);
 }
 .sop-sidebar-toggle {
   background: none;
-  border: 1px solid var(--gray-200);
+  border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: 6px;
   padding: 4px 6px;
   cursor: pointer;
@@ -123,18 +123,18 @@
   transition: all 0.15s;
 }
 .sop-sidebar-toggle:hover {
-  color: var(--gray-600);
-  border-color: var(--gray-300);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
 }
 .sop-home-link {
   font-size: 12px;
   font-weight: 500;
-  color: var(--gray-500);
+  color: var(--gray-400);
   text-decoration: none;
   transition: color 0.15s;
 }
 .sop-home-link:hover {
-  color: var(--primary);
+  color: #fff;
 }
 
 /* ── Tab bar ── */
@@ -366,9 +366,9 @@
 /* Design tokens (CSS custom properties)                              */
 /* ------------------------------------------------------------------ */
 .sop-content {
-  --primary: #1a56db;
-  --primary-light: #e8eefb;
-  --primary-dark: #0f3a8e;
+  --primary: #ea580c;
+  --primary-light: #fff7ed;
+  --primary-dark: #c2410c;
   --success: #059669;
   --success-light: #ecfdf5;
   --warning: #d97706;
@@ -489,7 +489,7 @@
   font-weight: 600;
   padding: 2px 8px;
   border-radius: 4px;
-  border: 1px solid rgba(26, 86, 219, 0.2);
+  border: 1px solid rgba(234, 88, 12, 0.2);
 }
 
 .sop-content .app-link:hover {

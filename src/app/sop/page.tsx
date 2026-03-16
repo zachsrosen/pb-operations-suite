@@ -70,11 +70,8 @@ function DotIcon({ color }: { color: string }) {
 /* ------------------------------------------------------------------ */
 
 function LogoIcon() {
-  return (
-    <svg viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
-      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-    </svg>
-  );
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src="/branding/photon-brothers-logo-mixed-white.svg" alt="PB" height="28" style={{ height: 28 }} />;
 }
 
 function SearchIcon() {
