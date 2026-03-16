@@ -15,14 +15,14 @@ describe("Scheduler Forecast Ghost Events", () => {
     function isEligible(opts: {
       stage?: string;
       constructionScheduleDate?: string | null;
-      manualSchedule?: boolean;
+      manualScheduleType?: string | null;
       zuperJobCategory?: string;
       hasRealConstructionEvent?: boolean;
       installMilestone?: { liveForecast: string | null; basis: string } | null;
     }): boolean {
       if (!PRE_CONSTRUCTION_STAGES.has(opts.stage || "")) return false;
       if (opts.constructionScheduleDate) return false;
-      if (opts.manualSchedule) return false;
+      if (opts.manualScheduleType === "installation") return false;
       if (opts.zuperJobCategory === "construction") return false;
       if (opts.hasRealConstructionEvent) return false;
       if (!opts.installMilestone) return false;
@@ -35,7 +35,7 @@ describe("Scheduler Forecast Ghost Events", () => {
       expect(isEligible({
         stage: "rtb",
         constructionScheduleDate: null,
-        manualSchedule: false,
+        manualScheduleType: null,
         zuperJobCategory: "survey",
         hasRealConstructionEvent: false,
         installMilestone: { liveForecast: "2026-04-15", basis: "segment_median" },
@@ -46,7 +46,7 @@ describe("Scheduler Forecast Ghost Events", () => {
       expect(isEligible({
         stage: "survey",
         constructionScheduleDate: null,
-        manualSchedule: false,
+        manualScheduleType: null,
         zuperJobCategory: "survey",
         hasRealConstructionEvent: false,
         installMilestone: { liveForecast: "2026-04-15", basis: "segment_median" },
@@ -57,7 +57,7 @@ describe("Scheduler Forecast Ghost Events", () => {
       expect(isEligible({
         stage: "blocked",
         constructionScheduleDate: null,
-        manualSchedule: false,
+        manualScheduleType: null,
         zuperJobCategory: undefined,
         hasRealConstructionEvent: false,
         installMilestone: { liveForecast: "2026-04-15", basis: "segment_median" },
@@ -68,7 +68,7 @@ describe("Scheduler Forecast Ghost Events", () => {
       expect(isEligible({
         stage: "inspection",
         constructionScheduleDate: null,
-        manualSchedule: false,
+        manualScheduleType: null,
         zuperJobCategory: undefined,
         hasRealConstructionEvent: false,
         installMilestone: { liveForecast: "2026-04-15", basis: "segment_median" },
@@ -79,7 +79,7 @@ describe("Scheduler Forecast Ghost Events", () => {
       expect(isEligible({
         stage: "construction",
         constructionScheduleDate: null,
-        manualSchedule: false,
+        manualScheduleType: null,
         zuperJobCategory: undefined,
         hasRealConstructionEvent: false,
         installMilestone: { liveForecast: "2026-04-15", basis: "segment_median" },
@@ -90,29 +90,40 @@ describe("Scheduler Forecast Ghost Events", () => {
       expect(isEligible({
         stage: "rtb",
         constructionScheduleDate: "2026-04-10",
-        manualSchedule: false,
+        manualScheduleType: null,
         zuperJobCategory: undefined,
         hasRealConstructionEvent: false,
         installMilestone: { liveForecast: "2026-04-15", basis: "segment_median" },
       })).toBe(false);
     });
 
-    it("rejects project with manual/tentative schedule", () => {
+    it("rejects project with tentative installation schedule", () => {
       expect(isEligible({
         stage: "rtb",
         constructionScheduleDate: null,
-        manualSchedule: true,
+        manualScheduleType: "installation",
         zuperJobCategory: undefined,
         hasRealConstructionEvent: false,
         installMilestone: { liveForecast: "2026-04-15", basis: "segment_median" },
       })).toBe(false);
+    });
+
+    it("allows project with tentative survey schedule (not installation)", () => {
+      expect(isEligible({
+        stage: "rtb",
+        constructionScheduleDate: null,
+        manualScheduleType: "survey",
+        zuperJobCategory: undefined,
+        hasRealConstructionEvent: false,
+        installMilestone: { liveForecast: "2026-04-15", basis: "segment_median" },
+      })).toBe(true);
     });
 
     it("rejects project with active Zuper construction job", () => {
       expect(isEligible({
         stage: "rtb",
         constructionScheduleDate: null,
-        manualSchedule: false,
+        manualScheduleType: null,
         zuperJobCategory: "construction",
         hasRealConstructionEvent: false,
         installMilestone: { liveForecast: "2026-04-15", basis: "segment_median" },
@@ -123,7 +134,7 @@ describe("Scheduler Forecast Ghost Events", () => {
       expect(isEligible({
         stage: "rtb",
         constructionScheduleDate: null,
-        manualSchedule: false,
+        manualScheduleType: null,
         zuperJobCategory: undefined,
         hasRealConstructionEvent: true,
         installMilestone: { liveForecast: "2026-04-15", basis: "segment_median" },
@@ -134,7 +145,7 @@ describe("Scheduler Forecast Ghost Events", () => {
       expect(isEligible({
         stage: "rtb",
         constructionScheduleDate: null,
-        manualSchedule: false,
+        manualScheduleType: null,
         zuperJobCategory: undefined,
         hasRealConstructionEvent: false,
         installMilestone: { liveForecast: "2026-04-15", basis: "actual" },
@@ -145,7 +156,7 @@ describe("Scheduler Forecast Ghost Events", () => {
       expect(isEligible({
         stage: "rtb",
         constructionScheduleDate: null,
-        manualSchedule: false,
+        manualScheduleType: null,
         zuperJobCategory: undefined,
         hasRealConstructionEvent: false,
         installMilestone: { liveForecast: null, basis: "insufficient" },
@@ -156,7 +167,7 @@ describe("Scheduler Forecast Ghost Events", () => {
       expect(isEligible({
         stage: "rtb",
         constructionScheduleDate: null,
-        manualSchedule: false,
+        manualScheduleType: null,
         zuperJobCategory: undefined,
         hasRealConstructionEvent: false,
         installMilestone: null,

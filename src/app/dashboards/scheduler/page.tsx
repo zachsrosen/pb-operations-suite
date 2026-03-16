@@ -1360,7 +1360,7 @@ export default function SchedulerPage() {
       // ── Eligibility filter ──
       if (!preConstructionStages.has(project.stage)) continue;
       if (project.constructionScheduleDate) continue;
-      if (manualSchedules[project.id]) continue;
+      if (manualSchedules[project.id]?.scheduleType === "installation") continue;
       if (project.zuperJobCategory === "construction") continue;
 
       const installMilestone = tp.milestones.find(
