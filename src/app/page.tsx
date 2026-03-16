@@ -215,7 +215,7 @@ export default function Home() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [selectedPipeline, setSelectedPipeline] = useState("project");
   const [pipelineCache, setPipelineCache] = useState<
-    Record<string, { stageCounts: Record<string, number>; stageValues: Record<string, number>; total: number; totalValue: number }>
+    Record<string, { stageCounts: Record<string, number>; stageValues: Record<string, number>; total: number; totalValue: number; error?: boolean }>
   >({});
   // Track which pipelines are currently being fetched
   const [loadingPipelines, setLoadingPipelines] = useState<Set<string>>(new Set());
@@ -370,10 +370,10 @@ export default function Home() {
       console.error(`Failed to fetch ${pipelineKey} pipeline data:`, err);
       // Remove from ref so user can retry by re-selecting
       pipelineFetchedRef.current.delete(pipelineKey);
-      // Store zero-sentinel so stat cards don't stay in permanent loading
+      // Store error sentinel so stat cards show 0 instead of permanent loading
       setPipelineCache((prev) => prev[pipelineKey] ? prev : ({
         ...prev,
-        [pipelineKey]: { stageCounts: {}, stageValues: {}, total: 0, totalValue: 0 },
+        [pipelineKey]: { stageCounts: {}, stageValues: {}, total: 0, totalValue: 0, error: true },
       }));
     } finally {
       setLoadingPipelines((prev) => {
@@ -724,14 +724,15 @@ export default function Home() {
                 View All Deals →
               </Link>
             </div>
-            {selectedPipeline !== "project" && !pipelineStageData && !loadingPipelines.has(selectedPipeline) && (
+            {selectedPipeline !== "project" && !loadingPipelines.has(selectedPipeline) &&
+              (!pipelineStageData || pipelineCache[selectedPipeline]?.error) && (
               <div className="text-center py-8 text-muted text-sm">
                 Failed to load pipeline data.
               </div>
             )}
             {loadingPipelines.has(selectedPipeline) ? (
               <SkeletonSection />
-            ) : pipelineStageData && Object.keys(pipelineStageData.stageCounts).length > 0 ? (
+            ) : pipelineStageData && !pipelineCache[selectedPipeline]?.error && Object.keys(pipelineStageData.stageCounts).length > 0 ? (
               <div className="space-y-3">
                 {Object.entries(pipelineStageData.stageCounts)
                   .sort((a, b) => {
