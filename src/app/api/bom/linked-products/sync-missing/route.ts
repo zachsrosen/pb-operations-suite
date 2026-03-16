@@ -339,7 +339,7 @@ async function handleExecute(body: Record<string, unknown>, userEmail: string) {
 
       if (!sku) {
         outcome.status = "skipped";
-        outcome.reason = "No matching InternalProduct";
+        outcome.reason = "No matching internal product";
         skipped++;
         outcomes.push(outcome);
         // Heartbeat update
