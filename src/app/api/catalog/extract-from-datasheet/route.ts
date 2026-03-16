@@ -77,6 +77,7 @@ function buildExtractionTool(categoryHint?: string) {
         unitSpec: { type: "string", description: "Primary numeric spec value (e.g. '400' for 400W module, '13.5' for 13.5kWh battery)" },
         unitLabel: { type: "string", description: "Unit for the spec (e.g. 'W', 'kWh', 'kW', 'A')" },
         sku: { type: "string", description: "SKU or part number if different from model" },
+        vendorName: { type: "string", description: "Distributor or supplier name (e.g. CED, BayWa, Rell Power) — NOT the manufacturer/brand" },
         specValues: specValuesSchema,
       },
       required: ["brand", "model"],
