@@ -149,6 +149,16 @@ function SOPPageInner() {
   const canEdit = userRole === "ADMIN" || userRole === "OWNER";
   const canSuggest = !!userRole && userRole !== "VIEWER" && !canEdit;
 
+  // Tab visibility: admins/owners see all, everyone else sees public + role-specific
+  const PUBLIC_TABS = ["hubspot", "ops", "ref"];
+  const PM_GUIDE_USERS = ["alexis", "kaitlyn", "kat", "natasha"];
+  const showAllTabs = canEdit;
+  const userFirstName = (session?.user?.name || "").split(" ")[0].toLowerCase();
+  const canSeePmGuide = showAllTabs || PM_GUIDE_USERS.includes(userFirstName);
+  const visibleTabs = tabs.filter(
+    (t) => showAllTabs || PUBLIC_TABS.includes(t.id) || (t.id === "pm" && canSeePmGuide)
+  );
+
   // Fetch user role on mount
   useEffect(() => {
     async function fetchRole() {
@@ -360,6 +370,20 @@ function SOPPageInner() {
     [tabs]
   );
 
+  // Guard: redirect to first visible tab if active tab is hidden for this user
+  useEffect(() => {
+    if (!tabs.length || !activeTabId || loading) return;
+    const isVisible = visibleTabs.some((t) => t.id === activeTabId);
+    if (!isVisible && visibleTabs.length > 0) {
+      const fallback = visibleTabs[0];
+      setActiveTabId(fallback.id);
+      if (fallback.sections.length > 0) {
+        setActiveSectionId(fallback.sections[0].id);
+        updateUrl(fallback.id, fallback.sections[0].id);
+      }
+    }
+  }, [activeTabId, visibleTabs, tabs, loading]);
+
   // Get current tab
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
@@ -454,7 +478,7 @@ function SOPPageInner() {
 
       {/* ── Tab Bar ── */}
       <nav className="sop-tab-bar">
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             onClick={() => {
