@@ -206,7 +206,7 @@ Use this to confirm battery kWh for the BOM (13.5 kWh = Tesla Powerwall-3 nomina
 
 ## BOM Category Mapping
 
-| PV-2 EQUIPMENT Label | BOM Category | EquipmentSku.category | unitSpec example |
+| PV-2 EQUIPMENT Label | BOM Category | InternalProduct.category | unitSpec example |
 |----------------------|-------------|-----------------------|-----------------|
 | SOLAR PV MODULE | Module | `MODULE` | "440W" |
 | BATTERY & INVERTER | Battery/Inverter combo | `BATTERY` | "13.5kWh" |
