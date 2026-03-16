@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState, useCallback, useMemo, memo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef, memo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useSSE } from "@/hooks/useSSE";
 import { queryKeys } from "@/lib/query-keys";
 
 import { formatMoney } from "@/lib/format";
-import { STAGE_COLORS } from "@/lib/constants";
+import { STAGE_COLORS, STAGE_ORDER } from "@/lib/constants";
+import { ACTIVE_STAGES } from "@/lib/deals-pipeline";
+import { PIPELINE_OPTIONS } from "@/app/dashboards/deals/deals-types";
 import { StatCard } from "@/components/ui/MetricCard";
 import { SkeletonSection } from "@/components/ui/Skeleton";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
@@ -211,6 +213,14 @@ function computeStats(projects: ProjectRecord[]): Stats {
 export default function Home() {
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [selectedPipeline, setSelectedPipeline] = useState("project");
+  const [pipelineCache, setPipelineCache] = useState<
+    Record<string, { stageCounts: Record<string, number>; stageValues: Record<string, number>; total: number; totalValue: number }>
+  >({});
+  // Track which pipeline is currently being fetched (null = idle)
+  const [loadingPipeline, setLoadingPipeline] = useState<string | null>(null);
+  // Ref mirrors cache keys + tracks in-flight — avoids stale closures in fetchPipelineData
+  const pipelineFetchedRef = useRef<Set<string>>(new Set());
 
   const isMac = useIsMac();
   const modKey = isMac ? "\u2318" : "Ctrl";
@@ -328,6 +338,68 @@ export default function Home() {
   const clearLocations = useCallback(() => {
     setSelectedLocations([]);
   }, []);
+
+  // Fetch non-project pipeline data (lazy, cached in state)
+  const fetchPipelineData = useCallback(async (pipelineKey: string) => {
+    if (pipelineKey === "project") return;
+    // Skip if already cached or in-flight (ref is always current)
+    if (pipelineFetchedRef.current.has(pipelineKey)) return;
+    pipelineFetchedRef.current.add(pipelineKey);
+    setLoadingPipeline(pipelineKey);
+    try {
+      // active=true is the API default; explicit here to lock the contract
+      const res = await fetch(`/api/deals?pipeline=${pipelineKey}&active=true`);
+      if (!res.ok) throw new Error("Failed to fetch pipeline data");
+      const data = await res.json();
+      const deals: { stage: string; amount: number }[] = data.deals || [];
+      // Compute stage values (API returns stageCounts but not stageValues)
+      const stageValues: Record<string, number> = {};
+      for (const deal of deals) {
+        stageValues[deal.stage] = (stageValues[deal.stage] || 0) + deal.amount;
+      }
+      setPipelineCache((prev) => ({
+        ...prev,
+        [pipelineKey]: {
+          stageCounts: data.stats?.stageCounts || {},
+          stageValues,
+          total: data.totalCount || deals.length,
+          totalValue: data.stats?.totalValue || 0,
+        },
+      }));
+    } catch (err) {
+      console.error(`Failed to fetch ${pipelineKey} pipeline data:`, err);
+      // Remove from ref so user can retry by re-selecting
+      pipelineFetchedRef.current.delete(pipelineKey);
+    } finally {
+      // Only clear loading if this pipeline is still the one being loaded
+      setLoadingPipeline((curr) => (curr === pipelineKey ? null : curr));
+    }
+  }, []);
+
+  const handlePipelineChange = useCallback((pipelineKey: string) => {
+    setSelectedPipeline(pipelineKey);
+    fetchPipelineData(pipelineKey);
+  }, [fetchPipelineData]);
+
+  // Resolve stage data for the selected pipeline
+  const pipelineStageData = useMemo(() => {
+    if (selectedPipeline === "project") {
+      return {
+        stageCounts: stats?.stageCounts || {},
+        stageValues: stats?.stageValues || {},
+        total: stats?.totalProjects || 0,
+        stageOrder: STAGE_ORDER as readonly string[],
+      };
+    }
+    const cached = pipelineCache[selectedPipeline];
+    if (!cached) return null;
+    return {
+      stageCounts: cached.stageCounts,
+      stageValues: cached.stageValues,
+      total: cached.total,
+      stageOrder: ACTIVE_STAGES[selectedPipeline] || [],
+    };
+  }, [selectedPipeline, stats, pipelineCache]);
 
   const visibleSuites = useMemo(() => {
     if (!userRole) return [];
@@ -608,66 +680,82 @@ export default function Home() {
         )}
 
         {/* Pipeline by Stage */}
-        {loading ? (
+        {loading && selectedPipeline === "project" ? (
           <SkeletonSection />
         ) : (
-          stats?.stageCounts && (
-            <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 mb-8 animate-fadeIn shadow-card backdrop-blur-sm">
-              <div className="flex items-center justify-between mb-4">
+          <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-6 mb-8 animate-fadeIn shadow-card backdrop-blur-sm">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
                 <h2 className="text-lg font-semibold">Pipeline by Stage</h2>
-                <Link
-                  href="/dashboards/deals"
-                  className="text-sm text-muted hover:text-orange-400 transition-colors"
+                <select
+                  value={selectedPipeline}
+                  onChange={(e) => handlePipelineChange(e.target.value)}
+                  className="text-sm bg-surface-2 border border-t-border rounded-lg px-2.5 py-1 text-foreground cursor-pointer hover:border-muted transition-colors focus:outline-none focus:ring-1 focus:ring-orange-500/50"
                 >
-                  View All Deals →
-                </Link>
+                  {PIPELINE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
               </div>
-              <div className="space-y-3">
-                {(() => {
-                  const stageOrder = [
-                    "Close Out",
-                    "Permission To Operate",
-                    "Inspection",
-                    "Construction",
-                    "Ready To Build",
-                    "RTB - Blocked",
-                    "Permitting & Interconnection",
-                    "Design & Engineering",
-                    "Site Survey",
-                    "On Hold",
-                    "Project Rejected - Needs Review",
-                  ];
-                  return Object.entries(stats.stageCounts)
-                    .sort((a, b) => {
-                      const aIdx = stageOrder.indexOf(a[0]);
-                      const bIdx = stageOrder.indexOf(b[0]);
-                      if (aIdx === -1 && bIdx === -1)
-                        return a[0].localeCompare(b[0]);
-                      if (aIdx === -1) return 1;
-                      if (bIdx === -1) return -1;
-                      return aIdx - bIdx;
-                    })
-                    .map(([stage, count]) => {
-                      const dealsUrl = `/dashboards/deals?stage=${encodeURIComponent(stage)}${
-                        selectedLocations.length > 0
-                          ? `&location=${selectedLocations.map(encodeURIComponent).join(",")}`
-                          : ""
-                      }`;
-                      return (
-                        <StageBar
-                          key={stage}
-                          stage={stage}
-                          count={count as number}
-                          total={stats.totalProjects}
-                          value={stats.stageValues?.[stage]}
-                          linkHref={dealsUrl}
-                        />
-                      );
-                    });
-                })()}
-              </div>
+              <Link
+                href={
+                  selectedPipeline === "project"
+                    ? "/dashboards/deals"
+                    : `/dashboards/deals?pipeline=${selectedPipeline}`
+                }
+                className="text-sm text-muted hover:text-orange-400 transition-colors"
+              >
+                View All Deals →
+              </Link>
             </div>
-          )
+            {selectedPipeline !== "project" && !pipelineStageData && loadingPipeline !== selectedPipeline && (
+              <div className="text-center py-8 text-muted text-sm">
+                Failed to load pipeline data.
+              </div>
+            )}
+            {loadingPipeline === selectedPipeline ? (
+              <SkeletonSection />
+            ) : pipelineStageData && Object.keys(pipelineStageData.stageCounts).length > 0 ? (
+              <div className="space-y-3">
+                {Object.entries(pipelineStageData.stageCounts)
+                  .sort((a, b) => {
+                    const order = pipelineStageData.stageOrder;
+                    const aIdx = order.indexOf(a[0]);
+                    const bIdx = order.indexOf(b[0]);
+                    if (aIdx === -1 && bIdx === -1) return a[0].localeCompare(b[0]);
+                    if (aIdx === -1) return 1;
+                    if (bIdx === -1) return -1;
+                    return aIdx - bIdx;
+                  })
+                  .map(([stage, count]) => {
+                    const dealsUrl =
+                      selectedPipeline === "project"
+                        ? `/dashboards/deals?stage=${encodeURIComponent(stage)}${
+                            selectedLocations.length > 0
+                              ? `&location=${selectedLocations.map(encodeURIComponent).join(",")}`
+                              : ""
+                          }`
+                        : `/dashboards/deals?pipeline=${selectedPipeline}&stage=${encodeURIComponent(stage)}`;
+                    return (
+                      <StageBar
+                        key={stage}
+                        stage={stage}
+                        count={count as number}
+                        total={pipelineStageData.total}
+                        value={pipelineStageData.stageValues[stage]}
+                        linkHref={dealsUrl}
+                      />
+                    );
+                  })}
+              </div>
+            ) : loadingPipeline !== selectedPipeline && pipelineStageData ? (
+              <div className="text-center py-8 text-muted text-sm">
+                No active deals in this pipeline.
+              </div>
+            ) : null}
+          </div>
         )}
 
         {/* Role-Based Curated Cards */}
