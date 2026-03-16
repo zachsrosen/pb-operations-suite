@@ -10,7 +10,7 @@ import {
 
 jest.mock("@/lib/db", () => ({
   prisma: {
-    equipmentSku: {
+    internalProduct: {
       findMany: jest.fn().mockResolvedValue([
         {
           id: "sku_1",

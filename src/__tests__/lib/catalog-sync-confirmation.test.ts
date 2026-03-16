@@ -16,14 +16,14 @@ describe("catalog-sync-confirmation", () => {
   it("creates and validates a token round-trip", () => {
     const issuedAt = Date.now();
     const token = createSyncConfirmationToken(
-      { skuId: "sku_1", systems: ["zoho", "hubspot"], changesHash: "abc123", issuedAt },
+      { internalProductId: "sku_1", systems: ["zoho", "hubspot"], changesHash: "abc123", issuedAt },
       TEST_SECRET,
     );
 
     const result = validateSyncConfirmationToken({
       token,
       issuedAt,
-      skuId: "sku_1",
+      internalProductId: "sku_1",
       systems: ["zoho", "hubspot"],
       changesHash: "abc123",
     });
@@ -33,11 +33,11 @@ describe("catalog-sync-confirmation", () => {
   it("is deterministic for same input (system order independent)", () => {
     const issuedAt = Date.now();
     const token1 = createSyncConfirmationToken(
-      { skuId: "sku_1", systems: ["hubspot", "zoho"], changesHash: "abc", issuedAt },
+      { internalProductId: "sku_1", systems: ["hubspot", "zoho"], changesHash: "abc", issuedAt },
       TEST_SECRET,
     );
     const token2 = createSyncConfirmationToken(
-      { skuId: "sku_1", systems: ["zoho", "hubspot"], changesHash: "abc", issuedAt },
+      { internalProductId: "sku_1", systems: ["zoho", "hubspot"], changesHash: "abc", issuedAt },
       TEST_SECRET,
     );
     expect(token1).toBe(token2);
@@ -46,14 +46,14 @@ describe("catalog-sync-confirmation", () => {
   it("rejects expired tokens", () => {
     const issuedAt = Date.now() - CATALOG_SYNC_CONFIRM_TTL_MS - 1000;
     const token = createSyncConfirmationToken(
-      { skuId: "sku_1", systems: ["zoho"], changesHash: "abc", issuedAt },
+      { internalProductId: "sku_1", systems: ["zoho"], changesHash: "abc", issuedAt },
       TEST_SECRET,
     );
 
     const result = validateSyncConfirmationToken({
       token,
       issuedAt,
-      skuId: "sku_1",
+      internalProductId: "sku_1",
       systems: ["zoho"],
       changesHash: "abc",
     });
@@ -64,14 +64,14 @@ describe("catalog-sync-confirmation", () => {
   it("rejects future issuedAt", () => {
     const issuedAt = Date.now() + 120_000; // 2 minutes in the future
     const token = createSyncConfirmationToken(
-      { skuId: "sku_1", systems: ["zoho"], changesHash: "abc", issuedAt },
+      { internalProductId: "sku_1", systems: ["zoho"], changesHash: "abc", issuedAt },
       TEST_SECRET,
     );
 
     const result = validateSyncConfirmationToken({
       token,
       issuedAt,
-      skuId: "sku_1",
+      internalProductId: "sku_1",
       systems: ["zoho"],
       changesHash: "abc",
     });
@@ -82,14 +82,14 @@ describe("catalog-sync-confirmation", () => {
   it("rejects tampered changesHash", () => {
     const issuedAt = Date.now();
     const token = createSyncConfirmationToken(
-      { skuId: "sku_1", systems: ["zoho"], changesHash: "original", issuedAt },
+      { internalProductId: "sku_1", systems: ["zoho"], changesHash: "original", issuedAt },
       TEST_SECRET,
     );
 
     const result = validateSyncConfirmationToken({
       token,
       issuedAt,
-      skuId: "sku_1",
+      internalProductId: "sku_1",
       systems: ["zoho"],
       changesHash: "tampered",
     });
@@ -100,14 +100,14 @@ describe("catalog-sync-confirmation", () => {
   it("rejects system set mismatch between confirm and execute", () => {
     const issuedAt = Date.now();
     const token = createSyncConfirmationToken(
-      { skuId: "sku_1", systems: ["zoho"], changesHash: "abc", issuedAt },
+      { internalProductId: "sku_1", systems: ["zoho"], changesHash: "abc", issuedAt },
       TEST_SECRET,
     );
 
     const result = validateSyncConfirmationToken({
       token,
       issuedAt,
-      skuId: "sku_1",
+      internalProductId: "sku_1",
       systems: ["zoho", "hubspot"], // Added hubspot after confirm
       changesHash: "abc",
     });
@@ -115,17 +115,17 @@ describe("catalog-sync-confirmation", () => {
     if (!result.ok) expect(result.error).toMatch(/invalid/i);
   });
 
-  it("rejects different skuId", () => {
+  it("rejects different internalProductId", () => {
     const issuedAt = Date.now();
     const token = createSyncConfirmationToken(
-      { skuId: "sku_1", systems: ["zoho"], changesHash: "abc", issuedAt },
+      { internalProductId: "sku_1", systems: ["zoho"], changesHash: "abc", issuedAt },
       TEST_SECRET,
     );
 
     const result = validateSyncConfirmationToken({
       token,
       issuedAt,
-      skuId: "sku_2",
+      internalProductId: "sku_2",
       systems: ["zoho"],
       changesHash: "abc",
     });
@@ -134,7 +134,7 @@ describe("catalog-sync-confirmation", () => {
 
   it("buildSyncConfirmation returns token, issuedAt, expiresAt", () => {
     const result = buildSyncConfirmation({
-      skuId: "sku_1",
+      internalProductId: "sku_1",
       systems: ["zoho"],
       changesHash: "abc",
     });
