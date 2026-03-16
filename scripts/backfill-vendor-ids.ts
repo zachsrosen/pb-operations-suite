@@ -1,7 +1,9 @@
 import { PrismaClient } from "../src/generated/prisma/client";
+import { PrismaNeon } from "@prisma/adapter-neon";
 import { matchVendorName } from "../src/lib/vendor-normalize";
 
-const prisma = new PrismaClient();
+const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
+const prisma = new PrismaClient({ adapter });
 const applyMode = process.argv.includes("--apply");
 
 async function main() {
