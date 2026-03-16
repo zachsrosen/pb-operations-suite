@@ -9,6 +9,7 @@ const LINKS: SuitePageCard[] = [
     description: "Drag-and-drop scheduling calendar with crew management.",
     tag: "SCHEDULING",
     section: "Scheduling",
+    hardNavigate: true,
   },
   {
     href: "/dashboards/site-survey-scheduler",
