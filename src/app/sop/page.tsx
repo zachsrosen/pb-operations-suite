@@ -146,17 +146,46 @@ function SOPPageInner() {
   const canEdit = userRole === "ADMIN" || userRole === "OWNER";
   const canSuggest = !!userRole && userRole !== "VIEWER" && !canEdit;
 
-  // Tab visibility: admins/owners see all, everyone else sees public + role-specific
-  const PUBLIC_TABS = ["hubspot", "ops", "ref"];
-  const PM_GUIDE_USERS = ["alexis", "kaitlyn", "kat", "natasha"];
+  /* ── Tab & Section Visibility ──────────────────────────────────────
+   *
+   * EVERYONE sees:
+   *   hubspot  — HubSpot Guide
+   *   ops      — Project Pipeline
+   *   ref      — Reference (minus admin-only sections below)
+   *   wf       — Workflows
+   *
+   * ROLE-SPECIFIC:
+   *   pm       — PM Guide        → only named PMs (Alexis, Kaitlyn, Kat, Natasha)
+   *   role-de  — Tech Ops        → TECH_OPS role
+   *
+   * ADMIN ONLY (shelved until content is finalized):
+   *   other    — Other Pipelines
+   *   zuper    — Zuper
+   *   role-ops — Operations
+   *   role-sales — Sales
+   *
+   * ADMIN-ONLY SECTIONS (within visible tabs):
+   *   ref-user-roles — User Roles & Permissions (in Reference tab)
+   *   ref-system     — System Architecture (in Reference tab)
+   * ────────────────────────────────────────────────────────────────── */
   const showAllTabs = canEdit;
   const userFirstName = (session?.user?.name || "").split(" ")[0].toLowerCase();
-  const canSeePmGuide = showAllTabs || PM_GUIDE_USERS.includes(userFirstName);
-  const visibleTabs = tabs.filter(
-    (t) => showAllTabs || PUBLIC_TABS.includes(t.id) || (t.id === "pm" && canSeePmGuide)
-  );
 
-  // Section visibility: hide admin-only sections from non-admins
+  const TAB_ACCESS: Record<string, (role: string | null, name: string) => boolean> = {
+    hubspot:    () => true,
+    ops:        () => true,
+    ref:        () => true,
+    wf:         () => true,
+    pm:         (_role, name) => ["alexis", "kaitlyn", "kat", "natasha"].includes(name),
+    "role-de":  (role) => role === "TECH_OPS",
+  };
+
+  const visibleTabs = tabs.filter((t) => {
+    if (showAllTabs) return true;
+    const check = TAB_ACCESS[t.id];
+    return check ? check(userRole, userFirstName) : false;
+  });
+
   const ADMIN_ONLY_SECTIONS = ["ref-user-roles", "ref-system"];
   const isSectionVisible = (sectionId: string) =>
     showAllTabs || !ADMIN_ONLY_SECTIONS.includes(sectionId);
@@ -482,22 +511,31 @@ function SOPPageInner() {
 
       {/* ── Tab Bar ── */}
       <nav className="sop-tab-bar">
-        {visibleTabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => {
-              setActiveTabId(tab.id);
-              setSearchResults(null);
-              setSearchQuery("");
-              if (tab.sections.length > 0) {
-                navigateTo(tab.sections[0].id, tab.id);
-              }
-            }}
-            className={tab.id === activeTabId ? "active" : ""}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {visibleTabs.map((tab) => {
+          const isAdminOnly = showAllTabs && !TAB_ACCESS[tab.id];
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTabId(tab.id);
+                setSearchResults(null);
+                setSearchQuery("");
+                if (tab.sections.length > 0) {
+                  navigateTo(tab.sections[0].id, tab.id);
+                }
+              }}
+              className={`${tab.id === activeTabId ? "active" : ""} ${isAdminOnly ? "admin-only" : ""}`}
+              title={isAdminOnly ? "Admin only — hidden from other users" : undefined}
+            >
+              {isAdminOnly && (
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" style={{ marginRight: 4, opacity: 0.5 }}>
+                  <path d="M12 2C9.24 2 7 4.24 7 7v3H6a2 2 0 00-2 2v8a2 2 0 002 2h12a2 2 0 002-2v-8a2 2 0 00-2-2h-1V7c0-2.76-2.24-5-5-5zm3 10H9V7c0-1.66 1.34-3 3-3s3 1.34 3 3v5z"/>
+                </svg>
+              )}
+              {tab.label}
+            </button>
+          );
+        })}
       </nav>
 
       {/* ── Search Results Overlay ── */}
