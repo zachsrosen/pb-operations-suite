@@ -43,6 +43,7 @@ const CLONE_FIELD_MAP: (keyof CatalogFormState)[] = [
   "hardToProcure",
   "sku",
   "vendorName",
+  "zohoVendorId",
   "vendorPartNumber",
 ];
 
