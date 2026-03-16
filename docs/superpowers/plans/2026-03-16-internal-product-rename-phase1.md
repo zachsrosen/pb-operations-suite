@@ -40,9 +40,7 @@ For `InventoryStock`:
 - Update `@@unique([internalProductId, location])` with `map: "InventoryStock_skuId_location_key"`
 - Update `@@index([internalProductId])` with `map: "InventoryStock_skuId_idx"`
 
-For `BomLineItem` (if it has an `equipmentSkuId` FK):
-- Check if `equipmentSkuId` exists → rename to `internalProductId` with `@map("equipmentSkuId")`
-- Update the relation field name and `@relation` accordingly
+**Note:** There is no `BomLineItem` model with an `equipmentSkuId` FK in the schema. The `equipmentSkuId` that appears in the codebase is a TypeScript interface property in `bom-snapshot.ts`, handled in Task 2.
 
 - [ ] **Step 3: Run prisma generate and verify**
 
@@ -131,17 +129,26 @@ git commit -m "refactor: rename EquipmentSku → InternalProduct in library file
 **Files:**
 - Modify: `src/app/api/inventory/skus/route.ts` (~10 references)
 - Modify: `src/app/api/inventory/skus/merge/route.ts` (~16 references)
-- Modify: `src/app/api/inventory/skus/sync-bulk/route.ts` (~4 references)
-- Modify: `src/app/api/inventory/skus/sync-hubspot-bulk/route.ts` (~4 references)
-- Modify: `src/app/api/inventory/skus/[id]/sync/route.ts` (~2 references)
+- Modify: `src/app/api/inventory/skus/sync-bulk/route.ts` (~9 references)
+- Modify: `src/app/api/inventory/skus/sync-hubspot-bulk/route.ts` (~10 references)
+- Modify: `src/app/api/inventory/skus/[id]/sync/route.ts` (~5 references)
+- Modify: `src/app/api/inventory/skus/[id]/sync/confirm/route.ts` (~1 reference)
 - Modify: `src/app/api/inventory/skus/stats/route.ts` (~2 references)
 - Modify: `src/app/api/inventory/sync-skus/route.ts` (~3 references)
-- Modify: `src/app/api/inventory/sync-zoho/route.ts` (~2 references)
+- Modify: `src/app/api/inventory/sync-zoho/route.ts` (~8 references)
+- Modify: `src/app/api/inventory/transactions/route.ts` (~12 references)
+- Modify: `src/app/api/inventory/stock/route.ts` (~1 reference)
+- Modify: `src/app/api/inventory/stock/[id]/route.ts` (~1 reference)
+- Modify: `src/app/api/inventory/needs/route.ts` (~4 references)
 
-For every file in this task, apply:
+For every file in this task, apply these rename patterns:
 - `prisma.equipmentSku.*` → `prisma.internalProduct.*`
 - `EquipmentSku` type references → `InternalProduct`
 - `.skuId` property accesses on spec/inventory objects → `.internalProductId`
+- `skuId_location` compound unique accessor → `internalProductId_location` (Prisma renames this automatically when the FK field is renamed)
+- `include: { sku: true }` on InventoryStock queries → `include: { internalProduct: true }`
+- `.sku.` property chains on stock results (e.g., `row.sku.brand`) → `.internalProduct.` (e.g., `row.internalProduct.brand`)
+- `key === "skuId"` string literal filters → `key === "internalProductId"`
 - Variable names like `skuId` when they refer to the record's ID → leave as-is if they refer to the URL param `[id]`, rename if they refer to the FK
 - Comments mentioning `EquipmentSku` → `InternalProduct`
 - `entityType: "equipment_sku"` in audit log calls → **leave as-is** (deferred per spec)
@@ -151,6 +158,7 @@ For every file in this task, apply:
 This is the largest inventory route. Read the full file first. Apply all renames. Watch for:
 - The `EquipmentCategory` enum import — this stays unchanged
 - `entityType: "equipment_sku"` — leave as-is
+- `key === "skuId"` string literal in spec-key filtering → `key === "internalProductId"`
 - Dynamic spec table access patterns that might use string literals
 
 - [ ] **Step 2: Rename in skus/merge/route.ts**
@@ -158,12 +166,34 @@ This is the largest inventory route. Read the full file first. Apply all renames
 This file has transaction-wrapped operations and dynamic table updates. Watch for:
 - Dynamic spec table name strings (these reference Prisma model names, so they should be updated if they reference `equipmentSku`)
 - `.skuId` in spec update logic
+- `skuId_location` compound unique accessor → `internalProductId_location`
+- `key === "skuId"` string literal → `key === "internalProductId"`
 
-- [ ] **Step 3: Rename in remaining inventory routes**
+- [ ] **Step 3: Rename in remaining skus/ routes**
 
-Apply the standard renames to: `sync-bulk/route.ts`, `sync-hubspot-bulk/route.ts`, `[id]/sync/route.ts`, `stats/route.ts`, `sync-skus/route.ts`, `sync-zoho/route.ts`.
+Apply the standard renames to: `sync-bulk/route.ts`, `sync-hubspot-bulk/route.ts`, `[id]/sync/route.ts`, `[id]/sync/confirm/route.ts`, `stats/route.ts`, `sync-skus/route.ts`, `sync-zoho/route.ts`.
 
-- [ ] **Step 4: Commit**
+For `[id]/sync/confirm/route.ts`: the call to `buildSyncConfirmation({ skuId: id })` must become `buildSyncConfirmation({ internalProductId: id })` to match the interface rename in Task 2 Step 3.
+
+For `sync-zoho/route.ts`: watch for `skuId_location` compound unique accessor — rename to `internalProductId_location`.
+
+- [ ] **Step 4: Rename in inventory stock, transactions, and needs routes**
+
+For `transactions/route.ts` (~12 references):
+- `skuId_location` compound unique accessor → `internalProductId_location`
+- `skuId` in create data → `internalProductId`
+- `include: { sku: true }` → `include: { internalProduct: true }`
+- `.stock.sku` property chains → `.stock.internalProduct`
+- `skuId` in metadata objects → `internalProductId`
+
+For `stock/route.ts` and `stock/[id]/route.ts`:
+- `include: { sku: true }` → `include: { internalProduct: true }`
+
+For `needs/route.ts`:
+- `include: { sku: true }` → `include: { internalProduct: true }`
+- `.sku.category`, `.sku.brand`, `.sku.model` → `.internalProduct.category`, `.internalProduct.brand`, `.internalProduct.model`
+
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/app/api/inventory/
@@ -227,7 +257,7 @@ git commit -m "refactor: rename EquipmentSku → InternalProduct in catalog and 
 For every file:
 - `prisma.equipmentSku.*` → `prisma.internalProduct.*`
 
-These are simple — mostly single Prisma query renames with no FK or spec access.
+Most are simple single Prisma query renames. **Exception**: `comparison/create/route.ts` has a `key === "skuId"` string literal filter (line ~89) that filters spec record property keys — this must become `key === "internalProductId"` since spec records now use the renamed FK.
 
 - [ ] **Step 2: Run type check**
 
@@ -251,19 +281,20 @@ git commit -m "refactor: rename EquipmentSku → InternalProduct in products API
 ### Task 6: Rename in dashboard/UI components
 
 **Files:**
-- Modify: `src/app/dashboards/inventory/page.tsx` (~11 references)
+- Modify: `src/app/dashboards/inventory/page.tsx` (~25 references — includes `.sku.` relation accesses)
 - Modify: `src/app/dashboards/catalog/page.tsx` (~3 references)
-- Modify: `src/app/dashboards/catalog/edit/[id]/page.tsx` (~1 reference)
+- Modify: `src/app/dashboards/catalog/edit/[id]/page.tsx` (~10 references)
 - Modify: `src/app/dashboards/bom/page.tsx` (~2 references)
 - Modify: `src/app/dashboards/submit-product/page.tsx` (~1 reference)
 - Modify: `src/components/catalog/SyncModal.tsx` (~6 references)
 
 - [ ] **Step 1: Rename in inventory/page.tsx**
 
-This file has a local `interface EquipmentSku` type alias. Rename:
+This is the most complex UI file. It has a local `interface EquipmentSku` type alias and many `.sku.` relation accesses on stock records. Rename:
 - `interface EquipmentSku` → `interface InternalProduct`
 - All uses of that type
 - `.skuId` property accesses → `.internalProductId`
+- `.sku.` relation accesses on stock records (e.g., `row.sku.brand`, `row.sku.model`, `row.sku.category`) → `.internalProduct.` (e.g., `row.internalProduct.brand`). These break because the API response shape changes when the Prisma `include` is renamed.
 
 - [ ] **Step 2: Rename in catalog pages and SyncModal**
 
@@ -271,7 +302,8 @@ For `catalog/page.tsx`:
 - `.skuId` property accesses → `.internalProductId`
 
 For `catalog/edit/[id]/page.tsx`:
-- `skuId` variable/property → `internalProductId` (if it refers to the FK, not the URL param)
+- The local `skuId` variable (derived from URL param or API response) may stay as-is if it's just a local name
+- The `skuId={skuId}` JSX prop passed to `SyncModal` → `internalProductId={skuId}` (must match the renamed SyncModal interface property)
 
 For `SyncModal.tsx`:
 - Interface property `skuId: string` → `internalProductId: string`
@@ -414,6 +446,14 @@ grep -rn "\.skuId\b" --include="*.ts" --include="*.tsx" src/ scripts/ | grep -v 
 
 Expected: Zero results. Any remaining `.skuId` references on spec/inventory objects need renaming to `.internalProductId`.
 
+- [ ] **Step 2b: Check for stale `.sku` relation includes on InventoryStock queries**
+
+```bash
+grep -rn "include.*\bsku\b" --include="*.ts" --include="*.tsx" src/ scripts/ | grep -v "node_modules\|generated"
+```
+
+Expected: Zero results. Any remaining `include: { sku: true }` on InventoryStock queries must become `include: { internalProduct: true }`. Also check for `.sku.` property chains on stock query results.
+
 - [ ] **Step 3: TypeScript check**
 
 ```bash
@@ -438,9 +478,13 @@ npm run build
 
 Expected: Build succeeds.
 
-- [ ] **Step 6: Final commit (if any fixes from Steps 1-2)**
+- [ ] **Step 6: Manual runtime check**
+
+Start the dev server (`npm run dev`) and verify the inventory and catalog pages load without runtime errors. This matches the spec's success criteria.
+
+- [ ] **Step 7: Final commit (if any fixes from Steps 1-2b)**
 
 ```bash
-git add -A
+git add src/ scripts/ .claude/skills/
 git commit -m "refactor: fix remaining stale EquipmentSku references"
 ```
