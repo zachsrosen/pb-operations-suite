@@ -455,20 +455,20 @@ git commit -m "feat: add zohoVendorId to form state with SET_VENDOR action and l
 Create `src/__tests__/api/vendor-sync.test.ts`:
 
 ```typescript
-import { POST } from "@/app/api/catalog/vendors/sync/route";
+import { POST, GET } from "@/app/api/catalog/vendors/sync/route";
 import { prisma } from "@/lib/db";
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 // Mock auth
-jest.mock("@/lib/solar-auth", () => ({
-  getServerSession: jest.fn(),
-  requireRole: jest.fn(),
+const mockRequireApiAuth = jest.fn();
+jest.mock("@/lib/api-auth", () => ({
+  requireApiAuth: (...args: unknown[]) => mockRequireApiAuth(...args),
 }));
 
 // Mock Zoho client
 const mockListVendors = jest.fn();
 jest.mock("@/lib/zoho-inventory", () => ({
-  getZohoClient: () => ({ listVendors: mockListVendors }),
+  zohoInventory: { listVendors: mockListVendors },
 }));
 
 // Mock Prisma
@@ -482,8 +482,6 @@ jest.mock("@/lib/db", () => ({
   },
 }));
 
-const { requireRole } = jest.requireMock("@/lib/solar-auth");
-
 function makeRequest(headers: Record<string, string> = {}) {
   return new NextRequest("http://localhost/api/catalog/vendors/sync", {
     method: "POST",
@@ -494,7 +492,7 @@ function makeRequest(headers: Record<string, string> = {}) {
 describe("POST /api/catalog/vendors/sync", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    requireRole.mockResolvedValue({ user: { role: "ADMIN" } });
+    mockRequireApiAuth.mockResolvedValue({ email: "admin@test.com", role: "ADMIN" });
   });
 
   it("upserts vendors from Zoho and soft-deletes missing ones", async () => {
@@ -539,7 +537,9 @@ describe("POST /api/catalog/vendors/sync", () => {
   it("accepts cron auth via CRON_SECRET header", async () => {
     const origSecret = process.env.CRON_SECRET;
     process.env.CRON_SECRET = "test-secret";
-    requireRole.mockRejectedValue(new Error("Not authenticated"));
+    mockRequireApiAuth.mockResolvedValue(
+      NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    );
 
     mockListVendors.mockResolvedValue([]);
     (prisma.vendorLookup.findMany as jest.Mock).mockResolvedValue([]);
@@ -553,7 +553,9 @@ describe("POST /api/catalog/vendors/sync", () => {
   it("rejects cron request with wrong secret", async () => {
     const origSecret = process.env.CRON_SECRET;
     process.env.CRON_SECRET = "test-secret";
-    requireRole.mockRejectedValue(new Error("Not authenticated"));
+    mockRequireApiAuth.mockResolvedValue(
+      NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    );
 
     const res = await POST(makeRequest({ authorization: "Bearer wrong-secret" }));
     expect(res.status).toBe(401);
@@ -562,7 +564,9 @@ describe("POST /api/catalog/vendors/sync", () => {
   });
 
   it("rejects unauthenticated requests", async () => {
-    requireRole.mockRejectedValue(new Error("Not authenticated"));
+    mockRequireApiAuth.mockResolvedValue(
+      NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+    );
 
     const res = await POST(makeRequest());
     expect(res.status).toBe(401);
@@ -582,27 +586,30 @@ Create `src/app/api/catalog/vendors/sync/route.ts`:
 
 ```typescript
 import { NextRequest, NextResponse } from "next/server";
-import { requireRole } from "@/lib/solar-auth";
-import { getZohoClient } from "@/lib/zoho-inventory";
+import { requireApiAuth } from "@/lib/api-auth";
+import { zohoInventory } from "@/lib/zoho-inventory";
 import { prisma } from "@/lib/db";
 
-export async function POST(req: NextRequest) {
-  // Auth: admin role OR cron secret
+// Vercel Cron Jobs hit routes with GET, so export both.
+export async function GET(req: NextRequest) { return handleSync(req); }
+export async function POST(req: NextRequest) { return handleSync(req); }
+
+async function handleSync(req: NextRequest) {
+  // Auth: session-based (admin/owner) OR cron secret
   const cronHeader = req.headers.get("authorization");
   const cronSecret = process.env.CRON_SECRET;
   const isCron = cronSecret && cronHeader === `Bearer ${cronSecret}`;
 
   if (!isCron) {
-    try {
-      await requireRole(["ADMIN", "OWNER"]);
-    } catch {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    const authResult = await requireApiAuth();
+    if (authResult instanceof NextResponse) return authResult;
+    if (!["ADMIN", "OWNER"].includes(authResult.role)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
   }
 
   try {
-    const zoho = getZohoClient();
-    const zohoVendors = await zoho.listVendors();
+    const zohoVendors = await zohoInventory.listVendors();
 
     const now = new Date();
     const zohoIds = new Set<string>();
@@ -1359,13 +1366,11 @@ In `src/app/api/catalog/search/route.ts`, find the `select` object in the Prisma
 
 - [ ] **Step 3: Handle URL query param vendor prefill**
 
-In the submit-product page, find the URL param prefill section (around line 105-130). If `vendorName` is prefilled via URL, attempt to resolve `zohoVendorId`:
+The current URL prefill (line 106 of `submit-product/page.tsx`) only reads `["category", "brand", "model", "description", "unitSpec", "unitLabel"]`. `vendorName` is not in this list, so URL-based vendor prefill does not exist today.
 
-This requires a fetch to `/api/catalog/vendors` — but since it's SSR/client, the simplest approach is: set `vendorName` in state, leave `zohoVendorId` blank, and let the user confirm via the picker. The picker will show the hint. No fetch needed at prefill time.
+**Decision**: Do not add `vendorName` to URL params. Vendor selection requires picker confirmation (no free-text), so a URL param can't set a valid vendor pair without a server round-trip. If needed in the future, a URL `vendorName` could set `vendorHint` as a suggestion, but that's out of scope for this task.
 
-No code change needed here — the existing behavior (set vendorName, no zohoVendorId) combined with the legacy-clone logic in `PREFILL_FROM_PRODUCT` already handles this correctly by clearing vendorName when zohoVendorId is missing.
-
-**For URL params specifically**: URL prefill goes through `SET_FIELD`, not `PREFILL_FROM_PRODUCT`. The `SET_FIELD` guard already clears `zohoVendorId` when `vendorName` is set. This means the user will see an empty vendor picker and need to select. This is acceptable for URL params.
+No code change needed — this is an intentional omission, not an oversight.
 
 - [ ] **Step 4: Commit**
 
