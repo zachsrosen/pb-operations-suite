@@ -15,7 +15,7 @@
 import { zohoInventory } from "@/lib/zoho-inventory";
 import { logActivity, prisma } from "@/lib/db";
 import { postProcessSoItems, type SoLineItem, type BomProject, type BomItem } from "@/lib/bom-so-post-process";
-import { normalizeModelAlias } from "@/lib/model-alias";
+import { buildBomSearchTerms } from "@/lib/bom-search-terms";
 import type { ActorContext } from "@/lib/actor-context";
 
 // ---------------------------------------------------------------------------
@@ -152,18 +152,11 @@ export async function createSalesOrder(params: {
         ? `${item.brand ? item.brand + " " : ""}${item.model}`
         : item.description;
 
-    // Try model first, then full "brand model" name, then description,
-    // then suffix-stripped alias as fallback
-    const rawTerms: (string | null | undefined)[] = [item.model, name, item.description];
-    if (item.model) {
-      const normalized = normalizeModelAlias(item.model);
-      if (normalized && normalized !== item.model) {
-        rawTerms.push(normalized, `${item.brand ? item.brand + " " : ""}${normalized}`);
-      }
-    }
-    const searchTerms = rawTerms.filter(
-      (t): t is string => !!t && t.trim().length > 1,
-    );
+    const searchTerms = buildBomSearchTerms({
+      brand: item.brand,
+      model: item.model,
+      description: item.description,
+    });
     let match: { item_id: string; zohoName: string; zohoSku?: string } | null = null;
     for (const term of searchTerms) {
       match = await zohoInventory.findItemIdByName(term);

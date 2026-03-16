@@ -15,7 +15,7 @@ import { EquipmentCategory } from "@/generated/prisma/enums";
 import type { ActorContext } from "@/lib/actor-context";
 import { notifyAdminsOfNewCatalogRequest } from "@/lib/catalog-notify";
 import { buildCanonicalKey, canonicalToken } from "@/lib/canonical";
-import { normalizeModelAlias } from "@/lib/model-alias";
+import { buildBomSearchTerms } from "@/lib/bom-search-terms";
 import { zohoInventory } from "@/lib/zoho-inventory";
 
 // ---------------------------------------------------------------------------
@@ -132,28 +132,13 @@ function parsePendingTtlDays(): number {
   return Math.min(Math.floor(raw), 3650);
 }
 
-/**
- * Build search terms for Zoho inventory matching.
- * Same pattern as bom-so-create.ts: model → "brand model" → description.
- * Also adds normalized model aliases (suffix-stripped) as fallback terms.
- */
+/** Build search terms for Zoho inventory matching. */
 function buildSearchTerms(item: ValidSkuItem): string[] {
-  const name = item.model
-    ? `${item.brand} ${item.model}`
-    : item.description;
-  const terms: (string | null | undefined)[] = [item.model, name, item.description];
-
-  // Add suffix-stripped model alias as fallback search terms
-  if (item.model) {
-    const normalized = normalizeModelAlias(item.model);
-    if (normalized && normalized !== item.model) {
-      terms.push(normalized, `${item.brand} ${normalized}`);
-    }
-  }
-
-  return terms.filter(
-    (t): t is string => !!t && t.trim().length > 1,
-  );
+  return buildBomSearchTerms({
+    brand: item.brand,
+    model: item.model,
+    description: item.description,
+  });
 }
 
 function itemBase(item: ValidSkuItem): Pick<SkuSyncItemResult, "category" | "brand" | "model"> {
