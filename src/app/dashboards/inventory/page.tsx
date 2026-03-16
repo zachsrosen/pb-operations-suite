@@ -537,10 +537,10 @@ function ReceiveAdjustTab(props: {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {/* SKU Selector */}
             <div className="flex flex-col">
-              <label className="text-xs font-medium text-muted mb-1">SKU</label>
+              <label className="text-xs font-medium text-muted mb-1">Product</label>
               <input
                 type="text"
-                placeholder="Filter SKUs..."
+                placeholder="Filter products..."
                 value={skuFilter}
                 onChange={(e) => setSkuFilter(e.target.value)}
                 className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50 mb-1"
@@ -551,7 +551,7 @@ function ReceiveAdjustTab(props: {
                 required
                 className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
               >
-                <option value="">Select SKU...</option>
+                <option value="">Select product...</option>
                 {CATEGORY_ORDER.map((cat) => {
                   const items = skusByCategory[cat];
                   if (!items || items.length === 0) return null;
@@ -736,7 +736,7 @@ function ReceiveAdjustTab(props: {
               <thead>
                 <tr className="bg-surface-2/50 text-muted text-xs">
                   <th className="text-left px-4 py-2 font-medium">Time</th>
-                  <th className="text-left px-4 py-2 font-medium">SKU</th>
+                  <th className="text-left px-4 py-2 font-medium">Product</th>
                   <th className="text-left px-4 py-2 font-medium">Location</th>
                   <th className="text-left px-4 py-2 font-medium">Type</th>
                   <th className="text-right px-4 py-2 font-medium">Qty</th>
@@ -943,7 +943,7 @@ function NeedsReportTab(props: {
   if (!needsReport || !needsReport.needs || needsReport.needs.length === 0) {
     return (
       <div className="text-muted text-sm text-center py-12">
-        No demand data available. Sync SKUs and ensure projects have equipment data.
+        No demand data available. Sync products and ensure projects have equipment data.
       </div>
     );
   }
@@ -1015,7 +1015,7 @@ function NeedsReportTab(props: {
             <span className="text-green-400 font-medium">{filteredSummary.surplus}</span>
             {" surplus out of "}
             <span className="text-foreground/80 font-medium">{filteredSummary.total}</span>
-            {" SKUs"}
+            {" products"}
           </p>
           <button
             onClick={handleExportCsv}
@@ -1050,7 +1050,7 @@ function NeedsReportTab(props: {
                 <h4 className="text-sm font-semibold text-foreground/80 mb-2">
                   {CATEGORY_LABELS[group.category] || group.category}{" "}
                   <span className="text-muted font-normal">
-                    ({group.rows.length} SKU{group.rows.length !== 1 ? "s" : ""})
+                    ({group.rows.length} product{group.rows.length !== 1 ? "s" : ""})
                   </span>
                 </h4>
                 <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
@@ -1274,7 +1274,7 @@ export default function InventoryHubPage() {
     queryKey: queryKeys.inventory.skus(),
     queryFn: async () => {
       const res = await fetch("/api/inventory/skus");
-      if (!res.ok) throw new Error("Failed to fetch SKUs");
+      if (!res.ok) throw new Error("Failed to fetch products");
       const data = await res.json();
       return (data.skus || []) as InternalProduct[];
     },
@@ -1340,16 +1340,16 @@ export default function InventoryHubPage() {
       const data = await res.json();
       addToast({
         type: "success",
-        title: "SKU Sync Complete",
+        title: "Product Sync Complete",
         message: `${data.created} new, ${data.existing} existing (${data.total} total from ${data.projectsScanned} projects)`,
       });
       invalidateAll();
     } catch (err) {
-      console.error("SKU sync error:", err);
+      console.error("Product sync error:", err);
       addToast({
         type: "error",
         title: "Sync Failed",
-        message: err instanceof Error ? err.message : "Failed to sync SKUs",
+        message: err instanceof Error ? err.message : "Failed to sync products",
       });
     } finally {
       setSyncing(false);
@@ -1477,7 +1477,7 @@ export default function InventoryHubPage() {
               No inventory tracked yet
             </h2>
             <p className="text-muted text-sm max-w-md">
-              Sync SKUs from HubSpot or import stock from Zoho Inventory to start
+              Sync products from HubSpot or import stock from Zoho Inventory to start
               tracking inventory levels, stock, and procurement needs.
             </p>
           </div>
@@ -1493,7 +1493,7 @@ export default function InventoryHubPage() {
                   Syncing...
                 </>
               ) : (
-                "Sync SKUs from HubSpot"
+                "Sync Products from HubSpot"
               )}
             </button>
             <button
@@ -1521,7 +1521,7 @@ export default function InventoryHubPage() {
   return (
     <DashboardShell
       title="Inventory Hub"
-      subtitle={`${stats.totalSkus} SKUs \u2022 ${stats.totalOnHand.toLocaleString()} units on hand`}
+      subtitle={`${stats.totalSkus} products \u2022 ${stats.totalOnHand.toLocaleString()} units on hand`}
       accentColor="cyan"
       lastUpdated={needsReport?.lastUpdated || (needsQuery.dataUpdatedAt ? new Date(needsQuery.dataUpdatedAt).toLocaleTimeString() : null)}
       headerRight={
@@ -1537,7 +1537,7 @@ export default function InventoryHubPage() {
                 Syncing...
               </>
             ) : (
-              "Sync SKUs"
+              "Sync Products"
             )}
           </button>
           <button
@@ -1604,7 +1604,7 @@ export default function InventoryHubPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
         {[
           {
-            label: "SKUs Tracked",
+            label: "Products Tracked",
             value: stats.totalSkus.toLocaleString(),
             color: "text-cyan-400",
           },

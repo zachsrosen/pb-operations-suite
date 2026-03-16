@@ -351,7 +351,7 @@ export default function CatalogPage() {
           withPricing: 0,
         });
       })
-      .catch(() => addToast({ type: "error", title: "Failed to load SKUs" }))
+      .catch(() => addToast({ type: "error", title: "Failed to load products" }))
       .finally(() => setSkuLoading(false));
   }, [addToast]);
 
@@ -373,11 +373,11 @@ export default function CatalogPage() {
       });
       const body = await res.json().catch(() => null) as { error?: string; name?: string } | null;
       if (!res.ok) throw new Error(body?.error || `Failed to delete (${res.status})`);
-      addToast({ type: "success", title: `Deleted ${body?.name || "SKU"}` });
+      addToast({ type: "success", title: `Deleted ${body?.name || "product"}` });
       setDeleteSkuId(null);
       fetchSkus();
     } catch (error) {
-      addToast({ type: "error", title: error instanceof Error ? error.message : "Failed to delete SKU" });
+      addToast({ type: "error", title: error instanceof Error ? error.message : "Failed to delete product" });
     } finally {
       setDeletingSkuId(null);
     }
@@ -593,10 +593,10 @@ export default function CatalogPage() {
       const data = await res.json() as { error?: string; sku?: Sku };
       if (!res.ok || !data.sku) throw new Error(data.error || "Save failed");
       setSkus((prev) => prev.map((row) => (row.id === data.sku!.id ? data.sku! : row)));
-      addToast({ type: "success", title: "SKU updated" });
+      addToast({ type: "success", title: "Product updated" });
       cancelSkuEdit();
     } catch (err: unknown) {
-      addToast({ type: "error", title: err instanceof Error ? err.message : "Failed to update SKU" });
+      addToast({ type: "error", title: err instanceof Error ? err.message : "Failed to update product" });
     } finally {
       setSavingSkuEdit(false);
     }
@@ -945,7 +945,7 @@ export default function CatalogPage() {
                 : "border-transparent text-muted hover:text-foreground"
             }`}
           >
-            {t === "skus" && "Equipment SKUs"}
+            {t === "skus" && "Products"}
             {t === "sync" && "Sync Health"}
             {t === "dedup" && "Zoho Dedup"}
             {t === "pending" && (
@@ -988,7 +988,7 @@ export default function CatalogPage() {
             className="rounded-lg border border-t-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-cyan-500/50 flex-1 min-w-48"
           />
           <span className="ml-auto text-xs text-muted self-center">
-            {filtered.length} of {skus.length} SKU{skus.length !== 1 ? "s" : ""}
+            {filtered.length} of {skus.length} product{skus.length !== 1 ? "s" : ""}
           </span>
         </div>
       )}
@@ -997,12 +997,12 @@ export default function CatalogPage() {
       {tab === "skus" && (
         <div className="space-y-4">
           {skuLoading ? (
-            <p className="text-sm text-muted animate-pulse py-8 text-center">Loading SKUs…</p>
+            <p className="text-sm text-muted animate-pulse py-8 text-center">Loading products…</p>
           ) : (
             <div className="space-y-3">
               {filtered.length === 0 ? (
                 <div className="rounded-xl border border-t-border bg-surface shadow-card px-4 py-8 text-center text-sm text-muted">
-                  No SKUs found.
+                  No products found.
                 </div>
               ) : filtered.map((sku) => {
                 const editing = editingSkuId === sku.id && Boolean(skuEditDraft);
@@ -1435,7 +1435,7 @@ export default function CatalogPage() {
                         <span className="text-sm font-medium text-foreground">
                           {cat.category.replace(/_/g, " ")}
                         </span>
-                        <span className="text-xs text-muted">{cat.total} SKUs</span>
+                        <span className="text-xs text-muted">{cat.total} products</span>
                       </div>
                       <div className="w-full bg-surface-2 rounded-full h-2">
                         <div
@@ -1485,7 +1485,7 @@ export default function CatalogPage() {
                   {unsynced.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="px-4 py-8 text-center text-sm text-muted">
-                        All filtered SKUs are fully synced.
+                        All filtered products are fully synced.
                       </td>
                     </tr>
                   ) : unsynced.map((sku) => {
@@ -1875,7 +1875,7 @@ export default function CatalogPage() {
                 <>
                   <div className="rounded-lg border border-t-border bg-background/40 p-3 text-sm text-muted">
                     <div>
-                      {bulkSyncPreview.count} active SKU{bulkSyncPreview.count === 1 ? "" : "s"} missing {formatSyncSystemName(bulkSyncSystem)} IDs.
+                      {bulkSyncPreview.count} active product{bulkSyncPreview.count === 1 ? "" : "s"} missing {formatSyncSystemName(bulkSyncSystem)} IDs.
                     </div>
                     <div className="text-xs mt-1">
                       Showing first {Math.min(50, bulkSyncPreview.skus.length)} of {bulkSyncPreview.skus.length}.
@@ -1976,7 +1976,7 @@ export default function CatalogPage() {
           <div className="w-full max-w-lg rounded-xl border border-t-border bg-surface shadow-card-lg overflow-hidden">
             <div className="flex items-center justify-between border-b border-t-border px-4 py-3">
               <div>
-                <div className="text-xs uppercase tracking-wide text-amber-400">SKU Cleanup</div>
+                <div className="text-xs uppercase tracking-wide text-amber-400">Product Cleanup</div>
                 <div className="text-sm text-foreground truncate">
                   {cleanupSku.brand} — {cleanupSku.model}
                 </div>
@@ -2012,7 +2012,7 @@ export default function CatalogPage() {
                       checked={cleanupAction === "deactivate"}
                       onChange={() => setCleanupAction("deactivate")}
                     />
-                    Deactivate SKU
+                    Deactivate Product
                   </label>
                 </div>
               </div>

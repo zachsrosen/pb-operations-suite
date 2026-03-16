@@ -83,8 +83,8 @@ export async function POST(request: NextRequest) {
     prisma.internalProduct.findUnique({ where: { id: targetSkuId }, include }),
   ]);
 
-  if (!source) return NextResponse.json({ error: "Source SKU not found" }, { status: 404 });
-  if (!target) return NextResponse.json({ error: "Target SKU not found" }, { status: 404 });
+  if (!source) return NextResponse.json({ error: "Source product not found" }, { status: 404 });
+  if (!target) return NextResponse.json({ error: "Target product not found" }, { status: 404 });
   if (source.category !== target.category) {
     return NextResponse.json(
       { error: `Category mismatch. Source is ${source.category}, target is ${target.category}.` },
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
     const sourceFresh = await tx.internalProduct.findUnique({ where: { id: sourceSkuId }, include });
     const targetFresh = await tx.internalProduct.findUnique({ where: { id: targetSkuId }, include });
     if (!sourceFresh || !targetFresh) {
-      throw new Error("Source or target SKU no longer exists");
+      throw new Error("Source or target product no longer exists");
     }
 
     const updateData: Record<string, unknown> = {};
@@ -250,7 +250,7 @@ export async function POST(request: NextRequest) {
 
   await logActivity({
     type: "FEATURE_USED",
-    description: "Merged duplicate internal SKUs",
+    description: "Merged duplicate internal products",
     userEmail: authResult.email,
     userName: authResult.name,
     entityType: "product_comparison",

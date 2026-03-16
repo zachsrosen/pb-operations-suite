@@ -87,7 +87,7 @@ const LINKS: SuitePageCard[] = [
   {
     href: "/dashboards/catalog",
     title: "Catalog Management",
-    description: "Manage equipment SKUs, sync health, pending approvals, and deduplication.",
+    description: "Manage products, sync health, pending approvals, and deduplication.",
     tag: "CATALOG",
     tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
     section: "Admin",

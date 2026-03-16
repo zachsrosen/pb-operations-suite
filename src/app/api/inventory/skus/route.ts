@@ -312,7 +312,7 @@ function enrichSku<T extends Record<string, unknown>>(sku: T) {
  *
  * Query params:
  *   category - Filter by EquipmentCategory enum value
- *   active   - "true" (default) to show only active SKUs, "false" to include inactive
+ *   active   - "true" (default) to show only active products, "false" to include inactive
  *   search   - optional text search across brand/model/sku/vendor part/description
  *   limit    - optional max rows (default 500, max 5000)
  */
@@ -385,7 +385,7 @@ export async function GET(request: NextRequest) {
       // Backward-compatible fallback for databases that have not applied the
       // latest InternalProduct migration yet.
       console.warn(
-        "[Inventory SKUs] Falling back to legacy SKU query due to missing database columns"
+        "[Inventory Products] Falling back to legacy product query due to missing database columns"
       );
 
       const legacySkus = await prisma.internalProduct.findMany({
@@ -444,10 +444,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ skus: enriched, count: enriched.length, summary, duplicates: duplicateGroups });
   } catch (error) {
-    console.error("Error fetching SKUs:", error);
+    console.error("Error fetching products:", error);
     Sentry.captureException(error);
     return NextResponse.json(
-      { error: "Failed to fetch SKUs" },
+      { error: "Failed to fetch products" },
       { status: 500 }
     );
   }
@@ -649,7 +649,7 @@ export async function POST(request: NextRequest) {
     });
 
     if (!upserted) {
-      throw new Error("SKU upsert failed");
+      throw new Error("Product upsert failed");
     }
 
     const linkedSourcesOnUpsert = LINK_FIELD_CONFIG.flatMap(({ source, field }) => {
@@ -659,7 +659,7 @@ export async function POST(request: NextRequest) {
     if (linkedSourcesOnUpsert.length > 0) {
       await logActivity({
         type: "FEATURE_USED",
-        description: "Created/upserted internal SKU with source links",
+        description: "Created/upserted internal product with source links",
         userEmail: authResult.email,
         userName: authResult.name,
         entityType: "product_comparison",
@@ -682,7 +682,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ sku: enrichSku(upserted as unknown as Record<string, unknown>) }, { status: 201 });
   } catch (error) {
     if (isPrismaMissingColumnError(error)) {
-      console.error("SKU upsert blocked by missing database columns:", error);
+      console.error("Product upsert blocked by missing database columns:", error);
       Sentry.captureException(error);
       return NextResponse.json(
         {
@@ -692,10 +692,10 @@ export async function POST(request: NextRequest) {
         { status: 503 }
       );
     }
-    console.error("Error creating/upserting SKU:", error);
+    console.error("Error creating/upserting product:", error);
     Sentry.captureException(error);
     return NextResponse.json(
-      { error: "Failed to create/upsert SKU" },
+      { error: "Failed to create/upsert product" },
       { status: 500 }
     );
   }
@@ -768,7 +768,7 @@ export async function PATCH(request: NextRequest) {
       },
     });
     if (!existing) {
-      return NextResponse.json({ error: "SKU not found" }, { status: 404 });
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
 
     const categoryProvided = "category" in body;
@@ -928,7 +928,7 @@ export async function PATCH(request: NextRequest) {
     });
 
     if (!updated) {
-      return NextResponse.json({ error: "SKU not found" }, { status: 404 });
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
 
     if (requestedLinkChanges.length > 0) {
@@ -958,7 +958,7 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ sku: enrichSku(updated as unknown as Record<string, unknown>) });
   } catch (error) {
     if (isPrismaMissingColumnError(error)) {
-      console.error("SKU patch blocked by missing database columns:", error);
+      console.error("Product patch blocked by missing database columns:", error);
       Sentry.captureException(error);
       return NextResponse.json(
         {
@@ -972,18 +972,18 @@ export async function PATCH(request: NextRequest) {
     const prismaCode = (error as { code?: string } | null)?.code;
     if (prismaCode === "P2002") {
       return NextResponse.json(
-        { error: "Another SKU already uses this category + brand + model combination." },
+        { error: "Another product already uses this category + brand + model combination." },
         { status: 409 }
       );
     }
     if (prismaCode === "P2025") {
-      return NextResponse.json({ error: "SKU not found" }, { status: 404 });
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
 
-    console.error("Error updating SKU:", error);
+    console.error("Error updating product:", error);
     Sentry.captureException(error);
     return NextResponse.json(
-      { error: "Failed to update SKU" },
+      { error: "Failed to update product" },
       { status: 500 }
     );
   }
@@ -1047,7 +1047,7 @@ export async function DELETE(request: NextRequest) {
     });
 
     if (!existing) {
-      return NextResponse.json({ error: "SKU not found" }, { status: 404 });
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
 
     // Cascade delete inside a transaction: specs → transactions → stock → SKU
@@ -1077,10 +1077,10 @@ export async function DELETE(request: NextRequest) {
 
     await logActivity({
       type: "INVENTORY_ADJUSTED",
-      description: `Permanently deleted SKU: ${existing.brand} ${existing.model} (${existing.category})`,
+      description: `Permanently deleted product: ${existing.brand} ${existing.model} (${existing.category})`,
       userEmail: authResult.email,
       userName: authResult.name,
-      entityType: "equipment_sku",
+      entityType: "internal_product",
       entityId: id,
       entityName: `${existing.brand} ${existing.model}`.trim(),
       metadata: {
@@ -1105,13 +1105,13 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     const prismaCode = (error as { code?: string } | null)?.code;
     if (prismaCode === "P2025") {
-      return NextResponse.json({ error: "SKU not found" }, { status: 404 });
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
 
-    console.error("Error deleting SKU:", error);
+    console.error("Error deleting product:", error);
     Sentry.captureException(error);
     return NextResponse.json(
-      { error: "Failed to delete SKU" },
+      { error: "Failed to delete product" },
       { status: 500 }
     );
   }

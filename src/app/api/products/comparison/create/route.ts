@@ -134,13 +134,13 @@ export async function POST(request: NextRequest) {
     },
   });
   if (!skuRecord) {
-    return NextResponse.json({ error: "Internal SKU not found" }, { status: 404 });
+    return NextResponse.json({ error: "Internal product not found" }, { status: 404 });
   }
 
   const brand = String(skuRecord.brand || "").trim();
   const model = String(skuRecord.model || "").trim();
   if (!brand || !model) {
-    return NextResponse.json({ error: "Internal SKU must have brand and model" }, { status: 400 });
+    return NextResponse.json({ error: "Internal product must have brand and model" }, { status: 400 });
   }
 
   const internalSkuValue = String(skuRecord.sku || skuRecord.vendorPartNumber || "").trim() || null;

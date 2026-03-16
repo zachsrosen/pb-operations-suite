@@ -430,7 +430,7 @@ async function processChunk(
           brand: sku.brand,
           model: sku.model,
           status: "skipped",
-          reason: "Guarded write — another process linked this SKU",
+          reason: "Guarded write — another process linked this product",
         });
       }
     }
@@ -462,7 +462,7 @@ async function processChunk(
         brand: "",
         model: "",
         status: "skipped",
-        reason: "SKU no longer exists or is inactive",
+        reason: "Product no longer exists or is inactive",
       });
     }
   }

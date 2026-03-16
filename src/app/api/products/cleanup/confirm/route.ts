@@ -30,7 +30,7 @@ const confirmationRequestSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["internalSkuIds"],
-        message: "At least one internal SKU ID is required.",
+        message: "At least one internal product ID is required.",
       });
       return;
     }
@@ -39,7 +39,7 @@ const confirmationRequestSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["internalSkuIds"],
-        message: `A maximum of ${PRODUCT_CLEANUP_MAX_BATCH} unique SKU IDs is allowed per request.`,
+        message: `A maximum of ${PRODUCT_CLEANUP_MAX_BATCH} unique product IDs is allowed per request.`,
       });
     }
 
@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
   if (internalSkuIds.length === 0 || internalSkuIds.length > PRODUCT_CLEANUP_MAX_BATCH) {
     return NextResponse.json(
       {
-        error: `Request must include between 1 and ${PRODUCT_CLEANUP_MAX_BATCH} unique SKU IDs.`,
+        error: `Request must include between 1 and ${PRODUCT_CLEANUP_MAX_BATCH} unique product IDs.`,
       },
       { status: 400 }
     );
