@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
 
     // Log activity
     await logActivity({
-      type: "INVENTORY_PRODUCT_SYNCED",
+      type: "INVENTORY_SKU_SYNCED",
       description: `Product sync: ${created} created, ${existing} existing (${total} total from ${equipmentProjects.length} projects)`,
       userEmail: authResult.email,
       userName: authResult.name,

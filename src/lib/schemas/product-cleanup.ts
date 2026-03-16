@@ -37,7 +37,7 @@ export const productCleanupRequestSchema = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["internalSkuIds"],
-        message: "At least one internal SKU ID is required.",
+        message: "At least one internal product ID is required.",
       });
       return;
     }

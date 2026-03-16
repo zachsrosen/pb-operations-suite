@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       type: outcome === "failed" ? "API_ERROR" : "INVENTORY_SKU_SYNCED",
       description:
         outcome === "succeeded"
-          ? "Saved BOM data to inventory SKUs"
+          ? "Saved BOM data to inventory products"
           : "BOM save failed",
       userEmail: authResult.email,
       userName: authResult.name,
