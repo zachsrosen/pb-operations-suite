@@ -25,7 +25,7 @@ function evaluateInternal(): SystemReadiness {
   return {
     system: "INTERNAL",
     status: "ready",
-    details: ["Will create/update EquipmentSku"],
+    details: ["Will create/update internal product"],
   };
 }
 
