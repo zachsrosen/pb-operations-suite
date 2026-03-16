@@ -189,7 +189,7 @@ export async function GET(request: NextRequest) {
 
   const internalIds = [...new Set(rows.map((row) => row.internal?.id).filter((id): id is string => Boolean(id)))];
   const internalMetaRows = internalIds.length
-    ? await prisma.equipmentSku.findMany({
+    ? await prisma.internalProduct.findMany({
         where: { id: { in: internalIds } },
         select: {
           id: true,
