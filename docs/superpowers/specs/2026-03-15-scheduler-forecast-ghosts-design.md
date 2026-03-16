@@ -31,7 +31,7 @@ For each matched project, build a full `ScheduledEvent` object:
 |-------|--------|
 | `eventType` | `"construction"` (reuses existing type) |
 | `isForecast` | `true` (new boolean flag on `ScheduledEvent`) |
-| `date` | `milestones.find(m => m.key === "install" && m.basis !== "actual")?.liveForecast` |
+| `date` | `milestones.find(m => m.key === "install" && m.basis !== "actual" && m.basis !== "insufficient")?.liveForecast` |
 | `days` | `project.daysInstall` (per-project duration), fallback `3` |
 | All other fields | From the matched `SchedulerProject` |
 
@@ -47,6 +47,12 @@ A project gets a ghost install event when ALL of these are true:
 
 This prevents duplicate events where a project already has a real or tentative schedule.
 
+### Injection point
+
+Ghost events are concatenated **after** `filteredScheduledEvents` is computed from `scheduledEvents`. They bypass the `seenKeys` deduplication in `scheduledEvents` entirely — the eligibility filter above is the sole deduplication mechanism for ghosts. This is intentional: ghost events are a separate layer controlled by the toggle, not part of the core event pipeline.
+
+The merge happens in a new `useMemo` that combines `filteredScheduledEvents` + `forecastEvents` (when toggle is on) into a `displayEvents` array. All three views (month, week, Gantt) read from `displayEvents` instead of `filteredScheduledEvents` directly.
+
 ## Rendering
 
 ### Visual treatment (all three views)
@@ -60,8 +66,7 @@ This prevents duplicate events where a project already has a real or tentative s
 
 Forecast ghosts reuse `eventType: "construction"`, so they flow through existing stage filters naturally. Additional rules:
 
-- Treated as **"scheduled/upcoming" only** — they hide when `showScheduled` is off
-- **Never** considered completed or incomplete
+- Ghost events have neither `isCompleted` nor `isOverdue` set, so they are naturally hidden when `showScheduled` is off (the existing filter already excludes non-completed, non-overdue events). No special `isForecast` logic needed for this filter.
 - Respect location and other active calendar filters
 - The summary chip count reflects forecast events visible after all calendar filters are applied
 
@@ -72,8 +77,8 @@ Forecast events use the same construction sort priority. On the same day, foreca
 ### Click behavior
 
 - Forecast events **are clickable** for read-only context
-- The detail modal state expands to carry event context: `{ project: SchedulerProject; event: ScheduledEvent | null }` so the modal knows whether the clicked event is a forecast
-- When `event?.isForecast === true`, the modal:
+- Add a **separate** `detailModalEvent` state (`ScheduledEvent | null`) alongside the existing `detailModal` (`SchedulerProject | null`). This avoids refactoring all 15+ `detailModal.X` references in the modal JSX. The three view click handlers set both: `setDetailModal(project); setDetailModalEvent(ev);`
+- When `detailModalEvent?.isForecast === true`, the modal:
   - Shows forecast metadata: predicted date, forecast basis, variance
   - Displays a "Not yet scheduled" state
   - **Suppresses**: "Remove from Schedule", "Reschedule", and Zuper sync actions
@@ -82,8 +87,8 @@ Forecast events use the same construction sort priority. On the same day, foreca
 
 | Behavior | Forecast events |
 |----------|----------------|
-| Revenue counting | **Excluded** — skipped in revenue bucket aggregation |
-| Drag/drop | **Disabled** — drag handlers gate on `!event.isForecast` |
+| Revenue counting | **Excluded** — `computeRevenueBuckets` adds `&& !e.isForecast` to its construction filter. `queueRevenue` (project-based sum) is unaffected since ghosts are events, not projects. |
+| Drag/drop | **Disabled** — month view drag handlers gate on `!event.isForecast`. Week view has no drag support. Gantt drag (if any) also gates. |
 | Zuper sync | **No** — forecast events never trigger job creation/updates |
 | Export/CSV | **Included** — marked as `type: "forecast"` in export rows |
 
