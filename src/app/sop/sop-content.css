@@ -177,6 +177,12 @@
 .sop-tab-bar button.admin-only.active {
   opacity: 0.8;
 }
+.sop-tab-bar button.role-specific {
+  opacity: 0.7;
+}
+.sop-tab-bar button.role-specific.active {
+  opacity: 1;
+}
 
 /* ── Search results ── */
 .sop-search-results {
