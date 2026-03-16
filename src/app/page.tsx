@@ -215,10 +215,10 @@ export default function Home() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [selectedPipeline, setSelectedPipeline] = useState("project");
   const [pipelineCache, setPipelineCache] = useState<
-    Record<string, { stageCounts: Record<string, number>; stageValues: Record<string, number>; total: number; totalValue: number }>
+    Record<string, { deals: { stage: string; amount: number; pbLocation: string }[]; stageCounts: Record<string, number>; stageValues: Record<string, number>; total: number; totalValue: number; error?: boolean }>
   >({});
-  // Track which pipeline is currently being fetched (null = idle)
-  const [loadingPipeline, setLoadingPipeline] = useState<string | null>(null);
+  // Track which pipelines are currently being fetched
+  const [loadingPipelines, setLoadingPipelines] = useState<Set<string>>(new Set());
   // Ref mirrors cache keys + tracks in-flight — avoids stale closures in fetchPipelineData
   const pipelineFetchedRef = useRef<Set<string>>(new Set());
 
@@ -345,13 +345,17 @@ export default function Home() {
     // Skip if already cached or in-flight (ref is always current)
     if (pipelineFetchedRef.current.has(pipelineKey)) return;
     pipelineFetchedRef.current.add(pipelineKey);
-    setLoadingPipeline(pipelineKey);
+    setLoadingPipelines((prev) => new Set(prev).add(pipelineKey));
     try {
       // active=true is the API default; explicit here to lock the contract
       const res = await fetch(`/api/deals?pipeline=${pipelineKey}&active=true`);
       if (!res.ok) throw new Error("Failed to fetch pipeline data");
       const data = await res.json();
-      const deals: { stage: string; amount: number }[] = data.deals || [];
+      const deals: { stage: string; amount: number; pbLocation: string }[] = (data.deals || []).map(
+        (d: { stage: string; amount: number; pbLocation?: string }) => ({
+          stage: d.stage, amount: d.amount, pbLocation: d.pbLocation || "Unknown",
+        })
+      );
       // Compute stage values (API returns stageCounts but not stageValues)
       const stageValues: Record<string, number> = {};
       for (const deal of deals) {
@@ -360,6 +364,7 @@ export default function Home() {
       setPipelineCache((prev) => ({
         ...prev,
         [pipelineKey]: {
+          deals,
           stageCounts: data.stats?.stageCounts || {},
           stageValues,
           total: data.totalCount || deals.length,
@@ -370,9 +375,17 @@ export default function Home() {
       console.error(`Failed to fetch ${pipelineKey} pipeline data:`, err);
       // Remove from ref so user can retry by re-selecting
       pipelineFetchedRef.current.delete(pipelineKey);
+      // Store error sentinel so stat cards show 0 instead of permanent loading
+      setPipelineCache((prev) => prev[pipelineKey] ? prev : ({
+        ...prev,
+        [pipelineKey]: { deals: [], stageCounts: {}, stageValues: {}, total: 0, totalValue: 0, error: true },
+      }));
     } finally {
-      // Only clear loading if this pipeline is still the one being loaded
-      setLoadingPipeline((curr) => (curr === pipelineKey ? null : curr));
+      setLoadingPipelines((prev) => {
+        const next = new Set(prev);
+        next.delete(pipelineKey);
+        return next;
+      });
     }
   }, []);
 
@@ -381,7 +394,7 @@ export default function Home() {
     fetchPipelineData(pipelineKey);
   }, [fetchPipelineData]);
 
-  // Resolve stage data for the selected pipeline
+  // Resolve stage data for the selected pipeline (location-filtered)
   const pipelineStageData = useMemo(() => {
     if (selectedPipeline === "project") {
       return {
@@ -393,13 +406,60 @@ export default function Home() {
     }
     const cached = pipelineCache[selectedPipeline];
     if (!cached) return null;
+    // Filter by location if active
+    if (selectedLocations.length > 0) {
+      const locSet = new Set(selectedLocations);
+      const filtered = cached.deals.filter((d) => locSet.has(d.pbLocation));
+      const stageCounts: Record<string, number> = {};
+      const stageValues: Record<string, number> = {};
+      for (const d of filtered) {
+        stageCounts[d.stage] = (stageCounts[d.stage] || 0) + 1;
+        stageValues[d.stage] = (stageValues[d.stage] || 0) + d.amount;
+      }
+      return {
+        stageCounts,
+        stageValues,
+        total: filtered.length,
+        stageOrder: ACTIVE_STAGES[selectedPipeline] || [],
+      };
+    }
     return {
       stageCounts: cached.stageCounts,
       stageValues: cached.stageValues,
       total: cached.total,
       stageOrder: ACTIVE_STAGES[selectedPipeline] || [],
     };
-  }, [selectedPipeline, stats, pipelineCache]);
+  }, [selectedPipeline, stats, pipelineCache, selectedLocations]);
+
+  // Location-filtered pipeline stats for stat cards
+  const filteredPipelineStats = useMemo(() => {
+    const result: Record<string, { total: number; totalValue: number }> = {};
+    for (const key of ["dnr", "roofing", "service"] as const) {
+      const cached = pipelineCache[key];
+      if (!cached || cached.error) {
+        result[key] = { total: 0, totalValue: 0 };
+        continue;
+      }
+      if (selectedLocations.length === 0) {
+        result[key] = { total: cached.total, totalValue: cached.totalValue };
+        continue;
+      }
+      const locSet = new Set(selectedLocations);
+      const filtered = cached.deals.filter((d) => locSet.has(d.pbLocation));
+      result[key] = {
+        total: filtered.length,
+        totalValue: filtered.reduce((s, d) => s + d.amount, 0),
+      };
+    }
+    return result;
+  }, [pipelineCache, selectedLocations]);
+
+  // Eagerly fetch pipeline stats for stat cards (service, dnr, roofing)
+  useEffect(() => {
+    fetchPipelineData("service");
+    fetchPipelineData("dnr");
+    fetchPipelineData("roofing");
+  }, [fetchPipelineData]);
 
   const visibleSuites = useMemo(() => {
     if (!userRole) return [];
@@ -558,8 +618,13 @@ export default function Home() {
           </div>
         )}
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8 stagger-grid">
+        {/* Stats Grid — all cards are location-filtered when a location is selected */}
+        {(() => {
+          const locSuffix = selectedLocations.length > 0
+            ? `&location=${selectedLocations.map(encodeURIComponent).join(",")}`
+            : "";
+          return (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
           <StatCard
             label="Active Projects"
             value={loading ? null : stats?.totalProjects ?? null}
@@ -569,43 +634,44 @@ export default function Home() {
                 : null
             }
             color="orange"
+            href={`/dashboards/deals?pipeline=project${locSuffix}`}
           />
           <StatCard
-            label="Pipeline Value"
-            value={
-              loading
-                ? null
-                : stats?.totalValue
-                  ? `$${(stats.totalValue / 1000000).toFixed(1)}M`
-                  : null
-            }
-            color="green"
-          />
-          <StatCard
-            label="PE Projects"
-            value={loading ? null : stats?.peCount ?? null}
+            label="Active D&R"
+            value={pipelineCache["dnr"]?.error ? "—" : filteredPipelineStats["dnr"]?.total ?? null}
             subtitle={
-              !loading && stats?.peValue ? formatMoney(stats.peValue) : null
-            }
-            color="emerald"
-          />
-          <StatCard
-            label="Ready To Build"
-            value={loading ? null : stats?.rtbCount ?? null}
-            subtitle={
-              !loading && stats?.rtbValue ? formatMoney(stats.rtbValue) : null
+              filteredPipelineStats["dnr"]?.totalValue && !pipelineCache["dnr"]?.error
+                ? formatMoney(filteredPipelineStats["dnr"].totalValue)
+                : null
             }
             color="blue"
+            href={`/dashboards/deals?pipeline=dnr${locSuffix}`}
           />
           <StatCard
-            label="On Hold"
-            value={loading ? null : stats?.onHoldCount ?? null}
+            label="Active Roofing"
+            value={pipelineCache["roofing"]?.error ? "—" : filteredPipelineStats["roofing"]?.total ?? null}
             subtitle={
-              !loading && stats?.onHoldValue ? formatMoney(stats.onHoldValue) : null
+              filteredPipelineStats["roofing"]?.totalValue && !pipelineCache["roofing"]?.error
+                ? formatMoney(filteredPipelineStats["roofing"].totalValue)
+                : null
             }
             color="red"
+            href={`/dashboards/deals?pipeline=roofing${locSuffix}`}
+          />
+          <StatCard
+            label="Active Service"
+            value={pipelineCache["service"]?.error ? "—" : filteredPipelineStats["service"]?.total ?? null}
+            subtitle={
+              filteredPipelineStats["service"]?.totalValue && !pipelineCache["service"]?.error
+                ? formatMoney(filteredPipelineStats["service"].totalValue)
+                : null
+            }
+            color="green"
+            href={`/dashboards/deals?pipeline=service${locSuffix}`}
           />
         </div>
+          );
+        })()}
 
         {/* Location Filter */}
         {loading ? (
@@ -710,14 +776,15 @@ export default function Home() {
                 View All Deals →
               </Link>
             </div>
-            {selectedPipeline !== "project" && !pipelineStageData && loadingPipeline !== selectedPipeline && (
+            {selectedPipeline !== "project" && !loadingPipelines.has(selectedPipeline) &&
+              (!pipelineStageData || pipelineCache[selectedPipeline]?.error) && (
               <div className="text-center py-8 text-muted text-sm">
                 Failed to load pipeline data.
               </div>
             )}
-            {loadingPipeline === selectedPipeline ? (
+            {loadingPipelines.has(selectedPipeline) ? (
               <SkeletonSection />
-            ) : pipelineStageData && Object.keys(pipelineStageData.stageCounts).length > 0 ? (
+            ) : pipelineStageData && !pipelineCache[selectedPipeline]?.error && Object.keys(pipelineStageData.stageCounts).length > 0 ? (
               <div className="space-y-3">
                 {Object.entries(pipelineStageData.stageCounts)
                   .sort((a, b) => {
@@ -730,14 +797,12 @@ export default function Home() {
                     return aIdx - bIdx;
                   })
                   .map(([stage, count]) => {
-                    const dealsUrl =
-                      selectedPipeline === "project"
-                        ? `/dashboards/deals?stage=${encodeURIComponent(stage)}${
-                            selectedLocations.length > 0
-                              ? `&location=${selectedLocations.map(encodeURIComponent).join(",")}`
-                              : ""
-                          }`
-                        : `/dashboards/deals?pipeline=${selectedPipeline}&stage=${encodeURIComponent(stage)}`;
+                    const locParam = selectedLocations.length > 0
+                      ? `&location=${selectedLocations.map(encodeURIComponent).join(",")}`
+                      : "";
+                    const dealsUrl = selectedPipeline === "project"
+                      ? `/dashboards/deals?stage=${encodeURIComponent(stage)}${locParam}`
+                      : `/dashboards/deals?pipeline=${selectedPipeline}&stage=${encodeURIComponent(stage)}${locParam}`;
                     return (
                       <StageBar
                         key={stage}
@@ -750,7 +815,7 @@ export default function Home() {
                     );
                   })}
               </div>
-            ) : loadingPipeline !== selectedPipeline && pipelineStageData ? (
+            ) : !loadingPipelines.has(selectedPipeline) && pipelineStageData ? (
               <div className="text-center py-8 text-muted text-sm">
                 No active deals in this pipeline.
               </div>

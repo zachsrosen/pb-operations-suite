@@ -75,4 +75,15 @@ describe("canAccessRoute - new suite structure", () => {
   it("allows OPERATIONS to access D&R pipeline", () => {
     expect(canAccessRoute("OPERATIONS", "/dashboards/dnr")).toBe(true);
   });
+
+  // Forecasting API for scheduler ghost events
+  it("allows scheduler-accessible roles to access /api/forecasting", () => {
+    expect(canAccessRoute("OPERATIONS", "/api/forecasting")).toBe(true);
+    expect(canAccessRoute("OPERATIONS", "/api/forecasting/timeline")).toBe(true);
+    expect(canAccessRoute("TECH_OPS", "/api/forecasting")).toBe(true);
+    expect(canAccessRoute("TECH_OPS", "/api/forecasting/timeline")).toBe(true);
+    expect(canAccessRoute("OPERATIONS_MANAGER", "/api/forecasting")).toBe(true);
+    expect(canAccessRoute("PROJECT_MANAGER", "/api/forecasting")).toBe(true);
+    expect(canAccessRoute("MANAGER", "/api/forecasting")).toBe(true);
+  });
 });
