@@ -258,6 +258,7 @@ SOP Operations Guide
 <a href="#" onclick="go('wf-overview')" data-s="wf-overview"><span class="dot dot-blue"></span>Overview &amp; Counts</a>
 <a href="#" onclick="go('wf-survey')" data-s="wf-survey"><span class="dot dot-green"></span>Site Survey (15)</a>
 <a href="#" onclick="go('wf-da')" data-s="wf-da"><span class="dot dot-green"></span>Design Approval (21)</a>
+<a href="#" onclick="go('wf-design')" data-s="wf-design"><span class="dot dot-green"></span>Design &amp; Engineering (73+)</a>
 <a href="#" onclick="go('wf-permit')" data-s="wf-permit"><span class="dot dot-amber"></span>Permitting (36)</a>
 <a href="#" onclick="go('wf-ic')" data-s="wf-ic"><span class="dot dot-amber"></span>Interconnection (40)</a>
 <a href="#" onclick="go('wf-con')" data-s="wf-con"><span class="dot dot-purple"></span>Construction (8)</a>
@@ -541,7 +542,7 @@ SOP Operations Guide
 <tr><th>Stage</th><th>HubSpot Workflows</th><th>Coverage</th></tr>
 <tr><td>Site Survey</td><td>15</td><td>Scheduling, Zuper sync, stage advance, notifications</td></tr>
 <tr><td>Design Approval</td><td>21</td><td>Task creation, PandaDoc tracking, DA status flow</td></tr>
-<tr><td>Design &amp; Engineering</td><td>73+</td><td>7-step workflow-driven (Design Flow folder): Normal Process (7), Date Stamps (12), Revisions (DA 10, Permitting 17, IC 15, As-Built 17), New Construction (2), Xcel (3), D&amp;R/Service (7)</td></tr>
+<tr><td>Design &amp; Engineering</td><td>73+</td><td>Vishtik task flow, design review, engineering stamps, revision loops</td></tr>
 <tr><td>Permitting</td><td>36</td><td>SolarApp+, task chains, follow-ups (14/30/45/60d), stage advance</td></tr>
 <tr><td>Interconnection</td><td>40</td><td>Utility submission, approval tracking, follow-ups, RTB gate</td></tr>
 <tr><td>Construction</td><td>8</td><td>Zuper sync, checklist processing, stage advance, M2 (CC) invoice</td></tr>
@@ -887,8 +888,7 @@ SOP Operations Guide
 <div class="summary">
 <strong>At a glance:</strong> Permitting is one of two gates before construction can start (the other is <a href="#" onclick="go('ic')">Interconnection</a>).
 <ul>
-<li>Permit package is prepared and sent to the customer for signature</li>
-<li>Once signed, it's submitted to the local building authority (AHJ)</li>
+<li>Normal path: permit goes straight from "Ready for Permitting" → "Submitted to AHJ" (the "Submitted to Customer" and "Customer Signature" steps only trigger when the AHJ requires it — based on a property on the AHJ record associated to the deal)</li>
 <li>When the permit is issued, someone <strong>manually sets the status</strong> to "Permit Issued"</li>
 <li>This is a <strong>manual step</strong> — the AHJ doesn't update HubSpot directly</li>
 <li>Once both permit AND interconnection are approved (and DA invoice paid), the deal moves to <a href="#" onclick="go('rtb')">Ready To Build</a></li>
@@ -4700,40 +4700,6 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 </table>
 </div>
 
-<h2>Design &amp; Engineering Workflows (73+)</h2>
-<p class="subtitle">Organized under the <strong>Design Flow</strong> folder in HubSpot with 8 subfolders.</p>
-
-<h3>Normal Process (7 workflows)</h3>
-<p>The core 7-step flow that drives every deal through design &amp; engineering:</p>
-<div class="card">
-<table>
-<tr><th>#</th><th>Workflow</th><th>Trigger</th><th>Action</th></tr>
-<tr><td>01</td><td>Vishtik Design Submitted</td><td>Design submitted via Vishtik</td><td>Creates task for Vishtik to complete design; sets <code>Design Status</code> = Submitted</td></tr>
-<tr><td>02</td><td>Vishtik Design Returned</td><td>Vishtik marks design complete</td><td>Creates task for PB Design Lead to review; sets status = In Review</td></tr>
-<tr><td>03</td><td>Design Rejected</td><td>Design Lead rejects design</td><td>Sends revision back to Vishtik; increments <code>DA Revision Counter</code></td></tr>
-<tr><td>04</td><td>DA Approved</td><td>Design Approval approved</td><td>Creates final review task for Design Lead; sets status = DA Approved</td></tr>
-<tr><td>05</td><td>Final Review Complete</td><td>Design Lead completes final review task</td><td><strong>Branches:</strong> Solar → submits to engineering for stamps; Non-solar → sets Design Complete</td></tr>
-<tr><td>06</td><td>Engineering Stamped</td><td>Stamped plans received</td><td>Sets <code>Design Status</code> = Design Complete; records <code>Engineering Stamped Date</code></td></tr>
-<tr><td>07</td><td>Design Revision</td><td>Revision needed (DA, AHJ, utility, or as-built)</td><td>Increments appropriate revision counter; assigns revision tasks</td></tr>
-</table>
-</div>
-
-<h3>Other Design Flow Subfolders</h3>
-<div class="card">
-<table>
-<tr><th>Subfolder</th><th>Count</th><th>Purpose</th></tr>
-<tr><td>Date Stamps</td><td>12</td><td>Auto-records timestamps for each design milestone</td></tr>
-<tr><td>DA Revisions</td><td>10</td><td>Design approval rejection → revision → resubmission loop</td></tr>
-<tr><td>Permitting Revisions</td><td>17</td><td>AHJ-triggered redesign when permit is rejected</td></tr>
-<tr><td>Interconnection Revisions</td><td>15</td><td>Utility-triggered redesign when IC application is rejected</td></tr>
-<tr><td>As-Built Revisions</td><td>17</td><td>Post-construction redesign for as-built corrections</td></tr>
-<tr><td>New Construction</td><td>2</td><td>Adjustments for new-construction projects (pre-wire, builder coordination)</td></tr>
-<tr><td>Xcel</td><td>3</td><td>Xcel Energy–specific design requirements (CO only)</td></tr>
-<tr><td>D&amp;R / Service</td><td>7</td><td>Disconnect &amp; reconnect and service-related design flows</td></tr>
-</table>
-</div>
-<div class="warn"><strong>Note:</strong> Revision subfolders (DA, Permitting, IC, As-Built) are triggered from other pipeline stages — not just during Design &amp; Engineering. A permit rejection in the Permitting stage routes back through the Permitting Revisions design workflows.</div>
-
 <h2>PTO Status Values</h2>
 <p>PTO has more status values than other stages due to the Xcel Energy photo requirements (CO only):</p>
 <div class="sf">
@@ -4753,6 +4719,47 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <span class="sp sp-h">Waiting on Information</span>
 <span class="sp sp-r">PTO Submission Rejected</span>
 </div>
+</div>
+
+<!-- ===== WORKFLOWS: DESIGN & ENGINEERING ===== -->
+<div class="section" id="wf-design">
+<h1>Design &amp; Engineering Workflows (73+)</h1>
+<p class="subtitle">Organized under the <strong>Design Flow</strong> folder in HubSpot with 8 subfolders.</p>
+
+<div class="summary">
+<strong>At a glance:</strong> Design &amp; Engineering is driven by <strong>73+ workflows</strong> in the Design Flow folder. The core 7-step Normal Process handles every deal, while specialized subfolders handle date stamps, revisions, new construction, Xcel, and D&amp;R/Service flows.
+</div>
+
+<h2>Normal Process (7 workflows)</h2>
+<p>The core 7-step flow that drives every deal through design &amp; engineering:</p>
+<div class="card">
+<table>
+<tr><th>#</th><th>Workflow</th><th>Trigger</th><th>Action</th></tr>
+<tr><td>01</td><td>Vishtik Design Submitted</td><td>Design submitted via Vishtik</td><td>Creates task for Vishtik to complete design; sets <code>Design Status</code> = Submitted</td></tr>
+<tr><td>02</td><td>Vishtik Design Returned</td><td>Vishtik marks design complete</td><td>Creates task for PB Design Lead to review; sets status = In Review</td></tr>
+<tr><td>03</td><td>Design Rejected</td><td>Design Lead rejects design</td><td>Sends revision back to Vishtik; increments <code>DA Revision Counter</code></td></tr>
+<tr><td>04</td><td>DA Approved</td><td>Design Approval approved</td><td>Creates final review task for Design Lead; sets status = DA Approved</td></tr>
+<tr><td>05</td><td>Final Review Complete</td><td>Design Lead completes final review task</td><td><strong>Branches:</strong> Solar → submits to engineering for stamps; Non-solar → sets Design Complete</td></tr>
+<tr><td>06</td><td>Engineering Stamped</td><td>Stamped plans received</td><td>Sets <code>Design Status</code> = Design Complete; records <code>Engineering Stamped Date</code></td></tr>
+<tr><td>07</td><td>Design Revision</td><td>Revision needed (DA, AHJ, utility, or as-built)</td><td>Increments appropriate revision counter; assigns revision tasks</td></tr>
+</table>
+</div>
+
+<h2>Other Design Flow Subfolders</h2>
+<div class="card">
+<table>
+<tr><th>Subfolder</th><th>Count</th><th>Purpose</th></tr>
+<tr><td>Date Stamps</td><td>12</td><td>Auto-records timestamps for each design milestone</td></tr>
+<tr><td>DA Revisions</td><td>10</td><td>Design approval rejection → revision → resubmission loop</td></tr>
+<tr><td>Permitting Revisions</td><td>17</td><td>AHJ-triggered redesign when permit is rejected</td></tr>
+<tr><td>Interconnection Revisions</td><td>15</td><td>Utility-triggered redesign when IC application is rejected</td></tr>
+<tr><td>As-Built Revisions</td><td>17</td><td>Post-construction redesign for as-built corrections</td></tr>
+<tr><td>New Construction</td><td>2</td><td>Adjustments for new-construction projects (pre-wire, builder coordination)</td></tr>
+<tr><td>Xcel</td><td>3</td><td>Xcel Energy–specific design requirements (CO only)</td></tr>
+<tr><td>D&amp;R / Service</td><td>7</td><td>Disconnect &amp; reconnect and service-related design flows</td></tr>
+</table>
+</div>
+<div class="warn"><strong>Note:</strong> Revision subfolders (DA, Permitting, IC, As-Built) are triggered from other pipeline stages — not just during Design &amp; Engineering. A permit rejection in the Permitting stage routes back through the Permitting Revisions design workflows.</div>
 </div>
 
 <!-- ===== WORKFLOWS: SITE SURVEY ===== -->
