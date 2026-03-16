@@ -159,6 +159,11 @@ function SOPPageInner() {
     (t) => showAllTabs || PUBLIC_TABS.includes(t.id) || (t.id === "pm" && canSeePmGuide)
   );
 
+  // Section visibility: hide admin-only sections from non-admins
+  const ADMIN_ONLY_SECTIONS = ["ref-user-roles", "ref-system"];
+  const isSectionVisible = (sectionId: string) =>
+    showAllTabs || !ADMIN_ONLY_SECTIONS.includes(sectionId);
+
   // Fetch user role on mount
   useEffect(() => {
     async function fetchRole() {
@@ -387,13 +392,15 @@ function SOPPageInner() {
   // Get current tab
   const activeTab = tabs.find((t) => t.id === activeTabId);
 
-  // Group sidebar sections by sidebarGroup
+  // Group sidebar sections by sidebarGroup (filtered by visibility)
   const sidebarGroups = activeTab
-    ? activeTab.sections.reduce<Record<string, SopSectionMeta[]>>((acc, section) => {
-        if (!acc[section.sidebarGroup]) acc[section.sidebarGroup] = [];
-        acc[section.sidebarGroup].push(section);
-        return acc;
-      }, {})
+    ? activeTab.sections
+        .filter((s) => isSectionVisible(s.id))
+        .reduce<Record<string, SopSectionMeta[]>>((acc, section) => {
+          if (!acc[section.sidebarGroup]) acc[section.sidebarGroup] = [];
+          acc[section.sidebarGroup].push(section);
+          return acc;
+        }, {})
     : {};
 
   // User display name
