@@ -35,6 +35,7 @@ export interface ProjectFields {
   finalInspectionStatus: string | null;
   ptoStatus: string | null;
   dealOwner: string;
+  projectManager: string;
   daysSinceStageMovement: number;
   // Milestone dates
   siteSurveyScheduleDate: string | null;
@@ -90,6 +91,7 @@ export function projectToTableDeal(p: Project): TableDeal {
     finalInspectionStatus: p.finalInspectionStatus,
     ptoStatus: p.ptoStatus,
     dealOwner: p.dealOwner,
+    projectManager: p.projectManager,
     daysSinceStageMovement: p.daysSinceStageMovement,
     siteSurveyScheduleDate: p.siteSurveyScheduleDate,
     siteSurveyCompletionDate: p.siteSurveyCompletionDate,
