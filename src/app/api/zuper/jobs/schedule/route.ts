@@ -24,6 +24,11 @@ import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest } from "@/
 import { getGoogleCalendarEventUrl } from "@/lib/external-links";
 import { normalizeEmail } from "@/lib/email-utils";
 import { extractInstallerNote as extractInstallerNoteFromBlob } from "@/lib/schedule-notes";
+import {
+  type SurveyorInfo,
+  mergeSurveyorInfo,
+  sendSurveyReassignmentNotifications,
+} from "@/lib/survey-reassignment-notifications";
 
 type ScheduleType = "survey" | "installation" | "inspection";
 const MANAGER_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS_MANAGER"];
@@ -778,17 +783,17 @@ export async function PUT(request: NextRequest) {
       // Reschedule existing job
       console.log(`[Zuper Schedule] ACTION: RESCHEDULE - Job UID: ${existingJob.job_uid}`);
 
-      let previousSurveyorEmail: string | null = null;
+      let previousSurveyor: SurveyorInfo | null = null;
       if (schedule.type === "survey") {
         try {
-          previousSurveyorEmail = await resolvePrimarySurveyorEmailFromJob(existingJob.job_uid, zuperUserCache);
+          previousSurveyor = await resolvePrimarySurveyorInfoFromJob(existingJob.job_uid, zuperUserCache);
         } catch (prevErr) {
           console.warn(
             `[Zuper Schedule] Could not resolve previous surveyor from Zuper job ${existingJob.job_uid}: ${prevErr instanceof Error ? prevErr.message : String(prevErr)}`
           );
         }
 
-        if (!previousSurveyorEmail && prisma) {
+        if (prisma && (!previousSurveyor?.email || !previousSurveyor?.name)) {
           const previousRecord = await prisma.scheduleRecord.findFirst({
             where: {
               projectId: String(project.id),
@@ -799,12 +804,12 @@ export async function PUT(request: NextRequest) {
             select: { assignedUser: true, assignedUserUid: true },
           });
           if (previousRecord) {
-            const resolvedPrevious = await resolveCrewNotificationRecipient({
+            const previousRecordInfo = await resolveSurveyorInfoFromAssignment({
               assignedUser: previousRecord.assignedUser || undefined,
               assignedUserUid: previousRecord.assignedUserUid || undefined,
               userCache: zuperUserCache,
             });
-            previousSurveyorEmail = normalizeEmail(resolvedPrevious.recipientEmail);
+            previousSurveyor = mergeSurveyorInfo(previousSurveyor, previousRecordInfo);
           }
         }
       }
@@ -950,7 +955,7 @@ export async function PUT(request: NextRequest) {
           session.user.name || session.user.email,
           session.user.email,
           existingJob.job_uid,
-          { previousSurveyorEmail, userCache: zuperUserCache }
+          { previousSurveyor, userCache: zuperUserCache }
         );
       } else {
         console.log("[Zuper Schedule] Test slot mode enabled; skipping crew notification email");
@@ -1850,61 +1855,71 @@ function splitTokens(value?: string): string[] {
     .filter(Boolean);
 }
 
+async function resolveSurveyorInfoFromAssignment(params: {
+  assignedUser?: string;
+  assignedUserUid?: string;
+  crew?: string;
+  userCache?: ZuperUserLookupCache;
+}): Promise<SurveyorInfo> {
+  const assignedUserName = firstToken(params.assignedUser) || null;
+  const assignedUserUidCandidate = firstToken(params.assignedUserUid);
+  const crewUidCandidate = firstToken(params.crew);
+  const assignedUserUid =
+    (assignedUserUidCandidate && isUuidLike(assignedUserUidCandidate) ? assignedUserUidCandidate : null) ||
+    (crewUidCandidate && isUuidLike(crewUidCandidate) ? crewUidCandidate : null);
+
+  let info: SurveyorInfo = {
+    email: null,
+    name: assignedUserName,
+    uid: assignedUserUid,
+  };
+
+  if (assignedUserUid) {
+    const userResult = await getCachedZuperUser(assignedUserUid, params.userCache);
+    if (userResult.type === "success") {
+      info = mergeSurveyorInfo(info, {
+        email: normalizeEmail(userResult.data?.email),
+        name: [userResult.data?.first_name, userResult.data?.last_name].filter(Boolean).join(" ").trim() || null,
+        uid: assignedUserUid,
+      }) || info;
+    }
+  }
+
+  if (assignedUserUid) {
+    const byUid = await getCrewMemberByZuperUserUid(assignedUserUid);
+    info = mergeSurveyorInfo(info, {
+      email: normalizeEmail(byUid?.email),
+      name: byUid?.name || null,
+      uid: assignedUserUid,
+    }) || info;
+  }
+
+  if (assignedUserName) {
+    const byName = await getCrewMemberByName(assignedUserName);
+    info = mergeSurveyorInfo(info, {
+      email: normalizeEmail(byName?.email),
+      name: byName?.name || assignedUserName,
+      uid: byName?.zuperUserUid || null,
+    }) || info;
+  }
+
+  return info;
+}
+
 async function resolveCrewNotificationRecipient(params: {
   assignedUser?: string;
   assignedUserUid?: string;
   crew?: string;
   userCache?: ZuperUserLookupCache;
 }): Promise<{ recipientEmail: string | null; recipientName: string }> {
-  const assignedUserName = firstToken(params.assignedUser);
-  const assignedUserUidCandidate = firstToken(params.assignedUserUid);
-  const crewUidCandidate = firstToken(params.crew);
-  const assignedUserUid =
-    (assignedUserUidCandidate && isUuidLike(assignedUserUidCandidate) ? assignedUserUidCandidate : undefined) ||
-    (crewUidCandidate && isUuidLike(crewUidCandidate) ? crewUidCandidate : undefined);
-
-  let recipientEmail: string | null = null;
-  let recipientName = assignedUserName || "";
-
-  if (assignedUserUid) {
-    const userResult = await getCachedZuperUser(assignedUserUid, params.userCache);
-    if (userResult.type === "success") {
-      const liveEmail = normalizeEmail(userResult.data?.email);
-      if (liveEmail) {
-        recipientEmail = liveEmail;
-      }
-      const liveName = [userResult.data?.first_name, userResult.data?.last_name]
-        .filter(Boolean)
-        .join(" ")
-        .trim();
-      if (liveName) {
-        recipientName = liveName;
-      }
-    }
-  }
-
-  if (!recipientEmail && assignedUserUid) {
-    const byUid = await getCrewMemberByZuperUserUid(assignedUserUid);
-    const byUidEmail = normalizeEmail(byUid?.email);
-    if (byUidEmail) {
-      recipientEmail = byUidEmail;
-      recipientName = byUid?.name || recipientName;
-    }
-  }
-
-  if (!recipientEmail && assignedUserName) {
-    const byName = await getCrewMemberByName(assignedUserName);
-    const byNameEmail = normalizeEmail(byName?.email);
-    if (byNameEmail) {
-      recipientEmail = byNameEmail;
-      recipientName = byName?.name || recipientName;
-    }
-  }
+  const info = await resolveSurveyorInfoFromAssignment(params);
+  let recipientEmail = info.email;
+  let recipientName = info.name || firstToken(params.assignedUser) || "";
 
   // Fallback: support assignments that use app user display names (non-crew).
-  if (!recipientEmail && assignedUserName && prisma) {
+  if (!recipientEmail && info.name && prisma) {
     const byAppUserName = await prisma.user.findFirst({
-      where: { name: assignedUserName },
+      where: { name: info.name },
       select: { email: true, name: true },
     });
     const byAppUserEmail = normalizeEmail(byAppUserName?.email);
@@ -1944,10 +1959,10 @@ function getSiteSurveySharedCalendarImpersonationEmail(email?: string | null): s
   return getSharedCalendarImpersonationEmail() || normalizeEmail(email);
 }
 
-async function resolvePrimarySurveyorEmailFromJob(
+async function resolvePrimarySurveyorInfoFromJob(
   jobUid: string,
   userCache?: ZuperUserLookupCache
-): Promise<string | null> {
+): Promise<SurveyorInfo | null> {
   const jobResult = await zuper.getJob(jobUid);
   if (jobResult.type !== "success" || !jobResult.data) return null;
 
@@ -1955,30 +1970,20 @@ async function resolvePrimarySurveyorEmailFromJob(
   const assignedUser = (jobResult.data as any)?.assigned_to?.[0]?.user;
   if (!assignedUser) return null;
 
-  const directEmail = normalizeEmail(assignedUser.email);
-  if (directEmail) return directEmail;
-
-  const userUid = (assignedUser.user_uid || "").trim();
-  if (userUid) {
-    const byUid = await getCrewMemberByZuperUserUid(userUid);
-    const byUidEmail = normalizeEmail(byUid?.email);
-    if (byUidEmail) return byUidEmail;
-
-    const zuperUser = await getCachedZuperUser(userUid, userCache);
-    if (zuperUser.type === "success") {
-      const zuperEmail = normalizeEmail(zuperUser.data?.email);
-      if (zuperEmail) return zuperEmail;
-    }
-  }
-
   const fullName = [assignedUser.first_name, assignedUser.last_name].filter(Boolean).join(" ").trim();
-  if (fullName) {
-    const byName = await getCrewMemberByName(fullName);
-    const byNameEmail = normalizeEmail(byName?.email);
-    if (byNameEmail) return byNameEmail;
-  }
+  const baseInfo: SurveyorInfo = {
+    email: normalizeEmail(assignedUser.email),
+    name: fullName || null,
+    uid: (assignedUser.user_uid || "").trim() || null,
+  };
 
-  return null;
+  const fallbackInfo = await resolveSurveyorInfoFromAssignment({
+    assignedUser: fullName || undefined,
+    assignedUserUid: baseInfo.uid || undefined,
+    userCache,
+  });
+
+  return mergeSurveyorInfo(baseInfo, fallbackInfo);
 }
 
 function deriveCustomerDetails(project: { name?: string; address?: string }): { customerName: string; customerAddress: string } {
@@ -2012,7 +2017,7 @@ async function sendCrewNotification(
   schedulerName: string,
   schedulerEmail: string,
   zuperJobUid?: string,
-  options?: { previousSurveyorEmail?: string | null; userCache?: ZuperUserLookupCache }
+  options?: { previousSurveyor?: SurveyorInfo | null; userCache?: ZuperUserLookupCache }
 ) {
   try {
     // If no assigned user, skip notification
@@ -2047,6 +2052,7 @@ async function sendCrewNotification(
 
     let primaryRecipientEmail = recipientTargets[0]?.email || null;
     const primaryRecipientName = recipientTargets[0]?.name || firstToken(schedule.assignedUser) || "Team Member";
+    let usedSchedulerFallback = false;
 
     if (!primaryRecipientEmail) {
       if (!schedulerEmail) {
@@ -2059,6 +2065,7 @@ async function sendCrewNotification(
         `[Zuper Schedule] No email found for assigned surveyor; falling back to scheduler email: ${schedulerEmail}`
       );
       primaryRecipientEmail = schedulerEmail;
+      usedSchedulerFallback = true;
       recipientTargets.push({
         email: schedulerEmail,
         name: primaryRecipientName,
@@ -2104,15 +2111,47 @@ async function sendCrewNotification(
       }
     }
 
-    for (const recipient of recipientTargets) {
-      await sendSchedulingNotification({
-        to: recipient.email,
-        crewMemberName: recipient.name || schedule.assignedUser,
-        scheduledByName: schedulerName,
-        scheduledByEmail: schedulerEmail,
-        dealOwnerName,
-        projectManagerName,
-        appointmentType: schedule.type as "survey" | "installation" | "inspection",
+    const sendStandardSchedulingNotifications = async () => {
+      for (const recipient of recipientTargets) {
+        await sendSchedulingNotification({
+          to: recipient.email,
+          crewMemberName: recipient.name || schedule.assignedUser || "Team Member",
+          scheduledByName: schedulerName,
+          scheduledByEmail: schedulerEmail,
+          dealOwnerName,
+          projectManagerName,
+          appointmentType: schedule.type as "survey" | "installation" | "inspection",
+          customerName,
+          customerAddress,
+          scheduledDate: schedule.date,
+          scheduledStart: schedule.startTime,
+          scheduledEnd: schedule.endTime,
+          projectId: project.id,
+          zuperJobUid,
+          googleCalendarEventUrl,
+          notes: schedule.notes,
+        });
+      }
+    };
+
+    const currentSurveyor: SurveyorInfo = {
+      email: normalizeEmail(primaryRecipientEmail),
+      name: primaryRecipientName || null,
+      uid: firstToken(schedule.assignedUserUid || schedule.crew) || null,
+    };
+    const previousSurveyor = options?.previousSurveyor || null;
+    const currentSurveyorEmail = normalizeEmail(currentSurveyor.email);
+    if (schedule.type === "survey") {
+      await sendSurveyReassignmentNotifications({
+        logPrefix: "Zuper Schedule",
+        schedulerName,
+        schedulerEmail,
+        previousSurveyor,
+        currentSurveyor,
+        currentRecipients: recipientTargets.map((recipient) => ({
+          email: recipient.email,
+          name: recipient.name || schedule.assignedUser || "Team Member",
+        })),
         customerName,
         customerAddress,
         scheduledDate: schedule.date,
@@ -2120,16 +2159,19 @@ async function sendCrewNotification(
         scheduledEnd: schedule.endTime,
         projectId: project.id,
         zuperJobUid,
-        googleCalendarEventUrl,
+        dealOwnerName,
         notes: schedule.notes,
+        googleCalendarEventUrl,
+        usedSchedulerFallback,
+        sendStandardSchedulingNotifications,
       });
+    } else {
+      await sendStandardSchedulingNotifications();
     }
 
     // Keep surveyor Google Calendar in sync for site surveys.
     if (schedule.type === "survey") {
-      const previousSurveyorEmail = normalizeEmail(options?.previousSurveyorEmail);
-      const currentSurveyorEmail = normalizeEmail(primaryRecipientEmail);
-
+      const previousSurveyorEmail = normalizeEmail(previousSurveyor?.email);
       if (
         previousSurveyorEmail &&
         currentSurveyorEmail &&

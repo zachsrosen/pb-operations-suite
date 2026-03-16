@@ -26,6 +26,11 @@ import { runDesignCompletePipeline } from "@/lib/bom-pipeline";
 import { acquirePipelineLock, DuplicateRunError } from "@/lib/bom-pipeline-lock";
 import { checkBomSnapshotExists, getBomEmailEnrichment, type BomEmailEnrichment } from "@/lib/bom-email-enrichment";
 import { extractInstallerNote, upsertInstallerNoteInBlob, MAX_INSTALLER_NOTE_LENGTH } from "@/lib/schedule-notes";
+import {
+  type SurveyorInfo,
+  mergeSurveyorInfo,
+  sendSurveyReassignmentNotifications,
+} from "@/lib/survey-reassignment-notifications";
 
 type ZuperUserLookupResult = Awaited<ReturnType<typeof zuper.getUser>>;
 
@@ -446,7 +451,7 @@ export async function POST(request: NextRequest) {
     let endDateTimeForHubSpot: string | undefined;
     let boundaryStartDateForHubSpot: string | undefined;
     let boundaryEndDateForHubSpot: string | undefined;
-    let previousSurveyorEmailFromJob: string | null = null;
+    let previousSurveyorFromJob: SurveyorInfo | null = null;
 
     try {
       // Category config for matching
@@ -599,17 +604,29 @@ export async function POST(request: NextRequest) {
           if (existingJobResult.type === "success" && existingJobResult.data) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const assignedUser = (existingJobResult.data as any)?.assigned_to?.[0]?.user;
-            previousSurveyorEmailFromJob = normalizeEmail(assignedUser?.email);
+            previousSurveyorFromJob = {
+              email: normalizeEmail(assignedUser?.email),
+              name: [assignedUser?.first_name, assignedUser?.last_name].filter(Boolean).join(" ").trim() || null,
+              uid: (assignedUser?.user_uid || "").trim() || null,
+            };
 
             const assignedUid = (assignedUser?.user_uid || "").trim();
-            if (!previousSurveyorEmailFromJob && assignedUid) {
+            if ((!previousSurveyorFromJob?.email || !previousSurveyorFromJob?.name) && assignedUid) {
               const byUid = await getCrewMemberByZuperUserUid(assignedUid);
-              previousSurveyorEmailFromJob = normalizeEmail(byUid?.email);
+              previousSurveyorFromJob = mergeSurveyorInfo(previousSurveyorFromJob, {
+                email: normalizeEmail(byUid?.email),
+                name: byUid?.name || null,
+                uid: assignedUid,
+              });
             }
-            if (!previousSurveyorEmailFromJob && assignedUid) {
+            if ((!previousSurveyorFromJob?.email || !previousSurveyorFromJob?.name) && assignedUid) {
               const userResult = await getCachedZuperUser(assignedUid, zuperUserCache);
               if (userResult.type === "success") {
-                previousSurveyorEmailFromJob = normalizeEmail(userResult.data?.email);
+                previousSurveyorFromJob = mergeSurveyorInfo(previousSurveyorFromJob, {
+                  email: normalizeEmail(userResult.data?.email),
+                  name: [userResult.data?.first_name, userResult.data?.last_name].filter(Boolean).join(" ").trim() || null,
+                  uid: assignedUid,
+                });
               }
             }
           }
@@ -794,6 +811,7 @@ export async function POST(request: NextRequest) {
 
         let recipientEmail: string | null = null;
         let recipientName = record.assignedUser;
+        let usedSchedulerFallback = false;
 
         if (firstAssignedUid) {
           const userResult = await getCachedZuperUser(firstAssignedUid, zuperUserCache);
@@ -849,6 +867,7 @@ export async function POST(request: NextRequest) {
             `[Zuper Confirm] No email found for assigned surveyor; falling back to scheduler email: ${session.user.email}`
           );
           recipientEmail = session.user.email;
+          usedSchedulerFallback = true;
           if (!recipientName) {
             recipientName = session.user.name || session.user.email;
           }
@@ -927,6 +946,11 @@ export async function POST(request: NextRequest) {
         }
 
         if (recipientEmail) {
+          const currentSurveyor: SurveyorInfo = {
+            email: normalizeEmail(recipientEmail),
+            name: recipientName || record.assignedUser || null,
+            uid: firstAssignedUid || null,
+          };
           // ── BOM enrichment for install emails (sync — needed to build email content) ──
           let bomEnrichment: BomEmailEnrichment | null = null;
           if (scheduleType === "installation") {
@@ -967,29 +991,60 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          await sendSchedulingNotification({
-            to: recipientEmail,
-            crewMemberName: recipientName,
-            scheduledByName: session.user.name || session.user.email,
-            scheduledByEmail: session.user.email,
-            dealOwnerName: dealOwnerName || undefined,
-            projectManagerName: projectManagerName || undefined,
-            appointmentType: scheduleType,
-            customerName,
-            customerAddress,
-            scheduledDate: record.scheduledDate,
-            scheduledStart: record.scheduledStart || undefined,
-            scheduledEnd: record.scheduledEnd || undefined,
-            projectId: record.projectId,
-            zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
-            googleCalendarEventUrl,
-            notes: effectiveNotes || undefined,
-            installDetails,
-            bomEnrichment: bomEnrichment || undefined,
-          });
+          const sendStandardSchedulingNotification = async () => {
+            await sendSchedulingNotification({
+              to: recipientEmail!,
+              crewMemberName: recipientName,
+              scheduledByName: session.user.name || session.user.email || "PB Operations",
+              scheduledByEmail: session.user.email || "noreply@photonbrothers.com",
+              dealOwnerName: dealOwnerName || undefined,
+              projectManagerName: projectManagerName || undefined,
+              appointmentType: scheduleType,
+              customerName,
+              customerAddress,
+              scheduledDate: record.scheduledDate,
+              scheduledStart: record.scheduledStart || undefined,
+              scheduledEnd: record.scheduledEnd || undefined,
+              projectId: record.projectId,
+              zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
+              googleCalendarEventUrl,
+              notes: effectiveNotes || undefined,
+              installDetails,
+              bomEnrichment: bomEnrichment || undefined,
+            });
+          };
+
+          const previousSurveyorEmail = normalizeEmail(previousSurveyorFromJob?.email);
 
           if (scheduleType === "survey") {
-            const previousSurveyorEmail = normalizeEmail(previousSurveyorEmailFromJob);
+            await sendSurveyReassignmentNotifications({
+              logPrefix: "Zuper Confirm",
+              schedulerName: session.user.name || session.user.email || "PB Operations",
+              schedulerEmail: session.user.email || "noreply@photonbrothers.com",
+              previousSurveyor: previousSurveyorFromJob,
+              currentSurveyor,
+              currentRecipients: [{
+                email: recipientEmail,
+                name: recipientName || record.assignedUser || "Team Member",
+              }],
+              customerName,
+              customerAddress,
+              scheduledDate: record.scheduledDate,
+              scheduledStart: record.scheduledStart || undefined,
+              scheduledEnd: record.scheduledEnd || undefined,
+              projectId: record.projectId,
+              zuperJobUid: zuperJobUid || record.zuperJobUid || undefined,
+              dealOwnerName: dealOwnerName || undefined,
+              notes: effectiveNotes || undefined,
+              googleCalendarEventUrl,
+              usedSchedulerFallback,
+              sendStandardSchedulingNotifications: sendStandardSchedulingNotification,
+            });
+          } else {
+            await sendStandardSchedulingNotification();
+          }
+
+          if (scheduleType === "survey") {
             const currentSurveyorEmail = normalizeEmail(recipientEmail);
             if (
               previousSurveyorEmail &&

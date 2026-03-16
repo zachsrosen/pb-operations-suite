@@ -4,6 +4,7 @@ import { Resend } from "resend";
 import type { UpdateEntry } from "@/lib/product-updates";
 import { VerificationCode } from "@/emails/VerificationCode";
 import { SchedulingNotification } from "@/emails/SchedulingNotification";
+import { ReassignmentNotification } from "@/emails/ReassignmentNotification";
 import { AvailabilityConflict } from "@/emails/AvailabilityConflict";
 import { ProductUpdate } from "@/emails/ProductUpdate";
 import { BugReport } from "@/emails/BugReport";
@@ -748,6 +749,117 @@ Please check your Zuper app for complete details.
       `BCC: ${bccRecipients.join(", ") || "None"}`,
     ].join("\n"),
     attachments: attachments.length > 0 ? attachments : undefined,
+  });
+}
+
+interface SendReassignmentNotificationParams {
+  to: string;
+  bcc?: string | string[];
+  crewMemberName: string;
+  reassignedByName: string;
+  reassignedByEmail: string;
+  otherSurveyorName: string;
+  direction: "outgoing" | "incoming";
+  customerName: string;
+  customerAddress: string;
+  scheduledDate: string;
+  scheduledStart?: string;
+  scheduledEnd?: string;
+  projectId: string;
+  zuperJobUid?: string;
+  dealOwnerName?: string;
+  notes?: string;
+  googleCalendarEventUrl?: string;
+}
+
+export async function sendReassignmentNotification(
+  params: SendReassignmentNotificationParams
+): Promise<{ success: boolean; error?: string }> {
+  const formattedDate = formatDate(params.scheduledDate);
+  const timeSlot = params.scheduledStart && params.scheduledEnd
+    ? `${formatTime(params.scheduledStart)} - ${formatTime(params.scheduledEnd)}`
+    : "Full day";
+  const cleanedNotes = sanitizeScheduleEmailNotes(params.notes);
+  const defaultBcc = getSchedulingNotificationBccRecipients();
+  const explicitBcc =
+    typeof params.bcc === "string"
+      ? parseEmailList(params.bcc)
+      : Array.isArray(params.bcc)
+        ? params.bcc.map((value) => parseEmailAddress(value)).filter((value): value is string => !!value)
+        : [];
+  const reassignerEmail = parseEmailAddress(params.reassignedByEmail);
+  const bccRecipients = dedupeEmails(
+    [...defaultBcc, ...explicitBcc, ...(reassignerEmail ? [reassignerEmail] : [])],
+    params.to,
+  );
+  const hubSpotDealUrl = getHubSpotDealUrl(params.projectId);
+  const zuperJobUrl = getZuperJobUrl(params.zuperJobUid);
+  const directionText = params.direction === "outgoing"
+    ? `Now assigned to ${params.otherSurveyorName}`
+    : `Previously assigned to ${params.otherSurveyorName}`;
+
+  const html = await render(
+    React.createElement(ReassignmentNotification, {
+      crewMemberName: params.crewMemberName,
+      reassignedByName: params.reassignedByName,
+      otherSurveyorName: params.otherSurveyorName,
+      direction: params.direction,
+      customerName: params.customerName,
+      customerAddress: params.customerAddress,
+      formattedDate,
+      timeSlot,
+      dealOwnerName: params.dealOwnerName,
+      notes: cleanedNotes,
+      hubSpotDealUrl,
+      zuperJobUrl: zuperJobUrl || undefined,
+      googleCalendarEventUrl:
+        params.direction === "incoming" ? params.googleCalendarEventUrl || undefined : undefined,
+    })
+  );
+
+  return sendEmailMessage({
+    to: params.to,
+    bcc: bccRecipients,
+    subject: `Site Survey Reassigned - ${params.customerName}`,
+    html,
+    text: `Site Survey Reassigned
+
+Hi ${params.crewMemberName},
+
+Your site survey assignment has been updated.
+
+Customer: ${params.customerName}
+Address: ${params.customerAddress}
+Date: ${formattedDate}
+Time: ${timeSlot}
+Reassigned by: ${params.reassignedByName}
+Deal owner: ${params.dealOwnerName || "N/A"}
+${directionText}
+${cleanedNotes ? `Notes: ${cleanedNotes}` : ""}
+HubSpot Deal: ${hubSpotDealUrl}
+${zuperJobUrl ? `Zuper Job: ${zuperJobUrl}` : ""}
+${params.direction === "incoming" && params.googleCalendarEventUrl ? `Google Calendar Event: ${params.googleCalendarEventUrl}` : ""}
+
+Please check your Zuper app for complete details.
+
+- PB Operations`,
+    debugFallbackTitle: `SURVEY REASSIGNMENT NOTIFICATION for ${params.to}`,
+    debugFallbackBody: [
+      `Crew Member: ${params.crewMemberName}`,
+      `Reassigned By: ${params.reassignedByName} (${params.reassignedByEmail})`,
+      `Direction: ${params.direction}`,
+      `Other Surveyor: ${params.otherSurveyorName}`,
+      `Customer: ${params.customerName}`,
+      `Address: ${params.customerAddress}`,
+      `Date: ${formattedDate}`,
+      `Time: ${timeSlot}`,
+      `Deal Owner: ${params.dealOwnerName || "N/A"}`,
+      `Notes: ${cleanedNotes || "None"}`,
+      `HubSpot Deal: ${hubSpotDealUrl}`,
+      `Zuper Job: ${zuperJobUrl || "None"}`,
+      `Google Calendar Event: ${params.direction === "incoming" ? params.googleCalendarEventUrl || "None" : "Not included"}`,
+      `BCC: ${bccRecipients.join(", ") || "None"}`,
+    ].join("\n"),
   });
 }
 
