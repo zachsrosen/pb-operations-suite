@@ -162,7 +162,9 @@ Keep `/api/inventory/skus/**` as thin wrappers that call the same implementation
 export { GET, POST, PATCH, DELETE } from "@/app/api/inventory/products/route";
 ```
 
-Same pattern for all sub-routes. Wrappers stay for at least one release cycle.
+Same pattern for all sub-routes. The main route file exports all four HTTP methods (`GET`, `POST`, `PATCH`, `DELETE`), so the compatibility wrapper covers all of them including SKU deletion. Any future `[id]`-scoped routes (e.g., `DELETE /api/inventory/products/[id]`) should also get a wrapper at the old path when added.
+
+Wrappers stay for at least one release cycle.
 
 ### Internal Callers
 
