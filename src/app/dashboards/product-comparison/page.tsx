@@ -564,9 +564,9 @@ const QUEUE_FILTER_OPTIONS: FilterOption[] = [
 
 const DEFAULT_QUEUE_FILTERS: QueueFilter[] = ["unlinked", "no-internal", "duplicates", "pinned"];
 const CLEANUP_SCOPE_OPTIONS: Array<{ value: CleanupScope; label: string; description: string }> = [
-  { value: "duplicates", label: "Visible duplicates", description: "Only rows in the duplicate queue with an internal SKU." },
+  { value: "duplicates", label: "Visible duplicates", description: "Only rows in the duplicate queue with an internal product." },
   { value: "pinned", label: "Pinned rows", description: "Rows you pinned while linking/matching." },
-  { value: "visible", label: "All visible rows", description: "All currently visible rows with an internal SKU." },
+  { value: "visible", label: "All visible rows", description: "All currently visible rows with an internal product." },
 ];
 const CLEANUP_CONFIRM_TEXT = "CLEANUP";
 const CLEANUP_MAX_BATCH = 50;
@@ -881,7 +881,7 @@ export default function ProductComparisonPage() {
   const confirmSourceLink = useCallback(
     async (row: DisplayRow, source: LinkableSourceName, externalId: string) => {
       if (!row.internal?.id) {
-        setActionFeedback({ type: "error", message: "No internal SKU found for this row." });
+        setActionFeedback({ type: "error", message: "No internal product found for this row." });
         return;
       }
 
@@ -949,7 +949,7 @@ export default function ProductComparisonPage() {
   const createMissingSourceProduct = useCallback(
     async (row: DisplayRow, source: LinkableSourceName) => {
       if (!row.internal?.id) {
-        setActionFeedback({ type: "error", message: "No internal SKU found for this row." });
+        setActionFeedback({ type: "error", message: "No internal product found for this row." });
         return;
       }
 
@@ -1058,7 +1058,7 @@ export default function ProductComparisonPage() {
       if (!category || !brand || !model) {
         setActionFeedback({
           type: "error",
-          message: "Category, brand, and model are required to create an internal SKU.",
+          message: "Category, brand, and model are required to create an internal product.",
         });
         return;
       }
@@ -1087,7 +1087,7 @@ export default function ProductComparisonPage() {
         });
         const result = (await response.json().catch(() => null)) as InventorySkuResponse | null;
         if (!response.ok || !result?.sku) {
-          throw new Error(result?.error || `Failed to create internal SKU (${response.status})`);
+          throw new Error(result?.error || `Failed to create internal product (${response.status})`);
         }
 
         const created = result.sku;
@@ -1133,12 +1133,12 @@ export default function ProductComparisonPage() {
         }));
         setActionFeedback({
           type: "success",
-          message: "Created internal SKU and linked available source IDs. Saved to inventory.",
+          message: "Created internal product and linked available source IDs. Saved to inventory.",
         });
       } catch (error) {
         setActionFeedback({
           type: "error",
-          message: error instanceof Error ? error.message : "Failed to create internal SKU",
+          message: error instanceof Error ? error.message : "Failed to create internal product",
         });
       } finally {
         setCreatingInternalKeys((prev) => {
@@ -1154,11 +1154,11 @@ export default function ProductComparisonPage() {
   const mergeDuplicateInternalIntoPrimary = useCallback(
     async (row: DisplayRow, sourceSkuId: string) => {
       if (!row.internal?.id) {
-        setActionFeedback({ type: "error", message: "Primary internal SKU is missing for this row." });
+        setActionFeedback({ type: "error", message: "Primary internal product is missing for this row." });
         return;
       }
       if (!sourceSkuId || sourceSkuId === row.internal.id) {
-        setActionFeedback({ type: "error", message: "Invalid duplicate SKU selected for merge." });
+        setActionFeedback({ type: "error", message: "Invalid duplicate product selected for merge." });
         return;
       }
 
@@ -1177,7 +1177,7 @@ export default function ProductComparisonPage() {
         });
         const payload = (await response.json().catch(() => null)) as { error?: string } | null;
         if (!response.ok) {
-          throw new Error(payload?.error || `Failed to merge duplicate internal SKU (${response.status})`);
+          throw new Error(payload?.error || `Failed to merge duplicate internal product (${response.status})`);
         }
 
         setData((prev) => {
@@ -1203,12 +1203,12 @@ export default function ProductComparisonPage() {
         setMergePreview((prev) => (prev && prev.row.key === row.key && prev.sourceDuplicate.id === sourceSkuId ? null : prev));
         setActionFeedback({
           type: "success",
-          message: "Merged duplicate internal SKU into the primary SKU. Row pinned for further linking work.",
+          message: "Merged duplicate internal product into the primary product. Row pinned for further linking work.",
         });
       } catch (error) {
         setActionFeedback({
           type: "error",
-          message: error instanceof Error ? error.message : "Failed to merge duplicate internal SKU",
+          message: error instanceof Error ? error.message : "Failed to merge duplicate internal product",
         });
       } finally {
         setMergingKeys((prev) => {
@@ -1496,7 +1496,7 @@ export default function ProductComparisonPage() {
     if (cleanupSkuIds.length === 0) {
       setActionFeedback({
         type: "error",
-        message: "No internal SKUs are available for this cleanup scope.",
+        message: "No internal products are available for this cleanup scope.",
       });
       return;
     }
@@ -1604,7 +1604,7 @@ export default function ProductComparisonPage() {
 
       setActionFeedback({
         type: summary.failed > 0 ? "error" : "success",
-        message: `${cleanupDryRun ? "Dry-run complete" : "Cleanup complete"} for ${summary.total} SKU${summary.total === 1 ? "" : "s"} (${summary.succeeded} succeeded, ${summary.partial} partial, ${summary.failed} failed).`,
+        message: `${cleanupDryRun ? "Dry-run complete" : "Cleanup complete"} for ${summary.total} product${summary.total === 1 ? "" : "s"} (${summary.succeeded} succeeded, ${summary.partial} partial, ${summary.failed} failed).`,
       });
       setCleanupConfirmInput("");
     } catch (error) {
@@ -1855,7 +1855,7 @@ export default function ProductComparisonPage() {
                   </div>
 
                   <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
-                    Merge behavior: the primary SKU is kept. Missing fields on primary are filled from duplicate. If both have values and conflict, primary wins.
+                    Merge behavior: the primary product is kept. Missing fields on primary are filled from duplicate. If both have values and conflict, primary wins.
                   </div>
 
                   <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1926,7 +1926,7 @@ export default function ProductComparisonPage() {
                       ))}
                     </div>
                     <div className="text-xs text-muted">
-                      {cleanupScopeLabel}: {cleanupSkuIds.length} internal SKU{cleanupSkuIds.length === 1 ? "" : "s"} selected.
+                      {cleanupScopeLabel}: {cleanupSkuIds.length} internal product{cleanupSkuIds.length === 1 ? "" : "s"} selected.
                     </div>
                   </div>
 
@@ -1944,7 +1944,7 @@ export default function ProductComparisonPage() {
                             }))
                           }
                         />
-                        Unlink selected source IDs on internal SKU
+                        Unlink selected source IDs on internal product
                       </label>
                       <label className="flex items-center gap-2 text-xs text-foreground">
                         <input
@@ -1957,7 +1957,7 @@ export default function ProductComparisonPage() {
                             }))
                           }
                         />
-                        Deactivate internal SKU
+                        Deactivate internal product
                       </label>
                       <label className="flex items-center gap-2 text-xs text-foreground md:col-span-2">
                         <input
@@ -2426,7 +2426,7 @@ export default function ProductComparisonPage() {
                                 onClick={() => toggleInternalCreate(row)}
                                 className="px-2 py-1 rounded border border-emerald-500/40 bg-emerald-500/10 text-emerald-300 text-[11px] hover:bg-emerald-500/20"
                               >
-                                {internalCreateDraft?.open ? "Hide internal create" : "Create internal SKU from this row"}
+                                {internalCreateDraft?.open ? "Hide internal create" : "Create internal product from this row"}
                               </button>
 
                               {internalCreateDraft?.open && (
@@ -2514,7 +2514,7 @@ export default function ProductComparisonPage() {
                           {source !== "internal" && (
                             <div className="mt-2 border-t border-t-border pt-2">
                               {!hasInternal ? (
-                                <div className="text-[11px] text-amber-300">Add or match an Internal SKU to enable link confirmation.</div>
+                                <div className="text-[11px] text-amber-300">Add or match an internal product to enable link confirmation.</div>
                               ) : supportsLinking ? (
                                 <div className="space-y-2">
                                   <div className="text-[11px] text-muted">
@@ -2668,7 +2668,7 @@ export default function ProductComparisonPage() {
                           return (
                             <div className="rounded-md border border-fuchsia-500/30 bg-fuchsia-500/10 p-2 space-y-2">
                               <div className="text-[11px] text-fuchsia-200">
-                                Merge duplicate internal SKUs into this primary SKU to clean inventory links.
+                                Merge duplicate internal products into this primary product to clean inventory links.
                               </div>
                               <div className="space-y-1.5">
                                 {duplicateCandidates.map((candidate) => {
@@ -2680,7 +2680,7 @@ export default function ProductComparisonPage() {
                                       className="rounded border border-fuchsia-500/20 bg-background/60 p-2"
                                     >
                                       <div className="text-[11px] text-foreground break-words">
-                                        {candidate.name || "Unnamed internal SKU"}
+                                        {candidate.name || "Unnamed internal product"}
                                       </div>
                                       <div className="text-[10px] text-muted break-all">
                                         SKU: {candidate.sku || "—"} · ID: {candidate.id}
