@@ -126,7 +126,7 @@ import { ACTIVE_STAGES } from "@/lib/deals-pipeline";
 import { PIPELINE_OPTIONS } from "@/app/dashboards/deals/deals-types";
 ```
 
-Note: `STAGE_COLORS` is already imported. Just add the `STAGE_ORDER` to that import and add the two new imports.
+Note: `STAGE_COLORS` is already imported. Just add `STAGE_ORDER` to that import and add the two new imports. Also add `useRef` to the React import on line 4 (it's not currently imported in `page.tsx`).
 
 - [ ] **Step 2: Add pipeline state and cache type**
 
@@ -137,7 +137,10 @@ Inside the `Home` component (after `selectedLocations` state, around line 212), 
   const [pipelineCache, setPipelineCache] = useState<
     Record<string, { stageCounts: Record<string, number>; stageValues: Record<string, number>; total: number; totalValue: number }>
   >({});
-  const [pipelineLoading, setPipelineLoading] = useState(false);
+  // Track which pipeline is currently being fetched (null = idle)
+  const [loadingPipeline, setLoadingPipeline] = useState<string | null>(null);
+  // Ref mirrors cache keys + tracks in-flight — avoids stale closures in fetchPipelineData
+  const pipelineFetchedRef = useRef<Set<string>>(new Set());
 ```
 
 - [ ] **Step 3: Add pipeline data fetch function**
@@ -147,40 +150,39 @@ After the `clearLocations` callback (around line 330), add:
 ```typescript
   // Fetch non-project pipeline data (lazy, cached in state)
   const fetchPipelineData = useCallback(async (pipelineKey: string) => {
-    // Cache check uses functional state to avoid stale closure on pipelineCache
-    setPipelineCache((prev) => {
-      if (prev[pipelineKey]) return prev; // already cached — no-op
-      // Trigger the actual fetch outside this setter
-      (async () => {
-        setPipelineLoading(true);
-        try {
-          // active=true is the API default; explicit here to lock the contract
-          const res = await fetch(`/api/deals?pipeline=${pipelineKey}&active=true`);
-          if (!res.ok) throw new Error("Failed to fetch pipeline data");
-          const data = await res.json();
-          const deals: { stage: string; amount: number }[] = data.deals || [];
-          // Compute stage values (API returns stageCounts but not stageValues)
-          const stageValues: Record<string, number> = {};
-          for (const deal of deals) {
-            stageValues[deal.stage] = (stageValues[deal.stage] || 0) + deal.amount;
-          }
-          setPipelineCache((p) => ({
-            ...p,
-            [pipelineKey]: {
-              stageCounts: data.stats?.stageCounts || {},
-              stageValues,
-              total: data.totalCount || deals.length,
-              totalValue: data.stats?.totalValue || 0,
-            },
-          }));
-        } catch (err) {
-          console.error(`Failed to fetch ${pipelineKey} pipeline data:`, err);
-        } finally {
-          setPipelineLoading(false);
-        }
-      })();
-      return prev; // return unchanged — the async IIFE updates later
-    });
+    if (pipelineKey === "project") return;
+    // Skip if already cached or in-flight (ref is always current)
+    if (pipelineFetchedRef.current.has(pipelineKey)) return;
+    pipelineFetchedRef.current.add(pipelineKey);
+    setLoadingPipeline(pipelineKey);
+    try {
+      // active=true is the API default; explicit here to lock the contract
+      const res = await fetch(`/api/deals?pipeline=${pipelineKey}&active=true`);
+      if (!res.ok) throw new Error("Failed to fetch pipeline data");
+      const data = await res.json();
+      const deals: { stage: string; amount: number }[] = data.deals || [];
+      // Compute stage values (API returns stageCounts but not stageValues)
+      const stageValues: Record<string, number> = {};
+      for (const deal of deals) {
+        stageValues[deal.stage] = (stageValues[deal.stage] || 0) + deal.amount;
+      }
+      setPipelineCache((prev) => ({
+        ...prev,
+        [pipelineKey]: {
+          stageCounts: data.stats?.stageCounts || {},
+          stageValues,
+          total: data.totalCount || deals.length,
+          totalValue: data.stats?.totalValue || 0,
+        },
+      }));
+    } catch (err) {
+      console.error(`Failed to fetch ${pipelineKey} pipeline data:`, err);
+      // Remove from ref so user can retry by re-selecting
+      pipelineFetchedRef.current.delete(pipelineKey);
+    } finally {
+      // Only clear loading if this pipeline is still the one being loaded
+      setLoadingPipeline((curr) => (curr === pipelineKey ? null : curr));
+    }
   }, []);
 ```
 
@@ -191,9 +193,7 @@ Right after `fetchPipelineData`:
 ```typescript
   const handlePipelineChange = useCallback((pipelineKey: string) => {
     setSelectedPipeline(pipelineKey);
-    if (pipelineKey !== "project") {
-      fetchPipelineData(pipelineKey);
-    }
+    fetchPipelineData(pipelineKey);
   }, [fetchPipelineData]);
 ```
 
@@ -259,12 +259,12 @@ Replace lines 610-671 (the entire Pipeline by Stage block) with:
                 View All Deals →
               </Link>
             </div>
-            {selectedPipeline !== "project" && !pipelineStageData && !pipelineLoading && (
+            {selectedPipeline !== "project" && !pipelineStageData && loadingPipeline !== selectedPipeline && (
               <div className="text-center py-8 text-muted text-sm">
                 Failed to load pipeline data.
               </div>
             )}
-            {pipelineLoading ? (
+            {loadingPipeline === selectedPipeline ? (
               <SkeletonSection />
             ) : pipelineStageData && Object.keys(pipelineStageData.stageCounts).length > 0 ? (
               <div className="space-y-3">
@@ -299,7 +299,7 @@ Replace lines 610-671 (the entire Pipeline by Stage block) with:
                     );
                   })}
               </div>
-            ) : !pipelineLoading && pipelineStageData ? (
+            ) : loadingPipeline !== selectedPipeline && pipelineStageData ? (
               <div className="text-center py-8 text-muted text-sm">
                 No active deals in this pipeline.
               </div>
