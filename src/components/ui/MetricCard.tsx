@@ -1,6 +1,7 @@
 "use client";
 
 import { memo } from "react";
+import Link from "next/link";
 
 // ---- Accent StatCard (large, gradient background) ----
 
@@ -9,6 +10,7 @@ interface StatCardProps {
   value: string | number | null;
   subtitle?: string | null;
   color: string;
+  href?: string;
 }
 
 const ACCENT_CLASSES: Record<string, string> = {
@@ -27,11 +29,10 @@ export const StatCard = memo(function StatCard({
   value,
   subtitle,
   color,
+  href,
 }: StatCardProps) {
-  return (
-    <div
-      className={`bg-gradient-to-br ${ACCENT_CLASSES[color] || ACCENT_CLASSES.blue} border rounded-xl p-6 shadow-card`}
-    >
+  const content = (
+    <>
       {value === null ? (
         <div className="h-9 w-20 bg-skeleton rounded animate-pulse mb-1" />
       ) : (
@@ -43,8 +44,15 @@ export const StatCard = memo(function StatCard({
       {subtitle && (
         <div className="text-xs text-muted mt-0.5">{subtitle}</div>
       )}
-    </div>
+    </>
   );
+
+  const className = `bg-gradient-to-br ${ACCENT_CLASSES[color] || ACCENT_CLASSES.blue} border rounded-xl p-6 shadow-card${href ? " hover:brightness-110 transition-all cursor-pointer" : ""}`;
+
+  if (href) {
+    return <Link href={href} className={className}>{content}</Link>;
+  }
+  return <div className={className}>{content}</div>;
 });
 
 // ---- MiniStat (compact, centered) ----

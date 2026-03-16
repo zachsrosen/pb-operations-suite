@@ -401,6 +401,13 @@ export default function Home() {
     };
   }, [selectedPipeline, stats, pipelineCache]);
 
+  // Eagerly fetch pipeline stats for stat cards (service, dnr, roofing)
+  useEffect(() => {
+    fetchPipelineData("service");
+    fetchPipelineData("dnr");
+    fetchPipelineData("roofing");
+  }, [fetchPipelineData]);
+
   const visibleSuites = useMemo(() => {
     if (!userRole) return [];
     if (userRole === "VIEWER") return [];
@@ -559,7 +566,7 @@ export default function Home() {
         )}
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8 stagger-grid">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
           <StatCard
             label="Active Projects"
             value={loading ? null : stats?.totalProjects ?? null}
@@ -569,41 +576,40 @@ export default function Home() {
                 : null
             }
             color="orange"
+            href="/dashboards/deals?pipeline=project"
           />
           <StatCard
-            label="Pipeline Value"
-            value={
-              loading
-                ? null
-                : stats?.totalValue
-                  ? `$${(stats.totalValue / 1000000).toFixed(1)}M`
-                  : null
-            }
-            color="green"
-          />
-          <StatCard
-            label="PE Projects"
-            value={loading ? null : stats?.peCount ?? null}
+            label="Active D&R"
+            value={pipelineCache["dnr"]?.total ?? null}
             subtitle={
-              !loading && stats?.peValue ? formatMoney(stats.peValue) : null
-            }
-            color="emerald"
-          />
-          <StatCard
-            label="Ready To Build"
-            value={loading ? null : stats?.rtbCount ?? null}
-            subtitle={
-              !loading && stats?.rtbValue ? formatMoney(stats.rtbValue) : null
+              pipelineCache["dnr"]?.totalValue
+                ? formatMoney(pipelineCache["dnr"].totalValue)
+                : null
             }
             color="blue"
+            href="/dashboards/deals?pipeline=dnr"
           />
           <StatCard
-            label="On Hold"
-            value={loading ? null : stats?.onHoldCount ?? null}
+            label="Active Roofing"
+            value={pipelineCache["roofing"]?.total ?? null}
             subtitle={
-              !loading && stats?.onHoldValue ? formatMoney(stats.onHoldValue) : null
+              pipelineCache["roofing"]?.totalValue
+                ? formatMoney(pipelineCache["roofing"].totalValue)
+                : null
             }
             color="red"
+            href="/dashboards/deals?pipeline=roofing"
+          />
+          <StatCard
+            label="Active Service"
+            value={pipelineCache["service"]?.total ?? null}
+            subtitle={
+              pipelineCache["service"]?.totalValue
+                ? formatMoney(pipelineCache["service"].totalValue)
+                : null
+            }
+            color="green"
+            href="/dashboards/deals?pipeline=service"
           />
         </div>
 

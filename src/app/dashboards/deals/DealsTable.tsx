@@ -90,10 +90,10 @@ export default function DealsTable({
   const tdClass = "px-2 py-2 text-sm";
 
   return (
-    <div>
+    <div className="max-h-[75vh] overflow-auto">
       <table className="w-full border-collapse text-xs">
-        <thead>
-          <tr className="border-b border-t-border bg-surface-2/50">
+        <thead className="sticky top-0 z-10">
+          <tr className="border-b border-t-border bg-surface-2">
             <th className={`${thClass} min-w-[160px]`} onClick={() => onSort("name")}>
               Deal Name <SortArrow active={sort === "name"} order={order} />
             </th>
