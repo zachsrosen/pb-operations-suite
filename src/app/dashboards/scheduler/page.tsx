@@ -150,6 +150,7 @@ interface ScheduledEvent extends SchedulerProject {
   isInspectionFailed?: boolean;
   isTentative?: boolean;
   tentativeRecordId?: string;
+  isForecast?: boolean;
 }
 
 interface PendingSchedule {
@@ -557,6 +558,20 @@ export default function SchedulerPage() {
   const [typeFilters, setTypeFilters] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<"amount" | "date" | "days" | "location" | "type">("amount");
 
+  /* ---- forecast ghost toggle ---- */
+  const [showForecasts, setShowForecasts] = useState(false);
+  useEffect(() => {
+    const stored = localStorage.getItem("scheduler-show-forecasts");
+    if (stored === "true") setShowForecasts(true);
+  }, []);
+  const toggleForecasts = useCallback(() => {
+    setShowForecasts((prev) => {
+      const next = !prev;
+      localStorage.setItem("scheduler-show-forecasts", String(next));
+      return next;
+    });
+  }, []);
+
   /* ---- selection / scheduling ---- */
   const [selectedProject, setSelectedProject] = useState<SchedulerProject | null>(null);
   const [manualSchedules, setManualSchedules] = useState<Record<string, ManualSchedule>>({});
@@ -565,6 +580,7 @@ export default function SchedulerPage() {
   /* ---- modals ---- */
   const [scheduleModal, setScheduleModal] = useState<PendingSchedule | null>(null);
   const [detailModal, setDetailModal] = useState<SchedulerProject | null>(null);
+  const [detailModalEvent, setDetailModalEvent] = useState<ScheduledEvent | null>(null);
   const [installDaysInput, setInstallDaysInput] = useState(2);
   const [crewSelectInput, setCrewSelectInput] = useState("");
   const [constructionAssigneeNames, setConstructionAssigneeNames] = useState<string[]>([]);
@@ -801,8 +817,37 @@ export default function SchedulerPage() {
     }
   }, [projectsQuery.data, projectsQuery.error]);
 
+  // ---- Forecast data for ghost events (conditional on toggle) ----
+  interface TimelineMilestone {
+    key: string;
+    liveForecast: string | null;
+    basis: string;
+    varianceDays: number | null;
+    name: string;
+  }
+  interface TimelineProject {
+    dealId: string;
+    projectNumber: string;
+    customerName: string;
+    location: string;
+    currentStage: string;
+    milestones: TimelineMilestone[];
+  }
+
+  const forecastQuery = useQuery<{ projects: TimelineProject[] }>({
+    queryKey: ["scheduler", "forecasts"],
+    queryFn: async () => {
+      const res = await fetch("/api/forecasting/timeline");
+      if (!res.ok) throw new Error("Failed to fetch forecasts");
+      return res.json();
+    },
+    enabled: showForecasts,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
   const fetchProjects = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["scheduler", "main-projects"] });
+    queryClient.invalidateQueries({ queryKey: ["scheduler", "forecasts"] });
   }, [queryClient]);
 
   // Check Zuper configuration status
@@ -1293,6 +1338,73 @@ export default function SchedulerPage() {
     });
   }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled, showCompleted, showIncomplete]);
 
+  // ---- Forecast ghost events ----
+  const forecastGhostEvents = useMemo((): ScheduledEvent[] => {
+    if (!showForecasts || !forecastQuery.data?.projects) return [];
+
+    const timelineProjects = forecastQuery.data.projects;
+    const ghosts: ScheduledEvent[] = [];
+    const preConstructionStages = new Set(["survey", "rtb", "blocked"]);
+
+    const typeVariants: Record<string, string[]> = {
+      survey: ["survey", "survey-complete"],
+      construction: ["construction", "construction-complete"],
+      inspection: ["inspection", "inspection-pass", "inspection-fail"],
+      scheduled: ["scheduled"],
+    };
+
+    for (const tp of timelineProjects) {
+      const project = projects.find((p) => String(p.id) === tp.dealId);
+      if (!project) continue;
+
+      // ── Eligibility filter ──
+      if (!preConstructionStages.has(project.stage)) continue;
+      if (project.constructionScheduleDate) continue;
+      if (manualSchedules[project.id]?.scheduleType === "installation") continue;
+      if (project.zuperJobCategory === "construction") continue;
+
+      const installMilestone = tp.milestones.find(
+        (m) => m.key === "install" && m.basis !== "actual" && m.basis !== "insufficient"
+      );
+      if (!installMilestone?.liveForecast) continue;
+
+      const hasRealConstructionEvent = scheduledEvents.some(
+        (e) => e.id === project.id && (e.eventType === "construction" || e.eventType === "construction-complete")
+      );
+      if (hasRealConstructionEvent) continue;
+
+      // ── Build ghost event ──
+      const ghost: ScheduledEvent = {
+        ...project,
+        date: installMilestone.liveForecast,
+        eventType: "construction",
+        days: project.daysInstall || 3,
+        isForecast: true,
+      };
+
+      // ── Apply same calendar filters as filteredScheduledEvents ──
+      if (calendarLocations.length > 0 && !calendarLocations.includes(ghost.location)) continue;
+      if (calendarScheduleTypes.length > 0) {
+        const expandedTypes = calendarScheduleTypes.flatMap((t) => typeVariants[t] || [t]);
+        if (!expandedTypes.includes(ghost.eventType)) continue;
+      }
+      if (!showScheduled) continue;
+
+      ghosts.push(ghost);
+    }
+
+    return ghosts;
+  }, [
+    showForecasts, forecastQuery.data, projects, manualSchedules,
+    scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled,
+  ]);
+
+  // ---- Merged display events: real filtered events + ghost forecast events ----
+  const displayEvents = useMemo((): ScheduledEvent[] => {
+    if (forecastGhostEvents.length === 0) return filteredScheduledEvents;
+    return [...filteredScheduledEvents, ...forecastGhostEvents];
+  }, [filteredScheduledEvents, forecastGhostEvents]);
+
   const queueRevenue = useMemo(
     () => formatRevenueCompact(filteredProjects.reduce((s, p) => s + p.amount, 0)),
     [filteredProjects]
@@ -1310,6 +1422,7 @@ export default function SchedulerPage() {
     tentative: RevenueBucket;
     completed: RevenueBucket;
     overdue: RevenueBucket;
+    forecasted: RevenueBucket;
   };
   type MonthData = {
     monthLabel: string;
@@ -1319,17 +1432,19 @@ export default function SchedulerPage() {
     tentative: RevenueBucket;
     completed: RevenueBucket;
     overdue: RevenueBucket;
+    forecasted: RevenueBucket;
   };
 
   const computeRevenueBuckets = useCallback((events: typeof filteredScheduledEvents) => {
     const scheduledEvts = events.filter((e) =>
-      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && !e.isOverdue && !e.isTentative
+      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && !e.isOverdue && !e.isTentative && !e.isForecast
     );
-    const tentativeEvts = events.filter((e) => e.isTentative);
-    const completedEvts = events.filter((e) => e.eventType === "construction-complete");
+    const tentativeEvts = events.filter((e) => e.isTentative && !e.isForecast);
+    const completedEvts = events.filter((e) => e.eventType === "construction-complete" && !e.isForecast);
     const overdueEvts = events.filter((e) =>
-      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && e.isOverdue && !e.isTentative
+      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && e.isOverdue && !e.isTentative && !e.isForecast
     );
+    const forecastedEvts = events.filter((e) => e.isForecast);
     const dedupeRevenue = (evts: typeof events) => {
       const ids = new Set(evts.map((e) => e.id));
       return {
@@ -1337,7 +1452,7 @@ export default function SchedulerPage() {
         revenue: [...ids].reduce((sum, id) => sum + (evts.find((e) => e.id === id)?.amount || 0), 0),
       };
     };
-    return { scheduled: dedupeRevenue(scheduledEvts), tentative: dedupeRevenue(tentativeEvts), completed: dedupeRevenue(completedEvts), overdue: dedupeRevenue(overdueEvts) };
+    return { scheduled: dedupeRevenue(scheduledEvts), tentative: dedupeRevenue(tentativeEvts), completed: dedupeRevenue(completedEvts), overdue: dedupeRevenue(overdueEvts), forecasted: dedupeRevenue(forecastedEvts) };
   }, []);
 
   const weeklyRevenueSummary = useMemo((): WeekData[] => {
@@ -1362,7 +1477,7 @@ export default function SchedulerPage() {
       const isCurrent = w === 0;
       const label = weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-      const weekEvents = filteredScheduledEvents.filter((e) => {
+      const weekEvents = displayEvents.filter((e) => {
         const d = new Date(e.date + "T12:00:00");
         return d >= weekStart && d < weekEnd;
       });
@@ -1371,7 +1486,7 @@ export default function SchedulerPage() {
       weeks.push({ weekStart, weekLabel: label, isPast, isFuture, isCurrent, ...buckets });
     }
     return weeks;
-  }, [filteredScheduledEvents, computeRevenueBuckets]);
+  }, [displayEvents, computeRevenueBuckets]);
 
   const monthlyRevenueSummary = useMemo((): MonthData[] => {
     const today = new Date();
@@ -1388,7 +1503,7 @@ export default function SchedulerPage() {
       const isCurrent = m === 0;
       const label = monthStart.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 
-      const monthEvents = filteredScheduledEvents.filter((e) => {
+      const monthEvents = displayEvents.filter((e) => {
         const ed = new Date(e.date + "T12:00:00");
         return ed >= monthStart && ed < monthEnd;
       });
@@ -1397,7 +1512,7 @@ export default function SchedulerPage() {
       months.push({ monthLabel: label, isPast, isCurrent, ...buckets });
     }
     return months;
-  }, [filteredScheduledEvents, computeRevenueBuckets]);
+  }, [displayEvents, computeRevenueBuckets]);
 
   /* ================================================================ */
   /*  Calendar logic                                                   */
@@ -1424,7 +1539,7 @@ export default function SchedulerPage() {
     }
 
     const eventsByDate: Record<number, (ScheduledEvent & { dayNum: number; totalCalDays: number })[]> = {};
-    filteredScheduledEvents.forEach((e) => {
+    displayEvents.forEach((e) => {
       const startDate = new Date(e.date + "T12:00:00");
       const businessDays = Math.ceil(e.days || 1);
       let dayCount = 0;
@@ -1461,13 +1576,15 @@ export default function SchedulerPage() {
       survey: 2, "survey-complete": 2,
     };
     for (const day of Object.keys(eventsByDate)) {
-      eventsByDate[Number(day)].sort((a, b) =>
-        (STAGE_ORDER[a.eventType] ?? 9) - (STAGE_ORDER[b.eventType] ?? 9)
-      );
+      eventsByDate[Number(day)].sort((a, b) => {
+        const stageDiff = (STAGE_ORDER[a.eventType] ?? 9) - (STAGE_ORDER[b.eventType] ?? 9);
+        if (stageDiff !== 0) return stageDiff;
+        return (a.isForecast ? 1 : 0) - (b.isForecast ? 1 : 0);
+      });
     }
 
     return { startDay, daysInMonth, today, eventsByDate, weekdays };
-  }, [currentYear, currentMonth, filteredScheduledEvents]);
+  }, [currentYear, currentMonth, displayEvents]);
 
   /* ================================================================ */
   /*  Week view logic                                                  */
@@ -1882,6 +1999,7 @@ export default function SchedulerPage() {
             : `Confirmed (Zuper sync issue: ${data.zuperError})`
         );
         setDetailModal(null);
+        setDetailModalEvent(null);
       } else {
         showToast(data.error || "Failed to confirm", "error");
       }
@@ -1928,6 +2046,7 @@ export default function SchedulerPage() {
       });
       showToast("Tentative schedule removed");
       setDetailModal(null);
+      setDetailModalEvent(null);
       return;
     }
     setCancellingTentative(true);
@@ -1951,6 +2070,7 @@ export default function SchedulerPage() {
         });
         showToast("Tentative schedule cancelled");
         setDetailModal(null);
+        setDetailModalEvent(null);
       } else {
         const data = await res.json();
         showToast(data.error || "Failed to cancel", "error");
@@ -2137,6 +2257,7 @@ export default function SchedulerPage() {
     } finally {
       setReschedulingProjectId(null);
       setDetailModal(null);
+      setDetailModalEvent(null);
     }
   }, [trackFeature, getEffectiveConstructionDays, liveConstructionAssigneesByLocation, showToast]);
 
@@ -2386,6 +2507,7 @@ export default function SchedulerPage() {
       );
       showToast("Removed from schedule");
       setDetailModal(null);
+      setDetailModalEvent(null);
       setTimeout(() => fetchProjects(), 900);
     } catch {
       showToast("Failed to remove from schedule", "error");
@@ -2456,9 +2578,11 @@ export default function SchedulerPage() {
       "Schedule Date",
       "Days",
       "Crew",
+      "Event Type",
     ];
     let csv = headers.join(",") + "\n";
-    scheduledEvents.forEach((e) => {
+    const eventsToExport = showForecasts ? [...scheduledEvents, ...forecastGhostEvents] : scheduledEvents;
+    eventsToExport.forEach((e) => {
       csv +=
         [
           getProjectId(e.name),
@@ -2471,6 +2595,7 @@ export default function SchedulerPage() {
           e.date,
           e.days || e.daysInstall || 2,
           e.crew || "",
+          e.isForecast ? "forecast" : e.eventType,
         ].join(",") + "\n";
     });
     const blob = new Blob([csv], { type: "text/csv" });
@@ -2481,12 +2606,12 @@ export default function SchedulerPage() {
     a.click();
     URL.revokeObjectURL(url);
     showToast("CSV exported");
-  }, [scheduledEvents, showToast]);
+  }, [scheduledEvents, displayEvents, showForecasts, showToast]);
 
   const exportICal = useCallback(() => {
     let ical =
       "BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//PB Scheduler//EN\n";
-    scheduledEvents.forEach((e) => {
+    scheduledEvents.filter((e) => !e.isForecast).forEach((e) => {
       const start = e.date.replace(/-/g, "");
       const end = addDays(e.date, Math.ceil(e.days || 1)).replace(/-/g, "");
       ical += `BEGIN:VEVENT\nDTSTART;VALUE=DATE:${start}\nDTEND;VALUE=DATE:${end}\nSUMMARY:${getCustomerName(e.name)} - ${e.crew || "Unassigned"}\nDESCRIPTION:${e.address}\\n$${e.amount.toLocaleString()}\nEND:VEVENT\n`;
@@ -2553,7 +2678,7 @@ export default function SchedulerPage() {
 
       if (e.key === "Escape") {
         if (scheduleModal) setScheduleModal(null);
-        else if (detailModal) setDetailModal(null);
+        else if (detailModal) { setDetailModal(null); setDetailModalEvent(null); }
         else if (selectedProject) setSelectedProject(null);
         return;
       }
@@ -3374,6 +3499,26 @@ export default function SchedulerPage() {
                   {t.label}
                 </button>
               ))}
+              <button
+                onClick={toggleForecasts}
+                className={`flex items-center gap-1 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ml-1 ${
+                  showForecasts
+                    ? "border-blue-400 text-blue-400 bg-blue-500/10"
+                    : "border-t-border text-muted opacity-60 hover:border-muted"
+                }`}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${
+                  showForecasts ? "border-blue-400" : "border-t-border"
+                }`}>
+                  {showForecasts && <span className="w-1 h-1 rounded-full bg-blue-400" />}
+                </span>
+                Forecasts
+              </button>
+              {showForecasts && forecastGhostEvents.length > 0 && (
+                <span className="text-[0.55rem] text-blue-400/70 ml-0.5">
+                  {forecastGhostEvents.length} forecasted install{forecastGhostEvents.length !== 1 ? "s" : ""}
+                </span>
+              )}
             </div>
           </div>
 
@@ -3483,7 +3628,7 @@ export default function SchedulerPage() {
                             const isCompletedType = ev.eventType === "construction-complete" || ev.eventType === "inspection-pass" || ev.eventType === "survey-complete";
                             const isFailedType = ev.eventType === "inspection-fail";
                             const isActiveType = !isCompletedType && !isFailedType;
-                            const isDraggable = isActiveType && !ev.isOverdue;
+                            const isDraggable = isActiveType && !ev.isOverdue && !ev.isForecast;
 
                             // Completed events use same base color at low opacity
                             const completedColorClass =
@@ -3505,6 +3650,7 @@ export default function SchedulerPage() {
                               isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                               isCompletedType ? completedColorClass :
                               ev.isOverdue ? overdueColorClass :
+                              ev.isForecast ? "bg-blue-500/40 text-blue-200 border border-dashed border-blue-400 opacity-60" :
                               ev.isTentative ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                               ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
                               ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
@@ -3526,16 +3672,16 @@ export default function SchedulerPage() {
                                 onDragEnd={handleDragEnd}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setDetailModal(
-                                    projects.find((pr) => pr.id === ev.id) ||
-                                      null
-                                  );
+                                  const proj = projects.find((pr) => pr.id === ev.id) || null;
+                                  setDetailModal(proj);
+                                  setDetailModalEvent(ev);
                                 }}
-                                title={`${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : " (drag to reschedule)"}`}
+                                title={ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : " (drag to reschedule)"}`}
                                 className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
                                   isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
                                 } ${eventColorClass} ${draggedProjectId === ev.id ? "opacity-60" : ""}`}
                               >
+                                {ev.isForecast && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">FORECAST</span>}
                                 {ev.isTentative && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">TENT {ev.days > 0 ? `${ev.days}d` : ""}</span>}
                                 {isFailedType && <span className="mr-0.5">✗</span>}
                                 {isCompletedType && <span className="mr-0.5">✓</span>}
@@ -3649,7 +3795,7 @@ export default function SchedulerPage() {
                           const dateStr = toDateStr(d);
                           // Find events that span this date using business days (skip weekends)
                           const dayEvents: { event: ScheduledEvent; dayNum: number }[] = [];
-                          filteredScheduledEvents.forEach((e) => {
+                          displayEvents.forEach((e) => {
                             if (e.location !== loc) return;
                             const businessDays = Math.ceil(e.days || 1);
                             const eventStart = new Date(e.date + "T12:00:00");
@@ -3675,9 +3821,11 @@ export default function SchedulerPage() {
                             inspection: 1, "inspection-pass": 1, "inspection-fail": 1,
                             survey: 2, "survey-complete": 2,
                           };
-                          dayEvents.sort((a, b) =>
-                            (WEEK_STAGE_ORDER[a.event.eventType] ?? 9) - (WEEK_STAGE_ORDER[b.event.eventType] ?? 9)
-                          );
+                          dayEvents.sort((a, b) => {
+                            const stageDiff = (WEEK_STAGE_ORDER[a.event.eventType] ?? 9) - (WEEK_STAGE_ORDER[b.event.eventType] ?? 9);
+                            if (stageDiff !== 0) return stageDiff;
+                            return (a.event.isForecast ? 1 : 0) - (b.event.isForecast ? 1 : 0);
+                          });
                           return (
                             <div
                               key={di}
@@ -3718,6 +3866,7 @@ export default function SchedulerPage() {
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? completedColorClassW :
                                   ev.isOverdue ? overdueColorClassW :
+                                  ev.isForecast ? "bg-blue-500/40 text-blue-200 border border-dashed border-blue-400 opacity-60" :
                                   ev.isTentative ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                                   ev.eventType === "construction" ? "bg-blue-500 text-white" :
                                   ev.eventType === "survey" ? "bg-cyan-500 text-white" :
@@ -3730,15 +3879,14 @@ export default function SchedulerPage() {
                                     key={ei}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setDetailModal(
-                                        projects.find(
-                                          (pr) => pr.id === ev.id
-                                        ) || null
-                                      );
+                                      const proj = projects.find((pr) => pr.id === ev.id) || null;
+                                      setDetailModal(proj);
+                                      setDetailModalEvent(ev);
                                     }}
-                                    title={`${ev.name}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : ""}`}
+                                    title={ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : ""}`}
                                     className={`text-[0.6rem] px-1.5 py-1 rounded mb-1 cursor-pointer transition-transform hover:scale-[1.02] hover:shadow-lg ${eventColorClass}`}
                                   >
+                                    {ev.isForecast && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">FORECAST</span>}
                                     {ev.isTentative && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">TENT {ev.days > 0 ? `${ev.days}d` : ""}</span>}
                                     {isFailedType && <span className="mr-0.5">✗</span>}
                                     {isCompletedType && <span className="mr-0.5">✓</span>}
@@ -3842,7 +3990,7 @@ export default function SchedulerPage() {
                             key={idx}
                             className="bg-surface relative"
                           >
-                            {filteredScheduledEvents
+                            {displayEvents
                               .filter((e) => {
                                 if (e.location !== loc) return false;
                                 const eventStart = new Date(e.date + "T12:00:00");
@@ -3857,7 +4005,9 @@ export default function SchedulerPage() {
                                   inspection: 1, "inspection-pass": 1, "inspection-fail": 1,
                                   survey: 2, "survey-complete": 2,
                                 };
-                                return (order[a.eventType] ?? 9) - (order[b.eventType] ?? 9);
+                                const stageDiff = (order[a.eventType] ?? 9) - (order[b.eventType] ?? 9);
+                                if (stageDiff !== 0) return stageDiff;
+                                return (a.isForecast ? 1 : 0) - (b.isForecast ? 1 : 0);
                               })
                               .map((e, ei) => {
                                 const days = e.days || 1;
@@ -3892,6 +4042,7 @@ export default function SchedulerPage() {
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? completedColorClassG :
                                   e.isOverdue ? overdueColorClassG :
+                                  e.isForecast ? "bg-blue-500/40 text-blue-200 border border-dashed border-blue-400 opacity-60" :
                                   e.isTentative ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                                   e.eventType === "construction" ? "bg-blue-500 text-white" :
                                   e.eventType === "rtb" ? "bg-emerald-500 text-black" :
@@ -3904,14 +4055,12 @@ export default function SchedulerPage() {
                                 return (
                                   <div
                                     key={ei}
-                                    onClick={() =>
-                                      setDetailModal(
-                                        projects.find(
-                                          (pr) => pr.id === e.id
-                                        ) || null
-                                      )
-                                    }
-                                    title={`${e.name} - ${daysLabel} - ${amount}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : e.isOverdue ? " ⚠ Incomplete" : ""}`}
+                                    onClick={() => {
+                                      const proj = projects.find((pr) => pr.id === e.id) || null;
+                                      setDetailModal(proj);
+                                      setDetailModalEvent(e);
+                                    }}
+                                    title={e.isForecast ? "Forecasted install — not yet scheduled" : `${e.name} - ${daysLabel} - ${amount}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : e.isOverdue ? " ⚠ Incomplete" : ""}`}
                                     className={`absolute top-2 bottom-2 rounded flex items-center px-1.5 text-[0.55rem] font-medium cursor-pointer transition-transform hover:scale-y-110 hover:shadow-lg hover:z-10 overflow-hidden truncate ${eventColorClass}`}
                                     style={{
                                       left: 0,
@@ -3919,6 +4068,7 @@ export default function SchedulerPage() {
                                       zIndex: 1,
                                     }}
                                   >
+                                    {e.isForecast && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">FORECAST</span>}
                                     {e.isTentative && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">TENT</span>}
                                     {isFailedType && <span className="mr-0.5">✗</span>}
                                     {isCompletedType && <span className="mr-0.5">✓</span>}
@@ -3974,13 +4124,13 @@ export default function SchedulerPage() {
           <>
           <div className="flex-1 p-2 space-y-0.5">
             {weeklyRevenueSummary.filter((week) => {
-              const hasAnyData = week.scheduled.count > 0 || week.completed.count > 0 || week.overdue.count > 0 || week.tentative.count > 0;
+              const hasAnyData = week.scheduled.count > 0 || week.completed.count > 0 || week.overdue.count > 0 || week.tentative.count > 0 || week.forecasted.count > 0;
               return hasAnyData || week.isCurrent;
             }).map((week, i) => {
               const hasSched = week.scheduled.count > 0;
               const hasComp = week.completed.count > 0;
               const hasIncomplete = week.overdue.count > 0;
-              const hasAny = hasSched || hasComp || hasIncomplete || week.tentative.count > 0;
+              const hasAny = hasSched || hasComp || hasIncomplete || week.tentative.count > 0 || week.forecasted.count > 0;
               // Only show overdue for past + current week (not future)
               const showIncompleteRow = !week.isFuture;
               return (
@@ -4037,13 +4187,26 @@ export default function SchedulerPage() {
 
                   {/* Incomplete — only for past + current week, only if data present */}
                   {showIncompleteRow && hasIncomplete && (
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between mb-0.5">
                       <div className="flex items-center gap-1">
                         <div className="w-1.5 h-1.5 rounded-sm bg-red-500" />
                         <span className="text-[0.55rem] text-muted">Incomplete</span>
                       </div>
                       <span className="text-[0.6rem] font-mono font-semibold text-red-400">
                         {week.overdue.count} · ${formatRevenueCompact(week.overdue.revenue)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Forecasted — only show if data present */}
+                  {week.forecasted.count > 0 && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-sm border border-dashed border-blue-400 bg-blue-500/40" />
+                        <span className="text-[0.55rem] text-muted">Forecasted</span>
+                      </div>
+                      <span className="text-[0.6rem] font-mono font-semibold text-blue-300 opacity-80">
+                        {week.forecasted.count} · ${formatRevenueCompact(week.forecasted.revenue)}
                       </span>
                     </div>
                   )}
@@ -4089,13 +4252,24 @@ export default function SchedulerPage() {
             </div>
             )}
             {weeklyRevenueSummary.some(w => w.overdue.count > 0) && (
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-red-500" />
                 <span className="text-[0.6rem] text-foreground/80">Incomplete</span>
               </div>
               <span className="text-[0.65rem] font-mono font-bold text-red-400">
                 ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.overdue.revenue, 0))}
+              </span>
+            </div>
+            )}
+            {weeklyRevenueSummary.some(w => w.forecasted.count > 0) && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm border border-dashed border-blue-400 bg-blue-500/40" />
+                <span className="text-[0.6rem] text-foreground/80">Forecasted</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-blue-300 opacity-80">
+                ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.forecasted.revenue, 0))}
               </span>
             </div>
             )}
@@ -4108,13 +4282,13 @@ export default function SchedulerPage() {
           <>
           <div className="flex-1 p-2 space-y-0.5">
             {monthlyRevenueSummary.filter((month) => {
-              const hasAnyData = month.scheduled.count > 0 || month.completed.count > 0 || month.overdue.count > 0 || month.tentative.count > 0;
+              const hasAnyData = month.scheduled.count > 0 || month.completed.count > 0 || month.overdue.count > 0 || month.tentative.count > 0 || month.forecasted.count > 0;
               return hasAnyData || month.isCurrent;
             }).map((month, i) => {
               const hasSched = month.scheduled.count > 0;
               const hasComp = month.completed.count > 0;
               const hasIncomplete = month.overdue.count > 0;
-              const hasAny = hasSched || hasComp || hasIncomplete || month.tentative.count > 0;
+              const hasAny = hasSched || hasComp || hasIncomplete || month.tentative.count > 0 || month.forecasted.count > 0;
               const showIncompleteRow = month.isPast || month.isCurrent;
               return (
                 <div
@@ -4170,13 +4344,26 @@ export default function SchedulerPage() {
 
                   {/* Incomplete — only for past + current month, only if data present */}
                   {showIncompleteRow && hasIncomplete && (
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between mb-0.5">
                       <div className="flex items-center gap-1">
                         <div className="w-1.5 h-1.5 rounded-sm bg-red-500" />
                         <span className="text-[0.55rem] text-muted">Incomplete</span>
                       </div>
                       <span className="text-[0.6rem] font-mono font-semibold text-red-400">
                         {month.overdue.count} · ${formatRevenueCompact(month.overdue.revenue)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Forecasted — only show if data present */}
+                  {month.forecasted.count > 0 && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-sm border border-dashed border-blue-400 bg-blue-500/40" />
+                        <span className="text-[0.55rem] text-muted">Forecasted</span>
+                      </div>
+                      <span className="text-[0.6rem] font-mono font-semibold text-blue-300 opacity-80">
+                        {month.forecasted.count} · ${formatRevenueCompact(month.forecasted.revenue)}
                       </span>
                     </div>
                   )}
@@ -4222,13 +4409,24 @@ export default function SchedulerPage() {
             </div>
             )}
             {monthlyRevenueSummary.some(m => m.overdue.count > 0) && (
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-red-500" />
                 <span className="text-[0.6rem] text-foreground/80">Incomplete</span>
               </div>
               <span className="text-[0.65rem] font-mono font-bold text-red-400">
                 ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.overdue.revenue, 0))}
+              </span>
+            </div>
+            )}
+            {monthlyRevenueSummary.some(m => m.forecasted.count > 0) && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm border border-dashed border-blue-400 bg-blue-500/40" />
+                <span className="text-[0.6rem] text-foreground/80">Forecasted</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-blue-300 opacity-80">
+                ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.forecasted.revenue, 0))}
               </span>
             </div>
             )}
@@ -4648,7 +4846,7 @@ export default function SchedulerPage() {
         <div
           className="fixed inset-0 bg-black/80 flex items-center justify-center z-[1000]"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setDetailModal(null);
+            if (e.target === e.currentTarget) { setDetailModal(null); setDetailModalEvent(null); }
           }}
         >
           <div className="bg-surface border border-t-border rounded-xl p-5 max-w-[500px] w-[90%] max-h-[85vh] overflow-y-auto">
@@ -4701,7 +4899,7 @@ export default function SchedulerPage() {
                     >
                       HubSpot
                     </a>
-                    {detailModal.zuperJobUid && (
+                    {detailModal.zuperJobUid && !detailModalEvent?.isForecast && (
                       <>
                         <span className="text-muted/70">|</span>
                         <a
@@ -4828,8 +5026,43 @@ export default function SchedulerPage() {
                   </ModalSection>
                 )}
 
+              {/* Forecast Info (when viewing a ghost event) */}
+              {detailModalEvent?.isForecast && (() => {
+                const tp = forecastQuery.data?.projects.find((p) => p.dealId === String(detailModal.id));
+                const installMs = tp?.milestones.find((m) => m.key === "install");
+                return (
+                  <ModalSection title="Forecast">
+                    <ModalRow
+                      label="Predicted Install"
+                      value={formatDateShort(detailModalEvent.date)}
+                      valueClass="text-blue-400 font-semibold"
+                    />
+                    <ModalRow
+                      label="Duration"
+                      value={`${detailModalEvent.days} ${detailModalEvent.days === 1 ? "day" : "days"}`}
+                    />
+                    {installMs?.basis && (
+                      <ModalRow
+                        label="Forecast Basis"
+                        value={installMs.basis.replace(/_/g, " ")}
+                      />
+                    )}
+                    {installMs?.varianceDays != null && (
+                      <ModalRow
+                        label="Variance"
+                        value={`${installMs.varianceDays > 0 ? "+" : ""}${installMs.varianceDays} days`}
+                        valueClass={installMs.varianceDays > 14 ? "text-red-400" : installMs.varianceDays > 7 ? "text-amber-400" : "text-emerald-400"}
+                      />
+                    )}
+                    <div className="text-[0.65rem] text-muted mt-1 p-2 rounded bg-blue-500/5 border border-dashed border-blue-400/30">
+                      Forecasted install — not yet scheduled. This date is a prediction based on project milestone data.
+                    </div>
+                  </ModalSection>
+                );
+              })()}
+
               {/* Schedule */}
-              <ModalSection title="Schedule">
+              {!detailModalEvent?.isForecast && <ModalSection title="Schedule">
                 {(() => {
                   const scheduleInfo =
                     manualSchedules[detailModal.id] ||
@@ -4898,11 +5131,11 @@ export default function SchedulerPage() {
                     </>
                   );
                 })()}
-              </ModalSection>
+              </ModalSection>}
             </div>
 
             {/* Tentative action banner */}
-            {manualSchedules[detailModal.id]?.isTentative && (
+            {manualSchedules[detailModal.id]?.isTentative && !detailModalEvent?.isForecast && (
               <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-dashed border-amber-400/50">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-amber-400 text-[0.7rem] font-bold uppercase tracking-wide">⏳ Tentative</span>
@@ -4948,7 +5181,7 @@ export default function SchedulerPage() {
             )}
 
             {/* Reschedule section — for confirmed (non-tentative) scheduled items */}
-            {(!manualSchedules[detailModal.id]?.isTentative && (detailModal.scheduleDate || manualSchedules[detailModal.id]?.startDate)) ? (
+            {(!detailModalEvent?.isForecast && !manualSchedules[detailModal.id]?.isTentative && (detailModal.scheduleDate || manualSchedules[detailModal.id]?.startDate)) ? (
               <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-400/30">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-blue-400 text-[0.7rem] font-bold uppercase tracking-wide">Reschedule</span>
@@ -4999,6 +5232,7 @@ export default function SchedulerPage() {
                       } else {
                         const project = detailModal;
                         setDetailModal(null);
+                        setDetailModalEvent(null);
                         openScheduleModal(project, newDate);
                       }
                     }}
@@ -5016,7 +5250,7 @@ export default function SchedulerPage() {
             ) : null}
 
             <div className="flex gap-2 justify-end flex-wrap">
-              {!manualSchedules[detailModal.id]?.isTentative && (
+              {!manualSchedules[detailModal.id]?.isTentative && !detailModalEvent?.isForecast && (
                 <button
                   onClick={() => handleRemoveScheduled(detailModal.id)}
                   className="px-3.5 py-2 rounded-md bg-red-700/80 border border-red-700/80 text-white text-[0.75rem] font-semibold no-underline hover:bg-red-700 transition-colors cursor-pointer"
@@ -5032,7 +5266,7 @@ export default function SchedulerPage() {
               >
                 Open in HubSpot
               </a>
-              {detailModal.zuperJobUid && (
+              {detailModal.zuperJobUid && !detailModalEvent?.isForecast && (
                 <a
                   href={`${zuperWebBaseUrl}/jobs/${detailModal.zuperJobUid}/details`}
                   target="_blank"
@@ -5043,7 +5277,7 @@ export default function SchedulerPage() {
                 </a>
               )}
               <button
-                onClick={() => setDetailModal(null)}
+                onClick={() => { setDetailModal(null); setDetailModalEvent(null); }}
                 className="px-3.5 py-2 rounded-md bg-background border border-t-border text-foreground/80 text-[0.75rem] cursor-pointer hover:bg-surface-2 transition-colors"
               >
                 Close
