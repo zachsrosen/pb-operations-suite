@@ -394,7 +394,7 @@ export default function Home() {
     fetchPipelineData(pipelineKey);
   }, [fetchPipelineData]);
 
-  // Resolve stage data for the selected pipeline
+  // Resolve stage data for the selected pipeline (location-filtered)
   const pipelineStageData = useMemo(() => {
     if (selectedPipeline === "project") {
       return {
@@ -406,13 +406,30 @@ export default function Home() {
     }
     const cached = pipelineCache[selectedPipeline];
     if (!cached) return null;
+    // Filter by location if active
+    if (selectedLocations.length > 0) {
+      const locSet = new Set(selectedLocations);
+      const filtered = cached.deals.filter((d) => locSet.has(d.pbLocation));
+      const stageCounts: Record<string, number> = {};
+      const stageValues: Record<string, number> = {};
+      for (const d of filtered) {
+        stageCounts[d.stage] = (stageCounts[d.stage] || 0) + 1;
+        stageValues[d.stage] = (stageValues[d.stage] || 0) + d.amount;
+      }
+      return {
+        stageCounts,
+        stageValues,
+        total: filtered.length,
+        stageOrder: ACTIVE_STAGES[selectedPipeline] || [],
+      };
+    }
     return {
       stageCounts: cached.stageCounts,
       stageValues: cached.stageValues,
       total: cached.total,
       stageOrder: ACTIVE_STAGES[selectedPipeline] || [],
     };
-  }, [selectedPipeline, stats, pipelineCache]);
+  }, [selectedPipeline, stats, pipelineCache, selectedLocations]);
 
   // Location-filtered pipeline stats for stat cards
   const filteredPipelineStats = useMemo(() => {
@@ -780,14 +797,12 @@ export default function Home() {
                     return aIdx - bIdx;
                   })
                   .map(([stage, count]) => {
-                    const dealsUrl =
-                      selectedPipeline === "project"
-                        ? `/dashboards/deals?stage=${encodeURIComponent(stage)}${
-                            selectedLocations.length > 0
-                              ? `&location=${selectedLocations.map(encodeURIComponent).join(",")}`
-                              : ""
-                          }`
-                        : `/dashboards/deals?pipeline=${selectedPipeline}&stage=${encodeURIComponent(stage)}`;
+                    const locParam = selectedLocations.length > 0
+                      ? `&location=${selectedLocations.map(encodeURIComponent).join(",")}`
+                      : "";
+                    const dealsUrl = selectedPipeline === "project"
+                      ? `/dashboards/deals?stage=${encodeURIComponent(stage)}${locParam}`
+                      : `/dashboards/deals?pipeline=${selectedPipeline}&stage=${encodeURIComponent(stage)}${locParam}`;
                     return (
                       <StageBar
                         key={stage}
