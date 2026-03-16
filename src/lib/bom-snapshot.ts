@@ -2,7 +2,7 @@
  * BOM Snapshot — Shared Logic
  *
  * Saves a BOM extraction snapshot with auto-incrementing version,
- * BOM post-processing (feature-gated), and EquipmentSku sync. Used by both:
+ * BOM post-processing (feature-gated), and InternalProduct sync. Used by both:
  *   - POST /api/bom/history (HTTP route)
  *   - BOM pipeline orchestrator (automated)
  *
@@ -66,7 +66,7 @@ export interface SkuSyncItemResult {
   matchSource: "zoho" | "internal" | "pending" | "skipped";
   zohoItemId?: string;
   zohoItemName?: string;
-  equipmentSkuId?: string;
+  internalProductId?: string;
   pendingPushId?: string;
   action: "linked" | "matched" | "created_with_zoho" | "queued_pending" | "skipped";
 }
@@ -94,7 +94,7 @@ export interface SnapshotResult {
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Categories that map to the EquipmentSku inventory table */
+/** Categories that map to the InternalProduct inventory table */
 const INVENTORY_CATEGORIES: Record<string, EquipmentCategory> = {
   MODULE: "MODULE",
   INVERTER: "INVERTER",
@@ -112,7 +112,7 @@ const DEFAULT_PENDING_PUSH_TTL_DAYS = 90;
 // Internal types
 // ---------------------------------------------------------------------------
 
-/** Validated item shape after filtering in syncEquipmentSkus. */
+/** Validated item shape after filtering in syncInternalProducts. */
 interface ValidSkuItem {
   category: string;
   brand: string;
@@ -161,12 +161,12 @@ function itemBase(item: ValidSkuItem): Pick<SkuSyncItemResult, "category" | "bra
 }
 
 /**
- * Match BOM items against Zoho Inventory (first) then internal EquipmentSku
+ * Match BOM items against Zoho Inventory (first) then internal InternalProduct
  * catalog. Unmatched items create PendingCatalogPush records for review.
  *
- * New EquipmentSku records are only created when backed by a real Zoho item.
+ * New InternalProduct records are only created when backed by a real Zoho item.
  */
-export async function syncEquipmentSkus(items: BomItem[]): Promise<SkuSyncResult> {
+export async function syncInternalProducts(items: BomItem[]): Promise<SkuSyncResult> {
   if (!prisma) {
     throw new Error("Database not configured");
   }
@@ -254,9 +254,9 @@ async function matchItemsAgainstInventory(
       continue;
     }
 
-    // ── Step 2: Try internal EquipmentSku by canonical key ──
+    // ── Step 2: Try internal InternalProduct by canonical key ──
     if (canonicalKey) {
-      const skuMatch = await prisma!.equipmentSku.findFirst({
+      const skuMatch = await prisma!.internalProduct.findFirst({
         where: { canonicalKey, isActive: true },
         select: { id: true },
       });
@@ -266,7 +266,7 @@ async function matchItemsAgainstInventory(
         itemResults.push({
           ...itemBase(item),
           matchSource: "internal",
-          equipmentSkuId: skuMatch.id,
+          internalProductId: skuMatch.id,
           action: "matched",
         });
         continue;
@@ -314,11 +314,11 @@ async function matchItemsAgainstInventory(
 }
 
 // ---------------------------------------------------------------------------
-// Zoho → EquipmentSku bridge
+// Zoho → InternalProduct bridge
 // ---------------------------------------------------------------------------
 
 /**
- * When a Zoho match is found, find or create the corresponding EquipmentSku.
+ * When a Zoho match is found, find or create the corresponding InternalProduct.
  * Priority: zohoItemId → canonicalKey → create new (Zoho-backed).
  */
 async function linkOrCreateSkuFromZoho(
@@ -333,35 +333,35 @@ async function linkOrCreateSkuFromZoho(
   };
 
   // 1. Find by zohoItemId
-  let sku = await prisma!.equipmentSku.findFirst({
+  let sku = await prisma!.internalProduct.findFirst({
     where: { zohoItemId: zohoMatch.item_id, isActive: true },
     select: { id: true },
   });
 
   if (sku) {
-    return { ...base, matchSource: "zoho", ...zohoFields, equipmentSkuId: sku.id, action: "linked" };
+    return { ...base, matchSource: "zoho", ...zohoFields, internalProductId: sku.id, action: "linked" };
   }
 
   // 2. Find by canonical key and backfill zohoItemId
   if (canonicalKey) {
-    sku = await prisma!.equipmentSku.findFirst({
+    sku = await prisma!.internalProduct.findFirst({
       where: { canonicalKey, isActive: true },
       select: { id: true },
     });
     if (sku) {
-      await prisma!.equipmentSku.update({
+      await prisma!.internalProduct.update({
         where: { id: sku.id },
         data: { zohoItemId: zohoMatch.item_id },
       });
-      return { ...base, matchSource: "zoho", ...zohoFields, equipmentSkuId: sku.id, action: "linked" };
+      return { ...base, matchSource: "zoho", ...zohoFields, internalProductId: sku.id, action: "linked" };
     }
   }
 
-  // 3. No EquipmentSku exists — create one backed by Zoho item
+  // 3. No InternalProduct exists — create one backed by Zoho item
   const cb = canonicalToken(item.brand);
   const cm = canonicalToken(item.model);
   try {
-    const newSku = await prisma!.equipmentSku.create({
+    const newSku = await prisma!.internalProduct.create({
       data: {
         category: item.category as EquipmentCategory,
         brand: item.brand,
@@ -377,11 +377,11 @@ async function linkOrCreateSkuFromZoho(
       },
       select: { id: true },
     });
-    return { ...base, matchSource: "zoho", ...zohoFields, equipmentSkuId: newSku.id, action: "created_with_zoho" };
+    return { ...base, matchSource: "zoho", ...zohoFields, internalProductId: newSku.id, action: "created_with_zoho" };
   } catch (err: unknown) {
     // P2002 = unique constraint race — another request created it first
     if ((err as { code?: string }).code === "P2002") {
-      const existing = await prisma!.equipmentSku.findFirst({
+      const existing = await prisma!.internalProduct.findFirst({
         where: {
           category: item.category as EquipmentCategory,
           brand: item.brand,
@@ -390,11 +390,11 @@ async function linkOrCreateSkuFromZoho(
         select: { id: true },
       });
       if (existing) {
-        await prisma!.equipmentSku.update({
+        await prisma!.internalProduct.update({
           where: { id: existing.id },
           data: { zohoItemId: zohoMatch.item_id },
         });
-        return { ...base, matchSource: "zoho", ...zohoFields, equipmentSkuId: existing.id, action: "linked" };
+        return { ...base, matchSource: "zoho", ...zohoFields, internalProductId: existing.id, action: "linked" };
       }
     }
     throw err;
@@ -624,7 +624,7 @@ async function syncWithDirectInsertLegacy(items: BomItem[]): Promise<SkuSyncResu
  * Save a BOM snapshot for a deal with auto-incrementing version.
  *
  * Runs the BOM post-processor (if enabled via ENABLE_BOM_POST_PROCESS),
- * saves the snapshot to Postgres, and syncs EquipmentSku records.
+ * saves the snapshot to Postgres, and syncs InternalProduct records.
  *
  * @returns The created snapshot's id, version, and createdAt.
  */
@@ -727,7 +727,7 @@ export async function saveBomSnapshot(params: {
       ...processedBomData.items,
       ...(processedBomData.suggestedAdditions ?? []),
     ];
-    const skuSync = await syncEquipmentSkus(allItemsToSync);
+    const skuSync = await syncInternalProducts(allItemsToSync);
 
     await logSnapshot("succeeded", {
       dealId,

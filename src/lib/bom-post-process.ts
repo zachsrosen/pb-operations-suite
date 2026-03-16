@@ -14,7 +14,7 @@
  *    propagating to PO/SO creation which reads snapshot items[].
  *  - Rule 5 returns suggestedAdditions[] as a SEPARATE array.  These are
  *    OPS_STANDARD items the planset doesn't include.  They get synced to
- *    internal inventory (EquipmentSku) but do NOT modify items[].
+ *    internal inventory (InternalProduct) but do NOT modify items[].
  *  - detectJobContext runs AFTER Rules 1-3 so it sees normalized categories
  *    and models (e.g. PV_MODULE→MODULE, description→model standardization).
  *  - Pure synchronous — no Zoho lookups, no external dependencies.

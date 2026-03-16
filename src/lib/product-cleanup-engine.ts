@@ -200,7 +200,7 @@ export async function runInternalCleanupEngine(params: {
   };
 
   if (!dryRun && hasInternalUpdate) {
-    await prismaClient.equipmentSku.update({
+    await prismaClient.internalProduct.update({
       where: { id: sku.id },
       data: updateData,
     });
