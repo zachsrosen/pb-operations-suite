@@ -22,10 +22,31 @@ import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days"
 import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
 import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest } from "@/lib/scheduling-policy";
 import { getGoogleCalendarEventUrl } from "@/lib/external-links";
+import { normalizeEmail } from "@/lib/email-utils";
 import { extractInstallerNote as extractInstallerNoteFromBlob } from "@/lib/schedule-notes";
 
 type ScheduleType = "survey" | "installation" | "inspection";
 const MANAGER_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS_MANAGER"];
+type ZuperUserLookupResult = Awaited<ReturnType<typeof zuper.getUser>>;
+type ZuperUserLookupCache = Map<string, ZuperUserLookupResult>;
+
+async function getCachedZuperUser(
+  userUid: string,
+  cache?: ZuperUserLookupCache
+): Promise<ZuperUserLookupResult> {
+  if (!cache) {
+    return zuper.getUser(userUid);
+  }
+
+  const cached = cache.get(userUid);
+  if (cached) {
+    return cached;
+  }
+
+  const result = await zuper.getUser(userUid);
+  cache.set(userUid, result);
+  return result;
+}
 
 async function checkScheduleOwnership(
   user: { email: string; role: string },
@@ -340,6 +361,7 @@ async function verifyHubSpotScheduleWrite(
 export async function PUT(request: NextRequest) {
   tagSentryRequest(request);
   try {
+    const zuperUserCache = new Map<string, ZuperUserLookupResult>();
     // Check authentication
     const session = await auth();
     if (!session?.user?.email) {
@@ -733,12 +755,19 @@ export async function PUT(request: NextRequest) {
       .every((part: string) => isUuid(part));
     let resolvedCrew = schedule.crew || "";
     let resolvedTeamUid = schedule.teamUid || "";
-    if ((!resolvedCrew || !isUuidList(resolvedCrew)) && schedule.assignedUser && !String(schedule.assignedUser).includes(",")) {
+    if (schedule.assignedUser && !String(schedule.assignedUser).includes(",")) {
       console.log(`[Zuper Schedule] Resolving UID for "${schedule.assignedUser}" (crew was "${resolvedCrew}")`);
       const resolved = await zuper.resolveUserUid(schedule.assignedUser);
       if (resolved) {
-        resolvedCrew = resolved.userUid;
-        if (!resolvedTeamUid && resolved.teamUid) resolvedTeamUid = resolved.teamUid;
+        if (!resolvedCrew || !isUuidList(resolvedCrew)) {
+          resolvedCrew = resolved.userUid;
+        }
+        if (resolved.teamUid && resolvedTeamUid !== resolved.teamUid) {
+          console.log(
+            `[Zuper Schedule] Overriding team UID for "${schedule.assignedUser}" from "${resolvedTeamUid || "none"}" to "${resolved.teamUid}"`
+          );
+          resolvedTeamUid = resolved.teamUid;
+        }
         console.log(`[Zuper Schedule] Resolved "${schedule.assignedUser}" → userUid: ${resolvedCrew}, teamUid: ${resolvedTeamUid}`);
       } else {
         console.warn(`[Zuper Schedule] Could not resolve UID for "${schedule.assignedUser}"`);
@@ -752,7 +781,7 @@ export async function PUT(request: NextRequest) {
       let previousSurveyorEmail: string | null = null;
       if (schedule.type === "survey") {
         try {
-          previousSurveyorEmail = await resolvePrimarySurveyorEmailFromJob(existingJob.job_uid);
+          previousSurveyorEmail = await resolvePrimarySurveyorEmailFromJob(existingJob.job_uid, zuperUserCache);
         } catch (prevErr) {
           console.warn(
             `[Zuper Schedule] Could not resolve previous surveyor from Zuper job ${existingJob.job_uid}: ${prevErr instanceof Error ? prevErr.message : String(prevErr)}`
@@ -773,6 +802,7 @@ export async function PUT(request: NextRequest) {
             const resolvedPrevious = await resolveCrewNotificationRecipient({
               assignedUser: previousRecord.assignedUser || undefined,
               assignedUserUid: previousRecord.assignedUserUid || undefined,
+              userCache: zuperUserCache,
             });
             previousSurveyorEmail = normalizeEmail(resolvedPrevious.recipientEmail);
           }
@@ -920,7 +950,7 @@ export async function PUT(request: NextRequest) {
           session.user.name || session.user.email,
           session.user.email,
           existingJob.job_uid,
-          { previousSurveyorEmail }
+          { previousSurveyorEmail, userCache: zuperUserCache }
         );
       } else {
         console.log("[Zuper Schedule] Test slot mode enabled; skipping crew notification email");
@@ -1052,7 +1082,8 @@ export async function PUT(request: NextRequest) {
           project,
           session.user.name || session.user.email,
           session.user.email,
-          newJobUid
+          newJobUid,
+          { userCache: zuperUserCache }
         );
       } else {
         console.log("[Zuper Schedule] Test slot mode enabled; skipping crew notification email");
@@ -1164,6 +1195,7 @@ export async function GET(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   tagSentryRequest(request);
   try {
+    const zuperUserCache = new Map<string, ZuperUserLookupResult>();
     // Check authentication
     const session = await auth();
     if (!session?.user?.email) {
@@ -1608,6 +1640,7 @@ export async function DELETE(request: NextRequest) {
         const resolvedRecipient = await resolveCrewNotificationRecipient({
           assignedUser: latestActiveRecord?.assignedUser || (typeof assignedUser === "string" ? assignedUser : undefined),
           assignedUserUid: latestActiveRecord?.assignedUserUid || undefined,
+          userCache: zuperUserCache,
         });
         calendarDeleteAttempted = true;
         const personalDelete = await deleteSiteSurveyCalendarEvent({
@@ -1711,6 +1744,7 @@ export async function DELETE(request: NextRequest) {
         cancelledByName: session.user.name || session.user.email,
         cancelledByEmail: session.user.email,
         cancelReason: typeof cancelReason === "string" ? cancelReason : undefined,
+        userCache: zuperUserCache,
       });
     } catch (emailErr) {
       console.warn("[Zuper Unschedule] Failed to send cancellation notification email:", emailErr);
@@ -1820,6 +1854,7 @@ async function resolveCrewNotificationRecipient(params: {
   assignedUser?: string;
   assignedUserUid?: string;
   crew?: string;
+  userCache?: ZuperUserLookupCache;
 }): Promise<{ recipientEmail: string | null; recipientName: string }> {
   const assignedUserName = firstToken(params.assignedUser);
   const assignedUserUidCandidate = firstToken(params.assignedUserUid);
@@ -1831,11 +1866,38 @@ async function resolveCrewNotificationRecipient(params: {
   let recipientEmail: string | null = null;
   let recipientName = assignedUserName || "";
 
-  if (assignedUserName) {
+  if (assignedUserUid) {
+    const userResult = await getCachedZuperUser(assignedUserUid, params.userCache);
+    if (userResult.type === "success") {
+      const liveEmail = normalizeEmail(userResult.data?.email);
+      if (liveEmail) {
+        recipientEmail = liveEmail;
+      }
+      const liveName = [userResult.data?.first_name, userResult.data?.last_name]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+      if (liveName) {
+        recipientName = liveName;
+      }
+    }
+  }
+
+  if (!recipientEmail && assignedUserUid) {
+    const byUid = await getCrewMemberByZuperUserUid(assignedUserUid);
+    const byUidEmail = normalizeEmail(byUid?.email);
+    if (byUidEmail) {
+      recipientEmail = byUidEmail;
+      recipientName = byUid?.name || recipientName;
+    }
+  }
+
+  if (!recipientEmail && assignedUserName) {
     const byName = await getCrewMemberByName(assignedUserName);
-    if (byName?.email) {
-      recipientEmail = byName.email;
-      recipientName = byName.name;
+    const byNameEmail = normalizeEmail(byName?.email);
+    if (byNameEmail) {
+      recipientEmail = byNameEmail;
+      recipientName = byName?.name || recipientName;
     }
   }
 
@@ -1845,40 +1907,14 @@ async function resolveCrewNotificationRecipient(params: {
       where: { name: assignedUserName },
       select: { email: true, name: true },
     });
-    if (byAppUserName?.email) {
-      recipientEmail = byAppUserName.email;
-      recipientName = byAppUserName.name || recipientName;
-    }
-  }
-
-  if (!recipientEmail && assignedUserUid) {
-    const byUid = await getCrewMemberByZuperUserUid(assignedUserUid);
-    if (byUid?.email) {
-      recipientEmail = byUid.email;
-      recipientName = byUid.name;
-    }
-  }
-
-  if (!recipientEmail && assignedUserUid) {
-    const userResult = await zuper.getUser(assignedUserUid);
-    if (userResult.type === "success" && userResult.data?.email) {
-      recipientEmail = userResult.data.email;
-      if (!recipientName) {
-        recipientName = [userResult.data.first_name, userResult.data.last_name]
-          .filter(Boolean)
-          .join(" ")
-          .trim() || (assignedUserName || "");
-      }
+    const byAppUserEmail = normalizeEmail(byAppUserName?.email);
+    if (byAppUserEmail) {
+      recipientEmail = byAppUserEmail;
+      recipientName = byAppUserName?.name || recipientName;
     }
   }
 
   return { recipientEmail, recipientName };
-}
-
-function normalizeEmail(input?: string | null): string | null {
-  const raw = (input || "").trim().toLowerCase();
-  if (!raw) return null;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw) ? raw : null;
 }
 
 function isNickSurveyorEmail(email?: string | null): boolean {
@@ -1908,7 +1944,10 @@ function getSiteSurveySharedCalendarImpersonationEmail(email?: string | null): s
   return getSharedCalendarImpersonationEmail() || normalizeEmail(email);
 }
 
-async function resolvePrimarySurveyorEmailFromJob(jobUid: string): Promise<string | null> {
+async function resolvePrimarySurveyorEmailFromJob(
+  jobUid: string,
+  userCache?: ZuperUserLookupCache
+): Promise<string | null> {
   const jobResult = await zuper.getJob(jobUid);
   if (jobResult.type !== "success" || !jobResult.data) return null;
 
@@ -1925,7 +1964,7 @@ async function resolvePrimarySurveyorEmailFromJob(jobUid: string): Promise<strin
     const byUidEmail = normalizeEmail(byUid?.email);
     if (byUidEmail) return byUidEmail;
 
-    const zuperUser = await zuper.getUser(userUid);
+    const zuperUser = await getCachedZuperUser(userUid, userCache);
     if (zuperUser.type === "success") {
       const zuperEmail = normalizeEmail(zuperUser.data?.email);
       if (zuperEmail) return zuperEmail;
@@ -1973,7 +2012,7 @@ async function sendCrewNotification(
   schedulerName: string,
   schedulerEmail: string,
   zuperJobUid?: string,
-  options?: { previousSurveyorEmail?: string | null }
+  options?: { previousSurveyorEmail?: string | null; userCache?: ZuperUserLookupCache }
 ) {
   try {
     // If no assigned user, skip notification
@@ -1995,6 +2034,7 @@ async function sendCrewNotification(
         assignedUser: assignedUserName,
         assignedUserUid,
         crew: assignedUserUid,
+        userCache: options?.userCache,
       });
       const email = normalizeEmail(resolvedRecipient.recipientEmail);
       if (!email || seenEmails.has(email)) continue;
@@ -2241,6 +2281,7 @@ async function sendCrewCancellationEmail(params: {
   cancelledByName: string;
   cancelledByEmail: string;
   cancelReason?: string;
+  userCache?: ZuperUserLookupCache;
 }) {
   if (params.scheduleType !== "survey" || !params.assignedUser) {
     return;
@@ -2249,6 +2290,7 @@ async function sendCrewCancellationEmail(params: {
   const resolvedRecipient = await resolveCrewNotificationRecipient({
     assignedUser: params.assignedUser,
     assignedUserUid: params.assignedUserUid || undefined,
+    userCache: params.userCache,
   });
   let recipientEmail = resolvedRecipient.recipientEmail;
   const recipientName = resolvedRecipient.recipientName || params.assignedUser;

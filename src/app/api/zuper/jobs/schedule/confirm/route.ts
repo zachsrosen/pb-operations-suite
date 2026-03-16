@@ -20,11 +20,28 @@ import { getInstallNotificationDetails } from "@/lib/scheduling-email-details";
 import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
 import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest } from "@/lib/scheduling-policy";
 import { getGoogleCalendarEventUrl } from "@/lib/external-links";
+import { normalizeEmail } from "@/lib/email-utils";
 import { waitUntil } from "@vercel/functions";
 import { runDesignCompletePipeline } from "@/lib/bom-pipeline";
 import { acquirePipelineLock, DuplicateRunError } from "@/lib/bom-pipeline-lock";
 import { checkBomSnapshotExists, getBomEmailEnrichment, type BomEmailEnrichment } from "@/lib/bom-email-enrichment";
 import { extractInstallerNote, upsertInstallerNoteInBlob, MAX_INSTALLER_NOTE_LENGTH } from "@/lib/schedule-notes";
+
+type ZuperUserLookupResult = Awaited<ReturnType<typeof zuper.getUser>>;
+
+async function getCachedZuperUser(
+  userUid: string,
+  cache: Map<string, ZuperUserLookupResult>
+): Promise<ZuperUserLookupResult> {
+  const cached = cache.get(userUid);
+  if (cached) {
+    return cached;
+  }
+
+  const result = await zuper.getUser(userUid);
+  cache.set(userUid, result);
+  return result;
+}
 
 function getConstructionScheduleBoundaryProperties(): { start: string | null; end: string | null } {
   const start = process.env.HUBSPOT_CONSTRUCTION_START_DATE_PROPERTY?.trim() || null;
@@ -89,12 +106,6 @@ function parseHubSpotValueToDateOnly(raw: string): string | null {
   const ms = parseHubSpotValueToMs(value);
   if (typeof ms !== "number" || !Number.isFinite(ms)) return null;
   return new Date(ms).toISOString().slice(0, 10);
-}
-
-function normalizeEmail(value?: string | null): string | null {
-  const trimmed = (value || "").trim().toLowerCase();
-  if (!trimmed) return null;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed) ? trimmed : null;
 }
 
 function isNickSurveyorEmail(email?: string | null): boolean {
@@ -213,6 +224,7 @@ async function writeConstructionScheduleBoundaryProperties(
  */
 export async function POST(request: NextRequest) {
   try {
+    const zuperUserCache = new Map<string, ZuperUserLookupResult>();
     const session = await auth();
     if (!session?.user?.email) {
       return NextResponse.json({ error: "Authentication required" }, { status: 401 });
@@ -339,14 +351,14 @@ export async function POST(request: NextRequest) {
         const crewMember = await getCrewMemberByName(desiredAssigneeName);
         if (crewMember?.zuperUserUid) {
           resolvedUserUids.push(crewMember.zuperUserUid);
-          if (!resolvedTeamUid && crewMember.zuperTeamUid) {
+          if (crewMember.zuperTeamUid) {
             resolvedTeamUid = crewMember.zuperTeamUid;
           }
         } else {
           const resolved = await zuper.resolveUserUid(desiredAssigneeName);
           if (resolved?.userUid) {
             resolvedUserUids.push(resolved.userUid);
-            if (!resolvedTeamUid && resolved.teamUid) {
+            if (resolved.teamUid) {
               resolvedTeamUid = resolved.teamUid;
             }
           }
@@ -595,7 +607,7 @@ export async function POST(request: NextRequest) {
               previousSurveyorEmailFromJob = normalizeEmail(byUid?.email);
             }
             if (!previousSurveyorEmailFromJob && assignedUid) {
-              const userResult = await zuper.getUser(assignedUid);
+              const userResult = await getCachedZuperUser(assignedUid, zuperUserCache);
               if (userResult.type === "success") {
                 previousSurveyorEmailFromJob = normalizeEmail(userResult.data?.email);
               }
@@ -783,17 +795,38 @@ export async function POST(request: NextRequest) {
         let recipientEmail: string | null = null;
         let recipientName = record.assignedUser;
 
-        const byName = await getCrewMemberByName(record.assignedUser);
-        if (byName?.email) {
-          recipientEmail = byName.email;
-          recipientName = byName.name;
+        if (firstAssignedUid) {
+          const userResult = await getCachedZuperUser(firstAssignedUid, zuperUserCache);
+          if (userResult.type === "success") {
+            const liveEmail = normalizeEmail(userResult.data?.email);
+            if (liveEmail) {
+              recipientEmail = liveEmail;
+            }
+            const liveName = [userResult.data.first_name, userResult.data.last_name]
+              .filter(Boolean)
+              .join(" ")
+              .trim();
+            if (liveName) {
+              recipientName = liveName;
+            }
+          }
         }
 
         if (!recipientEmail && firstAssignedUid) {
           const byUid = await getCrewMemberByZuperUserUid(firstAssignedUid);
-          if (byUid?.email) {
-            recipientEmail = byUid.email;
+          const byUidEmail = normalizeEmail(byUid?.email);
+          if (byUidEmail) {
+            recipientEmail = byUidEmail;
             recipientName = byUid.name;
+          }
+        }
+
+        if (!recipientEmail) {
+          const byName = await getCrewMemberByName(record.assignedUser);
+          const byNameEmail = normalizeEmail(byName?.email);
+          if (byNameEmail) {
+            recipientEmail = byNameEmail;
+            recipientName = byName.name;
           }
         }
 
@@ -804,19 +837,10 @@ export async function POST(request: NextRequest) {
             where: { name: record.assignedUser },
             select: { email: true, name: true },
           });
-          if (byAppUserName?.email) {
-            recipientEmail = byAppUserName.email;
-            recipientName = byAppUserName.name || recipientName;
-          }
-        }
-
-        if (!recipientEmail && firstAssignedUid) {
-          const userResult = await zuper.getUser(firstAssignedUid);
-          if (userResult.type === "success" && userResult.data?.email) {
-            recipientEmail = userResult.data.email;
-            recipientName =
-              [userResult.data.first_name, userResult.data.last_name].filter(Boolean).join(" ").trim() ||
-              record.assignedUser;
+          const byAppUserEmail = normalizeEmail(byAppUserName?.email);
+          if (byAppUserEmail) {
+            recipientEmail = byAppUserEmail;
+            recipientName = byAppUserName?.name || recipientName;
           }
         }
 

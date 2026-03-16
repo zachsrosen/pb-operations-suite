@@ -517,8 +517,10 @@ export async function GET(request: NextRequest) {
     // Resolve userUid and teamUid dynamically from Zuper API
     const resolved = resolvedCrewUids[crew.name];
     const crewUserUid = crew.userUid || resolved?.userUid;
-    // Prefer team from user's Zuper profile, fall back to location-based team map
-    const crewTeamUid = crew.teamUid || resolved?.teamUid || teamMap[crew.location];
+    // Prefer the live Zuper-resolved team over DB-configured team UIDs. The DB
+    // copy can drift and cause assignment no-ops when Zuper expects a different
+    // team for the selected user.
+    const crewTeamUid = resolved?.teamUid || crew.teamUid || teamMap[crew.location];
     if (crewUserUid) {
       console.log(`[Zuper Availability] Crew "${crew.name}" resolved UID: ${crewUserUid}, Team: ${crewTeamUid || "none"}`);
     } else {
