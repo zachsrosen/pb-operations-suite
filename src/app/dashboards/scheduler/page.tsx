@@ -1337,6 +1337,73 @@ export default function SchedulerPage() {
     });
   }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled, showCompleted, showIncomplete]);
 
+  // ---- Forecast ghost events ----
+  const forecastGhostEvents = useMemo((): ScheduledEvent[] => {
+    if (!showForecasts || !forecastQuery.data?.projects) return [];
+
+    const timelineProjects = forecastQuery.data.projects;
+    const ghosts: ScheduledEvent[] = [];
+    const preConstructionStages = new Set(["survey", "rtb", "blocked"]);
+
+    const typeVariants: Record<string, string[]> = {
+      survey: ["survey", "survey-complete"],
+      construction: ["construction", "construction-complete"],
+      inspection: ["inspection", "inspection-pass", "inspection-fail"],
+      scheduled: ["scheduled"],
+    };
+
+    for (const tp of timelineProjects) {
+      const project = projects.find((p) => String(p.id) === tp.dealId);
+      if (!project) continue;
+
+      // ── Eligibility filter ──
+      if (!preConstructionStages.has(project.stage)) continue;
+      if (project.constructionScheduleDate) continue;
+      if (manualSchedules[project.id]) continue;
+      if (project.zuperJobCategory === "construction") continue;
+
+      const installMilestone = tp.milestones.find(
+        (m) => m.key === "install" && m.basis !== "actual" && m.basis !== "insufficient"
+      );
+      if (!installMilestone?.liveForecast) continue;
+
+      const hasRealConstructionEvent = scheduledEvents.some(
+        (e) => e.id === project.id && (e.eventType === "construction" || e.eventType === "construction-complete")
+      );
+      if (hasRealConstructionEvent) continue;
+
+      // ── Build ghost event ──
+      const ghost: ScheduledEvent = {
+        ...project,
+        date: installMilestone.liveForecast,
+        eventType: "construction",
+        days: project.daysInstall || 3,
+        isForecast: true,
+      };
+
+      // ── Apply same calendar filters as filteredScheduledEvents ──
+      if (calendarLocations.length > 0 && !calendarLocations.includes(ghost.location)) continue;
+      if (calendarScheduleTypes.length > 0) {
+        const expandedTypes = calendarScheduleTypes.flatMap((t) => typeVariants[t] || [t]);
+        if (!expandedTypes.includes(ghost.eventType)) continue;
+      }
+      if (!showScheduled) continue;
+
+      ghosts.push(ghost);
+    }
+
+    return ghosts;
+  }, [
+    showForecasts, forecastQuery.data, projects, manualSchedules,
+    scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled,
+  ]);
+
+  // ---- Merged display events: real filtered events + ghost forecast events ----
+  const displayEvents = useMemo((): ScheduledEvent[] => {
+    if (forecastGhostEvents.length === 0) return filteredScheduledEvents;
+    return [...filteredScheduledEvents, ...forecastGhostEvents];
+  }, [filteredScheduledEvents, forecastGhostEvents]);
+
   const queueRevenue = useMemo(
     () => formatRevenueCompact(filteredProjects.reduce((s, p) => s + p.amount, 0)),
     [filteredProjects]
@@ -1367,12 +1434,12 @@ export default function SchedulerPage() {
 
   const computeRevenueBuckets = useCallback((events: typeof filteredScheduledEvents) => {
     const scheduledEvts = events.filter((e) =>
-      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && !e.isOverdue && !e.isTentative
+      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && !e.isOverdue && !e.isTentative && !e.isForecast
     );
-    const tentativeEvts = events.filter((e) => e.isTentative);
-    const completedEvts = events.filter((e) => e.eventType === "construction-complete");
+    const tentativeEvts = events.filter((e) => e.isTentative && !e.isForecast);
+    const completedEvts = events.filter((e) => e.eventType === "construction-complete" && !e.isForecast);
     const overdueEvts = events.filter((e) =>
-      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && e.isOverdue && !e.isTentative
+      (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && e.isOverdue && !e.isTentative && !e.isForecast
     );
     const dedupeRevenue = (evts: typeof events) => {
       const ids = new Set(evts.map((e) => e.id));
@@ -1468,7 +1535,7 @@ export default function SchedulerPage() {
     }
 
     const eventsByDate: Record<number, (ScheduledEvent & { dayNum: number; totalCalDays: number })[]> = {};
-    filteredScheduledEvents.forEach((e) => {
+    displayEvents.forEach((e) => {
       const startDate = new Date(e.date + "T12:00:00");
       const businessDays = Math.ceil(e.days || 1);
       let dayCount = 0;
@@ -1505,13 +1572,15 @@ export default function SchedulerPage() {
       survey: 2, "survey-complete": 2,
     };
     for (const day of Object.keys(eventsByDate)) {
-      eventsByDate[Number(day)].sort((a, b) =>
-        (STAGE_ORDER[a.eventType] ?? 9) - (STAGE_ORDER[b.eventType] ?? 9)
-      );
+      eventsByDate[Number(day)].sort((a, b) => {
+        const stageDiff = (STAGE_ORDER[a.eventType] ?? 9) - (STAGE_ORDER[b.eventType] ?? 9);
+        if (stageDiff !== 0) return stageDiff;
+        return (a.isForecast ? 1 : 0) - (b.isForecast ? 1 : 0);
+      });
     }
 
     return { startDay, daysInMonth, today, eventsByDate, weekdays };
-  }, [currentYear, currentMonth, filteredScheduledEvents]);
+  }, [currentYear, currentMonth, displayEvents]);
 
   /* ================================================================ */
   /*  Week view logic                                                  */
@@ -3693,7 +3762,7 @@ export default function SchedulerPage() {
                           const dateStr = toDateStr(d);
                           // Find events that span this date using business days (skip weekends)
                           const dayEvents: { event: ScheduledEvent; dayNum: number }[] = [];
-                          filteredScheduledEvents.forEach((e) => {
+                          displayEvents.forEach((e) => {
                             if (e.location !== loc) return;
                             const businessDays = Math.ceil(e.days || 1);
                             const eventStart = new Date(e.date + "T12:00:00");
@@ -3719,9 +3788,11 @@ export default function SchedulerPage() {
                             inspection: 1, "inspection-pass": 1, "inspection-fail": 1,
                             survey: 2, "survey-complete": 2,
                           };
-                          dayEvents.sort((a, b) =>
-                            (WEEK_STAGE_ORDER[a.event.eventType] ?? 9) - (WEEK_STAGE_ORDER[b.event.eventType] ?? 9)
-                          );
+                          dayEvents.sort((a, b) => {
+                            const stageDiff = (WEEK_STAGE_ORDER[a.event.eventType] ?? 9) - (WEEK_STAGE_ORDER[b.event.eventType] ?? 9);
+                            if (stageDiff !== 0) return stageDiff;
+                            return (a.event.isForecast ? 1 : 0) - (b.event.isForecast ? 1 : 0);
+                          });
                           return (
                             <div
                               key={di}
@@ -3886,7 +3957,7 @@ export default function SchedulerPage() {
                             key={idx}
                             className="bg-surface relative"
                           >
-                            {filteredScheduledEvents
+                            {displayEvents
                               .filter((e) => {
                                 if (e.location !== loc) return false;
                                 const eventStart = new Date(e.date + "T12:00:00");
@@ -3901,7 +3972,9 @@ export default function SchedulerPage() {
                                   inspection: 1, "inspection-pass": 1, "inspection-fail": 1,
                                   survey: 2, "survey-complete": 2,
                                 };
-                                return (order[a.eventType] ?? 9) - (order[b.eventType] ?? 9);
+                                const stageDiff = (order[a.eventType] ?? 9) - (order[b.eventType] ?? 9);
+                                if (stageDiff !== 0) return stageDiff;
+                                return (a.isForecast ? 1 : 0) - (b.isForecast ? 1 : 0);
                               })
                               .map((e, ei) => {
                                 const days = e.days || 1;
