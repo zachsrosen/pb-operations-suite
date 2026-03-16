@@ -14,8 +14,8 @@ async function main() {
   });
   console.log(`Loaded ${lookups.length} active vendors from VendorLookup`);
 
-  // Find SKUs with vendorName but no zohoVendorId
-  const skus = await prisma.equipmentSku.findMany({
+  // Find products with vendorName but no zohoVendorId
+  const skus = await prisma.internalProduct.findMany({
     where: {
       vendorName: { not: null },
       zohoVendorId: null,
@@ -35,7 +35,7 @@ async function main() {
         `  MATCH: "${sku.vendorName}" → "${result.name}" (${result.zohoVendorId}) — ${sku.brand} ${sku.model}`
       );
       if (applyMode) {
-        await prisma.equipmentSku.update({
+        await prisma.internalProduct.update({
           where: { id: sku.id },
           data: { zohoVendorId: result.zohoVendorId },
         });
@@ -48,7 +48,7 @@ async function main() {
     }
   }
 
-  console.log(`\nEquipmentSku: ${matched} matched, ${unmatched} unmatched`);
+  console.log(`\nInternalProduct: ${matched} matched, ${unmatched} unmatched`);
 
   // Also backfill PendingCatalogPush records
   const pushes = await prisma.pendingCatalogPush.findMany({

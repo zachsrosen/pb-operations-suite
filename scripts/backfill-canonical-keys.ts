@@ -1,5 +1,5 @@
 /**
- * Backfill canonicalBrand, canonicalModel, canonicalKey on EquipmentSku rows
+ * Backfill canonicalBrand, canonicalModel, canonicalKey on InternalProduct rows
  * where they are currently NULL.
  *
  * Safe to re-run — only touches rows with NULL canonicalKey.
@@ -14,12 +14,12 @@ async function main() {
     process.exit(1);
   }
 
-  const beforeNull = await prisma.equipmentSku.count({ where: { canonicalKey: null } });
-  const total = await prisma.equipmentSku.count();
-  console.log(`\n📊 Before: ${beforeNull}/${total} SKUs have NULL canonicalKey\n`);
+  const beforeNull = await prisma.internalProduct.count({ where: { canonicalKey: null } });
+  const total = await prisma.internalProduct.count();
+  console.log(`\n📊 Before: ${beforeNull}/${total} products have NULL canonicalKey\n`);
 
   if (beforeNull === 0) {
-    console.log("✅ Nothing to backfill — all SKUs already have canonicalKey set.\n");
+    console.log("✅ Nothing to backfill — all products already have canonicalKey set.\n");
     process.exit(0);
   }
 
@@ -32,9 +32,9 @@ async function main() {
     WHERE "canonicalKey" IS NULL
   `);
 
-  const afterNull = await prisma.equipmentSku.count({ where: { canonicalKey: null } });
+  const afterNull = await prisma.internalProduct.count({ where: { canonicalKey: null } });
   console.log(`✅ Backfilled ${updated} rows`);
-  console.log(`📊 After: ${afterNull}/${total} SKUs still have NULL canonicalKey\n`);
+  console.log(`📊 After: ${afterNull}/${total} products still have NULL canonicalKey\n`);
 
   process.exit(0);
 }
