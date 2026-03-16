@@ -16,6 +16,7 @@ const LINKS: SuitePageCard[] = [
     description: "Dedicated calendar for scheduling site surveys with Zuper integration.",
     tag: "SCHEDULING",
     section: "Scheduling",
+    hardNavigate: true,
   },
   {
     href: "/dashboards/construction-scheduler",
@@ -23,6 +24,7 @@ const LINKS: SuitePageCard[] = [
     description: "Dedicated calendar for scheduling construction installs with Zuper integration.",
     tag: "SCHEDULING",
     section: "Scheduling",
+    hardNavigate: true,
   },
   {
     href: "/dashboards/inspection-scheduler",
@@ -30,6 +32,7 @@ const LINKS: SuitePageCard[] = [
     description: "Dedicated calendar for scheduling inspections with Zuper integration.",
     tag: "SCHEDULING",
     section: "Scheduling",
+    hardNavigate: true,
   },
   {
     href: "/dashboards/site-survey",
