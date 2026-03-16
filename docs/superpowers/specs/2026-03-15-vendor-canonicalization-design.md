@@ -96,7 +96,7 @@ New component modeled after existing `BrandDropdown`:
 
 ### Clone/Import/Prefill Paths
 
-- **`PREFILL_FROM_PRODUCT` (clone)**: copies `vendorName` + `zohoVendorId` from source SKU. Clears `vendorPartNumber` (existing behavior) but preserves vendor selection.
+- **`PREFILL_FROM_PRODUCT` (clone)**: if source SKU has both `vendorName` and `zohoVendorId`, copy both (valid pair). If source SKU has `vendorName` but no `zohoVendorId` (legacy data), treat `vendorName` as a hint — show it as placeholder text in the picker but leave `zohoVendorId` blank, requiring the user to re-select from the list. Clears `vendorPartNumber` (existing behavior).
 - **`PREFILL_FROM_DATASHEET` (AI import)**: extraction may return a vendor string. Server-side matching rule:
   - Exact match or normalized-exact match against `VendorLookup.name` → set `zohoVendorId`
   - **Normalization rule**: case-insensitive, trim whitespace, strip trailing suffixes (Inc, LLC, Corp, Ltd, Co). Example: "SolarEdge Technologies Inc" normalizes to "solaredge technologies" for comparison.
@@ -122,7 +122,7 @@ On the valid case (both present, matching): `VendorLookup.name` is the canonical
 
 - Copies `zohoVendorId` from push record to `EquipmentSku` on upsert
 - Downstream systems receive both values where applicable:
-  - **Zoho Inventory**: send both `vendor_id` (from `zohoVendorId`) and `vendor_name` when `zohoVendorId` is present. The `ZohoItemPayload` interface already has a `vendor_id` field (line 31 of `zoho-inventory.ts`) — currently unused. Phase 1 wires it up.
+  - **Zoho Inventory**: send both `vendor_id` (from `zohoVendorId`) and `vendor_name` when `zohoVendorId` is present. The `ZohoItemPayload` interface already has a `vendor_id` field (line 31 of `zoho-inventory.ts`) — currently unused. Phase 1 wires it up. **Important**: `createOrUpdateItem()` currently only does a best-effort `group_name` update on existing item matches — it does not update vendor fields on the existing-item path. This must be extended so that `vendor_id` and `vendor_name` are included in the existing-item update payload too, not just new-item creation. Otherwise vendor canonicalization silently misses already-matched Zoho items.
   - **HubSpot**: continues receiving `vendorName` string for the `vendor_name` property (no vendor ID concept in HubSpot)
   - **Zuper**: continues receiving `vendorName` string
 
