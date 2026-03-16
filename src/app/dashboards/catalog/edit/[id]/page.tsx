@@ -100,7 +100,7 @@ export default function CatalogSkuEditPage() {
 
   useEffect(() => {
     if (!skuId) {
-      setLoadError("Missing SKU id");
+      setLoadError("Missing product id");
       setLoading(false);
       return;
     }
@@ -114,10 +114,10 @@ export default function CatalogSkuEditPage() {
       try {
         const res = await fetch("/api/inventory/skus?active=false", { cache: "no-store" });
         const body = await res.json().catch(() => null) as { error?: string; skus?: EditableInternalProduct[] } | null;
-        if (!res.ok) throw new Error(body?.error || `Failed to load SKUs (${res.status})`);
+        if (!res.ok) throw new Error(body?.error || `Failed to load products (${res.status})`);
 
         const found = (body?.skus || []).find((item) => item.id === skuId);
-        if (!found) throw new Error("SKU not found");
+        if (!found) throw new Error("Product not found");
         if (cancelled) return;
 
         setCategory(found.category);
@@ -143,7 +143,7 @@ export default function CatalogSkuEditPage() {
         setIsActive(found.isActive);
       } catch (error) {
         if (!cancelled) {
-          setLoadError(error instanceof Error ? error.message : "Failed to load SKU");
+          setLoadError(error instanceof Error ? error.message : "Failed to load product");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -201,9 +201,9 @@ export default function CatalogSkuEditPage() {
       });
 
       const body = await res.json().catch(() => null) as { error?: string } | null;
-      if (!res.ok) throw new Error(body?.error || `Failed to update SKU (${res.status})`);
+      if (!res.ok) throw new Error(body?.error || `Failed to update product (${res.status})`);
 
-      addToast({ type: "success", title: "SKU updated" });
+      addToast({ type: "success", title: "Product updated" });
 
       const hasLinkedSystems = Boolean(zohoItemId || hubspotProductId || zuperItemId);
       if (hasLinkedSystems && canSync) {
@@ -212,8 +212,8 @@ export default function CatalogSkuEditPage() {
         router.push("/dashboards/catalog");
       }
     } catch (error) {
-      setLoadError(error instanceof Error ? error.message : "Failed to update SKU");
-      addToast({ type: "error", title: error instanceof Error ? error.message : "Failed to update SKU" });
+      setLoadError(error instanceof Error ? error.message : "Failed to update product");
+      addToast({ type: "error", title: error instanceof Error ? error.message : "Failed to update product" });
     } finally {
       setSaving(false);
     }
@@ -231,12 +231,12 @@ export default function CatalogSkuEditPage() {
       });
 
       const body = await res.json().catch(() => null) as { error?: string; name?: string } | null;
-      if (!res.ok) throw new Error(body?.error || `Failed to delete SKU (${res.status})`);
+      if (!res.ok) throw new Error(body?.error || `Failed to delete product (${res.status})`);
 
-      addToast({ type: "success", title: `Deleted ${body?.name || "SKU"}` });
+      addToast({ type: "success", title: `Deleted ${body?.name || "product"}` });
       router.push("/dashboards/catalog");
     } catch (error) {
-      addToast({ type: "error", title: error instanceof Error ? error.message : "Failed to delete SKU" });
+      addToast({ type: "error", title: error instanceof Error ? error.message : "Failed to delete product" });
       setShowDeleteConfirm(false);
     } finally {
       setDeleting(false);
@@ -537,7 +537,7 @@ export default function CatalogSkuEditPage() {
             <div className="flex-1">
               <div className="text-sm font-medium text-foreground">Push changes to linked systems?</div>
               <div className="text-xs text-muted mt-0.5">
-                This SKU is linked to{" "}
+                This product is linked to{" "}
                 {[zohoItemId && "Zoho", hubspotProductId && "HubSpot", zuperItemId && "Zuper"]
                   .filter(Boolean)
                   .join(", ")}
