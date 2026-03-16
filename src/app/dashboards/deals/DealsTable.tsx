@@ -123,6 +123,11 @@ export default function DealsTable({
                 </th>
               ))}
             {isProject && (
+              <th className={`${thClass} w-[80px]`} onClick={() => onSort("projectManager")}>
+                PM <SortArrow active={sort === "projectManager"} order={order} />
+              </th>
+            )}
+            {isProject && (
               <th className={`${thClass} w-[80px]`} onClick={() => onSort("dealOwner")}>
                 Owner <SortArrow active={sort === "dealOwner"} order={order} />
               </th>
@@ -165,6 +170,11 @@ export default function DealsTable({
                   </td>
                 ))}
               {isProject && (
+                <td className={`${tdClass} text-muted text-[11px] truncate max-w-[80px]`} title={deal.projectManager || ""}>
+                  {deal.projectManager || "—"}
+                </td>
+              )}
+              {isProject && (
                 <td className={`${tdClass} text-muted text-[11px] truncate max-w-[80px]`} title={deal.dealOwner || ""}>
                   {deal.dealOwner || "—"}
                 </td>
@@ -173,7 +183,7 @@ export default function DealsTable({
           ))}
           {sorted.length === 0 && (
             <tr>
-              <td colSpan={isProject ? 13 : 12} className="text-center py-12 text-muted">
+              <td colSpan={isProject ? 14 : 12} className="text-center py-12 text-muted">
                 No deals match the current filters.
               </td>
             </tr>

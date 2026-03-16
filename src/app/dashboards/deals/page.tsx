@@ -44,6 +44,14 @@ function getOwnerOptions(deals: TableDeal[]): FilterOption[] {
   return owners.map((o) => ({ value: o, label: o }));
 }
 
+// Project Manager options from project data
+function getPMOptions(deals: TableDeal[]): FilterOption[] {
+  const pms = [
+    ...new Set(deals.map((d) => d.projectManager).filter((p): p is string => !!p)),
+  ].sort();
+  return pms.map((p) => ({ value: p, label: p }));
+}
+
 function DealsPageInner() {
   const { filters, setFilters, setStatusFilter } = useDealsFilters();
   const [allDeals, setAllDeals] = useState<TableDeal[]>([]);
@@ -156,6 +164,12 @@ function DealsPageInner() {
       result = result.filter((d) => d.dealOwner && ownerSet.has(d.dealOwner));
     }
 
+    // Project Manager filter (project pipeline only)
+    if (filters.projectManagers.length > 0 && isProjectPipeline(filters.pipeline)) {
+      const pmSet = new Set(filters.projectManagers);
+      result = result.filter((d) => d.projectManager && pmSet.has(d.projectManager));
+    }
+
     // Status column filters
     for (const [field, values] of Object.entries(filters.statusFilters)) {
       if (values.length > 0) {
@@ -193,6 +207,7 @@ function DealsPageInner() {
   const stageOptions = useMemo(() => getStageOptions(filters.pipeline), [filters.pipeline]);
   const locationOptions = useMemo(() => getLocationOptions(allDeals), [allDeals]);
   const ownerOptions = useMemo(() => getOwnerOptions(allDeals), [allDeals]);
+  const pmOptions = useMemo(() => getPMOptions(allDeals), [allDeals]);
 
   const handleSort = useCallback(
     (field: string) => {
@@ -259,6 +274,17 @@ function DealsPageInner() {
           />
         )}
 
+        {/* Project Manager filter — project pipeline only */}
+        {isProject && (
+          <MultiSelectFilter
+            label="PM"
+            options={pmOptions}
+            selected={filters.projectManagers}
+            onChange={(projectManagers) => setFilters({ projectManagers })}
+            accentColor="orange"
+          />
+        )}
+
         {/* Search */}
         <div className="relative ml-auto">
           <svg
@@ -283,7 +309,7 @@ function DealsPageInner() {
       </div>
 
       {/* Active filter pills */}
-      {(filters.stages.length > 0 || filters.locations.length > 0 || filters.owners.length > 0) && (
+      {(filters.stages.length > 0 || filters.locations.length > 0 || filters.owners.length > 0 || filters.projectManagers.length > 0) && (
         <div className="flex gap-2 flex-wrap mb-3">
           {filters.stages.map((s) => (
             <FilterPill
@@ -304,6 +330,13 @@ function DealsPageInner() {
               key={`owner-${o}`}
               label={o}
               onRemove={() => setFilters({ owners: filters.owners.filter((v) => v !== o) })}
+            />
+          ))}
+          {filters.projectManagers.map((pm) => (
+            <FilterPill
+              key={`pm-${pm}`}
+              label={`PM: ${pm}`}
+              onRemove={() => setFilters({ projectManagers: filters.projectManagers.filter((v) => v !== pm) })}
             />
           ))}
         </div>

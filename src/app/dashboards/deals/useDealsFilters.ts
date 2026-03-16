@@ -8,6 +8,7 @@ export interface DealsFilterState {
   stages: string[];
   locations: string[];
   owners: string[];
+  projectManagers: string[];
   search: string;
   sort: string;
   order: "asc" | "desc";
@@ -49,6 +50,7 @@ export function useDealsFilters() {
       stages: parseCommaSep(searchParams.get("stage")),
       locations: parseCommaSep(searchParams.get("location")),
       owners: parseCommaSep(searchParams.get("owner")),
+      projectManagers: parseCommaSep(searchParams.get("pm")),
       search: searchParams.get("search") || "",
       sort: searchParams.get("sort") || "stage",
       order: (searchParams.get("order") as "asc" | "desc") || "asc",
@@ -69,9 +71,10 @@ export function useDealsFilters() {
         } else {
           params.set("pipeline", updates.pipeline);
         }
-        // Pipeline change resets stage, owner, sort, and status filters
+        // Pipeline change resets stage, owner, pm, sort, and status filters
         params.delete("stage");
         params.delete("owner");
+        params.delete("pm");
         params.delete("sort");
         params.delete("order");
         [...params.keys()].filter((k) => k.startsWith("sf_")).forEach((k) => params.delete(k));
@@ -93,6 +96,12 @@ export function useDealsFilters() {
         const v = toCommaSep(updates.owners);
         if (v) params.set("owner", v);
         else params.delete("owner");
+      }
+
+      if (updates.projectManagers !== undefined) {
+        const v = toCommaSep(updates.projectManagers);
+        if (v) params.set("pm", v);
+        else params.delete("pm");
       }
 
       if (updates.search !== undefined) {
