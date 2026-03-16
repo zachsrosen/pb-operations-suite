@@ -53,6 +53,8 @@ Ghost events are concatenated **after** `filteredScheduledEvents` is computed fr
 
 The merge happens in a new `useMemo` that combines `filteredScheduledEvents` + `forecastEvents` (when toggle is on) into a `displayEvents` array. All three views (month, week, Gantt) read from `displayEvents` instead of `filteredScheduledEvents` directly.
 
+**Revenue memos stay on `filteredScheduledEvents`**: `weeklyRevenueSummary` and `monthlyRevenueSummary` continue to read from `filteredScheduledEvents` (not `displayEvents`). This naturally excludes ghost events from revenue calculations without any additional `!e.isForecast` guard in those memos. Only `computeRevenueBuckets` needs the explicit gate as a safety net.
+
 ## Rendering
 
 ### Visual treatment (all three views)
@@ -66,7 +68,7 @@ The merge happens in a new `useMemo` that combines `filteredScheduledEvents` + `
 
 Forecast ghosts reuse `eventType: "construction"`, so they flow through existing stage filters naturally. Additional rules:
 
-- Ghost events have neither `isCompleted` nor `isOverdue` set, so they are naturally hidden when `showScheduled` is off (the existing filter already excludes non-completed, non-overdue events). No special `isForecast` logic needed for this filter.
+- Ghost events have neither `isCompleted` nor `isOverdue` set, so they are naturally hidden when `showScheduled` is off (the existing filter already excludes non-completed, non-overdue events). This is intentional — ghost events are a scheduling-layer concern and should disappear alongside real scheduled events. No special `isForecast` logic needed for this filter.
 - Respect location and other active calendar filters
 - The summary chip count reflects forecast events visible after all calendar filters are applied
 
