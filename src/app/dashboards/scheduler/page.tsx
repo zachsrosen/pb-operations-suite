@@ -2581,7 +2581,7 @@ export default function SchedulerPage() {
       "Event Type",
     ];
     let csv = headers.join(",") + "\n";
-    const eventsToExport = showForecasts ? displayEvents : scheduledEvents;
+    const eventsToExport = showForecasts ? [...scheduledEvents, ...forecastGhostEvents] : scheduledEvents;
     eventsToExport.forEach((e) => {
       csv +=
         [
@@ -4899,7 +4899,7 @@ export default function SchedulerPage() {
                     >
                       HubSpot
                     </a>
-                    {detailModal.zuperJobUid && (
+                    {detailModal.zuperJobUid && !detailModalEvent?.isForecast && (
                       <>
                         <span className="text-muted/70">|</span>
                         <a
