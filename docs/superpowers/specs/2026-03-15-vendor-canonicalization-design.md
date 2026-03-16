@@ -62,7 +62,7 @@ The picker writes both `vendorName` (from `VendorLookup.name`) and `zohoVendorId
 
 **POST `/api/catalog/vendors/sync`**:
 - **Auth**: Admin-only (role check via `getServerSession`) + Vercel cron via `Authorization: Bearer CRON_SECRET` env var
-- **Pagination**: Zoho vendor list endpoint uses `page` + `per_page`; sync loops until empty page
+- **Pagination**: Reuses existing `zohoClient.listVendors()` which calls `listContacts("vendor")` with `page` + `per_page` + `has_more_page` loop (already implemented in `zoho-inventory.ts:919-944`)
 - **Upsert logic**: Match by `zohoVendorId`. If Zoho returns a new name for the same ID, update `VendorLookup.name` (canonical source).
 - **Soft delete**: If a Zoho vendor disappears from the response, set `isActive = false` rather than deleting (existing SKUs may reference that name)
 - **Failure handling**: If Zoho is unreachable, log the error and leave existing `VendorLookup` rows untouched (stale data > no data). Return 502 so the admin UI can surface it.
@@ -98,8 +98,9 @@ New component modeled after existing `BrandDropdown`:
 
 - **`PREFILL_FROM_PRODUCT` (clone)**: copies `vendorName` + `zohoVendorId` from source SKU. Clears `vendorPartNumber` (existing behavior) but preserves vendor selection.
 - **`PREFILL_FROM_DATASHEET` (AI import)**: extraction may return a vendor string. Server-side matching rule:
-  - Exact or normalized-exact match against `VendorLookup.name` → set `zohoVendorId`
-  - Otherwise return the extracted string as a hint displayed in the picker, but leave `zohoVendorId` blank — user must pick manually
+  - Exact match or normalized-exact match against `VendorLookup.name` → set `zohoVendorId`
+  - **Normalization rule**: case-insensitive, trim whitespace, strip trailing suffixes (Inc, LLC, Corp, Ltd, Co). Example: "SolarEdge Technologies Inc" normalizes to "solaredge technologies" for comparison.
+  - If no match: return the extracted string as a hint (shown as placeholder text in the picker), but leave `zohoVendorId` blank — user must pick manually
 - **URL query param prefill**: if `vendorName` is provided via query param, attempt exact match against `VendorLookup` to resolve `zohoVendorId`; if no match, leave `zohoVendorId` blank for user selection
 
 ## Section 3: Server Validation & Downstream Sync
@@ -151,11 +152,13 @@ The `@unique` constraint on `zohoVendorId` must be explicit in the migration SQL
 
 ### Optional Manual Backfill (Admin Tool, Not Blocking)
 
-A script that iterates existing SKUs with `vendorName` present + `zohoVendorId` null:
-- **Default mode (dry-run)**: produces a report of matched and unmatched records
+Script at `scripts/backfill-vendor-ids.ts`, invoked as `npx tsx scripts/backfill-vendor-ids.ts [--apply]`. Run manually after the initial vendor sync populates `VendorLookup`.
+
+- **Default mode (dry-run)**: prints a report of matched and unmatched records, no writes
 - **Apply mode (`--apply`)**: writes `zohoVendorId` for confirmed matches
-- Matching rule: exact or normalized-exact against `VendorLookup.name` only — no fuzzy auto-linking
+- Matching rule: exact or normalized-exact (same normalization as datasheet import — case-insensitive, trim, strip suffixes) against `VendorLookup.name` only — no fuzzy auto-linking
 - Logs unmatched records for manual review
+- Not blocking: SKUs without a `zohoVendorId` remain functional, they just lack the durable identity link
 
 ### `MANUFACTURERS` Array
 
