@@ -802,7 +802,7 @@ export async function POST(request: NextRequest) {
             if (liveEmail) {
               recipientEmail = liveEmail;
             }
-            const liveName = [userResult.data.first_name, userResult.data.last_name]
+            const liveName = [userResult.data?.first_name, userResult.data?.last_name]
               .filter(Boolean)
               .join(" ")
               .trim();
@@ -817,7 +817,7 @@ export async function POST(request: NextRequest) {
           const byUidEmail = normalizeEmail(byUid?.email);
           if (byUidEmail) {
             recipientEmail = byUidEmail;
-            recipientName = byUid.name;
+            recipientName = byUid?.name || recipientName;
           }
         }
 
@@ -826,7 +826,7 @@ export async function POST(request: NextRequest) {
           const byNameEmail = normalizeEmail(byName?.email);
           if (byNameEmail) {
             recipientEmail = byNameEmail;
-            recipientName = byName.name;
+            recipientName = byName?.name || recipientName;
           }
         }
 
