@@ -123,7 +123,7 @@ If the old surveyor's identity is completely unresolvable (no name, no email), t
 `confirm/route.ts` does **not** use `sendCrewNotification` — it calls `sendSchedulingNotification` directly (around line 970) and has its own inline reassignment detection (around line 991). The modification pattern differs from `route.ts`:
 
 1. Move the reassignment detection (currently after the email send at ~line 991) to **before** the `sendSchedulingNotification` call (~line 970)
-2. The previous surveyor's UID and name are available from the raw Zuper job data at `assigned_to[0].user` (lines ~596-614), which provides `first_name` and `last_name` directly — no additional lookup needed
+2. The previous surveyor's **display name** is available from the raw Zuper job data at `assigned_to[0].user` (`first_name`, `last_name`) — no API call needed for the name. However, the previous surveyor's **deliverable email** must still go through the existing email-resolution fallback chain (`assigned_to[0].user.email` → CrewMember-by-UID → `zuper.getUser(uid)`), because Zuper job payloads do not always carry a usable email. The outgoing reassignment email depends on a resolved email address, so skipping the fallback chain would silently drop outgoing notifications for jobs whose raw `assigned_to` user has no embedded email.
 3. If reassignment detected:
    a. Send outgoing reassignment email to previous surveyor
    b. Send incoming reassignment email to new surveyor (replacing the direct `sendSchedulingNotification` call)
@@ -179,7 +179,7 @@ Levels 1-3 are considered "resolved" and allow the incoming reassignment email t
 |------|--------|
 | `src/lib/email.ts` | Add `sendReassignmentNotification` function and `SendReassignmentNotificationParams` interface |
 | `src/app/api/zuper/jobs/schedule/route.ts` | Refactor `resolvePrimarySurveyorEmailFromJob` to return `PreviousSurveyorInfo`; reorder `sendCrewNotification` to detect reassignment before email loop; conditionally send reassignment emails |
-| `src/app/api/zuper/jobs/schedule/confirm/route.ts` | Move reassignment detection before `sendSchedulingNotification` call; add reassignment email sends using inline Zuper job data for old surveyor identity |
+| `src/app/api/zuper/jobs/schedule/confirm/route.ts` | Move reassignment detection before `sendSchedulingNotification` call; add reassignment email sends using inline Zuper job data for old surveyor name, with full email-resolution fallback chain for old surveyor email |
 
 ### Out of Scope
 
@@ -197,7 +197,8 @@ Levels 1-3 are considered "resolved" and allow the incoming reassignment email t
 - Google Calendar link only appears for incoming
 
 **Unit: `sendReassignmentNotification`**
-- Mocks Resend, verifies subject line
+- Mocks `sendEmailMessage` (the shared mail transport layer, not Resend directly — the production path uses Google Workspace with Resend as fallback, so mocking Resend alone would miss the actual BCC merge/dedupe behavior)
+- Verifies subject line
 - Verifies BCC includes ops recipients + reassigner
 - Outgoing and incoming produce different email body content
 - `reassignedByEmail` appears in BCC but not in rendered HTML
@@ -216,7 +217,8 @@ Levels 1-3 are considered "resolved" and allow the incoming reassignment email t
 
 **Parity: `confirm/route.ts`**
 - Same reassignment detection and notification behavior as `route.ts`
-- Uses inline Zuper job data for old surveyor identity (not `resolvePrimarySurveyorEmailFromJob`)
+- Uses inline Zuper job data for old surveyor display name
+- Uses full email-resolution fallback chain for old surveyor deliverable email (not just raw `assigned_to` email)
 
 **Test mode:**
 - Reassignment emails are not sent when `isTestMode` is true
