@@ -638,9 +638,9 @@ export default function Home() {
           />
           <StatCard
             label="Active D&R"
-            value={pipelineCache["dnr"]?.error ? "—" : filteredPipelineStats["dnr"]?.total ?? null}
+            value={!pipelineCache["dnr"] ? null : pipelineCache["dnr"].error ? "—" : filteredPipelineStats["dnr"]?.total}
             subtitle={
-              filteredPipelineStats["dnr"]?.totalValue && !pipelineCache["dnr"]?.error
+              pipelineCache["dnr"] && !pipelineCache["dnr"].error && filteredPipelineStats["dnr"]?.totalValue
                 ? formatMoney(filteredPipelineStats["dnr"].totalValue)
                 : null
             }
@@ -649,9 +649,9 @@ export default function Home() {
           />
           <StatCard
             label="Active Roofing"
-            value={pipelineCache["roofing"]?.error ? "—" : filteredPipelineStats["roofing"]?.total ?? null}
+            value={!pipelineCache["roofing"] ? null : pipelineCache["roofing"].error ? "—" : filteredPipelineStats["roofing"]?.total}
             subtitle={
-              filteredPipelineStats["roofing"]?.totalValue && !pipelineCache["roofing"]?.error
+              pipelineCache["roofing"] && !pipelineCache["roofing"].error && filteredPipelineStats["roofing"]?.totalValue
                 ? formatMoney(filteredPipelineStats["roofing"].totalValue)
                 : null
             }
@@ -660,9 +660,9 @@ export default function Home() {
           />
           <StatCard
             label="Active Service"
-            value={pipelineCache["service"]?.error ? "—" : filteredPipelineStats["service"]?.total ?? null}
+            value={!pipelineCache["service"] ? null : pipelineCache["service"].error ? "—" : filteredPipelineStats["service"]?.total}
             subtitle={
-              filteredPipelineStats["service"]?.totalValue && !pipelineCache["service"]?.error
+              pipelineCache["service"] && !pipelineCache["service"].error && filteredPipelineStats["service"]?.totalValue
                 ? formatMoney(filteredPipelineStats["service"].totalValue)
                 : null
             }
