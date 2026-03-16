@@ -358,7 +358,7 @@ async function executeContinuationChunk(params: {
 
   const runSystem = systemFromOperation(run.operation);
   if (!runSystem) {
-    return NextResponse.json({ error: "Run operation is not a SKU bulk sync" }, { status: 400 });
+    return NextResponse.json({ error: "Run operation is not a product bulk sync" }, { status: 400 });
   }
 
   if (runSystem !== requestedSystem) {
@@ -416,7 +416,7 @@ async function processChunk(
 
   const system = systemFromOperation(run.operation);
   if (!system) {
-    return NextResponse.json({ error: "Run operation is not a SKU bulk sync" }, { status: 400 });
+    return NextResponse.json({ error: "Run operation is not a product bulk sync" }, { status: 400 });
   }
 
   const frozenIds = run.targetIds as string[] | null;
@@ -555,7 +555,7 @@ async function processChunk(
       brand: "",
       model: "",
       status: "skipped",
-      reason: "SKU no longer exists or is inactive",
+      reason: "Product no longer exists or is inactive",
     });
     await updateRunProgress(runId, { skipped: 1 });
   }

@@ -52,7 +52,7 @@ export async function GET(
   });
 
   if (!sku) {
-    return NextResponse.json({ error: "SKU not found" }, { status: 404 });
+    return NextResponse.json({ error: "Product not found" }, { status: 404 });
   }
 
   try {
@@ -122,7 +122,7 @@ export async function POST(
   });
 
   if (!sku) {
-    return NextResponse.json({ error: "SKU not found" }, { status: 404 });
+    return NextResponse.json({ error: "Product not found" }, { status: 404 });
   }
 
   // Recompute preview server-side for the hash

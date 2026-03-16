@@ -172,8 +172,8 @@ export async function POST(request: NextRequest) {
 
     // Log activity
     await logActivity({
-      type: "INVENTORY_SKU_SYNCED",
-      description: `SKU sync: ${created} created, ${existing} existing (${total} total from ${equipmentProjects.length} projects)`,
+      type: "INVENTORY_PRODUCT_SYNCED",
+      description: `Product sync: ${created} created, ${existing} existing (${total} total from ${equipmentProjects.length} projects)`,
       userEmail: authResult.email,
       userName: authResult.name,
       entityType: "inventory",
@@ -197,10 +197,10 @@ export async function POST(request: NextRequest) {
       projectsScanned: equipmentProjects.length,
     });
   } catch (error) {
-    console.error("Error syncing SKUs from HubSpot:", error);
+    console.error("Error syncing products from HubSpot:", error);
     Sentry.captureException(error);
     return NextResponse.json(
-      { error: "Failed to sync SKUs" },
+      { error: "Failed to sync products" },
       { status: 500 }
     );
   }

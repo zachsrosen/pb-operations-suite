@@ -52,7 +52,7 @@ export async function GET() {
       });
     } catch (error) {
       if (!isPrismaMissingColumnError(error)) throw error;
-      console.warn("[Inventory SKU Stats] Falling back to legacy query due to missing columns");
+      console.warn("[Inventory Product Stats] Falling back to legacy query due to missing columns");
       skus = await prisma.internalProduct.findMany({
         where: { isActive: true },
         select: {
@@ -122,10 +122,10 @@ export async function GET() {
 
     return NextResponse.json({ categories, totals });
   } catch (error) {
-    console.error("Error fetching SKU stats:", error);
+    console.error("Error fetching product stats:", error);
     Sentry.captureException(error);
     return NextResponse.json(
-      { error: "Failed to fetch SKU stats" },
+      { error: "Failed to fetch product stats" },
       { status: 500 }
     );
   }
