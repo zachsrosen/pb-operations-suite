@@ -4,7 +4,7 @@
  * GET /api/inventory/stock
  *   Query params:
  *     - location (string) — filter by warehouse location
- *     - category (string) — filter by sku.category (MODULE, INVERTER, BATTERY, EV_CHARGER)
+ *     - category (string) — filter by internalProduct.category (MODULE, INVERTER, BATTERY, EV_CHARGER)
  *
  *   Returns { stock, count }
  */
@@ -28,9 +28,9 @@ export async function GET(request: NextRequest) {
     const location = searchParams.get("location");
     const category = searchParams.get("category");
 
-    // Build where clause — always filter to active SKUs
+    // Build where clause — always filter to active products
     const where: Record<string, unknown> = {
-      sku: {
+      internalProduct: {
         isActive: true,
         ...(category ? { category } : {}),
       },
@@ -42,10 +42,10 @@ export async function GET(request: NextRequest) {
 
     const stock = await prisma.inventoryStock.findMany({
       where,
-      include: { sku: true },
+      include: { internalProduct: true },
       orderBy: [
-        { sku: { category: "asc" } },
-        { sku: { brand: "asc" } },
+        { internalProduct: { category: "asc" } },
+        { internalProduct: { brand: "asc" } },
         { location: "asc" },
       ],
     });

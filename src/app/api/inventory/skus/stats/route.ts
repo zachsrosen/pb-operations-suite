@@ -39,7 +39,7 @@ export async function GET() {
     }> = [];
 
     try {
-      skus = await prisma.equipmentSku.findMany({
+      skus = await prisma.internalProduct.findMany({
         where: { isActive: true },
         select: {
           category: true,
@@ -53,7 +53,7 @@ export async function GET() {
     } catch (error) {
       if (!isPrismaMissingColumnError(error)) throw error;
       console.warn("[Inventory SKU Stats] Falling back to legacy query due to missing columns");
-      skus = await prisma.equipmentSku.findMany({
+      skus = await prisma.internalProduct.findMany({
         where: { isActive: true },
         select: {
           category: true,

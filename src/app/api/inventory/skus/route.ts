@@ -247,7 +247,7 @@ function specRecordToMetadata(record: unknown): Record<string, unknown> {
   if (!isRecord(record)) return {};
   const metadata: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
-    if (key === "id" || key === "skuId") continue;
+    if (key === "id" || key === "internalProductId") continue;
     if (value === null || value === undefined || value === "") continue;
     metadata[key] = value;
   }
@@ -263,7 +263,7 @@ function buildSkuMetadata(category: string, sku: Record<string, unknown>): Recor
 async function applySkuMetadata(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any,
-  skuId: string,
+  internalProductId: string,
   category: string,
   metadata: Record<string, unknown> | null
 ) {
@@ -274,7 +274,7 @@ async function applySkuMetadata(
     if (table === targetTable) continue;
     const model = tx[table];
     if (model?.deleteMany) {
-      await model.deleteMany({ where: { skuId } });
+      await model.deleteMany({ where: { internalProductId } });
     }
   }
 
@@ -282,13 +282,13 @@ async function applySkuMetadata(
   if (!model?.deleteMany || !model?.upsert) return;
 
   if (!metadata || Object.keys(metadata).length === 0) {
-    await model.deleteMany({ where: { skuId } });
+    await model.deleteMany({ where: { internalProductId } });
     return;
   }
 
   await model.upsert({
-    where: { skuId },
-    create: { skuId, ...metadata },
+    where: { internalProductId },
+    create: { internalProductId, ...metadata },
     update: metadata,
   });
 }
@@ -373,7 +373,7 @@ export async function GET(request: NextRequest) {
     let skus: Array<Record<string, unknown>> = [];
 
     try {
-      skus = await prisma.equipmentSku.findMany({
+      skus = await prisma.internalProduct.findMany({
         where,
         include: SKU_INCLUDE,
         orderBy,
@@ -383,12 +383,12 @@ export async function GET(request: NextRequest) {
       if (!isPrismaMissingColumnError(error)) throw error;
 
       // Backward-compatible fallback for databases that have not applied the
-      // latest EquipmentSku migration yet.
+      // latest InternalProduct migration yet.
       console.warn(
         "[Inventory SKUs] Falling back to legacy SKU query due to missing database columns"
       );
 
-      const legacySkus = await prisma.equipmentSku.findMany({
+      const legacySkus = await prisma.internalProduct.findMany({
         where,
         select: {
           id: true,
@@ -580,7 +580,7 @@ export async function POST(request: NextRequest) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tx: any
     ) => {
-      const skuRecord = await tx.equipmentSku.upsert({
+      const skuRecord = await tx.internalProduct.upsert({
         where: {
           category_brand_model: {
             category: category as EquipmentCategory,
@@ -642,7 +642,7 @@ export async function POST(request: NextRequest) {
         await applySkuMetadata(tx, skuRecord.id, category as string, metadataParsed.value);
       }
 
-      return tx.equipmentSku.findUnique({
+      return tx.internalProduct.findUnique({
         where: { id: skuRecord.id },
         include: SKU_INCLUDE,
       });
@@ -668,7 +668,7 @@ export async function POST(request: NextRequest) {
         metadata: {
           feature: "product_comparison",
           action: "create_internal_with_links",
-          skuId: String((upserted as Record<string, unknown>).id || ""),
+          internalProductId: String((upserted as Record<string, unknown>).id || ""),
           linkedSources: linkedSourcesOnUpsert,
         },
         ipAddress: authResult.ip,
@@ -753,7 +753,7 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
-    const existing = await prisma.equipmentSku.findUnique({
+    const existing = await prisma.internalProduct.findUnique({
       where: { id },
       select: {
         id: true,
@@ -910,7 +910,7 @@ export async function PATCH(request: NextRequest) {
       tx: any
     ) => {
       if (Object.keys(updateData).length > 0) {
-        await tx.equipmentSku.update({
+        await tx.internalProduct.update({
           where: { id },
           data: updateData,
         });
@@ -921,7 +921,7 @@ export async function PATCH(request: NextRequest) {
         await applySkuMetadata(tx, id, category as string, metadataToApply);
       }
 
-      return tx.equipmentSku.findUnique({
+      return tx.internalProduct.findUnique({
         where: { id },
         include: SKU_INCLUDE,
       });
@@ -943,7 +943,7 @@ export async function PATCH(request: NextRequest) {
         metadata: {
           feature: "product_comparison",
           action: "confirm_link",
-          skuId: id,
+          internalProductId: id,
           changes: requestedLinkChanges,
           changedSources: requestedLinkChanges.map((change) => change.source),
         },
@@ -1035,7 +1035,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
-    const existing = await prisma.equipmentSku.findUnique({
+    const existing = await prisma.internalProduct.findUnique({
       where: { id },
       select: {
         id: true,
@@ -1059,20 +1059,20 @@ export async function DELETE(request: NextRequest) {
       for (const table of SPEC_TABLES) {
         const model = tx[table];
         if (model?.deleteMany) {
-          await model.deleteMany({ where: { skuId: id } });
+          await model.deleteMany({ where: { internalProductId: id } });
         }
       }
 
       // Delete stock transactions (they reference InventoryStock)
       await tx.stockTransaction.deleteMany({
-        where: { stock: { skuId: id } },
+        where: { stock: { internalProductId: id } },
       });
 
       // Delete inventory stock levels
-      await tx.inventoryStock.deleteMany({ where: { skuId: id } });
+      await tx.inventoryStock.deleteMany({ where: { internalProductId: id } });
 
       // Delete the SKU itself
-      await tx.equipmentSku.delete({ where: { id } });
+      await tx.internalProduct.delete({ where: { id } });
     });
 
     await logActivity({

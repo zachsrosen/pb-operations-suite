@@ -190,13 +190,13 @@ export async function GET(request: NextRequest) {
 
     // ── 4. Fetch stock levels from DB ──────────────────────────────
     const stockRows = await prisma.inventoryStock.findMany({
-      include: { sku: true },
+      include: { internalProduct: true },
     });
 
     // Build stock map keyed on "CATEGORY:brand:model:location"
     const stockMap = new Map<string, number>();
     for (const row of stockRows) {
-      const key = `${row.sku.category}:${row.sku.brand}:${row.sku.model}:${row.location}`;
+      const key = `${row.internalProduct.category}:${row.internalProduct.brand}:${row.internalProduct.model}:${row.location}`;
       stockMap.set(key, (stockMap.get(key) || 0) + row.quantityOnHand);
     }
 

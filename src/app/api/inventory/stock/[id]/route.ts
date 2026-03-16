@@ -5,7 +5,7 @@
  *   Auth required, role-gated.
  *   Body: { minStockLevel? }
  *   Updates minStockLevel and sets lastCountedAt to now.
- *   Returns { stock } (with sku relation)
+ *   Returns { stock } (with internalProduct relation)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -65,7 +65,7 @@ export async function PUT(
         ...(minStockLevel !== undefined ? { minStockLevel } : {}),
         lastCountedAt: new Date(),
       },
-      include: { sku: true },
+      include: { internalProduct: true },
     });
 
     return NextResponse.json({ stock });
