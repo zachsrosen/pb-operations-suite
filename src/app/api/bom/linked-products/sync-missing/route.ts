@@ -323,11 +323,11 @@ async function handleExecute(body: Record<string, unknown>, userEmail: string) {
     const outcome: ExecuteOutcome = { item: bomItem, status: "skipped" };
 
     try {
-      // Look up EquipmentSku by (category, brand, model)
+      // Look up InternalProduct by (category, brand, model)
       const categoryEnum = bomItem.category as EquipmentCategory;
       const validCategory = Object.values(EquipmentCategory).includes(categoryEnum);
       const sku = validCategory
-        ? await prisma.equipmentSku.findFirst({
+        ? await prisma.internalProduct.findFirst({
             where: {
               category: categoryEnum,
               brand: bomItem.brand || "",
@@ -339,7 +339,7 @@ async function handleExecute(body: Record<string, unknown>, userEmail: string) {
 
       if (!sku) {
         outcome.status = "skipped";
-        outcome.reason = "No matching EquipmentSku";
+        outcome.reason = "No matching InternalProduct";
         skipped++;
         outcomes.push(outcome);
         // Heartbeat update
@@ -380,7 +380,7 @@ async function handleExecute(body: Record<string, unknown>, userEmail: string) {
         hubspotProductId = productResult.data.hubspotProductId;
 
         // Guarded write-back
-        await prisma.equipmentSku.updateMany({
+        await prisma.internalProduct.updateMany({
           where: { id: sku.id, hubspotProductId: null },
           data: { hubspotProductId },
         });

@@ -129,8 +129,8 @@ export async function POST(
         weight: push.weight,
       };
 
-      // 1. Upsert EquipmentSku with all common fields
-      const sku = await tx.equipmentSku.upsert({
+      // 1. Upsert InternalProduct with all common fields
+      const sku = await tx.internalProduct.upsert({
         where: {
           category_brand_model: {
             category: push.category as EquipmentCategory,
@@ -158,8 +158,8 @@ export async function POST(
             const prismaModel = (tx as any)[specTable];
             if (prismaModel?.upsert) {
               await prismaModel.upsert({
-                where: { skuId: sku.id },
-                create: { skuId: sku.id, ...specData },
+                where: { internalProductId: sku.id },
+                create: { internalProductId: sku.id, ...specData },
                 update: specData,
               });
             }
@@ -227,7 +227,7 @@ export async function POST(
           data: { hubspotProductId: hubspotResult.hubspotProductId },
         });
           if (basePush.internalSkuId) {
-          await tx.equipmentSku.update({
+          await tx.internalProduct.update({
               where: { id: basePush.internalSkuId },
             data: { hubspotProductId: hubspotResult.hubspotProductId },
           });
@@ -289,7 +289,7 @@ export async function POST(
           data: { zohoItemId: zohoResult.zohoItemId },
         });
           if (basePush.internalSkuId) {
-          await tx.equipmentSku.update({
+          await tx.internalProduct.update({
               where: { id: basePush.internalSkuId },
             data: { zohoItemId: zohoResult.zohoItemId },
           });
@@ -356,7 +356,7 @@ export async function POST(
           data: { zuperItemId: zuperResult.zuperItemId },
         });
           if (basePush.internalSkuId) {
-          await tx.equipmentSku.update({
+          await tx.internalProduct.update({
               where: { id: basePush.internalSkuId },
             data: { zuperItemId: zuperResult.zuperItemId },
           });
