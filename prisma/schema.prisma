@@ -727,7 +727,7 @@ enum TransactionType {
   RETURNED
 }
 
-model EquipmentSku {
+model InternalProduct {
   id          String            @id @default(cuid())
   category    EquipmentCategory
   brand       String
@@ -778,6 +778,7 @@ model EquipmentSku {
   @@index([canonicalKey])
   @@index([canonicalBrand, canonicalModel])
   @@index([zohoVendorId])
+  @@map("EquipmentSku")
 }
 
 model VendorLookup {
@@ -793,9 +794,9 @@ model VendorLookup {
 }
 
 model ModuleSpec {
-  id               String @id @default(cuid())
-  skuId            String @unique
-  sku              EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  id                String @id @default(cuid())
+  internalProductId String @unique @map("skuId")
+  internalProduct   InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
   wattage          Float?
   efficiency       Float?            // percentage
   cellType         String?           // "Mono PERC", "TOPCon", "HJT", "Poly", "Thin Film"
@@ -807,9 +808,9 @@ model ModuleSpec {
 }
 
 model InverterSpec {
-  id               String @id @default(cuid())
-  skuId            String @unique
-  sku              EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  id                String @id @default(cuid())
+  internalProductId String @unique @map("skuId")
+  internalProduct   InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
   acOutputKw       Float?
   maxDcInput       Float?
   phase            String?           // "Single", "Three-phase"
@@ -821,8 +822,8 @@ model InverterSpec {
 
 model BatterySpec {
   id                      String @id @default(cuid())
-  skuId                   String @unique
-  sku                     EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  internalProductId       String @unique @map("skuId")
+  internalProduct         InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
   capacityKwh             Float?
   energyStorageCapacity   Float?
   usableCapacityKwh       Float?
@@ -834,9 +835,9 @@ model BatterySpec {
 }
 
 model EvChargerSpec {
-  id              String @id @default(cuid())
-  skuId           String @unique
-  sku             EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  id                String @id @default(cuid())
+  internalProductId String @unique @map("skuId")
+  internalProduct   InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
   powerKw         Float?
   connectorType   String?           // "J1772", "NACS", "CCS"
   amperage        Float?
@@ -846,9 +847,9 @@ model EvChargerSpec {
 }
 
 model MountingHardwareSpec {
-  id              String @id @default(cuid())
-  skuId           String @unique
-  sku             EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  id                String @id @default(cuid())
+  internalProductId String @unique @map("skuId")
+  internalProduct   InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
   mountType       String?           // "Roof", "Ground", "Carport", "Flat Roof"
   material        String?           // "Aluminum", "Steel"
   tiltRange       String?
@@ -858,9 +859,9 @@ model MountingHardwareSpec {
 }
 
 model ElectricalHardwareSpec {
-  id              String @id @default(cuid())
-  skuId           String @unique
-  sku             EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  id                String @id @default(cuid())
+  internalProductId String @unique @map("skuId")
+  internalProduct   InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
   componentType   String?           // "Conduit", "Wire", "Disconnect", "Breaker", "Combiner"
   gaugeSize       String?           // AWG or conduit size
   voltageRating   Float?
@@ -869,8 +870,8 @@ model ElectricalHardwareSpec {
 
 model RelayDeviceSpec {
   id                  String @id @default(cuid())
-  skuId               String @unique
-  sku                 EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  internalProductId   String @unique @map("skuId")
+  internalProduct     InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
   deviceType          String?      // "Gateway", "Meter", "CT", "Consumption Monitor"
   connectivity        String?      // "WiFi", "Cellular", "Ethernet", "Zigbee"
   compatibleInverters String?
@@ -900,21 +901,21 @@ model CatalogProduct {
 }
 
 model InventoryStock {
-  id              String       @id @default(cuid())
-  skuId           String
-  sku             EquipmentSku @relation(fields: [skuId], references: [id], onDelete: Cascade)
-  location        String       // PB Location = warehouse
-  quantityOnHand  Int          @default(0)
-  minStockLevel   Int?         // Optional reorder threshold (future)
-  lastCountedAt   DateTime?
+  id                String          @id @default(cuid())
+  internalProductId String          @map("skuId")
+  internalProduct   InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
+  location          String          // PB Location = warehouse
+  quantityOnHand    Int             @default(0)
+  minStockLevel     Int?            // Optional reorder threshold (future)
+  lastCountedAt     DateTime?
 
-  updatedAt       DateTime     @updatedAt
+  updatedAt         DateTime        @updatedAt
 
   // Relations
   transactions    StockTransaction[]
 
-  @@unique([skuId, location])
-  @@index([skuId])
+  @@unique([internalProductId, location], map: "InventoryStock_skuId_location_key")
+  @@index([internalProductId], map: "InventoryStock_skuId_idx")
   @@index([location])
 }
 
