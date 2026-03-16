@@ -67,9 +67,8 @@ git commit -m "refactor: rename EquipmentSku → InternalProduct in Prisma schem
 - Modify: `src/lib/catalog-sync.ts` (~3 references)
 - Modify: `src/lib/catalog-sync-confirmation.ts` (~6 references)
 - Modify: `src/lib/catalog-harvest.ts` (~2 references)
-- Modify: `src/lib/catalog-readiness.ts` (~1 reference)
+- Modify: `src/lib/catalog-readiness.ts` (~1 Prisma reference; leave display string for Phase 2)
 - Modify: `src/lib/product-cleanup-engine.ts` (~1 reference)
-- Modify: `src/lib/product-updates.ts` (~3 references, comments only)
 - Modify: `src/lib/bom-post-process.ts` (~1 reference, comment only)
 - Modify: `src/lib/canonical.ts` (~1 reference, comment only)
 
@@ -102,8 +101,12 @@ For each of `catalog-harvest.ts`, `catalog-readiness.ts`, `product-cleanup-engin
 - `prisma.equipmentSku.*` → `prisma.internalProduct.*`
 - Comments mentioning `EquipmentSku` → `InternalProduct`
 
-For `product-updates.ts`, `bom-post-process.ts`, `canonical.ts`:
+For `bom-post-process.ts`, `canonical.ts`:
 - Comments only — update mentions of `EquipmentSku` → `InternalProduct`
+
+**Deferred to Phase 2** (user-visible strings, not internal code):
+- `src/lib/product-updates.ts` — `EquipmentSku` appears in release-note text rendered on the Updates page. These are UI copy, not code references.
+- `src/lib/catalog-readiness.ts` — the `details: ["Will create/update EquipmentSku"]` string is shown in the Review step UI. Rename the `prisma.equipmentSku.*` call here but leave the display string as-is.
 
 - [ ] **Step 5: Run type check**
 
