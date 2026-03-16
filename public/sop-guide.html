@@ -541,7 +541,7 @@ SOP Operations Guide
 <tr><th>Stage</th><th>HubSpot Workflows</th><th>Coverage</th></tr>
 <tr><td>Site Survey</td><td>15</td><td>Scheduling, Zuper sync, stage advance, notifications</td></tr>
 <tr><td>Design Approval</td><td>21</td><td>Task creation, PandaDoc tracking, DA status flow</td></tr>
-<tr><td>Design &amp; Engineering</td><td>Vishtik task flow</td><td>6-step task-based (not workflow-based); workflows exist in HubSpot but are task-driven</td></tr>
+<tr><td>Design &amp; Engineering</td><td>73+</td><td>7-step workflow-driven (Design Flow folder): Normal Process (7), Date Stamps (12), Revisions (DA 10, Permitting 17, IC 15, As-Built 17), New Construction (2), Xcel (3), D&amp;R/Service (7)</td></tr>
 <tr><td>Permitting</td><td>36</td><td>SolarApp+, task chains, follow-ups (14/30/45/60d), stage advance</td></tr>
 <tr><td>Interconnection</td><td>40</td><td>Utility submission, approval tracking, follow-ups, RTB gate</td></tr>
 <tr><td>Construction</td><td>8</td><td>Zuper sync, checklist processing, stage advance, M2 (CC) invoice</td></tr>
@@ -549,7 +549,7 @@ SOP Operations Guide
 <tr><td>PTO</td><td>25</td><td>Submission tracking, Xcel photos, follow-ups (10/30/60d), PTO invoice</td></tr>
 <tr><td>New Construction</td><td>7</td><td>Tag-triggered adjustments to standard workflows</td></tr>
 </table>
-<p class="subtitle" style="margin-top:0.5rem;font-size:0.8rem;">171 total HubSpot workflows across the project pipeline. Each step in this SOP is tagged <span class="t t-auto">AUTO</span>, <span class="t t-man">MANUAL</span>, <span class="t t-trig">TRIGGER</span>, <span class="t t-zup">ZUPER SYNC</span>, <span class="t t-chk">CHECKLIST</span>, <span class="t t-calc">CALC</span>, or <span class="t t-not">NOTIF</span> to indicate how it executes.</p>
+<p class="subtitle" style="margin-top:0.5rem;font-size:0.8rem;">240+ total HubSpot workflows across the project pipeline. Each step in this SOP is tagged <span class="t t-auto">AUTO</span>, <span class="t t-man">MANUAL</span>, <span class="t t-trig">TRIGGER</span>, <span class="t t-zup">ZUPER SYNC</span>, <span class="t t-chk">CHECKLIST</span>, <span class="t t-calc">CALC</span>, or <span class="t t-not">NOTIF</span> to indicate how it executes.</p>
 </div>
 </div>
 
@@ -806,22 +806,25 @@ SOP Operations Guide
 <span class="sp">Xcel - Site Plan &amp; SLD Completed</span>
 </div>
 
-<h2>Task Workflow (6-Step)</h2>
-<p>Design statuses are driven by a task workflow shared between <strong>Vishtik</strong> (external design company) and the <strong>Design Lead</strong>. Each task completion auto-advances the <code>Design Status</code>.</p>
+<h2>Workflow-Driven Task Flow (7-Step)</h2>
+<p>Design statuses are driven by <strong>7 HubSpot workflows</strong> in the <code>Design Flow / Normal Process</code> folder, shared between <strong>Vishtik</strong> (external design company) and the <strong>Design Lead</strong>. Each task completion triggers a workflow that auto-advances the <code>Design Status</code>.</p>
 
 <div class="card">
 <table>
-<tr><th>#</th><th>Task</th><th>Assigned To</th><th>Status After Completion</th></tr>
-<tr><td>1</td><td>Retrieve Project Details</td><td>Vishtik</td><td><span class="t t-auto">AUTO</span> → "In Progress"</td></tr>
-<tr><td>2</td><td>Upload Completed Design</td><td>Vishtik</td><td><span class="t t-auto">AUTO</span> → "Ready For Review"</td></tr>
-<tr><td>3</td><td>Complete Initial Design Review</td><td>Design Lead</td><td><span class="t t-auto">AUTO</span> → "Draft Complete - Waiting on Approvals"</td></tr>
-<tr><td>4</td><td>Complete Final Design Review</td><td>Design Lead</td><td><span class="t t-auto">AUTO</span> → "DA Approved" (triggered when DA is approved)</td></tr>
-<tr><td>5</td><td>Retrieve Plans for Stamping</td><td>Vishtik</td><td><span class="t t-auto">AUTO</span> → "Submitted To Engineering"</td></tr>
-<tr><td>6</td><td>Upload Stamped Plans</td><td>Vishtik</td><td><span class="t t-auto">AUTO</span> → "Design Complete"</td></tr>
+<tr><th>#</th><th>Workflow</th><th>Task / Trigger</th><th>Assigned To</th><th>Status After</th></tr>
+<tr><td>01</td><td>Design In Progress</td><td>Retrieve Project Details completed</td><td>Vishtik</td><td><span class="t t-auto">AUTO</span> → "In Progress"</td></tr>
+<tr><td>02</td><td>Design Uploaded / Ready for Review</td><td>Upload Completed Design completed</td><td>Vishtik</td><td><span class="t t-auto">AUTO</span> → "Ready For Review"</td></tr>
+<tr><td>03</td><td>Initial Review Complete</td><td>Complete Initial Design Review completed</td><td>Design Lead</td><td><span class="t t-auto">AUTO</span> → "Draft Complete - Waiting on Approvals"</td></tr>
+<tr><td>04</td><td>DA Approved / Final Design Review</td><td>DA approved by customer</td><td>Design Lead</td><td><span class="t t-auto">AUTO</span> Creates "Final Design Review" task</td></tr>
+<tr><td>05</td><td>Final Review Complete</td><td>Complete Final Design Review completed</td><td>Design Lead</td><td><span class="t t-auto">AUTO</span> Solar → "Submitted To Engineering" + stamps task; Non-solar → "Design Complete"</td></tr>
+<tr><td>06</td><td>Design Stamps in Progress</td><td>Retrieve Plans for Stamping completed</td><td>Vishtik</td><td><span class="t t-auto">AUTO</span> → stamps in progress</td></tr>
+<tr><td>07</td><td>Stamped Plans Uploaded / Design Complete</td><td>Upload Stamped Plans completed</td><td>Vishtik</td><td><span class="t t-auto">AUTO</span> → "Design Complete"</td></tr>
 </table>
 </div>
 
-<div class="info"><strong>Task 4 (Final Design Review)</strong> is triggered when DA is approved and design is in "Draft Complete - Waiting on Approvals". Completion of Final Design Review sends the design for engineering stamps OR straight to permitting, depending on job criteria and AHJ requirements.</div>
+<div class="info"><strong>Workflow 05 branches on Project Type:</strong> Solar and Solar Add-On projects route to engineering stamps (Vishtik tasks 06–07). Non-solar projects skip stamps and go directly to "Design Complete." This is why some projects have 5 steps and others have 7.</div>
+
+<div class="warn"><strong>Additional Design Flow folders:</strong> Beyond these 7 core workflows, the Design Flow folder contains 12 date stamp workflows, 12+ revision workflows (DA, Permitting, Interconnection, As-Built), 2 new construction workflows, 3 Xcel-specific workflows, and 7 D&amp;R/Service workflows.</div>
 
 <h2>Procedure</h2>
 
@@ -839,17 +842,20 @@ SOP Operations Guide
 <div class="ac"><div><span class="t t-auto">AUTO</span> Task 3 complete → <code>Design Status</code> → "Draft Complete - Waiting on Approvals"</div></div>
 <p>At this point, the DA PandaDoc is sent to the customer (see <a href="#" onclick="go('da')">Design Approval</a>).</p>
 
-<h3>4. Final Design Review <span class="t t-auto">AUTO</span> (Task 4)</h3>
-<p>Triggered when DA is approved. Design Lead completes final review.</p>
-<div class="ac"><div><span class="t t-auto">AUTO</span> DA approved → Final Design Review task created for Design Lead</div><div><span class="t t-auto">AUTO</span> Task 4 complete → routes to engineering stamps OR straight to permitting (based on job criteria / AHJ requirements)</div></div>
+<h3>4. DA Approved → Final Design Review <span class="t t-auto">AUTO</span> (Workflow 04)</h3>
+<p>Triggered when DA is approved. Creates "Final Design Review" task for the Design Lead.</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> DA approved → Final Design Review task created for Design Lead</div></div>
 
-<h3>5. Engineering Stamps <span class="t t-auto">AUTO</span> (Tasks 5–6, if required)</h3>
-<p>If engineering stamps are required, Vishtik retrieves plans (Task 5) then uploads stamped plans (Task 6).</p>
-<div class="ac"><div><span class="t t-auto">AUTO</span> Task 5 complete → <code>Design Status</code> → "Submitted To Engineering"</div><div><span class="t t-auto">AUTO</span> <code>Engineering Submission Date</code> recorded</div></div>
-<div class="ac"><div><span class="t t-auto">AUTO</span> Task 6 complete → <code>Design Status</code> → "Design Complete"</div></div>
+<h3>5. Final Review Complete <span class="t t-auto">AUTO</span> (Workflow 05)</h3>
+<p>Design Lead completes the final design review. <strong>This workflow branches based on Project Type:</strong></p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> <strong>Solar / Solar Add-On:</strong> <code>Design Status</code> → "Submitted To Engineering" + <code>Engineering Submission Date</code> recorded + "Retrieve Plans for Stamping" task created for Vishtik</div><div><span class="t t-auto">AUTO</span> <strong>Non-solar:</strong> <code>Design Status</code> → "Design Complete" (skips engineering stamps)</div></div>
 
-<h3>6. Design Complete <span class="t t-auto">AUTO</span></h3>
-<p>Upload Stamped Plans completion (Task 6) marks the design complete and triggers stage advance.</p>
+<h3>6. Engineering Stamps <span class="t t-auto">AUTO</span> (Workflows 06–07, solar only)</h3>
+<p>Vishtik retrieves plans for stamping (Workflow 06), then uploads stamped plans (Workflow 07).</p>
+<div class="ac"><div><span class="t t-auto">AUTO</span> Workflow 06 → stamps in progress</div><div><span class="t t-auto">AUTO</span> Workflow 07 → <code>Design Status</code> → "Design Complete"</div></div>
+
+<h3>7. Design Complete <span class="t t-auto">AUTO</span></h3>
+<p>Whether via Workflow 05 (non-solar) or Workflow 07 (solar), reaching "Design Complete" triggers stage advance.</p>
 <div class="ac"><div><span class="t t-auto">AUTO</span> <code>Is Design Completed?</code> → Yes</div><div><span class="t t-auto">AUTO</span> <code>Design Completion Date</code> recorded</div><div><span class="t t-calc">CALC</span> <code>Design Turnaround Time</code> (time from survey to design complete)</div><div><span class="t t-calc">CALC</span> <code>DA To Permit</code> (time from DA approved to permit issued)</div><div><span class="t t-auto">AUTO</span> Deal stage advances to <strong>Permitting &amp; Interconnection</strong></div></div>
 
 <h3>7. Design Revisions</h3>
@@ -860,7 +866,7 @@ SOP Operations Guide
 <div class="card">
 <table>
 <tr><th>Field</th><th>Set By</th><th>Purpose</th></tr>
-<tr><td><code>Design Status</code></td><td><span class="t t-auto">AUTO</span></td><td>Driven by 6-step task workflow (Vishtik + Design Lead)</td></tr>
+<tr><td><code>Design Status</code></td><td><span class="t t-auto">AUTO</span></td><td>Driven by 7-step workflow (Vishtik + Design Lead)</td></tr>
 <tr><td><code>Design Lead</code></td><td><span class="t t-auto">AUTO</span></td><td>Assigned at project start — reviews and approves designs</td></tr>
 <tr><td><code>Is Design Completed?</code></td><td><span class="t t-auto">AUTO</span></td><td>Flips when design_status = Design Complete</td></tr>
 <tr><td><code>Design Completion Date</code></td><td><span class="t t-auto">AUTO</span></td><td>Date design was completed</td></tr>
@@ -2449,7 +2455,7 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <tr><th>Field</th><th>Pipeline Area</th><th>Set By</th><th>Drives</th></tr>
 <tr><td><code>Site Survey Status</code></td><td>Site Survey</td><td><span class="t t-zup">ZUPER</span> / <span class="t t-man">MANUAL</span></td><td>Survey workflow + stage advance</td></tr>
 <tr><td><code>Design Approval Status</code></td><td>Design Approval</td><td><span class="t t-auto">AUTO</span></td><td>Fully PandaDoc-driven — auto-set on send, approve, or reject</td></tr>
-<tr><td><code>Design Status</code></td><td>Design &amp; Engineering</td><td><span class="t t-auto">AUTO</span></td><td>Driven by 6-step task workflow (Vishtik + Design Lead)</td></tr>
+<tr><td><code>Design Status</code></td><td>Design &amp; Engineering</td><td><span class="t t-auto">AUTO</span></td><td>Driven by 7-step workflow (Vishtik + Design Lead)</td></tr>
 <tr><td><code>Permitting Status</code></td><td>Permitting</td><td><span class="t t-auto">AUTO</span> (task) / <span class="t t-man">MANUAL</span></td><td>Task-driven through normal flow; "Permit Issued" set manually + RTB gate (condition 1)</td></tr>
 <tr><td><code>Interconnection Status</code></td><td>Interconnection</td><td><span class="t t-auto">AUTO</span> (task) / <span class="t t-man">MANUAL</span></td><td>Task-driven through normal flow; "Application Approved" set manually + RTB gate (condition 2)</td></tr>
 <tr><td><code>Construction Status</code></td><td>Construction</td><td><span class="t t-zup">ZUPER</span> / <span class="t t-auto">AUTO</span></td><td>Construction workflow + stage advance</td></tr>
@@ -4621,10 +4627,10 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <!-- ===== WORKFLOWS TAB: OVERVIEW ===== -->
 <div class="section" id="wf-overview">
 <h1>HubSpot Workflow Reference</h1>
-<p class="subtitle">Complete catalog of all 171 HubSpot workflows across 10 pipeline stages. Use this to understand what fires when, troubleshoot automation, and onboard new team members.</p>
+<p class="subtitle">Complete catalog of 240+ HubSpot workflows across 10 pipeline stages. Use this to understand what fires when, troubleshoot automation, and onboard new team members.</p>
 
 <div class="summary">
-<strong>At a glance:</strong> Photon Brothers runs <strong>171 HubSpot workflows</strong> that drive the solar installation lifecycle.
+<strong>At a glance:</strong> Photon Brothers runs <strong>240+ HubSpot workflows</strong> that drive the solar installation lifecycle.
 <ul>
 <li>Workflows are named with prefixes: <strong>WMS</strong> (Westminster/CO workflows) and <strong>ZRS</strong> (Zuper-related sync)</li>
 <li>Numbered sequences (01a, 01b, 01c) indicate related workflow chains</li>
@@ -4639,7 +4645,7 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <tr><th>Stage</th><th>Count</th><th>Status Field</th><th>Key Integration</th></tr>
 <tr><td><strong>Site Survey</strong></td><td>15</td><td><code>Site Survey Status</code></td><td>Zuper (field sync)</td></tr>
 <tr><td><strong>Design Approval</strong></td><td>21</td><td><code>Design Approval Status</code></td><td>PandaDoc (e-sign)</td></tr>
-<tr><td><strong>Design &amp; Engineering</strong></td><td>—</td><td><code>Design Status</code></td><td>Vishtik Technologies</td></tr>
+<tr><td><strong>Design &amp; Engineering</strong></td><td>73+</td><td><code>Design Status</code></td><td>Vishtik Technologies</td></tr>
 <tr><td><strong>Permitting</strong></td><td>36</td><td><code>Permitting Status</code></td><td>SolarApp+</td></tr>
 <tr><td><strong>Interconnection</strong></td><td>40</td><td><code>Interconnection Status</code></td><td>Xcel Energy (CO)</td></tr>
 <tr><td><strong>Construction</strong></td><td>8</td><td><code>Construction Status</code></td><td>Zuper (field sync)</td></tr>
@@ -4694,8 +4700,39 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 </table>
 </div>
 
-<h2>Empty Stage: Design &amp; Engineering</h2>
-<div class="info"><strong>Design &amp; Engineering has 0 dedicated workflows.</strong> This stage is driven by a 6-step task workflow managed outside the standard automation folder (Vishtik design submission → review → stamped plans). The <code>Design Status</code> field tracks progress through task completions rather than standalone workflows.</div>
+<h2>Design &amp; Engineering Workflows (73+)</h2>
+<p class="subtitle">Organized under the <strong>Design Flow</strong> folder in HubSpot with 8 subfolders.</p>
+
+<h3>Normal Process (7 workflows)</h3>
+<p>The core 7-step flow that drives every deal through design &amp; engineering:</p>
+<div class="card">
+<table>
+<tr><th>#</th><th>Workflow</th><th>Trigger</th><th>Action</th></tr>
+<tr><td>01</td><td>Vishtik Design Submitted</td><td>Design submitted via Vishtik</td><td>Creates task for Vishtik to complete design; sets <code>Design Status</code> = Submitted</td></tr>
+<tr><td>02</td><td>Vishtik Design Returned</td><td>Vishtik marks design complete</td><td>Creates task for PB Design Lead to review; sets status = In Review</td></tr>
+<tr><td>03</td><td>Design Rejected</td><td>Design Lead rejects design</td><td>Sends revision back to Vishtik; increments <code>DA Revision Counter</code></td></tr>
+<tr><td>04</td><td>DA Approved</td><td>Design Approval approved</td><td>Creates final review task for Design Lead; sets status = DA Approved</td></tr>
+<tr><td>05</td><td>Final Review Complete</td><td>Design Lead completes final review task</td><td><strong>Branches:</strong> Solar → submits to engineering for stamps; Non-solar → sets Design Complete</td></tr>
+<tr><td>06</td><td>Engineering Stamped</td><td>Stamped plans received</td><td>Sets <code>Design Status</code> = Design Complete; records <code>Engineering Stamped Date</code></td></tr>
+<tr><td>07</td><td>Design Revision</td><td>Revision needed (DA, AHJ, utility, or as-built)</td><td>Increments appropriate revision counter; assigns revision tasks</td></tr>
+</table>
+</div>
+
+<h3>Other Design Flow Subfolders</h3>
+<div class="card">
+<table>
+<tr><th>Subfolder</th><th>Count</th><th>Purpose</th></tr>
+<tr><td>Date Stamps</td><td>12</td><td>Auto-records timestamps for each design milestone</td></tr>
+<tr><td>DA Revisions</td><td>10</td><td>Design approval rejection → revision → resubmission loop</td></tr>
+<tr><td>Permitting Revisions</td><td>17</td><td>AHJ-triggered redesign when permit is rejected</td></tr>
+<tr><td>Interconnection Revisions</td><td>15</td><td>Utility-triggered redesign when IC application is rejected</td></tr>
+<tr><td>As-Built Revisions</td><td>17</td><td>Post-construction redesign for as-built corrections</td></tr>
+<tr><td>New Construction</td><td>2</td><td>Adjustments for new-construction projects (pre-wire, builder coordination)</td></tr>
+<tr><td>Xcel</td><td>3</td><td>Xcel Energy–specific design requirements (CO only)</td></tr>
+<tr><td>D&amp;R / Service</td><td>7</td><td>Disconnect &amp; reconnect and service-related design flows</td></tr>
+</table>
+</div>
+<div class="warn"><strong>Note:</strong> Revision subfolders (DA, Permitting, IC, As-Built) are triggered from other pipeline stages — not just during Design &amp; Engineering. A permit rejection in the Permitting stage routes back through the Permitting Revisions design workflows.</div>
 
 <h2>PTO Status Values</h2>
 <p>PTO has more status values than other stages due to the Xcel Energy photo requirements (CO only):</p>

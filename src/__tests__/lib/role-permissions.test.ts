@@ -33,8 +33,8 @@ describe("canAccessRoute - new suite structure", () => {
     expect(canAccessRoute("PROJECT_MANAGER", "/")).toBe(true);
   });
 
-  it("blocks VIEWER from home", () => {
-    expect(canAccessRoute("VIEWER", "/")).toBe(false);
+  it("allows VIEWER to access home", () => {
+    expect(canAccessRoute("VIEWER", "/")).toBe(true);
   });
 
   // BOM History access

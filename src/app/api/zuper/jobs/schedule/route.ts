@@ -1874,17 +1874,7 @@ async function resolveSurveyorInfoFromAssignment(params: {
     uid: assignedUserUid,
   };
 
-  if (assignedUserUid) {
-    const userResult = await getCachedZuperUser(assignedUserUid, params.userCache);
-    if (userResult.type === "success") {
-      info = mergeSurveyorInfo(info, {
-        email: normalizeEmail(userResult.data?.email),
-        name: [userResult.data?.first_name, userResult.data?.last_name].filter(Boolean).join(" ").trim() || null,
-        uid: assignedUserUid,
-      }) || info;
-    }
-  }
-
+  // Prefer CrewMember (authoritative) over Zuper API (may be stale)
   if (assignedUserUid) {
     const byUid = await getCrewMemberByZuperUserUid(assignedUserUid);
     info = mergeSurveyorInfo(info, {
@@ -1901,6 +1891,34 @@ async function resolveSurveyorInfoFromAssignment(params: {
       name: byName?.name || assignedUserName,
       uid: byName?.zuperUserUid || null,
     }) || info;
+  }
+
+  // Zuper API as last resort for email/name
+  if (assignedUserUid && (!info.email || !info.name)) {
+    const userResult = await getCachedZuperUser(assignedUserUid, params.userCache);
+    if (userResult.type === "success") {
+      info = mergeSurveyorInfo(info, {
+        email: normalizeEmail(userResult.data?.email),
+        name: [userResult.data?.first_name, userResult.data?.last_name].filter(Boolean).join(" ").trim() || null,
+        uid: assignedUserUid,
+      }) || info;
+    }
+  }
+
+  // Fallback: support assignments that use app user display names (non-crew)
+  if (!info.email && info.name && prisma) {
+    const byAppUser = await prisma.user.findFirst({
+      where: { name: info.name },
+      select: { email: true, name: true },
+    });
+    const appUserEmail = normalizeEmail(byAppUser?.email);
+    if (appUserEmail) {
+      info = mergeSurveyorInfo(info, {
+        email: appUserEmail,
+        name: byAppUser?.name || null,
+        uid: null,
+      }) || info;
+    }
   }
 
   return info;
