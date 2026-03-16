@@ -158,14 +158,14 @@ function DealsPageInner() {
       result = result.filter((d) => stageSet.has(d.stage));
     }
 
-    // Owner filter (project pipeline only)
-    if (filters.owners.length > 0 && isProjectPipeline(filters.pipeline)) {
+    // Owner filter
+    if (filters.owners.length > 0) {
       const ownerSet = new Set(filters.owners);
       result = result.filter((d) => d.dealOwner && ownerSet.has(d.dealOwner));
     }
 
-    // Project Manager filter (project pipeline only)
-    if (filters.projectManagers.length > 0 && isProjectPipeline(filters.pipeline)) {
+    // Project Manager filter
+    if (filters.projectManagers.length > 0) {
       const pmSet = new Set(filters.projectManagers);
       result = result.filter((d) => d.projectManager && pmSet.has(d.projectManager));
     }
