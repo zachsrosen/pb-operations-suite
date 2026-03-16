@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { FORM_CATEGORIES, CATEGORY_CONFIGS, type FieldDef } from "@/lib/catalog-fields";
 import { requireApiAuth } from "@/lib/api-auth";
+import { prisma } from "@/lib/db";
+import { matchVendorName } from "@/lib/vendor-normalize";
 
 // Import pdf-parse/lib directly — the main index.js has a bug that tries
 // to read a test file on import when module.parent is falsy (serverless/ESM).
@@ -179,6 +181,24 @@ export async function POST(request: NextRequest) {
     }
 
     const extracted = toolBlock.input as Record<string, unknown>;
+
+    // Attempt vendor matching if AI extracted a vendor
+    const extractedVendor = extracted.vendorName as string | undefined;
+    if (extractedVendor && prisma) {
+      const lookups = await prisma.vendorLookup.findMany({
+        where: { isActive: true },
+        select: { zohoVendorId: true, name: true },
+      });
+      const match = matchVendorName(extractedVendor, lookups);
+      if (match) {
+        extracted.vendorName = match.name;
+        extracted.zohoVendorId = match.zohoVendorId;
+      } else {
+        // Keep as hint, no zohoVendorId — user must pick manually
+        extracted.vendorHint = extractedVendor;
+        delete extracted.vendorName;
+      }
+    }
 
     // Count extracted fields (top-level + specValues)
     const specValues = extracted.specValues as Record<string, unknown> | undefined;
