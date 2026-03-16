@@ -1422,6 +1422,7 @@ export default function SchedulerPage() {
     tentative: RevenueBucket;
     completed: RevenueBucket;
     overdue: RevenueBucket;
+    forecasted: RevenueBucket;
   };
   type MonthData = {
     monthLabel: string;
@@ -1431,6 +1432,7 @@ export default function SchedulerPage() {
     tentative: RevenueBucket;
     completed: RevenueBucket;
     overdue: RevenueBucket;
+    forecasted: RevenueBucket;
   };
 
   const computeRevenueBuckets = useCallback((events: typeof filteredScheduledEvents) => {
@@ -1442,6 +1444,7 @@ export default function SchedulerPage() {
     const overdueEvts = events.filter((e) =>
       (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && e.isOverdue && !e.isTentative && !e.isForecast
     );
+    const forecastedEvts = events.filter((e) => e.isForecast);
     const dedupeRevenue = (evts: typeof events) => {
       const ids = new Set(evts.map((e) => e.id));
       return {
@@ -1449,7 +1452,7 @@ export default function SchedulerPage() {
         revenue: [...ids].reduce((sum, id) => sum + (evts.find((e) => e.id === id)?.amount || 0), 0),
       };
     };
-    return { scheduled: dedupeRevenue(scheduledEvts), tentative: dedupeRevenue(tentativeEvts), completed: dedupeRevenue(completedEvts), overdue: dedupeRevenue(overdueEvts) };
+    return { scheduled: dedupeRevenue(scheduledEvts), tentative: dedupeRevenue(tentativeEvts), completed: dedupeRevenue(completedEvts), overdue: dedupeRevenue(overdueEvts), forecasted: dedupeRevenue(forecastedEvts) };
   }, []);
 
   const weeklyRevenueSummary = useMemo((): WeekData[] => {
@@ -1474,7 +1477,7 @@ export default function SchedulerPage() {
       const isCurrent = w === 0;
       const label = weekStart.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
-      const weekEvents = filteredScheduledEvents.filter((e) => {
+      const weekEvents = displayEvents.filter((e) => {
         const d = new Date(e.date + "T12:00:00");
         return d >= weekStart && d < weekEnd;
       });
@@ -1483,7 +1486,7 @@ export default function SchedulerPage() {
       weeks.push({ weekStart, weekLabel: label, isPast, isFuture, isCurrent, ...buckets });
     }
     return weeks;
-  }, [filteredScheduledEvents, computeRevenueBuckets]);
+  }, [displayEvents, computeRevenueBuckets]);
 
   const monthlyRevenueSummary = useMemo((): MonthData[] => {
     const today = new Date();
@@ -1500,7 +1503,7 @@ export default function SchedulerPage() {
       const isCurrent = m === 0;
       const label = monthStart.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 
-      const monthEvents = filteredScheduledEvents.filter((e) => {
+      const monthEvents = displayEvents.filter((e) => {
         const ed = new Date(e.date + "T12:00:00");
         return ed >= monthStart && ed < monthEnd;
       });
@@ -1509,7 +1512,7 @@ export default function SchedulerPage() {
       months.push({ monthLabel: label, isPast, isCurrent, ...buckets });
     }
     return months;
-  }, [filteredScheduledEvents, computeRevenueBuckets]);
+  }, [displayEvents, computeRevenueBuckets]);
 
   /* ================================================================ */
   /*  Calendar logic                                                   */
@@ -4121,13 +4124,13 @@ export default function SchedulerPage() {
           <>
           <div className="flex-1 p-2 space-y-0.5">
             {weeklyRevenueSummary.filter((week) => {
-              const hasAnyData = week.scheduled.count > 0 || week.completed.count > 0 || week.overdue.count > 0 || week.tentative.count > 0;
+              const hasAnyData = week.scheduled.count > 0 || week.completed.count > 0 || week.overdue.count > 0 || week.tentative.count > 0 || week.forecasted.count > 0;
               return hasAnyData || week.isCurrent;
             }).map((week, i) => {
               const hasSched = week.scheduled.count > 0;
               const hasComp = week.completed.count > 0;
               const hasIncomplete = week.overdue.count > 0;
-              const hasAny = hasSched || hasComp || hasIncomplete || week.tentative.count > 0;
+              const hasAny = hasSched || hasComp || hasIncomplete || week.tentative.count > 0 || week.forecasted.count > 0;
               // Only show overdue for past + current week (not future)
               const showIncompleteRow = !week.isFuture;
               return (
@@ -4184,13 +4187,26 @@ export default function SchedulerPage() {
 
                   {/* Incomplete — only for past + current week, only if data present */}
                   {showIncompleteRow && hasIncomplete && (
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between mb-0.5">
                       <div className="flex items-center gap-1">
                         <div className="w-1.5 h-1.5 rounded-sm bg-red-500" />
                         <span className="text-[0.55rem] text-muted">Incomplete</span>
                       </div>
                       <span className="text-[0.6rem] font-mono font-semibold text-red-400">
                         {week.overdue.count} · ${formatRevenueCompact(week.overdue.revenue)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Forecasted — only show if data present */}
+                  {week.forecasted.count > 0 && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-sm border border-dashed border-blue-400 bg-blue-500/40" />
+                        <span className="text-[0.55rem] text-muted">Forecasted</span>
+                      </div>
+                      <span className="text-[0.6rem] font-mono font-semibold text-blue-300 opacity-80">
+                        {week.forecasted.count} · ${formatRevenueCompact(week.forecasted.revenue)}
                       </span>
                     </div>
                   )}
@@ -4236,13 +4252,24 @@ export default function SchedulerPage() {
             </div>
             )}
             {weeklyRevenueSummary.some(w => w.overdue.count > 0) && (
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-red-500" />
                 <span className="text-[0.6rem] text-foreground/80">Incomplete</span>
               </div>
               <span className="text-[0.65rem] font-mono font-bold text-red-400">
                 ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.overdue.revenue, 0))}
+              </span>
+            </div>
+            )}
+            {weeklyRevenueSummary.some(w => w.forecasted.count > 0) && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm border border-dashed border-blue-400 bg-blue-500/40" />
+                <span className="text-[0.6rem] text-foreground/80">Forecasted</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-blue-300 opacity-80">
+                ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.forecasted.revenue, 0))}
               </span>
             </div>
             )}
@@ -4255,13 +4282,13 @@ export default function SchedulerPage() {
           <>
           <div className="flex-1 p-2 space-y-0.5">
             {monthlyRevenueSummary.filter((month) => {
-              const hasAnyData = month.scheduled.count > 0 || month.completed.count > 0 || month.overdue.count > 0 || month.tentative.count > 0;
+              const hasAnyData = month.scheduled.count > 0 || month.completed.count > 0 || month.overdue.count > 0 || month.tentative.count > 0 || month.forecasted.count > 0;
               return hasAnyData || month.isCurrent;
             }).map((month, i) => {
               const hasSched = month.scheduled.count > 0;
               const hasComp = month.completed.count > 0;
               const hasIncomplete = month.overdue.count > 0;
-              const hasAny = hasSched || hasComp || hasIncomplete || month.tentative.count > 0;
+              const hasAny = hasSched || hasComp || hasIncomplete || month.tentative.count > 0 || month.forecasted.count > 0;
               const showIncompleteRow = month.isPast || month.isCurrent;
               return (
                 <div
@@ -4317,13 +4344,26 @@ export default function SchedulerPage() {
 
                   {/* Incomplete — only for past + current month, only if data present */}
                   {showIncompleteRow && hasIncomplete && (
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between mb-0.5">
                       <div className="flex items-center gap-1">
                         <div className="w-1.5 h-1.5 rounded-sm bg-red-500" />
                         <span className="text-[0.55rem] text-muted">Incomplete</span>
                       </div>
                       <span className="text-[0.6rem] font-mono font-semibold text-red-400">
                         {month.overdue.count} · ${formatRevenueCompact(month.overdue.revenue)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Forecasted — only show if data present */}
+                  {month.forecasted.count > 0 && (
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1">
+                        <div className="w-1.5 h-1.5 rounded-sm border border-dashed border-blue-400 bg-blue-500/40" />
+                        <span className="text-[0.55rem] text-muted">Forecasted</span>
+                      </div>
+                      <span className="text-[0.6rem] font-mono font-semibold text-blue-300 opacity-80">
+                        {month.forecasted.count} · ${formatRevenueCompact(month.forecasted.revenue)}
                       </span>
                     </div>
                   )}
@@ -4369,13 +4409,24 @@ export default function SchedulerPage() {
             </div>
             )}
             {monthlyRevenueSummary.some(m => m.overdue.count > 0) && (
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm bg-red-500" />
                 <span className="text-[0.6rem] text-foreground/80">Incomplete</span>
               </div>
               <span className="text-[0.65rem] font-mono font-bold text-red-400">
                 ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.overdue.revenue, 0))}
+              </span>
+            </div>
+            )}
+            {monthlyRevenueSummary.some(m => m.forecasted.count > 0) && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm border border-dashed border-blue-400 bg-blue-500/40" />
+                <span className="text-[0.6rem] text-foreground/80">Forecasted</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-blue-300 opacity-80">
+                ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.forecasted.revenue, 0))}
               </span>
             </div>
             )}
