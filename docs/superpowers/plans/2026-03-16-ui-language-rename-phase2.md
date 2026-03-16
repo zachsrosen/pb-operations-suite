@@ -36,7 +36,7 @@
 **Files:**
 - Modify: `src/app/dashboards/inventory/page.tsx`
 
-This file has ~12 user-facing strings where "SKU" means "product record".
+This file has ~16 user-facing strings where "SKU" means "product record", including Receive tab selectors and transaction table headers.
 
 - [ ] **Step 1: Rename all user-facing SKU → product strings**
 
@@ -44,6 +44,10 @@ Apply these exact replacements (line numbers for reference, match on string cont
 
 | Line | Old String | New String |
 |------|-----------|------------|
+| 540 | `SKU` (Receive tab selector label) | `Product` |
+| 543 | `placeholder="Filter SKUs..."` | `placeholder="Filter products..."` |
+| 554 | `Select SKU...` (dropdown default) | `Select product...` |
+| 739 | `SKU` (transactions table column header) | `Product` |
 | 946 | `Sync SKUs and ensure projects have equipment data.` | `Sync products and ensure projects have equipment data.` |
 | 1018 | `{" SKUs"}` | `{" products"}` |
 | 1053 | `({group.rows.length} SKU{group.rows.length !== 1 ? "s" : ""})` | `({group.rows.length} product{group.rows.length !== 1 ? "s" : ""})` |
@@ -247,6 +251,7 @@ git commit -m "copy: rename SKU → product in BOM, guide, handbook, and suite p
 - Modify: `src/app/api/inventory/skus/sync-bulk/route.ts`
 - Modify: `src/app/api/inventory/skus/sync-hubspot-bulk/route.ts`
 - Modify: `src/app/api/inventory/skus/stats/route.ts`
+- Modify: `src/app/api/inventory/sync-skus/route.ts`
 
 These are error messages, console logs, and audit log descriptions returned from the API. Many surface directly in toast messages on the frontend.
 
@@ -305,6 +310,12 @@ For `stats/route.ts`:
 - Line 55: `"[Inventory SKU Stats] Falling back to legacy query"` → `"[Inventory Product Stats] Falling back to legacy query"`
 - Line 125: `"Error fetching SKU stats:"` → `"Error fetching product stats:"`
 - Line 128: `"Failed to fetch SKU stats"` → `"Failed to fetch product stats"`
+
+For `sync-skus/route.ts`:
+- Line 175: `type: "INVENTORY_SKU_SYNCED"` → `type: "INVENTORY_PRODUCT_SYNCED"`
+- Line 176: `"SKU sync: ${created} created, ${existing} existing..."` → `"Product sync: ${created} created, ${existing} existing..."`
+- Line 200: `"Error syncing SKUs from HubSpot:"` → `"Error syncing products from HubSpot:"`
+- Line 203: `"Failed to sync SKUs"` → `"Failed to sync products"`
 
 - [ ] **Step 4: Commit**
 
