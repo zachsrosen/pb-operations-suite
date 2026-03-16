@@ -207,6 +207,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // SOP Guide
       "/sop",
       "/api/sop",
+      // Forecasting API (read-only, needed for scheduler ghost events)
+      "/api/forecasting",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: true,
@@ -482,6 +484,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // SOP Guide
       "/sop",
       "/api/sop",
+      // Forecasting API (read-only, needed for scheduler ghost events)
+      "/api/forecasting",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
