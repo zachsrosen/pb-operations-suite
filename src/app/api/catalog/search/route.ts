@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
       sellPrice: true,
       sku: true,
       vendorName: true,
+      zohoVendorId: true,
       vendorPartNumber: true,
       hardToProcure: true,
       length: true,

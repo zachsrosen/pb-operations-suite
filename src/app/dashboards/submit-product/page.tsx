@@ -43,6 +43,7 @@ const CLONE_FIELD_MAP: (keyof CatalogFormState)[] = [
   "hardToProcure",
   "sku",
   "vendorName",
+  "zohoVendorId",
   "vendorPartNumber",
 ];
 
@@ -201,6 +202,7 @@ function CatalogWizard() {
         unitLabel: state.unitLabel || null,
         sku: state.sku || null,
         vendorName: state.vendorName || null,
+        zohoVendorId: state.zohoVendorId || null,
         vendorPartNumber: state.vendorPartNumber || null,
         unitCost: state.unitCost ? parseFloat(state.unitCost) : null,
         sellPrice: state.sellPrice ? parseFloat(state.sellPrice) : null,

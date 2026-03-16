@@ -752,6 +752,7 @@ model EquipmentSku {
   canonicalBrand  String?
   canonicalModel  String?
   canonicalKey    String?
+  zohoVendorId           String?
 
   createdAt   DateTime          @default(now())
   updatedAt   DateTime          @updatedAt
@@ -776,6 +777,19 @@ model EquipmentSku {
   @@index([zohoItemId])
   @@index([canonicalKey])
   @@index([canonicalBrand, canonicalModel])
+  @@index([zohoVendorId])
+}
+
+model VendorLookup {
+  id              String   @id @default(cuid())
+  zohoVendorId    String   @unique
+  name            String
+  isActive        Boolean  @default(true)
+  lastSyncedAt    DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([isActive, name])
 }
 
 model ModuleSpec {
@@ -1063,6 +1077,7 @@ model PendingCatalogPush {
   candidateSkuIds   String[]
   reviewReason      String?
   expiresAt         DateTime?
+  zohoVendorId    String?
 
   createdAt   DateTime   @default(now())
   resolvedAt  DateTime?
@@ -1072,6 +1087,7 @@ model PendingCatalogPush {
   @@index([canonicalKey, status])
   @@index([source])
   @@index([expiresAt])
+  @@index([zohoVendorId])
 }
 
 // ===========================================

@@ -4,6 +4,7 @@ import CategoryFields from "./CategoryFields";
 import FieldTooltip from "./FieldTooltip";
 import { getCategoryFields } from "@/lib/catalog-fields";
 import type { CatalogFormState, CatalogFormAction } from "@/lib/catalog-form-state";
+import VendorPicker from "./VendorPicker";
 
 interface DetailsStepProps {
   state: CatalogFormState;
@@ -207,11 +208,14 @@ export default function DetailsStep({ state, dispatch, onNext, onBack }: Details
               Vendor Name
               <FieldTooltip text="Distributor or supplier name (e.g., CED, BayWa)" />
             </label>
-            <input
-              type="text"
-              value={state.vendorName}
-              onChange={(e) => { dispatch({ type: "SET_FIELD", field: "vendorName", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "vendorName" }); }}
-              className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            <VendorPicker
+              vendorName={state.vendorName}
+              zohoVendorId={state.zohoVendorId}
+              onChange={(name, id) => {
+                dispatch({ type: "SET_VENDOR", vendorName: name, zohoVendorId: id });
+                dispatch({ type: "CLEAR_PREFILL_FIELD", field: "vendorName" });
+              }}
+              hint={state.vendorHint || undefined}
             />
           </div>
           <div className={fieldClass("vendorPartNumber")}>

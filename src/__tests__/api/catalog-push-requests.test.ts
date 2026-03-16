@@ -8,6 +8,7 @@ jest.mock("@/lib/api-auth", () => ({
 // ── Prisma ────────────────────────────────────────────────────────────────────
 const mockCreate = jest.fn();
 const mockFindMany = jest.fn();
+const mockFindUnique = jest.fn();
 
 jest.mock("@/lib/db", () => ({
   prisma: {
@@ -15,12 +16,16 @@ jest.mock("@/lib/db", () => ({
       create: (...args: unknown[]) => mockCreate(...args),
       findMany: (...args: unknown[]) => mockFindMany(...args),
     },
+    vendorLookup: {
+      findUnique: (...args: unknown[]) => mockFindUnique(...args),
+    },
   },
 }));
 
 // ── Route under test ──────────────────────────────────────────────────────────
 import { NextRequest } from "next/server";
 import { POST as postRequest, GET as getRequests } from "@/app/api/catalog/push-requests/route";
+import { prisma } from "@/lib/db";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function makeRequest(body: unknown, method = "POST") {
@@ -291,6 +296,93 @@ describe("POST /api/catalog/push-requests", () => {
 
     expect(res.status).toBe(201);
     expect(mockCreate).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Vendor pair validation tests ──────────────────────────────────────────────
+
+function validPayload() {
+  return {
+    brand: "Tesla",
+    model: "Powerwall 3",
+    description: "Battery",
+    category: "BATTERY",
+    systems: ["INTERNAL"],
+    metadata: { capacityKwh: 13.5 },
+  };
+}
+
+describe("vendor pair validation", () => {
+  it("rejects vendorName without zohoVendorId", async () => {
+    const res = await postRequest(
+      makeRequest({
+        ...validPayload(),
+        vendorName: "Rell Power",
+        zohoVendorId: "",
+      })
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("selected from the list");
+  });
+
+  it("rejects zohoVendorId without vendorName", async () => {
+    const res = await postRequest(
+      makeRequest({
+        ...validPayload(),
+        vendorName: "",
+        zohoVendorId: "v123",
+      })
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects mismatched vendorName vs VendorLookup", async () => {
+    mockFindUnique.mockResolvedValue({
+      zohoVendorId: "v123",
+      name: "Rell Power",
+    });
+
+    const res = await postRequest(
+      makeRequest({
+        ...validPayload(),
+        vendorName: "Wrong Name",
+        zohoVendorId: "v123",
+      })
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("does not match");
+  });
+
+  it("accepts valid vendor pair", async () => {
+    mockCreate.mockResolvedValue({ id: "push_v1", status: "PENDING" });
+    mockFindUnique.mockResolvedValue({
+      zohoVendorId: "v123",
+      name: "Rell Power",
+    });
+
+    const res = await postRequest(
+      makeRequest({
+        ...validPayload(),
+        vendorName: "Rell Power",
+        zohoVendorId: "v123",
+      })
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it("accepts both blank (vendor is optional)", async () => {
+    mockCreate.mockResolvedValue({ id: "push_v2", status: "PENDING" });
+
+    const res = await postRequest(
+      makeRequest({
+        ...validPayload(),
+        vendorName: "",
+        zohoVendorId: "",
+      })
+    );
+    expect(res.status).toBe(201);
   });
 });
 
