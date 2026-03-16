@@ -25,7 +25,7 @@ interface SyncOutcome {
 }
 
 interface SyncModalProps {
-  skuId: string;
+  internalProductId: string;
   skuName: string;
   isOpen: boolean;
   onClose: () => void;
@@ -45,7 +45,7 @@ const STATUS_COLORS: Record<string, string> = {
   unsupported: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
 };
 
-export default function SyncModal({ skuId, skuName, isOpen, onClose }: SyncModalProps) {
+export default function SyncModal({ internalProductId, skuName, isOpen, onClose }: SyncModalProps) {
   const [previews, setPreviews] = useState<SyncPreview[]>([]);
   const [changesHash, setChangesHash] = useState("");
   const [systems, setSystems] = useState<string[]>([]);
@@ -59,7 +59,7 @@ export default function SyncModal({ skuId, skuName, isOpen, onClose }: SyncModal
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/inventory/skus/${skuId}/sync`);
+      const res = await fetch(`/api/inventory/skus/${internalProductId}/sync`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `HTTP ${res.status}`);
@@ -73,7 +73,7 @@ export default function SyncModal({ skuId, skuName, isOpen, onClose }: SyncModal
     } finally {
       setLoading(false);
     }
-  }, [skuId]);
+  }, [internalProductId]);
 
   useEffect(() => {
     if (isOpen) {
@@ -89,7 +89,7 @@ export default function SyncModal({ skuId, skuName, isOpen, onClose }: SyncModal
     setError(null);
     try {
       // Step 1: Get HMAC token
-      const confirmRes = await fetch(`/api/inventory/skus/${skuId}/sync/confirm`, {
+      const confirmRes = await fetch(`/api/inventory/skus/${internalProductId}/sync/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ systems, changesHash }),
@@ -101,7 +101,7 @@ export default function SyncModal({ skuId, skuName, isOpen, onClose }: SyncModal
       const { token, issuedAt } = await confirmRes.json();
 
       // Step 2: Execute sync
-      const executeRes = await fetch(`/api/inventory/skus/${skuId}/sync`, {
+      const executeRes = await fetch(`/api/inventory/skus/${internalProductId}/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, issuedAt, systems }),

@@ -24,7 +24,7 @@ const labelClasses = "block text-sm font-medium text-muted mb-1";
 const cardClasses = "bg-surface rounded-xl border border-t-border p-6 shadow-card";
 const sectionTitleClasses = "text-lg font-semibold text-foreground mb-4";
 
-interface EditableSku {
+interface EditableInternalProduct {
   id: string;
   name: string | null;
   category: string;
@@ -113,7 +113,7 @@ export default function CatalogSkuEditPage() {
 
       try {
         const res = await fetch("/api/inventory/skus?active=false", { cache: "no-store" });
-        const body = await res.json().catch(() => null) as { error?: string; skus?: EditableSku[] } | null;
+        const body = await res.json().catch(() => null) as { error?: string; skus?: EditableInternalProduct[] } | null;
         if (!res.ok) throw new Error(body?.error || `Failed to load SKUs (${res.status})`);
 
         const found = (body?.skus || []).find((item) => item.id === skuId);
@@ -565,7 +565,7 @@ export default function CatalogSkuEditPage() {
       )}
 
       <SyncModal
-        skuId={skuId}
+        internalProductId={skuId}
         skuName={`${brand} ${model}`}
         isOpen={showSyncModal}
         onClose={() => {
