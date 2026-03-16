@@ -3596,7 +3596,7 @@ export default function SchedulerPage() {
                             const isCompletedType = ev.eventType === "construction-complete" || ev.eventType === "inspection-pass" || ev.eventType === "survey-complete";
                             const isFailedType = ev.eventType === "inspection-fail";
                             const isActiveType = !isCompletedType && !isFailedType;
-                            const isDraggable = isActiveType && !ev.isOverdue;
+                            const isDraggable = isActiveType && !ev.isOverdue && !ev.isForecast;
 
                             // Completed events use same base color at low opacity
                             const completedColorClass =
@@ -3618,6 +3618,7 @@ export default function SchedulerPage() {
                               isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                               isCompletedType ? completedColorClass :
                               ev.isOverdue ? overdueColorClass :
+                              ev.isForecast ? "bg-blue-500/40 text-blue-200 border border-dashed border-blue-400 opacity-60" :
                               ev.isTentative ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                               ev.eventType === "rtb" ? "bg-emerald-500 text-black" :
                               ev.eventType === "blocked" ? "bg-yellow-500 text-black" :
@@ -3644,11 +3645,12 @@ export default function SchedulerPage() {
                                       null
                                   );
                                 }}
-                                title={`${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : " (drag to reschedule)"}`}
+                                title={ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : " (drag to reschedule)"}`}
                                 className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
                                   isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
                                 } ${eventColorClass} ${draggedProjectId === ev.id ? "opacity-60" : ""}`}
                               >
+                                {ev.isForecast && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">FORECAST</span>}
                                 {ev.isTentative && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">TENT {ev.days > 0 ? `${ev.days}d` : ""}</span>}
                                 {isFailedType && <span className="mr-0.5">✗</span>}
                                 {isCompletedType && <span className="mr-0.5">✓</span>}
@@ -3833,6 +3835,7 @@ export default function SchedulerPage() {
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? completedColorClassW :
                                   ev.isOverdue ? overdueColorClassW :
+                                  ev.isForecast ? "bg-blue-500/40 text-blue-200 border border-dashed border-blue-400 opacity-60" :
                                   ev.isTentative ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                                   ev.eventType === "construction" ? "bg-blue-500 text-white" :
                                   ev.eventType === "survey" ? "bg-cyan-500 text-white" :
@@ -3851,9 +3854,10 @@ export default function SchedulerPage() {
                                         ) || null
                                       );
                                     }}
-                                    title={`${ev.name}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : ""}`}
+                                    title={ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : ""}`}
                                     className={`text-[0.6rem] px-1.5 py-1 rounded mb-1 cursor-pointer transition-transform hover:scale-[1.02] hover:shadow-lg ${eventColorClass}`}
                                   >
+                                    {ev.isForecast && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">FORECAST</span>}
                                     {ev.isTentative && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">TENT {ev.days > 0 ? `${ev.days}d` : ""}</span>}
                                     {isFailedType && <span className="mr-0.5">✗</span>}
                                     {isCompletedType && <span className="mr-0.5">✓</span>}
@@ -4009,6 +4013,7 @@ export default function SchedulerPage() {
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? completedColorClassG :
                                   e.isOverdue ? overdueColorClassG :
+                                  e.isForecast ? "bg-blue-500/40 text-blue-200 border border-dashed border-blue-400 opacity-60" :
                                   e.isTentative ? "bg-amber-500/70 text-black border border-dashed border-amber-300" :
                                   e.eventType === "construction" ? "bg-blue-500 text-white" :
                                   e.eventType === "rtb" ? "bg-emerald-500 text-black" :
@@ -4028,7 +4033,7 @@ export default function SchedulerPage() {
                                         ) || null
                                       )
                                     }
-                                    title={`${e.name} - ${daysLabel} - ${amount}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : e.isOverdue ? " ⚠ Incomplete" : ""}`}
+                                    title={e.isForecast ? "Forecasted install — not yet scheduled" : `${e.name} - ${daysLabel} - ${amount}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : e.isOverdue ? " ⚠ Incomplete" : ""}`}
                                     className={`absolute top-2 bottom-2 rounded flex items-center px-1.5 text-[0.55rem] font-medium cursor-pointer transition-transform hover:scale-y-110 hover:shadow-lg hover:z-10 overflow-hidden truncate ${eventColorClass}`}
                                     style={{
                                       left: 0,
@@ -4036,6 +4041,7 @@ export default function SchedulerPage() {
                                       zIndex: 1,
                                     }}
                                   >
+                                    {e.isForecast && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">FORECAST</span>}
                                     {e.isTentative && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">TENT</span>}
                                     {isFailedType && <span className="mr-0.5">✗</span>}
                                     {isCompletedType && <span className="mr-0.5">✓</span>}
