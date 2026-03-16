@@ -580,6 +580,7 @@ export default function SchedulerPage() {
   /* ---- modals ---- */
   const [scheduleModal, setScheduleModal] = useState<PendingSchedule | null>(null);
   const [detailModal, setDetailModal] = useState<SchedulerProject | null>(null);
+  const [detailModalEvent, setDetailModalEvent] = useState<ScheduledEvent | null>(null);
   const [installDaysInput, setInstallDaysInput] = useState(2);
   const [crewSelectInput, setCrewSelectInput] = useState("");
   const [constructionAssigneeNames, setConstructionAssigneeNames] = useState<string[]>([]);
@@ -1995,6 +1996,7 @@ export default function SchedulerPage() {
             : `Confirmed (Zuper sync issue: ${data.zuperError})`
         );
         setDetailModal(null);
+        setDetailModalEvent(null);
       } else {
         showToast(data.error || "Failed to confirm", "error");
       }
@@ -2041,6 +2043,7 @@ export default function SchedulerPage() {
       });
       showToast("Tentative schedule removed");
       setDetailModal(null);
+      setDetailModalEvent(null);
       return;
     }
     setCancellingTentative(true);
@@ -2064,6 +2067,7 @@ export default function SchedulerPage() {
         });
         showToast("Tentative schedule cancelled");
         setDetailModal(null);
+        setDetailModalEvent(null);
       } else {
         const data = await res.json();
         showToast(data.error || "Failed to cancel", "error");
@@ -2250,6 +2254,7 @@ export default function SchedulerPage() {
     } finally {
       setReschedulingProjectId(null);
       setDetailModal(null);
+      setDetailModalEvent(null);
     }
   }, [trackFeature, getEffectiveConstructionDays, liveConstructionAssigneesByLocation, showToast]);
 
@@ -2499,6 +2504,7 @@ export default function SchedulerPage() {
       );
       showToast("Removed from schedule");
       setDetailModal(null);
+      setDetailModalEvent(null);
       setTimeout(() => fetchProjects(), 900);
     } catch {
       showToast("Failed to remove from schedule", "error");
@@ -2666,7 +2672,7 @@ export default function SchedulerPage() {
 
       if (e.key === "Escape") {
         if (scheduleModal) setScheduleModal(null);
-        else if (detailModal) setDetailModal(null);
+        else if (detailModal) { setDetailModal(null); setDetailModalEvent(null); }
         else if (selectedProject) setSelectedProject(null);
         return;
       }
@@ -3640,10 +3646,9 @@ export default function SchedulerPage() {
                                 onDragEnd={handleDragEnd}
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  setDetailModal(
-                                    projects.find((pr) => pr.id === ev.id) ||
-                                      null
-                                  );
+                                  const proj = projects.find((pr) => pr.id === ev.id) || null;
+                                  setDetailModal(proj);
+                                  setDetailModalEvent(ev);
                                 }}
                                 title={ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : " (drag to reschedule)"}`}
                                 className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
@@ -3848,11 +3853,9 @@ export default function SchedulerPage() {
                                     key={ei}
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setDetailModal(
-                                        projects.find(
-                                          (pr) => pr.id === ev.id
-                                        ) || null
-                                      );
+                                      const proj = projects.find((pr) => pr.id === ev.id) || null;
+                                      setDetailModal(proj);
+                                      setDetailModalEvent(ev);
                                     }}
                                     title={ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : ""}`}
                                     className={`text-[0.6rem] px-1.5 py-1 rounded mb-1 cursor-pointer transition-transform hover:scale-[1.02] hover:shadow-lg ${eventColorClass}`}
@@ -4026,13 +4029,11 @@ export default function SchedulerPage() {
                                 return (
                                   <div
                                     key={ei}
-                                    onClick={() =>
-                                      setDetailModal(
-                                        projects.find(
-                                          (pr) => pr.id === e.id
-                                        ) || null
-                                      )
-                                    }
+                                    onClick={() => {
+                                      const proj = projects.find((pr) => pr.id === e.id) || null;
+                                      setDetailModal(proj);
+                                      setDetailModalEvent(e);
+                                    }}
                                     title={e.isForecast ? "Forecasted install — not yet scheduled" : `${e.name} - ${daysLabel} - ${amount}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : e.isOverdue ? " ⚠ Incomplete" : ""}`}
                                     className={`absolute top-2 bottom-2 rounded flex items-center px-1.5 text-[0.55rem] font-medium cursor-pointer transition-transform hover:scale-y-110 hover:shadow-lg hover:z-10 overflow-hidden truncate ${eventColorClass}`}
                                     style={{
@@ -4771,7 +4772,7 @@ export default function SchedulerPage() {
         <div
           className="fixed inset-0 bg-black/80 flex items-center justify-center z-[1000]"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setDetailModal(null);
+            if (e.target === e.currentTarget) { setDetailModal(null); setDetailModalEvent(null); }
           }}
         >
           <div className="bg-surface border border-t-border rounded-xl p-5 max-w-[500px] w-[90%] max-h-[85vh] overflow-y-auto">
@@ -4951,8 +4952,43 @@ export default function SchedulerPage() {
                   </ModalSection>
                 )}
 
+              {/* Forecast Info (when viewing a ghost event) */}
+              {detailModalEvent?.isForecast && (() => {
+                const tp = forecastQuery.data?.projects.find((p) => p.dealId === String(detailModal.id));
+                const installMs = tp?.milestones.find((m) => m.key === "install");
+                return (
+                  <ModalSection title="Forecast">
+                    <ModalRow
+                      label="Predicted Install"
+                      value={formatDateShort(detailModalEvent.date)}
+                      valueClass="text-blue-400 font-semibold"
+                    />
+                    <ModalRow
+                      label="Duration"
+                      value={`${detailModalEvent.days} ${detailModalEvent.days === 1 ? "day" : "days"}`}
+                    />
+                    {installMs?.basis && (
+                      <ModalRow
+                        label="Forecast Basis"
+                        value={installMs.basis.replace(/_/g, " ")}
+                      />
+                    )}
+                    {installMs?.varianceDays != null && (
+                      <ModalRow
+                        label="Variance"
+                        value={`${installMs.varianceDays > 0 ? "+" : ""}${installMs.varianceDays} days`}
+                        valueClass={installMs.varianceDays > 14 ? "text-red-400" : installMs.varianceDays > 7 ? "text-amber-400" : "text-emerald-400"}
+                      />
+                    )}
+                    <div className="text-[0.65rem] text-muted mt-1 p-2 rounded bg-blue-500/5 border border-dashed border-blue-400/30">
+                      Forecasted install — not yet scheduled. This date is a prediction based on project milestone data.
+                    </div>
+                  </ModalSection>
+                );
+              })()}
+
               {/* Schedule */}
-              <ModalSection title="Schedule">
+              {!detailModalEvent?.isForecast && <ModalSection title="Schedule">
                 {(() => {
                   const scheduleInfo =
                     manualSchedules[detailModal.id] ||
@@ -5021,11 +5057,11 @@ export default function SchedulerPage() {
                     </>
                   );
                 })()}
-              </ModalSection>
+              </ModalSection>}
             </div>
 
             {/* Tentative action banner */}
-            {manualSchedules[detailModal.id]?.isTentative && (
+            {manualSchedules[detailModal.id]?.isTentative && !detailModalEvent?.isForecast && (
               <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-dashed border-amber-400/50">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-amber-400 text-[0.7rem] font-bold uppercase tracking-wide">⏳ Tentative</span>
@@ -5071,7 +5107,7 @@ export default function SchedulerPage() {
             )}
 
             {/* Reschedule section — for confirmed (non-tentative) scheduled items */}
-            {(!manualSchedules[detailModal.id]?.isTentative && (detailModal.scheduleDate || manualSchedules[detailModal.id]?.startDate)) ? (
+            {(!detailModalEvent?.isForecast && !manualSchedules[detailModal.id]?.isTentative && (detailModal.scheduleDate || manualSchedules[detailModal.id]?.startDate)) ? (
               <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-400/30">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-blue-400 text-[0.7rem] font-bold uppercase tracking-wide">Reschedule</span>
@@ -5122,6 +5158,7 @@ export default function SchedulerPage() {
                       } else {
                         const project = detailModal;
                         setDetailModal(null);
+                        setDetailModalEvent(null);
                         openScheduleModal(project, newDate);
                       }
                     }}
@@ -5139,7 +5176,7 @@ export default function SchedulerPage() {
             ) : null}
 
             <div className="flex gap-2 justify-end flex-wrap">
-              {!manualSchedules[detailModal.id]?.isTentative && (
+              {!manualSchedules[detailModal.id]?.isTentative && !detailModalEvent?.isForecast && (
                 <button
                   onClick={() => handleRemoveScheduled(detailModal.id)}
                   className="px-3.5 py-2 rounded-md bg-red-700/80 border border-red-700/80 text-white text-[0.75rem] font-semibold no-underline hover:bg-red-700 transition-colors cursor-pointer"
@@ -5155,7 +5192,7 @@ export default function SchedulerPage() {
               >
                 Open in HubSpot
               </a>
-              {detailModal.zuperJobUid && (
+              {detailModal.zuperJobUid && !detailModalEvent?.isForecast && (
                 <a
                   href={`${zuperWebBaseUrl}/jobs/${detailModal.zuperJobUid}/details`}
                   target="_blank"
@@ -5166,7 +5203,7 @@ export default function SchedulerPage() {
                 </a>
               )}
               <button
-                onClick={() => setDetailModal(null)}
+                onClick={() => { setDetailModal(null); setDetailModalEvent(null); }}
                 className="px-3.5 py-2 rounded-md bg-background border border-t-border text-foreground/80 text-[0.75rem] cursor-pointer hover:bg-surface-2 transition-colors"
               >
                 Close
