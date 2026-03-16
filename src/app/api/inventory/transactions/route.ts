@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
       where,
       include: {
         stock: {
-          include: { sku: true },
+          include: { internalProduct: true },
         },
       },
       orderBy: { createdAt: "desc" },
@@ -204,10 +204,10 @@ export async function POST(request: NextRequest) {
       // Step 1: Upsert InventoryStock
       const stock = await tx.inventoryStock.upsert({
         where: {
-          skuId_location: { skuId, location },
+          internalProductId_location: { internalProductId: skuId, location },
         },
         create: {
-          skuId,
+          internalProductId: skuId,
           location,
           quantityOnHand: signedQty,
           ...(type === "ADJUSTED" ? { lastCountedAt: new Date() } : {}),
@@ -216,7 +216,7 @@ export async function POST(request: NextRequest) {
           quantityOnHand: { increment: signedQty },
           ...(type === "ADJUSTED" ? { lastCountedAt: new Date() } : {}),
         },
-        include: { sku: true },
+        include: { internalProduct: true },
       });
 
       // Step 2: Create StockTransaction record
@@ -238,7 +238,7 @@ export async function POST(request: NextRequest) {
     // Activity logging (don't fail the request if this errors)
     try {
       const activityType = TRANSACTION_ACTIVITY_MAP[type as TransactionType];
-      const sku = result.stock.sku;
+      const sku = result.stock.internalProduct;
       const description = `${type.toLowerCase()} ${Math.abs(signedQty)}x ${sku.brand} ${sku.model} at ${location}`;
 
       await logActivity({
@@ -252,7 +252,7 @@ export async function POST(request: NextRequest) {
         pbLocation: location,
         metadata: {
           transactionId: result.transaction.id,
-          skuId,
+          internalProductId: skuId,
           quantity: signedQty,
           type,
           projectId: projectId || null,

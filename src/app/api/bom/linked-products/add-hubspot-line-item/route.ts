@@ -82,9 +82,9 @@ async function loadSku(skuId: string | null, category: string | null, brand: str
 
   try {
     if (skuId) {
-      return await prisma.equipmentSku.findFirst({ where, select: fullSelect });
+      return await prisma.internalProduct.findFirst({ where, select: fullSelect });
     }
-    const rows = await prisma.equipmentSku.findMany({
+    const rows = await prisma.internalProduct.findMany({
       where,
       select: fullSelect,
       orderBy: { updatedAt: "desc" },
@@ -94,7 +94,7 @@ async function loadSku(skuId: string | null, category: string | null, brand: str
   } catch (error) {
     if (!isPrismaMissingColumnError(error)) throw error;
     if (skuId) {
-      const legacy = await prisma.equipmentSku.findFirst({ where, select: legacySelect });
+      const legacy = await prisma.internalProduct.findFirst({ where, select: legacySelect });
       if (!legacy) return null;
       return {
         ...legacy,
@@ -104,7 +104,7 @@ async function loadSku(skuId: string | null, category: string | null, brand: str
         hubspotProductId: null,
       };
     }
-    const legacyRows = await prisma.equipmentSku.findMany({
+    const legacyRows = await prisma.internalProduct.findMany({
       where,
       select: legacySelect,
       orderBy: { updatedAt: "desc" },
@@ -315,7 +315,7 @@ export async function POST(request: NextRequest) {
     // If caller explicitly provided a product ID, keep inventory linkage in sync.
     if (prisma && skuRecord?.id && explicitHubspotProductId && !skuRecord.hubspotProductId) {
       try {
-        await prisma.equipmentSku.update({
+        await prisma.internalProduct.update({
           where: { id: skuRecord.id },
           data: { hubspotProductId: explicitHubspotProductId },
         });

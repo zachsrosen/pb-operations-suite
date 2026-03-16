@@ -1,7 +1,7 @@
 /**
  * Canonical token normalization for product deduplication.
  *
- * Used by: SKU route, harvest, dedupe, matcher, syncEquipmentSkus.
+ * Used by: SKU route, harvest, dedupe, matcher, syncInternalProducts.
  * Must stay in sync with the Postgres backfill regex in migration.
  */
 

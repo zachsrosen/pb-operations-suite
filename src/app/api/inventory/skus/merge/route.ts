@@ -79,8 +79,8 @@ export async function POST(request: NextRequest) {
   } as const;
 
   const [source, target] = await Promise.all([
-    prisma.equipmentSku.findUnique({ where: { id: sourceSkuId }, include }),
-    prisma.equipmentSku.findUnique({ where: { id: targetSkuId }, include }),
+    prisma.internalProduct.findUnique({ where: { id: sourceSkuId }, include }),
+    prisma.internalProduct.findUnique({ where: { id: targetSkuId }, include }),
   ]);
 
   if (!source) return NextResponse.json({ error: "Source SKU not found" }, { status: 404 });
@@ -107,8 +107,8 @@ export async function POST(request: NextRequest) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     tx: any
   ) => {
-    const sourceFresh = await tx.equipmentSku.findUnique({ where: { id: sourceSkuId }, include });
-    const targetFresh = await tx.equipmentSku.findUnique({ where: { id: targetSkuId }, include });
+    const sourceFresh = await tx.internalProduct.findUnique({ where: { id: sourceSkuId }, include });
+    const targetFresh = await tx.internalProduct.findUnique({ where: { id: targetSkuId }, include });
     if (!sourceFresh || !targetFresh) {
       throw new Error("Source or target SKU no longer exists");
     }
@@ -132,14 +132,14 @@ export async function POST(request: NextRequest) {
     updateData.zuperItemId = pickMissingTargetValue(targetFresh.zuperItemId, sourceFresh.zuperItemId) ?? targetFresh.zuperItemId;
     updateData.zohoItemId = pickMissingTargetValue(targetFresh.zohoItemId, sourceFresh.zohoItemId) ?? targetFresh.zohoItemId;
 
-    await tx.equipmentSku.update({
+    await tx.internalProduct.update({
       where: { id: targetSkuId },
       data: updateData,
     });
 
     let mergedStockLocations = 0;
     const sourceStocks = await tx.inventoryStock.findMany({
-      where: { skuId: sourceSkuId },
+      where: { internalProductId: sourceSkuId },
       select: {
         id: true,
         location: true,
@@ -152,8 +152,8 @@ export async function POST(request: NextRequest) {
     for (const sourceStock of sourceStocks) {
       const targetStock = await tx.inventoryStock.findUnique({
         where: {
-          skuId_location: {
-            skuId: targetSkuId,
+          internalProductId_location: {
+            internalProductId: targetSkuId,
             location: sourceStock.location,
           },
         },
@@ -173,7 +173,7 @@ export async function POST(request: NextRequest) {
       } else {
         const createdStock = await tx.inventoryStock.create({
           data: {
-            skuId: targetSkuId,
+            internalProductId: targetSkuId,
             location: sourceStock.location,
             quantityOnHand: sourceStock.quantityOnHand,
             minStockLevel: sourceStock.minStockLevel,
@@ -200,8 +200,8 @@ export async function POST(request: NextRequest) {
 
       if (!targetSpec) {
         await tx[table].update({
-          where: { skuId: sourceSkuId },
-          data: { skuId: targetSkuId },
+          where: { internalProductId: sourceSkuId },
+          data: { internalProductId: targetSkuId },
         });
         mergedSpecTables += 1;
         continue;
@@ -209,7 +209,7 @@ export async function POST(request: NextRequest) {
 
       const specUpdateData: Record<string, unknown> = {};
       for (const [key, sourceValue] of Object.entries(sourceSpec as Record<string, unknown>)) {
-        if (key === "id" || key === "skuId") continue;
+        if (key === "id" || key === "internalProductId") continue;
         const targetValue = (targetSpec as Record<string, unknown>)[key];
         const mergedValue = pickMissingTargetValue(targetValue, sourceValue);
         if (mergedValue !== undefined) specUpdateData[key] = mergedValue;
@@ -217,17 +217,17 @@ export async function POST(request: NextRequest) {
 
       if (Object.keys(specUpdateData).length > 0) {
         await tx[table].update({
-          where: { skuId: targetSkuId },
+          where: { internalProductId: targetSkuId },
           data: specUpdateData,
         });
       }
 
-      await tx[table].delete({ where: { skuId: sourceSkuId } });
+      await tx[table].delete({ where: { internalProductId: sourceSkuId } });
       mergedSpecTables += 1;
     }
 
-    await tx.equipmentSku.delete({ where: { id: sourceSkuId } });
-    const targetAfter = await tx.equipmentSku.findUnique({
+    await tx.internalProduct.delete({ where: { id: sourceSkuId } });
+    const targetAfter = await tx.internalProduct.findUnique({
       where: { id: targetSkuId },
       select: {
         id: true,

@@ -2,14 +2,14 @@
 
 ## Overview
 
-The BOM output maps to the existing PB Operations Suite `EquipmentSku` schema so it can be imported directly into the inventory system via `/api/inventory/sync-skus`.
+The BOM output maps to the existing PB Operations Suite `InternalProduct` schema so it can be imported directly into the inventory system via `/api/inventory/sync-skus`.
 
 ---
 
-## EquipmentSku Schema (from Prisma)
+## InternalProduct Schema (from Prisma)
 
 ```typescript
-model EquipmentSku {
+model InternalProduct {
   id        String            // Auto-generated
   category  EquipmentCategory // MODULE | INVERTER | BATTERY | EV_CHARGER (+ extended below)
   brand     String            // Manufacturer name

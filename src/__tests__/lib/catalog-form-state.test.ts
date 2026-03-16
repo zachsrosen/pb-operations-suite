@@ -373,3 +373,106 @@ describe("validateCatalogForm", () => {
     expect(result.errors[0].field).toBe("category");
   });
 });
+
+describe("SET_VENDOR action", () => {
+  it("sets both vendorName and zohoVendorId atomically", () => {
+    const state = catalogFormReducer(initialFormState, {
+      type: "SET_VENDOR",
+      vendorName: "Rell Power",
+      zohoVendorId: "v123",
+    });
+    expect(state.vendorName).toBe("Rell Power");
+    expect(state.zohoVendorId).toBe("v123");
+  });
+
+  it("clears both when called with empty values", () => {
+    const withVendor = {
+      ...initialFormState,
+      vendorName: "Rell Power",
+      zohoVendorId: "v123",
+    };
+    const state = catalogFormReducer(withVendor, {
+      type: "SET_VENDOR",
+      vendorName: "",
+      zohoVendorId: "",
+    });
+    expect(state.vendorName).toBe("");
+    expect(state.zohoVendorId).toBe("");
+  });
+});
+
+describe("SET_FIELD vendorName clears zohoVendorId", () => {
+  it("clears zohoVendorId when vendorName is set via SET_FIELD", () => {
+    const withVendor = {
+      ...initialFormState,
+      vendorName: "Rell Power",
+      zohoVendorId: "v123",
+    };
+    const state = catalogFormReducer(withVendor, {
+      type: "SET_FIELD",
+      field: "vendorName",
+      value: "Something else",
+    });
+    expect(state.vendorName).toBe("Something else");
+    expect(state.zohoVendorId).toBe("");
+  });
+
+  it("does not clear zohoVendorId when other fields set via SET_FIELD", () => {
+    const withVendor = {
+      ...initialFormState,
+      vendorName: "Rell Power",
+      zohoVendorId: "v123",
+    };
+    const state = catalogFormReducer(withVendor, {
+      type: "SET_FIELD",
+      field: "brand",
+      value: "NewBrand",
+    });
+    expect(state.zohoVendorId).toBe("v123");
+  });
+});
+
+describe("PREFILL_FROM_PRODUCT with zohoVendorId", () => {
+  it("copies zohoVendorId when present (valid pair)", () => {
+    const state = catalogFormReducer(initialFormState, {
+      type: "PREFILL_FROM_PRODUCT",
+      data: {
+        category: "MODULE",
+        brand: "Tesla",
+        vendorName: "Rell Power",
+        zohoVendorId: "v123",
+      },
+      source: "clone",
+    });
+    expect(state.vendorName).toBe("Rell Power");
+    expect(state.zohoVendorId).toBe("v123");
+  });
+
+  it("sets vendorHint and clears vendorName when source has vendorName but no zohoVendorId (legacy)", () => {
+    const state = catalogFormReducer(initialFormState, {
+      type: "PREFILL_FROM_PRODUCT",
+      data: {
+        category: "MODULE",
+        brand: "Tesla",
+        vendorName: "Rell Power",
+      },
+      source: "clone",
+    });
+    expect(state.vendorName).toBe("");
+    expect(state.zohoVendorId).toBe("");
+    expect(state.vendorHint).toBe("Rell Power");
+    expect(state.prefillFields.has("vendorName")).toBe(false);
+  });
+
+  it("passes through vendorHint from datasheet extract", () => {
+    const state = catalogFormReducer(initialFormState, {
+      type: "PREFILL_FROM_PRODUCT",
+      data: {
+        category: "MODULE",
+        vendorHint: "SolarEdge Inc",
+      },
+      source: "datasheet",
+    });
+    expect(state.vendorHint).toBe("SolarEdge Inc");
+  });
+});

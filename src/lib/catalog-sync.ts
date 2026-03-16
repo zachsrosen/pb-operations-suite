@@ -100,7 +100,7 @@ function getSpecData(sku: SkuRecord): Record<string, unknown> {
   if (!spec || typeof spec !== "object") return {};
   const record = spec as Record<string, unknown>;
   // Strip Prisma metadata fields
-  const { id: _id, skuId: _skuId, ...rest } = record;
+  const { id: _id, internalProductId: _internalProductId, ...rest } = record;
   return rest;
 }
 
@@ -439,7 +439,7 @@ export async function executeZohoSync(sku: SkuRecord, preview: SyncPreview): Pro
 
     // Guarded write: only set zohoItemId if it's still null
     if (result.zohoItemId) {
-      const updated = await prisma.equipmentSku.updateMany({
+      const updated = await prisma.internalProduct.updateMany({
         where: { id: sku.id, zohoItemId: null },
         data: { zohoItemId: result.zohoItemId },
       });
@@ -510,7 +510,7 @@ export async function executeHubSpotSync(sku: SkuRecord, preview: SyncPreview): 
     });
 
     if (result.hubspotProductId) {
-      const updated = await prisma.equipmentSku.updateMany({
+      const updated = await prisma.internalProduct.updateMany({
         where: { id: sku.id, hubspotProductId: null },
         data: { hubspotProductId: result.hubspotProductId },
       });
@@ -573,7 +573,7 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
     });
 
     if (result.zuperItemId) {
-      const updated = await prisma.equipmentSku.updateMany({
+      const updated = await prisma.internalProduct.updateMany({
         where: { id: sku.id, zuperItemId: null },
         data: { zuperItemId: result.zuperItemId },
       });

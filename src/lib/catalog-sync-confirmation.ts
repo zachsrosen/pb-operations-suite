@@ -5,7 +5,7 @@ export type SyncSystem = "zoho" | "hubspot" | "zuper";
 export const CATALOG_SYNC_CONFIRM_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 interface SyncConfirmationInput {
-  skuId: string;
+  internalProductId: string;
   systems: SyncSystem[];
   changesHash: string;
   issuedAt: number;
@@ -40,7 +40,7 @@ function toCanonicalPayload(input: SyncConfirmationInput): string {
   const normalizedSystems = [...new Set(input.systems)].sort() as SyncSystem[];
 
   return JSON.stringify({
-    skuId: trim(input.skuId),
+    internalProductId: trim(input.internalProductId),
     systems: normalizedSystems,
     changesHash: trim(input.changesHash),
     issuedAt: Math.trunc(input.issuedAt),
@@ -74,7 +74,7 @@ export function createSyncConfirmationToken(
 export function validateSyncConfirmationToken(input: {
   token: string;
   issuedAt: number;
-  skuId: string;
+  internalProductId: string;
   systems: SyncSystem[];
   changesHash: string;
 }): { ok: true } | { ok: false; error: string } {
@@ -96,7 +96,7 @@ export function validateSyncConfirmationToken(input: {
   let expectedToken = "";
   try {
     expectedToken = createSyncConfirmationToken({
-      skuId: input.skuId,
+      internalProductId: input.internalProductId,
       systems: input.systems,
       changesHash: input.changesHash,
       issuedAt,
@@ -116,7 +116,7 @@ export function validateSyncConfirmationToken(input: {
 }
 
 export function buildSyncConfirmation(input: {
-  skuId: string;
+  internalProductId: string;
   systems: SyncSystem[];
   changesHash: string;
   issuedAt?: number;
@@ -124,7 +124,7 @@ export function buildSyncConfirmation(input: {
   const issuedAt = typeof input.issuedAt === "number" ? Math.trunc(input.issuedAt) : Date.now();
   return {
     token: createSyncConfirmationToken({
-      skuId: input.skuId,
+      internalProductId: input.internalProductId,
       systems: input.systems,
       changesHash: input.changesHash,
       issuedAt,

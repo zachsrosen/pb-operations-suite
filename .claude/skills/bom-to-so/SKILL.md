@@ -86,7 +86,7 @@ Planset PDF
   |  - Brand inference (1707000 -> Tesla)
   |  - Model standardization (Powerwall 3 -> 1707000-XX-Y)
   |  - Qty corrections (INFORMATIONAL only, does NOT mutate)
-  |  - Suggested additions (SEPARATE array, synced to EquipmentSku)
+  |  - Suggested additions (SEPARATE array, synced to InternalProduct)
   |
   v
 [Saved BOM Snapshot] (bomData.items[] + bomData.suggestedAdditions[])

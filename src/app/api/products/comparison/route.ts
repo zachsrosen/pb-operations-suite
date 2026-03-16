@@ -1715,7 +1715,7 @@ async function fetchInternalProducts(): Promise<{ products: NormalizedProduct[];
       zohoItemId: string | null;
     }>;
 
-    rows = await db.equipmentSku.findMany({
+    rows = await db.internalProduct.findMany({
       where: { isActive: true },
       select: {
         id: true,

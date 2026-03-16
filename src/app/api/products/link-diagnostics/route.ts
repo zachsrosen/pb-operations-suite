@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
       [SOURCE_FIELD_MAP[source]]: { not: null as string | null, notIn: [""] },
     }));
 
-    const skuRows = await prisma.equipmentSku.findMany({
+    const skuRows = await prisma.internalProduct.findMany({
       where: {
         OR: orConditions,
       },

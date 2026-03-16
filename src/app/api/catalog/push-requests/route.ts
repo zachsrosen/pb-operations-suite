@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
 
   const {
     brand, model, description, category, unitSpec, unitLabel,
-    sku, vendorName, vendorPartNumber, unitCost, sellPrice,
+    sku, vendorName, zohoVendorId, vendorPartNumber, unitCost, sellPrice,
     hardToProcure, length, width, weight, metadata,
     systems, dealId,
   } = body as Record<string, unknown>;
@@ -67,6 +67,34 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // Vendor pair validation
+  const hasVendorName = !isBlank(vendorName);
+  const hasZohoVendorId = !isBlank(zohoVendorId);
+
+  if (hasVendorName && !hasZohoVendorId) {
+    return NextResponse.json(
+      { error: "Vendor must be selected from the list" },
+      { status: 400 }
+    );
+  }
+  if (!hasVendorName && hasZohoVendorId) {
+    return NextResponse.json(
+      { error: "Vendor ID provided without vendor name" },
+      { status: 400 }
+    );
+  }
+  if (hasVendorName && hasZohoVendorId) {
+    const lookup = await prisma.vendorLookup.findUnique({
+      where: { zohoVendorId: String(zohoVendorId) },
+    });
+    if (!lookup || lookup.name !== String(vendorName).trim()) {
+      return NextResponse.json(
+        { error: "Vendor name does not match the selected vendor record" },
+        { status: 400 }
+      );
+    }
+  }
+
   if (!Array.isArray(systems) || systems.length === 0) {
     return NextResponse.json({ error: "systems must be a non-empty array" }, { status: 400 });
   }
@@ -88,6 +116,7 @@ export async function POST(request: NextRequest) {
       unitLabel: unitLabel ? String(unitLabel).trim() : null,
       sku: sku ? String(sku).trim() : null,
       vendorName: vendorName ? String(vendorName).trim() : null,
+      zohoVendorId: hasZohoVendorId ? String(zohoVendorId).trim() : null,
       vendorPartNumber: vendorPartNumber ? String(vendorPartNumber).trim() : null,
       unitCost: parseNullableNumber(unitCost),
       sellPrice: parseNullableNumber(sellPrice),

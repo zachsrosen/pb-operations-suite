@@ -86,7 +86,7 @@ function specRecordToMetadata(record: unknown): Record<string, unknown> {
   if (!record || typeof record !== "object" || Array.isArray(record)) return {};
   const metadata: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
-    if (key === "id" || key === "skuId") continue;
+    if (key === "id" || key === "internalProductId") continue;
     if (value === null || value === undefined || value === "") continue;
     metadata[key] = value;
   }
@@ -121,7 +121,7 @@ export async function POST(request: NextRequest) {
 
   const { internalSkuId, source } = parsed.data;
 
-  const skuRecord = await prisma.equipmentSku.findUnique({
+  const skuRecord = await prisma.internalProduct.findUnique({
     where: { id: internalSkuId },
     include: {
       moduleSpec: true,
@@ -214,7 +214,7 @@ export async function POST(request: NextRequest) {
     }
 
     const linkField = LINK_FIELD_BY_SOURCE[source];
-    await prisma.equipmentSku.update({
+    await prisma.internalProduct.update({
       where: { id: internalSkuId },
       data: { [linkField]: externalId },
     });

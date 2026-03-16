@@ -10,6 +10,8 @@ export interface CatalogFormState {
   vendorPartNumber: string;
   // Step 2: Details
   vendorName: string;
+  zohoVendorId: string;
+  vendorHint: string;   // UI-only hint from AI extract or legacy clone; not persisted to DB
   unitSpec: string;
   unitLabel: string;
   unitCost: string;
@@ -37,6 +39,8 @@ export const initialFormState: CatalogFormState = {
   sku: "",
   vendorPartNumber: "",
   vendorName: "",
+  zohoVendorId: "",
+  vendorHint: "",
   unitSpec: "",
   unitLabel: "",
   unitCost: "",
@@ -61,6 +65,7 @@ export type CatalogFormAction =
   | { type: "SET_CATEGORY"; category: string }
   | { type: "SET_SPEC"; key: string; value: unknown }
   | { type: "TOGGLE_SYSTEM"; system: string }
+  | { type: "SET_VENDOR"; vendorName: string; zohoVendorId: string }
   | { type: "PREFILL_FROM_PRODUCT"; data: Partial<CatalogFormState>; source: "clone" | "datasheet" }
   | { type: "CLEAR_PREFILL_FIELD"; field: string }
   | { type: "RESET" };
@@ -70,8 +75,21 @@ export function catalogFormReducer(
   action: CatalogFormAction
 ): CatalogFormState {
   switch (action.type) {
-    case "SET_FIELD":
-      return { ...state, [action.field]: action.value };
+    case "SET_FIELD": {
+      const next = { ...state, [action.field]: action.value };
+      // Defensive invariant: if vendorName is changed directly, clear zohoVendorId
+      if (action.field === "vendorName") {
+        next.zohoVendorId = "";
+      }
+      return next;
+    }
+
+    case "SET_VENDOR":
+      return {
+        ...state,
+        vendorName: action.vendorName,
+        zohoVendorId: action.zohoVendorId,
+      };
 
     case "SET_CATEGORY":
       return { ...state, category: action.category, specValues: {} };
@@ -122,6 +140,14 @@ export function catalogFormReducer(
             filledFields.add(key);
           }
         }
+      }
+      // Legacy vendor handling: if vendorName present but zohoVendorId missing,
+      // move vendorName to vendorHint so the picker shows it as a suggestion,
+      // and clear vendorName so the user must re-select from the list.
+      if (updates.vendorName && !updates.zohoVendorId) {
+        (updates as Record<string, unknown>).vendorHint = updates.vendorName;
+        delete (updates as Record<string, unknown>).vendorName;
+        filledFields.delete("vendorName");
       }
       if (action.source === "clone") {
         for (const f of CLONE_CLEAR_FIELDS) {

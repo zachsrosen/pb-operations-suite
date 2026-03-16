@@ -130,7 +130,7 @@ Records suggested corrections in `corrections[]` but does **NOT** change `item.q
 
 ### Rule 5: Suggested Additions
 
-Returns `suggestedAdditions[]` as a separate array (NOT added to `items[]`). These are synced to the `EquipmentSku` inventory table.
+Returns `suggestedAdditions[]` as a separate array (NOT added to `items[]`). These are synced to the `InternalProduct` inventory table.
 
 | Condition | Suggested Item | Qty | Reason |
 |-----------|---------------|-----|--------|

@@ -12,7 +12,7 @@ import { queryKeys } from "@/lib/query-keys";
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
-interface EquipmentSku {
+interface InternalProduct {
   id: string;
   category: string;
   brand: string;
@@ -27,12 +27,12 @@ interface EquipmentSku {
 
 interface StockRecord {
   id: string;
-  skuId: string;
+  internalProductId: string;
   location: string;
   quantityOnHand: number;
   minLevel: number;
   lastCountedAt: string | null;
-  sku: EquipmentSku;
+  internalProduct: InternalProduct;
 }
 
 interface Transaction {
@@ -165,7 +165,7 @@ function StockOverviewTab(props: {
   /* Sorted and filtered rows */
   const rows = useMemo(() => {
     const enriched = stock.map((s) => {
-      const key = `${s.sku.category}:${s.sku.brand}:${s.sku.model}:${s.location}`;
+      const key = `${s.internalProduct.category}:${s.internalProduct.brand}:${s.internalProduct.model}:${s.location}`;
       const demand = demandMap.get(key);
       const weightedDemand = demand?.weightedDemand ?? 0;
       const gap = s.quantityOnHand - weightedDemand;
@@ -180,17 +180,17 @@ function StockOverviewTab(props: {
       let cmp = 0;
       switch (sortField) {
         case "category":
-          cmp = CATEGORY_ORDER.indexOf(a.sku.category) - CATEGORY_ORDER.indexOf(b.sku.category);
-          if (cmp === 0) cmp = a.sku.brand.localeCompare(b.sku.brand);
+          cmp = CATEGORY_ORDER.indexOf(a.internalProduct.category) - CATEGORY_ORDER.indexOf(b.internalProduct.category);
+          if (cmp === 0) cmp = a.internalProduct.brand.localeCompare(b.internalProduct.brand);
           break;
         case "brand":
-          cmp = a.sku.brand.localeCompare(b.sku.brand);
+          cmp = a.internalProduct.brand.localeCompare(b.internalProduct.brand);
           break;
         case "model":
-          cmp = a.sku.model.localeCompare(b.sku.model);
+          cmp = a.internalProduct.model.localeCompare(b.internalProduct.model);
           break;
         case "spec":
-          cmp = (a.sku.unitSpec ?? 0) - (b.sku.unitSpec ?? 0);
+          cmp = (a.internalProduct.unitSpec ?? 0) - (b.internalProduct.unitSpec ?? 0);
           break;
         case "location":
           cmp = a.location.localeCompare(b.location);
@@ -297,14 +297,14 @@ function StockOverviewTab(props: {
                 </tr>
               ) : (
                 rows.map((row) => {
-                  const badge = CATEGORY_BADGES[row.sku.category] || {
-                    short: row.sku.category.slice(0, 3),
+                  const badge = CATEGORY_BADGES[row.internalProduct.category] || {
+                    short: row.internalProduct.category.slice(0, 3),
                     color: "text-muted",
                   };
                   const counted = relativeTime(row.lastCountedAt);
                   const specStr =
-                    row.sku.unitSpec != null
-                      ? `${row.sku.unitSpec}${row.sku.unitLabel ? ` ${row.sku.unitLabel}` : ""}`
+                    row.internalProduct.unitSpec != null
+                      ? `${row.internalProduct.unitSpec}${row.internalProduct.unitLabel ? ` ${row.internalProduct.unitLabel}` : ""}`
                       : "\u2014";
 
                   return (
@@ -317,8 +317,8 @@ function StockOverviewTab(props: {
                           {badge.short}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-sm text-foreground">{row.sku.brand}</td>
-                      <td className="px-4 py-3 text-sm text-foreground">{row.sku.model}</td>
+                      <td className="px-4 py-3 text-sm text-foreground">{row.internalProduct.brand}</td>
+                      <td className="px-4 py-3 text-sm text-foreground">{row.internalProduct.model}</td>
                       <td className="px-4 py-3 text-sm text-muted">{specStr}</td>
                       <td className="px-4 py-3 text-sm text-foreground">{row.location}</td>
                       <td className="px-4 py-3 text-sm font-medium text-foreground">
@@ -358,7 +358,7 @@ function StockOverviewTab(props: {
 }
 
 function ReceiveAdjustTab(props: {
-  skus: EquipmentSku[];
+  skus: InternalProduct[];
   transactions: Transaction[];
   onTransactionCreated: () => Promise<void>;
 }) {
@@ -382,7 +382,7 @@ function ReceiveAdjustTab(props: {
 
   /* ---- SKU options grouped by category ---- */
   const skusByCategory = useMemo(() => {
-    const groups: Record<string, EquipmentSku[]> = {};
+    const groups: Record<string, InternalProduct[]> = {};
     const filtered = props.skus.filter((s) => {
       if (!skuFilter) return true;
       const term = skuFilter.toLowerCase();
@@ -751,7 +751,7 @@ function ReceiveAdjustTab(props: {
                       {relativeTime(tx.createdAt)}
                     </td>
                     <td className="px-4 py-2 text-foreground text-xs whitespace-nowrap">
-                      {tx.stock.sku.brand} {tx.stock.sku.model}
+                      {tx.stock.internalProduct.brand} {tx.stock.internalProduct.model}
                     </td>
                     <td className="px-4 py-2 text-muted text-xs whitespace-nowrap">
                       {tx.stock.location}
@@ -1276,7 +1276,7 @@ export default function InventoryHubPage() {
       const res = await fetch("/api/inventory/skus");
       if (!res.ok) throw new Error("Failed to fetch SKUs");
       const data = await res.json();
-      return (data.skus || []) as EquipmentSku[];
+      return (data.skus || []) as InternalProduct[];
     },
     refetchInterval: POLL,
   });
@@ -1414,7 +1414,7 @@ export default function InventoryHubPage() {
         return false;
       if (
         filterCategories.length > 0 &&
-        !filterCategories.includes(s.sku.category)
+        !filterCategories.includes(s.internalProduct.category)
       )
         return false;
       return true;

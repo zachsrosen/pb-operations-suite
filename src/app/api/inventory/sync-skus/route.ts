@@ -3,7 +3,7 @@
  *
  * POST /api/inventory/sync-skus
  *   Scans all equipment-context HubSpot projects and upserts unique SKUs
- *   into the EquipmentSku table. Returns counts of created/existing/total.
+ *   into the InternalProduct table. Returns counts of created/existing/total.
  *   Auth required, roles: ADMIN, OWNER, PROJECT_MANAGER
  */
 
@@ -133,12 +133,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Upsert each unique SKU into EquipmentSku
+    // Upsert each unique SKU into InternalProduct
     let created = 0;
     let existing = 0;
 
     for (const sku of skuMap.values()) {
-      const result = await prisma.equipmentSku.upsert({
+      const result = await prisma.internalProduct.upsert({
         where: {
           category_brand_model: {
             category: sku.category,

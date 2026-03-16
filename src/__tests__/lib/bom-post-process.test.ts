@@ -106,6 +106,167 @@ describe("Rule 2: Brand Inference", () => {
     expect(r.items[0].brand).toBeUndefined();
     expect(r.corrections.filter((c) => c.action === "brand_fill")).toHaveLength(0);
   });
+
+  // ── Panel manufacturer inference ──
+
+  it("infers Jinko from model JKM430N-54HL4-B", () => {
+    const r = run([
+      bi({ category: "MODULE", description: "Solar Panel 430W", model: "JKM430N-54HL4-B" }),
+    ]);
+    expect(r.items[0].brand).toBe("Jinko");
+  });
+
+  it("infers Canadian Solar from model CS6.2-48TM-445H", () => {
+    const r = run([
+      bi({ category: "MODULE", description: "Solar Panel", model: "CS6.2-48TM-445H" }),
+    ]);
+    expect(r.items[0].brand).toBe("Canadian Solar");
+  });
+
+  it("infers Canadian Solar from model CS7N-TB-AG-700", () => {
+    const r = run([
+      bi({ category: "MODULE", description: "Solar Panel", model: "CS7N-TB-AG-700" }),
+    ]);
+    expect(r.items[0].brand).toBe("Canadian Solar");
+  });
+
+  it("infers Trina from model TSM-NEG19RC.20", () => {
+    const r = run([
+      bi({ category: "MODULE", description: "Vertex S+", model: "TSM-NEG19RC.20" }),
+    ]);
+    expect(r.items[0].brand).toBe("Trina");
+  });
+
+  it("infers LONGi from model LR5-54HGD-430M", () => {
+    const r = run([
+      bi({ category: "MODULE", description: "Hi-MO 7", model: "LR5-54HGD-430M" }),
+    ]);
+    expect(r.items[0].brand).toBe("LONGi");
+  });
+
+  it("infers JA Solar from model JAM54D41-440/MB", () => {
+    const r = run([
+      bi({ category: "MODULE", description: "Deep Blue 4.0", model: "JAM54D41-440/MB" }),
+    ]);
+    expect(r.items[0].brand).toBe("JA Solar");
+  });
+
+  it("infers REC from model REC430AA", () => {
+    const r = run([
+      bi({ category: "MODULE", description: "Alpha Pure", model: "REC430AA" }),
+    ]);
+    expect(r.items[0].brand).toBe("REC");
+  });
+
+  it("infers Hyundai from model HIN-T440NF", () => {
+    const r = run([
+      bi({ category: "MODULE", description: "Solar Panel", model: "HIN-T440NF" }),
+    ]);
+    expect(r.items[0].brand).toBe("Hyundai");
+  });
+
+  // ── Inverter / hybrid manufacturer inference ──
+
+  it("infers SMA from model SB7.7-1SP-US-41", () => {
+    const r = run([
+      bi({ category: "INVERTER", description: "Sunny Boy", model: "SB7.7-1SP-US-41" }),
+    ]);
+    expect(r.items[0].brand).toBe("SMA");
+  });
+
+  it("infers Sol-Ark from model Sol-Ark 15K-2P-N", () => {
+    const r = run([
+      bi({ category: "INVERTER", description: "Hybrid Inverter", model: "Sol-Ark 15K-2P-N" }),
+    ]);
+    expect(r.items[0].brand).toBe("Sol-Ark");
+  });
+
+  it("infers Generac from model APKE00075 (PWRcell 2)", () => {
+    const r = run([
+      bi({ category: "INVERTER", description: "PWRcell 2 Inverter", model: "APKE00075" }),
+    ]);
+    expect(r.items[0].brand).toBe("Generac");
+  });
+
+  // ── Optimizer / RSD manufacturer inference ──
+
+  it("infers Tigo from model TS4-A-O", () => {
+    const r = run([
+      bi({ category: "RAPID_SHUTDOWN", description: "Optimizer", model: "TS4-A-O" }),
+    ]);
+    expect(r.items[0].brand).toBe("Tigo");
+  });
+
+  it("infers APsmart from model RSD-S-PLC", () => {
+    const r = run([
+      bi({ category: "RAPID_SHUTDOWN", description: "Rapid Shutdown", model: "RSD-S-PLC" }),
+    ]);
+    expect(r.items[0].brand).toBe("APsmart");
+  });
+
+  // ── Battery manufacturer inference ──
+
+  it("infers FranklinWH from model aPower 2", () => {
+    const r = run([
+      bi({ category: "BATTERY", description: "Battery 15kWh", model: "aPower 2" }),
+    ]);
+    expect(r.items[0].brand).toBe("FranklinWH");
+  });
+
+  it("infers FranklinWH from model AGT-R1V1-US", () => {
+    const r = run([
+      bi({ category: "MONITORING", description: "Gateway", model: "AGT-R1V1-US" }),
+    ]);
+    expect(r.items[0].brand).toBe("FranklinWH");
+  });
+
+  it("infers Sonnen from model ecoLinx", () => {
+    const r = run([
+      bi({ category: "BATTERY", description: "Home Battery", model: "ecoLinx" }),
+    ]);
+    expect(r.items[0].brand).toBe("Sonnen");
+  });
+
+  // ── Racking manufacturer inference ──
+
+  it("infers Unirac from model SFM Infinity", () => {
+    const r = run([
+      bi({ category: "RACKING", description: "Rail System", model: "SFM Infinity" }),
+    ]);
+    expect(r.items[0].brand).toBe("Unirac");
+  });
+
+  // ── SolarEdge optimizer short codes ──
+
+  it("infers SolarEdge from model S440 (short optimizer code)", () => {
+    const r = run([
+      bi({ category: "MODULE", description: "Power Optimizer", model: "S440" }),
+    ]);
+    expect(r.items[0].brand).toBe("SolarEdge");
+  });
+
+  it("infers SolarEdge from model P505 (short optimizer code)", () => {
+    const r = run([
+      bi({ category: "MODULE", description: "Power Optimizer", model: "P505" }),
+    ]);
+    expect(r.items[0].brand).toBe("SolarEdge");
+  });
+
+  // ── Enphase accessory inference ──
+
+  it("infers Enphase from model Q-SEAL-10", () => {
+    const r = run([
+      bi({ category: "ELECTRICAL_BOS", description: "Sealing Plugs", model: "Q-SEAL-10" }),
+    ]);
+    expect(r.items[0].brand).toBe("Enphase");
+  });
+
+  it("infers Enphase from model Q-TERM-10", () => {
+    const r = run([
+      bi({ category: "ELECTRICAL_BOS", description: "Termination Caps", model: "Q-TERM-10" }),
+    ]);
+    expect(r.items[0].brand).toBe("Enphase");
+  });
 });
 
 // ---------------------------------------------------------------------------

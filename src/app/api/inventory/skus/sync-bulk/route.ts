@@ -66,7 +66,7 @@ function systemFromOperation(operation: string): SyncSystem | null {
   return null;
 }
 
-function getMissingWhere(system: SyncSystem): Prisma.EquipmentSkuWhereInput {
+function getMissingWhere(system: SyncSystem): Prisma.InternalProductWhereInput {
   if (system === "zoho") return { zohoItemId: null, isActive: true };
   if (system === "hubspot") return { hubspotProductId: null, isActive: true };
   return { zuperItemId: null, isActive: true };
@@ -154,7 +154,7 @@ async function handlePreview(body: Record<string, unknown>) {
     return NextResponse.json({ error: "system is required (zoho|hubspot|zuper)" }, { status: 400 });
   }
 
-  const skus = await prisma.equipmentSku.findMany({
+  const skus = await prisma.internalProduct.findMany({
     where: getMissingWhere(system),
     select: { id: true, category: true, brand: true, model: true },
     orderBy: { id: "asc" },
@@ -243,7 +243,7 @@ async function executeFirstChunk(params: {
   const { system, token, issuedAt, changesHash, userEmail } = params;
   const operation = OPERATION_BY_SYSTEM[system];
 
-  const missingSkus = await prisma.equipmentSku.findMany({
+  const missingSkus = await prisma.internalProduct.findMany({
     where: getMissingWhere(system),
     select: { id: true, category: true, brand: true, model: true },
     orderBy: { id: "asc" },
@@ -456,7 +456,7 @@ async function processChunk(
     });
   }
 
-  const skus = await prisma.equipmentSku.findMany({
+  const skus = await prisma.internalProduct.findMany({
     where: { id: { in: targetIdsForChunk }, isActive: true },
     include: SKU_INCLUDE,
     orderBy: { id: "asc" },
@@ -467,7 +467,7 @@ async function processChunk(
   let chunkFailed = 0;
 
   const chunkOutcomes: Array<{
-    skuId: string;
+    internalProductId: string;
     brand: string;
     model: string;
     status: "created" | "skipped" | "failed";
@@ -483,7 +483,7 @@ async function processChunk(
     if (sku[linkField]) {
       chunkSkipped += 1;
       chunkOutcomes.push({
-        skuId: sku.id,
+        internalProductId: sku.id,
         brand: sku.brand,
         model: sku.model,
         status: "skipped",
@@ -504,7 +504,7 @@ async function processChunk(
     if (!syncResult.ok) {
       chunkFailed += 1;
       chunkOutcomes.push({
-        skuId: sku.id,
+        internalProductId: sku.id,
         brand: sku.brand,
         model: sku.model,
         status: "failed",
@@ -532,7 +532,7 @@ async function processChunk(
     }
 
     chunkOutcomes.push({
-      skuId: sku.id,
+      internalProductId: sku.id,
       brand: sku.brand,
       model: sku.model,
       status: normalizedStatus,
@@ -551,7 +551,7 @@ async function processChunk(
 
     chunkSkipped += 1;
     chunkOutcomes.push({
-      skuId: missingId,
+      internalProductId: missingId,
       brand: "",
       model: "",
       status: "skipped",

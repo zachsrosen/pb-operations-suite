@@ -145,7 +145,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const skuRows = await prisma.equipmentSku.findMany({
+    const skuRows = await prisma.internalProduct.findMany({
       where: { id: { in: internalSkuIds } },
       select: {
         id: true,

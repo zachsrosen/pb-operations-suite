@@ -59,7 +59,7 @@ export async function POST(
 
   try {
     const confirmation = buildSyncConfirmation({
-      skuId: id,
+      internalProductId: id,
       systems: validatedSystems,
       changesHash: changesHash.trim(),
     });

@@ -247,7 +247,7 @@ function specRecordToMetadata(record: unknown): Record<string, unknown> {
   if (!isRecord(record)) return {};
   const metadata: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
-    if (key === "id" || key === "skuId") continue;
+    if (key === "id" || key === "internalProductId") continue;
     if (value === null || value === undefined || value === "") continue;
     metadata[key] = value;
   }
@@ -263,7 +263,7 @@ function buildSkuMetadata(category: string, sku: Record<string, unknown>): Recor
 async function applySkuMetadata(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   tx: any,
-  skuId: string,
+  internalProductId: string,
   category: string,
   metadata: Record<string, unknown> | null
 ) {
@@ -274,7 +274,7 @@ async function applySkuMetadata(
     if (table === targetTable) continue;
     const model = tx[table];
     if (model?.deleteMany) {
-      await model.deleteMany({ where: { skuId } });
+      await model.deleteMany({ where: { internalProductId } });
     }
   }
 
@@ -282,13 +282,13 @@ async function applySkuMetadata(
   if (!model?.deleteMany || !model?.upsert) return;
 
   if (!metadata || Object.keys(metadata).length === 0) {
-    await model.deleteMany({ where: { skuId } });
+    await model.deleteMany({ where: { internalProductId } });
     return;
   }
 
   await model.upsert({
-    where: { skuId },
-    create: { skuId, ...metadata },
+    where: { internalProductId },
+    create: { internalProductId, ...metadata },
     update: metadata,
   });
 }
@@ -373,7 +373,7 @@ export async function GET(request: NextRequest) {
     let skus: Array<Record<string, unknown>> = [];
 
     try {
-      skus = await prisma.equipmentSku.findMany({
+      skus = await prisma.internalProduct.findMany({
         where,
         include: SKU_INCLUDE,
         orderBy,
@@ -383,12 +383,12 @@ export async function GET(request: NextRequest) {
       if (!isPrismaMissingColumnError(error)) throw error;
 
       // Backward-compatible fallback for databases that have not applied the
-      // latest EquipmentSku migration yet.
+      // latest InternalProduct migration yet.
       console.warn(
         "[Inventory SKUs] Falling back to legacy SKU query due to missing database columns"
       );
 
-      const legacySkus = await prisma.equipmentSku.findMany({
+      const legacySkus = await prisma.internalProduct.findMany({
         where,
         select: {
           id: true,
@@ -553,6 +553,7 @@ export async function POST(request: NextRequest) {
     const descriptionParsed = parseOptionalString(body, "description");
     const skuParsed = parseOptionalString(body, "sku");
     const vendorNameParsed = parseOptionalString(body, "vendorName");
+    const zohoVendorIdParsed = parseOptionalString(body, "zohoVendorId");
     const vendorPartParsed = parseOptionalString(body, "vendorPartNumber");
     const zohoItemParsed = parseOptionalString(body, "zohoItemId");
     const hubspotProductParsed = parseOptionalString(body, "hubspotProductId");
@@ -560,11 +561,26 @@ export async function POST(request: NextRequest) {
     const metadataParsed = parseOptionalMetadata(body, category as string);
     if ("error" in metadataParsed) return NextResponse.json({ error: metadataParsed.error }, { status: 400 });
 
+    // Vendor pair validation for upsert — only when zohoVendorId is explicitly
+    // provided. Callers that only send vendorName (sync scripts, legacy UI) are
+    // allowed through; the pair invariant is enforced on the submit-product and
+    // push-requests paths where the picker guarantees both values.
+    if (zohoVendorIdParsed.provided && zohoVendorIdParsed.value) {
+      const upsertVendorName = vendorNameParsed.provided ? vendorNameParsed.value : null;
+      if (!upsertVendorName) {
+        return NextResponse.json({ error: "Vendor ID provided without vendor name" }, { status: 400 });
+      }
+      const lookup = await prisma!.vendorLookup.findUnique({ where: { zohoVendorId: zohoVendorIdParsed.value } });
+      if (!lookup || lookup.name !== upsertVendorName) {
+        return NextResponse.json({ error: "Vendor name does not match the selected vendor record" }, { status: 400 });
+      }
+    }
+
     const upserted = await prisma.$transaction(async (
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tx: any
     ) => {
-      const skuRecord = await tx.equipmentSku.upsert({
+      const skuRecord = await tx.internalProduct.upsert({
         where: {
           category_brand_model: {
             category: category as EquipmentCategory,
@@ -579,6 +595,7 @@ export async function POST(request: NextRequest) {
           ...(descriptionParsed.provided && { description: descriptionParsed.value }),
           ...(skuParsed.provided && { sku: skuParsed.value }),
           ...(vendorNameParsed.provided && { vendorName: vendorNameParsed.value }),
+          ...(zohoVendorIdParsed.provided && { zohoVendorId: zohoVendorIdParsed.value }),
           ...(vendorPartParsed.provided && { vendorPartNumber: vendorPartParsed.value }),
           ...(unitCostParsed.provided && { unitCost: unitCostParsed.value }),
           ...(sellPriceParsed.provided && { sellPrice: sellPriceParsed.value }),
@@ -607,6 +624,7 @@ export async function POST(request: NextRequest) {
           description: descriptionParsed.provided ? descriptionParsed.value : null,
           sku: skuParsed.provided ? skuParsed.value : null,
           vendorName: vendorNameParsed.provided ? vendorNameParsed.value : null,
+          zohoVendorId: zohoVendorIdParsed.provided ? zohoVendorIdParsed.value : null,
           vendorPartNumber: vendorPartParsed.provided ? vendorPartParsed.value : null,
           unitCost: unitCostParsed.provided ? unitCostParsed.value : null,
           sellPrice: sellPriceParsed.provided ? sellPriceParsed.value : null,
@@ -624,7 +642,7 @@ export async function POST(request: NextRequest) {
         await applySkuMetadata(tx, skuRecord.id, category as string, metadataParsed.value);
       }
 
-      return tx.equipmentSku.findUnique({
+      return tx.internalProduct.findUnique({
         where: { id: skuRecord.id },
         include: SKU_INCLUDE,
       });
@@ -650,7 +668,7 @@ export async function POST(request: NextRequest) {
         metadata: {
           feature: "product_comparison",
           action: "create_internal_with_links",
-          skuId: String((upserted as Record<string, unknown>).id || ""),
+          internalProductId: String((upserted as Record<string, unknown>).id || ""),
           linkedSources: linkedSourcesOnUpsert,
         },
         ipAddress: authResult.ip,
@@ -735,13 +753,15 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
-    const existing = await prisma.equipmentSku.findUnique({
+    const existing = await prisma.internalProduct.findUnique({
       where: { id },
       select: {
         id: true,
         category: true,
         brand: true,
         model: true,
+        vendorName: true,
+        zohoVendorId: true,
         hubspotProductId: true,
         zuperItemId: true,
         zohoItemId: true,
@@ -794,12 +814,34 @@ export async function PATCH(request: NextRequest) {
     const descriptionParsed = parseOptionalString(body, "description");
     const skuParsed = parseOptionalString(body, "sku");
     const vendorNameParsed = parseOptionalString(body, "vendorName");
+    const zohoVendorIdParsed = parseOptionalString(body, "zohoVendorId");
     const vendorPartParsed = parseOptionalString(body, "vendorPartNumber");
     const zohoItemParsed = parseOptionalString(body, "zohoItemId");
     const hubspotProductParsed = parseOptionalString(body, "hubspotProductId");
     const zuperItemParsed = parseOptionalString(body, "zuperItemId");
     const metadataParsed = parseOptionalMetadata(body, category as string);
     if ("error" in metadataParsed) return NextResponse.json({ error: metadataParsed.error }, { status: 400 });
+
+    // Vendor pair validation — only when vendor fields are being changed.
+    // Legacy records may have vendorName without zohoVendorId; we don't block
+    // unrelated edits on those records.
+    const vendorFieldsChanging = vendorNameParsed.provided || zohoVendorIdParsed.provided;
+    if (vendorFieldsChanging) {
+      const effectiveVendorName = vendorNameParsed.provided ? vendorNameParsed.value : existing.vendorName;
+      const effectiveZohoVendorId = zohoVendorIdParsed.provided ? zohoVendorIdParsed.value : existing.zohoVendorId;
+      if (effectiveVendorName && !effectiveZohoVendorId) {
+        return NextResponse.json({ error: "Vendor must be selected from the list (zohoVendorId required)" }, { status: 400 });
+      }
+      if (!effectiveVendorName && effectiveZohoVendorId) {
+        return NextResponse.json({ error: "Vendor ID provided without vendor name" }, { status: 400 });
+      }
+      if (effectiveVendorName && effectiveZohoVendorId) {
+        const lookup = await prisma!.vendorLookup.findUnique({ where: { zohoVendorId: effectiveZohoVendorId } });
+        if (!lookup || lookup.name !== effectiveVendorName) {
+          return NextResponse.json({ error: "Vendor name does not match the selected vendor record" }, { status: 400 });
+        }
+      }
+    }
 
     const parsedLinksBySource = {
       hubspot: hubspotProductParsed,
@@ -836,6 +878,7 @@ export async function PATCH(request: NextRequest) {
       ...(descriptionParsed.provided && { description: descriptionParsed.value }),
       ...(skuParsed.provided && { sku: skuParsed.value }),
       ...(vendorNameParsed.provided && { vendorName: vendorNameParsed.value }),
+      ...(zohoVendorIdParsed.provided && { zohoVendorId: zohoVendorIdParsed.value }),
       ...(vendorPartParsed.provided && { vendorPartNumber: vendorPartParsed.value }),
       ...(unitCostParsed.provided && { unitCost: unitCostParsed.value }),
       ...(sellPriceParsed.provided && { sellPrice: sellPriceParsed.value }),
@@ -867,7 +910,7 @@ export async function PATCH(request: NextRequest) {
       tx: any
     ) => {
       if (Object.keys(updateData).length > 0) {
-        await tx.equipmentSku.update({
+        await tx.internalProduct.update({
           where: { id },
           data: updateData,
         });
@@ -878,7 +921,7 @@ export async function PATCH(request: NextRequest) {
         await applySkuMetadata(tx, id, category as string, metadataToApply);
       }
 
-      return tx.equipmentSku.findUnique({
+      return tx.internalProduct.findUnique({
         where: { id },
         include: SKU_INCLUDE,
       });
@@ -900,7 +943,7 @@ export async function PATCH(request: NextRequest) {
         metadata: {
           feature: "product_comparison",
           action: "confirm_link",
-          skuId: id,
+          internalProductId: id,
           changes: requestedLinkChanges,
           changedSources: requestedLinkChanges.map((change) => change.source),
         },
@@ -992,7 +1035,7 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
 
-    const existing = await prisma.equipmentSku.findUnique({
+    const existing = await prisma.internalProduct.findUnique({
       where: { id },
       select: {
         id: true,
@@ -1016,20 +1059,20 @@ export async function DELETE(request: NextRequest) {
       for (const table of SPEC_TABLES) {
         const model = tx[table];
         if (model?.deleteMany) {
-          await model.deleteMany({ where: { skuId: id } });
+          await model.deleteMany({ where: { internalProductId: id } });
         }
       }
 
       // Delete stock transactions (they reference InventoryStock)
       await tx.stockTransaction.deleteMany({
-        where: { stock: { skuId: id } },
+        where: { stock: { internalProductId: id } },
       });
 
       // Delete inventory stock levels
-      await tx.inventoryStock.deleteMany({ where: { skuId: id } });
+      await tx.inventoryStock.deleteMany({ where: { internalProductId: id } });
 
       // Delete the SKU itself
-      await tx.equipmentSku.delete({ where: { id } });
+      await tx.internalProduct.delete({ where: { id } });
     });
 
     await logActivity({

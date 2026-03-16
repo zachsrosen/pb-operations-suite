@@ -40,6 +40,7 @@ export interface UpsertZohoItemInput {
   sku?: string | null;
   unitLabel?: string | null;
   vendorName?: string | null;
+  zohoVendorId?: string | null;
   vendorPartNumber?: string | null;
   sellPrice?: number | null;
   unitCost?: number | null;
@@ -689,6 +690,7 @@ export class ZohoInventoryClient {
     const description = trimOrUndefined(input.description);
     const unitLabel = trimOrUndefined(input.unitLabel);
     const vendorName = trimOrUndefined(input.vendorName);
+    const zohoVendorId = trimOrUndefined(input.zohoVendorId);
     const vendorPartNumber = trimOrUndefined(input.vendorPartNumber);
 
     const name = `${brand || ""} ${model || ""}`.trim();
@@ -720,21 +722,25 @@ export class ZohoInventoryClient {
     }
 
     if (existingItemId) {
-      // Apply confirmed group_name to existing items that may be missing it
+      // Best-effort update of group, vendor fields on existing items
       const groupName = input.category ? getZohoGroupName(input.category) : undefined;
-      if (groupName) {
+      const updatePayload: Record<string, unknown> = {};
+      if (groupName) updatePayload.group_name = groupName;
+      if (vendorName) updatePayload.vendor_name = vendorName;
+      if (zohoVendorId) updatePayload.vendor_id = zohoVendorId;
+
+      if (Object.keys(updatePayload).length > 0) {
         try {
-          const updateResult = await this.updateItem(existingItemId, { group_name: groupName });
+          const updateResult = await this.updateItem(existingItemId, updatePayload);
           if (updateResult.status !== "updated") {
             console.warn(
-              `[zoho-inventory] Best-effort group_name update on existing item ${existingItemId} ` +
+              `[zoho-inventory] Best-effort update on existing item ${existingItemId} ` +
                 `returned status "${updateResult.status}": ${updateResult.message}`
             );
           }
         } catch (error) {
-          // Truly unexpected errors (network failures, etc.)
           console.warn(
-            `[zoho-inventory] Failed to update group_name on existing item ${existingItemId}: ${
+            `[zoho-inventory] Failed to update existing item ${existingItemId}: ${
               error instanceof Error ? error.message : String(error)
             }`
           );
@@ -773,6 +779,7 @@ export class ZohoInventoryClient {
       ...(isNum(input.sellPrice) ? { rate: input.sellPrice } : {}),
       ...(isNum(input.unitCost) ? { purchase_rate: input.unitCost } : {}),
       ...(vendorName ? { vendor_name: vendorName } : {}),
+      ...(zohoVendorId ? { vendor_id: zohoVendorId } : {}),
       ...(unitLabel ? { unit: unitLabel } : {}),
       ...(isNum(input.weight) ? { weight: input.weight } : {}),
       ...(isNum(input.length) ? { length: input.length } : {}),

@@ -43,6 +43,7 @@ const CLONE_FIELD_MAP: (keyof CatalogFormState)[] = [
   "hardToProcure",
   "sku",
   "vendorName",
+  "zohoVendorId",
   "vendorPartNumber",
 ];
 
@@ -76,7 +77,7 @@ function normalizeCloneResult(
       const flat: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(specObj)) {
         // Skip Prisma relation keys
-        if (k === "id" || k === "skuId" || k === "equipmentSkuId") continue;
+        if (k === "id" || k === "internalProductId") continue;
         if (v !== null && v !== undefined && v !== "") {
           flat[k] = typeof v === "number" ? String(v) : v;
         }
@@ -201,6 +202,7 @@ function CatalogWizard() {
         unitLabel: state.unitLabel || null,
         sku: state.sku || null,
         vendorName: state.vendorName || null,
+        zohoVendorId: state.zohoVendorId || null,
         vendorPartNumber: state.vendorPartNumber || null,
         unitCost: state.unitCost ? parseFloat(state.unitCost) : null,
         sellPrice: state.sellPrice ? parseFloat(state.sellPrice) : null,

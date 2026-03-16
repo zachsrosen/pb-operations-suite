@@ -15,6 +15,7 @@
 import { zohoInventory } from "@/lib/zoho-inventory";
 import { logActivity, prisma } from "@/lib/db";
 import { postProcessSoItems, type SoLineItem, type BomProject, type BomItem } from "@/lib/bom-so-post-process";
+import { normalizeModelAlias } from "@/lib/model-alias";
 import type { ActorContext } from "@/lib/actor-context";
 
 // ---------------------------------------------------------------------------
@@ -151,8 +152,16 @@ export async function createSalesOrder(params: {
         ? `${item.brand ? item.brand + " " : ""}${item.model}`
         : item.description;
 
-    // Try model first, then full "brand model" name, then description
-    const searchTerms = [item.model, name, item.description].filter(
+    // Try model first, then full "brand model" name, then description,
+    // then suffix-stripped alias as fallback
+    const rawTerms: (string | null | undefined)[] = [item.model, name, item.description];
+    if (item.model) {
+      const normalized = normalizeModelAlias(item.model);
+      if (normalized && normalized !== item.model) {
+        rawTerms.push(normalized, `${item.brand ? item.brand + " " : ""}${normalized}`);
+      }
+    }
+    const searchTerms = rawTerms.filter(
       (t): t is string => !!t && t.trim().length > 1,
     );
     let match: { item_id: string; zohoName: string; zohoSku?: string } | null = null;

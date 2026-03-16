@@ -75,7 +75,7 @@ describe("product-cleanup-engine", () => {
     const mockUpdate = jest.fn();
     const mockDeleteMany = jest.fn();
     const prismaClient = {
-      equipmentSku: {
+      internalProduct: {
         update: mockUpdate,
       },
       catalogProduct: {

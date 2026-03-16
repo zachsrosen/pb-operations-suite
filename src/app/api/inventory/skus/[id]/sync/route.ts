@@ -46,7 +46,7 @@ export async function GET(
   if ("error" in auth) return auth.error;
 
   const { id } = await params;
-  const sku = await prisma.equipmentSku.findUnique({
+  const sku = await prisma.internalProduct.findUnique({
     where: { id },
     include: SKU_INCLUDE,
   });
@@ -60,7 +60,7 @@ export async function GET(
     const changesHash = computePreviewHash(previews);
 
     return NextResponse.json({
-      skuId: sku.id,
+      internalProductId: sku.id,
       previews,
       changesHash,
       systems: previews.map((p) => p.system),
@@ -116,7 +116,7 @@ export async function POST(
     return NextResponse.json({ error: "Invalid system in systems array" }, { status: 400 });
   }
 
-  const sku = await prisma.equipmentSku.findUnique({
+  const sku = await prisma.internalProduct.findUnique({
     where: { id },
     include: SKU_INCLUDE,
   });
@@ -136,7 +136,7 @@ export async function POST(
   const validation = validateSyncConfirmationToken({
     token,
     issuedAt,
-    skuId: id,
+    internalProductId: id,
     systems: validatedSystems,
     changesHash: freshHash,
   });
@@ -160,7 +160,7 @@ export async function POST(
     }
 
     return NextResponse.json({
-      skuId: sku.id,
+      internalProductId: sku.id,
       outcomes: result.outcomes,
       hashMatch: result.hashMatch,
     });

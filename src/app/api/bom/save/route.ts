@@ -3,7 +3,7 @@
  *
  * POST /api/bom/save
  *   Accepts a structured BOM from the planset-bom skill and upserts
- *   equipment SKUs (all 8 BOM categories) into EquipmentSku.
+ *   equipment SKUs (all 8 BOM categories) into InternalProduct.
  *   Returns counts of created/updated items.
  *   Auth required.
  */
@@ -11,7 +11,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma, logActivity } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
-import { syncEquipmentSkus } from "@/lib/bom-snapshot";
+import { syncInternalProducts } from "@/lib/bom-snapshot";
 import type { BomData } from "@/lib/bom-snapshot";
 
 export async function POST(request: NextRequest) {
@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const { created, updated, skipped, pending, zohoMatched, items } = await syncEquipmentSkus(bom.items);
+    const { created, updated, skipped, pending, zohoMatched, items } = await syncInternalProducts(bom.items);
 
     await logSave(
       "succeeded",

@@ -1838,7 +1838,7 @@ export default function CatalogPage() {
       {/* Sync Modal */}
       {syncSkuId && (
         <SyncModal
-          skuId={syncSkuId}
+          internalProductId={syncSkuId}
           skuName={syncSkuName}
           isOpen={!!syncSkuId}
           onClose={() => { setSyncSkuId(null); setSyncSkuName(""); fetchSkus(); }}

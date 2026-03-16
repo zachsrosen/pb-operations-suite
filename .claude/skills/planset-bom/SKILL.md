@@ -1,6 +1,6 @@
 ---
 name: planset-bom
-description: This skill should be used when the user asks to "read a planset", "generate a BOM", "create a bill of materials from a plan set", "extract equipment from a planset", "pull the BOM from this PDF", "what's on this planset", "read this design plan", or drops a Photon Brothers stamped planset PDF. Produces a full bill of materials from a PB solar/storage design planset, outputting CSV, Markdown, and JSON matched to the EquipmentSku inventory schema.
+description: This skill should be used when the user asks to "read a planset", "generate a BOM", "create a bill of materials from a plan set", "extract equipment from a planset", "pull the BOM from this PDF", "what's on this planset", "read this design plan", or drops a Photon Brothers stamped planset PDF. Produces a full bill of materials from a PB solar/storage design planset, outputting CSV, Markdown, and JSON matched to the InternalProduct inventory schema.
 version: 0.1.0
 ---
 

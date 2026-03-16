@@ -315,7 +315,7 @@ export async function POST(request: NextRequest) {
   try {
     const itemMap = getItemMap();
 
-    const existingSkus = await prisma.equipmentSku.findMany({
+    const existingSkus = await prisma.internalProduct.findMany({
       select: { id: true, category: true, brand: true, model: true },
     });
 
@@ -354,7 +354,7 @@ export async function POST(request: NextRequest) {
 
       let skuId = mapped.id;
       if (!skuId) {
-        const createdSku = await prisma.equipmentSku.upsert({
+        const createdSku = await prisma.internalProduct.upsert({
           where: {
             category_brand_model: {
               category: mapped.category,
@@ -426,14 +426,14 @@ export async function POST(request: NextRequest) {
 
         const deltaResult = await prisma.$transaction(async (tx) => {
           const existing = await tx.inventoryStock.findUnique({
-            where: { skuId_location: { skuId, location: mappedLocation } },
+            where: { internalProductId_location: { internalProductId: skuId, location: mappedLocation } },
             select: { id: true, quantityOnHand: true },
           });
 
           if (!existing) {
             const createdStock = await tx.inventoryStock.create({
               data: {
-                skuId,
+                internalProductId: skuId,
                 location: mappedLocation,
                 quantityOnHand: targetQty,
                 lastCountedAt: new Date(),

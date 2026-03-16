@@ -3,7 +3,7 @@
  * Run: npx tsx scripts/test-shadow.ts
  */
 import "dotenv/config";
-import { syncEquipmentSkus } from "../src/lib/bom-snapshot";
+import { syncInternalProducts } from "../src/lib/bom-snapshot";
 import type { BomItem } from "../src/lib/bom-snapshot";
 
 // Real BOM extracted from PROJ-8654 Lingle planset (battery-only + expansion)
@@ -110,7 +110,7 @@ async function main() {
   console.log(`\n🔧 CATALOG_SKU_SYNC_LEGACY = ${legacy}`);
   console.log(`📦 PROJ-8654 Lingle — ${bomItems.length} BOM items\n`);
 
-  const result = await syncEquipmentSkus(bomItems);
+  const result = await syncInternalProducts(bomItems);
 
   console.log("═══════════════════════════════════════════");
   console.log("  SKU SYNC RESULT");

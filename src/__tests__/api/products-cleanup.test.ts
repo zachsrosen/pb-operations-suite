@@ -13,7 +13,7 @@ jest.mock("@/lib/db", () => ({
   getUserByEmail: (...args: unknown[]) => mockGetUserByEmail(...args),
   logActivity: (...args: unknown[]) => mockLogActivity(...args),
   prisma: {
-    equipmentSku: {
+    internalProduct: {
       findMany: (...args: unknown[]) => mockFindMany(...args),
       update: (...args: unknown[]) => mockEquipmentUpdate(...args),
     },

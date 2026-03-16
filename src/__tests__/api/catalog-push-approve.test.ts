@@ -72,7 +72,7 @@ let pushState: Record<string, unknown>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const mockTransaction = jest.fn(async (fn: any) => {
   const txClient = {
-    equipmentSku: {
+    internalProduct: {
       upsert: (...args: unknown[]) => mockUpsert(...args),
       update: (...args: unknown[]) => mockEquipmentUpdate(...args),
     },
@@ -302,7 +302,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
   // ── Internal catalog writes ────────────────────────────────────────────
 
   describe("internal catalog writes", () => {
-    it("upserts EquipmentSku with all common fields", async () => {
+    it("upserts InternalProduct with all common fields", async () => {
       mockFindUnique.mockResolvedValue(makePush());
 
       await POST(new NextRequest("http://localhost"), makeParams());
@@ -373,8 +373,8 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       expect(mockSpecUpsert).toHaveBeenCalledTimes(1);
       expect(mockSpecUpsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { skuId: "sku_1" },
-          create: expect.objectContaining({ skuId: "sku_1", wattage: 410 }),
+          where: { internalProductId: "sku_1" },
+          create: expect.objectContaining({ internalProductId: "sku_1", wattage: 410 }),
           update: expect.objectContaining({ wattage: 410 }),
         })
       );

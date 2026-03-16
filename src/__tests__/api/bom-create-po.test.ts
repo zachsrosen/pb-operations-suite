@@ -28,7 +28,7 @@ jest.mock("@/lib/db", () => ({
       findFirst: (...args: unknown[]) => mockFindFirst(...args),
       update: (...args: unknown[]) => mockUpdate(...args),
     },
-    equipmentSku: {
+    internalProduct: {
       findMany: (...args: unknown[]) => mockFindMany(...args),
     },
   },

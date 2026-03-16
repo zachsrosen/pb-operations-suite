@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 // ──────────────────────────────────────────────
 
 async function handlePreview() {
-  const skus = await prisma.equipmentSku.findMany({
+  const skus = await prisma.internalProduct.findMany({
     where: { hubspotProductId: null, isActive: true },
     select: { id: true, category: true, brand: true, model: true },
     orderBy: { id: "asc" },
@@ -149,7 +149,7 @@ async function executeFirstChunk(params: {
   const { token, issuedAt, changesHash, userEmail } = params;
 
   // Server-side recompute of missing SKUs
-  const missingSkus = await prisma.equipmentSku.findMany({
+  const missingSkus = await prisma.internalProduct.findMany({
     where: { hubspotProductId: null, isActive: true },
     select: { id: true, category: true, brand: true, model: true },
     orderBy: { id: "asc" },
@@ -348,7 +348,7 @@ async function processChunk(
   }
 
   // Fetch the actual SKU data
-  const skus = await prisma.equipmentSku.findMany({
+  const skus = await prisma.internalProduct.findMany({
     where: { id: { in: targetIdsForChunk }, isActive: true },
     orderBy: { id: "asc" },
   });
@@ -357,7 +357,7 @@ async function processChunk(
   let chunkSkipped = 0;
   let chunkFailed = 0;
   const chunkOutcomes: Array<{
-    skuId: string;
+    internalProductId: string;
     brand: string;
     model: string;
     status: string;
@@ -372,7 +372,7 @@ async function processChunk(
     if (sku.hubspotProductId) {
       chunkSkipped++;
       chunkOutcomes.push({
-        skuId: sku.id,
+        internalProductId: sku.id,
         brand: sku.brand,
         model: sku.model,
         status: "skipped",
@@ -401,7 +401,7 @@ async function processChunk(
     if (!productResult.ok) {
       chunkFailed++;
       chunkOutcomes.push({
-        skuId: sku.id,
+        internalProductId: sku.id,
         brand: sku.brand,
         model: sku.model,
         status: "failed",
@@ -409,7 +409,7 @@ async function processChunk(
       });
     } else {
       // Guarded write-back
-      const updated = await prisma.equipmentSku.updateMany({
+      const updated = await prisma.internalProduct.updateMany({
         where: { id: sku.id, hubspotProductId: null },
         data: { hubspotProductId: productResult.data.hubspotProductId },
       });
@@ -417,7 +417,7 @@ async function processChunk(
       if (updated.count > 0) {
         chunkCreated++;
         chunkOutcomes.push({
-          skuId: sku.id,
+          internalProductId: sku.id,
           brand: sku.brand,
           model: sku.model,
           status: "created",
@@ -426,7 +426,7 @@ async function processChunk(
       } else {
         chunkSkipped++;
         chunkOutcomes.push({
-          skuId: sku.id,
+          internalProductId: sku.id,
           brand: sku.brand,
           model: sku.model,
           status: "skipped",
@@ -458,7 +458,7 @@ async function processChunk(
     if (!processedIds.has(missingId)) {
       chunkSkipped++;
       chunkOutcomes.push({
-        skuId: missingId,
+        internalProductId: missingId,
         brand: "",
         model: "",
         status: "skipped",

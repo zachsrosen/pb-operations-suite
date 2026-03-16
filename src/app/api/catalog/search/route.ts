@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get("q")?.trim();
   if (!q || q.length < 2) return NextResponse.json([]);
 
-  const results = await prisma.equipmentSku.findMany({
+  const results = await prisma.internalProduct.findMany({
     where: {
       isActive: true,
       OR: [
@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
       sellPrice: true,
       sku: true,
       vendorName: true,
+      zohoVendorId: true,
       vendorPartNumber: true,
       hardToProcure: true,
       length: true,

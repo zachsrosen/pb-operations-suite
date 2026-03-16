@@ -146,31 +146,31 @@ export async function GET() {
     lastActivity,
     catalogGroupCounts,
   ] = await Promise.all([
-    prisma.equipmentSku.count({
+    prisma.internalProduct.count({
       where: { isActive: true },
     }),
-    prisma.equipmentSku.count({
+    prisma.internalProduct.count({
       where: {
         isActive: true,
         hubspotProductId: { not: null },
         NOT: { hubspotProductId: "" },
       },
     }),
-    prisma.equipmentSku.count({
+    prisma.internalProduct.count({
       where: {
         isActive: true,
         zuperItemId: { not: null },
         NOT: { zuperItemId: "" },
       },
     }),
-    prisma.equipmentSku.count({
+    prisma.internalProduct.count({
       where: {
         isActive: true,
         zohoItemId: { not: null },
         NOT: { zohoItemId: "" },
       },
     }),
-    prisma.equipmentSku.count({
+    prisma.internalProduct.count({
       where: {
         isActive: true,
         hubspotProductId: { not: null },

@@ -86,14 +86,14 @@ export function parseHarvestWarnings(p: HarvestedProduct): HarvestWarning[] {
 }
 
 // ---------------------------------------------------------------------------
-// Adapter: Internal (Prisma EquipmentSku)
+// Adapter: Internal (Prisma InternalProduct)
 // ---------------------------------------------------------------------------
 
 export async function harvestInternal(): Promise<HarvestedProduct[]> {
   const { prisma } = await import("@/lib/db");
   if (!prisma) return [];
 
-  const skus = await prisma.equipmentSku.findMany({
+  const skus = await prisma.internalProduct.findMany({
     where: { isActive: true },
   });
 
