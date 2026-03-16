@@ -574,6 +574,11 @@ export default function Home() {
         )}
 
         {/* Stats Grid */}
+        {(() => {
+          const locSuffix = selectedLocations.length > 0
+            ? `&location=${selectedLocations.map(encodeURIComponent).join(",")}`
+            : "";
+          return (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8 stagger-grid">
           <StatCard
             label="Active Projects"
@@ -584,42 +589,44 @@ export default function Home() {
                 : null
             }
             color="orange"
-            href="/dashboards/deals?pipeline=project"
+            href={`/dashboards/deals?pipeline=project${locSuffix}`}
           />
           <StatCard
             label="Active D&R"
-            value={pipelineCache["dnr"]?.total ?? null}
+            value={pipelineCache["dnr"]?.error ? "—" : pipelineCache["dnr"]?.total ?? null}
             subtitle={
-              pipelineCache["dnr"]?.totalValue
+              pipelineCache["dnr"]?.totalValue && !pipelineCache["dnr"]?.error
                 ? formatMoney(pipelineCache["dnr"].totalValue)
                 : null
             }
             color="blue"
-            href="/dashboards/deals?pipeline=dnr"
+            href={`/dashboards/deals?pipeline=dnr${locSuffix}`}
           />
           <StatCard
             label="Active Roofing"
-            value={pipelineCache["roofing"]?.total ?? null}
+            value={pipelineCache["roofing"]?.error ? "—" : pipelineCache["roofing"]?.total ?? null}
             subtitle={
-              pipelineCache["roofing"]?.totalValue
+              pipelineCache["roofing"]?.totalValue && !pipelineCache["roofing"]?.error
                 ? formatMoney(pipelineCache["roofing"].totalValue)
                 : null
             }
             color="red"
-            href="/dashboards/deals?pipeline=roofing"
+            href={`/dashboards/deals?pipeline=roofing${locSuffix}`}
           />
           <StatCard
             label="Active Service"
-            value={pipelineCache["service"]?.total ?? null}
+            value={pipelineCache["service"]?.error ? "—" : pipelineCache["service"]?.total ?? null}
             subtitle={
-              pipelineCache["service"]?.totalValue
+              pipelineCache["service"]?.totalValue && !pipelineCache["service"]?.error
                 ? formatMoney(pipelineCache["service"].totalValue)
                 : null
             }
             color="green"
-            href="/dashboards/deals?pipeline=service"
+            href={`/dashboards/deals?pipeline=service${locSuffix}`}
           />
         </div>
+          );
+        })()}
 
         {/* Location Filter */}
         {loading ? (
