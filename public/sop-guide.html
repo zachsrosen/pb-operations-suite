@@ -191,7 +191,7 @@ SOP Operations Guide
 <div class="sidebar-section" data-tab="ops">
 <div class="sidebar-section-title">Parallel Workflows</div>
 <a href="#" onclick="go('inc')" data-s="inc"><span class="dot dot-amber"></span>Incentives &amp; Rebates</a>
-<a href="#" onclick="go('notif')" data-s="notif"><span class="dot dot-indigo"></span>Notifications</a>
+<!--<a href="#" onclick="go('notif')" data-s="notif"><span class="dot dot-indigo"></span>Notifications</a>-->
 <!-- Invoicing and Timing Metrics hidden for now -->
 <!--<a href="#" onclick="go('inv')" data-s="inv"><span class="dot dot-teal"></span>Invoicing</a>-->
 <!--<a href="#" onclick="go('met')" data-s="met"><span class="dot dot-teal"></span>Timing Metrics</a>-->
@@ -391,8 +391,6 @@ SOP Operations Guide
 <p class="subtitle" style="margin-top:0.5rem;font-size:0.8rem;">Current as of March 2026. Assignments come from the HubSpot project team assignment workflow — check recent deals for latest.</p>
 </div>
 
-<div class="review"><strong>⚠ Needs Review:</strong> Role-per-stage handoff matrix is partially inferred. Handoff responsibilities and assignment workflow details should be confirmed by ops.</div>
-
 <h2>Role Handoff Points</h2>
 <p>Each role is primary during specific pipeline stages:</p>
 <div class="card">
@@ -402,7 +400,7 @@ SOP Operations Guide
 <tr><td><a href="#" onclick="go('design')">Design</a></td><td>Design Lead</td><td>Site Surveyor</td></tr>
 <tr><td><a href="#" onclick="go('permit')">Permitting</a></td><td>Permit Lead</td><td>Project Manager</td></tr>
 <tr><td><a href="#" onclick="go('ic')">Interconnection</a></td><td>Interconnections Lead</td><td>Project Manager</td></tr>
-<tr><td><a href="#" onclick="go('rtb')">RTB Gate</a></td><td>Preconstruction Lead</td><td>Operations Lead</td></tr>
+<tr><td><a href="#" onclick="go('rtb')">RTB Gate</a></td><td>Project Manager</td><td>Preconstruction Lead</td></tr>
 <tr><td><a href="#" onclick="go('con')">Construction</a></td><td>Operations Lead</td><td>Project Manager</td></tr>
 <tr><td><a href="#" onclick="go('insp')">Inspection</a></td><td>Inspections Lead</td><td>Operations Lead</td></tr>
 <tr><td><a href="#" onclick="go('pto')">PTO</a></td><td>Interconnections Lead</td><td>Project Manager</td></tr>
@@ -527,9 +525,9 @@ SOP Operations Guide
 <tr><td>Site Survey</td><td>Design &amp; Engineering</td><td>Survey Complete — <code>Site Survey Status</code> = "Completed" (via Zuper)</td><td><span class="t t-zup">ZUPER</span>→<span class="t t-auto">AUTO</span></td></tr>
 <tr><td>Design &amp; Eng</td><td>Permitting &amp; Interconnection</td><td>DA Approved &amp; Design Complete — <code>Design Status</code> = "Design Complete" (via task completion)</td><td><span class="t t-auto">AUTO</span> (task)</td></tr>
 <tr><td>Permitting &amp; Interconnection</td><td>Ready To Build</td><td>Permit Issued &amp; IC Approved — permit issued + interconnection approved + DA invoice paid</td><td><span class="t t-auto">AUTO</span> (dual gate)</td></tr>
-<tr><td>Permitting &amp; Interconnection</td><td>RTB - Blocked</td><td>Any RTB gate condition incomplete</td><td><span class="t t-auto">AUTO</span></td></tr>
+<tr><td>Permitting &amp; Interconnection</td><td>RTB - Blocked</td><td>Permit issued but any other RTB gate condition incomplete</td><td><span class="t t-auto">AUTO</span></td></tr>
 <tr><td>Ready To Build</td><td>Construction</td><td>Construction Scheduled — <code>Construction Status</code> → Scheduled or further</td><td><span class="t t-zup">ZUPER</span>→<span class="t t-auto">AUTO</span></td></tr>
-<tr><td>Construction</td><td>Inspection</td><td>Construction Complete — Construction Complete Checklist submitted</td><td><span class="t t-chk">CHECKLIST</span>→<span class="t t-auto">AUTO</span></td></tr>
+<tr><td>Construction</td><td>Inspection</td><td>Construction Complete — <code>Construction Status</code> = "Completed" (via Zuper)</td><td><span class="t t-zup">ZUPER</span>→<span class="t t-auto">AUTO</span></td></tr>
 <tr><td>Inspection</td><td>PTO</td><td>Inspection Passed — <code>Final Inspection Status</code> = "Passed" (via Zuper)</td><td><span class="t t-zup">ZUPER</span>→<span class="t t-auto">AUTO</span></td></tr>
 <tr><td>PTO</td><td>Close Out</td><td>PTO Granted — <code>PTO Status</code> = "PTO Granted"</td><td><span class="t t-trig">TRIGGER</span>→<span class="t t-auto">AUTO</span></td></tr>
 </table>
@@ -1611,8 +1609,6 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <p>New construction projects are identified by the <code>New Construction</code> tag on the deal. This tag triggers specialized workflows throughout the pipeline.</p>
 <div class="ac ac-trig"><div><span class="t t-trig">TRIGGER</span> Deal has <code>New Construction</code> tag</div></div>
 
-<div class="review"><strong>⚠ Needs Review:</strong> Two-phase construction (rough-in/trim-out), builder coordination points, and stage impact details are based on standard solar new-construction practices — confirm they match PB's actual process.</div>
-
 <h2>Key Differences by Stage</h2>
 <div class="card">
 <table>
@@ -1620,31 +1616,32 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <tr><td><a href="#" onclick="go('survey')">Site Survey</a></td><td>Survey may happen before framing is complete — need structural plans from builder</td><td>Design may start from builder blueprints rather than on-site measurements</td></tr>
 <tr><td><a href="#" onclick="go('design')">Design</a></td><td>Design depends on builder timelines and framing completion; revision paths differ</td><td>Longer design cycles — expect multiple revision rounds as builder plans change</td></tr>
 <tr><td><a href="#" onclick="go('permit')">Permitting</a></td><td>Solar permit coordinated with builder's overall permit process</td><td>May be bundled with building permit or submitted as an addendum</td></tr>
-<tr><td><a href="#" onclick="go('con')">Construction</a></td><td>Two-phase install: rough-in before drywall, trim-out after</td><td>Requires two separate crew dispatches; longer elapsed time between phases</td></tr>
-<tr><td><a href="#" onclick="go('insp')">Inspection</a></td><td>Multiple inspections coordinated with builder's inspection schedule</td><td>Solar rough-in inspection + final inspection may be separate events</td></tr>
+<tr><td><a href="#" onclick="go('con')">Construction</a></td><td>Two-phase: pre-wire before drywall, full construction when house is ready</td><td>Requires two separate crew dispatches; gap between phases depends on builder timeline</td></tr>
+<tr><td><a href="#" onclick="go('insp')">Inspection</a></td><td>Multiple inspections coordinated with builder's inspection schedule</td><td>Pre-wire inspection + final inspection may be separate events</td></tr>
 <tr><td><a href="#" onclick="go('pto')">PTO</a></td><td>PTO delayed until certificate of occupancy (CO) is issued</td><td>System cannot be energized until CO — may be weeks/months after solar install</td></tr>
 </table>
 </div>
 
 <h2>Two-Phase Construction</h2>
-<p>New construction solar installations typically happen in two phases:</p>
+<p>New construction solar installations happen in two phases:</p>
 <div class="card">
 <table>
 <tr><th>Phase</th><th>Timing</th><th>Work Performed</th></tr>
-<tr><td><strong>Rough-In</strong></td><td>After framing, before drywall</td><td>Conduit runs, junction boxes, wire pulls, inverter mounting location prep</td></tr>
-<tr><td><strong>Trim-Out</strong></td><td>After roof + exterior complete</td><td>Panel mounting, inverter install, battery install, final wiring, labeling</td></tr>
+<tr><td><strong>Pre-Wire</strong></td><td>After framing, before drywall</td><td>Conduit runs, junction boxes, wire pulls, inverter mounting location prep</td></tr>
+<tr><td><strong>Construction</strong></td><td>When house is ready</td><td>Panel mounting, inverter install, battery install, final wiring, labeling</td></tr>
 </table>
 </div>
-<div class="warn"><strong>Scheduling complexity:</strong> Both phases must be coordinated with the builder's schedule. The gap between rough-in and trim-out can be weeks or months. Track the builder's projected timeline in deal notes.</div>
+<div class="warn"><strong>Scheduling complexity:</strong> Both phases must be coordinated with the builder's schedule. The gap between pre-wire and construction can be weeks or months. Track the builder's projected timeline in deal notes.</div>
 
 <h2>Builder Coordination</h2>
 <div class="card">
 <table>
 <tr><th>Coordination Point</th><th>Who</th><th>When</th></tr>
 <tr><td>Structural plans for design</td><td>Builder → PB Design</td><td>Before design starts</td></tr>
-<tr><td>Rough-in schedule</td><td>Builder → PB Ops</td><td>When framing is complete</td></tr>
-<tr><td>Drywall hold (if conduit needs verification)</td><td>PB → Builder</td><td>After rough-in, before drywall</td></tr>
-<tr><td>Trim-out schedule</td><td>Builder → PB Ops</td><td>When roof and exterior are complete</td></tr>
+<tr><td>Pre-wire schedule</td><td>Builder → PB Ops</td><td>When framing is complete</td></tr>
+<tr><td>Drywall hold (if conduit needs verification)</td><td>PB → Builder</td><td>After pre-wire, before drywall</td></tr>
+<tr><td>Drone site survey</td><td>PB Ops</td><td>Once install can be scheduled — capture aerial imagery of the site</td></tr>
+<tr><td>Construction schedule</td><td>Builder → PB Ops</td><td>When house is ready</td></tr>
 <tr><td>Certificate of Occupancy</td><td>Builder → PB PTO</td><td>Before PTO application</td></tr>
 </table>
 </div>
@@ -2493,9 +2490,13 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <div class="card">
 <table>
 <tr><th>Field</th><th>Recorded When</th></tr>
+<tr><td><code>Close Date</code></td><td>Contract signed (deal closed)</td></tr>
+<tr><td><code>Kickoff Completion Date</code></td><td>PM reviews and kicks off the project</td></tr>
+<tr><td><code>Site Survey Schedule Date</code></td><td>Site survey scheduled</td></tr>
+<tr><td><code>Site Survey Completion Date</code></td><td>Site survey completed</td></tr>
+<tr><td><code>Design Approval Ready Date</code></td><td>Design enters review</td></tr>
 <tr><td><code>Design Approval Sent Date</code></td><td>DA sent for approval</td></tr>
 <tr><td><code>Design Approval Date</code></td><td>Customer approves DA</td></tr>
-<tr><td><code>Design Approval Ready Date</code></td><td>Design enters review</td></tr>
 <tr><td><code>Design Completion Date</code></td><td>Design marked complete</td></tr>
 <tr><td><code>Engineering Submission Date</code></td><td>Engineering plans submitted</td></tr>
 <tr><td><code>Engineering Stamped Date</code></td><td>Stamped plans received</td></tr>
@@ -2504,7 +2505,6 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <tr><td><code>Interconnection Submit Date</code></td><td>Interconnection application submitted</td></tr>
 <tr><td><code>Interconnection Approval Date</code></td><td>Interconnection approved</td></tr>
 <tr><td><code>Construction Complete Date</code></td><td>Construction checklist submitted</td></tr>
-<tr><td><code>Kickoff Completion Date</code></td><td>PM reviews and kicks off the project</td></tr>
 <tr><td><code>Inspections Pass Date</code></td><td>Inspection passed</td></tr>
 <tr><td><code>PTO Submit Date</code></td><td>PTO application submitted</td></tr>
 <tr><td><code>PTO Granted Date</code></td><td>PTO granted</td></tr>
@@ -2519,7 +2519,10 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <table>
 <tr><th>Field</th><th>Increments When</th></tr>
 <tr><td><code>DA Revision Counter</code></td><td>Each DA rejection/revision cycle</td></tr>
-<tr><td><code>Revision Counter</code></td><td>Each design revision cycle</td></tr>
+<tr><td><code>Permit Revision Counter</code></td><td>Each permit revision cycle</td></tr>
+<tr><td><code>Interconnection Revision Counter</code></td><td>Each interconnection revision cycle</td></tr>
+<tr><td><code>As-Built Revision Counter</code></td><td>Each as-built revision cycle</td></tr>
+<tr><td><code>Total Revision Count</code></td><td>Sum of all revision counters across the deal</td></tr>
 <tr><td><code>Inspection Fail Count</code></td><td>Each inspection failure</td></tr>
 </table>
 </div>
@@ -2529,11 +2532,14 @@ When all three are met, the deal <strong>automatically</strong> moves to Ready T
 <table>
 <tr><th>Field</th><th>Role</th><th>Set By</th></tr>
 <tr><td><code>Deal owner</code></td><td>Deal Owner</td><td><span class="t t-auto">AUTO</span></td></tr>
-<tr><td><code>Site Surveyor - Zuper</code></td><td>Surveyor (Zuper)</td><td><span class="t t-zup">ZUPER</span></td></tr>
+<tr><td><code>Site Surveyor</code></td><td>Site Surveyor</td><td><span class="t t-auto">AUTO</span></td></tr>
 <tr><td><code>Design Lead</code></td><td>Design Lead</td><td><span class="t t-auto">AUTO</span></td></tr>
 <tr><td><code>Permit Lead</code></td><td>Permit Lead</td><td><span class="t t-auto">AUTO</span></td></tr>
 <tr><td><code>Interconnections Lead</code></td><td>Interconnections Lead</td><td><span class="t t-auto">AUTO</span></td></tr>
-<tr><td><code>Project Manager - Zuper</code></td><td>PM (Zuper)</td><td><span class="t t-zup">ZUPER</span></td></tr>
+<tr><td><code>Preconstruction Lead</code></td><td>Preconstruction Lead</td><td><span class="t t-auto">AUTO</span></td></tr>
+<tr><td><code>Project Manager</code></td><td>Project Manager</td><td><span class="t t-auto">AUTO</span></td></tr>
+<tr><td><code>Operations Lead</code></td><td>Operations Lead</td><td><span class="t t-auto">AUTO</span></td></tr>
+<tr><td><code>Inspections Lead</code></td><td>Inspections Lead</td><td><span class="t t-auto">AUTO</span></td></tr>
 <tr><td><code>Incentive Lead</code></td><td>Incentive Lead</td><td><span class="t t-auto">AUTO</span></td></tr>
 </table>
 </div>
