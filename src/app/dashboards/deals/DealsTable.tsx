@@ -106,6 +106,11 @@ export default function DealsTable({
             <th className={`${thClass} w-[80px] text-right`} onClick={() => onSort("amount")}>
               Amount <SortArrow active={sort === "amount"} order={order} />
             </th>
+            {isProject && (
+              <th className={`${thClass} w-[50px] text-right`} onClick={() => onSort("daysSinceStageMovement")}>
+                Days <SortArrow active={sort === "daysSinceStageMovement"} order={order} />
+              </th>
+            )}
             {isProject &&
               STATUS_COLUMNS.map((col) => (
                 <StatusColumnHeader
@@ -151,6 +156,13 @@ export default function DealsTable({
               </td>
               <td className={`${tdClass} text-muted`}>{deal.pbLocation}</td>
               <td className={`${tdClass} text-right text-muted`}>{formatMoney(deal.amount)}</td>
+              {isProject && (
+                <td className={`${tdClass} text-right`}>
+                  <span className={`font-medium ${(deal.daysSinceStageMovement ?? 0) > 30 ? "text-red-400" : (deal.daysSinceStageMovement ?? 0) > 14 ? "text-yellow-400" : "text-muted"}`}>
+                    {deal.daysSinceStageMovement ?? 0}d
+                  </span>
+                </td>
+              )}
               {isProject &&
                 STATUS_COLUMNS.map((col) => (
                   <td key={col.key} className={`${tdClass} text-center`}>
@@ -171,7 +183,7 @@ export default function DealsTable({
           ))}
           {sorted.length === 0 && (
             <tr>
-              <td colSpan={isProject ? 14 : 4} className="text-center py-12 text-muted">
+              <td colSpan={isProject ? 15 : 4} className="text-center py-12 text-muted">
                 No deals match the current filters.
               </td>
             </tr>
