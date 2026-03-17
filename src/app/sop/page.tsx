@@ -458,7 +458,7 @@ function SOPPageInner() {
       <header className="sop-top-bar">
         <div className="sop-logo">
           <LogoIcon />
-          <span>SOP Operations Guide</span>
+          <span>SOP Guide</span>
         </div>
 
         <div className="sop-search-box" onClick={() => searchInputRef.current?.focus()}>
@@ -493,7 +493,7 @@ function SOPPageInner() {
             </span>
           )}
           {userName && <span className="sop-user-name">{userName}</span>}
-          <span className="sop-version">v3.2 — Updated Mar 2026</span>
+          <span className="sop-version">v4.0 — Updated Mar 2026</span>
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="sop-sidebar-toggle"

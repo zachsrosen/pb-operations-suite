@@ -61,7 +61,7 @@
   color: #fff;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 32px;
   user-select: none;
   white-space: nowrap;
   flex: 1;
@@ -74,8 +74,8 @@
   border: 1px solid rgba(255, 255, 255, 0.15);
   border-radius: var(--radius);
   padding: 6px 14px;
-  flex: 1;
-  max-width: 480px;
+  width: 420px;
+  flex-shrink: 0;
   cursor: text;
 }
 .sop-search-box input {
