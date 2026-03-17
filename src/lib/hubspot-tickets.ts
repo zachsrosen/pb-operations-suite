@@ -11,6 +11,12 @@
 import * as Sentry from "@sentry/nextjs";
 import { hubspotClient } from "@/lib/hubspot";
 import type { PriorityItem } from "@/lib/service-priority";
+import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/tickets";
+import {
+  FilterOperatorEnum as NotesFilterOperatorEnum,
+  AssociationSpecAssociationCategoryEnum,
+} from "@hubspot/api-client/lib/codegen/crm/objects/notes";
+import { FilterOperatorEnum as EmailsFilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/objects/emails";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -232,7 +238,7 @@ export async function fetchServiceTickets(): Promise<EnrichedTicketItem[]> {
           filters: [
             {
               propertyName: "hs_pipeline",
-              operator: "EQ" as const,
+              operator: FilterOperatorEnum.Eq,
               value: SERVICE_TICKET_PIPELINE_ID,
             },
           ],
@@ -297,7 +303,7 @@ async function resolveTicketLocations(
     const allDealIds = new Set<string>();
 
     for (const result of batchResponse.results || []) {
-      const ticketId = result.from?.id;
+      const ticketId = result._from?.id;
       if (!ticketId) continue;
       const dealIds = (result.to || []).map((t: { id: string }) => t.id);
       if (dealIds.length > 0) {
@@ -347,7 +353,7 @@ async function resolveTicketLocations(
         const companyByTicket = new Map<string, string>();
 
         for (const result of companyBatch.results || []) {
-          const ticketId = result.from?.id;
+          const ticketId = result._from?.id;
           if (!ticketId) continue;
           const firstCompany = (result.to || [])[0];
           if (firstCompany) {
@@ -475,13 +481,13 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
         filterGroups: [{
           filters: [{
             propertyName: "associations.ticket",
-            operator: "EQ" as const,
+            operator: NotesFilterOperatorEnum.Eq,
             value: ticketId,
           }],
         }],
         properties: ["hs_note_body", "hs_timestamp", "hubspot_owner_id", "hs_created_by"],
         limit: 50,
-        sorts: [{ propertyName: "hs_timestamp", direction: "DESCENDING" }],
+        sorts: ["hs_timestamp"],
       });
 
       for (const note of notesResponse.results || []) {
@@ -498,13 +504,13 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
         filterGroups: [{
           filters: [{
             propertyName: "associations.ticket",
-            operator: "EQ" as const,
+            operator: EmailsFilterOperatorEnum.Eq,
             value: ticketId,
           }],
         }],
         properties: ["hs_email_subject", "hs_email_text", "hs_timestamp", "hs_email_direction"],
         limit: 50,
-        sorts: [{ propertyName: "hs_timestamp", direction: "DESCENDING" }],
+        sorts: ["hs_timestamp"],
       });
 
       for (const email of emailsResponse.results || []) {
@@ -580,7 +586,7 @@ export async function updateTicket(
         associations: [
           {
             to: { id: ticketId },
-            types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 18 }],
+            types: [{ associationCategory: AssociationSpecAssociationCategoryEnum.HubspotDefined, associationTypeId: 18 }],
           },
         ],
       });

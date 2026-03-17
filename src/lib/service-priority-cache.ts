@@ -27,9 +27,10 @@ export function initPriorityQueueCascade(): void {
 
   // CacheListener signature is (key: string, timestamp: number) => void
   appCache.subscribe((key: string, _timestamp: number) => {
-    // Phase 1: watch deals:service
-    // Phase 2: will add service-tickets:* prefix check
-    const isUpstream = key.startsWith("deals:service");
+    // Phase 1: deals:service — Phase 2: also service-tickets:*
+    const isUpstream =
+      key.startsWith("deals:service") ||
+      key.startsWith("service-tickets");
 
     if (!isUpstream) return;
 
