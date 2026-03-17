@@ -276,6 +276,38 @@ describe("validateRequiredSpecFields", () => {
   });
 });
 
+describe("validateRequiredSpecFields with min/max", () => {
+  it("returns error for negative wattage (min: 0)", () => {
+    const errors = validateRequiredSpecFields("MODULE", { wattage: -100 });
+    expect(errors.some((e) => e.field === "spec.wattage" && e.message.includes("cannot be"))).toBe(true);
+  });
+
+  it("accepts zero wattage (min: 0 means >= 0)", () => {
+    const errors = validateRequiredSpecFields("MODULE", { wattage: 0 });
+    expect(errors).toEqual([]);
+  });
+
+  it("returns error for efficiency over 100 (max: 100)", () => {
+    const errors = validateRequiredSpecFields("MODULE", { wattage: 400, efficiency: 105 });
+    expect(errors.some((e) => e.field === "spec.efficiency" && e.message.includes("cannot exceed"))).toBe(true);
+  });
+
+  it("accepts efficiency at 100", () => {
+    const errors = validateRequiredSpecFields("MODULE", { wattage: 400, efficiency: 100 });
+    expect(errors.filter((e) => e.field === "spec.efficiency")).toEqual([]);
+  });
+
+  it("allows negative tempCoefficient (no min set)", () => {
+    const errors = validateRequiredSpecFields("MODULE", { wattage: 400, tempCoefficient: -0.35 });
+    expect(errors.filter((e) => e.field === "spec.tempCoefficient")).toEqual([]);
+  });
+
+  it("skips range check for empty/blank spec fields", () => {
+    const errors = validateRequiredSpecFields("MODULE", { wattage: 400, efficiency: "" });
+    expect(errors.filter((e) => e.field === "spec.efficiency")).toEqual([]);
+  });
+});
+
 describe("validateCatalogForm", () => {
   function makeState(overrides: Partial<CatalogFormState> = {}): CatalogFormState {
     return { ...initialFormState, ...overrides };
@@ -371,6 +403,115 @@ describe("validateCatalogForm", () => {
     expect(result.valid).toBe(false);
     expect(result.errors.length).toBe(1);
     expect(result.errors[0].field).toBe("category");
+  });
+
+  it("returns error for negative length", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE", brand: "Test", model: "T1", description: "Desc",
+      specValues: { wattage: 400 },
+      length: "-5",
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.field === "length")).toBe(true);
+  });
+
+  it("returns error for negative width", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE", brand: "Test", model: "T1", description: "Desc",
+      specValues: { wattage: 400 },
+      width: "-2",
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.field === "width")).toBe(true);
+  });
+
+  it("returns error for negative weight", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE", brand: "Test", model: "T1", description: "Desc",
+      specValues: { wattage: 400 },
+      weight: "-10",
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.field === "weight")).toBe(true);
+  });
+
+  it("returns error for zero length (must be > 0)", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE", brand: "Test", model: "T1", description: "Desc",
+      specValues: { wattage: 400 },
+      length: "0",
+    }));
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.field === "length")).toBe(true);
+  });
+
+  it("accepts valid positive dimensions", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE", brand: "Test", model: "T1", description: "Desc",
+      specValues: { wattage: 400 },
+      length: "65.5", width: "39.1", weight: "44",
+    }));
+    expect(result.valid).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it("skips dimension validation when field is empty", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE", brand: "Test", model: "T1", description: "Desc",
+      specValues: { wattage: 400 },
+      length: "", width: "", weight: "",
+    }));
+    expect(result.valid).toBe(true);
+  });
+
+  it("returns warning for negative unitCost", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE", brand: "Test", model: "T1", description: "Desc",
+      specValues: { wattage: 400 },
+      unitCost: "-100",
+    }));
+    expect(result.valid).toBe(true); // warning, not error
+    expect(result.warnings.some((w) => w.field === "unitCost")).toBe(true);
+  });
+
+  it("returns warning for negative sellPrice", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE", brand: "Test", model: "T1", description: "Desc",
+      specValues: { wattage: 400 },
+      sellPrice: "-50",
+    }));
+    expect(result.valid).toBe(true); // warning, not error
+    expect(result.warnings.some((w) => w.field === "sellPrice")).toBe(true);
+  });
+
+  it("allows zero unitCost (free items)", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE", brand: "Test", model: "T1", description: "Desc",
+      specValues: { wattage: 400 },
+      unitCost: "0",
+    }));
+    expect(result.warnings.some((w) => w.field === "unitCost")).toBe(false);
+  });
+
+  it("returns warning for vendorName without zohoVendorId", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE", brand: "Test", model: "T1", description: "Desc",
+      specValues: { wattage: 400 },
+      vendorName: "Rell Power",
+      zohoVendorId: "",
+    }));
+    expect(result.valid).toBe(true); // warning, not error
+    expect(result.warnings.some((w) => w.field === "vendorName")).toBe(true);
+  });
+
+  it("no vendor warning when both vendorName and zohoVendorId set", () => {
+    const result = validateCatalogForm(makeState({
+      category: "MODULE", brand: "Test", model: "T1", description: "Desc",
+      specValues: { wattage: 400 },
+      vendorName: "Rell Power",
+      zohoVendorId: "v123",
+    }));
+    expect(result.warnings.some((w) => w.field === "vendorName")).toBe(false);
   });
 });
 
