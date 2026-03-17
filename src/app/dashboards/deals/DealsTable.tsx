@@ -116,12 +116,6 @@ export default function DealsTable({
                   onChange={(vals) => onStatusFilterChange(col.key, vals)}
                 />
               ))}
-            {!isProject &&
-              STATUS_COLUMNS.map((col) => (
-                <th key={col.key} className={`${thClass} w-[36px] text-center`} title={col.fullName}>
-                  <span className="text-muted/50">{col.abbrev}</span>
-                </th>
-              ))}
             {isProject && (
               <th className={`${thClass} w-[80px]`} onClick={() => onSort("projectManager")}>
                 PM <SortArrow active={sort === "projectManager"} order={order} />
@@ -163,12 +157,6 @@ export default function DealsTable({
                     <StatusDot value={deal[col.key as keyof TableDeal] as string | null} />
                   </td>
                 ))}
-              {!isProject &&
-                STATUS_COLUMNS.map((col) => (
-                  <td key={col.key} className={`${tdClass} text-center`}>
-                    <StatusDot value={null} unavailable />
-                  </td>
-                ))}
               {isProject && (
                 <td className={`${tdClass} text-muted text-[11px] truncate max-w-[80px]`} title={deal.projectManager || ""}>
                   {deal.projectManager || "—"}
@@ -183,7 +171,7 @@ export default function DealsTable({
           ))}
           {sorted.length === 0 && (
             <tr>
-              <td colSpan={isProject ? 14 : 12} className="text-center py-12 text-muted">
+              <td colSpan={isProject ? 14 : 4} className="text-center py-12 text-muted">
                 No deals match the current filters.
               </td>
             </tr>
@@ -191,14 +179,14 @@ export default function DealsTable({
         </tbody>
       </table>
 
-      {/* Legend */}
-      <div className="flex gap-4 px-4 py-2.5 border-t border-t-border text-xs text-muted">
+      {/* Legend — project pipeline only (status columns hidden for other pipelines) */}
+      {isProject && <div className="flex gap-4 px-4 py-2.5 border-t border-t-border text-xs text-muted">
         <span><span style={{ color: "#4ade80" }}>●</span> Complete</span>
         <span><span style={{ color: "#38bdf8" }}>●</span> In Progress</span>
         <span><span style={{ color: "#facc15" }}>●</span> Pending</span>
         <span><span style={{ color: "#f87171" }}>●</span> Issue</span>
         <span><span style={{ color: "#555" }}>○</span> Not Started</span>
-      </div>
+      </div>}
     </div>
   );
 }
