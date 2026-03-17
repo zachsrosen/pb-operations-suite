@@ -43,6 +43,7 @@ export const APP_PAGE_ROUTES = [
   "/dashboards/service-backlog",
   "/dashboards/service-overview",
   "/dashboards/service-scheduler",
+  "/dashboards/service-tickets",
   "/dashboards/site-survey",
   "/dashboards/site-survey-scheduler",
   "/dashboards/timeline",
