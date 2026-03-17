@@ -7,6 +7,7 @@ import { initPriorityQueueCascade, QUEUE_CACHE_KEY } from "@/lib/service-priorit
 import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES } from "@/lib/deals-pipeline";
 import { hubspotClient } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
+import { fetchServiceTickets } from "@/lib/hubspot-tickets";
 
 // Initialize cascade listener at module scope (singleton, process-local)
 initPriorityQueueCascade();
@@ -83,7 +84,13 @@ export async function GET(request: NextRequest) {
     const { data, lastUpdated } = await appCache.getOrFetch(
       QUEUE_CACHE_KEY,
       async () => {
-        const deals = await fetchServiceDeals();
+        // Fetch deals and tickets in parallel
+        const [deals, tickets] = await Promise.all([
+          fetchServiceDeals(),
+          fetchServiceTickets(),
+        ]);
+
+        const allItems = [...deals, ...tickets];
 
         // Fetch overrides from DB
         const overrides = prisma
@@ -98,7 +105,7 @@ export async function GET(request: NextRequest) {
           : [];
 
         const queue = buildPriorityQueue(
-          deals,
+          allItems,
           overrides.map(o => ({
             itemId: o.itemId,
             itemType: o.itemType,
