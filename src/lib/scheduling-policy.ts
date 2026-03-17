@@ -3,7 +3,7 @@ import { normalizeRole, UserRole as UserRoleEnum, type UserRole } from "@/lib/ro
 
 interface SalesSurveyLeadTimeInput {
   role: UserRole;
-  scheduleType: "survey" | "installation" | "inspection";
+  scheduleType: "survey" | "pre-sale-survey" | "installation" | "inspection";
   scheduleDate: string;
   timezone?: string | null;
 }
@@ -67,7 +67,7 @@ export function getSalesSurveyLeadTimeError({
   scheduleDate,
   timezone,
 }: SalesSurveyLeadTimeInput): string | null {
-  if (role !== "SALES" || scheduleType !== "survey") return null;
+  if (role !== "SALES" || (scheduleType !== "survey" && scheduleType !== "pre-sale-survey")) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduleDate)) return null;
 
   const tz = timezone || "America/Denver";

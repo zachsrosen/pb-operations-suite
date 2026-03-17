@@ -196,6 +196,7 @@ export interface TimeOffRequest {
 // These UIDs are specific to the photonbrothers Zuper account
 export const JOB_CATEGORY_UIDS = {
   SITE_SURVEY: "002bac33-84d3-4083-a35d-50626fc49288",
+  PRE_SALE_SITE_VISIT: "c53070e5-63fd-41bc-8803-f66ad842dbb5",
   CONSTRUCTION: "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf",
   INSPECTION: "b7dc03d2-25d0-40df-a2fc-b1a477b16b65",
   SERVICE_VISIT: "cff6f839-c043-46ee-a09f-8d0e9f363437",
@@ -212,6 +213,7 @@ export const JOB_CATEGORY_UIDS = {
 // Human-readable category names (for display/logging)
 export const JOB_CATEGORIES = {
   SITE_SURVEY: "Site Survey",
+  PRE_SALE_SITE_VISIT: "Pre-Sale Site Visit",
   CONSTRUCTION: "Construction",
   INSPECTION: "Inspection",
   SERVICE_VISIT: "Service Visit",
@@ -1581,7 +1583,7 @@ export async function createJobFromProject(project: {
   customerEmail?: string;
   customerPhone?: string;
 }, schedule: {
-  type: "survey" | "installation" | "inspection";
+  type: "survey" | "pre-sale-survey" | "installation" | "inspection";
   date: string;
   days: number;
   startTime?: string; // Optional specific start time (e.g., "12:00")
@@ -1591,6 +1593,8 @@ export async function createJobFromProject(project: {
   timezone?: string; // IANA timezone for the slot (e.g. "America/Los_Angeles" for CA)
   notes?: string;
 }): Promise<ZuperApiResponse<ZuperJob>> {
+  const isSurveyLike = (type: typeof schedule.type): boolean =>
+    type === "survey" || type === "pre-sale-survey";
   const normalize = (value: string): string =>
     value.toLowerCase().replace(/\s+/g, " ").trim();
   const splitCustomerName = (rawName: string): { firstName: string; lastName: string } => {
@@ -1614,11 +1618,13 @@ export async function createJobFromProject(project: {
   // Determine job category - use UIDs for creating jobs
   const categoryUidMap = {
     survey: JOB_CATEGORY_UIDS.SITE_SURVEY,
+    "pre-sale-survey": JOB_CATEGORY_UIDS.PRE_SALE_SITE_VISIT,
     installation: JOB_CATEGORY_UIDS.CONSTRUCTION,
     inspection: JOB_CATEGORY_UIDS.INSPECTION,
   };
   const categoryNameMap = {
     survey: JOB_CATEGORIES.SITE_SURVEY,
+    "pre-sale-survey": JOB_CATEGORIES.PRE_SALE_SITE_VISIT,
     installation: JOB_CATEGORIES.CONSTRUCTION,
     inspection: JOB_CATEGORIES.INSPECTION,
   };
@@ -1704,7 +1710,7 @@ export async function createJobFromProject(project: {
     // The slot selection only determines the inspector assignment, not the time window
     startDateTime = localToUtc(schedule.date, "08:00");
     endDateTime = localToUtc(schedule.date, "16:00");
-  } else if (schedule.type === "survey" && schedule.startTime && schedule.endTime) {
+  } else if (isSurveyLike(schedule.type) && schedule.startTime && schedule.endTime) {
     // Use specific time slot (e.g., "08:00" to "09:00" for site surveys)
     // Convert from local timezone to UTC for Zuper
     startDateTime = localToUtc(schedule.date, schedule.startTime);

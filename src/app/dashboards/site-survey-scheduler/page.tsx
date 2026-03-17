@@ -44,6 +44,8 @@ interface SurveyProject {
   id: string;
   name: string;
   address: string;
+  city: string;
+  state: string;
   location: string;
   amount: number;
   type: string;
@@ -276,6 +278,8 @@ function transformProject(p: RawProject): SurveyProject | null {
     id: String(p.id),
     name: p.name || `Project ${p.id}`,
     address: [p.address, p.city, p.state].filter(Boolean).join(", ") || "Address TBD",
+    city: p.city || "",
+    state: p.state || "",
     location: p.pbLocation || "Unknown",
     amount: p.amount || 0,
     type: p.projectType || "Solar",
@@ -377,11 +381,13 @@ export default function SiteSurveySchedulerPage() {
               id: String(d.id),
               name: String(d.name || "Unknown"),
               address: String(d.address || ""),
+              city: String(d.city || ""),
+              state: String(d.state || ""),
               location: String(d.location || "Unknown"),
               amount: Number(d.amount) || 0,
               type: String(d.type || "Solar"),
-              systemSize: 0,
-              batteries: 0,
+              systemSize: Number(d.systemSizeKw) || 0,
+              batteries: Number(d.batteryCount) || 0,
               evCount: 0,
               scheduleDate: d.surveyDate ? String(d.surveyDate) : null,
               surveyStatus: d.surveyStatus ? String(d.surveyStatus) : "Not Started",
@@ -1165,6 +1171,7 @@ export default function SiteSurveySchedulerPage() {
 
     // Track the Zuper job UID from scheduling response
     let scheduledZuperJobUid: string | undefined = project.zuperJobUid;
+    const scheduleType = project.isPreSale ? "pre-sale-survey" : "survey";
 
     // Sync to Zuper FIRST if enabled (so we get the job UID for local booking)
     if (syncToZuper) {
@@ -1185,15 +1192,15 @@ export default function SiteSurveySchedulerPage() {
               name: project.name,
               address: project.address,
               dealOwner: project.dealOwner,
-              city: "",
-              state: "",
+              city: project.city,
+              state: project.state,
               systemSizeKw: project.systemSize,
               batteryCount: project.batteries,
               projectType: project.type,
               zuperJobUid: project.zuperJobUid, // Pass existing Zuper job UID if known
             },
             schedule: {
-              type: "survey",
+              type: scheduleType,
               date: date,
               days: 0.25, // Site surveys are typically ~1 hour
               startTime: slot?.startTime, // e.g. "12:00"
@@ -1270,11 +1277,11 @@ export default function SiteSurveySchedulerPage() {
               name: project.name,
               address: project.address,
               dealOwner: project.dealOwner,
-              city: "",
-              state: "",
+              city: project.city,
+              state: project.state,
             },
             schedule: {
-              type: "survey",
+              type: scheduleType,
               date,
               startTime: slot?.startTime,
               endTime: slot?.endTime,
@@ -1533,7 +1540,7 @@ export default function SiteSurveySchedulerPage() {
           scheduledStart: project?.assignedSlot?.startTime || "",
           scheduledEnd: project?.assignedSlot?.endTime || "",
           zuperJobUid: project?.zuperJobUid || null,
-          scheduleType: "survey",
+          scheduleType: project?.isPreSale ? "pre-sale-survey" : "survey",
           cancelReason: reason,
         }),
       });
