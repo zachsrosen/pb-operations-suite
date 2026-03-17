@@ -475,6 +475,8 @@ export default function Home() {
     if (userRole === "OPERATIONS_MANAGER") {
       const allowedOpsManagerLinks = new Set([
         "/suites/operations",
+        "/suites/service",
+        "/suites/dnr-roofing",
         "/dashboards/ai",
       ]);
       return SUITE_LINKS.filter((suite) => allowedOpsManagerLinks.has(suite.href));
@@ -491,6 +493,8 @@ export default function Home() {
     if (userRole === "PROJECT_MANAGER") {
       const allowedPmSuites = new Set([
         "/suites/operations",
+        "/suites/service",
+        "/suites/dnr-roofing",
         "/suites/design-engineering",
         "/suites/permitting-interconnection",
         "/suites/intelligence",
