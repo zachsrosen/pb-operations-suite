@@ -64,14 +64,23 @@ export async function GET(request: NextRequest) {
     // Only include stages that have tickets OR are in the pipeline
     const stageNames = orderedStageIds.map(id => stageMap[id]).filter(Boolean);
 
-    // Fetch HubSpot owners for assignee dropdown
+    // Fetch all HubSpot owners for assignee dropdown (paginated)
     let owners: Array<{ id: string; name: string }> = [];
     try {
-      const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage();
-      owners = (ownersResponse.results || []).map(o => ({
-        id: o.id,
-        name: `${o.firstName || ""} ${o.lastName || ""}`.trim() || o.email || o.id,
-      })).sort((a, b) => a.name.localeCompare(b.name));
+      let after: string | undefined;
+      do {
+        const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(
+          undefined, after, 100
+        );
+        for (const o of ownersResponse.results || []) {
+          owners.push({
+            id: o.id,
+            name: `${o.firstName || ""} ${o.lastName || ""}`.trim() || o.email || o.id,
+          });
+        }
+        after = ownersResponse.paging?.next?.after;
+      } while (after);
+      owners.sort((a, b) => a.name.localeCompare(b.name));
     } catch {
       console.warn("[ServiceTickets] Failed to fetch owners for dropdown");
     }

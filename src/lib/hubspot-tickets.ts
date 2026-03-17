@@ -19,6 +19,22 @@ import {
 import { FilterOperatorEnum as EmailsFilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/objects/emails";
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** HubSpot batch API limit — matches BATCH_SIZE in hubspot.ts */
+const BATCH_SIZE = 100;
+
+/** Chunk an array into groups of `size` */
+function chunk<T>(arr: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    chunks.push(arr.slice(i, i + size));
+  }
+  return chunks;
+}
+
+// ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
@@ -291,24 +307,24 @@ async function resolveTicketLocations(
   if (ticketIds.length === 0) return locationMap;
 
   try {
-    // Batch read associations: tickets → deals
-    const batchResponse = await hubspotClient.crm.associations.batchApi.read(
-      "tickets",
-      "deals",
-      { inputs: ticketIds.map(id => ({ id })) }
-    );
-
-    // Collect unique deal IDs that have associations
+    // Batch read associations: tickets → deals (chunked at 100)
     const dealIdsByTicket = new Map<string, string[]>();
     const allDealIds = new Set<string>();
 
-    for (const result of batchResponse.results || []) {
-      const ticketId = result._from?.id;
-      if (!ticketId) continue;
-      const dealIds = (result.to || []).map((t: { id: string }) => t.id);
-      if (dealIds.length > 0) {
-        dealIdsByTicket.set(ticketId, dealIds);
-        dealIds.forEach((id: string) => allDealIds.add(id));
+    for (const batch of chunk(ticketIds, BATCH_SIZE)) {
+      const batchResponse = await hubspotClient.crm.associations.batchApi.read(
+        "tickets",
+        "deals",
+        { inputs: batch.map(id => ({ id })) }
+      );
+      for (const result of batchResponse.results || []) {
+        const ticketId = result._from?.id;
+        if (!ticketId) continue;
+        const dealIds = (result.to || []).map((t: { id: string }) => t.id);
+        if (dealIds.length > 0) {
+          dealIdsByTicket.set(ticketId, dealIds);
+          dealIds.forEach((id: string) => allDealIds.add(id));
+        }
       }
     }
 
@@ -316,15 +332,16 @@ async function resolveTicketLocations(
     if (allDealIds.size > 0) {
       const dealLocations = new Map<string, string>();
 
-      const batchReadResponse = await hubspotClient.crm.deals.batchApi.read({
-        inputs: Array.from(allDealIds).map(id => ({ id })),
-        properties: ["pb_location"],
-        propertiesWithHistory: [],
-      });
-
-      for (const deal of batchReadResponse.results || []) {
-        const loc = deal.properties?.pb_location;
-        if (loc) dealLocations.set(deal.id, loc);
+      for (const batch of chunk(Array.from(allDealIds), BATCH_SIZE)) {
+        const batchReadResponse = await hubspotClient.crm.deals.batchApi.read({
+          inputs: batch.map(id => ({ id })),
+          properties: ["pb_location"],
+          propertiesWithHistory: [],
+        });
+        for (const deal of batchReadResponse.results || []) {
+          const loc = deal.properties?.pb_location;
+          if (loc) dealLocations.set(deal.id, loc);
+        }
       }
 
       // Map ticket → first deal's location
@@ -343,36 +360,38 @@ async function resolveTicketLocations(
     const unresolved = ticketIds.filter(id => !locationMap.has(id));
     if (unresolved.length > 0) {
       try {
-        const companyBatch = await hubspotClient.crm.associations.batchApi.read(
-          "tickets",
-          "companies",
-          { inputs: unresolved.map(id => ({ id })) }
-        );
-
         const companyIds = new Set<string>();
         const companyByTicket = new Map<string, string>();
 
-        for (const result of companyBatch.results || []) {
-          const ticketId = result._from?.id;
-          if (!ticketId) continue;
-          const firstCompany = (result.to || [])[0];
-          if (firstCompany) {
-            companyByTicket.set(ticketId, firstCompany.id);
-            companyIds.add(firstCompany.id);
+        for (const batch of chunk(unresolved, BATCH_SIZE)) {
+          const companyBatch = await hubspotClient.crm.associations.batchApi.read(
+            "tickets",
+            "companies",
+            { inputs: batch.map(id => ({ id })) }
+          );
+          for (const result of companyBatch.results || []) {
+            const ticketId = result._from?.id;
+            if (!ticketId) continue;
+            const firstCompany = (result.to || [])[0];
+            if (firstCompany) {
+              companyByTicket.set(ticketId, firstCompany.id);
+              companyIds.add(firstCompany.id);
+            }
           }
         }
 
         if (companyIds.size > 0) {
-          const companyRead = await hubspotClient.crm.companies.batchApi.read({
-            inputs: Array.from(companyIds).map(id => ({ id })),
-            properties: ["city", "state"],
-            propertiesWithHistory: [],
-          });
-
           const companyLocations = new Map<string, string>();
-          for (const co of companyRead.results || []) {
-            const city = co.properties?.city;
-            if (city) companyLocations.set(co.id, city);
+          for (const batch of chunk(Array.from(companyIds), BATCH_SIZE)) {
+            const companyRead = await hubspotClient.crm.companies.batchApi.read({
+              inputs: batch.map(id => ({ id })),
+              properties: ["city", "state"],
+              propertiesWithHistory: [],
+            });
+            for (const co of companyRead.results || []) {
+              const city = co.properties?.city;
+              if (city) companyLocations.set(co.id, city);
+            }
           }
 
           for (const [ticketId, companyId] of companyByTicket) {
