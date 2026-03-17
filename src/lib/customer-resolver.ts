@@ -12,6 +12,8 @@ import * as Sentry from "@sentry/nextjs";
 import { hubspotClient } from "@/lib/hubspot";
 import { chunk } from "@/lib/utils";
 import { getCachedZuperJobsByDealIds } from "@/lib/db";
+import { FilterOperatorEnum as ContactFilterOp } from "@hubspot/api-client/lib/codegen/crm/contacts";
+import { FilterOperatorEnum as CompanyFilterOp } from "@hubspot/api-client/lib/codegen/crm/companies";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -398,19 +400,19 @@ export async function executeSearch(query: string): Promise<{ hits: RawSearchHit
     searchContactsWithRetry({
       filterGroups: [{
         filters: [
-          { propertyName: "firstname", operator: "CONTAINS_TOKEN" as unknown as "EQ", value: `*${query}*` },
+          { propertyName: "firstname", operator: ContactFilterOp.ContainsToken, value: `*${query}*` },
         ],
       }, {
         filters: [
-          { propertyName: "lastname", operator: "CONTAINS_TOKEN" as unknown as "EQ", value: `*${query}*` },
+          { propertyName: "lastname", operator: ContactFilterOp.ContainsToken, value: `*${query}*` },
         ],
       }, {
         filters: [
-          { propertyName: "email", operator: "CONTAINS_TOKEN" as unknown as "EQ", value: `*${query}*` },
+          { propertyName: "email", operator: ContactFilterOp.ContainsToken, value: `*${query}*` },
         ],
       }, {
         filters: [
-          { propertyName: "phone", operator: "CONTAINS_TOKEN" as unknown as "EQ", value: `*${query}*` },
+          { propertyName: "phone", operator: ContactFilterOp.ContainsToken, value: `*${query}*` },
         ],
       }],
       properties: ["firstname", "lastname", "email", "phone", "address", "city", "state", "zip"],
@@ -421,11 +423,11 @@ export async function executeSearch(query: string): Promise<{ hits: RawSearchHit
     searchCompaniesWithRetry({
       filterGroups: [{
         filters: [
-          { propertyName: "name", operator: "CONTAINS_TOKEN" as unknown as "EQ", value: `*${query}*` },
+          { propertyName: "name", operator: CompanyFilterOp.ContainsToken, value: `*${query}*` },
         ],
       }, {
         filters: [
-          { propertyName: "address", operator: "CONTAINS_TOKEN" as unknown as "EQ", value: `*${query}*` },
+          { propertyName: "address", operator: CompanyFilterOp.ContainsToken, value: `*${query}*` },
         ],
       }],
       properties: ["name", "address", "city", "state", "zip"],
