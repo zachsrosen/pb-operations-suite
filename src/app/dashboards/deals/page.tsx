@@ -13,7 +13,6 @@ import {
   projectToTableDeal,
   isProjectPipeline,
   PIPELINE_OPTIONS,
-  STATUS_COLUMNS,
 } from "./deals-types";
 import { STAGE_ORDER } from "@/lib/constants";
 import { ACTIVE_STAGES } from "@/lib/deals-pipeline";
@@ -53,7 +52,7 @@ function getPMOptions(deals: TableDeal[]): FilterOption[] {
 }
 
 function DealsPageInner() {
-  const { filters, setFilters, setStatusFilter } = useDealsFilters();
+  const { filters, setFilters, setStatusFilter, clearFilters } = useDealsFilters();
   const [allDeals, setAllDeals] = useState<TableDeal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -204,6 +203,34 @@ function DealsPageInner() {
   }, [filteredDeals, filters.pipeline]);
 
   const isProject = isProjectPipeline(filters.pipeline);
+
+  const exportData = useMemo(() => {
+    if (filteredDeals.length === 0) return undefined;
+    const rows = filteredDeals.map((d) => {
+      const base: Record<string, unknown> = {
+        Name: d.name,
+        Stage: d.stage,
+        Location: d.pbLocation,
+        Amount: d.amount,
+      };
+      if (isProject) {
+        base["Days in Stage"] = d.daysSinceStageMovement ?? 0;
+        base["Owner"] = d.dealOwner || "";
+        base["Project Manager"] = d.projectManager || "";
+        base["Site Survey"] = d.siteSurveyStatus || "";
+        base["Design"] = d.designStatus || "";
+        base["Design Approval"] = d.layoutStatus || "";
+        base["Permitting"] = d.permittingStatus || "";
+        base["Interconnection"] = d.interconnectionStatus || "";
+        base["Construction"] = d.constructionStatus || "";
+        base["Inspection"] = d.finalInspectionStatus || "";
+        base["PTO"] = d.ptoStatus || "";
+      }
+      return base;
+    });
+    return { data: rows, filename: `deals-${filters.pipeline}` };
+  }, [filteredDeals, filters.pipeline, isProject]);
+
   const stageOptions = useMemo(() => getStageOptions(filters.pipeline), [filters.pipeline]);
   const locationOptions = useMemo(() => getLocationOptions(allDeals), [allDeals]);
   const ownerOptions = useMemo(() => getOwnerOptions(allDeals), [allDeals]);
@@ -226,6 +253,7 @@ function DealsPageInner() {
       accentColor="orange"
       lastUpdated={lastUpdated}
       fullWidth={true}
+      exportData={exportData}
     >
       {/* Filter Bar */}
       <div className="flex items-center gap-3 flex-wrap mb-4">
@@ -309,7 +337,7 @@ function DealsPageInner() {
       </div>
 
       {/* Active filter pills */}
-      {(filters.stages.length > 0 || filters.locations.length > 0 || filters.owners.length > 0 || filters.projectManagers.length > 0) && (
+      {(filters.stages.length > 0 || filters.locations.length > 0 || filters.owners.length > 0 || filters.projectManagers.length > 0 || Object.values(filters.statusFilters).some(v => v.length > 0)) && (
         <div className="flex gap-2 flex-wrap mb-3">
           {filters.stages.map((s) => (
             <FilterPill
@@ -328,7 +356,7 @@ function DealsPageInner() {
           {filters.owners.map((o) => (
             <FilterPill
               key={`owner-${o}`}
-              label={o}
+              label={`Owner: ${o}`}
               onRemove={() => setFilters({ owners: filters.owners.filter((v) => v !== o) })}
             />
           ))}
@@ -339,6 +367,12 @@ function DealsPageInner() {
               onRemove={() => setFilters({ projectManagers: filters.projectManagers.filter((v) => v !== pm) })}
             />
           ))}
+          <button
+            onClick={clearFilters}
+            className="text-[10px] text-muted hover:text-foreground underline ml-1"
+          >
+            Clear all
+          </button>
         </div>
       )}
 

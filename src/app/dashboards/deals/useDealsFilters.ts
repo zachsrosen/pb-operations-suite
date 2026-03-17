@@ -153,5 +153,15 @@ export function useDealsFilters() {
     [searchParams, setFilters]
   );
 
-  return { filters, setFilters, setStatusFilter };
+  const clearFilters = useCallback(() => {
+    setFilters({
+      stages: [],
+      locations: [],
+      owners: [],
+      projectManagers: [],
+      statusFilters: {},
+    });
+  }, [setFilters]);
+
+  return { filters, setFilters, setStatusFilter, clearFilters };
 }

@@ -588,8 +588,8 @@ const DEAL_PROPERTIES = [
   // Design review flags
   "system_performance_review",
 
-  // Calculated/tracking
-  "days_since_stage_movement",
+  // Stage timing (precise — replaces 30-day-bucket days_since_stage_movement)
+  "hs_v2_date_entered_current_stage",
 
   // Install planning
   "expected_days_for_install",
@@ -684,6 +684,14 @@ function msToDays(value: unknown): number | null {
 function daysBetween(date1: Date, date2: Date): number {
   const diffTime = date2.getTime() - date1.getTime();
   return Math.round(diffTime / (1000 * 60 * 60 * 24));
+}
+
+/** Compute days since a deal entered its current stage from the HubSpot timestamp. */
+export function computeDaysInStage(dateEnteredCurrentStage: unknown, now: Date = new Date()): number {
+  if (!dateEnteredCurrentStage) return 0;
+  const entered = new Date(String(dateEnteredCurrentStage));
+  if (isNaN(entered.getTime())) return 0;
+  return Math.max(0, daysBetween(entered, now));
 }
 
 function parseDate(value: unknown): string | null {
@@ -916,7 +924,7 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     daysToInspection,
     daysToPto,
     daysSinceClose,
-    daysSinceStageMovement: Number(deal.days_since_stage_movement) || 0,
+    daysSinceStageMovement: computeDaysInStage(deal.hs_v2_date_entered_current_stage, now),
 
     // Status flags
     systemPerformanceReview: String(deal.system_performance_review || "").toLowerCase() === "true",
