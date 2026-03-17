@@ -11,6 +11,7 @@
 import * as Sentry from "@sentry/nextjs";
 import { hubspotClient } from "@/lib/hubspot";
 import type { PriorityItem } from "@/lib/service-priority";
+import { chunk } from "@/lib/utils";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/tickets";
 import {
   FilterOperatorEnum as NotesFilterOperatorEnum,
@@ -24,15 +25,6 @@ import { FilterOperatorEnum as EmailsFilterOperatorEnum } from "@hubspot/api-cli
 
 /** HubSpot batch API limit — matches BATCH_SIZE in hubspot.ts */
 const BATCH_SIZE = 100;
-
-/** Chunk an array into groups of `size` */
-function chunk<T>(arr: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) {
-    chunks.push(arr.slice(i, i + size));
-  }
-  return chunks;
-}
 
 // ---------------------------------------------------------------------------
 // Types
