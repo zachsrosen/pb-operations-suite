@@ -2,6 +2,7 @@
   "name": "pb-ops-temp",
   "version": "0.1.0",
   "private": true,
+  "sideEffects": ["*.css"],
   "scripts": {
     "dev": "next dev",
     "build": "prisma generate && next build",
@@ -15,7 +16,9 @@
     "test:watch": "jest --watch",
     "email:preview": "react-email dev --dir src/emails",
     "build:solar": "bash scripts/build-solar-surveyor.sh",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "remotion:studio": "remotion studio remotion/Root.tsx",
+    "remotion:render": "remotion render remotion/Root.tsx WalkthroughVideo out/walkthrough-video.mp4"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.50",
@@ -29,6 +32,10 @@
     "@react-email/components": "^1.0.8",
     "@react-email/render": "^2.0.4",
     "@react-pdf/renderer": "^4.3.2",
+    "@remotion/cli": "^4.0.436",
+    "@remotion/media": "^4.0.436",
+    "@remotion/tailwind-v4": "^4.0.436",
+    "@remotion/transitions": "^4.0.436",
     "@sentry/nextjs": "^10.39.0",
     "@tanstack/react-query": "^5.90.21",
     "@tanstack/react-query-devtools": "^5.91.3",
@@ -45,6 +52,7 @@
     "prisma": "^7.3.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "remotion": "^4.0.436",
     "resend": "^6.9.1",
     "sanitize-html": "^2.17.1",
     "zod": "^4.3.6",
