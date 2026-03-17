@@ -30,6 +30,7 @@ export default function SopEditor({
   onCancel,
 }: SopEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   const [preview, setPreview] = useState("");
   const [editSummary, setEditSummary] = useState("");
@@ -37,6 +38,7 @@ export default function SopEditor({
   const [error, setError] = useState<string | null>(null);
   const [conflictVersion, setConflictVersion] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const titleId = "sop-editor-title";
 
   // Debounced preview update (300ms delay to avoid lag on large payloads)
   const updatePreview = useCallback((content: string) => {
@@ -79,11 +81,47 @@ export default function SopEditor({
     // Initial preview
     setPreview(sanitizeSopContent(initialContent));
 
+    // Focus the editor surface on mount
+    requestAnimationFrame(() => view.focus());
+
     return () => {
       view.destroy();
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [initialContent, updatePreview]);
+
+  // Escape key to close; Tab trap within dialog
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        onCancel();
+        return;
+      }
+      if (e.key === "Tab" && dialogRef.current) {
+        const focusable = Array.from(
+          dialogRef.current.querySelectorAll<HTMLElement>(
+            'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"]), .cm-content'
+          )
+        ).filter((el) => !el.hasAttribute("disabled"));
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [onCancel]);
 
   const getContent = useCallback(() => {
     return viewRef.current?.state.doc.toString() || "";
@@ -152,11 +190,18 @@ export default function SopEditor({
 
   // Portal to document.body so the fixed overlay escapes any parent stacking context
   return createPortal(
-    <div className="fixed inset-0 flex flex-col bg-background" style={{ zIndex: 1100 }}>
+    <div
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      className="fixed inset-0 flex flex-col bg-background"
+      style={{ zIndex: 1100 }}
+    >
       {/* Toolbar */}
       <div className="flex items-center justify-between border-b border-t-border px-4 py-2 bg-surface">
         <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold text-foreground">
+          <h3 id={titleId} className="text-sm font-semibold text-foreground">
             {mode === "edit" ? "Edit" : "Suggest Change"}: {sectionTitle}
           </h3>
           <span className="text-xs px-2 py-0.5 rounded bg-surface-2 text-muted">

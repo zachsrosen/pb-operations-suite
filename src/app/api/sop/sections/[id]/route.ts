@@ -1,20 +1,21 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth-utils";
+import { canAccessSection } from "@/lib/sop-access";
 
 /**
  * GET /api/sop/sections/[id]
  *
  * Returns a single SOP section with its full HTML content.
- * Available to all authenticated users.
+ * Access is checked against the caller's role and the section's parent tab.
  */
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth();
-    if (!session?.user?.email) {
+    const user = await getCurrentUser();
+    if (!user) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
@@ -42,6 +43,12 @@ export async function GET(
 
     if (!section) {
       return NextResponse.json({ error: "Section not found" }, { status: 404 });
+    }
+
+    // Check access against parent tab and section-level restrictions
+    const firstName = (user.name || "").split(" ")[0].toLowerCase();
+    if (!canAccessSection(section.id, section.tabId, user.role, firstName)) {
+      return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 
     return NextResponse.json({ section });

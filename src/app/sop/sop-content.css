@@ -369,9 +369,30 @@
   color: var(--primary);
 }
 
+/* ── Mobile section nav (hidden on desktop) ── */
+.sop-mobile-section-nav {
+  display: none;
+}
+
 /* ── Responsive ── */
 @media (max-width: 768px) {
   .sop-sidebar { display: none; }
+  .sop-mobile-section-nav {
+    display: block;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--gray-200);
+    background: #fff;
+  }
+  .sop-mobile-section-nav select {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--gray-300);
+    font-size: 14px;
+    background: #fff;
+    color: var(--gray-800);
+    font-family: inherit;
+  }
   .sop-main { padding: 16px; }
   .sop-search-box { width: 180px; }
 }
