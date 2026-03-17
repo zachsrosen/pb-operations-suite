@@ -139,8 +139,9 @@ function SOPPageInner() {
   const contentRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Role-based editing state
+  // Role-based editing state (effective user, including impersonation)
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [effectiveUserName, setEffectiveUserName] = useState<string>("");
   const [editing, setEditing] = useState(false);
   const [pendingSuggestionCount, setPendingSuggestionCount] = useState(0);
 
@@ -166,7 +167,9 @@ function SOPPageInner() {
    *   ref-user-roles — User Roles & Permissions (in Reference tab)
    *   ref-system     — System Architecture (in Reference tab)
    * ────────────────────────────────────────────────────────────────── */
-  const userFirstName = (session?.user?.name || "").split(" ")[0].toLowerCase();
+  // Use effective user name (from auth/sync, impersonation-aware) for tab access,
+  // falling back to session name before the sync response arrives
+  const userFirstName = (effectiveUserName || session?.user?.name || "").split(" ")[0].toLowerCase();
 
   const visibleTabs = tabs.filter((t) =>
     canAccessTab(t.id, userRole, userFirstName)
@@ -175,7 +178,7 @@ function SOPPageInner() {
   const isSectionVisible = (sectionId: string) =>
     canEdit || !ADMIN_ONLY_SECTIONS.includes(sectionId);
 
-  // Fetch user role on mount
+  // Fetch effective user role + name on mount (handles impersonation)
   useEffect(() => {
     async function fetchRole() {
       try {
@@ -183,6 +186,7 @@ function SOPPageInner() {
         if (res.ok) {
           const data = await res.json();
           setUserRole(data.role || null);
+          if (data.name) setEffectiveUserName(data.name);
         }
       } catch {
         // Non-critical — editing buttons just won't show
@@ -353,6 +357,9 @@ function SOPPageInner() {
   const navigateTo = useCallback(
     (sectionId: string, tabId?: string) => {
       const tab = tabId || activeTabId;
+      // Skip if already on this section — avoids stranding in loading state
+      // (the section-loading effect won't re-fire if activeSectionId is unchanged)
+      if (sectionId === activeSectionId && tab === activeTabId) return;
       setSectionContent(null);
       setEditing(false);
       setContentLoading(true);
@@ -362,7 +369,7 @@ function SOPPageInner() {
       updateUrl(tab, sectionId);
       contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     },
-    [activeTabId, updateUrl]
+    [activeTabId, activeSectionId, updateUrl]
   );
 
   // Search across all sections

@@ -376,6 +376,7 @@
 
 /* ── Responsive ── */
 @media (max-width: 768px) {
+  .sop-layout { flex-direction: column; }
   .sop-sidebar { display: none; }
   .sop-mobile-section-nav {
     display: block;
