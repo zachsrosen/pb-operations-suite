@@ -11,6 +11,13 @@ const LINKS: SuitePageCard[] = [
     section: "Service",
   },
   {
+    href: "/dashboards/service-tickets",
+    title: "Ticket Board",
+    description: "Kanban board for HubSpot service tickets — filter, reassign, change status, and add notes.",
+    tag: "TICKETS",
+    section: "Service",
+  },
+  {
     href: "/dashboards/service-scheduler",
     title: "Service Schedule",
     description: "Calendar view of Zuper service visit and service revisit jobs.",
