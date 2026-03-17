@@ -186,7 +186,7 @@ function SOPPageInner() {
         if (res.ok) {
           const data = await res.json();
           setUserRole(data.role || null);
-          if (data.name) setEffectiveUserName(data.name);
+          if (data.user?.name) setEffectiveUserName(data.user.name);
         }
       } catch {
         // Non-critical — editing buttons just won't show
