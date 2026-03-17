@@ -84,6 +84,7 @@ export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps)
             <InfoRow label="Location" value={deal.pbLocation} />
             <InfoRow label="Project Type" value={deal.projectType} />
             {isProject && <InfoRow label="Owner" value={deal.dealOwner || "—"} />}
+            {isProject && <InfoRow label="Project Manager" value={deal.projectManager || "—"} />}
             <InfoRow label="Amount" value={formatMoney(deal.amount)} />
             <InfoRow label="Close Date" value={formatDate(deal.closeDate)} />
             {deal.createDate && <InfoRow label="Create Date" value={formatDate(deal.createDate)} />}
