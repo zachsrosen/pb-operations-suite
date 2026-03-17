@@ -203,6 +203,34 @@ function DealsPageInner() {
   }, [filteredDeals, filters.pipeline]);
 
   const isProject = isProjectPipeline(filters.pipeline);
+
+  const exportData = useMemo(() => {
+    if (filteredDeals.length === 0) return undefined;
+    const rows = filteredDeals.map((d) => {
+      const base: Record<string, unknown> = {
+        Name: d.name,
+        Stage: d.stage,
+        Location: d.pbLocation,
+        Amount: d.amount,
+      };
+      if (isProject) {
+        base["Days in Stage"] = d.daysSinceStageMovement ?? 0;
+        base["Owner"] = d.dealOwner || "";
+        base["Project Manager"] = d.projectManager || "";
+        base["Site Survey"] = d.siteSurveyStatus || "";
+        base["Design"] = d.designStatus || "";
+        base["Design Approval"] = d.layoutStatus || "";
+        base["Permitting"] = d.permittingStatus || "";
+        base["Interconnection"] = d.interconnectionStatus || "";
+        base["Construction"] = d.constructionStatus || "";
+        base["Inspection"] = d.finalInspectionStatus || "";
+        base["PTO"] = d.ptoStatus || "";
+      }
+      return base;
+    });
+    return { data: rows, filename: `deals-${filters.pipeline}` };
+  }, [filteredDeals, filters.pipeline, isProject]);
+
   const stageOptions = useMemo(() => getStageOptions(filters.pipeline), [filters.pipeline]);
   const locationOptions = useMemo(() => getLocationOptions(allDeals), [allDeals]);
   const ownerOptions = useMemo(() => getOwnerOptions(allDeals), [allDeals]);
@@ -225,6 +253,7 @@ function DealsPageInner() {
       accentColor="orange"
       lastUpdated={lastUpdated}
       fullWidth={true}
+      exportData={exportData}
     >
       {/* Filter Bar */}
       <div className="flex items-center gap-3 flex-wrap mb-4">
