@@ -252,3 +252,11 @@ No new Prisma models. No migrations. All data sourced from HubSpot + existing Pr
 - Empty states render correctly for no query, no results, and empty columns
 - TECH_OPS role can access the dashboard
 - Service Suite landing page shows Customer History card
+
+---
+
+## Known Limitations (Deferred)
+
+### Deal-derived address precedence during expansion
+
+The approved design specifies address source precedence: deal `address_line_1` + `postal_code` first, contact/company address as fallback. The current implementation uses only contact `address`/`zip` during company expansion (Phase 2). Implementing deal-derived precedence requires an additional association-resolution pass (contact → deals → deal addresses) for every expanded contact, adding significant HubSpot API cost to the search path. This is documented as a follow-up improvement for when multi-site grouping accuracy becomes a priority.
