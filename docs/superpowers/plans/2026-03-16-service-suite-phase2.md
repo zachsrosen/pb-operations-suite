@@ -4,7 +4,7 @@
 
 **Goal:** Integrate HubSpot service tickets into the priority queue and build a dedicated Ticket Board dashboard.
 
-**Architecture:** New `hubspot-tickets.ts` module parallels the existing `hubspot.ts` deals client but targets the HubSpot Tickets v3 API. Tickets feed into the existing priority scoring engine alongside deals. A new Ticket Board dashboard provides a kanban-style view with filtering, detail panels, and bulk actions (assign, status change, notes). All ticket routes live under `/api/service/tickets/` to avoid collision with the existing `/api/admin/tickets` bug report system.
+**Architecture:** New `hubspot-tickets.ts` module parallels the existing `hubspot.ts` deals client but targets the HubSpot Tickets v3 API. Tickets feed into the existing priority scoring engine alongside deals. A new Ticket Board dashboard provides a kanban-style view with filtering, a detail panel per ticket (status change, assignee change, add notes), and activity timeline. All ticket routes live under `/api/service/tickets/` to avoid collision with the existing `/api/admin/tickets` bug report system.
 
 **Tech Stack:** Next.js 16.1, React 19, TypeScript 5, @hubspot/api-client, Prisma 7.3, Tailwind v4, SSE via useSSE hook
 
@@ -920,6 +920,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
+import { hubspotClient } from "@/lib/hubspot";
 import {
   fetchServiceTickets,
   getTicketStageMap,
@@ -981,6 +982,18 @@ export async function GET(request: NextRequest) {
     // Only include stages that have tickets OR are in the pipeline
     const stageNames = orderedStageIds.map(id => stageMap[id]).filter(Boolean);
 
+    // Fetch HubSpot owners for assignee dropdown
+    let owners: Array<{ id: string; name: string }> = [];
+    try {
+      const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage();
+      owners = (ownersResponse.results || []).map(o => ({
+        id: o.id,
+        name: `${o.firstName || ""} ${o.lastName || ""}`.trim() || o.email || o.id,
+      })).sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      console.warn("[ServiceTickets] Failed to fetch owners for dropdown");
+    }
+
     return NextResponse.json({
       tickets: filtered,
       total: tickets.length,
@@ -988,6 +1001,7 @@ export async function GET(request: NextRequest) {
       locations,
       stages: stageNames,
       stageMap: stageMap,
+      owners,
       lastUpdated,
     });
   } catch (error) {
@@ -1184,7 +1198,7 @@ In `src/app/suites/service/page.tsx`, add after the Service Overview card object
   {
     href: "/dashboards/service-tickets",
     title: "Ticket Board",
-    description: "Kanban board for HubSpot service tickets — filter, assign, and track status.",
+    description: "Kanban board for HubSpot service tickets — filter, reassign, change status, and add notes.",
     tag: "TICKETS",
     section: "Service",
   },
@@ -1205,7 +1219,7 @@ git commit -m "feat(service): add Ticket Board card to service suite landing pag
 **Files:**
 - Create: `src/app/dashboards/service-tickets/page.tsx`
 
-**Context:** This is the main ticket board — a kanban-style view where columns are ticket pipeline stages. Uses the same patterns as other dashboards: `DashboardShell`, `StatCard`, `useSSE`, theme tokens. Includes a detail panel that opens when clicking a ticket, and action buttons for assign/status change/notes.
+**Context:** This is the main ticket board — a kanban-style view where columns are ticket pipeline stages. Uses the same patterns as other dashboards: `DashboardShell`, `StatCard`, `useSSE`, theme tokens. Includes a slide-over detail panel (status change, assignee reassignment, add notes, activity timeline).
 
 The component fetches from `/api/service/tickets` and uses SSE with cache key filter `service-tickets` for real-time updates.
 
@@ -1280,6 +1294,7 @@ interface TicketListResponse {
   locations: string[];
   stages: string[];
   stageMap: Record<string, string>;
+  owners: Array<{ id: string; name: string }>;
   lastUpdated: string;
 }
 
@@ -1433,6 +1448,26 @@ export default function ServiceTicketBoardPage() {
     }
   }, [noteText, openDetail, selectedTicket?.id]);
 
+  const handleAssign = useCallback(async (ticketId: string, ownerId: string) => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/service/tickets/${ticketId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownerId }),
+      });
+      if (!res.ok) throw new Error("Failed to assign ticket");
+      await fetchData();
+      if (selectedTicket?.id === ticketId) {
+        await openDetail(ticketId);
+      }
+    } catch (err) {
+      console.error("[TicketBoard] Assign failed:", err);
+    } finally {
+      setActionLoading(false);
+    }
+  }, [fetchData, openDetail, selectedTicket?.id]);
+
   // ---- Derived data ---------------------------------------------------------
 
   // Stage filter is client-side (lightweight); location + priority are server-side
@@ -1515,7 +1550,7 @@ export default function ServiceTicketBoardPage() {
         />
         <StatCard
           label="Filtered"
-          value={data?.filteredCount ?? 0}
+          value={filteredTickets.length}
           color="blue"
         />
         <StatCard
@@ -1692,6 +1727,22 @@ export default function ServiceTicketBoardPage() {
                   >
                     {Object.entries(data?.stageMap ?? {}).map(([id, name]) => (
                       <option key={id} value={id}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Assign to */}
+                <div className="mb-6">
+                  <h3 className="text-sm font-medium text-foreground mb-2">Assign To</h3>
+                  <select
+                    value={selectedTicket.ownerId || ""}
+                    onChange={(e) => handleAssign(selectedTicket.id, e.target.value)}
+                    disabled={actionLoading}
+                    className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground w-full disabled:opacity-50"
+                  >
+                    <option value="">Unassigned</option>
+                    {(data?.owners ?? []).map(owner => (
+                      <option key={owner.id} value={owner.id}>{owner.name}</option>
                     ))}
                   </select>
                 </div>
