@@ -896,16 +896,23 @@ export async function resolveContactIdsFromGroupKey(
     return matchedIds;
   }
 
-  // Address-only group: search contacts by address
-  // Extract street portion from normalized address (before the |)
+  // Address-only group: search contacts by zip code (un-normalized, so HubSpot
+  // can match raw stored values), then post-filter by exact normalized address.
+  // Using zip avoids the mismatch between normalized street text ("123 main street")
+  // and HubSpot's raw stored value ("123 Main St").
   const pipeIdx = parsed.normalizedAddress.indexOf("|");
-  const streetPart = pipeIdx > 0 ? parsed.normalizedAddress.slice(0, pipeIdx) : parsed.normalizedAddress;
+  const zipPart = pipeIdx > 0 ? parsed.normalizedAddress.slice(pipeIdx + 1) : null;
+
+  if (!zipPart) {
+    // No zip in the normalized address — can't do a reliable search
+    return [];
+  }
 
   try {
     const resp = await searchContactsWithRetry({
       filterGroups: [{
         filters: [
-          { propertyName: "address", operator: ContactFilterOp.ContainsToken, value: `*${streetPart}*` },
+          { propertyName: "zip", operator: ContactFilterOp.Eq, value: zipPart },
         ],
       }],
       properties: ["address", "zip"],
@@ -913,7 +920,7 @@ export async function resolveContactIdsFromGroupKey(
       after: "0",
     });
 
-    // Filter to contacts whose normalized address matches exactly
+    // Post-filter to contacts whose normalized address matches exactly
     const contactIds: string[] = [];
     for (const c of resp.results || []) {
       const normalized = normalizeAddress(c.properties?.address || null, c.properties?.zip || null);

@@ -9,6 +9,7 @@ import type {
   CustomerDetail,
   CustomerContact,
 } from "@/lib/customer-resolver";
+import { getZuperJobUrl } from "@/lib/external-links";
 
 // ---------------------------------------------------------------------------
 // Types (client-side mirrors)
@@ -345,23 +346,31 @@ export default function CustomerHistoryPage() {
                         <p className="text-sm text-muted italic">None found</p>
                       ) : (
                         <div className="space-y-2">
-                          {detail.jobs.map((j) => (
-                            <div
-                              key={j.uid}
-                              className="p-2 rounded bg-surface-2"
-                            >
-                              <p className="text-sm font-medium text-foreground truncate">
-                                {j.title}
-                              </p>
-                              <p className="text-xs text-muted">
-                                {j.category || "No category"}
-                                {j.status && ` · ${j.status}`}
-                              </p>
-                              <p className="text-xs text-muted">
-                                {formatDate(j.scheduledDate)}
-                              </p>
-                            </div>
-                          ))}
+                          {detail.jobs.map((j) => {
+                            const url = getZuperJobUrl(j.uid);
+                            const Wrapper = url ? "a" : "div";
+                            const linkProps = url
+                              ? { href: url, target: "_blank", rel: "noopener noreferrer" }
+                              : {};
+                            return (
+                              <Wrapper
+                                key={j.uid}
+                                {...linkProps}
+                                className={`block p-2 rounded bg-surface-2${url ? " hover:bg-surface transition-colors" : ""}`}
+                              >
+                                <p className="text-sm font-medium text-foreground truncate">
+                                  {j.title}
+                                </p>
+                                <p className="text-xs text-muted">
+                                  {j.category || "No category"}
+                                  {j.status && ` · ${j.status}`}
+                                </p>
+                                <p className="text-xs text-muted">
+                                  {formatDate(j.scheduledDate)}
+                                </p>
+                              </Wrapper>
+                            );
+                          })}
                         </div>
                       )}
                     </section>
