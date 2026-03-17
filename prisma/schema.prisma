@@ -1628,3 +1628,21 @@ model SopSuggestion {
   @@index([status, createdAt])
   @@index([sectionId])
 }
+
+// ===========================================
+// SERVICE PRIORITY QUEUE
+// ===========================================
+
+model ServicePriorityOverride {
+  id               String    @id @default(cuid())
+  itemId           String
+  itemType         String    // "deal" | "ticket"
+  overridePriority String    // "critical" | "high" | "medium" | "low"
+  setBy            String
+  reason           String?
+  expiresAt        DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([itemId, itemType])
+}
