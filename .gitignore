@@ -53,3 +53,10 @@ next-env.d.ts
 /output
 /tmp
 .worktrees
+
+# Remotion video assets (large files, local only)
+public/remotion/recordings/*.mp4
+public/remotion/montage/*.png
+public/remotion/montage/*.jpg
+public/remotion/music/*.mp3
+public/remotion/music/*.wav

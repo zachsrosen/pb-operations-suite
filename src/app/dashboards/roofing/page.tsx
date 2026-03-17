@@ -1,0 +1,467 @@
+"use client";
+
+import { useState, useMemo, useRef, useEffect } from "react";
+import DashboardShell from "@/components/DashboardShell";
+import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { formatCurrency } from "@/lib/format";
+import { useProgressiveDeals } from "@/hooks/useProgressiveDeals";
+import { ProjectSearchBar } from "@/components/ui/MultiSelectFilter";
+import { useActivityTracking } from "@/hooks/useActivityTracking";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+interface Deal {
+  name: string;
+  stage: string;
+  amount: number;
+  pbLocation: string;
+  city?: string;
+  state?: string;
+  isActive: boolean;
+  daysSinceCreate: number;
+  url: string;
+}
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+const STAGES: string[] = [
+  "On Hold",
+  "Color Selection",
+  "Material & Labor Order",
+  "Confirm Dates",
+  "Staged",
+  "Production",
+  "Post Production",
+  "Invoice/Collections",
+  "Job Close Out Paperwork",
+  "Job Completed",
+];
+
+const STAGE_COLORS: Record<string, string> = {
+  "On Hold": "bg-zinc-500",
+  "Color Selection": "bg-purple-500",
+  "Material & Labor Order": "bg-blue-500",
+  "Confirm Dates": "bg-indigo-500",
+  "Staged": "bg-yellow-500",
+  "Production": "bg-orange-500",
+  "Post Production": "bg-amber-500",
+  "Invoice/Collections": "bg-teal-500",
+  "Job Close Out Paperwork": "bg-cyan-500",
+  "Job Completed": "bg-green-500",
+};
+
+const STAGE_GROUPS: Record<string, string[]> = {
+  "Pre-Production": ["On Hold", "Color Selection", "Material & Labor Order", "Confirm Dates"],
+  "Production": ["Staged", "Production", "Post Production"],
+  "Closeout": ["Invoice/Collections", "Job Close Out Paperwork"],
+};
+
+/** Short display labels for long stage names */
+const STAGE_SHORT_LABELS: Record<string, string> = {
+  "Material & Labor Order": "Mat & Labor",
+  "Invoice/Collections": "Invoice/Coll",
+  "Job Close Out Paperwork": "Closeout Paper",
+};
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function truncateStage(stage: string, max = 25): string {
+  return stage.length > max ? stage.substring(0, max - 3) + "..." : stage;
+}
+
+function ageColorClass(days: number): string {
+  if (days > 60) return "text-red-400";
+  if (days > 30) return "text-yellow-400";
+  return "text-muted";
+}
+
+// ---------------------------------------------------------------------------
+// Component
+// ---------------------------------------------------------------------------
+
+export default function RoofingPipelinePage() {
+  const {
+    deals: allDeals,
+    loading,
+    loadingMore,
+    progress,
+    error,
+    lastUpdated,
+    refetch: fetchData,
+  } = useProgressiveDeals<Deal>({
+    params: { pipeline: "roofing", active: "false" },
+  });
+
+  /* ---- activity tracking ---- */
+  const { trackDashboardView } = useActivityTracking();
+  const hasTrackedView = useRef(false);
+
+  /* ---- Track dashboard view on load ---- */
+  useEffect(() => {
+    if (!loading && !hasTrackedView.current) {
+      hasTrackedView.current = true;
+      trackDashboardView("roofing", {
+        projectCount: allDeals.length,
+      });
+    }
+  }, [loading, allDeals.length, trackDashboardView]);
+
+  const [filterLocation, setFilterLocation] = useState("all");
+  const [filterStage, setFilterStage] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // ---- Derived data --------------------------------------------------------
+
+  const locations = useMemo(
+    () =>
+      [...new Set(allDeals.map((d) => d.pbLocation))]
+        .filter((l) => l !== "Unknown")
+        .sort(),
+    [allDeals],
+  );
+
+  const filteredDeals = useMemo(
+    () =>
+      allDeals.filter((d) => {
+        if (filterLocation !== "all" && d.pbLocation !== filterLocation)
+          return false;
+        if (filterStage !== "all" && d.stage !== filterStage) return false;
+
+        // Search filter
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          const name = (d.name || "").toLowerCase();
+          const location = (d.pbLocation || "").toLowerCase();
+          const city = (d.city || "").toLowerCase();
+          if (!name.includes(query) && !location.includes(query) && !city.includes(query)) {
+            return false;
+          }
+        }
+
+        return true;
+      }),
+    [allDeals, filterLocation, filterStage, searchQuery],
+  );
+
+  const activeDeals = useMemo(
+    () => filteredDeals.filter((d) => d.isActive),
+    [filteredDeals],
+  );
+
+  const totalValue = useMemo(
+    () => activeDeals.reduce((sum, d) => sum + d.amount, 0),
+    [activeDeals],
+  );
+
+  const stageCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    STAGES.forEach((s) => (counts[s] = 0));
+    activeDeals.forEach((d) => {
+      if (counts[d.stage] !== undefined) counts[d.stage]++;
+    });
+    return counts;
+  }, [activeDeals]);
+
+  const onHoldCount = useMemo(
+    () => activeDeals.filter((d) => d.stage === "On Hold").length,
+    [activeDeals],
+  );
+
+  // ---- Loading state -------------------------------------------------------
+
+  if (loading && allDeals.length === 0) {
+    return (
+      <DashboardShell title="Roofing Pipeline" subtitle="Roofing Projects" accentColor="purple">
+        <LoadingSpinner color="purple" message="Loading Roofing Pipeline..." />
+      </DashboardShell>
+    );
+  }
+
+  // ---- Error state ---------------------------------------------------------
+
+  if (error && allDeals.length === 0) {
+    return (
+      <DashboardShell title="Roofing Pipeline" subtitle="Roofing Projects" accentColor="purple">
+        <ErrorState message={error} onRetry={fetchData} color="purple" />
+      </DashboardShell>
+    );
+  }
+
+  // ---- Main render ---------------------------------------------------------
+
+  return (
+    <DashboardShell
+      title="Roofing Pipeline"
+      subtitle={`Roofing Projects${loadingMore && progress ? ` \u2022 Loading ${progress.loaded}${progress.total ? `/${progress.total}` : ""} deals...` : lastUpdated ? ` \u2022 Last updated: ${lastUpdated}` : ""}`}
+      accentColor="purple"
+      breadcrumbs={[{ label: "Dashboards", href: "/" }, { label: "Roofing Pipeline" }]}
+      headerRight={
+        <div className="flex items-center gap-3">
+          {/* Location filter */}
+          <select
+            value={filterLocation}
+            onChange={(e) => setFilterLocation(e.target.value)}
+            className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-white"
+          >
+            <option value="all">All Locations</option>
+            {locations.map((loc) => (
+              <option key={loc} value={loc}>
+                {loc}
+              </option>
+            ))}
+          </select>
+
+          {/* Stage filter */}
+          <select
+            value={filterStage}
+            onChange={(e) => setFilterStage(e.target.value)}
+            className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-white"
+          >
+            <option value="all">All Stages</option>
+            {STAGES.map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+
+          {/* Refresh */}
+          <button
+            onClick={fetchData}
+            className="bg-violet-600 hover:bg-violet-700 px-4 py-2 rounded-lg text-sm font-medium text-foreground"
+          >
+            Refresh
+          </button>
+        </div>
+      }
+    >
+      {/* Stats row */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <StatCard label="Active Projects" value={activeDeals.length} color="text-violet-400" />
+        <StatCard label="Pipeline Value" value={formatCurrency(totalValue)} color="text-green-400" />
+        <StatCard
+          label="Pre-Production"
+          value={
+            (stageCounts["On Hold"] ?? 0) +
+            (stageCounts["Color Selection"] ?? 0) +
+            (stageCounts["Material & Labor Order"] ?? 0) +
+            (stageCounts["Confirm Dates"] ?? 0)
+          }
+          color="text-blue-400"
+        />
+        <StatCard
+          label="Production Phase"
+          value={
+            (stageCounts["Staged"] ?? 0) +
+            (stageCounts["Production"] ?? 0) +
+            (stageCounts["Post Production"] ?? 0)
+          }
+          color="text-orange-400"
+        />
+        <StatCard label="On Hold" value={onHoldCount} color="text-zinc-400" />
+      </div>
+
+      {/* Stage groups */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        {Object.entries(STAGE_GROUPS).map(([group, stages]) => (
+          <div
+            key={group}
+            className="bg-surface rounded-xl border border-t-border p-4"
+          >
+            <h3 className="text-sm font-semibold text-muted mb-3">
+              {group}
+            </h3>
+            <div className="space-y-2">
+              {stages.map((stage) => (
+                <div key={stage} className="flex items-center justify-between">
+                  <span className="text-xs text-foreground/80 truncate">
+                    {STAGE_SHORT_LABELS[stage] ?? stage}
+                  </span>
+                  <span
+                    className={`text-sm font-bold ${
+                      stageCounts[stage] > 0 ? "text-white" : "text-muted/70"
+                    }`}
+                  >
+                    {stageCounts[stage] ?? 0}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Search bar */}
+      <div className="bg-surface rounded-xl border border-t-border p-4 mb-6">
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex-1 min-w-[200px]">
+            <ProjectSearchBar
+              onSearch={setSearchQuery}
+              placeholder="Search by name, location, or city..."
+            />
+          </div>
+
+          {searchQuery && (
+            <button
+              onClick={() => {
+                setSearchQuery("");
+              }}
+              className="text-xs text-muted hover:text-foreground px-2 py-1"
+            >
+              Clear Search
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Deals table */}
+      <div className="bg-surface rounded-xl border border-t-border overflow-hidden">
+        <div className="p-4 border-b border-t-border">
+          <div className="flex items-center gap-3">
+            <h2 className="text-lg font-semibold">
+              Roofing Projects ({filteredDeals.length})
+              {filteredDeals.length !== activeDeals.length && (
+                <span className="text-sm font-normal text-muted ml-2">
+                  {activeDeals.length} active
+                </span>
+              )}
+            </h2>
+            {loadingMore && progress && (
+              <span className="text-xs text-muted">
+                Loading {progress.loaded}{progress.total ? ` of ${progress.total}` : ""} deals...
+              </span>
+            )}
+          </div>
+          {loadingMore && (
+            <div className="mt-2 h-1 bg-surface-2 rounded-full overflow-hidden">
+              {progress?.total ? (
+                <div
+                  className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                  style={{ width: `${(progress.loaded / progress.total) * 100}%` }}
+                />
+              ) : (
+                <div className="h-full w-1/3 bg-violet-500 rounded-full animate-pulse" />
+              )}
+            </div>
+          )}
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-surface">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
+                  Project
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
+                  Location
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
+                  Stage
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-muted uppercase">
+                  Amount
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-muted uppercase">
+                  Age
+                </th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-muted uppercase">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-t-border">
+              {filteredDeals.length === 0 ? (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-4 py-8 text-center text-muted"
+                  >
+                    No projects found
+                  </td>
+                </tr>
+              ) : (
+                filteredDeals.map((deal, idx) => (
+                  <tr
+                    key={`${deal.name}-${idx}`}
+                    className={`hover:bg-surface/50 ${
+                      !deal.isActive ? "opacity-50" : ""
+                    }`}
+                  >
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-foreground">{deal.name}</div>
+                      <div className="text-xs text-muted">
+                        {deal.city || ""} {deal.state || ""}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-foreground/80">
+                      {deal.pbLocation}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span
+                        className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                          STAGE_COLORS[deal.stage] || "bg-zinc-600"
+                        } bg-opacity-20 text-white`}
+                      >
+                        {truncateStage(deal.stage)}
+                      </span>
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-right font-mono text-sm ${
+                        deal.amount > 0 ? "text-green-400" : "text-muted"
+                      }`}
+                    >
+                      {formatCurrency(deal.amount)}
+                    </td>
+                    <td
+                      className={`px-4 py-3 text-sm ${ageColorClass(deal.daysSinceCreate)}`}
+                    >
+                      {deal.daysSinceCreate}d
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <a
+                        href={deal.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-violet-400 hover:text-violet-300 text-sm"
+                      >
+                        Open &rarr;
+                      </a>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </DashboardShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Sub-components
+// ---------------------------------------------------------------------------
+
+function StatCard({
+  label,
+  value,
+  color,
+}: {
+  label: string;
+  value: string | number;
+  color: string;
+}) {
+  return (
+    <div className="bg-surface rounded-xl p-4 border border-t-border">
+      <div className={`text-2xl font-bold ${color}`}>{value}</div>
+      <div className="text-sm text-muted">{label}</div>
+    </div>
+  );
+}

@@ -27,8 +27,10 @@ export default function VendorPicker({
   const [highlighted, setHighlighted] = useState(0);
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState(false);
+  const [staleVendorHint, setStaleVendorHint] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const hasValidatedVendorRef = useRef(false);
 
   const fetchVendors = useCallback(async (includeId?: string) => {
     setLoading(true);
@@ -51,6 +53,24 @@ export default function VendorPicker({
     fetchVendors(zohoVendorId || undefined);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Validate zohoVendorId against fetched list — detect stale IDs from clones/imports.
+  // Uses a ref guard to ensure this check runs exactly once (when vendors first load),
+  // while keeping all deps in the array to satisfy exhaustive-deps.
+  useEffect(() => {
+    if (loading || fetchError || vendors.length === 0) return;
+    if (hasValidatedVendorRef.current) return;
+    hasValidatedVendorRef.current = true;
+
+    if (!zohoVendorId) return;
+
+    const found = vendors.some((v) => v.zohoVendorId === zohoVendorId);
+    if (!found) {
+      // Stale ID: vendor was deleted from Zoho since this product was created/cloned
+      setStaleVendorHint(vendorName || "Unknown vendor");
+      onChange("", "");
+    }
+  }, [vendors, loading, fetchError, zohoVendorId, vendorName, onChange]);
+
   // Click outside to close
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -70,6 +90,7 @@ export default function VendorPicker({
     onChange(v.name, v.zohoVendorId);
     setQuery("");
     setOpen(false);
+    setStaleVendorHint(null);
   }
 
   function clear() {
@@ -195,6 +216,12 @@ export default function VendorPicker({
               </button>
             ))}
         </div>
+      )}
+      {/* Stale vendor hint — shown when cloned/imported vendor no longer exists */}
+      {staleVendorHint && !vendorName && (
+        <p className="mt-1 text-xs text-amber-400">
+          Previously selected vendor &ldquo;{staleVendorHint}&rdquo; is no longer available. Please re-select.
+        </p>
       )}
     </div>
   );

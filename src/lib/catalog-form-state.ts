@@ -220,19 +220,39 @@ export function validateRequiredSpecFields(
   const errors: ValidationError[] = [];
 
   for (const field of fields) {
-    if (!field.required) continue;
-
     // Skip fields hidden by showWhen
     if (field.showWhen) {
       if (specValues[field.showWhen.field] !== field.showWhen.value) continue;
     }
 
-    if (isBlank(specValues[field.key])) {
+    const value = specValues[field.key];
+
+    // Required check
+    if (field.required && isBlank(value)) {
       errors.push({
         field: `spec.${field.key}`,
         message: `${field.label} is required for ${getCategoryLabel(category)}`,
         section: "details",
       });
+      continue; // don't range-check a missing required field
+    }
+
+    // Range checks (only for number fields with a numeric value)
+    if (field.type === "number" && typeof value === "number" && Number.isFinite(value)) {
+      if (field.min !== undefined && value < field.min) {
+        errors.push({
+          field: `spec.${field.key}`,
+          message: `${field.label} cannot be less than ${field.min}`,
+          section: "details",
+        });
+      }
+      if (field.max !== undefined && value > field.max) {
+        errors.push({
+          field: `spec.${field.key}`,
+          message: `${field.label} cannot exceed ${field.max}`,
+          section: "details",
+        });
+      }
     }
   }
 
@@ -266,6 +286,40 @@ export function validateCatalogForm(state: CatalogFormState): ValidationResult {
     errors.push(...validateRequiredSpecFields(state.category, state.specValues));
   }
 
+  // Numeric range checks — dimensions/weight (blocking errors: must be > 0)
+  if (state.length) {
+    const v = parseFloat(state.length);
+    if (Number.isFinite(v) && v <= 0) {
+      errors.push({ field: "length", message: "Length must be greater than 0", section: "details" });
+    }
+  }
+  if (state.width) {
+    const v = parseFloat(state.width);
+    if (Number.isFinite(v) && v <= 0) {
+      errors.push({ field: "width", message: "Width must be greater than 0", section: "details" });
+    }
+  }
+  if (state.weight) {
+    const v = parseFloat(state.weight);
+    if (Number.isFinite(v) && v <= 0) {
+      errors.push({ field: "weight", message: "Weight must be greater than 0", section: "details" });
+    }
+  }
+
+  // Numeric range checks — pricing (non-blocking warnings: 0 is OK for free items)
+  if (state.unitCost) {
+    const v = parseFloat(state.unitCost);
+    if (Number.isFinite(v) && v < 0) {
+      warnings.push({ field: "unitCost", message: "Unit cost is negative", section: "details" });
+    }
+  }
+  if (state.sellPrice) {
+    const v = parseFloat(state.sellPrice);
+    if (Number.isFinite(v) && v < 0) {
+      warnings.push({ field: "sellPrice", message: "Sell price is negative", section: "details" });
+    }
+  }
+
   // Warnings (non-blocking)
   if (state.unitCost && state.sellPrice) {
     const cost = parseFloat(state.unitCost);
@@ -277,6 +331,15 @@ export function validateCatalogForm(state: CatalogFormState): ValidationResult {
         section: "review",
       });
     }
+  }
+
+  // Vendor pair warning: name set without Zoho ID
+  if (state.vendorName && !state.zohoVendorId) {
+    warnings.push({
+      field: "vendorName",
+      message: "Vendor selected without Zoho ID — product won't sync to Zoho Inventory",
+      section: "details",
+    });
   }
 
   return { valid: errors.length === 0, errors, warnings };

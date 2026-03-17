@@ -236,7 +236,7 @@ export default function DNRSchedulerPage() {
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-2 border-b border-t-border bg-surface shrink-0">
         <div className="flex items-center gap-3">
-          <Link href="/suites/operations" className="text-muted hover:text-foreground text-sm transition-colors">
+          <Link href="/suites/dnr-roofing" className="text-muted hover:text-foreground text-sm transition-colors">
             &larr; Back
           </Link>
           <h1 className="text-base font-bold">D&R Schedule</h1>
