@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
+import { StatCard } from "@/components/ui/MetricCard";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useSSE } from "@/hooks/useSSE";
@@ -92,27 +93,6 @@ const TIER_CONFIG: Record<PriorityTier, {
 };
 
 const ALL_TIERS: PriorityTier[] = ["critical", "high", "medium", "low"];
-
-// ---------------------------------------------------------------------------
-// Sub-components
-// ---------------------------------------------------------------------------
-
-function StatCard({
-  label,
-  value,
-  color,
-}: {
-  label: string;
-  value: string | number;
-  color: string;
-}) {
-  return (
-    <div className="bg-surface rounded-xl p-4 border border-t-border">
-      <div className={`text-2xl font-bold ${color}`}>{value}</div>
-      <div className="text-sm text-muted">{label}</div>
-    </div>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Main component
@@ -267,24 +247,26 @@ export default function ServiceOverviewPage() {
       {/* KPI Strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 stagger-grid">
         <StatCard
-          label="Open Tickets"
-          value={data?.stats.total ?? 0}
-          color="text-cyan-400"
-        />
-        <StatCard
           label="Active Deals"
           value={data?.stats.total ?? 0}
-          color="text-blue-400"
+          color="cyan"
+        />
+        <StatCard
+          label="Open Tickets"
+          subtitle="Coming in Phase 2"
+          value={0}
+          color="blue"
         />
         <StatCard
           label="Overdue Items"
           value={overdueCount}
-          color="text-red-400"
+          color="red"
         />
         <StatCard
           label="Scheduled Today"
+          subtitle="Coming soon"
           value={scheduledToday}
-          color="text-green-400"
+          color="green"
         />
       </div>
 

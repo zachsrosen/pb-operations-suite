@@ -26,16 +26,14 @@ async function fetchServiceDeals(): Promise<PriorityItem[]> {
     .filter(([, name]) => activeStageNames.has(name))
     .map(([id]) => id);
 
-  // HubSpot uses OR logic across filterGroups — one group per stage
-  // combined with the pipeline filter. Max 5 filterGroups per request;
-  // service pipeline has <5 active stages so no chunking needed here.
+  // Single filterGroup with IN operator — avoids the 5-filterGroups-per-request limit
   const searchRequest = {
-    filterGroups: activeStageIds.map(stageId => ({
+    filterGroups: [{
       filters: [
         { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: pipelineId },
-        { propertyName: "dealstage", operator: FilterOperatorEnum.Eq, value: stageId },
+        { propertyName: "dealstage", operator: FilterOperatorEnum.In, values: activeStageIds },
       ],
-    })),
+    }],
     properties,
     limit: 100,
   };
