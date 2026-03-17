@@ -8,12 +8,16 @@
  * Spec: docs/superpowers/specs/2026-03-17-customer-history-design.md
  */
 
+import * as Sentry from "@sentry/nextjs";
+import { hubspotClient } from "@/lib/hubspot";
+import { chunk } from "@/lib/utils";
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const _BATCH_SIZE = 100;
-const _MAX_SEARCH_RESULTS = 25;
+const BATCH_SIZE = 100;
+const MAX_SEARCH_RESULTS = 25;
 
 /** Company names to treat as empty/generic */
 const GENERIC_COMPANY_NAMES = new Set([
@@ -186,9 +190,301 @@ export function deriveDisplayName(
 }
 
 // ---------------------------------------------------------------------------
+// Retry Wrappers
+// ---------------------------------------------------------------------------
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Search contacts with rate-limit retry.
+ * Mirrors searchTicketsWithRetry() in hubspot-tickets.ts.
+ */
+export async function searchContactsWithRetry(
+  searchRequest: Parameters<typeof hubspotClient.crm.contacts.searchApi.doSearch>[0],
+  maxRetries = 5
+) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await hubspotClient.crm.contacts.searchApi.doSearch(searchRequest);
+    } catch (error: unknown) {
+      const isRateLimit =
+        error instanceof Error &&
+        (error.message.includes("429") || error.message.includes("rate") || error.message.includes("secondly"));
+      const statusCode = (error as { code?: number })?.code;
+
+      if ((isRateLimit || statusCode === 429) && attempt < maxRetries - 1) {
+        const base = Math.pow(2, attempt) * 1100;
+        const jitter = Math.random() * 400;
+        await sleep(Math.round(base + jitter));
+        continue;
+      }
+      Sentry.addBreadcrumb({
+        category: "customer-resolver",
+        message: "Contact search failed after retries",
+        level: "error",
+        data: { attempt, statusCode },
+      });
+      throw error;
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
+
+/**
+ * Search companies with rate-limit retry.
+ * Mirrors searchTicketsWithRetry() in hubspot-tickets.ts.
+ */
+export async function searchCompaniesWithRetry(
+  searchRequest: Parameters<typeof hubspotClient.crm.companies.searchApi.doSearch>[0],
+  maxRetries = 5
+) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await hubspotClient.crm.companies.searchApi.doSearch(searchRequest);
+    } catch (error: unknown) {
+      const isRateLimit =
+        error instanceof Error &&
+        (error.message.includes("429") || error.message.includes("rate") || error.message.includes("secondly"));
+      const statusCode = (error as { code?: number })?.code;
+
+      if ((isRateLimit || statusCode === 429) && attempt < maxRetries - 1) {
+        const base = Math.pow(2, attempt) * 1100;
+        const jitter = Math.random() * 400;
+        await sleep(Math.round(base + jitter));
+        continue;
+      }
+      Sentry.addBreadcrumb({
+        category: "customer-resolver",
+        message: "Company search failed after retries",
+        level: "error",
+        data: { attempt, statusCode },
+      });
+      throw error;
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
+
+// Forward declaration — full implementation in Phase 2 (Task 5)
+async function resolveCompanyContacts(companyIds: string[]): Promise<Map<string, string[]>> {
+  // Stub — will be replaced in Task 5
+  void companyIds;
+  return new Map();
+}
+
+// ---------------------------------------------------------------------------
 // Phase 1: Multi-Entity Search
 // ---------------------------------------------------------------------------
-// (Implemented in Task 4)
+
+/** Intermediate type — a single contact record from either contact or company search */
+export interface RawSearchHit {
+  type: "contact" | "company";
+  id: string;          // contact ID
+  companyId: string | null;
+  street: string | null;
+  zip: string | null;
+  companyName: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  phone: string | null;
+}
+
+/**
+ * Group raw search hits by canonical identity: Company ID + normalized address.
+ * Deduplicates contacts by ID. Skips hits with no resolvable address.
+ * Returns CustomerSummary[] with counts set to -1 (resolved lazily on detail).
+ */
+export function groupSearchHits(hits: RawSearchHit[]): CustomerSummary[] {
+  // Deduplicate by contact ID
+  const seen = new Set<string>();
+  const unique: RawSearchHit[] = [];
+  for (const hit of hits) {
+    if (!seen.has(hit.id)) {
+      seen.add(hit.id);
+      unique.push(hit);
+    }
+  }
+
+  // Group by canonical key
+  const groups = new Map<string, {
+    companyId: string | null;
+    companyName: string | null;
+    address: string;  // formatted display address (original casing)
+    contactIds: string[];
+    contacts: Array<{ lastName: string | null }>;
+  }>();
+
+  for (const hit of unique) {
+    const normalizedAddr = normalizeAddress(hit.street, hit.zip);
+    if (!normalizedAddr) continue;
+
+    const groupKey = hit.companyId
+      ? `company:${hit.companyId}:${normalizedAddr}`
+      : `addr:${normalizedAddr}`;
+
+    const existing = groups.get(groupKey);
+    if (existing) {
+      if (!existing.contactIds.includes(hit.id)) {
+        existing.contactIds.push(hit.id);
+        existing.contacts.push({ lastName: hit.lastName });
+      }
+    } else {
+      // Build display address from original values
+      const displayAddress = [hit.street, hit.zip].filter(Boolean).join(", ").trim();
+      groups.set(groupKey, {
+        companyId: hit.companyId,
+        companyName: hit.companyName,
+        address: displayAddress,
+        contactIds: [hit.id],
+        contacts: [{ lastName: hit.lastName }],
+      });
+    }
+  }
+
+  // Convert to CustomerSummary[]
+  const results: CustomerSummary[] = [];
+  for (const [groupKey, group] of groups) {
+    results.push({
+      groupKey,
+      displayName: deriveDisplayName(group.companyName, group.contacts, group.address),
+      address: group.address,
+      contactIds: group.contactIds,
+      companyId: group.companyId,
+      dealCount: -1,
+      ticketCount: -1,
+      jobCount: -1,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Execute Phase 1: search both contacts and companies in HubSpot.
+ * Returns raw hits + truncated flag.
+ */
+export async function executeSearch(query: string): Promise<{ hits: RawSearchHit[]; truncated: boolean }> {
+  const hits: RawSearchHit[] = [];
+  let truncated = false;
+
+  // Search contacts and companies in parallel
+  const [contactResults, companyResults] = await Promise.allSettled([
+    searchContactsWithRetry({
+      filterGroups: [{
+        filters: [
+          { propertyName: "firstname", operator: "CONTAINS_TOKEN" as unknown as "EQ", value: `*${query}*` },
+        ],
+      }, {
+        filters: [
+          { propertyName: "lastname", operator: "CONTAINS_TOKEN" as unknown as "EQ", value: `*${query}*` },
+        ],
+      }, {
+        filters: [
+          { propertyName: "email", operator: "CONTAINS_TOKEN" as unknown as "EQ", value: `*${query}*` },
+        ],
+      }, {
+        filters: [
+          { propertyName: "phone", operator: "CONTAINS_TOKEN" as unknown as "EQ", value: `*${query}*` },
+        ],
+      }],
+      properties: ["firstname", "lastname", "email", "phone", "address", "city", "state", "zip"],
+      limit: MAX_SEARCH_RESULTS,
+      sorts: [{ propertyName: "lastmodifieddate", direction: "DESCENDING" }] as unknown as string[],
+      after: "0",
+    }),
+    searchCompaniesWithRetry({
+      filterGroups: [{
+        filters: [
+          { propertyName: "name", operator: "CONTAINS_TOKEN" as unknown as "EQ", value: `*${query}*` },
+        ],
+      }, {
+        filters: [
+          { propertyName: "address", operator: "CONTAINS_TOKEN" as unknown as "EQ", value: `*${query}*` },
+        ],
+      }],
+      properties: ["name", "address", "city", "state", "zip"],
+      limit: MAX_SEARCH_RESULTS,
+      sorts: [{ propertyName: "hs_lastmodifieddate", direction: "DESCENDING" }] as unknown as string[],
+      after: "0",
+    }),
+  ]);
+
+  // Process contact results
+  if (contactResults.status === "fulfilled") {
+    const res = contactResults.value;
+    if (res.paging?.next?.after) truncated = true;
+
+    for (const c of res.results || []) {
+      hits.push({
+        type: "contact",
+        id: c.id,
+        companyId: null, // resolved in Phase 2
+        street: c.properties?.address || null,
+        zip: c.properties?.zip || null,
+        companyName: null, // resolved in Phase 2
+        firstName: c.properties?.firstname || null,
+        lastName: c.properties?.lastname || null,
+        email: c.properties?.email || null,
+        phone: c.properties?.phone || null,
+      });
+    }
+  } else {
+    Sentry.captureException(contactResults.reason);
+    console.error("[CustomerResolver] Contact search failed:", contactResults.reason);
+  }
+
+  // Process company results — need to resolve company → contacts
+  if (companyResults.status === "fulfilled") {
+    const res = companyResults.value;
+    if (res.paging?.next?.after) truncated = true;
+
+    // Batch-fetch contacts for each matched company
+    const companyIds = res.results?.map(c => c.id) || [];
+    if (companyIds.length > 0) {
+      try {
+        const companyContactMap = await resolveCompanyContacts(companyIds);
+
+        for (const company of res.results || []) {
+          const contactIds = companyContactMap.get(company.id) || [];
+          if (contactIds.length > 0) {
+            for (const batch of chunk(contactIds, BATCH_SIZE)) {
+              const batchResp = await hubspotClient.crm.contacts.batchApi.read({
+                inputs: batch.map(id => ({ id })),
+                properties: ["firstname", "lastname", "email", "phone", "address", "zip"],
+                propertiesWithHistory: [],
+              });
+              for (const contact of batchResp.results || []) {
+                hits.push({
+                  type: "company",
+                  id: contact.id,
+                  companyId: company.id,
+                  street: contact.properties?.address || company.properties?.address || null,
+                  zip: contact.properties?.zip || company.properties?.zip || null,
+                  companyName: company.properties?.name || null,
+                  firstName: contact.properties?.firstname || null,
+                  lastName: contact.properties?.lastname || null,
+                  email: contact.properties?.email || null,
+                  phone: contact.properties?.phone || null,
+                });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        Sentry.captureException(err);
+        console.error("[CustomerResolver] Company contact resolution failed:", err);
+      }
+    }
+  } else {
+    Sentry.captureException(companyResults.reason);
+    console.error("[CustomerResolver] Company search failed:", companyResults.reason);
+  }
+
+  return { hits, truncated };
+}
 
 // ---------------------------------------------------------------------------
 // Phase 2: Identity Grouping + Expansion

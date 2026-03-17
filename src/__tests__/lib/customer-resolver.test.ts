@@ -1,4 +1,9 @@
-import { normalizeAddress, deriveDisplayName } from "@/lib/customer-resolver";
+import {
+  normalizeAddress,
+  deriveDisplayName,
+  groupSearchHits,
+  type RawSearchHit,
+} from "@/lib/customer-resolver";
 
 describe("normalizeAddress", () => {
   it("normalizes a standard address to lowercase street|zip format", () => {
@@ -68,5 +73,154 @@ describe("deriveDisplayName", () => {
 
   it("falls back to address when contacts array is empty", () => {
     expect(deriveDisplayName(null, [], "789 Pine Dr")).toBe("789 Pine Dr");
+  });
+});
+
+describe("groupSearchHits", () => {
+  it("groups contacts by company + normalized address", () => {
+    const hits: RawSearchHit[] = [
+      {
+        type: "contact",
+        id: "c1",
+        companyId: "comp1",
+        street: "123 Main St",
+        zip: "80202",
+        companyName: "Acme Solar",
+        firstName: "John",
+        lastName: "Smith",
+        email: "john@example.com",
+        phone: "555-1234",
+      },
+      {
+        type: "contact",
+        id: "c2",
+        companyId: "comp1",
+        street: "123 Main St",
+        zip: "80202",
+        companyName: "Acme Solar",
+        firstName: "Jane",
+        lastName: "Smith",
+        email: "jane@example.com",
+        phone: "555-5678",
+      },
+    ];
+
+    const groups = groupSearchHits(hits);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].groupKey).toBe("company:comp1:123 main street|80202");
+    expect(groups[0].contactIds).toEqual(["c1", "c2"]);
+    expect(groups[0].displayName).toBe("Acme Solar");
+  });
+
+  it("separates multi-site company into distinct groups", () => {
+    const hits: RawSearchHit[] = [
+      {
+        type: "contact",
+        id: "c1",
+        companyId: "comp1",
+        street: "123 Main St",
+        zip: "80202",
+        companyName: "Big Corp",
+        firstName: "Alice",
+        lastName: "A",
+        email: null,
+        phone: null,
+      },
+      {
+        type: "contact",
+        id: "c2",
+        companyId: "comp1",
+        street: "456 Oak Ave",
+        zip: "80301",
+        companyName: "Big Corp",
+        firstName: "Bob",
+        lastName: "B",
+        email: null,
+        phone: null,
+      },
+    ];
+
+    const groups = groupSearchHits(hits);
+    expect(groups).toHaveLength(2);
+    expect(groups.map(g => g.groupKey).sort()).toEqual([
+      "company:comp1:123 main street|80202",
+      "company:comp1:456 oak avenue|80301",
+    ]);
+  });
+
+  it("creates address-only group when no company", () => {
+    const hits: RawSearchHit[] = [
+      {
+        type: "contact",
+        id: "c1",
+        companyId: null,
+        street: "789 Pine Dr",
+        zip: "80401",
+        companyName: null,
+        firstName: "Charlie",
+        lastName: "Brown",
+        email: "charlie@example.com",
+        phone: null,
+      },
+    ];
+
+    const groups = groupSearchHits(hits);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].groupKey).toBe("addr:789 pine drive|80401");
+    expect(groups[0].companyId).toBeNull();
+    expect(groups[0].displayName).toBe("Brown Residence");
+  });
+
+  it("deduplicates contacts appearing in both contact and company search", () => {
+    const hits: RawSearchHit[] = [
+      {
+        type: "contact",
+        id: "c1",
+        companyId: "comp1",
+        street: "123 Main St",
+        zip: "80202",
+        companyName: "Acme Solar",
+        firstName: "John",
+        lastName: "Smith",
+        email: "john@example.com",
+        phone: null,
+      },
+      {
+        type: "company",
+        id: "c1",
+        companyId: "comp1",
+        street: "123 Main St",
+        zip: "80202",
+        companyName: "Acme Solar",
+        firstName: "John",
+        lastName: "Smith",
+        email: "john@example.com",
+        phone: null,
+      },
+    ];
+
+    const groups = groupSearchHits(hits);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].contactIds).toEqual(["c1"]);
+  });
+
+  it("skips hits with no resolvable address", () => {
+    const hits: RawSearchHit[] = [
+      {
+        type: "contact",
+        id: "c1",
+        companyId: "comp1",
+        street: "",
+        zip: "",
+        companyName: "No Address Corp",
+        firstName: "Dan",
+        lastName: "D",
+        email: null,
+        phone: null,
+      },
+    ];
+
+    const groups = groupSearchHits(hits);
+    expect(groups).toHaveLength(0);
   });
 });
