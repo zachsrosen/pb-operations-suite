@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { toDateStr } from "@/lib/scheduling-utils";
+import { JOB_CATEGORY_UIDS } from "@/lib/zuper";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -37,18 +38,27 @@ interface ZuperJob {
 /* ------------------------------------------------------------------ */
 
 const CATEGORY_UIDS = [
-  "cff6f839-c043-46ee-a09f-8d0e9f363437", // Service Visit
-  "8a29a1c0-9141-4db6-b8bb-9d9a65e2a1de", // Service Revisit
+  JOB_CATEGORY_UIDS.WALK_ROOF,        // "b3289bad-d618-47c7-b592-43454b655982"
+  JOB_CATEGORY_UIDS.MID_ROOF_INSTALL, // "18f08c0d-f767-4e4a-8970-7c67597f4b4a"
+  JOB_CATEGORY_UIDS.ROOF_FINAL,       // "92caf51d-1a53-4679-9b64-ba316ccb870d"
 ];
 
 const CATEGORY_COLORS: Record<string, string> = {
-  "Service Visit": "bg-emerald-500",
-  "Service Revisit": "bg-amber-500",
+  "Walk Roof": "bg-blue-500",
+  "Mid Roof Install": "bg-orange-500",
+  "Roof Final": "bg-green-500",
 };
 
 const CATEGORY_TEXT_COLORS: Record<string, string> = {
-  "Service Visit": "text-emerald-400",
-  "Service Revisit": "text-amber-400",
+  "Walk Roof": "text-blue-400",
+  "Mid Roof Install": "text-orange-400",
+  "Roof Final": "text-green-400",
+};
+
+const CATEGORY_EVENT_COLORS: Record<string, string> = {
+  "Walk Roof": "bg-blue-500/20 border border-blue-500/30 text-blue-300 hover:bg-blue-500/30",
+  "Mid Roof Install": "bg-orange-500/20 border border-orange-500/30 text-orange-300 hover:bg-orange-500/30",
+  "Roof Final": "bg-green-500/20 border border-green-500/30 text-green-300 hover:bg-green-500/30",
 };
 
 const MONTH_NAMES = [
@@ -77,7 +87,6 @@ function isWeekend(dateStr: string): boolean {
 }
 
 function getCustomerName(title: string): string {
-  // "PROJ-1234 | LastName, FirstName | 123 Main St..." → "LastName, FirstName"
   const parts = title.split(" | ");
   return parts[1] || parts[0] || title;
 }
@@ -88,33 +97,28 @@ const ZUPER_WEB_BASE = "https://web.zuperpro.com";
 /*  Component                                                          */
 /* ------------------------------------------------------------------ */
 
-export default function ServiceSchedulerPage() {
+export default function RoofingSchedulerPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  // Data
   const [jobs, setJobs] = useState<ZuperJob[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Calendar state
   const today = new Date();
   const [currentMonth, setCurrentMonth] = useState(today.getMonth());
   const [currentYear, setCurrentYear] = useState(today.getFullYear());
 
-  // Filters
   const [searchText, setSearchText] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedJob, setSelectedJob] = useState<ZuperJob | null>(null);
 
-  // Fetch data
   const fetchJobs = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      // Fetch 3 months of data around current month
       const fromDate = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-01`;
       const endMonth = new Date(currentYear, currentMonth + 2, 0);
       const toDate = toDateStr(endMonth);
@@ -136,11 +140,10 @@ export default function ServiceSchedulerPage() {
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
-      trackDashboardView("service-scheduler", { projectCount: jobs.length });
+      trackDashboardView("roofing-scheduler", { projectCount: jobs.length });
     }
   }, [loading, jobs.length, trackDashboardView]);
 
-  // Derived data
   const uniqueStatuses = useMemo(() => {
     const s = new Set(jobs.map(j => j.statusName).filter(Boolean));
     return Array.from(s).sort();
@@ -162,7 +165,6 @@ export default function ServiceSchedulerPage() {
     });
   }, [jobs, searchText, selectedCategories, selectedLocations, selectedStatuses]);
 
-  // Calendar data
   const calendarDays = useMemo(() => {
     const firstDay = new Date(currentYear, currentMonth, 1);
     const lastDay = new Date(currentYear, currentMonth + 1, 0);
@@ -187,26 +189,23 @@ export default function ServiceSchedulerPage() {
   const jobsByDate = useMemo(() => {
     const map: Record<string, ZuperJob[]> = {};
     filteredJobs.forEach(j => {
-      // Use scheduled start date if available, otherwise due date
-      const dateStr = j.scheduledStart
-        ? j.scheduledStart.substring(0, 10)
-        : j.dueDate;
+      const dateStr = j.scheduledStart ? j.scheduledStart.substring(0, 10) : j.dueDate;
       if (!dateStr) return;
       if (!map[dateStr]) map[dateStr] = [];
       map[dateStr].push(j);
     });
-    // Sort each day's jobs by time
+    // Sort: Walk Roof first, then Mid Roof Install, then Roof Final; then by time
+    const ORDER: Record<string, number> = { "Walk Roof": 0, "Mid Roof Install": 1, "Roof Final": 2 };
     for (const date of Object.keys(map)) {
       map[date].sort((a, b) => {
-        const aTime = a.scheduledStart || a.dueDate || "z";
-        const bTime = b.scheduledStart || b.dueDate || "z";
-        return aTime.localeCompare(bTime);
+        const catDiff = (ORDER[a.categoryName] ?? 9) - (ORDER[b.categoryName] ?? 9);
+        if (catDiff !== 0) return catDiff;
+        return (a.scheduledStart || a.dueDate || "z").localeCompare(b.scheduledStart || b.dueDate || "z");
       });
     }
     return map;
   }, [filteredJobs]);
 
-  // Stats
   const stats = useMemo(() => {
     const total = filteredJobs.length;
     const scheduled = filteredJobs.filter(j => j.scheduledStart).length;
@@ -218,7 +217,6 @@ export default function ServiceSchedulerPage() {
     return { total, scheduled, unscheduled, byCategory };
   }, [filteredJobs]);
 
-  // Navigation
   const prevMonth = () => {
     if (currentMonth === 0) { setCurrentMonth(11); setCurrentYear(currentYear - 1); }
     else setCurrentMonth(currentMonth - 1);
@@ -239,13 +237,10 @@ export default function ServiceSchedulerPage() {
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-2 border-b border-t-border bg-surface shrink-0">
         <div className="flex items-center gap-3">
-          <Link
-            href="/suites/service"
-            className="text-muted hover:text-foreground text-sm transition-colors"
-          >
+          <Link href="/suites/dnr-roofing" className="text-muted hover:text-foreground text-sm transition-colors">
             &larr; Back
           </Link>
-          <h1 className="text-base font-bold">Service Schedule</h1>
+          <h1 className="text-base font-bold">Roofing Schedule</h1>
           <span className="text-xs text-muted bg-surface-2 px-2 py-0.5 rounded-full">
             {stats.total} jobs
           </span>
@@ -266,17 +261,16 @@ export default function ServiceSchedulerPage() {
         {/* Sidebar */}
         <aside className="w-[280px] shrink-0 border-r border-t-border flex flex-col overflow-hidden max-[900px]:hidden">
           <div className="p-3 space-y-2 border-b border-t-border">
-            {/* Search */}
             <input
               type="text"
               placeholder="Search jobs..."
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
-              className="w-full bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded-md text-[0.7rem] focus:outline-none focus:border-emerald-500 placeholder:text-muted/70"
+              className="w-full bg-background border border-t-border text-foreground/90 px-2 py-1.5 rounded-md text-[0.7rem] focus:outline-none focus:border-purple-500 placeholder:text-muted/70"
             />
             {/* Category filters */}
             <div className="flex flex-wrap gap-1">
-              {["Service Visit", "Service Revisit"].map(cat => (
+              {["Walk Roof", "Mid Roof Install", "Roof Final"].map(cat => (
                 <button
                   key={cat}
                   onClick={() => toggleFilter(selectedCategories, cat, setSelectedCategories)}
@@ -298,7 +292,7 @@ export default function ServiceSchedulerPage() {
                   onClick={() => toggleFilter(selectedLocations, loc, setSelectedLocations)}
                   className={`px-1.5 py-0.5 text-[0.6rem] rounded border transition-colors ${
                     selectedLocations.includes(loc)
-                      ? "bg-emerald-500 border-emerald-400 text-black"
+                      ? "bg-purple-500 border-purple-400 text-black"
                       : "bg-background border-t-border text-muted hover:border-muted"
                   }`}
                 >
@@ -336,7 +330,7 @@ export default function ServiceSchedulerPage() {
             )}
           </div>
 
-          {/* Stats bar */}
+          {/* Stats */}
           <div className="text-[0.65rem] text-muted px-3 py-2 border-b border-t-border bg-background flex justify-between">
             <span>{stats.scheduled} scheduled</span>
             <span>{stats.unscheduled} unscheduled</span>
@@ -352,7 +346,7 @@ export default function ServiceSchedulerPage() {
             ))}
           </div>
 
-          {/* Unscheduled jobs list */}
+          {/* Unscheduled list */}
           <div className="flex-1 overflow-y-auto p-2">
             <div className="text-[0.6rem] font-semibold uppercase tracking-wider text-muted mb-2 px-1">
               Unscheduled Jobs
@@ -364,11 +358,13 @@ export default function ServiceSchedulerPage() {
                 <div
                   key={j.jobUid}
                   onClick={() => setSelectedJob(j)}
-                  className={`bg-background border rounded-lg p-2.5 mb-1.5 cursor-pointer transition-all hover:border-emerald-500 hover:translate-x-0.5 border-l-[3px] ${
-                    CATEGORY_COLORS[j.categoryName]?.replace("bg-", "border-l-") || "border-l-zinc-600"
+                  className={`bg-background border rounded-lg p-2.5 mb-1.5 cursor-pointer transition-all hover:border-purple-500 hover:translate-x-0.5 border-l-[3px] ${
+                    j.categoryName === "Walk Roof" ? "border-l-blue-500"
+                    : j.categoryName === "Mid Roof Install" ? "border-l-orange-500"
+                    : "border-l-green-500"
                   } ${
                     selectedJob?.jobUid === j.jobUid
-                      ? "border-emerald-500 bg-emerald-500/10 shadow-[0_0_0_1px] shadow-emerald-500"
+                      ? "border-purple-500 bg-purple-500/10 shadow-[0_0_0_1px] shadow-purple-500"
                       : "border-t-border"
                   }`}
                 >
@@ -377,28 +373,22 @@ export default function ServiceSchedulerPage() {
                       {getCustomerName(j.title)}
                     </div>
                   </div>
-                  <div className="text-[0.6rem] text-muted mb-1 truncate" title={j.address}>
-                    {j.address}
-                  </div>
+                  <div className="text-[0.6rem] text-muted mb-1 truncate" title={j.address}>{j.address}</div>
                   <div className="flex gap-1 flex-wrap">
                     <span className={`text-[0.5rem] px-1 py-0.5 rounded ${
-                      CATEGORY_COLORS[j.categoryName]?.replace("bg-", "bg-") + "/20 " + (CATEGORY_TEXT_COLORS[j.categoryName] || "text-muted")
+                      j.categoryName === "Walk Roof" ? "bg-blue-500/20 text-blue-400"
+                      : j.categoryName === "Mid Roof Install" ? "bg-orange-500/20 text-orange-400"
+                      : "bg-green-500/20 text-green-400"
                     }`}>
                       {j.categoryName}
                     </span>
-                    <span className="text-[0.5rem] px-1 py-0.5 rounded bg-surface-2 text-muted">
-                      {j.statusName}
-                    </span>
+                    <span className="text-[0.5rem] px-1 py-0.5 rounded bg-surface-2 text-muted">{j.statusName}</span>
                     {j.teamName && (
-                      <span className="text-[0.5rem] px-1 py-0.5 rounded bg-surface-2 text-muted">
-                        {j.teamName}
-                      </span>
+                      <span className="text-[0.5rem] px-1 py-0.5 rounded bg-surface-2 text-muted">{j.teamName}</span>
                     )}
                   </div>
                   {j.assignedUser && (
-                    <div className="text-[0.55rem] text-muted mt-1">
-                      Assigned: {j.assignedUser}
-                    </div>
+                    <div className="text-[0.55rem] text-muted mt-1">Assigned: {j.assignedUser}</div>
                   )}
                 </div>
               ))
@@ -406,9 +396,8 @@ export default function ServiceSchedulerPage() {
           </div>
         </aside>
 
-        {/* Main calendar area */}
+        {/* Main calendar */}
         <main className="flex flex-col flex-1 overflow-hidden">
-          {/* Calendar header */}
           <div className="flex items-center justify-between px-4 py-2 border-b border-t-border bg-surface shrink-0">
             <div className="flex items-center gap-2">
               <button onClick={prevMonth} className="p-1 text-muted hover:text-foreground transition-colors">&larr;</button>
@@ -425,7 +414,6 @@ export default function ServiceSchedulerPage() {
             </div>
           </div>
 
-          {/* Loading / Error */}
           {loading && (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-muted text-sm">Loading Zuper jobs...</div>
@@ -435,14 +423,13 @@ export default function ServiceSchedulerPage() {
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
                 <div className="text-red-400 text-sm">{error}</div>
-                <button onClick={fetchJobs} className="mt-2 px-3 py-1.5 bg-emerald-500 text-black rounded-md text-sm cursor-pointer">
+                <button onClick={fetchJobs} className="mt-2 px-3 py-1.5 bg-purple-500 text-white rounded-md text-sm cursor-pointer">
                   Retry
                 </button>
               </div>
             </div>
           )}
 
-          {/* Calendar grid */}
           {!loading && !error && (
             <div className="flex-1 overflow-y-auto">
               <div className="grid grid-cols-7 border-b border-t-border">
@@ -466,12 +453,10 @@ export default function ServiceSchedulerPage() {
                       className={`min-h-[110px] max-h-[180px] overflow-y-auto p-1 border-b border-r border-t-border transition-colors ${
                         !isCurrentMonth ? "opacity-40" : ""
                       } ${weekend ? "bg-surface/30" : ""} ${
-                        isToday ? "bg-emerald-900/20 ring-2 ring-inset ring-emerald-500" : ""
+                        isToday ? "bg-purple-900/20 ring-2 ring-inset ring-purple-500" : ""
                       }`}
                     >
-                      <div className={`text-xs font-medium mb-0.5 ${
-                        isToday ? "text-emerald-400" : "text-muted"
-                      }`}>
+                      <div className={`text-xs font-medium mb-0.5 ${isToday ? "text-purple-400" : "text-muted"}`}>
                         {parseInt(dateStr.split("-")[2])}
                       </div>
                       <div className="space-y-0.5">
@@ -480,19 +465,15 @@ export default function ServiceSchedulerPage() {
                             key={j.jobUid}
                             onClick={() => setSelectedJob(j)}
                             className={`text-[0.6rem] p-1 rounded cursor-pointer transition-colors ${
-                              j.categoryName === "Service Revisit"
-                                ? "bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30"
-                                : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
-                            } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""}`}
-                            title={`${j.title}\n${j.statusName}\n${j.assignedUser || "Unassigned"}${j.scheduledStart ? "\n" + formatTime(j.scheduledStart) : ""}`}
+                              CATEGORY_EVENT_COLORS[j.categoryName] || "bg-zinc-500/20 border border-zinc-500/30 text-zinc-300 hover:bg-zinc-500/30"
+                            } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-purple-400" : ""}`}
+                            title={`${j.title}\n${j.categoryName} — ${j.statusName}\n${j.assignedUser || "Unassigned"}${j.scheduledStart ? "\n" + formatTime(j.scheduledStart) : ""}`}
                           >
                             <div className="truncate font-medium">{getCustomerName(j.title)}</div>
                             <div className="flex items-center gap-1 mt-0.5">
+                              <span className="text-[0.5rem] opacity-70">{j.categoryName}</span>
                               {j.scheduledStart && (
                                 <span className="text-[0.5rem] opacity-70">{formatTime(j.scheduledStart)}</span>
-                              )}
-                              {j.assignedUser && (
-                                <span className="text-[0.5rem] opacity-60 truncate">{j.assignedUser.split(" ")[0]}</span>
                               )}
                             </div>
                           </div>
@@ -507,16 +488,10 @@ export default function ServiceSchedulerPage() {
         </main>
       </div>
 
-      {/* Job detail modal */}
+      {/* Detail modal */}
       {selectedJob && (
-        <div
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50"
-          onClick={() => setSelectedJob(null)}
-        >
-          <div
-            className="bg-surface border border-t-border rounded-xl shadow-card-lg w-[480px] max-h-[80vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={() => setSelectedJob(null)}>
+          <div className="bg-surface border border-t-border rounded-xl shadow-card-lg w-[480px] max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
             <div className="p-5 border-b border-t-border">
               <div className="flex justify-between items-start">
                 <div>
@@ -576,7 +551,7 @@ export default function ServiceSchedulerPage() {
                   href={`${ZUPER_WEB_BASE}/jobs/${selectedJob.jobUid}/details`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex-1 text-center text-xs py-2 rounded-md bg-emerald-500 text-black font-semibold hover:bg-emerald-400 transition-colors"
+                  className="flex-1 text-center text-xs py-2 rounded-md bg-purple-500 text-white font-semibold hover:bg-purple-400 transition-colors"
                 >
                   Open in Zuper
                 </a>
@@ -585,7 +560,7 @@ export default function ServiceSchedulerPage() {
                     href={`https://app.hubspot.com/contacts/22460157/deal/${selectedJob.hubspotDealId}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex-1 text-center text-xs py-2 rounded-md bg-orange-500 text-black font-semibold hover:bg-orange-400 transition-colors"
+                    className="flex-1 text-center text-xs py-2 rounded-md bg-blue-500 text-white font-semibold hover:bg-blue-400 transition-colors"
                   >
                     Open in HubSpot
                   </a>
