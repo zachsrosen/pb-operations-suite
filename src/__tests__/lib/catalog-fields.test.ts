@@ -169,6 +169,54 @@ describe("catalog-fields", () => {
     });
   });
 
+  describe("FieldDef min/max ranges", () => {
+    test("MODULE wattage has min: 0", () => {
+      const fields = getCategoryFields("MODULE");
+      const wattage = fields.find((f) => f.key === "wattage");
+      expect(wattage?.min).toBe(0);
+    });
+
+    test("MODULE efficiency has min: 0 and max: 100", () => {
+      const fields = getCategoryFields("MODULE");
+      const efficiency = fields.find((f) => f.key === "efficiency");
+      expect(efficiency?.min).toBe(0);
+      expect(efficiency?.max).toBe(100);
+    });
+
+    test("MODULE tempCoefficient has NO min (legitimately negative)", () => {
+      const fields = getCategoryFields("MODULE");
+      const tempCoeff = fields.find((f) => f.key === "tempCoefficient");
+      expect(tempCoeff?.min).toBeUndefined();
+      expect(tempCoeff?.max).toBeUndefined();
+    });
+
+    test("BATTERY roundTripEfficiency has min: 0 and max: 100", () => {
+      const fields = getCategoryFields("BATTERY");
+      const rte = fields.find((f) => f.key === "roundTripEfficiency");
+      expect(rte?.min).toBe(0);
+      expect(rte?.max).toBe(100);
+    });
+
+    test("RACKING windRating has min: 0", () => {
+      const fields = getCategoryFields("RACKING");
+      const wind = fields.find((f) => f.key === "windRating");
+      expect(wind?.min).toBe(0);
+    });
+
+    test("RACKING snowLoad has min: 0", () => {
+      const fields = getCategoryFields("RACKING");
+      const snow = fields.find((f) => f.key === "snowLoad");
+      expect(snow?.min).toBe(0);
+    });
+
+    test("fields without explicit min/max have undefined", () => {
+      const fields = getCategoryFields("MODULE");
+      const cellType = fields.find((f) => f.key === "cellType");
+      expect(cellType?.min).toBeUndefined();
+      expect(cellType?.max).toBeUndefined();
+    });
+  });
+
   describe("constants", () => {
     test("MANUFACTURERS has at least 30 entries", () => {
       expect(MANUFACTURERS.length).toBeGreaterThanOrEqual(30);
