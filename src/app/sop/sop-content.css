@@ -45,10 +45,10 @@
 /* ── Top bar ── */
 .sop-top-bar {
   background: #111827;
-  padding: 12px 32px;
+  padding: 8px 24px;
   display: flex;
   align-items: center;
-  gap: 24px;
+  gap: 16px;
   position: sticky;
   top: 0;
   z-index: 1000;
@@ -104,6 +104,7 @@
   align-items: center;
   gap: 16px;
   white-space: nowrap;
+  margin-left: auto;
 }
 .sop-user-name {
   font-size: 12px;
@@ -146,17 +147,17 @@
   border-bottom: 1px solid var(--gray-200);
   padding: 0 24px;
   display: flex;
+  flex-wrap: wrap;
   gap: 0;
   position: sticky;
-  top: 53px;
+  top: 45px;
   z-index: 999;
   box-shadow: var(--shadow);
-  overflow-x: auto;
 }
 .sop-tab-bar button {
   background: none;
   border: none;
-  padding: 10px 20px;
+  padding: 10px 14px;
   font-size: 13px;
   font-weight: 600;
   color: var(--gray-500);
@@ -253,18 +254,18 @@
 .sop-layout {
   display: flex;
   flex: 1;
-  min-height: calc(100vh - 90px);
+  min-height: calc(100vh - 82px);
 }
 
 /* ── Sidebar ── */
 .sop-sidebar {
-  width: 260px;
+  width: 230px;
   background: #fff;
   border-right: 1px solid var(--gray-200);
-  padding: 14px 0;
+  padding: 10px 0;
   position: sticky;
-  top: 90px;
-  height: calc(100vh - 90px);
+  top: 82px;
+  height: calc(100vh - 82px);
   overflow-y: auto;
   flex-shrink: 0;
 }
@@ -319,8 +320,8 @@
 /* ── Main content area ── */
 .sop-main {
   flex: 1;
-  padding: 28px 44px;
-  max-width: 980px;
+  padding: 24px 32px;
+  min-width: 0;
   overflow-y: auto;
 }
 

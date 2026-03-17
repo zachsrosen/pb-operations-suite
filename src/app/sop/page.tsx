@@ -151,8 +151,7 @@ function SOPPageInner() {
    * EVERYONE sees:
    *   hubspot  — HubSpot Guide
    *   ops      — Project Pipeline
-   *   ref      — Reference (minus admin-only sections below)
-   *   wf       — Workflows
+   *   ref      — Reference (includes Workflows, minus admin-only sections below)
    *
    * ROLE-SPECIFIC:
    *   pm       — PM Guide        → only named PMs (Alexis, Kaitlyn, Kat, Natasha)
@@ -173,7 +172,6 @@ function SOPPageInner() {
     hubspot:    () => true,
     ops:        () => true,
     ref:        () => true,
-    wf:         () => true,
     pm:         (_role, name) => ["alexis", "kaitlyn", "kat", "natasha"].includes(name),
     "role-de":  (role) => role === "TECH_OPS",
   };
