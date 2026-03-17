@@ -1,7 +1,7 @@
 /**
  * Inventory SKU Stats API
  *
- * GET /api/inventory/skus/stats — per-category sync health breakdown
+ * GET /api/inventory/products/stats — per-category sync health breakdown
  *
  * Returns counts of SKUs by category and how many have each external ID populated.
  */

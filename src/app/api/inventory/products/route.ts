@@ -1,9 +1,9 @@
 /**
- * Inventory SKU API
+ * Inventory Products API
  *
- * GET    /api/inventory/skus - List SKUs with optional filtering
- * POST   /api/inventory/skus - Create or upsert a SKU (admin/manager only)
- * DELETE /api/inventory/skus - Permanently delete a SKU (admin only)
+ * GET    /api/inventory/products - List products with optional filtering
+ * POST   /api/inventory/products - Create or upsert a product (admin/manager only)
+ * DELETE /api/inventory/products - Permanently delete a product (admin only)
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -308,7 +308,7 @@ function enrichSku<T extends Record<string, unknown>>(sku: T) {
 }
 
 /**
- * GET /api/inventory/skus
+ * GET /api/inventory/products
  *
  * Query params:
  *   category - Filter by EquipmentCategory enum value
@@ -454,7 +454,7 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/inventory/skus
+ * POST /api/inventory/products
  *
  * Body: {
  *   category, brand, model,
@@ -702,7 +702,7 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * PATCH /api/inventory/skus
+ * PATCH /api/inventory/products
  *
  * Body: {
  *   id: string,
@@ -993,7 +993,7 @@ export async function PATCH(request: NextRequest) {
 const DELETE_ROLES = ["ADMIN"];
 
 /**
- * DELETE /api/inventory/skus
+ * DELETE /api/inventory/products
  *
  * Body: { id: string }
  *

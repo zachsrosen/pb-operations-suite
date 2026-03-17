@@ -1,8 +1,8 @@
 /**
- * Inventory SKU Sync API
+ * Inventory Product Sync API
  *
- * POST /api/inventory/sync-skus
- *   Scans all equipment-context HubSpot projects and upserts unique SKUs
+ * POST /api/inventory/sync-products
+ *   Scans all equipment-context HubSpot projects and upserts unique products
  *   into the InternalProduct table. Returns counts of created/existing/total.
  *   Auth required, roles: ADMIN, OWNER, PROJECT_MANAGER
  */
