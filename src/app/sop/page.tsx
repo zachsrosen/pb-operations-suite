@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { sanitizeSopContent } from "@/lib/sop-sanitize";
+import { canAccessTab, ADMIN_ONLY_SECTIONS } from "@/lib/sop-access";
 import "./sop-content.css";
 
 // Dynamic import — CodeMirror is browser-only
@@ -138,8 +139,9 @@ function SOPPageInner() {
   const contentRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Role-based editing state
+  // Role-based editing state (effective user, including impersonation)
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [effectiveUserName, setEffectiveUserName] = useState<string>("");
   const [editing, setEditing] = useState(false);
   const [pendingSuggestionCount, setPendingSuggestionCount] = useState(0);
 
@@ -165,28 +167,18 @@ function SOPPageInner() {
    *   ref-user-roles — User Roles & Permissions (in Reference tab)
    *   ref-system     — System Architecture (in Reference tab)
    * ────────────────────────────────────────────────────────────────── */
-  const showAllTabs = canEdit;
-  const userFirstName = (session?.user?.name || "").split(" ")[0].toLowerCase();
+  // Use effective user name (from auth/sync, impersonation-aware) for tab access,
+  // falling back to session name before the sync response arrives
+  const userFirstName = (effectiveUserName || session?.user?.name || "").split(" ")[0].toLowerCase();
 
-  const TAB_ACCESS: Record<string, (role: string | null, name: string) => boolean> = {
-    hubspot:    () => true,
-    ops:        () => true,
-    ref:        () => true,
-    pm:         (_role, name) => ["alexis", "kaitlyn", "kat", "natasha"].includes(name),
-    "role-de":  (role) => role === "TECH_OPS",
-  };
+  const visibleTabs = tabs.filter((t) =>
+    canAccessTab(t.id, userRole, userFirstName)
+  );
 
-  const visibleTabs = tabs.filter((t) => {
-    if (showAllTabs) return true;
-    const check = TAB_ACCESS[t.id];
-    return check ? check(userRole, userFirstName) : false;
-  });
-
-  const ADMIN_ONLY_SECTIONS = ["ref-user-roles", "ref-system"];
   const isSectionVisible = (sectionId: string) =>
-    showAllTabs || !ADMIN_ONLY_SECTIONS.includes(sectionId);
+    canEdit || !ADMIN_ONLY_SECTIONS.includes(sectionId);
 
-  // Fetch user role on mount
+  // Fetch effective user role + name on mount (handles impersonation)
   useEffect(() => {
     async function fetchRole() {
       try {
@@ -194,6 +186,7 @@ function SOPPageInner() {
         if (res.ok) {
           const data = await res.json();
           setUserRole(data.role || null);
+          if (data.user?.name) setEffectiveUserName(data.user.name);
         }
       } catch {
         // Non-critical — editing buttons just won't show
@@ -364,13 +357,19 @@ function SOPPageInner() {
   const navigateTo = useCallback(
     (sectionId: string, tabId?: string) => {
       const tab = tabId || activeTabId;
+      // Skip if already on this section — avoids stranding in loading state
+      // (the section-loading effect won't re-fire if activeSectionId is unchanged)
+      if (sectionId === activeSectionId && tab === activeTabId) return;
+      setSectionContent(null);
+      setEditing(false);
+      setContentLoading(true);
       setActiveSectionId(sectionId);
       setSearchResults(null);
       setSearchQuery("");
       updateUrl(tab, sectionId);
       contentRef.current?.scrollTo({ top: 0, behavior: "smooth" });
     },
-    [activeTabId, updateUrl]
+    [activeTabId, activeSectionId, updateUrl]
   );
 
   // Search across all sections
@@ -508,12 +507,13 @@ function SOPPageInner() {
       {/* ── Tab Bar ── */}
       <nav className="sop-tab-bar">
         {visibleTabs.map((tab) => {
-          const isAdminOnly = showAllTabs && !TAB_ACCESS[tab.id];
+          // Admin UI hints: show lock/role icons so admins know what others see
           const ROLE_SPECIFIC_TABS: Record<string, string> = {
             pm: "Visible to select PMs",
             "role-de": "Visible to Tech Ops team",
           };
-          const roleLabel = showAllTabs ? ROLE_SPECIFIC_TABS[tab.id] : undefined;
+          const isAdminOnly = canEdit && !canAccessTab(tab.id, "VIEWER", "");
+          const roleLabel = canEdit ? ROLE_SPECIFIC_TABS[tab.id] : undefined;
           return (
             <button
               key={tab.id}
@@ -606,6 +606,22 @@ function SOPPageInner() {
               </div>
             ))}
           </nav>
+        )}
+
+        {/* ── Mobile Section Nav (visible <768px when sidebar hidden) ── */}
+        {activeTab && (
+          <div className="sop-mobile-section-nav">
+            <select
+              value={activeSectionId}
+              onChange={(e) => navigateTo(e.target.value)}
+            >
+              {activeTab.sections
+                .filter((s) => isSectionVisible(s.id))
+                .map((s) => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+            </select>
+          </div>
         )}
 
         {/* ── Content Area ── */}

@@ -1,17 +1,18 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { getCurrentUser } from "@/lib/auth-utils";
+import { canAccessTab, ADMIN_ONLY_SECTIONS } from "@/lib/sop-access";
 
 /**
  * GET /api/sop/tabs
  *
- * Returns all SOP tabs with their section metadata (no content bodies).
- * Available to all authenticated users.
+ * Returns SOP tabs with their section metadata (no content bodies).
+ * Tabs and admin-only sections are filtered by the caller's role.
  */
 export async function GET() {
   try {
-    const session = await auth();
-    if (!session?.user?.email) {
+    const user = await getCurrentUser();
+    if (!user) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
@@ -19,7 +20,10 @@ export async function GET() {
       return NextResponse.json({ error: "Database not configured" }, { status: 503 });
     }
 
-    const tabs = await prisma.sopTab.findMany({
+    const firstName = (user.name || "").split(" ")[0].toLowerCase();
+    const isAdmin = user.role === "ADMIN" || user.role === "OWNER";
+
+    const allTabs = await prisma.sopTab.findMany({
       orderBy: { sortOrder: "asc" },
       include: {
         sections: {
@@ -37,6 +41,17 @@ export async function GET() {
         },
       },
     });
+
+    // Filter tabs the user can access
+    const tabs = allTabs
+      .filter((tab) => canAccessTab(tab.id, user.role, firstName))
+      .map((tab) => ({
+        ...tab,
+        // Strip admin-only sections for non-admins
+        sections: isAdmin
+          ? tab.sections
+          : tab.sections.filter((s) => !ADMIN_ONLY_SECTIONS.includes(s.id)),
+      }));
 
     return NextResponse.json({ tabs });
   } catch (error) {
