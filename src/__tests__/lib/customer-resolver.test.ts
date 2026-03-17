@@ -1,8 +1,14 @@
+// Mock @/lib/db to prevent Prisma import.meta from breaking Jest
+jest.mock("@/lib/db", () => ({
+  getCachedZuperJobsByDealIds: jest.fn().mockResolvedValue([]),
+}));
+
 import {
   normalizeAddress,
   deriveDisplayName,
   groupSearchHits,
   filterExpandedContactsByAddress,
+  parseGroupKey,
   type RawSearchHit,
 } from "@/lib/customer-resolver";
 
@@ -245,5 +251,32 @@ describe("filterExpandedContactsByAddress", () => {
     ];
     const result = filterExpandedContactsByAddress(contacts, "123 main street|80202");
     expect(result).toEqual([]);
+  });
+});
+
+describe("parseGroupKey", () => {
+  it("parses a company groupKey", () => {
+    const result = parseGroupKey("company:12345:123 main street|80202");
+    expect(result).toEqual({
+      type: "company",
+      companyId: "12345",
+      normalizedAddress: "123 main street|80202",
+    });
+  });
+
+  it("parses an address-only groupKey", () => {
+    const result = parseGroupKey("addr:123 main street|80202");
+    expect(result).toEqual({
+      type: "addr",
+      companyId: null,
+      normalizedAddress: "123 main street|80202",
+    });
+  });
+
+  it("returns null for invalid groupKey", () => {
+    expect(parseGroupKey("invalid")).toBeNull();
+    expect(parseGroupKey("company:")).toBeNull();
+    expect(parseGroupKey("addr:")).toBeNull();
+    expect(parseGroupKey("company:12345:")).toBeNull();
   });
 });

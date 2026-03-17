@@ -767,3 +767,59 @@ export async function resolveCustomerDetail(summary: CustomerSummary): Promise<C
     jobs,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Search for customers by query string.
+ * Runs Phase 1 (multi-entity search) + Phase 2 (grouping + expansion).
+ * Returns CustomerSummary[] with counts = -1 (resolved lazily on detail).
+ */
+export async function searchCustomers(query: string): Promise<SearchResult> {
+  // Phase 1: Multi-entity search
+  const { hits, truncated } = await executeSearch(query);
+
+  // Phase 2: Group + expand
+  const groups = groupSearchHits(hits);
+
+  // Expand company groups with all contacts at the same address
+  await expandGroups(groups);
+
+  // Cap at MAX_SEARCH_RESULTS groups
+  const capped = groups.slice(0, MAX_SEARCH_RESULTS);
+
+  return {
+    results: capped,
+    truncated: truncated || groups.length > MAX_SEARCH_RESULTS,
+  };
+}
+
+/**
+ * Parse and validate a groupKey string.
+ * Returns the parsed components or null if invalid.
+ */
+export function parseGroupKey(groupKey: string): {
+  type: "company" | "addr";
+  companyId: string | null;
+  normalizedAddress: string;
+} | null {
+  if (groupKey.startsWith("company:")) {
+    const rest = groupKey.slice("company:".length);
+    const colonIdx = rest.indexOf(":");
+    if (colonIdx === -1) return null;
+    const companyId = rest.slice(0, colonIdx);
+    const normalizedAddress = rest.slice(colonIdx + 1);
+    if (!companyId || !normalizedAddress) return null;
+    return { type: "company", companyId, normalizedAddress };
+  }
+
+  if (groupKey.startsWith("addr:")) {
+    const normalizedAddress = groupKey.slice("addr:".length);
+    if (!normalizedAddress) return null;
+    return { type: "addr", companyId: null, normalizedAddress };
+  }
+
+  return null;
+}
