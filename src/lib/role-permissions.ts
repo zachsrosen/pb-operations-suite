@@ -795,12 +795,13 @@ export function canAccessRoute(role: UserRole, route: string): boolean {
 /**
  * Check if user can schedule a specific type
  */
-export function canScheduleType(role: UserRole, scheduleType: "survey" | "installation" | "inspection"): boolean {
+export function canScheduleType(role: UserRole, scheduleType: "survey" | "pre-sale-survey" | "installation" | "inspection"): boolean {
   const permissions = ROLE_PERMISSIONS[normalizeRole(role)];
   if (!permissions) return false;
 
   switch (scheduleType) {
     case "survey":
+    case "pre-sale-survey":
       return permissions.canScheduleSurveys;
     case "installation":
       return permissions.canScheduleInstalls;

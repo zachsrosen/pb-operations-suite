@@ -27,10 +27,10 @@ export async function PUT(request: NextRequest) {
     const body = await request.json();
     const { project, schedule } = body;
 
-    const scheduleType = schedule?.type as "survey" | "installation" | "inspection";
-    if (!scheduleType || !["survey", "installation", "inspection"].includes(scheduleType)) {
+    const scheduleType = schedule?.type as "survey" | "pre-sale-survey" | "installation" | "inspection";
+    if (!scheduleType || !["survey", "pre-sale-survey", "installation", "inspection"].includes(scheduleType)) {
       return NextResponse.json(
-        { error: "Invalid schedule type. Must be: survey, installation, or inspection" },
+        { error: "Invalid schedule type. Must be: survey, pre-sale-survey, installation, or inspection" },
         { status: 400 }
       );
     }
@@ -126,7 +126,7 @@ export async function PUT(request: NextRequest) {
     const userAgent = hdrs.get("user-agent") || "unknown";
 
     const activityType =
-      scheduleType === "survey"
+      (scheduleType === "survey" || scheduleType === "pre-sale-survey")
         ? "SURVEY_SCHEDULED"
         : scheduleType === "inspection"
           ? "INSPECTION_SCHEDULED"

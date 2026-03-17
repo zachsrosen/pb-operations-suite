@@ -499,6 +499,7 @@ export async function sendEmailMessage(params: {
 // Appointment type display names
 const APPOINTMENT_TYPE_LABELS: Record<string, string> = {
   survey: "Site Survey",
+  "pre-sale-survey": "Pre-Sale Site Visit",
   installation: "Installation",
   inspection: "Inspection",
 };
@@ -574,7 +575,7 @@ interface SendSchedulingNotificationParams {
   scheduledByEmail: string;
   dealOwnerName?: string;
   projectManagerName?: string;
-  appointmentType: "survey" | "installation" | "inspection";
+  appointmentType: "survey" | "pre-sale-survey" | "installation" | "inspection";
   customerName: string;
   customerAddress: string;
   scheduledDate: string; // YYYY-MM-DD
@@ -627,7 +628,7 @@ export async function sendSchedulingNotification(
   const cleanedNotes = sanitizeScheduleEmailNotes(params.notes);
   const hubSpotDealUrl = getHubSpotDealUrl(params.projectId);
   const zuperJobUrl = getZuperJobUrl(params.zuperJobUid);
-  const stakeholderTextLine = params.appointmentType === "survey" && params.dealOwnerName
+  const stakeholderTextLine = (params.appointmentType === "survey" || params.appointmentType === "pre-sale-survey") && params.dealOwnerName
     ? `Deal owner: ${params.dealOwnerName}\n`
     : (params.appointmentType === "installation" || params.appointmentType === "inspection") && params.projectManagerName
       ? `Project manager: ${params.projectManagerName}\n`
@@ -870,7 +871,7 @@ interface SendCancellationNotificationParams {
   cancelledByEmail: string;
   scheduledByName?: string;
   dealOwnerName?: string;
-  appointmentType: "survey" | "installation" | "inspection";
+  appointmentType: "survey" | "pre-sale-survey" | "installation" | "inspection";
   customerName: string;
   customerAddress: string;
   scheduledDate?: string;

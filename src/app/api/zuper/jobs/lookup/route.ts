@@ -263,25 +263,26 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
     const customerLower = customerName.toLowerCase();
     const lastName = extractLastName(customerName).toLowerCase();
 
-    let nameMatches = false;
+    // Track HOW the name matched — last-name-only matches need address corroboration
+    let matchType: "proj" | "full_name" | "last_name" | null = null;
 
     // PROJ number match is strongest — if title contains "PROJ-7637", it's almost certainly the right job
     if (projNumber && titleLower.includes(projNumber.toLowerCase())) {
-      nameMatches = true;
+      matchType = "proj";
     }
 
-    if (!nameMatches && customerLower.length > 3 && titleLower.includes(customerLower)) {
-      nameMatches = true;
+    if (!matchType && customerLower.length > 3 && titleLower.includes(customerLower)) {
+      matchType = "full_name";
     }
     // Use includes instead of startsWith — our job titles are "Inspection - PROJ-7637 | Smith, Victor"
-    if (!nameMatches && lastName.length > 2 && titleLower.includes(lastName + ",")) {
-      nameMatches = true;
+    if (!matchType && lastName.length > 2 && titleLower.includes(lastName + ",")) {
+      matchType = "last_name";
     }
-    if (!nameMatches && lastName.length > 2 && titleLower.startsWith(lastName)) {
-      nameMatches = true;
+    if (!matchType && lastName.length > 2 && titleLower.startsWith(lastName)) {
+      matchType = "last_name";
     }
 
-    if (!nameMatches) return { matches: false, addressScore: 0 };
+    if (!matchType) return { matches: false, addressScore: 0 };
 
     let addressScore = 0;
 
@@ -298,6 +299,13 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
       } else if (streetNum && titleLower.includes(streetNum)) {
         addressScore += 5;
       }
+    }
+
+    // Last-name-only matches (e.g. "Scott,") are prone to false positives on common
+    // surnames. Require at least one corroborating signal (PROJ number, address, or
+    // street number) before accepting them.
+    if (matchType === "last_name" && addressScore === 0) {
+      return { matches: false, addressScore: 0 };
     }
 
     return { matches: true, addressScore };

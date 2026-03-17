@@ -34,6 +34,26 @@ import {
 
 type ZuperUserLookupResult = Awaited<ReturnType<typeof zuper.getUser>>;
 
+type ScheduleType = "survey" | "pre-sale-survey" | "installation" | "inspection";
+
+function isSurveyLike(type: string): type is "survey" | "pre-sale-survey" {
+  return type === "survey" || type === "pre-sale-survey";
+}
+
+function getCategoryNameForScheduleType(type: ScheduleType): string {
+  if (type === "pre-sale-survey") return "Pre-Sale Site Visit";
+  if (type === "installation") return "Construction";
+  if (type === "inspection") return "Inspection";
+  return "Site Survey";
+}
+
+function getCategoryUidForScheduleType(type: ScheduleType): string {
+  if (type === "pre-sale-survey") return JOB_CATEGORY_UIDS.PRE_SALE_SITE_VISIT;
+  if (type === "installation") return JOB_CATEGORY_UIDS.CONSTRUCTION;
+  if (type === "inspection") return JOB_CATEGORY_UIDS.INSPECTION;
+  return JOB_CATEGORY_UIDS.SITE_SURVEY;
+}
+
 async function getCachedZuperUser(
   userUid: string,
   cache: Map<string, ZuperUserLookupResult>
@@ -287,8 +307,8 @@ export async function POST(request: NextRequest) {
       normalizedScheduleType === "construction"
         ? "installation"
         : normalizedScheduleType
-    ) as "survey" | "installation" | "inspection";
-    if (!["survey", "installation", "inspection"].includes(scheduleType)) {
+    ) as ScheduleType;
+    if (!["survey", "pre-sale-survey", "installation", "inspection"].includes(scheduleType)) {
       return NextResponse.json(
         { error: `Unsupported schedule type on record: ${record.scheduleType}` },
         { status: 400 }
@@ -456,9 +476,10 @@ export async function POST(request: NextRequest) {
     try {
       // Category config for matching
       const categoryConfig: Record<string, { name: string; uid: string }> = {
-        survey: { name: "Site Survey", uid: JOB_CATEGORY_UIDS.SITE_SURVEY },
-        installation: { name: "Construction", uid: JOB_CATEGORY_UIDS.CONSTRUCTION },
-        inspection: { name: "Inspection", uid: JOB_CATEGORY_UIDS.INSPECTION },
+        survey: { name: getCategoryNameForScheduleType("survey"), uid: getCategoryUidForScheduleType("survey") },
+        "pre-sale-survey": { name: getCategoryNameForScheduleType("pre-sale-survey"), uid: getCategoryUidForScheduleType("pre-sale-survey") },
+        installation: { name: getCategoryNameForScheduleType("installation"), uid: getCategoryUidForScheduleType("installation") },
+        inspection: { name: getCategoryNameForScheduleType("inspection"), uid: getCategoryUidForScheduleType("inspection") },
       };
       const targetCategoryName = categoryConfig[scheduleType].name;
       const targetCategoryUid = categoryConfig[scheduleType].uid;
@@ -599,7 +620,7 @@ export async function POST(request: NextRequest) {
       boundaryEndDateForHubSpot = endDateForSchedule;
 
       if (existingJob?.job_uid) {
-        if (scheduleType === "survey") {
+        if (isSurveyLike(scheduleType)) {
           const existingJobResult = await zuper.getJob(existingJob.job_uid);
           if (existingJobResult.type === "success" && existingJobResult.data) {
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -721,7 +742,7 @@ export async function POST(request: NextRequest) {
       await cacheZuperJob({
         jobUid: zuperJobUid,
         jobTitle: `${scheduleType} - ${record.projectName}`,
-        jobCategory: scheduleType === "survey" ? "Site Survey" : scheduleType === "inspection" ? "Inspection" : "Construction",
+        jobCategory: getCategoryNameForScheduleType(scheduleType),
         jobStatus: "SCHEDULED",
         hubspotDealId: record.projectId,
         projectName: record.projectName,
@@ -732,7 +753,7 @@ export async function POST(request: NextRequest) {
     const hubspotWarnings: string[] = [];
     try {
       let hubspotUpdate: Record<string, string | null>;
-      if (scheduleType === "survey") {
+      if (isSurveyLike(scheduleType)) {
         hubspotUpdate = {
           site_survey_schedule_date: record.scheduledDate,
         };
@@ -751,7 +772,7 @@ export async function POST(request: NextRequest) {
       if (!dateUpdated) {
         hubspotWarnings.push("HubSpot schedule date write failed");
       }
-      if (scheduleType === "survey" && record.assignedUser?.trim()) {
+      if (isSurveyLike(scheduleType) && record.assignedUser?.trim()) {
         const surveyorUpdated = await updateSiteSurveyorProperty(record.projectId, record.assignedUser.trim());
         if (!surveyorUpdated) {
           hubspotWarnings.push(`HubSpot site_surveyor write failed (${record.assignedUser})`);
@@ -768,7 +789,7 @@ export async function POST(request: NextRequest) {
         hubspotWarnings.push(...boundaryWarnings);
       }
       const verificationFields =
-        scheduleType === "survey"
+        isSurveyLike(scheduleType)
           ? ["site_survey_schedule_date", "site_surveyor"]
           : scheduleType === "installation"
             ? ["install_schedule_date", "construction_scheduled_date"]
@@ -778,7 +799,7 @@ export async function POST(request: NextRequest) {
         hubspotWarnings.push("HubSpot verification read failed");
       } else {
         const dateValues =
-          scheduleType === "survey"
+          isSurveyLike(scheduleType)
             ? [verifyProps.site_survey_schedule_date]
             : scheduleType === "installation"
               ? [verifyProps.install_schedule_date, verifyProps.construction_scheduled_date]
@@ -787,7 +808,7 @@ export async function POST(request: NextRequest) {
         if (!dateMatched) {
           hubspotWarnings.push(`HubSpot schedule date verification failed (expected ${record.scheduledDate})`);
         }
-        if (scheduleType === "survey" && record.assignedUser?.trim()) {
+        if (isSurveyLike(scheduleType) && record.assignedUser?.trim()) {
           const surveyorRaw = String(verifyProps.site_surveyor || "").trim().toLowerCase();
           if (!surveyorRaw || surveyorRaw === "null" || surveyorRaw === "undefined") {
             hubspotWarnings.push("HubSpot site_surveyor verification failed (still blank)");
@@ -884,7 +905,7 @@ export async function POST(request: NextRequest) {
         // Fetch project manager + install details before email/calendar blocks
         let dealOwnerName: string | null = null;
         let projectManagerName: string | null = null;
-        if (scheduleType === "survey") {
+        if (isSurveyLike(scheduleType)) {
           try {
             const owner = await getDealOwnerContact(record.projectId);
             dealOwnerName = owner.ownerName;
@@ -968,7 +989,7 @@ export async function POST(request: NextRequest) {
           }
 
           let googleCalendarEventUrl: string | undefined;
-          if (scheduleType === "survey") {
+          if (isSurveyLike(scheduleType)) {
             googleCalendarEventUrl =
               getGoogleCalendarEventUrl(getSurveyCalendarEventId(record.projectId), recipientEmail) || undefined;
           } else if (scheduleType === "installation") {
@@ -1016,7 +1037,7 @@ export async function POST(request: NextRequest) {
 
           const previousSurveyorEmail = normalizeEmail(previousSurveyorFromJob?.email);
 
-          if (scheduleType === "survey") {
+          if (isSurveyLike(scheduleType)) {
             await sendSurveyReassignmentNotifications({
               logPrefix: "Zuper Confirm",
               schedulerName: session.user.name || session.user.email || "PB Operations",
@@ -1044,7 +1065,7 @@ export async function POST(request: NextRequest) {
             await sendStandardSchedulingNotification();
           }
 
-          if (scheduleType === "survey") {
+          if (isSurveyLike(scheduleType)) {
             const currentSurveyorEmail = normalizeEmail(recipientEmail);
             if (
               previousSurveyorEmail &&
@@ -1185,7 +1206,7 @@ export async function POST(request: NextRequest) {
     const userAgent = hdrs.get("user-agent") || "unknown";
 
     const activityType =
-      scheduleType === "survey"
+      isSurveyLike(scheduleType)
         ? "SURVEY_SCHEDULED"
         : scheduleType === "inspection"
           ? "INSPECTION_SCHEDULED"

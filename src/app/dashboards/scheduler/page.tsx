@@ -834,12 +834,17 @@ export default function SchedulerPage() {
     milestones: TimelineMilestone[];
   }
 
-  const forecastQuery = useQuery<{ projects: TimelineProject[] }>({
+  const forecastQuery = useQuery<{ projects: TimelineProject[]; rawProjects: RawProject[] }>({
     queryKey: ["scheduler", "forecasts"],
     queryFn: async () => {
-      const res = await fetch("/api/forecasting/timeline");
-      if (!res.ok) throw new Error("Failed to fetch forecasts");
-      return res.json();
+      const [timelineRes, rawRes] = await Promise.all([
+        fetch("/api/forecasting/timeline"),
+        fetch("/api/projects"),
+      ]);
+      if (!timelineRes.ok) throw new Error("Failed to fetch forecasts");
+      const timeline = await timelineRes.json();
+      const raw = rawRes.ok ? await rawRes.json() : { projects: [] };
+      return { projects: timeline.projects, rawProjects: raw.projects };
     },
     enabled: showForecasts,
     refetchInterval: 5 * 60 * 1000,
@@ -1343,8 +1348,16 @@ export default function SchedulerPage() {
     if (!showForecasts || !forecastQuery.data?.projects) return [];
 
     const timelineProjects = forecastQuery.data.projects;
+    const rawProjects = forecastQuery.data.rawProjects || [];
     const ghosts: ScheduledEvent[] = [];
-    const preConstructionStages = new Set(["survey", "rtb", "blocked"]);
+    const preConstructionStages = new Set(["survey", "rtb", "blocked", "design", "permitting"]);
+
+    const mapRawStage = (stageRaw: string): string => {
+      const s = (stageRaw || "").toLowerCase();
+      if (s.includes("design") || s.includes("d&e") || s.includes("engineering")) return "design";
+      if (s.includes("permit") || s.includes("interconnection") || s.includes("p&i")) return "permitting";
+      return mapStage(stageRaw);
+    };
 
     const typeVariants: Record<string, string[]> = {
       survey: ["survey", "survey-complete"],
@@ -1355,13 +1368,17 @@ export default function SchedulerPage() {
 
     for (const tp of timelineProjects) {
       const project = projects.find((p) => String(p.id) === tp.dealId);
-      if (!project) continue;
+      const raw = !project ? rawProjects.find((r: RawProject) => String(r.id) === tp.dealId) : null;
+      if (!project && !raw) continue;
+
+      const id = project ? project.id : String(raw!.id);
+      const stage = project ? project.stage : mapRawStage(raw!.stage);
 
       // ── Eligibility filter ──
-      if (!preConstructionStages.has(project.stage)) continue;
-      if (project.constructionScheduleDate) continue;
-      if (manualSchedules[project.id]?.scheduleType === "installation") continue;
-      if (project.zuperJobCategory === "construction") continue;
+      if (!preConstructionStages.has(stage)) continue;
+      if (project?.constructionScheduleDate || raw?.constructionScheduleDate) continue;
+      if (manualSchedules[id]?.scheduleType === "installation") continue;
+      if (project?.zuperJobCategory === "construction") continue;
 
       const installMilestone = tp.milestones.find(
         (m) => m.key === "install" && m.basis !== "actual" && m.basis !== "insufficient"
@@ -1369,18 +1386,74 @@ export default function SchedulerPage() {
       if (!installMilestone?.liveForecast) continue;
 
       const hasRealConstructionEvent = scheduledEvents.some(
-        (e) => e.id === project.id && (e.eventType === "construction" || e.eventType === "construction-complete")
+        (e) => e.id === id && (e.eventType === "construction" || e.eventType === "construction-complete")
       );
       if (hasRealConstructionEvent) continue;
 
       // ── Build ghost event ──
-      const ghost: ScheduledEvent = {
-        ...project,
-        date: installMilestone.liveForecast,
-        eventType: "construction",
-        days: project.daysInstall || 3,
-        isForecast: true,
-      };
+      let ghost: ScheduledEvent;
+      if (project) {
+        ghost = {
+          ...project,
+          date: installMilestone.liveForecast,
+          eventType: "construction",
+          days: project.daysInstall || 3,
+          isForecast: true,
+        };
+      } else {
+        // Build from raw project data (D&E / P&I projects not in scheduler projects)
+        const r = raw!;
+        ghost = {
+          id: String(r.id),
+          name: r.name,
+          address: r.address || "",
+          location: normalizeLocation(r.pbLocation || r.city),
+          amount: r.amount || 0,
+          type: r.projectType || "Solar",
+          stage,
+          systemSize: r.equipment?.systemSizeKwdc || 0,
+          moduleCount: r.equipment?.modules?.count || 0,
+          inverterCount: r.equipment?.inverter?.count || 0,
+          batteries: r.equipment?.battery?.count || 0,
+          batteryExpansion: r.equipment?.battery?.expansionCount || 0,
+          batteryModel: null,
+          evCount: r.equipment?.evCount || 0,
+          moduleBrand: r.equipment?.modules?.brand || "",
+          moduleModel: r.equipment?.modules?.model || "",
+          moduleWattage: r.equipment?.modules?.wattage || 0,
+          inverterBrand: r.equipment?.inverter?.brand || "",
+          inverterModel: r.equipment?.inverter?.model || "",
+          inverterSizeKwac: r.equipment?.inverter?.sizeKwac || 0,
+          batterySizeKwh: r.equipment?.battery?.sizeKwh || 0,
+          ahj: r.ahj || "",
+          utility: r.utility || "",
+          crew: null,
+          daysInstall: r.expectedDaysForInstall || r.daysToInstall || 3,
+          daysElec: r.daysForElectricians || 0,
+          totalDays: (r.expectedDaysForInstall || r.daysToInstall || 3) + (r.daysForElectricians || 0),
+          roofersCount: r.roofersCount || 0,
+          electriciansCount: r.electriciansCount || 0,
+          difficulty: r.installDifficulty || 3,
+          installNotes: r.installNotes || "",
+          roofType: null,
+          scheduleDate: null,
+          constructionScheduleDate: null,
+          inspectionScheduleDate: null,
+          surveyScheduleDate: r.siteSurveyScheduleDate || null,
+          surveyCompleted: r.siteSurveyCompletionDate || null,
+          constructionCompleted: null,
+          inspectionCompleted: null,
+          inspectionStatus: null,
+          hubspotUrl: r.url || `https://app.hubspot.com/contacts/21710069/record/0-3/${r.id}`,
+          isPE: r.isParticipateEnergy || false,
+          daysToInstall: r.daysToInstall ?? null,
+          isCompletedPastStage: false,
+          date: installMilestone.liveForecast,
+          eventType: "construction",
+          days: r.expectedDaysForInstall || r.daysToInstall || 3,
+          isForecast: true,
+        };
+      }
 
       // ── Apply same calendar filters as filteredScheduledEvents ──
       if (calendarLocations.length > 0 && !calendarLocations.includes(ghost.location)) continue;
@@ -1465,8 +1538,21 @@ export default function SchedulerPage() {
 
     const weeks: WeekData[] = [];
 
-    // 6 weeks back + current week + 5 weeks forward = 12 weeks
-    for (let w = -6; w < 6; w++) {
+    // Extend forward range to cover forecast ghost events, capped to avoid
+    // runaway bucket counts from far-future outlier forecasts.
+    const MAX_WEEKS_FORWARD = 26; // ~6 months
+    let weeksForward = 6;
+    if (forecastGhostEvents.length > 0) {
+      const maxDate = forecastGhostEvents.reduce((max, e) => {
+        const d = new Date(e.date + "T12:00:00");
+        return d > max ? d : max;
+      }, new Date(0));
+      const diffWeeks = Math.ceil((maxDate.getTime() - thisMonday.getTime()) / (7 * 86400000));
+      if (diffWeeks + 1 > weeksForward) weeksForward = Math.min(diffWeeks + 1, MAX_WEEKS_FORWARD);
+    }
+
+    // 6 weeks back + current week + forward weeks
+    for (let w = -6; w < weeksForward; w++) {
       const weekStart = new Date(thisMonday);
       weekStart.setDate(thisMonday.getDate() + w * 7);
       const weekEnd = new Date(weekStart);
@@ -1486,7 +1572,7 @@ export default function SchedulerPage() {
       weeks.push({ weekStart, weekLabel: label, isPast, isFuture, isCurrent, ...buckets });
     }
     return weeks;
-  }, [displayEvents, computeRevenueBuckets]);
+  }, [displayEvents, forecastGhostEvents, computeRevenueBuckets]);
 
   const monthlyRevenueSummary = useMemo((): MonthData[] => {
     const today = new Date();
@@ -1494,13 +1580,12 @@ export default function SchedulerPage() {
     const thisYear = today.getFullYear();
     const months: MonthData[] = [];
 
-    // 6 months back + current month + 3 months forward = 10 months
-    for (let m = -6; m <= 3; m++) {
-      const d = new Date(thisYear, thisMonth + m, 1);
-      const monthStart = new Date(d.getFullYear(), d.getMonth(), 1);
-      const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 1);
-      const isPast = m < 0;
-      const isCurrent = m === 0;
+    // Show all months of the current year (Jan–Dec)
+    for (let mo = 0; mo < 12; mo++) {
+      const monthStart = new Date(thisYear, mo, 1);
+      const monthEnd = new Date(thisYear, mo + 1, 1);
+      const isPast = mo < thisMonth;
+      const isCurrent = mo === thisMonth;
       const label = monthStart.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 
       const monthEvents = displayEvents.filter((e) => {
@@ -1512,7 +1597,7 @@ export default function SchedulerPage() {
       months.push({ monthLabel: label, isPast, isCurrent, ...buckets });
     }
     return months;
-  }, [displayEvents, computeRevenueBuckets]);
+  }, [displayEvents, forecastGhostEvents, computeRevenueBuckets]);
 
   /* ================================================================ */
   /*  Calendar logic                                                   */
