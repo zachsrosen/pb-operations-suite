@@ -253,8 +253,7 @@ export default function ServiceOverviewPage() {
         />
         <StatCard
           label="Open Tickets"
-          subtitle="Coming in Phase 2"
-          value={0}
+          value={data?.queue.filter(i => i.item.type === "ticket").length ?? 0}
           color="blue"
         />
         <StatCard
