@@ -3,11 +3,16 @@ import { useEffect, useMemo, useState } from "react";
 import BrandDropdown from "./BrandDropdown";
 import { FORM_CATEGORIES, getCategoryLabel } from "@/lib/catalog-fields";
 import type { CatalogFormState, CatalogFormAction } from "@/lib/catalog-form-state";
+import type { ValidationError, ValidationWarning } from "@/lib/catalog-form-state";
 
 interface BasicsStepProps {
   state: CatalogFormState;
   dispatch: React.Dispatch<CatalogFormAction>;
   onCategoryChange?: (category: string) => void;
+  errors?: ValidationError[];
+  warnings?: ValidationWarning[];
+  touchedFields?: Set<string>;
+  onFieldBlur?: (field: string) => void;
   onNext: () => void;
   onBack?: () => void;
 }
@@ -24,7 +29,7 @@ interface ExistingSkuMatch {
   zohoItemId?: string;
 }
 
-export default function BasicsStep({ state, dispatch, onCategoryChange, onNext, onBack }: BasicsStepProps) {
+export default function BasicsStep({ state, dispatch, onCategoryChange, errors, warnings, touchedFields, onFieldBlur, onNext, onBack }: BasicsStepProps) {
   const [existingMatches, setExistingMatches] = useState<ExistingSkuMatch[]>([]);
   const [existingMatchesLoading, setExistingMatchesLoading] = useState(false);
   const [mergeSourceSkuId, setMergeSourceSkuId] = useState("");
@@ -84,7 +89,14 @@ export default function BasicsStep({ state, dispatch, onCategoryChange, onNext, 
     } finally { setMergeBusy(false); }
   }
 
-  const canProceed = state.category && state.brand && state.model && state.description;
+  // Filter errors/warnings to only those for touched fields
+  const fieldError = (field: string): string | undefined => {
+    if (!touchedFields?.has(field)) return undefined;
+    return errors?.find((e) => e.field === field)?.message;
+  };
+
+  const inputErrorClass = (field: string): string =>
+    fieldError(field) ? "ring-2 ring-red-500/50 border-red-500/50" : "";
 
   const isPrefilled = (field: string) => state.prefillFields.has(field);
 
@@ -118,7 +130,15 @@ export default function BasicsStep({ state, dispatch, onCategoryChange, onNext, 
         <div className="bg-surface rounded-xl border border-t-border p-6 shadow-card">
           <h3 className="text-lg font-semibold text-foreground mb-4">Product Identity</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className={isPrefilled("brand") ? "border-l-2 border-l-green-400 pl-3" : ""}>
+            <div
+              className={isPrefilled("brand") ? "border-l-2 border-l-green-400 pl-3" : ""}
+              onBlur={(e) => {
+                // Only mark touched when focus leaves the entire container, not internal focus moves
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  onFieldBlur?.("brand");
+                }
+              }}
+            >
               <label className="block text-sm font-medium text-muted mb-1">
                 Brand <span className="text-red-400">*</span>
               </label>
@@ -129,8 +149,14 @@ export default function BasicsStep({ state, dispatch, onCategoryChange, onNext, 
                   dispatch({ type: "CLEAR_PREFILL_FIELD", field: "brand" });
                 }}
               />
+              {fieldError("brand") && (
+                <p className="mt-1 text-xs text-red-400">{fieldError("brand")}</p>
+              )}
             </div>
-            <div className={isPrefilled("model") ? "border-l-2 border-l-green-400 pl-3" : ""}>
+            <div
+              className={isPrefilled("model") ? "border-l-2 border-l-green-400 pl-3" : ""}
+              onBlur={() => onFieldBlur?.("model")}
+            >
               <label className="block text-sm font-medium text-muted mb-1">
                 Model / Part # <span className="text-red-400">*</span>
               </label>
@@ -141,10 +167,16 @@ export default function BasicsStep({ state, dispatch, onCategoryChange, onNext, 
                   dispatch({ type: "SET_FIELD", field: "model", value: e.target.value });
                   dispatch({ type: "CLEAR_PREFILL_FIELD", field: "model" });
                 }}
-                className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                className={`w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 ${inputErrorClass("model")}`}
               />
+              {fieldError("model") && (
+                <p className="mt-1 text-xs text-red-400">{fieldError("model")}</p>
+              )}
             </div>
-            <div className={`sm:col-span-2 ${isPrefilled("description") ? "border-l-2 border-l-green-400 pl-3" : ""}`}>
+            <div
+              className={`sm:col-span-2 ${isPrefilled("description") ? "border-l-2 border-l-green-400 pl-3" : ""}`}
+              onBlur={() => onFieldBlur?.("description")}
+            >
               <label className="block text-sm font-medium text-muted mb-1">
                 Description <span className="text-red-400">*</span>
               </label>
@@ -155,8 +187,11 @@ export default function BasicsStep({ state, dispatch, onCategoryChange, onNext, 
                   dispatch({ type: "CLEAR_PREFILL_FIELD", field: "description" });
                 }}
                 rows={3}
-                className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                className={`w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 ${inputErrorClass("description")}`}
               />
+              {fieldError("description") && (
+                <p className="mt-1 text-xs text-red-400">{fieldError("description")}</p>
+              )}
             </div>
             {/* SKU + Vendor Part # — in Basics so duplicate lookup can use them */}
             <div className={isPrefilled("sku") ? "border-l-2 border-l-green-400 pl-3" : ""}>
@@ -280,9 +315,8 @@ export default function BasicsStep({ state, dispatch, onCategoryChange, onNext, 
         )}
         <button
           type="button"
-          disabled={!canProceed}
           onClick={onNext}
-          className="px-6 py-2.5 text-sm font-semibold rounded-lg bg-cyan-600 text-white hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="px-6 py-2.5 text-sm font-semibold rounded-lg bg-cyan-600 text-white hover:bg-cyan-500 transition-colors"
         >
           Next: Details →
         </button>

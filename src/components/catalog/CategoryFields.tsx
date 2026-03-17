@@ -2,6 +2,7 @@
 
 import { getCategoryFields, type FieldDef } from "@/lib/catalog-fields";
 import FieldTooltip from "./FieldTooltip";
+import type { ValidationError } from "@/lib/catalog-form-state";
 
 interface CategoryFieldsProps {
   category: string;
@@ -10,6 +11,9 @@ interface CategoryFieldsProps {
   showTooltips?: boolean;
   prefillFields?: Set<string>;
   onClearPrefill?: (key: string) => void;
+  errors?: ValidationError[];
+  touchedFields?: Set<string>;
+  onFieldBlur?: (field: string) => void;
 }
 
 const inputClasses =
@@ -139,8 +143,17 @@ export default function CategoryFields({
   showTooltips,
   prefillFields,
   onClearPrefill,
+  errors,
+  touchedFields,
+  onFieldBlur,
 }: CategoryFieldsProps) {
   const fields = getCategoryFields(category);
+
+  const fieldError = (key: string): string | undefined => {
+    const field = `spec.${key}`;
+    if (!touchedFields?.has(field)) return undefined;
+    return errors?.find((e) => e.field === field)?.message;
+  };
 
   if (fields.length === 0) return null;
 
@@ -152,6 +165,7 @@ export default function CategoryFields({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {fields.map((field) => {
           const Renderer = FIELD_RENDERERS[field.type];
+          const error = fieldError(field.key);
           return (
             <div
               key={field.key}
@@ -160,6 +174,7 @@ export default function CategoryFields({
                   ? "border-l-2 border-l-blue-400 pl-3"
                   : ""
               }
+              onBlur={() => onFieldBlur?.(`spec.${field.key}`)}
             >
               <label className="text-sm font-medium text-muted mb-1 block">
                 {field.label}
@@ -170,14 +185,17 @@ export default function CategoryFields({
                   <FieldTooltip text={field.tooltip} />
                 )}
               </label>
-              <Renderer
-                field={field}
-                value={values[field.key]}
-                onChange={(v) => {
-                  onChange(field.key, v);
-                  onClearPrefill?.(field.key);
-                }}
-              />
+              <div className={error ? "ring-2 ring-red-500/50 rounded-lg" : ""}>
+                <Renderer
+                  field={field}
+                  value={values[field.key]}
+                  onChange={(v) => {
+                    onChange(field.key, v);
+                    onClearPrefill?.(field.key);
+                  }}
+                />
+              </div>
+              {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
             </div>
           );
         })}
