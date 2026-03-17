@@ -77,12 +77,22 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/executive-calendar": { href: "/suites/executive", label: "Executive" },
   "/dashboards/forecast-accuracy": { href: "/suites/executive", label: "Executive" },
   "/dashboards/forecast-timeline": { href: "/suites/executive", label: "Executive" },
-  // Service + D&R Suite
-  "/dashboards/service-scheduler": { href: "/suites/service", label: "Service + D&R" },
-  "/dashboards/service-backlog": { href: "/suites/service", label: "Service + D&R" },
-  "/dashboards/service": { href: "/suites/service", label: "Service + D&R" },
-  "/dashboards/dnr-scheduler": { href: "/suites/service", label: "Service + D&R" },
-  "/dashboards/dnr": { href: "/suites/service", label: "Service + D&R" },
+  // Service Suite dashboards
+  "/dashboards/service-scheduler": { href: "/suites/service", label: "Service" },
+  "/dashboards/service-backlog": { href: "/suites/service", label: "Service" },
+  "/dashboards/service": { href: "/suites/service", label: "Service" },
+  "/dashboards/service-overview": { href: "/suites/service", label: "Service" },
+  // Future phases — add now so breadcrumbs work when these dashboards are created:
+  "/dashboards/service-tickets": { href: "/suites/service", label: "Service" },
+  "/dashboards/service-customers": { href: "/suites/service", label: "Service" },
+  "/dashboards/service-warranty": { href: "/suites/service", label: "Service" },
+  "/dashboards/service-catalog": { href: "/suites/service", label: "Service" },
+
+  // D&R + Roofing Suite dashboards
+  "/dashboards/dnr-scheduler": { href: "/suites/dnr-roofing", label: "D&R + Roofing" },
+  "/dashboards/dnr": { href: "/suites/dnr-roofing", label: "D&R + Roofing" },
+  "/dashboards/roofing": { href: "/suites/dnr-roofing", label: "D&R + Roofing" },
+  "/dashboards/roofing-scheduler": { href: "/suites/dnr-roofing", label: "D&R + Roofing" },
   // Admin Suite
   "/dashboards/zuper-status-comparison": { href: "/suites/admin", label: "Admin" },
   // Design Reviews (dynamic: /dashboards/reviews/:dealId)
