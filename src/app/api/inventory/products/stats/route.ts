@@ -1,9 +1,9 @@
 /**
- * Inventory SKU Stats API
+ * Inventory Product Stats API
  *
  * GET /api/inventory/products/stats — per-category sync health breakdown
  *
- * Returns counts of SKUs by category and how many have each external ID populated.
+ * Returns counts of products by category and how many have each external ID populated.
  */
 
 import { NextResponse } from "next/server";
