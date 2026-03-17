@@ -82,6 +82,43 @@ describe("scorePriorityItem", () => {
     expect(result.score).toBeLessThan(25);
   });
 
+  it("scores warranty expiring in 3 days as urgent (not expired)", () => {
+    const item: PriorityItem = {
+      id: "deal-warranty",
+      type: "deal",
+      title: "Service — Warranty Soon",
+      stage: "Work In Progress",
+      lastModified: new Date("2026-03-16T10:00:00Z").toISOString(),
+      lastContactDate: new Date("2026-03-15T12:00:00Z").toISOString(),
+      createDate: new Date("2026-03-10T12:00:00Z").toISOString(),
+      amount: 3000,
+      location: "Denver",
+      warrantyExpiry: new Date("2026-03-19T12:00:00Z").toISOString(), // 3 days from now
+    };
+    const result = scorePriorityItem(item, now);
+    // Should hit the <= 7 days branch (+40), NOT the expired branch (+30)
+    expect(result.reasons).toEqual(expect.arrayContaining([expect.stringContaining("Warranty expires in")]));
+    expect(result.reasons).not.toEqual(expect.arrayContaining(["Warranty expired"]));
+    expect(result.score).toBeGreaterThanOrEqual(40); // at least the warranty +40
+  });
+
+  it("scores an already-expired warranty correctly", () => {
+    const item: PriorityItem = {
+      id: "deal-expired",
+      type: "deal",
+      title: "Service — Warranty Past",
+      stage: "Work In Progress",
+      lastModified: new Date("2026-03-16T10:00:00Z").toISOString(),
+      lastContactDate: new Date("2026-03-15T12:00:00Z").toISOString(),
+      createDate: new Date("2026-03-10T12:00:00Z").toISOString(),
+      amount: 3000,
+      location: "Denver",
+      warrantyExpiry: new Date("2026-03-10T12:00:00Z").toISOString(), // 6 days ago
+    };
+    const result = scorePriorityItem(item, now);
+    expect(result.reasons).toContain("Warranty expired");
+  });
+
   it("returns reasons array explaining the score", () => {
     const item: PriorityItem = {
       id: "deal-4",

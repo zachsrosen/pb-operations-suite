@@ -506,7 +506,8 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
         }],
         properties: ["hs_note_body", "hs_timestamp", "hubspot_owner_id", "hs_created_by"],
         limit: 50,
-        sorts: ["hs_timestamp"],
+        // API accepts object-form sorts but TS types expect string[] — cast to get newest first
+        sorts: [{ propertyName: "hs_timestamp", direction: "DESCENDING" }] as unknown as string[],
       });
 
       for (const note of notesResponse.results || []) {
@@ -529,7 +530,7 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
         }],
         properties: ["hs_email_subject", "hs_email_text", "hs_timestamp", "hs_email_direction"],
         limit: 50,
-        sorts: ["hs_timestamp"],
+        sorts: [{ propertyName: "hs_timestamp", direction: "DESCENDING" }] as unknown as string[],
       });
 
       for (const email of emailsResponse.results || []) {

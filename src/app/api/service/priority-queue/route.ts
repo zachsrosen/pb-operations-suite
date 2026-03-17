@@ -27,40 +27,50 @@ async function fetchServiceDeals(): Promise<PriorityItem[]> {
     .filter(([, name]) => activeStageNames.has(name))
     .map(([id]) => id);
 
-  // Single filterGroup with IN operator — avoids the 5-filterGroups-per-request limit
-  const searchRequest = {
-    filterGroups: [{
-      filters: [
-        { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: pipelineId },
-        { propertyName: "dealstage", operator: FilterOperatorEnum.In, values: activeStageIds },
-      ],
-    }],
-    properties,
-    limit: 100,
-  };
+  const allItems: PriorityItem[] = [];
 
   try {
-    const response = await hubspotClient.crm.deals.searchApi.doSearch(searchRequest);
-    const deals = response.results || [];
-
-    return deals.map(deal => {
-      const dealstage = deal.properties.dealstage ?? "";
-      return {
-        id: deal.properties.hs_object_id || deal.id,
-        type: "deal" as const,
-        title: deal.properties.dealname || "Untitled Deal",
-        stage: stageMap[dealstage] || dealstage || "Unknown",
-        lastModified: deal.properties.hs_lastmodifieddate || deal.properties.createdate || new Date().toISOString(),
-        lastContactDate: deal.properties.notes_last_contacted || null,
-        createDate: deal.properties.createdate || new Date().toISOString(),
-        amount: deal.properties.amount ? parseFloat(deal.properties.amount) : null,
-        location: deal.properties.pb_location || null,
-        url: `https://app.hubspot.com/contacts/${process.env.HUBSPOT_PORTAL_ID || ""}/deal/${deal.id}`,
+    let after: string | undefined;
+    do {
+      // Single filterGroup with IN operator — avoids the 5-filterGroups-per-request limit
+      const searchRequest: Record<string, unknown> = {
+        filterGroups: [{
+          filters: [
+            { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: pipelineId },
+            { propertyName: "dealstage", operator: FilterOperatorEnum.In, values: activeStageIds },
+          ],
+        }],
+        properties,
+        limit: 100,
+        ...(after ? { after } : {}),
       };
-    });
+
+      const response = await hubspotClient.crm.deals.searchApi.doSearch(searchRequest);
+      const deals = response.results || [];
+
+      for (const deal of deals) {
+        const dealstage = deal.properties.dealstage ?? "";
+        allItems.push({
+          id: deal.properties.hs_object_id || deal.id,
+          type: "deal" as const,
+          title: deal.properties.dealname || "Untitled Deal",
+          stage: stageMap[dealstage] || dealstage || "Unknown",
+          lastModified: deal.properties.hs_lastmodifieddate || deal.properties.createdate || new Date().toISOString(),
+          lastContactDate: deal.properties.notes_last_contacted || null,
+          createDate: deal.properties.createdate || new Date().toISOString(),
+          amount: deal.properties.amount ? parseFloat(deal.properties.amount) : null,
+          location: deal.properties.pb_location || null,
+          url: `https://app.hubspot.com/contacts/${process.env.HUBSPOT_PORTAL_ID || ""}/deal/${deal.id}`,
+        });
+      }
+
+      after = response.paging?.next?.after;
+    } while (after);
+
+    return allItems;
   } catch (error) {
     console.error("[PriorityQueue] Error fetching service deals:", error);
-    return [];
+    return allItems; // Return whatever we collected before the error
   }
 }
 

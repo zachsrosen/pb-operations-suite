@@ -31,7 +31,7 @@ export interface PriorityScore {
 
 function daysBetween(dateStr: string, now: Date): number {
   const date = new Date(dateStr);
-  return Math.max(0, (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
+  return (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
 }
 
 function tierFromScore(score: number): PriorityTier {
