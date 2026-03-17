@@ -223,9 +223,14 @@ export default function CustomerHistoryPage() {
           <div className="fixed top-0 right-0 h-full w-full max-w-2xl bg-surface border-l border-t-border shadow-2xl z-50 overflow-y-auto">
             {/* Panel Header */}
             <div className="sticky top-0 bg-surface border-b border-t-border p-4 flex items-center justify-between z-10">
-              <h2 className="text-lg font-semibold text-foreground truncate">
-                {selectedCustomer.displayName}
-              </h2>
+              <div className="min-w-0 flex-1 mr-3">
+                <h2 className="text-lg font-semibold text-foreground truncate">
+                  {selectedCustomer.displayName}
+                </h2>
+                {selectedCustomer.address && (
+                  <p className="text-sm text-muted truncate">{selectedCustomer.address}</p>
+                )}
+              </div>
               <button
                 onClick={() => setSelectedCustomer(null)}
                 className="text-muted hover:text-foreground p-1"
