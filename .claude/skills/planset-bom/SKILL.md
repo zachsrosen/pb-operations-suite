@@ -114,7 +114,7 @@ Assemble the full BOM JSON matching the schema in `references/bom-schema.md`.
 Output all three formats inline:
 1. **Markdown table** — grouped by category, with validation summary
 2. **CSV** — ready to import into Google Sheets or inventory
-3. **JSON** — structured for `/api/inventory/sync-skus`
+3. **JSON** — structured for `/api/inventory/sync-products`
 
 Optionally run the export script if a file path is needed:
 ```bash
