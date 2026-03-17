@@ -328,12 +328,15 @@ async function verifyHubSpotScheduleWrite(
   scheduleDate: string,
   expectedSurveyor?: string
 ): Promise<{ ok: boolean; warnings: string[] }> {
+  // Only verify site_surveyor for ops surveys — pre-sale visits don't write it
   const verificationFields =
-    isSurveyLike(scheduleType)
+    scheduleType === "survey"
       ? ["site_survey_schedule_date", "site_surveyor"]
-      : scheduleType === "installation"
-        ? ["install_schedule_date", "construction_scheduled_date"]
-        : ["inspections_schedule_date", "inspection_scheduled_date"];
+      : scheduleType === "pre-sale-survey"
+        ? ["site_survey_schedule_date"]
+        : scheduleType === "installation"
+          ? ["install_schedule_date", "construction_scheduled_date"]
+          : ["inspections_schedule_date", "inspection_scheduled_date"];
 
   const props = await getDealProperties(dealId, verificationFields);
   if (!props) {
@@ -352,7 +355,7 @@ async function verifyHubSpotScheduleWrite(
     warnings.push(`HubSpot schedule date verification failed (expected ${scheduleDate})`);
   }
 
-  if (isSurveyLike(scheduleType) && expectedSurveyor?.trim()) {
+  if (scheduleType === "survey" && expectedSurveyor?.trim()) {
     if (isBlank(props.site_surveyor)) {
       warnings.push("HubSpot site_surveyor verification failed (still blank)");
     }
@@ -930,7 +933,10 @@ export async function PUT(request: NextRequest) {
       if (!hubspotDateUpdated) {
         hubspotWarnings.push("HubSpot schedule date write failed");
       }
-      if (isSurveyLike(schedule.type) && schedule.assignedUser) {
+      // Only write site_surveyor for real ops surveys — pre-sale visits
+      // share site_survey_schedule_date for visibility but must not touch
+      // site_surveyor to avoid overwriting a future ops survey assignment.
+      if (schedule.type === "survey" && schedule.assignedUser) {
         const surveyorUpdated = await updateSiteSurveyorProperty(project.id, schedule.assignedUser);
         if (!surveyorUpdated) {
           hubspotWarnings.push(`HubSpot site_surveyor write failed (${schedule.assignedUser})`);
@@ -1063,7 +1069,10 @@ export async function PUT(request: NextRequest) {
       if (!hubspotDateUpdated) {
         hubspotWarnings.push("HubSpot schedule date write failed");
       }
-      if (isSurveyLike(schedule.type) && schedule.assignedUser) {
+      // Only write site_surveyor for real ops surveys — pre-sale visits
+      // share site_survey_schedule_date for visibility but must not touch
+      // site_surveyor to avoid overwriting a future ops survey assignment.
+      if (schedule.type === "survey" && schedule.assignedUser) {
         const surveyorUpdated = await updateSiteSurveyorProperty(project.id, schedule.assignedUser);
         if (!surveyorUpdated) {
           hubspotWarnings.push(`HubSpot site_surveyor write failed (${schedule.assignedUser})`);
@@ -1379,7 +1388,8 @@ export async function DELETE(request: NextRequest) {
 
       for (const dealId of candidateDealIds) {
         // Reset the stage-specific status field.
-        if (isSurveyLike(scheduleType)) {
+        // Pre-sale visits skip status/surveyor resets — only ops surveys own these fields.
+        if (scheduleType === "survey") {
           hubspotStatusUpdated = await updateDealProperty(dealId, {
             site_survey_status: "Ready to Schedule",
           });
@@ -1388,6 +1398,9 @@ export async function DELETE(request: NextRequest) {
               site_survey_status: "Ready To Schedule",
             });
           }
+        } else if (scheduleType === "pre-sale-survey") {
+          // Pre-sale visits only clear schedule date, not status or surveyor.
+          hubspotStatusUpdated = true;
         } else if (scheduleType === "installation") {
           hubspotStatusUpdated = await updateDealProperty(dealId, {
             install_status: "Ready to Build",
@@ -1409,10 +1422,11 @@ export async function DELETE(request: NextRequest) {
         }
 
         let scheduleCleared = false;
-        let surveyorCleared = !isSurveyLike(scheduleType);
+        let surveyorCleared = scheduleType !== "survey"; // only ops surveys need surveyor cleared
         const MAX_CLEAR_ATTEMPTS = 4;
         for (let attempt = 1; attempt <= MAX_CLEAR_ATTEMPTS; attempt += 1) {
           if (isSurveyLike(scheduleType)) {
+            // Both ops surveys and pre-sale visits clear schedule date
             scheduleCleared = await updateDealProperty(dealId, {
               site_survey_schedule_date: "",
             });
@@ -1422,13 +1436,16 @@ export async function DELETE(request: NextRequest) {
               });
             }
 
-            surveyorCleared = await updateDealProperty(dealId, {
-              site_surveyor: "",
-            });
-            if (!surveyorCleared) {
+            // Only ops surveys clear site_surveyor
+            if (scheduleType === "survey") {
               surveyorCleared = await updateDealProperty(dealId, {
-                site_surveyor: null,
+                site_surveyor: "",
               });
+              if (!surveyorCleared) {
+                surveyorCleared = await updateDealProperty(dealId, {
+                  site_surveyor: null,
+                });
+              }
             }
           } else if (scheduleType === "installation") {
             scheduleCleared = await updateDealProperty(dealId, {
@@ -1478,17 +1495,22 @@ export async function DELETE(request: NextRequest) {
           }
 
           hubspotDealIdUsed = dealId;
-          const verificationFields = isSurveyLike(scheduleType)
+          const verificationFields = scheduleType === "survey"
             ? ["site_survey_schedule_date", "site_surveyor", "site_survey_status"]
-            : scheduleType === "installation"
-              ? ["install_schedule_date", "construction_scheduled_date", "install_status"]
-              : ["inspections_schedule_date", "inspection_scheduled_date", "final_inspection_status"];
+            : scheduleType === "pre-sale-survey"
+              ? ["site_survey_schedule_date"]
+              : scheduleType === "installation"
+                ? ["install_schedule_date", "construction_scheduled_date", "install_status"]
+                : ["inspections_schedule_date", "inspection_scheduled_date", "final_inspection_status"];
           hubspotVerification = await getDealProperties(dealId, verificationFields);
-          const verifiedFieldsCleared = isSurveyLike(scheduleType)
+          const verifiedFieldsCleared = scheduleType === "survey"
             ? !!hubspotVerification &&
               isBlank(hubspotVerification.site_survey_schedule_date) &&
               isBlank(hubspotVerification.site_surveyor)
-            : scheduleType === "installation"
+            : scheduleType === "pre-sale-survey"
+              ? !!hubspotVerification &&
+                isBlank(hubspotVerification.site_survey_schedule_date)
+              : scheduleType === "installation"
               ? !!hubspotVerification &&
                 isBlank(hubspotVerification.install_schedule_date) &&
                 isBlank(hubspotVerification.construction_scheduled_date)
@@ -1504,22 +1526,27 @@ export async function DELETE(request: NextRequest) {
         }
 
         hubspotFieldsCleared = scheduleCleared && surveyorCleared;
-        const verifiedFieldsCleared = isSurveyLike(scheduleType)
+        const verifiedFieldsCleared = scheduleType === "survey"
           ? !!hubspotVerification &&
             isBlank(hubspotVerification.site_survey_schedule_date) &&
             isBlank(hubspotVerification.site_surveyor)
-          : scheduleType === "installation"
+          : scheduleType === "pre-sale-survey"
             ? !!hubspotVerification &&
-              isBlank(hubspotVerification.install_schedule_date) &&
-              isBlank(hubspotVerification.construction_scheduled_date)
-            : !!hubspotVerification &&
-              isBlank(hubspotVerification.inspections_schedule_date) &&
-              isBlank(hubspotVerification.inspection_scheduled_date);
-        const verifiedStatus = isSurveyLike(scheduleType)
+              isBlank(hubspotVerification.site_survey_schedule_date)
+            : scheduleType === "installation"
+              ? !!hubspotVerification &&
+                isBlank(hubspotVerification.install_schedule_date) &&
+                isBlank(hubspotVerification.construction_scheduled_date)
+              : !!hubspotVerification &&
+                isBlank(hubspotVerification.inspections_schedule_date) &&
+                isBlank(hubspotVerification.inspection_scheduled_date);
+        const verifiedStatus = scheduleType === "survey"
           ? !!hubspotVerification &&
             (hubspotVerification.site_survey_status === "Ready to Schedule" ||
               hubspotVerification.site_survey_status === "Ready To Schedule")
-          : scheduleType === "installation"
+          : scheduleType === "pre-sale-survey"
+            ? true // pre-sale visits don't reset site_survey_status
+            : scheduleType === "installation"
             ? !!hubspotVerification &&
               (hubspotVerification.install_status === "Ready to Build" ||
                 hubspotVerification.install_status === "Ready To Build")
