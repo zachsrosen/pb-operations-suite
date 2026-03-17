@@ -180,6 +180,13 @@ export interface EnrichedTicketItem extends PriorityItem {
   ownerId: string | null;
 }
 
+export interface TimelineEntry {
+  type: "note" | "email" | "call" | "meeting" | "task";
+  timestamp: string;
+  body: string;
+  createdBy?: string | null;
+}
+
 export interface TicketDetail {
   id: string;
   subject: string;
@@ -199,6 +206,7 @@ export interface TicketDetail {
     deals: Array<{ id: string; name: string; amount: string | null; location: string | null; url: string }>;
     companies: Array<{ id: string; name: string }>;
   };
+  timeline: TimelineEntry[];
 }
 
 // ---------------------------------------------------------------------------
@@ -311,12 +319,22 @@ export function transformTicketToPriorityItem(
  * Discover ticket pipeline stages from HubSpot.
  * Returns a map of stageId → stageName.
  */
-let cachedStageMap: Record<string, string> | null = null;
+export interface TicketStageMapResult {
+  map: Record<string, string>;        // stageId → stageName
+  orderedStageIds: string[];           // stage IDs in HubSpot pipeline display order
+}
+
+let cachedStageResult: TicketStageMapResult | null = null;
 let stageMapFetchedAt = 0;
 const STAGE_MAP_TTL = 5 * 60 * 1000; // 5 minutes
 
-export async function getTicketStageMap(): Promise<Record<string, string>> {
-  if (cachedStageMap && Date.now() - stageMapFetchedAt < STAGE_MAP_TTL) return cachedStageMap;
+/**
+ * Discover ticket pipeline stages from HubSpot.
+ * Returns both a map (stageId → stageName) and an ordered array of stage IDs
+ * sorted by HubSpot's displayOrder, so kanban columns match the real pipeline.
+ */
+export async function getTicketStageMap(): Promise<TicketStageMapResult> {
+  if (cachedStageResult && Date.now() - stageMapFetchedAt < STAGE_MAP_TTL) return cachedStageResult;
 
   try {
     const response = await hubspotClient.crm.pipelines.pipelinesApi.getById(
@@ -324,15 +342,20 @@ export async function getTicketStageMap(): Promise<Record<string, string>> {
       SERVICE_TICKET_PIPELINE_ID
     );
     const map: Record<string, string> = {};
-    for (const stage of response.stages || []) {
+    const stages = (response.stages || []).sort(
+      (a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0)
+    );
+    const orderedStageIds: string[] = [];
+    for (const stage of stages) {
       map[stage.id] = stage.label;
+      orderedStageIds.push(stage.id);
     }
-    cachedStageMap = map;
+    cachedStageResult = { map, orderedStageIds };
     stageMapFetchedAt = Date.now();
-    return map;
+    return cachedStageResult;
   } catch (error) {
     console.error("[HubSpotTickets] Failed to fetch pipeline stages:", error);
-    return {};
+    return { map: {}, orderedStageIds: [] };
   }
 }
 
@@ -342,7 +365,7 @@ export async function getTicketStageMap(): Promise<Record<string, string>> {
  */
 export async function fetchServiceTickets(): Promise<EnrichedTicketItem[]> {
   try {
-    const stageMap = await getTicketStageMap();
+    const { map: stageMap } = await getTicketStageMap();
 
     // Get all closed/resolved stage IDs to EXCLUDE them
     // Convention: stages with displayOrder >= 900 or label containing "Closed"/"Done"
@@ -350,26 +373,35 @@ export async function fetchServiceTickets(): Promise<EnrichedTicketItem[]> {
       .filter(([, label]) => /closed|done|resolved|completed/i.test(label))
       .map(([id]) => id);
 
-    // Search all tickets in the service pipeline
-    const searchRequest = {
-      filterGroups: [{
-        filters: [
-          {
-            propertyName: "hs_pipeline",
-            operator: "EQ" as const,
-            value: SERVICE_TICKET_PIPELINE_ID,
-          },
-        ],
-      }],
-      properties: TICKET_PROPERTIES,
-      limit: 100,
-    };
+    // Paginate through all tickets in the service pipeline
+    let tickets: HubSpotTicket[] = [];
+    let after: string | undefined;
 
-    const response = await searchTicketsWithRetry(searchRequest);
-    let tickets: HubSpotTicket[] = (response.results || []).map(t => ({
-      id: t.id,
-      properties: t.properties as Record<string, string | undefined>,
-    }));
+    do {
+      const searchRequest = {
+        filterGroups: [{
+          filters: [
+            {
+              propertyName: "hs_pipeline",
+              operator: "EQ" as const,
+              value: SERVICE_TICKET_PIPELINE_ID,
+            },
+          ],
+        }],
+        properties: TICKET_PROPERTIES,
+        limit: 100,
+        ...(after ? { after } : {}),
+      };
+
+      const response = await searchTicketsWithRetry(searchRequest);
+      const page = (response.results || []).map(t => ({
+        id: t.id,
+        properties: t.properties as Record<string, string | undefined>,
+      }));
+      tickets = tickets.concat(page);
+
+      after = response.paging?.next?.after;
+    } while (after);
 
     // Filter out closed tickets client-side
     if (closedStageIds.length > 0) {
@@ -509,7 +541,7 @@ async function resolveTicketLocations(
  */
 export async function getTicketDetail(ticketId: string): Promise<TicketDetail | null> {
   try {
-    const stageMap = await getTicketStageMap();
+    const { map: stageMap } = await getTicketStageMap();
 
     // Fetch ticket with associations
     const ticket = await hubspotClient.crm.tickets.basicApi.getById(
@@ -586,6 +618,64 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
       }
     }
 
+    // Fetch timeline: notes, emails, calls, meetings, tasks associated with this ticket
+    const timeline: TimelineEntry[] = [];
+    try {
+      // Fetch notes associated with the ticket via search
+      const notesResponse = await hubspotClient.crm.objects.notes.searchApi.doSearch({
+        filterGroups: [{
+          filters: [{
+            propertyName: "associations.ticket",
+            operator: "EQ" as const,
+            value: ticketId,
+          }],
+        }],
+        properties: ["hs_note_body", "hs_timestamp", "hubspot_owner_id", "hs_created_by"],
+        limit: 50,
+        sorts: [{ propertyName: "hs_timestamp", direction: "DESCENDING" }],
+      });
+
+      for (const note of notesResponse.results || []) {
+        timeline.push({
+          type: "note",
+          timestamp: note.properties.hs_timestamp || note.properties.hs_createdate || "",
+          body: note.properties.hs_note_body || "",
+          createdBy: note.properties.hs_created_by || null,
+        });
+      }
+
+      // Fetch emails associated with the ticket
+      const emailsResponse = await hubspotClient.crm.objects.emails.searchApi.doSearch({
+        filterGroups: [{
+          filters: [{
+            propertyName: "associations.ticket",
+            operator: "EQ" as const,
+            value: ticketId,
+          }],
+        }],
+        properties: ["hs_email_subject", "hs_email_text", "hs_timestamp", "hs_email_direction"],
+        limit: 50,
+        sorts: [{ propertyName: "hs_timestamp", direction: "DESCENDING" }],
+      });
+
+      for (const email of emailsResponse.results || []) {
+        const direction = email.properties.hs_email_direction === "INCOMING_EMAIL" ? "Received" : "Sent";
+        const subject = email.properties.hs_email_subject || "No subject";
+        timeline.push({
+          type: "email",
+          timestamp: email.properties.hs_timestamp || "",
+          body: `[${direction}] ${subject}`,
+          createdBy: null,
+        });
+      }
+
+      // Sort timeline by timestamp descending (most recent first)
+      timeline.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    } catch (timelineError) {
+      // Timeline is best-effort — don't fail the whole detail request
+      console.warn("[HubSpotTickets] Failed to fetch timeline:", timelineError);
+    }
+
     return {
       id: props.hs_object_id || ticket.id,
       subject: props.subject || "Untitled Ticket",
@@ -601,6 +691,7 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
       location: derivedLocation,
       url: `https://app.hubspot.com/contacts/${PORTAL_ID}/ticket/${ticket.id}`,
       associations: { contacts, deals, companies },
+      timeline,
     };
   } catch (error) {
     console.error("[HubSpotTickets] Error fetching ticket detail:", error);
@@ -866,6 +957,9 @@ export async function GET(request: NextRequest) {
     if (location && location !== "all") {
       filtered = filtered.filter(t => t.location === location);
     }
+    if (priority && priority !== "all") {
+      filtered = filtered.filter(t => t.priority === priority);
+    }
     if (stage && stage !== "all") {
       filtered = filtered.filter(t => t.stage === stage);
     }
@@ -877,20 +971,23 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get unique locations and stages for filter dropdowns
+    // Get unique locations for filter dropdown
     const locations = [...new Set(tickets.map(t => t.location).filter((l): l is string => !!l))].sort();
-    const stages = [...new Set(tickets.map(t => t.stage).filter(Boolean))].sort();
 
-    // Fetch stage map for stage metadata
-    const stageMap = await getTicketStageMap();
+    // Fetch stage map for metadata + pipeline display order
+    const { map: stageMap, orderedStageIds } = await getTicketStageMap();
+
+    // Return stages in pipeline display order (not alphabetical)
+    // Only include stages that have tickets OR are in the pipeline
+    const stageNames = orderedStageIds.map(id => stageMap[id]).filter(Boolean);
 
     return NextResponse.json({
       tickets: filtered,
       total: tickets.length,
       filteredCount: filtered.length,
       locations,
-      stages,
-      stageMap,
+      stages: stageNames,
+      stageMap: stageMap,
       lastUpdated,
     });
   } catch (error) {
@@ -1147,6 +1244,13 @@ interface TicketItem {
   ownerName?: string | null;
 }
 
+interface TimelineEntry {
+  type: "note" | "email" | "call" | "meeting" | "task";
+  timestamp: string;
+  body: string;
+  createdBy?: string | null;
+}
+
 interface TicketDetail {
   id: string;
   subject: string;
@@ -1166,6 +1270,7 @@ interface TicketDetail {
     deals: Array<{ id: string; name: string; amount: string | null; location: string | null; url: string }>;
     companies: Array<{ id: string; name: string }>;
   };
+  timeline: TimelineEntry[];
 }
 
 interface TicketListResponse {
@@ -1230,6 +1335,7 @@ export default function ServiceTicketBoardPage() {
     try {
       const params = new URLSearchParams();
       if (filterLocation !== "all") params.set("location", filterLocation);
+      if (filterPriority !== "all") params.set("priority", filterPriority);
       if (searchQuery) params.set("search", searchQuery);
 
       const res = await fetch(`/api/service/tickets?${params.toString()}`);
@@ -1245,7 +1351,7 @@ export default function ServiceTicketBoardPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterLocation, searchQuery]);
+  }, [filterLocation, filterPriority, searchQuery]);
 
   useEffect(() => {
     setLoading(true);
@@ -1329,9 +1435,9 @@ export default function ServiceTicketBoardPage() {
 
   // ---- Derived data ---------------------------------------------------------
 
+  // Stage filter is client-side (lightweight); location + priority are server-side
   const filteredTickets = data?.tickets.filter(t => {
     if (filterStage !== "all" && t.stage !== filterStage) return false;
-    if (filterPriority !== "all" && t.priority !== filterPriority) return false;
     return true;
   }) ?? [];
 
@@ -1636,6 +1742,35 @@ export default function ServiceTicketBoardPage() {
                   </div>
                 )}
 
+                {/* Activity Timeline */}
+                {selectedTicket.timeline.length > 0 && (
+                  <div className="mb-6">
+                    <h3 className="text-sm font-medium text-foreground mb-2">
+                      Activity Timeline ({selectedTicket.timeline.length})
+                    </h3>
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {selectedTicket.timeline.map((entry, idx) => {
+                        const typeIcon: Record<string, string> = {
+                          note: "📝", email: "📧", call: "📞", meeting: "📅", task: "✅",
+                        };
+                        return (
+                          <div key={idx} className="border-l-2 border-t-border pl-3">
+                            <div className="flex items-center gap-2 text-xs text-muted mb-1">
+                              <span>{typeIcon[entry.type] || "•"}</span>
+                              <span className="capitalize font-medium">{entry.type}</span>
+                              <span className="opacity-40">·</span>
+                              <span>{ageLabel(entry.timestamp)}</span>
+                            </div>
+                            <p className="text-sm text-foreground line-clamp-3 whitespace-pre-wrap">
+                              {entry.body.replace(/<[^>]*>/g, "")}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Add note */}
                 <div className="mb-6">
                   <h3 className="text-sm font-medium text-foreground mb-2">Add Note</h3>
@@ -1785,7 +1920,9 @@ HUBSPOT_SERVICE_TICKET_PIPELINE_ID=0    # Default pipeline; update to actual ser
 - [ ] Lint clean on all new files
 - [ ] HubSpot tickets API returns data (requires `tickets` read scope)
 - [ ] Ticket Board kanban view renders with columns per pipeline stage
+- [ ] Kanban columns follow HubSpot pipeline display order (not alphabetical)
 - [ ] Ticket detail panel shows associations (contacts, deals, companies)
+- [ ] Ticket detail panel shows activity timeline (notes + emails)
 - [ ] Status change from detail panel updates HubSpot (requires `tickets.write` scope)
 - [ ] Add note from detail panel creates engagement in HubSpot
 - [ ] Priority queue now includes both deals and tickets
@@ -1793,3 +1930,5 @@ HUBSPOT_SERVICE_TICKET_PIPELINE_ID=0    # Default pipeline; update to actual ser
 - [ ] SSE real-time updates work for `service-tickets` cache key
 - [ ] No collision with `/api/admin/tickets` bug report system
 - [ ] Location filter works (derived from associated deals)
+- [ ] Priority filter works server-side
+- [ ] Pagination fetches all tickets (not just first 100)
