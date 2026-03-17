@@ -11,6 +11,7 @@
 import * as Sentry from "@sentry/nextjs";
 import { hubspotClient } from "@/lib/hubspot";
 import { chunk } from "@/lib/utils";
+import { getCachedZuperJobsByDealIds } from "@/lib/db";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -590,4 +591,179 @@ export async function expandGroups(groups: CustomerSummary[]): Promise<void> {
 // ---------------------------------------------------------------------------
 // Phase 3: Association Resolution (Detail only)
 // ---------------------------------------------------------------------------
-// (Implemented in Task 6)
+
+/**
+ * Resolve a single customer group's full detail:
+ * contacts (with properties), deals, tickets, and Zuper jobs.
+ *
+ * This is the expensive path — only called by the detail endpoint.
+ */
+export async function resolveCustomerDetail(summary: CustomerSummary): Promise<CustomerDetail> {
+  const contacts: CustomerContact[] = [];
+  const dealIdSet = new Set<string>();
+  const ticketIdSet = new Set<string>();
+
+  // 1. Batch-read contact properties
+  for (const batch of chunk(summary.contactIds, BATCH_SIZE)) {
+    try {
+      const batchResp = await hubspotClient.crm.contacts.batchApi.read({
+        inputs: batch.map(id => ({ id })),
+        properties: ["firstname", "lastname", "email", "phone"],
+        propertiesWithHistory: [],
+      });
+      for (const c of batchResp.results || []) {
+        contacts.push({
+          id: c.id,
+          firstName: c.properties?.firstname || null,
+          lastName: c.properties?.lastname || null,
+          email: c.properties?.email || null,
+          phone: c.properties?.phone || null,
+        });
+      }
+    } catch (err) {
+      Sentry.captureException(err);
+      console.error("[CustomerResolver] Contact batch read failed:", err);
+    }
+  }
+
+  // 2. Resolve contact → deal associations
+  for (const batch of chunk(summary.contactIds, BATCH_SIZE)) {
+    try {
+      const resp = await hubspotClient.crm.associations.batchApi.read(
+        "contacts",
+        "deals",
+        { inputs: batch.map(id => ({ id })) }
+      );
+      for (const result of resp.results || []) {
+        for (const to of (result.to || []) as Array<{ id: string }>) {
+          dealIdSet.add(to.id);
+        }
+      }
+    } catch (err) {
+      Sentry.captureException(err);
+      console.error("[CustomerResolver] Contact→deal association failed:", err);
+    }
+  }
+
+  // 3. Resolve contact → ticket associations
+  for (const batch of chunk(summary.contactIds, BATCH_SIZE)) {
+    try {
+      const resp = await hubspotClient.crm.associations.batchApi.read(
+        "contacts",
+        "tickets",
+        { inputs: batch.map(id => ({ id })) }
+      );
+      for (const result of resp.results || []) {
+        for (const to of (result.to || []) as Array<{ id: string }>) {
+          ticketIdSet.add(to.id);
+        }
+      }
+    } catch (err) {
+      Sentry.captureException(err);
+      console.error("[CustomerResolver] Contact→ticket association failed:", err);
+    }
+  }
+
+  // 4. Batch-read deal properties
+  const deals: CustomerDeal[] = [];
+  const dealIds = Array.from(dealIdSet);
+  for (const batch of chunk(dealIds, BATCH_SIZE)) {
+    try {
+      const batchResp = await hubspotClient.crm.deals.batchApi.read({
+        inputs: batch.map(id => ({ id })),
+        properties: [
+          "dealname", "dealstage", "pipeline", "amount",
+          "pb_location", "address_line_1", "closedate", "hs_lastmodifieddate",
+        ],
+        propertiesWithHistory: [],
+      });
+      for (const d of batchResp.results || []) {
+        deals.push({
+          id: d.id,
+          name: d.properties?.dealname || "Untitled Deal",
+          stage: d.properties?.dealstage || "unknown",
+          pipeline: d.properties?.pipeline || "unknown",
+          amount: d.properties?.amount || null,
+          location: d.properties?.pb_location || null,
+          closeDate: d.properties?.closedate || null,
+          lastModified: d.properties?.hs_lastmodifieddate || "",
+        });
+      }
+    } catch (err) {
+      Sentry.captureException(err);
+      console.error("[CustomerResolver] Deal batch read failed:", err);
+    }
+  }
+
+  // Sort deals by lastModified descending
+  deals.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
+
+  // 5. Batch-read ticket properties
+  const tickets: CustomerTicket[] = [];
+  const ticketIds = Array.from(ticketIdSet);
+  for (const batch of chunk(ticketIds, BATCH_SIZE)) {
+    try {
+      const batchResp = await hubspotClient.crm.tickets.batchApi.read({
+        inputs: batch.map(id => ({ id })),
+        properties: [
+          "subject", "hs_pipeline_stage", "hs_ticket_priority",
+          "createdate", "hs_lastmodifieddate",
+        ],
+        propertiesWithHistory: [],
+      });
+      for (const t of batchResp.results || []) {
+        tickets.push({
+          id: t.id,
+          subject: t.properties?.subject || "Untitled Ticket",
+          status: t.properties?.hs_pipeline_stage || "unknown",
+          priority: t.properties?.hs_ticket_priority || null,
+          createDate: t.properties?.createdate || "",
+          lastModified: t.properties?.hs_lastmodifieddate || "",
+        });
+      }
+    } catch (err) {
+      Sentry.captureException(err);
+      console.error("[CustomerResolver] Ticket batch read failed:", err);
+    }
+  }
+
+  // Sort tickets by lastModified descending
+  tickets.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
+
+  // 6. Zuper jobs via Prisma cached lookup
+  let jobs: CustomerJob[] = [];
+  if (dealIds.length > 0) {
+    try {
+      const zuperJobs = await getCachedZuperJobsByDealIds(dealIds);
+      jobs = (zuperJobs || []).map(j => ({
+        uid: j.jobUid,
+        title: j.jobTitle || "Untitled Job",
+        category: j.jobCategory || null,
+        status: j.jobStatus || null,
+        scheduledDate: j.scheduledStart?.toISOString() || null,
+        createdAt: j.lastSyncedAt?.toISOString() || null,
+      }));
+
+      // Sort by scheduledDate descending, fallback to createdAt
+      jobs.sort((a, b) => {
+        const dateA = a.scheduledDate || a.createdAt || "";
+        const dateB = b.scheduledDate || b.createdAt || "";
+        return new Date(dateB).getTime() - new Date(dateA).getTime();
+      });
+    } catch (err) {
+      Sentry.captureException(err);
+      console.error("[CustomerResolver] Zuper job lookup failed:", err);
+    }
+  }
+
+  return {
+    ...summary,
+    dealCount: deals.length,
+    ticketCount: tickets.length,
+    jobCount: jobs.length,
+    contacts,
+    deals,
+    tickets,
+    jobs,
+  };
+}
