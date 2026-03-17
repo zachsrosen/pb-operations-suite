@@ -2,6 +2,7 @@ import {
   normalizeAddress,
   deriveDisplayName,
   groupSearchHits,
+  filterExpandedContactsByAddress,
   type RawSearchHit,
 } from "@/lib/customer-resolver";
 
@@ -222,5 +223,27 @@ describe("groupSearchHits", () => {
 
     const groups = groupSearchHits(hits);
     expect(groups).toHaveLength(0);
+  });
+});
+
+describe("filterExpandedContactsByAddress", () => {
+  it("keeps contacts whose address matches the group key", () => {
+    const contacts = [
+      { id: "c1", street: "123 Main St", zip: "80202" },
+      { id: "c2", street: "456 Oak Ave", zip: "80301" },
+      { id: "c3", street: "123 Main St.", zip: "80202-1234" }, // normalizes to same
+    ];
+    const groupNormalizedAddr = "123 main street|80202";
+
+    const result = filterExpandedContactsByAddress(contacts, groupNormalizedAddr);
+    expect(result.map(c => c.id)).toEqual(["c1", "c3"]);
+  });
+
+  it("returns empty array when no contacts match", () => {
+    const contacts = [
+      { id: "c1", street: "999 Other Rd", zip: "90210" },
+    ];
+    const result = filterExpandedContactsByAddress(contacts, "123 main street|80202");
+    expect(result).toEqual([]);
   });
 });

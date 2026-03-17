@@ -267,11 +267,33 @@ export async function searchCompaniesWithRetry(
   throw new Error("Max retries exceeded");
 }
 
-// Forward declaration — full implementation in Phase 2 (Task 5)
+/**
+ * Resolve company → contact associations via batch API.
+ * Returns Map<companyId, contactId[]>.
+ */
 async function resolveCompanyContacts(companyIds: string[]): Promise<Map<string, string[]>> {
-  // Stub — will be replaced in Task 5
-  void companyIds;
-  return new Map();
+  const map = new Map<string, string[]>();
+
+  for (const batch of chunk(companyIds, BATCH_SIZE)) {
+    try {
+      const resp = await hubspotClient.crm.associations.batchApi.read(
+        "companies",
+        "contacts",
+        { inputs: batch.map(id => ({ id })) }
+      );
+      for (const result of resp.results || []) {
+        const companyId = result._from?.id;
+        if (!companyId) continue;
+        const contactIds = (result.to || []).map((t: { id: string }) => t.id);
+        map.set(companyId, contactIds);
+      }
+    } catch (err) {
+      Sentry.captureException(err);
+      console.error("[CustomerResolver] Company→contact association batch failed:", err);
+    }
+  }
+
+  return map;
 }
 
 // ---------------------------------------------------------------------------
@@ -489,7 +511,81 @@ export async function executeSearch(query: string): Promise<{ hits: RawSearchHit
 // ---------------------------------------------------------------------------
 // Phase 2: Identity Grouping + Expansion
 // ---------------------------------------------------------------------------
-// (Implemented in Task 5)
+
+/**
+ * Filter expanded contacts to only those whose resolved address matches
+ * the group's normalized address key. This prevents multi-site companies
+ * from over-merging unrelated properties.
+ */
+export function filterExpandedContactsByAddress(
+  contacts: Array<{ id: string; street: string | null; zip: string | null }>,
+  groupNormalizedAddr: string
+): Array<{ id: string; street: string | null; zip: string | null }> {
+  return contacts.filter(c => {
+    const normalized = normalizeAddress(c.street, c.zip);
+    return normalized === groupNormalizedAddr;
+  });
+}
+
+/**
+ * Expand customer groups by fetching all contacts for each company,
+ * then filtering back to the matching address.
+ * Mutates the groups array — adds new contactIds from expansion.
+ */
+export async function expandGroups(groups: CustomerSummary[]): Promise<void> {
+  // Collect unique company IDs that need expansion
+  const companyGroups = groups.filter(g => g.companyId);
+  if (companyGroups.length === 0) return;
+
+  const uniqueCompanyIds = [...new Set(companyGroups.map(g => g.companyId!))];
+  const companyContactMap = await resolveCompanyContacts(uniqueCompanyIds);
+
+  // For each company group, fetch expanded contacts and filter by address
+  for (const group of companyGroups) {
+    const allContactIds = companyContactMap.get(group.companyId!) || [];
+    const newContactIds = allContactIds.filter(id => !group.contactIds.includes(id));
+
+    if (newContactIds.length === 0) continue;
+
+    // Batch-read contact properties to check addresses
+    const matchedIds: string[] = [];
+    for (const batch of chunk(newContactIds, BATCH_SIZE)) {
+      try {
+        const batchResp = await hubspotClient.crm.contacts.batchApi.read({
+          inputs: batch.map(id => ({ id })),
+          properties: ["firstname", "lastname", "email", "phone", "address", "zip"],
+          propertiesWithHistory: [],
+        });
+
+        // Extract normalized address portion from groupKey
+        const addrPart = group.groupKey.includes(":")
+          ? group.groupKey.split(":").slice(2).join(":")
+          : group.groupKey.replace("addr:", "");
+
+        const filtered = filterExpandedContactsByAddress(
+          (batchResp.results || []).map(c => ({
+            id: c.id,
+            street: c.properties?.address || null,
+            zip: c.properties?.zip || null,
+          })),
+          addrPart
+        );
+
+        matchedIds.push(...filtered.map(c => c.id));
+      } catch (err) {
+        Sentry.captureException(err);
+        console.error("[CustomerResolver] Expansion batch read failed:", err);
+      }
+    }
+
+    // Add matched contacts to the group
+    for (const id of matchedIds) {
+      if (!group.contactIds.includes(id)) {
+        group.contactIds.push(id);
+      }
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Phase 3: Association Resolution (Detail only)
