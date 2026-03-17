@@ -119,9 +119,8 @@ export default function CustomerHistoryPage() {
 
     try {
       const groupKeyEncoded = encodeURIComponent(customer.groupKey);
-      const contactIds = customer.contactIds.join(",");
       const res = await fetch(
-        `/api/service/customers/${groupKeyEncoded}?contactIds=${contactIds}`
+        `/api/service/customers/${groupKeyEncoded}`
       );
       if (!res.ok) throw new Error("Failed to load customer detail");
       const data: DetailResponse = await res.json();

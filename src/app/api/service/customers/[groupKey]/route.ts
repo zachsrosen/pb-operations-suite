@@ -4,6 +4,7 @@ import { getUserByEmail } from "@/lib/db";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import {
   parseGroupKey,
+  resolveContactIdsFromGroupKey,
   resolveCustomerDetail,
   type CustomerSummary,
 } from "@/lib/customer-resolver";
@@ -38,33 +39,43 @@ export async function GET(
     const forceRefresh = new URL(request.url).searchParams.get("refresh") === "true";
     const cacheKey = CACHE_KEYS.SERVICE_CUSTOMER_DETAIL(groupKey);
 
-    // Build a minimal CustomerSummary from the parsed groupKey
-    // The detail resolver needs contactIds — these come from the search result
-    // that the client already has, passed via query param
-    const contactIdsParam = new URL(request.url).searchParams.get("contactIds") || "";
-    const contactIds = contactIdsParam.split(",").filter(Boolean);
-
-    if (contactIds.length === 0) {
-      return NextResponse.json(
-        { error: "contactIds query parameter required" },
-        { status: 400 }
-      );
-    }
-
-    const summary: CustomerSummary = {
-      groupKey,
-      displayName: "", // will be derived from detail
-      address: "",
-      contactIds,
-      companyId: parsed.companyId,
-      dealCount: -1,
-      ticketCount: -1,
-      jobCount: -1,
-    };
-
     const { data: customer, lastUpdated } = await appCache.getOrFetch(
       cacheKey,
-      () => resolveCustomerDetail(summary),
+      async () => {
+        // Self-resolve contactIds from the groupKey — no client input
+        const contactIds = await resolveContactIdsFromGroupKey(parsed);
+
+        if (contactIds.length === 0) {
+          // Return a minimal empty detail rather than failing
+          return {
+            groupKey,
+            displayName: "",
+            address: parsed.normalizedAddress.replace("|", ", "),
+            contactIds: [],
+            companyId: parsed.companyId,
+            dealCount: 0,
+            ticketCount: 0,
+            jobCount: 0,
+            contacts: [],
+            deals: [],
+            tickets: [],
+            jobs: [],
+          };
+        }
+
+        const summary: CustomerSummary = {
+          groupKey,
+          displayName: "",
+          address: "",
+          contactIds,
+          companyId: parsed.companyId,
+          dealCount: -1,
+          ticketCount: -1,
+          jobCount: -1,
+        };
+
+        return resolveCustomerDetail(summary);
+      },
       forceRefresh
     );
 

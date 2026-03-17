@@ -414,6 +414,10 @@ export async function executeSearch(query: string): Promise<{ hits: RawSearchHit
         filters: [
           { propertyName: "phone", operator: ContactFilterOp.ContainsToken, value: `*${query}*` },
         ],
+      }, {
+        filters: [
+          { propertyName: "address", operator: ContactFilterOp.ContainsToken, value: `*${query}*` },
+        ],
       }],
       properties: ["firstname", "lastname", "email", "phone", "address", "city", "state", "zip"],
       limit: MAX_SEARCH_RESULTS,
@@ -845,4 +849,82 @@ export function parseGroupKey(groupKey: string): {
   }
 
   return null;
+}
+
+/**
+ * Self-resolve contactIds from a groupKey without relying on client input.
+ *
+ * - Company groups: fetch company → contact associations, batch-read addresses,
+ *   filter to those matching the group's normalized address.
+ * - Address-only groups: search contacts by address, filter to matching.
+ *
+ * This ensures the detail endpoint is self-contained and cache-safe.
+ */
+export async function resolveContactIdsFromGroupKey(
+  parsed: { type: "company" | "addr"; companyId: string | null; normalizedAddress: string }
+): Promise<string[]> {
+  if (parsed.type === "company" && parsed.companyId) {
+    // Resolve company → contacts, then filter by address
+    const companyContactMap = await resolveCompanyContacts([parsed.companyId]);
+    const allContactIds = companyContactMap.get(parsed.companyId) || [];
+
+    if (allContactIds.length === 0) return [];
+
+    // Batch-read contact addresses and filter to those matching the group address
+    const matchedIds: string[] = [];
+    for (const batch of chunk(allContactIds, BATCH_SIZE)) {
+      try {
+        const batchResp = await hubspotClient.crm.contacts.batchApi.read({
+          inputs: batch.map(id => ({ id })),
+          properties: ["address", "zip"],
+          propertiesWithHistory: [],
+        });
+        const filtered = filterExpandedContactsByAddress(
+          (batchResp.results || []).map(c => ({
+            id: c.id,
+            street: c.properties?.address || null,
+            zip: c.properties?.zip || null,
+          })),
+          parsed.normalizedAddress
+        );
+        matchedIds.push(...filtered.map(c => c.id));
+      } catch (err) {
+        Sentry.captureException(err);
+        console.error("[CustomerResolver] resolveContactIds batch read failed:", err);
+      }
+    }
+    return matchedIds;
+  }
+
+  // Address-only group: search contacts by address
+  // Extract street portion from normalized address (before the |)
+  const pipeIdx = parsed.normalizedAddress.indexOf("|");
+  const streetPart = pipeIdx > 0 ? parsed.normalizedAddress.slice(0, pipeIdx) : parsed.normalizedAddress;
+
+  try {
+    const resp = await searchContactsWithRetry({
+      filterGroups: [{
+        filters: [
+          { propertyName: "address", operator: ContactFilterOp.ContainsToken, value: `*${streetPart}*` },
+        ],
+      }],
+      properties: ["address", "zip"],
+      limit: MAX_SEARCH_RESULTS,
+      after: "0",
+    });
+
+    // Filter to contacts whose normalized address matches exactly
+    const contactIds: string[] = [];
+    for (const c of resp.results || []) {
+      const normalized = normalizeAddress(c.properties?.address || null, c.properties?.zip || null);
+      if (normalized === parsed.normalizedAddress) {
+        contactIds.push(c.id);
+      }
+    }
+    return contactIds;
+  } catch (err) {
+    Sentry.captureException(err);
+    console.error("[CustomerResolver] resolveContactIds address search failed:", err);
+    return [];
+  }
 }
