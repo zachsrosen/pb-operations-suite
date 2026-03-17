@@ -4,6 +4,13 @@ import { getCurrentUser } from "@/lib/auth-utils";
 
 const LINKS: SuitePageCard[] = [
   {
+    href: "/dashboards/service-overview",
+    title: "Service Overview",
+    description: "Priority queue command center — see what needs attention now.",
+    tag: "OVERVIEW",
+    section: "Service",
+  },
+  {
     href: "/dashboards/service-scheduler",
     title: "Service Schedule",
     description: "Calendar view of Zuper service visit and service revisit jobs.",
@@ -24,20 +31,6 @@ const LINKS: SuitePageCard[] = [
     tag: "PIPELINE",
     section: "Service",
   },
-  {
-    href: "/dashboards/dnr-scheduler",
-    title: "D&R Schedule",
-    description: "Calendar view of Zuper detach, reset, and D&R inspection jobs.",
-    tag: "SCHEDULING",
-    section: "D&R",
-  },
-  {
-    href: "/dashboards/dnr",
-    title: "D&R Pipeline",
-    description: "Detach & Reset projects with phase tracking.",
-    tag: "D&R",
-    section: "D&R",
-  },
 ];
 
 export default async function ServiceDRSuitePage() {
@@ -47,12 +40,12 @@ export default async function ServiceDRSuitePage() {
   return (
     <SuitePageShell
       currentSuiteHref="/suites/service"
-      title="Service + D&R Suite"
-      subtitle="Service and detach & reset scheduling, equipment tracking, and pipelines."
+      title="Service Suite"
+      subtitle="Service scheduling, equipment tracking, priority queue, and pipelines."
       cards={LINKS}
       role={user.role}
-      hoverBorderClass="hover:border-purple-500/50"
-      tagColorClass="bg-purple-500/20 text-purple-400 border-purple-500/30"
+      hoverBorderClass="hover:border-cyan-500/50"
+      tagColorClass="bg-cyan-500/20 text-cyan-400 border-cyan-500/30"
     />
   );
 }
