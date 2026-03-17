@@ -27,6 +27,22 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
   const fieldClass = (field: string) =>
     `${isPrefilled(field) ? "border-l-2 border-l-blue-400 pl-3" : ""}`;
 
+  const fieldError = (field: string): string | undefined => {
+    if (!touchedFields?.has(field)) return undefined;
+    return errors?.find((e) => e.field === field)?.message;
+  };
+
+  const fieldWarning = (field: string): string | undefined => {
+    if (!touchedFields?.has(field)) return undefined;
+    return warnings?.find((w) => w.field === field)?.message;
+  };
+
+  const inputErrorClass = (field: string): string =>
+    fieldError(field) ? "ring-2 ring-red-500/50 border-red-500/50" : "";
+
+  const inputWarningClass = (field: string): string =>
+    !fieldError(field) && fieldWarning(field) ? "ring-2 ring-amber-500/50 border-amber-500/50" : "";
+
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -87,6 +103,9 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
           showTooltips={true}
           prefillFields={state.prefillFields}
           onClearPrefill={(key) => dispatch({ type: "CLEAR_PREFILL_FIELD", field: `spec.${key}` })}
+          errors={errors}
+          touchedFields={touchedFields}
+          onFieldBlur={onFieldBlur}
         />
       </div>
 
@@ -96,7 +115,7 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
           Pricing & Unit <OptionalBadge />
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <div className={fieldClass("unitCost")}>
+          <div className={fieldClass("unitCost")} onBlur={() => onFieldBlur?.("unitCost")}>
             <label className="block text-sm font-medium text-muted mb-1">
               Unit Cost ($)
               <FieldTooltip text="Your cost to purchase this item from the vendor" />
@@ -106,10 +125,12 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
               step="any"
               value={state.unitCost}
               onChange={(e) => { dispatch({ type: "SET_FIELD", field: "unitCost", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "unitCost" }); }}
-              className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className={`w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 ${inputErrorClass("unitCost")} ${inputWarningClass("unitCost")}`}
             />
+            {fieldError("unitCost") && <p className="mt-1 text-xs text-red-400">{fieldError("unitCost")}</p>}
+            {!fieldError("unitCost") && fieldWarning("unitCost") && <p className="mt-1 text-xs text-amber-400">{fieldWarning("unitCost")}</p>}
           </div>
-          <div className={fieldClass("sellPrice")}>
+          <div className={fieldClass("sellPrice")} onBlur={() => onFieldBlur?.("sellPrice")}>
             <label className="block text-sm font-medium text-muted mb-1">
               Sell Price ($)
               <FieldTooltip text="The price charged to the customer" />
@@ -119,8 +140,10 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
               step="any"
               value={state.sellPrice}
               onChange={(e) => { dispatch({ type: "SET_FIELD", field: "sellPrice", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "sellPrice" }); }}
-              className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className={`w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 ${inputErrorClass("sellPrice")} ${inputWarningClass("sellPrice")}`}
             />
+            {fieldError("sellPrice") && <p className="mt-1 text-xs text-red-400">{fieldError("sellPrice")}</p>}
+            {!fieldError("sellPrice") && fieldWarning("sellPrice") && <p className="mt-1 text-xs text-amber-400">{fieldWarning("sellPrice")}</p>}
           </div>
           <div className={fieldClass("unitSpec")}>
             <label className="block text-sm font-medium text-muted mb-1">
@@ -157,7 +180,7 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
           Physical Details & Vendor <OptionalBadge />
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className={fieldClass("length")}>
+          <div className={fieldClass("length")} onBlur={() => onFieldBlur?.("length")}>
             <label className="block text-sm font-medium text-muted mb-1">
               Length (in)
               <FieldTooltip text="Product length in inches" />
@@ -167,10 +190,12 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
               step="any"
               value={state.length}
               onChange={(e) => { dispatch({ type: "SET_FIELD", field: "length", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "length" }); }}
-              className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className={`w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 ${inputErrorClass("length")} ${inputWarningClass("length")}`}
             />
+            {fieldError("length") && <p className="mt-1 text-xs text-red-400">{fieldError("length")}</p>}
+            {!fieldError("length") && fieldWarning("length") && <p className="mt-1 text-xs text-amber-400">{fieldWarning("length")}</p>}
           </div>
-          <div className={fieldClass("width")}>
+          <div className={fieldClass("width")} onBlur={() => onFieldBlur?.("width")}>
             <label className="block text-sm font-medium text-muted mb-1">
               Width (in)
               <FieldTooltip text="Product width in inches" />
@@ -180,10 +205,12 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
               step="any"
               value={state.width}
               onChange={(e) => { dispatch({ type: "SET_FIELD", field: "width", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "width" }); }}
-              className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className={`w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 ${inputErrorClass("width")} ${inputWarningClass("width")}`}
             />
+            {fieldError("width") && <p className="mt-1 text-xs text-red-400">{fieldError("width")}</p>}
+            {!fieldError("width") && fieldWarning("width") && <p className="mt-1 text-xs text-amber-400">{fieldWarning("width")}</p>}
           </div>
-          <div className={fieldClass("weight")}>
+          <div className={fieldClass("weight")} onBlur={() => onFieldBlur?.("weight")}>
             <label className="block text-sm font-medium text-muted mb-1">
               Weight (lbs)
               <FieldTooltip text="Product weight in pounds" />
@@ -193,8 +220,10 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
               step="any"
               value={state.weight}
               onChange={(e) => { dispatch({ type: "SET_FIELD", field: "weight", value: e.target.value }); dispatch({ type: "CLEAR_PREFILL_FIELD", field: "weight" }); }}
-              className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className={`w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 ${inputErrorClass("weight")} ${inputWarningClass("weight")}`}
             />
+            {fieldError("weight") && <p className="mt-1 text-xs text-red-400">{fieldError("weight")}</p>}
+            {!fieldError("weight") && fieldWarning("weight") && <p className="mt-1 text-xs text-amber-400">{fieldWarning("weight")}</p>}
           </div>
           <div className={fieldClass("sku")}>
             <label className="block text-sm font-medium text-muted mb-1">
@@ -208,7 +237,7 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
               className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500"
             />
           </div>
-          <div className={fieldClass("vendorName")}>
+          <div className={fieldClass("vendorName")} onBlur={() => onFieldBlur?.("vendorName")}>
             <label className="block text-sm font-medium text-muted mb-1">
               Vendor Name
               <FieldTooltip text="Distributor or supplier name (e.g., CED, BayWa)" />
@@ -222,6 +251,7 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
               }}
               hint={state.vendorHint || undefined}
             />
+            {fieldWarning("vendorName") && <p className="mt-1 text-xs text-amber-400">{fieldWarning("vendorName")}</p>}
           </div>
           <div className={fieldClass("vendorPartNumber")}>
             <label className="block text-sm font-medium text-muted mb-1">
