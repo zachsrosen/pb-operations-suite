@@ -4,6 +4,8 @@ import { getUserByEmail, prisma } from "@/lib/db";
 import { appCache } from "@/lib/cache";
 import { QUEUE_CACHE_KEY } from "@/lib/service-priority-cache";
 
+const ALLOWED_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS", "OPERATIONS_MANAGER", "PROJECT_MANAGER"];
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ itemType: string; itemId: string }> }
@@ -17,6 +19,10 @@ export async function DELETE(
     const user = await getUserByEmail(session.user.email);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 403 });
+    }
+
+    if (!ALLOWED_ROLES.includes(user.role)) {
+      return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
     }
 
     if (!prisma) {
