@@ -713,7 +713,8 @@ export async function updateTicket(
 ): Promise<boolean> {
   try {
     const properties: Record<string, string> = {};
-    if (updates.ownerId) properties.hubspot_owner_id = updates.ownerId;
+    // ownerId === "" explicitly clears the owner (unassign)
+    if (updates.ownerId !== undefined) properties.hubspot_owner_id = updates.ownerId;
     if (updates.stageId) properties.hs_pipeline_stage = updates.stageId;
 
     if (Object.keys(properties).length > 0) {
@@ -1100,11 +1101,18 @@ export async function PATCH(
       note?: string;
     };
 
-    if (!ownerId && !stageId && !note) {
+    // ownerId === "" means "unassign" — that's a valid update, not empty
+    const hasUpdate = ownerId !== undefined || stageId || note;
+    if (!hasUpdate) {
       return NextResponse.json({ error: "No updates provided" }, { status: 400 });
     }
 
-    const success = await updateTicket(id, { ownerId, stageId, note });
+    // Pass ownerId even if "" (means unassign) — updateTicket checks !== undefined
+    const success = await updateTicket(id, {
+      ...(ownerId !== undefined ? { ownerId } : {}),
+      ...(stageId ? { stageId } : {}),
+      ...(note ? { note } : {}),
+    });
 
     if (!success) {
       return NextResponse.json({ error: "Failed to update ticket" }, { status: 500 });
