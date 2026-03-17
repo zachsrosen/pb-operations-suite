@@ -116,7 +116,7 @@ function CatalogWizard() {
     });
   }, []);
 
-  const markSectionTouched = useCallback((section: "basics" | "details") => {
+  const markSectionTouched = (section: "basics" | "details") => {
     setTouchedFields((prev) => {
       const next = new Set(prev);
       for (const err of validation.errors) {
@@ -127,7 +127,7 @@ function CatalogWizard() {
       }
       return next;
     });
-  }, [validation]);
+  };
 
   // URL query-param prefill from deal/BOM flows
   useEffect(() => {

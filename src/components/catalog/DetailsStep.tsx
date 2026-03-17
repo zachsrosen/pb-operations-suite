@@ -2,10 +2,12 @@
 import { useState, useRef } from "react";
 import CategoryFields from "./CategoryFields";
 import FieldTooltip from "./FieldTooltip";
-import { getCategoryFields } from "@/lib/catalog-fields";
 import type { CatalogFormState, CatalogFormAction } from "@/lib/catalog-form-state";
 import type { ValidationError, ValidationWarning } from "@/lib/catalog-form-state";
 import VendorPicker from "./VendorPicker";
+
+const PHOTO_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+const PHOTO_ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 interface DetailsStepProps {
   state: CatalogFormState;
@@ -46,9 +48,6 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const PHOTO_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
-  const PHOTO_ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
   async function handlePhotoUpload(file: File) {
     setPhotoError(null);
