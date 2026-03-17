@@ -23,9 +23,9 @@ describe("computeDaysInStage", () => {
     expect(computeDaysInStage("", now)).toBe(0);
   });
 
-  it("rounds to nearest day", () => {
-    // 6.75 days ago → rounds to 7
-    expect(computeDaysInStage("2026-03-09T18:30:00.000Z", now)).toBe(7);
+  it("floors to complete elapsed days", () => {
+    // 6.73 days ago → floors to 6
+    expect(computeDaysInStage("2026-03-09T18:30:00.000Z", now)).toBe(6);
   });
 
   it("clamps to 0 for future dates (clock skew)", () => {
@@ -33,8 +33,8 @@ describe("computeDaysInStage", () => {
   });
 
   it("handles large values (no 120-day cap)", () => {
-    // 928 days ago — the old property would show 120 max
-    expect(computeDaysInStage("2023-08-31T19:54:52.223Z", now)).toBe(928);
+    // 927 complete days ago — the old property would show 120 max
+    expect(computeDaysInStage("2023-08-31T19:54:52.223Z", now)).toBe(927);
   });
 
   it("returns 0 for invalid date strings", () => {

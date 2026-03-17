@@ -686,12 +686,13 @@ function daysBetween(date1: Date, date2: Date): number {
   return Math.round(diffTime / (1000 * 60 * 60 * 24));
 }
 
-/** Compute days since a deal entered its current stage from the HubSpot timestamp. */
+/** Compute complete days since a deal entered its current stage from the HubSpot timestamp. */
 export function computeDaysInStage(dateEnteredCurrentStage: unknown, now: Date = new Date()): number {
   if (!dateEnteredCurrentStage) return 0;
   const entered = new Date(String(dateEnteredCurrentStage));
   if (isNaN(entered.getTime())) return 0;
-  return Math.max(0, daysBetween(entered, now));
+  const diffMs = now.getTime() - entered.getTime();
+  return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
 }
 
 function parseDate(value: unknown): string | null {
