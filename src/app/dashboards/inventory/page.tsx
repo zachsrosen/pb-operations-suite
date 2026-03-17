@@ -1273,7 +1273,7 @@ export default function InventoryHubPage() {
   const skuQuery = useQuery({
     queryKey: queryKeys.inventory.skus(),
     queryFn: async () => {
-      const res = await fetch("/api/inventory/skus");
+      const res = await fetch("/api/inventory/products");
       if (!res.ok) throw new Error("Failed to fetch products");
       const data = await res.json();
       return (data.skus || []) as InternalProduct[];
@@ -1332,7 +1332,7 @@ export default function InventoryHubPage() {
   const handleSyncSkus = useCallback(async () => {
     setSyncing(true);
     try {
-      const res = await fetch("/api/inventory/sync-skus", { method: "POST" });
+      const res = await fetch("/api/inventory/sync-products", { method: "POST" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || "Sync failed");

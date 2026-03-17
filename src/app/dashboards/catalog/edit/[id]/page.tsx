@@ -112,7 +112,7 @@ export default function CatalogSkuEditPage() {
       setLoadError(null);
 
       try {
-        const res = await fetch("/api/inventory/skus?active=false", { cache: "no-store" });
+        const res = await fetch("/api/inventory/products?active=false", { cache: "no-store" });
         const body = await res.json().catch(() => null) as { error?: string; skus?: EditableInternalProduct[] } | null;
         if (!res.ok) throw new Error(body?.error || `Failed to load products (${res.status})`);
 
@@ -194,7 +194,7 @@ export default function CatalogSkuEditPage() {
         isActive,
       };
 
-      const res = await fetch("/api/inventory/skus", {
+      const res = await fetch("/api/inventory/products", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -224,7 +224,7 @@ export default function CatalogSkuEditPage() {
     setDeleting(true);
 
     try {
-      const res = await fetch("/api/inventory/skus", {
+      const res = await fetch("/api/inventory/products", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: skuId }),

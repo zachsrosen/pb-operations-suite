@@ -900,7 +900,7 @@ export default function ProductComparisonPage() {
       }
 
       try {
-        const response = await fetch("/api/inventory/skus", {
+        const response = await fetch("/api/inventory/products", {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(patchBody),
@@ -1080,7 +1080,7 @@ export default function ProductComparisonPage() {
           zohoItemId: row.zoho?.id || null,
         };
 
-        const response = await fetch("/api/inventory/skus", {
+        const response = await fetch("/api/inventory/products", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -1167,7 +1167,7 @@ export default function ProductComparisonPage() {
       setActionFeedback(null);
 
       try {
-        const response = await fetch("/api/inventory/skus/merge", {
+        const response = await fetch("/api/inventory/products/merge", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

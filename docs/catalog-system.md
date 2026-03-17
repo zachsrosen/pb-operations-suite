@@ -78,7 +78,7 @@ Holds product submissions until an admin approves/rejects them.
 The form collects:
 1. **Category** — grid selector from `FORM_CATEGORIES` (16 categories)
 2. **Identity** — brand (from approved manufacturer list), model, SKU, vendor fields
-3. **Existing SKU lookup** — searches `/api/inventory/skus` to prevent duplicates
+3. **Existing product lookup** — searches `/api/inventory/products` to prevent duplicates
 4. **Category specs** — dynamic fields from `getCategoryFields(category)` in `catalog-fields.ts`
 5. **Pricing & dimensions** — unitCost, sellPrice, weight, length, width
 6. **Target systems** — checkboxes for INTERNAL (required), HUBSPOT, ZOHO, ZUPER

@@ -59,7 +59,7 @@ export default function SyncModal({ internalProductId, skuName, isOpen, onClose 
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/inventory/skus/${internalProductId}/sync`);
+      const res = await fetch(`/api/inventory/products/${internalProductId}/sync`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `HTTP ${res.status}`);
@@ -89,7 +89,7 @@ export default function SyncModal({ internalProductId, skuName, isOpen, onClose 
     setError(null);
     try {
       // Step 1: Get HMAC token
-      const confirmRes = await fetch(`/api/inventory/skus/${internalProductId}/sync/confirm`, {
+      const confirmRes = await fetch(`/api/inventory/products/${internalProductId}/sync/confirm`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ systems, changesHash }),
@@ -101,7 +101,7 @@ export default function SyncModal({ internalProductId, skuName, isOpen, onClose 
       const { token, issuedAt } = await confirmRes.json();
 
       // Step 2: Execute sync
-      const executeRes = await fetch(`/api/inventory/skus/${internalProductId}/sync`, {
+      const executeRes = await fetch(`/api/inventory/products/${internalProductId}/sync`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token, issuedAt, systems }),

@@ -1,0 +1,1118 @@
+/**
+ * Inventory Products API
+ *
+ * GET    /api/inventory/products - List products with optional filtering
+ * POST   /api/inventory/products - Create or upsert a product (admin/manager only)
+ * DELETE /api/inventory/products - Permanently delete a product (admin only)
+ */
+
+import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
+import { prisma, logActivity } from "@/lib/db";
+import { requireApiAuth } from "@/lib/api-auth";
+import { tagSentryRequest } from "@/lib/sentry-request";
+import { canonicalToken, buildCanonicalKey } from "@/lib/canonical";
+import { EquipmentCategory } from "@/generated/prisma/enums";
+import {
+  CATEGORY_CONFIGS,
+  filterMetadataToSpecFields,
+  getCategoryFields,
+  getSpecTableName,
+} from "@/lib/catalog-fields";
+
+// Roles allowed to create/upsert SKUs
+const WRITE_ROLES = ["ADMIN", "OWNER", "PROJECT_MANAGER"];
+
+// Valid EquipmentCategory values for validation
+const VALID_CATEGORIES = Object.values(EquipmentCategory);
+const LINK_FIELD_CONFIG = [
+  { source: "hubspot", field: "hubspotProductId" },
+  { source: "zuper", field: "zuperItemId" },
+  { source: "zoho", field: "zohoItemId" },
+] as const;
+
+const SPEC_TABLES = Array.from(
+  new Set(
+    Object.values(CATEGORY_CONFIGS)
+      .map((cfg) => cfg.specTable)
+      .filter((table): table is string => Boolean(table))
+  )
+);
+
+const SKU_INCLUDE = {
+  stockLevels: {
+    select: { location: true, quantityOnHand: true },
+  },
+  moduleSpec: true,
+  inverterSpec: true,
+  batterySpec: true,
+  evChargerSpec: true,
+  mountingHardwareSpec: true,
+  electricalHardwareSpec: true,
+  relayDeviceSpec: true,
+} as const;
+
+type ParsedNumber =
+  | { provided: false }
+  | { provided: true; value: number | null }
+  | { provided: true; error: string };
+
+type ParsedBoolean =
+  | { provided: false }
+  | { provided: true; value: boolean }
+  | { provided: true; error: string };
+
+type ParsedMetadata =
+  | { provided: false }
+  | { provided: true; value: Record<string, unknown> | null }
+  | { provided: true; error: string };
+
+function isPrismaMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = (error as { code?: unknown }).code;
+  return code === "P2022";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizeLinkValue(value: unknown): string | null {
+  const normalized = String(value || "").trim();
+  return normalized || null;
+}
+
+function parseOptionalNumber(input: Record<string, unknown>, key: string): ParsedNumber {
+  if (!(key in input)) return { provided: false };
+  const raw = input[key];
+  if (raw === null || raw === undefined || raw === "") return { provided: true, value: null };
+  if (typeof raw === "string" && raw.trim() === "") return { provided: true, value: null };
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) {
+    return { provided: true, error: `${key} must be a valid number` };
+  }
+  return { provided: true, value: parsed };
+}
+
+function parseOptionalString(input: Record<string, unknown>, key: string): { provided: boolean; value: string | null } {
+  if (!(key in input)) return { provided: false, value: null };
+  const raw = input[key];
+  if (raw === null || raw === undefined) return { provided: true, value: null };
+  const trimmed = String(raw).trim();
+  return { provided: true, value: trimmed || null };
+}
+
+function parseOptionalBoolean(input: Record<string, unknown>, key: string): ParsedBoolean {
+  if (!(key in input)) return { provided: false };
+  const raw = input[key];
+  if (typeof raw === "boolean") return { provided: true, value: raw };
+  if (typeof raw === "string") {
+    const normalized = raw.trim().toLowerCase();
+    if (normalized === "true") return { provided: true, value: true };
+    if (normalized === "false") return { provided: true, value: false };
+  }
+  return { provided: true, error: `${key} must be a boolean` };
+}
+
+function parseOptionalMetadata(
+  input: Record<string, unknown>,
+  category: string,
+  key = "metadata"
+): ParsedMetadata {
+  if (!(key in input)) return { provided: false };
+
+  const raw = input[key];
+  if (raw === null || raw === undefined) return { provided: true, value: null };
+  if (!isRecord(raw)) {
+    return { provided: true, error: `${key} must be an object` };
+  }
+
+  const filtered = filterMetadataToSpecFields(category, raw);
+  const normalized: Record<string, unknown> = {};
+
+  for (const field of getCategoryFields(category)) {
+    if (!(field.key in filtered)) continue;
+    const value = filtered[field.key];
+
+    if (field.type === "number") {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) {
+        return { provided: true, error: `${field.key} must be a valid number` };
+      }
+      normalized[field.key] = parsed;
+      continue;
+    }
+
+    if (field.type === "toggle") {
+      if (typeof value === "boolean") {
+        normalized[field.key] = value;
+        continue;
+      }
+      if (typeof value === "string") {
+        const lower = value.trim().toLowerCase();
+        if (lower === "true") {
+          normalized[field.key] = true;
+          continue;
+        }
+        if (lower === "false") {
+          normalized[field.key] = false;
+          continue;
+        }
+      }
+      return { provided: true, error: `${field.key} must be a boolean` };
+    }
+
+    const text = String(value ?? "").trim();
+    if (text) normalized[field.key] = text;
+  }
+
+  return { provided: true, value: Object.keys(normalized).length > 0 ? normalized : null };
+}
+
+function buildSyncHealth(sku: {
+  zohoItemId: string | null;
+  hubspotProductId: string | null;
+  zuperItemId: string | null;
+}) {
+  const zoho = Boolean(sku.zohoItemId);
+  const hubspot = Boolean(sku.hubspotProductId);
+  const zuper = Boolean(sku.zuperItemId);
+  const connectedCount = (zoho ? 1 : 0) + (hubspot ? 1 : 0) + (zuper ? 1 : 0);
+  return {
+    internal: true,
+    zoho,
+    hubspot,
+    zuper,
+    connectedCount,
+    fullySynced: connectedCount === 3,
+  };
+}
+
+interface DuplicateGroupEntry {
+  id: string;
+  brand: string;
+  model: string;
+  sku: string | null;
+  vendorPartNumber: string | null;
+}
+
+interface DuplicateGroup {
+  key: string;
+  category: string;
+  canonicalBrand: string;
+  canonicalModel: string;
+  count: number;
+  entries: DuplicateGroupEntry[];
+}
+
+function buildDuplicateGroups(skus: Array<Record<string, unknown>>): DuplicateGroup[] {
+  const groups = new Map<string, DuplicateGroup>();
+
+  for (const sku of skus) {
+    const category = String(sku.category || "");
+    const canonicalBrand = canonicalToken(sku.brand);
+    const canonicalModel = canonicalToken(sku.model);
+    if (!category || !canonicalBrand || !canonicalModel) continue;
+
+    const key = `${category}|${canonicalBrand}|${canonicalModel}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        key,
+        category,
+        canonicalBrand,
+        canonicalModel,
+        count: 0,
+        entries: [],
+      });
+    }
+
+    const group = groups.get(key)!;
+    group.entries.push({
+      id: String(sku.id || ""),
+      brand: String(sku.brand || ""),
+      model: String(sku.model || ""),
+      sku: typeof sku.sku === "string" ? sku.sku : null,
+      vendorPartNumber: typeof sku.vendorPartNumber === "string" ? sku.vendorPartNumber : null,
+    });
+    group.count += 1;
+  }
+
+  return [...groups.values()]
+    .filter((group) => group.count > 1)
+    .sort((a, b) => b.count - a.count || a.key.localeCompare(b.key));
+}
+
+function specRecordToMetadata(record: unknown): Record<string, unknown> {
+  if (!isRecord(record)) return {};
+  const metadata: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (key === "id" || key === "internalProductId") continue;
+    if (value === null || value === undefined || value === "") continue;
+    metadata[key] = value;
+  }
+  return metadata;
+}
+
+function buildSkuMetadata(category: string, sku: Record<string, unknown>): Record<string, unknown> {
+  const specTable = getSpecTableName(category);
+  if (!specTable) return {};
+  return specRecordToMetadata(sku[specTable]);
+}
+
+async function applySkuMetadata(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  tx: any,
+  internalProductId: string,
+  category: string,
+  metadata: Record<string, unknown> | null
+) {
+  const targetTable = getSpecTableName(category);
+  if (!targetTable) return;
+
+  for (const table of SPEC_TABLES) {
+    if (table === targetTable) continue;
+    const model = tx[table];
+    if (model?.deleteMany) {
+      await model.deleteMany({ where: { internalProductId } });
+    }
+  }
+
+  const model = tx[targetTable];
+  if (!model?.deleteMany || !model?.upsert) return;
+
+  if (!metadata || Object.keys(metadata).length === 0) {
+    await model.deleteMany({ where: { internalProductId } });
+    return;
+  }
+
+  await model.upsert({
+    where: { internalProductId },
+    create: { internalProductId, ...metadata },
+    update: metadata,
+  });
+}
+
+function enrichSku<T extends Record<string, unknown>>(sku: T) {
+  const category = String(sku.category || "");
+  const syncSource = sku as unknown as {
+    zohoItemId: string | null;
+    hubspotProductId: string | null;
+    zuperItemId: string | null;
+  };
+  return {
+    ...sku,
+    metadata: buildSkuMetadata(category, sku),
+    syncHealth: buildSyncHealth(syncSource),
+  };
+}
+
+/**
+ * GET /api/inventory/products
+ *
+ * Query params:
+ *   category - Filter by EquipmentCategory enum value
+ *   active   - "true" (default) to show only active products, "false" to include inactive
+ *   search   - optional text search across brand/model/sku/vendor part/description
+ *   limit    - optional max rows (default 500, max 5000)
+ */
+export async function GET(request: NextRequest) {
+  tagSentryRequest(request);
+  if (!prisma) {
+    return NextResponse.json(
+      { error: "Database not configured" },
+      { status: 503 }
+    );
+  }
+
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const categoryParam = searchParams.get("category");
+    const activeParam = searchParams.get("active");
+    const searchParam = String(searchParams.get("search") || searchParams.get("q") || "").trim();
+    const limitRaw = Number(searchParams.get("limit") || 500);
+    const limit = Number.isFinite(limitRaw)
+      ? Math.min(Math.max(Math.trunc(limitRaw), 1), 5000)
+      : 500;
+    const activeOnly = activeParam !== "false"; // default true
+
+    // Validate category if provided
+    if (
+      categoryParam &&
+      !VALID_CATEGORIES.includes(categoryParam as EquipmentCategory)
+    ) {
+      return NextResponse.json(
+        {
+          error: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const where = {
+      ...(categoryParam && {
+        category: categoryParam as EquipmentCategory,
+      }),
+      ...(activeOnly && { isActive: true }),
+      ...(searchParam && {
+        OR: [
+          { brand: { contains: searchParam, mode: "insensitive" as const } },
+          { model: { contains: searchParam, mode: "insensitive" as const } },
+          { sku: { contains: searchParam, mode: "insensitive" as const } },
+          { vendorPartNumber: { contains: searchParam, mode: "insensitive" as const } },
+          { description: { contains: searchParam, mode: "insensitive" as const } },
+        ],
+      }),
+    };
+    const orderBy = [
+      { category: "asc" as const },
+      { brand: "asc" as const },
+      { model: "asc" as const },
+    ];
+
+    let skus: Array<Record<string, unknown>> = [];
+
+    try {
+      skus = await prisma.internalProduct.findMany({
+        where,
+        include: SKU_INCLUDE,
+        orderBy,
+        take: limit,
+      }) as unknown as Array<Record<string, unknown>>;
+    } catch (error) {
+      if (!isPrismaMissingColumnError(error)) throw error;
+
+      // Backward-compatible fallback for databases that have not applied the
+      // latest InternalProduct migration yet.
+      console.warn(
+        "[Inventory Products] Falling back to legacy product query due to missing database columns"
+      );
+
+      const legacySkus = await prisma.internalProduct.findMany({
+        where,
+        select: {
+          id: true,
+          category: true,
+          brand: true,
+          model: true,
+          unitSpec: true,
+          unitLabel: true,
+          isActive: true,
+          zohoItemId: true,
+          createdAt: true,
+          updatedAt: true,
+          stockLevels: {
+            select: { location: true, quantityOnHand: true },
+          },
+        },
+        orderBy,
+        take: limit,
+      });
+
+      skus = legacySkus.map((sku: Record<string, unknown>) => ({
+        ...sku,
+        description: null,
+        vendorName: null,
+        vendorPartNumber: null,
+        unitCost: null,
+        sellPrice: null,
+        sku: null,
+        hardToProcure: false,
+        length: null,
+        width: null,
+        weight: null,
+        hubspotProductId: null,
+        zuperItemId: null,
+        metadata: {},
+      }));
+    }
+
+    const enriched = skus.map((sku) => enrichSku(sku));
+    const duplicateGroups = buildDuplicateGroups(enriched);
+    const duplicateRows = duplicateGroups.reduce((sum, group) => sum + group.count, 0);
+
+    const summary = {
+      total: enriched.length,
+      fullySynced: enriched.filter((s) => s.syncHealth.fullySynced).length,
+      missingZoho: enriched.filter((s) => !s.syncHealth.zoho).length,
+      missingHubspot: enriched.filter((s) => !s.syncHealth.hubspot).length,
+      missingZuper: enriched.filter((s) => !s.syncHealth.zuper).length,
+      duplicateGroups: duplicateGroups.length,
+      duplicateRows,
+      withPricing: enriched.filter((s) => s.unitCost != null && s.sellPrice != null).length,
+    };
+
+    return NextResponse.json({ skus: enriched, count: enriched.length, summary, duplicates: duplicateGroups });
+  } catch (error) {
+    console.error("Error fetching products:", error);
+    Sentry.captureException(error);
+    return NextResponse.json(
+      { error: "Failed to fetch products" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * POST /api/inventory/products
+ *
+ * Body: {
+ *   category, brand, model,
+ *   description?, vendorName?, vendorPartNumber?, sku?,
+ *   unitSpec?, unitLabel?, unitCost?, sellPrice?,
+ *   hardToProcure?, length?, width?, weight?, metadata?,
+ *   zohoItemId?, hubspotProductId?, zuperItemId?
+ * }
+ *
+ * Upserts on the compound unique (category + brand + model).
+ * Requires ADMIN, OWNER, or PROJECT_MANAGER role.
+ */
+export async function POST(request: NextRequest) {
+  tagSentryRequest(request);
+  if (!prisma) {
+    return NextResponse.json(
+      { error: "Database not configured" },
+      { status: 503 }
+    );
+  }
+
+  // Auth check
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
+  // Role check
+  if (!WRITE_ROLES.includes(authResult.role)) {
+    return NextResponse.json(
+      { error: "Insufficient permissions. Requires ADMIN, EXECUTIVE, or PROJECT_MANAGER role." },
+      { status: 403 }
+    );
+  }
+
+  try {
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json() as Record<string, unknown>;
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON in request body" },
+        { status: 400 }
+      );
+    }
+
+    const category = body.category;
+    const brand = body.brand;
+    const model = body.model;
+
+    // Validate required fields
+    if (!category || !brand || !model) {
+      return NextResponse.json(
+        { error: "category, brand, and model are required" },
+        { status: 400 }
+      );
+    }
+
+    // Validate category enum
+    if (!VALID_CATEGORIES.includes(category as EquipmentCategory)) {
+      return NextResponse.json(
+        {
+          error: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const trimmedBrand = String(brand).trim();
+    const trimmedModel = String(model).trim();
+
+    if (!trimmedBrand || !trimmedModel) {
+      return NextResponse.json(
+        { error: "brand and model must not be empty after trimming" },
+        { status: 400 }
+      );
+    }
+
+    const unitSpecParsed = parseOptionalNumber(body, "unitSpec");
+    const unitCostParsed = parseOptionalNumber(body, "unitCost");
+    const sellPriceParsed = parseOptionalNumber(body, "sellPrice");
+    const lengthParsed = parseOptionalNumber(body, "length");
+    const widthParsed = parseOptionalNumber(body, "width");
+    const weightParsed = parseOptionalNumber(body, "weight");
+
+    if ("error" in unitSpecParsed) return NextResponse.json({ error: unitSpecParsed.error }, { status: 400 });
+    if ("error" in unitCostParsed) return NextResponse.json({ error: unitCostParsed.error }, { status: 400 });
+    if ("error" in sellPriceParsed) return NextResponse.json({ error: sellPriceParsed.error }, { status: 400 });
+    if ("error" in lengthParsed) return NextResponse.json({ error: lengthParsed.error }, { status: 400 });
+    if ("error" in widthParsed) return NextResponse.json({ error: widthParsed.error }, { status: 400 });
+    if ("error" in weightParsed) return NextResponse.json({ error: weightParsed.error }, { status: 400 });
+
+    const hardToProcureParsed = parseOptionalBoolean(body, "hardToProcure");
+    if ("error" in hardToProcureParsed) return NextResponse.json({ error: hardToProcureParsed.error }, { status: 400 });
+
+    const nameParsed = parseOptionalString(body, "name");
+    const unitLabelParsed = parseOptionalString(body, "unitLabel");
+    const descriptionParsed = parseOptionalString(body, "description");
+    const skuParsed = parseOptionalString(body, "sku");
+    const vendorNameParsed = parseOptionalString(body, "vendorName");
+    const zohoVendorIdParsed = parseOptionalString(body, "zohoVendorId");
+    const vendorPartParsed = parseOptionalString(body, "vendorPartNumber");
+    const zohoItemParsed = parseOptionalString(body, "zohoItemId");
+    const hubspotProductParsed = parseOptionalString(body, "hubspotProductId");
+    const zuperItemParsed = parseOptionalString(body, "zuperItemId");
+    const metadataParsed = parseOptionalMetadata(body, category as string);
+    if ("error" in metadataParsed) return NextResponse.json({ error: metadataParsed.error }, { status: 400 });
+
+    // Vendor pair validation for upsert — only when zohoVendorId is explicitly
+    // provided. Callers that only send vendorName (sync scripts, legacy UI) are
+    // allowed through; the pair invariant is enforced on the submit-product and
+    // push-requests paths where the picker guarantees both values.
+    if (zohoVendorIdParsed.provided && zohoVendorIdParsed.value) {
+      const upsertVendorName = vendorNameParsed.provided ? vendorNameParsed.value : null;
+      if (!upsertVendorName) {
+        return NextResponse.json({ error: "Vendor ID provided without vendor name" }, { status: 400 });
+      }
+      const lookup = await prisma!.vendorLookup.findUnique({ where: { zohoVendorId: zohoVendorIdParsed.value } });
+      if (!lookup || lookup.name !== upsertVendorName) {
+        return NextResponse.json({ error: "Vendor name does not match the selected vendor record" }, { status: 400 });
+      }
+    }
+
+    const upserted = await prisma.$transaction(async (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tx: any
+    ) => {
+      const skuRecord = await tx.internalProduct.upsert({
+        where: {
+          category_brand_model: {
+            category: category as EquipmentCategory,
+            brand: trimmedBrand,
+            model: trimmedModel,
+          },
+        },
+        update: {
+          ...(nameParsed.provided && { name: nameParsed.value }),
+          ...(unitSpecParsed.provided && { unitSpec: unitSpecParsed.value }),
+          ...(unitLabelParsed.provided && { unitLabel: unitLabelParsed.value }),
+          ...(descriptionParsed.provided && { description: descriptionParsed.value }),
+          ...(skuParsed.provided && { sku: skuParsed.value }),
+          ...(vendorNameParsed.provided && { vendorName: vendorNameParsed.value }),
+          ...(zohoVendorIdParsed.provided && { zohoVendorId: zohoVendorIdParsed.value }),
+          ...(vendorPartParsed.provided && { vendorPartNumber: vendorPartParsed.value }),
+          ...(unitCostParsed.provided && { unitCost: unitCostParsed.value }),
+          ...(sellPriceParsed.provided && { sellPrice: sellPriceParsed.value }),
+          ...(hardToProcureParsed.provided && { hardToProcure: hardToProcureParsed.value }),
+          ...(lengthParsed.provided && { length: lengthParsed.value }),
+          ...(widthParsed.provided && { width: widthParsed.value }),
+          ...(weightParsed.provided && { weight: weightParsed.value }),
+          ...(zohoItemParsed.provided && { zohoItemId: zohoItemParsed.value }),
+          ...(hubspotProductParsed.provided && { hubspotProductId: hubspotProductParsed.value }),
+          ...(zuperItemParsed.provided && { zuperItemId: zuperItemParsed.value }),
+          canonicalBrand: canonicalToken(trimmedBrand),
+          canonicalModel: canonicalToken(trimmedModel),
+          canonicalKey: buildCanonicalKey(category as string, trimmedBrand, trimmedModel),
+          isActive: true,
+        },
+        create: {
+          category: category as EquipmentCategory,
+          brand: trimmedBrand,
+          model: trimmedModel,
+          name: nameParsed.provided ? nameParsed.value : null,
+          canonicalBrand: canonicalToken(trimmedBrand),
+          canonicalModel: canonicalToken(trimmedModel),
+          canonicalKey: buildCanonicalKey(category as string, trimmedBrand, trimmedModel),
+          unitSpec: unitSpecParsed.provided ? unitSpecParsed.value : null,
+          unitLabel: unitLabelParsed.provided ? unitLabelParsed.value : null,
+          description: descriptionParsed.provided ? descriptionParsed.value : null,
+          sku: skuParsed.provided ? skuParsed.value : null,
+          vendorName: vendorNameParsed.provided ? vendorNameParsed.value : null,
+          zohoVendorId: zohoVendorIdParsed.provided ? zohoVendorIdParsed.value : null,
+          vendorPartNumber: vendorPartParsed.provided ? vendorPartParsed.value : null,
+          unitCost: unitCostParsed.provided ? unitCostParsed.value : null,
+          sellPrice: sellPriceParsed.provided ? sellPriceParsed.value : null,
+          hardToProcure: hardToProcureParsed.provided ? hardToProcureParsed.value : false,
+          length: lengthParsed.provided ? lengthParsed.value : null,
+          width: widthParsed.provided ? widthParsed.value : null,
+          weight: weightParsed.provided ? weightParsed.value : null,
+          zohoItemId: zohoItemParsed.provided ? zohoItemParsed.value : null,
+          hubspotProductId: hubspotProductParsed.provided ? hubspotProductParsed.value : null,
+          zuperItemId: zuperItemParsed.provided ? zuperItemParsed.value : null,
+        },
+      });
+
+      if (metadataParsed.provided) {
+        await applySkuMetadata(tx, skuRecord.id, category as string, metadataParsed.value);
+      }
+
+      return tx.internalProduct.findUnique({
+        where: { id: skuRecord.id },
+        include: SKU_INCLUDE,
+      });
+    });
+
+    if (!upserted) {
+      throw new Error("Product upsert failed");
+    }
+
+    const linkedSourcesOnUpsert = LINK_FIELD_CONFIG.flatMap(({ source, field }) => {
+      const value = normalizeLinkValue((upserted as Record<string, unknown>)[field]);
+      return value ? [{ source, externalId: value }] : [];
+    });
+    if (linkedSourcesOnUpsert.length > 0) {
+      await logActivity({
+        type: "FEATURE_USED",
+        description: "Created/upserted internal product with source links",
+        userEmail: authResult.email,
+        userName: authResult.name,
+        entityType: "product_comparison",
+        entityId: String((upserted as Record<string, unknown>).id || ""),
+        entityName: `${String((upserted as Record<string, unknown>).brand || "")} ${String((upserted as Record<string, unknown>).model || "")}`.trim(),
+        metadata: {
+          feature: "product_comparison",
+          action: "create_internal_with_links",
+          internalProductId: String((upserted as Record<string, unknown>).id || ""),
+          linkedSources: linkedSourcesOnUpsert,
+        },
+        ipAddress: authResult.ip,
+        userAgent: authResult.userAgent,
+        requestPath: request.nextUrl.pathname,
+        requestMethod: request.method,
+        responseStatus: 201,
+      });
+    }
+
+    return NextResponse.json({ sku: enrichSku(upserted as unknown as Record<string, unknown>) }, { status: 201 });
+  } catch (error) {
+    if (isPrismaMissingColumnError(error)) {
+      console.error("Product upsert blocked by missing database columns:", error);
+      Sentry.captureException(error);
+      return NextResponse.json(
+        {
+          error:
+            "Inventory catalog schema migration is not applied yet. Run `prisma migrate deploy` on production.",
+        },
+        { status: 503 }
+      );
+    }
+    console.error("Error creating/upserting product:", error);
+    Sentry.captureException(error);
+    return NextResponse.json(
+      { error: "Failed to create/upsert product" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * PATCH /api/inventory/products
+ *
+ * Body: {
+ *   id: string,
+ *   category?, brand?, model?,
+ *   description?, vendorName?, vendorPartNumber?, sku?,
+ *   unitSpec?, unitLabel?, unitCost?, sellPrice?,
+ *   hardToProcure?, length?, width?, weight?, metadata?,
+ *   zohoItemId?, hubspotProductId?, zuperItemId?,
+ *   isActive?
+ * }
+ *
+ * Updates a SKU by id.
+ * Requires ADMIN, OWNER, or PROJECT_MANAGER role.
+ */
+export async function PATCH(request: NextRequest) {
+  tagSentryRequest(request);
+  if (!prisma) {
+    return NextResponse.json(
+      { error: "Database not configured" },
+      { status: 503 }
+    );
+  }
+
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
+  if (!WRITE_ROLES.includes(authResult.role)) {
+    return NextResponse.json(
+      { error: "Insufficient permissions. Requires ADMIN, EXECUTIVE, or PROJECT_MANAGER role." },
+      { status: 403 }
+    );
+  }
+
+  try {
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json() as Record<string, unknown>;
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON in request body" },
+        { status: 400 }
+      );
+    }
+
+    const idRaw = body.id;
+    const id = typeof idRaw === "string" ? idRaw.trim() : "";
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    const existing = await prisma.internalProduct.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        category: true,
+        brand: true,
+        model: true,
+        vendorName: true,
+        zohoVendorId: true,
+        hubspotProductId: true,
+        zuperItemId: true,
+        zohoItemId: true,
+      },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+
+    const categoryProvided = "category" in body;
+    const category = categoryProvided ? String(body.category || "").trim() : existing.category;
+    if (!VALID_CATEGORIES.includes(category as EquipmentCategory)) {
+      return NextResponse.json(
+        { error: `Invalid category. Must be one of: ${VALID_CATEGORIES.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    const brandProvided = "brand" in body;
+    const modelProvided = "model" in body;
+    const brand = brandProvided ? String(body.brand || "").trim() : "";
+    const model = modelProvided ? String(body.model || "").trim() : "";
+    if (brandProvided && !brand) {
+      return NextResponse.json({ error: "brand must not be empty after trimming" }, { status: 400 });
+    }
+    if (modelProvided && !model) {
+      return NextResponse.json({ error: "model must not be empty after trimming" }, { status: 400 });
+    }
+
+    const unitSpecParsed = parseOptionalNumber(body, "unitSpec");
+    const unitCostParsed = parseOptionalNumber(body, "unitCost");
+    const sellPriceParsed = parseOptionalNumber(body, "sellPrice");
+    const lengthParsed = parseOptionalNumber(body, "length");
+    const widthParsed = parseOptionalNumber(body, "width");
+    const weightParsed = parseOptionalNumber(body, "weight");
+    if ("error" in unitSpecParsed) return NextResponse.json({ error: unitSpecParsed.error }, { status: 400 });
+    if ("error" in unitCostParsed) return NextResponse.json({ error: unitCostParsed.error }, { status: 400 });
+    if ("error" in sellPriceParsed) return NextResponse.json({ error: sellPriceParsed.error }, { status: 400 });
+    if ("error" in lengthParsed) return NextResponse.json({ error: lengthParsed.error }, { status: 400 });
+    if ("error" in widthParsed) return NextResponse.json({ error: widthParsed.error }, { status: 400 });
+    if ("error" in weightParsed) return NextResponse.json({ error: weightParsed.error }, { status: 400 });
+
+    const isActiveParsed = parseOptionalBoolean(body, "isActive");
+    const hardToProcureParsed = parseOptionalBoolean(body, "hardToProcure");
+    if ("error" in isActiveParsed) return NextResponse.json({ error: isActiveParsed.error }, { status: 400 });
+    if ("error" in hardToProcureParsed) return NextResponse.json({ error: hardToProcureParsed.error }, { status: 400 });
+
+    const nameParsed = parseOptionalString(body, "name");
+    const unitLabelParsed = parseOptionalString(body, "unitLabel");
+    const descriptionParsed = parseOptionalString(body, "description");
+    const skuParsed = parseOptionalString(body, "sku");
+    const vendorNameParsed = parseOptionalString(body, "vendorName");
+    const zohoVendorIdParsed = parseOptionalString(body, "zohoVendorId");
+    const vendorPartParsed = parseOptionalString(body, "vendorPartNumber");
+    const zohoItemParsed = parseOptionalString(body, "zohoItemId");
+    const hubspotProductParsed = parseOptionalString(body, "hubspotProductId");
+    const zuperItemParsed = parseOptionalString(body, "zuperItemId");
+    const metadataParsed = parseOptionalMetadata(body, category as string);
+    if ("error" in metadataParsed) return NextResponse.json({ error: metadataParsed.error }, { status: 400 });
+
+    // Vendor pair validation — only when vendor fields are being changed.
+    // Legacy records may have vendorName without zohoVendorId; we don't block
+    // unrelated edits on those records.
+    const vendorFieldsChanging = vendorNameParsed.provided || zohoVendorIdParsed.provided;
+    if (vendorFieldsChanging) {
+      const effectiveVendorName = vendorNameParsed.provided ? vendorNameParsed.value : existing.vendorName;
+      const effectiveZohoVendorId = zohoVendorIdParsed.provided ? zohoVendorIdParsed.value : existing.zohoVendorId;
+      if (effectiveVendorName && !effectiveZohoVendorId) {
+        return NextResponse.json({ error: "Vendor must be selected from the list (zohoVendorId required)" }, { status: 400 });
+      }
+      if (!effectiveVendorName && effectiveZohoVendorId) {
+        return NextResponse.json({ error: "Vendor ID provided without vendor name" }, { status: 400 });
+      }
+      if (effectiveVendorName && effectiveZohoVendorId) {
+        const lookup = await prisma!.vendorLookup.findUnique({ where: { zohoVendorId: effectiveZohoVendorId } });
+        if (!lookup || lookup.name !== effectiveVendorName) {
+          return NextResponse.json({ error: "Vendor name does not match the selected vendor record" }, { status: 400 });
+        }
+      }
+    }
+
+    const parsedLinksBySource = {
+      hubspot: hubspotProductParsed,
+      zuper: zuperItemParsed,
+      zoho: zohoItemParsed,
+    } as const;
+    const requestedLinkChanges = LINK_FIELD_CONFIG.flatMap(({ source, field }) => {
+      const parsedLink = parsedLinksBySource[source];
+      if (!parsedLink.provided) return [];
+      const previousValue = normalizeLinkValue(existing[field]);
+      const nextValue = normalizeLinkValue(parsedLink.value);
+      if (previousValue === nextValue) return [];
+      return [{ source, field, from: previousValue, to: nextValue }];
+    });
+
+    // Recompute canonical columns when any identity field changes
+    const identityChanged = categoryProvided || brandProvided || modelProvided;
+    const effectiveBrand = brandProvided ? brand : existing.brand;
+    const effectiveModel = modelProvided ? model : existing.model;
+    const effectiveCategory = categoryProvided ? (category as string) : existing.category;
+
+    const updateData: Record<string, unknown> = {
+      ...(categoryProvided && { category: category as EquipmentCategory }),
+      ...(brandProvided && { brand }),
+      ...(modelProvided && { model }),
+      ...(nameParsed.provided && { name: nameParsed.value }),
+      ...(identityChanged && {
+        canonicalBrand: canonicalToken(effectiveBrand),
+        canonicalModel: canonicalToken(effectiveModel),
+        canonicalKey: buildCanonicalKey(effectiveCategory, effectiveBrand, effectiveModel),
+      }),
+      ...(unitSpecParsed.provided && { unitSpec: unitSpecParsed.value }),
+      ...(unitLabelParsed.provided && { unitLabel: unitLabelParsed.value }),
+      ...(descriptionParsed.provided && { description: descriptionParsed.value }),
+      ...(skuParsed.provided && { sku: skuParsed.value }),
+      ...(vendorNameParsed.provided && { vendorName: vendorNameParsed.value }),
+      ...(zohoVendorIdParsed.provided && { zohoVendorId: zohoVendorIdParsed.value }),
+      ...(vendorPartParsed.provided && { vendorPartNumber: vendorPartParsed.value }),
+      ...(unitCostParsed.provided && { unitCost: unitCostParsed.value }),
+      ...(sellPriceParsed.provided && { sellPrice: sellPriceParsed.value }),
+      ...(hardToProcureParsed.provided && { hardToProcure: hardToProcureParsed.value }),
+      ...(lengthParsed.provided && { length: lengthParsed.value }),
+      ...(widthParsed.provided && { width: widthParsed.value }),
+      ...(weightParsed.provided && { weight: weightParsed.value }),
+      ...(zohoItemParsed.provided && { zohoItemId: zohoItemParsed.value }),
+      ...(hubspotProductParsed.provided && { hubspotProductId: hubspotProductParsed.value }),
+      ...(zuperItemParsed.provided && { zuperItemId: zuperItemParsed.value }),
+      ...(isActiveParsed.provided && { isActive: isActiveParsed.value }),
+    };
+
+    const categoryChanged = categoryProvided && category !== existing.category;
+    if (categoryChanged && !metadataParsed.provided) {
+      return NextResponse.json(
+        { error: "metadata is required when changing category to prevent accidental spec data loss" },
+        { status: 400 }
+      );
+    }
+
+    const metadataMutatesSpecs = metadataParsed.provided || categoryChanged;
+    if (Object.keys(updateData).length === 0 && !metadataMutatesSpecs) {
+      return NextResponse.json({ error: "No fields provided to update" }, { status: 400 });
+    }
+
+    const updated = await prisma.$transaction(async (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tx: any
+    ) => {
+      if (Object.keys(updateData).length > 0) {
+        await tx.internalProduct.update({
+          where: { id },
+          data: updateData,
+        });
+      }
+
+      if (metadataMutatesSpecs) {
+        const metadataToApply = metadataParsed.provided ? metadataParsed.value : null;
+        await applySkuMetadata(tx, id, category as string, metadataToApply);
+      }
+
+      return tx.internalProduct.findUnique({
+        where: { id },
+        include: SKU_INCLUDE,
+      });
+    });
+
+    if (!updated) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+
+    if (requestedLinkChanges.length > 0) {
+      await logActivity({
+        type: "FEATURE_USED",
+        description: `Confirmed product links for ${requestedLinkChanges.map((change) => change.source).join(", ")}`,
+        userEmail: authResult.email,
+        userName: authResult.name,
+        entityType: "product_comparison",
+        entityId: id,
+        entityName: `${existing.brand} ${existing.model}`.trim() || id,
+        metadata: {
+          feature: "product_comparison",
+          action: "confirm_link",
+          internalProductId: id,
+          changes: requestedLinkChanges,
+          changedSources: requestedLinkChanges.map((change) => change.source),
+        },
+        ipAddress: authResult.ip,
+        userAgent: authResult.userAgent,
+        requestPath: request.nextUrl.pathname,
+        requestMethod: request.method,
+        responseStatus: 200,
+      });
+    }
+
+    return NextResponse.json({ sku: enrichSku(updated as unknown as Record<string, unknown>) });
+  } catch (error) {
+    if (isPrismaMissingColumnError(error)) {
+      console.error("Product patch blocked by missing database columns:", error);
+      Sentry.captureException(error);
+      return NextResponse.json(
+        {
+          error:
+            "Inventory catalog schema migration is not applied yet. Run `prisma migrate deploy` on production.",
+        },
+        { status: 503 }
+      );
+    }
+
+    const prismaCode = (error as { code?: string } | null)?.code;
+    if (prismaCode === "P2002") {
+      return NextResponse.json(
+        { error: "Another product already uses this category + brand + model combination." },
+        { status: 409 }
+      );
+    }
+    if (prismaCode === "P2025") {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+
+    console.error("Error updating product:", error);
+    Sentry.captureException(error);
+    return NextResponse.json(
+      { error: "Failed to update product" },
+      { status: 500 }
+    );
+  }
+}
+
+// Roles allowed to permanently delete SKUs
+const DELETE_ROLES = ["ADMIN"];
+
+/**
+ * DELETE /api/inventory/products
+ *
+ * Body: { id: string }
+ *
+ * Permanently deletes a SKU and all related spec, stock, and transaction records.
+ * Requires ADMIN role only.
+ */
+export async function DELETE(request: NextRequest) {
+  tagSentryRequest(request);
+  if (!prisma) {
+    return NextResponse.json(
+      { error: "Database not configured" },
+      { status: 503 }
+    );
+  }
+
+  const authResult = await requireApiAuth();
+  if (authResult instanceof NextResponse) return authResult;
+
+  if (!DELETE_ROLES.includes(authResult.role)) {
+    return NextResponse.json(
+      { error: "Insufficient permissions. Only ADMIN can delete inventory items." },
+      { status: 403 }
+    );
+  }
+
+  try {
+    let body: Record<string, unknown>;
+    try {
+      body = await request.json() as Record<string, unknown>;
+    } catch {
+      return NextResponse.json(
+        { error: "Invalid JSON in request body" },
+        { status: 400 }
+      );
+    }
+
+    const id = typeof body.id === "string" ? body.id.trim() : "";
+    if (!id) {
+      return NextResponse.json({ error: "id is required" }, { status: 400 });
+    }
+
+    const existing = await prisma.internalProduct.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        category: true,
+        brand: true,
+        model: true,
+        stockLevels: { select: { id: true } },
+      },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+
+    // Cascade delete inside a transaction: specs → transactions → stock → SKU
+    await prisma.$transaction(async (
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      tx: any
+    ) => {
+      // Delete all category-specific spec records
+      for (const table of SPEC_TABLES) {
+        const model = tx[table];
+        if (model?.deleteMany) {
+          await model.deleteMany({ where: { internalProductId: id } });
+        }
+      }
+
+      // Delete stock transactions (they reference InventoryStock)
+      await tx.stockTransaction.deleteMany({
+        where: { stock: { internalProductId: id } },
+      });
+
+      // Delete inventory stock levels
+      await tx.inventoryStock.deleteMany({ where: { internalProductId: id } });
+
+      // Delete the SKU itself
+      await tx.internalProduct.delete({ where: { id } });
+    });
+
+    await logActivity({
+      type: "INVENTORY_ADJUSTED",
+      description: `Permanently deleted product: ${existing.brand} ${existing.model} (${existing.category})`,
+      userEmail: authResult.email,
+      userName: authResult.name,
+      entityType: "internal_product",
+      entityId: id,
+      entityName: `${existing.brand} ${existing.model}`.trim(),
+      metadata: {
+        action: "delete_sku",
+        category: existing.category,
+        brand: existing.brand,
+        model: existing.model,
+        stockRecordsDeleted: existing.stockLevels.length,
+      },
+      ipAddress: authResult.ip,
+      userAgent: authResult.userAgent,
+      requestPath: request.nextUrl.pathname,
+      requestMethod: request.method,
+      responseStatus: 200,
+    });
+
+    return NextResponse.json({
+      deleted: true,
+      id,
+      name: `${existing.brand} ${existing.model}`.trim(),
+    });
+  } catch (error) {
+    const prismaCode = (error as { code?: string } | null)?.code;
+    if (prismaCode === "P2025") {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+
+    console.error("Error deleting product:", error);
+    Sentry.captureException(error);
+    return NextResponse.json(
+      { error: "Failed to delete product" },
+      { status: 500 }
+    );
+  }
+}

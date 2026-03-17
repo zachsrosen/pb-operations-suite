@@ -334,7 +334,7 @@ export default function CatalogPage() {
   // Fetch SKUs
   const fetchSkus = useCallback(() => {
     setSkuLoading(true);
-    fetch("/api/inventory/skus?active=false")
+    fetch("/api/inventory/products?active=false")
       .then((r) => r.json())
       .then((d: { skus?: Sku[]; summary?: SkuSummary; duplicates?: DuplicateGroup[] }) => {
         setSkus(d.skus ?? []);
@@ -366,7 +366,7 @@ export default function CatalogPage() {
   async function handleDeleteSku(id: string) {
     setDeletingSkuId(id);
     try {
-      const res = await fetch("/api/inventory/skus", {
+      const res = await fetch("/api/inventory/products", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
@@ -394,7 +394,7 @@ export default function CatalogPage() {
   // Check sync feature flag (admin-only — dedup APIs require admin/owner role)
   useEffect(() => {
     if (!isAdmin) return;
-    fetch("/api/inventory/skus/sync-enabled", { cache: "no-store" })
+    fetch("/api/inventory/products/sync-enabled", { cache: "no-store" })
       .then((r) => setSyncEnabled(r.ok))
       .catch(() => setSyncEnabled(false));
   }, [isAdmin]);
@@ -411,7 +411,7 @@ export default function CatalogPage() {
   useEffect(() => {
     if (tab !== "sync") return;
     setCategoryStatsLoading(true);
-    fetch("/api/inventory/skus/stats")
+    fetch("/api/inventory/products/stats")
       .then((r) => r.json())
       .then((d: { categories?: CategorySyncStat[] }) => {
         setCategoryStats(d.categories ?? []);
@@ -568,7 +568,7 @@ export default function CatalogPage() {
     if (!skuEditDraft) return;
     setSavingSkuEdit(true);
     try {
-      const res = await fetch("/api/inventory/skus", {
+      const res = await fetch("/api/inventory/products", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -811,7 +811,7 @@ export default function CatalogPage() {
     setBulkSyncSummary({ created: 0, skipped: 0, failed: 0 });
 
     try {
-      const res = await fetch("/api/inventory/skus/sync-bulk", {
+      const res = await fetch("/api/inventory/products/sync-bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "preview", system }),
@@ -841,7 +841,7 @@ export default function CatalogPage() {
     setBulkSyncProgress({ done: 0, total: bulkSyncPreview.count });
 
     try {
-      const confirmRes = await fetch("/api/inventory/skus/sync-bulk/confirm", {
+      const confirmRes = await fetch("/api/inventory/products/sync-bulk/confirm", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -869,7 +869,7 @@ export default function CatalogPage() {
       };
 
       for (let guard = 0; guard < 500; guard++) {
-        const executeRes = await fetch("/api/inventory/skus/sync-bulk", {
+        const executeRes = await fetch("/api/inventory/products/sync-bulk", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),

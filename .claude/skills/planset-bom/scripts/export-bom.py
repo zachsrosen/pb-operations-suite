@@ -175,7 +175,7 @@ def main():
     print("Done. Files ready for:")
     print(f"  CSV  → import into inventory system or Google Sheets")
     print(f"  MD   → paste into Notion, docs, or job notes")
-    print(f"  JSON → POST to /api/inventory/sync-skus")
+    print(f"  JSON → POST to /api/inventory/sync-products")
 
 
 if __name__ == "__main__":

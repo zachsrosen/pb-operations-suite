@@ -1092,7 +1092,7 @@ function BomDashboardInner() {
         if (!res.ok) throw new Error(`Catalog fetch failed (${res.status})`);
         return res.json() as Promise<ProductComparisonResponse>;
       }),
-      fetch("/api/inventory/skus?active=false")
+      fetch("/api/inventory/products?active=false")
         .then((res) => {
           if (!res.ok) throw new Error(`Inventory product fetch failed (${res.status})`);
           return res.json() as Promise<{ skus?: InternalCatalogSku[] }>;
