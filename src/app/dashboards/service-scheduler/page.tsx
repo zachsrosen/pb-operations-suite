@@ -240,7 +240,7 @@ export default function ServiceSchedulerPage() {
       <header className="flex items-center justify-between px-4 py-2 border-b border-t-border bg-surface shrink-0">
         <div className="flex items-center gap-3">
           <Link
-            href="/suites/operations"
+            href="/suites/service"
             className="text-muted hover:text-foreground text-sm transition-colors"
           >
             &larr; Back
