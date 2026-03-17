@@ -71,7 +71,7 @@ export default function BasicsStep({ state, dispatch, onCategoryChange, onNext, 
     if (!mergeSourceSkuId || !mergeTargetSkuId || mergeSourceSkuId === mergeTargetSkuId) return;
     setMergeBusy(true);
     try {
-      const res = await fetch("/api/inventory/skus/merge", {
+      const res = await fetch("/api/inventory/products/merge", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sourceSkuId: mergeSourceSkuId, targetSkuId: mergeTargetSkuId }),
