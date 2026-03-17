@@ -519,6 +519,13 @@ export async function executeSearch(query: string): Promise<{ hits: RawSearchHit
  * Filter expanded contacts to only those whose resolved address matches
  * the group's normalized address key. This prevents multi-site companies
  * from over-merging unrelated properties.
+ *
+ * NOTE: Currently uses only the contact's own address/zip properties.
+ * The spec's full address source precedence (deal address_line_1 + postal_code
+ * first, contact address fallback second) is deferred — it would require
+ * resolving contact→deal associations during expansion, adding significant
+ * API overhead. Most contacts have their own address fields populated, so
+ * this simplification covers the common case. See spec Section 1.
  */
 export function filterExpandedContactsByAddress(
   contacts: Array<{ id: string; street: string | null; zip: string | null }>,
@@ -758,8 +765,22 @@ export async function resolveCustomerDetail(summary: CustomerSummary): Promise<C
     }
   }
 
+  // Re-derive displayName and address so the cached result is self-contained
+  // (the detail endpoint may receive empty placeholders from the caller)
+  const parsed = parseGroupKey(summary.groupKey);
+  const displayAddress = parsed
+    ? parsed.normalizedAddress.replace("|", ", ")
+    : summary.address;
+  const displayName = summary.displayName || deriveDisplayName(
+    null, // company name not available here — contacts provide the fallback
+    contacts.map(c => ({ lastName: c.lastName })),
+    displayAddress
+  );
+
   return {
     ...summary,
+    displayName,
+    address: summary.address || displayAddress,
     dealCount: deals.length,
     ticketCount: tickets.length,
     jobCount: jobs.length,
