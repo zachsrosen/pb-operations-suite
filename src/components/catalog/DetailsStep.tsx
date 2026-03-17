@@ -2,6 +2,7 @@
 import { useState, useRef } from "react";
 import CategoryFields from "./CategoryFields";
 import FieldTooltip from "./FieldTooltip";
+import { getCategoryFields } from "@/lib/catalog-fields";
 import type { CatalogFormState, CatalogFormAction } from "@/lib/catalog-form-state";
 import type { ValidationError, ValidationWarning } from "@/lib/catalog-form-state";
 import VendorPicker from "./VendorPicker";
