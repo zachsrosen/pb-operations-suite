@@ -15,6 +15,7 @@ import {
   validateCatalogForm,
   type CatalogFormState,
 } from "@/lib/catalog-form-state";
+import type { ValidationError, ValidationWarning } from "@/lib/catalog-form-state";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useState, useReducer, useEffect, useCallback, Suspense } from "react";
 
@@ -102,6 +103,32 @@ function CatalogWizard() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
+
+  // Compute validation on every state change (cheap — pure function, no DOM)
+  const validation = validateCatalogForm(state);
+
+  const handleFieldBlur = useCallback((field: string) => {
+    setTouchedFields((prev) => {
+      const next = new Set(prev);
+      next.add(field);
+      return next;
+    });
+  }, []);
+
+  const markSectionTouched = useCallback((section: "basics" | "details") => {
+    setTouchedFields((prev) => {
+      const next = new Set(prev);
+      for (const err of validation.errors) {
+        if (err.section === section) next.add(err.field);
+      }
+      for (const warn of validation.warnings) {
+        if (warn.section === section) next.add(warn.field);
+      }
+      return next;
+    });
+  }, [validation]);
+
   // URL query-param prefill from deal/BOM flows
   useEffect(() => {
     const paramFields = ["category", "brand", "model", "description", "unitSpec", "unitLabel"] as const;
@@ -145,6 +172,7 @@ function CatalogWizard() {
   const handleClone = useCallback((product: CloneResult) => {
     const normalized = normalizeCloneResult(product);
     dispatch({ type: "PREFILL_FROM_PRODUCT", data: normalized, source: "clone" });
+    setTouchedFields(new Set());
     // Apply category defaults — only fill unitLabel when the clone didn't provide one
     if (product.category) {
       const defaults = getCategoryDefaults(product.category);
@@ -164,6 +192,7 @@ function CatalogWizard() {
         data: extracted as Partial<CatalogFormState>,
         source: "datasheet",
       });
+      setTouchedFields(new Set());
       // Apply category defaults — only fill unitLabel when extraction didn't provide one
       if (extracted.category) {
         const defaults = getCategoryDefaults(extracted.category);
@@ -289,9 +318,19 @@ function CatalogWizard() {
           state={state}
           dispatch={dispatch}
           onCategoryChange={handleCategoryChange}
-          onNext={() => setCurrentStep("details")}
+          errors={validation.errors}
+          warnings={validation.warnings}
+          touchedFields={touchedFields}
+          onFieldBlur={handleFieldBlur}
+          onNext={() => {
+            markSectionTouched("basics");
+            if (!validation.errors.some((e) => e.section === "basics")) {
+              setCurrentStep("details");
+            }
+          }}
           onBack={() => {
             dispatch({ type: "RESET" });
+            setTouchedFields(new Set());
             setCurrentStep("start");
           }}
         />
@@ -301,7 +340,16 @@ function CatalogWizard() {
         <DetailsStep
           state={state}
           dispatch={dispatch}
-          onNext={() => setCurrentStep("review")}
+          errors={validation.errors}
+          warnings={validation.warnings}
+          touchedFields={touchedFields}
+          onFieldBlur={handleFieldBlur}
+          onNext={() => {
+            markSectionTouched("details");
+            if (!validation.errors.some((e) => e.section === "details")) {
+              setCurrentStep("review");
+            }
+          }}
           onBack={() => setCurrentStep("basics")}
         />
       )}

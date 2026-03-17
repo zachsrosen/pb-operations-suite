@@ -4,11 +4,16 @@ import CategoryFields from "./CategoryFields";
 import FieldTooltip from "./FieldTooltip";
 import { getCategoryFields } from "@/lib/catalog-fields";
 import type { CatalogFormState, CatalogFormAction } from "@/lib/catalog-form-state";
+import type { ValidationError, ValidationWarning } from "@/lib/catalog-form-state";
 import VendorPicker from "./VendorPicker";
 
 interface DetailsStepProps {
   state: CatalogFormState;
   dispatch: React.Dispatch<CatalogFormAction>;
+  errors?: ValidationError[];
+  warnings?: ValidationWarning[];
+  touchedFields?: Set<string>;
+  onFieldBlur?: (field: string) => void;
   onNext: () => void;
   onBack: () => void;
 }
@@ -17,7 +22,7 @@ function OptionalBadge() {
   return <span className="text-[10px] text-muted ml-1">(optional)</span>;
 }
 
-export default function DetailsStep({ state, dispatch, onNext, onBack }: DetailsStepProps) {
+export default function DetailsStep({ state, dispatch, errors, warnings, touchedFields, onFieldBlur, onNext, onBack }: DetailsStepProps) {
   const isPrefilled = (field: string) => state.prefillFields.has(field);
   const fieldClass = (field: string) =>
     `${isPrefilled(field) ? "border-l-2 border-l-blue-400 pl-3" : ""}`;

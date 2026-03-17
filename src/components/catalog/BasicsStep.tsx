@@ -3,11 +3,16 @@ import { useEffect, useMemo, useState } from "react";
 import BrandDropdown from "./BrandDropdown";
 import { FORM_CATEGORIES, getCategoryLabel } from "@/lib/catalog-fields";
 import type { CatalogFormState, CatalogFormAction } from "@/lib/catalog-form-state";
+import type { ValidationError, ValidationWarning } from "@/lib/catalog-form-state";
 
 interface BasicsStepProps {
   state: CatalogFormState;
   dispatch: React.Dispatch<CatalogFormAction>;
   onCategoryChange?: (category: string) => void;
+  errors?: ValidationError[];
+  warnings?: ValidationWarning[];
+  touchedFields?: Set<string>;
+  onFieldBlur?: (field: string) => void;
   onNext: () => void;
   onBack?: () => void;
 }
@@ -24,7 +29,7 @@ interface ExistingSkuMatch {
   zohoItemId?: string;
 }
 
-export default function BasicsStep({ state, dispatch, onCategoryChange, onNext, onBack }: BasicsStepProps) {
+export default function BasicsStep({ state, dispatch, onCategoryChange, errors, warnings, touchedFields, onFieldBlur, onNext, onBack }: BasicsStepProps) {
   const [existingMatches, setExistingMatches] = useState<ExistingSkuMatch[]>([]);
   const [existingMatchesLoading, setExistingMatchesLoading] = useState(false);
   const [mergeSourceSkuId, setMergeSourceSkuId] = useState("");
