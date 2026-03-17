@@ -30,9 +30,11 @@ Group initial hits by Company ID + normalized address. Then expand each group: f
 **Expansion scoping:** After fetching all contacts for a company, filter them back to the specific normalized address key for that group. This prevents a company with multiple service sites (e.g. Denver and Colorado Springs) from merging into one group.
 
 **Address source precedence during expansion** (most subtle behavior in the resolver):
-1. Deal-derived service address first — contact's associated deals → `pb_location`
-2. Contact/company address fallback second — contact's own address properties or company address
-3. Only then compare the resolved address against the normalized group key for inclusion/exclusion
+1. Deal-derived street address first — contact's associated deals → `address_line_1` + `city` + `state` + `postal_code` (NOT `pb_location`, which is a location label like "Denver"/"Westminster", not a street address)
+2. Contact/company address fallback second — contact's own address properties or company address fields
+3. Only then normalize the resolved street address and compare against the group key for inclusion/exclusion
+
+> **Important:** `pb_location` is useful as a display label (shown on customer cards) but must NOT feed the `street|zip` normalizer. The grouping key is built from structured address fields (`address_line_1`, `postal_code`), not from the location label.
 
 For address-only groups (no company association), expansion is skipped — only the matched contacts are included.
 
@@ -41,7 +43,7 @@ For the full expanded set of contact IDs per group, batch-resolve:
 - Contacts → deals (via `crm.associations.batchApi.read`)
 - Contacts → tickets (via `crm.associations.batchApi.read`)
 - Deduplicate deal/ticket IDs across contacts in the same group
-- Zuper jobs: **Prisma-backed cached lookup** from `db.ts` (`where: { hubspotDealId: { in: dealIds } }`) — not a live Zuper API call. Zuper freshness depends on the existing sync job that populates the Prisma `ZuperJob` table; Customer History inherits that cadence.
+- Zuper jobs: **Prisma-backed cached lookup** from `db.ts` via `prisma.zuperJobCache.findMany({ where: { hubspotDealId: { in: dealIds } } })` — not a live Zuper API call. Zuper freshness depends on the existing sync job that populates the `ZuperJobCache` model; Customer History inherits that cadence.
 
 ### Address Normalization
 
@@ -93,7 +95,7 @@ interface CustomerDetail extends CustomerSummary {
 - Retry pattern from `searchTicketsWithRetry()` in `hubspot-tickets.ts` — duplicate for contacts/companies
 - `chunk()` utility: extract from `hubspot-tickets.ts` to `src/lib/utils.ts` as a shared export (it's already duplicated between `hubspot.ts` patterns and `hubspot-tickets.ts`)
 - Batch association pattern from `hubspot-tickets.ts`
-- Prisma Zuper job lookup via `hubspotDealId` from `db.ts` (line ~617)
+- Prisma `ZuperJobCache` lookup via `hubspotDealId` from `db.ts` (line ~615, `prisma.zuperJobCache.findMany`)
 - `appCache.getOrFetch()` for search result caching
 
 ### Cache
@@ -114,7 +116,7 @@ interface CustomerDetail extends CustomerSummary {
 - Auth: same `auth()` + `getUserByEmail()` + route permissions pattern as existing service routes
 - Normalize query via `q.trim().toLowerCase()` before hashing for cache key
 - Calls `customer-resolver.ts` search flow (Phases 1-2 only), returns `CustomerSummary[]`
-- Max 25 customer groups returned; response includes `truncated: true` if more exist
+- Max 25 customer groups returned; `truncated` is set to `true` when either HubSpot search (contacts or companies) returns `paging?.next?.after` in its response, indicating more raw results exist upstream
 - Counts (`dealCount`, `ticketCount`, `jobCount`) are `-1` on search results — resolved lazily on detail view
 - Response:
 
@@ -220,12 +222,12 @@ No new Prisma models. No migrations. All data sourced from HubSpot + existing Pr
 - Primary key: Company ID + normalized service address
 - Grouping key format: `"company:{id}:{normalizedAddr}"` or `"addr:{normalizedAddr}"`
 - Expansion scoped to matching address — multi-site companies stay separate
-- Address source precedence: deal `pb_location` → contact/company address → compare against group key
+- Address source precedence: deal `address_line_1` + `postal_code` → contact/company address → normalize and compare against group key (NOT `pb_location`, which is a location label)
 
 ### Data Sources
 - HubSpot contacts + companies: live search via local `searchContactsWithRetry()` / `searchCompaniesWithRetry()` (NOT the deals-specific `searchWithRetry()`)
 - HubSpot deals + tickets: live association resolution via batch API (detail endpoint only)
-- Zuper jobs: Prisma-backed cached lookup via `hubspotDealId` — inherits existing sync cadence
+- Zuper jobs: `ZuperJobCache` Prisma model lookup via `hubspotDealId` — inherits existing sync cadence
 
 ### Rate-Limit Budget
 - Search endpoint: ~5-10 HubSpot API calls (2 searches + expansion associations)
