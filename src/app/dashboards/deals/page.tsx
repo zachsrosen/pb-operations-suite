@@ -52,7 +52,7 @@ function getPMOptions(deals: TableDeal[]): FilterOption[] {
 }
 
 function DealsPageInner() {
-  const { filters, setFilters, setStatusFilter } = useDealsFilters();
+  const { filters, setFilters, setStatusFilter, clearFilters } = useDealsFilters();
   const [allDeals, setAllDeals] = useState<TableDeal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -308,7 +308,7 @@ function DealsPageInner() {
       </div>
 
       {/* Active filter pills */}
-      {(filters.stages.length > 0 || filters.locations.length > 0 || filters.owners.length > 0 || filters.projectManagers.length > 0) && (
+      {(filters.stages.length > 0 || filters.locations.length > 0 || filters.owners.length > 0 || filters.projectManagers.length > 0 || Object.values(filters.statusFilters).some(v => v.length > 0)) && (
         <div className="flex gap-2 flex-wrap mb-3">
           {filters.stages.map((s) => (
             <FilterPill
@@ -338,6 +338,12 @@ function DealsPageInner() {
               onRemove={() => setFilters({ projectManagers: filters.projectManagers.filter((v) => v !== pm) })}
             />
           ))}
+          <button
+            onClick={clearFilters}
+            className="text-[10px] text-muted hover:text-foreground underline ml-1"
+          >
+            Clear all
+          </button>
         </div>
       )}
 
