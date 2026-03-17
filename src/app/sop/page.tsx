@@ -493,7 +493,7 @@ function SOPPageInner() {
             </span>
           )}
           {userName && <span className="sop-user-name">{userName}</span>}
-          <span className="sop-version">v3.1 — Updated Mar 2026</span>
+          <span className="sop-version">v3.2 — Updated Mar 2026</span>
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="sop-sidebar-toggle"
