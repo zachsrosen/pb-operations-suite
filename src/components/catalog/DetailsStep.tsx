@@ -47,8 +47,25 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
   const [photoError, setPhotoError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const PHOTO_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+  const PHOTO_ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
   async function handlePhotoUpload(file: File) {
     setPhotoError(null);
+
+    // Client-side validation — reject before uploading
+    if (!PHOTO_ALLOWED_TYPES.has(file.type)) {
+      setPhotoError("Unsupported file type. Use JPEG, PNG, WebP, or GIF.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    if (file.size > PHOTO_MAX_BYTES) {
+      const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+      setPhotoError(`File too large (${sizeMb} MB). Maximum is 5 MB.`);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
     setPhotoUploading(true);
     try {
       const fd = new FormData();
