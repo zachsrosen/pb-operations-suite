@@ -47,6 +47,11 @@ export const queryKeys = {
     root: ["forecasting"] as const,
     baselines: () => [...queryKeys.forecasting.root, "baselines"] as const,
   },
+  servicePriority: {
+    root: ["servicePriority"] as const,
+    queue: (location?: string) =>
+      [...queryKeys.servicePriority.root, "queue", location] as const,
+  },
 } as const;
 
 /**
@@ -64,6 +69,7 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("stats")) return [queryKeys.stats.root];
   if (serverKey.startsWith("zuper")) return [queryKeys.zuper.root];
   if (serverKey.startsWith("forecast")) return [queryKeys.forecasting.root];
+  if (serverKey.startsWith("service:priority")) return [queryKeys.servicePriority.root];
   // pipelines: no RQ consumer depends on it in this batch
   if (serverKey.startsWith("pipelines")) return [];
   return [];

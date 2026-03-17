@@ -263,4 +263,5 @@ export const CACHE_KEYS = {
   UTILITIES_ALL: "utilities:all",
   FORECAST_BASELINES: "forecast:baselines",
   FORECAST_ACCURACY: "forecast:accuracy",
+  SERVICE_PRIORITY_QUEUE: "service:priority-queue",
 } as const;
