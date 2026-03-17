@@ -1597,7 +1597,7 @@ export default function SchedulerPage() {
       months.push({ monthLabel: label, isPast, isCurrent, ...buckets });
     }
     return months;
-  }, [displayEvents, computeRevenueBuckets]);
+  }, [displayEvents, forecastGhostEvents, computeRevenueBuckets]);
 
   /* ================================================================ */
   /*  Calendar logic                                                   */

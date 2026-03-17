@@ -30,10 +30,14 @@ import {
   sendSurveyReassignmentNotifications,
 } from "@/lib/survey-reassignment-notifications";
 
-type ScheduleType = "survey" | "installation" | "inspection";
+type ScheduleType = "survey" | "pre-sale-survey" | "installation" | "inspection";
 const MANAGER_ROLES = ["ADMIN", "OWNER", "MANAGER", "OPERATIONS_MANAGER"];
 type ZuperUserLookupResult = Awaited<ReturnType<typeof zuper.getUser>>;
 type ZuperUserLookupCache = Map<string, ZuperUserLookupResult>;
+
+function isSurveyLike(type: string): type is "survey" | "pre-sale-survey" {
+  return type === "survey" || type === "pre-sale-survey";
+}
 
 async function getCachedZuperUser(
   userUid: string,
@@ -252,12 +256,14 @@ function canUseTestMode(role?: string | null): boolean {
 }
 
 function getCategoryNameForScheduleType(type: ScheduleType): string {
+  if (type === "pre-sale-survey") return "Pre-Sale Site Visit";
   if (type === "installation") return "Construction";
   if (type === "inspection") return "Inspection";
   return "Site Survey";
 }
 
 function getCategoryUidForScheduleType(type: ScheduleType): string {
+  if (type === "pre-sale-survey") return JOB_CATEGORY_UIDS.PRE_SALE_SITE_VISIT;
   if (type === "installation") return JOB_CATEGORY_UIDS.CONSTRUCTION;
   if (type === "inspection") return JOB_CATEGORY_UIDS.INSPECTION;
   return JOB_CATEGORY_UIDS.SITE_SURVEY;
@@ -323,7 +329,7 @@ async function verifyHubSpotScheduleWrite(
   expectedSurveyor?: string
 ): Promise<{ ok: boolean; warnings: string[] }> {
   const verificationFields =
-    scheduleType === "survey"
+    isSurveyLike(scheduleType)
       ? ["site_survey_schedule_date", "site_surveyor"]
       : scheduleType === "installation"
         ? ["install_schedule_date", "construction_scheduled_date"]
@@ -336,7 +342,7 @@ async function verifyHubSpotScheduleWrite(
 
   const warnings: string[] = [];
   const dateValues =
-    scheduleType === "survey"
+    isSurveyLike(scheduleType)
       ? [props.site_survey_schedule_date]
       : scheduleType === "installation"
         ? [props.install_schedule_date, props.construction_scheduled_date]
@@ -346,7 +352,7 @@ async function verifyHubSpotScheduleWrite(
     warnings.push(`HubSpot schedule date verification failed (expected ${scheduleDate})`);
   }
 
-  if (scheduleType === "survey" && expectedSurveyor?.trim()) {
+  if (isSurveyLike(scheduleType) && expectedSurveyor?.trim()) {
     if (isBlank(props.site_surveyor)) {
       warnings.push("HubSpot site_surveyor verification failed (still blank)");
     }
@@ -395,9 +401,9 @@ export async function PUT(request: NextRequest) {
 
     // Validate schedule type early for permission check
     const scheduleType = schedule?.type as ScheduleType;
-    if (!scheduleType || !["survey", "installation", "inspection"].includes(scheduleType)) {
+    if (!scheduleType || !["survey", "pre-sale-survey", "installation", "inspection"].includes(scheduleType)) {
       return NextResponse.json(
-        { error: "Invalid schedule type. Must be: survey, installation, or inspection" },
+        { error: "Invalid schedule type. Must be: survey, pre-sale-survey, installation, or inspection" },
         { status: 400 }
       );
     }
@@ -474,6 +480,7 @@ export async function PUT(request: NextRequest) {
     // Map schedule type to Zuper category names and UIDs
     const categoryConfig: Record<string, { name: string; uid: string }> = {
       survey: { name: "Site Survey", uid: JOB_CATEGORY_UIDS.SITE_SURVEY },
+      "pre-sale-survey": { name: "Pre-Sale Site Visit", uid: JOB_CATEGORY_UIDS.PRE_SALE_SITE_VISIT },
       installation: { name: "Construction", uid: JOB_CATEGORY_UIDS.CONSTRUCTION },
       inspection: { name: "Inspection", uid: JOB_CATEGORY_UIDS.INSPECTION },
     };
@@ -729,7 +736,7 @@ export async function PUT(request: NextRequest) {
       startDateTime = localToUtc(schedule.date, "08:00");
       endDateTime = localToUtc(schedule.date, "16:00");
       console.log(`[Zuper Schedule] Inspection: using fixed 8am-4pm ${slotTimezone} window`);
-    } else if (schedule.type === "survey" && schedule.startTime && schedule.endTime) {
+    } else if (isSurveyLike(schedule.type) && schedule.startTime && schedule.endTime) {
       // Use specific time slot (e.g., "12:00" to "13:00" for site surveys)
       // Convert from local timezone to UTC for Zuper
       startDateTime = localToUtc(schedule.date, schedule.startTime);
@@ -784,7 +791,7 @@ export async function PUT(request: NextRequest) {
       console.log(`[Zuper Schedule] ACTION: RESCHEDULE - Job UID: ${existingJob.job_uid}`);
 
       let previousSurveyor: SurveyorInfo | null = null;
-      if (schedule.type === "survey") {
+      if (isSurveyLike(schedule.type)) {
         try {
           previousSurveyor = await resolvePrimarySurveyorInfoFromJob(existingJob.job_uid, zuperUserCache);
         } catch (prevErr) {
@@ -797,7 +804,7 @@ export async function PUT(request: NextRequest) {
           const previousRecord = await prisma.scheduleRecord.findFirst({
             where: {
               projectId: String(project.id),
-              scheduleType: "survey",
+              scheduleType: schedule.type,
               status: { in: ["scheduled", "tentative"] },
             },
             orderBy: { createdAt: "desc" },
@@ -868,8 +875,8 @@ export async function PUT(request: NextRequest) {
 
       // Log as reschedule only when UI explicitly requested reschedule mode.
       const activityType = isUiReschedule
-        ? (schedule.type === "survey" ? "SURVEY_RESCHEDULED" : schedule.type === "inspection" ? "INSPECTION_RESCHEDULED" : "INSTALL_RESCHEDULED")
-        : (schedule.type === "survey" ? "SURVEY_SCHEDULED" : schedule.type === "inspection" ? "INSPECTION_SCHEDULED" : "INSTALL_SCHEDULED");
+        ? (isSurveyLike(schedule.type) ? "SURVEY_RESCHEDULED" : schedule.type === "inspection" ? "INSPECTION_RESCHEDULED" : "INSTALL_RESCHEDULED")
+        : (isSurveyLike(schedule.type) ? "SURVEY_SCHEDULED" : schedule.type === "inspection" ? "INSPECTION_SCHEDULED" : "INSTALL_SCHEDULED");
       const activityVerb = isUiReschedule ? "Rescheduled" : "Scheduled";
       await logSchedulingActivity(
         activityType,
@@ -907,7 +914,7 @@ export async function PUT(request: NextRequest) {
         await cacheZuperJob({
           jobUid: existingJob.job_uid,
           jobTitle: rescheduleResult.data.job_title || `${schedule.type} - ${project.name}`,
-          jobCategory: schedule.type === "survey" ? "Site Survey" : schedule.type === "inspection" ? "Inspection" : "Construction",
+          jobCategory: getCategoryNameForScheduleType(schedule.type),
           jobStatus: "SCHEDULED",
           hubspotDealId: project.id,
           projectName: project.name,
@@ -923,7 +930,7 @@ export async function PUT(request: NextRequest) {
       if (!hubspotDateUpdated) {
         hubspotWarnings.push("HubSpot schedule date write failed");
       }
-      if (schedule.type === "survey" && schedule.assignedUser) {
+      if (isSurveyLike(schedule.type) && schedule.assignedUser) {
         const surveyorUpdated = await updateSiteSurveyorProperty(project.id, schedule.assignedUser);
         if (!surveyorUpdated) {
           hubspotWarnings.push(`HubSpot site_surveyor write failed (${schedule.assignedUser})`);
@@ -1006,7 +1013,7 @@ export async function PUT(request: NextRequest) {
 
       // Log the scheduling activity
       await logSchedulingActivity(
-        schedule.type === "survey" ? "SURVEY_SCHEDULED" : schedule.type === "inspection" ? "INSPECTION_SCHEDULED" : "INSTALL_SCHEDULED",
+        isSurveyLike(schedule.type) ? "SURVEY_SCHEDULED" : schedule.type === "inspection" ? "INSPECTION_SCHEDULED" : "INSTALL_SCHEDULED",
         `Scheduled ${schedule.type} for ${project.name || project.id}`,
         project,
         createResult.data?.job_uid,
@@ -1040,7 +1047,7 @@ export async function PUT(request: NextRequest) {
         await cacheZuperJob({
           jobUid: newJobUid,
           jobTitle: createResult.data.job_title || `${schedule.type} - ${project.name}`,
-          jobCategory: schedule.type === "survey" ? "Site Survey" : schedule.type === "inspection" ? "Inspection" : "Construction",
+          jobCategory: getCategoryNameForScheduleType(schedule.type),
           jobStatus: "SCHEDULED",
           hubspotDealId: project.id,
           projectName: project.name,
@@ -1056,7 +1063,7 @@ export async function PUT(request: NextRequest) {
       if (!hubspotDateUpdated) {
         hubspotWarnings.push("HubSpot schedule date write failed");
       }
-      if (schedule.type === "survey" && schedule.assignedUser) {
+      if (isSurveyLike(schedule.type) && schedule.assignedUser) {
         const surveyorUpdated = await updateSiteSurveyorProperty(project.id, schedule.assignedUser);
         if (!surveyorUpdated) {
           hubspotWarnings.push(`HubSpot site_surveyor write failed (${schedule.assignedUser})`);
@@ -1161,6 +1168,7 @@ export async function GET(request: NextRequest) {
       // Category config with both names and UIDs for flexible matching
       const categoryConfig: Record<string, { name: string; uid: string }> = {
         survey: { name: "Site Survey", uid: JOB_CATEGORY_UIDS.SITE_SURVEY },
+        "pre-sale-survey": { name: "Pre-Sale Site Visit", uid: JOB_CATEGORY_UIDS.PRE_SALE_SITE_VISIT },
         installation: { name: "Construction", uid: JOB_CATEGORY_UIDS.CONSTRUCTION },
         inspection: { name: "Inspection", uid: JOB_CATEGORY_UIDS.INSPECTION },
       };
@@ -1222,9 +1230,9 @@ export async function DELETE(request: NextRequest) {
 
     const body = await request.json();
     const scheduleType = (body?.scheduleType as ScheduleType) || "survey";
-    if (!["survey", "installation", "inspection"].includes(scheduleType)) {
+    if (!["survey", "pre-sale-survey", "installation", "inspection"].includes(scheduleType)) {
       return NextResponse.json(
-        { error: "Invalid scheduleType. Must be: survey, installation, inspection" },
+        { error: "Invalid scheduleType. Must be: survey, pre-sale-survey, installation, inspection" },
         { status: 400 }
       );
     }
@@ -1371,7 +1379,7 @@ export async function DELETE(request: NextRequest) {
 
       for (const dealId of candidateDealIds) {
         // Reset the stage-specific status field.
-        if (scheduleType === "survey") {
+        if (isSurveyLike(scheduleType)) {
           hubspotStatusUpdated = await updateDealProperty(dealId, {
             site_survey_status: "Ready to Schedule",
           });
@@ -1401,10 +1409,10 @@ export async function DELETE(request: NextRequest) {
         }
 
         let scheduleCleared = false;
-        let surveyorCleared = scheduleType !== "survey";
+        let surveyorCleared = !isSurveyLike(scheduleType);
         const MAX_CLEAR_ATTEMPTS = 4;
         for (let attempt = 1; attempt <= MAX_CLEAR_ATTEMPTS; attempt += 1) {
-          if (scheduleType === "survey") {
+          if (isSurveyLike(scheduleType)) {
             scheduleCleared = await updateDealProperty(dealId, {
               site_survey_schedule_date: "",
             });
@@ -1470,13 +1478,13 @@ export async function DELETE(request: NextRequest) {
           }
 
           hubspotDealIdUsed = dealId;
-          const verificationFields = scheduleType === "survey"
+          const verificationFields = isSurveyLike(scheduleType)
             ? ["site_survey_schedule_date", "site_surveyor", "site_survey_status"]
             : scheduleType === "installation"
               ? ["install_schedule_date", "construction_scheduled_date", "install_status"]
               : ["inspections_schedule_date", "inspection_scheduled_date", "final_inspection_status"];
           hubspotVerification = await getDealProperties(dealId, verificationFields);
-          const verifiedFieldsCleared = scheduleType === "survey"
+          const verifiedFieldsCleared = isSurveyLike(scheduleType)
             ? !!hubspotVerification &&
               isBlank(hubspotVerification.site_survey_schedule_date) &&
               isBlank(hubspotVerification.site_surveyor)
@@ -1496,7 +1504,7 @@ export async function DELETE(request: NextRequest) {
         }
 
         hubspotFieldsCleared = scheduleCleared && surveyorCleared;
-        const verifiedFieldsCleared = scheduleType === "survey"
+        const verifiedFieldsCleared = isSurveyLike(scheduleType)
           ? !!hubspotVerification &&
             isBlank(hubspotVerification.site_survey_schedule_date) &&
             isBlank(hubspotVerification.site_surveyor)
@@ -1507,7 +1515,7 @@ export async function DELETE(request: NextRequest) {
             : !!hubspotVerification &&
               isBlank(hubspotVerification.inspections_schedule_date) &&
               isBlank(hubspotVerification.inspection_scheduled_date);
-        const verifiedStatus = scheduleType === "survey"
+        const verifiedStatus = isSurveyLike(scheduleType)
           ? !!hubspotVerification &&
             (hubspotVerification.site_survey_status === "Ready to Schedule" ||
               hubspotVerification.site_survey_status === "Ready To Schedule")
@@ -1550,7 +1558,7 @@ export async function DELETE(request: NextRequest) {
       const ipAddress = forwarded?.split(",")[0]?.trim() || headersList.get("x-real-ip") || undefined;
 
       await logActivity({
-        type: scheduleType === "survey" ? "SURVEY_CANCELLED" : scheduleType === "installation" ? "INSTALL_CANCELLED" : "INSPECTION_CANCELLED",
+        type: isSurveyLike(scheduleType) ? "SURVEY_CANCELLED" : scheduleType === "installation" ? "INSTALL_CANCELLED" : "INSPECTION_CANCELLED",
         description: `Unscheduled ${scheduleType} for ${projectName || projectId}`,
         userId: user.id,
         userEmail: session.user.email,
@@ -1640,7 +1648,7 @@ export async function DELETE(request: NextRequest) {
         calendarDeleteError = calendarErr instanceof Error ? calendarErr.message : "Unknown install calendar delete error";
         console.warn("[Zuper Unschedule] Installation calendar delete failed:", calendarErr);
       }
-    } else if (scheduleType === "survey") {
+    } else if (isSurveyLike(scheduleType)) {
       try {
         const resolvedRecipient = await resolveCrewNotificationRecipient({
           assignedUser: latestActiveRecord?.assignedUser || (typeof assignedUser === "string" ? assignedUser : undefined),
@@ -2092,7 +2100,7 @@ async function sendCrewNotification(
 
     const { customerName, customerAddress } = deriveCustomerDetails(project);
 
-    const dealOwnerName = schedule.type === "survey"
+    const dealOwnerName = isSurveyLike(schedule.type)
       ? (project.dealOwner?.trim() || undefined)
       : undefined;
     let projectManagerName = (schedule.type === "installation" || schedule.type === "inspection")
@@ -2109,7 +2117,7 @@ async function sendCrewNotification(
       }
     }
     let googleCalendarEventUrl: string | undefined;
-    if (schedule.type === "survey") {
+    if (isSurveyLike(schedule.type)) {
       googleCalendarEventUrl =
         getGoogleCalendarEventUrl(getSurveyCalendarEventId(project.id), primaryRecipientEmail) || undefined;
     } else if (schedule.type === "installation") {
@@ -2138,7 +2146,7 @@ async function sendCrewNotification(
           scheduledByEmail: schedulerEmail,
           dealOwnerName,
           projectManagerName,
-          appointmentType: schedule.type as "survey" | "installation" | "inspection",
+          appointmentType: schedule.type as ScheduleType,
           customerName,
           customerAddress,
           scheduledDate: schedule.date,
@@ -2159,7 +2167,7 @@ async function sendCrewNotification(
     };
     const previousSurveyor = options?.previousSurveyor || null;
     const currentSurveyorEmail = normalizeEmail(currentSurveyor.email);
-    if (schedule.type === "survey") {
+    if (isSurveyLike(schedule.type)) {
       await sendSurveyReassignmentNotifications({
         logPrefix: "Zuper Schedule",
         schedulerName,
@@ -2188,7 +2196,7 @@ async function sendCrewNotification(
     }
 
     // Keep surveyor Google Calendar in sync for site surveys.
-    if (schedule.type === "survey") {
+    if (isSurveyLike(schedule.type)) {
       const previousSurveyorEmail = normalizeEmail(previousSurveyor?.email);
       if (
         previousSurveyorEmail &&
@@ -2343,7 +2351,7 @@ async function sendCrewCancellationEmail(params: {
   cancelReason?: string;
   userCache?: ZuperUserLookupCache;
 }) {
-  if (params.scheduleType !== "survey" || !params.assignedUser) {
+  if (!isSurveyLike(params.scheduleType) || !params.assignedUser) {
     return;
   }
 

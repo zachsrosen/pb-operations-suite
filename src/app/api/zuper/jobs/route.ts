@@ -4,7 +4,7 @@ import { logActivity } from "@/lib/db";
 import { zuper, createJobFromProject } from "@/lib/zuper";
 
 // Inline validation for job creation request
-const VALID_SCHEDULE_TYPES = ["survey", "installation", "inspection"] as const;
+const VALID_SCHEDULE_TYPES = ["survey", "pre-sale-survey", "installation", "inspection"] as const;
 
 function validateJobCreation(data: unknown): data is {
   project: {
@@ -22,7 +22,7 @@ function validateJobCreation(data: unknown): data is {
     customerPhone?: string;
   };
   schedule: {
-    type: "survey" | "installation" | "inspection";
+    type: "survey" | "pre-sale-survey" | "installation" | "inspection";
     date: string;
     days?: number;
     crew?: string;
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest) {
 
     // Create the job in Zuper
     const result = await createJobFromProject(project, {
-      type: schedule.type as "survey" | "installation" | "inspection",
+      type: schedule.type as "survey" | "pre-sale-survey" | "installation" | "inspection",
       date: schedule.date,
       days: schedule.days || 1,
       crew: schedule.crew,

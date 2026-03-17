@@ -8,7 +8,7 @@ export interface SchedulingNotificationProps {
   scheduledByEmail: string;
   dealOwnerName?: string | null;
   projectManagerName?: string | null;
-  appointmentType: "survey" | "installation" | "inspection";
+  appointmentType: "survey" | "pre-sale-survey" | "installation" | "inspection";
   appointmentTypeLabel: string; // Already resolved: "Site Survey" | "Installation" | "Inspection"
   customerName: string;
   customerAddress: string;
@@ -46,7 +46,7 @@ export function SchedulingNotification({
   const hasBomDetails = bomDetailLines && bomDetailLines.length > 0;
   const hasLinks = !!hubSpotDealUrl || !!zuperJobUrl || !!googleCalendarEventUrl || !!zohoSoUrl;
   const stakeholder =
-    appointmentType === "survey" && dealOwnerName
+    (appointmentType === "survey" || appointmentType === "pre-sale-survey") && dealOwnerName
       ? { icon: "🧑‍💼", label: "Deal owner", value: dealOwnerName }
       : (appointmentType === "installation" || appointmentType === "inspection") && projectManagerName
         ? { icon: "🧑‍🔧", label: "Project manager", value: projectManagerName }
