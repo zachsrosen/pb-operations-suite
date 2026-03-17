@@ -327,7 +327,7 @@ function DealsPageInner() {
           {filters.owners.map((o) => (
             <FilterPill
               key={`owner-${o}`}
-              label={o}
+              label={`Owner: ${o}`}
               onRemove={() => setFilters({ owners: filters.owners.filter((v) => v !== o) })}
             />
           ))}
