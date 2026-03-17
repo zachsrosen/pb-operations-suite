@@ -1580,12 +1580,12 @@ export default function SchedulerPage() {
     const thisYear = today.getFullYear();
     const months: MonthData[] = [];
 
-    // Show all months of 2026 (Jan–Dec)
+    // Show all months of the current year (Jan–Dec)
     for (let mo = 0; mo < 12; mo++) {
-      const monthStart = new Date(2026, mo, 1);
-      const monthEnd = new Date(2026, mo + 1, 1);
-      const isPast = monthStart < new Date(thisYear, thisMonth, 1);
-      const isCurrent = mo === thisMonth && thisYear === 2026;
+      const monthStart = new Date(thisYear, mo, 1);
+      const monthEnd = new Date(thisYear, mo + 1, 1);
+      const isPast = mo < thisMonth;
+      const isCurrent = mo === thisMonth;
       const label = monthStart.toLocaleDateString("en-US", { month: "short", year: "2-digit" });
 
       const monthEvents = displayEvents.filter((e) => {
