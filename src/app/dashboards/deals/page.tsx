@@ -13,7 +13,6 @@ import {
   projectToTableDeal,
   isProjectPipeline,
   PIPELINE_OPTIONS,
-  STATUS_COLUMNS,
 } from "./deals-types";
 import { STAGE_ORDER } from "@/lib/constants";
 import { ACTIVE_STAGES } from "@/lib/deals-pipeline";
