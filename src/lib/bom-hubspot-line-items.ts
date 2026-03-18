@@ -379,6 +379,15 @@ async function matchAndPartition(items: BomItem[]): Promise<PartitionResult> {
  *
  * @returns The number of newly created pending requests.
  */
+/** Default TTL for pending catalog requests (matches bom-snapshot.ts). */
+const DEFAULT_PENDING_TTL_DAYS = 90;
+
+function parsePendingTtlDays(): number {
+  const raw = Number(process.env.CATALOG_PENDING_TTL_DAYS);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_PENDING_TTL_DAYS;
+  return Math.min(Math.floor(raw), 3650);
+}
+
 async function createCatalogRequests(
   catalogMissing: PartitionResult["catalogMissing"],
   dealId: string,
@@ -386,6 +395,8 @@ async function createCatalogRequests(
 ): Promise<number> {
   if (!prisma || catalogMissing.length === 0) return 0;
 
+  const ttlDays = parsePendingTtlDays();
+  const expiresAt = new Date(Date.now() + ttlDays * 24 * 60 * 60 * 1000);
   let newlyCreated = 0;
 
   for (const item of catalogMissing) {
@@ -413,6 +424,7 @@ async function createCatalogRequests(
           canonicalKey,
           reviewReason: "no_catalog_match",
           dealId,
+          expiresAt,
         },
         select: { id: true },
       });
