@@ -272,6 +272,14 @@ export async function createSalesOrder(params: {
       try {
         const existing = await zohoInventory.getSalesOrder(soNumber);
         if (existing?.salesorder_id) {
+          // Best-effort: patch the deal-link custom field onto the recovered SO
+          try {
+            await zohoInventory.updateSalesOrder(existing.salesorder_id, {
+              custom_fields: [{ label: "HubSpot Deal Record ID", value: dealId }],
+            });
+          } catch (patchErr) {
+            console.warn("[bom-so-create] Could not patch custom fields on recovered SO:", patchErr);
+          }
           // Patch the snapshot so future runs hit the idempotency guard
           await prisma.projectBomSnapshot.update({
             where: { id: snapshot.id },

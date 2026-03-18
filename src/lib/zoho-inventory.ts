@@ -968,6 +968,13 @@ export class ZohoInventoryClient {
     };
   }
 
+  async updateSalesOrder(
+    salesorderId: string,
+    payload: Partial<Pick<ZohoSalesOrderPayload, "custom_fields">>
+  ): Promise<void> {
+    await this.requestPut(`/salesorders/${salesorderId}`, payload);
+  }
+
   async getSalesOrder(soNumber: string): Promise<ZohoSalesOrderRecord> {
     const lookup = normalizeSalesOrderLookup(soNumber);
     if (!lookup) {
