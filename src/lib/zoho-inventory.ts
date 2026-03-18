@@ -172,6 +172,7 @@ export interface ZohoSalesOrderPayload {
   notes?: string;
   status: "draft";
   line_items: ZohoSalesOrderLineItem[];
+  custom_fields?: Array<{ label: string; value: string }>;
 }
 
 interface ZohoSalesOrderCreateResponse {

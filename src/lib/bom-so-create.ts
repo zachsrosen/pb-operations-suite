@@ -259,6 +259,9 @@ export async function createSalesOrder(params: {
         quantity,
         ...(description ? { description } : {}),
       })),
+      custom_fields: [
+        { label: "HubSpot Deal Record ID", value: dealId },
+      ],
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Zoho API error";
