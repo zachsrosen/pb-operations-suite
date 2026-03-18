@@ -1092,6 +1092,38 @@ model PendingCatalogPush {
 }
 
 // ===========================================
+// BOM → HUBSPOT PUSH LOG
+// ===========================================
+
+enum BomHubSpotPushStatus {
+  PENDING
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+model BomHubSpotPushLog {
+  id              String                @id @default(cuid())
+  dealId          String                @unique  // PENDING lock: only one active push per deal
+  snapshotId      String
+  snapshotVersion Int
+  status          BomHubSpotPushStatus  @default(PENDING)
+  pushedBy        String                // user email
+  pushedCount     Int                   @default(0)
+  skippedCount    Int                   @default(0)
+  deletedCount    Int                   @default(0)
+  errorMessage    String?
+  rulesVersion    String?
+  jobContext      Json?
+
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  @@index([snapshotId])
+  @@index([status, createdAt])
+}
+
+// ===========================================
 // BOM PIPELINE RUNS
 // ===========================================
 
