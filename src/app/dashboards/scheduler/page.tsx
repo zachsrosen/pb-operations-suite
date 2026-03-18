@@ -1344,7 +1344,8 @@ export default function SchedulerPage() {
   }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled, showCompleted, showIncomplete]);
 
   // ---- Forecast ghost events ----
-  const forecastGhostEvents = useMemo((): ScheduledEvent[] => {
+  // Produces ALL eligible forecast ghosts; split into calendar vs overdue downstream
+  const allForecastGhosts = useMemo((): ScheduledEvent[] => {
     if (!showForecasts || !forecastQuery.data?.projects) return [];
 
     const timelineProjects = forecastQuery.data.projects;
@@ -1472,7 +1473,22 @@ export default function SchedulerPage() {
     scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled,
   ]);
 
-  // ---- Merged display events: real filtered events + ghost forecast events ----
+  // Split ghosts: future/today → calendar, past → overdue sidebar only
+  // Use local date (not UTC) so US-timezone users don't see today's forecasts as overdue
+  const todayLocal = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
+  const forecastGhostEvents = useMemo(
+    () => allForecastGhosts.filter((e) => e.date >= todayLocal),
+    [allForecastGhosts, todayLocal]
+  );
+  const overdueForecastEvents = useMemo(
+    () => allForecastGhosts.filter((e) => e.date < todayLocal),
+    [allForecastGhosts, todayLocal]
+  );
+
+  // ---- Merged display events: real filtered events + ghost forecast events (future only) ----
   const displayEvents = useMemo((): ScheduledEvent[] => {
     if (forecastGhostEvents.length === 0) return filteredScheduledEvents;
     return [...filteredScheduledEvents, ...forecastGhostEvents];
@@ -1527,6 +1543,16 @@ export default function SchedulerPage() {
     };
     return { scheduled: dedupeRevenue(scheduledEvts), tentative: dedupeRevenue(tentativeEvts), completed: dedupeRevenue(completedEvts), overdue: dedupeRevenue(overdueEvts), forecasted: dedupeRevenue(forecastedEvts) };
   }, []);
+
+  // Overdue forecast aggregate — forecasts with dates in the past (not on calendar)
+  const overdueForecastSummary = useMemo((): { count: number; revenue: number } => {
+    if (overdueForecastEvents.length === 0) return { count: 0, revenue: 0 };
+    const ids = new Set(overdueForecastEvents.map((e) => e.id));
+    return {
+      count: ids.size,
+      revenue: [...ids].reduce((sum, id) => sum + (overdueForecastEvents.find((e) => e.id === id)?.amount || 0), 0),
+    };
+  }, [overdueForecastEvents]);
 
   const weeklyRevenueSummary = useMemo((): WeekData[] => {
     const today = new Date();
@@ -2666,7 +2692,7 @@ export default function SchedulerPage() {
       "Event Type",
     ];
     let csv = headers.join(",") + "\n";
-    const eventsToExport = showForecasts ? [...scheduledEvents, ...forecastGhostEvents] : scheduledEvents;
+    const eventsToExport = showForecasts ? [...scheduledEvents, ...forecastGhostEvents, ...overdueForecastEvents] : scheduledEvents;
     eventsToExport.forEach((e) => {
       csv +=
         [
@@ -3599,9 +3625,11 @@ export default function SchedulerPage() {
                 </span>
                 Forecasts
               </button>
-              {showForecasts && forecastGhostEvents.length > 0 && (
+              {showForecasts && allForecastGhosts.length > 0 && (
                 <span className="text-[0.55rem] text-blue-400/70 ml-0.5">
-                  {forecastGhostEvents.length} forecasted install{forecastGhostEvents.length !== 1 ? "s" : ""}
+                  {forecastGhostEvents.length} forecasted{overdueForecastEvents.length > 0 && (
+                    <span className="text-amber-400/80"> / {overdueForecastEvents.length} overdue</span>
+                  )}
                 </span>
               )}
             </div>
@@ -4203,6 +4231,24 @@ export default function SchedulerPage() {
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
             </button>
           </div>
+
+          {/* Overdue Forecast callout — global signal, not period-scoped */}
+          {overdueForecastSummary.count > 0 && (
+          <div className="px-2.5 py-2 border-b border-t-border bg-amber-500/5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-sm border border-dashed border-amber-500 bg-amber-500/30" />
+                <span className="text-[0.6rem] font-medium text-amber-400">Overdue Forecast</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-amber-400 opacity-80">
+                {overdueForecastSummary.count} · ${formatRevenueCompact(overdueForecastSummary.revenue)}
+              </span>
+            </div>
+            <p className="text-[0.5rem] text-muted mt-0.5 leading-tight">
+              Forecasted installs that have passed without being scheduled
+            </p>
+          </div>
+          )}
 
           {/* Weekly view */}
           {revenueSidebarTab === "weekly" && (
