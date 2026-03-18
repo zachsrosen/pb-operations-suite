@@ -5,9 +5,8 @@ import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import type {
-  CustomerSummary,
-  CustomerDetail,
-  CustomerContact,
+  ContactSearchResult,
+  ContactDetail,
 } from "@/lib/customer-resolver";
 import { getZuperJobUrl } from "@/lib/external-links";
 
@@ -16,14 +15,14 @@ import { getZuperJobUrl } from "@/lib/external-links";
 // ---------------------------------------------------------------------------
 
 interface SearchResponse {
-  results: CustomerSummary[];
+  results: ContactSearchResult[];
   query: string;
   truncated: boolean;
   lastUpdated: string;
 }
 
 interface DetailResponse {
-  customer: CustomerDetail;
+  customer: ContactDetail;
   lastUpdated: string;
 }
 
@@ -66,15 +65,15 @@ function hubspotContactUrl(contactId: string): string {
 
 export default function CustomerHistoryPage() {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<CustomerSummary[]>([]);
+  const [results, setResults] = useState<ContactSearchResult[]>([]);
   const [truncated, setTruncated] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Detail panel state
-  const [selectedCustomer, setSelectedCustomer] = useState<CustomerSummary | null>(null);
-  const [detail, setDetail] = useState<CustomerDetail | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<ContactSearchResult | null>(null);
+  const [detail, setDetail] = useState<ContactDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -114,15 +113,15 @@ export default function CustomerHistoryPage() {
   }, []);
 
   // Fetch detail when a customer card is clicked
-  const handleSelectCustomer = useCallback(async (customer: CustomerSummary) => {
+  const handleSelectCustomer = useCallback(async (customer: ContactSearchResult) => {
     setSelectedCustomer(customer);
     setDetail(null);
     setDetailLoading(true);
 
     try {
-      const groupKeyEncoded = encodeURIComponent(customer.groupKey);
+      const contactIdEncoded = encodeURIComponent(customer.contactId);
       const res = await fetch(
-        `/api/service/customers/${groupKeyEncoded}`
+        `/api/service/customers/${contactIdEncoded}`
       );
       if (!res.ok) throw new Error("Failed to load customer detail");
       const data: DetailResponse = await res.json();
@@ -191,21 +190,24 @@ export default function CustomerHistoryPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 stagger-grid">
           {results.map((customer) => (
             <button
-              key={customer.groupKey}
+              key={customer.contactId}
               onClick={() => handleSelectCustomer(customer)}
               className={`text-left p-4 bg-surface rounded-lg border transition-all hover:shadow-lg ${
-                selectedCustomer?.groupKey === customer.groupKey
+                selectedCustomer?.contactId === customer.contactId
                   ? "border-cyan-500 shadow-cyan-500/20"
                   : "border-t-border hover:border-cyan-500/50"
               }`}
             >
               <h3 className="font-semibold text-foreground truncate">
-                {customer.displayName}
+                {[customer.firstName, customer.lastName].filter(Boolean).join(" ") || "Unknown"}
               </h3>
-              <p className="text-sm text-muted mt-1 truncate">{customer.address}</p>
-              <p className="text-xs text-muted mt-2">
-                {customer.contactIds.length} contact{customer.contactIds.length !== 1 ? "s" : ""}
-              </p>
+              {customer.companyName && (
+                <p className="text-sm text-muted mt-0.5 truncate">{customer.companyName}</p>
+              )}
+              <p className="text-sm text-muted mt-1 truncate">{customer.address || "No address"}</p>
+              {customer.email && (
+                <p className="text-xs text-muted mt-1 truncate">{customer.email}</p>
+              )}
             </button>
           ))}
         </div>
@@ -226,7 +228,7 @@ export default function CustomerHistoryPage() {
             <div className="sticky top-0 bg-surface border-b border-t-border p-4 flex items-center justify-between z-10">
               <div className="min-w-0 flex-1 mr-3">
                 <h2 className="text-lg font-semibold text-foreground truncate">
-                  {selectedCustomer.displayName}
+                  {[selectedCustomer.firstName, selectedCustomer.lastName].filter(Boolean).join(" ") || "Unknown"}
                 </h2>
                 {selectedCustomer.address && (
                   <p className="text-sm text-muted truncate">{selectedCustomer.address}</p>
@@ -247,32 +249,33 @@ export default function CustomerHistoryPage() {
                 </div>
               ) : detail ? (
                 <>
-                  {/* Contacts */}
+                  {/* Contact Info */}
                   <section>
                     <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
-                      Contacts ({detail.contacts.length})
+                      Contact Info
                     </h3>
-                    <div className="space-y-2">
-                      {detail.contacts.map((c: CustomerContact) => (
-                        <a
-                          key={c.id}
-                          href={hubspotContactUrl(c.id)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block p-2 rounded bg-surface-2 hover:bg-surface-2/80 transition-colors"
-                        >
-                          <span className="text-foreground font-medium">
-                            {[c.firstName, c.lastName].filter(Boolean).join(" ") || "Unknown"}
-                          </span>
-                          {c.email && (
-                            <span className="text-sm text-muted ml-2">{c.email}</span>
-                          )}
-                          {c.phone && (
-                            <span className="text-sm text-muted ml-2">{c.phone}</span>
-                          )}
-                        </a>
-                      ))}
-                    </div>
+                    <a
+                      href={hubspotContactUrl(detail.contactId)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block p-3 rounded bg-surface-2 hover:bg-surface-2/80 transition-colors"
+                    >
+                      <p className="text-foreground font-medium">
+                        {[detail.firstName, detail.lastName].filter(Boolean).join(" ") || "Unknown"}
+                      </p>
+                      {detail.companyName && (
+                        <p className="text-sm text-muted mt-1">{detail.companyName}</p>
+                      )}
+                      {detail.email && (
+                        <p className="text-sm text-muted mt-1">{detail.email}</p>
+                      )}
+                      {detail.phone && (
+                        <p className="text-sm text-muted mt-1">{detail.phone}</p>
+                      )}
+                      {detail.address && (
+                        <p className="text-sm text-muted mt-1">{detail.address}</p>
+                      )}
+                    </a>
                   </section>
 
                   {/* Three-Column Grid: Deals | Tickets | Jobs */}

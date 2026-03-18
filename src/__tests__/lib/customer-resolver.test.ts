@@ -1,295 +1,587 @@
-// Mock @/lib/db to prevent Prisma import.meta from breaking Jest
+// Mock @/lib/db before any imports
 jest.mock("@/lib/db", () => ({
   getCachedZuperJobsByDealIds: jest.fn().mockResolvedValue([]),
+  prisma: { zuperJobCache: { findMany: jest.fn().mockResolvedValue([]) } },
 }));
 
-import {
-  normalizeAddress,
-  deriveDisplayName,
-  groupSearchHits,
-  filterExpandedContactsByAddress,
-  parseGroupKey,
-  type RawSearchHit,
-} from "@/lib/customer-resolver";
+jest.mock("@/lib/hubspot", () => ({
+  hubspotClient: {
+    crm: {
+      contacts: {
+        searchApi: { doSearch: jest.fn() },
+        batchApi: { read: jest.fn() },
+      },
+      companies: {
+        searchApi: { doSearch: jest.fn() },
+      },
+      associations: {
+        batchApi: { read: jest.fn() },
+      },
+      deals: { batchApi: { read: jest.fn() } },
+      tickets: { batchApi: { read: jest.fn() } },
+    },
+  },
+}));
 
-describe("normalizeAddress", () => {
-  it("normalizes a standard address to lowercase street|zip format", () => {
-    expect(normalizeAddress("123 Main St", "80202")).toBe("123 main street|80202");
+jest.mock("@sentry/nextjs", () => ({
+  captureException: jest.fn(),
+  addBreadcrumb: jest.fn(),
+}));
+
+import { searchContacts, resolveContactDetail } from "@/lib/customer-resolver";
+import { hubspotClient } from "@/lib/hubspot";
+import { getCachedZuperJobsByDealIds, prisma } from "@/lib/db";
+
+// Typed mock references
+const mockContactSearch = hubspotClient.crm.contacts.searchApi.doSearch as jest.Mock;
+const mockContactBatchRead = hubspotClient.crm.contacts.batchApi.read as jest.Mock;
+const mockCompanySearch = hubspotClient.crm.companies.searchApi.doSearch as jest.Mock;
+const mockAssociationRead = hubspotClient.crm.associations.batchApi.read as jest.Mock;
+const mockDealBatchRead = hubspotClient.crm.deals.batchApi.read as jest.Mock;
+const mockTicketBatchRead = hubspotClient.crm.tickets.batchApi.read as jest.Mock;
+const mockGetZuperJobs = getCachedZuperJobsByDealIds as jest.Mock;
+const mockPrismaFindMany = prisma.zuperJobCache.findMany as jest.Mock;
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  // Default: empty results
+  mockContactSearch.mockResolvedValue({ results: [], paging: null });
+  mockCompanySearch.mockResolvedValue({ results: [], paging: null });
+  mockContactBatchRead.mockResolvedValue({ results: [] });
+  mockAssociationRead.mockResolvedValue({ results: [] });
+  mockDealBatchRead.mockResolvedValue({ results: [] });
+  mockTicketBatchRead.mockResolvedValue({ results: [] });
+  mockGetZuperJobs.mockResolvedValue([]);
+  mockPrismaFindMany.mockResolvedValue([]);
+});
+
+// ---------------------------------------------------------------------------
+// formatContactAddress (tested indirectly through searchContacts)
+// ---------------------------------------------------------------------------
+
+describe("formatContactAddress (via searchContacts)", () => {
+  it("formats full address from contact properties", async () => {
+    mockContactSearch.mockResolvedValue({
+      results: [{
+        id: "c1",
+        properties: {
+          firstname: "John",
+          lastname: "Smith",
+          email: "john@example.com",
+          phone: "555-1234",
+          address: "123 Main St",
+          city: "Denver",
+          state: "CO",
+          zip: "80202",
+          company: "Acme",
+        },
+      }],
+      paging: null,
+    });
+
+    const result = await searchContacts("john");
+    expect(result.results[0].address).toBe("123 Main St, Denver, CO, 80202");
   });
 
-  it("expands common abbreviations", () => {
-    expect(normalizeAddress("456 Oak Ave", "80301")).toBe("456 oak avenue|80301");
-    expect(normalizeAddress("789 Pine Dr", "80401")).toBe("789 pine drive|80401");
-    expect(normalizeAddress("100 Elm Blvd", "80501")).toBe("100 elm boulevard|80501");
-    expect(normalizeAddress("200 Cedar Ln", "80601")).toBe("200 cedar lane|80601");
-    expect(normalizeAddress("300 Birch Ct", "80701")).toBe("300 birch court|80701");
-    expect(normalizeAddress("400 Maple Rd", "80801")).toBe("400 maple road|80801");
-  });
+  it("returns null when no address properties are set", async () => {
+    mockContactSearch.mockResolvedValue({
+      results: [{
+        id: "c1",
+        properties: {
+          firstname: "John",
+          lastname: "Smith",
+          email: null,
+          phone: null,
+          address: null,
+          city: null,
+          state: null,
+          zip: null,
+          company: null,
+        },
+      }],
+      paging: null,
+    });
 
-  it("normalizes directionals", () => {
-    expect(normalizeAddress("123 N Main St", "80202")).toBe("123 north main street|80202");
-    expect(normalizeAddress("456 S Oak Ave", "80301")).toBe("456 south oak avenue|80301");
-    expect(normalizeAddress("789 E Pine Dr", "80401")).toBe("789 east pine drive|80401");
-    expect(normalizeAddress("100 W Elm Blvd", "80501")).toBe("100 west elm boulevard|80501");
-  });
-
-  it("strips periods and extra whitespace", () => {
-    expect(normalizeAddress("123 Main St.", "80202")).toBe("123 main street|80202");
-    expect(normalizeAddress("  456   Oak   Ave  ", "80301")).toBe("456 oak avenue|80301");
-  });
-
-  it("takes only first 5 digits of zip", () => {
-    expect(normalizeAddress("123 Main St", "80202-1234")).toBe("123 main street|80202");
-  });
-
-  it("returns null for missing street", () => {
-    expect(normalizeAddress("", "80202")).toBeNull();
-    expect(normalizeAddress(null as unknown as string, "80202")).toBeNull();
-  });
-
-  it("returns null for missing zip", () => {
-    expect(normalizeAddress("123 Main St", "")).toBeNull();
-    expect(normalizeAddress("123 Main St", null as unknown as string)).toBeNull();
+    const result = await searchContacts("john");
+    expect(result.results[0].address).toBeNull();
   });
 });
 
-describe("deriveDisplayName", () => {
-  it("uses company name when present", () => {
-    expect(deriveDisplayName("Acme Solar LLC", [], "123 Main St")).toBe("Acme Solar LLC");
-  });
+// ---------------------------------------------------------------------------
+// searchContacts
+// ---------------------------------------------------------------------------
 
-  it("skips generic company names", () => {
-    expect(deriveDisplayName("Unknown Company", [{ lastName: "Smith" }], "123 Main St"))
-      .toBe("Smith Residence");
-  });
+describe("searchContacts", () => {
+  it("returns contacts from direct contact search", async () => {
+    mockContactSearch.mockResolvedValue({
+      results: [
+        {
+          id: "c1",
+          properties: {
+            firstname: "Alice",
+            lastname: "Johnson",
+            email: "alice@example.com",
+            phone: "555-0001",
+            address: "100 Oak Ave",
+            city: "Boulder",
+            state: "CO",
+            zip: "80301",
+            company: "Solar Corp",
+          },
+        },
+        {
+          id: "c2",
+          properties: {
+            firstname: "Bob",
+            lastname: "Williams",
+            email: "bob@example.com",
+            phone: "555-0002",
+            address: "200 Pine Dr",
+            city: "Denver",
+            state: "CO",
+            zip: "80202",
+            company: null,
+          },
+        },
+      ],
+      paging: null,
+    });
 
-  it("skips empty company name", () => {
-    expect(deriveDisplayName("", [{ lastName: "Jones" }], "456 Oak Ave"))
-      .toBe("Jones Residence");
-  });
+    const result = await searchContacts("alice");
+    expect(result.results).toHaveLength(2);
+    expect(result.truncated).toBe(false);
 
-  it("uses first contact's last name when no company", () => {
-    expect(deriveDisplayName(null, [{ lastName: "Garcia" }, { lastName: "Lopez" }], "789 Pine Dr"))
-      .toBe("Garcia Residence");
-  });
+    expect(result.results[0]).toEqual({
+      contactId: "c1",
+      firstName: "Alice",
+      lastName: "Johnson",
+      email: "alice@example.com",
+      phone: "555-0001",
+      address: "100 Oak Ave, Boulder, CO, 80301",
+      companyName: "Solar Corp",
+    });
 
-  it("falls back to address when no company or last name", () => {
-    expect(deriveDisplayName(null, [{ lastName: null }, { lastName: "" }], "789 Pine Dr"))
-      .toBe("789 Pine Dr");
-  });
-
-  it("falls back to address when contacts array is empty", () => {
-    expect(deriveDisplayName(null, [], "789 Pine Dr")).toBe("789 Pine Dr");
-  });
-});
-
-describe("groupSearchHits", () => {
-  it("groups contacts by company + normalized address", () => {
-    const hits: RawSearchHit[] = [
-      {
-        type: "contact",
-        id: "c1",
-        companyId: "comp1",
-        street: "123 Main St",
-        zip: "80202",
-        companyName: "Acme Solar",
-        firstName: "John",
-        lastName: "Smith",
-        email: "john@example.com",
-        phone: "555-1234",
-      },
-      {
-        type: "contact",
-        id: "c2",
-        companyId: "comp1",
-        street: "123 Main St",
-        zip: "80202",
-        companyName: "Acme Solar",
-        firstName: "Jane",
-        lastName: "Smith",
-        email: "jane@example.com",
-        phone: "555-5678",
-      },
-    ];
-
-    const groups = groupSearchHits(hits);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].groupKey).toBe("company:comp1:123 main street|80202");
-    expect(groups[0].contactIds).toEqual(["c1", "c2"]);
-    expect(groups[0].displayName).toBe("Acme Solar");
-  });
-
-  it("separates multi-site company into distinct groups", () => {
-    const hits: RawSearchHit[] = [
-      {
-        type: "contact",
-        id: "c1",
-        companyId: "comp1",
-        street: "123 Main St",
-        zip: "80202",
-        companyName: "Big Corp",
-        firstName: "Alice",
-        lastName: "A",
-        email: null,
-        phone: null,
-      },
-      {
-        type: "contact",
-        id: "c2",
-        companyId: "comp1",
-        street: "456 Oak Ave",
-        zip: "80301",
-        companyName: "Big Corp",
-        firstName: "Bob",
-        lastName: "B",
-        email: null,
-        phone: null,
-      },
-    ];
-
-    const groups = groupSearchHits(hits);
-    expect(groups).toHaveLength(2);
-    expect(groups.map(g => g.groupKey).sort()).toEqual([
-      "company:comp1:123 main street|80202",
-      "company:comp1:456 oak avenue|80301",
-    ]);
-  });
-
-  it("creates address-only group when no company", () => {
-    const hits: RawSearchHit[] = [
-      {
-        type: "contact",
-        id: "c1",
-        companyId: null,
-        street: "789 Pine Dr",
-        zip: "80401",
-        companyName: null,
-        firstName: "Charlie",
-        lastName: "Brown",
-        email: "charlie@example.com",
-        phone: null,
-      },
-    ];
-
-    const groups = groupSearchHits(hits);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].groupKey).toBe("addr:789 pine drive|80401");
-    expect(groups[0].companyId).toBeNull();
-    expect(groups[0].displayName).toBe("Brown Residence");
-  });
-
-  it("deduplicates contacts appearing in both contact and company search", () => {
-    const hits: RawSearchHit[] = [
-      {
-        type: "contact",
-        id: "c1",
-        companyId: "comp1",
-        street: "123 Main St",
-        zip: "80202",
-        companyName: "Acme Solar",
-        firstName: "John",
-        lastName: "Smith",
-        email: "john@example.com",
-        phone: null,
-      },
-      {
-        type: "company",
-        id: "c1",
-        companyId: "comp1",
-        street: "123 Main St",
-        zip: "80202",
-        companyName: "Acme Solar",
-        firstName: "John",
-        lastName: "Smith",
-        email: "john@example.com",
-        phone: null,
-      },
-    ];
-
-    const groups = groupSearchHits(hits);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].contactIds).toEqual(["c1"]);
-  });
-
-  it("skips hits with no resolvable address", () => {
-    const hits: RawSearchHit[] = [
-      {
-        type: "contact",
-        id: "c1",
-        companyId: "comp1",
-        street: "",
-        zip: "",
-        companyName: "No Address Corp",
-        firstName: "Dan",
-        lastName: "D",
-        email: null,
-        phone: null,
-      },
-    ];
-
-    const groups = groupSearchHits(hits);
-    expect(groups).toHaveLength(0);
-  });
-});
-
-describe("filterExpandedContactsByAddress", () => {
-  it("keeps contacts whose address matches the group key", () => {
-    const contacts = [
-      { id: "c1", street: "123 Main St", zip: "80202" },
-      { id: "c2", street: "456 Oak Ave", zip: "80301" },
-      { id: "c3", street: "123 Main St.", zip: "80202-1234" }, // normalizes to same
-    ];
-    const groupNormalizedAddr = "123 main street|80202";
-
-    const result = filterExpandedContactsByAddress(contacts, groupNormalizedAddr);
-    expect(result.map(c => c.id)).toEqual(["c1", "c3"]);
-  });
-
-  it("includes contacts with no address (blank = inherit company address)", () => {
-    const contacts = [
-      { id: "c1", street: "123 Main St", zip: "80202" },
-      { id: "c2", street: null, zip: null },           // blank address
-      { id: "c3", street: "", zip: "" },                // empty string address
-      { id: "c4", street: "456 Oak Ave", zip: "80301" }, // different address
-    ];
-    const groupNormalizedAddr = "123 main street|80202";
-
-    const result = filterExpandedContactsByAddress(contacts, groupNormalizedAddr);
-    expect(result.map(c => c.id)).toEqual(["c1", "c2", "c3"]);
-  });
-
-  it("returns empty array when no contacts match", () => {
-    const contacts = [
-      { id: "c1", street: "999 Other Rd", zip: "90210" },
-    ];
-    const result = filterExpandedContactsByAddress(contacts, "123 main street|80202");
-    expect(result).toEqual([]);
-  });
-});
-
-describe("parseGroupKey", () => {
-  it("parses a company groupKey", () => {
-    const result = parseGroupKey("company:12345:123 main street|80202");
-    expect(result).toEqual({
-      type: "company",
-      companyId: "12345",
-      normalizedAddress: "123 main street|80202",
+    expect(result.results[1]).toEqual({
+      contactId: "c2",
+      firstName: "Bob",
+      lastName: "Williams",
+      email: "bob@example.com",
+      phone: "555-0002",
+      address: "200 Pine Dr, Denver, CO, 80202",
+      companyName: null,
     });
   });
 
-  it("parses an address-only groupKey", () => {
-    const result = parseGroupKey("addr:123 main street|80202");
-    expect(result).toEqual({
-      type: "addr",
-      companyId: null,
-      normalizedAddress: "123 main street|80202",
+  it("returns contacts from company search (resolved to contacts, deduped)", async () => {
+    // No direct contact hits
+    mockContactSearch.mockResolvedValue({ results: [], paging: null });
+
+    // Company search returns a company
+    mockCompanySearch.mockResolvedValue({
+      results: [{
+        id: "comp1",
+        properties: { name: "Acme Solar", address: "500 Corp Blvd" },
+      }],
+      paging: null,
     });
+
+    // Company→contact associations
+    mockAssociationRead.mockResolvedValue({
+      results: [{
+        _from: { id: "comp1" },
+        to: [{ id: "c10" }, { id: "c11" }],
+      }],
+    });
+
+    // Batch-read those contacts
+    mockContactBatchRead.mockResolvedValue({
+      results: [
+        {
+          id: "c10",
+          properties: {
+            firstname: "Charlie",
+            lastname: "Brown",
+            email: "charlie@acme.com",
+            phone: null,
+            address: "500 Corp Blvd",
+            city: "Denver",
+            state: "CO",
+            zip: "80202",
+            company: "Other Name",
+          },
+        },
+        {
+          id: "c11",
+          properties: {
+            firstname: "Lucy",
+            lastname: "Van Pelt",
+            email: "lucy@acme.com",
+            phone: null,
+            address: null,
+            city: null,
+            state: null,
+            zip: null,
+            company: null,
+          },
+        },
+      ],
+    });
+
+    const result = await searchContacts("acme");
+    expect(result.results).toHaveLength(2);
+
+    // Company name from matched company should be used
+    expect(result.results[0].companyName).toBe("Acme Solar");
+    expect(result.results[1].companyName).toBe("Acme Solar");
+
+    // Contact IDs should be correct
+    expect(result.results.map(r => r.contactId).sort()).toEqual(["c10", "c11"]);
   });
 
-  it("returns null for invalid groupKey", () => {
-    expect(parseGroupKey("invalid")).toBeNull();
-    expect(parseGroupKey("company:")).toBeNull();
-    expect(parseGroupKey("addr:")).toBeNull();
-    expect(parseGroupKey("company:12345:")).toBeNull();
+  it("deduplicates contacts that appear in both contact and company search", async () => {
+    // Contact search finds c1
+    mockContactSearch.mockResolvedValue({
+      results: [{
+        id: "c1",
+        properties: {
+          firstname: "Dupe",
+          lastname: "Person",
+          email: "dupe@example.com",
+          phone: null,
+          address: null,
+          city: null,
+          state: null,
+          zip: null,
+          company: "MyCompany",
+        },
+      }],
+      paging: null,
+    });
+
+    // Company search also finds company associated with c1
+    mockCompanySearch.mockResolvedValue({
+      results: [{
+        id: "comp1",
+        properties: { name: "MyCompany", address: null },
+      }],
+      paging: null,
+    });
+
+    mockAssociationRead.mockResolvedValue({
+      results: [{ _from: { id: "comp1" }, to: [{ id: "c1" }] }],
+    });
+
+    mockContactBatchRead.mockResolvedValue({
+      results: [{
+        id: "c1",
+        properties: {
+          firstname: "Dupe",
+          lastname: "Person",
+          email: "dupe@example.com",
+          phone: null,
+          address: null,
+          city: null,
+          state: null,
+          zip: null,
+          company: "MyCompany",
+        },
+      }],
+    });
+
+    const result = await searchContacts("dupe");
+    // Should only appear once
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].contactId).toBe("c1");
+  });
+
+  it("sets truncated when paging present", async () => {
+    mockContactSearch.mockResolvedValue({
+      results: [{
+        id: "c1",
+        properties: {
+          firstname: "A", lastname: "B",
+          email: null, phone: null,
+          address: null, city: null, state: null, zip: null,
+          company: null,
+        },
+      }],
+      paging: { next: { after: "25" } },
+    });
+
+    const result = await searchContacts("test");
+    expect(result.truncated).toBe(true);
+  });
+
+  it("returns empty results for no matches", async () => {
+    const result = await searchContacts("nonexistent");
+    expect(result.results).toEqual([]);
+    expect(result.truncated).toBe(false);
+  });
+
+  it("handles search API errors gracefully (returns partial results)", async () => {
+    // Contact search fails
+    mockContactSearch.mockRejectedValue(new Error("API down"));
+
+    // Company search succeeds
+    mockCompanySearch.mockResolvedValue({
+      results: [{
+        id: "comp1",
+        properties: { name: "Fallback Corp", address: null },
+      }],
+      paging: null,
+    });
+
+    mockAssociationRead.mockResolvedValue({
+      results: [{ _from: { id: "comp1" }, to: [{ id: "c50" }] }],
+    });
+
+    mockContactBatchRead.mockResolvedValue({
+      results: [{
+        id: "c50",
+        properties: {
+          firstname: "Partial",
+          lastname: "Result",
+          email: null, phone: null,
+          address: null, city: null, state: null, zip: null,
+          company: null,
+        },
+      }],
+    });
+
+    const result = await searchContacts("test");
+    // Should still return company-sourced contacts
+    expect(result.results).toHaveLength(1);
+    expect(result.results[0].contactId).toBe("c50");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveContactDetail
+// ---------------------------------------------------------------------------
+
+describe("resolveContactDetail", () => {
+  it("returns full detail with deals, tickets, and jobs", async () => {
+    // Contact properties
+    mockContactBatchRead.mockResolvedValue({
+      results: [{
+        id: "c1",
+        properties: {
+          firstname: "John",
+          lastname: "Smith",
+          email: "john@example.com",
+          phone: "555-1234",
+          address: "123 Main St",
+          city: "Denver",
+          state: "CO",
+          zip: "80202",
+          company: "Acme",
+        },
+      }],
+    });
+
+    // Contact→deal associations
+    mockAssociationRead
+      .mockResolvedValueOnce({
+        results: [{
+          to: [{ id: "d1" }, { id: "d2" }],
+        }],
+      })
+      // Contact→ticket associations
+      .mockResolvedValueOnce({
+        results: [{
+          to: [{ id: "t1" }],
+        }],
+      });
+
+    // Deal batch read
+    mockDealBatchRead.mockResolvedValue({
+      results: [
+        {
+          id: "d1",
+          properties: {
+            dealname: "Solar Install",
+            dealstage: "closedwon",
+            pipeline: "default",
+            amount: "25000",
+            pb_location: "Denver",
+            closedate: "2026-01-15",
+            hs_lastmodifieddate: "2026-03-10T10:00:00Z",
+          },
+        },
+        {
+          id: "d2",
+          properties: {
+            dealname: "Battery Addon",
+            dealstage: "contractsent",
+            pipeline: "default",
+            amount: "8000",
+            pb_location: null,
+            closedate: null,
+            hs_lastmodifieddate: "2026-03-15T10:00:00Z",
+          },
+        },
+      ],
+    });
+
+    // Ticket batch read
+    mockTicketBatchRead.mockResolvedValue({
+      results: [{
+        id: "t1",
+        properties: {
+          subject: "Inverter Issue",
+          hs_pipeline_stage: "open",
+          hs_ticket_priority: "HIGH",
+          createdate: "2026-03-01T00:00:00Z",
+          hs_lastmodifieddate: "2026-03-12T00:00:00Z",
+        },
+      }],
+    });
+
+    // Zuper jobs — deal-linked
+    mockGetZuperJobs.mockResolvedValue([{
+      jobUid: "j1",
+      jobTitle: "Site Survey",
+      jobCategory: "Site Survey",
+      jobStatus: "COMPLETED",
+      scheduledStart: new Date("2026-01-10T09:00:00Z"),
+      lastSyncedAt: new Date("2026-03-10T00:00:00Z"),
+    }]);
+
+    // Zuper jobs — name/address-linked
+    mockPrismaFindMany.mockResolvedValue([{
+      jobUid: "j2",
+      jobTitle: "Inspection",
+      jobCategory: "Inspection",
+      jobStatus: "SCHEDULED",
+      scheduledStart: new Date("2026-04-01T09:00:00Z"),
+      lastSyncedAt: new Date("2026-03-15T00:00:00Z"),
+    }]);
+
+    const detail = await resolveContactDetail("c1");
+
+    expect(detail.contactId).toBe("c1");
+    expect(detail.firstName).toBe("John");
+    expect(detail.lastName).toBe("Smith");
+    expect(detail.email).toBe("john@example.com");
+    expect(detail.address).toBe("123 Main St, Denver, CO, 80202");
+    expect(detail.companyName).toBe("Acme");
+
+    // Deals sorted by lastModified DESC
+    expect(detail.deals).toHaveLength(2);
+    expect(detail.deals[0].id).toBe("d2"); // more recent
+    expect(detail.deals[1].id).toBe("d1");
+    expect(detail.deals[0].name).toBe("Battery Addon");
+    expect(detail.deals[1].amount).toBe("25000");
+
+    // Tickets
+    expect(detail.tickets).toHaveLength(1);
+    expect(detail.tickets[0].subject).toBe("Inverter Issue");
+    expect(detail.tickets[0].priority).toBe("HIGH");
+
+    // Jobs — deduped, sorted by scheduledDate DESC
+    expect(detail.jobs).toHaveLength(2);
+    expect(detail.jobs[0].uid).toBe("j2"); // April > January
+    expect(detail.jobs[1].uid).toBe("j1");
+  });
+
+  it("returns empty arrays when no associations exist", async () => {
+    mockContactBatchRead.mockResolvedValue({
+      results: [{
+        id: "c99",
+        properties: {
+          firstname: "Lonely",
+          lastname: "Contact",
+          email: null, phone: null,
+          address: null, city: null, state: null, zip: null,
+          company: null,
+        },
+      }],
+    });
+
+    // No associations
+    mockAssociationRead.mockResolvedValue({ results: [] });
+
+    const detail = await resolveContactDetail("c99");
+
+    expect(detail.contactId).toBe("c99");
+    expect(detail.firstName).toBe("Lonely");
+    expect(detail.deals).toEqual([]);
+    expect(detail.tickets).toEqual([]);
+    expect(detail.jobs).toEqual([]);
+  });
+
+  it("handles association API errors gracefully", async () => {
+    mockContactBatchRead.mockResolvedValue({
+      results: [{
+        id: "c1",
+        properties: {
+          firstname: "Error",
+          lastname: "Test",
+          email: null, phone: null,
+          address: null, city: null, state: null, zip: null,
+          company: null,
+        },
+      }],
+    });
+
+    // Association calls fail
+    mockAssociationRead.mockRejectedValue(new Error("Association API down"));
+
+    const detail = await resolveContactDetail("c1");
+
+    // Should still return contact info with empty arrays
+    expect(detail.contactId).toBe("c1");
+    expect(detail.firstName).toBe("Error");
+    expect(detail.deals).toEqual([]);
+    expect(detail.tickets).toEqual([]);
+    expect(detail.jobs).toEqual([]);
+  });
+
+  it("deduplicates jobs from deal-linked and name/address paths", async () => {
+    mockContactBatchRead.mockResolvedValue({
+      results: [{
+        id: "c1",
+        properties: {
+          firstname: "John",
+          lastname: "Smith",
+          email: null, phone: null,
+          address: "123 Main St", city: null, state: null, zip: null,
+          company: null,
+        },
+      }],
+    });
+
+    // Has one deal
+    mockAssociationRead
+      .mockResolvedValueOnce({
+        results: [{ to: [{ id: "d1" }] }],
+      })
+      .mockResolvedValueOnce({ results: [] }); // no tickets
+
+    mockDealBatchRead.mockResolvedValue({ results: [{
+      id: "d1",
+      properties: {
+        dealname: "Deal", dealstage: "won", pipeline: "default",
+        amount: null, pb_location: null, closedate: null,
+        hs_lastmodifieddate: "2026-01-01",
+      },
+    }] });
+
+    // Same job found via both paths
+    const sharedJob = {
+      jobUid: "j-shared",
+      jobTitle: "Shared Job",
+      jobCategory: "Construction",
+      jobStatus: "STARTED",
+      scheduledStart: new Date("2026-02-01T09:00:00Z"),
+      lastSyncedAt: new Date("2026-03-01T00:00:00Z"),
+    };
+
+    mockGetZuperJobs.mockResolvedValue([sharedJob]);
+    mockPrismaFindMany.mockResolvedValue([sharedJob]);
+
+    const detail = await resolveContactDetail("c1");
+    expect(detail.jobs).toHaveLength(1);
+    expect(detail.jobs[0].uid).toBe("j-shared");
   });
 });

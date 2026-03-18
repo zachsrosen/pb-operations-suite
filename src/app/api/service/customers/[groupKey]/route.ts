@@ -2,12 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
-import {
-  parseGroupKey,
-  resolveContactIdsFromGroupKey,
-  resolveCustomerDetail,
-  type CustomerSummary,
-} from "@/lib/customer-resolver";
+import { resolveContactDetail } from "@/lib/customer-resolver";
 
 export async function GET(
   request: NextRequest,
@@ -24,58 +19,22 @@ export async function GET(
       return NextResponse.json({ error: "User not found" }, { status: 403 });
     }
 
-    const { groupKey: encodedGroupKey } = await params;
-    const groupKey = decodeURIComponent(encodedGroupKey);
+    const { groupKey: encodedContactId } = await params;
+    const contactId = decodeURIComponent(encodedContactId);
 
-    // Validate groupKey shape
-    const parsed = parseGroupKey(groupKey);
-    if (!parsed) {
+    if (!contactId) {
       return NextResponse.json(
-        { error: "Invalid groupKey format. Must start with 'company:' or 'addr:'" },
+        { error: "Contact ID is required" },
         { status: 400 }
       );
     }
 
     const forceRefresh = new URL(request.url).searchParams.get("refresh") === "true";
-    const cacheKey = CACHE_KEYS.SERVICE_CUSTOMER_DETAIL(groupKey);
+    const cacheKey = CACHE_KEYS.SERVICE_CUSTOMER_DETAIL(contactId);
 
     const { data: customer, lastUpdated } = await appCache.getOrFetch(
       cacheKey,
-      async () => {
-        // Self-resolve contactIds from the groupKey — no client input
-        const contactIds = await resolveContactIdsFromGroupKey(parsed);
-
-        if (contactIds.length === 0) {
-          // Return a minimal empty detail rather than failing
-          return {
-            groupKey,
-            displayName: "",
-            address: parsed.normalizedAddress.replace("|", ", "),
-            contactIds: [],
-            companyId: parsed.companyId,
-            dealCount: 0,
-            ticketCount: 0,
-            jobCount: 0,
-            contacts: [],
-            deals: [],
-            tickets: [],
-            jobs: [],
-          };
-        }
-
-        const summary: CustomerSummary = {
-          groupKey,
-          displayName: "",
-          address: "",
-          contactIds,
-          companyId: parsed.companyId,
-          dealCount: null,
-          ticketCount: null,
-          jobCount: null,
-        };
-
-        return resolveCustomerDetail(summary);
-      },
+      () => resolveContactDetail(contactId),
       forceRefresh
     );
 
