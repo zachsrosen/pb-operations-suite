@@ -1095,7 +1095,7 @@ model PendingCatalogPush {
 // BOM → HUBSPOT PUSH LOG
 // ===========================================
 
-enum BomHubSpotPushStatus {
+enum HubSpotPushStatus {
   PENDING
   SUCCESS
   PARTIAL
@@ -1103,24 +1103,26 @@ enum BomHubSpotPushStatus {
 }
 
 model BomHubSpotPushLog {
-  id              String                @id @default(cuid())
-  dealId          String                @unique  // PENDING lock: only one active push per deal
-  snapshotId      String
-  snapshotVersion Int
-  status          BomHubSpotPushStatus  @default(PENDING)
-  pushedBy        String                // user email
-  pushedCount     Int                   @default(0)
-  skippedCount    Int                   @default(0)
-  deletedCount    Int                   @default(0)
-  errorMessage    String?
-  rulesVersion    String?
-  jobContext      Json?
+  id                      String             @id @default(cuid())
+  dealId                  String
+  snapshotId              String
+  snapshotVersion         Int
+  pushedBy                String             // user email
+  pushedCount             Int                @default(0)
+  skippedCount            Int                @default(0)
+  deletedPriorCount       Int                @default(0)
+  catalogMissingCount     Int                @default(0)
+  hubspotLinkMissingCount Int                @default(0)
+  status                  HubSpotPushStatus  @default(PENDING)
+  errorMessage            String?
 
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
 
-  @@index([snapshotId])
-  @@index([status, createdAt])
+  // NOTE: partial unique index on (dealId) WHERE status='PENDING'
+  // is in the migration SQL, not expressible in Prisma schema.
+  @@index([dealId])
+  @@index([createdAt])
 }
 
 // ===========================================

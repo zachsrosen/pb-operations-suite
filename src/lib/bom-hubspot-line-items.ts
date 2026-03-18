@@ -124,15 +124,9 @@ async function acquirePushLock(
       },
     });
 
-    // Step 2: Remove any completed rows so the unique insert can proceed.
-    await tx.bomHubSpotPushLog.deleteMany({
-      where: {
-        dealId,
-        status: { in: ["SUCCESS", "PARTIAL", "FAILED"] },
-      },
-    });
-
-    // Step 3: Insert new PENDING row. P2002 → a live PENDING push is in flight.
+    // Step 2: Insert new PENDING row. The partial unique index on
+    // (dealId) WHERE status='PENDING' rejects if another is in-flight.
+    // Completed rows (SUCCESS/PARTIAL/FAILED) are preserved for audit history.
     try {
       const log = await tx.bomHubSpotPushLog.create({
         data: {
@@ -167,10 +161,10 @@ async function updatePushLog(
     status: "SUCCESS" | "PARTIAL" | "FAILED";
     pushedCount: number;
     skippedCount: number;
-    deletedCount: number;
+    deletedPriorCount: number;
+    catalogMissingCount: number;
+    hubspotLinkMissingCount: number;
     errorMessage?: string | null;
-    rulesVersion?: string | null;
-    jobContext?: Record<string, unknown> | null;
   },
 ): Promise<void> {
   if (!prisma) throw new Error("Database not configured");
@@ -181,10 +175,10 @@ async function updatePushLog(
       status: data.status,
       pushedCount: data.pushedCount,
       skippedCount: data.skippedCount,
-      deletedCount: data.deletedCount,
+      deletedPriorCount: data.deletedPriorCount,
+      catalogMissingCount: data.catalogMissingCount,
+      hubspotLinkMissingCount: data.hubspotLinkMissingCount,
       errorMessage: data.errorMessage ?? null,
-      rulesVersion: data.rulesVersion ?? null,
-      jobContext: data.jobContext ? (data.jobContext as Prisma.InputJsonValue) : undefined,
     },
   });
 }
@@ -274,63 +268,51 @@ async function matchAndPartition(items: BomItem[]): Promise<PartitionResult> {
       });
     }
 
-    // Phase 2: alias match.
-    if (!internalProduct) {
-      const aliasCandidates = await findInternalAliasCandidates({
-        category: item.category,
-        brand: item.brand,
-        model: item.model,
-      });
+    // Phase 2: alias match (hoisted for Phase 3 reuse).
+    const aliasCandidates = !internalProduct
+      ? await findInternalAliasCandidates({
+          category: item.category,
+          brand: item.brand,
+          model: item.model,
+        })
+      : [];
 
-      if (aliasCandidates.length > 0) {
-        // Exact normalized alias match.
-        const normalizedModel = item.model.trim().toUpperCase();
-        const exactMatch = aliasCandidates.find(
-          (c) => c.model.trim().toUpperCase() === normalizedModel,
-        );
-        const candidate = exactMatch
-          ? { id: exactMatch.id, model: exactMatch.model, canonicalKey: exactMatch.canonicalKey }
-          : pickUniqueInternalCandidate(aliasCandidates);
+    if (!internalProduct && aliasCandidates.length > 0) {
+      // Exact normalized alias match.
+      const normalizedModel = item.model.trim().toUpperCase();
+      const exactMatch = aliasCandidates.find(
+        (c) => c.model.trim().toUpperCase() === normalizedModel,
+      );
+      const candidate = exactMatch
+        ? { id: exactMatch.id, model: exactMatch.model, canonicalKey: exactMatch.canonicalKey }
+        : pickUniqueInternalCandidate(aliasCandidates);
 
-        if (candidate) {
-          internalProduct = await prisma.internalProduct.findUnique({
-            where: { id: candidate.id },
-            select: {
-              id: true,
-              hubspotProductId: true,
-              name: true,
-              brand: true,
-              model: true,
-              sku: true,
-            },
-          });
-        }
+      if (candidate) {
+        internalProduct = await prisma.internalProduct.findUnique({
+          where: { id: candidate.id },
+          select: {
+            id: true,
+            hubspotProductId: true,
+            name: true,
+            brand: true,
+            model: true,
+            sku: true,
+          },
+        });
       }
     }
 
-    // Phase 3: model family match.
-    if (!internalProduct) {
+    // Phase 3: model family match — filter from alias candidates
+    // (same scope as bom-snapshot.ts), not all active products.
+    if (!internalProduct && aliasCandidates.length > 0) {
       const family = extractModelFamily(item.model);
       if (family) {
-        const familyCandidates = await prisma.internalProduct.findMany({
-          where: {
-            isActive: true,
-            model: { startsWith: family },
-          },
-          select: {
-            id: true,
-            model: true,
-            canonicalKey: true,
-          },
+        const familyCandidates = aliasCandidates.filter((c) => {
+          const cFamily = extractModelFamily(c.model);
+          return cFamily === family;
         });
 
-        const candidate = pickUniqueInternalCandidate(
-          familyCandidates.map((c) => ({
-            id: c.id,
-            model: String(c.model || "").trim(),
-            canonicalKey: c.canonicalKey,
-          })),
-        );
+        const candidate = pickUniqueInternalCandidate(familyCandidates);
 
         if (candidate) {
           internalProduct = await prisma.internalProduct.findUnique({
@@ -517,9 +499,9 @@ export async function pushBomToHubSpotLineItems(
       status: finalStatus,
       pushedCount: pushedItems.length,
       skippedCount: finalSkipped.length,
-      deletedCount: deletedPriorCount,
-      rulesVersion,
-      jobContext,
+      deletedPriorCount,
+      catalogMissingCount: catalogMissing.length,
+      hubspotLinkMissingCount: hubspotLinkMissing.length,
     });
 
     return {
@@ -541,11 +523,11 @@ export async function pushBomToHubSpotLineItems(
       status: "FAILED",
       pushedCount: pushedItems.length,
       skippedCount: skipped.length + createFailures.length,
-      deletedCount: 0,
+      deletedPriorCount: 0,
+      catalogMissingCount: catalogMissing.length,
+      hubspotLinkMissingCount: hubspotLinkMissing.length,
       errorMessage:
         err instanceof Error ? err.message : "Unknown error",
-      rulesVersion,
-      jobContext,
     }).catch(() => {
       // Log update failure should not shadow the original error.
     });
