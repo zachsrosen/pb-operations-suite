@@ -311,7 +311,7 @@ export async function createServiceSo(
       notes: `Service SO for ${dealAddress}`,
       status: "draft",
       line_items: zohoLineItems,
-      custom_fields: [{ label: "HubSpot Deal ID", value: dealId }],
+      custom_fields: [{ label: "HubSpot Deal Record ID", value: dealId }],
     });
 
     // 6. Update record → SUBMITTED

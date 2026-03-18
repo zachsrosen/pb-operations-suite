@@ -35,7 +35,7 @@ interface ProductsResponse {
 // Constants
 // ---------------------------------------------------------------------------
 
-const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER", "PROJECT_MANAGER"];
+const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 
 // ---------------------------------------------------------------------------
 // Component
@@ -166,7 +166,7 @@ export default function ServiceCatalogPage() {
       )}
 
       {!loading && error && (
-        <ErrorState message={error} onRetry={fetchProducts} color="green" />
+        <ErrorState message={error} onRetry={fetchProducts} color="cyan" />
       )}
 
       {/* ------------------------------------------------------------------ */}
@@ -216,7 +216,7 @@ export default function ServiceCatalogPage() {
                     )}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-[var(--color-border)]">
+                <tbody className="divide-y divide-t-border">
                   {filteredProducts.map((product) => (
                     <tr
                       key={product.id}
