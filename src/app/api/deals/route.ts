@@ -6,6 +6,7 @@ import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { requireApiAuth } from "@/lib/api-auth";
 import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES, DEAL_PROPERTIES } from "@/lib/deals-pipeline";
+import { chunk } from "@/lib/utils";
 
 const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
@@ -66,6 +67,8 @@ interface Deal {
   url: string;
   isActive: boolean;
   daysSinceCreate: number;
+  companyId: string | null;
+  companyName: string | null;
 }
 
 function parseDate(value: unknown): string | null {
@@ -108,6 +111,8 @@ function transformDeal(deal: Record<string, unknown>, pipelineKey: string, porta
     url: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${deal.hs_object_id}`,
     isActive: activeStages.includes(stageName),
     daysSinceCreate: createDate ? daysBetween(createDate, now) : 0,
+    companyId: null,
+    companyName: null,
   };
 }
 
@@ -202,7 +207,62 @@ async function fetchDealsForPipeline(pipelineKey: string): Promise<Deal[]> {
     } while (after);
   }
 
-  return allDeals.map((deal) => transformDeal(deal, pipelineKey, portalId));
+  const transformedDeals = allDeals.map((deal) => transformDeal(deal, pipelineKey, portalId));
+
+  // Resolve company associations for service deals (needed for SO creation gating)
+  if (pipelineKey === "service" && transformedDeals.length > 0) {
+    const dealIds = transformedDeals.map(d => String(d.id));
+    const companyMap = new Map<string, { companyId: string; companyName: string }>();
+
+    try {
+      for (const batch of chunk(dealIds, 100)) {
+        const assocResp = await hubspotClient.crm.associations.batchApi.read(
+          "deals", "companies",
+          { inputs: batch.map(id => ({ id })) }
+        );
+
+        const companyIds = new Set<string>();
+        const dealToCompany = new Map<string, string>();
+
+        for (const result of assocResp.results || []) {
+          const dealId = result._from?.id;
+          const firstCompanyId = (result.to || [])[0]?.id;
+          if (dealId && firstCompanyId) {
+            dealToCompany.set(dealId, firstCompanyId);
+            companyIds.add(firstCompanyId);
+          }
+        }
+
+        if (companyIds.size > 0) {
+          const companyResp = await hubspotClient.crm.companies.batchApi.read({
+            inputs: Array.from(companyIds).map(id => ({ id })),
+            properties: ["name"],
+            propertiesWithHistory: [],
+          });
+          const nameMap = new Map<string, string>();
+          for (const c of companyResp.results || []) {
+            nameMap.set(c.id, c.properties?.name || "");
+          }
+          for (const [dealId, compId] of dealToCompany) {
+            companyMap.set(dealId, {
+              companyId: compId,
+              companyName: nameMap.get(compId) || "",
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[Deals] Company association lookup failed:", err);
+    }
+
+    for (const deal of transformedDeals) {
+      const company = companyMap.get(String(deal.id));
+      deal.companyId = company?.companyId || null;
+      deal.companyName = company?.companyName || null;
+    }
+  }
+
+  return transformedDeals;
 }
 
 export async function GET(request: NextRequest) {

@@ -6,6 +6,7 @@ import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES, DEAL_PROPERTIES } from "@/lib/deals-pipeline";
+import { chunk } from "@/lib/utils";
 
 /**
  * Streaming deals endpoint.
@@ -81,6 +82,8 @@ interface Deal {
   url: string;
   isActive: boolean;
   daysSinceCreate: number;
+  companyId: string | null;
+  companyName: string | null;
 }
 
 function parseDate(value: unknown): string | null {
@@ -118,6 +121,8 @@ function transformDeal(deal: Record<string, unknown>, pipelineKey: string, porta
     url: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${deal.hs_object_id}`,
     isActive: activeStages.includes(stageName),
     daysSinceCreate: createDate ? daysBetween(createDate, now) : 0,
+    companyId: null,
+    companyName: null,
   };
 }
 
@@ -143,6 +148,60 @@ function filterDeals(deals: Deal[], activeOnly: boolean, location: string | null
   if (location) result = result.filter((d) => d.pbLocation === location);
   if (stage) result = result.filter((d) => d.stage === stage);
   return result;
+}
+
+// Resolve company associations for service deals (needed for SO creation gating)
+async function resolveCompanyData(deals: Deal[]): Promise<void> {
+  if (deals.length === 0) return;
+  const dealIds = deals.map(d => String(d.id));
+  const companyMap = new Map<string, { companyId: string; companyName: string }>();
+
+  try {
+    for (const batch of chunk(dealIds, 100)) {
+      const assocResp = await hubspotClient.crm.associations.batchApi.read(
+        "deals", "companies",
+        { inputs: batch.map(id => ({ id })) }
+      );
+
+      const companyIds = new Set<string>();
+      const dealToCompany = new Map<string, string>();
+
+      for (const result of assocResp.results || []) {
+        const dealId = result._from?.id;
+        const firstCompanyId = (result.to || [])[0]?.id;
+        if (dealId && firstCompanyId) {
+          dealToCompany.set(dealId, firstCompanyId);
+          companyIds.add(firstCompanyId);
+        }
+      }
+
+      if (companyIds.size > 0) {
+        const companyResp = await hubspotClient.crm.companies.batchApi.read({
+          inputs: Array.from(companyIds).map(id => ({ id })),
+          properties: ["name"],
+          propertiesWithHistory: [],
+        });
+        const nameMap = new Map<string, string>();
+        for (const c of companyResp.results || []) {
+          nameMap.set(c.id, c.properties?.name || "");
+        }
+        for (const [dealId, compId] of dealToCompany) {
+          companyMap.set(dealId, {
+            companyId: compId,
+            companyName: nameMap.get(compId) || "",
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn("[Deals/Stream] Company association lookup failed:", err);
+  }
+
+  for (const deal of deals) {
+    const company = companyMap.get(String(deal.id));
+    deal.companyId = company?.companyId || null;
+    deal.companyName = company?.companyName || null;
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -291,6 +350,11 @@ export async function GET(request: NextRequest) {
         // All batches complete — build final dataset and cache it
         const allTransformed = allRawDeals.map((d) => transformDeal(d, pipeline, portalId));
 
+        // Resolve company associations for service deals (needed for SO creation gating)
+        if (pipeline === "service") {
+          await resolveCompanyData(allTransformed);
+        }
+
         // Write to shared cache so next request is instant
         appCache.set(CACHE_KEYS.DEALS(pipeline), allTransformed);
 
@@ -367,5 +431,12 @@ async function fetchAllDealsForPipeline(pipelineKey: string): Promise<Deal[]> {
     } while (after);
   }
 
-  return allDeals.map((d) => transformDeal(d, pipelineKey, portalId));
+  const transformedDeals = allDeals.map((d) => transformDeal(d, pipelineKey, portalId));
+
+  // Resolve company associations for service deals (needed for SO creation gating)
+  if (pipelineKey === "service") {
+    await resolveCompanyData(transformedDeals);
+  }
+
+  return transformedDeals;
 }
