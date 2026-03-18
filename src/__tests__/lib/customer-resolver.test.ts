@@ -245,6 +245,19 @@ describe("filterExpandedContactsByAddress", () => {
     expect(result.map(c => c.id)).toEqual(["c1", "c3"]);
   });
 
+  it("includes contacts with no address (blank = inherit company address)", () => {
+    const contacts = [
+      { id: "c1", street: "123 Main St", zip: "80202" },
+      { id: "c2", street: null, zip: null },           // blank address
+      { id: "c3", street: "", zip: "" },                // empty string address
+      { id: "c4", street: "456 Oak Ave", zip: "80301" }, // different address
+    ];
+    const groupNormalizedAddr = "123 main street|80202";
+
+    const result = filterExpandedContactsByAddress(contacts, groupNormalizedAddr);
+    expect(result.map(c => c.id)).toEqual(["c1", "c2", "c3"]);
+  });
+
   it("returns empty array when no contacts match", () => {
     const contacts = [
       { id: "c1", street: "999 Other Rd", zip: "90210" },

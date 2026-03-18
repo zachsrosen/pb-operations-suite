@@ -540,7 +540,10 @@ export function filterExpandedContactsByAddress(
 ): Array<{ id: string; street: string | null; zip: string | null }> {
   return contacts.filter(c => {
     const normalized = normalizeAddress(c.street, c.zip);
-    return normalized === groupNormalizedAddr;
+    // Include contacts whose address matches, OR contacts with no address
+    // (blank-address contacts inherit the company address during search grouping,
+    // so they belong to this group).
+    return normalized === groupNormalizedAddr || normalized === null;
   });
 }
 
