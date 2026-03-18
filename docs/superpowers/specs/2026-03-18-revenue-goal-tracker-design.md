@@ -156,13 +156,16 @@ Two distinct target values per group per month:
 
 ### Effective Target
 - Computed on the fly at query time, never persisted
-- For closed months: equals base target (frozen)
-- For future months:
+- For **closed months**: equals base target (frozen)
+- For **current month and future months**:
 
 ```
 ytd_shortfall = sum(base_targets for closed months) - sum(actuals for closed months)
+remaining_months = current month + future months (i.e., 12 - closed_months)
 effective = base_target + (ytd_shortfall / remaining_months)
 ```
+
+The current open month participates in redistribution — its effective target adjusts based on prior shortfall/surplus, same as future months. This is what `currentMonthOnTarget` compares against for fireworks.
 
 ### Rules
 - **Month closure**: A month is "closed" when the current date is past its last day. On March 18, 2026, January and February are closed. March becomes closed on April 1.
@@ -255,9 +258,11 @@ On March 18, 2026 (2 months closed): expected pace = 2/12 = 16.67% of annual tar
 
 | Status | Condition | Visual |
 |--------|-----------|--------|
-| Ahead | `ytdActual > expectedPace` | Green pulse dot |
-| On pace | `0.95 * expectedPace <= ytdActual <= expectedPace` | No indicator |
+| Ahead | `ytdActual > 1.05 * expectedPace` | Green pulse dot |
+| On pace | `0.95 * expectedPace <= ytdActual <= 1.05 * expectedPace` | No indicator |
 | Behind | `ytdActual < 0.95 * expectedPace` | Amber dot + "behind by $X" |
+
+The 5% band applies symmetrically: within +/-5% of expected pace is "on pace." This prevents noisy status flips from small fluctuations.
 
 No business-day weighting or seasonal adjustment to pace. Seasonality is handled by the configurable base targets, not the pace calculation.
 
@@ -354,7 +359,7 @@ Properties that must be fetched (add to pipeline-specific property lists if not 
 
 - **Server-side**: TTL cache. Add `REVENUE_GOALS: (year: number) => \`revenue-goals:${year}\`` to the `CACHE_KEYS` constant in `lib/cache.ts`
 - **Client-side**: React Query with 5-minute stale time. Add `revenueGoals: (year: number) => ["revenue-goals", year] as const` to `queryKeys` in `lib/query-keys.ts`
-- **SSE invalidation**: Uses `appCache.subscribe()` to register a listener that calls `appCache.invalidate(CACHE_KEYS.REVENUE_GOALS(currentYear))` when the invalidated key starts with `deals:`. This piggybacks on existing deal invalidation. The 5-minute TTL provides the reliability floor.
+- **SSE invalidation**: Uses `appCache.subscribe()` to register a listener that calls `appCache.invalidateByPrefix("revenue-goals")` when the invalidated key starts with `deals:`. This invalidates all cached years (not just current year), since the feature is year-selectable and an admin may be viewing/editing a non-current year. Piggybacks on existing deal invalidation. The 5-minute TTL provides the reliability floor.
 - Add `revenue-goals` to `cacheKeyToQueryKeys` mapping in `query-keys.ts`: `if (serverKey.startsWith("revenue-goals")) return [queryKeys.revenueGoals.root];` (before the fallback `return []`)
 
 ### HubSpot Search Limits
