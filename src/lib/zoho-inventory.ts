@@ -972,7 +972,7 @@ export class ZohoInventoryClient {
     salesorderId: string,
     payload: Partial<Pick<ZohoSalesOrderPayload, "custom_fields">>
   ): Promise<void> {
-    await this.requestPut(`/salesorders/${salesorderId}`, payload);
+    await this.requestPut(`/salesorders/${encodeURIComponent(salesorderId)}`, payload);
   }
 
   async getSalesOrder(soNumber: string): Promise<ZohoSalesOrderRecord> {

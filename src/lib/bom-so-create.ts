@@ -272,7 +272,9 @@ export async function createSalesOrder(params: {
       try {
         const existing = await zohoInventory.getSalesOrder(soNumber);
         if (existing?.salesorder_id) {
-          // Best-effort: patch the deal-link custom field onto the recovered SO
+          // Best-effort: patch the deal-link custom field onto the recovered SO.
+          // Note: this replaces the entire custom_fields array on the Zoho SO.
+          // Safe here because SOs are created as drafts and won't have manual custom fields yet.
           try {
             await zohoInventory.updateSalesOrder(existing.salesorder_id, {
               custom_fields: [{ label: "HubSpot Deal Record ID", value: dealId }],
