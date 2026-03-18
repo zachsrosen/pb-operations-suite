@@ -17,6 +17,12 @@ import { notifyAdminsOfNewCatalogRequest } from "@/lib/catalog-notify";
 import { buildCanonicalKey, canonicalToken } from "@/lib/canonical";
 import { buildBomSearchTerms } from "@/lib/bom-search-terms";
 import { zohoInventory } from "@/lib/zoho-inventory";
+import {
+  normalizeIdentityModel,
+  extractModelFamily,
+  pickUniqueInternalCandidate,
+  findInternalAliasCandidates,
+} from "@/lib/bom-catalog-match";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -255,6 +261,96 @@ async function matchItemsAgainstInventory(
           action: "matched",
         });
         continue;
+      }
+    }
+
+    // ── Step 2b: Conservative internal alias/family matching ─────────────────
+    const aliasCandidates = await findInternalAliasCandidates(item);
+    if (canonicalKey && aliasCandidates.length > 0) {
+      const itemAlias = normalizeIdentityModel(item.model);
+      const exactAliasMatches = aliasCandidates.filter(
+        (candidate) => normalizeIdentityModel(candidate.model) === itemAlias
+      );
+      const uniqueAliasMatch = pickUniqueInternalCandidate(exactAliasMatches);
+      if (uniqueAliasMatch) {
+        updated++;
+        itemResults.push({
+          ...itemBase(item),
+          matchSource: "internal",
+          internalProductId: uniqueAliasMatch.id,
+          action: "matched",
+        });
+        continue;
+      }
+
+      if (exactAliasMatches.length > 1) {
+        const existingPending = await prisma!.pendingCatalogPush.findFirst({
+          where: { canonicalKey, status: "PENDING" },
+          select: { id: true, candidateSkuIds: true },
+        });
+
+        const pushResult = await upsertPendingPush(existingPending, {
+          brand: item.brand,
+          model: item.model,
+          description: item.description || "",
+          category: item.category,
+          canonicalKey,
+          candidateSkuIds: exactAliasMatches.map((candidate) => candidate.id),
+          reviewReason: "ambiguous_alias_match",
+        }, pendingTtlDays);
+
+        pending++;
+        itemResults.push({
+          ...itemBase(item),
+          matchSource: "pending",
+          pendingPushId: pushResult.id,
+          action: "queued_pending",
+        });
+        continue;
+      }
+
+      const itemFamily = extractModelFamily(item.model);
+      if (itemFamily) {
+        const familyMatches = aliasCandidates.filter(
+          (candidate) => extractModelFamily(candidate.model) === itemFamily
+        );
+        const uniqueFamilyMatch = pickUniqueInternalCandidate(familyMatches);
+        if (uniqueFamilyMatch) {
+          updated++;
+          itemResults.push({
+            ...itemBase(item),
+            matchSource: "internal",
+            internalProductId: uniqueFamilyMatch.id,
+            action: "matched",
+          });
+          continue;
+        }
+
+        if (familyMatches.length > 1) {
+          const existingPending = await prisma!.pendingCatalogPush.findFirst({
+            where: { canonicalKey, status: "PENDING" },
+            select: { id: true, candidateSkuIds: true },
+          });
+
+          const pushResult = await upsertPendingPush(existingPending, {
+            brand: item.brand,
+            model: item.model,
+            description: item.description || "",
+            category: item.category,
+            canonicalKey,
+            candidateSkuIds: familyMatches.map((candidate) => candidate.id),
+            reviewReason: "ambiguous_family_match",
+          }, pendingTtlDays);
+
+          pending++;
+          itemResults.push({
+            ...itemBase(item),
+            matchSource: "pending",
+            pendingPushId: pushResult.id,
+            action: "queued_pending",
+          });
+          continue;
+        }
       }
     }
 
