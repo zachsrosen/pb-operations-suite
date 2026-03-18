@@ -266,5 +266,5 @@ export const CACHE_KEYS = {
   SERVICE_PRIORITY_QUEUE: "service:priority-queue",
   SERVICE_TICKETS: "service-tickets:all",
   SERVICE_CUSTOMERS_SEARCH: (queryHash: string) => `service:customers:search:${queryHash}`,
-  SERVICE_CUSTOMER_DETAIL: (groupKey: string) => `service:customers:detail:${groupKey}`,
+  SERVICE_CUSTOMER_DETAIL: (contactId: string) => `service:customers:detail:${contactId}`,
 } as const;

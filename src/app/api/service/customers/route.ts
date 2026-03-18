@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
-import { searchCustomers } from "@/lib/customer-resolver";
+import { searchContacts } from "@/lib/customer-resolver";
 import crypto from "crypto";
 
 export async function GET(request: NextRequest) {
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
 
     const { data, lastUpdated } = await appCache.getOrFetch(
       cacheKey,
-      () => searchCustomers(query),
+      () => searchContacts(query),
       forceRefresh
     );
 
