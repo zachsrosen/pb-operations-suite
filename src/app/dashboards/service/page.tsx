@@ -218,9 +218,6 @@ export default function ServicePipelinePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           dealId: String(soSelectedDeal.id),
-          dealName: soSelectedDeal.name,
-          dealAddress: [soSelectedDeal.address, soSelectedDeal.city, soSelectedDeal.state, soSelectedDeal.postalCode]
-            .filter(Boolean).join(", "),
           requestToken: soRequestTokenRef.current,
           items: soLineItems.map(li => ({ productId: li.productId, quantity: li.quantity })),
         }),

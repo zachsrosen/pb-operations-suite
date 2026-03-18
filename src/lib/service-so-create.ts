@@ -35,8 +35,6 @@ export interface ServiceSoLineItem {
 
 export interface CreateServiceSoInput {
   dealId: string;
-  dealName: string;
-  dealAddress: string;
   requestToken: string;
   items: Array<{ productId: string; quantity: number }>;
   createdBy: string;
@@ -114,9 +112,27 @@ export async function resolveZohoCustomer(
 // HubSpot Helpers
 // ---------------------------------------------------------------------------
 
-async function resolveCompanyForDeal(
+async function resolveDealContext(
   dealId: string
-): Promise<{ companyId: string; companyName: string; contactEmail?: string }> {
+): Promise<{
+  dealName: string;
+  dealAddress: string;
+  companyName: string;
+  contactEmail?: string;
+}> {
+  // Fetch deal properties server-side (no client trust)
+  const dealResp = await hubspotClient.crm.deals.batchApi.read({
+    inputs: [{ id: dealId }],
+    properties: ["dealname", "address_line_1", "city", "state", "postal_code"],
+    propertiesWithHistory: [],
+  });
+  const dealProps = dealResp.results?.[0]?.properties || {};
+  const dealName = dealProps.dealname || `Deal ${dealId}`;
+  const dealAddress = [dealProps.address_line_1, dealProps.city, dealProps.state, dealProps.postal_code]
+    .filter(Boolean)
+    .join(", ");
+
+  // Deal → company association
   const assocResp = await hubspotClient.crm.associations.batchApi.read(
     "deals",
     "companies",
@@ -159,7 +175,7 @@ async function resolveCompanyForDeal(
     // Non-critical — email is optional for customer creation
   }
 
-  return { companyId: companyIds[0], companyName, contactEmail };
+  return { dealName, dealAddress, companyName, contactEmail };
 }
 
 // ---------------------------------------------------------------------------
@@ -216,7 +232,7 @@ function resolveProducts(
 export async function createServiceSo(
   input: CreateServiceSoInput
 ): Promise<CreateServiceSoResult> {
-  const { dealId, dealName, dealAddress, requestToken, items, createdBy } = input;
+  const { dealId, requestToken, items, createdBy } = input;
 
   // 1. Idempotency: check for existing record
   const existing = await prisma!.serviceSoRequest.findUnique({
@@ -274,15 +290,31 @@ export async function createServiceSo(
     requestId = record.id;
   } catch (err: unknown) {
     if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002") {
-      throw new Error("Service SO request already in progress (concurrent create)");
+      // Race condition: another request created the record between our findUnique and create.
+      // Load and return it — this is the idempotent behavior the spec requires.
+      const raceRecord = await prisma!.serviceSoRequest.findUnique({
+        where: { requestToken },
+      });
+      if (raceRecord?.zohoSoId) {
+        return {
+          zohoSoId: raceRecord.zohoSoId,
+          zohoSoNumber: raceRecord.zohoSoNumber || "",
+          zohoCustomerId: raceRecord.zohoCustomerId || "",
+          lineItems: raceRecord.lineItems as unknown as ServiceSoLineItem[],
+          totalAmount: raceRecord.totalAmount,
+          alreadyExisted: true,
+        };
+      }
+      // Still DRAFT (concurrent request still in progress) — let the client retry
+      throw new Error("Service SO request is being processed, please retry");
     }
     throw err;
   }
 
   try {
 
-    // 3. Resolve HubSpot company → Zoho customer
-    const { companyName, contactEmail } = await resolveCompanyForDeal(dealId);
+    // 3. Resolve deal context + HubSpot company → Zoho customer (all server-side)
+    const { dealName, dealAddress, companyName, contactEmail } = await resolveDealContext(dealId);
     const zohoCustomerId = await resolveZohoCustomer(companyName, contactEmail);
 
     // 4. Update DRAFT with resolved data

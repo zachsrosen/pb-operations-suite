@@ -28,6 +28,7 @@ jest.mock("@/lib/hubspot", () => ({
       associations: { batchApi: { read: jest.fn() } },
       companies: { batchApi: { read: jest.fn() } },
       contacts: { batchApi: { read: jest.fn() } },
+      deals: { batchApi: { read: jest.fn() } },
     },
   },
 }));
@@ -48,6 +49,7 @@ const mockSoDelete = (prisma as any).serviceSoRequest.delete as jest.Mock;
 const mockAssocRead = (hubspotClient as any).crm.associations.batchApi.read as jest.Mock;
 const mockCompanyRead = (hubspotClient as any).crm.companies.batchApi.read as jest.Mock;
 const mockContactRead = (hubspotClient as any).crm.contacts.batchApi.read as jest.Mock;
+const mockDealRead = (hubspotClient as any).crm.deals.batchApi.read as jest.Mock;
 
 const mockCreateSo = zohoInventory.createSalesOrder as jest.Mock;
 
@@ -119,11 +121,19 @@ describe("resolveZohoCustomer", () => {
 describe("createServiceSo", () => {
   const baseInput: CreateServiceSoInput = {
     dealId: "deal-1",
-    dealName: "Test Service Deal",
-    dealAddress: "123 Main St, Denver, CO 80202",
     requestToken: "tok-abc",
     items: [{ productId: "prod-1", quantity: 2 }],
     createdBy: "user@example.com",
+  };
+
+  // Mock helper: set up deal batch read (server-side deal name/address resolution)
+  const mockDealBatchRead = () => {
+    mockDealRead.mockResolvedValueOnce({
+      results: [{
+        id: "deal-1",
+        properties: { dealname: "Test Service Deal", address_line_1: "123 Main St", city: "Denver", state: "CO", postal_code: "80202" },
+      }],
+    });
   };
 
   beforeEach(() => jest.clearAllMocks());
@@ -161,6 +171,8 @@ describe("createServiceSo", () => {
       id: "prod-1", name: "Widget", sku: "W-1", description: null,
       sellPrice: 50, category: "SERVICE", isActive: true, zohoItemId: "zi-1",
     }]);
+    // Deal properties (server-side resolution)
+    mockDealBatchRead();
     // HubSpot company
     mockAssocRead.mockResolvedValueOnce({
       results: [{ _from: { id: "deal-1" }, to: [{ id: "comp-1" }] }],
@@ -209,6 +221,9 @@ describe("createServiceSo", () => {
       id: "prod-1", name: "Widget", category: "SERVICE", isActive: true,
       sku: null, description: null, sellPrice: 50, zohoItemId: null,
     }]);
+    // Deal properties (server-side resolution)
+    mockDealBatchRead();
+    // No company association
     mockAssocRead.mockResolvedValueOnce({ results: [] });
 
     await expect(createServiceSo(baseInput)).rejects.toThrow(/must have an associated company/);

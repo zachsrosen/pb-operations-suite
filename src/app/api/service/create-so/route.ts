@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
     if (authResult instanceof NextResponse) return authResult;
 
     const body = await request.json();
-    const { dealId, dealName, dealAddress, requestToken, items } = body;
+    const { dealId, requestToken, items } = body;
 
     if (!dealId || !requestToken || !Array.isArray(items) || items.length === 0) {
       return NextResponse.json(
@@ -28,8 +28,6 @@ export async function POST(request: NextRequest) {
 
     const result = await createServiceSo({
       dealId: String(dealId),
-      dealName: dealName || "",
-      dealAddress: dealAddress || "",
       requestToken,
       items,
       createdBy: authResult.email,

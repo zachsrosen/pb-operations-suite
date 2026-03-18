@@ -35,7 +35,7 @@ interface ProductsResponse {
 // Constants
 // ---------------------------------------------------------------------------
 
-const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
+const ADMIN_ROLES = ["ADMIN"];
 
 // ---------------------------------------------------------------------------
 // Component
