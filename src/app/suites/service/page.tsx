@@ -45,6 +45,13 @@ const LINKS: SuitePageCard[] = [
     tag: "PIPELINE",
     section: "Service",
   },
+  {
+    href: "/dashboards/service-catalog",
+    title: "Service Catalog",
+    description: "Browse service products, pricing, and availability.",
+    tag: "CATALOG",
+    section: "Service",
+  },
 ];
 
 export default async function ServiceDRSuitePage() {
