@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
@@ -30,6 +30,30 @@ interface Deal {
   url: string;
   isActive: boolean;
   daysSinceCreate: number;
+  companyId: string | null;
+  companyName: string | null;
+}
+
+interface SoProduct {
+  id: string;
+  name: string;
+  sku: string | null;
+  sellPrice: number | null;
+}
+
+interface SoLineItem {
+  productId: string;
+  name: string;
+  sku: string | null;
+  unitPrice: number;
+  quantity: number;
+}
+
+interface SoResult {
+  zohoSoId: string;
+  zohoSoNumber: string;
+  totalAmount: number;
+  alreadyExisted?: boolean;
 }
 
 // --- Constants ---
@@ -85,6 +109,17 @@ export default function ServicePipelinePage() {
   // Activity tracking
   const { trackDashboardView, trackFilter } = useActivityTracking();
   const hasTrackedView = useRef(false);
+
+  // SO panel state
+  const [soSelectedDeal, setSoSelectedDeal] = useState<Deal | null>(null);
+  const [soProducts, setSoProducts] = useState<SoProduct[]>([]);
+  const [soLineItems, setSoLineItems] = useState<SoLineItem[]>([]);
+  const [soLoading, setSoLoading] = useState(false);
+  const [soSubmitting, setSoSubmitting] = useState(false);
+  const [soResult, setSoResult] = useState<SoResult | null>(null);
+  const [soError, setSoError] = useState<string | null>(null);
+  const [soProductSearch, setSoProductSearch] = useState("");
+  const soRequestTokenRef = useRef<string | null>(null);
 
   // Track dashboard view
   useEffect(() => {
@@ -142,6 +177,70 @@ export default function ServicePipelinePage() {
     });
     return counts;
   }, [activeDeals]);
+
+  // SO panel handlers
+  const handleOpenSoPanel = useCallback(async (deal: Deal) => {
+    soRequestTokenRef.current = crypto.randomUUID();
+    setSoSelectedDeal(deal);
+    setSoLineItems([]);
+    setSoResult(null);
+    setSoError(null);
+    setSoProductSearch("");
+    setSoLoading(true);
+
+    try {
+      const res = await fetch("/api/inventory/products?category=SERVICE&active=true");
+      if (!res.ok) throw new Error("Failed to load products");
+      const data = await res.json();
+      setSoProducts(
+        (data.skus || []).map((p: Record<string, unknown>) => ({
+          id: p.id as string,
+          name: (p.name || p.model || "Unnamed") as string,
+          sku: p.sku as string | null,
+          sellPrice: p.sellPrice as number | null,
+        }))
+      );
+    } catch {
+      setSoError("Failed to load service products");
+    } finally {
+      setSoLoading(false);
+    }
+  }, []);
+
+  const handleSubmitSo = useCallback(async () => {
+    if (!soSelectedDeal || soLineItems.length === 0 || !soRequestTokenRef.current) return;
+    setSoSubmitting(true);
+    setSoError(null);
+
+    try {
+      const res = await fetch("/api/service/create-so", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId: String(soSelectedDeal.id),
+          dealName: soSelectedDeal.name,
+          dealAddress: [soSelectedDeal.address, soSelectedDeal.city, soSelectedDeal.state, soSelectedDeal.postalCode]
+            .filter(Boolean).join(", "),
+          requestToken: soRequestTokenRef.current,
+          items: soLineItems.map(li => ({ productId: li.productId, quantity: li.quantity })),
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create SO");
+
+      setSoResult({
+        zohoSoId: data.zohoSoId,
+        zohoSoNumber: data.zohoSoNumber,
+        totalAmount: data.totalAmount,
+        alreadyExisted: data.alreadyExisted,
+      });
+    } catch (err) {
+      setSoError(err instanceof Error ? err.message : "Failed to create SO");
+    } finally {
+      setSoSubmitting(false);
+    }
+  }, [soSelectedDeal, soLineItems]);
 
   // --- Loading state ---
   if (loading && allDeals.length === 0) {
@@ -362,6 +461,21 @@ export default function ServicePipelinePage() {
                       {deal.createDate || "-"}
                     </td>
                     <td className="px-4 py-3 text-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenSoPanel(deal);
+                        }}
+                        disabled={!deal.companyId}
+                        title={deal.companyId ? "Create Sales Order" : "Deal must have an associated company to create a Sales Order"}
+                        className={`text-sm px-2 py-1 rounded mr-2 ${
+                          deal.companyId
+                            ? "text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
+                            : "text-muted/40 cursor-not-allowed"
+                        }`}
+                      >
+                        Create SO
+                      </button>
                       <a
                         href={deal.url}
                         target="_blank"
@@ -378,6 +492,140 @@ export default function ServicePipelinePage() {
           </table>
         </div>
       </div>
+
+      {/* SO Creation Slide-over Panel */}
+      {soSelectedDeal && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setSoSelectedDeal(null)} />
+          <div className="relative w-full max-w-lg bg-surface border-l border-t-border overflow-y-auto">
+            <div className="p-6">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-6">
+                <div>
+                  <h2 className="text-lg font-semibold text-foreground">Create Sales Order</h2>
+                  <p className="text-sm text-muted">{soSelectedDeal.name}</p>
+                  <p className="text-xs text-muted">{soSelectedDeal.address}</p>
+                </div>
+                <button onClick={() => setSoSelectedDeal(null)} className="text-muted hover:text-foreground text-xl">✕</button>
+              </div>
+
+              {soResult ? (
+                <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
+                  <p className="text-green-400 font-medium">
+                    {soResult.alreadyExisted ? "Sales Order already exists" : "Sales Order created"}
+                  </p>
+                  <p className="text-sm text-muted mt-1">SO #: {soResult.zohoSoNumber}</p>
+                  <p className="text-sm text-muted">Total: {formatCurrency(soResult.totalAmount)}</p>
+                </div>
+              ) : (
+                <>
+                  {/* Product picker */}
+                  <div className="mb-4">
+                    <input
+                      type="text"
+                      placeholder="Search products..."
+                      value={soProductSearch}
+                      onChange={(e) => setSoProductSearch(e.target.value)}
+                      className="w-full px-3 py-2 bg-surface-2 border border-t-border rounded text-sm text-foreground placeholder:text-muted"
+                    />
+                  </div>
+
+                  {soLoading ? (
+                    <div className="flex justify-center py-8">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-cyan-500" />
+                    </div>
+                  ) : (
+                    <div className="max-h-48 overflow-y-auto mb-4 border border-t-border rounded">
+                      {soProducts
+                        .filter(p => {
+                          const q = soProductSearch.toLowerCase();
+                          return !q || p.name.toLowerCase().includes(q) || (p.sku || "").toLowerCase().includes(q);
+                        })
+                        .map(p => (
+                          <button
+                            key={p.id}
+                            onClick={() => {
+                              if (!soLineItems.find(li => li.productId === p.id)) {
+                                setSoLineItems(prev => [...prev, {
+                                  productId: p.id,
+                                  name: p.name,
+                                  sku: p.sku,
+                                  unitPrice: p.sellPrice || 0,
+                                  quantity: 1,
+                                }]);
+                              }
+                            }}
+                            className="w-full text-left px-3 py-2 hover:bg-surface-2 border-b border-t-border last:border-b-0"
+                          >
+                            <div className="text-sm text-foreground">{p.name}</div>
+                            <div className="text-xs text-muted">{p.sku || "No SKU"} · {formatCurrency(p.sellPrice || 0)}</div>
+                          </button>
+                        ))}
+                      {soProducts.filter(p => {
+                        const q = soProductSearch.toLowerCase();
+                        return !q || p.name.toLowerCase().includes(q) || (p.sku || "").toLowerCase().includes(q);
+                      }).length === 0 && (
+                        <div className="px-3 py-4 text-sm text-muted text-center">No service products found</div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Line items */}
+                  {soLineItems.length > 0 && (
+                    <div className="mb-4">
+                      <h3 className="text-sm font-medium text-foreground mb-2">Line Items</h3>
+                      {soLineItems.map((li, idx) => (
+                        <div key={li.productId} className="flex items-center gap-2 mb-2 p-2 bg-surface-2 rounded">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm text-foreground truncate">{li.name}</div>
+                            <div className="text-xs text-muted">{formatCurrency(li.unitPrice)} each</div>
+                          </div>
+                          <input
+                            type="number"
+                            min={1}
+                            value={li.quantity}
+                            onChange={(e) => {
+                              const qty = Math.max(1, parseInt(e.target.value) || 1);
+                              setSoLineItems(prev => prev.map((item, i) => i === idx ? { ...item, quantity: qty } : item));
+                            }}
+                            className="w-16 px-2 py-1 bg-surface border border-t-border rounded text-sm text-foreground text-center"
+                          />
+                          <div className="w-20 text-right text-sm text-foreground">
+                            {formatCurrency(li.unitPrice * li.quantity)}
+                          </div>
+                          <button
+                            onClick={() => setSoLineItems(prev => prev.filter((_, i) => i !== idx))}
+                            className="text-red-400 hover:text-red-300 text-sm"
+                          >✕</button>
+                        </div>
+                      ))}
+                      <div className="text-right text-sm font-medium text-foreground mt-2 pt-2 border-t border-t-border">
+                        Total: {formatCurrency(soLineItems.reduce((sum, li) => sum + li.unitPrice * li.quantity, 0))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Error */}
+                  {soError && (
+                    <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded text-sm text-red-400">
+                      {soError}
+                    </div>
+                  )}
+
+                  {/* Submit */}
+                  <button
+                    onClick={handleSubmitSo}
+                    disabled={soLineItems.length === 0 || soSubmitting}
+                    className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded text-sm font-medium"
+                  >
+                    {soSubmitting ? "Creating..." : "Create Sales Order"}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardShell>
   );
 }
