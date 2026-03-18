@@ -944,6 +944,15 @@ function BomDashboardInner() {
   const [dealLoading, setDealLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [savedVersion, setSavedVersion] = useState<number | null>(null);
+  const [savedSnapshotId, setSavedSnapshotId] = useState<string | null>(null);
+  const [pushingToHubspot, setPushingToHubspot] = useState(false);
+  const [hubspotPushResult, setHubspotPushResult] = useState<{
+    pushedCount: number;
+    skippedItems: Array<{ bomName: string; reason: string }>;
+    catalogMissing: Array<{ category: string; brand: string | null; model: string | null; description: string }>;
+    hubspotLinkMissing: Array<{ internalProductId: string; name: string; sku: string | null }>;
+    deletedPriorCount: number;
+  } | null>(null);
   // Zoho PO state
   const [zohoVendors, setZohoVendors] = useState<{ contact_id: string; contact_name: string }[] | null>(null);
   const [vendorsLoading, setVendorsLoading] = useState(false);
@@ -1311,6 +1320,8 @@ function BomDashboardInner() {
       if (!res.ok) throw new Error(`Save failed (${res.status})`);
       const saved = await res.json() as { id: string; version: number; createdAt: string };
       setSavedVersion(saved.version);
+      setSavedSnapshotId(saved.id);
+      setHubspotPushResult(null);
       setZohoPoId(null);            // New save = no PO yet
       setZohoSoId(null);            // New save = no SO yet
       setZohoVendors(null);         // Re-fetch vendors for this project on next render
@@ -1456,6 +1467,38 @@ function BomDashboardInner() {
     }
   }, [linkedProject, savedVersion, selectedCustomerId, addToast]);
 
+  /* ---- Push BOM to HubSpot ---- */
+  const pushToHubspot = useCallback(async () => {
+    if (!linkedProject || !savedSnapshotId) return;
+    setPushingToHubspot(true);
+    setHubspotPushResult(null);
+    try {
+      const res = await fetch("/api/bom/push-to-hubspot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          dealId: linkedProject.hs_object_id,
+          snapshotId: savedSnapshotId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        addToast({ type: "error", title: data.error ?? "Failed to push to HubSpot" });
+        return;
+      }
+      setHubspotPushResult(data);
+      const warnings = (data.catalogMissing?.length || 0) + (data.hubspotLinkMissing?.length || 0);
+      addToast({
+        type: warnings > 0 ? "warning" : "success",
+        title: `${data.pushedCount} items pushed to HubSpot${warnings > 0 ? ` (${warnings} need attention)` : ""}`,
+      });
+    } catch {
+      addToast({ type: "error", title: "Network error pushing to HubSpot" });
+    } finally {
+      setPushingToHubspot(false);
+    }
+  }, [linkedProject, savedSnapshotId, addToast]);
+
   /* ---- Load BOM helper ---- */
   // freshExtract=true when loading a newly extracted PDF (not a saved snapshot).
   // Pass preserveProject to keep the BOM tied to the current HubSpot deal.
@@ -1465,9 +1508,12 @@ function BomDashboardInner() {
     }
     setBom(data);
     setItems(assignIds(data.items));
+    setHubspotPushResult(null);
     if (freshExtract) {
       if (preserveProject) {
         setLinkedProject(preserveProject);
+        setSavedSnapshotId(null);
+        setHubspotPushResult(null);
         setImportTab(preserveProject.designFolderUrl ? "project-files" : "upload");
         const url = new URL(window.location.href);
         url.searchParams.set("deal", preserveProject.hs_object_id);
@@ -1479,6 +1525,8 @@ function BomDashboardInner() {
         setDriveFiles([]);
         setSnapshots([]);
         setSavedVersion(null);
+        setSavedSnapshotId(null);
+        setHubspotPushResult(null);
         setZohoPoId(null);
         setZohoSoId(null);
         setZohoVendors(null);
@@ -2682,6 +2730,7 @@ function BomDashboardInner() {
             <div className="rounded-xl bg-surface border border-t-border p-5 shadow-card">
               <h3 className="text-sm font-semibold text-foreground mb-3">Link to HubSpot Project</h3>
               {linkedProject ? (
+                <>
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-sm text-foreground">
                     ✅ <span className="font-medium">{linkedProject.dealname}</span>
@@ -2796,13 +2845,50 @@ function BomDashboardInner() {
                       Retry Zoho vendors
                     </button>
                   )}
+                  {/* HubSpot Push */}
+                  {savedSnapshotId && (
+                    <button
+                      onClick={pushToHubspot}
+                      disabled={pushingToHubspot}
+                      title="Push BOM line items to this HubSpot deal"
+                      className="text-xs rounded bg-cyan-600 text-white px-3 py-1 hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {pushingToHubspot ? "Pushing\u2026" : "Push to HubSpot"}
+                    </button>
+                  )}
                   <button
-                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setZohoPoId(null); setZohoVendors(null); setZohoSoId(null); setSelectedVendorId(""); setSelectedCustomerId(""); setSelectedCustomerName(""); setCustomerMatchMethod(null); router.replace("/dashboards/bom"); }}
+                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setSavedSnapshotId(null); setHubspotPushResult(null); setZohoPoId(null); setZohoVendors(null); setZohoSoId(null); setSelectedVendorId(""); setSelectedCustomerId(""); setSelectedCustomerName(""); setCustomerMatchMethod(null); router.replace("/dashboards/bom"); }}
                     className="text-xs text-muted hover:text-foreground"
                   >
                     Unlink
                   </button>
                 </div>
+                {hubspotPushResult && (
+                  <div className="mt-3 pt-3 border-t border-t-border text-xs space-y-1">
+                    <div className="text-green-600 dark:text-green-400 font-medium">
+                      {hubspotPushResult.pushedCount} items pushed to HubSpot
+                      {hubspotPushResult.deletedPriorCount > 0 && (
+                        <span className="text-muted font-normal"> ({hubspotPushResult.deletedPriorCount} prior removed)</span>
+                      )}
+                    </div>
+                    {hubspotPushResult.catalogMissing.length > 0 && (
+                      <div className="text-amber-600 dark:text-amber-400">
+                        {hubspotPushResult.catalogMissing.length} not in catalog: {hubspotPushResult.catalogMissing.map(i => i.description).join(", ")}
+                      </div>
+                    )}
+                    {hubspotPushResult.hubspotLinkMissing.length > 0 && (
+                      <div className="text-amber-600 dark:text-amber-400">
+                        {hubspotPushResult.hubspotLinkMissing.length} missing HubSpot link: {hubspotPushResult.hubspotLinkMissing.map(i => i.name).join(", ")}
+                      </div>
+                    )}
+                    {hubspotPushResult.skippedItems.filter(s => s.reason === "create_failed").length > 0 && (
+                      <div className="text-red-600 dark:text-red-400">
+                        {hubspotPushResult.skippedItems.filter(s => s.reason === "create_failed").length} failed to create
+                      </div>
+                    )}
+                  </div>
+                )}
+                </>
               ) : (
                 <div className="relative">
                   <input
@@ -3000,6 +3086,8 @@ function BomDashboardInner() {
                             onClick={() => {
                               loadBomData(snap.bomData);
                               setSavedVersion(snap.version);
+                              setSavedSnapshotId(snap.id);
+                              setHubspotPushResult(null);
                               setZohoPoId(snap.zohoPoId ?? null);
                               setZohoSoId(snap.zohoSoId ?? null);
                               setZohoVendors(null);         // re-fetch vendors for this version
