@@ -2443,6 +2443,45 @@ export async function createDealLineItem(
   };
 }
 
+/**
+ * Parse a BOM ownership tag from a line item description.
+ * Tags look like [BOM:clxyz123abc] where the ID is a BomHubSpotPushLog row ID.
+ */
+export function parseBomTag(description: string | null): {
+  isBomManaged: boolean;
+  pushLogId: string | null;
+} {
+  if (!description) return { isBomManaged: false, pushLogId: null };
+  const match = description.match(/\[BOM:([a-z0-9]+)\]/i);
+  if (!match) return { isBomManaged: false, pushLogId: null };
+  return { isBomManaged: true, pushLogId: match[1] };
+}
+
+/**
+ * Delete (archive) a HubSpot line item by ID.
+ * Uses raw fetch() with Bearer token, consistent with createDealLineItem.
+ */
+export async function deleteLineItem(lineItemId: string): Promise<void> {
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN is not configured");
+
+  const id = String(lineItemId).trim();
+  if (!id) throw new Error("lineItemId is required");
+
+  const response = await fetch(
+    `https://api.hubapi.com/crm/v3/objects/line_items/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    }
+  );
+
+  if (!response.ok && response.status !== 404) {
+    const raw = await response.text();
+    throw new Error(`Failed to delete HubSpot line item ${id} (${response.status}): ${raw || "unknown error"}`);
+  }
+}
+
 export interface HubSpotProductProperties {
   name: string | null;
   description: string | null;
