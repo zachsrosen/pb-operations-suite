@@ -276,7 +276,7 @@ export async function createSalesOrder(params: {
           // preserving any other custom fields already present.
           try {
             const existingFields: Array<{ label: string; value: string }> =
-              (existing as Record<string, unknown>).custom_fields as Array<{ label: string; value: string }> ?? [];
+              (existing as unknown as Record<string, unknown>).custom_fields as Array<{ label: string; value: string }> ?? [];
             const alreadySet = existingFields.some(
               (f) => f.label === "HubSpot Deal Record ID" && f.value === dealId,
             );
