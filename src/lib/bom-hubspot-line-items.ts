@@ -463,9 +463,12 @@ export async function pushBomToHubSpotLineItems(
       }
     }
 
-    const allCreateSucceeded = createFailures.length === 0;
+    const allCreateSucceeded =
+      createFailures.length === 0 && pushedItems.length > 0;
 
-    // 5c. Delete prior BOM-managed line items only when all creates succeeded.
+    // 5c. Delete prior BOM-managed line items only when ALL creates succeeded
+    //     AND at least one item was actually pushed (zero-match push must not
+    //     delete prior items).
     let deletedPriorCount = 0;
 
     if (allCreateSucceeded) {
