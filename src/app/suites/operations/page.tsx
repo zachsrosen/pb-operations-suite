@@ -36,6 +36,13 @@ const LINKS: SuitePageCard[] = [
     hardNavigate: true,
   },
   {
+    href: "/dashboards/forecast-schedule",
+    title: "Forecast Schedule",
+    description: "Calendar view of all forecasted installs by stage and location with pipeline breakdown.",
+    tag: "FORECAST",
+    section: "Scheduling",
+  },
+  {
     href: "/dashboards/site-survey",
     title: "Site Survey Execution",
     description: "Site survey scheduling, status tracking, and completion monitoring.",

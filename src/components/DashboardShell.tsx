@@ -12,6 +12,7 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 const SUITE_MAP: Record<string, { href: string; label: string }> = {
   // Operations Suite
   "/dashboards/scheduler": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/forecast-schedule": { href: "/suites/operations", label: "Operations" },
   "/dashboards/site-survey-scheduler": { href: "/suites/operations", label: "Operations" },
   "/dashboards/construction-scheduler": { href: "/suites/operations", label: "Operations" },
   "/dashboards/inspection-scheduler": { href: "/suites/operations", label: "Operations" },
