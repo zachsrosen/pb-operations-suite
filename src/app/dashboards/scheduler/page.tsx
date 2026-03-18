@@ -1344,7 +1344,8 @@ export default function SchedulerPage() {
   }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled, showCompleted, showIncomplete]);
 
   // ---- Forecast ghost events ----
-  const forecastGhostEvents = useMemo((): ScheduledEvent[] => {
+  // Produces ALL eligible forecast ghosts; split into calendar vs overdue downstream
+  const allForecastGhosts = useMemo((): ScheduledEvent[] => {
     if (!showForecasts || !forecastQuery.data?.projects) return [];
 
     const timelineProjects = forecastQuery.data.projects;
@@ -1472,7 +1473,18 @@ export default function SchedulerPage() {
     scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled,
   ]);
 
-  // ---- Merged display events: real filtered events + ghost forecast events ----
+  // Split ghosts: future/today → calendar, past → overdue sidebar only
+  const todayIso = useMemo(() => new Date().toISOString().split("T")[0], []);
+  const forecastGhostEvents = useMemo(
+    () => allForecastGhosts.filter((e) => e.date >= todayIso),
+    [allForecastGhosts, todayIso]
+  );
+  const overdueForecastEvents = useMemo(
+    () => allForecastGhosts.filter((e) => e.date < todayIso),
+    [allForecastGhosts, todayIso]
+  );
+
+  // ---- Merged display events: real filtered events + ghost forecast events (future only) ----
   const displayEvents = useMemo((): ScheduledEvent[] => {
     if (forecastGhostEvents.length === 0) return filteredScheduledEvents;
     return [...filteredScheduledEvents, ...forecastGhostEvents];
@@ -1527,6 +1539,16 @@ export default function SchedulerPage() {
     };
     return { scheduled: dedupeRevenue(scheduledEvts), tentative: dedupeRevenue(tentativeEvts), completed: dedupeRevenue(completedEvts), overdue: dedupeRevenue(overdueEvts), forecasted: dedupeRevenue(forecastedEvts) };
   }, []);
+
+  // Overdue forecast aggregate — forecasts with dates in the past (not on calendar)
+  const overdueForecastSummary = useMemo((): { count: number; revenue: number } => {
+    if (overdueForecastEvents.length === 0) return { count: 0, revenue: 0 };
+    const ids = new Set(overdueForecastEvents.map((e) => e.id));
+    return {
+      count: ids.size,
+      revenue: [...ids].reduce((sum, id) => sum + (overdueForecastEvents.find((e) => e.id === id)?.amount || 0), 0),
+    };
+  }, [overdueForecastEvents]);
 
   const weeklyRevenueSummary = useMemo((): WeekData[] => {
     const today = new Date();
@@ -2666,7 +2688,7 @@ export default function SchedulerPage() {
       "Event Type",
     ];
     let csv = headers.join(",") + "\n";
-    const eventsToExport = showForecasts ? [...scheduledEvents, ...forecastGhostEvents] : scheduledEvents;
+    const eventsToExport = showForecasts ? [...scheduledEvents, ...forecastGhostEvents, ...overdueForecastEvents] : scheduledEvents;
     eventsToExport.forEach((e) => {
       csv +=
         [
@@ -3599,9 +3621,11 @@ export default function SchedulerPage() {
                 </span>
                 Forecasts
               </button>
-              {showForecasts && forecastGhostEvents.length > 0 && (
+              {showForecasts && allForecastGhosts.length > 0 && (
                 <span className="text-[0.55rem] text-blue-400/70 ml-0.5">
-                  {forecastGhostEvents.length} forecasted install{forecastGhostEvents.length !== 1 ? "s" : ""}
+                  {forecastGhostEvents.length} forecasted{overdueForecastEvents.length > 0 && (
+                    <span className="text-amber-400/80"> / {overdueForecastEvents.length} overdue</span>
+                  )}
                 </span>
               )}
             </div>
@@ -4348,13 +4372,24 @@ export default function SchedulerPage() {
             </div>
             )}
             {weeklyRevenueSummary.some(w => w.forecasted.count > 0) && (
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm border border-dashed border-blue-400 bg-blue-500/40" />
                 <span className="text-[0.6rem] text-foreground/80">Forecasted</span>
               </div>
               <span className="text-[0.65rem] font-mono font-bold text-blue-300 opacity-80">
                 ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.forecasted.revenue, 0))}
+              </span>
+            </div>
+            )}
+            {overdueForecastSummary.count > 0 && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm border border-dashed border-amber-500 bg-amber-500/30" />
+                <span className="text-[0.6rem] text-foreground/80">Overdue Forecast</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-amber-400 opacity-80">
+                {overdueForecastSummary.count} · ${formatRevenueCompact(overdueForecastSummary.revenue)}
               </span>
             </div>
             )}
@@ -4505,13 +4540,24 @@ export default function SchedulerPage() {
             </div>
             )}
             {monthlyRevenueSummary.some(m => m.forecasted.count > 0) && (
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-1">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm border border-dashed border-blue-400 bg-blue-500/40" />
                 <span className="text-[0.6rem] text-foreground/80">Forecasted</span>
               </div>
               <span className="text-[0.65rem] font-mono font-bold text-blue-300 opacity-80">
                 ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.forecasted.revenue, 0))}
+              </span>
+            </div>
+            )}
+            {overdueForecastSummary.count > 0 && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1">
+                <div className="w-2 h-2 rounded-sm border border-dashed border-amber-500 bg-amber-500/30" />
+                <span className="text-[0.6rem] text-foreground/80">Overdue Forecast</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-amber-400 opacity-80">
+                {overdueForecastSummary.count} · ${formatRevenueCompact(overdueForecastSummary.revenue)}
               </span>
             </div>
             )}
