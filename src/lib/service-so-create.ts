@@ -9,6 +9,9 @@
 
 import * as Sentry from "@sentry/nextjs";
 import { zohoInventory } from "@/lib/zoho-inventory";
+import type { ZohoSalesOrderLineItem } from "@/lib/zoho-inventory";
+import { prisma } from "@/lib/db";
+import { hubspotClient } from "@/lib/hubspot";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -105,4 +108,240 @@ export async function resolveZohoCustomer(
   });
 
   return contact_id;
+}
+
+// ---------------------------------------------------------------------------
+// HubSpot Helpers
+// ---------------------------------------------------------------------------
+
+async function resolveCompanyForDeal(
+  dealId: string
+): Promise<{ companyId: string; companyName: string; contactEmail?: string }> {
+  const assocResp = await hubspotClient.crm.associations.batchApi.read(
+    "deals",
+    "companies",
+    { inputs: [{ id: dealId }] }
+  );
+  const companyIds = (assocResp.results?.[0]?.to || []).map(
+    (t: { id: string }) => t.id
+  );
+  if (companyIds.length === 0) {
+    throw new Error("Deal must have an associated company to create a Sales Order");
+  }
+
+  const companyResp = await hubspotClient.crm.companies.batchApi.read({
+    inputs: [{ id: companyIds[0] }],
+    properties: ["name", "domain"],
+    propertiesWithHistory: [],
+  });
+  const company = companyResp.results?.[0];
+  const companyName = company?.properties?.name || `Company ${companyIds[0]}`;
+
+  let contactEmail: string | undefined;
+  try {
+    const contactAssocResp = await hubspotClient.crm.associations.batchApi.read(
+      "deals",
+      "contacts",
+      { inputs: [{ id: dealId }] }
+    );
+    const contactIds = (contactAssocResp.results?.[0]?.to || []).map(
+      (t: { id: string }) => t.id
+    );
+    if (contactIds.length > 0) {
+      const contactResp = await hubspotClient.crm.contacts.batchApi.read({
+        inputs: [{ id: contactIds[0] }],
+        properties: ["email"],
+        propertiesWithHistory: [],
+      });
+      contactEmail = contactResp.results?.[0]?.properties?.email || undefined;
+    }
+  } catch {
+    // Non-critical — email is optional for customer creation
+  }
+
+  return { companyId: companyIds[0], companyName, contactEmail };
+}
+
+// ---------------------------------------------------------------------------
+// Product Resolution
+// ---------------------------------------------------------------------------
+
+function resolveProducts(
+  dbProducts: Array<{
+    id: string;
+    name: string | null;
+    sku: string | null;
+    description: string | null;
+    sellPrice: number | null;
+    category: string;
+    isActive: boolean;
+    zohoItemId: string | null;
+  }>,
+  requestedItems: Array<{ productId: string; quantity: number }>
+): ServiceSoLineItem[] {
+  const productMap = new Map(dbProducts.map(p => [p.id, p]));
+  const invalid: string[] = [];
+
+  const lineItems: ServiceSoLineItem[] = [];
+  for (const item of requestedItems) {
+    const product = productMap.get(item.productId);
+    if (!product || product.category !== "SERVICE" || !product.isActive) {
+      invalid.push(item.productId);
+      continue;
+    }
+    lineItems.push({
+      productId: product.id,
+      name: product.name || "Unnamed Product",
+      sku: product.sku,
+      description: product.description,
+      quantity: item.quantity,
+      unitPrice: product.sellPrice || 0,
+      zohoItemId: product.zohoItemId,
+    });
+  }
+
+  if (invalid.length > 0) {
+    throw new Error(
+      `The following product IDs are not valid SERVICE products: ${invalid.join(", ")}`
+    );
+  }
+
+  return lineItems;
+}
+
+// ---------------------------------------------------------------------------
+// Main: Create Service SO
+// ---------------------------------------------------------------------------
+
+export async function createServiceSo(
+  input: CreateServiceSoInput
+): Promise<CreateServiceSoResult> {
+  const { dealId, dealName, dealAddress, requestToken, items, createdBy } = input;
+
+  // 1. Idempotency: check for existing record
+  const existing = await prisma!.serviceSoRequest.findUnique({
+    where: { requestToken },
+  });
+
+  if (existing) {
+    if (existing.zohoSoId) {
+      return {
+        zohoSoId: existing.zohoSoId,
+        zohoSoNumber: existing.zohoSoNumber || "",
+        zohoCustomerId: existing.zohoCustomerId || "",
+        lineItems: existing.lineItems as unknown as ServiceSoLineItem[],
+        totalAmount: existing.totalAmount,
+        alreadyExisted: true,
+      };
+    }
+    if (existing.status === "FAILED") {
+      await prisma!.serviceSoRequest.delete({ where: { requestToken } });
+    } else {
+      throw new Error(
+        `Service SO request already in progress (status: ${existing.status})`
+      );
+    }
+  }
+
+  // Create DRAFT record
+  let requestId: string;
+  try {
+    const record = await prisma!.serviceSoRequest.create({
+      data: {
+        dealId,
+        requestToken,
+        lineItems: [],
+        totalAmount: 0,
+        status: "DRAFT",
+        createdBy,
+      },
+    });
+    requestId = record.id;
+  } catch (err: unknown) {
+    if (err && typeof err === "object" && "code" in err && (err as { code: string }).code === "P2002") {
+      throw new Error("Service SO request already in progress (concurrent create)");
+    }
+    throw err;
+  }
+
+  try {
+    // 2. Resolve products from DB
+    const productIds = items.map(i => i.productId);
+    const dbProducts = await prisma!.internalProduct.findMany({
+      where: { id: { in: productIds } },
+      select: {
+        id: true, name: true, sku: true, description: true, sellPrice: true,
+        category: true, isActive: true, zohoItemId: true,
+      },
+    });
+
+    const lineItems = resolveProducts(dbProducts, items);
+    const totalAmount = lineItems.reduce(
+      (sum, li) => sum + li.unitPrice * li.quantity, 0
+    );
+
+    // 3. Resolve HubSpot company → Zoho customer
+    const { companyName, contactEmail } = await resolveCompanyForDeal(dealId);
+    const zohoCustomerId = await resolveZohoCustomer(companyName, contactEmail);
+
+    // 4. Update DRAFT with resolved data
+    await prisma!.serviceSoRequest.update({
+      where: { id: requestId },
+      data: {
+        lineItems: JSON.parse(JSON.stringify(lineItems)),
+        totalAmount,
+        zohoCustomerId,
+      },
+    });
+
+    // 5. Build + send Zoho SO
+    const zohoLineItems: ZohoSalesOrderLineItem[] = lineItems.map(li => ({
+      ...(li.zohoItemId ? { item_id: li.zohoItemId } : {}),
+      name: li.name,
+      quantity: li.quantity,
+      ...(li.description ? { description: li.description } : {}),
+    }));
+
+    const refNumber = dealName.length > 50 ? dealName.slice(0, 50) : dealName;
+
+    const zohoResult = await zohoInventory.createSalesOrder({
+      customer_id: zohoCustomerId,
+      reference_number: refNumber,
+      notes: `Service SO for ${dealAddress}`,
+      status: "draft",
+      line_items: zohoLineItems,
+      custom_fields: [{ label: "HubSpot Deal ID", value: dealId }],
+    });
+
+    // 6. Update record → SUBMITTED
+    await prisma!.serviceSoRequest.update({
+      where: { id: requestId },
+      data: {
+        zohoSoId: zohoResult.salesorder_id,
+        zohoSoNumber: zohoResult.salesorder_number,
+        status: "SUBMITTED",
+      },
+    });
+
+    return {
+      zohoSoId: zohoResult.salesorder_id,
+      zohoSoNumber: zohoResult.salesorder_number,
+      zohoCustomerId,
+      lineItems,
+      totalAmount,
+    };
+  } catch (err) {
+    try {
+      await prisma!.serviceSoRequest.update({
+        where: { id: requestId },
+        data: {
+          status: "FAILED",
+          errorMessage: err instanceof Error ? err.message : String(err),
+        },
+      });
+    } catch {
+      // Best-effort status update
+    }
+    throw err;
+  }
 }
