@@ -47,6 +47,8 @@ Admin/manager actions link to the existing catalog pages — no new write path:
 
 Both pre-fill `category: SERVICE`. The existing `/api/inventory/products` endpoint handles all CRUD.
 
+**Implementation note:** The existing catalog wizard at `/dashboards/catalog/new` may not read a `category` query param for pre-fill. If it doesn't, the link still works but category won't be pre-selected. Verify during implementation and add query param support if needed.
+
 ### Inactive Product Handling
 
 - **Catalog page:** Inactive products visible but greyed out with "Inactive" badge. Admins can reactivate.
@@ -69,7 +71,8 @@ No new API endpoints needed for the catalog page.
 **Button state:**
 - Enabled: deal has an associated HubSpot company
 - Disabled + tooltip: "Deal must have an associated company to create a Sales Order" when no company association exists
-- Company association check uses deal data already loaded on the page (no extra API call)
+
+**Company association data:** The current `Deal` type on the service pipeline has no company field. The deals API response must be extended to include `companyId` and `companyName` (fetched via HubSpot deal → company association batch API, same pattern used in `hubspot-tickets.ts`). This is a prerequisite change to both the API route (`/api/deals` or the progressive deals hook) and the `Deal` type interface.
 
 ### Slide-Over Panel
 
@@ -104,7 +107,7 @@ Opens on button click. Contains:
 
 `POST /api/service/create-so`
 
-**Auth:** All service suite roles (ADMIN, OWNER, MANAGER, OPERATIONS, OPERATIONS_MANAGER, PROJECT_MANAGER).
+**Auth:** All service suite roles (ADMIN, OWNER, MANAGER, OPERATIONS, OPERATIONS_MANAGER, PROJECT_MANAGER, TECH_OPS).
 
 ### Request Body
 
@@ -122,7 +125,7 @@ Opens on button click. Contains:
 ### Server Flow
 
 1. **Auth check** via `requireApiAuth()`.
-2. **Idempotency:** Check `ServiceSoRequest` by `requestToken`. If exists with `zohoSoId`, return existing result.
+2. **Idempotency:** Attempt `prisma.serviceSoRequest.create()` with the `requestToken`. If a unique constraint violation occurs (P2002), load the existing record — if it has `zohoSoId`, return it as a successful idempotency hit; if it's still DRAFT/FAILED, return its current state. This avoids the race condition where two concurrent requests both pass a check-then-create guard.
 3. **Product resolution:** Load each `InternalProduct` by `productId`. Validate:
    - Product exists
    - `category === SERVICE`
@@ -136,7 +139,7 @@ Opens on button click. Contains:
    - `salesorder_number`: omitted — let Zoho auto-assign
    - `line_items`: each with `item_id` (from `InternalProduct.zohoItemId` if set, omitted if not), `name`, `quantity`
    - `custom_fields`: `[{ label: "HubSpot Deal ID", value: dealId }]`
-   - `notes`: deal address context
+   - `notes`: deal address context (concatenated from `address`, `city`, `state`, `postalCode` fields — no single `fullAddress` field exists)
    - `status`: `"draft"`
 7. **Call `zohoInventory.createSalesOrder()`**
 8. **On success:** Update record → `zohoSoId`, `zohoSoNumber`, status `SUBMITTED`.
@@ -149,13 +152,13 @@ Server derives customer from the deal's associated HubSpot company:
 1. Fetch deal → company association via HubSpot associations API
 2. If no company: fail with 400 "Deal must have an associated company"
 3. Load company properties: `name`, `domain`
-4. Search Zoho customers by exact company name via `zohoInventory.listCustomers()`
-5. If single match: use that `customer_id`
-6. If multiple matches: filter by email domain from the deal's primary contact. If still ambiguous, take most recently created + log warning.
-7. If no match: create via `zohoInventory.createCustomer()` with company name + primary contact email
+4. Search Zoho customers by `contact_name` (the Zoho field name) matching the HubSpot company name. Use `zohoInventory.searchCustomers()` if available, otherwise `listCustomers()` filtered client-side. Note: `listCustomers()` paginates serially (200/page) which can be slow with many customers — cap at 5 pages (1000 customers) and log a warning if exhausted without match.
+5. If single match: use that `contact_id` (Zoho's customer ID field)
+6. If multiple matches: filter by `email` field (optional on `ZohoVendor`) matching the domain from the deal's primary contact. If `email` is absent or still ambiguous, take most recently created + log warning.
+7. If no match: add a `createContact()` method to `zoho-inventory.ts` (it does not currently exist). Uses the Zoho Inventory Contacts API `POST /contacts` with `contact_name`, `email`, `contact_type: "customer"`. This is the only new Zoho API method needed.
 8. Store resolved `zohoCustomerId` on the `ServiceSoRequest` record
 
-**Future enhancement (not this phase):** Persist a durable HubSpot company → Zoho customer mapping to avoid repeated lookups.
+**Performance note:** The customer lookup adds 1-5 Zoho API calls to the SO creation path. For Phase 4 this is acceptable given service SO volume is low. Future enhancement: persist a durable HubSpot company → Zoho customer mapping to avoid repeated lookups and eliminate the pagination risk.
 
 ### Unmatched Zoho Items
 
@@ -197,7 +200,7 @@ model ServiceSoRequest {
   totalAmount     Float
   status          ServiceSoStatus @default(DRAFT)
   errorMessage    String?
-  createdBy       String
+  createdBy       String          // User email (consistent with project convention)
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
@@ -226,20 +229,23 @@ Standard `prisma migrate dev` — no data migration needed (new table).
 
 | File | Change |
 |------|--------|
-| `src/app/dashboards/service/page.tsx` | Add "Create SO" button + slide-over panel to deal rows |
-| `src/lib/role-permissions.ts` | Add `/dashboards/service-catalog` and `/api/service/create-so` to service suite roles |
+| `src/app/dashboards/service/page.tsx` | Add `companyId`/`companyName` to Deal type, "Create SO" button + slide-over panel |
+| `src/lib/role-permissions.ts` | Add `/dashboards/service-catalog` to service suite roles (API route already covered by prefix) |
 | `src/app/suites/service/page.tsx` | Add Service Catalog card to landing page |
-| `src/components/DashboardShell.tsx` | Add `service-catalog` to `SUITE_MAP` |
+| `src/lib/zoho-inventory.ts` | Add `createContact()` method for Zoho customer creation |
 | `prisma/schema.prisma` | Add `ServiceSoStatus` enum + `ServiceSoRequest` model |
+| Service deals API (progressive deals hook) | Extend response to include company association data |
 
 ### Permission Matrix
 
 | Route | Roles |
 |-------|-------|
-| `/dashboards/service-catalog` | ADMIN, OWNER, MANAGER, OPERATIONS, OPERATIONS_MANAGER, PROJECT_MANAGER |
+| `/dashboards/service-catalog` | ADMIN, OWNER, MANAGER, OPERATIONS, OPERATIONS_MANAGER, PROJECT_MANAGER, TECH_OPS |
 | Catalog add/edit buttons | ADMIN, OWNER, MANAGER only (links to existing catalog pages) |
-| `/api/service/create-so` | ADMIN, OWNER, MANAGER, OPERATIONS, OPERATIONS_MANAGER, PROJECT_MANAGER |
+| `/api/service/create-so` | ADMIN, OWNER, MANAGER, OPERATIONS, OPERATIONS_MANAGER, PROJECT_MANAGER, TECH_OPS |
 | "Create SO" button on pipeline | All above (disabled when no company association) |
+
+**Note on `/api/service` prefix:** The existing `canAccessRoute` logic prefix-matches, so roles with `/api/service` in their `allowedRoutes` already have access to `/api/service/create-so`. Only `/dashboards/service-catalog` needs explicit addition to `role-permissions.ts`. The `DashboardShell.tsx` `SUITE_MAP` entry for `service-catalog` already exists from Phase 1 setup.
 
 ### Suite Landing Page
 
