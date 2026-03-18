@@ -172,6 +172,7 @@ export interface ZohoSalesOrderPayload {
   notes?: string;
   status: "draft";
   line_items: ZohoSalesOrderLineItem[];
+  custom_fields?: Array<{ label: string; value: string }>;
 }
 
 interface ZohoSalesOrderCreateResponse {
@@ -965,6 +966,13 @@ export class ZohoInventoryClient {
       salesorder_id: so.salesorder_id,
       salesorder_number: so.salesorder_number,
     };
+  }
+
+  async updateSalesOrder(
+    salesorderId: string,
+    payload: Partial<Pick<ZohoSalesOrderPayload, "custom_fields">>
+  ): Promise<void> {
+    await this.requestPut(`/salesorders/${encodeURIComponent(salesorderId)}`, payload);
   }
 
   async getSalesOrder(soNumber: string): Promise<ZohoSalesOrderRecord> {

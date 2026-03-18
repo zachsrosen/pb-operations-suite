@@ -951,6 +951,7 @@ function BomDashboardInner() {
     skippedItems: Array<{ bomName: string; reason: string }>;
     catalogMissing: Array<{ category: string; brand: string | null; model: string | null; description: string }>;
     hubspotLinkMissing: Array<{ internalProductId: string; name: string; sku: string | null }>;
+    catalogRequestsCreated: number;
     deletedPriorCount: number;
   } | null>(null);
   // Zoho PO state
@@ -2874,6 +2875,9 @@ function BomDashboardInner() {
                     {hubspotPushResult.catalogMissing.length > 0 && (
                       <div className="text-amber-600 dark:text-amber-400">
                         {hubspotPushResult.catalogMissing.length} not in catalog: {hubspotPushResult.catalogMissing.map(i => i.description).join(", ")}
+                        {hubspotPushResult.catalogRequestsCreated > 0 && (
+                          <span className="text-muted font-normal"> ({hubspotPushResult.catalogRequestsCreated} catalog {hubspotPushResult.catalogRequestsCreated === 1 ? "request" : "requests"} created)</span>
+                        )}
                       </div>
                     )}
                     {hubspotPushResult.hubspotLinkMissing.length > 0 && (

@@ -259,6 +259,9 @@ export async function createSalesOrder(params: {
         quantity,
         ...(description ? { description } : {}),
       })),
+      custom_fields: [
+        { label: "HubSpot Deal Record ID", value: dealId },
+      ],
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Zoho API error";
@@ -269,6 +272,26 @@ export async function createSalesOrder(params: {
       try {
         const existing = await zohoInventory.getSalesOrder(soNumber);
         if (existing?.salesorder_id) {
+          // Best-effort: merge the deal-link custom field onto the recovered SO,
+          // preserving any other custom fields already present.
+          try {
+            const existingFields: Array<{ label: string; value: string }> =
+              (existing as Record<string, unknown>).custom_fields as Array<{ label: string; value: string }> ?? [];
+            const alreadySet = existingFields.some(
+              (f) => f.label === "HubSpot Deal Record ID" && f.value === dealId,
+            );
+            if (!alreadySet) {
+              const merged = [
+                ...existingFields.filter((f) => f.label !== "HubSpot Deal Record ID"),
+                { label: "HubSpot Deal Record ID", value: dealId },
+              ];
+              await zohoInventory.updateSalesOrder(existing.salesorder_id, {
+                custom_fields: merged,
+              });
+            }
+          } catch (patchErr) {
+            console.warn("[bom-so-create] Could not patch custom fields on recovered SO:", patchErr);
+          }
           // Patch the snapshot so future runs hit the idempotency guard
           await prisma.projectBomSnapshot.update({
             where: { id: snapshot.id },
