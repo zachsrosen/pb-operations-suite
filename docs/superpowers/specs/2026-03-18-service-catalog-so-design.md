@@ -132,7 +132,7 @@ Opens on button click. Contains:
    - `isActive === true`
    - Reject with 400 if any fail, listing which products are invalid
 4. **Zoho customer resolution:** (see Section 3a below)
-5. **Create `ServiceSoRequest`** record with status `DRAFT`, server-resolved line items.
+5. **Update the DRAFT `ServiceSoRequest`** (created in step 2) with server-resolved line items and `totalAmount`.
 6. **Build Zoho SO payload:**
    - `customer_id`: from step 4
    - `reference_number`: deal name (max 50 chars)
@@ -152,7 +152,7 @@ Server derives customer from the deal's associated HubSpot company:
 1. Fetch deal → company association via HubSpot associations API
 2. If no company: fail with 400 "Deal must have an associated company"
 3. Load company properties: `name`, `domain`
-4. Search Zoho customers by `contact_name` (the Zoho field name) matching the HubSpot company name. Use `zohoInventory.searchCustomers()` if available, otherwise `listCustomers()` filtered client-side. Note: `listCustomers()` paginates serially (200/page) which can be slow with many customers — cap at 5 pages (1000 customers) and log a warning if exhausted without match.
+4. Search Zoho customers by `contact_name` (the Zoho field name) matching the HubSpot company name. **Do not use `searchCustomers()` or `listCustomers()`** — `searchCustomers()` is a stub that only returns page 1, and `listCustomers()` has a hard page-100 throw. Instead, build a paginated lookup loop directly in `service-so-create.ts` using `zohoInventory.fetchCustomerPage(pageNum)`, iterating until a match is found or 5 pages (1000 customers) are exhausted. Log a warning if the cap is hit without a match.
 5. If single match: use that `contact_id` (Zoho's customer ID field)
 6. If multiple matches: filter by `email` field (optional on `ZohoVendor`) matching the domain from the deal's primary contact. If `email` is absent or still ambiguous, take most recently created + log warning.
 7. If no match: add a `createContact()` method to `zoho-inventory.ts` (it does not currently exist). Uses the Zoho Inventory Contacts API `POST /contacts` with `contact_name`, `email`, `contact_type: "customer"`. This is the only new Zoho API method needed.
