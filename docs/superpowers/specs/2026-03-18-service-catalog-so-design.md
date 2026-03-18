@@ -30,22 +30,22 @@ Product table scoped to `EquipmentCategory.SERVICE` only. `ADDER_SERVICES` is ex
 
 **Filters:**
 - Text search (name, SKU, brand, model)
-- Active/Inactive toggle (defaults to active-only)
+- "Show Inactive" toggle (off by default). The existing products API supports `active=true` (active only) and `active=false` (include all). When the toggle is off, fetch with `active=true`. When on, fetch with `active=false` and client-side badge inactive rows — the API does not support inactive-only filtering.
 
 ### Role-Based Behavior
 
 | Role | Capabilities |
 |------|-------------|
 | All service suite roles | Browse/search/filter products (read-only) |
-| ADMIN, OWNER, MANAGER | "Add Product" button, "Edit" action per row |
+| ADMIN | "Add Product" button, "Edit" action per row |
 
 ### Catalog Management
 
-Admin/manager actions link to the existing catalog pages — no new write path:
+ADMIN-only actions link to the existing catalog pages — no new write path:
 - "Add Product" → `/dashboards/catalog/new?category=SERVICE`
 - "Edit" → `/dashboards/catalog/edit/{id}`
 
-Both pre-fill `category: SERVICE`. The existing `/api/inventory/products` endpoint handles all CRUD.
+Both pre-fill `category: SERVICE`. The existing `/api/inventory/products` endpoint handles all CRUD. The existing route-permission model treats `/dashboards/catalog/*` as admin-only (with a narrow exemption for `/dashboards/catalog/new`). Rather than broadening those exemptions, catalog management stays ADMIN-only here.
 
 **Implementation note:** The existing catalog wizard at `/dashboards/catalog/new` may not read a `category` query param for pre-fill. If it doesn't, the link still works but category won't be pre-selected. Verify during implementation and add query param support if needed.
 
@@ -154,7 +154,7 @@ Server derives customer from the deal's associated HubSpot company:
 3. Load company properties: `name`, `domain`
 4. Search Zoho customers by `contact_name` (the Zoho field name) matching the HubSpot company name. **Do not use `searchCustomers()` or `listCustomers()`** — `searchCustomers()` is a stub that only returns page 1, and `listCustomers()` has a hard page-100 throw. Instead, build a paginated lookup loop directly in `service-so-create.ts` using `zohoInventory.fetchCustomerPage(pageNum)`, iterating until a match is found or 5 pages (1000 customers) are exhausted. Log a warning if the cap is hit without a match.
 5. If single match: use that `contact_id` (Zoho's customer ID field)
-6. If multiple matches: filter by `email` field (optional on `ZohoVendor`) matching the domain from the deal's primary contact. If `email` is absent or still ambiguous, take most recently created + log warning.
+6. If multiple matches: use the first match and log a warning with all matched `contact_id`s. The `ZohoVendor` type does not expose a creation timestamp, and primary-contact domain matching would require an additional HubSpot association lookup that adds complexity without sufficient payoff at current service SO volume. A simple first-match-wins + warning is the pragmatic choice for Phase 4. If duplicate-customer issues arise in practice, tighten the matching in a follow-up.
 7. If no match: add a `createContact()` method to `zoho-inventory.ts` (it does not currently exist). Uses the Zoho Inventory Contacts API `POST /contacts` with `contact_name`, `email`, `contact_type: "customer"`. This is the only new Zoho API method needed.
 8. Store resolved `zohoCustomerId` on the `ServiceSoRequest` record
 
@@ -241,7 +241,7 @@ Standard `prisma migrate dev` — no data migration needed (new table).
 | Route | Roles |
 |-------|-------|
 | `/dashboards/service-catalog` | ADMIN, OWNER, MANAGER, OPERATIONS, OPERATIONS_MANAGER, PROJECT_MANAGER, TECH_OPS |
-| Catalog add/edit buttons | ADMIN, OWNER, MANAGER only (links to existing catalog pages) |
+| Catalog add/edit buttons | ADMIN only (existing catalog routes are admin-only) |
 | `/api/service/create-so` | ADMIN, OWNER, MANAGER, OPERATIONS, OPERATIONS_MANAGER, PROJECT_MANAGER, TECH_OPS |
 | "Create SO" button on pipeline | All above (disabled when no company association) |
 
