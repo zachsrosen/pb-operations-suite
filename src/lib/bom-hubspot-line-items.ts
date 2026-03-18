@@ -22,6 +22,7 @@ import {
   createDealLineItem,
 } from "@/lib/hubspot";
 import type { BomItem, BomData } from "@/lib/bom-snapshot";
+import { notifyAdminsOfNewCatalogRequest } from "@/lib/catalog-notify";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -56,6 +57,7 @@ export interface PushToHubSpotResult {
     name: string;
     sku: string | null;
   }>;
+  catalogRequestsCreated: number;
   deletedPriorCount: number;
   jobContext: Record<string, unknown> | null;
 }
@@ -365,6 +367,79 @@ async function matchAndPartition(items: BomItem[]): Promise<PartitionResult> {
 }
 
 // ---------------------------------------------------------------------------
+// Catalog request creation
+// ---------------------------------------------------------------------------
+
+/**
+ * For each catalogMissing item, find or create a PendingCatalogPush row.
+ *
+ * Idempotent: if a PENDING row with the same canonicalKey already exists,
+ * it is reused (no duplicate row, no admin notification). Only genuinely
+ * new rows trigger the admin email.
+ *
+ * @returns The number of newly created pending requests.
+ */
+async function createCatalogRequests(
+  catalogMissing: PartitionResult["catalogMissing"],
+  dealId: string,
+  pushedBy: string,
+): Promise<number> {
+  if (!prisma || catalogMissing.length === 0) return 0;
+
+  let newlyCreated = 0;
+
+  for (const item of catalogMissing) {
+    const canonicalKey = buildCanonicalKey(item.category, item.brand ?? "", item.model ?? "");
+    if (!canonicalKey) continue;
+
+    // Check for an existing PENDING row with the same canonicalKey.
+    const existing = await prisma.pendingCatalogPush.findFirst({
+      where: { canonicalKey, status: "PENDING" },
+      select: { id: true },
+    });
+
+    if (existing) continue;
+
+    try {
+      const created = await prisma.pendingCatalogPush.create({
+        data: {
+          brand: item.brand ?? "Unknown",
+          model: item.model ?? "Unknown",
+          description: item.description,
+          category: item.category,
+          systems: ["INTERNAL", "HUBSPOT"],
+          requestedBy: pushedBy,
+          source: "bom_hubspot_push",
+          canonicalKey,
+          reviewReason: "no_catalog_match",
+          dealId,
+        },
+        select: { id: true },
+      });
+
+      notifyAdminsOfNewCatalogRequest({
+        id: created.id,
+        brand: item.brand ?? "Unknown",
+        model: item.model ?? "Unknown",
+        category: item.category,
+        requestedBy: pushedBy,
+        systems: ["INTERNAL", "HUBSPOT"],
+        dealId,
+      });
+
+      newlyCreated++;
+    } catch (err: unknown) {
+      // P2002 = race condition — another request created the same canonicalKey
+      // between our findFirst and create. Safe to skip.
+      if ((err as { code?: string }).code === "P2002") continue;
+      throw err;
+    }
+  }
+
+  return newlyCreated;
+}
+
+// ---------------------------------------------------------------------------
 // Main function
 // ---------------------------------------------------------------------------
 
@@ -375,6 +450,7 @@ async function matchAndPartition(items: BomItem[]): Promise<PartitionResult> {
  * 1. Load the snapshot by id + dealId.
  * 2. Combine bomData.items + suggestedAdditions.
  * 3. Run three-phase catalog matching.
+ * 3b. Create PendingCatalogPush rows for catalogMissing items (idempotent).
  * 4. Acquire a PENDING push lock (throws DuplicatePushError if in-flight).
  * 5. Create new line items tagged with [BOM:{pushLogId}].
  * 6. If all creates succeeded: delete prior BOM-managed line items.
@@ -410,6 +486,14 @@ export async function pushBomToHubSpotLineItems(
   // 3. Catalog matching (before acquiring lock to keep lock window small).
   const { matched, skipped, catalogMissing, hubspotLinkMissing } =
     await matchAndPartition(allItems);
+
+  // 3b. Create PendingCatalogPush rows for catalogMissing items.
+  //     Idempotent — reuses existing PENDING rows, only notifies on new ones.
+  const catalogRequestsCreated = await createCatalogRequests(
+    catalogMissing,
+    dealId,
+    pushedBy,
+  );
 
   // 4. Acquire push lock.
   const pushLogId = await acquirePushLock(
@@ -517,6 +601,7 @@ export async function pushBomToHubSpotLineItems(
       skippedItems: finalSkipped,
       catalogMissing,
       hubspotLinkMissing,
+      catalogRequestsCreated,
       deletedPriorCount,
       jobContext,
     };

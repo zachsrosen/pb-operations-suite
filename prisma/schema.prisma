@@ -1089,6 +1089,8 @@ model PendingCatalogPush {
   @@index([source])
   @@index([expiresAt])
   @@index([zohoVendorId])
+  // Partial unique: only one PENDING request per canonicalKey at a time.
+  // Enforced via raw SQL in migration (Prisma doesn't support WHERE on @@unique).
 }
 
 // ===========================================
