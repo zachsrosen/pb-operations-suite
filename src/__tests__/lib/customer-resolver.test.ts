@@ -40,6 +40,7 @@ const mockCompanySearch = hubspotClient.crm.companies.searchApi.doSearch as jest
 const mockAssociationRead = hubspotClient.crm.associations.batchApi.read as jest.Mock;
 const mockDealBatchRead = hubspotClient.crm.deals.batchApi.read as jest.Mock;
 const mockTicketBatchRead = hubspotClient.crm.tickets.batchApi.read as jest.Mock;
+const mockCompanyBatchRead = hubspotClient.crm.companies.batchApi.read as jest.Mock;
 const mockGetZuperJobs = getCachedZuperJobsByDealIds as jest.Mock;
 const mockPrismaFindMany = prisma.zuperJobCache.findMany as jest.Mock;
 
@@ -565,5 +566,72 @@ describe("resolveContactDetail", () => {
     expect(detail.jobs).toHaveLength(1);
     expect(detail.jobs[0].uid).toBe("j-heuristic");
     expect(mockPrismaFindMany).toHaveBeenCalled();
+  });
+
+  it("resolves company name via association when contact company property is blank", async () => {
+    mockContactBatchRead.mockResolvedValue({
+      results: [{
+        id: "c1",
+        properties: {
+          firstname: "Jane",
+          lastname: "Doe",
+          email: null, phone: null,
+          address: null, city: null, state: null, zip: null,
+          company: null, // blank — triggers association lookup
+        },
+      }],
+    });
+
+    // deals, tickets, then companies association
+    mockAssociationRead
+      .mockResolvedValueOnce({ results: [] })  // deals
+      .mockResolvedValueOnce({ results: [] })  // tickets
+      .mockResolvedValueOnce({                 // companies
+        results: [{ to: [{ id: "comp1" }] }],
+      });
+
+    // Company batch read returns the name
+    mockCompanyBatchRead.mockResolvedValue({
+      results: [{ id: "comp1", properties: { name: "Photon Brothers" } }],
+    });
+
+    const detail = await resolveContactDetail("c1");
+    expect(detail.companyName).toBe("Photon Brothers");
+  });
+
+  it("uses AND for heuristic when both name and address are present", async () => {
+    mockContactBatchRead.mockResolvedValue({
+      results: [{
+        id: "c1",
+        properties: {
+          firstname: "John",
+          lastname: "Smith",
+          email: null, phone: null,
+          address: "123 Main St", city: null, state: null, zip: null,
+          company: "Acme",
+        },
+      }],
+    });
+
+    // No deals, no tickets
+    mockAssociationRead
+      .mockResolvedValueOnce({ results: [] })
+      .mockResolvedValueOnce({ results: [] });
+
+    // No deal-linked jobs → triggers heuristic
+    mockGetZuperJobs.mockResolvedValue([]);
+    mockPrismaFindMany.mockResolvedValue([]);
+
+    await resolveContactDetail("c1");
+
+    // Verify the heuristic used AND (both name and address)
+    expect(mockPrismaFindMany).toHaveBeenCalledWith({
+      where: {
+        AND: [
+          { projectName: { contains: "John Smith", mode: "insensitive" } },
+          { customerAddress: { path: ["street"], string_contains: "123 Main St" } },
+        ],
+      },
+    });
   });
 });
