@@ -94,9 +94,9 @@ const STALE_LOCK_THRESHOLD_MS = 5 * 60 * 1000;
  * Acquire a PENDING lock for a deal push.
  *
  * 1. Recover stale PENDING rows older than 5 minutes (mark FAILED).
- * 2. Delete any completed (SUCCESS / PARTIAL / FAILED) rows for this deal.
- * 3. Insert a new PENDING row — if the @unique dealId constraint fires,
- *    a genuine in-flight PENDING push exists → throw DuplicatePushError.
+ * 2. Insert a new PENDING row — if the partial unique index on
+ *    (dealId, status=PENDING) fires, a genuine in-flight push exists
+ *    → throw DuplicatePushError. Completed rows are preserved for audit.
  *
  * @returns The new BomHubSpotPushLog row ID.
  */
