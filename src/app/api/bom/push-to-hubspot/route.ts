@@ -24,6 +24,7 @@ const ALLOWED_ROLES = new Set([
   "OPERATIONS_MANAGER",
   "PROJECT_MANAGER",
   "DESIGNER",
+  "TECH_OPS",
 ]);
 
 export async function POST(request: NextRequest) {
