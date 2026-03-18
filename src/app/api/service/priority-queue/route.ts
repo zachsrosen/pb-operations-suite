@@ -61,6 +61,7 @@ async function fetchServiceDeals(): Promise<PriorityItem[]> {
           amount: deal.properties.amount ? parseFloat(deal.properties.amount) : null,
           location: deal.properties.pb_location || null,
           url: `https://app.hubspot.com/contacts/${process.env.HUBSPOT_PORTAL_ID || ""}/deal/${deal.id}`,
+          ownerId: deal.properties.hubspot_owner_id || null,
         });
       }
 
@@ -87,7 +88,6 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const location = searchParams.get("location");
     const forceRefresh = searchParams.get("refresh") === "true";
 
     // Fetch with cache (bypass debounce on manual refresh)
@@ -128,14 +128,9 @@ export async function GET(request: NextRequest) {
       forceRefresh
     );
 
-    let queue = data.queue;
+    const queue = data.queue;
 
-    // Apply location filter
-    if (location && location !== "all") {
-      queue = queue.filter(item => item.item.location === location);
-    }
-
-    // Compute stats
+    // Stats computed client-side now — still send global stats for initial render
     const stats = {
       total: queue.length,
       critical: queue.filter(i => i.tier === "critical").length,
@@ -146,15 +141,37 @@ export async function GET(request: NextRequest) {
 
     // Get unique locations for filter
     const locations = [...new Set(
-      data.queue
+      queue
         .map(i => i.item.location)
         .filter((l): l is string => !!l)
     )].sort();
+
+    // Fetch all HubSpot owners for filter dropdown (paginated)
+    let owners: Array<{ id: string; name: string }> = [];
+    try {
+      let ownerAfter: string | undefined;
+      do {
+        const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(
+          undefined, ownerAfter, 100
+        );
+        for (const o of ownersResponse.results || []) {
+          owners.push({
+            id: o.id,
+            name: `${o.firstName || ""} ${o.lastName || ""}`.trim() || o.email || o.id,
+          });
+        }
+        ownerAfter = ownersResponse.paging?.next?.after;
+      } while (ownerAfter);
+      owners.sort((a, b) => a.name.localeCompare(b.name));
+    } catch {
+      console.warn("[PriorityQueue] Failed to fetch owners for dropdown");
+    }
 
     return NextResponse.json({
       queue,
       stats,
       locations,
+      owners,
       lastUpdated,
     });
   } catch (error) {

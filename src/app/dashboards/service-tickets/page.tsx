@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
+import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useSSE } from "@/hooks/useSSE";
@@ -60,7 +61,6 @@ interface TicketDetail {
 interface TicketListResponse {
   tickets: TicketItem[];
   total: number;
-  filteredCount: number;
   locations: string[];
   stages: string[];
   stageMap: Record<string, string>;
@@ -102,9 +102,10 @@ export default function ServiceTicketBoardPage() {
   const [data, setData] = useState<TicketListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterLocation, setFilterLocation] = useState("all");
-  const [filterStage, setFilterStage] = useState("all");
-  const [filterPriority, setFilterPriority] = useState("all");
+  const [filterLocations, setFilterLocations] = useState<string[]>([]);
+  const [filterStages, setFilterStages] = useState<string[]>([]);
+  const [filterPriorities, setFilterPriorities] = useState<string[]>([]);
+  const [filterOwners, setFilterOwners] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTicket, setSelectedTicket] = useState<TicketDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -119,8 +120,6 @@ export default function ServiceTicketBoardPage() {
   const fetchData = useCallback(async () => {
     try {
       const params = new URLSearchParams();
-      if (filterLocation !== "all") params.set("location", filterLocation);
-      if (filterPriority !== "all") params.set("priority", filterPriority);
       if (searchQuery) params.set("search", searchQuery);
 
       const res = await fetch(`/api/service/tickets?${params.toString()}`);
@@ -136,7 +135,7 @@ export default function ServiceTicketBoardPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterLocation, filterPriority, searchQuery]);
+  }, [searchQuery]);
 
   useEffect(() => {
     setLoading(true);
@@ -238,16 +237,47 @@ export default function ServiceTicketBoardPage() {
 
   // ---- Derived data ---------------------------------------------------------
 
-  // Stage filter is client-side (lightweight); location + priority are server-side
-  const filteredTickets = data?.tickets.filter(t => {
-    if (filterStage !== "all" && t.stage !== filterStage) return false;
-    return true;
-  }) ?? [];
+  // All filtering is client-side
+  const filteredTickets = useMemo(() => {
+    if (!data?.tickets) return [];
+    return data.tickets.filter(t => {
+      if (filterLocations.length > 0 && (!t.location || !filterLocations.includes(t.location))) return false;
+      if (filterStages.length > 0 && !filterStages.includes(t.stage)) return false;
+      if (filterPriorities.length > 0 && (!t.priority || !filterPriorities.includes(t.priority))) return false;
+      if (filterOwners.length > 0) {
+        if (filterOwners.includes("__unassigned__") && !t.ownerId) return true;
+        if (t.ownerId && filterOwners.includes(t.ownerId)) return true;
+        return false;
+      }
+      return true;
+    });
+  }, [data?.tickets, filterLocations, filterStages, filterPriorities, filterOwners]);
 
   // Unique priorities for filter
   const priorities = [...new Set(
     (data?.tickets ?? []).map(t => t.priority).filter((p): p is string => !!p)
   )];
+
+  // Build filter options
+  const locationOptions: FilterOption[] = useMemo(
+    () => (data?.locations ?? []).map(l => ({ value: l, label: l })),
+    [data?.locations]
+  );
+  const stageOptions: FilterOption[] = useMemo(
+    () => (data?.stages ?? []).map(s => ({ value: s, label: s })),
+    [data?.stages]
+  );
+  const priorityOptions: FilterOption[] = useMemo(
+    () => priorities.map(p => ({ value: p, label: PRIORITY_CONFIG[p]?.label ?? p })),
+    [priorities]
+  );
+  const ownerOptions: FilterOption[] = useMemo(
+    () => [
+      { value: "__unassigned__", label: "Unassigned" },
+      ...(data?.owners ?? []).map(o => ({ value: o.id, label: o.name })),
+    ],
+    [data?.owners]
+  );
 
   // Group tickets by stage for kanban columns
   const stageOrder = data?.stages ?? [];
@@ -342,42 +372,40 @@ export default function ServiceTicketBoardPage() {
           onChange={(e) => setSearchQuery(e.target.value)}
           className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground placeholder:text-muted w-64"
         />
-        <select
-          value={filterLocation}
-          onChange={(e) => setFilterLocation(e.target.value)}
-          className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground"
-        >
-          <option value="all">All Locations</option>
-          {(data?.locations ?? []).map(loc => (
-            <option key={loc} value={loc}>{loc}</option>
-          ))}
-        </select>
-        <select
-          value={filterPriority}
-          onChange={(e) => setFilterPriority(e.target.value)}
-          className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground"
-        >
-          <option value="all">All Priorities</option>
-          {priorities.map(p => (
-            <option key={p} value={p}>{PRIORITY_CONFIG[p]?.label ?? p}</option>
-          ))}
-        </select>
-        <select
-          value={filterStage}
-          onChange={(e) => setFilterStage(e.target.value)}
-          className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground"
-        >
-          <option value="all">All Stages</option>
-          {stageOrder.map(stage => (
-            <option key={stage} value={stage}>{stage}</option>
-          ))}
-        </select>
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={filterLocations}
+          onChange={setFilterLocations}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Priority"
+          options={priorityOptions}
+          selected={filterPriorities}
+          onChange={setFilterPriorities}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Stage"
+          options={stageOptions}
+          selected={filterStages}
+          onChange={setFilterStages}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Owner"
+          options={ownerOptions}
+          selected={filterOwners}
+          onChange={setFilterOwners}
+          accentColor="cyan"
+        />
       </div>
 
       {/* Kanban Board */}
       <div className="flex gap-4 overflow-x-auto pb-4">
         {stageOrder
-          .filter(stage => filterStage === "all" || stage === filterStage)
+          .filter(stage => filterStages.length === 0 || filterStages.includes(stage))
           .map(stage => {
             const tickets = ticketsByStage.get(stage) ?? [];
             return (

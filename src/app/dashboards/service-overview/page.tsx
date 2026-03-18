@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
+import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { useSSE } from "@/hooks/useSSE";
@@ -26,6 +27,7 @@ interface QueueItem {
   location?: string | null;
   url?: string;
   warrantyExpiry?: string | null;
+  ownerId?: string | null;
 }
 
 interface PriorityScore {
@@ -48,6 +50,7 @@ interface PriorityQueueResponse {
   queue: PriorityScore[];
   stats: QueueStats;
   locations: string[];
+  owners: Array<{ id: string; name: string }>;
   lastUpdated: string;
 }
 
@@ -102,8 +105,9 @@ export default function ServiceOverviewPage() {
   const [data, setData] = useState<PriorityQueueResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filterLocation, setFilterLocation] = useState("all");
-  const [filterTier, setFilterTier] = useState<PriorityTier | "all">("all");
+  const [filterLocations, setFilterLocations] = useState<string[]>([]);
+  const [filterOwners, setFilterOwners] = useState<string[]>([]);
+  const [filterTiers, setFilterTiers] = useState<PriorityTier[]>([]);
   const [overridingId, setOverridingId] = useState<string | null>(null);
   const [overrideLoading, setOverrideLoading] = useState(false);
 
@@ -114,10 +118,7 @@ export default function ServiceOverviewPage() {
 
   const fetchData = useCallback(async () => {
     try {
-      const params = new URLSearchParams();
-      if (filterLocation !== "all") params.set("location", filterLocation);
-
-      const res = await fetch(`/api/service/priority-queue?${params.toString()}`);
+      const res = await fetch("/api/service/priority-queue");
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `HTTP ${res.status}`);
@@ -130,9 +131,9 @@ export default function ServiceOverviewPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterLocation]);
+  }, []);
 
-  // Initial load + refetch when location filter changes
+  // Initial load
   useEffect(() => {
     setLoading(true);
     fetchData();
@@ -186,15 +187,52 @@ export default function ServiceOverviewPage() {
 
   // ---- Derived data ---------------------------------------------------------
 
-  const filteredQueue = data?.queue.filter((entry) => {
-    if (filterTier !== "all" && entry.tier !== filterTier) return false;
-    return true;
-  }) ?? [];
+  // Pre-tier filter (location + owner only) — used for accurate tier badge counts
+  const preTierFiltered = useMemo(() => {
+    if (!data?.queue) return [];
+    return data.queue.filter((entry) => {
+      if (filterLocations.length > 0 && (!entry.item.location || !filterLocations.includes(entry.item.location))) return false;
+      if (filterOwners.length > 0) {
+        if (filterOwners.includes("__unassigned__") && !entry.item.ownerId) return true;
+        if (entry.item.ownerId && filterOwners.includes(entry.item.ownerId)) return true;
+        return false;
+      }
+      return true;
+    });
+  }, [data?.queue, filterLocations, filterOwners]);
+
+  // Full filter (location + owner + tier)
+  const filteredQueue = useMemo(() => {
+    if (filterTiers.length === 0) return preTierFiltered;
+    return preTierFiltered.filter(entry => filterTiers.includes(entry.tier));
+  }, [preTierFiltered, filterTiers]);
+
+  // Tier counts from pre-tier-filtered subset (accurate to location + owner selection)
+  const tierCounts = useMemo(() => ({
+    total: preTierFiltered.length,
+    critical: preTierFiltered.filter(i => i.tier === "critical").length,
+    high: preTierFiltered.filter(i => i.tier === "high").length,
+    medium: preTierFiltered.filter(i => i.tier === "medium").length,
+    low: preTierFiltered.filter(i => i.tier === "low").length,
+  }), [preTierFiltered]);
+
+  // Build filter options
+  const locationOptions: FilterOption[] = useMemo(
+    () => (data?.locations ?? []).map(l => ({ value: l, label: l })),
+    [data?.locations]
+  );
+  const ownerOptions: FilterOption[] = useMemo(
+    () => [
+      { value: "__unassigned__", label: "Unassigned" },
+      ...(data?.owners ?? []).map(o => ({ value: o.id, label: o.name })),
+    ],
+    [data?.owners]
+  );
 
   // Scheduled today: items whose createDate is today (placeholder logic — API doesn't expose scheduled date yet)
   const scheduledToday = 0;
   // Overdue items: critical or high tier
-  const overdueCount = (data?.stats.critical ?? 0) + (data?.stats.high ?? 0);
+  const overdueCount = tierCounts.critical + tierCounts.high;
 
   // ---- Loading / error states -----------------------------------------------
 
@@ -282,38 +320,39 @@ export default function ServiceOverviewPage() {
             </h2>
 
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Tier filter buttons */}
-              <button
-                onClick={() => setFilterTier("all")}
-                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                  filterTier === "all"
-                    ? "bg-cyan-600 text-white"
-                    : "bg-surface-2 text-muted hover:text-foreground"
-                }`}
-              >
-                All
-              </button>
+              {/* Tier multi-toggle buttons */}
               {ALL_TIERS.map((tier) => {
                 const cfg = TIER_CONFIG[tier];
+                const isActive = filterTiers.includes(tier);
                 return (
                   <button
                     key={tier}
-                    onClick={() => setFilterTier(tier)}
+                    onClick={() => {
+                      setFilterTiers(prev =>
+                        prev.includes(tier) ? prev.filter(t => t !== tier) : [...prev, tier]
+                      );
+                    }}
                     className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
-                      filterTier === tier
+                      isActive
                         ? `${cfg.bg} ${cfg.text}`
                         : "bg-surface-2 text-muted hover:text-foreground"
                     }`}
                   >
                     {cfg.label}
-                    {data && (
-                      <span className="ml-1 opacity-70">
-                        ({data.stats[tier]})
-                      </span>
-                    )}
+                    <span className="ml-1 opacity-70">
+                      ({tierCounts[tier]})
+                    </span>
                   </button>
                 );
               })}
+              {filterTiers.length > 0 && (
+                <button
+                  onClick={() => setFilterTiers([])}
+                  className="px-2 py-1 text-xs text-muted hover:text-foreground"
+                >
+                  Clear
+                </button>
+              )}
             </div>
           </div>
         </div>
@@ -322,8 +361,8 @@ export default function ServiceOverviewPage() {
         <div className="divide-y divide-t-border">
           {filteredQueue.length === 0 ? (
             <div className="px-4 py-12 text-center text-muted">
-              {filterTier !== "all"
-                ? `No ${filterTier} priority items`
+              {filterTiers.length > 0 || filterLocations.length > 0 || filterOwners.length > 0
+                ? "No items match current filters"
                 : "No items in priority queue"}
             </div>
           ) : (
@@ -466,21 +505,23 @@ export default function ServiceOverviewPage() {
         </div>
       </div>
 
-      {/* Bottom bar: location filter */}
-      <div className="flex items-center justify-between gap-4 bg-surface rounded-xl border border-t-border p-4">
-        <span className="text-sm text-muted">Filter by location:</span>
-        <select
-          value={filterLocation}
-          onChange={(e) => setFilterLocation(e.target.value)}
-          className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-foreground"
-        >
-          <option value="all">All Locations</option>
-          {(data?.locations ?? []).map((loc) => (
-            <option key={loc} value={loc}>
-              {loc}
-            </option>
-          ))}
-        </select>
+      {/* Bottom bar: location + owner filters */}
+      <div className="flex items-center gap-3 bg-surface rounded-xl border border-t-border p-4">
+        <span className="text-sm text-muted">Filters:</span>
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={filterLocations}
+          onChange={setFilterLocations}
+          accentColor="cyan"
+        />
+        <MultiSelectFilter
+          label="Owner"
+          options={ownerOptions}
+          selected={filterOwners}
+          onChange={setFilterOwners}
+          accentColor="cyan"
+        />
       </div>
     </DashboardShell>
   );

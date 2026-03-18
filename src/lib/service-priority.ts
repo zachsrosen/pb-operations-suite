@@ -17,6 +17,7 @@ export interface PriorityItem {
   location?: string | null;
   url?: string;
   warrantyExpiry?: string | null;
+  ownerId?: string | null;
 }
 
 export type PriorityTier = "critical" | "high" | "medium" | "low";

@@ -22,9 +22,6 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const location = searchParams.get("location");
-    const priority = searchParams.get("priority");
-    const stage = searchParams.get("stage");
     const search = searchParams.get("search");
     const forceRefresh = searchParams.get("refresh") === "true";
 
@@ -34,18 +31,8 @@ export async function GET(request: NextRequest) {
       forceRefresh
     );
 
+    // Only apply search server-side (reduces payload); all other filtering is client-side
     let filtered = tickets;
-
-    // Apply filters
-    if (location && location !== "all") {
-      filtered = filtered.filter(t => t.location === location);
-    }
-    if (priority && priority !== "all") {
-      filtered = filtered.filter(t => t.priority === priority);
-    }
-    if (stage && stage !== "all") {
-      filtered = filtered.filter(t => t.stage === stage);
-    }
     if (search) {
       const q = search.toLowerCase();
       filtered = filtered.filter(t =>
@@ -88,7 +75,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       tickets: filtered,
       total: tickets.length,
-      filteredCount: filtered.length,
       locations,
       stages: stageNames,
       stageMap: stageMap,
