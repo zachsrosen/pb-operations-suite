@@ -1474,14 +1474,18 @@ export default function SchedulerPage() {
   ]);
 
   // Split ghosts: future/today → calendar, past → overdue sidebar only
-  const todayIso = useMemo(() => new Date().toISOString().split("T")[0], []);
+  // Use local date (not UTC) so US-timezone users don't see today's forecasts as overdue
+  const todayLocal = useMemo(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }, []);
   const forecastGhostEvents = useMemo(
-    () => allForecastGhosts.filter((e) => e.date >= todayIso),
-    [allForecastGhosts, todayIso]
+    () => allForecastGhosts.filter((e) => e.date >= todayLocal),
+    [allForecastGhosts, todayLocal]
   );
   const overdueForecastEvents = useMemo(
-    () => allForecastGhosts.filter((e) => e.date < todayIso),
-    [allForecastGhosts, todayIso]
+    () => allForecastGhosts.filter((e) => e.date < todayLocal),
+    [allForecastGhosts, todayLocal]
   );
 
   // ---- Merged display events: real filtered events + ghost forecast events (future only) ----
@@ -4228,6 +4232,24 @@ export default function SchedulerPage() {
             </button>
           </div>
 
+          {/* Overdue Forecast callout — global signal, not period-scoped */}
+          {overdueForecastSummary.count > 0 && (
+          <div className="px-2.5 py-2 border-b border-t-border bg-amber-500/5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-sm border border-dashed border-amber-500 bg-amber-500/30" />
+                <span className="text-[0.6rem] font-medium text-amber-400">Overdue Forecast</span>
+              </div>
+              <span className="text-[0.65rem] font-mono font-bold text-amber-400 opacity-80">
+                {overdueForecastSummary.count} · ${formatRevenueCompact(overdueForecastSummary.revenue)}
+              </span>
+            </div>
+            <p className="text-[0.5rem] text-muted mt-0.5 leading-tight">
+              Forecasted installs that have passed without being scheduled
+            </p>
+          </div>
+          )}
+
           {/* Weekly view */}
           {revenueSidebarTab === "weekly" && (
           <>
@@ -4372,24 +4394,13 @@ export default function SchedulerPage() {
             </div>
             )}
             {weeklyRevenueSummary.some(w => w.forecasted.count > 0) && (
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm border border-dashed border-blue-400 bg-blue-500/40" />
                 <span className="text-[0.6rem] text-foreground/80">Forecasted</span>
               </div>
               <span className="text-[0.65rem] font-mono font-bold text-blue-300 opacity-80">
                 ${formatRevenueCompact(weeklyRevenueSummary.reduce((s, w) => s + w.forecasted.revenue, 0))}
-              </span>
-            </div>
-            )}
-            {overdueForecastSummary.count > 0 && (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-sm border border-dashed border-amber-500 bg-amber-500/30" />
-                <span className="text-[0.6rem] text-foreground/80">Overdue Forecast</span>
-              </div>
-              <span className="text-[0.65rem] font-mono font-bold text-amber-400 opacity-80">
-                {overdueForecastSummary.count} · ${formatRevenueCompact(overdueForecastSummary.revenue)}
               </span>
             </div>
             )}
@@ -4540,24 +4551,13 @@ export default function SchedulerPage() {
             </div>
             )}
             {monthlyRevenueSummary.some(m => m.forecasted.count > 0) && (
-            <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center justify-between">
               <div className="flex items-center gap-1">
                 <div className="w-2 h-2 rounded-sm border border-dashed border-blue-400 bg-blue-500/40" />
                 <span className="text-[0.6rem] text-foreground/80">Forecasted</span>
               </div>
               <span className="text-[0.65rem] font-mono font-bold text-blue-300 opacity-80">
                 ${formatRevenueCompact(monthlyRevenueSummary.reduce((s, m) => s + m.forecasted.revenue, 0))}
-              </span>
-            </div>
-            )}
-            {overdueForecastSummary.count > 0 && (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1">
-                <div className="w-2 h-2 rounded-sm border border-dashed border-amber-500 bg-amber-500/30" />
-                <span className="text-[0.6rem] text-foreground/80">Overdue Forecast</span>
-              </div>
-              <span className="text-[0.65rem] font-mono font-bold text-amber-400 opacity-80">
-                {overdueForecastSummary.count} · ${formatRevenueCompact(overdueForecastSummary.revenue)}
               </span>
             </div>
             )}
