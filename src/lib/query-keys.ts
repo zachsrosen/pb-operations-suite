@@ -63,8 +63,8 @@ export const queryKeys = {
     root: ["serviceCustomers"] as const,
     search: (query: string) =>
       [...queryKeys.serviceCustomers.root, "search", query] as const,
-    detail: (groupKey: string) =>
-      [...queryKeys.serviceCustomers.root, "detail", groupKey] as const,
+    detail: (contactId: string) =>
+      [...queryKeys.serviceCustomers.root, "detail", contactId] as const,
   },
 } as const;
 

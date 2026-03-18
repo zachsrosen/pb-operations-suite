@@ -6,7 +6,7 @@ import { resolveContactDetail } from "@/lib/customer-resolver";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: Promise<{ groupKey: string }> }
+  { params }: { params: Promise<{ contactId: string }> }
 ) {
   try {
     const session = await auth();
@@ -19,12 +19,12 @@ export async function GET(
       return NextResponse.json({ error: "User not found" }, { status: 403 });
     }
 
-    const { groupKey: encodedContactId } = await params;
-    const contactId = decodeURIComponent(encodedContactId);
+    const { contactId } = await params;
 
-    if (!contactId) {
+    // Validate contactId is numeric (HubSpot record IDs are always numeric)
+    if (!/^\d+$/.test(contactId)) {
       return NextResponse.json(
-        { error: "Contact ID is required" },
+        { error: "Invalid contact ID" },
         { status: 400 }
       );
     }
@@ -38,10 +38,7 @@ export async function GET(
       forceRefresh
     );
 
-    return NextResponse.json({
-      customer,
-      lastUpdated,
-    });
+    return NextResponse.json({ customer, lastUpdated });
   } catch (error) {
     console.error("[CustomerDetail] Error:", error);
     return NextResponse.json(
