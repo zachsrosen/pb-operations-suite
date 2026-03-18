@@ -1680,3 +1680,28 @@ model ServicePriorityOverride {
 
   @@unique([itemId, itemType])
 }
+
+enum ServiceSoStatus {
+  DRAFT
+  SUBMITTED
+  FAILED
+}
+
+model ServiceSoRequest {
+  id              String          @id @default(cuid())
+  dealId          String
+  requestToken    String          @unique
+  zohoSoId        String?
+  zohoSoNumber    String?
+  zohoCustomerId  String?
+  lineItems       Json
+  totalAmount     Float
+  status          ServiceSoStatus @default(DRAFT)
+  errorMessage    String?
+  createdBy       String
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([dealId])
+  @@index([createdBy])
+}
