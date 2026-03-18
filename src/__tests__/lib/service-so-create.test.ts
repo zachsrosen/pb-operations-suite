@@ -190,15 +190,16 @@ describe("createServiceSo", () => {
     expect(mockSoDelete).toHaveBeenCalled();
   });
 
-  it("rejects when product is not SERVICE category", async () => {
+  it("rejects when product is not SERVICE category (no DRAFT created)", async () => {
     mockSoFindUnique.mockResolvedValueOnce(null);
-    mockSoCreate.mockResolvedValueOnce({ id: "req-3" });
     mockProductFind.mockResolvedValueOnce([{
       id: "prod-1", name: "Solar Panel", category: "MODULE", isActive: true,
       sku: null, description: null, sellPrice: 500, zohoItemId: null,
     }]);
 
     await expect(createServiceSo(baseInput)).rejects.toThrow(/not valid SERVICE products/);
+    // Product validation happens BEFORE DRAFT creation — no DB record should be created
+    expect(mockSoCreate).not.toHaveBeenCalled();
   });
 
   it("rejects when deal has no company association", async () => {

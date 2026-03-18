@@ -78,7 +78,7 @@ export async function resolveZohoCustomer(
         }
       }
 
-      if (matches.length > 0 || !hasMore) break;
+      if (!hasMore) break;
     } catch (err) {
       Sentry.captureException(err);
       console.error(`[ServiceSO] Customer page ${page} fetch failed:`, err);
@@ -243,7 +243,22 @@ export async function createServiceSo(
     }
   }
 
-  // Create DRAFT record
+  // 2. Validate products BEFORE creating DRAFT record (pure validation, no DB write)
+  const productIds = items.map(i => i.productId);
+  const dbProducts = await prisma!.internalProduct.findMany({
+    where: { id: { in: productIds } },
+    select: {
+      id: true, name: true, sku: true, description: true, sellPrice: true,
+      category: true, isActive: true, zohoItemId: true,
+    },
+  });
+
+  const lineItems = resolveProducts(dbProducts, items);
+  const totalAmount = lineItems.reduce(
+    (sum, li) => sum + li.unitPrice * li.quantity, 0
+  );
+
+  // Create DRAFT record (after validation passes)
   let requestId: string;
   try {
     const record = await prisma!.serviceSoRequest.create({
@@ -265,20 +280,6 @@ export async function createServiceSo(
   }
 
   try {
-    // 2. Resolve products from DB
-    const productIds = items.map(i => i.productId);
-    const dbProducts = await prisma!.internalProduct.findMany({
-      where: { id: { in: productIds } },
-      select: {
-        id: true, name: true, sku: true, description: true, sellPrice: true,
-        category: true, isActive: true, zohoItemId: true,
-      },
-    });
-
-    const lineItems = resolveProducts(dbProducts, items);
-    const totalAmount = lineItems.reduce(
-      (sum, li) => sum + li.unitPrice * li.quantity, 0
-    );
 
     // 3. Resolve HubSpot company → Zoho customer
     const { companyName, contactEmail } = await resolveCompanyForDeal(dealId);
