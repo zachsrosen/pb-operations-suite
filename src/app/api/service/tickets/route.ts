@@ -51,25 +51,35 @@ export async function GET(request: NextRequest) {
     // Only include stages that have tickets OR are in the pipeline
     const stageNames = orderedStageIds.map(id => stageMap[id]).filter(Boolean);
 
-    // Fetch all HubSpot owners for assignee dropdown (paginated)
+    // Derive owner filter options from tickets that actually have owners assigned.
+    // Fetch all HubSpot owners once (paginated), then filter to only IDs in the data.
+    const ownerIdsInData = new Set(
+      tickets.map(t => t.ownerId).filter((id): id is string => !!id)
+    );
+
     let owners: Array<{ id: string; name: string }> = [];
-    try {
-      let after: string | undefined;
-      do {
-        const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(
-          undefined, after, 100
-        );
-        for (const o of ownersResponse.results || []) {
-          owners.push({
-            id: o.id,
-            name: `${o.firstName || ""} ${o.lastName || ""}`.trim() || o.email || o.id,
-          });
-        }
-        after = ownersResponse.paging?.next?.after;
-      } while (after);
-      owners.sort((a, b) => a.name.localeCompare(b.name));
-    } catch {
-      console.warn("[ServiceTickets] Failed to fetch owners for dropdown");
+    if (ownerIdsInData.size > 0) {
+      try {
+        let after: string | undefined;
+        do {
+          const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(
+            undefined, after, 100
+          );
+          for (const o of ownersResponse.results || []) {
+            if (ownerIdsInData.has(o.id)) {
+              owners.push({
+                id: o.id,
+                name: `${o.firstName || ""} ${o.lastName || ""}`.trim() || o.email || o.id,
+              });
+            }
+          }
+          after = ownersResponse.paging?.next?.after;
+        } while (after);
+        owners.sort((a, b) => a.name.localeCompare(b.name));
+      } catch {
+        owners = [...ownerIdsInData].map(id => ({ id, name: id }));
+        console.warn("[ServiceTickets] Failed to resolve owner names, using IDs");
+      }
     }
 
     return NextResponse.json({

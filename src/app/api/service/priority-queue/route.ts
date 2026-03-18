@@ -146,25 +146,35 @@ export async function GET(request: NextRequest) {
         .filter((l): l is string => !!l)
     )].sort();
 
-    // Fetch all HubSpot owners for filter dropdown (paginated)
+    // Derive owner filter options from queue items that actually have owners assigned.
+    // Fetch all HubSpot owners once (paginated), then filter to only IDs in the data.
+    const ownerIdsInData = new Set(
+      queue.map(i => i.item.ownerId).filter((id): id is string => !!id)
+    );
+
     let owners: Array<{ id: string; name: string }> = [];
-    try {
-      let ownerAfter: string | undefined;
-      do {
-        const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(
-          undefined, ownerAfter, 100
-        );
-        for (const o of ownersResponse.results || []) {
-          owners.push({
-            id: o.id,
-            name: `${o.firstName || ""} ${o.lastName || ""}`.trim() || o.email || o.id,
-          });
-        }
-        ownerAfter = ownersResponse.paging?.next?.after;
-      } while (ownerAfter);
-      owners.sort((a, b) => a.name.localeCompare(b.name));
-    } catch {
-      console.warn("[PriorityQueue] Failed to fetch owners for dropdown");
+    if (ownerIdsInData.size > 0) {
+      try {
+        let ownerAfter: string | undefined;
+        do {
+          const ownersResponse = await hubspotClient.crm.owners.ownersApi.getPage(
+            undefined, ownerAfter, 100
+          );
+          for (const o of ownersResponse.results || []) {
+            if (ownerIdsInData.has(o.id)) {
+              owners.push({
+                id: o.id,
+                name: `${o.firstName || ""} ${o.lastName || ""}`.trim() || o.email || o.id,
+              });
+            }
+          }
+          ownerAfter = ownersResponse.paging?.next?.after;
+        } while (ownerAfter);
+        owners.sort((a, b) => a.name.localeCompare(b.name));
+      } catch {
+        owners = [...ownerIdsInData].map(id => ({ id, name: id }));
+        console.warn("[PriorityQueue] Failed to resolve owner names, using IDs");
+      }
     }
 
     return NextResponse.json({
