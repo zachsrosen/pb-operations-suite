@@ -13,6 +13,7 @@ jest.mock("@/lib/hubspot", () => ({
       },
       companies: {
         searchApi: { doSearch: jest.fn() },
+        batchApi: { read: jest.fn() },
       },
       associations: {
         batchApi: { read: jest.fn() },
@@ -447,16 +448,6 @@ describe("resolveContactDetail", () => {
       lastSyncedAt: new Date("2026-03-10T00:00:00Z"),
     }]);
 
-    // Zuper jobs — name/address-linked
-    mockPrismaFindMany.mockResolvedValue([{
-      jobUid: "j2",
-      jobTitle: "Inspection",
-      jobCategory: "Inspection",
-      jobStatus: "SCHEDULED",
-      scheduledStart: new Date("2026-04-01T09:00:00Z"),
-      lastSyncedAt: new Date("2026-03-15T00:00:00Z"),
-    }]);
-
     const detail = await resolveContactDetail("c1");
 
     expect(detail.contactId).toBe("c1");
@@ -478,10 +469,10 @@ describe("resolveContactDetail", () => {
     expect(detail.tickets[0].subject).toBe("Inverter Issue");
     expect(detail.tickets[0].priority).toBe("HIGH");
 
-    // Jobs — deduped, sorted by scheduledDate DESC
-    expect(detail.jobs).toHaveLength(2);
-    expect(detail.jobs[0].uid).toBe("j2"); // April > January
-    expect(detail.jobs[1].uid).toBe("j1");
+    // Jobs — only deal-linked (heuristic skipped when deal-linked found results)
+    expect(detail.jobs).toHaveLength(1);
+    expect(detail.jobs[0].uid).toBe("j1");
+    expect(mockPrismaFindMany).not.toHaveBeenCalled();
   });
 
   it("returns empty arrays when no associations exist", async () => {
@@ -537,7 +528,7 @@ describe("resolveContactDetail", () => {
     expect(detail.jobs).toEqual([]);
   });
 
-  it("deduplicates jobs from deal-linked and name/address paths", async () => {
+  it("uses name/address heuristic only when no deal-linked jobs exist", async () => {
     mockContactBatchRead.mockResolvedValue({
       results: [{
         id: "c1",
@@ -551,37 +542,28 @@ describe("resolveContactDetail", () => {
       }],
     });
 
-    // Has one deal
+    // No deals, no tickets, no company
     mockAssociationRead
-      .mockResolvedValueOnce({
-        results: [{ to: [{ id: "d1" }] }],
-      })
-      .mockResolvedValueOnce({ results: [] }); // no tickets
+      .mockResolvedValueOnce({ results: [] })  // deals
+      .mockResolvedValueOnce({ results: [] })  // tickets
+      .mockResolvedValueOnce({ results: [] }); // companies
 
-    mockDealBatchRead.mockResolvedValue({ results: [{
-      id: "d1",
-      properties: {
-        dealname: "Deal", dealstage: "won", pipeline: "default",
-        amount: null, pb_location: null, closedate: null,
-        hs_lastmodifieddate: "2026-01-01",
-      },
-    }] });
+    // No deal-linked jobs (empty dealIds)
+    mockGetZuperJobs.mockResolvedValue([]);
 
-    // Same job found via both paths
-    const sharedJob = {
-      jobUid: "j-shared",
-      jobTitle: "Shared Job",
+    // Heuristic finds a job by name+address
+    mockPrismaFindMany.mockResolvedValue([{
+      jobUid: "j-heuristic",
+      jobTitle: "Heuristic Job",
       jobCategory: "Construction",
       jobStatus: "STARTED",
       scheduledStart: new Date("2026-02-01T09:00:00Z"),
       lastSyncedAt: new Date("2026-03-01T00:00:00Z"),
-    };
-
-    mockGetZuperJobs.mockResolvedValue([sharedJob]);
-    mockPrismaFindMany.mockResolvedValue([sharedJob]);
+    }]);
 
     const detail = await resolveContactDetail("c1");
     expect(detail.jobs).toHaveLength(1);
-    expect(detail.jobs[0].uid).toBe("j-shared");
+    expect(detail.jobs[0].uid).toBe("j-heuristic");
+    expect(mockPrismaFindMany).toHaveBeenCalled();
   });
 });

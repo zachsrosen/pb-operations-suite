@@ -397,6 +397,36 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
     console.error("[CustomerResolver] Contact→ticket association failed:", err);
   }
 
+  // 3b. Resolve contact → company association for company name
+  // The contact's own `company` property may be blank even when associated.
+  let resolvedCompanyName: string | null = contactProps.company || null;
+  if (!resolvedCompanyName) {
+    try {
+      const resp = await hubspotClient.crm.associations.batchApi.read(
+        "contacts",
+        "companies",
+        { inputs: [{ id: contactId }] }
+      );
+      const companyIds: string[] = [];
+      for (const result of resp.results || []) {
+        for (const to of (result.to || []) as Array<{ id: string }>) {
+          companyIds.push(to.id);
+        }
+      }
+      if (companyIds.length > 0) {
+        const companyResp = await hubspotClient.crm.companies.batchApi.read({
+          inputs: [{ id: companyIds[0] }],
+          properties: ["name"],
+          propertiesWithHistory: [],
+        });
+        resolvedCompanyName = companyResp.results?.[0]?.properties?.name || null;
+      }
+    } catch (err) {
+      Sentry.captureException(err);
+      console.error("[CustomerResolver] Contact→company association failed:", err);
+    }
+  }
+
   // 4. Batch-read deal properties
   const deals: ContactDeal[] = [];
   const dealIds = Array.from(dealIdSet);
@@ -486,40 +516,55 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
     }
   }
 
-  // 6b. Name/address-linked jobs via Prisma
-  const fullName = [contactProps.firstname, contactProps.lastname].filter(Boolean).join(" ").trim();
-  const contactAddress = contactProps.address?.trim() || "";
+  // 6b. Name/address heuristic — only when deal-linked path found nothing.
+  // This catches jobs not linked via deal ID (e.g., jobs created before sync).
+  // To avoid false positives, require both name AND address when both are available.
+  if (jobMap.size === 0) {
+    const fullName = [contactProps.firstname, contactProps.lastname].filter(Boolean).join(" ").trim();
+    const contactAddress = contactProps.address?.trim() || "";
 
-  const orConditions: Array<Record<string, unknown>> = [];
-  if (fullName) {
-    orConditions.push({ projectName: { contains: fullName, mode: "insensitive" } });
-  }
-  if (contactAddress) {
-    orConditions.push({
-      customerAddress: { path: ["street"], string_contains: contactAddress },
-    });
-  }
+    // Build WHERE conditions: AND when both available, single-field only as last resort
+    let whereClause: Record<string, unknown> | null = null;
 
-  if (orConditions.length > 0) {
-    try {
-      const nameAddressJobs = await prisma.zuperJobCache.findMany({
-        where: { OR: orConditions },
-      });
-      for (const j of nameAddressJobs) {
-        if (!jobMap.has(j.jobUid)) {
-          jobMap.set(j.jobUid, {
-            uid: j.jobUid,
-            title: j.jobTitle || "Untitled Job",
-            category: j.jobCategory || null,
-            status: j.jobStatus || null,
-            scheduledDate: j.scheduledStart?.toISOString() || null,
-            createdAt: j.lastSyncedAt?.toISOString() || null,
-          });
+    if (fullName && contactAddress) {
+      // Both available — require both to match (tightest filter)
+      whereClause = {
+        AND: [
+          { projectName: { contains: fullName, mode: "insensitive" } },
+          { customerAddress: { path: ["street"], string_contains: contactAddress } },
+        ],
+      };
+    } else if (fullName) {
+      // Name only — use it alone (last resort)
+      whereClause = { projectName: { contains: fullName, mode: "insensitive" } };
+    } else if (contactAddress) {
+      // Address only — use it alone (last resort)
+      whereClause = {
+        customerAddress: { path: ["street"], string_contains: contactAddress },
+      };
+    }
+
+    if (whereClause) {
+      try {
+        const nameAddressJobs = await prisma.zuperJobCache.findMany({
+          where: whereClause,
+        });
+        for (const j of nameAddressJobs) {
+          if (!jobMap.has(j.jobUid)) {
+            jobMap.set(j.jobUid, {
+              uid: j.jobUid,
+              title: j.jobTitle || "Untitled Job",
+              category: j.jobCategory || null,
+              status: j.jobStatus || null,
+              scheduledDate: j.scheduledStart?.toISOString() || null,
+              createdAt: j.lastSyncedAt?.toISOString() || null,
+            });
+          }
         }
+      } catch (err) {
+        Sentry.captureException(err);
+        console.error("[CustomerResolver] Zuper name/address job lookup failed:", err);
       }
-    } catch (err) {
-      Sentry.captureException(err);
-      console.error("[CustomerResolver] Zuper name/address job lookup failed:", err);
     }
   }
 
@@ -538,7 +583,7 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
     email: contactProps.email || null,
     phone: contactProps.phone || null,
     address: formatContactAddress(contactProps),
-    companyName: contactProps.company || null,
+    companyName: resolvedCompanyName,
     deals,
     tickets,
     jobs,
