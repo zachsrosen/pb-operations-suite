@@ -44,19 +44,20 @@ function formatDate(dateStr: string | null): string {
   }
 }
 
-// NOTE: This page is a client component ("use client"), so env vars must use
-// NEXT_PUBLIC_ prefix. Ensure NEXT_PUBLIC_HUBSPOT_PORTAL_ID is set in Vercel
-// env config (mirrors the existing HUBSPOT_PORTAL_ID server-side var).
+// Matches DEFAULT_HUBSPOT_PORTAL_ID in src/lib/external-links.ts.
+// Hardcoded because this is a client component and can't read server-side env vars.
+const HUBSPOT_PORTAL_ID = "21710069";
+
 function hubspotDealUrl(dealId: string): string {
-  return `https://app.hubspot.com/contacts/${process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || ""}/deal/${dealId}`;
+  return `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${dealId}`;
 }
 
 function hubspotTicketUrl(ticketId: string): string {
-  return `https://app.hubspot.com/contacts/${process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || ""}/ticket/${ticketId}`;
+  return `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/ticket/${ticketId}`;
 }
 
 function hubspotContactUrl(contactId: string): string {
-  return `https://app.hubspot.com/contacts/${process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || ""}/contact/${contactId}`;
+  return `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/contact/${contactId}`;
 }
 
 // ---------------------------------------------------------------------------

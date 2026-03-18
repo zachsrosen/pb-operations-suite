@@ -51,9 +51,12 @@ export interface CustomerSummary {
   address: string;
   contactIds: string[];
   companyId: string | null;
-  dealCount: number;
-  ticketCount: number;
-  jobCount: number;
+  /** Null on search results (resolved lazily on detail). */
+  dealCount: number | null;
+  /** Null on search results (resolved lazily on detail). */
+  ticketCount: number | null;
+  /** Null on search results (resolved lazily on detail). */
+  jobCount: number | null;
 }
 
 export interface CustomerDeal {
@@ -378,9 +381,9 @@ export function groupSearchHits(hits: RawSearchHit[]): CustomerSummary[] {
       address: group.address,
       contactIds: group.contactIds,
       companyId: group.companyId,
-      dealCount: -1,
-      ticketCount: -1,
-      jobCount: -1,
+      dealCount: null,
+      ticketCount: null,
+      jobCount: null,
     });
   }
 
@@ -909,25 +912,33 @@ export async function resolveContactIdsFromGroupKey(
   }
 
   try {
-    const resp = await searchContactsWithRetry({
-      filterGroups: [{
-        filters: [
-          { propertyName: "zip", operator: ContactFilterOp.Eq, value: zipPart },
-        ],
-      }],
-      properties: ["address", "zip"],
-      limit: MAX_SEARCH_RESULTS,
-      after: "0",
-    });
-
-    // Post-filter to contacts whose normalized address matches exactly
+    // Paginate through all contacts in this ZIP, then exact-match on normalized address.
+    // Dense ZIPs may have many contacts; the target contact could be on any page.
     const contactIds: string[] = [];
-    for (const c of resp.results || []) {
-      const normalized = normalizeAddress(c.properties?.address || null, c.properties?.zip || null);
-      if (normalized === parsed.normalizedAddress) {
-        contactIds.push(c.id);
+    let after: string | undefined = "0";
+
+    while (after !== undefined) {
+      const resp = await searchContactsWithRetry({
+        filterGroups: [{
+          filters: [
+            { propertyName: "zip", operator: ContactFilterOp.Eq, value: zipPart },
+          ],
+        }],
+        properties: ["address", "zip"],
+        limit: BATCH_SIZE,
+        after,
+      });
+
+      for (const c of resp.results || []) {
+        const normalized = normalizeAddress(c.properties?.address || null, c.properties?.zip || null);
+        if (normalized === parsed.normalizedAddress) {
+          contactIds.push(c.id);
+        }
       }
+
+      after = resp.paging?.next?.after;
     }
+
     return contactIds;
   } catch (err) {
     Sentry.captureException(err);

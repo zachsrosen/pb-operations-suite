@@ -69,9 +69,9 @@ export async function GET(
           address: "",
           contactIds,
           companyId: parsed.companyId,
-          dealCount: -1,
-          ticketCount: -1,
-          jobCount: -1,
+          dealCount: null,
+          ticketCount: null,
+          jobCount: null,
         };
 
         return resolveCustomerDetail(summary);
