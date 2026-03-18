@@ -406,10 +406,21 @@ async function createCatalogRequests(
     // Check for an existing PENDING row with the same canonicalKey.
     const existing = await prisma.pendingCatalogPush.findFirst({
       where: { canonicalKey, status: "PENDING" },
-      select: { id: true },
+      select: { id: true, systems: true },
     });
 
-    if (existing) continue;
+    if (existing) {
+      // Merge HUBSPOT into systems if the existing row doesn't have it
+      // (e.g., created by BOM extraction with systems: ["INTERNAL"]).
+      const systems = Array.isArray(existing.systems) ? (existing.systems as string[]) : [];
+      if (!systems.includes("HUBSPOT")) {
+        await prisma.pendingCatalogPush.update({
+          where: { id: existing.id },
+          data: { systems: [...systems, "HUBSPOT"] },
+        });
+      }
+      continue;
+    }
 
     try {
       const created = await prisma.pendingCatalogPush.create({
