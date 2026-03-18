@@ -1934,6 +1934,60 @@ export async function fetchLineItemsForDeal(dealId: string): Promise<LineItem[]>
   }
 }
 
+/**
+ * Strict variant of fetchLineItemsForDeal that throws on API failure
+ * instead of returning []. Use for write flows where a silent empty
+ * array would cause data duplication.
+ */
+export async function fetchLineItemsForDealStrict(dealId: string): Promise<LineItem[]> {
+  const associationsResponse = await hubspotClient.crm.associations.batchApi.read(
+    "deals",
+    "line_items",
+    { inputs: [{ id: dealId }] }
+  );
+
+  const associations = associationsResponse.results?.[0]?.to || [];
+  if (associations.length === 0) return [];
+
+  const lineItemIds = associations.map((a) => a.id);
+
+  const lineItemsResponse = await hubspotClient.crm.lineItems.batchApi.read({
+    inputs: lineItemIds.map((id) => ({ id })),
+    properties: [
+      "hs_product_id",
+      "name",
+      "hs_sku",
+      "sku",
+      "description",
+      "quantity",
+      "price",
+      "amount",
+      "product_category",
+      "manufacturer",
+      "dc_size",
+      "ac_size",
+      "energy_storage_capacity",
+    ],
+    propertiesWithHistory: [],
+  });
+
+  return lineItemsResponse.results.map((item) => ({
+    hubspotProductId: String(item.properties.hs_product_id || "").trim() || null,
+    id: item.id,
+    name: String(item.properties.name || ""),
+    sku: String(item.properties.hs_sku || item.properties.sku || ""),
+    description: String(item.properties.description || ""),
+    quantity: Number(item.properties.quantity) || 1,
+    price: Number(item.properties.price) || 0,
+    amount: Number(item.properties.amount) || 0,
+    productCategory: String(item.properties.product_category || ""),
+    manufacturer: String(item.properties.manufacturer || ""),
+    dcSize: Number(item.properties.dc_size) || 0,
+    acSize: Number(item.properties.ac_size) || 0,
+    energyStorageCapacity: Number(item.properties.energy_storage_capacity) || 0,
+  }));
+}
+
 function trimOrNull(value: string | null | undefined): string | null {
   const trimmed = String(value || "").trim();
   return trimmed || null;
