@@ -59,6 +59,13 @@ export const queryKeys = {
     detail: (ticketId: string) =>
       [...queryKeys.serviceTickets.root, "detail", ticketId] as const,
   },
+  serviceCustomers: {
+    root: ["serviceCustomers"] as const,
+    search: (query: string) =>
+      [...queryKeys.serviceCustomers.root, "search", query] as const,
+    detail: (groupKey: string) =>
+      [...queryKeys.serviceCustomers.root, "detail", groupKey] as const,
+  },
 } as const;
 
 /**
@@ -78,6 +85,7 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("forecast")) return [queryKeys.forecasting.root];
   if (serverKey.startsWith("service-tickets")) return [queryKeys.serviceTickets.root];
   if (serverKey.startsWith("service:priority")) return [queryKeys.servicePriority.root];
+  if (serverKey.startsWith("service:customers")) return [queryKeys.serviceCustomers.root];
   // pipelines: no RQ consumer depends on it in this batch
   if (serverKey.startsWith("pipelines")) return [];
   return [];

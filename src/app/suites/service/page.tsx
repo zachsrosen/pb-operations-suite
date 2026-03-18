@@ -18,6 +18,13 @@ const LINKS: SuitePageCard[] = [
     section: "Service",
   },
   {
+    href: "/dashboards/service-customers",
+    title: "Customer History",
+    description: "Search customers by name, email, phone, or address — see all deals, tickets, and jobs.",
+    tag: "HISTORY",
+    section: "Service",
+  },
+  {
     href: "/dashboards/service-scheduler",
     title: "Service Schedule",
     description: "Calendar view of Zuper service visit and service revisit jobs.",
