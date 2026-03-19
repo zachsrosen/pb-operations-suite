@@ -274,9 +274,13 @@ export async function createServiceSo(
     }));
 
     const refNumber = dealName.length > 50 ? dealName.slice(0, 50) : dealName;
+    // Generate unique SO number: SSO-{dealId}-{short token} to allow multiple SOs per deal
+    const shortToken = requestToken.slice(0, 8);
+    const soNumber = `SSO-${dealId}-${shortToken}`;
 
     const zohoResult = await zohoInventory.createSalesOrder({
       customer_id: zohoCustomerId,
+      salesorder_number: soNumber,
       reference_number: refNumber,
       notes: `Service SO for ${dealAddress}`,
       status: "draft",
