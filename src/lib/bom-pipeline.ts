@@ -834,7 +834,7 @@ export async function runDesignCompletePipeline(
         version: snapshotResult.version,
         generatedBy: "BOM Pipeline",
         generatedAt,
-      }) as React.ReactElement;
+      }) as Parameters<typeof renderToBuffer>[0];
 
       const rawBuffer = await renderToBuffer(pdfElement);
       bomPdfBuffer = Buffer.from(rawBuffer);
