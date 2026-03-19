@@ -60,7 +60,7 @@ export async function fetchRevenueDeals(year: number): Promise<DealLike[]> {
   // Deduplication prevents redundant filter groups (e.g. 4 solar groups
   // all using construction_complete_date on the project pipeline).
   const seen = new Set<string>();
-  const filterGroups: { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[] = [];
+  const filterGroups: { filters: { propertyName: string; operator: FilterOperatorEnum; value: string }[] }[] = [];
 
   for (const group of Object.values(REVENUE_GROUPS)) {
     for (const rule of group.recognition) {
