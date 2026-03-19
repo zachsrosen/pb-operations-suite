@@ -20,7 +20,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Database not available" }, { status: 503 });
   }
 
-  const wantCsv = request.headers.get("accept")?.includes("text/csv");
+  const url = new URL(request.url);
+  const wantCsv = url.searchParams.get("format") === "csv" ||
+    request.headers.get("accept")?.includes("text/csv");
 
   // 1. Load all InternalProducts with external links
   const products = await prisma.internalProduct.findMany({
