@@ -5,7 +5,7 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
-import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES, DEAL_PROPERTIES, getStageMaps, getActiveStages } from "@/lib/deals-pipeline";
+import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES, DEAL_PROPERTIES, getStageMaps, getActiveStages, getStageOrder } from "@/lib/deals-pipeline";
 import { chunk } from "@/lib/utils";
 
 /**
@@ -243,10 +243,12 @@ export async function GET(request: NextRequest) {
         true // force refresh
       ).catch(() => {/* swallow — best effort */});
     }
+    const stageOrderMap = await getStageOrder();
     const body = JSON.stringify({
       type: "full",
       deals,
       total: deals.length,
+      stageOrder: stageOrderMap[pipeline] || [],
       cached: true,
       stale: cached.stale,
       lastUpdated: new Date(Date.now() - cached.age).toISOString(),
@@ -373,10 +375,12 @@ export async function GET(request: NextRequest) {
         appCache.set(CACHE_KEYS.DEALS(pipeline), allTransformed);
 
         const finalFiltered = sortDeals(filterDeals(allTransformed, activeOnly, location, stage), sortBy, sortOrder);
+        const doneStageOrder = await getStageOrder();
         send({
           type: "done",
           deals: finalFiltered,
           total: finalFiltered.length,
+          stageOrder: doneStageOrder[pipeline] || [],
           cached: false,
           stale: false,
           lastUpdated: new Date().toISOString(),

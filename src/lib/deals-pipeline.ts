@@ -120,6 +120,7 @@ export const ACTIVE_STAGES: Record<string, string[]> = {
 const STAGE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 let _dynamicStageMaps: Record<string, Record<string, string>> | null = null;
 let _dynamicActiveStages: Record<string, string[]> | null = null;
+let _dynamicStageOrder: Record<string, string[]> | null = null;
 let _stageCacheTime = 0;
 let _stageInflight: Promise<void> | null = null;
 
@@ -138,15 +139,24 @@ async function _fetchPipelineStages(): Promise<void> {
       idToKey[id] = key;
     }
 
+    const stageOrder: Record<string, string[]> = {};
+
     for (const pipeline of pipelines.results || []) {
       const key = idToKey[pipeline.id];
       if (!key) continue; // pipeline we don't track
 
+      // Sort stages by displayOrder to match pipeline flow
+      const sortedStages = [...(pipeline.stages || [])].sort(
+        (a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0)
+      );
+
       const stageMap: Record<string, string> = {};
       const active: string[] = [];
+      const ordered: string[] = [];
 
-      for (const stage of pipeline.stages || []) {
+      for (const stage of sortedStages) {
         stageMap[stage.id] = stage.label;
+        ordered.push(stage.label);
         const isTerminal = TERMINAL_KEYWORDS.some(kw =>
           stage.label.toLowerCase().includes(kw)
         );
@@ -157,10 +167,12 @@ async function _fetchPipelineStages(): Promise<void> {
 
       stageMaps[key] = stageMap;
       activeStages[key] = active;
+      stageOrder[key] = ordered;
     }
 
     _dynamicStageMaps = stageMaps;
     _dynamicActiveStages = activeStages;
+    _dynamicStageOrder = stageOrder;
     _stageCacheTime = Date.now();
   } catch (err) {
     console.warn("[DealsPipeline] Failed to fetch pipeline stages from HubSpot, using static fallback:", err);
@@ -201,6 +213,32 @@ export async function getActiveStages(): Promise<Record<string, string[]>> {
   await _stageInflight;
 
   return _dynamicActiveStages || ACTIVE_STAGES;
+}
+
+/**
+ * Get pipeline-ordered stage names (all stages, including terminal).
+ * Order matches HubSpot's displayOrder for each pipeline.
+ */
+export async function getStageOrder(): Promise<Record<string, string[]>> {
+  if (_dynamicStageOrder && Date.now() - _stageCacheTime < STAGE_CACHE_TTL) {
+    return _dynamicStageOrder;
+  }
+
+  if (!_stageInflight) {
+    _stageInflight = _fetchPipelineStages().finally(() => { _stageInflight = null; });
+  }
+  await _stageInflight;
+
+  // Fallback: derive from static STAGE_MAPS (values in insertion order)
+  if (!_dynamicStageOrder) {
+    const fallback: Record<string, string[]> = {};
+    for (const [key, map] of Object.entries(STAGE_MAPS)) {
+      fallback[key] = Object.values(map);
+    }
+    return fallback;
+  }
+
+  return _dynamicStageOrder;
 }
 
 /** HubSpot deal properties fetched by the deals API endpoints */

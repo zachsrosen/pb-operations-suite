@@ -18,6 +18,7 @@ interface UseProgressiveDealsReturn<T> {
   progress: { loaded: number; total: number | null } | null;
   error: string | null;
   lastUpdated: string | null;
+  stageOrder: string[];
   refetch: () => void;
 }
 
@@ -48,6 +49,7 @@ export function useProgressiveDeals<T = Record<string, unknown>>(
   // Streaming-specific state (not cacheable — ephemeral UI feedback)
   const [loadingMore, setLoadingMore] = useState(false);
   const [progress, setProgress] = useState<{ loaded: number; total: number | null } | null>(null);
+  const [stageOrder, setStageOrder] = useState<string[]>([]);
 
   const requestIdRef = useRef(0);
   const queryClient = useQueryClient();
@@ -104,6 +106,7 @@ export function useProgressiveDeals<T = Record<string, unknown>>(
               cached?: boolean;
               stale?: boolean;
               lastUpdated?: string;
+              stageOrder?: string[];
               error?: string;
             };
             try {
@@ -114,6 +117,7 @@ export function useProgressiveDeals<T = Record<string, unknown>>(
 
             if (msg.type === "full") {
               finalDeals = msg.deals ?? [];
+              if (msg.stageOrder) setStageOrder(msg.stageOrder);
               setLoadingMore(false);
               setProgress(null);
               return finalDeals;
@@ -143,6 +147,7 @@ export function useProgressiveDeals<T = Record<string, unknown>>(
 
             if (msg.type === "done") {
               finalDeals = msg.deals ?? accumulated;
+              if (msg.stageOrder) setStageOrder(msg.stageOrder);
               setLoadingMore(false);
               setProgress(null);
               return finalDeals;
@@ -171,6 +176,7 @@ export function useProgressiveDeals<T = Record<string, unknown>>(
     lastUpdated: query.dataUpdatedAt
       ? new Date(query.dataUpdatedAt).toLocaleTimeString()
       : null,
+    stageOrder,
     refetch: () => {
       query.refetch();
     },

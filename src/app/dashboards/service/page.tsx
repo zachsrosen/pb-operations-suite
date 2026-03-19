@@ -92,6 +92,7 @@ export default function ServicePipelinePage() {
     progress,
     error,
     lastUpdated,
+    stageOrder,
     refetch: fetchData,
   } = useProgressiveDeals<Deal>({
     params: { pipeline: "service", active: "false" },
@@ -100,6 +101,7 @@ export default function ServicePipelinePage() {
   // Multiselect filter state (empty = show all)
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
   const [filterStages, setFilterStages] = useState<string[]>([]);
+  const [activeOnly, setActiveOnly] = useState(true);
 
   // Activity tracking
   const { trackDashboardView, trackFilter } = useActivityTracking();
@@ -141,16 +143,18 @@ export default function ServicePipelinePage() {
     [allDeals]
   );
 
-  // Derive stages from actual deal data (dynamic, not hardcoded)
+  // Derive stages from actual deal data, ordered by pipeline flow
   const allStages = useMemo(() => {
-    const seen = new Map<string, number>();
-    for (const d of allDeals) {
-      if (d.stage && !seen.has(d.stage)) {
-        seen.set(d.stage, seen.size);
-      }
+    const stagesInData = new Set(allDeals.map(d => d.stage).filter(Boolean));
+    if (stageOrder.length > 0) {
+      // Use pipeline-ordered stages, then append any unknown stages at the end
+      const ordered = stageOrder.filter(s => stagesInData.has(s));
+      const unknown = [...stagesInData].filter(s => !stageOrder.includes(s));
+      return [...ordered, ...unknown];
     }
-    return [...seen.keys()];
-  }, [allDeals]);
+    // Fallback: insertion order from data
+    return [...stagesInData];
+  }, [allDeals, stageOrder]);
 
   const stageOptions: FilterOption[] = useMemo(
     () => allStages.map(s => ({ value: s, label: s })),
@@ -167,11 +171,12 @@ export default function ServicePipelinePage() {
   const filteredDeals = useMemo(
     () =>
       allDeals.filter((d) => {
+        if (activeOnly && !d.isActive) return false;
         if (filterLocations.length > 0 && !filterLocations.includes(d.pbLocation)) return false;
         if (filterStages.length > 0 && !filterStages.includes(d.stage)) return false;
         return true;
       }),
-    [allDeals, filterLocations, filterStages]
+    [allDeals, filterLocations, filterStages, activeOnly]
   );
 
   // Active deals from filtered set
@@ -324,6 +329,16 @@ export default function ServicePipelinePage() {
         selected={filterStages}
         onChange={setFilterStages}
       />
+      <button
+        onClick={() => setActiveOnly(!activeOnly)}
+        className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+          activeOnly
+            ? "bg-blue-600 text-white"
+            : "bg-surface-2 text-muted hover:text-foreground"
+        }`}
+      >
+        Active Only
+      </button>
       <button
         onClick={fetchData}
         className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-foreground"

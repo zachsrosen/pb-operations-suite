@@ -5,7 +5,7 @@ import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { requireApiAuth } from "@/lib/api-auth";
-import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES, DEAL_PROPERTIES, getStageMaps, getActiveStages } from "@/lib/deals-pipeline";
+import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES, DEAL_PROPERTIES, getStageMaps, getActiveStages, getStageOrder } from "@/lib/deals-pipeline";
 import { chunk } from "@/lib/utils";
 
 const hubspotClient = new Client({
@@ -377,6 +377,10 @@ export async function GET(request: NextRequest) {
       };
     }
 
+    // Get pipeline-ordered stage names for UI
+    const stageOrderMap = await getStageOrder();
+    const stageOrder = stageOrderMap[pipeline] || [];
+
     return NextResponse.json({
       deals,
       count: deals.length,
@@ -386,6 +390,7 @@ export async function GET(request: NextRequest) {
         stageCounts,
         locationCounts,
       },
+      stageOrder,
       pagination: paginationMeta,
       pipeline,
       cached,
