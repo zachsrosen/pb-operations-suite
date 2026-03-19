@@ -631,7 +631,13 @@ export class ZohoInventoryClient {
    * Returns { item_id, zohoName, zohoSku } so callers can verify the match,
    * or null if no match found.
    */
-  async findItemIdByName(query: string): Promise<{ item_id: string; zohoName: string; zohoSku?: string } | null> {
+  async findItemIdByName(query: string): Promise<{
+    item_id: string;
+    zohoName: string;
+    zohoSku?: string;
+    vendor_id?: string;
+    vendor_name?: string;
+  } | null> {
     if (!query || query.trim().length < 2) return null;
     const items = await this.getItemsForMatching();
 
@@ -643,7 +649,15 @@ export class ZohoInventoryClient {
         const hit = items.find(i => i.sku && normalizeName(i.sku) === skuQ);
         // If override matches but SKU isn't in catalog, return null rather than
         // falling through to fuzzy matching (avoids substituting wrong product)
-        return hit ? { item_id: hit.item_id, zohoName: hit.name, zohoSku: hit.sku } : null;
+        return hit
+          ? {
+              item_id: hit.item_id,
+              zohoName: hit.name,
+              zohoSku: hit.sku,
+              vendor_id: hit.vendor_id,
+              vendor_name: hit.vendor_name,
+            }
+          : null;
       }
     }
 
@@ -651,16 +665,40 @@ export class ZohoInventoryClient {
 
     // 1. Exact name match
     const exactName = items.find(i => normalizeName(i.name) === q);
-    if (exactName) return { item_id: exactName.item_id, zohoName: exactName.name, zohoSku: exactName.sku };
+    if (exactName) {
+      return {
+        item_id: exactName.item_id,
+        zohoName: exactName.name,
+        zohoSku: exactName.sku,
+        vendor_id: exactName.vendor_id,
+        vendor_name: exactName.vendor_name,
+      };
+    }
 
     // 2. Exact SKU match
     const exactSku = items.find(i => i.sku && normalizeName(i.sku) === q);
-    if (exactSku) return { item_id: exactSku.item_id, zohoName: exactSku.name, zohoSku: exactSku.sku };
+    if (exactSku) {
+      return {
+        item_id: exactSku.item_id,
+        zohoName: exactSku.name,
+        zohoSku: exactSku.sku,
+        vendor_id: exactSku.vendor_id,
+        vendor_name: exactSku.vendor_name,
+      };
+    }
 
     // 3. Zoho SKU contains query (e.g. query "HIN-T440NF(BK)" → SKU "HYU HIN-T440NF(BK)")
     if (q.length >= 3) {
       const skuContains = items.find(i => i.sku && normalizeName(i.sku).includes(q));
-      if (skuContains) return { item_id: skuContains.item_id, zohoName: skuContains.name, zohoSku: skuContains.sku };
+      if (skuContains) {
+        return {
+          item_id: skuContains.item_id,
+          zohoName: skuContains.name,
+          zohoSku: skuContains.sku,
+          vendor_id: skuContains.vendor_id,
+          vendor_name: skuContains.vendor_name,
+        };
+      }
     }
 
     // 4. Query contains Zoho SKU (only if SKU is substantive)
@@ -669,18 +707,42 @@ export class ZohoInventoryClient {
       const s = normalizeName(i.sku);
       return s.length >= 5 && q.includes(s);
     });
-    if (queryContainsSku) return { item_id: queryContainsSku.item_id, zohoName: queryContainsSku.name, zohoSku: queryContainsSku.sku };
+    if (queryContainsSku) {
+      return {
+        item_id: queryContainsSku.item_id,
+        zohoName: queryContainsSku.name,
+        zohoSku: queryContainsSku.sku,
+        vendor_id: queryContainsSku.vendor_id,
+        vendor_name: queryContainsSku.vendor_name,
+      };
+    }
 
     // 5. Zoho name contains query
     const nameContains = items.find(i => normalizeName(i.name).includes(q));
-    if (nameContains) return { item_id: nameContains.item_id, zohoName: nameContains.name, zohoSku: nameContains.sku };
+    if (nameContains) {
+      return {
+        item_id: nameContains.item_id,
+        zohoName: nameContains.name,
+        zohoSku: nameContains.sku,
+        vendor_id: nameContains.vendor_id,
+        vendor_name: nameContains.vendor_name,
+      };
+    }
 
     // 6. Query contains Zoho name (only if Zoho name is substantive)
     const queryContains = items.find(i => {
       const n = normalizeName(i.name);
       return n.length >= 5 && q.includes(n);
     });
-    if (queryContains) return { item_id: queryContains.item_id, zohoName: queryContains.name, zohoSku: queryContains.sku };
+    if (queryContains) {
+      return {
+        item_id: queryContains.item_id,
+        zohoName: queryContains.name,
+        zohoSku: queryContains.sku,
+        vendor_id: queryContains.vendor_id,
+        vendor_name: queryContains.vendor_name,
+      };
+    }
 
     return null;
   }

@@ -40,6 +40,12 @@ export { type DrivePdfFile, getDriveToken, listDrivePdfs, pickBestPlanset, downl
 import { extractBomFromPdf } from "@/lib/bom-extract";
 import { saveBomSnapshot, type BomData } from "@/lib/bom-snapshot";
 import { createSalesOrder } from "@/lib/bom-so-create";
+import {
+  createPurchaseOrders,
+  parseZohoPurchaseOrders,
+  resolvePoVendorGroups,
+  type BomData as PoBomData,
+} from "@/lib/bom-po-create";
 import { fetchPrimaryContactId } from "@/lib/hubspot";
 import { resolveCustomer } from "@/lib/bom-customer-resolve";
 import { sendPipelineNotification } from "@/lib/email";
@@ -130,6 +136,13 @@ const STEP_RETRY_POLICIES: Partial<Record<BomPipelineStep, StepRetryPolicy>> = {
     retryablePatterns: DEFAULT_RETRYABLE_PATTERNS,
   },
   CREATE_SO: {
+    maxAttempts: 2,
+    baseDelayMs: 3_000,
+    jitterMs: 1_000,
+    retryableStatuses: DEFAULT_RETRYABLE_STATUSES,
+    retryablePatterns: DEFAULT_RETRYABLE_PATTERNS,
+  },
+  CREATE_PO: {
     maxAttempts: 2,
     baseDelayMs: 3_000,
     jitterMs: 1_000,
@@ -815,14 +828,13 @@ export async function runDesignCompletePipeline(
       const generatedAt = new Date().toLocaleDateString("en-US", {
         year: "numeric", month: "short", day: "numeric",
       });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const pdfElement = React.createElement(BomPdfDocument, {
         bom: extractResult.bom as Parameters<typeof BomPdfDocument>[0]["bom"],
         dealName,
         version: snapshotResult.version,
         generatedBy: "BOM Pipeline",
         generatedAt,
-      }) as React.ReactElement<any>;
+      }) as React.ReactElement;
 
       const rawBuffer = await renderToBuffer(pdfElement);
       bomPdfBuffer = Buffer.from(rawBuffer);
@@ -943,15 +955,76 @@ export async function runDesignCompletePipeline(
       unmatchedCount: soResult.unmatchedCount,
     });
 
+    // ── Step 7: Create draft Purchase Orders (best-effort, partial failures allowed) ──
+    currentStep = "CREATE_PO";
+
+    let poResult: {
+      created: Array<{ vendorId: string; vendorName: string; poId: string; poNumber: string | null; itemCount: number }>;
+      failed: Array<{ vendorId: string; vendorName: string; error: string }>;
+      skippedExisting: Array<{ vendorId: string; vendorName: string; poId: string; poNumber: string | null; itemCount: number }>;
+    } = {
+      created: [],
+      failed: [],
+      skippedExisting: [],
+    };
+    let poUnassignedItems: Array<{ name: string; quantity: number }> = [];
+
+    try {
+      const poSnapshot = await prisma.projectBomSnapshot.findFirst({
+        where: { id: snapshotResult.id },
+      });
+      if (poSnapshot) {
+        const poBomData = (poSnapshot.bomData ?? {}) as PoBomData;
+        const poGrouping = await resolvePoVendorGroups(poBomData);
+        poUnassignedItems = poGrouping.unassignedItems.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+        }));
+
+        const { result } = await withRetry("CREATE_PO", () => createPurchaseOrders({
+          snapshotId: poSnapshot.id,
+          bomData: poBomData,
+          vendorGroups: poGrouping.vendorGroups,
+          existingPos: parseZohoPurchaseOrders(poSnapshot.zohoPurchaseOrders),
+          dealName: poSnapshot.dealName,
+          version: poSnapshot.version,
+          address: poBomData.project?.address,
+          actor: PIPELINE_ACTOR,
+        }), retryObs);
+        poResult = result;
+      }
+    } catch (poError) {
+      const message = poError instanceof Error ? poError.message : String(poError);
+      poResult.failed.push({
+        vendorId: "pipeline",
+        vendorName: "Pipeline PO Creation",
+        error: message,
+      });
+      console.error("[bom-pipeline] PO creation step failed:", poError);
+    }
+
+    await updateRun(runId, {
+      metadata: {
+        customerMatchMethod,
+        searchAttempts,
+        purchaseOrders: [...poResult.skippedExisting, ...poResult.created],
+        poFailed: poResult.failed,
+        poUnassignedItems,
+      },
+    });
+
     // Determine final status
-    const isPartial = soResult.unmatchedCount > 0;
-    const finalStatus = soResult.alreadyExisted
+    const isPartial =
+      soResult.unmatchedCount > 0 ||
+      poResult.failed.length > 0 ||
+      poUnassignedItems.length > 0;
+    const finalStatus = soResult.alreadyExisted && !isPartial
       ? "succeeded"
       : isPartial
         ? "partial"
         : "succeeded";
 
-    // ── Step 7: Log + Notify ──
+    // ── Step 8: Log + Notify ──
     currentStep = "NOTIFY";
     const durationMs = Date.now() - startedAt;
 
@@ -975,6 +1048,9 @@ export async function runDesignCompletePipeline(
         salesorderNumber: soResult.salesorder_number,
         unmatchedCount: soResult.unmatchedCount,
         alreadyExisted: soResult.alreadyExisted,
+        purchaseOrderCount: poResult.created.length + poResult.skippedExisting.length,
+        purchaseOrderFailures: poResult.failed,
+        poUnassignedItems,
       },
       requestPath: PIPELINE_ACTOR.requestPath,
       requestMethod: PIPELINE_ACTOR.requestMethod,

@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import type { PoGroupingResult, ZohoPurchaseOrderEntry } from "@/lib/bom-po-create";
 // PDF upload uses chunked /api/bom/chunk — stays on our domain, no CORS issues
 
 /* ------------------------------------------------------------------ */
@@ -153,8 +154,18 @@ interface BomSnapshot {
   blobUrl: string | null;
   savedBy: string | null;
   createdAt: string;
-  zohoPoId: string | null;
+  zohoPurchaseOrders: ZohoPurchaseOrderEntry[] | null;
   zohoSoId: string | null;
+}
+
+function getPreviewPurchaseOrderCount(preview: PoGroupingResult, unassignedVendorId: string): number {
+  const baseCount = preview.vendorGroups.length;
+  if (!unassignedVendorId) return baseCount;
+  const hasMovableUnassigned = preview.unassignedItems.some((item) => !!item.zohoItemId);
+  if (!hasMovableUnassigned) return baseCount;
+  return preview.vendorGroups.some((group) => group.vendorId === unassignedVendorId)
+    ? baseCount
+    : baseCount + 1;
 }
 
 /* One row in the diff view */
@@ -958,8 +969,11 @@ function BomDashboardInner() {
   const [zohoVendors, setZohoVendors] = useState<{ contact_id: string; contact_name: string }[] | null>(null);
   const [vendorsLoading, setVendorsLoading] = useState(false);
   const [zohoVendorError, setZohoVendorError] = useState<string | null>(null);
-  const [selectedVendorId, setSelectedVendorId] = useState<string>("");
-  const [zohoPoId, setZohoPoId] = useState<string | null>(null);
+  const [unassignedVendorId, setUnassignedVendorId] = useState<string>("");
+  const [zohoPurchaseOrders, setZohoPurchaseOrders] = useState<ZohoPurchaseOrderEntry[] | null>(null);
+  const [poPreview, setPoPreview] = useState<PoGroupingResult | null>(null);
+  const [poFailures, setPoFailures] = useState<Array<{ vendorId: string; vendorName: string; error: string }>>([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [creatingPo, setCreatingPo] = useState(false);
   // Zoho SO state
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>("");
@@ -1172,7 +1186,15 @@ function BomDashboardInner() {
 
   /* ---- Load history when a project is linked ---- */
   useEffect(() => {
-    if (!linkedProject) { setSnapshots([]); setSavedVersion(null); setZohoPoId(null); return; }
+    if (!linkedProject) {
+      setSnapshots([]);
+      setSavedVersion(null);
+      setZohoPurchaseOrders(null);
+      setPoPreview(null);
+      setUnassignedVendorId("");
+      setPoFailures([]);
+      return;
+    }
     setHistoryLoading(true);
     const autoLoad = searchParams.get("load") === "latest";
     fetch(`/api/bom/history?dealId=${encodeURIComponent(linkedProject.hs_object_id)}`)
@@ -1184,7 +1206,10 @@ function BomDashboardInner() {
           const latest = data.snapshots[0]; // newest-first from API
           loadBomData(latest.bomData);
           setSavedVersion(latest.version);
-          setZohoPoId(latest.zohoPoId ?? null);
+          setZohoPurchaseOrders(latest.zohoPurchaseOrders ?? null);
+          setPoPreview(null);
+          setUnassignedVendorId("");
+          setPoFailures([]);
           setZohoSoId(latest.zohoSoId ?? null);
         }
       })
@@ -1323,10 +1348,12 @@ function BomDashboardInner() {
       setSavedVersion(saved.version);
       setSavedSnapshotId(saved.id);
       setHubspotPushResult(null);
-      setZohoPoId(null);            // New save = no PO yet
+      setZohoPurchaseOrders(null);  // New save = no PO yet
+      setPoPreview(null);
+      setPoFailures([]);
       setZohoSoId(null);            // New save = no SO yet
       setZohoVendors(null);         // Re-fetch vendors for this project on next render
-      setSelectedVendorId("");      // Clear stale vendor selection
+      setUnassignedVendorId("");    // Clear stale vendor selection
       setSelectedCustomerId("");    // Clear stale customer selection
       setSelectedCustomerName("");  // Clear stale customer name
       setCustomerMatchMethod(null);
@@ -1380,9 +1407,29 @@ function BomDashboardInner() {
     }
   }, [linkedProject, addToast, session, runCustomerAutoMatch]);
 
-  /* ---- Create Zoho PO ---- */
+  /* ---- Preview Zoho POs ---- */
+  const previewPurchaseOrders = useCallback(async () => {
+    if (!linkedProject || !savedVersion) return;
+    setPreviewLoading(true);
+    try {
+      const res = await fetch(`/api/bom/po-preview?dealId=${encodeURIComponent(linkedProject.hs_object_id)}&version=${savedVersion}`);
+      const data = await res.json() as PoGroupingResult & { error?: string };
+      if (!res.ok) {
+        addToast({ type: "error", title: data.error ?? "Failed to preview purchase orders" });
+        return;
+      }
+      setPoPreview(data);
+      setPoFailures([]);
+    } catch {
+      addToast({ type: "error", title: "Network error previewing purchase orders" });
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [linkedProject, savedVersion, addToast]);
+
+  /* ---- Create Zoho POs ---- */
   const createPo = useCallback(async () => {
-    if (!linkedProject || !savedVersion || !selectedVendorId) return;
+    if (!linkedProject || !savedVersion) return;
     setCreatingPo(true);
     try {
       const res = await fetch("/api/bom/create-po", {
@@ -1391,38 +1438,38 @@ function BomDashboardInner() {
         body: JSON.stringify({
           dealId: linkedProject.hs_object_id,
           version: savedVersion,
-          vendorId: selectedVendorId,
+          ...(unassignedVendorId ? { unassignedVendorId } : {}),
         }),
       });
       const data = await res.json() as {
-        purchaseorder_id?: string;
-        purchaseorder_number?: string;
-        unmatchedCount?: number;
-        unmatchedItems?: string[];
-        matchedItems?: Array<{ bomName: string; zohoName: string }>;
+        purchaseOrders?: ZohoPurchaseOrderEntry[];
+        unassignedItems?: Array<{ name: string; qty: number }>;
+        failed?: Array<{ vendorId: string; vendorName: string; error: string }>;
         error?: string;
       };
-      if (!res.ok || !data.purchaseorder_id) {
-        addToast({ type: "error", title: data.error ?? "Failed to create PO" });
+      if (!res.ok || !data.purchaseOrders) {
+        addToast({ type: "error", title: data.error ?? "Failed to create purchase orders" });
         return;
       }
-      setZohoPoId(data.purchaseorder_id);
-      const unmatch = data.unmatchedCount ?? 0;
-      const skippedList = data.unmatchedItems ?? [];
-      const matchedList = data.matchedItems ?? [];
-      const matchSummary = matchedList.map(m => `${m.bomName} → ${m.zohoName}`).join("\n");
-      const skipSummary = skippedList.length > 0 ? `\nSkipped: ${skippedList.join(", ")}` : "";
+      setZohoPurchaseOrders(data.purchaseOrders);
+      setPoFailures(data.failed ?? []);
+      setPoPreview(null);
+      const failedCount = data.failed?.length ?? 0;
+      const unassignedCount = data.unassignedItems?.length ?? 0;
       addToast({
-        type: unmatch > 0 ? "warning" : "success",
-        title: `PO ${data.purchaseorder_number ?? ""} created — ${matchedList.length} matched, ${unmatch} skipped`,
-        ...(matchSummary || skipSummary ? { description: matchSummary + skipSummary } : {}),
+        type: failedCount > 0 || unassignedCount > 0 ? "warning" : "success",
+        title: `${data.purchaseOrders.length} purchase order(s) linked`,
+        message:
+          failedCount > 0 || unassignedCount > 0
+            ? `${failedCount} failed, ${unassignedCount} still unassigned`
+            : undefined,
       });
     } catch {
-      addToast({ type: "error", title: "Network error creating PO" });
+      addToast({ type: "error", title: "Network error creating purchase orders" });
     } finally {
       setCreatingPo(false);
     }
-  }, [linkedProject, savedVersion, selectedVendorId, addToast]);
+  }, [linkedProject, savedVersion, unassignedVendorId, addToast]);
 
   /* ---- Create Zoho SO ---- */
   const createSo = useCallback(async () => {
@@ -1528,10 +1575,12 @@ function BomDashboardInner() {
         setSavedVersion(null);
         setSavedSnapshotId(null);
         setHubspotPushResult(null);
-        setZohoPoId(null);
+        setZohoPurchaseOrders(null);
+        setPoPreview(null);
+        setPoFailures([]);
         setZohoSoId(null);
         setZohoVendors(null);
-        setSelectedVendorId("");
+        setUnassignedVendorId("");
         setSelectedCustomerId("");
         setSelectedCustomerName("");
         setCustomerMatchMethod(null);
@@ -2612,7 +2661,9 @@ function BomDashboardInner() {
                       setCatalogStatus(new Map());
                       setSnapshots([]);
                       setSavedVersion(null);
-                      setZohoPoId(null);
+                      setZohoPurchaseOrders(null);
+                      setPoPreview(null);
+                      setPoFailures([]);
                       setCompareA(null);
                       setCompareB(null);
                       setShowDiff(false);
@@ -2759,35 +2810,89 @@ function BomDashboardInner() {
                       Save current BOM to enable Zoho PO/SO actions.
                     </span>
                   )}
-                  {/* Zoho PO — only show when saved + vendors available */}
-                  {savedVersion && zohoVendors && zohoVendors.length > 0 && (
-                    zohoPoId ? (
-                      <a
-                        href={`https://inventory.zoho.com/app#/purchaseorders/${zohoPoId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
-                      >
-                        View PO in Zoho →
-                      </a>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <ContactCombobox
-                          contacts={zohoVendors}
-                          value={selectedVendorId}
-                          onChange={setSelectedVendorId}
-                          placeholder="Search vendors…"
-                        />
-                        <button
-                          onClick={createPo}
-                          disabled={!selectedVendorId || creatingPo}
-                          title={!selectedVendorId ? "Select a vendor first" : "Create draft PO in Zoho Inventory"}
-                          className="text-xs rounded bg-cyan-600 text-white px-3 py-1 hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed"
-                        >
-                          {creatingPo ? "Creating…" : "Create PO in Zoho"}
-                        </button>
-                      </div>
-                    )
+                  {savedVersion && (
+                    <div className="flex flex-col gap-2">
+                      {zohoPurchaseOrders && zohoPurchaseOrders.length > 0 ? (
+                        <div className="flex flex-col gap-1">
+                          {zohoPurchaseOrders.map((po) => (
+                            <a
+                              key={`${po.vendorId}-${po.poId}`}
+                              href={`https://inventory.zoho.com/app#/purchaseorders/${po.poId}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
+                            >
+                              {po.vendorName} — {po.poNumber ?? "View in Zoho"} ({po.itemCount} items) →
+                            </a>
+                          ))}
+                          {poFailures.length > 0 && (
+                            <button
+                              onClick={createPo}
+                              disabled={creatingPo}
+                              className="text-xs rounded bg-amber-600 text-white px-3 py-1 hover:bg-amber-700 disabled:opacity-40 disabled:cursor-not-allowed w-fit"
+                            >
+                              {creatingPo ? "Retrying…" : "Retry Failed"}
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          <button
+                            onClick={previewPurchaseOrders}
+                            disabled={previewLoading}
+                            className="text-xs rounded bg-cyan-600 text-white px-3 py-1 hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed w-fit"
+                          >
+                            {previewLoading ? "Loading Preview…" : "Preview Purchase Orders"}
+                          </button>
+                          {poPreview && (
+                            <div className="rounded border border-border bg-surface/60 p-3 text-xs space-y-2 max-w-xl">
+                              {poPreview.vendorGroups.map((group) => (
+                                <div key={group.vendorId} className="space-y-1">
+                                  <div className="font-medium text-foreground">
+                                    {group.vendorName} · {group.items.length} item{group.items.length === 1 ? "" : "s"}
+                                  </div>
+                                  {group.items.map((item) => (
+                                    <div key={`${group.vendorId}-${item.zohoItemId}-${item.bomName}`} className="text-muted">
+                                      {item.bomName} → {item.zohoName} · Qty {item.quantity}
+                                    </div>
+                                  ))}
+                                </div>
+                              ))}
+                              {poPreview.unassignedItems.length > 0 && (
+                                <div className="space-y-2 border-t border-border pt-2">
+                                  <div className="font-medium text-foreground">Unassigned Items</div>
+                                  {poPreview.unassignedItems.map((item) => (
+                                    <div key={`${item.name}-${item.reason}`} className="text-muted">
+                                      {item.name} · Qty {item.quantity} · {item.reason}
+                                    </div>
+                                  ))}
+                                  {zohoVendors && zohoVendors.length > 0 && (
+                                    <ContactCombobox
+                                      contacts={zohoVendors}
+                                      value={unassignedVendorId}
+                                      onChange={setUnassignedVendorId}
+                                      placeholder="Assign vendor for matched unassigned items…"
+                                    />
+                                  )}
+                                </div>
+                              )}
+                              <div className="text-muted">
+                                {getPreviewPurchaseOrderCount(poPreview, unassignedVendorId)} purchase order(s) will be created.
+                              </div>
+                              <button
+                                onClick={createPo}
+                                disabled={creatingPo}
+                                className="text-xs rounded bg-cyan-600 text-white px-3 py-1 hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed"
+                              >
+                                {creatingPo
+                                  ? "Creating…"
+                                  : `Create ${getPreviewPurchaseOrderCount(poPreview, unassignedVendorId)} Purchase Order${getPreviewPurchaseOrderCount(poPreview, unassignedVendorId) === 1 ? "" : "s"}`}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   )}
                   {vendorsLoading && (
                     <span className="text-xs text-muted animate-pulse">Loading vendors…</span>
@@ -2858,7 +2963,7 @@ function BomDashboardInner() {
                     </button>
                   )}
                   <button
-                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setSavedSnapshotId(null); setHubspotPushResult(null); setZohoPoId(null); setZohoVendors(null); setZohoSoId(null); setSelectedVendorId(""); setSelectedCustomerId(""); setSelectedCustomerName(""); setCustomerMatchMethod(null); router.replace("/dashboards/bom"); }}
+                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setSavedSnapshotId(null); setHubspotPushResult(null); setZohoPurchaseOrders(null); setPoPreview(null); setPoFailures([]); setZohoVendors(null); setZohoSoId(null); setUnassignedVendorId(""); setSelectedCustomerId(""); setSelectedCustomerName(""); setCustomerMatchMethod(null); router.replace("/dashboards/bom"); }}
                     className="text-xs text-muted hover:text-foreground"
                   >
                     Unlink
@@ -2917,10 +3022,12 @@ function BomDashboardInner() {
                             setProjectSearch("");
                             setProjectResults([]);
                             setSavedVersion(null);
-                            setZohoPoId(null);
+                            setZohoPurchaseOrders(null);
+                            setPoPreview(null);
+                            setPoFailures([]);
                             setZohoSoId(null);
                             setZohoVendors(null);
-                            setSelectedVendorId("");
+                            setUnassignedVendorId("");
                             setSelectedCustomerId("");
                             setSelectedCustomerName("");
                             setCustomerMatchMethod(null);
@@ -3092,10 +3199,12 @@ function BomDashboardInner() {
                               setSavedVersion(snap.version);
                               setSavedSnapshotId(snap.id);
                               setHubspotPushResult(null);
-                              setZohoPoId(snap.zohoPoId ?? null);
+                              setZohoPurchaseOrders(snap.zohoPurchaseOrders ?? null);
+                              setPoPreview(null);
+                              setPoFailures([]);
                               setZohoSoId(snap.zohoSoId ?? null);
                               setZohoVendors(null);         // re-fetch vendors for this version
-                              setSelectedVendorId("");      // clear stale selection
+                              setUnassignedVendorId("");    // clear stale selection
                               setSelectedCustomerId("");    // clear stale selection
                               setSelectedCustomerName("");  // clear stale selection
                               setCustomerMatchMethod(null);
@@ -3592,7 +3701,10 @@ function BomDashboardInner() {
                   const latest = data.snapshots[0];
                   loadBomData(latest.bomData);
                   setSavedVersion(latest.version);
-                  setZohoPoId(latest.zohoPoId ?? null);
+                  setZohoPurchaseOrders(latest.zohoPurchaseOrders ?? null);
+                  setPoPreview(null);
+                  setPoFailures([]);
+                  setUnassignedVendorId("");
                   setZohoSoId(latest.zohoSoId ?? null);
                 }
               })

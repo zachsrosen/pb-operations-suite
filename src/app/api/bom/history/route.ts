@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
       blobUrl: true,
       savedBy: true,
       createdAt: true,
-      zohoPoId: true,
+      zohoPurchaseOrders: true,
       zohoSoId: true,
     },
   });

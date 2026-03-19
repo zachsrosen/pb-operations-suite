@@ -1,54 +1,51 @@
 /**
  * Tests for POST /api/bom/create-po
- *
- * Focused on two critical behaviours:
- *  1. Non-inventory BOM categories (RACKING, RAPID_SHUTDOWN, etc.) are silently
- *     skipped during SKU lookup and do NOT cause a Prisma enum validation error.
- *  2. The idempotency guard returns the existing PO ID when zohoPoId is already set.
  */
 
-// ── Auth ─────────────────────────────────────────────────────────────────────
 jest.mock("@/lib/api-auth", () => ({
   requireApiAuth: jest.fn(async () => ({
     email: "test@photonbrothers.com",
+    name: "Test User",
     role: "ADMIN",
     ip: "127.0.0.1",
     userAgent: "jest",
   })),
 }));
 
-// ── Prisma ────────────────────────────────────────────────────────────────────
 const mockFindFirst = jest.fn();
-const mockFindMany = jest.fn();
-const mockUpdate = jest.fn();
-
 jest.mock("@/lib/db", () => ({
   prisma: {
     projectBomSnapshot: {
       findFirst: (...args: unknown[]) => mockFindFirst(...args),
-      update: (...args: unknown[]) => mockUpdate(...args),
-    },
-    internalProduct: {
-      findMany: (...args: unknown[]) => mockFindMany(...args),
     },
   },
   logActivity: jest.fn(async () => {}),
 }));
 
-// ── Zoho inventory client ─────────────────────────────────────────────────────
-const mockCreatePurchaseOrder = jest.fn();
+const mockParseZohoPurchaseOrders = jest.fn();
+const mockResolvePoVendorGroups = jest.fn();
+const mockMergeUnassignedIntoVendor = jest.fn();
+const mockCreatePurchaseOrders = jest.fn();
+
+jest.mock("@/lib/bom-po-create", () => ({
+  parseZohoPurchaseOrders: (...args: unknown[]) => mockParseZohoPurchaseOrders(...args),
+  resolvePoVendorGroups: (...args: unknown[]) => mockResolvePoVendorGroups(...args),
+  mergeUnassignedIntoVendor: (...args: unknown[]) => mockMergeUnassignedIntoVendor(...args),
+  createPurchaseOrders: (...args: unknown[]) => mockCreatePurchaseOrders(...args),
+}));
+
+const mockListVendors = jest.fn();
 jest.mock("@/lib/zoho-inventory", () => ({
   zohoInventory: {
     isConfigured: () => true,
-    createPurchaseOrder: (...args: unknown[]) => mockCreatePurchaseOrder(...args),
+    listVendors: (...args: unknown[]) => mockListVendors(...args),
   },
 }));
 
-// ── Route under test ──────────────────────────────────────────────────────────
-import { POST } from "@/app/api/bom/create-po/route";
 import { NextRequest } from "next/server";
+import { POST } from "@/app/api/bom/create-po/route";
 
-function makeRequest(body: Record<string, unknown>): NextRequest {
+function makeRequest(body: Record<string, unknown>) {
   return new NextRequest("http://localhost:3000/api/bom/create-po", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -56,139 +53,109 @@ function makeRequest(body: Record<string, unknown>): NextRequest {
   });
 }
 
-// ── Shared snapshot factory ───────────────────────────────────────────────────
 function makeSnapshot(overrides: Record<string, unknown> = {}) {
   return {
     id: "snap-1",
     dealId: "deal-123",
-    dealName: "Test Project",
+    dealName: "PROJ-1234 Smith",
     version: 1,
-    zohoPoId: null,
+    zohoPurchaseOrders: null,
     bomData: {
       project: { address: "123 Solar St" },
-      items: [
-        // Inventory item — should generate a skuLookup
-        { category: "MODULE", brand: "QCell", model: "Q.PEAK-400", description: "400W module", qty: 32 },
-        // Non-inventory items — must NOT be cast to EquipmentCategory enum
-        { category: "RACKING", brand: null, model: null, description: "IronRidge XR100", qty: 1 },
-        { category: "RAPID_SHUTDOWN", brand: null, model: null, description: "Tigo TS4-F", qty: 32 },
-        { category: "ELECTRICAL_BOS", brand: null, model: null, description: "Conduit kit", qty: 2 },
-      ],
+      items: [],
     },
     ...overrides,
   };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 beforeEach(() => {
   jest.clearAllMocks();
-  mockUpdate.mockResolvedValue({});
-  mockCreatePurchaseOrder.mockResolvedValue({
-    purchaseorder_id: "po-abc",
-    purchaseorder_number: "PO-001",
+  mockParseZohoPurchaseOrders.mockReturnValue([]);
+  mockResolvePoVendorGroups.mockResolvedValue({
+    vendorGroups: [
+      { vendorId: "vendor-1", vendorName: "QCells", items: [{ bomName: "Panel", zohoName: "Panel", zohoItemId: "z1", quantity: 10, description: "Panel" }] },
+    ],
+    unassignedItems: [],
   });
+  mockMergeUnassignedIntoVendor.mockImplementation((grouping) => grouping);
+  mockCreatePurchaseOrders.mockResolvedValue({
+    created: [{ vendorId: "vendor-1", vendorName: "QCells", poId: "po-1", poNumber: "PO-1", itemCount: 1 }],
+    failed: [],
+    skippedExisting: [],
+  });
+  mockListVendors.mockResolvedValue([
+    { contact_id: "vendor-2", contact_name: "Fallback Vendor" },
+  ]);
 });
 
-// ── Test 1: Non-inventory categories don't cause enum errors ──────────────────
-describe("POST /api/bom/create-po — non-inventory category filtering", () => {
-  it("skips RACKING/RAPID_SHUTDOWN/ELECTRICAL_BOS in SKU lookup and succeeds", async () => {
+describe("POST /api/bom/create-po", () => {
+  it("requires dealId and version", async () => {
+    const response = await POST(makeRequest({ dealId: "deal-123" }));
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 404 when the snapshot does not exist", async () => {
+    mockFindFirst.mockResolvedValue(null);
+
+    const response = await POST(makeRequest({ dealId: "deal-123", version: 1 }));
+    expect(response.status).toBe(404);
+  });
+
+  it("creates grouped purchase orders and returns the combined list", async () => {
     mockFindFirst.mockResolvedValue(makeSnapshot());
-    // Only MODULE matches — so findMany is called with only that one category
-    mockFindMany.mockResolvedValue([]);
 
-    const req = makeRequest({ dealId: "deal-123", version: 1, vendorId: "vendor-1" });
-    const res = await POST(req);
-    const json = await res.json();
+    const response = await POST(makeRequest({ dealId: "deal-123", version: 1 }));
+    const json = await response.json();
 
-    expect(res.status).toBe(200);
-    expect(json.purchaseorder_id).toBe("po-abc");
-
-    // findMany should only have been called for MODULE (1 item), NOT for RACKING etc.
-    expect(mockFindMany).toHaveBeenCalledTimes(1);
-    const findManyArgs = mockFindMany.mock.calls[0][0] as {
-      where: { OR: Array<{ category: string }> };
-    };
-    const lookedUpCategories = findManyArgs.where.OR.map((c) => c.category);
-    expect(lookedUpCategories).toEqual(["MODULE"]);
-    expect(lookedUpCategories).not.toContain("RACKING");
-    expect(lookedUpCategories).not.toContain("RAPID_SHUTDOWN");
-    expect(lookedUpCategories).not.toContain("ELECTRICAL_BOS");
-
-    // All 4 BOM items still appear as Zoho line items (unmatched ones have no item_id)
-    const poPayload = mockCreatePurchaseOrder.mock.calls[0][0] as {
-      line_items: Array<{ name: string; item_id?: string }>;
-    };
-    expect(poPayload.line_items).toHaveLength(4);
-    // Non-inventory items should have no item_id
-    const rackingItem = poPayload.line_items.find((li) => li.name === "IronRidge XR100");
-    expect(rackingItem).toBeDefined();
-    expect(rackingItem).not.toHaveProperty("item_id");
+    expect(response.status).toBe(200);
+    expect(mockResolvePoVendorGroups).toHaveBeenCalledTimes(1);
+    expect(mockCreatePurchaseOrders).toHaveBeenCalledWith(expect.objectContaining({
+      snapshotId: "snap-1",
+      dealName: "PROJ-1234 Smith",
+      version: 1,
+    }));
+    expect(json.purchaseOrders).toEqual([
+      { vendorId: "vendor-1", vendorName: "QCells", poId: "po-1", poNumber: "PO-1", itemCount: 1 },
+    ]);
+    expect(json.failed).toEqual([]);
   });
 
-  it("counts all non-matched items (including non-inventory) in unmatchedCount", async () => {
+  it("merges unassigned items into the selected vendor when unassignedVendorId is provided", async () => {
     mockFindFirst.mockResolvedValue(makeSnapshot());
-    mockFindMany.mockResolvedValue([]); // no SKU matches at all
+    mockResolvePoVendorGroups.mockResolvedValue({
+      vendorGroups: [],
+      unassignedItems: [
+        { name: "Wire", quantity: 5, description: "Wire", zohoItemId: "z2", zohoName: "Wire", reason: "no_vendor" },
+      ],
+    });
+    mockMergeUnassignedIntoVendor.mockReturnValue({
+      vendorGroups: [
+        { vendorId: "vendor-2", vendorName: "Fallback Vendor", items: [{ bomName: "Wire", zohoName: "Wire", zohoItemId: "z2", quantity: 5, description: "Wire" }] },
+      ],
+      unassignedItems: [],
+    });
+    mockCreatePurchaseOrders.mockResolvedValue({
+      created: [{ vendorId: "vendor-2", vendorName: "Fallback Vendor", poId: "po-2", poNumber: "PO-2", itemCount: 1 }],
+      failed: [],
+      skippedExisting: [],
+    });
 
-    const req = makeRequest({ dealId: "deal-123", version: 1, vendorId: "vendor-1" });
-    const res = await POST(req);
-    const json = await res.json();
+    const response = await POST(makeRequest({
+      dealId: "deal-123",
+      version: 1,
+      unassignedVendorId: "vendor-2",
+    }));
+    const json = await response.json();
 
-    // 4 items total, 0 zohoItemId matches → unmatchedCount = 4
-    expect(json.unmatchedCount).toBe(4);
-  });
-});
-
-// ── Test 2: Idempotency guard ─────────────────────────────────────────────────
-describe("POST /api/bom/create-po — idempotency guard", () => {
-  it("returns existing PO ID when zohoPoId is already set without calling Zoho again", async () => {
-    mockFindFirst.mockResolvedValue(makeSnapshot({ zohoPoId: "po-existing-123" }));
-
-    const req = makeRequest({ dealId: "deal-123", version: 1, vendorId: "vendor-1" });
-    const res = await POST(req);
-    const json = await res.json();
-
-    expect(res.status).toBe(200);
-    expect(json.purchaseorder_id).toBe("po-existing-123");
-    expect(json.alreadyExisted).toBe(true);
-    expect(mockCreatePurchaseOrder).not.toHaveBeenCalled();
-    expect(mockFindMany).not.toHaveBeenCalled();
-    expect(mockUpdate).not.toHaveBeenCalled();
-  });
-});
-
-// ── Test 3: Quantity parsing ──────────────────────────────────────────────────
-describe("POST /api/bom/create-po — quantity parsing", () => {
-  it("treats qty:0 as 1 (minimum), not as 0", async () => {
-    const snap = makeSnapshot();
-    // Patch the MODULE qty to 0
-    (snap.bomData.items[0] as Record<string, unknown>).qty = 0;
-    mockFindFirst.mockResolvedValue(snap);
-    mockFindMany.mockResolvedValue([]);
-
-    const req = makeRequest({ dealId: "deal-123", version: 1, vendorId: "vendor-1" });
-    await POST(req);
-
-    const poPayload = mockCreatePurchaseOrder.mock.calls[0][0] as {
-      line_items: Array<{ name: string; quantity: number }>;
-    };
-    const moduleItem = poPayload.line_items.find((li) => li.name.includes("Q.PEAK"));
-    expect(moduleItem?.quantity).toBe(1);
-  });
-
-  it("rounds fractional quantities", async () => {
-    const snap = makeSnapshot();
-    (snap.bomData.items[0] as Record<string, unknown>).qty = "1.7";
-    mockFindFirst.mockResolvedValue(snap);
-    mockFindMany.mockResolvedValue([]);
-
-    const req = makeRequest({ dealId: "deal-123", version: 1, vendorId: "vendor-1" });
-    await POST(req);
-
-    const poPayload = mockCreatePurchaseOrder.mock.calls[0][0] as {
-      line_items: Array<{ name: string; quantity: number }>;
-    };
-    const moduleItem = poPayload.line_items.find((li) => li.name.includes("Q.PEAK"));
-    expect(moduleItem?.quantity).toBe(2);
+    expect(response.status).toBe(200);
+    expect(mockListVendors).toHaveBeenCalledTimes(1);
+    expect(mockMergeUnassignedIntoVendor).toHaveBeenCalledWith(
+      expect.objectContaining({ unassignedItems: expect.any(Array) }),
+      "vendor-2",
+      "Fallback Vendor",
+    );
+    expect(json.purchaseOrders).toEqual([
+      { vendorId: "vendor-2", vendorName: "Fallback Vendor", poId: "po-2", poNumber: "PO-2", itemCount: 1 },
+    ]);
   });
 });

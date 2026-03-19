@@ -1023,7 +1023,7 @@ model ProjectBomSnapshot {
   sourceFile  String?                       // original PDF filename
   blobUrl     String?                       // Vercel Blob URL of the source PDF
   savedBy     String                        // user email
-  zohoPoId    String?                       // Zoho Purchase Order ID once created
+  zohoPurchaseOrders Json?                 // Array of created Zoho Purchase Orders
   zohoSoId    String?                       // Zoho Sales Order ID once created
 
   createdAt   DateTime @default(now())
@@ -1151,6 +1151,7 @@ enum BomPipelineStep {
   SAVE_SNAPSHOT
   RESOLVE_CUSTOMER
   CREATE_SO
+  CREATE_PO
   NOTIFY
 }
 

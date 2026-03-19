@@ -1,8 +1,15 @@
-// src/app/api/bom/create-po/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
-import { zohoInventory } from "@/lib/zoho-inventory";
 import { logActivity, prisma } from "@/lib/db";
+import {
+  createPurchaseOrders,
+  mergeUnassignedIntoVendor,
+  parseZohoPurchaseOrders,
+  resolvePoVendorGroups,
+  type BomData,
+} from "@/lib/bom-po-create";
+import { zohoInventory } from "@/lib/zoho-inventory";
+import type { ActorContext } from "@/lib/actor-context";
 
 export const runtime = "nodejs";
 
@@ -16,9 +23,19 @@ const ALLOWED_ROLES = new Set([
   "DESIGNER",
 ]);
 
-export async function POST(request: NextRequest) {
-  const startedAt = Date.now();
+async function resolveVendorName(vendorId: string, fallbackGroups: Array<{ vendorId: string; vendorName: string }>) {
+  const existing = fallbackGroups.find((group) => group.vendorId === vendorId);
+  if (existing?.vendorName) return existing.vendorName;
 
+  try {
+    const vendors = await zohoInventory.listVendors();
+    return vendors.find((vendor) => vendor.contact_id === vendorId)?.contact_name ?? "Assigned Vendor";
+  } catch {
+    return "Assigned Vendor";
+  }
+}
+
+export async function POST(request: NextRequest) {
   if (!prisma) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
@@ -26,317 +43,99 @@ export async function POST(request: NextRequest) {
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
   if (!ALLOWED_ROLES.has(authResult.role)) {
-    await logActivity({
-      type: "API_ERROR",
-      description: "BOM create-po denied: insufficient permissions",
-      userEmail: authResult.email,
-      userName: authResult.name,
-      entityType: "bom",
-      entityName: "create_po",
-      metadata: { event: "bom_create_po", outcome: "failed", reason: "insufficient_permissions" },
-      ipAddress: authResult.ip,
-      userAgent: authResult.userAgent,
-      requestPath: "/api/bom/create-po",
-      requestMethod: "POST",
-      responseStatus: 403,
-      durationMs: Date.now() - startedAt,
-    });
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
 
   if (!zohoInventory.isConfigured()) {
-    await logActivity({
-      type: "API_ERROR",
-      description: "BOM create-po failed: Zoho Inventory not configured",
-      userEmail: authResult.email,
-      userName: authResult.name,
-      entityType: "bom",
-      entityName: "create_po",
-      metadata: { event: "bom_create_po", outcome: "failed", reason: "zoho_not_configured" },
-      ipAddress: authResult.ip,
-      userAgent: authResult.userAgent,
-      requestPath: "/api/bom/create-po",
-      requestMethod: "POST",
-      responseStatus: 503,
-      durationMs: Date.now() - startedAt,
-    });
-    return NextResponse.json(
-      { error: "Zoho Inventory is not configured" },
-      { status: 503 }
-    );
+    return NextResponse.json({ error: "Zoho Inventory is not configured" }, { status: 503 });
   }
 
-  let body: { dealId?: string; version?: number; vendorId?: string };
+  let body: { dealId?: string; version?: number; unassignedVendorId?: string };
   try {
     body = await request.json();
   } catch {
-    await logActivity({
-      type: "API_ERROR",
-      description: "BOM create-po failed: invalid JSON",
-      userEmail: authResult.email,
-      userName: authResult.name,
-      entityType: "bom",
-      entityName: "create_po",
-      metadata: { event: "bom_create_po", outcome: "failed", reason: "invalid_json" },
-      ipAddress: authResult.ip,
-      userAgent: authResult.userAgent,
-      requestPath: "/api/bom/create-po",
-      requestMethod: "POST",
-      responseStatus: 400,
-      durationMs: Date.now() - startedAt,
-    });
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { dealId, version, vendorId } = body;
-  if (!dealId || typeof version !== "number" || !vendorId) {
-    await logActivity({
-      type: "API_ERROR",
-      description: "BOM create-po failed: missing required fields",
-      userEmail: authResult.email,
-      userName: authResult.name,
-      entityType: "bom",
-      entityId: String(dealId || ""),
-      entityName: "create_po",
-      metadata: { event: "bom_create_po", outcome: "failed", reason: "missing_fields", dealId, version, hasVendorId: !!vendorId },
-      ipAddress: authResult.ip,
-      userAgent: authResult.userAgent,
-      requestPath: "/api/bom/create-po",
-      requestMethod: "POST",
-      responseStatus: 400,
-      durationMs: Date.now() - startedAt,
-    });
-    return NextResponse.json(
-      { error: "dealId, version, and vendorId are required" },
-      { status: 400 }
-    );
+  const { dealId, version, unassignedVendorId } = body;
+  if (!dealId || typeof version !== "number") {
+    return NextResponse.json({ error: "dealId and version are required" }, { status: 400 });
   }
 
-  // ── Main handler — wrapped so unhandled throws (Zoho item lookup, Prisma, etc.)
-  // return a structured 500 instead of Next.js's generic empty response.
-  try {
-
-  // 1. Load the BOM snapshot
-  const snapshot = await prisma.projectBomSnapshot.findFirst({
-    where: { dealId: String(dealId), version },
-  });
-  if (!snapshot) {
-    await logActivity({
-      type: "API_ERROR",
-      description: `BOM create-po failed: snapshot not found for ${dealId} v${version}`,
-      userEmail: authResult.email,
-      userName: authResult.name,
-      entityType: "bom",
-      entityId: String(dealId),
-      entityName: "create_po",
-      metadata: { event: "bom_create_po", outcome: "failed", reason: "snapshot_not_found", dealId, version },
-      ipAddress: authResult.ip,
-      userAgent: authResult.userAgent,
-      requestPath: "/api/bom/create-po",
-      requestMethod: "POST",
-      responseStatus: 404,
-      durationMs: Date.now() - startedAt,
-    });
-    return NextResponse.json({ error: "BOM snapshot not found" }, { status: 404 });
-  }
-
-  // 2. If PO already created, return existing ID (idempotency guard)
-  // This handles the primary duplicate risk: UI retry after Zoho success + DB failure.
-  // Concurrent-click protection is handled by `creatingPo` UI state (button disables on click).
-  if (snapshot.zohoPoId) {
-    await logActivity({
-      type: "FEATURE_USED",
-      description: `BOM create-po reused existing PO for ${snapshot.dealName} v${version}`,
-      userEmail: authResult.email,
-      userName: authResult.name,
-      entityType: "bom",
-      entityId: String(dealId),
-      entityName: snapshot.dealName,
-      metadata: {
-        event: "bom_create_po",
-        outcome: "existing_po_reused",
-        dealId: snapshot.dealId,
-        dealName: snapshot.dealName,
-        version,
-        purchaseorder_id: snapshot.zohoPoId,
-      },
-      ipAddress: authResult.ip,
-      userAgent: authResult.userAgent,
-      requestPath: "/api/bom/create-po",
-      requestMethod: "POST",
-      responseStatus: 200,
-      durationMs: Date.now() - startedAt,
-    });
-    return NextResponse.json({
-      purchaseorder_id: snapshot.zohoPoId,
-      purchaseorder_number: null,
-      unmatchedCount: 0,
-      alreadyExisted: true,
-    });
-  }
-
-  // 3. Build line items — look up zohoItemId per BOM item
-  const bomData = snapshot.bomData as {
-    project?: { address?: string };
-    items?: Array<{
-      category: string;
-      brand?: string | null;
-      model?: string | null;
-      description: string;
-      qty: number | string;
-    }>;
-  };
-
-  const bomItems = Array.isArray(bomData?.items) ? bomData.items : [];
-
-  // Build line items — only include items matched to an existing Zoho item_id.
-  // Name-only fallback is intentionally avoided: unmatched items are skipped
-  // so we never create phantom products in Zoho's item catalog.
-  // Note: matched items must have "Can be Purchased" enabled in Zoho to appear on POs.
-  //
-  // Process SEQUENTIALLY (not Promise.all) — findItemIdByName uses a shared
-  // in-memory item cache, so there's no throughput benefit to concurrency, and
-  // firing 30+ simultaneous requests hits Zoho's concurrent-request limit.
-  let unmatchedCount = 0;
-  const unmatchedItems: string[] = [];
-  const matchedItems: Array<{ bomName: string; zohoName: string }> = [];
-  const resolvedItems: ({ item_id: string; name: string; quantity: number; description: string } | null)[] = [];
-
-  for (const item of bomItems) {
-    const name =
-      item.model
-        ? `${item.brand ? item.brand + " " : ""}${item.model}`
-        : item.description;
-
-    // Try model first, then full "brand model" name, then description
-    const searchTerms = [item.model, name, item.description].filter((t): t is string => !!t && t.trim().length > 1);
-    let match: { item_id: string; zohoName: string } | null = null;
-    for (const term of searchTerms) {
-      match = await zohoInventory.findItemIdByName(term);
-      if (match) break;
-    }
-
-    if (!match) {
-      unmatchedCount++;
-      unmatchedItems.push(name); // record what we searched for so caller can diagnose
-      resolvedItems.push(null);
-      continue;
-    }
-
-    const parsedQty = Math.round(Number(item.qty));
-    // Skip zero-qty items — do NOT default to 1 (would create line items for items not needed).
-    if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
-      resolvedItems.push(null);
-      continue;
-    }
-    matchedItems.push({ bomName: name, zohoName: match.zohoName });
-    resolvedItems.push({ item_id: match.item_id, name, quantity: parsedQty, description: item.description });
-  }
-
-  const lineItems = resolvedItems.filter((item): item is NonNullable<typeof item> => item !== null);
-
-  // 4. Create PO in Zoho
-  const address = bomData?.project?.address ?? "";
-  const projMatch = snapshot.dealName.match(/PROJ-(\d+)/);
-  const poNumber = projMatch ? `PO-${projMatch[1]} (TEST)` : `PO-${dealId} (TEST)`;
-  let poResult: { purchaseorder_id: string; purchaseorder_number: string };
-  try {
-    poResult = await zohoInventory.createPurchaseOrder({
-      vendor_id: vendorId,
-      purchaseorder_number: poNumber,
-      reference_number: snapshot.dealName.slice(0, 50),
-      notes: `Generated from PB Ops BOM v${version}${address ? ` — ${address}` : ""}`,
-      status: "draft",
-      line_items: lineItems,
-    });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "Zoho API error";
-    console.error("[bom/create-po] Zoho error:", message);
-    await logActivity({
-      type: "API_ERROR",
-      description: `BOM create-po failed for ${snapshot.dealName}: ${message}`,
-      userEmail: authResult.email,
-      userName: authResult.name,
-      entityType: "bom",
-      entityId: String(dealId),
-      entityName: snapshot.dealName,
-      metadata: {
-        event: "bom_create_po",
-        outcome: "failed",
-        reason: "zoho_api_error",
-        dealId: snapshot.dealId,
-        dealName: snapshot.dealName,
-        version,
-        error: message,
-      },
-      ipAddress: authResult.ip,
-      userAgent: authResult.userAgent,
-      requestPath: "/api/bom/create-po",
-      requestMethod: "POST",
-      responseStatus: 502,
-      durationMs: Date.now() - startedAt,
-    });
-    return NextResponse.json({ error: message }, { status: 502 });
-  }
-
-  // 5. Store zohoPoId on snapshot
-  await prisma.projectBomSnapshot.update({
-    where: { id: snapshot.id },
-    data: { zohoPoId: poResult.purchaseorder_id },
-  });
-
-  await logActivity({
-    type: "FEATURE_USED",
-    description: `Created Zoho PO for ${snapshot.dealName} BOM v${version}`,
-    userEmail: authResult.email,
-    userName: authResult.name,
-    entityType: "bom",
-    entityId: String(dealId),
-    entityName: snapshot.dealName,
-    metadata: {
-      event: "bom_create_po",
-      outcome: "created",
-      dealId: snapshot.dealId,
-      dealName: snapshot.dealName,
-      version,
-      purchaseorder_id: poResult.purchaseorder_id,
-      purchaseorder_number: poResult.purchaseorder_number,
-      unmatchedCount,
-    },
+  const actor: ActorContext = {
+    email: authResult.email,
+    name: authResult.name,
     ipAddress: authResult.ip,
     userAgent: authResult.userAgent,
     requestPath: "/api/bom/create-po",
     requestMethod: "POST",
-    responseStatus: 200,
-    durationMs: Date.now() - startedAt,
-  });
+  };
 
-  return NextResponse.json({
-    purchaseorder_id: poResult.purchaseorder_id,
-    purchaseorder_number: poResult.purchaseorder_number,
-    unmatchedCount,
-    unmatchedItems,
-    matchedItems,
-  });
+  try {
+    const snapshot = await prisma.projectBomSnapshot.findFirst({
+      where: { dealId: String(dealId), version },
+    });
+    if (!snapshot) {
+      return NextResponse.json({ error: "BOM snapshot not found" }, { status: 404 });
+    }
 
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "Internal server error";
-    console.error("[bom/create-po] Unhandled error:", message, e);
+    const bomData = (snapshot.bomData ?? {}) as BomData;
+    const existingPos = parseZohoPurchaseOrders(snapshot.zohoPurchaseOrders);
+    let grouping = existingPos.length > 0 && Array.isArray(bomData.poVendorGroups) && bomData.poVendorGroups.length > 0
+      ? { vendorGroups: bomData.poVendorGroups, unassignedItems: [] }
+      : await resolvePoVendorGroups(bomData);
+
+    if (unassignedVendorId) {
+      const vendorName = await resolveVendorName(unassignedVendorId, grouping.vendorGroups);
+      grouping = mergeUnassignedIntoVendor(grouping, unassignedVendorId, vendorName);
+    }
+
+    const result = await createPurchaseOrders({
+      snapshotId: snapshot.id,
+      bomData,
+      vendorGroups: grouping.vendorGroups,
+      existingPos,
+      dealName: snapshot.dealName,
+      version,
+      address: bomData.project?.address,
+      actor,
+    });
+
+    const purchaseOrders = [...result.skippedExisting, ...result.created];
+
     await logActivity({
-      type: "API_ERROR",
-      description: `BOM create-po unhandled error: ${message}`,
-      userEmail: authResult.email,
-      userName: authResult.name,
+      type: "FEATURE_USED",
+      description: `Created ${result.created.length} Zoho PO(s) for ${snapshot.dealName} BOM v${version}`,
+      userEmail: actor.email,
+      userName: actor.name,
       entityType: "bom",
-      entityName: "create_po",
-      metadata: { event: "bom_create_po", outcome: "failed", reason: "unhandled_exception", error: message },
-      ipAddress: authResult.ip,
-      userAgent: authResult.userAgent,
-      requestPath: "/api/bom/create-po",
-      requestMethod: "POST",
-      responseStatus: 500,
-      durationMs: Date.now() - startedAt,
+      entityId: String(dealId),
+      entityName: snapshot.dealName,
+      metadata: {
+        event: "bom_create_po",
+        dealId: snapshot.dealId,
+        dealName: snapshot.dealName,
+        version,
+        purchaseOrders,
+        failed: result.failed,
+        unassignedVendorId: unassignedVendorId ?? null,
+      },
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+      requestPath: actor.requestPath,
+      requestMethod: actor.requestMethod,
     }).catch(() => {});
+
+    return NextResponse.json({
+      purchaseOrders,
+      unassignedItems: grouping.unassignedItems.map((item) => ({
+        name: item.name,
+        qty: item.quantity,
+      })),
+      failed: result.failed,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Internal server error";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
