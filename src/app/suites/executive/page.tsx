@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import SuitePageShell, { type SuitePageCard } from "@/components/SuitePageShell";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { RevenueGoalTracker } from "@/components/RevenueGoalTracker";
 
 const LINKS: SuitePageCard[] = [
   {
@@ -107,6 +108,7 @@ export default async function ExecutiveSuitePage() {
       cards={LINKS}
       role={user.role}
       hoverBorderClass="hover:border-orange-500/50"
+      heroContent={<RevenueGoalTracker />}
     />
   );
 }
