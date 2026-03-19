@@ -463,13 +463,8 @@ export default function ServicePipelinePage() {
                           e.stopPropagation();
                           handleOpenSoPanel(deal);
                         }}
-                        disabled={!deal.companyId}
-                        title={deal.companyId ? "Create Sales Order" : "Deal must have an associated company to create a Sales Order"}
-                        className={`text-sm px-2 py-1 rounded mr-2 ${
-                          deal.companyId
-                            ? "text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
-                            : "text-muted/40 cursor-not-allowed"
-                        }`}
+                        title="Create Sales Order"
+                        className="text-sm px-2 py-1 rounded mr-2 text-cyan-400 hover:text-cyan-300 hover:bg-cyan-500/10"
                       >
                         Create SO
                       </button>

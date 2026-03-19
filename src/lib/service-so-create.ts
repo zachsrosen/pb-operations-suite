@@ -12,12 +12,13 @@ import { zohoInventory } from "@/lib/zoho-inventory";
 import type { ZohoSalesOrderLineItem } from "@/lib/zoho-inventory";
 import { prisma } from "@/lib/db";
 import { hubspotClient } from "@/lib/hubspot";
+import { resolveCustomer } from "@/lib/bom-customer-resolve";
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const CUSTOMER_LOOKUP_MAX_PAGES = 5;
+// No service-specific constants — customer resolution uses shared bom-customer-resolve module
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,72 +54,21 @@ export interface CreateServiceSoResult {
 // Zoho Customer Resolution
 // ---------------------------------------------------------------------------
 
-/**
- * Find or create a Zoho customer by company name.
- *
- * Paginates through fetchCustomerPage (max 5 pages / 1000 customers).
- * If no match found, creates a new customer in Zoho.
- * If multiple matches, uses first match + logs warning (pragmatic for Phase 4).
- */
-export async function resolveZohoCustomer(
-  companyName: string,
-  contactEmail?: string
-): Promise<string> {
-  const matches: Array<{ contact_id: string; contact_name: string }> = [];
-
-  for (let page = 1; page <= CUSTOMER_LOOKUP_MAX_PAGES; page++) {
-    try {
-      const { contacts, hasMore } = await zohoInventory.fetchCustomerPage(page);
-
-      for (const c of contacts) {
-        if (c.contact_name?.toLowerCase() === companyName.toLowerCase()) {
-          matches.push({ contact_id: c.contact_id, contact_name: c.contact_name });
-        }
-      }
-
-      if (!hasMore) break;
-    } catch (err) {
-      Sentry.captureException(err);
-      console.error(`[ServiceSO] Customer page ${page} fetch failed:`, err);
-      break;
-    }
-  }
-
-  if (matches.length === 1) {
-    return matches[0].contact_id;
-  }
-
-  if (matches.length > 1) {
-    console.warn(
-      `[ServiceSO] Multiple Zoho customers matched "${companyName}": ${matches.map(m => m.contact_id).join(", ")}. Using first match.`
-    );
-    return matches[0].contact_id;
-  }
-
-  console.warn(
-    `[ServiceSO] No Zoho customer matched "${companyName}" within ${CUSTOMER_LOOKUP_MAX_PAGES} pages. Creating new customer.`
-  );
-
-  const { contact_id } = await zohoInventory.createContact({
-    contact_name: companyName,
-    email: contactEmail,
-    contact_type: "customer",
-  });
-
-  return contact_id;
-}
-
 // ---------------------------------------------------------------------------
 // HubSpot Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Resolve deal properties + primary contact from HubSpot.
+ * Uses the same customer resolution strategy as the BOM pipeline
+ * (contact-based, not company-based).
+ */
 async function resolveDealContext(
   dealId: string
 ): Promise<{
   dealName: string;
   dealAddress: string;
-  companyName: string;
-  contactEmail?: string;
+  primaryContactId: string | null;
 }> {
   // Fetch deal properties server-side (no client trust)
   const dealResp = await hubspotClient.crm.deals.batchApi.read({
@@ -132,28 +82,8 @@ async function resolveDealContext(
     .filter(Boolean)
     .join(", ");
 
-  // Deal → company association
-  const assocResp = await hubspotClient.crm.associations.batchApi.read(
-    "deals",
-    "companies",
-    { inputs: [{ id: dealId }] }
-  );
-  const companyIds = (assocResp.results?.[0]?.to || []).map(
-    (t: { id: string }) => t.id
-  );
-  if (companyIds.length === 0) {
-    throw new Error("Deal must have an associated company to create a Sales Order");
-  }
-
-  const companyResp = await hubspotClient.crm.companies.batchApi.read({
-    inputs: [{ id: companyIds[0] }],
-    properties: ["name", "domain"],
-    propertiesWithHistory: [],
-  });
-  const company = companyResp.results?.[0];
-  const companyName = company?.properties?.name || `Company ${companyIds[0]}`;
-
-  let contactEmail: string | undefined;
+  // Deal → primary contact association
+  let primaryContactId: string | null = null;
   try {
     const contactAssocResp = await hubspotClient.crm.associations.batchApi.read(
       "deals",
@@ -164,18 +94,14 @@ async function resolveDealContext(
       (t: { id: string }) => t.id
     );
     if (contactIds.length > 0) {
-      const contactResp = await hubspotClient.crm.contacts.batchApi.read({
-        inputs: [{ id: contactIds[0] }],
-        properties: ["email"],
-        propertiesWithHistory: [],
-      });
-      contactEmail = contactResp.results?.[0]?.properties?.email || undefined;
+      primaryContactId = contactIds[0];
     }
-  } catch {
-    // Non-critical — email is optional for customer creation
+  } catch (err) {
+    Sentry.captureException(err);
+    console.warn("[ServiceSO] Failed to resolve primary contact:", err);
   }
 
-  return { dealName, dealAddress, companyName, contactEmail };
+  return { dealName, dealAddress, primaryContactId };
 }
 
 // ---------------------------------------------------------------------------
@@ -313,9 +239,21 @@ export async function createServiceSo(
 
   try {
 
-    // 3. Resolve deal context + HubSpot company → Zoho customer (all server-side)
-    const { dealName, dealAddress, companyName, contactEmail } = await resolveDealContext(dealId);
-    const zohoCustomerId = await resolveZohoCustomer(companyName, contactEmail);
+    // 3. Resolve deal context + Zoho customer (contact-based, same as BOM pipeline)
+    const { dealName, dealAddress, primaryContactId } = await resolveDealContext(dealId);
+    const customerResult = await resolveCustomer({
+      dealName,
+      primaryContactId,
+      dealAddress: dealAddress || null,
+    });
+
+    if (!customerResult.customerId) {
+      throw new Error(
+        `Could not resolve Zoho customer for deal "${dealName}". ` +
+        `Tried: ${customerResult.searchAttempts.join("; ") || "no strategies matched"}`
+      );
+    }
+    const zohoCustomerId = customerResult.customerId;
 
     // 4. Update DRAFT with resolved data
     await prisma!.serviceSoRequest.update({

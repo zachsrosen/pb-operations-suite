@@ -1,7 +1,5 @@
 jest.mock("@/lib/zoho-inventory", () => ({
   zohoInventory: {
-    fetchCustomerPage: jest.fn(),
-    createContact: jest.fn(),
     createSalesOrder: jest.fn(),
   },
 }));
@@ -33,13 +31,15 @@ jest.mock("@/lib/hubspot", () => ({
   },
 }));
 
-import { resolveZohoCustomer, createServiceSo, type CreateServiceSoInput } from "@/lib/service-so-create";
+jest.mock("@/lib/bom-customer-resolve", () => ({
+  resolveCustomer: jest.fn(),
+}));
+
+import { createServiceSo, type CreateServiceSoInput } from "@/lib/service-so-create";
 import { zohoInventory } from "@/lib/zoho-inventory";
 import { prisma } from "@/lib/db";
 import { hubspotClient } from "@/lib/hubspot";
-
-const mockFetchPage = zohoInventory.fetchCustomerPage as jest.Mock;
-const mockCreateContact = zohoInventory.createContact as jest.Mock;
+import { resolveCustomer } from "@/lib/bom-customer-resolve";
 
 const mockProductFind = (prisma as any).internalProduct.findMany as jest.Mock;
 const mockSoCreate = (prisma as any).serviceSoRequest.create as jest.Mock;
@@ -47,76 +47,9 @@ const mockSoFindUnique = (prisma as any).serviceSoRequest.findUnique as jest.Moc
 const mockSoUpdate = (prisma as any).serviceSoRequest.update as jest.Mock;
 const mockSoDelete = (prisma as any).serviceSoRequest.delete as jest.Mock;
 const mockAssocRead = (hubspotClient as any).crm.associations.batchApi.read as jest.Mock;
-const mockCompanyRead = (hubspotClient as any).crm.companies.batchApi.read as jest.Mock;
-const mockContactRead = (hubspotClient as any).crm.contacts.batchApi.read as jest.Mock;
 const mockDealRead = (hubspotClient as any).crm.deals.batchApi.read as jest.Mock;
-
 const mockCreateSo = zohoInventory.createSalesOrder as jest.Mock;
-
-describe("resolveZohoCustomer", () => {
-  beforeEach(() => jest.clearAllMocks());
-
-  it("returns customer_id when exact name match found on page 1", async () => {
-    mockFetchPage.mockResolvedValueOnce({
-      contacts: [
-        { contact_id: "zc-1", contact_name: "Acme Corp" },
-        { contact_id: "zc-2", contact_name: "Beta Inc" },
-      ],
-      hasMore: false,
-    });
-
-    const result = await resolveZohoCustomer("Acme Corp", "info@acme.com");
-    expect(result).toBe("zc-1");
-    expect(mockFetchPage).toHaveBeenCalledTimes(1);
-  });
-
-  it("paginates up to 5 pages to find a match", async () => {
-    for (let i = 0; i < 4; i++) {
-      mockFetchPage.mockResolvedValueOnce({ contacts: [{ contact_id: `zc-${i}`, contact_name: `Other ${i}` }], hasMore: true });
-    }
-    mockFetchPage.mockResolvedValueOnce({
-      contacts: [{ contact_id: "zc-found", contact_name: "Target Co" }],
-      hasMore: false,
-    });
-
-    const result = await resolveZohoCustomer("Target Co");
-    expect(result).toBe("zc-found");
-    expect(mockFetchPage).toHaveBeenCalledTimes(5);
-  });
-
-  it("creates customer when no match found within 5 pages", async () => {
-    for (let i = 0; i < 5; i++) {
-      mockFetchPage.mockResolvedValueOnce({ contacts: [{ contact_id: `zc-${i}`, contact_name: `Other ${i}` }], hasMore: true });
-    }
-    mockCreateContact.mockResolvedValueOnce({ contact_id: "zc-new" });
-
-    const result = await resolveZohoCustomer("NewCo", "admin@newco.com");
-    expect(result).toBe("zc-new");
-    expect(mockCreateContact).toHaveBeenCalledWith({
-      contact_name: "NewCo",
-      email: "admin@newco.com",
-      contact_type: "customer",
-    });
-  });
-
-  it("uses first match and logs warning when multiple matches exist", async () => {
-    const consoleSpy = jest.spyOn(console, "warn").mockImplementation();
-    mockFetchPage.mockResolvedValueOnce({
-      contacts: [
-        { contact_id: "zc-a", contact_name: "Dupes Inc" },
-        { contact_id: "zc-b", contact_name: "Dupes Inc" },
-      ],
-      hasMore: false,
-    });
-
-    const result = await resolveZohoCustomer("Dupes Inc");
-    expect(result).toBe("zc-a");
-    expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Multiple Zoho customers matched")
-    );
-    consoleSpy.mockRestore();
-  });
-});
+const mockResolveCustomer = resolveCustomer as jest.Mock;
 
 describe("createServiceSo", () => {
   const baseInput: CreateServiceSoInput = {
@@ -131,8 +64,25 @@ describe("createServiceSo", () => {
     mockDealRead.mockResolvedValueOnce({
       results: [{
         id: "deal-1",
-        properties: { dealname: "Test Service Deal", address_line_1: "123 Main St", city: "Denver", state: "CO", postal_code: "80202" },
+        properties: { dealname: "PROJ-1234 | Smith, John | 123 Main St", address_line_1: "123 Main St", city: "Denver", state: "CO", postal_code: "80202" },
       }],
+    });
+  };
+
+  // Mock helper: set up deal → contact association
+  const mockDealContactAssoc = (contactId: string = "cont-1") => {
+    mockAssocRead.mockResolvedValueOnce({
+      results: [{ _from: { id: "deal-1" }, to: [{ id: contactId }] }],
+    });
+  };
+
+  // Mock helper: set up successful customer resolution (same as BOM pipeline)
+  const mockCustomerResolution = (customerId: string = "zc-acme") => {
+    mockResolveCustomer.mockResolvedValueOnce({
+      customerId,
+      customerName: "Smith, John",
+      matchMethod: "deal_name_full",
+      searchAttempts: [],
     });
   };
 
@@ -156,45 +106,21 @@ describe("createServiceSo", () => {
   });
 
   it("allows retry on FAILED idempotency hit", async () => {
-    // First findUnique returns FAILED record
     mockSoFindUnique.mockResolvedValueOnce({
       id: "req-old",
       status: "FAILED",
       requestToken: "tok-abc",
     });
-    // Delete the failed record
     mockSoDelete.mockResolvedValueOnce({});
-    // Create new DRAFT
     mockSoCreate.mockResolvedValueOnce({ id: "req-new" });
-    // Products
     mockProductFind.mockResolvedValueOnce([{
       id: "prod-1", name: "Widget", sku: "W-1", description: null,
       sellPrice: 50, category: "SERVICE", isActive: true, zohoItemId: "zi-1",
     }]);
-    // Deal properties (server-side resolution)
     mockDealBatchRead();
-    // HubSpot company
-    mockAssocRead.mockResolvedValueOnce({
-      results: [{ _from: { id: "deal-1" }, to: [{ id: "comp-1" }] }],
-    });
-    mockCompanyRead.mockResolvedValueOnce({
-      results: [{ id: "comp-1", properties: { name: "Acme", domain: "acme.com" } }],
-    });
-    // Contact email
-    mockAssocRead.mockResolvedValueOnce({
-      results: [{ _from: { id: "deal-1" }, to: [{ id: "cont-1" }] }],
-    });
-    mockContactRead.mockResolvedValueOnce({
-      results: [{ id: "cont-1", properties: { email: "info@acme.com" } }],
-    });
-    // Zoho customer
-    (zohoInventory.fetchCustomerPage as jest.Mock).mockResolvedValueOnce({
-      contacts: [{ contact_id: "zc-acme", contact_name: "Acme" }],
-      hasMore: false,
-    });
-    // Update with resolved data
+    mockDealContactAssoc();
+    mockCustomerResolution();
     mockSoUpdate.mockResolvedValue({});
-    // Zoho SO
     mockCreateSo.mockResolvedValueOnce({ salesorder_id: "zso-new", salesorder_number: "SO-099" });
 
     const result = await createServiceSo(baseInput);
@@ -210,22 +136,49 @@ describe("createServiceSo", () => {
     }]);
 
     await expect(createServiceSo(baseInput)).rejects.toThrow(/not valid SERVICE products/);
-    // Product validation happens BEFORE DRAFT creation — no DB record should be created
     expect(mockSoCreate).not.toHaveBeenCalled();
   });
 
-  it("rejects when deal has no company association", async () => {
+  it("rejects when Zoho customer cannot be resolved", async () => {
     mockSoFindUnique.mockResolvedValueOnce(null);
-    mockSoCreate.mockResolvedValueOnce({ id: "req-4" });
     mockProductFind.mockResolvedValueOnce([{
       id: "prod-1", name: "Widget", category: "SERVICE", isActive: true,
       sku: null, description: null, sellPrice: 50, zohoItemId: null,
     }]);
-    // Deal properties (server-side resolution)
+    mockSoCreate.mockResolvedValueOnce({ id: "req-4" });
     mockDealBatchRead();
-    // No company association
-    mockAssocRead.mockResolvedValueOnce({ results: [] });
+    mockDealContactAssoc();
+    // Customer resolution fails (no match)
+    mockResolveCustomer.mockResolvedValueOnce({
+      customerId: null,
+      customerName: null,
+      matchMethod: "none",
+      searchAttempts: ["deal_name_full → 0 matches"],
+    });
 
-    await expect(createServiceSo(baseInput)).rejects.toThrow(/must have an associated company/);
+    await expect(createServiceSo(baseInput)).rejects.toThrow(/Could not resolve Zoho customer/);
+  });
+
+  it("uses shared resolveCustomer with deal name and primary contact ID", async () => {
+    mockSoFindUnique.mockResolvedValueOnce(null);
+    mockProductFind.mockResolvedValueOnce([{
+      id: "prod-1", name: "Widget", category: "SERVICE", isActive: true,
+      sku: null, description: null, sellPrice: 50, zohoItemId: "zi-1",
+    }]);
+    mockSoCreate.mockResolvedValueOnce({ id: "req-5" });
+    mockDealBatchRead();
+    mockDealContactAssoc("cont-99");
+    mockCustomerResolution("zc-smith");
+    mockSoUpdate.mockResolvedValue({});
+    mockCreateSo.mockResolvedValueOnce({ salesorder_id: "zso-5", salesorder_number: "SO-005" });
+
+    await createServiceSo(baseInput);
+
+    // Verify resolveCustomer was called with deal name and primary contact ID
+    expect(mockResolveCustomer).toHaveBeenCalledWith({
+      dealName: "PROJ-1234 | Smith, John | 123 Main St",
+      primaryContactId: "cont-99",
+      dealAddress: "123 Main St, Denver, CO, 80202",
+    });
   });
 });
