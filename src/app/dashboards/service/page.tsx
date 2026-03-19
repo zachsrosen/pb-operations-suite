@@ -189,17 +189,52 @@ export default function ServicePipelinePage() {
     setSoLoading(true);
 
     try {
-      const res = await fetch("/api/inventory/products?category=SERVICE&active=true");
-      if (!res.ok) throw new Error("Failed to load products");
-      const data = await res.json();
+      // Fetch products and deal line items in parallel
+      const [productsRes, lineItemsRes] = await Promise.all([
+        fetch("/api/inventory/products?category=SERVICE&active=true"),
+        fetch(`/api/service/deal-line-items?dealId=${deal.id}`),
+      ]);
+
+      if (!productsRes.ok) throw new Error("Failed to load products");
+      const productsData = await productsRes.json();
       setSoProducts(
-        (data.skus || []).map((p: Record<string, unknown>) => ({
+        (productsData.skus || []).map((p: Record<string, unknown>) => ({
           id: p.id as string,
           name: (p.name || p.model || "Unnamed") as string,
           sku: p.sku as string | null,
           sellPrice: p.sellPrice as number | null,
         }))
       );
+
+      // Auto-populate from deal line items if available
+      if (lineItemsRes.ok) {
+        const lineItemsData = await lineItemsRes.json();
+        const items = (lineItemsData.items || []) as Array<{
+          productId: string | null;
+          name: string;
+          sku: string | null;
+          quantity: number;
+          unitPrice: number;
+          matched: boolean;
+        }>;
+
+        if (items.length > 0) {
+          // Pre-fill with matched items (have a productId for SO creation)
+          const prefilled: SoLineItem[] = items
+            .filter(item => item.productId && item.matched)
+            .map(item => ({
+              productId: item.productId!,
+              name: item.name,
+              sku: item.sku,
+              unitPrice: item.unitPrice,
+              quantity: item.quantity,
+            }));
+
+          if (prefilled.length > 0) {
+            setSoLineItems(prefilled);
+          }
+        }
+      }
     } catch {
       setSoError("Failed to load service products");
     } finally {
