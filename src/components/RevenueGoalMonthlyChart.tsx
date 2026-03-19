@@ -39,12 +39,13 @@ export function RevenueGoalMonthlyChart({ groups }: Props) {
     ? groups
     : groups.filter((g) => selectedGroups.includes(g.groupKey));
 
-  const maxMonthly = Math.max(
-    ...displayGroups.flatMap((g) =>
-      g.months.map((m) => Math.max(m.actual, m.effectiveTarget))
-    ),
-    1
-  );
+  // Use stacked totals for scale so bars fill the space
+  const monthTotals = MONTH_LABELS.map((_, i) => ({
+    actual: displayGroups.reduce((s, g) => s + g.months[i].actual, 0),
+    target: displayGroups.reduce((s, g) => s + g.months[i].effectiveTarget, 0),
+  }));
+  const maxMonthly = Math.max(...monthTotals.map((m) => Math.max(m.actual, m.target)), 1);
+  const isSingleGroup = displayGroups.length === 1;
 
   return (
     <div>
@@ -64,62 +65,58 @@ export function RevenueGoalMonthlyChart({ groups }: Props) {
         {MONTH_LABELS.map((label, monthIdx) => {
           const isFuture = monthIdx > currentMonth;
           const isCurrent = monthIdx === currentMonth;
-
-          // Aggregate actual and effective target across displayed groups for this month
-          const monthActualTotal = displayGroups.reduce((sum, g) => sum + g.months[monthIdx].actual, 0);
-          const monthTargetTotal = displayGroups.reduce((sum, g) => sum + g.months[monthIdx].effectiveTarget, 0);
+          const { actual: monthActual, target: monthTarget } = monthTotals[monthIdx];
+          const targetPct = maxMonthly > 0 ? (monthTarget / maxMonthly) * 100 : 0;
 
           return (
             <div key={label} className="flex flex-col items-center">
               {/* Dollar label above bars */}
-              <div className="h-8 flex flex-col items-center justify-end mb-0.5">
-                {monthActualTotal > 0 ? (
+              <div className="h-6 flex items-end justify-center mb-0.5">
+                {monthActual > 0 && (
                   <span className={`text-[9px] font-medium ${
                     isCurrent ? "text-orange-400" : "text-foreground/70"
-                  }`}>{formatCompact(monthActualTotal)}</span>
-                ) : isFuture && monthTargetTotal > 0 ? (
-                  <span className="text-[9px] text-muted/50">need</span>
-                ) : null}
+                  }`}>{formatCompact(monthActual)}</span>
+                )}
               </div>
 
-              {/* Bar area */}
-              <div className="relative w-full h-40 flex items-end justify-center gap-px">
-                {displayGroups.map((group) => {
-                  const monthData = group.months[monthIdx];
-                  const barHeight = maxMonthly > 0 ? (monthData.actual / maxMonthly) * 100 : 0;
-                  const targetHeight = maxMonthly > 0 ? (monthData.effectiveTarget / maxMonthly) * 100 : 0;
+              {/* Bar area — stacked bars */}
+              <div className="relative w-full h-40 flex items-end justify-center"
+                title={`${formatCurrency(monthActual)} actual / ${formatCurrency(monthTarget)} target`}>
+                {/* Target dashed line */}
+                <div className="absolute w-full border-t border-dashed border-white/25 z-10" style={{ bottom: `${targetPct}%` }} />
 
-                  return (
-                    <div key={group.groupKey} className="relative flex-1 flex items-end"
-                      title={`${group.displayName}: ${formatCurrency(monthData.actual)} / ${formatCurrency(monthData.effectiveTarget)}`}>
-                      {/* Target dashed line */}
-                      <div className="absolute w-full border-t border-dashed border-white/20" style={{ bottom: `${targetHeight}%` }} />
-                      {/* Future months: ghost bar showing target needed */}
-                      {isFuture && monthData.effectiveTarget > 0 && (
-                        <div
-                          className="absolute bottom-0 w-full rounded-t border border-dashed opacity-20"
-                          style={{
-                            height: `${targetHeight}%`,
-                            borderColor: group.color,
-                          }}
-                        />
-                      )}
-                      {/* Actual bar */}
+                {/* Future months: ghost target bar */}
+                {isFuture && monthTarget > 0 && (
+                  <div
+                    className="absolute bottom-0 w-3/4 rounded-t border border-dashed border-white/15"
+                    style={{ height: `${targetPct}%` }}
+                  />
+                )}
+
+                {/* Stacked actual bars */}
+                <div className="w-3/4 flex flex-col-reverse items-stretch">
+                  {displayGroups.map((group) => {
+                    const monthData = group.months[monthIdx];
+                    const segmentPct = maxMonthly > 0 ? (monthData.actual / maxMonthly) * 100 : 0;
+                    if (monthData.actual <= 0) return null;
+
+                    return (
                       <div
-                        className={`w-full rounded-t transition-all duration-500 ${
+                        key={group.groupKey}
+                        className={`w-full transition-all duration-500 first:rounded-b last:rounded-t ${
                           monthData.hit ? "ring-1 ring-emerald-400/50" :
-                          monthData.missed ? "opacity-70" :
-                          isFuture ? "opacity-30" : ""
+                          monthData.missed ? "opacity-80" : ""
                         }`}
                         style={{
-                          height: `${barHeight}%`,
+                          height: `${segmentPct}%`,
                           backgroundColor: monthData.missed ? `${group.color}88` : group.color,
-                          minHeight: monthData.actual > 0 ? "2px" : "0px",
+                          minHeight: "2px",
                         }}
+                        title={`${group.displayName}: ${formatCurrency(monthData.actual)}`}
                       />
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Month label */}
@@ -128,22 +125,24 @@ export function RevenueGoalMonthlyChart({ groups }: Props) {
                 isFuture ? "text-muted/50" : "text-muted"
               }`}>{label}</span>
 
-              {/* Status indicators + future target amount */}
+              {/* Status indicators + target for filtered views */}
               <div className="h-5 flex flex-col items-center justify-start">
-                {displayGroups.some((g) => g.months[monthIdx].hit) && (
-                  <span className="text-[8px] text-emerald-400">&#10003;</span>
-                )}
-                {displayGroups.some((g) => g.months[monthIdx].missed) && (
-                  <span className="text-[8px] text-red-400">&#10007;</span>
-                )}
-                {displayGroups.some((g) => g.months[monthIdx].currentMonthOnTarget) && (
-                  <span className="text-[8px] text-emerald-400">&#9733;</span>
-                )}
-                {isFuture && monthTargetTotal > 0 && (
-                  <span className="text-[8px] text-amber-400/70">{formatCompact(monthTargetTotal)}</span>
-                )}
-                {isCurrent && monthTargetTotal > 0 && (
-                  <span className="text-[8px] text-orange-400/70">{formatCompact(monthTargetTotal)}</span>
+                <div className="flex gap-0.5">
+                  {displayGroups.some((g) => g.months[monthIdx].hit) && (
+                    <span className="text-[8px] text-emerald-400">&#10003;</span>
+                  )}
+                  {displayGroups.some((g) => g.months[monthIdx].missed) && (
+                    <span className="text-[8px] text-red-400">&#10007;</span>
+                  )}
+                  {displayGroups.some((g) => g.months[monthIdx].currentMonthOnTarget) && (
+                    <span className="text-[8px] text-emerald-400">&#9733;</span>
+                  )}
+                </div>
+                {/* Show per-month target when filtered to specific group(s) */}
+                {isSingleGroup && (isFuture || isCurrent) && monthTarget > 0 && (
+                  <span className={`text-[8px] ${isCurrent ? "text-orange-400/70" : "text-amber-400/70"}`}>
+                    {formatCompact(monthTarget)}
+                  </span>
                 )}
               </div>
             </div>
