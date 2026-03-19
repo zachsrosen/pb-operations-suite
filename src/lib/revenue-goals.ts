@@ -219,9 +219,12 @@ export async function fetchZuperCompletedRevenue(
       let hasMore = true;
 
       while (hasMore) {
+        // Widen search window by 3 months before the target year to catch
+        // jobs scheduled late in the prior year but completed in the target year.
+        // Completion date filtering happens below via getCompletedTimeFromHistory().
         const response = await zuper.searchJobs({
           category: categoryUid,
-          from_date: `${year}-01-01`,
+          from_date: `${year - 1}-10-01`,
           to_date: `${year}-12-31`,
           page,
           limit: 100,
