@@ -6,6 +6,7 @@
  */
 
 import { searchWithRetry } from "./hubspot";
+import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import {
   REVENUE_GROUPS,
   getClosedMonthCount,
@@ -70,12 +71,12 @@ export async function fetchRevenueDeals(year: number): Promise<DealLike[]> {
             filters: [
               {
                 propertyName: "pipeline",
-                operator: "EQ",
+                operator: FilterOperatorEnum.Eq,
                 value: pipelineId,
               },
               {
                 propertyName: "createdate",
-                operator: "LT",
+                operator: FilterOperatorEnum.Lt,
                 value: endDate,
               },
             ],
@@ -126,10 +127,11 @@ export function buildRevenueGoalResponse(
   const closedMonths = getClosedMonthCount(now);
   const aggregated = aggregateRevenue(deals, REVENUE_GROUPS, year);
 
+  const currentMonth = now.getUTCMonth(); // 0-indexed
   const groups: RevenueGroupResult[] = [];
 
   let companyYtdActual = 0;
-  let companyYtdTarget = 0;
+  let companyYtdExpected = 0;
   let companyAnnualTarget = 0;
 
   for (const [key, config] of Object.entries(REVENUE_GROUPS)) {
@@ -145,49 +147,66 @@ export function buildRevenueGoalResponse(
       closedMonths
     );
 
-    // Build per-month results
-    const months = baseTargets.map((base, i) => ({
-      month: i,
-      actual: actuals[i],
-      baseTarget: base,
-      effectiveTarget: effectiveTargets[i],
-    }));
+    // Determine if this group has any gated recognition rules
+    const discoveryGated = config.recognition.some(
+      (r) => r.strategy === "gated"
+    );
+
+    // Build per-month results with hit/miss/closed/currentMonthOnTarget
+    const months = baseTargets.map((base, i) => {
+      const closed = i < closedMonths;
+      const actual = actuals[i];
+      const effectiveTarget = effectiveTargets[i];
+      return {
+        month: i,
+        actual,
+        baseTarget: base,
+        effectiveTarget,
+        closed,
+        hit: closed && actual >= effectiveTarget,
+        missed: closed && actual < effectiveTarget,
+        currentMonthOnTarget:
+          i === currentMonth && !closed && actual >= effectiveTarget,
+      };
+    });
 
     // YTD = sum of closed months + current month
     const ytdMonths = closedMonths + 1; // include current (partial) month
     const ytdActual = actuals
       .slice(0, ytdMonths)
       .reduce((s, v) => s + v, 0);
-    const ytdTarget = effectiveTargets
+    const ytdPaceExpected = effectiveTargets
       .slice(0, ytdMonths)
       .reduce((s, v) => s + v, 0);
 
-    const pace = computePaceStatus(ytdActual, ytdTarget);
+    const paceStatus = computePaceStatus(ytdActual, ytdPaceExpected);
 
     groups.push({
-      key,
-      label: config.label,
+      groupKey: key,
+      displayName: config.label,
+      color: config.color,
       annualTarget: config.annualTarget,
       ytdActual,
-      ytdTarget,
-      pace,
+      ytdPaceExpected,
+      paceStatus,
+      discoveryGated,
       months,
     });
 
     companyYtdActual += ytdActual;
-    companyYtdTarget += ytdTarget;
+    companyYtdExpected += ytdPaceExpected;
     companyAnnualTarget += config.annualTarget;
   }
 
   return {
     year,
-    asOf: now.toISOString(),
+    lastUpdated: now.toISOString(),
     groups,
     companyTotal: {
       annualTarget: companyAnnualTarget,
       ytdActual: companyYtdActual,
-      ytdTarget: companyYtdTarget,
-      pace: computePaceStatus(companyYtdActual, companyYtdTarget),
+      ytdPaceExpected: companyYtdExpected,
+      paceStatus: computePaceStatus(companyYtdActual, companyYtdExpected),
     },
   };
 }

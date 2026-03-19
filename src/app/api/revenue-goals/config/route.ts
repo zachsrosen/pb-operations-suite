@@ -20,8 +20,8 @@ export async function GET(request: NextRequest) {
   });
 
   const config: Record<string, { month: number; target: number }[]> = {};
-  for (const group of REVENUE_GROUPS) {
-    config[group.groupKey] = Array.from({ length: 12 }, (_, i) => ({
+  for (const [groupKey, group] of Object.entries(REVENUE_GROUPS)) {
+    config[groupKey] = Array.from({ length: 12 }, (_, i) => ({
       month: i + 1,
       target: group.annualTarget / 12,
     }));
@@ -53,7 +53,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
-  const validKeys = new Set(REVENUE_GROUPS.map((g) => g.groupKey));
+  const validKeys = new Set(Object.keys(REVENUE_GROUPS));
   for (const t of targets) {
     if (!validKeys.has(t.groupKey)) {
       return NextResponse.json({ error: `Invalid group: ${t.groupKey}` }, { status: 400 });

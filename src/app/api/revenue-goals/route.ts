@@ -38,10 +38,10 @@ export async function GET(request: NextRequest) {
 
         // Auto-seed if no rows exist for this year
         if (goals.length === 0) {
-          const seedRows = REVENUE_GROUPS.flatMap((group) =>
+          const seedRows = Object.entries(REVENUE_GROUPS).flatMap(([groupKey, group]) =>
             Array.from({ length: 12 }, (_, i) => ({
               year,
-              groupKey: group.groupKey,
+              groupKey,
               month: i + 1,
               target: String(Math.round((group.annualTarget / 12) * 100) / 100),
             }))
@@ -74,8 +74,8 @@ async function buildResponse(
   goals: { groupKey: string; month: number; target: unknown }[]
 ) {
   const baseTargetsMap: Record<string, number[]> = {};
-  for (const group of REVENUE_GROUPS) {
-    baseTargetsMap[group.groupKey] = Array(12).fill(group.annualTarget / 12);
+  for (const [groupKey, group] of Object.entries(REVENUE_GROUPS)) {
+    baseTargetsMap[groupKey] = Array(12).fill(group.annualTarget / 12);
   }
   for (const goal of goals) {
     if (!baseTargetsMap[goal.groupKey]) continue;

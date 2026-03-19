@@ -29,6 +29,7 @@ export interface RecognitionRule {
 export interface RevenueGroupConfig {
   key: string;
   label: string;
+  color: string;
   annualTarget: number;
   /** Pipeline(s) + recognition strategy */
   recognition: RecognitionRule[];
@@ -47,29 +48,35 @@ export interface MonthResult {
   actual: number;
   baseTarget: number;
   effectiveTarget: number;
+  closed: boolean;
+  hit: boolean;
+  missed: boolean;
+  currentMonthOnTarget: boolean;
 }
 
 /** Full result for one revenue group */
 export interface RevenueGroupResult {
-  key: string;
-  label: string;
+  groupKey: string;
+  displayName: string;
+  color: string;
   annualTarget: number;
   ytdActual: number;
-  ytdTarget: number;
-  pace: PaceStatus;
+  ytdPaceExpected: number;
+  paceStatus: PaceStatus;
+  discoveryGated: boolean;
   months: MonthResult[];
 }
 
 /** Top-level API response shape */
 export interface RevenueGoalResponse {
   year: number;
-  asOf: string; // ISO timestamp
+  lastUpdated: string; // ISO timestamp
   groups: RevenueGroupResult[];
   companyTotal: {
     annualTarget: number;
     ytdActual: number;
-    ytdTarget: number;
-    pace: PaceStatus;
+    ytdPaceExpected: number;
+    paceStatus: PaceStatus;
   };
 }
 
@@ -110,6 +117,7 @@ export const REVENUE_GROUPS: Record<string, RevenueGroupConfig> = {
   westminster: {
     key: "westminster",
     label: "Westminster",
+    color: "#3B82F6",
     annualTarget: 15_000_000,
     recognition: [
       {
@@ -125,6 +133,7 @@ export const REVENUE_GROUPS: Record<string, RevenueGroupConfig> = {
   dtc: {
     key: "dtc",
     label: "DTC (Centennial)",
+    color: "#10B981",
     annualTarget: 15_000_000,
     recognition: [
       {
@@ -140,6 +149,7 @@ export const REVENUE_GROUPS: Record<string, RevenueGroupConfig> = {
   colorado_springs: {
     key: "colorado_springs",
     label: "Colorado Springs",
+    color: "#F59E0B",
     annualTarget: 7_000_000,
     recognition: [
       {
@@ -155,6 +165,7 @@ export const REVENUE_GROUPS: Record<string, RevenueGroupConfig> = {
   california: {
     key: "california",
     label: "California",
+    color: "#8B5CF6",
     annualTarget: 7_000_000,
     recognition: [
       {
@@ -170,6 +181,7 @@ export const REVENUE_GROUPS: Record<string, RevenueGroupConfig> = {
   roofing_dnr: {
     key: "roofing_dnr",
     label: "Roofing & D&R",
+    color: "#EC4899",
     annualTarget: 7_000_000,
     recognition: [
       {
@@ -192,6 +204,7 @@ export const REVENUE_GROUPS: Record<string, RevenueGroupConfig> = {
   service: {
     key: "service",
     label: "Service",
+    color: "#06B6D4",
     annualTarget: 1_500_000,
     recognition: [
       {
