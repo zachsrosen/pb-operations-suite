@@ -132,7 +132,10 @@ interface CreatePosOptions {
 }
 ```
 
+**Retry grouping rule:** Once `zohoPurchaseOrders` is non-empty on the snapshot (i.e., at least one PO was successfully created), retries operate against the **original persisted grouping** only. The function does NOT recompute vendor buckets from fresh Zoho data on retry — it loads the persisted `vendorGroups` from the snapshot's `bomData` (see step 0 below) and creates only the missing vendor POs. This prevents items silently moving between vendor buckets due to Zoho vendor assignment drift between attempts.
+
 **Flow:**
+0. If `existingPos` is non-empty, load the frozen vendor grouping from the snapshot's `bomData.poVendorGroups` (persisted alongside the first successful PO). Skip to step 1 using frozen groups. If `existingPos` is empty, compute fresh grouping via `resolvePoVendorGroups()` and persist it to `bomData.poVendorGroups` before proceeding.
 1. Filter out vendor groups that already have a PO in `existingPos` (by `vendorId`) — partial-failure idempotency
 2. For each remaining group, call `zohoInventory.createPurchaseOrder()` sequentially
 3. Omit `purchaseorder_number` from the payload — Zoho auto-assigns a sequential PO number for draft orders. Use `reference_number` for project/vendor context: `PROJ-{id} V{version} — {vendorName}` (truncate vendor name portion to fit Zoho's 50-char limit, keeping the project identifier intact; append ellipsis if truncated)
@@ -269,7 +272,24 @@ Replace:
 
 `bom-pipeline.ts` calls `resolvePoVendorGroups()` + `createPurchaseOrders()` directly (shared lib). No `unassignedVendorId` — items without a preferred vendor are logged in `BomPipelineRun` metadata and skipped. Partial failures are logged but don't block the pipeline.
 
-**Ordering:** PO creation is independent of SO creation. Both fields (`zohoPurchaseOrders` and `zohoSoId`) coexist on the same snapshot. In the pipeline, PO creation would run after SO creation as an optional step. `zohoSoId` is out of scope for this spec — no changes to it.
+**Pipeline step enum:** Add `CREATE_PO` to the `BomPipelineStep` enum in `prisma/schema.prisma`:
+
+```prisma
+enum BomPipelineStep {
+  FETCH_DEAL
+  LIST_PDFS
+  EXTRACT_BOM
+  SAVE_SNAPSHOT
+  RESOLVE_CUSTOMER
+  CREATE_SO
+  CREATE_PO      // NEW — after SO, before NOTIFY
+  NOTIFY
+}
+```
+
+This gives PO creation its own retry/failure classification in `BomPipelineRun`. A failed `CREATE_PO` step records the partial results (which vendors succeeded, which failed) in the run metadata, and pipeline retry targets only the `CREATE_PO` step.
+
+**Ordering:** PO creation is independent of SO creation. Both fields (`zohoPurchaseOrders` and `zohoSoId`) coexist on the same snapshot. In the pipeline, PO creation runs after `CREATE_SO` as an optional step — if it fails, the pipeline still proceeds to `NOTIFY`. `zohoSoId` is out of scope for this spec — no changes to it.
 
 ---
 
@@ -288,7 +308,7 @@ Replace:
 |------|--------|
 | `src/lib/zoho-inventory.ts` | Add `vendor_id`, `vendor_name` to `findItemIdByName()` return |
 | `src/lib/bom-po-create.ts` | **New** — `resolvePoVendorGroups()`, `createPurchaseOrders()` |
-| `prisma/schema.prisma` | Replace `zohoPoId` with `zohoPurchaseOrders` on `ProjectBomSnapshot` |
+| `prisma/schema.prisma` | Replace `zohoPoId` with `zohoPurchaseOrders` on `ProjectBomSnapshot`; add `CREATE_PO` to `BomPipelineStep` enum |
 | `prisma/migrations/...` | Data migration for existing `zohoPoId` rows |
 | `src/app/api/bom/po-preview/route.ts` | **New** — preview grouping endpoint |
 | `src/app/api/bom/create-po/route.ts` | Rework to multi-vendor, partial-failure idempotency |
