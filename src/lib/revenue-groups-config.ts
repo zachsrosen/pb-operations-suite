@@ -10,7 +10,7 @@
 // ---------------------------------------------------------------------------
 
 /** How revenue is "recognized" for a deal in a pipeline */
-export type RecognitionStrategy = "construction_complete" | "gated" | "split";
+export type RecognitionStrategy = "construction_complete" | "gated" | "split" | "zuper_completed";
 
 /** Recognition rule for a single pipeline within a group */
 export interface RecognitionRule {
@@ -20,9 +20,12 @@ export interface RecognitionRule {
    * For "construction_complete": field name holding the completion date.
    * For "gated": field name for the stage-gate completion date.
    * For "split": array of [field, fraction] tuples (must sum to 1).
+   * For "zuper_completed": not used (completion date comes from Zuper job history).
    */
   dateField?: string;
   splitFields?: [field: string, fraction: number][];
+  /** For "zuper_completed": Zuper job category UIDs that count as the recognition event */
+  zuperCategoryUids?: string[];
 }
 
 /** Configuration for one revenue group (office / vertical) */
@@ -194,8 +197,8 @@ export const REVENUE_GROUPS: Record<string, RevenueGroupConfig> = {
       },
       {
         pipelineId: PIPELINE.ROOFING,
-        strategy: "gated",
-        dateField: "closedate",
+        strategy: "zuper_completed",
+        zuperCategoryUids: ["18f08c0d-f767-4e4a-8970-7c67597f4b4a"], // MID_ROOF_INSTALL
       },
     ],
     excludedStages: [CANCELLED_STAGES.DNR],
@@ -209,8 +212,11 @@ export const REVENUE_GROUPS: Record<string, RevenueGroupConfig> = {
     recognition: [
       {
         pipelineId: PIPELINE.SERVICE,
-        strategy: "gated",
-        dateField: "closedate",
+        strategy: "zuper_completed",
+        zuperCategoryUids: [
+          "cff6f839-c043-46ee-a09f-8d0e9f363437", // SERVICE_VISIT
+          "8a29a1c0-9141-4db6-b8bb-9d9a65e2a1de", // SERVICE_REVISIT (deduplicated per deal)
+        ],
       },
     ],
     excludedStages: [CANCELLED_STAGES.SERVICE],
@@ -379,6 +385,11 @@ export function aggregateRevenue(
       switch (rule.strategy) {
         case "gated":
           // Discovery-gated: recognition field not yet known, skip revenue
+          break;
+
+        case "zuper_completed":
+          // Revenue comes from Zuper job completion, not HubSpot date fields
+          // Actuals are fetched separately via fetchZuperCompletedRevenue()
           break;
 
         case "construction_complete": {

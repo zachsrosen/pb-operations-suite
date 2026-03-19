@@ -53,17 +53,19 @@ describe("REVENUE_GROUPS", () => {
     const dnrStrat = rd.recognition.find((r) => r.pipelineId === "21997330");
     expect(dnrStrat).toBeDefined();
     expect(dnrStrat!.strategy).toBe("split");
-    // Roofing should be gated
+    // Roofing should use Zuper completion
     const roofStrat = rd.recognition.find((r) => r.pipelineId === "765928545");
     expect(roofStrat).toBeDefined();
-    expect(roofStrat!.strategy).toBe("gated");
+    expect(roofStrat!.strategy).toBe("zuper_completed");
+    expect(roofStrat!.zuperCategoryUids).toBeDefined();
   });
 
-  it("service group uses gated strategy", () => {
+  it("service group uses Zuper completion strategy", () => {
     const svc = REVENUE_GROUPS.service;
     expect(svc).toBeDefined();
     expect(svc.recognition).toHaveLength(1);
-    expect(svc.recognition[0].strategy).toBe("gated");
+    expect(svc.recognition[0].strategy).toBe("zuper_completed");
+    expect(svc.recognition[0].zuperCategoryUids?.length).toBeGreaterThan(0);
   });
 });
 
@@ -314,9 +316,9 @@ describe("aggregateRevenue", () => {
     expect(result.westminster.monthlyActuals[2]).toBe(300_000);
   });
 
-  it("gated strategies produce $0 actuals (discovery-gated groups)", () => {
+  it("zuper_completed strategies produce $0 HubSpot actuals (revenue comes from Zuper)", () => {
     // Service pipeline deal with a closedate — should NOT be counted
-    // because service uses strategy: "gated"
+    // because service uses strategy: "zuper_completed" (actuals come from Zuper, not HubSpot)
     const deals: DealLike[] = [
       makeDeal({
         hs_object_id: "50",
@@ -329,12 +331,12 @@ describe("aggregateRevenue", () => {
     ];
 
     const result = aggregateRevenue(deals, groups, 2026);
-    // Service group should have $0 — gated strategy skips revenue
+    // Service group should have $0 in HubSpot aggregation — Zuper handles actuals
     expect(result.service.monthlyActuals.every((v) => v === 0)).toBe(true);
   });
 
-  it("roofing pipeline deals produce $0 actuals (gated within roofing_dnr)", () => {
-    // Roofing pipeline deal — should NOT be counted because roofing uses gated strategy
+  it("roofing pipeline deals produce $0 HubSpot actuals (zuper_completed within roofing_dnr)", () => {
+    // Roofing pipeline deal — should NOT be counted in HubSpot aggregation (Zuper handles it)
     const deals: DealLike[] = [
       makeDeal({
         hs_object_id: "51",

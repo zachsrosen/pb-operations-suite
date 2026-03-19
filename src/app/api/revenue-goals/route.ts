@@ -4,6 +4,7 @@ import { appCache, CACHE_KEYS } from "@/lib/cache";
 import {
   REVENUE_GROUPS,
   fetchRevenueDeals,
+  fetchZuperCompletedRevenue,
   buildRevenueGoalResponse,
 } from "@/lib/revenue-goals";
 import { prisma } from "@/lib/db";
@@ -82,6 +83,10 @@ async function buildResponse(
     baseTargetsMap[goal.groupKey][goal.month - 1] = Number(goal.target);
   }
 
-  const deals = await fetchRevenueDeals(year);
-  return buildRevenueGoalResponse(year, deals, baseTargetsMap);
+  // Fetch HubSpot deals and Zuper completed jobs in parallel
+  const [deals, zuperActuals] = await Promise.all([
+    fetchRevenueDeals(year),
+    fetchZuperCompletedRevenue(year),
+  ]);
+  return buildRevenueGoalResponse(year, deals, baseTargetsMap, new Date(), zuperActuals);
 }
