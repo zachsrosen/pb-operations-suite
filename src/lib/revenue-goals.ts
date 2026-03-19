@@ -47,8 +47,9 @@ export const REVENUE_DEAL_PROPERTIES = [
  * Queries each pipeline separately to stay within HubSpot filter group limits.
  */
 export async function fetchRevenueDeals(year: number): Promise<DealLike[]> {
-  const startDate = `${year}-01-01`;
-  const endDate = `${year}-12-31`;
+  // HubSpot date property filters require millisecond timestamps
+  const startDate = String(new Date(`${year}-01-01T00:00:00Z`).getTime());
+  const endDate = String(new Date(`${year}-12-31T23:59:59Z`).getTime());
 
   // Build per-pipeline filter groups scoped to recognition date fields.
   // Each unique (pipelineId, dateField) pair produces one OR filter group:
