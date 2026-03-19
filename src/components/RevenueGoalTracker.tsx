@@ -30,7 +30,13 @@ export function RevenueGoalTracker() {
   // SSE auto-invalidates via cacheKeyToQueryKeys mapping — no manual refetch needed
   useSSE(null, { cacheKeyFilter: "revenue-goals" });
 
-  if (error) return null; // Fail silently on the suite page
+  if (error) {
+    return (
+      <div className="bg-surface rounded-xl border border-red-500/30 p-4 text-sm text-red-400">
+        Revenue tracker failed to load: {error.message}
+      </div>
+    );
+  }
   if (isLoading || !data) {
     return (
       <div className="bg-surface rounded-xl border border-t-border p-6 animate-pulse">
