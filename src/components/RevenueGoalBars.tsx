@@ -39,7 +39,7 @@ export function RevenueGoalBars({ groups, companyTotal }: Props) {
           />
           {pacePct > 0 && (
             <div
-              className="absolute top-0 h-full w-0.5 bg-white/30"
+              className="absolute top-0 h-full w-[2px] bg-white/70"
               style={{ left: `${Math.min(pacePct, 100)}%` }}
               title={`Expected pace: ${pacePct.toFixed(0)}%`}
             />
@@ -58,9 +58,13 @@ export function RevenueGoalBars({ groups, companyTotal }: Props) {
           const pct = group.annualTarget > 0
             ? (group.ytdActual / group.annualTarget) * 100
             : 0;
+          const groupPacePct = group.annualTarget > 0
+            ? (group.ytdPaceExpected / group.annualTarget) * 100
+            : 0;
           const deficit = group.paceStatus === "behind"
             ? group.ytdPaceExpected - group.ytdActual
             : undefined;
+          const isApproximate = group.groupKey === "roofing_dnr" || group.groupKey === "service";
 
           return (
             <div key={group.groupKey}>
@@ -76,16 +80,26 @@ export function RevenueGoalBars({ groups, companyTotal }: Props) {
                   {group.discoveryGated && (
                     <span className="text-[10px] text-amber-500/70">not configured</span>
                   )}
+                  {isApproximate && (
+                    <span className="text-[9px] text-muted/60 italic" title="Revenue for this group is based on Zuper job completion data and may be approximate">~approx</span>
+                  )}
                 </div>
                 <span className="text-xs text-muted">
                   {formatCurrency(group.ytdActual)} / {formatCurrency(group.annualTarget)}
                 </span>
               </div>
-              <div className="bg-surface rounded-full h-3 overflow-hidden">
+              <div className="relative bg-surface rounded-full h-3 overflow-hidden">
                 <div
                   className="h-full rounded-full transition-all duration-1000 ease-out"
                   style={{ width: `${Math.min(pct, 100)}%`, backgroundColor: group.color }}
                 />
+                {groupPacePct > 0 && (
+                  <div
+                    className="absolute top-0 h-full w-[2px] bg-white/60"
+                    style={{ left: `${Math.min(groupPacePct, 100)}%` }}
+                    title={`Expected pace: ${groupPacePct.toFixed(0)}%`}
+                  />
+                )}
               </div>
             </div>
           );

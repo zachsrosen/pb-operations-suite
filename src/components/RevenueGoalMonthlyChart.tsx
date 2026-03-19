@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import type { RevenueGroupResult } from "@/lib/revenue-groups-config";
+import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
+import type { FilterOption } from "@/components/ui/MultiSelectFilter";
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -16,12 +18,18 @@ function formatCurrency(amount: number): string {
 }
 
 export function RevenueGoalMonthlyChart({ groups }: Props) {
-  const [selectedGroup, setSelectedGroup] = useState<string | "all">("all");
+  const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const currentMonth = new Date().getMonth();
 
-  const displayGroups = selectedGroup === "all"
+  const filterOptions: FilterOption[] = useMemo(
+    () => groups.map((g) => ({ value: g.groupKey, label: g.displayName })),
+    [groups]
+  );
+
+  // Empty selection = show all
+  const displayGroups = selectedGroups.length === 0
     ? groups
-    : groups.filter((g) => g.groupKey === selectedGroup);
+    : groups.filter((g) => selectedGroups.includes(g.groupKey));
 
   const maxMonthly = Math.max(
     ...displayGroups.flatMap((g) =>
@@ -34,16 +42,14 @@ export function RevenueGoalMonthlyChart({ groups }: Props) {
     <div>
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-sm font-semibold text-foreground">Monthly Breakdown</h3>
-        <select
-          value={selectedGroup}
-          onChange={(e) => setSelectedGroup(e.target.value)}
-          className="bg-surface-2 text-foreground text-xs rounded-lg px-2 py-1 border border-t-border"
-        >
-          <option value="all">All Groups</option>
-          {groups.map((g) => (
-            <option key={g.groupKey} value={g.groupKey}>{g.displayName}</option>
-          ))}
-        </select>
+        <MultiSelectFilter
+          label="Groups"
+          options={filterOptions}
+          selected={selectedGroups}
+          onChange={setSelectedGroups}
+          placeholder="All Groups"
+          accentColor="orange"
+        />
       </div>
 
       <div className="grid grid-cols-12 gap-1">
