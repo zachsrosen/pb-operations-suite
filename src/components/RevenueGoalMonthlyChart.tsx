@@ -17,6 +17,14 @@ function formatCurrency(amount: number): string {
   return `$${amount.toFixed(0)}`;
 }
 
+/** Compact format for tight column labels (no dollar sign, shorter) */
+function formatCompact(amount: number): string {
+  if (amount >= 1_000_000) return `$${(amount / 1_000_000).toFixed(1)}M`;
+  if (amount >= 100_000) return `$${(amount / 1_000).toFixed(0)}K`;
+  if (amount >= 1_000) return `$${(amount / 1_000).toFixed(0)}K`;
+  return `$${amount.toFixed(0)}`;
+}
+
 export function RevenueGoalMonthlyChart({ groups }: Props) {
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const currentMonth = new Date().getMonth();
@@ -52,14 +60,30 @@ export function RevenueGoalMonthlyChart({ groups }: Props) {
         />
       </div>
 
-      <div className="grid grid-cols-12 gap-1">
+      <div className="grid grid-cols-12 gap-1.5">
         {MONTH_LABELS.map((label, monthIdx) => {
           const isFuture = monthIdx > currentMonth;
           const isCurrent = monthIdx === currentMonth;
 
+          // Aggregate actual and effective target across displayed groups for this month
+          const monthActualTotal = displayGroups.reduce((sum, g) => sum + g.months[monthIdx].actual, 0);
+          const monthTargetTotal = displayGroups.reduce((sum, g) => sum + g.months[monthIdx].effectiveTarget, 0);
+
           return (
             <div key={label} className="flex flex-col items-center">
-              <div className="relative w-full h-24 flex items-end justify-center gap-px">
+              {/* Dollar label above bars */}
+              <div className="h-8 flex flex-col items-center justify-end mb-0.5">
+                {monthActualTotal > 0 ? (
+                  <span className={`text-[9px] font-medium ${
+                    isCurrent ? "text-orange-400" : "text-foreground/70"
+                  }`}>{formatCompact(monthActualTotal)}</span>
+                ) : isFuture && monthTargetTotal > 0 ? (
+                  <span className="text-[9px] text-muted/50">need</span>
+                ) : null}
+              </div>
+
+              {/* Bar area */}
+              <div className="relative w-full h-40 flex items-end justify-center gap-px">
                 {displayGroups.map((group) => {
                   const monthData = group.months[monthIdx];
                   const barHeight = maxMonthly > 0 ? (monthData.actual / maxMonthly) * 100 : 0;
@@ -68,7 +92,19 @@ export function RevenueGoalMonthlyChart({ groups }: Props) {
                   return (
                     <div key={group.groupKey} className="relative flex-1 flex items-end"
                       title={`${group.displayName}: ${formatCurrency(monthData.actual)} / ${formatCurrency(monthData.effectiveTarget)}`}>
+                      {/* Target dashed line */}
                       <div className="absolute w-full border-t border-dashed border-white/20" style={{ bottom: `${targetHeight}%` }} />
+                      {/* Future months: ghost bar showing target needed */}
+                      {isFuture && monthData.effectiveTarget > 0 && (
+                        <div
+                          className="absolute bottom-0 w-full rounded-t border border-dashed opacity-20"
+                          style={{
+                            height: `${targetHeight}%`,
+                            borderColor: group.color,
+                          }}
+                        />
+                      )}
+                      {/* Actual bar */}
                       <div
                         className={`w-full rounded-t transition-all duration-500 ${
                           monthData.hit ? "ring-1 ring-emerald-400/50" :
@@ -85,11 +121,15 @@ export function RevenueGoalMonthlyChart({ groups }: Props) {
                   );
                 })}
               </div>
+
+              {/* Month label */}
               <span className={`text-[9px] mt-1 ${
                 isCurrent ? "text-orange-400 font-bold" :
                 isFuture ? "text-muted/50" : "text-muted"
               }`}>{label}</span>
-              <div className="h-3 flex items-center">
+
+              {/* Status indicators + future target amount */}
+              <div className="h-5 flex flex-col items-center justify-start">
                 {displayGroups.some((g) => g.months[monthIdx].hit) && (
                   <span className="text-[8px] text-emerald-400">&#10003;</span>
                 )}
@@ -98,6 +138,12 @@ export function RevenueGoalMonthlyChart({ groups }: Props) {
                 )}
                 {displayGroups.some((g) => g.months[monthIdx].currentMonthOnTarget) && (
                   <span className="text-[8px] text-emerald-400">&#9733;</span>
+                )}
+                {isFuture && monthTargetTotal > 0 && (
+                  <span className="text-[8px] text-amber-400/70">{formatCompact(monthTargetTotal)}</span>
+                )}
+                {isCurrent && monthTargetTotal > 0 && (
+                  <span className="text-[8px] text-orange-400/70">{formatCompact(monthTargetTotal)}</span>
                 )}
               </div>
             </div>
