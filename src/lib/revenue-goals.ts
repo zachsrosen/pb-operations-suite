@@ -5,7 +5,7 @@
  * Imports server-only dependencies (hubspot.ts).
  */
 
-import { searchWithRetry, batchReadDeals } from "./hubspot";
+import { searchWithRetry } from "./hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { zuper } from "./zuper";
 import { getCompletedTimeFromHistory } from "./compliance-helpers";
