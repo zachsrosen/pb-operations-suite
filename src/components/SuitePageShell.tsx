@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { getSuiteSwitcherEntriesForRole, SUITE_NAV_ENTRIES } from "@/lib/suite-nav";
 import { canAccessRoute, getDefaultRouteForRole, type UserRole } from "@/lib/role-permissions";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
@@ -22,6 +23,7 @@ interface SuitePageShellProps {
   hoverBorderClass?: string;
   tagColorClass?: string;
   columnsClassName?: string;
+  heroContent?: ReactNode;
 }
 
 type GridRow = { cols: string; cards: SuitePageCard[] };
@@ -66,6 +68,7 @@ export default function SuitePageShell({
   hoverBorderClass = "hover:border-orange-500/50",
   tagColorClass = "bg-blue-500/20 text-blue-400 border-blue-500/30",
   columnsClassName = "grid grid-cols-1 md:grid-cols-3 gap-4",
+  heroContent,
 }: SuitePageShellProps) {
   const toRoutePath = (href: string): string | null => {
     if (!href.startsWith("/")) return null;
@@ -134,6 +137,10 @@ export default function SuitePageShell({
               })}
             </div>
           </div>
+        )}
+
+        {heroContent && (
+          <div className="mb-8">{heroContent}</div>
         )}
 
         {sections.map(({ section, cards: sectionCards }) => {
