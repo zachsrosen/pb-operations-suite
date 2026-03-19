@@ -56,10 +56,12 @@ export function RevenueGoalTracker() {
   );
 
   return (
-    <div className="bg-surface rounded-xl border border-t-border p-6 relative overflow-hidden">
-      {/* Fireworks layer */}
+    <div className="bg-surface rounded-xl border border-t-border p-6 relative">
+      {/* Fireworks layer (overflow-hidden scoped here so MultiSelectFilter dropdown isn't clipped) */}
       {fireworkGroups.length > 0 && (
-        <RevenueGoalFireworks groups={fireworkGroups} year={year} />
+        <div className="absolute inset-0 overflow-hidden rounded-xl pointer-events-none">
+          <RevenueGoalFireworks groups={fireworkGroups} year={year} />
+        </div>
       )}
 
       {/* Header */}
