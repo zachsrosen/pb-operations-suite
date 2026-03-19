@@ -170,6 +170,23 @@ describe("computePaceStatus", () => {
     const result = computePaceStatus(0, 0);
     expect(result).toBe("on_pace");
   });
+
+  it("straight-line pace uses closedMonths/12 * annualTarget (not redistributed targets)", () => {
+    // On March 18, closedMonths = 2 (Jan+Feb closed)
+    // For a $12M annual target, expected pace = (2/12) * 12M = $2M
+    const closedMonths = getClosedMonthCount(new Date(2026, 2, 18)); // March 18
+    expect(closedMonths).toBe(2);
+    const annualTarget = 12_000_000;
+    const expectedPace = (closedMonths / 12) * annualTarget;
+    expect(expectedPace).toBe(2_000_000);
+
+    // Actual = $2.2M → ahead (110% of $2M, > 105% threshold)
+    expect(computePaceStatus(2_200_000, expectedPace)).toBe("ahead");
+    // Actual = $1.9M → on_pace (95-105% of $2M)
+    expect(computePaceStatus(1_900_000, expectedPace)).toBe("on_pace");
+    // Actual = $1.8M → behind (< 95% of $2M)
+    expect(computePaceStatus(1_800_000, expectedPace)).toBe("behind");
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -295,5 +312,41 @@ describe("aggregateRevenue", () => {
 
     const result = aggregateRevenue(deals, groups, 2026);
     expect(result.westminster.monthlyActuals[2]).toBe(300_000);
+  });
+
+  it("gated strategies produce $0 actuals (discovery-gated groups)", () => {
+    // Service pipeline deal with a closedate — should NOT be counted
+    // because service uses strategy: "gated"
+    const deals: DealLike[] = [
+      makeDeal({
+        hs_object_id: "50",
+        pipeline: "23928924", // Service pipeline
+        amount: "50000",
+        closedate: "2026-02-15",
+        construction_complete_date: undefined,
+        pb_location: undefined,
+      }),
+    ];
+
+    const result = aggregateRevenue(deals, groups, 2026);
+    // Service group should have $0 — gated strategy skips revenue
+    expect(result.service.monthlyActuals.every((v) => v === 0)).toBe(true);
+  });
+
+  it("roofing pipeline deals produce $0 actuals (gated within roofing_dnr)", () => {
+    // Roofing pipeline deal — should NOT be counted because roofing uses gated strategy
+    const deals: DealLike[] = [
+      makeDeal({
+        hs_object_id: "51",
+        pipeline: "765928545", // Roofing pipeline
+        amount: "75000",
+        closedate: "2026-03-10",
+        construction_complete_date: undefined,
+        pb_location: undefined,
+      }),
+    ];
+
+    const result = aggregateRevenue(deals, groups, 2026);
+    expect(result.roofing_dnr.monthlyActuals.every((v) => v === 0)).toBe(true);
   });
 });

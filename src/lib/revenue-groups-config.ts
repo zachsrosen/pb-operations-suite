@@ -377,8 +377,11 @@ export function aggregateRevenue(
 
       // Apply recognition strategy
       switch (rule.strategy) {
-        case "construction_complete":
-        case "gated": {
+        case "gated":
+          // Discovery-gated: recognition field not yet known, skip revenue
+          break;
+
+        case "construction_complete": {
           const dateField = rule.dateField;
           if (!dateField) break;
           const month = parseMonthInYear(deal[dateField], year);
