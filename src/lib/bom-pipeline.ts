@@ -67,6 +67,33 @@ const AUTO_RETRY_ENABLED =
 const AI_ESCALATION_ENABLED =
   process.env.PIPELINE_AI_ESCALATION_ENABLED === "true";
 
+const AUTO_CREATE_PO_ON_RTB =
+  process.env.PIPELINE_AUTO_CREATE_PO_ON_RTB === "true";
+
+// ---------------------------------------------------------------------------
+// PO Gate
+// ---------------------------------------------------------------------------
+
+/**
+ * Determine whether the CREATE_PO step should run.
+ *
+ * - RTB trigger + flag on → start automatic PO creation
+ * - MANUAL trigger + existing POs → continue incomplete PO creation
+ * - Otherwise → skip
+ *
+ * Exported for testability — the pipeline calls this inline.
+ */
+export function shouldRunPoCreation(
+  trigger: string | undefined,
+  autoCreatePoOnRtb: boolean,
+  existingPosCount: number,
+): boolean {
+  return (
+    (trigger === "WEBHOOK_READY_TO_BUILD" && autoCreatePoOnRtb) ||
+    (trigger === "MANUAL" && existingPosCount > 0)
+  );
+}
+
 /** Per-step retry policy. Steps not listed here are not retried. */
 interface StepRetryPolicy {
   maxAttempts: number;   // total attempts (1 = no retry, 2 = one retry)
@@ -136,13 +163,6 @@ const STEP_RETRY_POLICIES: Partial<Record<BomPipelineStep, StepRetryPolicy>> = {
     retryablePatterns: DEFAULT_RETRYABLE_PATTERNS,
   },
   CREATE_SO: {
-    maxAttempts: 2,
-    baseDelayMs: 3_000,
-    jitterMs: 1_000,
-    retryableStatuses: DEFAULT_RETRYABLE_STATUSES,
-    retryablePatterns: DEFAULT_RETRYABLE_PATTERNS,
-  },
-  CREATE_PO: {
     maxAttempts: 2,
     baseDelayMs: 3_000,
     jitterMs: 1_000,
@@ -955,7 +975,7 @@ export async function runDesignCompletePipeline(
       unmatchedCount: soResult.unmatchedCount,
     });
 
-    // ── Step 7: Create draft Purchase Orders (best-effort, partial failures allowed) ──
+    // ── Step 7: Create draft Purchase Orders (conditional, best-effort) ──
     currentStep = "CREATE_PO";
 
     let poResult: {
@@ -969,38 +989,55 @@ export async function runDesignCompletePipeline(
     };
     let poUnassignedItems: Array<{ name: string; quantity: number }> = [];
 
-    try {
-      const poSnapshot = await prisma.projectBomSnapshot.findFirst({
-        where: { id: snapshotResult.id },
-      });
-      if (poSnapshot) {
-        const poBomData = (poSnapshot.bomData ?? {}) as PoBomData;
+    // State-based PO gate:
+    //   - RTB trigger + flag on → start automatic PO creation
+    //   - MANUAL trigger + existing POs → continue incomplete PO creation
+    //     (intentionally bypasses the flag — a prior run already created POs,
+    //     so recovery should work regardless of whether the flag is still on)
+    //   - Otherwise → skip PO creation entirely
+    //
+    // MANUAL continuation requires existingPos.length > 0 (at least one PO
+    // actually created). We don't use poVendorGroups alone because the shared
+    // lib persists an empty array on first attempt, and empty arrays are truthy.
+    // The frozen-grouping rule in createPurchaseOrders also only activates when
+    // existingPos is non-empty, so this keeps the gate aligned with the shared lib.
+    const poSnapshot = await prisma.projectBomSnapshot.findFirst({
+      where: { id: snapshotResult.id },
+    });
+    const existingPos = poSnapshot ? parseZohoPurchaseOrders(poSnapshot.zohoPurchaseOrders) : [];
+    const poBomData = (poSnapshot?.bomData ?? {}) as PoBomData;
+
+    const shouldCreatePos = shouldRunPoCreation(trigger, AUTO_CREATE_PO_ON_RTB, existingPos.length);
+
+    if (shouldCreatePos && poSnapshot && zohoInventory.isConfigured()) {
+      try {
         const poGrouping = await resolvePoVendorGroups(poBomData);
         poUnassignedItems = poGrouping.unassignedItems.map((item) => ({
           name: item.name,
           quantity: item.quantity,
         }));
 
-        const { result } = await withRetry("CREATE_PO", () => createPurchaseOrders({
+        // No withRetry — createPurchaseOrders handles persist-as-you-go
+        // partial-failure recovery internally
+        poResult = await createPurchaseOrders({
           snapshotId: poSnapshot.id,
           bomData: poBomData,
           vendorGroups: poGrouping.vendorGroups,
-          existingPos: parseZohoPurchaseOrders(poSnapshot.zohoPurchaseOrders),
+          existingPos,
           dealName: poSnapshot.dealName,
           version: poSnapshot.version,
           address: poBomData.project?.address,
           actor: PIPELINE_ACTOR,
-        }), retryObs);
-        poResult = result;
+        });
+      } catch (poError) {
+        const message = poError instanceof Error ? poError.message : String(poError);
+        poResult.failed.push({
+          vendorId: "pipeline",
+          vendorName: "Pipeline PO Creation",
+          error: message,
+        });
+        console.error("[bom-pipeline] PO creation step failed:", poError);
       }
-    } catch (poError) {
-      const message = poError instanceof Error ? poError.message : String(poError);
-      poResult.failed.push({
-        vendorId: "pipeline",
-        vendorName: "Pipeline PO Creation",
-        error: message,
-      });
-      console.error("[bom-pipeline] PO creation step failed:", poError);
     }
 
     await updateRun(runId, {
@@ -1076,6 +1113,17 @@ export async function runDesignCompletePipeline(
         snapshotUrl: getBomSnapshotUrl(dealId),
         durationMs,
         trigger,
+        // PO results
+        purchaseOrders: [...poResult.skippedExisting, ...poResult.created].map(po => ({
+          vendorName: po.vendorName,
+          poNumber: po.poNumber,
+          itemCount: po.itemCount,
+        })),
+        poFailed: poResult.failed.length > 0 ? poResult.failed.map(f => ({
+          vendorName: f.vendorName,
+          error: f.error,
+        })) : undefined,
+        poUnassignedCount: poUnassignedItems.length > 0 ? poUnassignedItems.length : undefined,
         ...(bomPdfBuffer ? { pdfAttachment: { filename: pdfFilename, content: bomPdfBuffer } } : {}),
       });
     } catch (notifyErr) {
