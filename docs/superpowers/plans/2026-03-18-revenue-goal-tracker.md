@@ -322,13 +322,16 @@ export interface RevenueGoalResponse {
 }
 
 // --- Group Config ---
+// Pipeline IDs are hardcoded here (not read from env vars) because this file
+// is imported by client components. The server-only revenue-goals.ts can use
+// env-backed IDs if needed, but for group definitions these are stable constants.
 
 const PIPELINE_IDS = {
-  PROJECT: process.env.HUBSPOT_PIPELINE_PROJECT || "6900017",
-  DNR: process.env.HUBSPOT_PIPELINE_DNR || "21997330",
-  ROOFING: process.env.HUBSPOT_PIPELINE_ROOFING || "765928545",
-  SERVICE: process.env.HUBSPOT_PIPELINE_SERVICE || "23928924",
-};
+  PROJECT: "6900017",
+  DNR: "21997330",
+  ROOFING: "765928545",
+  SERVICE: "23928924",
+} as const;
 
 export const REVENUE_GROUPS: RevenueGroupConfig[] = [
   {
@@ -443,7 +446,7 @@ export function computePaceStatus(actual: number, expected: number): PaceStatus 
 
 // --- Revenue aggregation ---
 
-interface DealLike {
+export interface DealLike {
   amount: number;
   pipeline: string;
   pb_location?: string;
@@ -1035,7 +1038,7 @@ import { RevenueGoalRings } from "./RevenueGoalRings";
 import { RevenueGoalBars } from "./RevenueGoalBars";
 import { RevenueGoalMonthlyChart } from "./RevenueGoalMonthlyChart";
 import { RevenueGoalFireworks } from "./RevenueGoalFireworks";
-import type { RevenueGoalResponse } from "@/lib/revenue-goals";
+import type { RevenueGoalResponse } from "@/lib/revenue-groups-config";
 
 type Variant = "rings" | "bars";
 
@@ -1158,7 +1161,7 @@ Create `src/components/RevenueGoalRings.tsx`:
 ```tsx
 "use client";
 
-import type { RevenueGroupResult } from "@/lib/revenue-goals";
+import type { RevenueGroupResult } from "@/lib/revenue-groups-config";
 
 interface Props {
   groups: RevenueGroupResult[];
@@ -1289,7 +1292,7 @@ Create `src/components/RevenueGoalBars.tsx`:
 ```tsx
 "use client";
 
-import type { RevenueGroupResult, RevenueGoalResponse } from "@/lib/revenue-goals";
+import type { RevenueGroupResult, RevenueGoalResponse } from "@/lib/revenue-groups-config";
 
 interface Props {
   groups: RevenueGroupResult[];
@@ -1424,7 +1427,7 @@ Create `src/components/RevenueGoalMonthlyChart.tsx`:
 "use client";
 
 import { useState } from "react";
-import type { RevenueGroupResult } from "@/lib/revenue-goals";
+import type { RevenueGroupResult } from "@/lib/revenue-groups-config";
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -1572,7 +1575,7 @@ Create `src/components/RevenueGoalFireworks.tsx`:
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { RevenueGroupResult } from "@/lib/revenue-goals";
+import type { RevenueGroupResult } from "@/lib/revenue-groups-config";
 
 interface Props {
   groups: RevenueGroupResult[];
