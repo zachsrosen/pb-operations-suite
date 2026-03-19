@@ -170,6 +170,9 @@ enum ActivityType {
   PORTAL_SURVEY_SCHEDULED
   PORTAL_SURVEY_RESCHEDULED
   PORTAL_SURVEY_CANCELLED
+
+  // Revenue Goals
+  REVENUE_GOAL_UPDATED
 }
 
 enum ClientType {
@@ -1705,4 +1708,23 @@ model ServiceSoRequest {
 
   @@index([dealId])
   @@index([createdBy])
+}
+
+// ===========================================
+// REVENUE GOALS
+// ===========================================
+
+model RevenueGoal {
+  id        String   @id @default(cuid())
+  year      Int
+  groupKey  String
+  month     Int
+  target    Decimal
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+
+  @@unique([year, groupKey, month])
+  @@index([year])
 }
