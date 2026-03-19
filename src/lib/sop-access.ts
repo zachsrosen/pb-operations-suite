@@ -6,7 +6,7 @@
  */
 
 /** Tabs visible to all authenticated users */
-const PUBLIC_TABS = new Set(["hubspot", "ops", "ref"]);
+const PUBLIC_TABS = new Set(["hubspot", "ops", "ref", "zoho-inventory"]);
 
 /** PM Guide — gated by first name */
 const PM_NAMES = new Set(["alexis", "kaitlyn", "kat", "natasha"]);

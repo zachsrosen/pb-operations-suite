@@ -966,6 +966,7 @@ export async function runDesignCompletePipeline(
           version: snapshotResult.version,
           customerId: customerId!,
           actor: PIPELINE_ACTOR,
+          pbLocation: dealProps.pbLocation,
         }),
         retryObs,
       );

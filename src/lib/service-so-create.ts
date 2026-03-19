@@ -13,6 +13,7 @@ import type { ZohoSalesOrderLineItem } from "@/lib/zoho-inventory";
 import { prisma } from "@/lib/db";
 import { hubspotClient } from "@/lib/hubspot";
 import { resolveCustomer } from "@/lib/bom-customer-resolve";
+import { ZOHO_WAREHOUSE_IDS } from "@/lib/constants";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -69,11 +70,12 @@ async function resolveDealContext(
   dealName: string;
   dealAddress: string;
   primaryContactId: string | null;
+  pbLocation: string | null;
 }> {
   // Fetch deal properties server-side (no client trust)
   const dealResp = await hubspotClient.crm.deals.batchApi.read({
     inputs: [{ id: dealId }],
-    properties: ["dealname", "address_line_1", "city", "state", "postal_code"],
+    properties: ["dealname", "address_line_1", "city", "state", "postal_code", "pb_location"],
     propertiesWithHistory: [],
   });
   const dealProps = dealResp.results?.[0]?.properties || {};
@@ -101,7 +103,7 @@ async function resolveDealContext(
     console.warn("[ServiceSO] Failed to resolve primary contact:", err);
   }
 
-  return { dealName, dealAddress, primaryContactId };
+  return { dealName, dealAddress, primaryContactId, pbLocation: dealProps.pb_location?.trim() || null };
 }
 
 // ---------------------------------------------------------------------------
@@ -243,7 +245,7 @@ export async function createServiceSo(
   try {
 
     // 3. Resolve deal context + Zoho customer (contact-based, same as BOM pipeline)
-    const { dealName, dealAddress, primaryContactId } = await resolveDealContext(dealId);
+    const { dealName, dealAddress, primaryContactId, pbLocation } = await resolveDealContext(dealId);
     const customerResult = await resolveCustomer({
       dealName,
       primaryContactId,
@@ -269,14 +271,16 @@ export async function createServiceSo(
     });
 
     // 5. Build + send Zoho SO
+    const warehouseId = pbLocation ? ZOHO_WAREHOUSE_IDS[pbLocation] : undefined;
     const zohoLineItems: ZohoSalesOrderLineItem[] = lineItems.map(li => ({
       ...(li.zohoItemId ? { item_id: li.zohoItemId } : {}),
       name: li.name,
       quantity: li.quantity,
       ...(li.description ? { description: li.description } : {}),
+      ...(warehouseId ? { warehouse_id: warehouseId } : {}),
     }));
 
-    const refNumber = dealName.length > 50 ? dealName.slice(0, 50) : dealName;
+    const refNumber = dealName.split("|").slice(0, 2).join("|").trim().slice(0, 50);
     // Extract PROJ-XXXX from deal name, matching BOM pipeline pattern
     const projMatch = dealName.match(/PROJ-(\d+)/);
     const soNumber = projMatch ? `SO-${projMatch[1]}` : `SO-${dealId}`;
