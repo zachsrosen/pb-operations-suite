@@ -968,6 +968,28 @@ export class ZohoInventoryClient {
     };
   }
 
+  /**
+   * Create a new contact (customer) in Zoho Inventory.
+   * Used by service SO creation when the deal's company has no Zoho match.
+   */
+  async createContact(payload: {
+    contact_name: string;
+    email?: string;
+    contact_type: "customer" | "vendor";
+  }): Promise<{ contact_id: string }> {
+    const result = await this.requestPost<{
+      code?: number;
+      message?: string;
+      contact?: { contact_id: string; contact_name: string };
+    }>("/contacts", payload);
+
+    if (!result.contact?.contact_id) {
+      throw new Error("Zoho did not return a contact ID");
+    }
+
+    return { contact_id: result.contact.contact_id };
+  }
+
   async updateSalesOrder(
     salesorderId: string,
     payload: Partial<Pick<ZohoSalesOrderPayload, "custom_fields">>
