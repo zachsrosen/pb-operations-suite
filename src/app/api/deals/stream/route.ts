@@ -5,7 +5,7 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
-import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES, DEAL_PROPERTIES } from "@/lib/deals-pipeline";
+import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES, DEAL_PROPERTIES, getStageMaps, getActiveStages } from "@/lib/deals-pipeline";
 import { chunk } from "@/lib/utils";
 
 /**
@@ -96,10 +96,16 @@ function daysBetween(d1: Date, d2: Date): number {
   return Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function transformDeal(deal: Record<string, unknown>, pipelineKey: string, portalId: string): Deal {
+function transformDeal(
+  deal: Record<string, unknown>,
+  pipelineKey: string,
+  portalId: string,
+  stageMap?: Record<string, string>,
+  activeStageList?: string[],
+): Deal {
   const stageId = String(deal.dealstage || "");
-  const stageName = STAGE_MAPS[pipelineKey]?.[stageId] || stageId;
-  const activeStages = ACTIVE_STAGES[pipelineKey] || [];
+  const stageName = stageMap?.[stageId] || STAGE_MAPS[pipelineKey]?.[stageId] || stageId;
+  const activeStages = activeStageList || ACTIVE_STAGES[pipelineKey] || [];
   const now = new Date();
   const createDate = deal.createdate ? new Date(String(deal.createdate)) : null;
   return {
@@ -268,7 +274,15 @@ export async function GET(request: NextRequest) {
       };
 
       try {
-        const stageMap = STAGE_MAPS[pipeline] || {};
+        // Fetch dynamic stage maps (cached 10 min, falls back to static)
+        const [dynamicStageMaps, dynamicActiveStages] = await Promise.all([
+          getStageMaps(),
+          getActiveStages(),
+        ]);
+        const dynStageMap = dynamicStageMaps[pipeline] || STAGE_MAPS[pipeline] || {};
+        const dynActiveStageList = dynamicActiveStages[pipeline] || ACTIVE_STAGES[pipeline] || [];
+
+        const stageMap = dynStageMap;
         const stageIds = Object.keys(stageMap);
 
         if (pipelineId === "default" && stageIds.length > 0) {
@@ -297,7 +311,7 @@ export async function GET(request: NextRequest) {
               allRawDeals.push(...rawDeals);
 
               // Transform and stream this chunk immediately
-              const transformed = rawDeals.map((d) => transformDeal(d, pipeline, portalId));
+              const transformed = rawDeals.map((d) => transformDeal(d, pipeline, portalId, dynStageMap, dynActiveStageList));
               const filtered = filterDeals(transformed, activeOnly, location, stage);
               if (filtered.length > 0) {
                 send({
@@ -332,7 +346,7 @@ export async function GET(request: NextRequest) {
             const rawDeals = response.results.map((d) => d.properties);
             allRawDeals.push(...rawDeals);
 
-            const transformed = rawDeals.map((d) => transformDeal(d, pipeline, portalId));
+            const transformed = rawDeals.map((d) => transformDeal(d, pipeline, portalId, dynStageMap, dynActiveStageList));
             const filtered = filterDeals(transformed, activeOnly, location, stage);
             if (filtered.length > 0) {
               send({
@@ -348,7 +362,7 @@ export async function GET(request: NextRequest) {
         }
 
         // All batches complete — build final dataset and cache it
-        const allTransformed = allRawDeals.map((d) => transformDeal(d, pipeline, portalId));
+        const allTransformed = allRawDeals.map((d) => transformDeal(d, pipeline, portalId, dynStageMap, dynActiveStageList));
 
         // Resolve company associations for service deals (needed for SO creation gating)
         if (pipeline === "service") {
@@ -392,7 +406,14 @@ async function fetchAllDealsForPipeline(pipelineKey: string): Promise<Deal[]> {
   if (!pipelineId) throw new Error(`Unknown pipeline: ${pipelineKey}`);
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
   const allDeals: Record<string, unknown>[] = [];
-  const stageMap = STAGE_MAPS[pipelineKey] || {};
+
+  // Fetch dynamic stage maps for this fallback path too
+  const [fallbackStageMaps, fallbackActiveStages] = await Promise.all([
+    getStageMaps(),
+    getActiveStages(),
+  ]);
+  const stageMap = fallbackStageMaps[pipelineKey] || STAGE_MAPS[pipelineKey] || {};
+  const fallbackActiveList = fallbackActiveStages[pipelineKey] || ACTIVE_STAGES[pipelineKey] || [];
   const stageIds = Object.keys(stageMap);
 
   if (pipelineId === "default" && stageIds.length > 0) {
@@ -431,7 +452,7 @@ async function fetchAllDealsForPipeline(pipelineKey: string): Promise<Deal[]> {
     } while (after);
   }
 
-  const transformedDeals = allDeals.map((d) => transformDeal(d, pipelineKey, portalId));
+  const transformedDeals = allDeals.map((d) => transformDeal(d, pipelineKey, portalId, stageMap, fallbackActiveList));
 
   // Resolve company associations for service deals (needed for SO creation gating)
   if (pipelineKey === "service") {

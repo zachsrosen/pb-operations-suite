@@ -5,7 +5,7 @@ import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { requireApiAuth } from "@/lib/api-auth";
-import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES, DEAL_PROPERTIES } from "@/lib/deals-pipeline";
+import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES, DEAL_PROPERTIES, getStageMaps, getActiveStages } from "@/lib/deals-pipeline";
 import { chunk } from "@/lib/utils";
 
 const hubspotClient = new Client({
@@ -85,10 +85,16 @@ function daysBetween(date1: Date, date2: Date): number {
   return Math.round(diffTime / (1000 * 60 * 60 * 24));
 }
 
-function transformDeal(deal: Record<string, unknown>, pipelineKey: string, portalId: string): Deal {
+function transformDeal(
+  deal: Record<string, unknown>,
+  pipelineKey: string,
+  portalId: string,
+  stageMap?: Record<string, string>,
+  activeStageList?: string[],
+): Deal {
   const stageId = String(deal.dealstage || "");
-  const stageName = STAGE_MAPS[pipelineKey]?.[stageId] || stageId;
-  const activeStages = ACTIVE_STAGES[pipelineKey] || [];
+  const stageName = stageMap?.[stageId] || STAGE_MAPS[pipelineKey]?.[stageId] || stageId;
+  const activeStages = activeStageList || ACTIVE_STAGES[pipelineKey] || [];
   const now = new Date();
   const createDate = deal.createdate ? new Date(String(deal.createdate)) : null;
 
@@ -124,9 +130,16 @@ async function fetchDealsForPipeline(pipelineKey: string): Promise<Deal[]> {
   const allDeals: Record<string, unknown>[] = [];
   let after: string | undefined;
 
+  // Fetch dynamic stage maps (cached 10 min, falls back to static)
+  const [dynamicStageMaps, dynamicActiveStages] = await Promise.all([
+    getStageMaps(),
+    getActiveStages(),
+  ]);
+  const stageMap = dynamicStageMaps[pipelineKey] || STAGE_MAPS[pipelineKey] || {};
+  const activeStageList = dynamicActiveStages[pipelineKey] || ACTIVE_STAGES[pipelineKey] || [];
+
   // For the default sales pipeline, search by each deal stage separately
   // because HubSpot's search API rejects pipeline="default" as a filter value.
-  const stageMap = STAGE_MAPS[pipelineKey] || {};
   const stageIds = Object.keys(stageMap);
 
   if (pipelineId === "default" && stageIds.length > 0) {
@@ -207,7 +220,7 @@ async function fetchDealsForPipeline(pipelineKey: string): Promise<Deal[]> {
     } while (after);
   }
 
-  const transformedDeals = allDeals.map((deal) => transformDeal(deal, pipelineKey, portalId));
+  const transformedDeals = allDeals.map((deal) => transformDeal(deal, pipelineKey, portalId, stageMap, activeStageList));
 
   // Resolve company associations for service deals (needed for SO creation gating)
   if (pipelineKey === "service" && transformedDeals.length > 0) {

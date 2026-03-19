@@ -1,7 +1,12 @@
 /**
  * Shared constants for HubSpot deals pipelines.
  * Used by /api/deals and /api/deals/stream to avoid duplication.
+ *
+ * Stage maps are fetched dynamically from HubSpot on first use and cached
+ * for 10 minutes. The static STAGE_MAPS below serve as fallbacks if the
+ * API call fails.
  */
+import { hubspotClient } from "@/lib/hubspot";
 
 /** Pipeline IDs — loaded from env with hardcoded fallbacks */
 export const PIPELINE_IDS: Record<string, string> = {
@@ -107,6 +112,96 @@ export const ACTIVE_STAGES: Record<string, string[]> = {
     "Job Close Out Paperwork",
   ],
 };
+
+// ---------------------------------------------------------------------------
+// Dynamic stage resolution — fetches from HubSpot API, caches 10 min
+// ---------------------------------------------------------------------------
+
+const STAGE_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
+let _dynamicStageMaps: Record<string, Record<string, string>> | null = null;
+let _dynamicActiveStages: Record<string, string[]> | null = null;
+let _stageCacheTime = 0;
+let _stageInflight: Promise<void> | null = null;
+
+// Known terminal stages (not considered "active") — case-insensitive match
+const TERMINAL_KEYWORDS = ["completed", "complete", "cancelled", "closed won", "closed lost", "job completed"];
+
+async function _fetchPipelineStages(): Promise<void> {
+  try {
+    const pipelines = await hubspotClient.crm.pipelines.pipelinesApi.getAll("deals");
+    const stageMaps: Record<string, Record<string, string>> = {};
+    const activeStages: Record<string, string[]> = {};
+
+    // Build reverse lookup: pipelineId → pipelineKey
+    const idToKey: Record<string, string> = {};
+    for (const [key, id] of Object.entries(PIPELINE_IDS)) {
+      idToKey[id] = key;
+    }
+
+    for (const pipeline of pipelines.results || []) {
+      const key = idToKey[pipeline.id];
+      if (!key) continue; // pipeline we don't track
+
+      const stageMap: Record<string, string> = {};
+      const active: string[] = [];
+
+      for (const stage of pipeline.stages || []) {
+        stageMap[stage.id] = stage.label;
+        const isTerminal = TERMINAL_KEYWORDS.some(kw =>
+          stage.label.toLowerCase().includes(kw)
+        );
+        if (!isTerminal) {
+          active.push(stage.label);
+        }
+      }
+
+      stageMaps[key] = stageMap;
+      activeStages[key] = active;
+    }
+
+    _dynamicStageMaps = stageMaps;
+    _dynamicActiveStages = activeStages;
+    _stageCacheTime = Date.now();
+  } catch (err) {
+    console.warn("[DealsPipeline] Failed to fetch pipeline stages from HubSpot, using static fallback:", err);
+    // Leave cache as-is (null on first fail = use static maps)
+  }
+}
+
+/**
+ * Get the stage ID → name map for a pipeline.
+ * Fetches from HubSpot API on first call and caches for 10 minutes.
+ * Falls back to static STAGE_MAPS if API fails.
+ */
+export async function getStageMaps(): Promise<Record<string, Record<string, string>>> {
+  if (_dynamicStageMaps && Date.now() - _stageCacheTime < STAGE_CACHE_TTL) {
+    return _dynamicStageMaps;
+  }
+
+  // Coalesce concurrent calls
+  if (!_stageInflight) {
+    _stageInflight = _fetchPipelineStages().finally(() => { _stageInflight = null; });
+  }
+  await _stageInflight;
+
+  return _dynamicStageMaps || STAGE_MAPS;
+}
+
+/**
+ * Get active (non-terminal) stage names for a pipeline.
+ */
+export async function getActiveStages(): Promise<Record<string, string[]>> {
+  if (_dynamicActiveStages && Date.now() - _stageCacheTime < STAGE_CACHE_TTL) {
+    return _dynamicActiveStages;
+  }
+
+  if (!_stageInflight) {
+    _stageInflight = _fetchPipelineStages().finally(() => { _stageInflight = null; });
+  }
+  await _stageInflight;
+
+  return _dynamicActiveStages || ACTIVE_STAGES;
+}
 
 /** HubSpot deal properties fetched by the deals API endpoints */
 export const DEAL_PROPERTIES = [
