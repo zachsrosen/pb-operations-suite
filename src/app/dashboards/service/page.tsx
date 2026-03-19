@@ -3,11 +3,11 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import DashboardShell from "@/components/DashboardShell";
+import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { formatCurrency } from "@/lib/format";
 import { useProgressiveDeals } from "@/hooks/useProgressiveDeals";
-import { useServiceFilters } from "@/stores/dashboard-filters";
 
 // --- Types ---
 
@@ -58,31 +58,29 @@ interface SoResult {
 
 // --- Constants ---
 
-const STAGES = [
-  "Project Preparation",
-  "Site Visit Scheduling",
-  "Work In Progress",
-  "Inspection",
-  "Invoicing",
-  "Completed",
-  "Cancelled",
-] as const;
+/** Color palette for stage badges — assigned by index from the data */
+const STAGE_COLOR_PALETTE = [
+  "bg-blue-500",
+  "bg-purple-500",
+  "bg-yellow-500",
+  "bg-orange-500",
+  "bg-pink-500",
+  "bg-cyan-500",
+  "bg-teal-500",
+  "bg-indigo-500",
+  "bg-rose-500",
+  "bg-amber-500",
+];
 
-type StageName = (typeof STAGES)[number];
-
-const STAGE_COLORS: Record<StageName, string> = {
-  "Project Preparation": "bg-blue-500",
-  "Site Visit Scheduling": "bg-purple-500",
-  "Work In Progress": "bg-yellow-500",
-  Inspection: "bg-orange-500",
-  Invoicing: "bg-pink-500",
+/** Terminal stages that get fixed colors regardless of position */
+const TERMINAL_STAGE_COLORS: Record<string, string> = {
   Completed: "bg-green-500",
   Cancelled: "bg-red-500",
 };
 
-const PIPELINE_STAGES = STAGES.filter(
-  (s) => s !== "Completed" && s !== "Cancelled"
-);
+function getStageColor(stage: string, index: number): string {
+  return TERMINAL_STAGE_COLORS[stage] || STAGE_COLOR_PALETTE[index % STAGE_COLOR_PALETTE.length];
+}
 
 // --- Component ---
 
@@ -99,12 +97,9 @@ export default function ServicePipelinePage() {
     params: { pipeline: "service", active: "false" },
   });
 
-  // Persisted filters (survive navigation)
-  const { filters: serviceFilters, setFilters: setServiceFilters } = useServiceFilters();
-  const filterLocation = serviceFilters.location;
-  const filterStage = serviceFilters.stage;
-  const setFilterLocation = useCallback((v: string) => setServiceFilters({ ...serviceFilters, location: v }), [serviceFilters, setServiceFilters]);
-  const setFilterStage = useCallback((v: string) => setServiceFilters({ ...serviceFilters, stage: v }), [serviceFilters, setServiceFilters]);
+  // Multiselect filter state (empty = show all)
+  const [filterLocations, setFilterLocations] = useState<string[]>([]);
+  const [filterStages, setFilterStages] = useState<string[]>([]);
 
   // Activity tracking
   const { trackDashboardView, trackFilter } = useActivityTracking();
@@ -132,29 +127,51 @@ export default function ServicePipelinePage() {
   // Track filter changes
   useEffect(() => {
     if (!loading && hasTrackedView.current) {
-      trackFilter("service", { location: filterLocation, stage: filterStage });
+      trackFilter("service", { locations: filterLocations, stages: filterStages });
     }
-  }, [filterLocation, filterStage, loading, trackFilter]);
+  }, [filterLocations, filterStages, loading, trackFilter]);
 
-  // Unique locations for filter dropdown
-  const locations = useMemo(
+  // Derive filter options from data
+  const locationOptions: FilterOption[] = useMemo(
     () =>
       [...new Set(allDeals.map((d) => d.pbLocation))]
         .filter((l) => l !== "Unknown")
-        .sort(),
+        .sort()
+        .map(l => ({ value: l, label: l })),
     [allDeals]
+  );
+
+  // Derive stages from actual deal data (dynamic, not hardcoded)
+  const allStages = useMemo(() => {
+    const seen = new Map<string, number>();
+    for (const d of allDeals) {
+      if (d.stage && !seen.has(d.stage)) {
+        seen.set(d.stage, seen.size);
+      }
+    }
+    return [...seen.keys()];
+  }, [allDeals]);
+
+  const stageOptions: FilterOption[] = useMemo(
+    () => allStages.map(s => ({ value: s, label: s })),
+    [allStages]
+  );
+
+  // Pipeline stages = non-terminal (for the visualization bar)
+  const pipelineStages = useMemo(
+    () => allStages.filter(s => !TERMINAL_STAGE_COLORS[s]),
+    [allStages]
   );
 
   // Filtered deals
   const filteredDeals = useMemo(
     () =>
       allDeals.filter((d) => {
-        if (filterLocation !== "all" && d.pbLocation !== filterLocation)
-          return false;
-        if (filterStage !== "all" && d.stage !== filterStage) return false;
+        if (filterLocations.length > 0 && !filterLocations.includes(d.pbLocation)) return false;
+        if (filterStages.length > 0 && !filterStages.includes(d.stage)) return false;
         return true;
       }),
-    [allDeals, filterLocation, filterStage]
+    [allDeals, filterLocations, filterStages]
   );
 
   // Active deals from filtered set
@@ -171,12 +188,12 @@ export default function ServicePipelinePage() {
 
   const stageCounts = useMemo(() => {
     const counts: Record<string, number> = {};
-    STAGES.forEach((s) => (counts[s] = 0));
+    for (const s of allStages) counts[s] = 0;
     activeDeals.forEach((d) => {
       if (counts[d.stage] !== undefined) counts[d.stage]++;
     });
     return counts;
-  }, [activeDeals]);
+  }, [activeDeals, allStages]);
 
   // SO panel handlers
   const handleOpenSoPanel = useCallback(async (deal: Deal) => {
@@ -295,32 +312,18 @@ export default function ServicePipelinePage() {
   // --- Header controls ---
   const headerRight = (
     <div className="flex items-center gap-3">
-      <select
-        value={filterLocation}
-        onChange={(e) => setFilterLocation(e.target.value)}
-        className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-white"
-      >
-        <option value="all">All Locations</option>
-        {locations.map((loc) => (
-          <option key={loc} value={loc}>
-            {loc}
-          </option>
-        ))}
-      </select>
-
-      <select
-        value={filterStage}
-        onChange={(e) => setFilterStage(e.target.value)}
-        className="bg-surface-2 border border-t-border rounded-lg px-3 py-2 text-sm text-white"
-      >
-        <option value="all">All Stages</option>
-        {STAGES.map((stage) => (
-          <option key={stage} value={stage}>
-            {stage}
-          </option>
-        ))}
-      </select>
-
+      <MultiSelectFilter
+        label="Location"
+        options={locationOptions}
+        selected={filterLocations}
+        onChange={setFilterLocations}
+      />
+      <MultiSelectFilter
+        label="Stage"
+        options={stageOptions}
+        selected={filterStages}
+        onChange={setFilterStages}
+      />
       <button
         onClick={fetchData}
         className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-medium text-foreground"
@@ -340,7 +343,7 @@ export default function ServicePipelinePage() {
       headerRight={headerRight}
     >
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-surface rounded-xl p-4 border border-t-border">
           <div className="text-2xl font-bold text-blue-400">
             {activeDeals.length}
@@ -354,22 +357,16 @@ export default function ServicePipelinePage() {
           <div className="text-sm text-muted">Pipeline Value</div>
         </div>
         <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-yellow-400">
-            {stageCounts["Work In Progress"]}
+          <div className="text-2xl font-bold text-foreground">
+            {filteredDeals.length}
           </div>
-          <div className="text-sm text-muted">In Progress</div>
+          <div className="text-sm text-muted">Showing</div>
         </div>
         <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-orange-400">
-            {stageCounts["Inspection"]}
+          <div className="text-2xl font-bold text-foreground">
+            {allDeals.length}
           </div>
-          <div className="text-sm text-muted">Inspection</div>
-        </div>
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-pink-400">
-            {stageCounts["Invoicing"]}
-          </div>
-          <div className="text-sm text-muted">Invoicing</div>
+          <div className="text-sm text-muted">Total Jobs</div>
         </div>
       </div>
 
@@ -377,14 +374,14 @@ export default function ServicePipelinePage() {
       <div className="bg-surface rounded-xl border border-t-border p-4 mb-6">
         <h2 className="text-lg font-semibold mb-4">Pipeline Stages</h2>
         <div className="flex gap-2 overflow-x-auto pb-2">
-          {PIPELINE_STAGES.map((stage) => (
+          {pipelineStages.map((stage, idx) => (
             <div key={stage} className="flex-1 min-w-[140px]">
               <div className="text-center mb-2">
                 <span className="text-xs text-muted">{stage}</span>
                 <div className="text-lg font-bold">{stageCounts[stage] || 0}</div>
               </div>
               <div
-                className={`h-2 ${STAGE_COLORS[stage]} rounded-full opacity-60`}
+                className={`h-2 ${getStageColor(stage, idx)} rounded-full opacity-60`}
               />
             </div>
           ))}
@@ -476,7 +473,7 @@ export default function ServicePipelinePage() {
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                          STAGE_COLORS[deal.stage as StageName] || "bg-zinc-600"
+                          getStageColor(deal.stage, allStages.indexOf(deal.stage))
                         } bg-opacity-20 text-white`}
                       >
                         {deal.stage}
