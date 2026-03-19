@@ -255,7 +255,21 @@ export default function ServiceOverviewPage() {
   // ---- Header controls ------------------------------------------------------
 
   const headerRight = (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-3">
+      <MultiSelectFilter
+        label="Location"
+        options={locationOptions}
+        selected={filterLocations}
+        onChange={setFilterLocations}
+        accentColor="cyan"
+      />
+      <MultiSelectFilter
+        label="Owner"
+        options={ownerOptions}
+        selected={filterOwners}
+        onChange={setFilterOwners}
+        accentColor="cyan"
+      />
       {/* SSE indicator */}
       <span
         className={`h-2 w-2 rounded-full ${connected ? "bg-green-400" : "bg-zinc-500"}`}
@@ -301,7 +315,6 @@ export default function ServiceOverviewPage() {
         />
         <StatCard
           label="Scheduled Today"
-          subtitle="Coming soon"
           value={scheduledToday}
           color="green"
         />
@@ -418,17 +431,19 @@ export default function ServiceOverviewPage() {
                       )}
                     </div>
 
-                    {/* Score reasons */}
-                    <div className="flex flex-wrap gap-1">
-                      {reasons.map((reason, i) => (
-                        <span
-                          key={i}
-                          className="inline-flex items-center px-2 py-0.5 rounded text-xs bg-surface-2 text-muted"
-                        >
-                          {reason}
-                        </span>
-                      ))}
-                    </div>
+                    {/* Score reasons — explains why this item is ranked here */}
+                    {reasons.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {reasons.map((reason, i) => (
+                          <span
+                            key={i}
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-xs ${cfg.bg} ${cfg.text}`}
+                          >
+                            {reason}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {/* Right: tier badge + score + override */}
@@ -493,9 +508,12 @@ export default function ServiceOverviewPage() {
                       )}
                     </div>
 
-                    {/* Score */}
-                    <span className="text-xs text-muted">
-                      Score: <span className={`font-medium ${cfg.text}`}>{score}</span>
+                    {/* Score with breakdown tooltip */}
+                    <span
+                      className="text-xs text-muted cursor-help"
+                      title={`Priority score: ${score}/100\n\nFactors:\n• Warranty expiry (up to 40 pts)\n• Last contact recency (up to 35 pts)\n• Stage duration (up to 20 pts)\n• Deal value (up to 10 pts)\n\nReasons: ${reasons.join(", ") || "None"}`}
+                    >
+                      Score: <span className={`font-medium ${cfg.text}`}>{score}</span>/100
                     </span>
                   </div>
                 </div>
@@ -505,24 +523,6 @@ export default function ServiceOverviewPage() {
         </div>
       </div>
 
-      {/* Bottom bar: location + owner filters */}
-      <div className="flex items-center gap-3 bg-surface rounded-xl border border-t-border p-4">
-        <span className="text-sm text-muted">Filters:</span>
-        <MultiSelectFilter
-          label="Location"
-          options={locationOptions}
-          selected={filterLocations}
-          onChange={setFilterLocations}
-          accentColor="cyan"
-        />
-        <MultiSelectFilter
-          label="Owner"
-          options={ownerOptions}
-          selected={filterOwners}
-          onChange={setFilterOwners}
-          accentColor="cyan"
-        />
-      </div>
     </DashboardShell>
   );
 }
