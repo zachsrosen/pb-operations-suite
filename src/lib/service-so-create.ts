@@ -276,7 +276,7 @@ export async function createServiceSo(
     const refNumber = dealName.length > 50 ? dealName.slice(0, 50) : dealName;
     // Extract PROJ-XXXX from deal name, matching BOM pipeline pattern
     const projMatch = dealName.match(/PROJ-(\d+)/);
-    const soNumber = projMatch ? `SSO-${projMatch[1]}` : `SSO-${dealId}`;
+    const soNumber = projMatch ? `SO-${projMatch[1]}` : `SO-${dealId}`;
 
     const zohoResult = await zohoInventory.createSalesOrder({
       customer_id: zohoCustomerId,
