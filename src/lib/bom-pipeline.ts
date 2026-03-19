@@ -46,6 +46,7 @@ import {
   resolvePoVendorGroups,
   type BomData as PoBomData,
 } from "@/lib/bom-po-create";
+import { zohoInventory } from "@/lib/zoho-inventory";
 import { fetchPrimaryContactId } from "@/lib/hubspot";
 import { resolveCustomer } from "@/lib/bom-customer-resolve";
 import { sendPipelineNotification } from "@/lib/email";
