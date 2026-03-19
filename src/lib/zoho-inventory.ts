@@ -181,6 +181,7 @@ interface ZohoSalesOrderCreateResponse {
   salesorder?: {
     salesorder_id: string;
     salesorder_number: string;
+    total?: number;
   };
 }
 
@@ -953,7 +954,7 @@ export class ZohoInventoryClient {
 
   async createSalesOrder(
     payload: ZohoSalesOrderPayload
-  ): Promise<{ salesorder_id: string; salesorder_number: string }> {
+  ): Promise<{ salesorder_id: string; salesorder_number: string; total: number }> {
     const result = await this.requestPost<ZohoSalesOrderCreateResponse>(
       "/salesorders",
       payload
@@ -965,6 +966,7 @@ export class ZohoInventoryClient {
     return {
       salesorder_id: so.salesorder_id,
       salesorder_number: so.salesorder_number,
+      total: so.total ?? 0,
     };
   }
 

@@ -112,6 +112,8 @@ function resolveProducts(
   dbProducts: Array<{
     id: string;
     name: string | null;
+    brand: string;
+    model: string;
     sku: string | null;
     description: string | null;
     sellPrice: number | null;
@@ -133,7 +135,7 @@ function resolveProducts(
     }
     lineItems.push({
       productId: product.id,
-      name: product.name || "Unnamed Product",
+      name: product.name || `${product.brand} ${product.model}`.trim() || "Unnamed Product",
       sku: product.sku,
       description: product.description,
       quantity: item.quantity,
@@ -190,7 +192,8 @@ export async function createServiceSo(
   const dbProducts = await prisma!.internalProduct.findMany({
     where: { id: { in: productIds } },
     select: {
-      id: true, name: true, sku: true, description: true, sellPrice: true,
+      id: true, name: true, brand: true, model: true,
+      sku: true, description: true, sellPrice: true,
       category: true, isActive: true, zohoItemId: true,
     },
   });
@@ -282,18 +285,20 @@ export async function createServiceSo(
       customer_id: zohoCustomerId,
       salesorder_number: soNumber,
       reference_number: refNumber,
-      notes: `Service SO for ${dealAddress}`,
+      notes: `Generated from PB Ops Service SO${dealAddress ? ` — ${dealAddress}` : ""}`,
       status: "draft",
       line_items: zohoLineItems,
       custom_fields: [{ label: "HubSpot Deal Record ID", value: dealId }],
     });
 
-    // 6. Update record → SUBMITTED
+    // 6. Update record → SUBMITTED with Zoho-authoritative total
+    const zohoTotal = zohoResult.total || totalAmount;
     await prisma!.serviceSoRequest.update({
       where: { id: requestId },
       data: {
         zohoSoId: zohoResult.salesorder_id,
         zohoSoNumber: zohoResult.salesorder_number,
+        totalAmount: zohoTotal,
         status: "SUBMITTED",
       },
     });
@@ -303,7 +308,7 @@ export async function createServiceSo(
       zohoSoNumber: zohoResult.salesorder_number,
       zohoCustomerId,
       lineItems,
-      totalAmount,
+      totalAmount: zohoTotal,
     };
   } catch (err) {
     try {
