@@ -127,7 +127,7 @@ function resolveProducts(
   const lineItems: ServiceSoLineItem[] = [];
   for (const item of requestedItems) {
     const product = productMap.get(item.productId);
-    if (!product || product.category !== "SERVICE" || !product.isActive) {
+    if (!product || !product.isActive) {
       invalid.push(item.productId);
       continue;
     }
@@ -144,7 +144,7 @@ function resolveProducts(
 
   if (invalid.length > 0) {
     throw new Error(
-      `The following product IDs are not valid SERVICE products: ${invalid.join(", ")}`
+      `The following product IDs are not valid active products: ${invalid.join(", ")}`
     );
   }
 
