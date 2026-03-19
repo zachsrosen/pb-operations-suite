@@ -44,7 +44,7 @@ export type PaceStatus = "ahead" | "on_pace" | "behind";
 
 /** Monthly result for a single month */
 export interface MonthResult {
-  month: number; // 0-11
+  month: number; // 1-12
   actual: number;
   baseTarget: number;
   effectiveTarget: number;

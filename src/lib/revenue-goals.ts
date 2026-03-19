@@ -51,14 +51,17 @@ export async function fetchRevenueDeals(year: number): Promise<DealLike[]> {
   const endDate = `${year}-12-31`;
 
   // Build per-pipeline filter groups scoped to recognition date fields.
-  // Each ready recognition rule produces an OR filter group:
+  // Each unique (pipelineId, dateField) pair produces one OR filter group:
   //   pipeline = X AND dateField >= startDate AND dateField <= endDate
   // Gated strategies are skipped entirely (no real date field yet).
-  const pipelineQueries = new Map<string, { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[][]>();
+  // Deduplication prevents redundant filter groups (e.g. 4 solar groups
+  // all using construction_complete_date on the project pipeline).
+  const seen = new Set<string>();
+  const filterGroups: { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[] = [];
 
   for (const group of Object.values(REVENUE_GROUPS)) {
     for (const rule of group.recognition) {
-      if (rule.strategy === "gated") continue; // discovery-gated, skip
+      if (rule.strategy === "gated") continue;
 
       const dateFields: string[] = [];
       if (rule.strategy === "split" && rule.splitFields) {
@@ -70,15 +73,17 @@ export async function fetchRevenueDeals(year: number): Promise<DealLike[]> {
       }
 
       for (const dateField of dateFields) {
-        if (!pipelineQueries.has(rule.pipelineId)) {
-          pipelineQueries.set(rule.pipelineId, []);
-        }
-        // Each date field becomes an OR filter group
-        pipelineQueries.get(rule.pipelineId)!.push([
-          { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: rule.pipelineId },
-          { propertyName: dateField, operator: FilterOperatorEnum.Gte, value: startDate },
-          { propertyName: dateField, operator: FilterOperatorEnum.Lte, value: endDate },
-        ]);
+        const dedupeKey = `${rule.pipelineId}:${dateField}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+
+        filterGroups.push({
+          filters: [
+            { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: rule.pipelineId },
+            { propertyName: dateField, operator: FilterOperatorEnum.Gte, value: startDate },
+            { propertyName: dateField, operator: FilterOperatorEnum.Lte, value: endDate },
+          ],
+        });
       }
     }
   }
@@ -86,36 +91,32 @@ export async function fetchRevenueDeals(year: number): Promise<DealLike[]> {
   const allDeals: DealLike[] = [];
   const seenIds = new Set<string>();
 
-  for (const [, filterSets] of pipelineQueries) {
-    // Deduplicate filter groups (same pipeline+field combos)
-    const filterGroups = filterSets.map((filters) => ({ filters }));
+  // Single paginated query with all deduplicated filter groups as OR clauses
+  let after: string | undefined;
+  let hasMore = true;
 
-    let after: string | undefined;
-    let hasMore = true;
+  while (hasMore) {
+    const response = await searchWithRetry({
+      filterGroups,
+      properties: REVENUE_DEAL_PROPERTIES,
+      limit: 100,
+      ...(after ? { after } : {}),
+    });
 
-    while (hasMore) {
-      const response = await searchWithRetry({
-        filterGroups,
-        properties: REVENUE_DEAL_PROPERTIES,
-        limit: 100,
-        ...(after ? { after } : {}),
-      });
-
-      const results = response.results ?? [];
-      for (const result of results) {
-        const id = result.properties.hs_object_id;
-        if (id && !seenIds.has(id)) {
-          seenIds.add(id);
-          allDeals.push(result.properties as unknown as DealLike);
-        }
+    const results = response.results ?? [];
+    for (const result of results) {
+      const id = result.properties.hs_object_id;
+      if (id && !seenIds.has(id)) {
+        seenIds.add(id);
+        allDeals.push(result.properties as unknown as DealLike);
       }
+    }
 
-      const nextAfter = response.paging?.next?.after;
-      if (nextAfter && results.length > 0) {
-        after = nextAfter;
-      } else {
-        hasMore = false;
-      }
+    const nextAfter = response.paging?.next?.after;
+    if (nextAfter && results.length > 0) {
+      after = nextAfter;
+    } else {
+      hasMore = false;
     }
   }
 
@@ -175,7 +176,7 @@ export function buildRevenueGoalResponse(
       const actual = actuals[i];
       const effectiveTarget = effectiveTargets[i];
       return {
-        month: i,
+        month: i + 1, // 1-indexed (Jan=1, Dec=12)
         actual,
         baseTarget: base,
         effectiveTarget,
