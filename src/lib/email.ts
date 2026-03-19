@@ -1795,6 +1795,10 @@ export async function sendPipelineNotification(params: {
   pbLocation?: string;
   // Trigger source
   trigger?: string;
+  // Purchase Order results
+  purchaseOrders?: Array<{ vendorName: string; poNumber: string | null; itemCount: number }>;
+  poFailed?: Array<{ vendorName: string; error: string }>;
+  poUnassignedCount?: number;
 }): Promise<SendResult> {
   const failOverride = params.status === "failed" ? process.env.PIPELINE_FAIL_NOTIFY_EMAILS : undefined;
 
@@ -1884,6 +1888,30 @@ export async function sendPipelineNotification(params: {
     }
   }
 
+  // Purchase Order results
+  if (params.purchaseOrders && params.purchaseOrders.length > 0) {
+    htmlParts.push(`<p style="margin:8px 0 2px"><strong>Purchase Orders (${params.purchaseOrders.length}):</strong></p>`);
+    htmlParts.push(`<ul style="margin:2px 0;padding-left:20px">`);
+    for (const po of params.purchaseOrders) {
+      const poLabel = po.poNumber ? escapeHtml(po.poNumber) : "Draft";
+      htmlParts.push(`<li>${escapeHtml(po.vendorName)} &mdash; ${poLabel} (${po.itemCount} items)</li>`);
+    }
+    htmlParts.push(`</ul>`);
+  }
+
+  if (params.poFailed && params.poFailed.length > 0) {
+    htmlParts.push(`<p style="margin:8px 0 2px;color:#dc2626"><strong>PO Failures (${params.poFailed.length}):</strong></p>`);
+    htmlParts.push(`<ul style="margin:2px 0;padding-left:20px">`);
+    for (const f of params.poFailed) {
+      htmlParts.push(`<li style="color:#dc2626">${escapeHtml(f.vendorName)}: ${escapeHtml(f.error)}</li>`);
+    }
+    htmlParts.push(`</ul>`);
+  }
+
+  if (params.poUnassignedCount && params.poUnassignedCount > 0) {
+    htmlParts.push(`<p style="margin:2px 0;color:#d97706"><strong>Unassigned Items:</strong> ${params.poUnassignedCount} items without a preferred vendor &mdash; assign in the BOM page</p>`);
+  }
+
   // Failure details
   if (isFailed || isPartial) {
     if (params.failedStep) htmlParts.push(`<p style="margin:2px 0"><strong>Failed Step:</strong> ${escapeHtml(params.failedStep)}</p>`);
@@ -1933,6 +1961,15 @@ export async function sendPipelineNotification(params: {
     params.customerMatchMethod ? `Customer Matched Via: ${params.customerMatchMethod}` : null,
     params.plansetFileName ? `Planset: ${params.plansetFileName}` : null,
     params.unmatchedCount ? `Unmatched Items (${params.unmatchedCount}): ${(params.unmatchedItems ?? []).join(", ")}` : null,
+    params.purchaseOrders && params.purchaseOrders.length > 0
+      ? `Purchase Orders (${params.purchaseOrders.length}): ${params.purchaseOrders.map(po => `${po.vendorName} — ${po.poNumber ?? "Draft"} (${po.itemCount} items)`).join(", ")}`
+      : null,
+    params.poFailed && params.poFailed.length > 0
+      ? `PO Failures (${params.poFailed.length}): ${params.poFailed.map(f => `${f.vendorName}: ${f.error}`).join(", ")}`
+      : null,
+    params.poUnassignedCount && params.poUnassignedCount > 0
+      ? `Unassigned Items: ${params.poUnassignedCount} items without a preferred vendor`
+      : null,
     params.failedStep ? `Failed Step: ${params.failedStep}` : null,
     params.errorMessage ? `Error: ${params.errorMessage}` : null,
     params.retried ? `Auto-Retried: attempt ${params.attempt ?? "?"} — ${params.retryReason ?? "transient error"}` : null,
