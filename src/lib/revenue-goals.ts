@@ -262,9 +262,10 @@ export async function fetchZuperCompletedRevenue(
 
   if (dealCompletions.size === 0) return result;
 
-  // Batch-fetch deal amounts from HubSpot (IN operator, 100 at a time)
+  // Batch-fetch deal properties from HubSpot (IN operator, 100 at a time)
+  // Include pipeline + dealstage so we can enforce source filters and cancellation rules
   const dealIds = Array.from(dealCompletions.keys());
-  const dealAmounts = new Map<string, number>();
+  const dealProps = new Map<string, { amount: number; pipeline: string; dealstage: string }>();
 
   for (let i = 0; i < dealIds.length; i += 100) {
     const batch = dealIds.slice(i, i + 100);
@@ -280,7 +281,7 @@ export async function fetchZuperCompletedRevenue(
           ],
         },
       ],
-      properties: ["hs_object_id", "amount"],
+      properties: ["hs_object_id", "amount", "pipeline", "dealstage"],
       limit: 100,
     });
 
@@ -288,16 +289,34 @@ export async function fetchZuperCompletedRevenue(
       const id = deal.properties.hs_object_id;
       const amount = parseFloat(deal.properties.amount || "0") || 0;
       if (id && amount > 0) {
-        dealAmounts.set(id, amount);
+        dealProps.set(id, {
+          amount,
+          pipeline: deal.properties.pipeline || "",
+          dealstage: deal.properties.dealstage || "",
+        });
       }
     }
   }
 
-  // Assign revenue to monthly buckets
+  // Assign revenue to monthly buckets, enforcing pipeline and cancellation filters
   for (const [dealId, { groupKey, month }] of dealCompletions) {
-    const amount = dealAmounts.get(dealId) || 0;
-    if (amount > 0 && result[groupKey]) {
-      result[groupKey][month] += amount;
+    const deal = dealProps.get(dealId);
+    if (!deal || deal.amount <= 0) continue;
+
+    const groupConfig = REVENUE_GROUPS[groupKey];
+    if (!groupConfig) continue;
+
+    // Verify deal's pipeline matches one of the group's configured pipelines
+    const matchingRule = groupConfig.recognition.find(
+      (r) => r.strategy === "zuper_completed" && r.pipelineId === deal.pipeline
+    );
+    if (!matchingRule) continue;
+
+    // Verify deal isn't in a cancelled/excluded stage
+    if (groupConfig.excludedStages.includes(deal.dealstage)) continue;
+
+    if (result[groupKey]) {
+      result[groupKey][month] += deal.amount;
     }
   }
 
