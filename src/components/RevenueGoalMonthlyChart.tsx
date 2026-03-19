@@ -39,12 +39,15 @@ export function RevenueGoalMonthlyChart({ groups }: Props) {
     ? groups
     : groups.filter((g) => selectedGroups.includes(g.groupKey));
 
-  // Use stacked totals for scale so bars fill the space
+  // Compute per-month stacked totals
   const monthTotals = MONTH_LABELS.map((_, i) => ({
     actual: displayGroups.reduce((s, g) => s + g.months[i].actual, 0),
     target: displayGroups.reduce((s, g) => s + g.months[i].effectiveTarget, 0),
   }));
-  const maxMonthly = Math.max(...monthTotals.map((m) => Math.max(m.actual, m.target)), 1);
+  // Scale bars against max actual only — targets shown as overlay lines
+  const maxActual = Math.max(...monthTotals.map((m) => m.actual), 1);
+  // For target line positioning, cap at bar area height
+  const maxScale = Math.max(maxActual, ...monthTotals.map((m) => m.target));
   const isSingleGroup = displayGroups.length === 1;
 
   return (
@@ -66,7 +69,8 @@ export function RevenueGoalMonthlyChart({ groups }: Props) {
           const isFuture = monthIdx > currentMonth;
           const isCurrent = monthIdx === currentMonth;
           const { actual: monthActual, target: monthTarget } = monthTotals[monthIdx];
-          const targetPct = maxMonthly > 0 ? (monthTarget / maxMonthly) * 100 : 0;
+          // Target line scales against full range (may be above bars)
+          const targetPct = maxScale > 0 ? Math.min((monthTarget / maxScale) * 100, 100) : 0;
 
           return (
             <div key={label} className="flex flex-col items-center">
@@ -97,7 +101,7 @@ export function RevenueGoalMonthlyChart({ groups }: Props) {
                 <div className="w-3/4 flex flex-col-reverse items-stretch">
                   {displayGroups.map((group) => {
                     const monthData = group.months[monthIdx];
-                    const segmentPct = maxMonthly > 0 ? (monthData.actual / maxMonthly) * 100 : 0;
+                    const segmentPct = maxActual > 0 ? (monthData.actual / maxActual) * 100 : 0;
                     if (monthData.actual <= 0) return null;
 
                     return (
