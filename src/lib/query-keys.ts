@@ -66,6 +66,10 @@ export const queryKeys = {
     detail: (contactId: string) =>
       [...queryKeys.serviceCustomers.root, "detail", contactId] as const,
   },
+  revenueGoals: {
+    root: ["revenue-goals"] as const,
+    byYear: (year: number) => ["revenue-goals", year] as const,
+  },
 } as const;
 
 /**
@@ -88,5 +92,6 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("service:customers")) return [queryKeys.serviceCustomers.root];
   // pipelines: no RQ consumer depends on it in this batch
   if (serverKey.startsWith("pipelines")) return [];
+  if (serverKey.startsWith("revenue-goals")) return [queryKeys.revenueGoals.root];
   return [];
 }

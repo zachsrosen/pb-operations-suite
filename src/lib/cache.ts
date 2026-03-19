@@ -267,4 +267,12 @@ export const CACHE_KEYS = {
   SERVICE_TICKETS: "service-tickets:all",
   SERVICE_CUSTOMERS_SEARCH: (queryHash: string) => `service:customers:search:${queryHash}`,
   SERVICE_CUSTOMER_DETAIL: (contactId: string) => `service:customers:detail:${contactId}`,
+  REVENUE_GOALS: (year: number) => `revenue-goals:${year}` as const,
 } as const;
+
+// Revenue goals cache cascade: invalidate when deals change
+appCache.subscribe((key) => {
+  if (key.startsWith("deals:")) {
+    appCache.invalidateByPrefix("revenue-goals");
+  }
+});
