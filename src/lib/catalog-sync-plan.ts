@@ -20,11 +20,10 @@ import {
   normalize,
   normalizedEqual,
   generators,
-  transforms,
   isVirtualField,
 } from "./catalog-sync-mappings";
 import type { SkuRecord } from "./catalog-sync";
-import { str, numStr, getSpecData, buildSkuName } from "./catalog-sync";
+import { getSpecData } from "./catalog-sync";
 import { zohoInventory } from "./zoho-inventory";
 import { getHubSpotProductById } from "./hubspot";
 import { getZuperPartById } from "./zuper-catalog";
@@ -112,7 +111,7 @@ async function buildExternalSnapshot(
     snapshots.push({
       system,
       field: edge.externalField,
-      rawValue: rawValue === undefined ? null : rawValue,
+      rawValue,
       normalizedValue: normalize(rawValue, edge.normalizeWith),
     });
   }
@@ -278,7 +277,7 @@ export function derivePlan(
 
   // Step 4: Derive push and create operations
   const pushesAndCreates = derivePushOperations(
-    sku, intents, activeMappings, snapshots, effectiveState,
+    sku, intents, activeMappings, effectiveState,
   );
 
   // Step 5: Add generator-backed push-only fields (always server-derived)
@@ -442,7 +441,7 @@ function computeEffectiveState(
 
   for (const [internalField, fieldPulls] of pullsByInternal) {
     // Pick winner by system precedence
-    const winner = fieldPulls.sort(
+    const winner = [...fieldPulls].sort(
       (a, b) =>
         SYSTEM_PRECEDENCE.indexOf(a.system as ExternalSystem) -
         SYSTEM_PRECEDENCE.indexOf(b.system as ExternalSystem),
@@ -466,7 +465,6 @@ function derivePushOperations(
   sku: SkuRecord,
   intents: Record<ExternalSystem, Record<string, FieldIntent>>,
   mappings: FieldMappingEdge[],
-  snapshots: FieldValueSnapshot[],
   effectiveState: Record<string, string | number | null>,
 ): SyncOperation[] {
   const ops: SyncOperation[] = [];
@@ -727,7 +725,7 @@ export async function executePlan(
   );
 
   return {
-    status: allSuccess ? "success" : anyFailed ? "partial" : "success",
+    status: allSuccess ? "success" : "partial",
     planHash: plan.planHash,
     outcomes,
   };
