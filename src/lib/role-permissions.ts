@@ -105,6 +105,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/inspections",
       "/dashboards/interconnection",
       "/dashboards/construction",
+      "/dashboards/construction-metrics",
       "/dashboards/incentives",
       // Intelligence dashboards
       "/dashboards/at-risk",
@@ -206,6 +207,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/dnr",
       "/dashboards/roofing",
       "/dashboards/roofing-scheduler",
+      "/dashboards/construction-metrics",
       // Equipment catalog
       "/dashboards/catalog",
       "/dashboards/submit-product",
@@ -271,6 +273,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/dnr",
       "/dashboards/roofing",
       "/dashboards/roofing-scheduler",
+      "/dashboards/construction-metrics",
       // Intelligence dashboards
       "/dashboards/at-risk",
       "/dashboards/qc",
@@ -369,6 +372,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/inspections",
       "/dashboards/interconnection",
       "/dashboards/construction",
+      "/dashboards/construction-metrics",
       "/dashboards/incentives",
       // Intelligence dashboards
       "/dashboards/at-risk",
@@ -464,6 +468,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/inspections",
       "/dashboards/interconnection",
       "/dashboards/construction",
+      "/dashboards/construction-metrics",
       "/dashboards/incentives",
       "/dashboards/scheduler",
       "/dashboards/forecast-schedule",
@@ -563,6 +568,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/inspections",
       "/dashboards/interconnection",
       "/dashboards/construction",
+      "/dashboards/construction-metrics",
       "/dashboards/incentives",
       // D&E Suite dashboards
       "/dashboards/de-overview",
@@ -626,6 +632,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/inspections",
       "/dashboards/interconnection",
       "/dashboards/construction",
+      "/dashboards/construction-metrics",
       "/dashboards/incentives",
       // D&E Suite dashboards
       "/dashboards/de-overview",

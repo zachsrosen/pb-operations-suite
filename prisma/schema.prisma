@@ -512,6 +512,9 @@ model CrewMember {
   @@index([role])
   @@index([teamName])
   @@index([isActive])
+
+  // Approval workflow
+  availabilityRequests AvailabilityChangeRequest[]
 }
 
 // ===========================================
@@ -592,6 +595,49 @@ model AvailabilityOverride {
   @@index([crewMemberId])
   @@index([date])
   @@index([crewMemberId, date])
+}
+
+// ===========================================
+// AVAILABILITY CHANGE REQUESTS (Approval workflow)
+// ===========================================
+
+model AvailabilityChangeRequest {
+  id              String   @id @default(cuid())
+
+  // Crew member link
+  crewMemberId    String
+  crewMember      CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+
+  // What kind of change
+  requestType     String   // "add" | "modify" | "delete"
+
+  // Recurring availability fields (for add/modify)
+  dayOfWeek       Int?     // 0-6 for recurring availability
+  startTime       String?  // "HH:MM" for recurring
+  endTime         String?  // "HH:MM" for recurring
+  location        String?  // Location for this slot
+  jobType         String?  // "survey" | "construction" | "inspection"
+
+  // Date-specific override fields
+  overrideDate    String?  // YYYY-MM-DD for date-specific overrides
+  isAvailable     Boolean  @default(true)
+  reason          String?
+
+  // Original slot ID if modifying/deleting existing
+  originalSlotId  String?
+
+  // Approval status
+  status          String   @default("pending") // "pending" | "approved" | "rejected"
+  reviewedBy      String?
+  reviewedAt      DateTime?
+  reviewNote      String?
+
+  // Audit
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([crewMemberId])
+  @@index([status])
 }
 
 // ===========================================

@@ -325,6 +325,50 @@ export default function DEMetricsPage() {
     return entries.slice(0, 10);
   }, [designProjects, sortKey, sortDir]);
 
+  // ---- DA Backlog (sent but not yet approved) ----
+  const daBacklog = useMemo(() => {
+    return designProjects
+      .filter(p => p.designApprovalSentDate && !p.designApprovalDate)
+      .map(p => {
+        const sentDate = new Date(p.designApprovalSentDate! + "T12:00:00");
+        const daysWaiting = Math.floor((Date.now() - sentDate.getTime()) / (1000 * 60 * 60 * 24));
+        return { ...p, daysWaiting };
+      })
+      .sort((a, b) => b.daysWaiting - a.daysWaiting);
+  }, [designProjects]);
+
+  // ---- DA Submission Rate per Designer (Weekly) ----
+  const daWeeklyByDesigner = useMemo(() => {
+    const now = Date.now();
+    const eightWeeksAgo = now - 56 * 24 * 60 * 60 * 1000;
+
+    // Get all week start dates for headers
+    const weekStarts: string[] = [];
+    for (let i = 7; i >= 0; i--) {
+      const d = new Date(now - i * 7 * 24 * 60 * 60 * 1000);
+      const monday = new Date(d);
+      monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      const label = `${monday.getMonth() + 1}/${monday.getDate()}`;
+      if (!weekStarts.includes(label)) weekStarts.push(label);
+    }
+
+    const byDesigner: Record<string, Record<string, number>> = {};
+
+    designProjects
+      .filter(p => p.designApprovalSentDate && new Date(p.designApprovalSentDate + "T12:00:00").getTime() > eightWeeksAgo)
+      .forEach(p => {
+        const designer = p.designLead || "Unassigned";
+        const d = new Date(p.designApprovalSentDate! + "T12:00:00");
+        const monday = new Date(d);
+        monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+        const week = `${monday.getMonth() + 1}/${monday.getDate()}`;
+        if (!byDesigner[designer]) byDesigner[designer] = {};
+        byDesigner[designer][week] = (byDesigner[designer][week] || 0) + 1;
+      });
+
+    return { byDesigner, weekStarts: weekStarts.slice(-8) };
+  }, [designProjects]);
+
   // ---- Export ----
   const exportRows = useMemo(
     () => designProjects.map((p) => ({
@@ -630,6 +674,117 @@ export default function DEMetricsPage() {
                     <td className="py-2 text-right text-muted">{formatMoney(data.revenue)}</td>
                   </tr>
                 ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* DA Backlog — Awaiting Approval */}
+      <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card mb-6">
+        <h2 className="text-lg font-semibold text-foreground mb-4">
+          DA Backlog — Awaiting Approval ({daBacklog.length})
+        </h2>
+        {loading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-8 bg-skeleton rounded animate-pulse" />
+            ))}
+          </div>
+        ) : daBacklog.length === 0 ? (
+          <p className="text-sm text-muted italic">No projects awaiting DA approval</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-t-border text-left text-muted">
+                  <th className="pb-2 pr-4">Project</th>
+                  <th className="pb-2 pr-4">Designer</th>
+                  <th className="pb-2 pr-4 text-right">Days Waiting</th>
+                  <th className="pb-2">Location</th>
+                </tr>
+              </thead>
+              <tbody>
+                {daBacklog.map((p) => {
+                  const isRed = p.daysWaiting > 14;
+                  const isOrange = !isRed && p.daysWaiting > 7;
+                  return (
+                    <tr key={p.id ?? p.name} className="border-b border-t-border/50">
+                      <td className="py-2 pr-4 text-foreground">{p.name}</td>
+                      <td className="py-2 pr-4 text-muted">{p.designLead || "—"}</td>
+                      <td className="py-2 pr-4 text-right">
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${
+                            isRed
+                              ? "text-red-400 bg-red-500/10"
+                              : isOrange
+                              ? "text-orange-400 bg-orange-500/10"
+                              : "text-foreground"
+                          }`}
+                        >
+                          {p.daysWaiting}d
+                        </span>
+                      </td>
+                      <td className="py-2 text-muted">{p.pbLocation || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* DA Submission Rate by Designer (Last 8 Weeks) */}
+      <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card mb-6">
+        <h2 className="text-lg font-semibold text-foreground mb-4">
+          DA Submission Rate by Designer (Last 8 Weeks)
+        </h2>
+        {loading ? (
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="h-8 bg-skeleton rounded animate-pulse" />
+            ))}
+          </div>
+        ) : Object.keys(daWeeklyByDesigner.byDesigner).length === 0 ? (
+          <p className="text-sm text-muted italic">No DA submissions in the last 8 weeks.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-t-border text-left text-muted">
+                  <th className="pb-2 pr-4">Designer</th>
+                  {daWeeklyByDesigner.weekStarts.map((w) => (
+                    <th key={w} className="pb-2 px-2 text-right whitespace-nowrap">{w}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(daWeeklyByDesigner.byDesigner).map(([designer, weeks]) => (
+                  <tr key={designer} className="border-b border-t-border/50">
+                    <td className="py-2 pr-4 text-foreground">{designer}</td>
+                    {daWeeklyByDesigner.weekStarts.map((w) => (
+                      <td key={w} className="py-2 px-2 text-right text-muted">
+                        {weeks[w] ? <span className="font-semibold text-foreground">{weeks[w]}</span> : "—"}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+                {/* Totals row */}
+                <tr className="border-t-2 border-t-border font-semibold">
+                  <td className="py-2 pr-4 text-foreground">Total</td>
+                  {daWeeklyByDesigner.weekStarts.map((w) => {
+                    const total = Object.values(daWeeklyByDesigner.byDesigner).reduce(
+                      (sum, weeks) => sum + (weeks[w] || 0),
+                      0
+                    );
+                    return (
+                      <td key={w} className="py-2 px-2 text-right text-foreground">
+                        {total || "—"}
+                      </td>
+                    );
+                  })}
+                </tr>
               </tbody>
             </table>
           </div>
