@@ -8,18 +8,12 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // ── Construction-specific time metric display configuration ──
 const METRIC_COLUMNS = [
-  { key: "avg_timeRtbToConstructionSchedule", label: "RTB → Scheduled", shortLabel: "RTB→Sched", thresholds: [7, 14, 30] },
-  { key: "avg_constructionTurnaroundTime", label: "Construction Duration", shortLabel: "Constr", thresholds: [7, 14, 30] },
-  { key: "avg_timeRtbToCc", label: "RTB → Complete", shortLabel: "RTB→CC", thresholds: [14, 30, 60] },
-  { key: "avg_timeCcToInspectionPass", label: "CC → Inspection Passed", shortLabel: "CC→Insp", thresholds: [14, 30, 60] },
+  { key: "avg_timeRtbToConstructionSchedule", label: "RTB → Booked", shortLabel: "RTB→Booked", tooltip: "Days from Ready to Build until a construction date is scheduled", thresholds: [7, 14, 30] },
+  { key: "avg_constructionTurnaroundTime", label: "Construction Duration", shortLabel: "Constr", tooltip: "Days from construction schedule date to construction complete date", thresholds: [7, 14, 30] },
+  { key: "avg_timeRtbToCc", label: "RTB → CC", shortLabel: "RTB→CC", tooltip: "Days from Ready to Build to construction complete", thresholds: [14, 30, 60] },
+  { key: "avg_timeCcToInspectionPass", label: "CC → Inspection Passed", shortLabel: "CC→Insp Pass", tooltip: "Days from construction complete to inspection passed", thresholds: [14, 30, 60] },
 ] as const;
 
-const DETAIL_METRICS = [
-  { key: "avg_projectTurnaroundTime", label: "Full Project Turnaround" },
-  { key: "avg_timeToPto", label: "Sale → PTO" },
-  { key: "avg_timeToCc", label: "Sale → CC" },
-  { key: "avg_timeToRtb", label: "Sale → RTB" },
-] as const;
 
 // Color-code cell by threshold: green < t[0], yellow < t[1], orange < t[2], red >= t[2]
 function getCellColor(value: number | null | undefined, thresholds: readonly number[]): string {
@@ -38,9 +32,29 @@ function getCellBg(value: number | null | undefined, thresholds: readonly number
   return "bg-red-500/10";
 }
 
+// Metric key without the avg_ prefix (matches TIME_METRICS in the API)
+const METRIC_KEY_MAP: Record<string, string> = {
+  avg_timeRtbToConstructionSchedule: "timeRtbToConstructionSchedule",
+  avg_constructionTurnaroundTime: "constructionTurnaroundTime",
+  avg_timeRtbToCc: "timeRtbToCc",
+  avg_timeCcToInspectionPass: "timeCcToInspectionPass",
+};
+
+interface DealDetail {
+  dealId: string;
+  projectNumber: string;
+  name: string;
+  url: string;
+  constructionScheduleDate: string | null;
+  constructionCompleteDate: string | null;
+  inspectionPassDate: string | null;
+  metrics: Record<string, number | null>;
+}
+
 interface MetricAverages {
   count: number;
-  [key: string]: number | null;
+  deals?: DealDetail[];
+  [key: string]: number | null | DealDetail[] | undefined;
 }
 
 interface InConstructionProject {
@@ -76,7 +90,7 @@ export default function ConstructionMetricsDashboardPage() {
 
   const [daysWindow, setDaysWindow] = useState(60);
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
-  const [showDetailMetrics, setShowDetailMetrics] = useState(false);
+  const [drillDown, setDrillDown] = useState<{ location: string; metricKey: string; metricLabel: string } | null>(null);
 
   const qcQuery = useQuery({
     queryKey: queryKeys.stats.qc(daysWindow),
@@ -117,7 +131,7 @@ export default function ConstructionMetricsDashboardPage() {
     return displayLocations.map((loc) => {
       const row: Record<string, string | number> = { Location: loc, Count: data.byLocation[loc].count };
       for (const col of METRIC_COLUMNS) {
-        const val = data.byLocation[loc][col.key];
+        const val = data.byLocation[loc][col.key] as number | null | undefined;
         row[col.label] = val !== null && val !== undefined ? val : "--";
       }
       return row;
@@ -215,7 +229,7 @@ export default function ConstructionMetricsDashboardPage() {
         </div>
 
         <div className="ml-auto text-sm text-muted">
-          {data.totals.count.toLocaleString()} projects &middot; {daysWindow > 0 ? `Last ${daysWindow} days` : "All time"}
+          {data.totals.count.toLocaleString()} projects &middot; {daysWindow > 0 ? `CC date in last ${daysWindow} days` : "All time"}
         </div>
       </div>
 
@@ -223,7 +237,7 @@ export default function ConstructionMetricsDashboardPage() {
       <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8">
         <div className="px-5 py-4 border-b border-t-border">
           <h2 className="text-lg font-semibold text-foreground">Average Times by Office</h2>
-          <p className="text-sm text-muted mt-0.5">Construction milestone timing by office — days between Ready to Build and completion stages</p>
+          <p className="text-sm text-muted mt-0.5">Average days per milestone · Click any cell to drill into individual deals</p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -232,7 +246,7 @@ export default function ConstructionMetricsDashboardPage() {
                 <th className="text-left px-4 py-3 font-semibold text-foreground sticky left-0 bg-surface-2/50 z-10 min-w-[140px]">Location</th>
                 <th className="text-center px-3 py-3 font-semibold text-foreground min-w-[70px]">Count</th>
                 {METRIC_COLUMNS.map((col) => (
-                  <th key={col.key} className="text-center px-3 py-3 font-semibold text-foreground min-w-[90px]" title={col.label}>
+                  <th key={col.key} className="text-center px-3 py-3 font-semibold text-foreground min-w-[90px]" title={col.tooltip}>
                     {col.shortLabel}
                   </th>
                 ))}
@@ -248,7 +262,12 @@ export default function ConstructionMetricsDashboardPage() {
                     {METRIC_COLUMNS.map((col) => {
                       const val = row[col.key] as number | null;
                       return (
-                        <td key={col.key} className={`text-center px-3 py-3 font-mono font-medium ${getCellColor(val, col.thresholds)} ${getCellBg(val, col.thresholds)}`}>
+                        <td
+                          key={col.key}
+                          className={`text-center px-3 py-3 font-mono font-medium cursor-pointer hover:ring-1 hover:ring-orange-500/40 transition-shadow ${getCellColor(val, col.thresholds)} ${getCellBg(val, col.thresholds)}`}
+                          onClick={() => val !== null && setDrillDown({ location: loc, metricKey: col.key, metricLabel: col.label })}
+                          title={val !== null ? `Click to see ${col.label} deals for ${loc}` : undefined}
+                        >
                           {fmt(val)}
                         </td>
                       );
@@ -274,45 +293,62 @@ export default function ConstructionMetricsDashboardPage() {
         </div>
       </div>
 
-      {/* ── Section 2: Detail Time Metric Cards ── */}
-      <div className="mb-8">
-        <button
-          onClick={() => setShowDetailMetrics(!showDetailMetrics)}
-          className="flex items-center gap-2 text-sm font-medium text-muted hover:text-foreground transition-colors mb-4"
-        >
-          <span className={`transition-transform ${showDetailMetrics ? "rotate-90" : ""}`}>&#9654;</span>
-          {showDetailMetrics ? "Hide" : "Show"} Additional Metrics ({DETAIL_METRICS.length})
-        </button>
-
-        {showDetailMetrics && (
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 stagger-grid">
-            {DETAIL_METRICS.map((metric) => (
-              <div key={metric.key} className="bg-surface border border-t-border rounded-xl p-4">
-                <p className="text-xs text-muted mb-2 truncate" title={metric.label}>{metric.label}</p>
-                <div className="space-y-1.5">
-                  {displayLocations.map((loc) => {
-                    const val = data.byLocation[loc]?.[metric.key] as number | null;
+      {/* ── Drill-Down Panel ── */}
+      {drillDown && data.byLocation[drillDown.location]?.deals && (() => {
+        const rawKey = METRIC_KEY_MAP[drillDown.metricKey] || drillDown.metricKey.replace("avg_", "");
+        const deals = (data.byLocation[drillDown.location].deals as DealDetail[])
+          .filter((d) => d.metrics[rawKey] !== null)
+          .sort((a, b) => (b.metrics[rawKey] ?? 0) - (a.metrics[rawKey] ?? 0));
+        const col = METRIC_COLUMNS.find((c) => c.key === drillDown.metricKey);
+        return (
+          <div className="bg-surface border border-orange-500/30 rounded-xl overflow-hidden mb-8 animate-value-flash">
+            <div className="px-5 py-4 border-b border-t-border flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-foreground">{drillDown.location} — {drillDown.metricLabel}</h2>
+                <p className="text-sm text-muted mt-0.5">{deals.length} deals with data · avg {fmt(data.byLocation[drillDown.location][drillDown.metricKey] as number | null)} days</p>
+              </div>
+              <button onClick={() => setDrillDown(null)} className="text-muted hover:text-foreground text-xl px-2">✕</button>
+            </div>
+            <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b border-t-border bg-surface-2/80 backdrop-blur-sm">
+                    <th className="text-left px-4 py-2.5 font-semibold text-foreground">Project</th>
+                    <th className="text-left px-4 py-2.5 font-semibold text-foreground">Customer</th>
+                    <th className="text-center px-4 py-2.5 font-semibold text-foreground">Sched Date</th>
+                    <th className="text-center px-4 py-2.5 font-semibold text-foreground">CC Date</th>
+                    <th className="text-center px-4 py-2.5 font-semibold text-foreground">{drillDown.metricLabel}</th>
+                    <th className="text-center px-4 py-2.5 font-semibold text-foreground">HubSpot</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deals.map((d, i) => {
+                    const val = d.metrics[rawKey];
                     return (
-                      <div key={loc} className="flex items-center justify-between">
-                        <span className="text-xs text-muted truncate mr-2">
-                          {loc.replace("Colorado Springs", "CO Spr").replace("San Luis Obispo", "SLO").replace("Westminster", "West").replace("Centennial", "Cent").replace("Camarillo", "Cam")}
-                        </span>
-                        <span className="text-sm font-mono font-medium text-foreground">{fmt(val)}</span>
-                      </div>
+                      <tr key={d.dealId} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+                        <td className="px-4 py-2.5 font-mono text-foreground">{d.projectNumber}</td>
+                        <td className="px-4 py-2.5 text-foreground truncate max-w-[200px]">{d.name}</td>
+                        <td className="text-center px-4 py-2.5 text-muted">{d.constructionScheduleDate || "--"}</td>
+                        <td className="text-center px-4 py-2.5 text-muted">{d.constructionCompleteDate || "--"}</td>
+                        <td className={`text-center px-4 py-2.5 font-mono font-medium ${col ? getCellColor(val, col.thresholds) : "text-foreground"}`}>
+                          {fmt(val)}
+                        </td>
+                        <td className="text-center px-4 py-2.5">
+                          <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-orange-400 hover:text-orange-300 underline text-xs">
+                            Open ↗
+                          </a>
+                        </td>
+                      </tr>
                     );
                   })}
-                  <div className="flex items-center justify-between border-t border-t-border/50 pt-1.5">
-                    <span className="text-xs font-semibold text-muted">Total</span>
-                    <span className="text-sm font-mono font-semibold text-orange-400">{fmt(data.totals[metric.key] as number | null)}</span>
-                  </div>
-                </div>
-              </div>
-            ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        )}
-      </div>
+        );
+      })()}
 
-      {/* ── Section 3: Per-Location Metric Cards ── */}
+      {/* ── Section 2: Per-Location Metric Cards ── */}
       <div className="mb-8">
         <h2 className="text-lg font-semibold text-foreground mb-4">Time Metrics by Location</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 stagger-grid">

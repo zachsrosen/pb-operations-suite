@@ -66,6 +66,35 @@ function calculateAverages(projects: Project[]): MetricAverages {
   return result;
 }
 
+/** Build per-deal metric values for drill-down. */
+function buildDealDetails(projects: Project[]) {
+  return projects.map((p) => {
+    const metrics: Record<string, number | null> = {};
+    for (const metric of TIME_METRICS) {
+      let val: number | null | undefined;
+      if (metric === "constructionTurnaroundTime")
+        val = daysBetween(p.constructionScheduleDate, p.constructionCompleteDate);
+      else if (metric === "timeCcToInspectionPass")
+        val = daysBetween(p.constructionCompleteDate, p.inspectionPassDate);
+      else
+        val = p[metric as keyof Project] as number | null | undefined;
+      metrics[metric] = val !== undefined && val !== null && !isNaN(val) && val >= 0
+        ? Math.round(val * 10) / 10
+        : null;
+    }
+    return {
+      dealId: p.id,
+      projectNumber: p.projectNumber,
+      name: p.name,
+      url: p.url,
+      constructionScheduleDate: p.constructionScheduleDate,
+      constructionCompleteDate: p.constructionCompleteDate,
+      inspectionPassDate: p.inspectionPassDate,
+      metrics,
+    };
+  });
+}
+
 function groupBy<T>(items: T[], keyFn: (item: T) => string): Record<string, T[]> {
   const groups: Record<string, T[]> = {};
   for (const item of items) {
@@ -106,12 +135,16 @@ export async function GET(request: NextRequest) {
       projects = projects.filter((p) => !!p.constructionCompleteDate);
     }
 
-    // Group by location
+    // Group by location — include deal-level details for drill-down
     const byLocationGroups = groupBy(projects, (p) => p.pbLocation || "Unknown");
-    const byLocation: Record<string, MetricAverages> = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const byLocation: Record<string, any> = {};
     for (const [loc, locProjects] of Object.entries(byLocationGroups)) {
       if (loc === "Unknown") continue;
-      byLocation[loc] = calculateAverages(locProjects);
+      byLocation[loc] = {
+        ...calculateAverages(locProjects),
+        deals: buildDealDetails(locProjects),
+      };
     }
 
     // Group by utility (for interconnection tables)
