@@ -100,7 +100,7 @@ async function getCategoryMap(): Promise<Record<string, string>> {
 }
 
 /** Resolve a category name or UID to a valid Zuper category UID. */
-async function resolveZuperCategoryUid(category: string | undefined): Promise<string> {
+export async function resolveZuperCategoryUid(category: string | undefined): Promise<string> {
   if (!category) return ZUPER_DEFAULT_CATEGORY_UID;
   // Already a UUID
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(category)) {
@@ -649,6 +649,7 @@ export async function updateZuperPart(
 
   const endpoints = getCatalogEndpoints();
   const bodyVariants: Array<{ label: string; body: JsonRecord }> = [
+    { label: "product", body: { product: fields } },
     { label: "item", body: { item: fields } },
     { label: "raw", body: fields },
   ];

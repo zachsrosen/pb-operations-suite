@@ -7,6 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { getZohoSalesOrderUrl, getZohoPurchaseOrderUrl } from "@/lib/external-links";
 import type { PoGroupingResult, ZohoPurchaseOrderEntry } from "@/lib/bom-po-create";
 // PDF upload uses chunked /api/bom/chunk — stays on our domain, no CORS issues
 
@@ -2817,7 +2818,7 @@ function BomDashboardInner() {
                           {zohoPurchaseOrders.map((po) => (
                             <a
                               key={`${po.vendorId}-${po.poId}`}
-                              href={`https://inventory.zoho.com/app#/purchaseorders/${po.poId}`}
+                              href={getZohoPurchaseOrderUrl(po.poId)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"
@@ -2908,7 +2909,7 @@ function BomDashboardInner() {
                   {savedVersion && (
                     zohoSoId ? (
                       <a
-                        href={`https://inventory.zoho.com/app#/salesorders/${zohoSoId}`}
+                        href={getZohoSalesOrderUrl(zohoSoId)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs text-cyan-600 dark:text-cyan-400 hover:underline"

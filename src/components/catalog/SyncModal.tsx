@@ -232,6 +232,7 @@ export default function SyncModal({ internalProductId, skuName, isOpen, onClose 
               token,
               issuedAt,
               systems: activeSystems,
+              changesHash: filteredHash,
               ...(Object.keys(excludedFieldsPayload).length > 0
                 ? { excludedFields: excludedFieldsPayload }
                 : {}),

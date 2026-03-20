@@ -4,7 +4,7 @@ import { zohoInventory } from "@/lib/zoho-inventory";
 import type { UpdateZohoItemResult } from "@/lib/zoho-inventory";
 import { getHubSpotProductById, updateHubSpotProduct } from "@/lib/hubspot";
 import type { UpdateHubSpotProductResult } from "@/lib/hubspot";
-import { getZuperPartById, updateZuperPart } from "@/lib/zuper-catalog";
+import { getZuperPartById, updateZuperPart, resolveZuperCategoryUid } from "@/lib/zuper-catalog";
 import type { UpdateZuperPartResult } from "@/lib/zuper-catalog";
 import {
   getHubspotCategoryValue,
@@ -44,7 +44,8 @@ export interface SyncOutcome {
 
 export interface SyncExecuteResult {
   outcomes: SyncOutcome[];
-  hashMatch: boolean;
+  /** True when the fresh preview hash diverged from the approved hash. */
+  stale?: boolean;
 }
 
 // Type for a SKU record with all specs included
@@ -111,10 +112,22 @@ function buildSkuName(sku: SkuRecord): string {
 function diffFields(
   proposed: Record<string, string | null>,
   current: Record<string, string | null>,
+  options?: { caseInsensitiveFields?: Set<string> },
 ): SyncFieldChange[] {
+  const ciFields = options?.caseInsensitiveFields;
   const changes: SyncFieldChange[] = [];
   for (const [field, proposedValue] of Object.entries(proposed)) {
     const currentValue = current[field] ?? null;
+    // For enum-like fields (e.g. HubSpot manufacturer), treat case-only
+    // differences as equal so we don't push a value the API will reject.
+    if (
+      ciFields?.has(field) &&
+      proposedValue != null &&
+      currentValue != null &&
+      proposedValue.toLowerCase() === currentValue.toLowerCase()
+    ) {
+      continue;
+    }
     if (proposedValue !== currentValue) {
       changes.push({ field, currentValue, proposedValue });
     }
@@ -311,7 +324,11 @@ async function previewHubSpot(sku: SkuRecord): Promise<SyncPreview> {
   }
 
   const current = parseHubSpotCurrentFields(properties, Object.keys(proposed));
-  const changes = diffFields(proposed, current);
+  // manufacturer is a HubSpot enumeration — case-only differences aren't
+  // real changes and will be rejected by the API with a 400.
+  const changes = diffFields(proposed, current, {
+    caseInsensitiveFields: new Set(["manufacturer"]),
+  });
 
   return {
     system: "hubspot",
@@ -616,7 +633,16 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
     };
   }
 
-  // Update existing — nest dotted keys (e.g. "custom_fields.x" → { custom_fields: { x } })
+  // Update existing — map internal preview field names to Zuper /product API
+  // field names, resolve category to UID, and nest dotted keys.
+  const ZUPER_FIELD_MAP: Record<string, string> = {
+    name: "product_name",
+    description: "product_description",
+    // category handled separately (needs UID resolution)
+    // sku omitted (product_no is auto-assigned by Zuper)
+    // specification stays as-is
+  };
+
   const fields: Record<string, unknown> = {};
   for (const change of preview.changes) {
     if (change.proposedValue !== null) {
@@ -624,8 +650,16 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
       if (parts.length === 2) {
         const parent = fields[parts[0]] as Record<string, unknown> | undefined;
         fields[parts[0]] = { ...parent, [parts[1]]: change.proposedValue };
+      } else if (change.field === "category") {
+        fields.product_category = await resolveZuperCategoryUid(
+          change.proposedValue,
+        );
+      } else if (change.field === "sku") {
+        // product_no is auto-assigned by Zuper — skip SKU updates
+        continue;
       } else {
-        fields[change.field] = change.proposedValue;
+        const apiField = ZUPER_FIELD_MAP[change.field] ?? change.field;
+        fields[apiField] = change.proposedValue;
       }
     }
   }
@@ -655,17 +689,19 @@ export async function executeSyncToLinkedSystems(
   systems: SyncSystem[],
   excludedFields?: ExcludedFieldsMap,
 ): Promise<SyncExecuteResult> {
-  // Step 1: Recompute preview server-side (fresh external fetch)
+  // Fetch fresh preview and apply the same exclusions the admin saw.
   const rawPreviews = await previewSyncToLinkedSystems(sku, systems);
-
-  // Step 2: Apply field exclusions, compute hash and compare
   const freshPreviews = applyFieldExclusions(rawPreviews, excludedFields);
+
+  // Verify the approved diff still matches current external state.
+  // If external data changed between preview and execute, the hash will
+  // diverge and we refuse to push unapproved changes.
   const freshHash = computePreviewHash(freshPreviews);
   if (freshHash !== expectedHash) {
-    return { outcomes: [], hashMatch: false };
+    return { outcomes: [], stale: true };
   }
 
-  // Step 3: Execute writes in parallel
+  // Execute writes in parallel
   const executeFns: Record<SyncSystem, (preview: SyncPreview) => Promise<SyncOutcome>> = {
     zoho: (p) => executeZohoSync(sku, p),
     hubspot: (p) => executeHubSpotSync(sku, p),
@@ -698,5 +734,5 @@ export async function executeSyncToLinkedSystems(
     };
   });
 
-  return { outcomes, hashMatch: true };
+  return { outcomes };
 }

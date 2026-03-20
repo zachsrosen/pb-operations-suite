@@ -1,9 +1,40 @@
 const DEFAULT_HUBSPOT_PORTAL_ID = "21710069";
 const DEFAULT_ZUPER_BASE_URL = "https://web.zuperpro.com";
 const GOOGLE_CALENDAR_EVENT_BASE_URL = "https://calendar.google.com/calendar/event";
-const DEFAULT_ZOHO_ITEM_BASE_URL = "https://inventory.zoho.com/app#/items";
+const DEFAULT_ZOHO_DOMAIN = "https://inventory.zoho.com";
+
+/**
+ * Static map of client-visible env vars.
+ *
+ * Next.js only inlines NEXT_PUBLIC_* vars when the full literal string
+ * (e.g. `process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID`) appears in source.
+ * Computed access like `process.env[\`NEXT_PUBLIC_${name}\`]` compiles to
+ * `undefined` in client bundles.  These explicit references ensure the
+ * values are inlined at build time.
+ */
+const CLIENT_ENV: Record<string, string | undefined> = {
+  HUBSPOT_PORTAL_ID: process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID,
+  ZUPER_WEB_URL: process.env.NEXT_PUBLIC_ZUPER_WEB_URL,
+  ZOHO_INVENTORY_ORG_ID: process.env.NEXT_PUBLIC_ZOHO_INVENTORY_ORG_ID,
+};
+
+/**
+ * Read an env var that works in both client and server contexts.
+ * Checks the static CLIENT_ENV map first (build-time inlined for client
+ * bundles), then falls back to dynamic process.env lookups which only
+ * resolve on the server.
+ */
+function env(name: string): string {
+  return (
+    CLIENT_ENV[name] ??
+    process.env[`NEXT_PUBLIC_${name}`] ??
+    process.env[name] ??
+    ""
+  ).trim();
+}
+
 export function getHubSpotDealUrl(dealId: string): string {
-  const portalId = (process.env.HUBSPOT_PORTAL_ID || DEFAULT_HUBSPOT_PORTAL_ID).trim();
+  const portalId = env("HUBSPOT_PORTAL_ID") || DEFAULT_HUBSPOT_PORTAL_ID;
   return `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`;
 }
 
@@ -18,9 +49,15 @@ function applyUrlTemplate(
   return rendered;
 }
 
+/**
+ * HubSpot products no longer have standalone record pages (the old
+ * `/record/0-7/{id}` URL now 404s). The product library list at
+ * `/objects/0-7/views/all/list` is the only working route — clicking a
+ * product name there opens a sidebar preview.
+ */
 export function getHubSpotProductUrl(productId: string): string {
-  const portalId = (process.env.HUBSPOT_PORTAL_ID || DEFAULT_HUBSPOT_PORTAL_ID).trim();
-  return `https://app.hubspot.com/contacts/${portalId}/record/0-7/${encodeURIComponent(productId)}`;
+  const portalId = env("HUBSPOT_PORTAL_ID") || DEFAULT_HUBSPOT_PORTAL_ID;
+  return `https://app.hubspot.com/contacts/${portalId}/objects/0-7/views/all/list`;
 }
 
 function normalizeWebBaseUrl(baseUrl: string): string {
@@ -38,7 +75,7 @@ function normalizeWebBaseUrl(baseUrl: string): string {
 }
 
 export function getZuperWebBaseUrl(): string {
-  const explicitWebBase = (process.env.ZUPER_WEB_URL || "").trim();
+  const explicitWebBase = env("ZUPER_WEB_URL");
   if (explicitWebBase) {
     return normalizeWebBaseUrl(explicitWebBase);
   }
@@ -47,25 +84,47 @@ export function getZuperWebBaseUrl(): string {
 }
 
 export function getZuperProductUrl(productId: string): string {
-  const template = (process.env.ZUPER_PRODUCT_URL_TEMPLATE || "").trim();
+  const template = env("ZUPER_PRODUCT_URL_TEMPLATE");
   if (template) {
     return applyUrlTemplate(template, { id: productId });
   }
-  return `${getZuperWebBaseUrl()}/app/product/${encodeURIComponent(productId)}`;
+  return `${getZuperWebBaseUrl()}/products/${encodeURIComponent(productId)}/details`;
+}
+
+/**
+ * Build the Zoho Inventory web-app hash base:
+ *   https://inventory.zoho.com/app/{orgId}#/inventory
+ *
+ * Modern Zoho Inventory URLs include the org ID in the path and use
+ * `#/inventory/...` as the hash prefix for all modules (items, salesorders,
+ * purchaseorders, etc.).
+ */
+function getZohoInventoryHashBase(): string {
+  const orgId = env("ZOHO_INVENTORY_ORG_ID");
+  const domain = DEFAULT_ZOHO_DOMAIN;
+
+  if (orgId) {
+    return `${domain}/app/${orgId}#/inventory`;
+  }
+
+  // Fallback without org ID — Zoho will redirect to org-scoped URL
+  return `${domain}/app#/inventory`;
 }
 
 export function getZohoSalesOrderUrl(salesorderId: string): string {
-  const baseUrl = process.env.ZOHO_INVENTORY_WEB_URL || "https://inventory.zoho.com/app#";
-  return `${baseUrl.replace(/\/$/, "").replace(/#\/items$/, "#")}/salesorders/${encodeURIComponent(salesorderId)}`;
+  return `${getZohoInventoryHashBase()}/salesorders/${encodeURIComponent(salesorderId)}`;
+}
+
+export function getZohoPurchaseOrderUrl(purchaseOrderId: string): string {
+  return `${getZohoInventoryHashBase()}/purchaseorders/${encodeURIComponent(purchaseOrderId)}`;
 }
 
 export function getZohoItemUrl(itemId: string): string {
-  const template = (process.env.ZOHO_INVENTORY_ITEM_URL_TEMPLATE || "").trim();
+  const template = env("ZOHO_INVENTORY_ITEM_URL_TEMPLATE");
   if (template) {
     return applyUrlTemplate(template, { id: itemId });
   }
-  const baseUrl = process.env.ZOHO_INVENTORY_WEB_URL || DEFAULT_ZOHO_ITEM_BASE_URL;
-  return `${baseUrl.replace(/\/$/, "")}/${encodeURIComponent(itemId)}`;
+  return `${getZohoInventoryHashBase()}/items/${encodeURIComponent(itemId)}`;
 }
 
 export function getZuperJobUrl(jobUid?: string | null): string | null {
