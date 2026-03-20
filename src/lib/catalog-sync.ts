@@ -67,6 +67,7 @@ export interface SkuRecord {
   width: number | null;
   weight: number | null;
   zohoItemId: string | null;
+  zohoVendorId: string | null;
   hubspotProductId: string | null;
   zuperItemId: string | null;
   moduleSpec?: Record<string, unknown> | null;
@@ -149,6 +150,7 @@ function buildZohoProposedFields(sku: SkuRecord): Record<string, string | null> 
     part_number: str(sku.model),
     unit: str(sku.unitLabel),
     vendor_name: str(sku.vendorName),
+    vendor_id: str(sku.zohoVendorId),
   };
 }
 
@@ -162,6 +164,7 @@ function parseZohoCurrentFields(item: Record<string, unknown>): Record<string, s
     part_number: str(item.part_number),
     unit: str(item.unit),
     vendor_name: str(item.vendor_name),
+    vendor_id: str(item.vendor_id),
   };
 }
 

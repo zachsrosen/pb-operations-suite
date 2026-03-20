@@ -63,6 +63,7 @@ describe("catalog-sync Zuper", () => {
     width: null,
     weight: null,
     zohoItemId: null,
+    zohoVendorId: null,
     hubspotProductId: "1591770479",
     zuperItemId: "zuper_1",
     batterySpec: {},

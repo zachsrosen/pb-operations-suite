@@ -64,12 +64,18 @@ const PULL_FIELD_MAP: Record<string, Record<string, string>> = {
     description: "description",
     sku: "sku",
     vendor_name: "vendorName",
+    vendor_id: "zohoVendorId",
   },
   zuper: {
     name: "model",
     sku: "sku",
     description: "description",
   },
+};
+
+/** Fields that must be pulled together (e.g. vendor name requires vendor ID). */
+const COMPANION_FIELDS: Record<string, Record<string, string>> = {
+  zoho: { vendor_name: "vendor_id" },
 };
 
 const NUMERIC_INTERNAL_FIELDS = new Set(["sellPrice", "unitCost"]);
@@ -250,6 +256,9 @@ export default function SyncModal({ internalProductId, skuName, isOpen, onClose 
       if (Object.keys(pullFields).length > 0) {
         const updatePayload: Record<string, string | number | null> = {};
         for (const [system, changes] of Object.entries(pullFields)) {
+          // Collect pulled field names so we can resolve companions
+          const pulledFields = new Set(changes.map((c) => c.field));
+
           for (const change of changes) {
             const internalField = PULL_FIELD_MAP[system]?.[change.field];
             if (!internalField) continue;
@@ -258,6 +267,20 @@ export default function SyncModal({ internalProductId, skuName, isOpen, onClose 
               if (Number.isFinite(n)) updatePayload[internalField] = n;
             } else {
               updatePayload[internalField] = change.currentValue;
+            }
+
+            // Auto-pull companion fields (e.g. vendor_name requires vendor_id)
+            const companion = COMPANION_FIELDS[system]?.[change.field];
+            if (companion && !pulledFields.has(companion)) {
+              const companionInternal = PULL_FIELD_MAP[system]?.[companion];
+              if (companionInternal) {
+                // Find companion value from the full preview data
+                const systemPreview = previews.find((p) => p.system === system);
+                const companionChange = systemPreview?.changes.find((c) => c.field === companion);
+                if (companionChange) {
+                  updatePayload[companionInternal] = companionChange.currentValue;
+                }
+              }
             }
           }
         }
