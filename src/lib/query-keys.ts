@@ -27,6 +27,7 @@ export const queryKeys = {
     root: ["stats"] as const,
     overview: () => [...queryKeys.stats.root, "overview"] as const,
     qc: (days: number) => [...queryKeys.stats.root, "qc", days] as const,
+    surveyMetrics: (days: number) => [...queryKeys.stats.root, "survey-metrics", days] as const,
   },
   auth: {
     root: ["auth"] as const,
