@@ -92,7 +92,7 @@ interface FieldMappingEdge {
 
 **Category-conditional mappings**: HubSpot spec properties vary by product category (e.g., `dc_size` only exists for MODULE, `ac_size` only for INVERTER). The `condition` field gates which mappings are active for a given product. When `condition` is omitted, the mapping applies to all categories.
 
-**Push-only composite fields**: Zuper's `specification` field is a many-to-one composite generated from multiple internal spec fields (e.g., MODULE: `"410W Mono PERC"` from wattage + cellType). It cannot be decomposed back into individual fields on pull. Marked `direction: "push-only"` — the preview shows it as read-only with a tooltip explaining why. The `generateZuperSpecification()` function in `catalog-fields.ts` already handles the composition logic; the mapping table references it as a special-case generator rather than a simple field-to-field edge.
+**Push-only composite fields**: Zuper's `specification` field is a many-to-one composite generated from multiple internal spec fields (e.g., MODULE: `"410W Mono PERC"` from wattage + cellType). It cannot be decomposed back into individual fields on pull. Marked `direction: "push-only"` — the preview shows it as read-only with a tooltip explaining why. The `generateZuperSpecification()` function in `catalog-fields.ts` already handles the composition logic; the mapping table references it as a special-case generator rather than a simple field-to-field edge. Generator-backed push-only fields (`_name`, `_specification`) are always server-derived during plan build — the client never sends intents for them. The server automatically includes them in the plan's push operations whenever the target system has a linked product (or in create operations for new products).
 
 **Virtual internal fields**: Fields prefixed with `_` (e.g., `_specification`, `_name`) are virtual — never persisted to the database. They exist only in the mapping table to anchor push-only composite edges. During plan derivation, virtual fields are skipped in the internal patch (Step 1). During re-materialization (Step 2), edges with a `generator` property regenerate their value from the **post-patch** internal state. This means a pull of `wattage` from HubSpot correctly cascades into an updated Zuper `specification` push because the generator reads the now-updated wattage.
 
@@ -244,7 +244,7 @@ Conflicts are keyed by `internalField`, after normalization:
 
 - Group all `pull` selections by their mapped `internalField`.
 - If more than one pull targets the same `internalField` and the normalized values differ: create a `PullConflict`.
-- Equal normalized values from different systems are **not** a conflict.
+- Equal normalized values from different systems are **not** a conflict. However, the raw values may differ in casing, whitespace, or formatting (e.g., `"Hyundai"` vs `"HYUNDAI"` both normalize equal under `enum-ci`). To keep the internal patch deterministic, a fixed system precedence order selects the raw value: **zoho > hubspot > zuper**. The first system in precedence with an active pull wins the raw write value. This only matters for the `internalPatch` — downstream pushes re-materialize from the effective internal state, so they always push the canonical internal value, not the raw pulled value.
 - Multi-way conflicts are supported (3 systems pulling to the same field with 3 different values).
 
 ```ts
@@ -387,7 +387,19 @@ Build the internal patch from all pull operations where `updateInternal = true`.
 
 ### Step 2: Re-materialize Outbound Writes
 
-Using the now-effective internal state (actual DB values after patch), compute the outbound field values for each push/create operation. This ensures pushes always reflect the committed internal state, not a transient computed value.
+Build the **effective internal state** by starting with the actual DB values after the Step 1 patch, then overlaying values from any relay-only pulls (`updateInternal = false`). These relay-only values were never persisted but still define the intended truth for downstream systems.
+
+```ts
+// Pseudocode
+const effectiveState = { ...postPatchDbValues };
+for (const op of plan.operations) {
+  if (op.kind === "pull" && !op.updateInternal && !op.noOp) {
+    effectiveState[op.internalField] = op.value;
+  }
+}
+```
+
+Compute the outbound field values for each push/create operation from `effectiveState`, not from DB state alone. Generator-backed fields (e.g., `_specification`, `_name`) are regenerated from `effectiveState` at this point — so a relay-only pull of `wattage` still flows into an updated Zuper specification push even though wattage was never persisted to the internal product.
 
 ### Step 3: Execute External Writes
 
@@ -399,12 +411,14 @@ interface SyncOperationOutcome {
   system: ExternalSystem | "internal";
   status: "success" | "skipped" | "failed";
   message: string;
-  source: "manual" | "cascade";
-  fields?: string[]; // which external fields were written (for push/create)
+  fieldDetails: Array<{
+    externalField: string;
+    source: "manual" | "cascade";
+  }>;
 }
 ```
 
-Outcomes are **per-system** (one push outcome per system, one create outcome per system, one internal-patch outcome) so the results UI can show a clean per-system status row. The `fields` array provides drill-down detail.
+Outcomes are **per-system** (one push outcome per system, one create outcome per system, one internal-patch outcome) so the results UI can show a clean per-system status row. A single system write can contain both manual and cascaded field writes (e.g., user manually pushed `price` to HubSpot while `sku` was auto-cascaded), so per-field `source` attribution lives in `fieldDetails` rather than a single top-level `source`. The results UI uses this to badge individual field rows within each system outcome.
 
 ### Step 4: Link-Back After Create
 
@@ -426,7 +440,7 @@ Two hashes, one approval:
 
 | Hash | Covers | Purpose |
 |------|--------|---------|
-| `basePreviewHash` | Raw external snapshots at preview time | Detect external drift before user acts |
+| `basePreviewHash` | Raw external snapshots at preview time | Informational only — lets the client warn the user if external state changed since the modal opened (e.g., "External data has changed, consider refreshing"). Not consumed by any server-side validation; `planHash` at execute time is the authoritative stale check. |
 | `planHash` | Full canonical plan: pulls, internal patch, pushes, creates, user overrides, cascade sources | Approval token binds to the exact plan the user reviewed |
 
 ### 6.2 Plan Hash Computation
@@ -511,7 +525,7 @@ After any `partial` result:
 3. **Update-internal toggle**: per-field checkbox on pull fields. Global toggle at modal top seeds defaults.
 4. **Conflict banner**: appears when pull conflicts are detected. Lists conflicting fields with values. Confirm disabled.
 5. **Reset auto button**: restores all auto fields to cascade-computed state.
-6. **Results view**: shows `manual` vs `cascade` source per outcome row.
+6. **Results view**: per-system outcome rows with expandable `fieldDetails` showing `manual` vs `cascade` source per field.
 7. **Plan preview step**: after user sets intents and clicks "Preview Plan", the modal calls `POST /sync/plan` and shows the full canonical plan before confirm. This replaces the current direct-to-confirm flow.
 
 ### Removed from Client
