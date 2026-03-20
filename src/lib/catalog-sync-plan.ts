@@ -681,3 +681,306 @@ export function computePlanHash(
   };
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
+
+// ── Plan execution ──
+
+/** Execute a validated sync plan. Called by POST /sync/execute after stale check. */
+export async function executePlan(
+  sku: SkuRecord,
+  plan: SyncPlan,
+): Promise<SyncExecuteResponse> {
+  const outcomes: SyncOperationOutcome[] = [];
+
+  // Step 1: Apply internal patch (pass sku for spec-table field detection)
+  if (Object.keys(plan.internalPatch).length > 0) {
+    const patchOutcome = await applyInternalPatch(sku.id, plan.internalPatch, sku);
+    outcomes.push(patchOutcome);
+    if (patchOutcome.status === "failed") {
+      return { status: "failed", planHash: plan.planHash, outcomes };
+    }
+  }
+
+  // Step 2: Re-materialize outbound writes from effective state
+  const effectiveState = await buildPostPatchEffectiveState(sku, plan);
+
+  // Build effective SKU for generators
+  const effectiveSku = buildEffectiveSku(sku, effectiveState);
+
+  // Step 3: Execute external writes in parallel (one batch per system)
+  const externalOps = plan.operations.filter(
+    (op) => op.kind === "push" || op.kind === "create",
+  );
+  const systemGroups = groupBySystem(externalOps);
+
+  const externalOutcomes = await Promise.all(
+    Array.from(systemGroups.entries()).map(([system, ops]) =>
+      executeSystemWrites(system, sku, ops, effectiveState, effectiveSku),
+    ),
+  );
+  outcomes.push(...externalOutcomes);
+
+  // Step 4: Determine overall status
+  const externalStatuses = externalOutcomes.map((o) => o.status);
+  const anyFailed = externalStatuses.includes("failed");
+  const allSuccess = externalStatuses.every(
+    (s) => s === "success" || s === "skipped",
+  );
+
+  return {
+    status: allSuccess ? "success" : anyFailed ? "partial" : "success",
+    planHash: plan.planHash,
+    outcomes,
+  };
+}
+
+async function applyInternalPatch(
+  productId: string,
+  patch: Record<string, string | number | null>,
+  sku: SkuRecord,
+): Promise<SyncOperationOutcome> {
+  try {
+    // Split patch into core InternalProduct fields vs spec-table fields.
+    const coreData: Record<string, unknown> = {};
+    const specData: Record<string, unknown> = {};
+    const existingSpec = getSpecData(sku) ?? {};
+
+    for (const [field, value] of Object.entries(patch)) {
+      if (isVirtualField(field)) continue;
+      if (field in existingSpec) {
+        specData[field] = value;
+      } else {
+        coreData[field] = value;
+      }
+    }
+
+    const totalFields = Object.keys(coreData).length + Object.keys(specData).length;
+    if (totalFields === 0) {
+      return {
+        kind: "internal-patch",
+        system: "internal",
+        status: "skipped",
+        message: "No fields to update",
+        fieldDetails: [],
+      };
+    }
+
+    // Update core InternalProduct fields
+    if (Object.keys(coreData).length > 0) {
+      await prisma.internalProduct.update({
+        where: { id: productId },
+        data: coreData,
+      });
+    }
+
+    // Update spec-table fields via the appropriate relation
+    if (Object.keys(specData).length > 0) {
+      const specTable = getSpecTableForSku(sku);
+      if (specTable) {
+        const specModel = specTable as keyof typeof prisma;
+        await (prisma[specModel] as unknown as { update: (args: { where: { internalProductId: string }; data: Record<string, unknown> }) => Promise<unknown> }).update({
+          where: { internalProductId: productId },
+          data: specData,
+        });
+      }
+    }
+
+    return {
+      kind: "internal-patch",
+      system: "internal",
+      status: "success",
+      message: `Updated ${totalFields} field(s)`,
+      fieldDetails: Object.keys(patch)
+        .filter((f) => !isVirtualField(f))
+        .map((f) => ({
+          externalField: f,
+          source: "manual" as const,
+        })),
+    };
+  } catch (err) {
+    return {
+      kind: "internal-patch",
+      system: "internal",
+      status: "failed",
+      message: err instanceof Error ? err.message : "Internal patch failed",
+      fieldDetails: [],
+    };
+  }
+}
+
+async function buildPostPatchEffectiveState(
+  sku: SkuRecord,
+  plan: SyncPlan,
+): Promise<Record<string, string | number | null>> {
+  const state: Record<string, string | number | null> = {};
+
+  // Load current SKU values
+  const activeMappings = getActiveMappings(sku.category);
+  for (const edge of activeMappings) {
+    if (isVirtualField(edge.internalField)) continue;
+    state[edge.internalField] = getSkuFieldValue(sku, edge.internalField);
+  }
+
+  // Apply the persisted patch
+  for (const [field, value] of Object.entries(plan.internalPatch)) {
+    state[field] = value;
+  }
+
+  // Overlay relay-only pull values (updateInternal=false, not in internalPatch)
+  for (const op of plan.operations) {
+    if (op.kind === "pull" && !op.updateInternal && !op.noOp) {
+      state[op.internalField] = op.value;
+    }
+  }
+
+  return state;
+}
+
+function groupBySystem(
+  ops: SyncOperation[],
+): Map<ExternalSystem, SyncOperation[]> {
+  const groups = new Map<ExternalSystem, SyncOperation[]>();
+  for (const op of ops) {
+    if (op.kind === "pull") continue;
+    if (!groups.has(op.system)) groups.set(op.system, []);
+    groups.get(op.system)!.push(op);
+  }
+  return groups;
+}
+
+async function executeSystemWrites(
+  system: ExternalSystem,
+  sku: SkuRecord,
+  ops: SyncOperation[],
+  effectiveState: Record<string, string | number | null>,
+  effectiveSku: SkuRecord,
+): Promise<SyncOperationOutcome> {
+  const fieldDetails: SyncOperationOutcome["fieldDetails"] = [];
+  for (const op of ops) {
+    if (op.kind === "push") {
+      fieldDetails.push({ externalField: op.externalField, source: op.source });
+    } else if (op.kind === "create") {
+      for (const field of Object.keys(op.fields)) {
+        fieldDetails.push({ externalField: field, source: op.source });
+      }
+    }
+  }
+
+  try {
+    const createOp = ops.find((o) => o.kind === "create");
+    if (createOp && createOp.kind === "create") {
+      return await executeCreate(system, sku, createOp, effectiveSku, fieldDetails);
+    }
+
+    const pushOps = ops.filter((o): o is Extract<SyncOperation, { kind: "push" }> =>
+      o.kind === "push",
+    );
+    if (pushOps.length === 0) {
+      return { kind: "push", system, status: "skipped", message: "No changes", fieldDetails };
+    }
+
+    return await executePushes(system, sku, pushOps, effectiveState, effectiveSku, fieldDetails);
+  } catch (err) {
+    return {
+      kind: ops.some((o) => o.kind === "create") ? "create" : "push",
+      system,
+      status: "failed",
+      message: err instanceof Error ? err.message : "External write failed",
+      fieldDetails,
+    };
+  }
+}
+
+async function executeCreate(
+  system: ExternalSystem,
+  sku: SkuRecord,
+  op: Extract<SyncOperation, { kind: "create" }>,
+  effectiveSku: SkuRecord,
+  fieldDetails: SyncOperationOutcome["fieldDetails"],
+): Promise<SyncOperationOutcome> {
+  const changes = Object.entries(op.fields).map(([field, value]) => ({
+    field,
+    currentValue: null,
+    proposedValue: value != null ? String(value) : null,
+  }));
+
+  const preview = {
+    system: system as "zoho" | "hubspot" | "zuper",
+    externalId: null,
+    linked: false,
+    action: "create" as const,
+    changes,
+    noChanges: false,
+  };
+
+  const result = await executeSystemSync(system, effectiveSku, preview);
+
+  return {
+    kind: "create",
+    system,
+    status: result.status === "created" ? "success" : "failed",
+    message: result.status === "created"
+      ? `Created in ${system}`
+      : `Failed to create in ${system}`,
+    fieldDetails,
+  };
+}
+
+async function executePushes(
+  system: ExternalSystem,
+  sku: SkuRecord,
+  ops: Extract<SyncOperation, { kind: "push" }>[],
+  effectiveState: Record<string, string | number | null>,
+  effectiveSku: SkuRecord,
+  fieldDetails: SyncOperationOutcome["fieldDetails"],
+): Promise<SyncOperationOutcome> {
+  const changes = ops.map((op) => ({
+    field: op.externalField,
+    currentValue: null,
+    proposedValue: op.value != null ? String(op.value) : null,
+  }));
+
+  const externalId = getExternalId(system, sku);
+
+  const preview = {
+    system: system as "zoho" | "hubspot" | "zuper",
+    externalId,
+    linked: true,
+    action: "update" as const,
+    changes,
+    noChanges: false,
+  };
+
+  const result = await executeSystemSync(system, effectiveSku, preview);
+
+  return {
+    kind: "push",
+    system,
+    status: result.status === "updated" ? "success" : result.status === "skipped" ? "skipped" : "failed",
+    message: result.status === "updated"
+      ? `Pushed ${ops.length} field(s) to ${system}`
+      : result.status === "skipped"
+        ? "Skipped"
+        : `Failed: ${result.status}`,
+    fieldDetails,
+  };
+}
+
+function getExternalId(system: ExternalSystem, sku: SkuRecord): string | null {
+  switch (system) {
+    case "zoho": return sku.zohoItemId;
+    case "hubspot": return sku.hubspotProductId;
+    case "zuper": return sku.zuperItemId;
+  }
+}
+
+async function executeSystemSync(
+  system: ExternalSystem,
+  sku: SkuRecord,
+  preview: { system: string; externalId: string | null; linked: boolean; action: string; changes: Array<{ field: string; currentValue: string | null; proposedValue: string | null }>; noChanges: boolean },
+) {
+  switch (system) {
+    case "zoho": return executeZohoSync(sku, preview as Parameters<typeof executeZohoSync>[1]);
+    case "hubspot": return executeHubSpotSync(sku, preview as Parameters<typeof executeHubSpotSync>[1]);
+    case "zuper": return executeZuperSync(sku, preview as Parameters<typeof executeZuperSync>[1]);
+  }
+}
