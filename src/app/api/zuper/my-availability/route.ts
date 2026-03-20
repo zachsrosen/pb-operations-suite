@@ -1,13 +1,13 @@
 /**
  * Self-Service Crew Availability API
  *
- * GET  /api/zuper/my-availability - Get logged-in user's crew profile + availability
- * POST /api/zuper/my-availability - Create a new availability slot
- * PUT  /api/zuper/my-availability - Update an existing slot (ownership verified)
- * DELETE /api/zuper/my-availability - Remove a slot (ownership verified)
+ * GET  /api/zuper/my-availability - Get logged-in user's crew profile + availability + pending requests
+ * POST /api/zuper/my-availability - Submit a request to add a new availability slot
+ * PUT  /api/zuper/my-availability - Submit a request to modify an existing slot (ownership verified)
+ * DELETE /api/zuper/my-availability - Submit a request to remove a slot (ownership verified)
  *
  * Links the logged-in user to their CrewMember record via email matching.
- * All operations are scoped to the user's own crew member ID.
+ * All mutation operations create AvailabilityChangeRequest records pending admin approval.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -81,6 +81,12 @@ export async function GET() {
   try {
     const records = await getCrewAvailabilities({ crewMemberId: crewMember.id });
 
+    // Also fetch any pending change requests for this crew member
+    const pendingRequests = await prisma!.availabilityChangeRequest.findMany({
+      where: { crewMemberId: crewMember.id, status: "pending" },
+      orderBy: { createdAt: "desc" },
+    });
+
     return NextResponse.json({
       crewMember: {
         id: crewMember.id,
@@ -89,6 +95,7 @@ export async function GET() {
         role: crewMember.role,
       },
       records,
+      pendingRequests,
     });
   } catch (error) {
     console.error("Error fetching my availability:", error);
@@ -97,7 +104,7 @@ export async function GET() {
 }
 
 /**
- * POST - Create a new availability slot for the logged-in crew member
+ * POST - Submit a request to add a new availability slot (pending admin approval)
  */
 export async function POST(request: NextRequest) {
   const result = await resolveCrewMember();
@@ -106,7 +113,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { location, reportLocation, jobType, dayOfWeek, startTime, endTime, timezone, isActive } = body;
+    const { location, jobType, dayOfWeek, startTime, endTime, reason } = body;
 
     if (!location || !jobType || dayOfWeek === undefined || !startTime || !endTime) {
       return NextResponse.json({
@@ -126,44 +133,44 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "startTime must be before endTime" }, { status: 400 });
     }
 
-    const record = await upsertCrewAvailability({
-      crewMemberId: crewMember.id,
-      location,
-      reportLocation: reportLocation || location,
-      jobType,
-      dayOfWeek,
-      startTime,
-      endTime,
-      timezone: timezone || "America/Denver",
-      isActive: isActive !== false,
-      createdBy: userId,
-      updatedBy: userId,
+    const changeRequest = await prisma!.availabilityChangeRequest.create({
+      data: {
+        crewMemberId: crewMember.id,
+        requestType: "add",
+        dayOfWeek: body.dayOfWeek,
+        startTime: body.startTime,
+        endTime: body.endTime,
+        location: body.location,
+        jobType: body.jobType,
+        reason: body.reason,
+        status: "pending",
+      },
     });
 
     const headersList = await headers();
     const reqCtx = extractRequestContext(headersList);
     await logAdminActivity({
       type: "AVAILABILITY_CHANGED",
-      description: `${crewMember.name} added availability: ${location} ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dayOfWeek]} ${startTime}-${endTime}`,
+      description: `${crewMember.name} requested to add availability: ${location} ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dayOfWeek]} ${startTime}-${endTime}`,
       userId,
       userEmail: crewMember.email || "unknown",
       userName: crewMember.name,
       entityType: "crew_availability",
-      entityId: record?.id,
+      entityId: changeRequest.id,
       requestPath: "/api/zuper/my-availability",
       requestMethod: "POST",
       ...reqCtx,
     });
 
-    return NextResponse.json({ success: true, record });
+    return NextResponse.json({ success: true, request: changeRequest });
   } catch (error) {
-    console.error("Error creating availability:", error);
-    return NextResponse.json({ error: "Failed to create availability" }, { status: 500 });
+    console.error("Error submitting availability request:", error);
+    return NextResponse.json({ error: "Failed to submit availability request" }, { status: 500 });
   }
 }
 
 /**
- * PUT - Update an existing availability slot (ownership verified)
+ * PUT - Submit a request to modify an existing availability slot (ownership verified, pending admin approval)
  */
 export async function PUT(request: NextRequest) {
   const result = await resolveCrewMember();
@@ -172,7 +179,7 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { id, location, reportLocation, jobType, dayOfWeek, startTime, endTime, timezone, isActive } = body;
+    const { id, location, jobType, dayOfWeek, startTime, endTime, reason } = body;
 
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -194,44 +201,45 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "startTime must be before endTime" }, { status: 400 });
     }
 
-    const record = await upsertCrewAvailability({
-      id,
-      crewMemberId: crewMember.id,
-      location,
-      reportLocation: reportLocation || location,
-      jobType,
-      dayOfWeek,
-      startTime,
-      endTime,
-      timezone: timezone || existing.timezone,
-      isActive: isActive !== undefined ? isActive : existing.isActive,
-      updatedBy: userId,
+    const changeRequest = await prisma!.availabilityChangeRequest.create({
+      data: {
+        crewMemberId: crewMember.id,
+        requestType: "modify",
+        originalSlotId: id,
+        dayOfWeek: body.dayOfWeek,
+        startTime: body.startTime,
+        endTime: body.endTime,
+        location: body.location,
+        jobType: body.jobType,
+        reason: body.reason,
+        status: "pending",
+      },
     });
 
     const headersList = await headers();
     const reqCtx = extractRequestContext(headersList);
     await logAdminActivity({
       type: "AVAILABILITY_CHANGED",
-      description: `${crewMember.name} updated availability: ${location} ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dayOfWeek]} ${startTime}-${endTime}`,
+      description: `${crewMember.name} requested to modify availability: ${location} ${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][dayOfWeek]} ${startTime}-${endTime}`,
       userId,
       userEmail: crewMember.email || "unknown",
       userName: crewMember.name,
       entityType: "crew_availability",
-      entityId: id,
+      entityId: changeRequest.id,
       requestPath: "/api/zuper/my-availability",
       requestMethod: "PUT",
       ...reqCtx,
     });
 
-    return NextResponse.json({ success: true, record });
+    return NextResponse.json({ success: true, request: changeRequest });
   } catch (error) {
-    console.error("Error updating availability:", error);
-    return NextResponse.json({ error: "Failed to update availability" }, { status: 500 });
+    console.error("Error submitting availability modification request:", error);
+    return NextResponse.json({ error: "Failed to submit availability modification request" }, { status: 500 });
   }
 }
 
 /**
- * DELETE - Remove an availability slot (ownership verified)
+ * DELETE - Submit a request to remove an availability slot (ownership verified, pending admin approval)
  */
 export async function DELETE(request: NextRequest) {
   const result = await resolveCrewMember();
@@ -240,7 +248,7 @@ export async function DELETE(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { id } = body;
+    const { id, reason } = body;
 
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
@@ -252,26 +260,34 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Record not found or not yours" }, { status: 404 });
     }
 
-    await deleteCrewAvailability(id);
+    const changeRequest = await prisma!.availabilityChangeRequest.create({
+      data: {
+        crewMemberId: crewMember.id,
+        requestType: "delete",
+        originalSlotId: id,
+        reason: reason || null,
+        status: "pending",
+      },
+    });
 
     const headersList = await headers();
     const reqCtx = extractRequestContext(headersList);
     await logAdminActivity({
       type: "AVAILABILITY_CHANGED",
-      description: `${crewMember.name} deleted availability slot`,
+      description: `${crewMember.name} requested to delete availability slot`,
       userId,
       userEmail: crewMember.email || "unknown",
       userName: crewMember.name,
       entityType: "crew_availability",
-      entityId: id,
+      entityId: changeRequest.id,
       requestPath: "/api/zuper/my-availability",
       requestMethod: "DELETE",
       ...reqCtx,
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, request: changeRequest });
   } catch (error) {
-    console.error("Error deleting availability:", error);
-    return NextResponse.json({ error: "Failed to delete availability" }, { status: 500 });
+    console.error("Error submitting availability deletion request:", error);
+    return NextResponse.json({ error: "Failed to submit availability deletion request" }, { status: 500 });
   }
 }
