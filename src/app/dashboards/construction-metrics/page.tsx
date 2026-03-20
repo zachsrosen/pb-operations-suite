@@ -8,7 +8,7 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 
 // ── Construction-specific time metric display configuration ──
 const METRIC_COLUMNS = [
-  { key: "avg_timeRtbToConstructionSchedule", label: "RTB → Schedule Date", shortLabel: "RTB→Sched", tooltip: "Days from Ready to Build until a construction date is scheduled", thresholds: [7, 14, 30] },
+  { key: "avg_timeRtbToConstructionSchedule", label: "RTB → Construction Start", shortLabel: "RTB→Const Start", tooltip: "Days from Ready to Build until construction schedule date", thresholds: [7, 14, 30] },
   { key: "avg_constructionTurnaroundTime", label: "Construction Duration", shortLabel: "Constr", tooltip: "Days from construction schedule date to construction complete date", thresholds: [7, 14, 30] },
   { key: "avg_timeRtbToCc", label: "RTB → CC", shortLabel: "RTB→CC", tooltip: "Days from Ready to Build to construction complete", thresholds: [14, 30, 60] },
   { key: "avg_timeCcToInspectionPass", label: "CC → Inspection Passed", shortLabel: "CC→Insp Pass", tooltip: "Days from construction complete to inspection passed", thresholds: [14, 30, 60] },
