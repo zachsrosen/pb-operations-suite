@@ -4,7 +4,9 @@ import { getUserByEmail, prisma } from "@/lib/db";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { isCatalogSyncEnabled, validateSyncConfirmationToken, type SyncSystem } from "@/lib/catalog-sync-confirmation";
 import { previewSyncToLinkedSystems, computePreviewHash, executeSyncToLinkedSystems } from "@/lib/catalog-sync";
-import type { ExcludedFieldsMap } from "@/lib/catalog-sync";
+import type { ExcludedFieldsMap, SkuRecord } from "@/lib/catalog-sync";
+import { buildSnapshots, deriveDefaultIntents, computeBasePreviewHash } from "@/lib/catalog-sync-plan";
+import { getActiveMappings } from "@/lib/catalog-sync-mappings";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -60,11 +62,24 @@ export async function GET(
     const previews = await previewSyncToLinkedSystems(sku as Parameters<typeof previewSyncToLinkedSystems>[0]);
     const changesHash = computePreviewHash(previews);
 
+    // New sync relay fields
+    const skuRecord = sku as unknown as SkuRecord;
+    const snapshots = await buildSnapshots(skuRecord, sku.category);
+    const activeMappings = getActiveMappings(sku.category);
+    const defaultIntents = deriveDefaultIntents(skuRecord, snapshots, sku.category);
+    const basePreviewHash = computeBasePreviewHash(snapshots);
+
     return NextResponse.json({
+      // Legacy fields (keep during migration)
       internalProductId: sku.id,
       previews,
       changesHash,
       systems: previews.map((p) => p.system),
+      // New fields
+      snapshots,
+      mappings: activeMappings,
+      defaultIntents,
+      basePreviewHash,
     });
   } catch (error) {
     console.error("[Sync] Preview failed:", error);
