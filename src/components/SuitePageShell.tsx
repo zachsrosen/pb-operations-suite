@@ -12,6 +12,7 @@ export interface SuitePageCard {
   tagColor?: string;
   section?: string;
   hardNavigate?: boolean;
+  disabled?: boolean;
 }
 
 interface SuitePageShellProps {
@@ -151,11 +152,13 @@ export default function SuitePageShell({
               {rows.map((row, rowIdx) => (
                 <div key={rowIdx} className={`${row.cols}${rowIdx > 0 ? " mt-4" : ""}`}>
                   {row.cards.map((item) => {
-                    const cardClass = `group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm ${hoverBorderClass} hover:bg-surface transition-all`;
+                    const cardClass = item.disabled
+                      ? "block rounded-xl border border-t-border/50 bg-gradient-to-br from-surface-elevated/50 via-surface/40 to-surface-2/30 p-5 shadow-card backdrop-blur-sm opacity-60 cursor-default"
+                      : `group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm ${hoverBorderClass} hover:bg-surface transition-all`;
                     const content = (
                       <>
                         <div className="flex items-center justify-between mb-1">
-                          <h3 className="font-semibold text-foreground group-hover:text-orange-400 transition-colors">
+                          <h3 className={`font-semibold ${item.disabled ? "text-muted" : "text-foreground group-hover:text-orange-400"} transition-colors`}>
                             {item.title}
                           </h3>
                           <span className={`text-xs font-medium px-2 py-0.5 rounded border ${item.tagColor || tagColorClass}`}>
@@ -165,6 +168,14 @@ export default function SuitePageShell({
                         <p className="text-sm text-muted">{item.description}</p>
                       </>
                     );
+
+                    if (item.disabled) {
+                      return (
+                        <div key={item.href || item.title} className={cardClass}>
+                          {content}
+                        </div>
+                      );
+                    }
 
                     if (item.hardNavigate) {
                       return (

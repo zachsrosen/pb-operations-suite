@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useEffect, useState, useCallback } from "react";
+import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
@@ -10,6 +11,7 @@ import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useDEMetricsFilters } from "@/stores/dashboard-filters";
+import { queryKeys } from "@/lib/query-keys";
 
 // Active design pipeline statuses (pre-completion, pre-engineering)
 const ACTIVE_DESIGN_STATUSES = [
@@ -39,6 +41,40 @@ const REVISION_STATUSES = [
   "As-Built Revision In Progress",
   "As-Built Revision Completed",
 ];
+
+// ---- DA Performance types ----
+interface DAGroupMetrics {
+  count: number;
+  avgTurnaround: number | null;
+  avgRevisions: number | null;
+  firstTryRate: number | null;
+  totalRevisions: number;
+}
+interface DAMetricsResponse {
+  byLocation: Record<string, DAGroupMetrics>;
+  totals: DAGroupMetrics;
+  daysWindow: number | string;
+}
+
+// ---- DA Performance color helpers ----
+const DA_TURNAROUND_THRESHOLDS = [5, 10, 20] as const;
+const DA_REVISION_THRESHOLDS = [0.5, 1, 2] as const;
+
+function getDaColor(value: number | null | undefined, thresholds: readonly number[]): string {
+  if (value === null || value === undefined) return "text-muted";
+  if (value <= thresholds[0]) return "text-emerald-400";
+  if (value <= thresholds[1]) return "text-yellow-400";
+  if (value <= thresholds[2]) return "text-orange-400";
+  return "text-red-400";
+}
+
+function getFirstTryColor(rate: number | null | undefined): string {
+  if (rate === null || rate === undefined) return "text-muted";
+  if (rate >= 80) return "text-emerald-400";
+  if (rate >= 60) return "text-yellow-400";
+  if (rate >= 40) return "text-orange-400";
+  return "text-red-400";
+}
 
 // ---- Sort helpers ----
 type SortKey = "designer" | "count" | "revenue";
@@ -82,6 +118,28 @@ export default function DEMetricsPage() {
       setSortDir("desc");
     }
   }, [sortKey]);
+
+  // ---- DA Performance by Office ----
+  const [daDaysWindow, setDaDaysWindow] = useState(60);
+
+  const daQuery = useQuery<DAMetricsResponse>({
+    queryKey: queryKeys.stats.daMetrics(daDaysWindow),
+    queryFn: async () => {
+      const url = daDaysWindow > 0
+        ? `/api/hubspot/da-metrics?days=${daDaysWindow}`
+        : "/api/hubspot/da-metrics";
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("Failed to fetch DA metrics");
+      return res.json();
+    },
+    refetchInterval: 5 * 60 * 1000,
+  });
+  const daData = daQuery.data ?? null;
+
+  const daLocations = useMemo(() => {
+    if (!daData?.byLocation) return [];
+    return Object.keys(daData.byLocation).sort();
+  }, [daData]);
 
   const TIME_PRESETS = [30, 60, 90, 180, 365] as const;
   type TimePreset = (typeof TIME_PRESETS)[number];
@@ -544,6 +602,117 @@ export default function DEMetricsPage() {
             valueColor={approvalMetrics.pending.count > 10 ? "text-yellow-400" : undefined}
           />
         </div>
+      </div>
+
+      {/* DA Performance by Office */}
+      <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-6">
+        <div className="px-5 py-4 border-b border-t-border flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">DA Performance by Office</h2>
+            <p className="text-sm text-muted mt-0.5">
+              Turnaround, revisions, and first-try approval rate by location
+            </p>
+          </div>
+          <div className="flex items-center gap-1 bg-surface-2 border border-t-border rounded-lg p-1">
+            {[
+              { label: "30d", value: 30 },
+              { label: "60d", value: 60 },
+              { label: "90d", value: 90 },
+              { label: "All", value: 0 },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setDaDaysWindow(opt.value)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                  daDaysWindow === opt.value
+                    ? "bg-purple-500/20 text-purple-400 border border-purple-500/30"
+                    : "text-muted hover:text-foreground hover:bg-surface-2"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {daQuery.isLoading ? (
+          <div className="p-6 space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-10 bg-skeleton rounded animate-pulse" />
+            ))}
+          </div>
+        ) : !daData || daLocations.length === 0 ? (
+          <div className="p-6 text-center text-muted text-sm">No DA performance data available</div>
+        ) : (
+          <>
+            {/* Summary row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-5 py-4 border-b border-t-border bg-surface-2/30">
+              <div className="text-center">
+                <p className="text-xs text-muted mb-0.5">Avg Turnaround</p>
+                <p className={`text-xl font-mono font-bold ${getDaColor(daData.totals.avgTurnaround, DA_TURNAROUND_THRESHOLDS)}`}>
+                  {daData.totals.avgTurnaround !== null ? daData.totals.avgTurnaround.toFixed(1) : "--"}
+                </p>
+                <p className="text-xs text-muted">days</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted mb-0.5">DAs Approved</p>
+                <p className="text-xl font-mono font-bold text-foreground">{daData.totals.count}</p>
+                <p className="text-xs text-muted">{daDaysWindow > 0 ? `last ${daDaysWindow}d` : "all time"}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted mb-0.5">First-Try Rate</p>
+                <p className={`text-xl font-mono font-bold ${getFirstTryColor(daData.totals.firstTryRate)}`}>
+                  {daData.totals.firstTryRate !== null ? `${daData.totals.firstTryRate}%` : "--"}
+                </p>
+                <p className="text-xs text-muted">0 revisions</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted mb-0.5">Avg Revisions</p>
+                <p className={`text-xl font-mono font-bold ${getDaColor(daData.totals.avgRevisions, DA_REVISION_THRESHOLDS)}`}>
+                  {daData.totals.avgRevisions !== null ? daData.totals.avgRevisions.toFixed(1) : "--"}
+                </p>
+                <p className="text-xs text-muted">per DA</p>
+              </div>
+            </div>
+
+            {/* By-location table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-t-border bg-surface-2/50 text-left text-muted">
+                    <th className="px-4 py-3 font-semibold">Location</th>
+                    <th className="px-4 py-3 font-semibold text-center">DAs</th>
+                    <th className="px-4 py-3 font-semibold text-center">Avg Turnaround</th>
+                    <th className="px-4 py-3 font-semibold text-center">Avg Revisions</th>
+                    <th className="px-4 py-3 font-semibold text-center">First-Try %</th>
+                    <th className="px-4 py-3 font-semibold text-center">Total Revisions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {daLocations.map((loc, i) => {
+                    const m = daData.byLocation[loc];
+                    return (
+                      <tr key={loc} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+                        <td className="px-4 py-3 font-medium text-foreground">{loc}</td>
+                        <td className="px-4 py-3 text-center text-foreground">{m.count}</td>
+                        <td className={`px-4 py-3 text-center font-mono ${getDaColor(m.avgTurnaround, DA_TURNAROUND_THRESHOLDS)}`}>
+                          {m.avgTurnaround !== null ? m.avgTurnaround.toFixed(1) : "--"}
+                        </td>
+                        <td className={`px-4 py-3 text-center font-mono ${getDaColor(m.avgRevisions, DA_REVISION_THRESHOLDS)}`}>
+                          {m.avgRevisions !== null ? m.avgRevisions.toFixed(1) : "--"}
+                        </td>
+                        <td className={`px-4 py-3 text-center font-mono ${getFirstTryColor(m.firstTryRate)}`}>
+                          {m.firstTryRate !== null ? `${m.firstTryRate}%` : "--"}
+                        </td>
+                        <td className="px-4 py-3 text-center text-muted">{m.totalRevisions}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Designs Section */}

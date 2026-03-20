@@ -19,9 +19,9 @@ const LINKS: SuitePageCard[] = [
   },
   {
     href: "/dashboards/pending-approval",
-    title: "Pending Design Approval",
-    description: "Projects awaiting DA/layout approval — submission tracking and wait times.",
-    tag: "APPROVAL",
+    title: "Design Approval Queue",
+    description: "Action queue: survey done needing design, designs ready to send, and DAs awaiting customer approval.",
+    tag: "QUEUE",
     section: "Design Pipeline",
   },
   {
@@ -32,16 +32,9 @@ const LINKS: SuitePageCard[] = [
     section: "Design Pipeline",
   },
   {
-    href: "/dashboards/da-metrics",
-    title: "DA Metrics",
-    description: "DA turnaround by office and designer, revision quality, pipeline queue, and survey-to-DA gap tracking.",
-    tag: "DA",
-    section: "Analytics",
-  },
-  {
     href: "/dashboards/de-metrics",
     title: "D&E Metrics",
-    description: "Approvals sent/approved/pending, designs drafted/stamped/completed, revenue and deal counts.",
+    description: "DA turnaround and revisions by office, approval pipeline, designer productivity, and monthly trends.",
     tag: "METRICS",
     section: "Analytics",
   },
