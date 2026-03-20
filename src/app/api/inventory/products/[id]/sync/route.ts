@@ -2,9 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getUserByEmail, prisma } from "@/lib/db";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
-import { isCatalogSyncEnabled, validateSyncConfirmationToken, validatePlanConfirmationToken, type SyncSystem } from "@/lib/catalog-sync-confirmation";
-import { previewSyncToLinkedSystems, computePreviewHash, executeSyncToLinkedSystems } from "@/lib/catalog-sync";
-import type { ExcludedFieldsMap, SkuRecord } from "@/lib/catalog-sync";
+import { isCatalogSyncEnabled, validatePlanConfirmationToken } from "@/lib/catalog-sync-confirmation";
+import type { SkuRecord } from "@/lib/catalog-sync";
 import { buildSnapshots, derivePlan, executePlan, deriveDefaultIntents, computeBasePreviewHash } from "@/lib/catalog-sync-plan";
 import type { ExternalSystem, FieldIntent } from "@/lib/catalog-sync-types";
 import { getActiveMappings } from "@/lib/catalog-sync-mappings";
@@ -13,7 +12,6 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
-const VALID_SYSTEMS = new Set<SyncSystem>(["zoho", "hubspot", "zuper"]);
 
 const SKU_INCLUDE = {
   moduleSpec: true,
@@ -60,10 +58,6 @@ export async function GET(
   }
 
   try {
-    const previews = await previewSyncToLinkedSystems(sku as Parameters<typeof previewSyncToLinkedSystems>[0]);
-    const changesHash = computePreviewHash(previews);
-
-    // New sync relay fields
     const skuRecord = sku as unknown as SkuRecord;
     const snapshots = await buildSnapshots(skuRecord, sku.category);
     const activeMappings = getActiveMappings(sku.category);
@@ -71,12 +65,7 @@ export async function GET(
     const basePreviewHash = computeBasePreviewHash(snapshots);
 
     return NextResponse.json({
-      // Legacy fields (keep during migration)
       internalProductId: sku.id,
-      previews,
-      changesHash,
-      systems: previews.map((p) => p.system),
-      // New fields
       snapshots,
       mappings: activeMappings,
       defaultIntents,
@@ -113,138 +102,61 @@ export async function POST(
   }
 
   const {
-    token, issuedAt, systems, changesHash: clientHash, excludedFields: rawExcludedFields,
+    token, issuedAt,
     planHash, intents,
   } = body as {
     token?: string;
     issuedAt?: number;
-    systems?: string[];
-    changesHash?: string;
-    excludedFields?: Record<string, string[]>;
     planHash?: string;
     intents?: Record<ExternalSystem, Record<string, FieldIntent>>;
   };
 
-  // Detect new flow: request has planHash + intents
-  if (planHash && typeof planHash === "string" && intents && typeof intents === "object" && !Array.isArray(intents)) {
-    const product = await prisma.internalProduct.findUnique({
-      where: { id },
-      include: SKU_INCLUDE,
-    });
-
-    if (!product) {
-      return NextResponse.json({ error: "Product not found" }, { status: 404 });
-    }
-
-    const tokenResult = validatePlanConfirmationToken({
-      internalProductId: id,
-      planHash,
-      issuedAt: issuedAt ?? 0,
-      token: token ?? "",
-    });
-    if (!tokenResult.ok) {
-      return NextResponse.json({ error: tokenResult.error }, { status: 403 });
-    }
-
-    const sku = product as unknown as SkuRecord;
-    const snapshots = await buildSnapshots(sku, product.category);
-    const freshPlan = derivePlan(sku, intents, snapshots, product.category);
-
-    // Stale check
-    if (freshPlan.planHash !== planHash) {
-      return NextResponse.json(
-        { error: "External state changed. Re-preview required.", status: "stale" },
-        { status: 409 },
-      );
-    }
-
-    // Conflict check
-    if (freshPlan.conflicts.length > 0) {
-      return NextResponse.json(
-        { error: "Unresolved conflicts", status: "conflict", conflicts: freshPlan.conflicts },
-        { status: 409 },
-      );
-    }
-
-    const result = await executePlan(sku, freshPlan);
-    return NextResponse.json(result);
+  if (!planHash || typeof planHash !== "string" || !intents || typeof intents !== "object" || Array.isArray(intents)) {
+    return NextResponse.json({ error: "planHash and intents are required" }, { status: 400 });
   }
 
-  // Legacy flow below
-
-  // Parse and validate excludedFields
-  let parsedExcludedFields: ExcludedFieldsMap | undefined;
-  if (rawExcludedFields && typeof rawExcludedFields === "object" && !Array.isArray(rawExcludedFields)) {
-    parsedExcludedFields = {};
-    for (const [sys, fields] of Object.entries(rawExcludedFields)) {
-      if (Array.isArray(fields) && fields.every((f) => typeof f === "string")) {
-        parsedExcludedFields[sys] = fields;
-      }
-    }
-    if (Object.keys(parsedExcludedFields).length === 0) parsedExcludedFields = undefined;
-  }
-
-  if (!token || typeof token !== "string") {
-    return NextResponse.json({ error: "Confirmation token is required" }, { status: 400 });
-  }
-  if (typeof issuedAt !== "number" || !Number.isFinite(issuedAt)) {
-    return NextResponse.json({ error: "issuedAt is required" }, { status: 400 });
-  }
-  if (!Array.isArray(systems) || systems.length === 0) {
-    return NextResponse.json({ error: "systems array is required" }, { status: 400 });
-  }
-  if (typeof clientHash !== "string" || !clientHash.trim()) {
-    return NextResponse.json({ error: "changesHash is required" }, { status: 400 });
-  }
-
-  const validatedSystems = systems.filter((s): s is SyncSystem => VALID_SYSTEMS.has(s as SyncSystem));
-  if (validatedSystems.length !== systems.length) {
-    return NextResponse.json({ error: "Invalid system in systems array" }, { status: 400 });
-  }
-
-  const sku = await prisma.internalProduct.findUnique({
+  const product = await prisma.internalProduct.findUnique({
     where: { id },
     include: SKU_INCLUDE,
   });
 
-  if (!sku) {
+  if (!product) {
     return NextResponse.json({ error: "Product not found" }, { status: 404 });
   }
 
-  // Validate HMAC against the client's hash — proves admin confirmed these changes.
-  // The execution layer re-fetches external state and compares hashes to ensure
-  // the approved diff hasn't gone stale (returns 409 if it has).
-  const validation = validateSyncConfirmationToken({
-    token,
-    issuedAt,
+  const tokenResult = validatePlanConfirmationToken({
     internalProductId: id,
-    systems: validatedSystems,
-    changesHash: clientHash.trim(),
+    planHash,
+    issuedAt: issuedAt ?? 0,
+    token: token ?? "",
   });
+  if (!tokenResult.ok) {
+    return NextResponse.json({ error: tokenResult.error }, { status: 403 });
+  }
 
-  if (!validation.ok) {
-    return NextResponse.json({ error: validation.error }, { status: 403 });
+  const sku = product as unknown as SkuRecord;
+  const snapshots = await buildSnapshots(sku, product.category);
+  const freshPlan = derivePlan(sku, intents, snapshots, product.category);
+
+  // Stale check
+  if (freshPlan.planHash !== planHash) {
+    return NextResponse.json(
+      { error: "External state changed. Re-preview required.", status: "stale" },
+      { status: 409 },
+    );
+  }
+
+  // Conflict check
+  if (freshPlan.conflicts.length > 0) {
+    return NextResponse.json(
+      { error: "Unresolved conflicts", status: "conflict", conflicts: freshPlan.conflicts },
+      { status: 409 },
+    );
   }
 
   try {
-    const result = await executeSyncToLinkedSystems(
-      sku as Parameters<typeof executeSyncToLinkedSystems>[0],
-      clientHash.trim(),
-      validatedSystems,
-      parsedExcludedFields,
-    );
-
-    if (result.stale) {
-      return NextResponse.json(
-        { error: "External state has changed since preview. Please re-preview and re-approve." },
-        { status: 409 },
-      );
-    }
-
-    return NextResponse.json({
-      internalProductId: sku.id,
-      outcomes: result.outcomes,
-    });
+    const result = await executePlan(sku, freshPlan);
+    return NextResponse.json(result);
   } catch (error) {
     console.error("[Sync] Execute failed:", error);
     return NextResponse.json(
