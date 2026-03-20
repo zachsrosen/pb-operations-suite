@@ -84,9 +84,7 @@ export default function AvailabilityApprovalsPage() {
   useEffect(() => {
     if (!isLoading && data && !hasTrackedView.current) {
       hasTrackedView.current = true;
-      trackDashboardView("availability-approvals", {
-        count: data.requests.length,
-      });
+      trackDashboardView("availability-approvals");
     }
   }, [isLoading, data, trackDashboardView]);
 
