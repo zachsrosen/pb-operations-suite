@@ -21,6 +21,7 @@ Extend the product catalog sync modal to support relaying values between externa
 - Arbitrary system-to-system mapping outside the existing internal-field mapping model.
 - Silent approval of derived writes — all operations are visible in the plan before confirm.
 - Client-only orchestration of multi-phase sync (server owns execution order).
+- Pull-to-pull cascading — pulling from System A never auto-sets another system to pull. Only push/skip can be auto-set by cascade.
 
 ---
 
@@ -74,15 +75,52 @@ Normalization uses field-specific transforms (not plain string equality):
 A single shared server-side mapping table replaces the current split between `PULL_FIELD_MAP` (client) and `buildXxxProposedFields`/`parseXxxCurrentFields` (server):
 
 ```ts
+type NormalizeWith = "number" | "trimmed-string" | "enum-ci";
+
 interface FieldMappingEdge {
   system: ExternalSystem;
   externalField: string;
   internalField: string;
-  normalizeWith: string; // "number" | "trimmed-string" | "enum-ci"
+  normalizeWith: NormalizeWith;
+  direction?: "push-only" | "pull-only"; // default: bidirectional
+  condition?: { category: string[] };    // only active for these product categories
+  companion?: string;                    // auto-paired field (e.g., vendor_name → vendor_id)
+  generator?: string;                    // composite field generator (e.g., "zuperSpecification")
 }
 ```
 
-Companion fields (e.g., `vendor_name` + `vendor_id`) are expressed as plan-time expansion rules in the mapping table, not ad-hoc client behavior.
+**Category-conditional mappings**: HubSpot spec properties vary by product category (e.g., `dc_size` only exists for MODULE, `ac_size` only for INVERTER). The `condition` field gates which mappings are active for a given product. When `condition` is omitted, the mapping applies to all categories.
+
+**Push-only composite fields**: Zuper's `specification` field is a many-to-one composite generated from multiple internal spec fields (e.g., MODULE: `"410W Mono PERC"` from wattage + cellType). It cannot be decomposed back into individual fields on pull. Marked `direction: "push-only"` — the preview shows it as read-only with a tooltip explaining why. The `generateZuperSpecification()` function in `catalog-fields.ts` already handles the composition logic; the mapping table references it as a special-case generator rather than a simple field-to-field edge.
+
+**Companion fields**: Fields that must travel together (e.g., Zoho `vendor_name` + `vendor_id`). The `companion` property on one edge points to the other. When a pull or push includes one, the plan expander auto-includes its companion. Both fields map to separate `internalField` values (`vendorName` and `zohoVendorId`).
+
+Example mappings:
+
+```ts
+// Universal mappings (all categories)
+{ system: "hubspot", externalField: "name", internalField: "model", normalizeWith: "trimmed-string" },
+{ system: "hubspot", externalField: "price", internalField: "sellPrice", normalizeWith: "number" },
+{ system: "hubspot", externalField: "manufacturer", internalField: "brand", normalizeWith: "enum-ci" },
+
+// Category-conditional (MODULE only)
+{ system: "hubspot", externalField: "dc_size", internalField: "wattage", normalizeWith: "number",
+  condition: { category: ["MODULE"] } },
+
+// Category-conditional (INVERTER only)
+{ system: "hubspot", externalField: "ac_size", internalField: "acOutputKw", normalizeWith: "number",
+  condition: { category: ["INVERTER"] } },
+
+// Push-only composite
+{ system: "zuper", externalField: "specification", internalField: "_specification",
+  normalizeWith: "trimmed-string", direction: "push-only" },
+
+// Companion pair
+{ system: "zoho", externalField: "vendor_name", internalField: "vendorName",
+  normalizeWith: "trimmed-string", companion: "vendor_id" },
+{ system: "zoho", externalField: "vendor_id", internalField: "zohoVendorId",
+  normalizeWith: "trimmed-string", companion: "vendor_name" },
+```
 
 ### 1.4 Sync Plan
 
@@ -112,6 +150,7 @@ type SyncOperation =
       internalField: string;
       value: string | number | null;
       updateInternal: boolean;
+      noOp?: boolean;            // true when pull has no effect (see §2.4)
       source: "manual";
     }
   | {
@@ -165,7 +204,7 @@ When a pull is removed (changed to push or skip), re-evaluate all auto fields as
 - Per-field toggle, visible when direction is `pull`.
 - Defaults to `true`.
 - When `false`: the pulled value is still used for cascade computation (so downstream systems get the value), but the internal product PATCH skips that field.
-- **Edge case**: if `updateInternalOnPull = false` AND no downstream system benefits from the effective value (all siblings are `skip` or `manual` with a different direction), the pull resolves to a **no-op**. The UI should gray out the field or show a hint: "No effect — no downstream targets."
+- **Edge case**: if `updateInternalOnPull = false` AND no downstream system benefits from the effective value (all siblings are `skip` or `manual` with a different direction), the pull resolves to a **no-op**. The server marks this in the plan response via a `noOp: true` flag on the pull operation. The UI grays out the field and shows a hint: "No effect — no downstream targets." No-op pulls are excluded from the plan hash so they don't trigger unnecessary stale detection.
 - Optional global toggle at the top of the modal seeds the per-field default. Changing the global toggle updates all fields that haven't been manually set.
 
 ---
@@ -243,12 +282,14 @@ POST /api/inventory/products/:id/sync/plan
 
 The server:
 1. Re-fetches current external state (or uses cached snapshots if within TTL).
-2. Applies intents to derive pull operations.
-3. Computes effective internal state from pulls.
-4. Derives downstream push/create operations from effective state.
-5. Expands companion fields (vendor_name → vendor_name + vendor_id).
-6. Detects conflicts.
-7. Computes `planHash` over the canonical plan.
+2. Filters mappings by product category (`condition` field) and direction constraints (`push-only` excluded from pull intents).
+3. Applies intents to derive pull operations.
+4. Computes effective internal state from pulls.
+5. Derives downstream push/create operations from effective state. Generates composite fields (e.g., Zuper `specification` from spec data via `generateZuperSpecification()`).
+6. Expands companion fields (vendor_name → vendor_name + vendor_id).
+7. Detects conflicts (§3).
+8. Marks no-op pulls (§2.4).
+9. Computes `planHash` over the canonical plan (excluding no-op pulls).
 
 The client uses this to show the user exactly what will happen before they confirm.
 
@@ -323,7 +364,7 @@ Using the now-effective internal state (actual DB values after patch), compute t
 
 ### Step 3: Execute External Writes
 
-Execute push and create operations in parallel (one per system). Each operation returns a `SyncOperationOutcome`:
+Execute push and create operations in parallel (one per system). Each system write aggregates its field-level results into one `SyncOperationOutcome`:
 
 ```ts
 interface SyncOperationOutcome {
@@ -332,10 +373,17 @@ interface SyncOperationOutcome {
   status: "success" | "skipped" | "failed";
   message: string;
   source: "manual" | "cascade";
+  fields?: string[]; // which external fields were written (for push/create)
 }
 ```
 
-### Step 4: Return Results
+Outcomes are **per-system** (one push outcome per system, one create outcome per system, one internal-patch outcome) so the results UI can show a clean per-system status row. The `fields` array provides drill-down detail.
+
+### Step 4: Link-Back After Create
+
+When a create operation succeeds, the external system returns an ID (e.g., Zoho `item_id`, HubSpot `product_id`, Zuper `product_uid`). The server writes this back to the `InternalProduct` record (`zohoItemId`, `hubspotProductId`, `zuperProductUid`) so future syncs can update rather than re-create. This is the same link-back the current create flow performs — no new behavior, just documenting the contract.
+
+### Step 5: Return Results
 
 - All succeed: `status: "success"`.
 - Internal patch succeeded, some external writes failed: `status: "partial"`.
@@ -433,7 +481,7 @@ After any `partial` result:
 
 ### Backward Compatibility
 
-The new API endpoints (`/sync/plan`, revised `/sync/execute`) can coexist with the current endpoints during development. The SyncModal switches to the new flow in a single PR. No gradual migration needed — the modal is the only consumer.
+The new API endpoints (`/sync/plan`, revised `/sync/execute`) can coexist with the current endpoints during development. The SyncModal switches to the new flow in a single PR. No gradual migration needed — verified that `SyncModal.tsx` is the only consumer of the sync confirm/execute endpoints (grep for `/sync/confirm` and `/sync/execute` confirms no other callers).
 
 ### Mapping Table Location
 
@@ -444,7 +492,18 @@ The shared field mapping table (`FieldMappingEdge[]`) lives in `src/lib/catalog-
 - `PULL_FIELD_MAP` in SyncModal
 - `COMPANION_FIELDS` in SyncModal
 
-The existing `buildXxxProposedFields` and `parseXxxCurrentFields` functions are refactored to read from the mapping table rather than hardcoded field lists.
+The existing `buildXxxProposedFields` and `parseXxxCurrentFields` functions are refactored to read from the mapping table rather than hardcoded field lists. Category-conditional edges reference the same `hubspotProperty` values already defined in `catalog-fields.ts` field definitions, keeping a single source of truth for field-to-property mapping.
+
+### Composite Field Generators
+
+Push-only composite fields (Zuper `specification`) use dedicated generator functions rather than simple field-to-field mapping. The `generateZuperSpecification()` function in `catalog-fields.ts` already handles this — it reads multiple spec fields from the internal product and produces a category-specific summary string (e.g., MODULE: `"410W Mono PERC"`). The mapping table references these generators via a `generator` property on push-only edges:
+
+```ts
+// In the mapping table, push-only composites reference a generator
+{ system: "zuper", externalField: "specification", internalField: "_specification",
+  normalizeWith: "trimmed-string", direction: "push-only",
+  generator: "zuperSpecification" }  // resolved to generateZuperSpecification()
+```
 
 ### Normalization Rules
 
