@@ -14,6 +14,15 @@ const PENDING_DA_STATUSES = [
 
 const APPROVED_STATUSES = ["Approved", "DA Approved", "da_approved", "approved"];
 
+// Stages to exclude from pipeline tables (completed/cancelled projects)
+const EXCLUDED_PIPELINE_STAGES = [
+  "Project Complete",
+  "Cancelled",
+  "Closed Lost",
+  "Closed Won",
+  "Lost",
+];
+
 function isApproved(status: string | null): boolean {
   if (!status) return false;
   return APPROVED_STATUSES.some((s) => s.toLowerCase() === status.toLowerCase());
@@ -57,6 +66,7 @@ interface PendingDeal {
   pbLocation: string;
   designLead: string;
   siteSurveyor: string;
+  stage: string;
   layoutStatus: string;
   designApprovalSentDate: string | null;
   siteSurveyScheduleDate: string | null;
@@ -185,7 +195,7 @@ export async function GET(request: NextRequest) {
     // Active DA pipeline — sent but not approved (from full project set)
     const now = new Date();
     const pendingDA: PendingDeal[] = (allProjects || [])
-      .filter((p) => isPendingDA(p.layoutStatus) && !isApproved(p.layoutStatus))
+      .filter((p) => isPendingDA(p.layoutStatus) && !isApproved(p.layoutStatus) && !EXCLUDED_PIPELINE_STAGES.some((s) => s.toLowerCase() === (p.stage || "").toLowerCase()))
       .map((p) => {
         const sentDate = p.designApprovalSentDate ? new Date(p.designApprovalSentDate) : null;
         const daysWaiting = sentDate
@@ -199,6 +209,7 @@ export async function GET(request: NextRequest) {
           pbLocation: p.pbLocation || "Unknown",
           designLead: p.designLead || "Unknown",
           siteSurveyor: p.siteSurveyor || "Unknown",
+          stage: p.stage || "Unknown",
           layoutStatus: p.layoutStatus || "Unknown",
           designApprovalSentDate: p.designApprovalSentDate,
           siteSurveyScheduleDate: p.siteSurveyScheduleDate,
@@ -216,8 +227,9 @@ export async function GET(request: NextRequest) {
         // DA not sent yet (no sent date, and not approved)
         if (p.designApprovalSentDate) return false;
         if (isApproved(p.layoutStatus)) return false;
-        // Still active (not closed/lost)
+        // Still active (not closed/lost/complete)
         if (!p.isActive) return false;
+        if (EXCLUDED_PIPELINE_STAGES.some((s) => s.toLowerCase() === (p.stage || "").toLowerCase())) return false;
         return true;
       })
       .map((p) => {
@@ -233,6 +245,7 @@ export async function GET(request: NextRequest) {
           pbLocation: p.pbLocation || "Unknown",
           designLead: p.designLead || "Unassigned",
           siteSurveyor: p.siteSurveyor || "Unknown",
+          stage: p.stage || "Unknown",
           layoutStatus: p.layoutStatus || "Not Started",
           designApprovalSentDate: null,
           siteSurveyScheduleDate: p.siteSurveyScheduleDate,

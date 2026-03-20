@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { queryKeys } from "@/lib/query-keys";
@@ -9,7 +9,6 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 // ── Thresholds ──
 const TURNAROUND_THRESHOLDS = [5, 10, 20] as const;
 const REVISION_THRESHOLDS = [0.5, 1, 2] as const;
-const WAITING_THRESHOLDS = [3, 7, 14] as const;
 
 function getColor(value: number | null | undefined, thresholds: readonly number[]): string {
   if (value === null || value === undefined) return "text-muted";
@@ -33,6 +32,63 @@ function getFirstTryColor(rate: number | null | undefined): string {
   if (rate >= 60) return "text-yellow-400";
   if (rate >= 40) return "text-orange-400";
   return "text-red-400";
+}
+
+function getWaitingColor(days: number): string {
+  if (days < 0) return "text-muted";
+  if (days > 14) return "text-red-400";
+  if (days > 7) return "text-orange-400";
+  if (days > 3) return "text-yellow-400";
+  return "text-emerald-400";
+}
+
+// ── Sortable column header ──
+type SortDir = "asc" | "desc";
+
+function SortHeader({
+  label,
+  sortKey,
+  currentKey,
+  currentDir,
+  onSort,
+  className = "",
+  title,
+}: {
+  label: string;
+  sortKey: string;
+  currentKey: string | null;
+  currentDir: SortDir;
+  onSort: (key: string) => void;
+  className?: string;
+  title?: string;
+}) {
+  const active = currentKey === sortKey;
+  return (
+    <th
+      className={`px-4 py-3 font-semibold text-foreground cursor-pointer select-none hover:text-purple-300 transition-colors ${className}`}
+      onClick={() => onSort(sortKey)}
+      title={title}
+    >
+      {label}
+      <span className="ml-1 text-xs">
+        {active ? (currentDir === "asc" ? "▲" : "▼") : "⇅"}
+      </span>
+    </th>
+  );
+}
+
+// ── Generic sorter ──
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function sortRows<T extends Record<string, any>>(rows: T[], key: string | null, dir: SortDir): T[] {
+  if (!key) return rows;
+  return [...rows].sort((a, b) => {
+    const av = a[key];
+    const bv = b[key];
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    if (typeof av === "number" && typeof bv === "number") return dir === "asc" ? av - bv : bv - av;
+    return dir === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+  });
 }
 
 // ── Types ──
@@ -69,6 +125,7 @@ interface PendingDeal {
   pbLocation: string;
   designLead: string;
   siteSurveyor: string;
+  stage: string;
   layoutStatus: string;
   designApprovalSentDate: string | null;
   siteSurveyScheduleDate: string | null;
@@ -97,16 +154,30 @@ const DAYS_OPTIONS = [
 
 const LOCATIONS = ["Westminster", "Centennial", "Colorado Springs", "San Luis Obispo", "Camarillo"];
 
+// ── Sort hook ──
+function useSort(defaultKey: string | null = null, defaultDir: SortDir = "desc") {
+  const [sortKey, setSortKey] = useState<string | null>(defaultKey);
+  const [sortDir, setSortDir] = useState<SortDir>(defaultDir);
+  const toggle = useCallback((key: string) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("desc"); }
+  }, [sortKey]);
+  return { sortKey, sortDir, toggle };
+}
+
 export default function DAMetricsDashboardPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
   const [daysWindow, setDaysWindow] = useState(60);
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
-  const [drillDown, setDrillDown] = useState<{
-    groupKey: string;
-    groupType: "location" | "designer";
-  } | null>(null);
+  const [drillDown, setDrillDown] = useState<{ groupKey: string; groupType: "location" } | null>(null);
+
+  // Sort state per table
+  const locSort = useSort(null, "desc");
+  const drillSort = useSort("turnaroundDays", "desc");
+  const awaitingSort = useSort("daysSinceSurvey", "desc");
+  const pendingSort = useSort("daysWaiting", "desc");
 
   const query = useQuery({
     queryKey: queryKeys.stats.daMetrics(daysWindow),
@@ -140,36 +211,31 @@ export default function DAMetricsDashboardPage() {
     return locs;
   }, [data, filterLocations]);
 
-  const displayDesigners = useMemo(() => {
+  // Filter pipeline tables by location
+  const filteredAwaitingDA = useMemo(() => {
     if (!data) return [];
-    return Object.entries(data.byDesigner)
-      .sort((a, b) => b[1].count - a[1].count)
-      .map(([name]) => name);
-  }, [data]);
+    if (filterLocations.length === 0) return data.awaitingDA;
+    return data.awaitingDA.filter((p) => filterLocations.includes(p.pbLocation));
+  }, [data, filterLocations]);
+
+  const filteredPendingDA = useMemo(() => {
+    if (!data) return [];
+    if (filterLocations.length === 0) return data.pendingDA;
+    return data.pendingDA.filter((p) => filterLocations.includes(p.pbLocation));
+  }, [data, filterLocations]);
 
   const exportData = useMemo(() => {
     if (!data) return [];
-    const rows: Record<string, string | number>[] = [];
-    for (const loc of displayLocations) {
+    return displayLocations.map((loc) => {
       const d = data.byLocation[loc];
-      rows.push({
-        Group: loc, Type: "Location", Count: d.count,
+      return {
+        Location: loc, Count: d.count,
         "Avg Turnaround": d.avgTurnaround ?? "--",
         "Avg Revisions": d.avgRevisions ?? "--",
         "First-Try %": d.firstTryRate ?? "--",
-      });
-    }
-    for (const name of displayDesigners) {
-      const d = data.byDesigner[name];
-      rows.push({
-        Group: name, Type: "Designer", Count: d.count,
-        "Avg Turnaround": d.avgTurnaround ?? "--",
-        "Avg Revisions": d.avgRevisions ?? "--",
-        "First-Try %": d.firstTryRate ?? "--",
-      });
-    }
-    return rows;
-  }, [data, displayLocations, displayDesigners]);
+      };
+    });
+  }, [data, displayLocations]);
 
   const fmt = (v: number | null | undefined) => (v === null || v === undefined ? "--" : v.toFixed(1));
   const fmtPct = (v: number | null | undefined) => (v === null || v === undefined ? "--" : `${v}%`);
@@ -202,14 +268,23 @@ export default function DAMetricsDashboardPage() {
   if (!data) return null;
 
   // Drill-down data
-  const drillDownGroup = drillDown
-    ? drillDown.groupType === "location"
-      ? data.byLocation[drillDown.groupKey]
-      : data.byDesigner[drillDown.groupKey]
-    : null;
-  const drillDownDeals = drillDownGroup?.deals
-    ?.filter((d) => d.turnaroundDays !== null)
-    .sort((a, b) => (b.turnaroundDays ?? 0) - (a.turnaroundDays ?? 0)) ?? [];
+  const drillDownGroup = drillDown ? data.byLocation[drillDown.groupKey] : null;
+  const drillDownDeals = sortRows(
+    drillDownGroup?.deals?.filter((d) => d.turnaroundDays !== null) ?? [],
+    drillSort.sortKey,
+    drillSort.sortDir
+  );
+
+  // Sorted pipeline tables
+  const sortedAwaiting = sortRows(filteredAwaitingDA, awaitingSort.sortKey, awaitingSort.sortDir);
+  const sortedPending = sortRows(filteredPendingDA, pendingSort.sortKey, pendingSort.sortDir);
+
+  // Sorted location rows for the grid
+  const locationRows = useMemo(() => {
+    if (!locSort.sortKey) return displayLocations;
+    const mapped = displayLocations.map((loc) => ({ loc, ...data.byLocation[loc] }));
+    return sortRows(mapped, locSort.sortKey, locSort.sortDir).map((r) => r.loc);
+  }, [displayLocations, data, locSort.sortKey, locSort.sortDir]);
 
   return (
     <DashboardShell
@@ -308,10 +383,8 @@ export default function DAMetricsDashboardPage() {
       </div>
 
       {/* ═══════════════════════════════════════════════
-          SECTION 1: Turnaround & Revision Metrics
+          SECTION 1: By Location Table
           ═══════════════════════════════════════════════ */}
-
-      {/* By Location Table */}
       <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8">
         <div className="px-5 py-4 border-b border-t-border">
           <h2 className="text-lg font-semibold text-foreground">DA Performance by Office</h2>
@@ -323,15 +396,15 @@ export default function DAMetricsDashboardPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-t-border bg-surface-2/50">
-                <th className="text-left px-4 py-3 font-semibold text-foreground min-w-[160px]">Location</th>
-                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[70px]">Count</th>
-                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[110px]" title="Average days from DA sent to DA approved">Avg Turnaround</th>
-                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[100px]" title="Average DA revision count">Avg Revisions</th>
-                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[100px]" title="Percentage approved with 0 revisions">First-Try %</th>
+                <SortHeader label="Location" sortKey="loc" currentKey={locSort.sortKey} currentDir={locSort.sortDir} onSort={locSort.toggle} className="text-left min-w-[160px]" />
+                <SortHeader label="Count" sortKey="count" currentKey={locSort.sortKey} currentDir={locSort.sortDir} onSort={locSort.toggle} className="text-center min-w-[70px]" />
+                <SortHeader label="Avg Turnaround" sortKey="avgTurnaround" currentKey={locSort.sortKey} currentDir={locSort.sortDir} onSort={locSort.toggle} className="text-center min-w-[110px]" title="Average days from DA sent to DA approved" />
+                <SortHeader label="Avg Revisions" sortKey="avgRevisions" currentKey={locSort.sortKey} currentDir={locSort.sortDir} onSort={locSort.toggle} className="text-center min-w-[100px]" title="Average DA revision count" />
+                <SortHeader label="First-Try %" sortKey="firstTryRate" currentKey={locSort.sortKey} currentDir={locSort.sortDir} onSort={locSort.toggle} className="text-center min-w-[100px]" title="Percentage approved with 0 revisions" />
               </tr>
             </thead>
             <tbody>
-              {displayLocations.map((loc, i) => {
+              {locationRows.map((loc, i) => {
                 const row = data.byLocation[loc];
                 return (
                   <tr key={loc} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
@@ -341,60 +414,6 @@ export default function DAMetricsDashboardPage() {
                       className={`text-center px-4 py-3 font-mono font-medium cursor-pointer hover:ring-1 hover:ring-purple-500/40 transition-shadow ${getColor(row.avgTurnaround, TURNAROUND_THRESHOLDS)} ${getBg(row.avgTurnaround, TURNAROUND_THRESHOLDS)}`}
                       onClick={() => row.avgTurnaround !== null && setDrillDown({ groupKey: loc, groupType: "location" })}
                       title={row.avgTurnaround !== null ? `Click to see DA deals for ${loc}` : undefined}
-                    >
-                      {fmt(row.avgTurnaround)}
-                    </td>
-                    <td className={`text-center px-4 py-3 font-mono font-medium ${getColor(row.avgRevisions, REVISION_THRESHOLDS)}`}>
-                      {fmt(row.avgRevisions)}
-                    </td>
-                    <td className={`text-center px-4 py-3 font-mono font-medium ${getFirstTryColor(row.firstTryRate)}`}>
-                      {fmtPct(row.firstTryRate)}
-                    </td>
-                  </tr>
-                );
-              })}
-              <tr className="border-t-2 border-t-border bg-surface-2/40 font-semibold">
-                <td className="px-4 py-3 text-foreground">Report Total</td>
-                <td className="text-center px-4 py-3 text-foreground">{data.totals.count.toLocaleString()}</td>
-                <td className={`text-center px-4 py-3 font-mono ${getColor(data.totals.avgTurnaround, TURNAROUND_THRESHOLDS)}`}>{fmt(data.totals.avgTurnaround)}</td>
-                <td className={`text-center px-4 py-3 font-mono ${getColor(data.totals.avgRevisions, REVISION_THRESHOLDS)}`}>{fmt(data.totals.avgRevisions)}</td>
-                <td className={`text-center px-4 py-3 font-mono ${getFirstTryColor(data.totals.firstTryRate)}`}>{fmtPct(data.totals.firstTryRate)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* By Designer Table */}
-      <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8">
-        <div className="px-5 py-4 border-b border-t-border">
-          <h2 className="text-lg font-semibold text-foreground">DA Performance by Designer</h2>
-          <p className="text-sm text-muted mt-0.5">
-            Per-designer turnaround and revision quality &middot; Click turnaround cells to drill into deals
-          </p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-t-border bg-surface-2/50">
-                <th className="text-left px-4 py-3 font-semibold text-foreground min-w-[160px]">Designer</th>
-                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[70px]">Count</th>
-                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[110px]" title="Average days from DA sent to DA approved">Avg Turnaround</th>
-                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[100px]" title="Average DA revision count">Avg Revisions</th>
-                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[100px]" title="Percentage approved with 0 revisions">First-Try %</th>
-              </tr>
-            </thead>
-            <tbody>
-              {displayDesigners.map((name, i) => {
-                const row = data.byDesigner[name];
-                return (
-                  <tr key={name} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
-                    <td className="px-4 py-3 font-medium text-foreground">{name}</td>
-                    <td className="text-center px-4 py-3 text-muted">{row.count.toLocaleString()}</td>
-                    <td
-                      className={`text-center px-4 py-3 font-mono font-medium cursor-pointer hover:ring-1 hover:ring-purple-500/40 transition-shadow ${getColor(row.avgTurnaround, TURNAROUND_THRESHOLDS)} ${getBg(row.avgTurnaround, TURNAROUND_THRESHOLDS)}`}
-                      onClick={() => row.avgTurnaround !== null && setDrillDown({ groupKey: name, groupType: "designer" })}
-                      title={row.avgTurnaround !== null ? `Click to see DA deals for ${name}` : undefined}
                     >
                       {fmt(row.avgTurnaround)}
                     </td>
@@ -437,21 +456,15 @@ export default function DAMetricsDashboardPage() {
             <table className="w-full text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-t-border bg-surface-2/80 backdrop-blur-sm">
-                  <th className="text-left px-4 py-2.5 font-semibold text-foreground">Project</th>
-                  <th className="text-left px-4 py-2.5 font-semibold text-foreground">Customer</th>
-                  {drillDown.groupType === "designer" && (
-                    <th className="text-left px-4 py-2.5 font-semibold text-foreground">Location</th>
-                  )}
-                  {drillDown.groupType === "location" && (
-                    <th className="text-left px-4 py-2.5 font-semibold text-foreground">Designer</th>
-                  )}
-                  <th className="text-left px-4 py-2.5 font-semibold text-foreground">Surveyor</th>
-                  <th className="text-center px-4 py-2.5 font-semibold text-foreground">Survey Sched</th>
-                  <th className="text-center px-4 py-2.5 font-semibold text-foreground">Survey Done</th>
-                  <th className="text-center px-4 py-2.5 font-semibold text-foreground">DA Sent</th>
-                  <th className="text-center px-4 py-2.5 font-semibold text-foreground">DA Approved</th>
-                  <th className="text-center px-4 py-2.5 font-semibold text-foreground">Turnaround</th>
-                  <th className="text-center px-4 py-2.5 font-semibold text-foreground">Revisions</th>
+                  <SortHeader label="Project" sortKey="projectNumber" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-left" />
+                  <SortHeader label="Customer" sortKey="name" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-left" />
+                  <SortHeader label="Surveyor" sortKey="siteSurveyor" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-left" />
+                  <SortHeader label="Survey Sched" sortKey="siteSurveyScheduleDate" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-center" />
+                  <SortHeader label="Survey Done" sortKey="siteSurveyCompletionDate" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-center" />
+                  <SortHeader label="DA Sent" sortKey="designApprovalSentDate" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-center" />
+                  <SortHeader label="DA Approved" sortKey="designApprovalDate" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-center" />
+                  <SortHeader label="Turnaround" sortKey="turnaroundDays" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-center" />
+                  <SortHeader label="Revisions" sortKey="daRevisionCounter" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-center" />
                   <th className="text-center px-4 py-2.5 font-semibold text-foreground">Link</th>
                 </tr>
               </thead>
@@ -460,12 +473,6 @@ export default function DAMetricsDashboardPage() {
                   <tr key={d.dealId} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
                     <td className="px-4 py-2.5 font-mono text-foreground">{d.projectNumber}</td>
                     <td className="px-4 py-2.5 text-foreground truncate max-w-[180px]">{d.name}</td>
-                    {drillDown.groupType === "designer" && (
-                      <td className="px-4 py-2.5 text-muted">{d.pbLocation}</td>
-                    )}
-                    {drillDown.groupType === "location" && (
-                      <td className="px-4 py-2.5 text-muted">{d.designLead}</td>
-                    )}
                     <td className="px-4 py-2.5 text-muted">{d.siteSurveyor}</td>
                     <td className="text-center px-4 py-2.5 text-muted text-xs">{d.siteSurveyScheduleDate || "--"}</td>
                     <td className="text-center px-4 py-2.5 text-muted text-xs">{d.siteSurveyCompletionDate || "--"}</td>
@@ -491,49 +498,46 @@ export default function DAMetricsDashboardPage() {
       )}
 
       {/* ═══════════════════════════════════════════════
-          SECTION 3A: Survey Complete → DA Not Sent
+          SECTION 2: Survey Complete → DA Not Sent
           ═══════════════════════════════════════════════ */}
-      {data.awaitingDA.length > 0 && (
+      {sortedAwaiting.length > 0 && (
         <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8">
           <div className="px-5 py-4 border-b border-t-border">
             <h2 className="text-lg font-semibold text-foreground">Survey Complete — DA Not Sent</h2>
             <p className="text-sm text-muted mt-0.5">
-              {data.awaitingDA.length} projects with completed survey but DA not yet sent &middot; Sorted by days since survey
+              {sortedAwaiting.length} projects with completed survey but DA not yet sent
             </p>
           </div>
           <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
             <table className="w-full text-sm">
               <thead className="sticky top-0 z-10">
                 <tr className="border-b border-t-border bg-surface-2/50">
-                  <th className="text-left px-4 py-3 font-semibold text-foreground">Project</th>
-                  <th className="text-left px-4 py-3 font-semibold text-foreground">Customer</th>
-                  <th className="text-left px-4 py-3 font-semibold text-foreground">Location</th>
-                  <th className="text-left px-4 py-3 font-semibold text-foreground">Designer</th>
-                  <th className="text-left px-4 py-3 font-semibold text-foreground">Surveyor</th>
-                  <th className="text-center px-4 py-3 font-semibold text-foreground">Survey Done</th>
-                  <th className="text-center px-4 py-3 font-semibold text-foreground">DA Status</th>
-                  <th className="text-center px-4 py-3 font-semibold text-foreground">Days Since Survey</th>
+                  <SortHeader label="Project" sortKey="projectNumber" currentKey={awaitingSort.sortKey} currentDir={awaitingSort.sortDir} onSort={awaitingSort.toggle} className="text-left" />
+                  <SortHeader label="Customer" sortKey="name" currentKey={awaitingSort.sortKey} currentDir={awaitingSort.sortDir} onSort={awaitingSort.toggle} className="text-left" />
+                  <SortHeader label="Location" sortKey="pbLocation" currentKey={awaitingSort.sortKey} currentDir={awaitingSort.sortDir} onSort={awaitingSort.toggle} className="text-left" />
+                  <SortHeader label="Designer" sortKey="designLead" currentKey={awaitingSort.sortKey} currentDir={awaitingSort.sortDir} onSort={awaitingSort.toggle} className="text-left" />
+                  <SortHeader label="Surveyor" sortKey="siteSurveyor" currentKey={awaitingSort.sortKey} currentDir={awaitingSort.sortDir} onSort={awaitingSort.toggle} className="text-left" />
+                  <SortHeader label="Stage" sortKey="stage" currentKey={awaitingSort.sortKey} currentDir={awaitingSort.sortDir} onSort={awaitingSort.toggle} className="text-left" />
+                  <SortHeader label="Survey Done" sortKey="siteSurveyCompletionDate" currentKey={awaitingSort.sortKey} currentDir={awaitingSort.sortDir} onSort={awaitingSort.toggle} className="text-center" />
+                  <SortHeader label="DA Status" sortKey="layoutStatus" currentKey={awaitingSort.sortKey} currentDir={awaitingSort.sortDir} onSort={awaitingSort.toggle} className="text-center" />
+                  <SortHeader label="Days Since Survey" sortKey="daysSinceSurvey" currentKey={awaitingSort.sortKey} currentDir={awaitingSort.sortDir} onSort={awaitingSort.toggle} className="text-center" />
                   <th className="text-center px-4 py-3 font-semibold text-foreground">Link</th>
                 </tr>
               </thead>
               <tbody>
-                {data.awaitingDA.map((p, i) => (
+                {sortedAwaiting.map((p, i) => (
                   <tr key={p.dealId} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
                     <td className="px-4 py-3 font-mono text-foreground">{p.projectNumber}</td>
                     <td className="px-4 py-3 text-foreground truncate max-w-[180px]">{p.name}</td>
                     <td className="px-4 py-3 text-muted">{p.pbLocation}</td>
                     <td className="px-4 py-3 text-muted">{p.designLead}</td>
                     <td className="px-4 py-3 text-muted">{p.siteSurveyor}</td>
+                    <td className="px-4 py-3 text-muted">{p.stage}</td>
                     <td className="text-center px-4 py-3 text-muted">{p.siteSurveyCompletionDate}</td>
                     <td className="text-center px-4 py-3">
                       <span className="px-2 py-0.5 rounded text-xs bg-surface-2 text-muted">{p.layoutStatus}</span>
                     </td>
-                    <td className={`text-center px-4 py-3 font-mono font-medium ${
-                      p.daysSinceSurvey > 14 ? "text-red-400" :
-                      p.daysSinceSurvey > 7 ? "text-orange-400" :
-                      p.daysSinceSurvey > 3 ? "text-yellow-400" :
-                      "text-emerald-400"
-                    }`}>
+                    <td className={`text-center px-4 py-3 font-mono font-medium ${getWaitingColor(p.daysSinceSurvey)}`}>
                       {p.daysSinceSurvey}
                     </td>
                     <td className="text-center px-4 py-3">
@@ -550,52 +554,49 @@ export default function DAMetricsDashboardPage() {
       )}
 
       {/* ═══════════════════════════════════════════════
-          SECTION 3B: DA Sent — Pending Approval
+          SECTION 3: DA Sent — Pending Approval
           ═══════════════════════════════════════════════ */}
-      {data.pendingDA.length > 0 && (
+      {sortedPending.length > 0 && (
         <div className="mb-8">
           <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
             <div className="px-5 py-4 border-b border-t-border">
               <h2 className="text-lg font-semibold text-foreground">DA Sent — Pending Approval</h2>
               <p className="text-sm text-muted mt-0.5">
-                {data.pendingDA.length} DAs sent but not yet approved &middot; Sorted by days waiting
+                {sortedPending.length} DAs sent but not yet approved
               </p>
             </div>
             <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr className="border-b border-t-border bg-surface-2/50">
-                    <th className="text-left px-4 py-3 font-semibold text-foreground">Project</th>
-                    <th className="text-left px-4 py-3 font-semibold text-foreground">Customer</th>
-                    <th className="text-left px-4 py-3 font-semibold text-foreground">Location</th>
-                    <th className="text-left px-4 py-3 font-semibold text-foreground">Designer</th>
-                    <th className="text-left px-4 py-3 font-semibold text-foreground">Surveyor</th>
-                    <th className="text-center px-4 py-3 font-semibold text-foreground">Survey Done</th>
-                    <th className="text-center px-4 py-3 font-semibold text-foreground">DA Status</th>
-                    <th className="text-center px-4 py-3 font-semibold text-foreground">DA Sent</th>
-                    <th className="text-center px-4 py-3 font-semibold text-foreground">Days Waiting</th>
+                    <SortHeader label="Project" sortKey="projectNumber" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-left" />
+                    <SortHeader label="Customer" sortKey="name" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-left" />
+                    <SortHeader label="Location" sortKey="pbLocation" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-left" />
+                    <SortHeader label="Designer" sortKey="designLead" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-left" />
+                    <SortHeader label="Surveyor" sortKey="siteSurveyor" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-left" />
+                    <SortHeader label="Stage" sortKey="stage" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-left" />
+                    <SortHeader label="Survey Done" sortKey="siteSurveyCompletionDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-center" />
+                    <SortHeader label="DA Status" sortKey="layoutStatus" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-center" />
+                    <SortHeader label="DA Sent" sortKey="designApprovalSentDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-center" />
+                    <SortHeader label="Days Waiting" sortKey="daysWaiting" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-center" />
                     <th className="text-center px-4 py-3 font-semibold text-foreground">Link</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {data.pendingDA.map((p, i) => (
+                  {sortedPending.map((p, i) => (
                     <tr key={p.dealId} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
                       <td className="px-4 py-3 font-mono text-foreground">{p.projectNumber}</td>
                       <td className="px-4 py-3 text-foreground truncate max-w-[180px]">{p.name}</td>
                       <td className="px-4 py-3 text-muted">{p.pbLocation}</td>
                       <td className="px-4 py-3 text-muted">{p.designLead}</td>
                       <td className="px-4 py-3 text-muted">{p.siteSurveyor}</td>
+                      <td className="px-4 py-3 text-muted">{p.stage}</td>
                       <td className="text-center px-4 py-3 text-muted text-xs">{p.siteSurveyCompletionDate || "--"}</td>
                       <td className="text-center px-4 py-3">
                         <span className="px-2 py-0.5 rounded text-xs bg-purple-500/15 text-purple-300">{p.layoutStatus}</span>
                       </td>
                       <td className="text-center px-4 py-3 text-muted text-xs">{p.designApprovalSentDate || "--"}</td>
-                      <td className={`text-center px-4 py-3 font-mono font-medium ${
-                        p.daysWaiting > 14 ? "text-red-400" :
-                        p.daysWaiting > 7 ? "text-orange-400" :
-                        p.daysWaiting > 3 ? "text-yellow-400" :
-                        "text-emerald-400"
-                      }`}>
+                      <td className={`text-center px-4 py-3 font-mono font-medium ${getWaitingColor(p.daysWaiting)}`}>
                         {p.daysWaiting}
                       </td>
                       <td className="text-center px-4 py-3">
