@@ -16,6 +16,9 @@
     "src/app/api/webhooks/hubspot/design-complete/route.ts": {
       "maxDuration": 300
     },
+    "src/app/api/webhooks/hubspot/ready-to-build/route.ts": {
+      "maxDuration": 300
+    },
     "src/app/api/zuper/jobs/schedule/confirm/route.ts": {
       "maxDuration": 300
     }
@@ -40,6 +43,10 @@
     {
       "path": "/api/catalog/vendors/sync",
       "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/pipeline-health",
+      "schedule": "0 15 * * *"
     }
   ],
   "redirects": [

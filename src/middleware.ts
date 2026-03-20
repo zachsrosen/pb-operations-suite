@@ -16,9 +16,11 @@ const PUBLIC_API_ROUTES = [
   "/api/updates/notify",
   "/api/sentry-canary",
   "/api/webhooks/hubspot/design-complete",
+  "/api/webhooks/hubspot/ready-to-build",
   "/api/webhooks/hubspot/design-review",
   "/api/cron/audit-digest",
   "/api/cron/audit-retention",
+  "/api/cron/pipeline-health",
   "/api/portal/survey", // Customer portal — token-validated, no session needed
   "/api/solar/cron/cleanup-pending", // Solar cron — CRON_SECRET validated in route
 ];

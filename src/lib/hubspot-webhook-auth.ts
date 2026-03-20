@@ -35,9 +35,34 @@ export interface WebhookValidationResult {
 }
 
 /**
+ * Normalize the request URL to match what HubSpot signed against.
+ *
+ * On Vercel, `req.url` may use internal hostnames or http:// instead of
+ * the custom domain HubSpot actually sent to. This reconstructs the
+ * canonical URL using WEBHOOK_CANONICAL_BASE_URL or NEXTAUTH_URL.
+ */
+function normalizeRequestUrl(requestUrl: string): string {
+  const canonicalBase =
+    process.env.WEBHOOK_CANONICAL_BASE_URL || process.env.NEXTAUTH_URL;
+  if (!canonicalBase) return requestUrl;
+
+  try {
+    const incoming = new URL(requestUrl);
+    const canonical = new URL(canonicalBase);
+    // Replace scheme + host with canonical, keep path + query
+    return `${canonical.protocol}//${canonical.host}${incoming.pathname}${incoming.search}`;
+  } catch {
+    return requestUrl;
+  }
+}
+
+/**
  * Validate a HubSpot webhook signature (v3).
  *
  * Returns `{ valid: true }` on success, or `{ valid: false, error }` on failure.
+ *
+ * Tries the request URL as-is first, then falls back to a canonical URL
+ * normalization to handle Vercel domain mismatches.
  */
 export function validateHubSpotWebhook(
   params: WebhookValidationParams,
@@ -58,32 +83,45 @@ export function validateHubSpotWebhook(
     return { valid: false, error: `Timestamp too ${direction} (${Math.round(Math.abs(age) / 1000)}s)` };
   }
 
-  // 2. Build the source string: method + URL + body + timestamp
-  const sourceString =
-    params.method.toUpperCase() +
-    params.requestUrl +
-    params.rawBody +
-    params.timestamp;
-
-  // 3. Compute HMAC SHA-256
-  const expectedSignature = crypto
-    .createHmac("sha256", secret)
-    .update(sourceString, "utf8")
-    .digest("base64");
-
-  // 4. Constant-time comparison
-  try {
-    const sigBuffer = Buffer.from(params.signature, "base64");
-    const expectedBuffer = Buffer.from(expectedSignature, "base64");
-    if (sigBuffer.length !== expectedBuffer.length) {
-      return { valid: false, error: "Signature length mismatch" };
-    }
-    if (!crypto.timingSafeEqual(sigBuffer, expectedBuffer)) {
-      return { valid: false, error: "Signature mismatch" };
-    }
-  } catch {
-    return { valid: false, error: "Signature comparison failed" };
+  // 2. Try signature with original URL first, then canonical URL
+  const urlsToTry = [params.requestUrl];
+  const normalizedUrl = normalizeRequestUrl(params.requestUrl);
+  if (normalizedUrl !== params.requestUrl) {
+    urlsToTry.push(normalizedUrl);
   }
 
-  return { valid: true };
+  for (const url of urlsToTry) {
+    const sourceString =
+      params.method.toUpperCase() +
+      url +
+      params.rawBody +
+      params.timestamp;
+
+    // 3. Compute HMAC SHA-256
+    const expectedSignature = crypto
+      .createHmac("sha256", secret)
+      .update(sourceString, "utf8")
+      .digest("base64");
+
+    // 4. Constant-time comparison
+    try {
+      const sigBuffer = Buffer.from(params.signature, "base64");
+      const expectedBuffer = Buffer.from(expectedSignature, "base64");
+      if (
+        sigBuffer.length === expectedBuffer.length &&
+        crypto.timingSafeEqual(sigBuffer, expectedBuffer)
+      ) {
+        if (url !== params.requestUrl) {
+          console.log(`[webhook-auth] Signature matched using canonical URL: ${url} (original: ${params.requestUrl})`);
+        }
+        return { valid: true };
+      }
+    } catch {
+      // Try next URL
+    }
+  }
+
+  // Log the URLs we tried for debugging
+  console.warn(`[webhook-auth] Signature validation failed. URLs tried: ${urlsToTry.join(", ")}`);
+  return { valid: false, error: "Signature mismatch" };
 }

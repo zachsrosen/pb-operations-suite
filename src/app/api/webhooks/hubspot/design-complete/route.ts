@@ -133,28 +133,63 @@ export async function POST(req: NextRequest) {
   // ── 2. Read raw body (needed for signature validation) ──
   const rawBody = await req.text();
 
-  // ── 3. Validate HubSpot signature ──
-  const signature = req.headers.get("x-hubspot-signature-v3") ?? "";
-  const timestamp = req.headers.get("x-hubspot-request-timestamp") ?? "";
+  // ── 3. Authenticate: HubSpot v3 signature OR bearer token (for Workflows / Tray) ──
+  const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "");
+  const pipelineSecret = process.env.PIPELINE_WEBHOOK_SECRET || process.env.API_SECRET_TOKEN;
+  const isBearerAuth = bearerToken && pipelineSecret && bearerToken === pipelineSecret;
 
-  const validation = validateHubSpotWebhook({
-    rawBody,
-    signature,
-    timestamp,
-    requestUrl: req.url,
-    method: "POST",
-  });
+  if (!isBearerAuth) {
+    // Fall back to HubSpot v3 HMAC signature validation
+    const signature = req.headers.get("x-hubspot-signature-v3") ?? "";
+    const timestamp = req.headers.get("x-hubspot-request-timestamp") ?? "";
 
-  if (!validation.valid) {
-    console.warn(`[design-complete] Signature validation failed: ${validation.error}`);
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    const validation = validateHubSpotWebhook({
+      rawBody,
+      signature,
+      timestamp,
+      requestUrl: req.url,
+      method: "POST",
+    });
+
+    if (!validation.valid) {
+      console.warn(`[design-complete] Auth failed: ${validation.error} (no valid bearer token either)`);
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
   }
 
   // ── 4. Parse payload ──
+  // Supports two formats:
+  //   a) App-scope: [{eventId, subscriptionType, propertyName, propertyValue, objectId}]
+  //   b) Workflow/Tray: {objectId, properties:{dealstage:"..."}} or {dealId, stage}
   let events: HubSpotWebhookEvent[];
   try {
-    events = JSON.parse(rawBody) as HubSpotWebhookEvent[];
-    if (!Array.isArray(events)) events = [events];
+    const parsed = JSON.parse(rawBody);
+
+    if (Array.isArray(parsed)) {
+      events = parsed;
+    } else if (parsed && typeof parsed === "object") {
+      const objectId = parsed.objectId ?? parsed.hs_object_id ?? parsed.dealId ?? parsed.vid;
+      const stage =
+        parsed.propertyValue ??
+        parsed.properties?.dealstage ??
+        parsed.stage ??
+        parsed.dealstage;
+
+      if (!objectId) {
+        return NextResponse.json({ error: "Missing objectId or dealId" }, { status: 400 });
+      }
+
+      events = [{
+        eventId: Date.now(),
+        subscriptionType: "deal.propertyChange",
+        propertyName: "dealstage",
+        propertyValue: stage || undefined,
+        objectId: Number(objectId),
+      }];
+      console.log(`[design-complete] Normalized workflow payload: deal ${objectId}, stage ${stage || "(will fetch)"}`);
+    } else {
+      return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+    }
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -177,32 +212,44 @@ export async function POST(req: NextRequest) {
     const dealId = String(event.objectId);
 
     // ── 5a. Determine trigger from webhook's reported stage ──
-    // Use event.propertyValue (the stage the deal moved TO when the webhook fired).
-    // Previously we fetched the live stage from HubSpot, but that races when deals
-    // move through multiple stages quickly (e.g. P&I → RTB before the webhook
-    // handler runs), causing the wrong trigger type to fire.
-    const webhookStage = event.propertyValue ?? "";
+    // For workflow/Tray payloads without a stage, fetch live stage from HubSpot.
+    let webhookStage = event.propertyValue ?? "";
+
+    if (!webhookStage) {
+      try {
+        const dealProps = await getDealProperties(dealId, ["dealstage"]);
+        webhookStage = dealProps?.dealstage ?? "";
+        if (webhookStage) {
+          console.log(`[design-complete] Deal ${dealId}: no stage in payload, fetched live stage ${webhookStage}`);
+        }
+      } catch (err) {
+        console.warn(`[design-complete] Deal ${dealId}: no stage in payload and failed to fetch — skipping`, err);
+        continue;
+      }
+    }
 
     if (!webhookStage || !stageConfig.has(webhookStage)) {
       if (webhookStage) {
-        console.log(`[design-complete] Deal ${dealId} webhook stage ${webhookStage} not in config — skipping`);
+        console.log(`[design-complete] Deal ${dealId} stage ${webhookStage} not in config — skipping`);
       } else {
-        console.warn(`[design-complete] Deal ${dealId} webhook has no propertyValue — skipping`);
+        console.warn(`[design-complete] Deal ${dealId} has no stage — skipping`);
       }
       continue;
     }
 
     const trigger: BomPipelineTrigger = stageConfig.get(webhookStage)!;
 
-    // Log if live stage differs (informational only — trigger is from webhook)
-    try {
-      const dealProps = await getDealProperties(dealId, ["dealstage"]);
-      const actualStage = dealProps?.dealstage ?? null;
-      if (actualStage && actualStage !== webhookStage) {
-        console.log(`[design-complete] Deal ${dealId}: webhook stage ${webhookStage} but live stage is ${actualStage} (race expected, using webhook value)`);
+    // Log if live stage differs (informational only)
+    if (event.propertyValue) {
+      try {
+        const dealProps = await getDealProperties(dealId, ["dealstage"]);
+        const actualStage = dealProps?.dealstage ?? null;
+        if (actualStage && actualStage !== webhookStage) {
+          console.log(`[design-complete] Deal ${dealId}: webhook stage ${webhookStage} but live stage is ${actualStage} (race expected, using webhook value)`);
+        }
+      } catch (err) {
+        console.warn(`[design-complete] Could not fetch live stage for deal ${dealId} — proceeding with webhook value`, err);
       }
-    } catch (err) {
-      console.warn(`[design-complete] Could not fetch live stage for deal ${dealId} — proceeding with webhook value`, err);
     }
 
     // ── 5b. Skip if pipeline already succeeded/partial for this deal+trigger (prevent re-runs) ──
