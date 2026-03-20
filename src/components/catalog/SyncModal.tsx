@@ -1,563 +1,558 @@
+// src/components/catalog/SyncModal.tsx
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
+import type {
+  ExternalSystem,
+  Direction,
+  FieldIntent,
+  FieldMappingEdge,
+  FieldValueSnapshot,
+  SyncPlan,
+  SyncOperationOutcome,
+} from "@/lib/catalog-sync-types";
+import { EXTERNAL_SYSTEMS } from "@/lib/catalog-sync-types";
+import { useSyncCascade } from "@/hooks/useSyncCascade";
 
-interface SyncFieldChange {
-  field: string;
-  currentValue: string | null;
-  proposedValue: string | null;
-}
+type IntentsMap = Record<ExternalSystem, Record<string, FieldIntent>>;
+type Step = "loading" | "intents" | "plan-preview" | "executing" | "results";
 
-interface SyncPreview {
-  system: string;
-  externalId: string | null;
-  linked: boolean;
-  action: "update" | "create" | "skip";
-  changes: SyncFieldChange[];
-  noChanges: boolean;
-}
-
-interface SyncOutcome {
-  system: string;
-  externalId: string;
-  status: "updated" | "created" | "skipped" | "failed" | "unsupported";
-  message: string;
-}
+const SYSTEM_LABELS: Record<ExternalSystem, string> = {
+  zoho: "Zoho Inventory",
+  hubspot: "HubSpot",
+  zuper: "Zuper",
+};
 
 interface SyncModalProps {
   internalProductId: string;
   skuName: string;
   isOpen: boolean;
   onClose: () => void;
+  onSyncComplete?: () => void;
 }
 
-type FieldDirection = "push" | "pull" | "skip";
-
-const SYSTEM_LABELS: Record<string, string> = {
-  zoho: "Zoho Inventory",
-  hubspot: "HubSpot",
-  zuper: "Zuper",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  updated: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
-  created: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-  skipped: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400",
-  failed: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
-  unsupported: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
-};
-
-/** Maps external system field name → internal product field for reverse sync */
-const PULL_FIELD_MAP: Record<string, Record<string, string>> = {
-  hubspot: {
-    name: "model",
-    price: "sellPrice",
-    hs_cost_of_goods_sold: "unitCost",
-    description: "description",
-    hs_sku: "sku",
-    manufacturer: "brand",
-  },
-  zoho: {
-    name: "model",
-    rate: "sellPrice",
-    purchase_rate: "unitCost",
-    description: "description",
-    sku: "sku",
-    vendor_name: "vendorName",
-    vendor_id: "zohoVendorId",
-  },
-  zuper: {
-    name: "model",
-    sku: "sku",
-    description: "description",
-  },
-};
-
-/** Fields that must be pulled together (e.g. vendor name requires vendor ID). */
-const COMPANION_FIELDS: Record<string, Record<string, string>> = {
-  zoho: { vendor_name: "vendor_id" },
-};
-
-const NUMERIC_INTERNAL_FIELDS = new Set(["sellPrice", "unitCost"]);
-
-/** Mirrors server's computePreviewHash using Web Crypto API */
-async function computePreviewHashClient(previews: SyncPreview[]): Promise<string> {
-  const sorted = [...previews].sort((a, b) => a.system.localeCompare(b.system));
-  const canonical = sorted.map((p) => ({
-    system: p.system,
-    externalId: p.externalId,
-    action: p.action,
-    changes: [...p.changes].sort((a, b) => a.field.localeCompare(b.field)),
-  }));
-  const data = new TextEncoder().encode(JSON.stringify(canonical));
-  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(hashBuffer))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-export default function SyncModal({ internalProductId, skuName, isOpen, onClose }: SyncModalProps) {
-  const [previews, setPreviews] = useState<SyncPreview[]>([]);
-  const [systems, setSystems] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [executing, setExecuting] = useState(false);
-  const [confirmText, setConfirmText] = useState("");
-  const [outcomes, setOutcomes] = useState<SyncOutcome[] | null>(null);
+export default function SyncModal({
+  internalProductId,
+  skuName,
+  isOpen,
+  onClose,
+  onSyncComplete,
+}: SyncModalProps) {
+  // ── State ──
+  const [step, setStep] = useState<Step>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [snapshots, setSnapshots] = useState<FieldValueSnapshot[]>([]);
+  const [mappings, setMappings] = useState<FieldMappingEdge[]>([]);
+  const [intents, setIntents] = useState<IntentsMap>({ zoho: {}, hubspot: {}, zuper: {} });
+  const [, setBasePreviewHash] = useState<string>("");
+  const [globalUpdateInternal, setGlobalUpdateInternal] = useState(true);
+  const [plan, setPlan] = useState<SyncPlan | null>(null);
+  const [outcomes, setOutcomes] = useState<SyncOperationOutcome[]>([]);
+  const [confirmText, setConfirmText] = useState("");
 
-  // Selective sync state
-  const [disabledSystems, setDisabledSystems] = useState<Set<string>>(new Set());
-  const [fieldDirections, setFieldDirections] = useState<Record<string, Record<string, FieldDirection>>>({});
+  const { applyCascade } = useSyncCascade({ mappings, snapshots });
 
-  const fetchPreview = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/inventory/products/${internalProductId}/sync`);
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `HTTP ${res.status}`);
-      }
-      const data = await res.json();
-      setPreviews(data.previews || []);
-      setSystems(data.systems || []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load preview");
-    } finally {
-      setLoading(false);
-    }
-  }, [internalProductId]);
-
+  // ── Load data on open ──
   useEffect(() => {
-    if (isOpen) {
-      fetchPreview();
-      setConfirmText("");
-      setOutcomes(null);
-      setError(null);
-      setDisabledSystems(new Set());
-      setFieldDirections({});
-    }
-  }, [isOpen, fetchPreview]);
-
-  const toggleSystem = (system: string) => {
-    setDisabledSystems((prev) => {
-      const next = new Set(prev);
-      if (next.has(system)) next.delete(system);
-      else next.add(system);
-      return next;
-    });
-  };
-
-  const cycleFieldDirection = (system: string, field: string, target: FieldDirection) => {
-    setFieldDirections((prev) => {
-      const current = prev[system]?.[field] ?? "push";
-      const next = current === target && target !== "push" ? "push" : target;
-      return { ...prev, [system]: { ...prev[system], [field]: next } };
-    });
-  };
-
-  const getDirection = (system: string, field: string): FieldDirection => {
-    return fieldDirections[system]?.[field] ?? "push";
-  };
-
-  const activePushPreviews = useMemo(() => {
-    return previews
-      .filter((p) => !disabledSystems.has(p.system))
-      .map((p) => {
-        if (p.action !== "update") return p;
-        const filteredChanges = p.changes.filter(
-          (c) => (fieldDirections[p.system]?.[c.field] ?? "push") === "push",
-        );
-        return { ...p, changes: filteredChanges };
-      });
-  }, [previews, disabledSystems, fieldDirections]);
-
-  const pullFields = useMemo(() => {
-    const pulls: Record<string, SyncFieldChange[]> = {};
-    for (const preview of previews) {
-      if (disabledSystems.has(preview.system)) continue;
-      if (preview.action !== "update") continue;
-      const pullChanges = preview.changes.filter(
-        (c) => (fieldDirections[preview.system]?.[c.field] ?? "push") === "pull",
-      );
-      if (pullChanges.length > 0) pulls[preview.system] = pullChanges;
-    }
-    return pulls;
-  }, [previews, disabledSystems, fieldDirections]);
-
-  const hasActiveChanges = useMemo(() => {
-    const hasPush = activePushPreviews.some((p) => !p.noChanges && p.changes.length > 0);
-    const hasPull = Object.keys(pullFields).length > 0;
-    return hasPush || hasPull;
-  }, [activePushPreviews, pullFields]);
-
-  const handleConfirmAndSync = async () => {
-    setExecuting(true);
+    if (!isOpen) return;
+    setStep("loading");
     setError(null);
-    try {
-      const activeSystems = activePushPreviews.map((p) => p.system);
-      const allOutcomes: SyncOutcome[] = [];
+    setPlan(null);
+    setOutcomes([]);
+    setConfirmText("");
 
-      const excludedFieldsPayload: Record<string, string[]> = {};
-      for (const preview of previews) {
-        if (disabledSystems.has(preview.system)) continue;
-        if (preview.action !== "update") continue;
-        const excluded = preview.changes
-          .filter((c) => (fieldDirections[preview.system]?.[c.field] ?? "push") !== "push")
-          .map((c) => c.field);
-        if (excluded.length > 0) excludedFieldsPayload[preview.system] = excluded;
-      }
+    fetch(`/api/inventory/products/${internalProductId}/sync`)
+      .then((r) => r.json())
+      .then((data) => {
+        setSnapshots(data.snapshots);
+        setMappings(data.mappings);
+        setIntents(data.defaultIntents);
+        setBasePreviewHash(data.basePreviewHash);
+        setStep("intents");
+      })
+      .catch((err) => {
+        setError(err.message);
+        setStep("intents");
+      });
+  }, [isOpen, internalProductId]);
 
-      const hasPushChanges = activePushPreviews.some(
-        (p) => !p.noChanges && p.changes.length > 0,
-      );
+  // ── Helpers ──
 
-      if (hasPushChanges && activeSystems.length > 0) {
-        const filteredHash = await computePreviewHashClient(activePushPreviews);
+  function getSnapshotValue(system: ExternalSystem | "internal", field: string) {
+    return snapshots.find((s) => s.system === system && s.field === field)?.rawValue ?? null;
+  }
 
-        const confirmRes = await fetch(
-          `/api/inventory/products/${internalProductId}/sync/confirm`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ systems: activeSystems, changesHash: filteredHash }),
-          },
+  function isSystemLinked(system: ExternalSystem): boolean {
+    return snapshots.some((s) => s.system === system);
+  }
+
+  function getSystemMappings(system: ExternalSystem): FieldMappingEdge[] {
+    return mappings.filter(
+      (e) => e.system === system && e.direction !== "push-only",
+    );
+  }
+
+  const hasAnyDiffs = Object.values(intents).some((sysIntents) =>
+    Object.values(sysIntents).some((i) => i.direction !== "skip"),
+  );
+
+  // ── Direction cycling ──
+
+  const cycleDirection = useCallback(
+    (system: ExternalSystem, field: string) => {
+      setIntents((prev) => {
+        const current = prev[system]?.[field];
+        if (!current) return prev;
+
+        const edge = mappings.find(
+          (e) => e.system === system && e.externalField === field,
         );
-        if (!confirmRes.ok) {
-          const data = await confirmRes.json().catch(() => ({}));
-          throw new Error(data.error || "Failed to get confirmation token");
-        }
-        const { token, issuedAt } = await confirmRes.json();
+        const canPull = edge && edge.direction !== "push-only";
+        const directions: Direction[] = canPull
+          ? ["push", "skip", "pull"]
+          : ["push", "skip"];
 
-        const executeRes = await fetch(
-          `/api/inventory/products/${internalProductId}/sync`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              token,
-              issuedAt,
-              systems: activeSystems,
-              changesHash: filteredHash,
-              ...(Object.keys(excludedFieldsPayload).length > 0
-                ? { excludedFields: excludedFieldsPayload }
-                : {}),
-            }),
-          },
-        );
-        if (!executeRes.ok) {
-          const data = await executeRes.json().catch(() => ({}));
-          throw new Error(data.error || "Sync execution failed");
-        }
-        const result = await executeRes.json();
-        allOutcomes.push(...(result.outcomes || []));
+        const idx = directions.indexOf(current.direction);
+        const next = directions[(idx + 1) % directions.length];
+
+        const updated = structuredClone(prev);
+        updated[system][field] = {
+          direction: next,
+          mode: "manual",
+          updateInternalOnPull: current.updateInternalOnPull,
+        };
+        return applyCascade(updated);
+      });
+    },
+    [mappings, applyCascade],
+  );
+
+  // ── Toggle update-internal per field ──
+
+  function toggleFieldUpdateInternal(system: ExternalSystem, field: string) {
+    setIntents((prev) => {
+      const updated = structuredClone(prev);
+      const intent = updated[system]?.[field];
+      if (intent) {
+        intent.updateInternalOnPull = !intent.updateInternalOnPull;
       }
+      return updated;
+    });
+  }
 
-      if (Object.keys(pullFields).length > 0) {
-        const updatePayload: Record<string, string | number | null> = {};
-        for (const [system, changes] of Object.entries(pullFields)) {
-          // Collect pulled field names so we can resolve companions
-          const pulledFields = new Set(changes.map((c) => c.field));
+  // ── Global update-internal toggle ──
 
-          for (const change of changes) {
-            const internalField = PULL_FIELD_MAP[system]?.[change.field];
-            if (!internalField) continue;
-            if (NUMERIC_INTERNAL_FIELDS.has(internalField) && change.currentValue != null) {
-              const n = Number(change.currentValue);
-              if (Number.isFinite(n)) updatePayload[internalField] = n;
-            } else {
-              updatePayload[internalField] = change.currentValue;
-            }
+  function handleGlobalUpdateInternalToggle() {
+    const newValue = !globalUpdateInternal;
+    setGlobalUpdateInternal(newValue);
+    setIntents((prev) => {
+      const updated = structuredClone(prev);
+      for (const system of EXTERNAL_SYSTEMS) {
+        for (const intent of Object.values(updated[system] ?? {})) {
+          intent.updateInternalOnPull = newValue;
+        }
+      }
+      return updated;
+    });
+  }
 
-            // Auto-pull companion fields (e.g. vendor_name requires vendor_id)
-            const companion = COMPANION_FIELDS[system]?.[change.field];
-            if (companion && !pulledFields.has(companion)) {
-              const companionInternal = PULL_FIELD_MAP[system]?.[companion];
-              if (companionInternal) {
-                // Find companion value from the full preview data
-                const systemPreview = previews.find((p) => p.system === system);
-                const companionChange = systemPreview?.changes.find((c) => c.field === companion);
-                if (companionChange) {
-                  updatePayload[companionInternal] = companionChange.currentValue;
-                }
-              }
-            }
+  // ── Reset auto decisions ──
+
+  function resetAutoDecisions() {
+    setIntents((prev) => {
+      const updated = structuredClone(prev);
+      for (const system of EXTERNAL_SYSTEMS) {
+        for (const [field, intent] of Object.entries(updated[system] ?? {})) {
+          if (intent.mode === "manual") {
+            updated[system][field] = { ...intent, mode: "auto" };
           }
         }
+      }
+      return applyCascade(updated);
+    });
+  }
 
-        if (Object.keys(updatePayload).length > 0) {
-          const patchRes = await fetch("/api/inventory/products", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: internalProductId, ...updatePayload }),
-          });
-          allOutcomes.push({
-            system: "internal",
-            externalId: internalProductId,
-            status: patchRes.ok ? "updated" : "failed",
-            message: patchRes.ok
-              ? `Pulled ${Object.keys(updatePayload).length} field(s) to internal product.`
-              : "Failed to update internal product.",
-          });
-        }
+  // ── Preview plan ──
+
+  async function handlePreviewPlan() {
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/inventory/products/${internalProductId}/sync/plan`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ intents }),
+        },
+      );
+      if (!response.ok) {
+        const err = await response.json();
+        setError(err.error ?? "Failed to derive plan");
+        return;
+      }
+      const data = await response.json();
+      setPlan(data.plan);
+      setStep("plan-preview");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to preview plan");
+    }
+  }
+
+  // ── Execute ──
+
+  async function handleExecute() {
+    if (!plan) return;
+    setStep("executing");
+    setError(null);
+    try {
+      // 1. Get confirmation token
+      const confirmRes = await fetch(
+        `/api/inventory/products/${internalProductId}/sync/confirm`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planHash: plan.planHash }),
+        },
+      );
+      if (!confirmRes.ok) {
+        setError("Failed to get confirmation token");
+        setStep("plan-preview");
+        return;
+      }
+      const { token, issuedAt } = await confirmRes.json();
+
+      // 2. Execute via POST /sync
+      const execRes = await fetch(
+        `/api/inventory/products/${internalProductId}/sync`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planHash: plan.planHash, token, issuedAt, intents }),
+        },
+      );
+      const result = await execRes.json();
+
+      if (execRes.status === 409) {
+        setError("External state changed since preview. Please re-preview.");
+        setStep("intents");
+        return;
+      }
+      if (!execRes.ok) {
+        setError(result.error ?? "Sync failed");
+        setStep("plan-preview");
+        return;
       }
 
-      setOutcomes(
-        allOutcomes.length > 0
-          ? allOutcomes
-          : [{ system: "all", externalId: "", status: "skipped", message: "No changes to sync." }],
-      );
+      setOutcomes(result.outcomes);
+      setStep("results");
+      onSyncComplete?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync failed");
-    } finally {
-      setExecuting(false);
+      setStep("plan-preview");
     }
-  };
+  }
+
+  // ── Render ──
 
   if (!isOpen) return null;
 
-  const isConfirmed = confirmText.trim().toUpperCase() === "CONFIRM";
-  const originalHasChanges = previews.some((p) => !p.noChanges);
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-      <div className="bg-surface mx-4 max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-border p-6 shadow-card-lg">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+      <div className="bg-surface max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-border p-6 shadow-xl">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-foreground">Sync: {skuName}</h2>
-          <button onClick={onClose} className="text-muted hover:text-foreground text-xl leading-none">
+          <h2 className="text-lg font-semibold text-foreground">
+            Sync: {skuName}
+          </h2>
+          <button onClick={onClose} className="text-muted hover:text-foreground">
             &times;
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-300">
+          <div className="mb-4 rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">
             {error}
           </div>
         )}
 
-        {loading && (
-          <div className="flex items-center justify-center py-12">
+        {/* Loading */}
+        {step === "loading" && (
+          <div className="flex min-h-[200px] items-center justify-center">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
-            <span className="ml-3 text-muted">Loading preview...</span>
           </div>
         )}
 
-        {outcomes && (
-          <div className="space-y-3">
-            <h3 className="font-medium text-foreground">Sync Results</h3>
-            {outcomes.map((outcome) => (
-              <div key={outcome.system} className="flex items-center justify-between rounded-lg bg-surface-2 px-4 py-3">
-                <span className="font-medium text-foreground">
-                  {outcome.system === "internal"
-                    ? "Internal Product"
-                    : (SYSTEM_LABELS[outcome.system] || outcome.system)}
-                </span>
-                <div className="flex items-center gap-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_COLORS[outcome.status] || ""}`}>
-                    {outcome.status}
-                  </span>
-                  <span className="text-xs text-muted">{outcome.message}</span>
-                </div>
-              </div>
-            ))}
-            <button
-              onClick={onClose}
-              className="mt-4 w-full rounded-lg bg-orange-500 px-4 py-2 font-medium text-white hover:bg-orange-600"
-            >
-              Close
-            </button>
-          </div>
-        )}
-
-        {!loading && !outcomes && previews.length > 0 && (
-          <div className="space-y-4">
-            {originalHasChanges && previews.some((p) => p.action === "update" && !p.noChanges) && (
-              <div className="flex flex-wrap items-center gap-3 rounded-lg bg-surface-2 px-3 py-2 text-xs text-muted">
-                <span>Per-field sync direction:</span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-green-500 text-[10px] text-white">&rarr;</span>
-                  Push
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-blue-500 text-[10px] text-white">&larr;</span>
-                  Pull
-                </span>
-                <span className="flex items-center gap-1">
-                  <span className="inline-flex h-4 w-4 items-center justify-center rounded bg-zinc-500 text-[10px] text-white">&mdash;</span>
-                  Skip
-                </span>
-              </div>
-            )}
-
-            {previews.map((preview) => {
-              const isSystemDisabled = disabledSystems.has(preview.system);
-              const hasSystemChanges = !preview.noChanges && preview.changes.length > 0;
+        {/* Intent Editor */}
+        {step === "intents" && (
+          <div className="space-y-6">
+            {EXTERNAL_SYSTEMS.map((system) => {
+              const sysMappings = getSystemMappings(system);
+              const linked = isSystemLinked(system);
+              if (sysMappings.length === 0) return null;
 
               return (
-                <div
-                  key={preview.system}
-                  className={`rounded-lg border border-border bg-surface-2 p-4 transition-opacity ${
-                    isSystemDisabled ? "opacity-40" : ""
-                  }`}
-                >
-                  <div className="mb-2 flex items-center justify-between">
-                    <label className="flex cursor-pointer items-center gap-2">
-                      {hasSystemChanges && (
-                        <input
-                          type="checkbox"
-                          checked={!isSystemDisabled}
-                          onChange={() => toggleSystem(preview.system)}
-                          className="h-4 w-4 rounded accent-orange-500"
-                        />
-                      )}
-                      <span className="font-medium text-foreground">
-                        {SYSTEM_LABELS[preview.system] || preview.system}
-                      </span>
-                    </label>
-                    <div className="flex items-center gap-2">
-                      {preview.noChanges && (
-                        <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900/30 dark:text-green-300">
-                          No changes
-                        </span>
-                      )}
-                      {!preview.linked && preview.action === "create" && (
-                        <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                          Will create
-                        </span>
-                      )}
-                      {preview.linked && preview.action === "update" && !preview.noChanges && !isSystemDisabled && (
-                        <span className="rounded-full bg-orange-100 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
-                          Will update
-                        </span>
-                      )}
-                    </div>
+                <div key={system} className="rounded-lg border border-border p-4">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h3 className="font-medium text-foreground">
+                      {SYSTEM_LABELS[system]}
+                    </h3>
+                    <span className={`text-xs rounded-full px-2 py-0.5 ${
+                      linked
+                        ? "bg-blue-500/10 text-blue-400"
+                        : "bg-green-500/10 text-green-400"
+                    }`}>
+                      {linked ? "Update" : "Will Create"}
+                    </span>
                   </div>
 
-                  {preview.changes.length > 0 && (
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-xs text-muted">
-                          {preview.action === "update" && <th className="w-[72px] pb-1" />}
-                          <th className="pb-1 pr-4">Field</th>
-                          <th className="pb-1 pr-4">Current</th>
-                          <th className="pb-1">Proposed</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {preview.changes.map((change) => {
-                          const direction = getDirection(preview.system, change.field);
-                          const isSkipped = direction === "skip" || isSystemDisabled;
-                          const isPull = direction === "pull" && !isSystemDisabled;
-                          const isPush = direction === "push" && !isSystemDisabled;
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-muted">
+                        <th className="pb-2">Field</th>
+                        <th className="pb-2">Direction</th>
+                        <th className="pb-2">Internal</th>
+                        <th className="pb-2">External</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sysMappings.map((edge) => {
+                        const intent = intents[system]?.[edge.externalField];
+                        if (!intent) return null;
+                        const internalVal = getSnapshotValue("internal", edge.internalField);
+                        const externalVal = getSnapshotValue(system, edge.externalField);
 
-                          return (
-                            <tr
-                              key={change.field}
-                              className={`border-t border-border/50 transition-opacity ${isSkipped ? "opacity-40" : ""}`}
-                            >
-                              {preview.action === "update" && (
-                                <td className="py-1.5 pr-2">
-                                  <div className="flex gap-0.5">
-                                    <button
-                                      onClick={() => cycleFieldDirection(preview.system, change.field, "pull")}
-                                      disabled={isSystemDisabled}
-                                      title="Pull from external"
-                                      className={`rounded px-1.5 py-0.5 text-xs font-bold transition-colors ${
-                                        isPull
-                                          ? "bg-blue-500 text-white"
-                                          : "bg-surface text-muted hover:bg-blue-100 hover:text-blue-700 dark:hover:bg-blue-900/30 dark:hover:text-blue-300"
-                                      } disabled:cursor-not-allowed disabled:opacity-30`}
-                                    >
-                                      &larr;
-                                    </button>
-                                    <button
-                                      onClick={() => cycleFieldDirection(preview.system, change.field, "skip")}
-                                      disabled={isSystemDisabled}
-                                      title="Skip this field"
-                                      className={`rounded px-1.5 py-0.5 text-xs font-bold transition-colors ${
-                                        direction === "skip"
-                                          ? "bg-zinc-500 text-white"
-                                          : "bg-surface text-muted hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-700 dark:hover:text-zinc-300"
-                                      } disabled:cursor-not-allowed disabled:opacity-30`}
-                                    >
-                                      &mdash;
-                                    </button>
-                                    <button
-                                      onClick={() => cycleFieldDirection(preview.system, change.field, "push")}
-                                      disabled={isSystemDisabled}
-                                      title="Push to external"
-                                      className={`rounded px-1.5 py-0.5 text-xs font-bold transition-colors ${
-                                        isPush
-                                          ? "bg-green-500 text-white"
-                                          : "bg-surface text-muted hover:bg-green-100 hover:text-green-700 dark:hover:bg-green-900/30 dark:hover:text-green-300"
-                                      } disabled:cursor-not-allowed disabled:opacity-30`}
-                                    >
-                                      &rarr;
-                                    </button>
-                                  </div>
-                                </td>
+                        return (
+                          <tr key={edge.externalField} className="border-t border-border/50">
+                            <td className="py-2 text-foreground">
+                              {edge.externalField}
+                              {intent.mode === "auto" && (
+                                <span className="ml-1 text-xs text-muted">(auto)</span>
                               )}
-                              <td className="py-1.5 pr-4 font-mono text-xs text-muted">{change.field}</td>
-                              <td
-                                className={`max-w-[200px] truncate py-1.5 pr-4 ${
-                                  isPull
-                                    ? "font-medium text-green-600 dark:text-green-400"
-                                    : "text-red-500 line-through"
+                            </td>
+                            <td className="py-2">
+                              <button
+                                onClick={() => cycleDirection(system, edge.externalField)}
+                                className={`rounded px-2 py-0.5 text-xs font-mono ${
+                                  intent.direction === "push"
+                                    ? "bg-green-500/10 text-green-400"
+                                    : intent.direction === "pull"
+                                      ? "bg-blue-500/10 text-blue-400"
+                                      : "bg-surface-2 text-muted"
                                 }`}
                               >
-                                {change.currentValue || <span className="text-muted italic no-underline">empty</span>}
-                              </td>
-                              <td
-                                className={`max-w-[200px] truncate py-1.5 ${
-                                  isPull ? "text-red-500 line-through" : "text-green-600 dark:text-green-400"
-                                }`}
-                              >
-                                {change.proposedValue || <span className="text-muted italic no-underline">empty</span>}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  )}
+                                {intent.direction === "push" ? "\u2192 push" :
+                                 intent.direction === "pull" ? "\u2190 pull" : "\u2014 skip"}
+                              </button>
+                              {intent.direction === "pull" && (
+                                <label className="ml-2 inline-flex items-center gap-1 text-xs text-muted">
+                                  <input
+                                    type="checkbox"
+                                    checked={intent.updateInternalOnPull}
+                                    onChange={() => toggleFieldUpdateInternal(system, edge.externalField)}
+                                    className="rounded"
+                                  />
+                                  save
+                                </label>
+                              )}
+                            </td>
+                            <td className="py-2 font-mono text-xs text-muted">
+                              {internalVal ?? "\u2014"}
+                            </td>
+                            <td className="py-2 font-mono text-xs text-muted">
+                              {externalVal ?? "\u2014"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
               );
             })}
 
-            {hasActiveChanges && (
-              <div className="mt-4 space-y-3 border-t border-border pt-4">
-                <label className="block text-sm text-muted">
-                  Type <strong className="text-foreground">CONFIRM</strong> to sync selected changes:
+            {/* Global controls */}
+            <div className="flex items-center justify-between border-t border-border pt-4">
+              <div className="flex items-center gap-4">
+                <label className="inline-flex items-center gap-2 text-sm text-muted">
+                  <input
+                    type="checkbox"
+                    checked={globalUpdateInternal}
+                    onChange={handleGlobalUpdateInternalToggle}
+                    className="rounded"
+                  />
+                  Update internal on pull
                 </label>
-                <input
-                  type="text"
-                  value={confirmText}
-                  onChange={(e) => setConfirmText(e.target.value)}
-                  placeholder="CONFIRM"
-                  className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-foreground placeholder:text-muted focus:border-orange-500 focus:outline-none focus:ring-1 focus:ring-orange-500"
-                  disabled={executing}
-                />
                 <button
-                  onClick={handleConfirmAndSync}
-                  disabled={!isConfirmed || executing}
-                  className="w-full rounded-lg bg-orange-500 px-4 py-2 font-medium text-white transition-colors hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={resetAutoDecisions}
+                  className="text-xs text-muted hover:text-foreground"
                 >
-                  {executing ? "Syncing..." : "Sync Selected Changes"}
+                  Reset auto decisions
                 </button>
               </div>
-            )}
+              <button
+                onClick={handlePreviewPlan}
+                disabled={!hasAnyDiffs}
+                className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-500 disabled:opacity-50"
+              >
+                Preview Plan
+              </button>
+            </div>
+          </div>
+        )}
 
-            {!originalHasChanges && (
-              <div className="mt-4 rounded-lg bg-green-50 p-4 text-center text-sm text-green-700 dark:bg-green-900/20 dark:text-green-300">
-                All external systems are in sync. No changes needed.
+        {/* Plan Preview */}
+        {step === "plan-preview" && plan && (
+          <div className="space-y-4">
+            <button
+              onClick={() => setStep("intents")}
+              className="text-sm text-muted hover:text-foreground"
+            >
+              &larr; Back to intents
+            </button>
+
+            {/* Summary */}
+            <div className="grid grid-cols-4 gap-3 text-center text-sm">
+              <div className="rounded-lg bg-surface-2 p-3">
+                <div className="text-lg font-bold text-foreground">{plan.summary.pulls}</div>
+                <div className="text-muted">Pulls</div>
+              </div>
+              <div className="rounded-lg bg-surface-2 p-3">
+                <div className="text-lg font-bold text-foreground">{plan.summary.internalWrites}</div>
+                <div className="text-muted">Internal</div>
+              </div>
+              <div className="rounded-lg bg-surface-2 p-3">
+                <div className="text-lg font-bold text-foreground">{plan.summary.pushes}</div>
+                <div className="text-muted">Pushes</div>
+              </div>
+              <div className="rounded-lg bg-surface-2 p-3">
+                <div className="text-lg font-bold text-foreground">{plan.summary.creates}</div>
+                <div className="text-muted">Creates</div>
+              </div>
+            </div>
+
+            {/* Conflicts */}
+            {plan.conflicts.length > 0 && (
+              <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">
+                <strong>Pull conflict{plan.conflicts.length > 1 ? "s" : ""}:</strong>
+                {plan.conflicts.map((c) => (
+                  <div key={c.internalField} className="mt-1">
+                    <code>{c.internalField}</code> has conflicting values from{" "}
+                    {c.contenders.map((ct) => ct.system).join(", ")}. Resolve by
+                    changing one to skip.
+                  </div>
+                ))}
               </div>
             )}
 
-            {originalHasChanges && !hasActiveChanges && (
-              <div className="mt-4 rounded-lg bg-zinc-50 p-4 text-center text-sm text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                All changes have been skipped. Toggle fields above to sync.
+            {/* Operations list */}
+            <div className="space-y-1 text-sm">
+              {plan.operations
+                .filter((op) => !(op.kind === "pull" && op.noOp))
+                .map((op, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-2 rounded px-2 py-1 text-muted"
+                  >
+                    <span className={`rounded px-1.5 py-0.5 text-xs font-mono ${
+                      op.kind === "pull"
+                        ? "bg-blue-500/10 text-blue-400"
+                        : op.kind === "push"
+                          ? "bg-green-500/10 text-green-400"
+                          : "bg-purple-500/10 text-purple-400"
+                    }`}>
+                      {op.kind}
+                    </span>
+                    <span>{op.system}</span>
+                    <span className="font-mono">
+                      {op.kind === "create" ? `(${Object.keys(op.fields).length} fields)` : op.externalField}
+                    </span>
+                    {op.source === "cascade" && (
+                      <span className="text-xs text-yellow-400">(cascaded)</span>
+                    )}
+                  </div>
+                ))}
+            </div>
+
+            {/* Confirm + Execute */}
+            <div className="flex items-center gap-3 border-t border-border pt-4">
+              <input
+                type="text"
+                value={confirmText}
+                onChange={(e) => setConfirmText(e.target.value)}
+                placeholder='Type "confirm" to execute'
+                className="flex-1 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-foreground"
+              />
+              <button
+                onClick={handleExecute}
+                disabled={
+                  confirmText !== "confirm" || plan.conflicts.length > 0
+                }
+                className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-500 disabled:opacity-50"
+              >
+                Execute Sync
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Executing */}
+        {step === "executing" && (
+          <div className="flex min-h-[200px] items-center justify-center">
+            <div className="text-center">
+              <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
+              <p className="text-sm text-muted">Executing sync plan...</p>
+            </div>
+          </div>
+        )}
+
+        {/* Results */}
+        {step === "results" && (
+          <div className="space-y-4">
+            <h3 className="font-medium text-foreground">Sync Results</h3>
+            {outcomes.map((outcome, i) => (
+              <div
+                key={i}
+                className={`rounded-lg border px-4 py-3 text-sm ${
+                  outcome.status === "success"
+                    ? "border-green-500/30 bg-green-500/5 text-green-400"
+                    : outcome.status === "failed"
+                      ? "border-red-500/30 bg-red-500/5 text-red-400"
+                      : "border-border bg-surface-2 text-muted"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-medium">
+                    {outcome.system === "internal" ? "Internal Product" : SYSTEM_LABELS[outcome.system as ExternalSystem]}
+                  </span>
+                  <span className="text-xs uppercase">{outcome.status}</span>
+                </div>
+                <p className="mt-1 text-xs">{outcome.message}</p>
+                {outcome.fieldDetails.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {outcome.fieldDetails.map((fd) => (
+                      <span
+                        key={fd.externalField}
+                        className={`rounded-full px-2 py-0.5 text-xs ${
+                          fd.source === "cascade"
+                            ? "bg-yellow-500/10 text-yellow-400"
+                            : "bg-surface-2 text-muted"
+                        }`}
+                      >
+                        {fd.externalField}
+                        {fd.source === "cascade" && " (cascaded)"}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
-            )}
+            ))}
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={onClose}
+                className="rounded-lg bg-surface-2 px-4 py-2 text-sm text-foreground hover:bg-surface"
+              >
+                Done
+              </button>
+            </div>
           </div>
         )}
       </div>
