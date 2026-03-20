@@ -57,6 +57,13 @@ const LINKS: SuitePageCard[] = [
     section: "Field Execution",
   },
   {
+    href: "/dashboards/construction-metrics",
+    title: "Construction Completion Metrics",
+    description: "Average start-to-completion times for construction projects across all office locations.",
+    tag: "METRICS",
+    section: "Field Execution",
+  },
+  {
     href: "/dashboards/inspections",
     title: "Inspections Execution",
     description: "Inspection status tracking and AHJ analysis.",
