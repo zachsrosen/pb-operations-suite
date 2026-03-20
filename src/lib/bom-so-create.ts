@@ -18,6 +18,7 @@ import { postProcessSoItems, type SoLineItem, type BomProject, type BomItem } fr
 import { buildBomSearchTerms } from "@/lib/bom-search-terms";
 import { ZOHO_WAREHOUSE_IDS } from "@/lib/constants";
 import { searchWithRetry } from "@/lib/hubspot";
+import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import type { ActorContext } from "@/lib/actor-context";
 
 // ---------------------------------------------------------------------------
@@ -250,7 +251,7 @@ export async function createSalesOrder(params: {
   if (!resolvedLocation) {
     try {
       const dealResp = await searchWithRetry({
-        filterGroups: [{ filters: [{ propertyName: "hs_object_id", operator: "EQ", value: dealId }] }],
+        filterGroups: [{ filters: [{ propertyName: "hs_object_id", operator: FilterOperatorEnum.Eq, value: dealId }] }],
         properties: ["pb_location"],
         limit: 1,
       });
