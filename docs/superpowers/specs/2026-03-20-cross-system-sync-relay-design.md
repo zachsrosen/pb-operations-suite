@@ -340,7 +340,7 @@ POST /api/inventory/products/:id/sync/confirm
 }
 ```
 
-The approval token signs `productId + planHash + issuedAt`. No longer signs individual systems or a filtered changes hash — the plan hash covers everything. Token TTL is 5 minutes (reuses the existing `SYNC_APPROVAL_TTL_MS` from `catalog-sync-confirmation.ts`). No separate plan TTL is needed — stale detection at execute time is the safety net if external state changes between plan derivation and confirm.
+The approval token signs `productId + planHash + issuedAt`. No longer signs individual systems or a filtered changes hash — the plan hash covers everything. Token TTL is 5 minutes (reuses the existing `CATALOG_SYNC_CONFIRM_TTL_MS` from `catalog-sync-confirmation.ts`). No separate plan TTL is needed — stale detection at execute time is the safety net if external state changes between plan derivation and confirm.
 
 ### 4.4 Execute (existing, revised)
 
