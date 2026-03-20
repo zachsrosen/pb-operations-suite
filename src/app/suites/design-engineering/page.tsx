@@ -32,6 +32,13 @@ const LINKS: SuitePageCard[] = [
     section: "Design Pipeline",
   },
   {
+    href: "/dashboards/da-metrics",
+    title: "DA Metrics",
+    description: "DA turnaround by office and designer, revision quality, pipeline queue, and survey-to-DA gap tracking.",
+    tag: "DA",
+    section: "Analytics",
+  },
+  {
     href: "/dashboards/de-metrics",
     title: "D&E Metrics",
     description: "Approvals sent/approved/pending, designs drafted/stamped/completed, revenue and deal counts.",
