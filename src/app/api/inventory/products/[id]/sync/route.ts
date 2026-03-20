@@ -3,7 +3,8 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { getUserByEmail, prisma } from "@/lib/db";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { isCatalogSyncEnabled, validateSyncConfirmationToken, type SyncSystem } from "@/lib/catalog-sync-confirmation";
-import { previewSyncToLinkedSystems, computePreviewHash, executeSyncToLinkedSystems } from "@/lib/catalog-sync";
+import { previewSyncToLinkedSystems, computePreviewHash, executeSyncToLinkedSystems, applyFieldExclusions } from "@/lib/catalog-sync";
+import type { ExcludedFieldsMap } from "@/lib/catalog-sync";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -95,11 +96,24 @@ export async function POST(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { token, issuedAt, systems } = body as {
+  const { token, issuedAt, systems, excludedFields: rawExcludedFields } = body as {
     token?: string;
     issuedAt?: number;
     systems?: string[];
+    excludedFields?: Record<string, string[]>;
   };
+
+  // Parse and validate excludedFields
+  let parsedExcludedFields: ExcludedFieldsMap | undefined;
+  if (rawExcludedFields && typeof rawExcludedFields === "object" && !Array.isArray(rawExcludedFields)) {
+    parsedExcludedFields = {};
+    for (const [sys, fields] of Object.entries(rawExcludedFields)) {
+      if (Array.isArray(fields) && fields.every((f) => typeof f === "string")) {
+        parsedExcludedFields[sys] = fields;
+      }
+    }
+    if (Object.keys(parsedExcludedFields).length === 0) parsedExcludedFields = undefined;
+  }
 
   if (!token || typeof token !== "string") {
     return NextResponse.json({ error: "Confirmation token is required" }, { status: 400 });
@@ -125,11 +139,12 @@ export async function POST(
     return NextResponse.json({ error: "Product not found" }, { status: 404 });
   }
 
-  // Recompute preview server-side for the hash
-  const freshPreviews = await previewSyncToLinkedSystems(
+  // Recompute preview server-side for the hash (with exclusions applied)
+  const rawPreviews = await previewSyncToLinkedSystems(
     sku as Parameters<typeof previewSyncToLinkedSystems>[0],
     validatedSystems,
   );
+  const freshPreviews = applyFieldExclusions(rawPreviews, parsedExcludedFields);
   const freshHash = computePreviewHash(freshPreviews);
 
   // Validate token against the fresh hash
@@ -150,6 +165,7 @@ export async function POST(
       sku as Parameters<typeof executeSyncToLinkedSystems>[0],
       freshHash,
       validatedSystems,
+      parsedExcludedFields,
     );
 
     if (!result.hashMatch) {
