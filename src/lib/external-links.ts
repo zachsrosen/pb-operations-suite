@@ -2,8 +2,23 @@ const DEFAULT_HUBSPOT_PORTAL_ID = "21710069";
 const DEFAULT_ZUPER_BASE_URL = "https://web.zuperpro.com";
 const GOOGLE_CALENDAR_EVENT_BASE_URL = "https://calendar.google.com/calendar/event";
 const DEFAULT_ZOHO_ITEM_BASE_URL = "https://inventory.zoho.com/app#/items";
+
+/**
+ * Read an env var that works in both client and server contexts.
+ * Client components can only access NEXT_PUBLIC_* vars, so we check
+ * the public prefixed version first, then fall back to the non-prefixed
+ * version (which works in API routes and server components).
+ */
+function env(name: string): string {
+  return (
+    process.env[`NEXT_PUBLIC_${name}`] ||
+    process.env[name] ||
+    ""
+  ).trim();
+}
+
 export function getHubSpotDealUrl(dealId: string): string {
-  const portalId = (process.env.HUBSPOT_PORTAL_ID || DEFAULT_HUBSPOT_PORTAL_ID).trim();
+  const portalId = env("HUBSPOT_PORTAL_ID") || DEFAULT_HUBSPOT_PORTAL_ID;
   return `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`;
 }
 
@@ -19,7 +34,7 @@ function applyUrlTemplate(
 }
 
 export function getHubSpotProductUrl(productId: string): string {
-  const portalId = (process.env.HUBSPOT_PORTAL_ID || DEFAULT_HUBSPOT_PORTAL_ID).trim();
+  const portalId = env("HUBSPOT_PORTAL_ID") || DEFAULT_HUBSPOT_PORTAL_ID;
   return `https://app.hubspot.com/contacts/${portalId}/record/0-7/${encodeURIComponent(productId)}`;
 }
 
@@ -38,7 +53,7 @@ function normalizeWebBaseUrl(baseUrl: string): string {
 }
 
 export function getZuperWebBaseUrl(): string {
-  const explicitWebBase = (process.env.ZUPER_WEB_URL || "").trim();
+  const explicitWebBase = env("ZUPER_WEB_URL");
   if (explicitWebBase) {
     return normalizeWebBaseUrl(explicitWebBase);
   }
@@ -47,7 +62,7 @@ export function getZuperWebBaseUrl(): string {
 }
 
 export function getZuperProductUrl(productId: string): string {
-  const template = (process.env.ZUPER_PRODUCT_URL_TEMPLATE || "").trim();
+  const template = env("ZUPER_PRODUCT_URL_TEMPLATE");
   if (template) {
     return applyUrlTemplate(template, { id: productId });
   }
@@ -55,16 +70,16 @@ export function getZuperProductUrl(productId: string): string {
 }
 
 export function getZohoSalesOrderUrl(salesorderId: string): string {
-  const baseUrl = process.env.ZOHO_INVENTORY_WEB_URL || "https://inventory.zoho.com/app#";
+  const baseUrl = env("ZOHO_INVENTORY_WEB_URL") || "https://inventory.zoho.com/app#";
   return `${baseUrl.replace(/\/$/, "").replace(/#\/items$/, "#")}/salesorders/${encodeURIComponent(salesorderId)}`;
 }
 
 export function getZohoItemUrl(itemId: string): string {
-  const template = (process.env.ZOHO_INVENTORY_ITEM_URL_TEMPLATE || "").trim();
+  const template = env("ZOHO_INVENTORY_ITEM_URL_TEMPLATE");
   if (template) {
     return applyUrlTemplate(template, { id: itemId });
   }
-  const baseUrl = process.env.ZOHO_INVENTORY_WEB_URL || DEFAULT_ZOHO_ITEM_BASE_URL;
+  const baseUrl = env("ZOHO_INVENTORY_WEB_URL") || DEFAULT_ZOHO_ITEM_BASE_URL;
   return `${baseUrl.replace(/\/$/, "")}/${encodeURIComponent(itemId)}`;
 }
 
