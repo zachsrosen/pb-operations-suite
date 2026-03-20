@@ -4,15 +4,31 @@ const GOOGLE_CALENDAR_EVENT_BASE_URL = "https://calendar.google.com/calendar/eve
 const DEFAULT_ZOHO_DOMAIN = "https://inventory.zoho.com";
 
 /**
+ * Static map of client-visible env vars.
+ *
+ * Next.js only inlines NEXT_PUBLIC_* vars when the full literal string
+ * (e.g. `process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID`) appears in source.
+ * Computed access like `process.env[\`NEXT_PUBLIC_${name}\`]` compiles to
+ * `undefined` in client bundles.  These explicit references ensure the
+ * values are inlined at build time.
+ */
+const CLIENT_ENV: Record<string, string | undefined> = {
+  HUBSPOT_PORTAL_ID: process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID,
+  ZUPER_WEB_URL: process.env.NEXT_PUBLIC_ZUPER_WEB_URL,
+  ZOHO_INVENTORY_ORG_ID: process.env.NEXT_PUBLIC_ZOHO_INVENTORY_ORG_ID,
+};
+
+/**
  * Read an env var that works in both client and server contexts.
- * Client components can only access NEXT_PUBLIC_* vars, so we check
- * the public prefixed version first, then fall back to the non-prefixed
- * version (which works in API routes and server components).
+ * Checks the static CLIENT_ENV map first (build-time inlined for client
+ * bundles), then falls back to dynamic process.env lookups which only
+ * resolve on the server.
  */
 function env(name: string): string {
   return (
-    process.env[`NEXT_PUBLIC_${name}`] ||
-    process.env[name] ||
+    CLIENT_ENV[name] ??
+    process.env[`NEXT_PUBLIC_${name}`] ??
+    process.env[name] ??
     ""
   ).trim();
 }

@@ -44,6 +44,8 @@ export interface SyncOutcome {
 
 export interface SyncExecuteResult {
   outcomes: SyncOutcome[];
+  /** True when the fresh preview hash diverged from the approved hash. */
+  stale?: boolean;
 }
 
 // Type for a SKU record with all specs included
@@ -650,17 +652,21 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
 
 export async function executeSyncToLinkedSystems(
   sku: SkuRecord,
-  _expectedHash: string,
+  expectedHash: string,
   systems: SyncSystem[],
   excludedFields?: ExcludedFieldsMap,
 ): Promise<SyncExecuteResult> {
-  // Fetch fresh preview and apply exclusions for execution.
-  // HMAC validation already happened in the route handler, so we
-  // don't need to compare hashes here — external API responses are
-  // non-deterministic enough (Zuper/Zoho field formatting) to cause
-  // spurious mismatches between preview and execute calls.
+  // Fetch fresh preview and apply the same exclusions the admin saw.
   const rawPreviews = await previewSyncToLinkedSystems(sku, systems);
   const freshPreviews = applyFieldExclusions(rawPreviews, excludedFields);
+
+  // Verify the approved diff still matches current external state.
+  // If external data changed between preview and execute, the hash will
+  // diverge and we refuse to push unapproved changes.
+  const freshHash = computePreviewHash(freshPreviews);
+  if (freshHash !== expectedHash) {
+    return { outcomes: [], stale: true };
+  }
 
   // Execute writes in parallel
   const executeFns: Record<SyncSystem, (preview: SyncPreview) => Promise<SyncOutcome>> = {

@@ -144,9 +144,8 @@ export async function POST(
   }
 
   // Validate HMAC against the client's hash — proves admin confirmed these changes.
-  // We no longer recompute from a fresh external API preview because Zuper/Zoho
-  // responses are non-deterministic (field formatting, ordering) which caused
-  // spurious "Invalid confirmation token" errors even when data hadn't changed.
+  // The execution layer re-fetches external state and compares hashes to ensure
+  // the approved diff hasn't gone stale (returns 409 if it has).
   const validation = validateSyncConfirmationToken({
     token,
     issuedAt,
@@ -166,6 +165,13 @@ export async function POST(
       validatedSystems,
       parsedExcludedFields,
     );
+
+    if (result.stale) {
+      return NextResponse.json(
+        { error: "External state has changed since preview. Please re-preview and re-approve." },
+        { status: 409 },
+      );
+    }
 
     return NextResponse.json({
       internalProductId: sku.id,
