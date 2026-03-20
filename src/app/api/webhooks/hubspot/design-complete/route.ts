@@ -133,21 +133,28 @@ export async function POST(req: NextRequest) {
   // ── 2. Read raw body (needed for signature validation) ──
   const rawBody = await req.text();
 
-  // ── 3. Validate HubSpot signature ──
-  const signature = req.headers.get("x-hubspot-signature-v3") ?? "";
-  const timestamp = req.headers.get("x-hubspot-request-timestamp") ?? "";
+  // ── 3. Authenticate: HubSpot v3 signature OR bearer token (for Workflows / Tray) ──
+  const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "");
+  const pipelineSecret = process.env.PIPELINE_WEBHOOK_SECRET || process.env.API_SECRET_TOKEN;
+  const isBearerAuth = bearerToken && pipelineSecret && bearerToken === pipelineSecret;
 
-  const validation = validateHubSpotWebhook({
-    rawBody,
-    signature,
-    timestamp,
-    requestUrl: req.url,
-    method: "POST",
-  });
+  if (!isBearerAuth) {
+    // Fall back to HubSpot v3 HMAC signature validation
+    const signature = req.headers.get("x-hubspot-signature-v3") ?? "";
+    const timestamp = req.headers.get("x-hubspot-request-timestamp") ?? "";
 
-  if (!validation.valid) {
-    console.warn(`[design-complete] Signature validation failed: ${validation.error}`);
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    const validation = validateHubSpotWebhook({
+      rawBody,
+      signature,
+      timestamp,
+      requestUrl: req.url,
+      method: "POST",
+    });
+
+    if (!validation.valid) {
+      console.warn(`[design-complete] Auth failed: ${validation.error} (no valid bearer token either)`);
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
   }
 
   // ── 4. Parse payload ──
