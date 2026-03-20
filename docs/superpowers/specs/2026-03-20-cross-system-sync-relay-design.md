@@ -68,7 +68,7 @@ Normalization uses field-specific transforms (not plain string equality):
 | `number`         | rate, purchase_rate, price, hs_cost_of_goods_sold | Parse to float, compare numerically      |
 | `trimmed-string` | name, sku, description, part_number, unit | Trim whitespace, compare case-sensitively |
 | `enum-ci`        | manufacturer, category          | Trim, compare case-insensitively         |
-| `vendor-pair`    | vendor_name + vendor_id         | Companion pair — pulled together          |
+| `trimmed-string` | vendor_name, vendor_id          | Companion pair — auto-paired via `companion` property (see §1.3) |
 
 ### 1.3 Field Mapping Edge
 
@@ -86,6 +86,7 @@ interface FieldMappingEdge {
   condition?: { category: string[] };    // only active for these product categories
   companion?: string;                    // auto-paired field (e.g., vendor_name → vendor_id)
   generator?: string;                    // composite field generator (e.g., "zuperSpecification")
+  transform?: string;                   // pre-write transform (e.g., "zuperCategoryUid")
 }
 ```
 
@@ -93,15 +94,31 @@ interface FieldMappingEdge {
 
 **Push-only composite fields**: Zuper's `specification` field is a many-to-one composite generated from multiple internal spec fields (e.g., MODULE: `"410W Mono PERC"` from wattage + cellType). It cannot be decomposed back into individual fields on pull. Marked `direction: "push-only"` — the preview shows it as read-only with a tooltip explaining why. The `generateZuperSpecification()` function in `catalog-fields.ts` already handles the composition logic; the mapping table references it as a special-case generator rather than a simple field-to-field edge.
 
-**Companion fields**: Fields that must travel together (e.g., Zoho `vendor_name` + `vendor_id`). The `companion` property on one edge points to the other. When a pull or push includes one, the plan expander auto-includes its companion. Both fields map to separate `internalField` values (`vendorName` and `zohoVendorId`).
+**Virtual internal fields**: Fields prefixed with `_` (e.g., `_specification`, `_name`) are virtual — never persisted to the database. They exist only in the mapping table to anchor push-only composite edges. During plan derivation, virtual fields are skipped in the internal patch (Step 1). During re-materialization (Step 2), edges with a `generator` property regenerate their value from the **post-patch** internal state. This means a pull of `wattage` from HubSpot correctly cascades into an updated Zuper `specification` push because the generator reads the now-updated wattage.
+
+**Push-only `name` fields**: Across all three systems, the external `name` field is composed as `"${brand} ${model}"` via `buildSkuName()`. It cannot be decomposed back into separate brand and model fields on pull. All `name` edges are marked `direction: "push-only"` with `generator: "skuName"`.
+
+**Companion fields**: Fields that must travel together (e.g., Zoho `vendor_name` + `vendor_id`). The `companion` property on one edge points to the other. When a pull or push includes one, the plan expander auto-includes its companion. Both fields map to separate `internalField` values (`vendorName` and `zohoVendorId`). When a companion is auto-expanded, it inherits the `updateInternalOnPull` setting from the field that triggered it.
+
+**Pre-write transforms**: Some fields require a transform before writing to the external system. Zuper's `category` field needs UID resolution via `resolveZuperCategoryUid()`. The `transform` property names a registered transform function that runs at execution time (Step 3), after re-materialization but before the API call.
+
+**Category-conditional collision handling**: Some HubSpot properties map to different internal fields depending on product category (e.g., `capacity__kw_` → `continuousPowerKw` for BATTERY, `powerKw` for EV_CHARGER). The `condition` field ensures only one edge is active per product. **Validation rule**: after filtering by the product's category, no two active mappings may share the same `system + externalField` pair.
 
 Example mappings:
 
 ```ts
-// Universal mappings (all categories)
-{ system: "hubspot", externalField: "name", internalField: "model", normalizeWith: "trimmed-string" },
+// Push-only composite: name (all systems)
+{ system: "hubspot", externalField: "name", internalField: "_name",
+  normalizeWith: "trimmed-string", direction: "push-only", generator: "skuName" },
+{ system: "zoho", externalField: "name", internalField: "_name",
+  normalizeWith: "trimmed-string", direction: "push-only", generator: "skuName" },
+{ system: "zuper", externalField: "name", internalField: "_name",
+  normalizeWith: "trimmed-string", direction: "push-only", generator: "skuName" },
+
+// Bidirectional (all categories)
 { system: "hubspot", externalField: "price", internalField: "sellPrice", normalizeWith: "number" },
 { system: "hubspot", externalField: "manufacturer", internalField: "brand", normalizeWith: "enum-ci" },
+{ system: "hubspot", externalField: "hs_sku", internalField: "sku", normalizeWith: "trimmed-string" },
 
 // Category-conditional (MODULE only)
 { system: "hubspot", externalField: "dc_size", internalField: "wattage", normalizeWith: "number",
@@ -111,9 +128,19 @@ Example mappings:
 { system: "hubspot", externalField: "ac_size", internalField: "acOutputKw", normalizeWith: "number",
   condition: { category: ["INVERTER"] } },
 
-// Push-only composite
+// Category-conditional collision: same HubSpot property, different internal fields
+{ system: "hubspot", externalField: "capacity__kw_", internalField: "continuousPowerKw",
+  normalizeWith: "number", condition: { category: ["BATTERY"] } },
+{ system: "hubspot", externalField: "capacity__kw_", internalField: "powerKw",
+  normalizeWith: "number", condition: { category: ["EV_CHARGER"] } },
+
+// Push-only composite: Zuper specification
 { system: "zuper", externalField: "specification", internalField: "_specification",
-  normalizeWith: "trimmed-string", direction: "push-only" },
+  normalizeWith: "trimmed-string", direction: "push-only", generator: "zuperSpecification" },
+
+// Pre-write transform: Zuper category (name → UID)
+{ system: "zuper", externalField: "category", internalField: "category",
+  normalizeWith: "enum-ci", transform: "zuperCategoryUid" },
 
 // Companion pair
 { system: "zoho", externalField: "vendor_name", internalField: "vendorName",
@@ -156,9 +183,9 @@ type SyncOperation =
   | {
       kind: "push";
       system: ExternalSystem;
-      field: string;
+      externalField: string;
       value: string | number | null;
-      source: "manual" | "cascade";
+      source: "manual" | "cascade"; // pulls are always "manual" (see Non-Goals: no pull-to-pull cascade)
     }
   | {
       kind: "create";
@@ -313,7 +340,7 @@ POST /api/inventory/products/:id/sync/confirm
 }
 ```
 
-The approval token signs `productId + planHash + issuedAt`. No longer signs individual systems or a filtered changes hash — the plan hash covers everything.
+The approval token signs `productId + planHash + issuedAt`. No longer signs individual systems or a filtered changes hash — the plan hash covers everything. Token TTL is 5 minutes (reuses the existing `SYNC_APPROVAL_TTL_MS` from `catalog-sync-confirmation.ts`). No separate plan TTL is needed — stale detection at execute time is the safety net if external state changes between plan derivation and confirm.
 
 ### 4.4 Execute (existing, revised)
 
@@ -381,7 +408,7 @@ Outcomes are **per-system** (one push outcome per system, one create outcome per
 
 ### Step 4: Link-Back After Create
 
-When a create operation succeeds, the external system returns an ID (e.g., Zoho `item_id`, HubSpot `product_id`, Zuper `product_uid`). The server writes this back to the `InternalProduct` record (`zohoItemId`, `hubspotProductId`, `zuperProductUid`) so future syncs can update rather than re-create. This is the same link-back the current create flow performs — no new behavior, just documenting the contract.
+When a create operation succeeds, the external system returns an ID (e.g., Zoho `item_id`, HubSpot `product_id`, Zuper `product_uid`). The server writes this back to the `InternalProduct` record (`zohoItemId`, `hubspotProductId`, `zuperItemId`) so future syncs can update rather than re-create. This is the same link-back the current create flow performs — no new behavior, just documenting the contract.
 
 ### Step 5: Return Results
 
@@ -405,11 +432,31 @@ Two hashes, one approval:
 ### 6.2 Plan Hash Computation
 
 ```ts
+function opSortKey(op: SyncOperation): string {
+  const field = op.kind === "create" ? "create" : op.externalField;
+  return `${op.kind}:${op.system}:${field}`;
+}
+
+function canonicalizeOp(op: SyncOperation): Record<string, unknown> {
+  // Strip noOp (excluded from hash), keep everything else that affects the plan
+  if (op.kind === "pull") {
+    return { kind: op.kind, system: op.system, externalField: op.externalField,
+             internalField: op.internalField, value: op.value, updateInternal: op.updateInternal };
+  }
+  if (op.kind === "push") {
+    return { kind: op.kind, system: op.system, externalField: op.externalField,
+             value: op.value, source: op.source };
+  }
+  // create
+  return { kind: op.kind, system: op.system, fields: sortKeys(op.fields), source: op.source };
+}
+
 function computePlanHash(plan: SyncPlan): string {
+  const activeOps = plan.operations.filter(op => !(op.kind === "pull" && op.noOp));
   const canonical = {
     productId: plan.productId,
     internalPatch: sortKeys(plan.internalPatch),
-    operations: plan.operations
+    operations: activeOps
       .sort((a, b) => opSortKey(a).localeCompare(opSortKey(b)))
       .map(canonicalizeOp),
   };
@@ -417,7 +464,7 @@ function computePlanHash(plan: SyncPlan): string {
 }
 ```
 
-The plan hash is deterministic: same intents + same external state = same hash.
+The plan hash is deterministic: same intents + same external state = same hash. No-op pulls are excluded so they don't trigger unnecessary stale detection. Any change in no-op status between plan derivation and execution will produce a different plan hash and trigger stale detection, which is intentional — the user should re-review when a formerly no-op pull becomes active (or vice versa).
 
 ### 6.3 Stale Detection
 
