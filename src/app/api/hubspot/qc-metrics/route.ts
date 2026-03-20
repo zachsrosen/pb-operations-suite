@@ -33,12 +33,25 @@ interface MetricAverages {
   [key: string]: number | null;
 }
 
+/** Calculate days between two date strings. Returns null if either is missing. */
+function daysBetween(start: string | null | undefined, end: string | null | undefined): number | null {
+  if (!start || !end) return null;
+  const ms = new Date(end).getTime() - new Date(start).getTime();
+  if (isNaN(ms) || ms < 0) return null;
+  return ms / (1000 * 60 * 60 * 24);
+}
+
 function calculateAverages(projects: Project[]): MetricAverages {
   const result: MetricAverages = { count: projects.length };
 
   for (const metric of TIME_METRICS) {
+    // Recalculate constructionTurnaroundTime from schedule → complete dates
     const values = projects
-      .map((p) => p[metric])
+      .map((p) =>
+        metric === "constructionTurnaroundTime"
+          ? daysBetween(p.constructionScheduleDate, p.constructionCompleteDate)
+          : p[metric],
+      )
       .filter((v): v is number => v !== null && v !== undefined && !isNaN(v) && v >= 0);
 
     result[`avg_${metric}`] = values.length > 0
@@ -75,16 +88,19 @@ export async function GET(request: NextRequest) {
 
     let projects = allProjects || [];
 
-    // Filter by time window if specified
+    // Filter by construction complete date window (not closeDate)
     if (daysWindow > 0) {
       const cutoff = new Date();
       cutoff.setDate(cutoff.getDate() - daysWindow);
       const cutoffStr = cutoff.toISOString().split("T")[0];
 
       projects = projects.filter((p) => {
-        if (!p.closeDate) return false;
-        return p.closeDate >= cutoffStr;
+        if (!p.constructionCompleteDate) return false;
+        return p.constructionCompleteDate >= cutoffStr;
       });
+    } else {
+      // All time — still require construction complete date to exist
+      projects = projects.filter((p) => !!p.constructionCompleteDate);
     }
 
     // Group by location
@@ -106,10 +122,28 @@ export async function GET(request: NextRequest) {
     // Totals
     const totals = calculateAverages(projects);
 
+    // Jobs currently in construction (from full project set, not filtered)
+    const now = new Date();
+    const inConstruction = (allProjects || [])
+      .filter((p) => p.stage === "Construction" && p.constructionScheduleDate)
+      .map((p) => {
+        const schedDate = new Date(p.constructionScheduleDate!);
+        const daysInConstruction = Math.round((now.getTime() - schedDate.getTime()) / (1000 * 60 * 60 * 24));
+        return {
+          projectNumber: p.projectNumber,
+          name: p.name,
+          pbLocation: p.pbLocation || "Unknown",
+          constructionScheduleDate: p.constructionScheduleDate,
+          daysInConstruction,
+        };
+      })
+      .sort((a, b) => b.daysInConstruction - a.daysInConstruction);
+
     return NextResponse.json({
       byLocation,
       byUtility,
       totals,
+      inConstruction,
       daysWindow: daysWindow || "all",
       lastUpdated,
     });

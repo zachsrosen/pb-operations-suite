@@ -43,10 +43,19 @@ interface MetricAverages {
   [key: string]: number | null;
 }
 
+interface InConstructionProject {
+  projectNumber: string;
+  name: string;
+  pbLocation: string;
+  constructionScheduleDate: string;
+  daysInConstruction: number;
+}
+
 interface QCData {
   byLocation: Record<string, MetricAverages>;
   byUtility: Record<string, MetricAverages>;
   totals: MetricAverages;
+  inConstruction: InConstructionProject[];
   daysWindow: number | string;
   lastUpdated: string;
 }
@@ -342,6 +351,50 @@ export default function ConstructionMetricsDashboardPage() {
           })}
         </div>
       </div>
+
+      {/* ── Section 4: Jobs Currently In Construction ── */}
+      {data.inConstruction && data.inConstruction.length > 0 && (
+        <div className="mb-8">
+          <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-t-border">
+              <h2 className="text-lg font-semibold text-foreground">Currently In Construction</h2>
+              <p className="text-sm text-muted mt-0.5">{data.inConstruction.length} jobs in construction — sorted by time since scheduled</p>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-t-border bg-surface-2/50">
+                    <th className="text-left px-4 py-3 font-semibold text-foreground">Project</th>
+                    <th className="text-left px-4 py-3 font-semibold text-foreground">Customer</th>
+                    <th className="text-left px-4 py-3 font-semibold text-foreground">Location</th>
+                    <th className="text-center px-4 py-3 font-semibold text-foreground">Scheduled</th>
+                    <th className="text-center px-4 py-3 font-semibold text-foreground">Days In Construction</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.inConstruction.map((p, i) => (
+                    <tr key={p.projectNumber} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+                      <td className="px-4 py-3 font-mono text-foreground">{p.projectNumber}</td>
+                      <td className="px-4 py-3 text-foreground">{p.name}</td>
+                      <td className="px-4 py-3 text-muted">{p.pbLocation}</td>
+                      <td className="text-center px-4 py-3 text-muted">{p.constructionScheduleDate}</td>
+                      <td className={`text-center px-4 py-3 font-mono font-medium ${
+                        p.daysInConstruction < 0 ? "text-muted" :
+                        p.daysInConstruction > 14 ? "text-red-400" :
+                        p.daysInConstruction > 7 ? "text-orange-400" :
+                        p.daysInConstruction > 3 ? "text-yellow-400" :
+                        "text-emerald-400"
+                      }`}>
+                        {p.daysInConstruction < 0 ? `Starts in ${Math.abs(p.daysInConstruction)}d` : p.daysInConstruction}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
     </DashboardShell>
   );
 }

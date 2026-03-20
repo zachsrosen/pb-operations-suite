@@ -508,14 +508,14 @@ export default function ConstructionSchedulerPage() {
     queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
   }, [queryClient]);
 
-  // Fetch completed construction projects (now in Inspection+ stages) — month & year totals
+  // Fetch projects with constructionCompleteDate set — month & year totals (stage-agnostic)
   const completedQuery = useQuery({
     queryKey: ["scheduler", "completed-construction"],
     queryFn: async () => {
       const now = new Date();
       const yearStart = `${now.getFullYear()}-01-01`;
       const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
-      const res = await fetch(`/api/projects?context=all&fields=id,name,pbLocation,amount,stage,constructionCompleteDate`);
+      const res = await fetch(`/api/projects?context=all&fields=id,name,pbLocation,amount,constructionCompleteDate`);
       type LocStats = { count: number; value: number };
       const empty = { month: { count: 0, value: 0, byLocation: {} as Record<string, LocStats> }, year: { count: 0, value: 0, byLocation: {} as Record<string, LocStats> } };
       if (!res.ok) return empty;
