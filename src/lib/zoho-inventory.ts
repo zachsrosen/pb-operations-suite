@@ -163,6 +163,7 @@ export interface ZohoSalesOrderLineItem {
   name: string;
   quantity: number;
   description?: string;
+  warehouse_id?: string;  // Zoho warehouse for this line item
 }
 
 export interface ZohoSalesOrderPayload {
@@ -204,6 +205,7 @@ export interface ZohoSalesOrderRecord {
     rate?: number;
     amount?: number;
     description?: string;
+    warehouse_id?: string;
   }>;
 }
 
@@ -1056,9 +1058,19 @@ export class ZohoInventoryClient {
 
   async updateSalesOrder(
     salesorderId: string,
-    payload: Partial<Pick<ZohoSalesOrderPayload, "custom_fields">>
+    payload: Partial<Pick<ZohoSalesOrderPayload, "custom_fields" | "reference_number" | "line_items">>
   ): Promise<void> {
     await this.requestPut(`/salesorders/${encodeURIComponent(salesorderId)}`, payload);
+  }
+
+  async getSalesOrderById(salesorderId: string): Promise<ZohoSalesOrderRecord> {
+    const response = await this.request<ZohoSalesOrderGetResponse>(
+      `/salesorders/${encodeURIComponent(salesorderId)}`
+    );
+    if (!response.salesorder) {
+      throw new Error(`Sales order ${salesorderId} not found`);
+    }
+    return response.salesorder;
   }
 
   async getSalesOrder(soNumber: string): Promise<ZohoSalesOrderRecord> {

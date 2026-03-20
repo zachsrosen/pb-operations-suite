@@ -16,6 +16,8 @@ import { zohoInventory } from "@/lib/zoho-inventory";
 import { logActivity, prisma } from "@/lib/db";
 import { postProcessSoItems, type SoLineItem, type BomProject, type BomItem } from "@/lib/bom-so-post-process";
 import { buildBomSearchTerms } from "@/lib/bom-search-terms";
+import { ZOHO_WAREHOUSE_IDS } from "@/lib/constants";
+import { searchWithRetry } from "@/lib/hubspot";
 import type { ActorContext } from "@/lib/actor-context";
 
 // ---------------------------------------------------------------------------
@@ -58,8 +60,9 @@ export async function createSalesOrder(params: {
   customerId: string;
   actor: ActorContext;
   debug?: boolean;
+  pbLocation?: string | null;
 }): Promise<CreateSoResult> {
-  const { dealId, version, customerId, actor, debug } = params;
+  const { dealId, version, customerId, actor, debug, pbLocation } = params;
   const startedAt = Date.now();
 
   if (!prisma) {
@@ -242,15 +245,35 @@ export async function createSalesOrder(params: {
   const projMatch = snapshot.dealName.match(/PROJ-(\d+)/);
   const soNumber = projMatch ? `SO-${projMatch[1]}` : `SO-${dealId}`;
 
+  // Resolve warehouse from PB location (fetch from HubSpot if not provided)
+  let resolvedLocation = pbLocation;
+  if (!resolvedLocation) {
+    try {
+      const dealResp = await searchWithRetry({
+        filterGroups: [{ filters: [{ propertyName: "hs_object_id", operator: "EQ", value: dealId }] }],
+        properties: ["pb_location"],
+        limit: 1,
+      });
+      resolvedLocation = dealResp.results?.[0]?.properties?.pb_location?.trim() || null;
+    } catch {
+      // Best-effort — don't block SO creation
+    }
+  }
+  const warehouseId = resolvedLocation
+    ? ZOHO_WAREHOUSE_IDS[resolvedLocation] ?? ZOHO_WAREHOUSE_IDS[resolvedLocation.toLowerCase()]
+    : undefined;
+  if (resolvedLocation && !warehouseId) {
+    console.warn(`[BOM-SO] Unknown pb_location "${resolvedLocation}" — no warehouse mapped for deal ${dealId}`);
+  }
+
   let soResult: { salesorder_id: string; salesorder_number: string };
   try {
     soResult = await zohoInventory.createSalesOrder({
       customer_id: customerId,
       salesorder_number: soNumber,
-      reference_number: (address && snapshot.dealName.includes(address)
-        ? snapshot.dealName.replace(address, "").replace(/\s*[-–—]\s*$/, "").trim() || snapshot.dealName
-        : snapshot.dealName
-      ).slice(0, 50),
+      reference_number: snapshot.dealName
+        .split("|").slice(0, 2).join("|").trim()
+        .slice(0, 50),
       notes: `Generated from PB Ops BOM v${version}${address ? ` — ${address}` : ""}`,
       status: "draft",
       line_items: lineItems.map(({ item_id, name, quantity, description }) => ({
@@ -258,6 +281,7 @@ export async function createSalesOrder(params: {
         name,
         quantity,
         ...(description ? { description } : {}),
+        ...(warehouseId ? { warehouse_id: warehouseId } : {}),
       })),
       custom_fields: [
         { label: "HubSpot Deal Record ID", value: dealId },

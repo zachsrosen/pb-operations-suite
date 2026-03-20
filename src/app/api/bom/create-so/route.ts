@@ -35,14 +35,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
 
-  let body: { dealId?: string; version?: number; customerId?: string };
+  let body: { dealId?: string; version?: number; customerId?: string; pbLocation?: string };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const { dealId, version, customerId } = body;
+  const { dealId, version, customerId, pbLocation } = body;
   if (!dealId || typeof version !== "number" || !customerId) {
     return NextResponse.json(
       { error: "dealId, version, and customerId are required" },
@@ -69,6 +69,7 @@ export async function POST(request: NextRequest) {
       customerId,
       actor,
       debug: wantDebug,
+      pbLocation,
     });
 
     await logActivity({
