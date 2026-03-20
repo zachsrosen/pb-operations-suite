@@ -271,7 +271,12 @@ export async function createServiceSo(
     });
 
     // 5. Build + send Zoho SO
-    const warehouseId = pbLocation ? ZOHO_WAREHOUSE_IDS[pbLocation] : undefined;
+    const warehouseId = pbLocation
+      ? ZOHO_WAREHOUSE_IDS[pbLocation] ?? ZOHO_WAREHOUSE_IDS[pbLocation.toLowerCase()]
+      : undefined;
+    if (pbLocation && !warehouseId) {
+      console.warn(`[ServiceSO] Unknown pb_location "${pbLocation}" — no warehouse mapped for deal ${dealId}`);
+    }
     const zohoLineItems: ZohoSalesOrderLineItem[] = lineItems.map(li => ({
       ...(li.zohoItemId ? { item_id: li.zohoItemId } : {}),
       name: li.name,

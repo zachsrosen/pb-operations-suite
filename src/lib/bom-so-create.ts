@@ -17,7 +17,7 @@ import { logActivity, prisma } from "@/lib/db";
 import { postProcessSoItems, type SoLineItem, type BomProject, type BomItem } from "@/lib/bom-so-post-process";
 import { buildBomSearchTerms } from "@/lib/bom-search-terms";
 import { ZOHO_WAREHOUSE_IDS } from "@/lib/constants";
-import { hubspotClient } from "@/lib/hubspot";
+import { searchWithRetry } from "@/lib/hubspot";
 import type { ActorContext } from "@/lib/actor-context";
 
 // ---------------------------------------------------------------------------
@@ -249,17 +249,22 @@ export async function createSalesOrder(params: {
   let resolvedLocation = pbLocation;
   if (!resolvedLocation) {
     try {
-      const dealResp = await hubspotClient.crm.deals.batchApi.read({
-        inputs: [{ id: dealId }],
+      const dealResp = await searchWithRetry({
+        filterGroups: [{ filters: [{ propertyName: "hs_object_id", operator: "EQ", value: dealId }] }],
         properties: ["pb_location"],
-        propertiesWithHistory: [],
+        limit: 1,
       });
       resolvedLocation = dealResp.results?.[0]?.properties?.pb_location?.trim() || null;
     } catch {
       // Best-effort — don't block SO creation
     }
   }
-  const warehouseId = resolvedLocation ? ZOHO_WAREHOUSE_IDS[resolvedLocation] : undefined;
+  const warehouseId = resolvedLocation
+    ? ZOHO_WAREHOUSE_IDS[resolvedLocation] ?? ZOHO_WAREHOUSE_IDS[resolvedLocation.toLowerCase()]
+    : undefined;
+  if (resolvedLocation && !warehouseId) {
+    console.warn(`[BOM-SO] Unknown pb_location "${resolvedLocation}" — no warehouse mapped for deal ${dealId}`);
+  }
 
   let soResult: { salesorder_id: string; salesorder_number: string };
   try {

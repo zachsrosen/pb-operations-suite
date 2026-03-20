@@ -77,7 +77,7 @@ export const DEFAULT_TIMEZONE = "America/Denver";
  * Mapping of PB location names → Zoho Inventory warehouse IDs.
  * Used to set the warehouse on Sales Order line items.
  */
-export const ZOHO_WAREHOUSE_IDS: Record<string, string> = {
+const _WAREHOUSE_IDS: Record<string, string> = {
   Centennial: "5385454000000088162",
   DTC: "5385454000000088162",
   Westminster: "5385454000000114025",
@@ -85,6 +85,20 @@ export const ZOHO_WAREHOUSE_IDS: Record<string, string> = {
   "San Luis Obispo": "5385454000000114177",
   Camarillo: "5385454000001367019",
 };
+
+/** Case-insensitive + alias lookup for warehouse IDs. */
+export const ZOHO_WAREHOUSE_IDS: Record<string, string> = Object.fromEntries([
+  ...Object.entries(_WAREHOUSE_IDS),
+  ...Object.entries(_WAREHOUSE_IDS).map(([k, v]) => [k.toLowerCase(), v]),
+  // Common aliases
+  ["slo", _WAREHOUSE_IDS["San Luis Obispo"]],
+  ["california", _WAREHOUSE_IDS["San Luis Obispo"]],
+  ["co springs", _WAREHOUSE_IDS["Colorado Springs"]],
+  ["cosp", _WAREHOUSE_IDS["Colorado Springs"]],
+  ["dtc", _WAREHOUSE_IDS.DTC],
+  ["centennial", _WAREHOUSE_IDS.Centennial],
+  ["westy", _WAREHOUSE_IDS.Westminster],
+]);
 
 /** Look up the timezone for a location, falling back to DEFAULT_TIMEZONE. */
 export function getTimezoneForLocation(location: string): string {
