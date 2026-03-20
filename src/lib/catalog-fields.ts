@@ -33,7 +33,7 @@ export const CATEGORY_CONFIGS: Record<string, CategoryConfig> = {
     label: "Module",
     enumValue: "MODULE",
     hubspotValue: "Module",
-    zuperCategory: "Solar Panel",
+    zuperCategory: "Module",
 
     specTable: "moduleSpec",
     fields: [

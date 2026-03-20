@@ -23,19 +23,22 @@ const VALID_PRODUCT_TYPES = ["PRODUCT", "SERVICE", "PARTS", "BUNDLE", "LABOR"] a
  * Static fallback map of category names → Zuper product_category UIDs.
  * Used only when the live API fetch fails. The resolver prefers live data
  * so that new Zuper categories are picked up automatically.
- *
- * This map covers ALL product categories that currently exist in Zuper.
- * Categories in catalog-fields.ts like "Solar Panel", "EV Charger", etc.
- * don't have matching Zuper product categories yet — they fall back to
- * "General" with a console.warn until those categories are created in Zuper.
  */
 const ZUPER_CATEGORY_UID_FALLBACK: Record<string, string> = {
+  "general": "de36210d-534a-48cb-980d-1bb1eb2f8201",
+  "invoicing": "24afea80-4196-4db6-a4f1-59260390f563",
   "battery": "7e926259-0552-41e6-b936-547543c209c6",
   "battery expansion": "7b1c6e98-e26f-4c2b-8ef6-d3e5471269ce",
   "inverter": "e21286e7-33a1-4e19-8981-790fb1c16d56",
+  "mounting hardware": "216ce016-9317-47f9-99ea-708fe5be6a64",
+  "electrical hardwire": "883c834e-942f-418a-859f-d1c94d327950",
   "relay device": "ea843bd0-dd5f-4211-8c59-c5dccaac2fa9",
-  "invoicing": "24afea80-4196-4db6-a4f1-59260390f563",
-  "general": "de36210d-534a-48cb-980d-1bb1eb2f8201",
+  "module": "acc03811-9ffa-43c6-a621-ea814e0d29be",
+  "ev charger": "f58dfa6e-fa6e-49ba-97db-68f9bef7569a",
+  "optimizer": "dcd2feee-a21c-487e-84a1-369e5bab2541",
+  "d&r": "98f9c932-346e-48d2-a59e-eea2a1740961",
+  "service": "a7c94aae-7326-49dd-93b0-4fc95eb56b10",
+  "tesla system components": "79a9da59-62bb-460b-b547-1126603284c7",
 };
 const ZUPER_DEFAULT_CATEGORY_UID = ZUPER_CATEGORY_UID_FALLBACK["general"];
 
