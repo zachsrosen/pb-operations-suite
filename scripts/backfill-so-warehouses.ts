@@ -148,8 +148,8 @@ async function main() {
     const updatedLineItems = lineItems.map((li) => ({
       line_item_id: li.line_item_id,
       item_id: li.item_id,
-      name: li.name,
-      quantity: li.quantity,
+      name: li.name ?? "",
+      quantity: li.quantity ?? 1,
       rate: li.rate,
       description: li.description,
       warehouse_id: warehouseId,
