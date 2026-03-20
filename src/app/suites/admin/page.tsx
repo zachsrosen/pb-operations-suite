@@ -59,6 +59,14 @@ const ADMIN_TOOLS: SuitePageCard[] = [
     tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
     section: "Admin Tools",
   },
+  {
+    href: "/dashboards/availability-approvals",
+    title: "Availability Approvals",
+    description: "Review and approve or reject crew availability change requests.",
+    tag: "APPROVALS",
+    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    section: "Admin Tools",
+  },
 ];
 
 const DOCUMENTATION: SuitePageCard[] = [
