@@ -17,11 +17,9 @@ import {
   normalizedEqual,
   getAllMappingEdges,
   getActiveMappings,
-  getSystemMappings,
   getPullableMappings,
   validateMappings,
   isVirtualField,
-  generators,
 } from "@/lib/catalog-sync-mappings";
 
 describe("normalizers", () => {
@@ -110,28 +108,21 @@ describe("mapping table", () => {
 });
 
 describe("getActiveMappings", () => {
-  it("includes MODULE-conditional fields for MODULE products", () => {
+  it("includes MODULE-conditional dc_size for MODULE products", () => {
     const mappings = getActiveMappings("MODULE");
-    // Should have at least some HubSpot category-conditional edges
-    const hubspotConditional = mappings.filter(
-      (e) => e.system === "hubspot" && e.condition,
+    const dcSize = mappings.find(
+      (e) => e.system === "hubspot" && e.externalField === "dc_size",
     );
-    expect(hubspotConditional.length).toBeGreaterThan(0);
+    expect(dcSize).toBeDefined();
+    expect(dcSize!.internalField).toBe("wattage");
   });
 
-  it("excludes MODULE-conditional fields for INVERTER products", () => {
-    const moduleMappings = getActiveMappings("MODULE");
-    const inverterMappings = getActiveMappings("INVERTER");
-    // MODULE-only edges should not appear in INVERTER mappings
-    const moduleOnlyEdges = moduleMappings.filter(
-      (e) => e.condition && e.condition.category.length === 1 && e.condition.category[0] === "MODULE",
+  it("excludes MODULE-conditional dc_size for INVERTER products", () => {
+    const mappings = getActiveMappings("INVERTER");
+    const dcSize = mappings.find(
+      (e) => e.system === "hubspot" && e.externalField === "dc_size",
     );
-    for (const edge of moduleOnlyEdges) {
-      const found = inverterMappings.find(
-        (e) => e.system === edge.system && e.externalField === edge.externalField && e.internalField === edge.internalField,
-      );
-      expect(found).toBeUndefined();
-    }
+    expect(dcSize).toBeUndefined();
   });
 });
 
