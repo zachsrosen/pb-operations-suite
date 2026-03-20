@@ -154,7 +154,7 @@ function buildZohoProposedFields(sku: SkuRecord): Record<string, string | null> 
   };
 }
 
-function parseZohoCurrentFields(item: Record<string, unknown>): Record<string, string | null> {
+export function parseZohoCurrentFields(item: Record<string, unknown>): Record<string, string | null> {
   return {
     name: str(item.name),
     sku: str(item.sku),
@@ -199,18 +199,19 @@ function buildHubSpotProposedFields(sku: SkuRecord): Record<string, string | nul
   return proposed;
 }
 
-function getHubSpotPropertyNames(sku: SkuRecord): string[] {
+export function getHubSpotPropertyNames(sku: SkuRecord): string[] {
   const specData = getSpecData(sku);
   const specProps = getHubspotPropertiesFromMetadata(sku.category, specData);
   return [...HUBSPOT_CORE_PROPERTIES, ...Object.keys(specProps)];
 }
 
-function parseHubSpotCurrentFields(
+export function parseHubSpotCurrentFields(
   properties: Record<string, string>,
-  proposedKeys: string[],
+  proposedKeys?: string[],
 ): Record<string, string | null> {
+  const keys = proposedKeys ?? Object.keys(properties);
   const current: Record<string, string | null> = {};
-  for (const key of proposedKeys) {
+  for (const key of keys) {
     current[key] = str(properties[key]);
   }
   return current;
@@ -234,7 +235,7 @@ function buildZuperProposedFields(sku: SkuRecord): Record<string, string | null>
   };
 }
 
-function parseZuperCurrentFields(item: Record<string, unknown>): Record<string, string | null> {
+export function parseZuperCurrentFields(item: Record<string, unknown>): Record<string, string | null> {
   // Zuper /product/{id} returns product_* prefixed fields and nested category
   const categoryObj = item.product_category as Record<string, unknown> | undefined;
   return {
