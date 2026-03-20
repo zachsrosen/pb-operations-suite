@@ -244,3 +244,440 @@ export function computeBasePreviewHash(snapshots: FieldValueSnapshot[]): string 
     .sort((a, b) => `${a.system}:${a.field}`.localeCompare(`${b.system}:${b.field}`));
   return createHash("sha256").update(JSON.stringify(external)).digest("hex");
 }
+
+// ── Plan derivation ──
+
+function sortKeys(obj: Record<string, unknown>): Record<string, unknown> {
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(obj).sort()) {
+    sorted[key] = obj[key];
+  }
+  return sorted;
+}
+
+/** Derive a canonical sync plan from user intents + fresh snapshots.
+ *  This is the core server-side logic called by POST /sync/plan and POST /sync/execute. */
+export function derivePlan(
+  sku: SkuRecord,
+  intents: Record<ExternalSystem, Record<string, FieldIntent>>,
+  snapshots: FieldValueSnapshot[],
+  category: string,
+): SyncPlan {
+  const activeMappings = getActiveMappings(category);
+
+  // Step 1: Derive pull operations from intents
+  const pulls = derivePullOperations(intents, activeMappings, snapshots);
+
+  // Step 2: Detect conflicts (pass mappings for correct normalizeWith lookup)
+  const conflicts = detectConflicts(pulls, activeMappings);
+
+  // Step 3: Compute effective internal state (with relay-only overlays)
+  const { internalPatch, effectiveState } = computeEffectiveState(
+    sku, pulls, activeMappings,
+  );
+
+  // Step 4: Derive push and create operations
+  const pushesAndCreates = derivePushOperations(
+    sku, intents, activeMappings, snapshots, effectiveState,
+  );
+
+  // Step 5: Add generator-backed push-only fields (always server-derived)
+  const generatorOps = deriveGeneratorPushes(
+    sku, activeMappings, snapshots, effectiveState,
+  );
+
+  const allOps: SyncOperation[] = [...pulls, ...pushesAndCreates, ...generatorOps];
+
+  // Step 6: Mark no-op pulls (pass mappings for field-level downstream check)
+  markNoOpPulls(allOps, activeMappings);
+
+  // Step 7: Compute hashes
+  const basePreviewHash = computeBasePreviewHash(snapshots);
+  const planHash = computePlanHash(sku.id, internalPatch, allOps);
+
+  return {
+    productId: sku.id,
+    basePreviewHash,
+    planHash,
+    conflicts,
+    internalPatch,
+    operations: allOps,
+    summary: {
+      pulls: allOps.filter((o) => o.kind === "pull" && !o.noOp).length,
+      internalWrites: Object.keys(internalPatch).length,
+      pushes: allOps.filter((o) => o.kind === "push").length,
+      creates: allOps.filter((o) => o.kind === "create").length,
+    },
+  };
+}
+
+// ── Pull operations ──
+
+function derivePullOperations(
+  intents: Record<ExternalSystem, Record<string, FieldIntent>>,
+  mappings: FieldMappingEdge[],
+  snapshots: FieldValueSnapshot[],
+): SyncOperation[] {
+  const pulls: SyncOperation[] = [];
+
+  for (const system of EXTERNAL_SYSTEMS) {
+    const systemIntents = intents[system] ?? {};
+    for (const [externalField, intent] of Object.entries(systemIntents)) {
+      if (intent.direction !== "pull") continue;
+
+      const edge = mappings.find(
+        (e) => e.system === system && e.externalField === externalField,
+      );
+      if (!edge || edge.direction === "push-only") continue;
+
+      const snap = snapshots.find(
+        (s) => s.system === system && s.field === externalField,
+      );
+
+      pulls.push({
+        kind: "pull",
+        system,
+        externalField,
+        internalField: edge.internalField,
+        value: snap?.rawValue ?? null,
+        updateInternal: intent.updateInternalOnPull,
+        source: "manual",
+      });
+
+      // Auto-expand companion fields
+      if (edge.companion) {
+        const companionEdge = mappings.find(
+          (e) => e.system === system && e.externalField === edge.companion,
+        );
+        if (companionEdge && !pulls.some(
+          (p) => p.kind === "pull" && p.system === system &&
+                 p.externalField === edge.companion,
+        )) {
+          const companionSnap = snapshots.find(
+            (s) => s.system === system && s.field === edge.companion,
+          );
+          pulls.push({
+            kind: "pull",
+            system,
+            externalField: edge.companion!,
+            internalField: companionEdge.internalField,
+            value: companionSnap?.rawValue ?? null,
+            updateInternal: intent.updateInternalOnPull,
+            source: "manual",
+          });
+        }
+      }
+    }
+  }
+
+  return pulls;
+}
+
+// ── Conflict detection ──
+
+type PullOperation = Extract<SyncOperation, { kind: "pull" }>;
+
+function detectConflicts(
+  pulls: SyncOperation[],
+  mappings: FieldMappingEdge[],
+): PullConflict[] {
+  // Group pulls by internalField
+  const groups = new Map<string, PullOperation[]>();
+  for (const pull of pulls) {
+    if (pull.kind !== "pull") continue;
+    const key = pull.internalField;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(pull);
+  }
+
+  const conflicts: PullConflict[] = [];
+  for (const [internalField, fieldPulls] of groups) {
+    if (fieldPulls.length < 2) continue;
+
+    // Look up normalizeWith from the mapping edge for this internal field
+    const edge = mappings.find((e) => e.internalField === internalField);
+    const normalizeWith = edge?.normalizeWith ?? "trimmed-string";
+    const uniqueNormalized = new Set(
+      fieldPulls.map((p) => String(normalize(p.value, normalizeWith) ?? "")),
+    );
+
+    if (uniqueNormalized.size > 1) {
+      conflicts.push({
+        internalField,
+        contenders: fieldPulls.map((p) => ({
+          system: p.system as ExternalSystem,
+          externalField: p.externalField,
+          normalizedValue: normalize(p.value, normalizeWith),
+        })),
+      });
+    }
+  }
+  return conflicts;
+}
+
+// ── Effective state computation ──
+
+function computeEffectiveState(
+  sku: SkuRecord,
+  pulls: SyncOperation[],
+  mappings: FieldMappingEdge[],
+): { internalPatch: Record<string, string | number | null>; effectiveState: Record<string, string | number | null> } {
+  const internalPatch: Record<string, string | number | null> = {};
+  const effectiveState: Record<string, string | number | null> = {};
+
+  // Start with current internal values
+  for (const edge of mappings) {
+    if (isVirtualField(edge.internalField)) continue;
+    const current = getSkuFieldValue(sku, edge.internalField);
+    effectiveState[edge.internalField] = current;
+  }
+
+  // Apply pulls. For equal-normalized multi-pulls, use system precedence.
+  const pullsByInternal = new Map<string, PullOperation[]>();
+  for (const pull of pulls) {
+    if (pull.kind !== "pull" || isVirtualField(pull.internalField)) continue;
+    if (!pullsByInternal.has(pull.internalField)) pullsByInternal.set(pull.internalField, []);
+    pullsByInternal.get(pull.internalField)!.push(pull);
+  }
+
+  for (const [internalField, fieldPulls] of pullsByInternal) {
+    // Pick winner by system precedence
+    const winner = fieldPulls.sort(
+      (a, b) =>
+        SYSTEM_PRECEDENCE.indexOf(a.system as ExternalSystem) -
+        SYSTEM_PRECEDENCE.indexOf(b.system as ExternalSystem),
+    )[0];
+
+    effectiveState[internalField] = winner.value;
+
+    // Only add to internalPatch if at least one pull has updateInternal=true
+    const anyPersist = fieldPulls.some((p) => p.updateInternal);
+    if (anyPersist) {
+      internalPatch[internalField] = winner.value;
+    }
+  }
+
+  return { internalPatch, effectiveState };
+}
+
+// ── Push/create operation derivation ──
+
+function derivePushOperations(
+  sku: SkuRecord,
+  intents: Record<ExternalSystem, Record<string, FieldIntent>>,
+  mappings: FieldMappingEdge[],
+  snapshots: FieldValueSnapshot[],
+  effectiveState: Record<string, string | number | null>,
+): SyncOperation[] {
+  const ops: SyncOperation[] = [];
+
+  for (const system of EXTERNAL_SYSTEMS) {
+    const isLinked = isSystemLinked(system, sku);
+    const systemIntents = intents[system] ?? {};
+    const systemMappings = mappings.filter(
+      (e) => e.system === system && e.direction !== "push-only",
+    );
+
+    if (!isLinked) {
+      // Create operation: collect all pushable field values
+      const hasAnyPush = Object.values(systemIntents).some(
+        (i) => i.direction === "push",
+      );
+      if (hasAnyPush) {
+        const fields: Record<string, string | number | null> = {};
+        const pushableMappings = getPushableMappings(system, sku.category);
+        for (const edge of pushableMappings) {
+          if (edge.direction === "push-only") continue; // generators handled separately
+          fields[edge.externalField] = effectiveState[edge.internalField] ?? null;
+        }
+        ops.push({
+          kind: "create",
+          system,
+          fields,
+          source: "manual",
+        });
+      }
+      continue;
+    }
+
+    // Push operations for linked systems
+    for (const [externalField, intent] of Object.entries(systemIntents)) {
+      if (intent.direction !== "push") continue;
+
+      const edge = systemMappings.find((e) => e.externalField === externalField);
+      if (!edge) continue;
+
+      const value = effectiveState[edge.internalField] ?? null;
+      ops.push({
+        kind: "push",
+        system,
+        externalField,
+        value,
+        source: intent.mode === "auto" ? "cascade" : "manual",
+      });
+    }
+  }
+
+  return ops;
+}
+
+// ── Generator-backed push-only fields ──
+
+function deriveGeneratorPushes(
+  sku: SkuRecord,
+  mappings: FieldMappingEdge[],
+  snapshots: FieldValueSnapshot[],
+  effectiveState: Record<string, string | number | null>,
+): SyncOperation[] {
+  const ops: SyncOperation[] = [];
+
+  // Build a temporary sku-like object with effective state overlaid
+  const effectiveSku = buildEffectiveSku(sku, effectiveState);
+
+  for (const edge of mappings) {
+    if (!edge.generator || edge.direction !== "push-only") continue;
+    if (!isSystemLinked(edge.system, sku)) continue; // handled by create ops
+
+    const gen = generators[edge.generator];
+    if (!gen) continue;
+
+    const generatedValue = gen(effectiveSku);
+    const externalSnap = snapshots.find(
+      (s) => s.system === edge.system && s.field === edge.externalField,
+    );
+
+    // Only push if the generated value differs from current external
+    if (!normalizedEqual(generatedValue, externalSnap?.rawValue, edge.normalizeWith)) {
+      ops.push({
+        kind: "push",
+        system: edge.system,
+        externalField: edge.externalField,
+        value: generatedValue,
+        source: "cascade",
+      });
+    }
+  }
+
+  return ops;
+}
+
+/** Build a SkuRecord-like object with effective state values overlaid.
+ *  Used so generators read the post-patch + relay-overlay values. */
+function buildEffectiveSku(
+  sku: SkuRecord,
+  effectiveState: Record<string, string | number | null>,
+): SkuRecord {
+  const specData = getSpecData(sku) ?? {};
+  const mergedSpec = { ...specData };
+
+  // Overlay effective state onto spec data and core fields
+  const merged = { ...sku } as unknown as Record<string, unknown>;
+  for (const [field, value] of Object.entries(effectiveState)) {
+    if (field in specData) {
+      mergedSpec[field] = value;
+    } else {
+      merged[field] = value;
+    }
+  }
+
+  // Re-inject spec data into the appropriate spec relation
+  const specTable = getSpecData(sku) ? getSpecTableForSku(sku) : null;
+  if (specTable) {
+    merged[specTable] = mergedSpec;
+  }
+
+  return merged as unknown as SkuRecord;
+}
+
+function getSpecTableForSku(sku: SkuRecord): string | null {
+  if (sku.moduleSpec) return "moduleSpec";
+  if (sku.inverterSpec) return "inverterSpec";
+  if (sku.batterySpec) return "batterySpec";
+  if (sku.evChargerSpec) return "evChargerSpec";
+  if (sku.mountingHardwareSpec) return "mountingHardwareSpec";
+  if (sku.electricalHardwareSpec) return "electricalHardwareSpec";
+  if (sku.relayDeviceSpec) return "relayDeviceSpec";
+  return null;
+}
+
+// ── No-op marking ──
+
+function markNoOpPulls(
+  operations: SyncOperation[],
+  mappings: FieldMappingEdge[],
+): void {
+  for (const op of operations) {
+    if (op.kind !== "pull") continue;
+    if (op.updateInternal) continue; // persists to DB, not a no-op
+
+    // A relay-only pull is no-op if no downstream push/create on another
+    // system touches a field whose mapping shares this pull's internalField.
+    const siblingExternalFields = mappings
+      .filter(
+        (e) =>
+          e.internalField === op.internalField &&
+          e.system !== op.system &&
+          e.direction !== "pull-only",
+      )
+      .map((e) => `${e.system}:${e.externalField}`);
+
+    const hasDownstream = operations.some(
+      (other) =>
+        other !== op &&
+        (other.kind === "push" || other.kind === "create") &&
+        (other.kind === "push"
+          ? siblingExternalFields.includes(`${other.system}:${other.externalField}`)
+          : siblingExternalFields.some((sf) => sf.startsWith(`${other.system}:`))),
+    );
+
+    if (!hasDownstream) {
+      op.noOp = true;
+    }
+  }
+}
+
+// ── Plan hash ──
+
+function opSortKey(op: SyncOperation): string {
+  const field = op.kind === "create" ? "create" : op.externalField;
+  return `${op.kind}:${op.system}:${field}`;
+}
+
+function canonicalizeOp(op: SyncOperation): Record<string, unknown> {
+  if (op.kind === "pull") {
+    return {
+      kind: op.kind, system: op.system, externalField: op.externalField,
+      internalField: op.internalField, value: op.value,
+      updateInternal: op.updateInternal,
+    };
+  }
+  if (op.kind === "push") {
+    return {
+      kind: op.kind, system: op.system, externalField: op.externalField,
+      value: op.value, source: op.source,
+    };
+  }
+  return {
+    kind: op.kind, system: op.system,
+    fields: sortKeys(op.fields as Record<string, unknown>),
+    source: op.source,
+  };
+}
+
+export function computePlanHash(
+  productId: string,
+  internalPatch: Record<string, string | number | null>,
+  operations: SyncOperation[],
+): string {
+  const activeOps = operations.filter(
+    (op) => !(op.kind === "pull" && op.noOp),
+  );
+  const canonical = {
+    productId,
+    internalPatch: sortKeys(internalPatch as Record<string, unknown>),
+    operations: activeOps
+      .sort((a, b) => opSortKey(a).localeCompare(opSortKey(b)))
+      .map(canonicalizeOp),
+  };
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
