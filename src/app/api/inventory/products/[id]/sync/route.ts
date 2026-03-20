@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getUserByEmail, prisma } from "@/lib/db";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
-import { isCatalogSyncEnabled, validateSyncConfirmationToken, type SyncSystem } from "@/lib/catalog-sync-confirmation";
+import { isCatalogSyncEnabled, validateSyncConfirmationToken, validatePlanConfirmationToken, type SyncSystem } from "@/lib/catalog-sync-confirmation";
 import { previewSyncToLinkedSystems, computePreviewHash, executeSyncToLinkedSystems } from "@/lib/catalog-sync";
 import type { ExcludedFieldsMap, SkuRecord } from "@/lib/catalog-sync";
-import { buildSnapshots, deriveDefaultIntents, computeBasePreviewHash } from "@/lib/catalog-sync-plan";
+import { buildSnapshots, derivePlan, executePlan, deriveDefaultIntents, computeBasePreviewHash } from "@/lib/catalog-sync-plan";
+import type { ExternalSystem, FieldIntent } from "@/lib/catalog-sync-types";
 import { getActiveMappings } from "@/lib/catalog-sync-mappings";
 
 export const runtime = "nodejs";
@@ -111,13 +112,65 @@ export async function POST(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { token, issuedAt, systems, changesHash: clientHash, excludedFields: rawExcludedFields } = body as {
+  const {
+    token, issuedAt, systems, changesHash: clientHash, excludedFields: rawExcludedFields,
+    planHash, intents,
+  } = body as {
     token?: string;
     issuedAt?: number;
     systems?: string[];
     changesHash?: string;
     excludedFields?: Record<string, string[]>;
+    planHash?: string;
+    intents?: Record<ExternalSystem, Record<string, FieldIntent>>;
   };
+
+  // Detect new flow: request has planHash + intents
+  if (planHash && intents) {
+    const product = await prisma.internalProduct.findUnique({
+      where: { id },
+      include: SKU_INCLUDE,
+    });
+
+    if (!product) {
+      return NextResponse.json({ error: "Product not found" }, { status: 404 });
+    }
+
+    const tokenResult = await validatePlanConfirmationToken({
+      internalProductId: id,
+      planHash,
+      issuedAt: issuedAt ?? 0,
+      token: token ?? "",
+    });
+    if (!tokenResult.ok) {
+      return NextResponse.json({ error: tokenResult.error }, { status: 403 });
+    }
+
+    const sku = product as unknown as SkuRecord;
+    const snapshots = await buildSnapshots(sku, product.category);
+    const freshPlan = derivePlan(sku, intents, snapshots, product.category);
+
+    // Stale check
+    if (freshPlan.planHash !== planHash) {
+      return NextResponse.json(
+        { error: "External state changed. Re-preview required.", status: "stale" },
+        { status: 409 },
+      );
+    }
+
+    // Conflict check
+    if (freshPlan.conflicts.length > 0) {
+      return NextResponse.json(
+        { error: "Unresolved conflicts", status: "conflict", conflicts: freshPlan.conflicts },
+        { status: 409 },
+      );
+    }
+
+    const result = await executePlan(sku, freshPlan);
+    return NextResponse.json(result);
+  }
+
+  // Legacy flow below
 
   // Parse and validate excludedFields
   let parsedExcludedFields: ExcludedFieldsMap | undefined;
