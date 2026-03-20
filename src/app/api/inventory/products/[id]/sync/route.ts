@@ -114,6 +114,19 @@ export async function POST(
   if (!planHash || typeof planHash !== "string" || !intents || typeof intents !== "object" || Array.isArray(intents)) {
     return NextResponse.json({ error: "planHash and intents are required" }, { status: 400 });
   }
+  if (!token || typeof token !== "string" || typeof issuedAt !== "number" || !Number.isFinite(issuedAt)) {
+    return NextResponse.json({ error: "token and issuedAt are required" }, { status: 400 });
+  }
+
+  const tokenResult = validatePlanConfirmationToken({
+    internalProductId: id,
+    planHash,
+    issuedAt,
+    token,
+  });
+  if (!tokenResult.ok) {
+    return NextResponse.json({ error: tokenResult.error }, { status: 403 });
+  }
 
   const product = await prisma.internalProduct.findUnique({
     where: { id },
@@ -122,16 +135,6 @@ export async function POST(
 
   if (!product) {
     return NextResponse.json({ error: "Product not found" }, { status: 404 });
-  }
-
-  const tokenResult = validatePlanConfirmationToken({
-    internalProductId: id,
-    planHash,
-    issuedAt: issuedAt ?? 0,
-    token: token ?? "",
-  });
-  if (!tokenResult.ok) {
-    return NextResponse.json({ error: tokenResult.error }, { status: 403 });
   }
 
   const sku = product as unknown as SkuRecord;
