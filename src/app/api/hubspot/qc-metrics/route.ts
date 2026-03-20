@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllProjects, type Project } from "@/lib/hubspot";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
+import { getCachedZuperJobsByDealIds } from "@/lib/db";
 
 // Time metric keys on the Project interface
 const TIME_METRICS = [
@@ -67,7 +68,7 @@ function calculateAverages(projects: Project[]): MetricAverages {
 }
 
 /** Build per-deal metric values for drill-down. */
-function buildDealDetails(projects: Project[]) {
+function buildDealDetails(projects: Project[], zuperByDeal: Map<string, string>) {
   return projects.map((p) => {
     const metrics: Record<string, number | null> = {};
     for (const metric of TIME_METRICS) {
@@ -90,6 +91,7 @@ function buildDealDetails(projects: Project[]) {
       constructionScheduleDate: p.constructionScheduleDate,
       constructionCompleteDate: p.constructionCompleteDate,
       inspectionPassDate: p.inspectionPassDate,
+      zuperJobUid: zuperByDeal.get(String(p.id)) || null,
       metrics,
     };
   });
@@ -135,6 +137,14 @@ export async function GET(request: NextRequest) {
       projects = projects.filter((p) => !!p.constructionCompleteDate);
     }
 
+    // Fetch Zuper construction jobs for all filtered deals
+    const dealIds = projects.map((p) => String(p.id));
+    const zuperJobs = await getCachedZuperJobsByDealIds(dealIds, "Construction");
+    const zuperByDeal = new Map<string, string>();
+    for (const job of zuperJobs) {
+      if (job.hubspotDealId) zuperByDeal.set(job.hubspotDealId, job.jobUid);
+    }
+
     // Group by location — include deal-level details for drill-down
     const byLocationGroups = groupBy(projects, (p) => p.pbLocation || "Unknown");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -143,7 +153,7 @@ export async function GET(request: NextRequest) {
       if (loc === "Unknown") continue;
       byLocation[loc] = {
         ...calculateAverages(locProjects),
-        deals: buildDealDetails(locProjects),
+        deals: buildDealDetails(locProjects, zuperByDeal),
       };
     }
 

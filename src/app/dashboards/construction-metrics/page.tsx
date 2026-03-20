@@ -48,8 +48,11 @@ interface DealDetail {
   constructionScheduleDate: string | null;
   constructionCompleteDate: string | null;
   inspectionPassDate: string | null;
+  zuperJobUid: string | null;
   metrics: Record<string, number | null>;
 }
+
+const ZUPER_BASE_URL = "https://web.zuperpro.com";
 
 interface MetricAverages {
   count: number;
@@ -318,7 +321,7 @@ export default function ConstructionMetricsDashboardPage() {
                     <th className="text-center px-4 py-2.5 font-semibold text-foreground">Sched Date</th>
                     <th className="text-center px-4 py-2.5 font-semibold text-foreground">CC Date</th>
                     <th className="text-center px-4 py-2.5 font-semibold text-foreground">{drillDown.metricLabel}</th>
-                    <th className="text-center px-4 py-2.5 font-semibold text-foreground">HubSpot</th>
+                    <th className="text-center px-4 py-2.5 font-semibold text-foreground">Links</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -334,9 +337,16 @@ export default function ConstructionMetricsDashboardPage() {
                           {fmt(val)}
                         </td>
                         <td className="text-center px-4 py-2.5">
-                          <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-orange-400 hover:text-orange-300 underline text-xs">
-                            Open ↗
-                          </a>
+                          <div className="flex items-center justify-center gap-2">
+                            <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-orange-400 hover:text-orange-300 underline text-xs">
+                              HubSpot ↗
+                            </a>
+                            {d.zuperJobUid && (
+                              <a href={`${ZUPER_BASE_URL}/jobs/${d.zuperJobUid}/details`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 underline text-xs">
+                                Zuper ↗
+                              </a>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -385,6 +395,26 @@ export default function ConstructionMetricsDashboardPage() {
               </div>
             );
           })}
+          {/* All Locations summary card */}
+          <div className="bg-surface border border-orange-500/30 rounded-xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-orange-400">All Locations</h3>
+              <span className="text-xs text-muted bg-surface-2 px-2 py-0.5 rounded">{data.totals.count.toLocaleString()} projects</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {METRIC_COLUMNS.map((col) => {
+                const val = data.totals[col.key] as number | null;
+                return (
+                  <div key={col.key}>
+                    <p className="text-xs text-muted mb-0.5">{col.label}</p>
+                    <span className={`text-lg font-mono font-semibold ${getCellColor(val, col.thresholds)}`}>
+                      {fmt(val)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 
