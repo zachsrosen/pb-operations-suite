@@ -3,6 +3,7 @@ export interface ConstructionSchedulerProject {
   name: string;
   location: string;
   installStatus: string;
+  amount: number;
 }
 
 export interface ConstructionEventProject extends ConstructionSchedulerProject {

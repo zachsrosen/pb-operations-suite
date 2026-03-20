@@ -11,6 +11,7 @@ interface ConstructionGanttViewProps<T extends ConstructionSchedulerProject> {
   getEffectiveInstallStartDate: (project: T) => string | null;
   getEffectiveInstallDays: (project: T) => number;
   getCustomerName: (name: string) => string;
+  formatCurrency: (value: number) => string;
   formatShortDate: (dateStr: string | null | undefined) => string;
   onPrev: () => void;
   onNext: () => void;
@@ -48,6 +49,7 @@ export function ConstructionGanttView<T extends ConstructionSchedulerProject>({
   getEffectiveInstallStartDate,
   getEffectiveInstallDays,
   getCustomerName,
+  formatCurrency,
   formatShortDate,
   onPrev,
   onNext,
@@ -145,6 +147,7 @@ export function ConstructionGanttView<T extends ConstructionSchedulerProject>({
                     </div>
                     <div className="text-[0.68rem] text-muted truncate">
                       {formatShortDate(row.startDate)} - {formatShortDate(row.endDate)}
+                      {row.project.amount > 0 && <span className="text-orange-400/80 ml-1">{formatCurrency(row.project.amount)}</span>}
                     </div>
                   </button>
                 </div>

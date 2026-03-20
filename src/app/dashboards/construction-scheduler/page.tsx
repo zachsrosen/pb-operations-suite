@@ -2005,6 +2005,7 @@ export default function ConstructionSchedulerPage() {
                 getEffectiveInstallDays={getEffectiveInstallDays}
                 isInstallOverdue={isInstallOverdue}
                 getCustomerName={getCustomerName}
+                formatCurrency={formatCurrency}
                 onPrev={goToPrevMonth}
                 onNext={goToNextMonth}
                 onToday={goToToday}
@@ -2038,6 +2039,7 @@ export default function ConstructionSchedulerPage() {
                 getEffectiveInstallDays={getEffectiveInstallDays}
                 isInstallOverdue={isInstallOverdue}
                 getCustomerName={getCustomerName}
+                formatCurrency={formatCurrency}
                 formatShortDate={formatShortDate}
                 onPrev={goToPrevMonth}
                 onNext={goToNextMonth}
@@ -2065,6 +2067,7 @@ export default function ConstructionSchedulerPage() {
                 getEffectiveInstallStartDate={getEffectiveInstallStartDate}
                 getEffectiveInstallDays={getEffectiveInstallDays}
                 getCustomerName={getCustomerName}
+                formatCurrency={formatCurrency}
                 formatShortDate={formatShortDate}
                 onPrev={goToPrevMonth}
                 onNext={goToNextMonth}

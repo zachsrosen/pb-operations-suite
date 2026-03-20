@@ -92,31 +92,26 @@ export function getZuperProductUrl(productId: string): string {
 }
 
 /**
- * Build the Zoho Inventory web-app hash base:
- *   https://inventory.zoho.com/app/{orgId}#/inventory
+ * Build the Zoho Inventory web-app base (without hash module path):
+ *   https://inventory.zoho.com/app/{orgId}
  *
- * Modern Zoho Inventory URLs include the org ID in the path and use
- * `#/inventory/...` as the hash prefix for all modules (items, salesorders,
- * purchaseorders, etc.).
+ * Zoho Inventory hash routes vary by module:
+ *   Items:           #/inventory/items/{id}
+ *   Sales Orders:    #/salesorders/{id}
+ *   Purchase Orders: #/purchaseorders/{id}
  */
-function getZohoInventoryHashBase(): string {
+function getZohoAppBase(): string {
   const orgId = env("ZOHO_INVENTORY_ORG_ID");
   const domain = DEFAULT_ZOHO_DOMAIN;
-
-  if (orgId) {
-    return `${domain}/app/${orgId}#/inventory`;
-  }
-
-  // Fallback without org ID — Zoho will redirect to org-scoped URL
-  return `${domain}/app#/inventory`;
+  return orgId ? `${domain}/app/${orgId}` : `${domain}/app`;
 }
 
 export function getZohoSalesOrderUrl(salesorderId: string): string {
-  return `${getZohoInventoryHashBase()}/salesorders/${encodeURIComponent(salesorderId)}`;
+  return `${getZohoAppBase()}#/salesorders/${encodeURIComponent(salesorderId)}`;
 }
 
 export function getZohoPurchaseOrderUrl(purchaseOrderId: string): string {
-  return `${getZohoInventoryHashBase()}/purchaseorders/${encodeURIComponent(purchaseOrderId)}`;
+  return `${getZohoAppBase()}#/purchaseorders/${encodeURIComponent(purchaseOrderId)}`;
 }
 
 export function getZohoItemUrl(itemId: string): string {
@@ -124,7 +119,7 @@ export function getZohoItemUrl(itemId: string): string {
   if (template) {
     return applyUrlTemplate(template, { id: itemId });
   }
-  return `${getZohoInventoryHashBase()}/items/${encodeURIComponent(itemId)}`;
+  return `${getZohoAppBase()}#/inventory/items/${encodeURIComponent(itemId)}`;
 }
 
 export function getZuperJobUrl(jobUid?: string | null): string | null {

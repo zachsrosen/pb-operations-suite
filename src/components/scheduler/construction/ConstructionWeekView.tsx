@@ -21,6 +21,7 @@ interface ConstructionWeekViewProps<T extends ConstructionSchedulerProject> {
   getEffectiveInstallDays: (project: T) => number;
   isInstallOverdue: (project: T, manualScheduleDate?: string) => boolean;
   getCustomerName: (name: string) => string;
+  formatCurrency: (value: number) => string;
   formatShortDate: (dateStr: string | null | undefined) => string;
   onPrev: () => void;
   onNext: () => void;
@@ -58,6 +59,7 @@ export function ConstructionWeekView<T extends ConstructionSchedulerProject>({
   getEffectiveInstallDays,
   isInstallOverdue,
   getCustomerName,
+  formatCurrency,
   formatShortDate,
   onPrev,
   onNext,
@@ -186,6 +188,7 @@ export function ConstructionWeekView<T extends ConstructionSchedulerProject>({
                       {!overdue && isTentative && <span className="text-amber-300 mr-0.5">TENT</span>}
                       {ev.totalDays > 1 && <span className="font-semibold mr-0.5">D{ev.dayNum}</span>}
                       {getCustomerName(ev.name)}
+                      {ev.amount > 0 && <span className="text-orange-400/80 ml-1">{formatCurrency(ev.amount)}</span>}
                     </div>
                   );
                 })}
