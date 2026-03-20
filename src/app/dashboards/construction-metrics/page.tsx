@@ -11,7 +11,7 @@ const METRIC_COLUMNS = [
   { key: "avg_timeRtbToConstructionSchedule", label: "RTB → Scheduled", shortLabel: "RTB→Sched", thresholds: [7, 14, 30] },
   { key: "avg_constructionTurnaroundTime", label: "Construction Duration", shortLabel: "Constr", thresholds: [7, 14, 30] },
   { key: "avg_timeRtbToCc", label: "RTB → Complete", shortLabel: "RTB→CC", thresholds: [14, 30, 60] },
-  { key: "avg_timeCcToPto", label: "CC → PTO", shortLabel: "CC→PTO", thresholds: [20, 40, 60] },
+  { key: "avg_timeCcToInspectionPass", label: "CC → Inspection Passed", shortLabel: "CC→Insp", thresholds: [14, 30, 60] },
 ] as const;
 
 const DETAIL_METRICS = [

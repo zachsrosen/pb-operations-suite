@@ -11,6 +11,7 @@ const TIME_METRICS = [
   "timeToSubmitInterconnection",
   "daToRtb",
   "constructionTurnaroundTime",
+  "timeCcToInspectionPass",
   "timeCcToPto",
   "timeToCc",
   "timeToDa",
@@ -45,13 +46,15 @@ function calculateAverages(projects: Project[]): MetricAverages {
   const result: MetricAverages = { count: projects.length };
 
   for (const metric of TIME_METRICS) {
-    // Recalculate constructionTurnaroundTime from schedule → complete dates
+    // Recalculate derived metrics from date pairs instead of HubSpot pre-computed properties
     const values = projects
-      .map((p) =>
-        metric === "constructionTurnaroundTime"
-          ? daysBetween(p.constructionScheduleDate, p.constructionCompleteDate)
-          : p[metric],
-      )
+      .map((p) => {
+        if (metric === "constructionTurnaroundTime")
+          return daysBetween(p.constructionScheduleDate, p.constructionCompleteDate);
+        if (metric === "timeCcToInspectionPass")
+          return daysBetween(p.constructionCompleteDate, p.inspectionPassDate);
+        return p[metric as keyof Project] as number | null | undefined;
+      })
       .filter((v): v is number => v !== null && v !== undefined && !isNaN(v) && v >= 0);
 
     result[`avg_${metric}`] = values.length > 0
