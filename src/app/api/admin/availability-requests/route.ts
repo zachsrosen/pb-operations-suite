@@ -10,12 +10,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/auth";
-import {
-  prisma,
-  getUserByEmail,
-  upsertCrewAvailability,
-  deleteCrewAvailability,
-} from "@/lib/db";
+import { prisma, getUserByEmail } from "@/lib/db";
 import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 
 const ALLOWED_ROLES = ["ADMIN", "OWNER", "OPERATIONS_MANAGER"] as const;
@@ -112,46 +107,53 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (action === "approve") {
-      if (
-        changeRequest.requestType === "add" ||
-        changeRequest.requestType === "modify"
-      ) {
-        await upsertCrewAvailability({
-          id:
+    // Apply slot change + update request status atomically
+    const updated = await prisma.$transaction(async (tx) => {
+      if (action === "approve") {
+        if (
+          changeRequest.requestType === "add" ||
+          changeRequest.requestType === "modify"
+        ) {
+          const slotData = {
+            crewMemberId: changeRequest.crewMemberId,
+            location: changeRequest.location || "",
+            jobType: changeRequest.jobType || "survey",
+            dayOfWeek: changeRequest.dayOfWeek ?? 0,
+            startTime: changeRequest.startTime || "08:00",
+            endTime: changeRequest.endTime || "17:00",
+            timezone: "America/Denver",
+            isActive: changeRequest.isAvailable,
+            updatedBy: user.id,
+          };
+          const existingId =
             changeRequest.requestType === "modify"
               ? changeRequest.originalSlotId || undefined
-              : undefined,
-          crewMemberId: changeRequest.crewMemberId,
-          location: changeRequest.location || "",
-          jobType: changeRequest.jobType || "survey",
-          dayOfWeek: changeRequest.dayOfWeek ?? 0,
-          startTime: changeRequest.startTime || "08:00",
-          endTime: changeRequest.endTime || "17:00",
-          timezone: "America/Denver",
-          isActive: changeRequest.isAvailable,
-          updatedBy: user.id,
-        });
-      } else if (
-        changeRequest.requestType === "delete" &&
-        changeRequest.originalSlotId
-      ) {
-        await deleteCrewAvailability(changeRequest.originalSlotId);
+              : undefined;
+          if (existingId) {
+            await tx.crewAvailability.update({ where: { id: existingId }, data: slotData });
+          } else {
+            await tx.crewAvailability.create({ data: slotData });
+          }
+        } else if (
+          changeRequest.requestType === "delete" &&
+          changeRequest.originalSlotId
+        ) {
+          await tx.crewAvailability.delete({ where: { id: changeRequest.originalSlotId } });
+        }
       }
-    }
 
-    // Update the request record with review outcome
-    const updated = await prisma.availabilityChangeRequest.update({
-      where: { id: requestId },
-      data: {
-        status: action === "approve" ? "approved" : "rejected",
-        reviewedBy: user.id,
-        reviewedAt: new Date(),
-        reviewNote: note || null,
-      },
+      return tx.availabilityChangeRequest.update({
+        where: { id: requestId },
+        data: {
+          status: action === "approve" ? "approved" : "rejected",
+          reviewedBy: user.id,
+          reviewedAt: new Date(),
+          reviewNote: note || null,
+        },
+      });
     });
 
-    // Audit log
+    // Audit log (outside transaction — best-effort, non-critical)
     const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const dayLabel =
       changeRequest.dayOfWeek !== null && changeRequest.dayOfWeek !== undefined
