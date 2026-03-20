@@ -83,19 +83,19 @@ export interface SkuRecord {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function str(value: unknown): string | null {
+export function str(value: unknown): string | null {
   if (value == null) return null;
   const s = String(value).trim();
   return s.length > 0 ? s : null;
 }
 
-function numStr(value: unknown): string | null {
+export function numStr(value: unknown): string | null {
   if (value == null) return null;
   const n = Number(value);
   return Number.isFinite(n) ? String(n) : null;
 }
 
-function getSpecData(sku: SkuRecord): Record<string, unknown> {
+export function getSpecData(sku: SkuRecord): Record<string, unknown> {
   const specTable = CATEGORY_CONFIGS[sku.category]?.specTable;
   if (!specTable) return {};
   const spec = sku[specTable as keyof SkuRecord];
@@ -106,7 +106,7 @@ function getSpecData(sku: SkuRecord): Record<string, unknown> {
   return rest;
 }
 
-function buildSkuName(sku: SkuRecord): string {
+export function buildSkuName(sku: SkuRecord): string {
   return `${sku.brand || ""} ${sku.model || ""}`.trim();
 }
 
