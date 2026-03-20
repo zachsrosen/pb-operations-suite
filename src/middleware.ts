@@ -118,7 +118,19 @@ export default auth((req) => {
   const isSafeCookieRole = cookieRole && cookieRole !== "ADMIN" && cookieRole !== "OWNER";
   const shouldUseCookieRole =
     isAdminToken && !!isSafeCookieRole && (cookieRole !== "VIEWER" || isImpersonatingCookie);
-  const rawRole = (shouldUseCookieRole ? cookieRole : tokenRole) || "VIEWER";
+  // Edge-runtime JWT sync gap: When sign-in happens on edge, syncRoleToToken
+  // bails (Prisma is unavailable) and the JWT role stays undefined/VIEWER.
+  // AuthSync.tsx later calls POST /api/auth/sync which sets pb_effective_role
+  // from the DB. Trust this httpOnly cookie as a fallback so users aren't
+  // stuck at VIEWER until their JWT naturally refreshes.
+  const isEdgeSyncFallback =
+    !shouldUseCookieRole &&
+    isLoggedIn &&
+    (!tokenRole || tokenRole === "VIEWER") &&
+    cookieRole &&
+    cookieRole !== "VIEWER" &&
+    !isImpersonatingCookie;
+  const rawRole = (shouldUseCookieRole ? cookieRole : isEdgeSyncFallback ? cookieRole : tokenRole) || "VIEWER";
   const userRole = normalizeRole(rawRole);
 
   // Set Sentry context for edge-level errors
