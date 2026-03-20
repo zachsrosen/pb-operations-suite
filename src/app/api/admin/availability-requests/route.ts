@@ -153,26 +153,30 @@ export async function POST(request: NextRequest) {
       });
     });
 
-    // Audit log (outside transaction — best-effort, non-critical)
-    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    const dayLabel =
-      changeRequest.dayOfWeek !== null && changeRequest.dayOfWeek !== undefined
-        ? dayNames[changeRequest.dayOfWeek]
-        : "";
-    const headersList = await headers();
-    const reqCtx = extractRequestContext(headersList);
-    await logAdminActivity({
-      type: "AVAILABILITY_CHANGED",
-      description: `${user.name || user.email} ${action}d availability request from ${changeRequest.crewMember.name}: ${changeRequest.requestType} ${changeRequest.location || ""} ${dayLabel}`.trim(),
-      userId: user.id,
-      userEmail: user.email,
-      userName: user.name || user.email,
-      entityType: "crew_availability",
-      entityId: requestId,
-      requestPath: "/api/admin/availability-requests",
-      requestMethod: "POST",
-      ...reqCtx,
-    });
+    // Audit log — best-effort; failure must not mask a successful approval
+    try {
+      const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const dayLabel =
+        changeRequest.dayOfWeek !== null && changeRequest.dayOfWeek !== undefined
+          ? dayNames[changeRequest.dayOfWeek]
+          : "";
+      const headersList = await headers();
+      const reqCtx = extractRequestContext(headersList);
+      await logAdminActivity({
+        type: "AVAILABILITY_CHANGED",
+        description: `${user.name || user.email} ${action}d availability request from ${changeRequest.crewMember.name}: ${changeRequest.requestType} ${changeRequest.location || ""} ${dayLabel}`.trim(),
+        userId: user.id,
+        userEmail: user.email,
+        userName: user.name || user.email,
+        entityType: "crew_availability",
+        entityId: requestId,
+        requestPath: "/api/admin/availability-requests",
+        requestMethod: "POST",
+        ...reqCtx,
+      });
+    } catch (auditErr) {
+      console.error("Non-critical: failed to write audit log for availability request", auditErr);
+    }
 
     return NextResponse.json({ success: true, request: updated });
   } catch (error) {
