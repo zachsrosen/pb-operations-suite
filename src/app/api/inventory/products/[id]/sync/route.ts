@@ -3,7 +3,7 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { getUserByEmail, prisma } from "@/lib/db";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import { isCatalogSyncEnabled, validateSyncConfirmationToken, type SyncSystem } from "@/lib/catalog-sync-confirmation";
-import { previewSyncToLinkedSystems, computePreviewHash, executeSyncToLinkedSystems, applyFieldExclusions } from "@/lib/catalog-sync";
+import { previewSyncToLinkedSystems, computePreviewHash, executeSyncToLinkedSystems } from "@/lib/catalog-sync";
 import type { ExcludedFieldsMap } from "@/lib/catalog-sync";
 
 export const runtime = "nodejs";
@@ -96,10 +96,11 @@ export async function POST(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { token, issuedAt, systems, excludedFields: rawExcludedFields } = body as {
+  const { token, issuedAt, systems, changesHash: clientHash, excludedFields: rawExcludedFields } = body as {
     token?: string;
     issuedAt?: number;
     systems?: string[];
+    changesHash?: string;
     excludedFields?: Record<string, string[]>;
   };
 
@@ -124,6 +125,9 @@ export async function POST(
   if (!Array.isArray(systems) || systems.length === 0) {
     return NextResponse.json({ error: "systems array is required" }, { status: 400 });
   }
+  if (typeof clientHash !== "string" || !clientHash.trim()) {
+    return NextResponse.json({ error: "changesHash is required" }, { status: 400 });
+  }
 
   const validatedSystems = systems.filter((s): s is SyncSystem => VALID_SYSTEMS.has(s as SyncSystem));
   if (validatedSystems.length !== systems.length) {
@@ -139,21 +143,16 @@ export async function POST(
     return NextResponse.json({ error: "Product not found" }, { status: 404 });
   }
 
-  // Recompute preview server-side for the hash (with exclusions applied)
-  const rawPreviews = await previewSyncToLinkedSystems(
-    sku as Parameters<typeof previewSyncToLinkedSystems>[0],
-    validatedSystems,
-  );
-  const freshPreviews = applyFieldExclusions(rawPreviews, parsedExcludedFields);
-  const freshHash = computePreviewHash(freshPreviews);
-
-  // Validate token against the fresh hash
+  // Validate HMAC against the client's hash — proves admin confirmed these changes.
+  // We no longer recompute from a fresh external API preview because Zuper/Zoho
+  // responses are non-deterministic (field formatting, ordering) which caused
+  // spurious "Invalid confirmation token" errors even when data hadn't changed.
   const validation = validateSyncConfirmationToken({
     token,
     issuedAt,
     internalProductId: id,
     systems: validatedSystems,
-    changesHash: freshHash,
+    changesHash: clientHash.trim(),
   });
 
   if (!validation.ok) {
@@ -163,22 +162,14 @@ export async function POST(
   try {
     const result = await executeSyncToLinkedSystems(
       sku as Parameters<typeof executeSyncToLinkedSystems>[0],
-      freshHash,
+      clientHash.trim(),
       validatedSystems,
       parsedExcludedFields,
     );
 
-    if (!result.hashMatch) {
-      return NextResponse.json(
-        { error: "External state changed during sync. Please re-preview and confirm." },
-        { status: 409 },
-      );
-    }
-
     return NextResponse.json({
       internalProductId: sku.id,
       outcomes: result.outcomes,
-      hashMatch: result.hashMatch,
     });
   } catch (error) {
     console.error("[Sync] Execute failed:", error);

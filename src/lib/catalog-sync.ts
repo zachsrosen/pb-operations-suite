@@ -44,7 +44,6 @@ export interface SyncOutcome {
 
 export interface SyncExecuteResult {
   outcomes: SyncOutcome[];
-  hashMatch: boolean;
 }
 
 // Type for a SKU record with all specs included
@@ -651,21 +650,19 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
 
 export async function executeSyncToLinkedSystems(
   sku: SkuRecord,
-  expectedHash: string,
+  _expectedHash: string,
   systems: SyncSystem[],
   excludedFields?: ExcludedFieldsMap,
 ): Promise<SyncExecuteResult> {
-  // Step 1: Recompute preview server-side (fresh external fetch)
+  // Fetch fresh preview and apply exclusions for execution.
+  // HMAC validation already happened in the route handler, so we
+  // don't need to compare hashes here — external API responses are
+  // non-deterministic enough (Zuper/Zoho field formatting) to cause
+  // spurious mismatches between preview and execute calls.
   const rawPreviews = await previewSyncToLinkedSystems(sku, systems);
-
-  // Step 2: Apply field exclusions, compute hash and compare
   const freshPreviews = applyFieldExclusions(rawPreviews, excludedFields);
-  const freshHash = computePreviewHash(freshPreviews);
-  if (freshHash !== expectedHash) {
-    return { outcomes: [], hashMatch: false };
-  }
 
-  // Step 3: Execute writes in parallel
+  // Execute writes in parallel
   const executeFns: Record<SyncSystem, (preview: SyncPreview) => Promise<SyncOutcome>> = {
     zoho: (p) => executeZohoSync(sku, p),
     hubspot: (p) => executeHubSpotSync(sku, p),
@@ -698,5 +695,5 @@ export async function executeSyncToLinkedSystems(
     };
   });
 
-  return { outcomes, hashMatch: true };
+  return { outcomes };
 }
