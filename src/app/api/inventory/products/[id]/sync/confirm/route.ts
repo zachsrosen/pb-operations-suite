@@ -5,6 +5,7 @@ import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import {
   isCatalogSyncEnabled,
   buildSyncConfirmation,
+  buildPlanConfirmation,
   type SyncSystem,
 } from "@/lib/catalog-sync-confirmation";
 
@@ -40,11 +41,22 @@ export async function POST(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { systems, changesHash } = body as {
+  const { systems, changesHash, planHash } = body as {
     systems?: string[];
     changesHash?: string;
+    planHash?: string;
   };
 
+  // New flow: planHash-based confirmation
+  if (planHash && typeof planHash === "string") {
+    const confirmation = await buildPlanConfirmation(id, planHash);
+    if (!confirmation) {
+      return NextResponse.json({ error: "Failed to generate token" }, { status: 500 });
+    }
+    return NextResponse.json(confirmation);
+  }
+
+  // Legacy flow below
   if (!Array.isArray(systems) || systems.length === 0) {
     return NextResponse.json({ error: "systems array is required" }, { status: 400 });
   }
