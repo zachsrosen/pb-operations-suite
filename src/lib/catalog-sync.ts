@@ -219,11 +219,13 @@ function buildZuperProposedFields(sku: SkuRecord): Record<string, string | null>
 }
 
 function parseZuperCurrentFields(item: Record<string, unknown>): Record<string, string | null> {
+  // Zuper /product/{id} returns product_* prefixed fields and nested category
+  const categoryObj = item.product_category as Record<string, unknown> | undefined;
   return {
-    name: str(item.name ?? item.item_name ?? item.part_name),
-    sku: str(item.sku ?? item.item_sku ?? item.item_code),
-    description: str(item.description),
-    category: str(item.category ?? item.category_name),
+    name: str(item.product_name ?? item.name ?? item.item_name ?? item.part_name),
+    sku: str(item.product_id ?? item.sku ?? item.item_sku ?? item.item_code),
+    description: str(item.product_description ?? item.description),
+    category: str(categoryObj?.category_name ?? item.category ?? item.category_name),
     specification: str(item.specification),
   };
 }
@@ -614,11 +616,17 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
     };
   }
 
-  // Update existing
+  // Update existing — nest dotted keys (e.g. "custom_fields.x" → { custom_fields: { x } })
   const fields: Record<string, unknown> = {};
   for (const change of preview.changes) {
     if (change.proposedValue !== null) {
-      fields[change.field] = change.proposedValue;
+      const parts = change.field.split(".");
+      if (parts.length === 2) {
+        const parent = fields[parts[0]] as Record<string, unknown> | undefined;
+        fields[parts[0]] = { ...parent, [parts[1]]: change.proposedValue };
+      } else {
+        fields[change.field] = change.proposedValue;
+      }
     }
   }
 
