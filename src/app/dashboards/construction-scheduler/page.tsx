@@ -752,19 +752,35 @@ export default function ConstructionSchedulerPage() {
   }, [filteredProjects, manualSchedules]);
 
   const stats = useMemo(() => {
-    const total = projects.length;
-    const needsScheduling = projects.filter(p =>
+    const total = filteredProjects.length;
+    const isTentative = (p: ConstructionProject) =>
+      !!(tentativeRecordIds[p.id] || p.tentativeRecordId);
+    const readyProjects = filteredProjects.filter(p =>
       !getEffectiveInstallStartDate(p) && !manualSchedules[p.id] && !p.completionDate
-    ).length;
-    const scheduled = projects.filter(p =>
-      (manualSchedules[p.id] || getEffectiveInstallStartDate(p)) && !p.completionDate
-    ).length;
-    const completed = projects.filter(p => p.completionDate).length;
-    const overdue = projects.filter(p => isInstallOverdue(p, manualSchedules[p.id])).length;
-    const totalValue = projects.reduce((sum, p) => sum + p.amount, 0);
+    );
+    const tentativeProjects = filteredProjects.filter(p =>
+      (manualSchedules[p.id] || getEffectiveInstallStartDate(p)) && !p.completionDate && isTentative(p)
+    );
+    const scheduledProjects = filteredProjects.filter(p =>
+      (manualSchedules[p.id] || getEffectiveInstallStartDate(p)) && !p.completionDate && !isTentative(p)
+    );
+    const completedProjects = filteredProjects.filter(p => p.completionDate);
+    const overdueProjects = filteredProjects.filter(p => isInstallOverdue(p, manualSchedules[p.id]));
 
-    return { total, needsScheduling, scheduled, completed, overdue, totalValue };
-  }, [projects, manualSchedules]);
+    return {
+      total,
+      needsScheduling: readyProjects.length,
+      scheduled: scheduledProjects.length,
+      tentative: tentativeProjects.length,
+      completed: completedProjects.length,
+      overdue: overdueProjects.length,
+      totalValue: filteredProjects.reduce((sum, p) => sum + p.amount, 0),
+      readyValue: readyProjects.reduce((sum, p) => sum + p.amount, 0),
+      scheduledValue: scheduledProjects.reduce((sum, p) => sum + p.amount, 0),
+      tentativeValue: tentativeProjects.reduce((sum, p) => sum + p.amount, 0),
+      completedValue: completedProjects.reduce((sum, p) => sum + p.amount, 0),
+    };
+  }, [filteredProjects, manualSchedules, tentativeRecordIds]);
 
   const buildExistingBookings = useCallback(
     (excludeProjectId?: string): ExistingBooking[] => {
@@ -1599,29 +1615,38 @@ export default function ConstructionSchedulerPage() {
             </div>
           </div>
 
-          {/* Stats Row */}
-          <div className="flex items-center gap-6 mt-3 text-sm">
-            <div className="flex items-center gap-2">
-              <span className="text-muted">Ready:</span>
-              <span className="text-emerald-400 font-semibold">{stats.needsScheduling}</span>
+          {/* Stats Cards Row */}
+          <div className="flex items-stretch gap-3 mt-3 flex-wrap">
+            <div className="px-3 py-2 bg-emerald-400/[0.08] border border-emerald-400/20 rounded-lg text-center min-w-[90px]">
+              <div className="text-muted text-[11px]">Ready</div>
+              <div key={String(stats.needsScheduling)} className="text-emerald-400 font-bold text-lg animate-value-flash">{stats.needsScheduling}</div>
+              <div key={`rv-${stats.readyValue}`} className="text-emerald-400/80 text-xs animate-value-flash">{formatCurrency(stats.readyValue)}</div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted">Scheduled:</span>
-              <span className="text-blue-400 font-semibold">{stats.scheduled}</span>
+            <div className="px-3 py-2 bg-blue-400/[0.08] border border-blue-400/20 rounded-lg text-center min-w-[90px]">
+              <div className="text-muted text-[11px]">Scheduled</div>
+              <div key={String(stats.scheduled)} className="text-blue-400 font-bold text-lg animate-value-flash">{stats.scheduled}</div>
+              <div key={`sv-${stats.scheduledValue}`} className="text-blue-400/80 text-xs animate-value-flash">{formatCurrency(stats.scheduledValue)}</div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-muted">Completed:</span>
-              <span className="text-green-400 font-semibold">{stats.completed}</span>
+            <div className="px-3 py-2 bg-violet-400/[0.08] border border-violet-400/20 rounded-lg text-center min-w-[90px]">
+              <div className="text-muted text-[11px]">Tentative</div>
+              <div key={String(stats.tentative)} className="text-violet-400 font-bold text-lg animate-value-flash">{stats.tentative}</div>
+              <div key={`tv-${stats.tentativeValue}`} className="text-violet-400/80 text-xs animate-value-flash">{formatCurrency(stats.tentativeValue)}</div>
+            </div>
+            <div className="px-3 py-2 bg-green-400/[0.08] border border-green-400/20 rounded-lg text-center min-w-[90px]">
+              <div className="text-muted text-[11px]">Completed</div>
+              <div key={String(stats.completed)} className="text-green-400 font-bold text-lg animate-value-flash">{stats.completed}</div>
+              <div key={`cv-${stats.completedValue}`} className="text-green-400/80 text-xs animate-value-flash">{formatCurrency(stats.completedValue)}</div>
             </div>
             {stats.overdue > 0 && (
-              <div className="flex items-center gap-2">
-                <span className="text-red-400">⚠ Overdue:</span>
-                <span className="text-red-400 font-semibold">{stats.overdue}</span>
+              <div className="px-3 py-2 bg-red-400/[0.08] border border-red-400/20 rounded-lg text-center min-w-[90px]">
+                <div className="text-muted text-[11px]">⚠ Overdue</div>
+                <div key={String(stats.overdue)} className="text-red-400 font-bold text-lg animate-value-flash">{stats.overdue}</div>
               </div>
             )}
-            <div className="flex items-center gap-2">
-              <span className="text-muted">Value:</span>
-              <span className="text-orange-400 font-semibold">{formatCurrency(stats.totalValue)}</span>
+            <div className="px-3 py-2 bg-orange-400/[0.08] border border-orange-400/20 rounded-lg text-center min-w-[90px] ml-auto">
+              <div className="text-muted text-[11px]">Total Value</div>
+              <div key={String(stats.totalValue)} className="text-orange-400 font-bold text-lg animate-value-flash">{formatCurrency(stats.totalValue)}</div>
+              <div className="text-orange-400/80 text-xs">{stats.total} projects</div>
             </div>
           </div>
 
