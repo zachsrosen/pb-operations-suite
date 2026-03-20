@@ -395,6 +395,30 @@ export async function previewSyncToLinkedSystems(
 }
 
 // ---------------------------------------------------------------------------
+// Field exclusion filtering
+// ---------------------------------------------------------------------------
+
+/** Map of system → field names to exclude from sync */
+export type ExcludedFieldsMap = Record<string, string[]>;
+
+/**
+ * Filters out excluded fields from preview changes.
+ * Returns a new array — does not mutate inputs.
+ */
+export function applyFieldExclusions(
+  previews: SyncPreview[],
+  excludedFields?: ExcludedFieldsMap,
+): SyncPreview[] {
+  if (!excludedFields || Object.keys(excludedFields).length === 0) return previews;
+  return previews.map((p) => {
+    const excluded = new Set(excludedFields[p.system] || []);
+    if (excluded.size === 0) return p;
+    const filteredChanges = p.changes.filter((c) => !excluded.has(c.field));
+    return { ...p, changes: filteredChanges };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Hash
 // ---------------------------------------------------------------------------
 
@@ -621,11 +645,13 @@ export async function executeSyncToLinkedSystems(
   sku: SkuRecord,
   expectedHash: string,
   systems: SyncSystem[],
+  excludedFields?: ExcludedFieldsMap,
 ): Promise<SyncExecuteResult> {
   // Step 1: Recompute preview server-side (fresh external fetch)
-  const freshPreviews = await previewSyncToLinkedSystems(sku, systems);
+  const rawPreviews = await previewSyncToLinkedSystems(sku, systems);
 
-  // Step 2: Compute hash and compare
+  // Step 2: Apply field exclusions, compute hash and compare
+  const freshPreviews = applyFieldExclusions(rawPreviews, excludedFields);
   const freshHash = computePreviewHash(freshPreviews);
   if (freshHash !== expectedHash) {
     return { outcomes: [], hashMatch: false };
@@ -639,7 +665,17 @@ export async function executeSyncToLinkedSystems(
   };
 
   const results = await Promise.allSettled(
-    freshPreviews.map((preview) => executeFns[preview.system](preview)),
+    freshPreviews.map((preview) => {
+      if (preview.action === "update" && preview.changes.length === 0) {
+        return Promise.resolve<SyncOutcome>({
+          system: preview.system,
+          externalId: preview.externalId || "",
+          status: "skipped",
+          message: "All changes excluded.",
+        });
+      }
+      return executeFns[preview.system](preview);
+    }),
   );
 
   const outcomes: SyncOutcome[] = results.map((result, i) => {
