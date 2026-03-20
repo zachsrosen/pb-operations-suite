@@ -21,13 +21,14 @@ export function formatMoney(value: number): string {
  * Used for executive/leadership displays requiring more detail.
  */
 export function formatCurrency(value: number): string {
-  if (value >= 1_000_000) {
-    return "$" + (value / 1_000_000).toFixed(2) + "M";
+  const v = value || 0;
+  if (v >= 1_000_000) {
+    return "$" + (v / 1_000_000).toFixed(2) + "M";
   }
-  if (value >= 1_000) {
-    return "$" + (value / 1_000).toFixed(1) + "K";
+  if (v >= 1_000) {
+    return "$" + (v / 1_000).toFixed(1) + "K";
   }
-  return "$" + value.toFixed(0);
+  return "$" + v.toFixed(0);
 }
 
 /**

@@ -508,6 +508,45 @@ export default function ConstructionSchedulerPage() {
     queryClient.invalidateQueries({ queryKey: PROJECTS_QUERY_KEY });
   }, [queryClient]);
 
+  // Fetch completed construction projects (now in Inspection+ stages) — month & year totals
+  const completedQuery = useQuery({
+    queryKey: ["scheduler", "completed-construction"],
+    queryFn: async () => {
+      const now = new Date();
+      const yearStart = `${now.getFullYear()}-01-01`;
+      const monthStart = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+      const res = await fetch(`/api/projects?context=all&fields=id,name,pbLocation,amount,stage,constructionCompleteDate`);
+      type LocStats = { count: number; value: number };
+      const empty = { month: { count: 0, value: 0, byLocation: {} as Record<string, LocStats> }, year: { count: 0, value: 0, byLocation: {} as Record<string, LocStats> } };
+      if (!res.ok) return empty;
+      const data = await res.json();
+      const result = { ...empty };
+      for (const p of (data.projects || []) as RawProject[]) {
+        const cd = p.constructionCompleteDate;
+        if (!cd || cd < yearStart) continue;
+        const loc = p.pbLocation || "Unknown";
+        const amt = p.amount || 0;
+        // Year
+        if (!result.year.byLocation[loc]) result.year.byLocation[loc] = { count: 0, value: 0 };
+        result.year.byLocation[loc].count++;
+        result.year.byLocation[loc].value += amt;
+        result.year.count++;
+        result.year.value += amt;
+        // Month
+        if (cd >= monthStart) {
+          if (!result.month.byLocation[loc]) result.month.byLocation[loc] = { count: 0, value: 0 };
+          result.month.byLocation[loc].count++;
+          result.month.byLocation[loc].value += amt;
+          result.month.count++;
+          result.month.value += amt;
+        }
+      }
+      return result;
+    },
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+  });
+
   // Check Zuper configuration status
   useEffect(() => {
     async function checkZuper() {
@@ -764,23 +803,40 @@ export default function ConstructionSchedulerPage() {
     const scheduledProjects = filteredProjects.filter(p =>
       (manualSchedules[p.id] || getEffectiveInstallStartDate(p)) && !p.completionDate && !isTentative(p)
     );
-    const completedProjects = filteredProjects.filter(p => p.completionDate);
     const overdueProjects = filteredProjects.filter(p => isInstallOverdue(p, manualSchedules[p.id]));
+
+    // Completed — from separate query, filtered by active location selection
+    const cData = completedQuery.data;
+    const resolveCompleted = (bucket?: { count: number; value: number; byLocation: Record<string, { count: number; value: number }> }) => {
+      if (!bucket) return { count: 0, value: 0 };
+      if (selectedLocations.length === 0) return { count: bucket.count, value: bucket.value };
+      let count = 0, value = 0;
+      for (const loc of selectedLocations) {
+        const l = bucket.byLocation[loc];
+        if (l) { count += l.count; value += l.value; }
+      }
+      return { count, value };
+    };
+    const completedMonth = resolveCompleted(cData?.month);
+    const completedYear = resolveCompleted(cData?.year);
 
     return {
       total,
       needsScheduling: readyProjects.length,
       scheduled: scheduledProjects.length,
       tentative: tentativeProjects.length,
-      completed: completedProjects.length,
+      completedMonth: completedMonth.count,
+      completedMonthValue: completedMonth.value,
+      completedYear: completedYear.count,
+      completedYearValue: completedYear.value,
       overdue: overdueProjects.length,
       totalValue: filteredProjects.reduce((sum, p) => sum + p.amount, 0),
       readyValue: readyProjects.reduce((sum, p) => sum + p.amount, 0),
       scheduledValue: scheduledProjects.reduce((sum, p) => sum + p.amount, 0),
       tentativeValue: tentativeProjects.reduce((sum, p) => sum + p.amount, 0),
-      completedValue: completedProjects.reduce((sum, p) => sum + p.amount, 0),
+      overdueValue: overdueProjects.reduce((sum, p) => sum + p.amount, 0),
     };
-  }, [filteredProjects, manualSchedules, tentativeRecordIds]);
+  }, [filteredProjects, manualSchedules, tentativeRecordIds, completedQuery.data, selectedLocations]);
 
   const buildExistingBookings = useCallback(
     (excludeProjectId?: string): ExistingBooking[] => {
@@ -1633,14 +1689,20 @@ export default function ConstructionSchedulerPage() {
               <div key={`tv-${stats.tentativeValue}`} className="text-violet-400/80 text-xs animate-value-flash">{formatCurrency(stats.tentativeValue)}</div>
             </div>
             <div className="px-3 py-2 bg-green-400/[0.08] border border-green-400/20 rounded-lg text-center min-w-[90px]">
-              <div className="text-muted text-[11px]">Completed</div>
-              <div key={String(stats.completed)} className="text-green-400 font-bold text-lg animate-value-flash">{stats.completed}</div>
-              <div key={`cv-${stats.completedValue}`} className="text-green-400/80 text-xs animate-value-flash">{formatCurrency(stats.completedValue)}</div>
+              <div className="text-muted text-[11px]">This Month</div>
+              <div key={String(stats.completedMonth)} className="text-green-400 font-bold text-lg animate-value-flash">{stats.completedMonth}</div>
+              <div key={`cmv-${stats.completedMonthValue}`} className="text-green-400/80 text-xs animate-value-flash">{formatCurrency(stats.completedMonthValue)}</div>
+            </div>
+            <div className="px-3 py-2 bg-green-400/[0.08] border border-green-400/20 rounded-lg text-center min-w-[90px]">
+              <div className="text-muted text-[11px]">This Year</div>
+              <div key={String(stats.completedYear)} className="text-green-400 font-bold text-lg animate-value-flash">{stats.completedYear}</div>
+              <div key={`cyv-${stats.completedYearValue}`} className="text-green-400/80 text-xs animate-value-flash">{formatCurrency(stats.completedYearValue)}</div>
             </div>
             {stats.overdue > 0 && (
               <div className="px-3 py-2 bg-red-400/[0.08] border border-red-400/20 rounded-lg text-center min-w-[90px]">
                 <div className="text-muted text-[11px]">⚠ Overdue</div>
                 <div key={String(stats.overdue)} className="text-red-400 font-bold text-lg animate-value-flash">{stats.overdue}</div>
+                <div key={`ov-${stats.overdueValue}`} className="text-red-400/80 text-xs animate-value-flash">{formatCurrency(stats.overdueValue)}</div>
               </div>
             )}
             <div className="px-3 py-2 bg-orange-400/[0.08] border border-orange-400/20 rounded-lg text-center min-w-[90px] ml-auto">
