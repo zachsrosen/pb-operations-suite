@@ -33,9 +33,15 @@ function applyUrlTemplate(
   return rendered;
 }
 
+/**
+ * HubSpot products no longer have standalone record pages (the old
+ * `/record/0-7/{id}` URL now 404s). The product library list at
+ * `/objects/0-7/views/all/list` is the only working route — clicking a
+ * product name there opens a sidebar preview.
+ */
 export function getHubSpotProductUrl(productId: string): string {
   const portalId = env("HUBSPOT_PORTAL_ID") || DEFAULT_HUBSPOT_PORTAL_ID;
-  return `https://app.hubspot.com/contacts/${portalId}/record/0-7/${encodeURIComponent(productId)}`;
+  return `https://app.hubspot.com/contacts/${portalId}/objects/0-7/views/all/list`;
 }
 
 function normalizeWebBaseUrl(baseUrl: string): string {
