@@ -49,7 +49,7 @@ export async function POST(
 
   // New flow: planHash-based confirmation
   if (planHash && typeof planHash === "string") {
-    const confirmation = await buildPlanConfirmation(id, planHash);
+    const confirmation = buildPlanConfirmation(id, planHash);
     if (!confirmation) {
       return NextResponse.json({ error: "Failed to generate token" }, { status: 500 });
     }

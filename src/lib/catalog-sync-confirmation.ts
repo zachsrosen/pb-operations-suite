@@ -150,18 +150,18 @@ function toPlanCanonicalPayload(input: PlanConfirmationInput): string {
   });
 }
 
-export async function createPlanConfirmationToken(
+export function createPlanConfirmationToken(
   input: PlanConfirmationInput,
-): Promise<string | null> {
+): string | null {
   const secret = getSyncConfirmationSecret();
   if (!secret) return null;
   const payload = toPlanCanonicalPayload(input);
   return createHmac("sha256", secret).update(payload).digest("hex");
 }
 
-export async function validatePlanConfirmationToken(
+export function validatePlanConfirmationToken(
   input: PlanConfirmationInput & { token: string },
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): { ok: true } | { ok: false; error: string } {
   const now = Date.now();
   if (input.issuedAt > now + 60_000) {
     return { ok: false, error: "Token issued in the future" };
@@ -169,7 +169,7 @@ export async function validatePlanConfirmationToken(
   if (now - input.issuedAt > CATALOG_SYNC_CONFIRM_TTL_MS) {
     return { ok: false, error: "Token expired" };
   }
-  const expected = await createPlanConfirmationToken(input);
+  const expected = createPlanConfirmationToken(input);
   if (!expected || !secureEquals(input.token, expected)) {
     return { ok: false, error: "Invalid token" };
   }
@@ -180,18 +180,17 @@ export function buildPlanConfirmation(
   internalProductId: string,
   planHash: string,
   issuedAt?: number,
-): Promise<{ token: string; issuedAt: number; expiresAt: number } | null> {
+): { token: string; issuedAt: number; expiresAt: number } | null {
   const now = issuedAt ?? Date.now();
-  return createPlanConfirmationToken({
+  const token = createPlanConfirmationToken({
     internalProductId,
     planHash,
     issuedAt: now,
-  }).then((token) => {
-    if (!token) return null;
-    return {
-      token,
-      issuedAt: now,
-      expiresAt: now + CATALOG_SYNC_CONFIRM_TTL_MS,
-    };
   });
+  if (!token) return null;
+  return {
+    token,
+    issuedAt: now,
+    expiresAt: now + CATALOG_SYNC_CONFIRM_TTL_MS,
+  };
 }

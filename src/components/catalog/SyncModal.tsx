@@ -44,7 +44,6 @@ export default function SyncModal({
   const [snapshots, setSnapshots] = useState<FieldValueSnapshot[]>([]);
   const [mappings, setMappings] = useState<FieldMappingEdge[]>([]);
   const [intents, setIntents] = useState<IntentsMap>({ zoho: {}, hubspot: {}, zuper: {} });
-  const [, setBasePreviewHash] = useState<string>("");
   const [globalUpdateInternal, setGlobalUpdateInternal] = useState(true);
   const [plan, setPlan] = useState<SyncPlan | null>(null);
   const [outcomes, setOutcomes] = useState<SyncOperationOutcome[]>([]);
@@ -62,12 +61,14 @@ export default function SyncModal({
     setConfirmText("");
 
     fetch(`/api/inventory/products/${internalProductId}/sync`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to load sync data");
+        return r.json();
+      })
       .then((data) => {
         setSnapshots(data.snapshots);
         setMappings(data.mappings);
         setIntents(data.defaultIntents);
-        setBasePreviewHash(data.basePreviewHash);
         setStep("intents");
       })
       .catch((err) => {

@@ -126,7 +126,7 @@ export async function POST(
   };
 
   // Detect new flow: request has planHash + intents
-  if (planHash && intents) {
+  if (planHash && typeof planHash === "string" && intents && typeof intents === "object" && !Array.isArray(intents)) {
     const product = await prisma.internalProduct.findUnique({
       where: { id },
       include: SKU_INCLUDE,
@@ -136,7 +136,7 @@ export async function POST(
       return NextResponse.json({ error: "Product not found" }, { status: 404 });
     }
 
-    const tokenResult = await validatePlanConfirmationToken({
+    const tokenResult = validatePlanConfirmationToken({
       internalProductId: id,
       planHash,
       issuedAt: issuedAt ?? 0,
