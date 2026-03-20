@@ -21,8 +21,10 @@ interface UseSyncCascadeOptions {
  *  sibling fields on other systems auto-set to push or skip. */
 export function useSyncCascade({ mappings, snapshots }: UseSyncCascadeOptions) {
   const mappingsRef = useRef(mappings);
+  // eslint-disable-next-line react-hooks/refs
   mappingsRef.current = mappings;
   const snapshotsRef = useRef(snapshots);
+  // eslint-disable-next-line react-hooks/refs
   snapshotsRef.current = snapshots;
 
   /** Run cascade logic over the full intent map. Returns a new intents object. */

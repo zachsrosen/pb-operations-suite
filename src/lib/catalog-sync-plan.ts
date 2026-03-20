@@ -725,7 +725,7 @@ export async function executePlan(
   );
 
   return {
-    status: allSuccess ? "success" : "partial",
+    status: anyFailed ? "partial" : allSuccess ? "success" : "partial",
     planHash: plan.planHash,
     outcomes,
   };
