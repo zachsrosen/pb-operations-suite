@@ -1,6 +1,6 @@
 // src/hooks/useSyncCascade.ts
 
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import type {
   ExternalSystem,
   FieldIntent,
@@ -22,9 +22,9 @@ interface UseSyncCascadeOptions {
 export function useSyncCascade({ mappings, snapshots }: UseSyncCascadeOptions) {
   // Refs keep applyCascade's closure fresh without changing its identity
   const mappingsRef = useRef(mappings);
-  mappingsRef.current = mappings;
+  useEffect(() => { mappingsRef.current = mappings; });
   const snapshotsRef = useRef(snapshots);
-  snapshotsRef.current = snapshots;
+  useEffect(() => { snapshotsRef.current = snapshots; });
 
   /** Run cascade logic over the full intent map. Returns a new intents object. */
   const applyCascade = useCallback(

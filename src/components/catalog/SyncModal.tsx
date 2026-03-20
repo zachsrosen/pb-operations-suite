@@ -51,14 +51,23 @@ export default function SyncModal({
 
   const { applyCascade } = useSyncCascade({ mappings, snapshots });
 
-  // ── Load data on open ──
-  useEffect(() => {
-    if (!isOpen) return;
+  // ── Reset state when modal opens (adjust-state-during-render pattern) ──
+  const [prevOpen, setPrevOpen] = useState(false);
+  if (isOpen && !prevOpen) {
+    setPrevOpen(true);
     setStep("loading");
     setError(null);
     setPlan(null);
     setOutcomes([]);
     setConfirmText("");
+  }
+  if (!isOpen && prevOpen) {
+    setPrevOpen(false);
+  }
+
+  // ── Fetch data on open ──
+  useEffect(() => {
+    if (!isOpen) return;
 
     fetch(`/api/inventory/products/${internalProductId}/sync`)
       .then((r) => {
