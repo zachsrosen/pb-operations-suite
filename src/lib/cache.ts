@@ -261,6 +261,7 @@ export const CACHE_KEYS = {
   PIPELINES: "pipelines",
   AHJS_ALL: "ahjs:all",
   UTILITIES_ALL: "utilities:all",
+  LOCATIONS_ALL: "locations:all",
   FORECAST_BASELINES: "forecast:baselines",
   FORECAST_ACCURACY: "forecast:accuracy",
   SERVICE_PRIORITY_QUEUE: "service:priority-queue",

@@ -29,6 +29,7 @@ export const queryKeys = {
     qc: (days: number) => [...queryKeys.stats.root, "qc", days] as const,
     surveyMetrics: (days: number) => [...queryKeys.stats.root, "survey-metrics", days] as const,
     daMetrics: (days: number) => [...queryKeys.stats.root, "da-metrics", days] as const,
+    inspectionMetrics: (days: number) => [...queryKeys.stats.root, "inspection-metrics", days] as const,
   },
   auth: {
     root: ["auth"] as const,
@@ -92,6 +93,8 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("service-tickets")) return [queryKeys.serviceTickets.root];
   if (serverKey.startsWith("service:priority")) return [queryKeys.servicePriority.root];
   if (serverKey.startsWith("service:customers")) return [queryKeys.serviceCustomers.root];
+  if (serverKey.startsWith("locations")) return [queryKeys.stats.root];
+  if (serverKey.startsWith("ahjs")) return [queryKeys.stats.root];
   // pipelines: no RQ consumer depends on it in this batch
   if (serverKey.startsWith("pipelines")) return [];
   if (serverKey.startsWith("revenue-goals")) return [queryKeys.revenueGoals.root];
