@@ -165,6 +165,7 @@ export function parseZohoCurrentFields(item: Record<string, unknown>): Record<st
     unit: str(item.unit),
     vendor_name: str(item.vendor_name),
     vendor_id: str(item.vendor_id),
+    brand: str(item.brand ?? item.manufacturer),
   };
 }
 
@@ -175,6 +176,7 @@ export function parseZohoCurrentFields(item: Record<string, unknown>): Record<st
 const HUBSPOT_CORE_PROPERTIES = [
   "name", "hs_sku", "price", "description", "manufacturer",
   "product_category", "hs_cost_of_goods_sold",
+  "vendor_part_number", "unit_label", "vendor_name",
 ];
 
 function buildHubSpotProposedFields(sku: SkuRecord): Record<string, string | null> {
@@ -236,7 +238,6 @@ function buildZuperProposedFields(sku: SkuRecord): Record<string, string | null>
 }
 
 export function parseZuperCurrentFields(item: Record<string, unknown>): Record<string, string | null> {
-  // Zuper /product/{id} returns product_* prefixed fields and nested category
   const categoryObj = item.product_category as Record<string, unknown> | undefined;
   return {
     name: str(item.product_name ?? item.name ?? item.item_name ?? item.part_name),
@@ -244,6 +245,12 @@ export function parseZuperCurrentFields(item: Record<string, unknown>): Record<s
     description: str(item.product_description ?? item.description),
     category: str(categoryObj?.category_name ?? item.category ?? item.category_name),
     specification: str(item.specification),
+    brand: str(item.brand),
+    model: str(item.model ?? item.part_number ?? item.vendor_part_number),
+    price: numStr(item.price ?? item.unit_price ?? item.rate),
+    purchase_price: numStr(item.purchase_price ?? item.cost_price ?? item.cost),
+    uom: str(item.uom ?? item.unit),
+    vendor_name: str(item.vendor_name ?? item.vendor),
   };
 }
 
