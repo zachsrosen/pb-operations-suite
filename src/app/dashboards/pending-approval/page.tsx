@@ -263,7 +263,12 @@ export default function DesignApprovalQueuePage() {
   const section2Rows = useMemo(
     () =>
       filtered
-        .filter((p) => p.layoutStatus && DESIGN_READY_STATUSES.includes(p.layoutStatus))
+        .filter((p) =>
+          p.layoutStatus &&
+          DESIGN_READY_STATUSES.includes(p.layoutStatus) &&
+          !p.designApprovalSentDate && // not already sent
+          !p.designApprovalDate         // not already approved
+        )
         .map((p) => ({
           ...p,
           daysWaiting: p.designCompletionDate
@@ -277,7 +282,11 @@ export default function DesignApprovalQueuePage() {
   const section3Rows = useMemo(
     () =>
       filtered
-        .filter((p) => p.layoutStatus && DA_SENT_STATUSES.includes(p.layoutStatus))
+        .filter((p) =>
+          p.layoutStatus &&
+          DA_SENT_STATUSES.includes(p.layoutStatus) &&
+          !p.designApprovalDate // not already approved
+        )
         .map((p) => ({
           ...p,
           daysWaiting: daysSince(p.designApprovalSentDate),

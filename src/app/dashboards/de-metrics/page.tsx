@@ -138,8 +138,36 @@ export default function DEMetricsPage() {
 
   const daLocations = useMemo(() => {
     if (!daData?.byLocation) return [];
-    return Object.keys(daData.byLocation).sort();
-  }, [daData]);
+    const all = Object.keys(daData.byLocation).sort();
+    if (persistedFilters.locations.length > 0) {
+      return all.filter((loc) => persistedFilters.locations.includes(loc));
+    }
+    return all;
+  }, [daData, persistedFilters.locations]);
+
+  // Recompute DA totals when location filter is active
+  const daTotals = useMemo((): DAGroupMetrics | null => {
+    if (!daData) return null;
+    if (persistedFilters.locations.length === 0) return daData.totals;
+    const groups = daLocations.map((loc) => daData.byLocation[loc]).filter(Boolean);
+    if (groups.length === 0) return { count: 0, avgTurnaround: null, avgRevisions: null, firstTryRate: null, totalRevisions: 0 };
+    const count = groups.reduce((s, g) => s + g.count, 0);
+    const totalRevisions = groups.reduce((s, g) => s + g.totalRevisions, 0);
+    // Weighted averages by count
+    const turnaroundSum = groups.reduce((s, g) => s + (g.avgTurnaround ?? 0) * g.count, 0);
+    const turnaroundN = groups.reduce((s, g) => s + (g.avgTurnaround !== null ? g.count : 0), 0);
+    const revisionSum = groups.reduce((s, g) => s + (g.avgRevisions ?? 0) * g.count, 0);
+    const revisionN = groups.reduce((s, g) => s + (g.avgRevisions !== null ? g.count : 0), 0);
+    const firstTrySum = groups.reduce((s, g) => s + (g.firstTryRate ?? 0) * g.count, 0);
+    const firstTryN = groups.reduce((s, g) => s + (g.firstTryRate !== null ? g.count : 0), 0);
+    return {
+      count,
+      avgTurnaround: turnaroundN > 0 ? Math.round((turnaroundSum / turnaroundN) * 10) / 10 : null,
+      avgRevisions: revisionN > 0 ? Math.round((revisionSum / revisionN) * 10) / 10 : null,
+      firstTryRate: firstTryN > 0 ? Math.round((firstTrySum / firstTryN) * 10) / 10 : null,
+      totalRevisions,
+    };
+  }, [daData, daLocations, persistedFilters.locations]);
 
   const TIME_PRESETS = [30, 60, 90, 180, 365] as const;
   type TimePreset = (typeof TIME_PRESETS)[number];
@@ -649,27 +677,27 @@ export default function DEMetricsPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-5 py-4 border-b border-t-border bg-surface-2/30">
               <div className="text-center">
                 <p className="text-xs text-muted mb-0.5">Avg Turnaround</p>
-                <p className={`text-xl font-mono font-bold ${getDaColor(daData.totals.avgTurnaround, DA_TURNAROUND_THRESHOLDS)}`}>
-                  {daData.totals.avgTurnaround !== null ? daData.totals.avgTurnaround.toFixed(1) : "--"}
+                <p className={`text-xl font-mono font-bold ${getDaColor(daTotals!.avgTurnaround, DA_TURNAROUND_THRESHOLDS)}`}>
+                  {daTotals!.avgTurnaround !== null ? daTotals!.avgTurnaround.toFixed(1) : "--"}
                 </p>
                 <p className="text-xs text-muted">days</p>
               </div>
               <div className="text-center">
                 <p className="text-xs text-muted mb-0.5">DAs Approved</p>
-                <p className="text-xl font-mono font-bold text-foreground">{daData.totals.count}</p>
+                <p className="text-xl font-mono font-bold text-foreground">{daTotals!.count}</p>
                 <p className="text-xs text-muted">{daDaysWindow > 0 ? `last ${daDaysWindow}d` : "all time"}</p>
               </div>
               <div className="text-center">
                 <p className="text-xs text-muted mb-0.5">First-Try Rate</p>
-                <p className={`text-xl font-mono font-bold ${getFirstTryColor(daData.totals.firstTryRate)}`}>
-                  {daData.totals.firstTryRate !== null ? `${daData.totals.firstTryRate}%` : "--"}
+                <p className={`text-xl font-mono font-bold ${getFirstTryColor(daTotals!.firstTryRate)}`}>
+                  {daTotals!.firstTryRate !== null ? `${daTotals!.firstTryRate}%` : "--"}
                 </p>
                 <p className="text-xs text-muted">0 revisions</p>
               </div>
               <div className="text-center">
                 <p className="text-xs text-muted mb-0.5">Avg Revisions</p>
-                <p className={`text-xl font-mono font-bold ${getDaColor(daData.totals.avgRevisions, DA_REVISION_THRESHOLDS)}`}>
-                  {daData.totals.avgRevisions !== null ? daData.totals.avgRevisions.toFixed(1) : "--"}
+                <p className={`text-xl font-mono font-bold ${getDaColor(daTotals!.avgRevisions, DA_REVISION_THRESHOLDS)}`}>
+                  {daTotals!.avgRevisions !== null ? daTotals!.avgRevisions.toFixed(1) : "--"}
                 </p>
                 <p className="text-xs text-muted">per DA</p>
               </div>
