@@ -245,9 +245,11 @@ Expected: Clean.
 - [ ] **Step 12: Commit**
 
 ```bash
-git add src/components/DashboardShell.tsx
+git add src/components/DashboardShell.tsx src/components/ThemeToggle.tsx
 git commit -m "refactor(dashboard-shell): suite accent header, PB badge nav, title border, mobile stacking"
 ```
+
+Note: if `ThemeToggle.tsx` was not modified in Step 9, `git add` will silently skip it — this is safe.
 
 ---
 
