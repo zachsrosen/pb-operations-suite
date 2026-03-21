@@ -252,4 +252,28 @@ describe("getDropdownOptions", () => {
     expect(options.some((o) => o.value === "internal")).toBe(true);
     expect(options.some((o) => o.value === "zoho")).toBe(true);
   });
+
+  it("filters external sources that conflict with another external cell relay", () => {
+    // Scenario: HubSpot cell already picked Zoho as relay source.
+    // Now Zuper cell should only see Keep, Internal, or Zoho — NOT HubSpot.
+    const snapshots: FieldValueSnapshot[] = [
+      snap("internal", "sellPrice", 305),
+      snap("zoho", "rate", 180),
+      snap("hubspot", "price", 300),
+      snap("zuper", "price", 290),
+    ];
+    // The locked source is "zoho" (from another external cell's relay, not Internal column)
+    const options = getDropdownOptions(
+      "zuper", "price", "sellPrice",
+      PRICE_EDGES, snapshots,
+      { zoho: true, hubspot: true, zuper: true },
+      "zoho", // locked because HubSpot cell already chose Zoho relay
+    );
+    // Zuper can pick Keep, Internal, or Zoho (same source)
+    expect(options.some((o) => o.value === "keep")).toBe(true);
+    expect(options.some((o) => o.value === "internal")).toBe(true);
+    expect(options.some((o) => o.value === "zoho")).toBe(true);
+    // HubSpot should NOT be available (conflicts with locked Zoho source)
+    expect(options.some((o) => o.value === "hubspot")).toBe(false);
+  });
 });

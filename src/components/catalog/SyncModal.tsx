@@ -16,7 +16,7 @@ import {
   getDropdownOptions,
 } from "@/lib/selection-to-intents";
 import type { CellSelection, FieldRow, DropdownOption } from "@/lib/selection-to-intents";
-import { isVirtualField } from "@/lib/catalog-sync-mappings";
+import { isVirtualField, normalizedEqual } from "@/lib/catalog-sync-mappings";
 
 // ── Types ──
 
@@ -109,7 +109,7 @@ export function buildFieldRows(
     for (const edge of edges) {
       if (!linkedSystems[edge.system]) continue;
       const extValue = getSnapshotValue(snapshots, edge.system, edge.externalField);
-      if (String(internalValue ?? "") !== String(extValue ?? "")) {
+      if (!normalizedEqual(internalValue, extValue, edge.normalizeWith)) {
         hasDiff = true;
         break;
       }
@@ -166,15 +166,30 @@ export function getImplicitWrites(
   const implicit: string[] = [];
   const seen = new Set<string>();
 
-  // Virtual/generated fields that will be pushed
-  const virtualFields = new Set<string>();
+  // Determine which systems have at least one active (non-keep) selection
+  const activeSystems = new Set<ExternalSystem>();
+  for (const [key, value] of Object.entries(selections)) {
+    if (value === "keep") continue;
+    const sys = key.split(":")[0];
+    if (sys !== "internal") activeSystems.add(sys as ExternalSystem);
+  }
+
+  // Virtual/generated fields — only include when at least one system
+  // that carries the virtual edge has an active selection
+  const virtualFields = new Map<string, Set<ExternalSystem>>();
   for (const edge of mappings) {
     if (isVirtualField(edge.internalField) && edge.generator) {
-      virtualFields.add(edge.internalField);
+      if (!virtualFields.has(edge.internalField)) {
+        virtualFields.set(edge.internalField, new Set());
+      }
+      virtualFields.get(edge.internalField)!.add(edge.system);
     }
   }
 
-  for (const iField of virtualFields) {
+  for (const [iField, systems] of virtualFields) {
+    // Only list if at least one system with this virtual edge is active
+    const hasActive = [...systems].some((s) => activeSystems.has(s));
+    if (!hasActive) continue;
     const label = FIELD_LABELS[iField] ?? iField;
     if (!seen.has(label)) {
       seen.add(label);
@@ -343,19 +358,43 @@ export default function SyncModal({
   );
 
   // ── Locked pull source per field ──
-  // If the internal column picks an external source for a field,
-  // that locks external cells for the same field to only that source.
+  // For each internal field, if ANY cell has already chosen an external source
+  // (Internal column pull or external cell relay), that locks all other cells
+  // on the same row to the same source. First external source wins.
   const lockedPullSources = useMemo(() => {
     const locked: Record<string, ExternalSystem | null> = {};
+
+    // Pass 1: Internal column selections (highest priority)
     for (const [key, value] of Object.entries(selections)) {
       if (!key.startsWith("internal:")) continue;
       if (value === "keep" || value === "internal") continue;
-      // value is an ExternalSystem
       const internalField = key.split(":")[1];
       locked[internalField] = value as ExternalSystem;
     }
+
+    // Pass 2: External cell relay selections
+    // If no Internal column lock exists for a field, check if any external
+    // cell has picked another external source (relay). That source locks the row.
+    for (const [key, value] of Object.entries(selections)) {
+      if (key.startsWith("internal:")) continue;
+      if (value === "keep" || value === "internal") continue;
+      // value is an ExternalSystem (relay source)
+      const parts = key.split(":");
+      const cellSystem = parts[0] as ExternalSystem;
+      const externalField = parts.slice(1).join(":");
+      // Find the internalField for this cell
+      const edge = mappings.find(
+        (e) => e.system === cellSystem && e.externalField === externalField,
+      );
+      if (!edge) continue;
+      // Only set if not already locked
+      if (locked[edge.internalField] === undefined) {
+        locked[edge.internalField] = value as ExternalSystem;
+      }
+    }
+
     return locked;
-  }, [selections]);
+  }, [selections, mappings]);
 
   // ── Handlers ──
 

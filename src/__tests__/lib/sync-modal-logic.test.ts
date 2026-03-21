@@ -132,6 +132,22 @@ describe("buildFieldRows", () => {
     expect(attention[0].edges).toHaveLength(3);
   });
 
+  it("uses normalized comparison (305 vs 305.0 is in-sync for number fields)", () => {
+    const mappings: FieldMappingEdge[] = [
+      edge("zoho", "rate", "sellPrice", { normalizeWith: "number" }),
+    ];
+    const snapshots: FieldValueSnapshot[] = [
+      snap("internal", "sellPrice", "305"),
+      snap("zoho", "rate", "305.0"),
+    ];
+
+    const { attention, inSync } = buildFieldRows(mappings, snapshots, linked);
+    // After normalization, 305 and 305.0 are equal
+    expect(attention).toHaveLength(0);
+    expect(inSync).toHaveLength(1);
+    expect(inSync[0].internalField).toBe("sellPrice");
+  });
+
   it("considers only linked systems for diffs", () => {
     const mappings: FieldMappingEdge[] = [
       edge("zoho", "rate", "sellPrice"),
@@ -241,7 +257,25 @@ describe("getImplicitWrites", () => {
     expect(writes).toHaveLength(0);
   });
 
-  it("deduplicates virtual field labels", () => {
+  it("deduplicates virtual field labels when systems are active", () => {
+    const mappings: FieldMappingEdge[] = [
+      edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
+      edge("hubspot", "name", "_name", { direction: "push-only", generator: "skuName" }),
+      edge("zoho", "rate", "sellPrice"),
+      edge("hubspot", "price", "sellPrice"),
+    ];
+    // Both systems active → virtual field appears once (deduped)
+    const selections = {
+      "zoho:rate": "internal" as const,
+      "hubspot:price": "internal" as const,
+    };
+
+    const writes = getImplicitWrites(mappings, selections, linked);
+    const nameEntries = writes.filter((w) => w.startsWith("Name"));
+    expect(nameEntries).toHaveLength(1);
+  });
+
+  it("omits virtual fields when no systems are active", () => {
     const mappings: FieldMappingEdge[] = [
       edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
       edge("hubspot", "name", "_name", { direction: "push-only", generator: "skuName" }),
@@ -249,8 +283,7 @@ describe("getImplicitWrites", () => {
     const selections = {};
 
     const writes = getImplicitWrites(mappings, selections, linked);
-    const nameEntries = writes.filter((w) => w.startsWith("Name"));
-    expect(nameEntries).toHaveLength(1);
+    expect(writes).toHaveLength(0);
   });
 });
 
