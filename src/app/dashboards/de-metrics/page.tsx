@@ -1,7 +1,6 @@
 "use client";
 
 import { useMemo, useRef, useEffect, useState, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { MetricCard } from "@/components/ui/MetricCard";
 import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
@@ -11,7 +10,6 @@ import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useDEMetricsFilters } from "@/stores/dashboard-filters";
-import { queryKeys } from "@/lib/query-keys";
 
 // Active design pipeline statuses (pre-completion, pre-engineering)
 const ACTIVE_DESIGN_STATUSES = [
@@ -49,11 +47,6 @@ interface DAGroupMetrics {
   avgRevisions: number | null;
   firstTryRate: number | null;
   totalRevisions: number;
-}
-interface DAMetricsResponse {
-  byLocation: Record<string, DAGroupMetrics>;
-  totals: DAGroupMetrics;
-  daysWindow: number | string;
 }
 
 // ---- DA Performance color helpers ----
@@ -119,55 +112,34 @@ export default function DEMetricsPage() {
     }
   }, [sortKey]);
 
-  // ---- DA Performance by Office ----
-  const [daDaysWindow, setDaDaysWindow] = useState(60);
-
-  const daQuery = useQuery<DAMetricsResponse>({
-    queryKey: queryKeys.stats.daMetrics(daDaysWindow),
-    queryFn: async () => {
-      const url = daDaysWindow > 0
-        ? `/api/hubspot/da-metrics?days=${daDaysWindow}`
-        : "/api/hubspot/da-metrics";
-      const res = await fetch(url);
-      if (!res.ok) throw new Error("Failed to fetch DA metrics");
-      return res.json();
-    },
-    refetchInterval: 5 * 60 * 1000,
-  });
-  const daData = daQuery.data ?? null;
-
-  const daLocations = useMemo(() => {
-    if (!daData?.byLocation) return [];
-    const all = Object.keys(daData.byLocation).sort();
-    if (persistedFilters.locations.length > 0) {
-      return all.filter((loc) => persistedFilters.locations.includes(loc));
-    }
-    return all;
-  }, [daData, persistedFilters.locations]);
-
-  // Recompute DA totals when location filter is active
-  const daTotals = useMemo((): DAGroupMetrics | null => {
-    if (!daData) return null;
-    if (persistedFilters.locations.length === 0) return daData.totals;
-    const groups = daLocations.map((loc) => daData.byLocation[loc]).filter(Boolean);
-    if (groups.length === 0) return { count: 0, avgTurnaround: null, avgRevisions: null, firstTryRate: null, totalRevisions: 0 };
-    const count = groups.reduce((s, g) => s + g.count, 0);
-    const totalRevisions = groups.reduce((s, g) => s + g.totalRevisions, 0);
-    // Weighted averages by count
-    const turnaroundSum = groups.reduce((s, g) => s + (g.avgTurnaround ?? 0) * g.count, 0);
-    const turnaroundN = groups.reduce((s, g) => s + (g.avgTurnaround !== null ? g.count : 0), 0);
-    const revisionSum = groups.reduce((s, g) => s + (g.avgRevisions ?? 0) * g.count, 0);
-    const revisionN = groups.reduce((s, g) => s + (g.avgRevisions !== null ? g.count : 0), 0);
-    const firstTrySum = groups.reduce((s, g) => s + (g.firstTryRate ?? 0) * g.count, 0);
-    const firstTryN = groups.reduce((s, g) => s + (g.firstTryRate !== null ? g.count : 0), 0);
+  // ---- DA Performance by Office (computed from designProjects, respects all filters) ----
+  const computeGroupMetrics = useCallback((projects: RawProject[]): DAGroupMetrics => {
+    const turnarounds = projects
+      .filter((p) => p.designApprovalSentDate && p.designApprovalDate)
+      .map((p) => {
+        const sent = new Date(p.designApprovalSentDate! + "T12:00:00");
+        const approved = new Date(p.designApprovalDate! + "T12:00:00");
+        return Math.floor((approved.getTime() - sent.getTime()) / (1000 * 60 * 60 * 24));
+      })
+      .filter((d) => d >= 0);
+    const revisions = projects
+      .map((p) => p.daRevisionCounter)
+      .filter((v): v is number => v !== null && v !== undefined && !isNaN(v) && v >= 0);
+    const firstTryCount = revisions.filter((v) => v === 0).length;
     return {
-      count,
-      avgTurnaround: turnaroundN > 0 ? Math.round((turnaroundSum / turnaroundN) * 10) / 10 : null,
-      avgRevisions: revisionN > 0 ? Math.round((revisionSum / revisionN) * 10) / 10 : null,
-      firstTryRate: firstTryN > 0 ? Math.round((firstTrySum / firstTryN) * 10) / 10 : null,
-      totalRevisions,
+      count: projects.length,
+      avgTurnaround: turnarounds.length > 0
+        ? Math.round((turnarounds.reduce((s, v) => s + v, 0) / turnarounds.length) * 10) / 10
+        : null,
+      avgRevisions: revisions.length > 0
+        ? Math.round((revisions.reduce((s, v) => s + v, 0) / revisions.length) * 10) / 10
+        : null,
+      firstTryRate: revisions.length > 0
+        ? Math.round((firstTryCount / revisions.length) * 1000) / 10
+        : null,
+      totalRevisions: revisions.reduce((s, v) => s + v, 0),
     };
-  }, [daData, daLocations, persistedFilters.locations]);
+  }, []);
 
   const TIME_PRESETS = [30, 60, 90, 180, 365] as const;
   type TimePreset = (typeof TIME_PRESETS)[number];
@@ -263,6 +235,33 @@ export default function DEMetricsPage() {
       }),
     [safeProjects, persistedFilters, searchQuery]
   );
+
+  // ---- DA Performance by Office (computed from designProjects — respects all page filters) ----
+  const daByLocation = useMemo(() => {
+    const daProjects = designProjects.filter((p) => p.designApprovalDate && isInWindow(p.designApprovalDate));
+    const groups: Record<string, RawProject[]> = {};
+    for (const p of daProjects) {
+      const loc = p.pbLocation || "Unknown";
+      if (loc === "Unknown") continue;
+      if (!groups[loc]) groups[loc] = [];
+      groups[loc].push(p);
+    }
+    const byLocation: Record<string, DAGroupMetrics> = {};
+    for (const [loc, projects] of Object.entries(groups)) {
+      byLocation[loc] = computeGroupMetrics(projects);
+    }
+    return byLocation;
+  }, [designProjects, isInWindow, computeGroupMetrics]);
+
+  const daLocations = useMemo(
+    () => Object.keys(daByLocation).sort(),
+    [daByLocation]
+  );
+
+  const daTotals = useMemo((): DAGroupMetrics => {
+    const allDaProjects = designProjects.filter((p) => p.designApprovalDate && isInWindow(p.designApprovalDate));
+    return computeGroupMetrics(allDaProjects);
+  }, [designProjects, isInWindow, computeGroupMetrics]);
 
   // ---- Approval Metrics (FIXED: use designApprovalSentDate for "Sent") ----
   const approvalMetrics = useMemo(() => {
@@ -634,70 +633,48 @@ export default function DEMetricsPage() {
 
       {/* DA Performance by Office */}
       <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-6">
-        <div className="px-5 py-4 border-b border-t-border flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">DA Performance by Office</h2>
-            <p className="text-sm text-muted mt-0.5">
-              Turnaround, revisions, and first-try approval rate by location
-            </p>
-          </div>
-          <div className="flex items-center gap-1 bg-surface-2 border border-t-border rounded-lg p-1">
-            {[
-              { label: "30d", value: 30 },
-              { label: "60d", value: 60 },
-              { label: "90d", value: 90 },
-              { label: "All", value: 0 },
-            ].map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setDaDaysWindow(opt.value)}
-                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-                  daDaysWindow === opt.value
-                    ? "bg-purple-500/20 text-purple-400 border border-purple-500/30"
-                    : "text-muted hover:text-foreground hover:bg-surface-2"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+        <div className="px-5 py-4 border-b border-t-border">
+          <h2 className="text-lg font-semibold text-foreground">DA Performance by Office</h2>
+          <p className="text-sm text-muted mt-0.5">
+            Turnaround, revisions, and first-try approval rate by location &middot; Uses the time window and filters above
+          </p>
         </div>
 
-        {daQuery.isLoading ? (
+        {loading ? (
           <div className="p-6 space-y-3">
             {Array.from({ length: 3 }).map((_, i) => (
               <div key={i} className="h-10 bg-skeleton rounded animate-pulse" />
             ))}
           </div>
-        ) : !daData || daLocations.length === 0 ? (
-          <div className="p-6 text-center text-muted text-sm">No DA performance data available</div>
+        ) : daLocations.length === 0 ? (
+          <div className="p-6 text-center text-muted text-sm">No DA performance data available for this time window</div>
         ) : (
           <>
             {/* Summary row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-5 py-4 border-b border-t-border bg-surface-2/30">
               <div className="text-center">
                 <p className="text-xs text-muted mb-0.5">Avg Turnaround</p>
-                <p className={`text-xl font-mono font-bold ${getDaColor(daTotals!.avgTurnaround, DA_TURNAROUND_THRESHOLDS)}`}>
-                  {daTotals!.avgTurnaround !== null ? daTotals!.avgTurnaround.toFixed(1) : "--"}
+                <p className={`text-xl font-mono font-bold ${getDaColor(daTotals.avgTurnaround, DA_TURNAROUND_THRESHOLDS)}`}>
+                  {daTotals.avgTurnaround !== null ? daTotals.avgTurnaround.toFixed(1) : "--"}
                 </p>
                 <p className="text-xs text-muted">days</p>
               </div>
               <div className="text-center">
                 <p className="text-xs text-muted mb-0.5">DAs Approved</p>
-                <p className="text-xl font-mono font-bold text-foreground">{daTotals!.count}</p>
-                <p className="text-xs text-muted">{daDaysWindow > 0 ? `last ${daDaysWindow}d` : "all time"}</p>
+                <p className="text-xl font-mono font-bold text-foreground">{daTotals.count}</p>
+                <p className="text-xs text-muted">{timeWindowLabel}</p>
               </div>
               <div className="text-center">
                 <p className="text-xs text-muted mb-0.5">First-Try Rate</p>
-                <p className={`text-xl font-mono font-bold ${getFirstTryColor(daTotals!.firstTryRate)}`}>
-                  {daTotals!.firstTryRate !== null ? `${daTotals!.firstTryRate}%` : "--"}
+                <p className={`text-xl font-mono font-bold ${getFirstTryColor(daTotals.firstTryRate)}`}>
+                  {daTotals.firstTryRate !== null ? `${daTotals.firstTryRate}%` : "--"}
                 </p>
                 <p className="text-xs text-muted">0 revisions</p>
               </div>
               <div className="text-center">
                 <p className="text-xs text-muted mb-0.5">Avg Revisions</p>
-                <p className={`text-xl font-mono font-bold ${getDaColor(daTotals!.avgRevisions, DA_REVISION_THRESHOLDS)}`}>
-                  {daTotals!.avgRevisions !== null ? daTotals!.avgRevisions.toFixed(1) : "--"}
+                <p className={`text-xl font-mono font-bold ${getDaColor(daTotals.avgRevisions, DA_REVISION_THRESHOLDS)}`}>
+                  {daTotals.avgRevisions !== null ? daTotals.avgRevisions.toFixed(1) : "--"}
                 </p>
                 <p className="text-xs text-muted">per DA</p>
               </div>
@@ -718,7 +695,7 @@ export default function DEMetricsPage() {
                 </thead>
                 <tbody>
                   {daLocations.map((loc, i) => {
-                    const m = daData.byLocation[loc];
+                    const m = daByLocation[loc];
                     return (
                       <tr key={loc} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
                         <td className="px-4 py-3 font-medium text-foreground">{loc}</td>

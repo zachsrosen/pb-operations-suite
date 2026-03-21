@@ -285,7 +285,8 @@ export default function DesignApprovalQueuePage() {
         .filter((p) =>
           p.layoutStatus &&
           DA_SENT_STATUSES.includes(p.layoutStatus) &&
-          !p.designApprovalDate // not already approved
+          p.designApprovalSentDate && // must have an actual sent date
+          !p.designApprovalDate       // not already approved
         )
         .map((p) => ({
           ...p,
