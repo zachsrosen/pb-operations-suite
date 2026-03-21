@@ -335,6 +335,18 @@ export interface Project {
   inspectionScheduleDate: string | null;
   inspectionPassDate: string | null;
   finalInspectionStatus: string | null;
+  // Inspection — NEW
+  inspectionFailDate: string | null;
+  inspectionBookedDate: string | null;
+  inspectionFailCount: number | null;
+  isInspectionPassed: boolean;
+  hasInspectionFailed: boolean;
+  isFirstTimeInspectionPass: boolean;
+  inspectionFailureReason: string | null;
+  inspectionTurnaroundTime: number | null;
+  hasInspectionFailedNotRejected: boolean;
+  isFirstTimePassNotRejected: boolean;
+  readyForInspection: string | null;
 
   // PTO
   ptoSubmitDate: string | null;
@@ -570,6 +582,19 @@ const DEAL_PROPERTIES = [
   "inspections_schedule_date",
   "inspections_completion_date", // pass date
   "final_inspection_status",
+  // Inspection dates — NEW
+  "inspections_fail_date",
+  "inspection_booked_date",
+  // Inspection metrics
+  "inspection_fail_count",
+  "is_inspection_passed_",
+  "has_inspection_failed_",
+  "first_time_inspection_pass_",
+  "inspection_failure_reason",
+  "inspection_turnaround_time",
+  "has_inspection_failed__not_rejected__",
+  "first_time_inspection_pass____not_rejected_",
+  "ready_for_inspection_",
 
   // PTO dates
   "pto_start_date", // submit date
@@ -909,6 +934,18 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     inspectionScheduleDate: parseDate(deal.inspections_schedule_date),
     inspectionPassDate: parseDate(deal.inspections_completion_date),
     finalInspectionStatus: deal.final_inspection_status ? String(deal.final_inspection_status) : null,
+    // Inspection — NEW
+    inspectionFailDate: parseDate(deal.inspections_fail_date),
+    inspectionBookedDate: parseDate(deal.inspection_booked_date),
+    inspectionFailCount: deal.inspection_fail_count ? Number(deal.inspection_fail_count) : null,
+    isInspectionPassed: deal.is_inspection_passed_ === "true",
+    hasInspectionFailed: deal.has_inspection_failed_ === "true",
+    isFirstTimeInspectionPass: deal.first_time_inspection_pass_ === "true",
+    inspectionFailureReason: deal.inspection_failure_reason ? String(deal.inspection_failure_reason) : null,
+    inspectionTurnaroundTime: deal.inspection_turnaround_time ? Number(deal.inspection_turnaround_time) : null,
+    hasInspectionFailedNotRejected: deal.has_inspection_failed__not_rejected__ === "true",
+    isFirstTimePassNotRejected: deal.first_time_inspection_pass____not_rejected_ === "true",
+    readyForInspection: deal.ready_for_inspection_ ? String(deal.ready_for_inspection_) : null,
 
     // PTO
     ptoSubmitDate: parseDate(deal.pto_start_date),
