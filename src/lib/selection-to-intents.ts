@@ -200,8 +200,29 @@ export function computeSmartDefaults(
 
   for (const edgeItem of mappings) {
     if (!linkedSystems[edgeItem.system]) continue;
+
+    // Virtual/generator fields: default checkbox to checked when values differ
+    if (edgeItem.internalField.startsWith("_") && edgeItem.generator) {
+      const internalSnap = snapshots.find(
+        (s) => s.system === "internal" && s.field === edgeItem.internalField,
+      );
+      const externalSnap = snapshots.find(
+        (s) => s.system === edgeItem.system && s.field === edgeItem.externalField,
+      );
+      const internalValue = internalSnap?.rawValue ?? null;
+      const externalValue = externalSnap?.rawValue ?? null;
+
+      const matches = normalizedEqual(internalValue, externalValue, edgeItem.normalizeWith);
+      defaults.push({
+        system: edgeItem.system,
+        externalField: edgeItem.externalField,
+        source: matches ? "keep" : "internal",
+      });
+      continue;
+    }
+
     if (edgeItem.direction === "push-only") continue;
-    if (edgeItem.internalField.startsWith("_")) continue; // virtual
+    if (edgeItem.internalField.startsWith("_")) continue; // non-generator virtual
 
     const internalSnap = snapshots.find(
       (s) => s.system === "internal" && s.field === edgeItem.internalField,

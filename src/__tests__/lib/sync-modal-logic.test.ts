@@ -84,7 +84,7 @@ describe("buildFieldRows", () => {
     expect(inSync[0].internalField).toBe("sku");
   });
 
-  it("marks virtual fields correctly", () => {
+  it("marks virtual fields correctly and places in inSync when values match", () => {
     const mappings: FieldMappingEdge[] = [
       edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
     ];
@@ -93,10 +93,29 @@ describe("buildFieldRows", () => {
       snap("zoho", "name", "Test Product"),
     ];
 
-    const { inSync } = buildFieldRows(mappings, snapshots, linked);
+    const { inSync, attention } = buildFieldRows(mappings, snapshots, linked);
+    expect(attention).toHaveLength(0);
     expect(inSync).toHaveLength(1);
     expect(inSync[0].isVirtual).toBe(true);
     expect(inSync[0].isPushOnly).toBe(true);
+  });
+
+  it("places virtual fields in attention when external value differs", () => {
+    const mappings: FieldMappingEdge[] = [
+      edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
+      edge("hubspot", "name", "_name", { direction: "push-only", generator: "skuName" }),
+    ];
+    const snapshots: FieldValueSnapshot[] = [
+      snap("internal", "_name", "HYUNDAI HiN-T440NF(BK)"),
+      snap("zoho", "name", "HYUNDAI HiN-T440NF(BK)"),
+      snap("hubspot", "name", "Hyundai 440W Solar Panels"),
+    ];
+
+    const { attention, inSync } = buildFieldRows(mappings, snapshots, linked);
+    expect(attention).toHaveLength(1);
+    expect(attention[0].isVirtual).toBe(true);
+    expect(attention[0].internalField).toBe("_name");
+    expect(inSync).toHaveLength(0);
   });
 
   it("marks push-only non-virtual fields", () => {
@@ -225,7 +244,7 @@ describe("getProjectedValue", () => {
 // ── getImplicitWrites ──
 
 describe("getImplicitWrites", () => {
-  it("includes virtual/generated fields", () => {
+  it("excludes virtual/generated fields (they are now visible in the table)", () => {
     const mappings: FieldMappingEdge[] = [
       edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
       edge("zoho", "rate", "sellPrice"),
@@ -233,7 +252,8 @@ describe("getImplicitWrites", () => {
     const selections = { "zoho:rate": "internal" as const };
 
     const writes = getImplicitWrites(mappings, selections, linked);
-    expect(writes).toContain("Name (auto-generated)");
+    expect(writes).not.toContain("Name (auto-generated)");
+    expect(writes).toHaveLength(0);
   });
 
   it("includes companion fields when primary is selected", () => {
@@ -257,14 +277,13 @@ describe("getImplicitWrites", () => {
     expect(writes).toHaveLength(0);
   });
 
-  it("deduplicates virtual field labels when systems are active", () => {
+  it("does not list virtual fields even when multiple systems are active", () => {
     const mappings: FieldMappingEdge[] = [
       edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
       edge("hubspot", "name", "_name", { direction: "push-only", generator: "skuName" }),
       edge("zoho", "rate", "sellPrice"),
       edge("hubspot", "price", "sellPrice"),
     ];
-    // Both systems active → virtual field appears once (deduped)
     const selections = {
       "zoho:rate": "internal" as const,
       "hubspot:price": "internal" as const,
@@ -272,10 +291,10 @@ describe("getImplicitWrites", () => {
 
     const writes = getImplicitWrites(mappings, selections, linked);
     const nameEntries = writes.filter((w) => w.startsWith("Name"));
-    expect(nameEntries).toHaveLength(1);
+    expect(nameEntries).toHaveLength(0);
   });
 
-  it("omits virtual fields when no systems are active", () => {
+  it("returns empty when only virtual fields exist", () => {
     const mappings: FieldMappingEdge[] = [
       edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
       edge("hubspot", "name", "_name", { direction: "push-only", generator: "skuName" }),

@@ -174,36 +174,8 @@ export function getImplicitWrites(
   const implicit: string[] = [];
   const seen = new Set<string>();
 
-  // Determine which systems have at least one active (non-keep) selection
-  const activeSystems = new Set<ExternalSystem>();
-  for (const [key, value] of Object.entries(selections)) {
-    if (value === "keep") continue;
-    const sys = key.split(":")[0];
-    if (sys !== "internal") activeSystems.add(sys as ExternalSystem);
-  }
-
-  // Virtual/generated fields — only include when at least one system
-  // that carries the virtual edge has an active selection
-  const virtualFields = new Map<string, Set<ExternalSystem>>();
-  for (const edge of mappings) {
-    if (isVirtualField(edge.internalField) && edge.generator) {
-      if (!virtualFields.has(edge.internalField)) {
-        virtualFields.set(edge.internalField, new Set());
-      }
-      virtualFields.get(edge.internalField)!.add(edge.system);
-    }
-  }
-
-  for (const [iField, systems] of virtualFields) {
-    // Only list if at least one system with this virtual edge is active
-    const hasActive = [...systems].some((s) => activeSystems.has(s));
-    if (!hasActive) continue;
-    const label = FIELD_LABELS[iField] ?? iField;
-    if (!seen.has(label)) {
-      seen.add(label);
-      implicit.push(`${label} (auto-generated)`);
-    }
-  }
+  // Virtual/generator fields are now visible in the table with checkboxes,
+  // so they are no longer listed as implicit writes.
 
   // Companion fields that auto-apply
   for (const edge of mappings) {
@@ -923,7 +895,9 @@ function FieldRowComponent({
 
       {/* Internal column */}
       <td className="px-3 py-2">
-        {row.isVirtual || row.isPushOnly ? (
+        {row.isVirtual ? (
+          <span className="font-mono text-xs text-muted">{formatValue(internalValue)}</span>
+        ) : row.isPushOnly ? (
           <span className="font-mono text-xs text-muted">{formatValue(internalValue)}</span>
         ) : readOnly ? (
           <span className="font-mono text-xs text-muted">{formatValue(internalValue)}</span>
@@ -960,17 +934,40 @@ function FieldRowComponent({
           );
         }
 
-        if (row.isVirtual || row.isPushOnly) {
+        if (row.isVirtual) {
+          const selKey = `${sys}:${edge.externalField}`;
+          const isChecked = selections[selKey] === "internal";
           return (
             <td key={sys} className="border-l border-border px-3 py-2">
-              <span className="font-mono text-xs text-muted">
-                {linked ? formatValue(extValue) : "\u2014"}
-              </span>
+              <div className="space-y-1">
+                <span className="font-mono text-xs text-muted" title={linked ? String(extValue ?? "") : ""}>
+                  {linked ? truncate(formatValue(extValue), 20) : "\u2014"}
+                </span>
+                {linked && (
+                  <label className="flex items-center gap-1.5 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() =>
+                        onSelectionChange(
+                          selKey,
+                          isChecked ? "keep" : "internal",
+                        )
+                      }
+                      aria-label={`Update ${SYSTEM_LABELS[sys]} ${row.label}`}
+                      className="rounded"
+                    />
+                    <span className={isChecked ? "text-blue-400" : "text-muted"}>
+                      Update
+                    </span>
+                  </label>
+                )}
+              </div>
             </td>
           );
         }
 
-        if (readOnly) {
+        if (row.isPushOnly || readOnly) {
           return (
             <td key={sys} className="border-l border-border px-3 py-2">
               <span className="font-mono text-xs text-muted">
