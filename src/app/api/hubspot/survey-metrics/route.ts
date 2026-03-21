@@ -10,6 +10,15 @@ interface MetricAverages {
   avg: number | null;
 }
 
+// Stages to exclude from pipeline tables (completed/cancelled projects)
+const EXCLUDED_STAGES = [
+  "Project Complete",
+  "Cancelled",
+  "Closed Lost",
+  "Closed Won",
+  "Lost",
+];
+
 interface DealDetail {
   dealId: string;
   projectNumber: string;
@@ -17,6 +26,8 @@ interface DealDetail {
   url: string;
   pbLocation: string;
   surveyor: string;
+  stage: string;
+  amount: number;
   siteSurveyScheduleDate: string | null;
   siteSurveyCompletionDate: string | null;
   turnaroundDays: number | null;
@@ -54,6 +65,8 @@ function buildDealDetails(
       url: p.url,
       pbLocation: p.pbLocation || "Unknown",
       surveyor: p.siteSurveyor || "Unknown",
+      stage: p.stage || "Unknown",
+      amount: p.amount ?? 0,
       siteSurveyScheduleDate: p.siteSurveyScheduleDate,
       siteSurveyCompletionDate: p.siteSurveyCompletionDate,
       turnaroundDays,
@@ -101,9 +114,13 @@ export async function GET(request: NextRequest) {
       projects = projects.filter((p) => !!p.siteSurveyCompletionDate);
     }
 
-    // Fetch Zuper site survey jobs for all filtered deals
-    const dealIds = projects.map((p) => String(p.id));
-    const zuperJobs = await getCachedZuperJobsByDealIds(dealIds, "Site Survey");
+    // Fetch Zuper site survey jobs for completed AND awaiting deals
+    const completedDealIds = projects.map((p) => String(p.id));
+    const awaitingDealIds = (allProjects || [])
+      .filter((p) => p.isSiteSurveyScheduled && !p.isSiteSurveyCompleted && p.siteSurveyScheduleDate)
+      .map((p) => String(p.id));
+    const allDealIds = [...new Set([...completedDealIds, ...awaitingDealIds])];
+    const zuperJobs = await getCachedZuperJobsByDealIds(allDealIds, "Site Survey");
     const zuperByDeal = new Map<string, string>();
     for (const job of zuperJobs) {
       if (job.hubspotDealId) zuperByDeal.set(job.hubspotDealId, job.jobUid);
@@ -136,19 +153,24 @@ export async function GET(request: NextRequest) {
     // Totals
     const totals = calculateAvg(projects);
 
-    // Projects currently awaiting survey (scheduled but not completed)
-    const now = new Date();
-    const awaitingSurvey = (allProjects || [])
+    // Projects with survey scheduled but not completed — split into upcoming vs past due
+    // Use local-date floor so a survey scheduled for "today" stays in upcoming all day
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const allAwaiting = (allProjects || [])
       .filter(
         (p) =>
           p.isSiteSurveyScheduled &&
           !p.isSiteSurveyCompleted &&
-          p.siteSurveyScheduleDate
+          p.siteSurveyScheduleDate &&
+          !EXCLUDED_STAGES.some((s) => s.toLowerCase() === (p.stage || "").toLowerCase())
       )
       .map((p) => {
-        const schedDate = new Date(p.siteSurveyScheduleDate!);
-        const daysWaiting = Math.round(
-          (now.getTime() - schedDate.getTime()) / (1000 * 60 * 60 * 24)
+        // Parse YYYY-MM-DD as local date (not UTC) by splitting components
+        const [y, m, d] = p.siteSurveyScheduleDate!.split("-").map(Number);
+        const schedDate = new Date(y, m - 1, d);
+        const daysUntil = Math.round(
+          (schedDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
         );
         return {
           dealId: String(p.id),
@@ -157,18 +179,30 @@ export async function GET(request: NextRequest) {
           url: p.url,
           pbLocation: p.pbLocation || "Unknown",
           surveyor: p.siteSurveyor || "Unassigned",
+          stage: p.stage || "Unknown",
+          amount: p.amount ?? 0,
           siteSurveyScheduleDate: p.siteSurveyScheduleDate,
-          daysWaiting,
+          daysUntil, // positive = future, negative = past due
           zuperJobUid: zuperByDeal.get(String(p.id)) || (p.zuperUid || null),
         };
-      })
-      .sort((a, b) => b.daysWaiting - a.daysWaiting);
+      });
+
+    // Upcoming: schedule date in the future (daysUntil >= 0), sorted soonest first
+    const upcomingSurveys = allAwaiting
+      .filter((p) => p.daysUntil >= 0)
+      .sort((a, b) => a.daysUntil - b.daysUntil);
+
+    // Past due: schedule date already passed (daysUntil < 0), sorted most overdue first
+    const pastDueSurveys = allAwaiting
+      .filter((p) => p.daysUntil < 0)
+      .sort((a, b) => a.daysUntil - b.daysUntil);
 
     return NextResponse.json({
       byLocation,
       bySurveyor,
       totals: { ...totals, deals: buildDealDetails(projects, zuperByDeal) },
-      awaitingSurvey,
+      upcomingSurveys,
+      pastDueSurveys,
       daysWindow: daysWindow || "all",
       lastUpdated,
     });
