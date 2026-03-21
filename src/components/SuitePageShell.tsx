@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode, CSSProperties } from "react";
 import { getSuiteSwitcherEntriesForRole, SUITE_NAV_ENTRIES } from "@/lib/suite-nav";
 import { canAccessRoute, getDefaultRouteForRole, type UserRole } from "@/lib/role-permissions";
+import { SUITE_ACCENT_COLORS, DEFAULT_SUITE_ACCENT } from "@/lib/suite-accents";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
 
 export interface SuitePageCard {
@@ -59,18 +60,6 @@ function groupCards(cards: SuitePageCard[]): Array<{ section: string; cards: Sui
   return order.map((section) => ({ section, cards: bySection.get(section) || [] }));
 }
 
-const SUITE_ACCENT_COLORS: Record<string, { color: string; light: string }> = {
-  "/suites/operations":                 { color: "#f97316", light: "#fb923c" },
-  "/suites/design-engineering":         { color: "#6366f1", light: "#818cf8" },
-  "/suites/permitting-interconnection": { color: "#06b6d4", light: "#22d3ee" },
-  "/suites/service":                    { color: "#06b6d4", light: "#22d3ee" },
-  "/suites/dnr-roofing":                { color: "#a855f7", light: "#c084fc" },
-  "/suites/intelligence":               { color: "#3b82f6", light: "#60a5fa" },
-  "/suites/executive":                  { color: "#f59e0b", light: "#fbbf24" },
-  "/suites/admin":                      { color: "#f97316", light: "#fb923c" },
-};
-
-const DEFAULT_ACCENT = { color: "#f97316", light: "#fb923c" };
 
 const SECTION_COLORS: Record<string, string> = {
   "Scheduling & Planning": "#3b82f6",
@@ -123,7 +112,7 @@ export default function SuitePageShell({
   columnsClassName = "grid grid-cols-1 md:grid-cols-3 gap-4",
   heroContent,
 }: SuitePageShellProps) {
-  const accent = SUITE_ACCENT_COLORS[currentSuiteHref] || DEFAULT_ACCENT;
+  const accent = SUITE_ACCENT_COLORS[currentSuiteHref] || DEFAULT_SUITE_ACCENT;
   const toRoutePath = (href: string): string | null => {
     if (!href.startsWith("/")) return null;
     return href.split("?")[0] || href;

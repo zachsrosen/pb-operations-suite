@@ -113,6 +113,36 @@ export default function SyncModal({
     return snapshots.find((s) => s.system === system && s.field === field)?.rawValue ?? null;
   }
 
+  /**
+   * Compute the effective internal value for a field, accounting for any
+   * pending pull from another system. If system X is pulling a value into
+   * internalField "foo", then when we render system Y's row for the same
+   * internalField, we show the post-pull value instead of the stale current one.
+   *
+   * Uses SYSTEM_PRECEDENCE (zoho > hubspot > zuper) when multiple pulls target
+   * the same internal field.
+   */
+  function getEffectiveInternalValue(internalField: string): string | number | null {
+    const currentValue = getSnapshotValue("internal", internalField);
+
+    // Find all pulls targeting this internal field
+    const precedence: ExternalSystem[] = ["zoho", "hubspot", "zuper"];
+    for (const sys of precedence) {
+      const sysIntents = intents[sys] ?? {};
+      for (const [extField, intent] of Object.entries(sysIntents)) {
+        if (intent.direction !== "pull") continue;
+        // Find the mapping edge to check which internalField this pull targets
+        const edge = mappings.find((e) => e.system === sys && e.externalField === extField);
+        if (edge && edge.internalField === internalField) {
+          // This system is pulling into this internal field — return the external value
+          return getSnapshotValue(sys, extField);
+        }
+      }
+    }
+
+    return currentValue;
+  }
+
   function isSystemLinked(system: ExternalSystem): boolean {
     return snapshots.some((s) => s.system === system);
   }
@@ -347,11 +377,16 @@ export default function SyncModal({
                     {sysMappings.map((edge) => {
                       const intent = intents[system]?.[edge.externalField];
                       if (!intent) return null;
-                      const internalVal = getSnapshotValue("internal", edge.internalField);
+                      // Use effective internal value (accounts for pending pulls from other systems)
+                      const effectiveVal = getEffectiveInternalValue(edge.internalField);
+                      const rawInternalVal = getSnapshotValue("internal", edge.internalField);
                       const externalVal = getSnapshotValue(system, edge.externalField);
+                      const internalVal = intent.direction === "pull" ? rawInternalVal : effectiveVal;
                       const inSync = String(internalVal ?? "") === String(externalVal ?? "");
                       const displayInternal = internalVal ?? "\u2014";
                       const displayExternal = externalVal ?? "\u2014";
+                      // Show a hint when the effective value differs from raw (due to a pull elsewhere)
+                      const hasUpstreamPull = intent.direction !== "pull" && String(effectiveVal ?? "") !== String(rawInternalVal ?? "");
 
                       return (
                         <div key={edge.externalField} className="rounded-lg border border-border/30 px-3 py-2">
@@ -398,6 +433,9 @@ export default function SyncModal({
                                 <span className="rounded bg-green-500/10 px-1.5 py-0.5 font-mono font-medium text-green-400">
                                   {displayInternal}
                                 </span>
+                                {hasUpstreamPull && (
+                                  <span className="text-blue-400/60 text-[10px]">(via pull)</span>
+                                )}
                                 <span className="text-green-400/60">&rarr;</span>
                                 <span className="font-mono text-muted line-through">
                                   {displayExternal}
@@ -416,10 +454,16 @@ export default function SyncModal({
                             ) : inSync ? (
                               <span className="font-mono text-muted">
                                 {displayInternal} <span className="text-muted/50">=</span> {displayExternal}
+                                {hasUpstreamPull && (
+                                  <span className="ml-1 text-blue-400/60">(after pull)</span>
+                                )}
                               </span>
                             ) : (
                               <>
                                 <span className="font-mono text-muted">{displayInternal}</span>
+                                {hasUpstreamPull && (
+                                  <span className="text-blue-400/60 text-[10px]">(via pull)</span>
+                                )}
                                 <span className="text-muted/50">|</span>
                                 <span className="font-mono text-muted">{displayExternal}</span>
                                 <span className="text-yellow-400/60">(differs)</span>
