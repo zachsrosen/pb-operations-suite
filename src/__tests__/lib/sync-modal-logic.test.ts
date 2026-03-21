@@ -1,155 +1,289 @@
 // src/__tests__/lib/sync-modal-logic.test.ts
-// Tests for SyncModal intent manipulation logic (global toggle, reset auto decisions)
+// Tests for the extracted pure functions from the SyncModal wide table
 
-import type { ExternalSystem, FieldIntent } from "@/lib/catalog-sync-types";
-import { EXTERNAL_SYSTEMS } from "@/lib/catalog-sync-types";
+// Mock heavy dependencies that pull in Prisma/ESM modules
+jest.mock("@/lib/db", () => ({
+  prisma: {},
+}));
 
-type IntentsMap = Record<ExternalSystem, Record<string, FieldIntent>>;
+jest.mock("@/lib/zuper-catalog", () => ({
+  resolveZuperCategoryUid: jest.fn(async (cat: string) => `uid-for-${cat}`),
+}));
 
-// ── Reproduce the exact logic from SyncModal ──
+jest.mock("@/lib/hubspot", () => ({}));
+jest.mock("@/lib/zoho-inventory", () => ({ zohoInventory: {} }));
 
-function handleGlobalToggle(intents: IntentsMap, newValue: boolean): IntentsMap {
-  const updated = JSON.parse(JSON.stringify(intents));
-  for (const system of EXTERNAL_SYSTEMS) {
-    for (const intent of Object.values(updated[system] ?? {})) {
-      // Only seed auto-managed fields; preserve manual per-field overrides
-      if (intent.mode === "auto") {
-        intent.updateInternalOnPull = newValue;
-      }
-    }
-  }
-  return updated;
+import type {
+  FieldMappingEdge,
+  FieldValueSnapshot,
+  ExternalSystem,
+} from "@/lib/catalog-sync-types";
+import {
+  buildFieldRows,
+  getProjectedValue,
+  getImplicitWrites,
+  countChanges,
+} from "@/components/catalog/SyncModal";
+
+// ── Test helpers ──
+
+function snap(
+  system: ExternalSystem | "internal",
+  field: string,
+  rawValue: string | number | null,
+): FieldValueSnapshot {
+  return { system, field, rawValue, normalizedValue: rawValue };
 }
 
-function resetAutoDecisions(
-  intents: IntentsMap,
-  serverDefaults: IntentsMap,
-): IntentsMap {
-  const updated = JSON.parse(JSON.stringify(intents));
-  for (const system of EXTERNAL_SYSTEMS) {
-    for (const [field, intent] of Object.entries(updated[system] ?? {})) {
-      // Only reset auto-managed (cascade-derived) fields back to server defaults;
-      // preserve fields the user explicitly set (mode === "manual")
-      if (intent.mode === "auto") {
-        const serverDefault = serverDefaults[system]?.[field];
-        if (serverDefault) {
-          updated[system][field] = { ...serverDefault, mode: "auto" };
-        }
-      }
-    }
-  }
-  return updated;
+function edge(
+  system: ExternalSystem,
+  externalField: string,
+  internalField: string,
+  opts?: Partial<FieldMappingEdge>,
+): FieldMappingEdge {
+  return {
+    system,
+    externalField,
+    internalField,
+    normalizeWith: "trimmed-string",
+    ...opts,
+  };
 }
 
-// ── Tests ──
+const linked: Record<ExternalSystem, boolean> = {
+  zoho: true,
+  hubspot: true,
+  zuper: true,
+};
 
-describe("handleGlobalToggle", () => {
-  it("only affects auto-managed fields, preserves manual overrides", () => {
-    const intents: IntentsMap = {
-      zoho: {
-        rate: { direction: "pull", mode: "manual", updateInternalOnPull: true },
-      },
-      hubspot: {
-        price: { direction: "push", mode: "auto", updateInternalOnPull: true },
-        name: { direction: "push", mode: "auto", updateInternalOnPull: true },
-      },
-      zuper: {},
-    };
+const linkedZohoOnly: Record<ExternalSystem, boolean> = {
+  zoho: true,
+  hubspot: false,
+  zuper: false,
+};
 
-    const result = handleGlobalToggle(intents, false);
+// ── buildFieldRows ──
 
-    // Manual field should be untouched
-    expect(result.zoho.rate.updateInternalOnPull).toBe(true);
-    // Auto fields should be updated
-    expect(result.hubspot.price.updateInternalOnPull).toBe(false);
-    expect(result.hubspot.name.updateInternalOnPull).toBe(false);
+describe("buildFieldRows", () => {
+  it("splits rows into attention (diffs) and inSync (matches)", () => {
+    const mappings: FieldMappingEdge[] = [
+      edge("zoho", "rate", "sellPrice"),
+      edge("zoho", "sku", "sku"),
+    ];
+    const snapshots: FieldValueSnapshot[] = [
+      snap("internal", "sellPrice", "305"),
+      snap("zoho", "rate", "180"),
+      snap("internal", "sku", "ABC"),
+      snap("zoho", "sku", "ABC"),
+    ];
+
+    const { attention, inSync } = buildFieldRows(mappings, snapshots, linked);
+    expect(attention).toHaveLength(1);
+    expect(attention[0].internalField).toBe("sellPrice");
+    expect(inSync).toHaveLength(1);
+    expect(inSync[0].internalField).toBe("sku");
   });
 
-  it("toggles back preserving manual overrides", () => {
-    const intents: IntentsMap = {
-      zoho: {},
-      hubspot: {
-        price: { direction: "push", mode: "auto", updateInternalOnPull: false },
-      },
-      zuper: {
-        sku: { direction: "pull", mode: "manual", updateInternalOnPull: false },
-      },
-    };
+  it("marks virtual fields correctly", () => {
+    const mappings: FieldMappingEdge[] = [
+      edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
+    ];
+    const snapshots: FieldValueSnapshot[] = [
+      snap("internal", "_name", "Test Product"),
+      snap("zoho", "name", "Test Product"),
+    ];
 
-    const result = handleGlobalToggle(intents, true);
+    const { inSync } = buildFieldRows(mappings, snapshots, linked);
+    expect(inSync).toHaveLength(1);
+    expect(inSync[0].isVirtual).toBe(true);
+    expect(inSync[0].isPushOnly).toBe(true);
+  });
 
-    // Auto field toggled on
-    expect(result.hubspot.price.updateInternalOnPull).toBe(true);
-    // Manual field preserved at false
-    expect(result.zuper.sku.updateInternalOnPull).toBe(false);
+  it("marks push-only non-virtual fields", () => {
+    const mappings: FieldMappingEdge[] = [
+      edge("hubspot", "product_category", "category", { direction: "push-only" }),
+    ];
+    const snapshots: FieldValueSnapshot[] = [
+      snap("internal", "category", "MODULE"),
+      snap("hubspot", "product_category", "MODULE"),
+    ];
+
+    const { inSync } = buildFieldRows(mappings, snapshots, linked);
+    expect(inSync).toHaveLength(1);
+    expect(inSync[0].isVirtual).toBe(false);
+    expect(inSync[0].isPushOnly).toBe(true);
+  });
+
+  it("groups edges by internal field across systems", () => {
+    const mappings: FieldMappingEdge[] = [
+      edge("zoho", "rate", "sellPrice"),
+      edge("hubspot", "price", "sellPrice"),
+      edge("zuper", "price", "sellPrice"),
+    ];
+    const snapshots: FieldValueSnapshot[] = [
+      snap("internal", "sellPrice", "305"),
+      snap("zoho", "rate", "305"),
+      snap("hubspot", "price", "305"),
+      snap("zuper", "price", "180"), // differs
+    ];
+
+    const { attention } = buildFieldRows(mappings, snapshots, linked);
+    expect(attention).toHaveLength(1);
+    expect(attention[0].edges).toHaveLength(3);
+  });
+
+  it("considers only linked systems for diffs", () => {
+    const mappings: FieldMappingEdge[] = [
+      edge("zoho", "rate", "sellPrice"),
+      edge("hubspot", "price", "sellPrice"),
+    ];
+    const snapshots: FieldValueSnapshot[] = [
+      snap("internal", "sellPrice", "305"),
+      snap("zoho", "rate", "305"),
+      // HubSpot not linked — no snapshot
+    ];
+
+    const { inSync } = buildFieldRows(mappings, snapshots, linkedZohoOnly);
+    // Only Zoho is linked and matches — should be in sync
+    expect(inSync).toHaveLength(1);
+  });
+
+  it("skips companion duplicate (zohoVendorId)", () => {
+    const mappings: FieldMappingEdge[] = [
+      edge("zoho", "vendor_name", "vendorName", { companion: "vendor_id" }),
+      edge("zoho", "vendor_id", "zohoVendorId", { companion: "vendor_name" }),
+    ];
+    const snapshots: FieldValueSnapshot[] = [
+      snap("internal", "vendorName", "Hyundai"),
+      snap("internal", "zohoVendorId", "123"),
+      snap("zoho", "vendor_name", "Hyundai"),
+      snap("zoho", "vendor_id", "123"),
+    ];
+
+    const { inSync, attention } = buildFieldRows(mappings, snapshots, linked);
+    // zohoVendorId row should be skipped, only vendorName shows
+    const allRows = [...attention, ...inSync];
+    const fieldNames = allRows.map((r) => r.internalField);
+    expect(fieldNames).toContain("vendorName");
+    expect(fieldNames).not.toContain("zohoVendorId");
   });
 });
 
-describe("resetAutoDecisions", () => {
-  it("resets auto-managed fields to server defaults, preserves manual choices", () => {
-    const serverDefaults: IntentsMap = {
-      zoho: {
-        rate: { direction: "push", mode: "manual", updateInternalOnPull: true },
-      },
-      hubspot: {
-        price: { direction: "push", mode: "manual", updateInternalOnPull: true },
-        name: { direction: "skip", mode: "auto", updateInternalOnPull: true },
-      },
-      zuper: {
-        sku: { direction: "skip", mode: "auto", updateInternalOnPull: true },
-      },
-    };
+// ── getProjectedValue ──
 
-    // User changed some fields; cascade changed others
-    const currentIntents: IntentsMap = {
-      zoho: {
-        rate: { direction: "pull", mode: "manual", updateInternalOnPull: false },
-      },
-      hubspot: {
-        price: { direction: "skip", mode: "manual", updateInternalOnPull: true },
-        // This was changed by cascade (auto), not by user
-        name: { direction: "push", mode: "auto", updateInternalOnPull: true },
-      },
-      zuper: {
-        // This was changed by cascade (auto)
-        sku: { direction: "push", mode: "auto", updateInternalOnPull: false },
-      },
-    };
+describe("getProjectedValue", () => {
+  const mappings: FieldMappingEdge[] = [
+    edge("zoho", "rate", "sellPrice"),
+    edge("hubspot", "price", "sellPrice"),
+    edge("zuper", "price", "sellPrice"),
+  ];
+  const snapshots: FieldValueSnapshot[] = [
+    snap("internal", "sellPrice", "305"),
+    snap("zoho", "rate", "180"),
+    snap("hubspot", "price", "300"),
+    snap("zuper", "price", "290"),
+  ];
 
-    const result = resetAutoDecisions(currentIntents, serverDefaults);
-
-    // Manual fields (user-set) should be unchanged
-    expect(result.zoho.rate.direction).toBe("pull");
-    expect(result.zoho.rate.mode).toBe("manual");
-    expect(result.zoho.rate.updateInternalOnPull).toBe(false);
-
-    expect(result.hubspot.price.direction).toBe("skip");
-    expect(result.hubspot.price.mode).toBe("manual");
-
-    // Auto fields (cascade-set) should be reset to server defaults
-    expect(result.hubspot.name.direction).toBe("skip");
-    expect(result.hubspot.name.mode).toBe("auto");
-
-    expect(result.zuper.sku.direction).toBe("skip");
-    expect(result.zuper.sku.mode).toBe("auto");
-    expect(result.zuper.sku.updateInternalOnPull).toBe(true);
+  it("returns current value for keep", () => {
+    const val = getProjectedValue("keep", "sellPrice", "rate", "zoho", snapshots, mappings);
+    expect(val).toBe("180");
   });
 
-  it("does not create new fields that weren't in the current intents", () => {
-    const serverDefaults: IntentsMap = {
-      zoho: { rate: { direction: "push", mode: "manual", updateInternalOnPull: true } },
-      hubspot: { price: { direction: "push", mode: "manual", updateInternalOnPull: true } },
-      zuper: {},
+  it("returns internal value for internal source", () => {
+    const val = getProjectedValue("internal", "sellPrice", "rate", "zoho", snapshots, mappings);
+    expect(val).toBe("305");
+  });
+
+  it("returns another external system value", () => {
+    const val = getProjectedValue("hubspot", "sellPrice", "rate", "zoho", snapshots, mappings);
+    expect(val).toBe("300");
+  });
+
+  it("returns null when source system has no edge for this field", () => {
+    const limitedMappings = [edge("zoho", "rate", "sellPrice")];
+    const val = getProjectedValue("hubspot", "sellPrice", "rate", "zoho", snapshots, limitedMappings);
+    expect(val).toBeNull();
+  });
+});
+
+// ── getImplicitWrites ──
+
+describe("getImplicitWrites", () => {
+  it("includes virtual/generated fields", () => {
+    const mappings: FieldMappingEdge[] = [
+      edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
+      edge("zoho", "rate", "sellPrice"),
+    ];
+    const selections = { "zoho:rate": "internal" as const };
+
+    const writes = getImplicitWrites(mappings, selections, linked);
+    expect(writes).toContain("Name (auto-generated)");
+  });
+
+  it("includes companion fields when primary is selected", () => {
+    const mappings: FieldMappingEdge[] = [
+      edge("zoho", "vendor_name", "vendorName", { companion: "vendor_id" }),
+      edge("zoho", "vendor_id", "zohoVendorId", { companion: "vendor_name" }),
+    ];
+    const selections = { "zoho:vendor_name": "internal" as const };
+
+    const writes = getImplicitWrites(mappings, selections, linked);
+    expect(writes.some((w) => w.includes("companion"))).toBe(true);
+  });
+
+  it("returns empty when no implicit writes exist", () => {
+    const mappings: FieldMappingEdge[] = [
+      edge("zoho", "rate", "sellPrice"),
+    ];
+    const selections = { "zoho:rate": "internal" as const };
+
+    const writes = getImplicitWrites(mappings, selections, linked);
+    expect(writes).toHaveLength(0);
+  });
+
+  it("deduplicates virtual field labels", () => {
+    const mappings: FieldMappingEdge[] = [
+      edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
+      edge("hubspot", "name", "_name", { direction: "push-only", generator: "skuName" }),
+    ];
+    const selections = {};
+
+    const writes = getImplicitWrites(mappings, selections, linked);
+    const nameEntries = writes.filter((w) => w.startsWith("Name"));
+    expect(nameEntries).toHaveLength(1);
+  });
+});
+
+// ── countChanges ──
+
+describe("countChanges", () => {
+  it("counts non-keep selections", () => {
+    const selections = {
+      "zoho:rate": "internal" as const,
+      "hubspot:price": "keep" as const,
+      "zuper:price": "zoho" as const,
+      "internal:sellPrice": "zoho" as const,
     };
 
-    const currentIntents: IntentsMap = {
-      zoho: {},
-      hubspot: {},
-      zuper: {},
+    const { fields, systems } = countChanges(selections);
+    expect(fields).toBe(3);
+    expect(systems.size).toBe(3); // zoho, zuper, internal
+  });
+
+  it("returns zero for all-keep selections", () => {
+    const selections = {
+      "zoho:rate": "keep" as const,
+      "hubspot:price": "keep" as const,
     };
 
-    const result = resetAutoDecisions(currentIntents, serverDefaults);
-    expect(Object.keys(result.zoho)).toHaveLength(0);
-    expect(Object.keys(result.hubspot)).toHaveLength(0);
+    const { fields, systems } = countChanges(selections);
+    expect(fields).toBe(0);
+    expect(systems.size).toBe(0);
+  });
+
+  it("handles empty selections", () => {
+    const { fields, systems } = countChanges({});
+    expect(fields).toBe(0);
+    expect(systems.size).toBe(0);
   });
 });

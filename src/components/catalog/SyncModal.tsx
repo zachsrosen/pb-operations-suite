@@ -1,24 +1,39 @@
 // src/components/catalog/SyncModal.tsx
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import type {
   ExternalSystem,
-  Direction,
-  FieldIntent,
   FieldMappingEdge,
   FieldValueSnapshot,
-  SyncPlan,
   SyncOperationOutcome,
+  SyncPlan,
 } from "@/lib/catalog-sync-types";
 import { EXTERNAL_SYSTEMS } from "@/lib/catalog-sync-types";
-import { useSyncCascade } from "@/hooks/useSyncCascade";
+import {
+  selectionToIntents,
+  computeSmartDefaults,
+  getDropdownOptions,
+} from "@/lib/selection-to-intents";
+import type { CellSelection, FieldRow, DropdownOption } from "@/lib/selection-to-intents";
+import { isVirtualField } from "@/lib/catalog-sync-mappings";
 
-type IntentsMap = Record<ExternalSystem, Record<string, FieldIntent>>;
-type Step = "loading" | "intents" | "plan-preview" | "executing" | "results";
+// ── Types ──
+
+type Step = "loading" | "table" | "executing" | "results";
+
+/** Per-cell selection keyed by `${system}:${externalField}` for external columns
+ *  or `internal:${internalField}` for the internal column. */
+type SelectionMap = Record<string, "keep" | "internal" | ExternalSystem>;
 
 const SYSTEM_LABELS: Record<ExternalSystem, string> = {
   zoho: "Zoho Inventory",
+  hubspot: "HubSpot",
+  zuper: "Zuper",
+};
+
+const SYSTEM_SHORT: Record<ExternalSystem, string> = {
+  zoho: "Zoho",
   hubspot: "HubSpot",
   zuper: "Zuper",
 };
@@ -28,19 +43,200 @@ const FIELD_LABELS: Record<string, string> = {
   _specification: "Specification",
   brand: "Brand",
   model: "Model",
+  sku: "SKU",
   category: "Category",
-  unitPrice: "Unit Price",
+  sellPrice: "Sell Price",
+  unitCost: "Unit Cost",
+  unitLabel: "Unit Label",
   description: "Description",
+  vendorName: "Vendor",
+  zohoVendorId: "Vendor ID",
   dc_size: "DC Size (W)",
+  wattage: "Wattage",
   efficiency: "Efficiency (%)",
+  acOutputKw: "AC Output (kW)",
   ac_output: "AC Output (W)",
-  capacity_kwh: "Capacity (kWh)",
-  power_kw: "Power (kW)",
-  connector_type: "Connector Type",
-  mount_type: "Mount Type",
-  component_type: "Component Type",
-  device_type: "Device Type",
+  capacityKwh: "Capacity (kWh)",
+  powerKw: "Power (kW)",
+  connectorType: "Connector Type",
+  mountType: "Mount Type",
+  componentType: "Component Type",
+  deviceType: "Device Type",
 };
+
+// ── Exported pure helpers (testable) ──
+
+/**
+ * Group mapping edges into FieldRows, partitioned into "attention" (has diffs)
+ * and "inSync" (all values agree).
+ */
+export function buildFieldRows(
+  mappings: FieldMappingEdge[],
+  snapshots: FieldValueSnapshot[],
+  linkedSystems: Record<ExternalSystem, boolean>,
+): { attention: FieldRow[]; inSync: FieldRow[] } {
+  // Group edges by internalField
+  const byInternal = new Map<string, FieldMappingEdge[]>();
+  for (const edge of mappings) {
+    // Skip companion duplicates — only show the primary field
+    if (edge.companion && edge.internalField === "zohoVendorId") continue;
+    const key = edge.internalField;
+    if (!byInternal.has(key)) byInternal.set(key, []);
+    byInternal.get(key)!.push(edge);
+  }
+
+  const attention: FieldRow[] = [];
+  const inSync: FieldRow[] = [];
+
+  for (const [internalField, edges] of byInternal) {
+    const isVirtual = isVirtualField(internalField);
+    const isPushOnly = edges.every((e) => e.direction === "push-only");
+
+    const label = FIELD_LABELS[internalField] ?? internalField;
+
+    const row: FieldRow = {
+      internalField,
+      label,
+      isVirtual,
+      isPushOnly,
+      edges,
+    };
+
+    // Determine if this row needs attention
+    const internalValue = getSnapshotValue(snapshots, "internal", internalField);
+    let hasDiff = false;
+
+    for (const edge of edges) {
+      if (!linkedSystems[edge.system]) continue;
+      const extValue = getSnapshotValue(snapshots, edge.system, edge.externalField);
+      if (String(internalValue ?? "") !== String(extValue ?? "")) {
+        hasDiff = true;
+        break;
+      }
+    }
+
+    if (hasDiff) {
+      attention.push(row);
+    } else {
+      inSync.push(row);
+    }
+  }
+
+  // Sort by label
+  attention.sort((a, b) => a.label.localeCompare(b.label));
+  inSync.sort((a, b) => a.label.localeCompare(b.label));
+
+  return { attention, inSync };
+}
+
+/**
+ * Get the projected value for a cell given the selected source.
+ */
+export function getProjectedValue(
+  source: "keep" | "internal" | ExternalSystem,
+  internalField: string,
+  externalField: string,
+  system: ExternalSystem,
+  snapshots: FieldValueSnapshot[],
+  mappings: FieldMappingEdge[],
+): string | number | null {
+  if (source === "keep") {
+    return getSnapshotValue(snapshots, system, externalField);
+  }
+  if (source === "internal") {
+    return getSnapshotValue(snapshots, "internal", internalField);
+  }
+  // Source is another external system — find its value for this internalField
+  const sourceEdge = mappings.find(
+    (e) => e.system === source && e.internalField === internalField,
+  );
+  if (!sourceEdge) return null;
+  return getSnapshotValue(snapshots, source, sourceEdge.externalField);
+}
+
+/**
+ * Get a list of implicit writes (auto-generated/companion fields) that will
+ * happen alongside the explicit selections.
+ */
+export function getImplicitWrites(
+  mappings: FieldMappingEdge[],
+  selections: SelectionMap,
+  linkedSystems: Record<ExternalSystem, boolean>,
+): string[] {
+  const implicit: string[] = [];
+  const seen = new Set<string>();
+
+  // Virtual/generated fields that will be pushed
+  const virtualFields = new Set<string>();
+  for (const edge of mappings) {
+    if (isVirtualField(edge.internalField) && edge.generator) {
+      virtualFields.add(edge.internalField);
+    }
+  }
+
+  for (const iField of virtualFields) {
+    const label = FIELD_LABELS[iField] ?? iField;
+    if (!seen.has(label)) {
+      seen.add(label);
+      implicit.push(`${label} (auto-generated)`);
+    }
+  }
+
+  // Companion fields that auto-apply
+  for (const edge of mappings) {
+    if (!edge.companion) continue;
+    // Check if primary is selected with non-keep
+    const key = `${edge.system}:${edge.externalField}`;
+    const sel = selections[key];
+    if (sel && sel !== "keep") {
+      const companionEdge = mappings.find(
+        (e) => e.system === edge.system && e.externalField === edge.companion,
+      );
+      if (companionEdge) {
+        const label = FIELD_LABELS[companionEdge.internalField] ?? companionEdge.internalField;
+        const desc = `${label} (companion)`;
+        if (!seen.has(desc)) {
+          seen.add(desc);
+          implicit.push(desc);
+        }
+      }
+    }
+  }
+
+  return implicit;
+}
+
+/**
+ * Count the number of fields and systems that will change.
+ */
+export function countChanges(selections: SelectionMap): { fields: number; systems: Set<string> } {
+  const systems = new Set<string>();
+  let fields = 0;
+  for (const [key, value] of Object.entries(selections)) {
+    if (value === "keep") continue;
+    fields++;
+    const parts = key.split(":");
+    systems.add(parts[0]);
+  }
+  return { fields, systems };
+}
+
+// ── Internal helpers ──
+
+function getSnapshotValue(
+  snapshots: FieldValueSnapshot[],
+  system: ExternalSystem | "internal",
+  field: string,
+): string | number | null {
+  return snapshots.find((s) => s.system === system && s.field === field)?.rawValue ?? null;
+}
+
+function formatValue(val: string | number | null): string {
+  if (val === null || val === undefined || val === "") return "\u2014";
+  return String(val);
+}
+
+// ── Component ──
 
 interface SyncModalProps {
   internalProductId: string;
@@ -62,24 +258,34 @@ export default function SyncModal({
   const [error, setError] = useState<string | null>(null);
   const [snapshots, setSnapshots] = useState<FieldValueSnapshot[]>([]);
   const [mappings, setMappings] = useState<FieldMappingEdge[]>([]);
-  const [intents, setIntents] = useState<IntentsMap>({ zoho: {}, hubspot: {}, zuper: {} });
-  const [serverDefaults, setServerDefaults] = useState<IntentsMap>({ zoho: {}, hubspot: {}, zuper: {} });
-  const [globalUpdateInternal, setGlobalUpdateInternal] = useState(true);
-  const [plan, setPlan] = useState<SyncPlan | null>(null);
+  const [selections, setSelections] = useState<SelectionMap>({});
+  const [createToggles, setCreateToggles] = useState<Record<ExternalSystem, boolean>>({
+    zoho: false,
+    hubspot: false,
+    zuper: false,
+  });
+  const [showInSync, setShowInSync] = useState(false);
   const [outcomes, setOutcomes] = useState<SyncOperationOutcome[]>([]);
-  const [confirmText, setConfirmText] = useState("");
 
-  const { applyCascade } = useSyncCascade({ mappings, snapshots });
+  // ── Linked systems ──
+  const linkedSystems = useMemo<Record<ExternalSystem, boolean>>(() => {
+    const result = { zoho: false, hubspot: false, zuper: false };
+    for (const sys of EXTERNAL_SYSTEMS) {
+      result[sys] = snapshots.some((s) => s.system === sys);
+    }
+    return result;
+  }, [snapshots]);
 
-  // ── Reset state when modal opens (adjust-state-during-render pattern) ──
+  // ── Reset when modal opens ──
   const [prevOpen, setPrevOpen] = useState(false);
   if (isOpen && !prevOpen) {
     setPrevOpen(true);
     setStep("loading");
     setError(null);
-    setPlan(null);
     setOutcomes([]);
-    setConfirmText("");
+    setSelections({});
+    setCreateToggles({ zoho: false, hubspot: false, zuper: false });
+    setShowInSync(false);
   }
   if (!isOpen && prevOpen) {
     setPrevOpen(false);
@@ -95,162 +301,220 @@ export default function SyncModal({
         return r.json();
       })
       .then((data) => {
-        setSnapshots(data.snapshots);
-        setMappings(data.mappings);
-        setIntents(data.defaultIntents);
-        setServerDefaults(structuredClone(data.defaultIntents));
-        setStep("intents");
+        const snaps: FieldValueSnapshot[] = data.snapshots;
+        const maps: FieldMappingEdge[] = data.mappings;
+        setSnapshots(snaps);
+        setMappings(maps);
+
+        // Compute linked systems inline for defaults
+        const linked: Record<ExternalSystem, boolean> = {
+          zoho: false,
+          hubspot: false,
+          zuper: false,
+        };
+        for (const sys of EXTERNAL_SYSTEMS) {
+          linked[sys] = snaps.some((s: FieldValueSnapshot) => s.system === sys);
+        }
+
+        // Compute smart defaults
+        const defaults = computeSmartDefaults(maps, snaps, linked);
+        const selMap: SelectionMap = {};
+        for (const d of defaults) {
+          const key = `${d.system}:${d.externalField}`;
+          selMap[key] = d.source;
+        }
+        setSelections(selMap);
+        setStep("table");
       })
       .catch((err) => {
         setError(err.message);
-        setStep("intents");
+        setStep("table");
       });
   }, [isOpen, internalProductId]);
 
-  // ── Helpers ──
+  // ── Build rows ──
+  const { attention, inSync } = useMemo(
+    () => buildFieldRows(mappings, snapshots, linkedSystems),
+    [mappings, snapshots, linkedSystems],
+  );
 
-  function getSnapshotValue(system: ExternalSystem | "internal", field: string) {
-    return snapshots.find((s) => s.system === system && s.field === field)?.rawValue ?? null;
-  }
-
-  /**
-   * Compute the effective internal value for a field, accounting for any
-   * pending pull from another system. If system X is pulling a value into
-   * internalField "foo", then when we render system Y's row for the same
-   * internalField, we show the post-pull value instead of the stale current one.
-   *
-   * Uses SYSTEM_PRECEDENCE (zoho > hubspot > zuper) when multiple pulls target
-   * the same internal field.
-   *
-   * Returns { value, saving } — `saving` is true when the upstream pull will
-   * persist the value to the internal DB, false when it's relay-only.
-   */
-  function getEffectiveInternal(internalField: string): { value: string | number | null; saving: boolean } {
-    const currentValue = getSnapshotValue("internal", internalField);
-
-    // Find the highest-precedence pull targeting this internal field
-    const precedence: ExternalSystem[] = ["zoho", "hubspot", "zuper"];
-    for (const sys of precedence) {
-      const sysIntents = intents[sys] ?? {};
-      for (const [extField, intent] of Object.entries(sysIntents)) {
-        if (intent.direction !== "pull") continue;
-        const edge = mappings.find((e) => e.system === sys && e.externalField === extField);
-        if (edge && edge.internalField === internalField) {
-          return {
-            value: getSnapshotValue(sys, extField),
-            saving: intent.updateInternalOnPull,
-          };
-        }
-      }
+  // ── Locked pull source per field ──
+  // If the internal column picks an external source for a field,
+  // that locks external cells for the same field to only that source.
+  const lockedPullSources = useMemo(() => {
+    const locked: Record<string, ExternalSystem | null> = {};
+    for (const [key, value] of Object.entries(selections)) {
+      if (!key.startsWith("internal:")) continue;
+      if (value === "keep" || value === "internal") continue;
+      // value is an ExternalSystem
+      const internalField = key.split(":")[1];
+      locked[internalField] = value as ExternalSystem;
     }
+    return locked;
+  }, [selections]);
 
-    return { value: currentValue, saving: false };
-  }
+  // ── Handlers ──
 
-  function isSystemLinked(system: ExternalSystem): boolean {
-    return snapshots.some((s) => s.system === system);
-  }
+  const handleSelectionChange = useCallback(
+    (key: string, value: "keep" | "internal" | ExternalSystem) => {
+      setSelections((prev) => {
+        const next = { ...prev, [key]: value };
 
-  function getSystemMappings(system: ExternalSystem): FieldMappingEdge[] {
-    return mappings.filter(
-      (e) => e.system === system && e.direction !== "push-only",
-    );
-  }
-
-  const hasAnyDiffs = Object.values(intents).some((sysIntents) =>
-    Object.values(sysIntents).some((i) => i.direction !== "skip"),
-  );
-
-  // ── Direction cycling ──
-
-  const cycleDirection = useCallback(
-    (system: ExternalSystem, field: string) => {
-      setIntents((prev) => {
-        const current = prev[system]?.[field];
-        if (!current) return prev;
-
-        const edge = mappings.find(
-          (e) => e.system === system && e.externalField === field,
-        );
-        const canPull = edge && edge.direction !== "push-only";
-        const directions: Direction[] = canPull
-          ? ["push", "skip", "pull"]
-          : ["push", "skip"];
-
-        const idx = directions.indexOf(current.direction);
-        const next = directions[(idx + 1) % directions.length];
-
-        const updated = structuredClone(prev);
-        updated[system][field] = {
-          direction: next,
-          mode: "manual",
-          updateInternalOnPull: current.updateInternalOnPull,
-        };
-        return applyCascade(updated);
-      });
-    },
-    [mappings, applyCascade],
-  );
-
-  // ── Toggle update-internal per field ──
-
-  function toggleFieldUpdateInternal(system: ExternalSystem, field: string) {
-    setIntents((prev) => {
-      const updated = structuredClone(prev);
-      const intent = updated[system]?.[field];
-      if (intent) {
-        intent.updateInternalOnPull = !intent.updateInternalOnPull;
-      }
-      return updated;
-    });
-  }
-
-  // ── Global update-internal toggle ──
-
-  function handleGlobalUpdateInternalToggle() {
-    const newValue = !globalUpdateInternal;
-    setGlobalUpdateInternal(newValue);
-    setIntents((prev) => {
-      const updated = structuredClone(prev);
-      for (const system of EXTERNAL_SYSTEMS) {
-        for (const intent of Object.values(updated[system] ?? {})) {
-          // Only seed auto-managed fields; preserve manual per-field overrides
-          if (intent.mode === "auto") {
-            intent.updateInternalOnPull = newValue;
-          }
-        }
-      }
-      return updated;
-    });
-  }
-
-  // ── Reset auto decisions ──
-
-  function resetAutoDecisions() {
-    setIntents((prev) => {
-      const updated = structuredClone(prev);
-      for (const system of EXTERNAL_SYSTEMS) {
-        for (const [field, intent] of Object.entries(updated[system] ?? {})) {
-          // Only reset auto-managed (cascade-derived) fields back to server defaults;
-          // preserve fields the user explicitly set (mode === "manual")
-          if (intent.mode === "auto") {
-            const serverDefault = serverDefaults[system]?.[field];
-            if (serverDefault) {
-              updated[system][field] = { ...serverDefault, mode: "auto" };
+        // Conflict prevention: if this is the Internal column changing,
+        // reset any external cells for the same field that would conflict
+        if (key.startsWith("internal:")) {
+          const internalField = key.split(":")[1];
+          if (value !== "keep" && value !== "internal") {
+            // Lock: external cells for this field can only be keep/internal/value
+            for (const sys of EXTERNAL_SYSTEMS) {
+              for (const edge of mappings) {
+                if (edge.system !== sys || edge.internalField !== internalField) continue;
+                const extKey = `${sys}:${edge.externalField}`;
+                const extSel = next[extKey];
+                if (
+                  extSel &&
+                  extSel !== "keep" &&
+                  extSel !== "internal" &&
+                  extSel !== value
+                ) {
+                  // Conflicting source — reset to keep
+                  next[extKey] = "keep";
+                }
+              }
             }
           }
         }
-      }
-      return applyCascade(updated);
-    });
-  }
 
-  // ── Preview plan ──
+        return next;
+      });
+    },
+    [mappings],
+  );
 
-  async function handlePreviewPlan() {
+  const handleCreateToggle = useCallback(
+    (system: ExternalSystem) => {
+      setCreateToggles((prev) => {
+        const newVal = !prev[system];
+        const next = { ...prev, [system]: newVal };
+
+        // When toggling on, set all cells for this system to "internal"
+        // When toggling off, set all cells for this system to "keep"
+        setSelections((prevSel) => {
+          const updated = { ...prevSel };
+          for (const edge of mappings) {
+            if (edge.system !== system) continue;
+            if (isVirtualField(edge.internalField)) continue;
+            if (edge.direction === "push-only") continue;
+            const key = `${system}:${edge.externalField}`;
+            updated[key] = newVal ? "internal" : "keep";
+          }
+          return updated;
+        });
+
+        return next;
+      });
+    },
+    [mappings],
+  );
+
+  const handleRetry = useCallback(() => {
     setError(null);
+    setStep("loading");
+    // Re-trigger the fetch
+    fetch(`/api/inventory/products/${internalProductId}/sync`)
+      .then((r) => {
+        if (!r.ok) throw new Error("Failed to load sync data");
+        return r.json();
+      })
+      .then((data) => {
+        setSnapshots(data.snapshots);
+        setMappings(data.mappings);
+        const snaps: FieldValueSnapshot[] = data.snapshots;
+        const maps: FieldMappingEdge[] = data.mappings;
+        const linked: Record<ExternalSystem, boolean> = {
+          zoho: false,
+          hubspot: false,
+          zuper: false,
+        };
+        for (const sys of EXTERNAL_SYSTEMS) {
+          linked[sys] = snaps.some((s: FieldValueSnapshot) => s.system === sys);
+        }
+        const defaults = computeSmartDefaults(maps, snaps, linked);
+        const selMap: SelectionMap = {};
+        for (const d of defaults) {
+          selMap[`${d.system}:${d.externalField}`] = d.source;
+        }
+        setSelections(selMap);
+        setStep("table");
+      })
+      .catch((err) => {
+        setError(err.message);
+        setStep("table");
+      });
+  }, [internalProductId]);
+
+  // ── Execute sync ──
+
+  async function handleSync() {
+    setError(null);
+    setStep("executing");
     try {
-      const response = await fetch(
+      // Build CellSelections from selections map
+      const cellSelections: CellSelection[] = [];
+
+      for (const [key, source] of Object.entries(selections)) {
+        if (source === "keep") continue;
+        const parts = key.split(":");
+        const colType = parts[0];
+        const field = parts.slice(1).join(":");
+
+        if (colType === "internal") {
+          // Internal column pulling from an external source
+          // Need to find the edge for this internal field on the source system
+          const sourceSystem = source as ExternalSystem;
+          const sourceEdge = mappings.find(
+            (e) => e.system === sourceSystem && e.internalField === field,
+          );
+          if (sourceEdge) {
+            cellSelections.push({
+              system: sourceSystem,
+              externalField: sourceEdge.externalField,
+              source: sourceSystem,
+              isInternalColumn: true,
+            });
+          }
+        } else {
+          // External column
+          const system = colType as ExternalSystem;
+          cellSelections.push({
+            system,
+            externalField: field,
+            source,
+          });
+        }
+      }
+
+      // Also add create operations for unlinked systems
+      for (const sys of EXTERNAL_SYSTEMS) {
+        if (linkedSystems[sys]) continue;
+        if (!createToggles[sys]) continue;
+        // All fields for this system should be pushed
+        for (const edge of mappings) {
+          if (edge.system !== sys) continue;
+          if (isVirtualField(edge.internalField)) continue;
+          if (edge.direction === "push-only") continue;
+          cellSelections.push({
+            system: sys,
+            externalField: edge.externalField,
+            source: "internal",
+          });
+        }
+      }
+
+      const intents = selectionToIntents(cellSelections, mappings);
+
+      // 1. POST /plan
+      const planRes = await fetch(
         `/api/inventory/products/${internalProductId}/sync/plan`,
         {
           method: "POST",
@@ -258,27 +522,24 @@ export default function SyncModal({
           body: JSON.stringify({ intents }),
         },
       );
-      if (!response.ok) {
-        const err = await response.json();
+      if (!planRes.ok) {
+        const err = await planRes.json();
         setError(err.error ?? "Failed to derive plan");
+        setStep("table");
         return;
       }
-      const data = await response.json();
-      setPlan(data.plan);
-      setStep("plan-preview");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to preview plan");
-    }
-  }
+      const planData: { plan: SyncPlan } = await planRes.json();
+      const plan = planData.plan;
 
-  // ── Execute ──
+      if (plan.conflicts.length > 0) {
+        setError(
+          `Pull conflict: ${plan.conflicts.map((c) => c.internalField).join(", ")} — please resolve conflicting sources.`,
+        );
+        setStep("table");
+        return;
+      }
 
-  async function handleExecute() {
-    if (!plan) return;
-    setStep("executing");
-    setError(null);
-    try {
-      // 1. Get confirmation token
+      // 2. POST /confirm
       const confirmRes = await fetch(
         `/api/inventory/products/${internalProductId}/sync/confirm`,
         {
@@ -289,12 +550,12 @@ export default function SyncModal({
       );
       if (!confirmRes.ok) {
         setError("Failed to get confirmation token");
-        setStep("plan-preview");
+        setStep("table");
         return;
       }
       const { token, issuedAt } = await confirmRes.json();
 
-      // 2. Execute via POST /sync
+      // 3. POST /sync
       const execRes = await fetch(
         `/api/inventory/products/${internalProductId}/sync`,
         {
@@ -306,13 +567,13 @@ export default function SyncModal({
       const result = await execRes.json();
 
       if (execRes.status === 409) {
-        setError("External state changed since preview. Please re-preview.");
-        setStep("intents");
+        setError("External state changed. Please retry.");
+        setStep("table");
         return;
       }
       if (!execRes.ok) {
         setError(result.error ?? "Sync failed");
-        setStep("plan-preview");
+        setStep("table");
         return;
       }
 
@@ -321,9 +582,19 @@ export default function SyncModal({
       onSyncComplete?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sync failed");
-      setStep("plan-preview");
+      setStep("table");
     }
   }
+
+  // ── Summary bar counts ──
+  const { fields: changeCount, systems: changeSystems } = useMemo(
+    () => countChanges(selections),
+    [selections],
+  );
+  const implicitWrites = useMemo(
+    () => getImplicitWrites(mappings, selections, linkedSystems),
+    [mappings, selections, linkedSystems],
+  );
 
   // ── Render ──
 
@@ -331,19 +602,32 @@ export default function SyncModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-surface max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-border p-6 shadow-xl">
+      <div className="bg-surface-elevated max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl border border-border p-6 shadow-xl">
+        {/* Header */}
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-foreground">
             Sync: {skuName}
           </h2>
-          <button onClick={onClose} className="text-muted hover:text-foreground">
+          <button
+            onClick={onClose}
+            className="text-muted hover:text-foreground text-xl leading-none"
+          >
             &times;
           </button>
         </div>
 
+        {/* Error */}
         {error && (
-          <div className="mb-4 rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">
-            {error}
+          <div className="mb-4 flex items-center justify-between rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            <span>{error}</span>
+            {step === "table" && (
+              <button
+                onClick={handleRetry}
+                className="ml-3 shrink-0 rounded bg-red-500/20 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-500/30"
+              >
+                Retry
+              </button>
+            )}
           </div>
         )}
 
@@ -354,272 +638,124 @@ export default function SyncModal({
           </div>
         )}
 
-        {/* Intent Editor */}
-        {step === "intents" && (
-          <div className="space-y-6">
-            {EXTERNAL_SYSTEMS.map((system) => {
-              const sysMappings = getSystemMappings(system);
-              const linked = isSystemLinked(system);
-              if (sysMappings.length === 0) return null;
-
-              return (
-                <div key={system} className="rounded-lg border border-border p-4">
-                  <div className="mb-3 flex items-center justify-between">
-                    <h3 className="font-medium text-foreground">
-                      {SYSTEM_LABELS[system]}
-                    </h3>
-                    <span className={`text-xs rounded-full px-2 py-0.5 ${
-                      linked
-                        ? "bg-blue-500/10 text-blue-400"
-                        : "bg-green-500/10 text-green-400"
-                    }`}>
-                      {linked ? "Update" : "Will Create"}
-                    </span>
-                  </div>
-
-                  <div className="space-y-1">
-                    {sysMappings.map((edge) => {
-                      const intent = intents[system]?.[edge.externalField];
-                      if (!intent) return null;
-                      // Use effective internal value (accounts for pending pulls from other systems)
-                      const effective = getEffectiveInternal(edge.internalField);
-                      const rawInternalVal = getSnapshotValue("internal", edge.internalField);
-                      const externalVal = getSnapshotValue(system, edge.externalField);
-                      const internalVal = intent.direction === "pull" ? rawInternalVal : effective.value;
-                      const inSync = String(internalVal ?? "") === String(externalVal ?? "");
-                      const displayInternal = internalVal ?? "\u2014";
-                      const displayExternal = externalVal ?? "\u2014";
-                      // Show hints when the effective value comes from a pull elsewhere
-                      const hasUpstreamPull = intent.direction !== "pull" && String(effective.value ?? "") !== String(rawInternalVal ?? "");
-                      const upstreamIsRelayOnly = hasUpstreamPull && !effective.saving;
-
-                      return (
-                        <div key={edge.externalField} className="rounded-lg border border-border/30 px-3 py-2">
-                          {/* Row 1: field name + direction button */}
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm text-foreground">
-                              {FIELD_LABELS[edge.internalField] ?? edge.internalField}
-                              {intent.mode === "auto" && (
-                                <span className="ml-1 text-xs text-muted">(auto)</span>
-                              )}
-                            </span>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => cycleDirection(system, edge.externalField)}
-                                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
-                                  intent.direction === "push"
-                                    ? "bg-green-500/15 text-green-400 hover:bg-green-500/25"
-                                    : intent.direction === "pull"
-                                      ? "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25"
-                                      : "bg-surface-2 text-muted hover:text-foreground"
-                                }`}
-                              >
-                                {intent.direction === "push" ? "Push \u2192" :
-                                 intent.direction === "pull" ? "\u2190 Pull" : "Skip"}
-                              </button>
-                              {intent.direction === "pull" && (
-                                <label className="inline-flex items-center gap-1 text-xs text-muted">
-                                  <input
-                                    type="checkbox"
-                                    checked={intent.updateInternalOnPull}
-                                    onChange={() => toggleFieldUpdateInternal(system, edge.externalField)}
-                                    className="rounded"
-                                  />
-                                  save
-                                </label>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Row 2: value flow visualization */}
-                          <div className="mt-1.5 flex items-center gap-2 text-xs">
-                            {intent.direction === "push" ? (
-                              <>
-                                <span className="rounded bg-green-500/10 px-1.5 py-0.5 font-mono font-medium text-green-400">
-                                  {displayInternal}
-                                </span>
-                                {hasUpstreamPull && (
-                                  <span className={`text-[10px] ${upstreamIsRelayOnly ? "text-yellow-400/60" : "text-blue-400/60"}`}>
-                                    {upstreamIsRelayOnly ? "(relay only)" : "(via pull)"}
-                                  </span>
-                                )}
-                                <span className="text-green-400/60">&rarr;</span>
-                                <span className="font-mono text-muted line-through">
-                                  {displayExternal}
-                                </span>
-                              </>
-                            ) : intent.direction === "pull" ? (
-                              <>
-                                <span className="font-mono text-muted line-through">
-                                  {displayInternal}
-                                </span>
-                                <span className="text-blue-400/60">&larr;</span>
-                                <span className="rounded bg-blue-500/10 px-1.5 py-0.5 font-mono font-medium text-blue-400">
-                                  {displayExternal}
-                                </span>
-                              </>
-                            ) : inSync ? (
-                              <span className="font-mono text-muted">
-                                {displayInternal} <span className="text-muted/50">=</span> {displayExternal}
-                                {hasUpstreamPull && (
-                                  <span className={`ml-1 ${upstreamIsRelayOnly ? "text-yellow-400/60" : "text-blue-400/60"}`}>
-                                    {upstreamIsRelayOnly ? "(relay only)" : "(after pull)"}
-                                  </span>
-                                )}
-                              </span>
-                            ) : (
-                              <>
-                                <span className="font-mono text-muted">{displayInternal}</span>
-                                {hasUpstreamPull && (
-                                  <span className={`text-[10px] ${upstreamIsRelayOnly ? "text-yellow-400/60" : "text-blue-400/60"}`}>
-                                    {upstreamIsRelayOnly ? "(relay only)" : "(via pull)"}
-                                  </span>
-                                )}
-                                <span className="text-muted/50">|</span>
-                                <span className="font-mono text-muted">{displayExternal}</span>
-                                <span className="text-yellow-400/60">(differs)</span>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Global controls */}
-            <div className="flex items-center justify-between border-t border-border pt-4">
-              <div className="flex items-center gap-4">
-                <label className="inline-flex items-center gap-2 text-sm text-muted">
-                  <input
-                    type="checkbox"
-                    checked={globalUpdateInternal}
-                    onChange={handleGlobalUpdateInternalToggle}
-                    className="rounded"
-                  />
-                  Update internal on pull
-                </label>
-                <button
-                  onClick={resetAutoDecisions}
-                  className="text-xs text-muted hover:text-foreground"
-                >
-                  Reset auto decisions
-                </button>
-              </div>
-              <button
-                onClick={handlePreviewPlan}
-                disabled={!hasAnyDiffs}
-                className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-500 disabled:opacity-50"
-              >
-                Preview Plan
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Plan Preview */}
-        {step === "plan-preview" && plan && (
+        {/* Table */}
+        {step === "table" && (
           <div className="space-y-4">
-            <button
-              onClick={() => setStep("intents")}
-              className="text-sm text-muted hover:text-foreground"
-            >
-              &larr; Back to intents
-            </button>
+            {/* Table container with horizontal scroll */}
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="sticky left-0 z-10 bg-surface-elevated px-3 py-2 text-left text-xs font-medium text-muted">
+                      Field
+                    </th>
+                    <th className="px-3 py-2 text-left text-xs font-medium text-muted">
+                      Internal
+                    </th>
+                    {EXTERNAL_SYSTEMS.map((sys) => (
+                      <th key={sys} className="px-3 py-2 text-left text-xs font-medium text-muted">
+                        <div className="flex items-center gap-2">
+                          <span>{SYSTEM_SHORT[sys]}</span>
+                          {!linkedSystems[sys] && (
+                            <label className="inline-flex items-center gap-1 text-xs">
+                              <input
+                                type="checkbox"
+                                checked={createToggles[sys]}
+                                onChange={() => handleCreateToggle(sys)}
+                                className="rounded"
+                              />
+                              <span className="text-muted">Create</span>
+                            </label>
+                          )}
+                        </div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {/* Needs Attention section */}
+                  {attention.length > 0 && (
+                    <>
+                      <tr>
+                        <td
+                          colSpan={5}
+                          className="sticky left-0 bg-surface-elevated px-3 pt-3 pb-1 text-xs font-semibold text-yellow-400"
+                        >
+                          Needs Attention ({attention.length})
+                        </td>
+                      </tr>
+                      {attention.map((row) => (
+                        <FieldRowComponent
+                          key={row.internalField}
+                          row={row}
+                          snapshots={snapshots}
+                          mappings={mappings}
+                          linkedSystems={linkedSystems}
+                          createToggles={createToggles}
+                          selections={selections}
+                          lockedPullSources={lockedPullSources}
+                          onSelectionChange={handleSelectionChange}
+                          readOnly={false}
+                        />
+                      ))}
+                    </>
+                  )}
 
-            {/* Summary */}
-            <div className="grid grid-cols-4 gap-3 text-center text-sm">
-              <div className="rounded-lg bg-surface-2 p-3">
-                <div className="text-lg font-bold text-foreground">{plan.summary.pulls}</div>
-                <div className="text-muted">Pulls</div>
-              </div>
-              <div className="rounded-lg bg-surface-2 p-3">
-                <div className="text-lg font-bold text-foreground">{plan.summary.internalWrites}</div>
-                <div className="text-muted">Internal</div>
-              </div>
-              <div className="rounded-lg bg-surface-2 p-3">
-                <div className="text-lg font-bold text-foreground">{plan.summary.pushes}</div>
-                <div className="text-muted">Pushes</div>
-              </div>
-              <div className="rounded-lg bg-surface-2 p-3">
-                <div className="text-lg font-bold text-foreground">{plan.summary.creates}</div>
-                <div className="text-muted">Creates</div>
-              </div>
+                  {/* In Sync section */}
+                  {inSync.length > 0 && (
+                    <>
+                      <tr>
+                        <td colSpan={5} className="sticky left-0 bg-surface-elevated px-3 pt-4 pb-1">
+                          <button
+                            onClick={() => setShowInSync(!showInSync)}
+                            className="text-xs font-medium text-muted hover:text-foreground"
+                          >
+                            {showInSync ? "Hide" : "Show"} {inSync.length} in-sync field{inSync.length !== 1 ? "s" : ""}
+                            <span className="ml-1">{showInSync ? "\u25B2" : "\u25BC"}</span>
+                          </button>
+                        </td>
+                      </tr>
+                      {showInSync &&
+                        inSync.map((row) => (
+                          <FieldRowComponent
+                            key={row.internalField}
+                            row={row}
+                            snapshots={snapshots}
+                            mappings={mappings}
+                            linkedSystems={linkedSystems}
+                            createToggles={createToggles}
+                            selections={selections}
+                            lockedPullSources={lockedPullSources}
+                            onSelectionChange={handleSelectionChange}
+                            readOnly={true}
+                          />
+                        ))}
+                    </>
+                  )}
+                </tbody>
+              </table>
             </div>
 
-            {/* Conflicts */}
-            {plan.conflicts.length > 0 && (
-              <div className="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">
-                <strong>Pull conflict{plan.conflicts.length > 1 ? "s" : ""}:</strong>
-                {plan.conflicts.map((c) => (
-                  <div key={c.internalField} className="mt-1">
-                    <code>{c.internalField}</code> has conflicting values from{" "}
-                    {c.contenders.map((ct) => ct.system).join(", ")}. Resolve by
-                    changing one to skip.
-                  </div>
-                ))}
-              </div>
+            {/* Implicit writes */}
+            {implicitWrites.length > 0 && (
+              <p className="text-xs text-muted">
+                Also updates: {implicitWrites.join(", ")}
+              </p>
             )}
 
-            {/* Operations list */}
-            <div className="space-y-1 text-sm">
-              {plan.operations
-                .filter((op) => !(op.kind === "pull" && op.noOp))
-                .map((op, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-2 rounded-lg border border-border/30 px-3 py-2"
-                  >
-                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${
-                      op.kind === "pull"
-                        ? "bg-blue-500/15 text-blue-400"
-                        : op.kind === "push"
-                          ? "bg-green-500/15 text-green-400"
-                          : "bg-purple-500/15 text-purple-400"
-                    }`}>
-                      {op.kind}
-                    </span>
-                    <span className="shrink-0 text-muted">{SYSTEM_LABELS[op.system as ExternalSystem] ?? op.system}</span>
-                    <span className="font-mono text-foreground">
-                      {op.kind === "create"
-                        ? `${Object.keys(op.fields).length} fields`
-                        : FIELD_LABELS[op.kind === "pull" ? op.internalField : op.externalField] ?? op.externalField}
-                    </span>
-                    {(op.kind === "push" || op.kind === "pull") && op.value != null && (
-                      <span className={`ml-auto shrink-0 rounded px-1.5 py-0.5 font-mono text-xs ${
-                        op.kind === "push"
-                          ? "bg-green-500/10 text-green-400"
-                          : "bg-blue-500/10 text-blue-400"
-                      }`}>
-                        {String(op.value)}
-                      </span>
-                    )}
-                    {op.source === "cascade" && (
-                      <span className="shrink-0 text-xs text-yellow-400">(auto)</span>
-                    )}
-                  </div>
-                ))}
-            </div>
-
-            {/* Confirm + Execute */}
-            <div className="flex items-center gap-3 border-t border-border pt-4">
-              <input
-                type="text"
-                value={confirmText}
-                onChange={(e) => setConfirmText(e.target.value)}
-                placeholder='Type "confirm" to execute'
-                className="flex-1 rounded-lg border border-border bg-surface-2 px-3 py-2 text-sm text-foreground"
-              />
+            {/* Summary bar */}
+            <div className="flex items-center justify-between border-t border-border pt-4">
+              <span className="text-sm text-muted">
+                {changeCount === 0
+                  ? "No changes selected"
+                  : `${changeCount} field${changeCount !== 1 ? "s" : ""} will be updated across ${changeSystems.size} system${changeSystems.size !== 1 ? "s" : ""}`}
+              </span>
               <button
-                onClick={handleExecute}
-                disabled={
-                  confirmText !== "confirm" || plan.conflicts.length > 0
-                }
+                onClick={handleSync}
+                disabled={changeCount === 0}
                 className="rounded-lg bg-orange-600 px-4 py-2 text-sm font-medium text-white hover:bg-orange-500 disabled:opacity-50"
               >
-                Execute Sync
+                Sync
               </button>
             </div>
           </div>
@@ -630,7 +766,7 @@ export default function SyncModal({
           <div className="flex min-h-[200px] items-center justify-center">
             <div className="text-center">
               <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-orange-500 border-t-transparent" />
-              <p className="text-sm text-muted">Executing sync plan...</p>
+              <p className="text-sm text-muted">Syncing across systems...</p>
             </div>
           </div>
         )}
@@ -652,7 +788,9 @@ export default function SyncModal({
               >
                 <div className="flex items-center justify-between">
                   <span className="font-medium">
-                    {outcome.system === "internal" ? "Internal Product" : SYSTEM_LABELS[outcome.system as ExternalSystem]}
+                    {outcome.system === "internal"
+                      ? "Internal Product"
+                      : SYSTEM_LABELS[outcome.system as ExternalSystem]}
                   </span>
                   <span className="text-xs uppercase">{outcome.status}</span>
                 </div>
@@ -687,6 +825,330 @@ export default function SyncModal({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Field Row Component ──
+
+interface FieldRowComponentProps {
+  row: FieldRow;
+  snapshots: FieldValueSnapshot[];
+  mappings: FieldMappingEdge[];
+  linkedSystems: Record<ExternalSystem, boolean>;
+  createToggles: Record<ExternalSystem, boolean>;
+  selections: SelectionMap;
+  lockedPullSources: Record<string, ExternalSystem | null>;
+  onSelectionChange: (key: string, value: "keep" | "internal" | ExternalSystem) => void;
+  readOnly: boolean;
+}
+
+function FieldRowComponent({
+  row,
+  snapshots,
+  mappings,
+  linkedSystems,
+  createToggles,
+  selections,
+  lockedPullSources,
+  onSelectionChange,
+  readOnly,
+}: FieldRowComponentProps) {
+  const internalValue = getSnapshotValue(snapshots, "internal", row.internalField);
+
+  // For the internal column, determine the dropdown option for pulling
+  const internalKey = `internal:${row.internalField}`;
+  const internalSelection = selections[internalKey] ?? "keep";
+
+  return (
+    <tr className="border-b border-border/30">
+      {/* Field label */}
+      <td className="sticky left-0 z-10 bg-surface-elevated px-3 py-2 text-sm font-medium text-foreground">
+        {row.label}
+        {row.isVirtual && (
+          <span className="ml-1 text-xs text-muted">(auto-generated)</span>
+        )}
+        {row.isPushOnly && !row.isVirtual && (
+          <span className="ml-1 text-xs text-muted">(push-only)</span>
+        )}
+      </td>
+
+      {/* Internal column */}
+      <td className="px-3 py-2">
+        {row.isVirtual || row.isPushOnly ? (
+          <span className="font-mono text-xs text-muted">{formatValue(internalValue)}</span>
+        ) : readOnly ? (
+          <span className="font-mono text-xs text-muted">{formatValue(internalValue)}</span>
+        ) : (
+          <InternalCell
+            row={row}
+            snapshots={snapshots}
+            mappings={mappings}
+            linkedSystems={linkedSystems}
+            selection={internalSelection}
+            onSelectionChange={(val) => onSelectionChange(internalKey, val)}
+            internalValue={internalValue}
+          />
+        )}
+      </td>
+
+      {/* External system columns */}
+      {EXTERNAL_SYSTEMS.map((sys) => {
+        const edge = row.edges.find((e) => e.system === sys);
+        if (!edge) {
+          return (
+            <td key={sys} className="px-3 py-2 text-xs text-muted">
+              \u2014
+            </td>
+          );
+        }
+
+        const linked = linkedSystems[sys];
+        const extValue = getSnapshotValue(snapshots, sys, edge.externalField);
+
+        if (!linked && !createToggles[sys]) {
+          return (
+            <td key={sys} className="px-3 py-2 text-xs text-muted italic">
+              Not linked
+            </td>
+          );
+        }
+
+        if (row.isVirtual || row.isPushOnly) {
+          return (
+            <td key={sys} className="px-3 py-2">
+              <span className="font-mono text-xs text-muted">
+                {linked ? formatValue(extValue) : "\u2014"}
+              </span>
+            </td>
+          );
+        }
+
+        if (readOnly) {
+          return (
+            <td key={sys} className="px-3 py-2">
+              <span className="font-mono text-xs text-muted">
+                {linked ? formatValue(extValue) : "\u2014"}
+              </span>
+            </td>
+          );
+        }
+
+        const selKey = `${sys}:${edge.externalField}`;
+        const cellSelection = selections[selKey] ?? "keep";
+        const lockedSource = lockedPullSources[row.internalField] ?? null;
+
+        return (
+          <td key={sys} className="px-3 py-2">
+            <ExternalCell
+              system={sys}
+              edge={edge}
+              internalField={row.internalField}
+              snapshots={snapshots}
+              mappings={mappings}
+              linkedSystems={linkedSystems}
+              selection={cellSelection}
+              lockedPullSource={lockedSource}
+              onSelectionChange={(val) => onSelectionChange(selKey, val)}
+              extValue={extValue}
+            />
+          </td>
+        );
+      })}
+    </tr>
+  );
+}
+
+// ── Internal Cell ──
+
+interface InternalCellProps {
+  row: FieldRow;
+  snapshots: FieldValueSnapshot[];
+  mappings: FieldMappingEdge[];
+  linkedSystems: Record<ExternalSystem, boolean>;
+  selection: "keep" | "internal" | ExternalSystem;
+  onSelectionChange: (val: "keep" | "internal" | ExternalSystem) => void;
+  internalValue: string | number | null;
+}
+
+function InternalCell({
+  row,
+  snapshots,
+  mappings,
+  linkedSystems,
+  selection,
+  onSelectionChange,
+  internalValue,
+}: InternalCellProps) {
+  // Build options for the internal column: Keep + external sources only
+  const options: DropdownOption[] = useMemo(() => {
+    const opts: DropdownOption[] = [
+      { value: "keep", label: "Keep", projectedValue: internalValue },
+    ];
+
+    for (const sys of EXTERNAL_SYSTEMS) {
+      if (!linkedSystems[sys]) continue;
+      const edge = row.edges.find((e) => e.system === sys);
+      if (!edge) continue;
+      if (edge.direction === "push-only") continue;
+
+      const extVal = getSnapshotValue(snapshots, sys, edge.externalField);
+      opts.push({
+        value: sys,
+        label: SYSTEM_SHORT[sys],
+        projectedValue: extVal,
+        disabled: String(extVal ?? "") === String(internalValue ?? ""),
+      });
+    }
+
+    return opts;
+  }, [row.edges, snapshots, linkedSystems, internalValue]);
+
+  const projected =
+    selection !== "keep"
+      ? options.find((o) => o.value === selection)?.projectedValue ?? null
+      : null;
+
+  const showTransition = selection !== "keep" && projected !== null;
+
+  return (
+    <div className="space-y-1">
+      {showTransition ? (
+        <div className="flex items-center gap-1 text-xs">
+          <span className="font-mono text-muted line-through">
+            {formatValue(internalValue)}
+          </span>
+          <span className="text-green-400">&rarr;</span>
+          <span className="rounded bg-green-500/10 px-1 py-0.5 font-mono font-medium text-green-400">
+            {formatValue(projected)}
+          </span>
+        </div>
+      ) : (
+        <span className="font-mono text-xs text-foreground">
+          {formatValue(internalValue)}
+        </span>
+      )}
+      <select
+        value={selection}
+        onChange={(e) =>
+          onSelectionChange(e.target.value as "keep" | ExternalSystem)
+        }
+        className={`w-full rounded border px-1.5 py-0.5 text-xs bg-surface-2 text-foreground ${
+          selection !== "keep"
+            ? "border-green-500/50"
+            : "border-border"
+        }`}
+      >
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+            {opt.label}
+            {opt.disabled ? " (same)" : ""}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+// ── External Cell ──
+
+interface ExternalCellProps {
+  system: ExternalSystem;
+  edge: FieldMappingEdge;
+  internalField: string;
+  snapshots: FieldValueSnapshot[];
+  mappings: FieldMappingEdge[];
+  linkedSystems: Record<ExternalSystem, boolean>;
+  selection: "keep" | "internal" | ExternalSystem;
+  lockedPullSource: ExternalSystem | null;
+  onSelectionChange: (val: "keep" | "internal" | ExternalSystem) => void;
+  extValue: string | number | null;
+}
+
+function ExternalCell({
+  system,
+  edge,
+  internalField,
+  snapshots,
+  mappings,
+  linkedSystems,
+  selection,
+  lockedPullSource,
+  onSelectionChange,
+  extValue,
+}: ExternalCellProps) {
+  const options = useMemo(
+    () =>
+      getDropdownOptions(
+        system,
+        edge.externalField,
+        internalField,
+        mappings,
+        snapshots,
+        linkedSystems,
+        lockedPullSource,
+      ),
+    [system, edge.externalField, internalField, mappings, snapshots, linkedSystems, lockedPullSource],
+  );
+
+  const projected =
+    selection !== "keep"
+      ? getProjectedValue(
+          selection,
+          internalField,
+          edge.externalField,
+          system,
+          snapshots,
+          mappings,
+        )
+      : null;
+
+  const showTransition = selection !== "keep";
+
+  // Detect divergence: if after this operation, the value will differ from other systems
+  // This is informational (yellow border), not blocking
+  const isDiverging =
+    selection === "keep" &&
+    String(extValue ?? "") !==
+      String(getSnapshotValue(snapshots, "internal", internalField) ?? "");
+
+  return (
+    <div className="space-y-1">
+      {showTransition ? (
+        <div className="flex items-center gap-1 text-xs">
+          <span className="font-mono text-muted line-through">
+            {formatValue(extValue)}
+          </span>
+          <span className="text-blue-400">&rarr;</span>
+          <span className="rounded bg-blue-500/10 px-1 py-0.5 font-mono font-medium text-blue-400">
+            {formatValue(projected)}
+          </span>
+        </div>
+      ) : (
+        <span className="font-mono text-xs text-foreground">
+          {formatValue(extValue)}
+        </span>
+      )}
+      <select
+        value={selection}
+        onChange={(e) =>
+          onSelectionChange(e.target.value as "keep" | "internal" | ExternalSystem)
+        }
+        className={`w-full rounded border px-1.5 py-0.5 text-xs bg-surface-2 text-foreground ${
+          selection !== "keep"
+            ? "border-blue-500/50"
+            : isDiverging
+              ? "border-yellow-500/40"
+              : "border-border"
+        }`}
+      >
+        {options.map((opt) => (
+          <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+            {opt.label}
+            {opt.disabled ? " (same)" : ""}
+          </option>
+        ))}
+      </select>
     </div>
   );
 }
