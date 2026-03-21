@@ -118,7 +118,15 @@ export function buildFieldRows(
     if (hasDiff) {
       attention.push(row);
     } else {
-      inSync.push(row);
+      // Skip rows where ALL values (internal + linked externals) are empty
+      const allEmpty = isEmptyish(internalValue) &&
+        edges.every((e) => {
+          if (!linkedSystems[e.system]) return true;
+          return isEmptyish(getSnapshotValue(snapshots, e.system, e.externalField));
+        });
+      if (!allEmpty) {
+        inSync.push(row);
+      }
     }
   }
 
@@ -243,12 +251,39 @@ function getSnapshotValue(
   system: ExternalSystem | "internal",
   field: string,
 ): string | number | null {
-  return snapshots.find((s) => s.system === system && s.field === field)?.rawValue ?? null;
+  const raw = snapshots.find((s) => s.system === system && s.field === field)?.rawValue ?? null;
+  return decodeValue(raw);
+}
+
+/** True when a snapshot value is effectively empty (null, "", or em-dash). */
+function isEmptyish(v: string | number | null): boolean {
+  if (v === null || v === undefined) return true;
+  if (typeof v === "string") {
+    const s = v.trim();
+    return s === "" || s === "\u2014" || s === "\\u2014";
+  }
+  return false;
+}
+
+/** Decode literal unicode escapes (e.g. `\u2014`) that arrive as raw text from API snapshots. */
+function decodeValue(v: string | number | null): string | number | null {
+  if (typeof v === "string")
+    return v
+      .replace(/\\u2014/g, "\u2014")
+      .replace(/\\u[\da-fA-F]{4}/g, (m) =>
+        String.fromCharCode(parseInt(m.slice(2), 16)),
+      );
+  return v;
 }
 
 function formatValue(val: string | number | null): string {
   if (val === null || val === undefined || val === "") return "\u2014";
-  return String(val);
+  return String(decodeValue(val));
+}
+
+/** Truncate a string to maxLen chars, appending "\u2026" if cut. */
+function truncate(s: string, maxLen: number): string {
+  return s.length > maxLen ? s.slice(0, maxLen) + "\u2026" : s;
 }
 
 // ── Component ──
@@ -659,14 +694,14 @@ export default function SyncModal({
               <table className="w-full border-collapse text-sm">
                 <thead>
                   <tr className="border-b border-border">
-                    <th className="sticky left-0 z-10 bg-surface-elevated px-3 py-2 text-left text-xs font-medium text-muted">
+                    <th className="sticky left-0 z-10 min-w-[130px] bg-surface-elevated px-3 py-2 text-left text-xs font-medium text-muted whitespace-nowrap">
                       Field
                     </th>
-                    <th className="px-3 py-2 text-left text-xs font-medium text-muted">
+                    <th className="min-w-[120px] px-3 py-2 text-left text-xs font-medium text-muted">
                       Internal
                     </th>
                     {EXTERNAL_SYSTEMS.map((sys) => (
-                      <th key={sys} className="px-3 py-2 text-left text-xs font-medium text-muted">
+                      <th key={sys} className="border-l border-border px-3 py-2 text-left text-xs font-medium text-muted">
                         <div className="flex items-center gap-2">
                           <span>{SYSTEM_SHORT[sys]}</span>
                           {!linkedSystems[sys] && (
@@ -876,7 +911,7 @@ function FieldRowComponent({
   return (
     <tr className="border-b border-border/30">
       {/* Field label */}
-      <td className="sticky left-0 z-10 bg-surface-elevated px-3 py-2 text-sm font-medium text-foreground">
+      <td className="sticky left-0 z-10 bg-surface-elevated px-3 py-2 text-sm font-medium text-foreground whitespace-nowrap">
         {row.label}
         {row.isVirtual && (
           <span className="ml-1 text-xs text-muted">(auto-generated)</span>
@@ -910,8 +945,7 @@ function FieldRowComponent({
         const edge = row.edges.find((e) => e.system === sys);
         if (!edge) {
           return (
-            <td key={sys} className="px-3 py-2 text-xs text-muted">
-              \u2014
+            <td key={sys} className="border-l border-border px-3 py-2 text-xs text-muted">
             </td>
           );
         }
@@ -921,15 +955,14 @@ function FieldRowComponent({
 
         if (!linked && !createToggles[sys]) {
           return (
-            <td key={sys} className="px-3 py-2 text-xs text-muted italic">
-              Not linked
+            <td key={sys} className="border-l border-border px-3 py-2 text-xs text-muted/40">
             </td>
           );
         }
 
         if (row.isVirtual || row.isPushOnly) {
           return (
-            <td key={sys} className="px-3 py-2">
+            <td key={sys} className="border-l border-border px-3 py-2">
               <span className="font-mono text-xs text-muted">
                 {linked ? formatValue(extValue) : "\u2014"}
               </span>
@@ -939,7 +972,7 @@ function FieldRowComponent({
 
         if (readOnly) {
           return (
-            <td key={sys} className="px-3 py-2">
+            <td key={sys} className="border-l border-border px-3 py-2">
               <span className="font-mono text-xs text-muted">
                 {linked ? formatValue(extValue) : "\u2014"}
               </span>
@@ -952,7 +985,7 @@ function FieldRowComponent({
         const lockedSource = lockedPullSources[row.internalField] ?? null;
 
         return (
-          <td key={sys} className="px-3 py-2">
+          <td key={sys} className="border-l border-border px-3 py-2">
             <ExternalCell
               system={sys}
               edge={edge}
@@ -1053,12 +1086,18 @@ function InternalCell({
             : "border-border"
         }`}
       >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-            {opt.label}
-            {opt.disabled ? " (same)" : ""}
-          </option>
-        ))}
+        {options.map((opt) => {
+          const display = formatValue(opt.projectedValue);
+          const label = truncate(display, 30);
+          const suffix = opt.value === "keep"
+            ? "(current)"
+            : `(${opt.label})`;
+          return (
+            <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+              {label} {suffix}{opt.disabled ? " (same)" : ""}
+            </option>
+          );
+        })}
       </select>
     </div>
   );
@@ -1157,12 +1196,18 @@ function ExternalCell({
               : "border-border"
         }`}
       >
-        {options.map((opt) => (
-          <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-            {opt.label}
-            {opt.disabled ? " (same)" : ""}
-          </option>
-        ))}
+        {options.map((opt) => {
+          const display = formatValue(opt.projectedValue);
+          const label = truncate(display, 30);
+          const suffix = opt.value === "keep"
+            ? "(current)"
+            : `(${opt.label})`;
+          return (
+            <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+              {label} {suffix}{opt.disabled ? " (same)" : ""}
+            </option>
+          );
+        })}
       </select>
     </div>
   );
