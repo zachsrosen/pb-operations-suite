@@ -477,7 +477,7 @@ function derivePushOperations(
     );
 
     if (!isLinked) {
-      // Create operation: collect all pushable field values
+      // Create operation: collect all pushable field values + generator-backed fields
       const hasAnyPush = Object.values(systemIntents).some(
         (i) => i.direction === "push",
       );
@@ -485,7 +485,16 @@ function derivePushOperations(
         const fields: Record<string, string | number | null> = {};
         const pushableMappings = getPushableMappings(system, sku.category);
         for (const edge of pushableMappings) {
-          if (edge.direction === "push-only") continue; // generators handled separately
+          if (edge.direction === "push-only" && edge.generator) {
+            // Include generator-backed push-only fields in creates
+            const gen = generators[edge.generator];
+            if (gen) {
+              const effectiveSku = buildEffectiveSku(sku, effectiveState);
+              fields[edge.externalField] = gen(effectiveSku);
+            }
+            continue;
+          }
+          if (edge.direction === "push-only") continue;
           fields[edge.externalField] = effectiveState[edge.internalField] ?? null;
         }
         ops.push({

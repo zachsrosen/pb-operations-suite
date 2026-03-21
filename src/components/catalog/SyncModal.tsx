@@ -44,6 +44,7 @@ export default function SyncModal({
   const [snapshots, setSnapshots] = useState<FieldValueSnapshot[]>([]);
   const [mappings, setMappings] = useState<FieldMappingEdge[]>([]);
   const [intents, setIntents] = useState<IntentsMap>({ zoho: {}, hubspot: {}, zuper: {} });
+  const [serverDefaults, setServerDefaults] = useState<IntentsMap>({ zoho: {}, hubspot: {}, zuper: {} });
   const [globalUpdateInternal, setGlobalUpdateInternal] = useState(true);
   const [plan, setPlan] = useState<SyncPlan | null>(null);
   const [outcomes, setOutcomes] = useState<SyncOperationOutcome[]>([]);
@@ -78,6 +79,7 @@ export default function SyncModal({
         setSnapshots(data.snapshots);
         setMappings(data.mappings);
         setIntents(data.defaultIntents);
+        setServerDefaults(structuredClone(data.defaultIntents));
         setStep("intents");
       })
       .catch((err) => {
@@ -159,7 +161,10 @@ export default function SyncModal({
       const updated = structuredClone(prev);
       for (const system of EXTERNAL_SYSTEMS) {
         for (const intent of Object.values(updated[system] ?? {})) {
-          intent.updateInternalOnPull = newValue;
+          // Only seed auto-managed fields; preserve manual per-field overrides
+          if (intent.mode === "auto") {
+            intent.updateInternalOnPull = newValue;
+          }
         }
       }
       return updated;
@@ -173,8 +178,13 @@ export default function SyncModal({
       const updated = structuredClone(prev);
       for (const system of EXTERNAL_SYSTEMS) {
         for (const [field, intent] of Object.entries(updated[system] ?? {})) {
-          if (intent.mode === "manual") {
-            updated[system][field] = { ...intent, mode: "auto" };
+          // Only reset auto-managed (cascade-derived) fields back to server defaults;
+          // preserve fields the user explicitly set (mode === "manual")
+          if (intent.mode === "auto") {
+            const serverDefault = serverDefaults[system]?.[field];
+            if (serverDefault) {
+              updated[system][field] = { ...serverDefault, mode: "auto" };
+            }
           }
         }
       }

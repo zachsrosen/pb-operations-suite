@@ -165,6 +165,41 @@ describe("derivePlan", () => {
   });
 });
 
+describe("derivePlan — create operations", () => {
+  it("includes generator-backed name and specification in unlinked system creates", () => {
+    // SKU with no zuperItemId → Zuper is unlinked
+    const unlinkedSku: SkuRecord = {
+      ...baseSku,
+      zuperItemId: null,
+    };
+    const snapshots: FieldValueSnapshot[] = [
+      { system: "internal", field: "sellPrice", rawValue: 305, normalizedValue: 305 },
+      { system: "internal", field: "sku", rawValue: "SIL410BG", normalizedValue: "SIL410BG" },
+    ];
+    // Push at least one field to trigger the create path
+    const intents: Record<ExternalSystem, Record<string, FieldIntent>> = {
+      zoho: {},
+      hubspot: {},
+      zuper: {
+        sku: { direction: "push", mode: "manual", updateInternalOnPull: true },
+      },
+    };
+    const plan = derivePlan(unlinkedSku, intents, snapshots, "MODULE");
+    const createOps = plan.operations.filter((o) => o.kind === "create" && o.system === "zuper");
+    expect(createOps).toHaveLength(1);
+    const createOp = createOps[0];
+    if (createOp.kind !== "create") throw new Error("Expected create op");
+
+    // Generator-backed fields should be present
+    expect(createOp.fields).toHaveProperty("name");
+    expect(createOp.fields.name).toBe("Silfab SIL-410-BG");
+    expect(createOp.fields).toHaveProperty("specification");
+    // specification is generated from spec data — just verify it's a non-empty string
+    expect(typeof createOp.fields.specification).toBe("string");
+    expect((createOp.fields.specification as string).length).toBeGreaterThan(0);
+  });
+});
+
 describe("computePlanHash", () => {
   it("is deterministic for same inputs", () => {
     const patch = { sellPrice: 305 as string | number | null };
