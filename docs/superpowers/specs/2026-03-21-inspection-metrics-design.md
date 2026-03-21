@@ -85,7 +85,9 @@ Add to `hubspot-custom-objects.ts` alongside existing AHJ and Utility objects.
 
 ### 1d. AHJ Custom Object (EXISTS)
 
-Already in `hubspot-custom-objects.ts`. The following inspection properties are already in `AHJ_PROPERTIES`:
+Already in `hubspot-custom-objects.ts`. The following properties are split into two groups:
+
+**Already in `AHJ_PROPERTIES` array:**
 
 | Property | Label | Type |
 |---|---|---|
@@ -94,15 +96,22 @@ Already in `hubspot-custom-objects.ts`. The following inspection properties are 
 | `inspections_fpr` | Inspections FPR | equation |
 | `count_of_inspections_passed` | Total Inspections Passed | rollup |
 | `count_of_inspections_failed` | Total Inspections Failed | rollup |
+| `inspection_requirements` | Inspection Requirements | checkbox |
+| `inspection_notes` | Inspection Notes | textarea |
+| `electrician_required_for_inspection_` | Electrician Required? | checkbox |
+
+**Need to add to `AHJ_PROPERTIES` array:**
+
+| Property | Label | Type |
+|---|---|---|
+| `fire_inspection_required` | Fire Inspection Required? | checkbox |
 | `total_first_time_passed_inspections` | Total 1st Time Passed | rollup |
 | `total_inspections_passed__365__` | Passed (365) | rollup |
 | `total_inspections_scheduled` | Total Scheduled | rollup |
-| `electrician_required_for_inspection_` | Electrician Required? | checkbox |
-| `fire_inspection_required` | Fire Inspection Required? | checkbox |
-| `inspection_requirements` | Inspection Requirements | checkbox |
-| `inspection_notes` | Inspection Notes | textarea |
 
-**AHJ → Deal association:** Resolve via existing `fetchAHJsForDeal()` or batch lookup by iterating `project.ahj` name matching against `fetchAllAHJs()`.
+**AHJ → Location mapping:** AHJs don't have a `pb_location` property. Resolve by majority-vote: for each AHJ, find all deals where `project.ahj` matches the AHJ name, count occurrences of each `pbLocation`, and assign the most common one. Cache this mapping for the request lifetime. Edge case: an AHJ spanning multiple locations gets assigned to the location with the most deals. The `ahjBreakdown` in `LocationGroup` handles the multi-location case by only including deals from that specific location.
+
+**AHJ → Deal association:** Resolve via `project.ahj` name matching against `fetchAllAHJs()` (batch approach — avoids per-deal API calls).
 
 ---
 
@@ -112,11 +121,19 @@ Already in `hubspot-custom-objects.ts`. The following inspection properties are 
 **Method:** GET
 **Query params:** `?days=N` (time window, default 0 = all time), `?refresh=true` (bypass cache)
 
+### Caching
+
+Add to `CACHE_KEYS` in `cache.ts`: `LOCATIONS_ALL: "locations:all"` (alongside existing `AHJS_ALL: "ahjs:all"`).
+
+Add to `cacheKeyToQueryKeys()` in `query-keys.ts`: inspection-metrics keys should invalidate when `stats`-prefixed server cache keys change (same cascade pattern as other metrics dashboards).
+
+**Note:** `construction-metrics` does not currently have its own query key in `query-keys.ts`. The new `inspectionMetrics` key follows the `surveyMetrics` / `daMetrics` pattern.
+
 ### Data Flow
 
 1. Fetch all projects via `appCache.getOrFetch(CACHE_KEYS.PROJECTS_ALL, fetchAllProjects({activeOnly: false}), forceRefresh)`
-2. Fetch Location custom objects via `fetchAllLocations()` (new, cached separately)
-3. Fetch AHJ custom objects via `fetchAllAHJs()` (existing)
+2. Fetch Location custom objects via `appCache.getOrFetch(CACHE_KEYS.LOCATIONS_ALL, fetchAllLocations(), forceRefresh)`
+3. Fetch AHJ custom objects via `appCache.getOrFetch(CACHE_KEYS.AHJS_ALL, fetchAllAHJs(), forceRefresh)` (existing)
 4. Resolve Zuper jobs: `getCachedZuperJobsByDealIds(dealIds, "Construction")` — inspection jobs are under construction Zuper category
 5. Filter projects to those with `inspectionPassDate` in time window (for stats)
 6. Filter active projects for action queues (CC pending inspection, outstanding failures)
@@ -136,7 +153,9 @@ For each group, compute from individual deals:
 
 ### Rollup Values (per group)
 
-For locations, read from Location custom object. For AHJs, read from AHJ custom object. Use the 365-day variants when `days` param is ≤ 365, all-time variants otherwise.
+For locations, read from Location custom object. For AHJs, read from AHJ custom object. Use the 365-day variants when `days` param is > 0 and ≤ 365, all-time variants when `days=0` (all time) or `days > 365`.
+
+**Clarification:** `days=0` means "all time" and should use the all-time rollup variants, not the 365-day ones (even though `0 ≤ 365` is technically true).
 
 ### Validation
 
@@ -144,7 +163,7 @@ Compare computed vs rollup for each group. Key comparisons:
 
 | Metric | Computed From | Rollup Property (Location) | Rollup Property (AHJ) |
 |---|---|---|---|
-| FPR | `firstTimePassCount / count` | `inspections_first_time_pass_rate__365_days_` | `inspections_fpr` |
+| FPR | `firstTimePassCount / count` | `inspections_first_time_pass_rate__365_days_` | `inspections_fpr` (all-time only; no 365-day FPR variant exists on AHJ) |
 | Pass Count | `count(isInspectionPassed)` | `total_inspections_passe_d__365_days_` | `total_inspections_passed__365__` |
 | Fail Count | `count(hasInspectionFailed)` | `inspections_failed__365_days_` | `count_of_inspections_failed` |
 | Turnaround | `avg(inspectionTurnaroundTime)` | `inspection_turnaround_time__365_days_` | `inspection_turnaround_time__365_days_` |
@@ -192,6 +211,29 @@ interface AHJGroup {
   fireInspectionRequired: boolean;
   inspectionRequirements: string | null;
   inspectionNotes: string | null;
+}
+
+interface RollupMetrics {
+  // From Location custom object
+  fpr: number | null;                    // inspections_fpr or inspections_first_time_pass_rate__365_days_
+  fprNotRejected: number | null;         // fpr_inspections__365___not_rejected_
+  passCount: number | null;              // count_of_inspections_passed or total_inspections_passe_d__365_days_
+  failCount: number | null;              // count_of_inspections_failed or inspections_failed__365_days_
+  firstTimePassCount: number | null;     // count_of_inspections_passed_1st_time or total_1st_time_passed_inspections__365_days_
+  turnaround: number | null;             // inspection_turnaround_time or inspection_turnaround_time__365_days_
+  outstandingFailed: number | null;      // outstanding_failed_inspections
+  outstandingFailedNotRejected: number | null; // outstanding_failed_inspections__not_rejected_
+  ccPendingInspection: number | null;    // cc_pending_inspection
+  constructionTurnaround: number | null; // construction_turnaround_time__365_
+}
+
+interface AHJRollupMetrics {
+  // From AHJ custom object (subset — fewer rollup fields available)
+  fpr: number | null;                    // inspections_fpr (all-time only)
+  passCount: number | null;              // count_of_inspections_passed or total_inspections_passed__365__
+  failCount: number | null;              // count_of_inspections_failed
+  firstTimePassCount: number | null;     // total_first_time_passed_inspections
+  turnaround: number | null;             // inspection_turnaround_time or inspection_turnaround_time__365_days_
 }
 
 interface ComputedMetrics {
@@ -252,8 +294,10 @@ interface PipelineDeal {
 
 ### Action Queue Filters
 
-- **ccPendingInspection:** `constructionCompleteDate` exists AND no `inspectionPassDate` AND not in `EXCLUDED_PIPELINE_STAGES` AND `isActive`. Sorted by `daysSinceCc` descending.
-- **outstandingFailed:** `hasInspectionFailed` is true AND no `inspectionPassDate` AND not in `EXCLUDED_PIPELINE_STAGES` AND `isActive`. Sorted by `daysSinceLastFail` descending.
+Use the existing `isActive` boolean on the `Project` interface (already excludes Project Complete, Cancelled, Closed Lost, Closed Won, Lost):
+
+- **ccPendingInspection:** `constructionCompleteDate` exists AND no `inspectionPassDate` AND `isActive`. Sorted by `daysSinceCc` descending.
+- **outstandingFailed:** `hasInspectionFailed` is true AND no `inspectionPassDate` AND `isActive`. Sorted by `daysSinceLastFail` descending.
 
 ---
 
@@ -261,7 +305,7 @@ interface PipelineDeal {
 
 ### Filters Bar
 
-- **Time window:** 30 / 60 / 90 / 180 / All buttons (applies to stats sections only)
+- **Time window:** 30 / 60 / 90 / 180 / 365 / All buttons (applies to stats sections only). The 365-day option gives exact parity with Location/AHJ rollup data.
 - **PB Location:** Location filter buttons (same pattern as survey-metrics). Applies to all sections.
 
 ### Summary Cards (4-card grid)
@@ -306,6 +350,12 @@ Sortable columns: Project, Customer, PB Location, AHJ, Stage, Amount, CC Date, D
 
 Sorted by Days Since CC descending by default. Filtered by PB Location. Excludes Project Complete / Cancelled.
 
+### Empty States
+
+- **Stats sections (no inspections in window):** Muted text: "No inspections completed in the selected time window."
+- **Action queues (zero items):** Positive indicator — green check icon with "No outstanding failed inspections" or "No projects pending inspection."
+- **Drill-down (zero deals):** "No deals in this group for the selected time window."
+
 ---
 
 ## 4. Drill-Down UX
@@ -349,10 +399,11 @@ Add `/dashboards/inspection-metrics` to:
 | `src/lib/hubspot.ts` | Add 11 new deal properties to `DEAL_PROPERTIES`, map to `Project` interface |
 | `src/lib/types.ts` | Add 11 new fields to `RawProject` |
 | `src/lib/transforms.ts` | Map new fields to `TransformedProject` (if needed downstream) |
-| `src/lib/hubspot-custom-objects.ts` | Add `LOCATION_OBJECT_TYPE`, `LOCATION_PROPERTIES`, `LocationRecord`, `fetchAllLocations()` |
+| `src/lib/hubspot-custom-objects.ts` | Add `LOCATION_OBJECT_TYPE`, `LOCATION_PROPERTIES`, `LocationRecord`, `fetchAllLocations()`; add 4 properties to `AHJ_PROPERTIES` |
+| `src/lib/cache.ts` | Add `LOCATIONS_ALL` to `CACHE_KEYS` |
 | `src/app/api/hubspot/inspection-metrics/route.ts` | **New** — API route |
 | `src/app/dashboards/inspection-metrics/page.tsx` | **New** — Dashboard page |
-| `src/lib/query-keys.ts` | Add `inspectionMetrics` key |
+| `src/lib/query-keys.ts` | Add `inspectionMetrics` key + SSE cache invalidation mapping |
 | `src/lib/page-directory.ts` | Add `/dashboards/inspection-metrics` |
 | `src/lib/role-permissions.ts` | Add to same roles as construction-metrics |
 | `src/app/suites/operations/page.tsx` | Add card to Inspections section |
