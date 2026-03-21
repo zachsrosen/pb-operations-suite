@@ -30,7 +30,7 @@ A 5-column table:
 └─────────────┴──────────────┴──────────────┴──────────────┴──────────────┘
 ```
 
-Each cell shows the current value in that system plus a dropdown to select which source's value should end up there.
+**Cell display rule:** Each cell shows its **current** value by default. When the user selects a non-"Keep" source from the dropdown, the cell transitions to show `current → projected` — the current value in muted text, an arrow, then the projected value (the source's value) highlighted. This makes it immediately clear what will change without needing a separate preview step. Cells still on "Keep" show only the current value with no transition indicator.
 
 ### Per-Cell Dropdowns
 
@@ -62,7 +62,12 @@ The `selectionToIntents()` client-side function converts the per-cell dropdown s
 
 **Relay = two intent entries.** When a user picks an external source for another external system's cell, `selectionToIntents()` emits a pull under the source system key AND a push under the target system key. The function iterates all cells, composing intents across all four columns before submission.
 
-**`updateInternalOnPull` control:** Picking an external source in the Internal column sets `updateInternalOnPull: true`. Picking an external source in another external column (relay) sets `updateInternalOnPull: false` by default — the relay flows the value to the target without modifying the internal DB. A per-row "save to internal" checkbox appears when any relay is active, letting users opt in to also persisting the relayed value internally.
+**`updateInternalOnPull` is controlled solely by the Internal column.** If the Internal cell picks an external source, that pull sets `updateInternalOnPull: true`. If the Internal cell is "Keep," no pull updates internal — even if other external cells trigger relay pulls. There is no separate checkbox; the Internal column dropdown is the single source of truth for internal persistence. This eliminates ambiguity between two competing controls.
+
+**`selectionToIntents()` deduplication rules:** Multiple cells may generate the same pull intent (e.g., Internal picks "Zoho" for price AND HubSpot picks "Zoho" for price both emit `zoho.rate → pull`). The function deduplicates:
+- Same system + same externalField → merge into one intent entry
+- If both `updateInternalOnPull: true` and `false` appear for the same pull, `true` wins (the Internal column explicitly asked for persistence)
+- Push intents don't conflict — each target system gets its own push entry
 
 The `POST /api/inventory/products/[id]/sync/plan` and `POST /sync` endpoints remain unchanged. The translation layer is purely client-side in the SyncModal component.
 
@@ -80,7 +85,7 @@ Companion fields (e.g., `vendor_name` / `vendor_id` on Zoho) appear as a **singl
 
 ### Unlinked Systems
 
-When a product is not linked to an external system (e.g., no `zuperProductUid`):
+When a product is not linked to an external system (e.g., no `zuperItemId`):
 
 - The column **still appears** but all cells show "Not linked" in muted text
 - A column-level **"Create in [System]"** toggle appears in the column header
@@ -114,7 +119,9 @@ This replaces the current modal's "Will Create" badge with an explicit user acti
 2. **Table** — wide comparison grid with per-cell dropdowns. Summary bar at bottom: "N fields will be updated across M systems" with a **Sync** button
 3. **Results** — per-system success/failure outcomes with field-level detail (same as current results step)
 
-No separate plan preview step — the table IS the preview. Users see current values, what each system will receive, and where values come from. Plan derivation still runs server-side on Sync click to catch stale data.
+No separate plan preview step — the table IS the preview. Users see current values, projected values, and where each comes from. Plan derivation still runs server-side on Sync click to catch stale data.
+
+**Implicit writes summary:** Below the table, a muted text line lists writes that happen automatically but don't appear as editable rows: "Also updates: Name (auto-generated), Specification (auto-generated), Vendor ID (companion)". This surfaces generator-backed and companion writes without cluttering the table. Only shown when implicit writes exist.
 
 **Smart defaults:** When the modal opens, dropdowns are set based on value comparison:
 - If all systems agree on a value → "Keep" (no action needed)
@@ -124,7 +131,13 @@ No separate plan preview step — the table IS the preview. Users see current va
 
 Users can override any default. This matches the spirit of the existing `deriveDefaultIntents` behavior (push diffs, skip matches) but expressed through dropdown pre-selection.
 
-**Conflict indication:** If a user picks different sources for the same internal field across systems (e.g., pull price from Zoho into Internal but leave HubSpot's cell on "Keep" with its old different price), highlight the inconsistency with a yellow border. Informational only — not blocking.
+**Conflict prevention vs. divergence warnings:**
+
+Two distinct cases:
+
+1. **Blocking pull conflicts (prevented at the UI level):** If the Internal cell picks source A for a field, external cells for that same field cannot pick a different external source B — because that would generate two contradictory pull intents for the same internal field, which the backend blocks. The dropdown dynamically filters options: once Internal picks "Zoho" for price, external cells for price can only pick "Keep", "Internal", or "Zoho" (same source — no conflict). This eliminates server-side pull conflicts entirely.
+
+2. **Non-blocking divergence warnings (informational):** If choices result in systems ending up with different values (e.g., Internal pulls from Zoho, HubSpot pushes from Internal, but Zuper stays on "Keep" with its old different value), highlight the divergent cells with a yellow border. This is a "heads up" — the user is intentionally leaving Zuper out of date. Not blocking.
 
 **Stale data guard:** Same mechanism as current sync relay — if values changed between load and execute, server returns 409 and the modal reloads fresh snapshots.
 
