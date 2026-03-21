@@ -23,6 +23,25 @@ const SYSTEM_LABELS: Record<ExternalSystem, string> = {
   zuper: "Zuper",
 };
 
+const FIELD_LABELS: Record<string, string> = {
+  _name: "Name",
+  _specification: "Specification",
+  brand: "Brand",
+  model: "Model",
+  category: "Category",
+  unitPrice: "Unit Price",
+  description: "Description",
+  dc_size: "DC Size (W)",
+  efficiency: "Efficiency (%)",
+  ac_output: "AC Output (W)",
+  capacity_kwh: "Capacity (kWh)",
+  power_kw: "Power (kW)",
+  connector_type: "Connector Type",
+  mount_type: "Mount Type",
+  component_type: "Component Type",
+  device_type: "Device Type",
+};
+
 interface SyncModalProps {
   internalProductId: string;
   skuName: string;
@@ -324,46 +343,42 @@ export default function SyncModal({
                     </span>
                   </div>
 
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-muted">
-                        <th className="pb-2">Field</th>
-                        <th className="pb-2">Direction</th>
-                        <th className="pb-2">Internal</th>
-                        <th className="pb-2">External</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sysMappings.map((edge) => {
-                        const intent = intents[system]?.[edge.externalField];
-                        if (!intent) return null;
-                        const internalVal = getSnapshotValue("internal", edge.internalField);
-                        const externalVal = getSnapshotValue(system, edge.externalField);
+                  <div className="space-y-1">
+                    {sysMappings.map((edge) => {
+                      const intent = intents[system]?.[edge.externalField];
+                      if (!intent) return null;
+                      const internalVal = getSnapshotValue("internal", edge.internalField);
+                      const externalVal = getSnapshotValue(system, edge.externalField);
+                      const inSync = String(internalVal ?? "") === String(externalVal ?? "");
+                      const displayInternal = internalVal ?? "\u2014";
+                      const displayExternal = externalVal ?? "\u2014";
 
-                        return (
-                          <tr key={edge.externalField} className="border-t border-border/50">
-                            <td className="py-2 text-foreground">
-                              {edge.externalField}
+                      return (
+                        <div key={edge.externalField} className="rounded-lg border border-border/30 px-3 py-2">
+                          {/* Row 1: field name + direction button */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-foreground">
+                              {FIELD_LABELS[edge.internalField] ?? edge.internalField}
                               {intent.mode === "auto" && (
                                 <span className="ml-1 text-xs text-muted">(auto)</span>
                               )}
-                            </td>
-                            <td className="py-2">
+                            </span>
+                            <div className="flex items-center gap-2">
                               <button
                                 onClick={() => cycleDirection(system, edge.externalField)}
-                                className={`rounded px-2 py-0.5 text-xs font-mono ${
+                                className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
                                   intent.direction === "push"
-                                    ? "bg-green-500/10 text-green-400"
+                                    ? "bg-green-500/15 text-green-400 hover:bg-green-500/25"
                                     : intent.direction === "pull"
-                                      ? "bg-blue-500/10 text-blue-400"
-                                      : "bg-surface-2 text-muted"
+                                      ? "bg-blue-500/15 text-blue-400 hover:bg-blue-500/25"
+                                      : "bg-surface-2 text-muted hover:text-foreground"
                                 }`}
                               >
-                                {intent.direction === "push" ? "\u2192 push" :
-                                 intent.direction === "pull" ? "\u2190 pull" : "\u2014 skip"}
+                                {intent.direction === "push" ? "Push \u2192" :
+                                 intent.direction === "pull" ? "\u2190 Pull" : "Skip"}
                               </button>
                               {intent.direction === "pull" && (
-                                <label className="ml-2 inline-flex items-center gap-1 text-xs text-muted">
+                                <label className="inline-flex items-center gap-1 text-xs text-muted">
                                   <input
                                     type="checkbox"
                                     checked={intent.updateInternalOnPull}
@@ -373,18 +388,48 @@ export default function SyncModal({
                                   save
                                 </label>
                               )}
-                            </td>
-                            <td className="py-2 font-mono text-xs text-muted">
-                              {internalVal ?? "\u2014"}
-                            </td>
-                            <td className="py-2 font-mono text-xs text-muted">
-                              {externalVal ?? "\u2014"}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                            </div>
+                          </div>
+
+                          {/* Row 2: value flow visualization */}
+                          <div className="mt-1.5 flex items-center gap-2 text-xs">
+                            {intent.direction === "push" ? (
+                              <>
+                                <span className="rounded bg-green-500/10 px-1.5 py-0.5 font-mono font-medium text-green-400">
+                                  {displayInternal}
+                                </span>
+                                <span className="text-green-400/60">&rarr;</span>
+                                <span className="font-mono text-muted line-through">
+                                  {displayExternal}
+                                </span>
+                              </>
+                            ) : intent.direction === "pull" ? (
+                              <>
+                                <span className="font-mono text-muted line-through">
+                                  {displayInternal}
+                                </span>
+                                <span className="text-blue-400/60">&larr;</span>
+                                <span className="rounded bg-blue-500/10 px-1.5 py-0.5 font-mono font-medium text-blue-400">
+                                  {displayExternal}
+                                </span>
+                              </>
+                            ) : inSync ? (
+                              <span className="font-mono text-muted">
+                                {displayInternal} <span className="text-muted/50">=</span> {displayExternal}
+                              </span>
+                            ) : (
+                              <>
+                                <span className="font-mono text-muted">{displayInternal}</span>
+                                <span className="text-muted/50">|</span>
+                                <span className="font-mono text-muted">{displayExternal}</span>
+                                <span className="text-yellow-400/60">(differs)</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               );
             })}
@@ -470,23 +515,34 @@ export default function SyncModal({
                 .map((op, i) => (
                   <div
                     key={i}
-                    className="flex items-center gap-2 rounded px-2 py-1 text-muted"
+                    className="flex items-center gap-2 rounded-lg border border-border/30 px-3 py-2"
                   >
-                    <span className={`rounded px-1.5 py-0.5 text-xs font-mono ${
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${
                       op.kind === "pull"
-                        ? "bg-blue-500/10 text-blue-400"
+                        ? "bg-blue-500/15 text-blue-400"
                         : op.kind === "push"
-                          ? "bg-green-500/10 text-green-400"
-                          : "bg-purple-500/10 text-purple-400"
+                          ? "bg-green-500/15 text-green-400"
+                          : "bg-purple-500/15 text-purple-400"
                     }`}>
                       {op.kind}
                     </span>
-                    <span>{op.system}</span>
-                    <span className="font-mono">
-                      {op.kind === "create" ? `(${Object.keys(op.fields).length} fields)` : op.externalField}
+                    <span className="shrink-0 text-muted">{SYSTEM_LABELS[op.system as ExternalSystem] ?? op.system}</span>
+                    <span className="font-mono text-foreground">
+                      {op.kind === "create"
+                        ? `${Object.keys(op.fields).length} fields`
+                        : FIELD_LABELS[op.kind === "pull" ? op.internalField : op.externalField] ?? op.externalField}
                     </span>
+                    {(op.kind === "push" || op.kind === "pull") && op.value != null && (
+                      <span className={`ml-auto shrink-0 rounded px-1.5 py-0.5 font-mono text-xs ${
+                        op.kind === "push"
+                          ? "bg-green-500/10 text-green-400"
+                          : "bg-blue-500/10 text-blue-400"
+                      }`}>
+                        {String(op.value)}
+                      </span>
+                    )}
                     {op.source === "cascade" && (
-                      <span className="text-xs text-yellow-400">(cascaded)</span>
+                      <span className="shrink-0 text-xs text-yellow-400">(auto)</span>
                     )}
                   </div>
                 ))}
