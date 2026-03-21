@@ -93,12 +93,9 @@ Expected:
 - MetricCard color alias test: FAIL (MetricCard doesn't have color prop yet)
 - Existing MetricCard tests: PASS
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Do NOT commit yet**
 
-```bash
-git add src/__tests__/components/ui.test.tsx
-git commit -m "test: update metric card tests — add href, null, color; remove SummaryCard; fix StatCard color"
-```
+The new tests (href, null, color) are intentionally failing — they test behavior that Task 2 will implement. Do not commit until Task 2 makes them pass. Proceed directly to Task 2.
 
 ---
 
@@ -252,7 +249,7 @@ Run: `npx eslint src/components/ui/MetricCard.tsx src/__tests__/components/ui.te
 
 Expected: Clean.
 
-- [ ] **Step 9: Commit**
+- [ ] **Step 9: Commit (includes test changes from Task 1)**
 
 ```bash
 git add src/components/ui/MetricCard.tsx src/__tests__/components/ui.test.tsx
@@ -293,8 +290,8 @@ npm run dev
 
 **Checklist:**
 1. `/dashboards/executive` — StatCards should be noticeably larger (text-4xl), richer gradients, stronger shadow
-2. `/dashboards/de-overview` — MetricCards should have `bg-surface-2` background, visually distinct from StatCards
-3. `/dashboards/pi-overview` — MiniStats should be compact, no shadow, clearly subordinate
+2. `/dashboards/de-metrics` — MetricCards should have `bg-surface-2` background, visually distinct from StatCards
+3. `/dashboards/plan-review` — MiniStats should be compact, no shadow, clearly subordinate
 4. `/dashboards/forecast-timeline` — 5 StatCards in a row, verify stronger shadow doesn't look excessive
 5. Toggle all 3 themes: dark, light, sunset — verify `bg-surface-2` MetricCards are visible (not washed out) in light mode
 6. Check any clickable StatCard (e.g., home page hero stats) — verify link behavior still works
