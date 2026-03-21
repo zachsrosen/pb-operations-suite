@@ -5,18 +5,22 @@ interface PhotonBrothersBadgeProps {
   href?: string;
   compact?: boolean;
   className?: string;
+  /** Override the default title/aria-label (e.g. "Back to Dashboard") */
+  label?: string;
 }
 
 export default function PhotonBrothersBadge({
   href = "/",
   compact = false,
   className = "",
+  label,
 }: PhotonBrothersBadgeProps) {
   return (
     <Link
       href={href}
       className={`inline-flex items-center rounded-lg border border-[#748aa5]/35 bg-gradient-to-r from-[#27384b] to-[#1a2636] px-2 py-1 shadow-sm ${className}`}
-      title="Photon Brothers"
+      title={label || "Photon Brothers"}
+      aria-label={label || "Photon Brothers"}
     >
       <Image
         src="/branding/photon-brothers-logo-mixed-white.svg"

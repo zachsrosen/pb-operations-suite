@@ -8,7 +8,7 @@ const ADMIN_TOOLS: SuitePageCard[] = [
     title: "Users",
     description: "Manage user accounts, roles, and access controls.",
     tag: "ADMIN",
-    tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
+    icon: "👥",
     section: "Admin Tools",
   },
   {
@@ -16,7 +16,7 @@ const ADMIN_TOOLS: SuitePageCard[] = [
     title: "Activity Log",
     description: "Audit user actions, dashboard views, and system events.",
     tag: "AUDIT",
-    tagColor: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    icon: "📜",
     section: "Admin Tools",
   },
   {
@@ -24,7 +24,7 @@ const ADMIN_TOOLS: SuitePageCard[] = [
     title: "Security",
     description: "Review security events, impersonation, and admin activity.",
     tag: "SECURITY",
-    tagColor: "bg-red-500/20 text-red-400 border-red-500/30",
+    icon: "🔒",
     section: "Admin Tools",
   },
   {
@@ -32,7 +32,7 @@ const ADMIN_TOOLS: SuitePageCard[] = [
     title: "Bug Reports",
     description: "View and manage user-submitted bug reports and issues.",
     tag: "TICKETS",
-    tagColor: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    icon: "🐛",
     section: "Admin Tools",
   },
   {
@@ -40,7 +40,7 @@ const ADMIN_TOOLS: SuitePageCard[] = [
     title: "Page Directory",
     description: "Complete page URL directory with per-role route access visibility.",
     tag: "ROUTES",
-    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    icon: "🗂️",
     section: "Admin Tools",
   },
   {
@@ -48,7 +48,7 @@ const ADMIN_TOOLS: SuitePageCard[] = [
     title: "Zuper Status Comparison",
     description: "Compare Zuper job statuses and schedule/completion dates with HubSpot data.",
     tag: "ZUPER",
-    tagColor: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+    icon: "🔄",
     section: "Admin Tools",
   },
   {
@@ -56,7 +56,7 @@ const ADMIN_TOOLS: SuitePageCard[] = [
     title: "Mobile Dashboard",
     description: "Touch-optimized view for field teams and fast project lookup.",
     tag: "MOBILE",
-    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    icon: "📱",
     section: "Admin Tools",
   },
   {
@@ -64,7 +64,7 @@ const ADMIN_TOOLS: SuitePageCard[] = [
     title: "Availability Approvals",
     description: "Review and approve or reject crew availability change requests.",
     tag: "APPROVALS",
-    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    icon: "✅",
     section: "Admin Tools",
   },
 ];
@@ -75,7 +75,7 @@ const DOCUMENTATION: SuitePageCard[] = [
     title: "Updates",
     description: "Release notes, changelog, and recent feature updates.",
     tag: "CHANGELOG",
-    tagColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+    icon: "📢",
     section: "Documentation",
   },
   {
@@ -83,7 +83,7 @@ const DOCUMENTATION: SuitePageCard[] = [
     title: "Guide",
     description: "User guide for navigating dashboards and features.",
     tag: "GUIDE",
-    tagColor: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+    icon: "📖",
     section: "Documentation",
   },
   {
@@ -91,7 +91,7 @@ const DOCUMENTATION: SuitePageCard[] = [
     title: "Roadmap",
     description: "Planned features, upcoming work, and development priorities.",
     tag: "ROADMAP",
-    tagColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    icon: "🗺️",
     section: "Documentation",
   },
   {
@@ -99,7 +99,7 @@ const DOCUMENTATION: SuitePageCard[] = [
     title: "Handbook",
     description: "Comprehensive guide to dashboards, features, and workflows.",
     tag: "HANDBOOK",
-    tagColor: "bg-blue-500/20 text-blue-400 border-blue-500/30",
+    icon: "📚",
     section: "Documentation",
   },
   {
@@ -107,7 +107,7 @@ const DOCUMENTATION: SuitePageCard[] = [
     title: "SOPs",
     description: "Standard operating procedures for operations, scheduling, and workflows.",
     tag: "SOP",
-    tagColor: "bg-teal-500/20 text-teal-400 border-teal-500/30",
+    icon: "📝",
     section: "Documentation",
   },
 ];
@@ -118,7 +118,7 @@ const PROTOTYPES: SuitePageCard[] = [
     title: "Home Refresh Prototypes",
     description: "13 homepage replacement concepts, including focused teal/steel refinements.",
     tag: "PROTOTYPE",
-    tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
+    icon: "🧪",
     section: "Prototypes",
   },
   {
@@ -126,7 +126,7 @@ const PROTOTYPES: SuitePageCard[] = [
     title: "Layout Refresh Prototypes",
     description: "Replacement suite layouts for operations, D&E, P&I, and executive views.",
     tag: "PROTOTYPE",
-    tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
+    icon: "🧪",
     section: "Prototypes",
   },
   {
@@ -134,7 +134,7 @@ const PROTOTYPES: SuitePageCard[] = [
     title: "Solar Checkout Experience",
     description: "Customer-facing solar checkout flow prototype.",
     tag: "PROTOTYPE",
-    tagColor: "bg-pink-500/20 text-pink-400 border-pink-500/30",
+    icon: "☀️",
     section: "Prototypes",
   },
   // Solar Surveyor moved to D&E Suite: /dashboards/solar-surveyor
@@ -146,7 +146,7 @@ const API_SHORTCUTS: SuitePageCard[] = [
     title: "Projects + Stats API",
     description: "Full project data with statistics.",
     tag: "GET",
-    tagColor: "bg-green-500/20 text-green-400 border-green-500/30",
+    icon: "🔗",
     section: "API Shortcuts",
   },
   {
@@ -154,7 +154,7 @@ const API_SHORTCUTS: SuitePageCard[] = [
     title: "PE Projects API",
     description: "Participate Energy project data.",
     tag: "GET",
-    tagColor: "bg-green-500/20 text-green-400 border-green-500/30",
+    icon: "🔗",
     section: "API Shortcuts",
   },
   {
@@ -162,7 +162,7 @@ const API_SHORTCUTS: SuitePageCard[] = [
     title: "Scheduling Projects API",
     description: "RTB and schedulable projects.",
     tag: "GET",
-    tagColor: "bg-green-500/20 text-green-400 border-green-500/30",
+    icon: "🔗",
     section: "API Shortcuts",
   },
 ];
@@ -179,7 +179,6 @@ export default async function AdminSuitePage() {
       subtitle="Admin tools, governance dashboards, and system docs."
       cards={[...ADMIN_TOOLS, ...DOCUMENTATION, ...API_SHORTCUTS, ...PROTOTYPES]}
       role={user.role}
-      hoverBorderClass="hover:border-orange-500/50"
       columnsClassName="grid grid-cols-1 md:grid-cols-3 gap-4"
     />
   );
