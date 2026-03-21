@@ -1,15 +1,15 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import type { ReactNode, CSSProperties } from "react";
 import { getSuiteSwitcherEntriesForRole, SUITE_NAV_ENTRIES } from "@/lib/suite-nav";
 import { canAccessRoute, getDefaultRouteForRole, type UserRole } from "@/lib/role-permissions";
-import PhotonBrothersBadge from "./PhotonBrothersBadge";
 
 export interface SuitePageCard {
   href: string;
   title: string;
   description: string;
   tag: string;
-  tagColor?: string;
+  tagColor?: string;       // deprecated — no longer read by renderer
+  icon?: string;            // emoji character, e.g. "📅"
   section?: string;
   hardNavigate?: boolean;
   disabled?: boolean;
@@ -21,8 +21,6 @@ interface SuitePageShellProps {
   subtitle: string;
   cards: SuitePageCard[];
   role?: UserRole;
-  hoverBorderClass?: string;
-  tagColorClass?: string;
   columnsClassName?: string;
   heroContent?: ReactNode;
 }
@@ -60,17 +58,71 @@ function groupCards(cards: SuitePageCard[]): Array<{ section: string; cards: Sui
   return order.map((section) => ({ section, cards: bySection.get(section) || [] }));
 }
 
+const SUITE_ACCENT_COLORS: Record<string, { color: string; light: string }> = {
+  "/suites/operations":                 { color: "#f97316", light: "#fb923c" },
+  "/suites/design-engineering":         { color: "#6366f1", light: "#818cf8" },
+  "/suites/permitting-interconnection": { color: "#06b6d4", light: "#22d3ee" },
+  "/suites/service":                    { color: "#06b6d4", light: "#22d3ee" },
+  "/suites/dnr-roofing":                { color: "#a855f7", light: "#c084fc" },
+  "/suites/intelligence":               { color: "#3b82f6", light: "#60a5fa" },
+  "/suites/executive":                  { color: "#f59e0b", light: "#fbbf24" },
+  "/suites/admin":                      { color: "#f97316", light: "#fb923c" },
+};
+
+const DEFAULT_ACCENT = { color: "#f97316", light: "#fb923c" };
+
+const SECTION_COLORS: Record<string, string> = {
+  "Scheduling & Planning": "#3b82f6",
+  "Site Survey": "#22c55e",
+  "Construction": "#f97316",
+  "Inspections": "#eab308",
+  "Inventory & Equipment": "#06b6d4",
+  "Catalog & Inventory": "#06b6d4",
+  "Design Pipeline": "#6366f1",
+  "Analytics": "#8b5cf6",
+  "Reference": "#64748b",
+  "Tools": "#14b8a6",
+  "Pipeline": "#06b6d4",
+  "Tracking": "#3b82f6",
+  "Programs": "#f59e0b",
+  "Service": "#06b6d4",
+  "D&R": "#8b5cf6",
+  "Roofing": "#ec4899",
+  "Risk & Quality": "#f97316",
+  "Pipeline & Forecasting": "#3b82f6",
+  "Management": "#22c55e",
+  "Executive Views": "#f59e0b",
+  "Command & Planning": "#ef4444",
+  "Sales": "#06b6d4",
+  "Field Performance": "#ef4444",
+  "Meta": "#3b82f6",
+  "Admin Tools": "#f97316",
+  "Documentation": "#22c55e",
+  "Prototypes": "#ec4899",
+  "API Shortcuts": "#06b6d4",
+  "Legacy Dashboards": "#64748b",
+};
+
+const DEFAULT_SECTION_COLOR = "#64748b";
+
+/** Convert "#f97316" → "249, 115, 22" for use in rgba() */
+function hexToRgb(hex: string): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `${r}, ${g}, ${b}`;
+}
+
 export default function SuitePageShell({
   currentSuiteHref,
   title,
   subtitle,
   cards,
   role,
-  hoverBorderClass = "hover:border-orange-500/50",
-  tagColorClass = "bg-blue-500/20 text-blue-400 border-blue-500/30",
   columnsClassName = "grid grid-cols-1 md:grid-cols-3 gap-4",
   heroContent,
 }: SuitePageShellProps) {
+  const accent = SUITE_ACCENT_COLORS[currentSuiteHref] || DEFAULT_ACCENT;
   const toRoutePath = (href: string): string | null => {
     if (!href.startsWith("/")) return null;
     return href.split("?")[0] || href;
@@ -102,34 +154,49 @@ export default function SuitePageShell({
       }}
     >
       <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="mb-6">
-          <Link href={backHref} className="text-xs text-muted hover:text-foreground transition-colors">
-            &larr; Back to Dashboard
-          </Link>
-          <div className="mt-3">
-            <PhotonBrothersBadge compact />
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-8">
+          {/* Left: PB mark + title */}
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <Link
+                href={backHref}
+                aria-label="Back to Dashboard"
+                title="Back to Dashboard"
+                className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center font-extrabold text-xs text-white"
+                style={{ background: `linear-gradient(135deg, ${accent.color}, ${accent.light})` }}
+              >
+                PB
+              </Link>
+              <h1
+                className="text-2xl font-bold"
+                style={{
+                  background: `linear-gradient(135deg, ${accent.color}, ${accent.light})`,
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                }}
+              >
+                {title}
+              </h1>
+            </div>
+            <p className="text-sm text-muted">{subtitle}</p>
           </div>
-          <h1 className="text-2xl font-bold mt-3 text-[#f49b04]">{title}</h1>
-          <p className="text-sm text-muted mt-1">{subtitle}</p>
-        </div>
 
-        {visibleSuites.length > 0 && (
-          <div className="bg-gradient-to-br from-surface-elevated/85 via-surface/70 to-surface-2/55 border border-t-border/80 rounded-xl p-4 mb-6 shadow-card backdrop-blur-sm">
-            <h2 className="text-xs uppercase tracking-wide text-muted mb-3">
-              Suite Switcher
-            </h2>
-            <div className="flex flex-wrap gap-2">
+          {/* Right: inline suite switcher */}
+          {visibleSuites.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
               {visibleSuites.map((suite) => {
                 const isCurrent = suite.href === currentSuiteHref;
                 return (
                   <Link
                     key={suite.href}
                     href={suite.href}
-                    className={`text-xs px-3 py-1.5 rounded-md border transition-colors ${
-                      isCurrent
-                        ? "border-orange-500/50 bg-orange-500/15 text-orange-300"
-                        : "border-t-border/80 bg-surface-elevated/70 text-muted hover:text-foreground hover:border-orange-500/40"
+                    className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${
+                      isCurrent ? "" : "bg-surface-elevated/50 text-muted hover:text-foreground"
                     }`}
+                    style={isCurrent ? {
+                      background: `rgba(${hexToRgb(accent.color)}, 0.15)`,
+                      color: accent.color,
+                    } : undefined}
                     title={suite.description}
                   >
                     {suite.shortLabel}
@@ -137,8 +204,8 @@ export default function SuitePageShell({
                 );
               })}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
         {heroContent && (
           <div className="mb-8">{heroContent}</div>
@@ -148,26 +215,75 @@ export default function SuitePageShell({
           const rows = getGridRows(sectionCards, columnsClassName);
           return (
             <section key={section} className="mb-8">
-              <h2 className="text-lg font-semibold text-foreground/80 mb-4">{section}</h2>
+              <div className="flex items-center gap-2 mb-4">
+                <div
+                  className="w-1 h-4 rounded-sm"
+                  style={{
+                    background: `linear-gradient(to bottom, ${SECTION_COLORS[section] || DEFAULT_SECTION_COLOR}, transparent)`,
+                  }}
+                />
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted">
+                  {section}
+                </h2>
+              </div>
               {rows.map((row, rowIdx) => (
                 <div key={rowIdx} className={`${row.cols}${rowIdx > 0 ? " mt-4" : ""}`}>
                   {row.cards.map((item) => {
+                    const sectionColor = SECTION_COLORS[item.section || ""] || DEFAULT_SECTION_COLOR;
+
                     const cardClass = item.disabled
-                      ? "block rounded-xl border border-t-border/50 bg-gradient-to-br from-surface-elevated/50 via-surface/40 to-surface-2/30 p-5 shadow-card backdrop-blur-sm opacity-60 cursor-default"
-                      : `group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm ${hoverBorderClass} hover:bg-surface transition-all`;
+                      ? "block rounded-xl border border-t-border/50 bg-gradient-to-br from-surface-elevated/50 via-surface/40 to-surface-2/30 p-5 shadow-card backdrop-blur-sm opacity-60 cursor-default relative overflow-hidden"
+                      : "group block rounded-xl border border-t-border/80 bg-gradient-to-br from-surface-elevated/80 via-surface/70 to-surface-2/50 p-5 shadow-card backdrop-blur-sm hover:bg-surface transition-all relative overflow-hidden";
+
                     const content = (
                       <>
-                        <div className="flex items-center justify-between mb-1">
-                          <h3 className={`font-semibold ${item.disabled ? "text-muted" : "text-foreground group-hover:text-orange-400"} transition-colors`}>
-                            {item.title}
+                        {/* Left accent bar */}
+                        <div
+                          className="absolute top-0 left-0 w-[3px] h-full"
+                          style={{
+                            background: `linear-gradient(to bottom, ${sectionColor}, transparent)`,
+                            opacity: item.disabled ? 0.3 : 1,
+                          }}
+                        />
+                        {/* Title row with emoji */}
+                        <div className="flex items-center gap-2 mb-1">
+                          {item.icon && (
+                            <span
+                              className="text-lg leading-none"
+                              style={item.disabled ? { filter: "grayscale(1) opacity(0.5)" } : undefined}
+                            >
+                              {item.icon}
+                            </span>
+                          )}
+                          <h3
+                            className={`font-semibold transition-colors ${
+                              item.disabled ? "text-muted" : "text-foreground"
+                            }`}
+                          >
+                            <span className="group-hover:hidden">{item.title}</span>
+                            <span
+                              className="hidden group-hover:inline"
+                              style={{ color: accent.color }}
+                            >
+                              {item.title}
+                            </span>
                           </h3>
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded border ${item.tagColor || tagColorClass}`}>
-                            {item.tag}
-                          </span>
                         </div>
+                        {/* Description */}
                         <p className="text-sm text-muted">{item.description}</p>
+                        {/* Footer: Open → or disabled tag */}
+                        <div className="mt-2 text-xs text-muted opacity-30 group-hover:opacity-60 transition-opacity">
+                          {item.disabled ? item.tag : "Open \u2192"}
+                        </div>
                       </>
                     );
+
+                    // Hover border via inline CSS variable
+                    const hoverStyle = !item.disabled ? {
+                      "--hover-border": `rgba(${hexToRgb(accent.color)}, 0.5)`,
+                    } as CSSProperties : undefined;
+
+                    const hoverClass = !item.disabled ? "[&:hover]:border-[var(--hover-border)]" : "";
 
                     if (item.disabled) {
                       return (
@@ -179,7 +295,12 @@ export default function SuitePageShell({
 
                     if (item.hardNavigate) {
                       return (
-                        <a key={item.href} href={item.href} className={cardClass}>
+                        <a
+                          key={item.href}
+                          href={item.href}
+                          className={`${cardClass} ${hoverClass}`}
+                          style={hoverStyle}
+                        >
                           {content}
                         </a>
                       );
@@ -190,7 +311,8 @@ export default function SuitePageShell({
                         key={item.href}
                         href={item.href}
                         prefetch={false}
-                        className={cardClass}
+                        className={`${cardClass} ${hoverClass}`}
+                        style={hoverStyle}
                       >
                         {content}
                       </Link>
