@@ -114,9 +114,13 @@ export async function GET(request: NextRequest) {
       projects = projects.filter((p) => !!p.siteSurveyCompletionDate);
     }
 
-    // Fetch Zuper site survey jobs for all filtered deals
-    const dealIds = projects.map((p) => String(p.id));
-    const zuperJobs = await getCachedZuperJobsByDealIds(dealIds, "Site Survey");
+    // Fetch Zuper site survey jobs for completed AND awaiting deals
+    const completedDealIds = projects.map((p) => String(p.id));
+    const awaitingDealIds = (allProjects || [])
+      .filter((p) => p.isSiteSurveyScheduled && !p.isSiteSurveyCompleted && p.siteSurveyScheduleDate)
+      .map((p) => String(p.id));
+    const allDealIds = [...new Set([...completedDealIds, ...awaitingDealIds])];
+    const zuperJobs = await getCachedZuperJobsByDealIds(allDealIds, "Site Survey");
     const zuperByDeal = new Map<string, string>();
     for (const job of zuperJobs) {
       if (job.hubspotDealId) zuperByDeal.set(job.hubspotDealId, job.jobUid);
@@ -150,7 +154,9 @@ export async function GET(request: NextRequest) {
     const totals = calculateAvg(projects);
 
     // Projects with survey scheduled but not completed — split into upcoming vs past due
-    const now = new Date();
+    // Use local-date floor so a survey scheduled for "today" stays in upcoming all day
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const allAwaiting = (allProjects || [])
       .filter(
         (p) =>
@@ -160,9 +166,11 @@ export async function GET(request: NextRequest) {
           !EXCLUDED_STAGES.some((s) => s.toLowerCase() === (p.stage || "").toLowerCase())
       )
       .map((p) => {
-        const schedDate = new Date(p.siteSurveyScheduleDate!);
+        // Parse YYYY-MM-DD as local date (not UTC) by splitting components
+        const [y, m, d] = p.siteSurveyScheduleDate!.split("-").map(Number);
+        const schedDate = new Date(y, m - 1, d);
         const daysUntil = Math.round(
-          (schedDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)
+          (schedDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
         );
         return {
           dealId: String(p.id),
