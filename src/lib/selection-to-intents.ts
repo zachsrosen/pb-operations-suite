@@ -38,13 +38,6 @@ export interface FieldRow {
   edges: FieldMappingEdge[];
 }
 
-/** Column metadata */
-export interface SystemColumn {
-  system: ExternalSystem;
-  linked: boolean;
-  createEnabled: boolean;
-}
-
 /** Dropdown option */
 export interface DropdownOption {
   value: "keep" | "internal" | ExternalSystem;
