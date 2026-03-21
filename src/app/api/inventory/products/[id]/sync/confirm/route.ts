@@ -4,14 +4,12 @@ import { getUserByEmail } from "@/lib/db";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 import {
   isCatalogSyncEnabled,
-  buildSyncConfirmation,
-  type SyncSystem,
+  buildPlanConfirmation,
 } from "@/lib/catalog-sync-confirmation";
 
 export const runtime = "nodejs";
 
 const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
-const VALID_SYSTEMS = new Set<SyncSystem>(["zoho", "hubspot", "zuper"]);
 
 // POST: Generate HMAC confirmation token for sync
 export async function POST(
@@ -40,36 +38,17 @@ export async function POST(
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { systems, changesHash } = body as {
-    systems?: string[];
-    changesHash?: string;
+  const { planHash } = body as {
+    planHash?: string;
   };
 
-  if (!Array.isArray(systems) || systems.length === 0) {
-    return NextResponse.json({ error: "systems array is required" }, { status: 400 });
-  }
-  if (typeof changesHash !== "string" || !changesHash.trim()) {
-    return NextResponse.json({ error: "changesHash is required" }, { status: 400 });
+  if (!planHash || typeof planHash !== "string") {
+    return NextResponse.json({ error: "planHash is required" }, { status: 400 });
   }
 
-  const validatedSystems = systems.filter((s): s is SyncSystem => VALID_SYSTEMS.has(s as SyncSystem));
-  if (validatedSystems.length !== systems.length) {
-    return NextResponse.json({ error: "Invalid system in systems array" }, { status: 400 });
+  const confirmation = buildPlanConfirmation(id, planHash);
+  if (!confirmation) {
+    return NextResponse.json({ error: "Failed to generate token" }, { status: 500 });
   }
-
-  try {
-    const confirmation = buildSyncConfirmation({
-      internalProductId: id,
-      systems: validatedSystems,
-      changesHash: changesHash.trim(),
-    });
-
-    return NextResponse.json(confirmation);
-  } catch (error) {
-    console.error("[Sync] Confirmation token generation failed:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Failed to generate confirmation token" },
-      { status: 500 },
-    );
-  }
+  return NextResponse.json(confirmation);
 }
