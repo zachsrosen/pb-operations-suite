@@ -102,6 +102,14 @@ const LINKS: SuitePageCard[] = [
     icon: "🔍",
     section: "Inspections",
   },
+  {
+    href: "/dashboards/inspection-metrics",
+    title: "Inspection Metrics",
+    description: "Turnaround times, first-time pass rates, and failure tracking by PB Location and AHJ.",
+    tag: "METRICS",
+    icon: "📊",
+    section: "Inspections",
+  },
 
   // ── Inventory & Equipment ──
   {

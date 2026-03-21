@@ -37,6 +37,7 @@ export const APP_PAGE_ROUTES = [
   "/dashboards/forecast-accuracy",
   "/dashboards/forecast-timeline",
   "/dashboards/incentives",
+  "/dashboards/inspection-metrics",
   "/dashboards/inspection-scheduler",
   "/dashboards/inspections",
   "/dashboards/interconnection",

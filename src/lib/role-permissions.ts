@@ -106,6 +106,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/interconnection",
       "/dashboards/construction",
       "/dashboards/construction-metrics",
+      "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
       "/dashboards/incentives",
       // Intelligence dashboards
@@ -209,6 +210,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/roofing",
       "/dashboards/roofing-scheduler",
       "/dashboards/construction-metrics",
+      "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
       // Equipment catalog
       "/dashboards/catalog",
@@ -276,6 +278,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/roofing",
       "/dashboards/roofing-scheduler",
       "/dashboards/construction-metrics",
+      "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
       // Intelligence dashboards
       "/dashboards/at-risk",
@@ -376,6 +379,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/interconnection",
       "/dashboards/construction",
       "/dashboards/construction-metrics",
+      "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
       "/dashboards/incentives",
       // Intelligence dashboards
@@ -473,6 +477,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/interconnection",
       "/dashboards/construction",
       "/dashboards/construction-metrics",
+      "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
       "/dashboards/incentives",
       "/dashboards/scheduler",
@@ -574,6 +579,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/interconnection",
       "/dashboards/construction",
       "/dashboards/construction-metrics",
+      "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
       "/dashboards/incentives",
       // D&E Suite dashboards
@@ -639,6 +645,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/interconnection",
       "/dashboards/construction",
       "/dashboards/construction-metrics",
+      "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
       "/dashboards/incentives",
       // D&E Suite dashboards
