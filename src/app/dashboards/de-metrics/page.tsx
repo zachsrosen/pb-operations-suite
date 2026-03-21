@@ -40,6 +40,35 @@ const REVISION_STATUSES = [
   "As-Built Revision Completed",
 ];
 
+// ---- DA Performance types ----
+interface DAGroupMetrics {
+  count: number;
+  avgTurnaround: number | null;
+  avgRevisions: number | null;
+  firstTryRate: number | null;
+  totalRevisions: number;
+}
+
+// ---- DA Performance color helpers ----
+const DA_TURNAROUND_THRESHOLDS = [5, 10, 20] as const;
+const DA_REVISION_THRESHOLDS = [0.5, 1, 2] as const;
+
+function getDaColor(value: number | null | undefined, thresholds: readonly number[]): string {
+  if (value === null || value === undefined) return "text-muted";
+  if (value <= thresholds[0]) return "text-emerald-400";
+  if (value <= thresholds[1]) return "text-yellow-400";
+  if (value <= thresholds[2]) return "text-orange-400";
+  return "text-red-400";
+}
+
+function getFirstTryColor(rate: number | null | undefined): string {
+  if (rate === null || rate === undefined) return "text-muted";
+  if (rate >= 80) return "text-emerald-400";
+  if (rate >= 60) return "text-yellow-400";
+  if (rate >= 40) return "text-orange-400";
+  return "text-red-400";
+}
+
 // ---- Sort helpers ----
 type SortKey = "designer" | "count" | "revenue";
 type SortDir = "asc" | "desc";
@@ -82,6 +111,35 @@ export default function DEMetricsPage() {
       setSortDir("desc");
     }
   }, [sortKey]);
+
+  // ---- DA Performance by Office (computed from designProjects, respects all filters) ----
+  const computeGroupMetrics = useCallback((projects: RawProject[]): DAGroupMetrics => {
+    const turnarounds = projects
+      .filter((p) => p.designApprovalSentDate && p.designApprovalDate)
+      .map((p) => {
+        const sent = new Date(p.designApprovalSentDate! + "T12:00:00");
+        const approved = new Date(p.designApprovalDate! + "T12:00:00");
+        return Math.floor((approved.getTime() - sent.getTime()) / (1000 * 60 * 60 * 24));
+      })
+      .filter((d) => d >= 0);
+    const revisions = projects
+      .map((p) => p.daRevisionCounter)
+      .filter((v): v is number => v !== null && v !== undefined && !isNaN(v) && v >= 0);
+    const firstTryCount = revisions.filter((v) => v === 0).length;
+    return {
+      count: projects.length,
+      avgTurnaround: turnarounds.length > 0
+        ? Math.round((turnarounds.reduce((s, v) => s + v, 0) / turnarounds.length) * 10) / 10
+        : null,
+      avgRevisions: revisions.length > 0
+        ? Math.round((revisions.reduce((s, v) => s + v, 0) / revisions.length) * 10) / 10
+        : null,
+      firstTryRate: revisions.length > 0
+        ? Math.round((firstTryCount / revisions.length) * 1000) / 10
+        : null,
+      totalRevisions: revisions.reduce((s, v) => s + v, 0),
+    };
+  }, []);
 
   const TIME_PRESETS = [30, 60, 90, 180, 365] as const;
   type TimePreset = (typeof TIME_PRESETS)[number];
@@ -177,6 +235,33 @@ export default function DEMetricsPage() {
       }),
     [safeProjects, persistedFilters, searchQuery]
   );
+
+  // ---- DA Performance by Office (computed from designProjects — respects all page filters) ----
+  const daByLocation = useMemo(() => {
+    const daProjects = designProjects.filter((p) => p.designApprovalDate && isInWindow(p.designApprovalDate));
+    const groups: Record<string, RawProject[]> = {};
+    for (const p of daProjects) {
+      const loc = p.pbLocation || "Unknown";
+      if (loc === "Unknown") continue;
+      if (!groups[loc]) groups[loc] = [];
+      groups[loc].push(p);
+    }
+    const byLocation: Record<string, DAGroupMetrics> = {};
+    for (const [loc, projects] of Object.entries(groups)) {
+      byLocation[loc] = computeGroupMetrics(projects);
+    }
+    return byLocation;
+  }, [designProjects, isInWindow, computeGroupMetrics]);
+
+  const daLocations = useMemo(
+    () => Object.keys(daByLocation).sort(),
+    [daByLocation]
+  );
+
+  const daTotals = useMemo((): DAGroupMetrics => {
+    const allDaProjects = designProjects.filter((p) => p.designApprovalDate && isInWindow(p.designApprovalDate));
+    return computeGroupMetrics(allDaProjects);
+  }, [designProjects, isInWindow, computeGroupMetrics]);
 
   // ---- Approval Metrics (FIXED: use designApprovalSentDate for "Sent") ----
   const approvalMetrics = useMemo(() => {
@@ -544,6 +629,95 @@ export default function DEMetricsPage() {
             valueColor={approvalMetrics.pending.count > 10 ? "text-yellow-400" : undefined}
           />
         </div>
+      </div>
+
+      {/* DA Performance by Office */}
+      <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-6">
+        <div className="px-5 py-4 border-b border-t-border">
+          <h2 className="text-lg font-semibold text-foreground">DA Performance by Office</h2>
+          <p className="text-sm text-muted mt-0.5">
+            Turnaround, revisions, and first-try approval rate by location &middot; Uses the time window and filters above
+          </p>
+        </div>
+
+        {loading ? (
+          <div className="p-6 space-y-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="h-10 bg-skeleton rounded animate-pulse" />
+            ))}
+          </div>
+        ) : daLocations.length === 0 ? (
+          <div className="p-6 text-center text-muted text-sm">No DA performance data available for this time window</div>
+        ) : (
+          <>
+            {/* Summary row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-5 py-4 border-b border-t-border bg-surface-2/30">
+              <div className="text-center">
+                <p className="text-xs text-muted mb-0.5">Avg Turnaround</p>
+                <p className={`text-xl font-mono font-bold ${getDaColor(daTotals.avgTurnaround, DA_TURNAROUND_THRESHOLDS)}`}>
+                  {daTotals.avgTurnaround !== null ? daTotals.avgTurnaround.toFixed(1) : "--"}
+                </p>
+                <p className="text-xs text-muted">days</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted mb-0.5">DAs Approved</p>
+                <p className="text-xl font-mono font-bold text-foreground">{daTotals.count}</p>
+                <p className="text-xs text-muted">{timeWindowLabel}</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted mb-0.5">First-Try Rate</p>
+                <p className={`text-xl font-mono font-bold ${getFirstTryColor(daTotals.firstTryRate)}`}>
+                  {daTotals.firstTryRate !== null ? `${daTotals.firstTryRate}%` : "--"}
+                </p>
+                <p className="text-xs text-muted">0 revisions</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted mb-0.5">Avg Revisions</p>
+                <p className={`text-xl font-mono font-bold ${getDaColor(daTotals.avgRevisions, DA_REVISION_THRESHOLDS)}`}>
+                  {daTotals.avgRevisions !== null ? daTotals.avgRevisions.toFixed(1) : "--"}
+                </p>
+                <p className="text-xs text-muted">per DA</p>
+              </div>
+            </div>
+
+            {/* By-location table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-t-border bg-surface-2/50 text-left text-muted">
+                    <th className="px-4 py-3 font-semibold">Location</th>
+                    <th className="px-4 py-3 font-semibold text-center">DAs</th>
+                    <th className="px-4 py-3 font-semibold text-center">Avg Turnaround</th>
+                    <th className="px-4 py-3 font-semibold text-center">Avg Revisions</th>
+                    <th className="px-4 py-3 font-semibold text-center">First-Try %</th>
+                    <th className="px-4 py-3 font-semibold text-center">Total Revisions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {daLocations.map((loc, i) => {
+                    const m = daByLocation[loc];
+                    return (
+                      <tr key={loc} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+                        <td className="px-4 py-3 font-medium text-foreground">{loc}</td>
+                        <td className="px-4 py-3 text-center text-foreground">{m.count}</td>
+                        <td className={`px-4 py-3 text-center font-mono ${getDaColor(m.avgTurnaround, DA_TURNAROUND_THRESHOLDS)}`}>
+                          {m.avgTurnaround !== null ? m.avgTurnaround.toFixed(1) : "--"}
+                        </td>
+                        <td className={`px-4 py-3 text-center font-mono ${getDaColor(m.avgRevisions, DA_REVISION_THRESHOLDS)}`}>
+                          {m.avgRevisions !== null ? m.avgRevisions.toFixed(1) : "--"}
+                        </td>
+                        <td className={`px-4 py-3 text-center font-mono ${getFirstTryColor(m.firstTryRate)}`}>
+                          {m.firstTryRate !== null ? `${m.firstTryRate}%` : "--"}
+                        </td>
+                        <td className="px-4 py-3 text-center text-muted">{m.totalRevisions}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Designs Section */}

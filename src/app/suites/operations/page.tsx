@@ -3,36 +3,13 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-utils";
 
 const LINKS: SuitePageCard[] = [
+  // ── Scheduling & Planning ──
   {
     href: "/dashboards/scheduler",
     title: "Master Schedule",
     description: "Drag-and-drop scheduling calendar with crew management.",
     tag: "SCHEDULING",
-    section: "Scheduling",
-    hardNavigate: true,
-  },
-  {
-    href: "/dashboards/site-survey-scheduler",
-    title: "Site Survey Schedule",
-    description: "Dedicated calendar for scheduling site surveys with Zuper integration.",
-    tag: "SCHEDULING",
-    section: "Scheduling",
-    hardNavigate: true,
-  },
-  {
-    href: "/dashboards/construction-scheduler",
-    title: "Construction Schedule",
-    description: "Dedicated calendar for scheduling construction installs with Zuper integration.",
-    tag: "SCHEDULING",
-    section: "Scheduling",
-    hardNavigate: true,
-  },
-  {
-    href: "/dashboards/inspection-scheduler",
-    title: "Inspection Schedule",
-    description: "Dedicated calendar for scheduling inspections with Zuper integration.",
-    tag: "SCHEDULING",
-    section: "Scheduling",
+    section: "Scheduling & Planning",
     hardNavigate: true,
   },
   {
@@ -40,42 +17,90 @@ const LINKS: SuitePageCard[] = [
     title: "Forecast Schedule",
     description: "Calendar view of all forecasted installs by stage and location with pipeline breakdown.",
     tag: "FORECAST",
-    section: "Scheduling",
-  },
-  {
-    href: "/dashboards/site-survey",
-    title: "Site Survey Execution",
-    description: "Site survey scheduling, status tracking, and completion monitoring.",
-    tag: "SURVEY",
-    section: "Field Execution",
-  },
-  {
-    href: "/dashboards/construction",
-    title: "Construction Execution",
-    description: "Construction status, scheduling, and progress tracking.",
-    tag: "CONSTRUCTION",
-    section: "Field Execution",
-  },
-  {
-    href: "/dashboards/construction-metrics",
-    title: "Construction Completion Metrics",
-    description: "Average start-to-completion times for construction projects across all office locations.",
-    tag: "METRICS",
-    section: "Field Execution",
-  },
-  {
-    href: "/dashboards/inspections",
-    title: "Inspections Execution",
-    description: "Inspection status tracking and AHJ analysis.",
-    tag: "INSPECTIONS",
-    section: "Field Execution",
+    section: "Scheduling & Planning",
   },
   {
     href: "/dashboards/equipment-backlog",
     title: "Equipment Backlog",
     description: "Equipment forecasting by brand, model, and stage with location filtering.",
     tag: "EQUIPMENT",
+    section: "Scheduling & Planning",
+  },
+
+  // ── Site Survey ──
+  {
+    href: "/dashboards/site-survey-scheduler",
+    title: "Site Survey Schedule",
+    description: "Dedicated calendar for scheduling site surveys with Zuper integration.",
+    tag: "SCHEDULING",
+    section: "Site Survey",
+    hardNavigate: true,
+  },
+  {
+    href: "/dashboards/site-survey",
+    title: "Site Survey Execution",
+    description: "Site survey scheduling, status tracking, and completion monitoring.",
+    tag: "SURVEY",
+    section: "Site Survey",
+  },
+  {
+    href: "/dashboards/survey-metrics",
+    title: "Survey Metrics",
+    description: "Site survey turnaround by office and surveyor, completion rates, and awaiting-survey queue.",
+    tag: "METRICS",
+    section: "Site Survey",
+  },
+
+  // ── Construction ──
+  {
+    href: "/dashboards/construction-scheduler",
+    title: "Construction Schedule",
+    description: "Dedicated calendar for scheduling construction installs with Zuper integration.",
+    tag: "SCHEDULING",
+    section: "Construction",
+    hardNavigate: true,
+  },
+  {
+    href: "/dashboards/construction",
+    title: "Construction Execution",
+    description: "Construction status, scheduling, and progress tracking.",
+    tag: "CONSTRUCTION",
+    section: "Construction",
+  },
+  {
+    href: "/dashboards/construction-metrics",
+    title: "Construction Completion Metrics",
+    description: "Average start-to-completion times for construction projects across all office locations.",
+    tag: "METRICS",
+    section: "Construction",
+  },
+
+  // ── Inspections ──
+  {
+    href: "/dashboards/inspection-scheduler",
+    title: "Inspection Schedule",
+    description: "Dedicated calendar for scheduling inspections with Zuper integration.",
+    tag: "SCHEDULING",
+    section: "Inspections",
+    hardNavigate: true,
+  },
+  {
+    href: "/dashboards/inspections",
+    title: "Inspections Execution",
+    description: "Inspection status tracking and AHJ analysis.",
+    tag: "INSPECTIONS",
+    section: "Inspections",
+  },
+
+  // ── Inventory & Equipment ──
+  {
+    href: "#",
+    title: "Product Catalog",
+    description: "Browse all equipment — modules, inverters, batteries, racking, and specs. (Incoming)",
+    tag: "INCOMING",
+    tagColor: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
     section: "Inventory & Equipment",
+    disabled: true,
   },
   {
     href: "/dashboards/bom",
@@ -94,7 +119,8 @@ const LINKS: SuitePageCard[] = [
     tagColor: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
     section: "Inventory & Equipment",
   },
-  // Admin-only section
+
+  // ── Admin ──
   {
     href: "/dashboards/inventory",
     title: "Inventory Hub",
@@ -128,7 +154,7 @@ export default async function OperationsSuitePage() {
     <SuitePageShell
       currentSuiteHref="/suites/operations"
       title="Operations Suite"
-      subtitle="Core operations and scheduling dashboards."
+      subtitle="Scheduling, field execution, and equipment management."
       cards={LINKS}
       role={user.role}
       hoverBorderClass="hover:border-orange-500/50"

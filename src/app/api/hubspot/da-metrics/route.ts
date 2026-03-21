@@ -227,6 +227,8 @@ export async function GET(request: NextRequest) {
         // DA not sent yet (no sent date, and not approved)
         if (p.designApprovalSentDate) return false;
         if (isApproved(p.layoutStatus)) return false;
+        // Already has a DA approval date — no longer "awaiting"
+        if (p.designApprovalDate) return false;
         // Still active (not closed/lost/complete)
         if (!p.isActive) return false;
         if (EXCLUDED_PIPELINE_STAGES.some((s) => s.toLowerCase() === (p.stage || "").toLowerCase())) return false;

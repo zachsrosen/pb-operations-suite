@@ -4,45 +4,163 @@ import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
-import { formatMoney, formatDate } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { usePendingApprovalFilters } from "@/stores/dashboard-filters";
 
-// Design Approval (layout) statuses that indicate "pending" — NOT approved/rejected/revision
-const PENDING_APPROVAL_STATUSES = [
+// ── Constants ──────────────────────────────────────────────────────────
+
+const EXCLUDED_STAGES = ["Project Complete", "Cancelled", "Closed Lost", "Closed Won", "Lost"];
+
+/** Layout statuses that mean the design is ready / drafted */
+const DESIGN_READY_STATUSES = ["Draft Complete", "Ready", "Draft Created"];
+
+/** Layout statuses that mean the DA has been sent to customer */
+const DA_SENT_STATUSES = [
   "Sent For Approval",
   "Resent For Approval",
   "Sent to Customer",
   "Review In Progress",
-  "Draft Complete",
   "Pending Review",
   "Ready For Review",
-  "Ready",
-  "Draft Created",
 ];
 
-type SortField = "name" | "layoutStatus" | "daysWaiting" | "amount" | "owner" | "location" | "designStatus" | "designComplete" | "daSent" | "siteSurveyor" | "designLead" | "stage";
+/** Combined "approved" layout statuses */
+const APPROVED_STATUSES = ["Approved", "Customer Approved"];
+
+// ── Sort helpers ───────────────────────────────────────────────────────
+
 type SortDir = "asc" | "desc";
 
-export default function PendingApprovalPage() {
+function useSort(defaultKey: string | null = null, defaultDir: SortDir = "desc") {
+  const [sortKey, setSortKey] = useState<string | null>(defaultKey);
+  const [sortDir, setSortDir] = useState<SortDir>(defaultDir);
+  const toggle = useCallback(
+    (key: string) => {
+      if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      else {
+        setSortKey(key);
+        setSortDir("desc");
+      }
+    },
+    [sortKey]
+  );
+  return { sortKey, sortDir, toggle };
+}
+
+function sortRows<T extends Record<string, unknown>>(rows: T[], key: string | null, dir: SortDir): T[] {
+  if (!key) return rows;
+  return [...rows].sort((a, b) => {
+    const av = a[key];
+    const bv = b[key];
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    if (typeof av === "number" && typeof bv === "number") return dir === "asc" ? av - bv : bv - av;
+    return dir === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+  });
+}
+
+// ── Day-diff helper ────────────────────────────────────────────────────
+
+function daysSince(dateStr: string | undefined | null): number {
+  if (!dateStr) return 0;
+  const d = new Date(dateStr + "T12:00:00");
+  const now = new Date();
+  return Math.max(0, Math.floor((now.getTime() - d.getTime()) / 86_400_000));
+}
+
+function daysColor(days: number): string {
+  if (days > 14) return "text-red-400";
+  if (days > 7) return "text-orange-400";
+  if (days > 3) return "text-yellow-400";
+  return "text-emerald-400";
+}
+
+// ── SortHeader ─────────────────────────────────────────────────────────
+
+function SortHeader({
+  label,
+  sortKey,
+  currentKey,
+  currentDir,
+  onSort,
+  className = "",
+}: {
+  label: string;
+  sortKey: string;
+  currentKey: string | null;
+  currentDir: SortDir;
+  onSort: (key: string) => void;
+  className?: string;
+}) {
+  const active = currentKey === sortKey;
+  return (
+    <th
+      className={`p-3 cursor-pointer select-none hover:text-purple-300 transition-colors ${className}`}
+      onClick={() => onSort(sortKey)}
+    >
+      {label}
+      <span className="ml-1 text-xs">{active ? (currentDir === "asc" ? "\u25B2" : "\u25BC") : "\u21C5"}</span>
+    </th>
+  );
+}
+
+// ── Section skeleton ───────────────────────────────────────────────────
+
+function SectionSkeleton({ title }: { title: string }) {
+  return (
+    <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8">
+      <div className="px-5 py-4 border-b border-t-border">
+        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
+      </div>
+      <div className="p-6 space-y-3">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <div key={i} className="h-10 bg-skeleton rounded animate-pulse" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── DA Status badge ────────────────────────────────────────────────────
+
+function DAStatusBadge({ status }: { status: string }) {
+  const isSent = DA_SENT_STATUSES.includes(status);
+  const cls = isSent
+    ? "bg-purple-500/15 text-purple-300 border-purple-500/30"
+    : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
+  return (
+    <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full border ${cls}`}>
+      {status}
+    </span>
+  );
+}
+
+// ── Main Page ──────────────────────────────────────────────────────────
+
+export default function DesignApprovalQueuePage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
+  // Data
   const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
     transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = projects ?? [];
 
-  const [sortField, setSortField] = useState<SortField>("daysWaiting");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-
-  // Filter state
+  // Filter state (persisted)
   const { filters: persistedFilters, setFilters: setPersisted, clearFilters } = usePendingApprovalFilters();
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Per-section sort state — must be called before any early return
+  const sort1 = useSort("daysWaiting", "desc");
+  const sort2 = useSort("daysWaiting", "desc");
+  const sort3 = useSort("daysWaiting", "desc");
+
+  // Activity tracking
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
@@ -50,48 +168,49 @@ export default function PendingApprovalPage() {
     }
   }, [loading, safeProjects.length, trackDashboardView]);
 
-  // Filter to projects with pending approval statuses
-  const pendingProjects = useMemo(() => {
-    return safeProjects
-      .filter((p) => p.layoutStatus && PENDING_APPROVAL_STATUSES.includes(p.layoutStatus))
-      .map((p) => ({
-        ...p,
-        daysWaiting: p.daysSinceStageMovement ?? 0,
-      }));
-  }, [safeProjects]);
+  // ── Base pool: exclude terminal stages ─────────────────────────────
+  const baseProjects = useMemo(
+    () => safeProjects.filter((p) => !EXCLUDED_STAGES.includes(p.stage)),
+    [safeProjects]
+  );
 
-  // Build filter options from pending projects
+  // ── Filter options (built from base pool) ──────────────────────────
   const locationOptions: FilterOption[] = useMemo(() => {
-    const locs = [...new Set(pendingProjects.map((p) => p.pbLocation).filter(Boolean))] as string[];
+    const locs = [...new Set(baseProjects.map((p) => p.pbLocation).filter(Boolean))] as string[];
     return locs.sort().map((l) => ({ value: l, label: l }));
-  }, [pendingProjects]);
+  }, [baseProjects]);
 
   const ownerOptions: FilterOption[] = useMemo(() => {
-    const owners = [...new Set(pendingProjects.map((p) => p.projectManager || "Unknown"))] as string[];
+    const owners = [...new Set(baseProjects.map((p) => p.projectManager || "Unknown"))] as string[];
     return owners.sort().map((o) => ({ value: o, label: o }));
-  }, [pendingProjects]);
+  }, [baseProjects]);
 
   const surveyorOptions: FilterOption[] = useMemo(() => {
-    const surveyors = [...new Set(pendingProjects.map((p) => p.siteSurveyor || "Unknown"))];
+    const surveyors = [...new Set(baseProjects.map((p) => p.siteSurveyor || "Unknown"))];
     return surveyors.sort().map((s) => ({ value: s, label: s }));
-  }, [pendingProjects]);
+  }, [baseProjects]);
 
   const designLeadOptions: FilterOption[] = useMemo(() => {
-    const leads = [...new Set(pendingProjects.map((p) => p.designLead || "Unknown"))];
+    const leads = [...new Set(baseProjects.map((p) => p.designLead || "Unknown"))];
     return leads.sort().map((s) => ({ value: s, label: s }));
-  }, [pendingProjects]);
+  }, [baseProjects]);
 
   const stageOptions: FilterOption[] = useMemo(() => {
-    const stages = [...new Set(pendingProjects.map((p) => p.stage || ""))].filter(Boolean);
+    const stages = [...new Set(baseProjects.map((p) => p.stage || ""))].filter(Boolean);
     return stages.sort().map((s) => ({ value: s, label: s }));
-  }, [pendingProjects]);
+  }, [baseProjects]);
 
-  const hasActiveFilters = persistedFilters.locations.length > 0 || persistedFilters.owners.length > 0 || persistedFilters.stages.length > 0 || persistedFilters.surveyors.length > 0 || persistedFilters.designLeads.length > 0 || searchQuery.length > 0;
+  const hasActiveFilters =
+    persistedFilters.locations.length > 0 ||
+    persistedFilters.owners.length > 0 ||
+    persistedFilters.stages.length > 0 ||
+    persistedFilters.surveyors.length > 0 ||
+    persistedFilters.designLeads.length > 0 ||
+    searchQuery.length > 0;
 
-  // Filtered projects
-  const filteredProjects = useMemo(() => {
-    let result = pendingProjects;
-
+  // ── Apply user filters ─────────────────────────────────────────────
+  const filtered = useMemo(() => {
+    let result = baseProjects;
     if (persistedFilters.locations.length > 0) {
       result = result.filter((p) => persistedFilters.locations.includes(p.pbLocation || ""));
     }
@@ -117,86 +236,104 @@ export default function PendingApprovalPage() {
           (p.layoutStatus || "").toLowerCase().includes(q)
       );
     }
-
     return result;
-  }, [pendingProjects, persistedFilters, searchQuery]);
+  }, [baseProjects, persistedFilters, searchQuery]);
 
-  // Sort
-  const sortedProjects = useMemo(() => {
-    const sorted = [...filteredProjects];
-    sorted.sort((a, b) => {
-      let cmp = 0;
-      switch (sortField) {
-        case "name": cmp = a.name.localeCompare(b.name); break;
-        case "owner": cmp = (a.projectManager || "Unknown").localeCompare(b.projectManager || "Unknown"); break;
-        case "location": cmp = (a.pbLocation || "").localeCompare(b.pbLocation || ""); break;
-        case "layoutStatus": cmp = (a.layoutStatus || "").localeCompare(b.layoutStatus || ""); break;
-        case "designStatus": cmp = (a.designStatus || "").localeCompare(b.designStatus || ""); break;
-        case "daysWaiting": cmp = a.daysWaiting - b.daysWaiting; break;
-        case "designComplete": cmp = (a.designCompletionDate || "").localeCompare(b.designCompletionDate || ""); break;
-        case "daSent": cmp = (a.designApprovalSentDate || "").localeCompare(b.designApprovalSentDate || ""); break;
-        case "amount": cmp = (a.amount || 0) - (b.amount || 0); break;
-        case "siteSurveyor": cmp = (a.siteSurveyor || "Unknown").localeCompare(b.siteSurveyor || "Unknown"); break;
-        case "designLead": cmp = (a.designLead || "Unknown").localeCompare(b.designLead || "Unknown"); break;
-        case "stage": cmp = (a.stage || "").localeCompare(b.stage || ""); break;
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-    return sorted;
-  }, [filteredProjects, sortField, sortDir]);
-
-  const handleSort = useCallback(
-    (field: SortField) => {
-      if (sortField === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-      else { setSortField(field); setSortDir("desc"); }
-    },
-    [sortField]
+  // ── Section 1: Survey Done — Needs Design ──────────────────────────
+  const section1Rows = useMemo(
+    () =>
+      filtered
+        .filter((p) => {
+          if (!p.siteSurveyCompletionDate) return false;
+          if (p.layoutStatus && DESIGN_READY_STATUSES.includes(p.layoutStatus)) return false;
+          if (p.layoutStatus && DA_SENT_STATUSES.includes(p.layoutStatus)) return false;
+          if (p.designApprovalSentDate) return false;
+          if (p.designApprovalDate) return false;
+          if (p.layoutStatus && APPROVED_STATUSES.includes(p.layoutStatus)) return false;
+          return true;
+        })
+        .map((p) => ({
+          ...p,
+          daysWaiting: daysSince(p.siteSurveyCompletionDate),
+        })),
+    [filtered]
   );
 
-  // Stats (computed from filtered set)
-  const stats = useMemo(() => {
-    const total = filteredProjects.length;
-    const days = filteredProjects.map((p) => p.daysWaiting);
-    const avgDays = days.length > 0 ? Math.round(days.reduce((a, b) => a + b, 0) / days.length) : 0;
-    const longestWait = days.length > 0 ? Math.max(...days) : 0;
-    return { total, avgDays, longestWait };
-  }, [filteredProjects]);
+  // ── Section 2: Design Ready — Send to Customer ─────────────────────
+  const section2Rows = useMemo(
+    () =>
+      filtered
+        .filter((p) =>
+          p.layoutStatus &&
+          DESIGN_READY_STATUSES.includes(p.layoutStatus) &&
+          !p.designApprovalSentDate && // not already sent
+          !p.designApprovalDate         // not already approved
+        )
+        .map((p) => ({
+          ...p,
+          daysWaiting: p.designCompletionDate
+            ? daysSince(p.designCompletionDate)
+            : p.daysSinceStageMovement ?? 0,
+        })),
+    [filtered]
+  );
 
-  // Export
+  // ── Section 3: DA Sent — Awaiting Customer ─────────────────────────
+  const section3Rows = useMemo(
+    () =>
+      filtered
+        .filter((p) =>
+          p.layoutStatus &&
+          DA_SENT_STATUSES.includes(p.layoutStatus) &&
+          p.designApprovalSentDate && // must have an actual sent date
+          !p.designApprovalDate       // not already approved
+        )
+        .map((p) => ({
+          ...p,
+          daysWaiting: daysSince(p.designApprovalSentDate),
+        })),
+    [filtered]
+  );
+
+  // ── Sorted rows ────────────────────────────────────────────────────
+  const sorted1 = useMemo(() => sortRows(section1Rows, sort1.sortKey, sort1.sortDir), [section1Rows, sort1.sortKey, sort1.sortDir]);
+  const sorted2 = useMemo(() => sortRows(section2Rows, sort2.sortKey, sort2.sortDir), [section2Rows, sort2.sortKey, sort2.sortDir]);
+  const sorted3 = useMemo(() => sortRows(section3Rows, sort3.sortKey, sort3.sortDir), [section3Rows, sort3.sortKey, sort3.sortDir]);
+
+  // ── Export ─────────────────────────────────────────────────────────
   const exportRows = useMemo(
-    () => sortedProjects.map((p) => ({
-      name: p.name,
-      pm: p.projectManager || "Unknown",
-      siteSurveyor: p.siteSurveyor || "",
-      designLead: p.designLead || "",
-      location: p.pbLocation || "",
-      stage: p.stage || "",
-      layoutStatus: p.layoutStatus || "",
-      designStatus: p.designStatus || "",
-      daysWaiting: p.daysWaiting,
-      amount: p.amount || 0,
-      designCompletionDate: p.designCompletionDate || "",
-      designApprovalSentDate: p.designApprovalSentDate || "",
-    })),
-    [sortedProjects]
+    () =>
+      [...section1Rows, ...section2Rows, ...section3Rows].map((p) => ({
+        name: p.name,
+        pm: p.projectManager || "Unknown",
+        siteSurveyor: p.siteSurveyor || "",
+        designLead: p.designLead || "",
+        location: p.pbLocation || "",
+        stage: p.stage || "",
+        layoutStatus: p.layoutStatus || "",
+        daysWaiting: p.daysWaiting,
+        surveyCompleted: p.siteSurveyCompletionDate || "",
+        designCompleted: p.designCompletionDate || "",
+        daSent: p.designApprovalSentDate || "",
+      })),
+    [section1Rows, section2Rows, section3Rows]
   );
 
-  const sortIndicator = (field: SortField) =>
-    sortField === field ? (sortDir === "asc" ? " ↑" : " ↓") : " ⇅";
+  // ── Render ─────────────────────────────────────────────────────────
 
   return (
     <DashboardShell
-      title="Pending Design Approval"
+      title="Design Approval Queue"
       accentColor="purple"
       lastUpdated={lastUpdated}
-      exportData={{ data: exportRows, filename: "pending-design-approval.csv" }}
+      exportData={{ data: exportRows, filename: "design-approval-queue.csv" }}
       fullWidth
     >
       {/* Summary Stats */}
       <div className="grid grid-cols-3 gap-4 stagger-grid mb-6">
-        <MiniStat label="Total Pending" value={loading ? null : stats.total} />
-        <MiniStat label="Avg Days Waiting" value={loading ? null : `${stats.avgDays}d`} alert={stats.avgDays > 10} />
-        <MiniStat label="Longest Wait" value={loading ? null : `${stats.longestWait}d`} alert={stats.longestWait > 21} />
+        <MiniStat label="Needs Design" value={loading ? null : section1Rows.length} />
+        <MiniStat label="Ready to Send" value={loading ? null : section2Rows.length} />
+        <MiniStat label="Awaiting Customer" value={loading ? null : section3Rows.length} />
       </div>
 
       {/* Filter Row */}
@@ -253,7 +390,7 @@ export default function PendingApprovalPage() {
           accentColor="indigo"
         />
         <MultiSelectFilter
-          label="Site Surveyor"
+          label="Surveyor"
           options={surveyorOptions}
           selected={persistedFilters.surveyors}
           onChange={(surveyors) => setPersisted({ ...persistedFilters, surveyors })}
@@ -269,7 +406,10 @@ export default function PendingApprovalPage() {
 
         {hasActiveFilters && (
           <button
-            onClick={() => { clearFilters(); setSearchQuery(""); }}
+            onClick={() => {
+              clearFilters();
+              setSearchQuery("");
+            }}
             className="text-xs px-3 py-2 rounded-lg border border-t-border text-muted hover:text-foreground hover:border-muted transition-colors"
           >
             Clear All
@@ -277,101 +417,196 @@ export default function PendingApprovalPage() {
         )}
       </div>
 
-      {/* Table */}
-      <div className="bg-surface border border-t-border rounded-xl shadow-card overflow-hidden mb-6">
-        {loading ? (
-          <div className="p-6 space-y-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="h-10 bg-skeleton rounded animate-pulse" />
-            ))}
+      {/* ── Section 1: Survey Done — Needs Design ───────────────── */}
+      {loading ? (
+        <SectionSkeleton title="Survey Done \u2014 Needs Design" />
+      ) : (
+        <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8">
+          <div className="px-5 py-4 border-b border-t-border">
+            <h2 className="text-lg font-semibold text-foreground">
+              Survey Done &mdash; Needs Design
+              <span className="ml-2 text-sm font-normal text-muted">({section1Rows.length})</span>
+            </h2>
+            <p className="text-xs text-muted mt-1">
+              Active projects where site survey is complete but design hasn&apos;t been drafted or sent &middot; Excludes completed and cancelled projects
+            </p>
           </div>
-        ) : sortedProjects.length === 0 ? (
-          <div className="p-8 text-center text-muted">
-            {hasActiveFilters
-              ? "No projects match the current filters."
-              : "No projects currently pending design approval."}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-t-border text-left text-muted bg-surface-2/50">
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("name")}>
-                    Project{sortIndicator("name")}
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("owner")}>
-                    PM{sortIndicator("owner")}
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("siteSurveyor")}>
-                    Site Surveyor{sortIndicator("siteSurveyor")}
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("designLead")}>
-                    Design Lead{sortIndicator("designLead")}
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("location")}>
-                    Location{sortIndicator("location")}
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("stage")}>
-                    Deal Stage{sortIndicator("stage")}
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("layoutStatus")}>
-                    DA Status{sortIndicator("layoutStatus")}
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("designStatus")}>
-                    Design Status{sortIndicator("designStatus")}
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("daysWaiting")}>
-                    Days Waiting{sortIndicator("daysWaiting")}
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("daSent")}>
-                    DA Sent{sortIndicator("daSent")}
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground" onClick={() => handleSort("designComplete")}>
-                    Design Complete{sortIndicator("designComplete")}
-                  </th>
-                  <th className="p-3 cursor-pointer hover:text-foreground text-right" onClick={() => handleSort("amount")}>
-                    Amount{sortIndicator("amount")}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedProjects.map((p) => (
-                  <tr key={p.id} className="border-b border-t-border/50 hover:bg-surface-2/50">
-                    <td className="p-3">
-                      {p.url ? (
-                        <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 hover:underline">
-                          {p.name}
-                        </a>
-                      ) : (
-                        <span className="text-foreground">{p.name}</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-muted">{p.projectManager || "Unknown"}</td>
-                    <td className="p-3 text-muted">{p.siteSurveyor || "—"}</td>
-                    <td className="p-3 text-muted">{p.designLead || "—"}</td>
-                    <td className="p-3 text-muted">{p.pbLocation || "—"}</td>
-                    <td className="p-3 text-muted">{p.stage || "—"}</td>
-                    <td className="p-3">
-                      <span className="inline-block px-2 py-0.5 text-xs font-medium rounded-full bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
-                        {p.layoutStatus}
-                      </span>
-                    </td>
-                    <td className="p-3 text-muted">{p.designStatus || "—"}</td>
-                    <td className="p-3 text-right">
-                      <span className={`font-semibold ${p.daysWaiting > 21 ? "text-red-400" : p.daysWaiting > 10 ? "text-yellow-400" : "text-foreground"}`}>
-                        {p.daysWaiting}d
-                      </span>
-                    </td>
-                    <td className="p-3 text-muted">{p.designApprovalSentDate ? formatDate(p.designApprovalSentDate) : "—"}</td>
-                    <td className="p-3 text-muted">{formatDate(p.designCompletionDate)}</td>
-                    <td className="p-3 text-right text-foreground">{formatMoney(p.amount || 0)}</td>
+          {sorted1.length === 0 ? (
+            <div className="p-8 text-center text-emerald-400">No projects in this stage</div>
+          ) : (
+            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b border-t-border text-left text-muted bg-surface-2/50">
+                    <SortHeader label="Project" sortKey="name" currentKey={sort1.sortKey} currentDir={sort1.sortDir} onSort={sort1.toggle} />
+                    <SortHeader label="PM" sortKey="projectManager" currentKey={sort1.sortKey} currentDir={sort1.sortDir} onSort={sort1.toggle} />
+                    <SortHeader label="Location" sortKey="pbLocation" currentKey={sort1.sortKey} currentDir={sort1.sortDir} onSort={sort1.toggle} />
+                    <SortHeader label="Surveyor" sortKey="siteSurveyor" currentKey={sort1.sortKey} currentDir={sort1.sortDir} onSort={sort1.toggle} />
+                    <SortHeader label="Designer" sortKey="designLead" currentKey={sort1.sortKey} currentDir={sort1.sortDir} onSort={sort1.toggle} />
+                    <SortHeader label="Stage" sortKey="stage" currentKey={sort1.sortKey} currentDir={sort1.sortDir} onSort={sort1.toggle} />
+                    <SortHeader label="Survey Completed" sortKey="siteSurveyCompletionDate" currentKey={sort1.sortKey} currentDir={sort1.sortDir} onSort={sort1.toggle} />
+                    <SortHeader label="Layout Status" sortKey="layoutStatus" currentKey={sort1.sortKey} currentDir={sort1.sortDir} onSort={sort1.toggle} />
+                    <SortHeader label="Days Since Survey" sortKey="daysWaiting" currentKey={sort1.sortKey} currentDir={sort1.sortDir} onSort={sort1.toggle} className="text-right" />
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {sorted1.map((p) => (
+                    <tr key={p.id} className="border-b border-t-border/50 hover:bg-surface-2/50">
+                      <td className="p-3">
+                        {p.url ? (
+                          <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 hover:underline">
+                            {p.name}
+                          </a>
+                        ) : (
+                          <span className="text-foreground">{p.name}</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-muted">{p.projectManager || "Unknown"}</td>
+                      <td className="p-3 text-muted">{p.pbLocation || "\u2014"}</td>
+                      <td className="p-3 text-muted">{p.siteSurveyor || "\u2014"}</td>
+                      <td className="p-3 text-muted">{p.designLead || "\u2014"}</td>
+                      <td className="p-3 text-muted">{p.stage || "\u2014"}</td>
+                      <td className="p-3 text-muted">{formatDate(p.siteSurveyCompletionDate)}</td>
+                      <td className="p-3 text-muted">{p.layoutStatus || "\u2014"}</td>
+                      <td className="p-3 text-right">
+                        <span className={`font-semibold ${daysColor(p.daysWaiting)}`}>{p.daysWaiting}d</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Section 2: Design Ready — Send to Customer ──────────── */}
+      {loading ? (
+        <SectionSkeleton title="Design Ready \u2014 Send to Customer" />
+      ) : (
+        <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8">
+          <div className="px-5 py-4 border-b border-t-border">
+            <h2 className="text-lg font-semibold text-foreground">
+              Design Ready &mdash; Send to Customer
+              <span className="ml-2 text-sm font-normal text-muted">({section2Rows.length})</span>
+            </h2>
+            <p className="text-xs text-muted mt-1">
+              Design is drafted or ready but hasn&apos;t been submitted to the customer yet &middot; Excludes completed and cancelled projects
+            </p>
           </div>
-        )}
-      </div>
+          {sorted2.length === 0 ? (
+            <div className="p-8 text-center text-emerald-400">No projects in this stage</div>
+          ) : (
+            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b border-t-border text-left text-muted bg-surface-2/50">
+                    <SortHeader label="Project" sortKey="name" currentKey={sort2.sortKey} currentDir={sort2.sortDir} onSort={sort2.toggle} />
+                    <SortHeader label="PM" sortKey="projectManager" currentKey={sort2.sortKey} currentDir={sort2.sortDir} onSort={sort2.toggle} />
+                    <SortHeader label="Location" sortKey="pbLocation" currentKey={sort2.sortKey} currentDir={sort2.sortDir} onSort={sort2.toggle} />
+                    <SortHeader label="Designer" sortKey="designLead" currentKey={sort2.sortKey} currentDir={sort2.sortDir} onSort={sort2.toggle} />
+                    <SortHeader label="Stage" sortKey="stage" currentKey={sort2.sortKey} currentDir={sort2.sortDir} onSort={sort2.toggle} />
+                    <SortHeader label="Layout Status" sortKey="layoutStatus" currentKey={sort2.sortKey} currentDir={sort2.sortDir} onSort={sort2.toggle} />
+                    <SortHeader label="Design Completed" sortKey="designCompletionDate" currentKey={sort2.sortKey} currentDir={sort2.sortDir} onSort={sort2.toggle} />
+                    <SortHeader label="Days Waiting" sortKey="daysWaiting" currentKey={sort2.sortKey} currentDir={sort2.sortDir} onSort={sort2.toggle} className="text-right" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted2.map((p) => (
+                    <tr key={p.id} className="border-b border-t-border/50 hover:bg-surface-2/50">
+                      <td className="p-3">
+                        {p.url ? (
+                          <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 hover:underline">
+                            {p.name}
+                          </a>
+                        ) : (
+                          <span className="text-foreground">{p.name}</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-muted">{p.projectManager || "Unknown"}</td>
+                      <td className="p-3 text-muted">{p.pbLocation || "\u2014"}</td>
+                      <td className="p-3 text-muted">{p.designLead || "\u2014"}</td>
+                      <td className="p-3 text-muted">{p.stage || "\u2014"}</td>
+                      <td className="p-3">
+                        <DAStatusBadge status={p.layoutStatus || ""} />
+                      </td>
+                      <td className="p-3 text-muted">{formatDate(p.designCompletionDate)}</td>
+                      <td className="p-3 text-right">
+                        <span className={`font-semibold ${daysColor(p.daysWaiting)}`}>{p.daysWaiting}d</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Section 3: DA Sent — Awaiting Customer ──────────────── */}
+      {loading ? (
+        <SectionSkeleton title="DA Sent \u2014 Awaiting Customer" />
+      ) : (
+        <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8">
+          <div className="px-5 py-4 border-b border-t-border">
+            <h2 className="text-lg font-semibold text-foreground">
+              DA Sent &mdash; Awaiting Customer
+              <span className="ml-2 text-sm font-normal text-muted">({section3Rows.length})</span>
+            </h2>
+            <p className="text-xs text-muted mt-1">
+              DA has been sent and is waiting on customer approval &middot; Excludes completed and cancelled projects
+            </p>
+          </div>
+          {sorted3.length === 0 ? (
+            <div className="p-8 text-center text-emerald-400">No projects in this stage</div>
+          ) : (
+            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+              <table className="w-full text-sm">
+                <thead className="sticky top-0 z-10">
+                  <tr className="border-b border-t-border text-left text-muted bg-surface-2/50">
+                    <SortHeader label="Project" sortKey="name" currentKey={sort3.sortKey} currentDir={sort3.sortDir} onSort={sort3.toggle} />
+                    <SortHeader label="PM" sortKey="projectManager" currentKey={sort3.sortKey} currentDir={sort3.sortDir} onSort={sort3.toggle} />
+                    <SortHeader label="Location" sortKey="pbLocation" currentKey={sort3.sortKey} currentDir={sort3.sortDir} onSort={sort3.toggle} />
+                    <SortHeader label="Designer" sortKey="designLead" currentKey={sort3.sortKey} currentDir={sort3.sortDir} onSort={sort3.toggle} />
+                    <SortHeader label="Surveyor" sortKey="siteSurveyor" currentKey={sort3.sortKey} currentDir={sort3.sortDir} onSort={sort3.toggle} />
+                    <SortHeader label="Stage" sortKey="stage" currentKey={sort3.sortKey} currentDir={sort3.sortDir} onSort={sort3.toggle} />
+                    <SortHeader label="DA Status" sortKey="layoutStatus" currentKey={sort3.sortKey} currentDir={sort3.sortDir} onSort={sort3.toggle} />
+                    <SortHeader label="DA Sent" sortKey="designApprovalSentDate" currentKey={sort3.sortKey} currentDir={sort3.sortDir} onSort={sort3.toggle} />
+                    <SortHeader label="Days Waiting" sortKey="daysWaiting" currentKey={sort3.sortKey} currentDir={sort3.sortDir} onSort={sort3.toggle} className="text-right" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {sorted3.map((p) => (
+                    <tr key={p.id} className="border-b border-t-border/50 hover:bg-surface-2/50">
+                      <td className="p-3">
+                        {p.url ? (
+                          <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-purple-400 hover:text-purple-300 hover:underline">
+                            {p.name}
+                          </a>
+                        ) : (
+                          <span className="text-foreground">{p.name}</span>
+                        )}
+                      </td>
+                      <td className="p-3 text-muted">{p.projectManager || "Unknown"}</td>
+                      <td className="p-3 text-muted">{p.pbLocation || "\u2014"}</td>
+                      <td className="p-3 text-muted">{p.designLead || "\u2014"}</td>
+                      <td className="p-3 text-muted">{p.siteSurveyor || "\u2014"}</td>
+                      <td className="p-3 text-muted">{p.stage || "\u2014"}</td>
+                      <td className="p-3">
+                        <DAStatusBadge status={p.layoutStatus || ""} />
+                      </td>
+                      <td className="p-3 text-muted">{formatDate(p.designApprovalSentDate)}</td>
+                      <td className="p-3 text-right">
+                        <span className={`font-semibold ${daysColor(p.daysWaiting)}`}>{p.daysWaiting}d</span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </DashboardShell>
   );
 }
