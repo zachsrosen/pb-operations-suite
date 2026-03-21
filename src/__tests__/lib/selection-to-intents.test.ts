@@ -18,8 +18,6 @@ import {
   computeSmartDefaults,
   getDropdownOptions,
   type CellSelection,
-  type FieldRow,
-  type SystemColumn,
 } from "@/lib/selection-to-intents";
 import type { ExternalSystem, FieldMappingEdge, FieldValueSnapshot } from "@/lib/catalog-sync-types";
 
@@ -164,6 +162,8 @@ describe("expandCompanions", () => {
     ];
     const expanded = expandCompanions(selections, VENDOR_EDGES);
     expect(expanded).toHaveLength(1);
+    expect(expanded[0].externalField).toBe("vendor_name");
+    expect(expanded[0].source).toBe("keep");
   });
 });
 
