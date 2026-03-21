@@ -147,7 +147,7 @@ No new CSS variables or theme tokens needed.
 | File | Change |
 |------|--------|
 | `src/components/ui/MetricCard.tsx` | StatCard: text-4xl, p-7, deeper gradient, shadow-card-lg. MetricCard: bg-surface-2, add href/color/null support, widen value type, fix key stringification. MiniStat: text-lg, p-3, bg-surface/30, no shadow. Remove SummaryCard export. Expand ACCENT_CLASSES with indigo + teal. |
-| `src/__tests__/components/ui.test.tsx` | Remove SummaryCard test, add equivalent MetricCard test coverage, fix StatCard test color format |
+| `src/__tests__/components/ui.test.tsx` | Remove SummaryCard test, fix StatCard test color format, add MetricCard tests: `href` renders link variant, `value={null}` renders loading skeleton |
 
 No new files. No new dependencies.
 
