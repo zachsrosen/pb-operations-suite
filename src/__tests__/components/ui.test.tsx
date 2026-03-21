@@ -6,7 +6,7 @@ import { render, screen } from "@testing-library/react";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
-import { StatCard, MiniStat, MetricCard, SummaryCard } from "@/components/ui/MetricCard";
+import { StatCard, MiniStat, MetricCard } from "@/components/ui/MetricCard";
 
 describe("LoadingSpinner", () => {
   it("renders with default message", () => {
@@ -83,13 +83,13 @@ describe("LiveIndicator", () => {
 
 describe("StatCard", () => {
   it("renders value and label", () => {
-    render(<StatCard value="42" label="Total Projects" color="text-blue-400" />);
+    render(<StatCard value="42" label="Total Projects" color="blue" />);
     expect(screen.getByText("42")).toBeTruthy();
     expect(screen.getByText("Total Projects")).toBeTruthy();
   });
 
   it("renders subtitle when provided", () => {
-    render(<StatCard value="42" label="Total" subtitle="$1.5M" color="text-green-400" />);
+    render(<StatCard value="42" label="Total" subtitle="$1.5M" color="green" />);
     expect(screen.getByText("$1.5M")).toBeTruthy();
   });
 });
@@ -115,12 +115,23 @@ describe("MetricCard", () => {
     const valueEl = screen.getByText("7");
     expect(valueEl.className).toContain("text-red-400");
   });
-});
 
-describe("SummaryCard", () => {
-  it("renders label and value", () => {
-    render(<SummaryCard label="Avg Days" value="45" />);
-    expect(screen.getByText("Avg Days")).toBeTruthy();
-    expect(screen.getByText("45")).toBeTruthy();
+  it("renders as link when href is provided", () => {
+    render(<MetricCard label="Revenue" value="$2.4M" href="/dashboards/revenue" />);
+    const link = screen.getByRole("link");
+    expect(link).toBeTruthy();
+    expect(link.getAttribute("href")).toBe("/dashboards/revenue");
+  });
+
+  it("renders loading skeleton when value is null", () => {
+    render(<MetricCard label="Pipeline" value={null} />);
+    expect(document.querySelector(".animate-pulse")).toBeTruthy();
+    expect(screen.getByText("Pipeline")).toBeTruthy();
+  });
+
+  it("applies color as valueColor alias", () => {
+    render(<MetricCard label="Count" value="7" color="text-emerald-400" />);
+    const valueEl = screen.getByText("7");
+    expect(valueEl.className).toContain("text-emerald-400");
   });
 });

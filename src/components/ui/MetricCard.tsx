@@ -14,14 +14,16 @@ interface StatCardProps {
 }
 
 const ACCENT_CLASSES: Record<string, string> = {
-  orange: "from-orange-500/20 to-orange-500/5 border-orange-500/30",
-  green: "from-green-500/20 to-green-500/5 border-green-500/30",
-  emerald: "from-emerald-500/20 to-emerald-500/5 border-emerald-500/30",
-  blue: "from-blue-500/20 to-blue-500/5 border-blue-500/30",
-  red: "from-red-500/20 to-red-500/5 border-red-500/30",
-  purple: "from-purple-500/20 to-purple-500/5 border-purple-500/30",
-  yellow: "from-yellow-500/20 to-yellow-500/5 border-yellow-500/30",
-  cyan: "from-cyan-500/20 to-cyan-500/5 border-cyan-500/30",
+  orange: "from-orange-500/25 to-orange-500/5 border-orange-500/30",
+  green: "from-green-500/25 to-green-500/5 border-green-500/30",
+  emerald: "from-emerald-500/25 to-emerald-500/5 border-emerald-500/30",
+  blue: "from-blue-500/25 to-blue-500/5 border-blue-500/30",
+  red: "from-red-500/25 to-red-500/5 border-red-500/30",
+  purple: "from-purple-500/25 to-purple-500/5 border-purple-500/30",
+  yellow: "from-yellow-500/25 to-yellow-500/5 border-yellow-500/30",
+  cyan: "from-cyan-500/25 to-cyan-500/5 border-cyan-500/30",
+  indigo: "from-indigo-500/25 to-indigo-500/5 border-indigo-500/30",
+  teal: "from-teal-500/25 to-teal-500/5 border-teal-500/30",
 };
 
 export const StatCard = memo(function StatCard({
@@ -36,7 +38,7 @@ export const StatCard = memo(function StatCard({
       {value === null ? (
         <div className="h-9 w-20 bg-skeleton rounded animate-pulse mb-1" />
       ) : (
-        <div key={String(value)} className="text-3xl font-bold text-foreground mb-1 animate-value-flash">
+        <div key={String(value)} className="text-4xl font-bold text-foreground mb-1 animate-value-flash">
           {value}
         </div>
       )}
@@ -47,7 +49,7 @@ export const StatCard = memo(function StatCard({
     </>
   );
 
-  const className = `bg-gradient-to-br ${ACCENT_CLASSES[color] || ACCENT_CLASSES.blue} border rounded-xl p-6 shadow-card${href ? " hover:brightness-110 transition-all cursor-pointer" : ""}`;
+  const className = `bg-gradient-to-br ${ACCENT_CLASSES[color] || ACCENT_CLASSES.blue} border rounded-xl p-7 shadow-card-lg${href ? " hover:brightness-110 transition-all cursor-pointer" : ""}`;
 
   if (href) {
     return <Link href={href} className={className}>{content}</Link>;
@@ -72,7 +74,7 @@ export const MiniStat = memo(function MiniStat({
 }: MiniStatProps) {
   return (
     <div
-      className={`bg-surface/50 border rounded-lg p-4 text-center shadow-card ${
+      className={`bg-surface/30 border rounded-lg p-3 text-center ${
         alert ? "border-red-500/50" : "border-t-border"
       }`}
     >
@@ -81,7 +83,7 @@ export const MiniStat = memo(function MiniStat({
       ) : (
         <div
           key={String(value)}
-          className={`text-xl font-bold animate-value-flash ${alert ? "text-red-400" : "text-foreground"}`}
+          className={`text-lg font-bold animate-value-flash ${alert ? "text-red-400" : "text-foreground"}`}
         >
           {value}
         </div>
@@ -102,11 +104,13 @@ export const MiniStat = memo(function MiniStat({
 
 interface MetricCardProps {
   label: string;
-  value: string;
+  value: string | number | null;
   sub?: string;
   border?: string;
   valueColor?: string;
   subColor?: string;
+  color?: string;
+  href?: string;
 }
 
 export const MetricCard = memo(function MetricCard({
@@ -116,46 +120,36 @@ export const MetricCard = memo(function MetricCard({
   border,
   valueColor,
   subColor,
+  color,
+  href,
 }: MetricCardProps) {
-  return (
-    <div
-      className={`bg-surface rounded-xl border border-t-border p-5 shadow-card ${border || ""}`}
-    >
+  const effectiveValueColor = valueColor || color || "text-foreground";
+
+  const content = (
+    <>
       <div className="text-muted text-sm font-medium">{label}</div>
-      <div
-        key={value}
-        className={`text-3xl font-bold mt-1 animate-value-flash ${valueColor || "text-foreground"}`}
-      >
-        {value}
-      </div>
+      {value === null ? (
+        <div className="h-9 w-20 bg-skeleton rounded animate-pulse mt-1" />
+      ) : (
+        <div
+          key={String(value)}
+          className={`text-3xl font-bold mt-1 animate-value-flash ${effectiveValueColor}`}
+        >
+          {value}
+        </div>
+      )}
       {sub && (
         <div className={`text-sm mt-1 ${subColor || "text-muted"}`}>
           {sub}
         </div>
       )}
-    </div>
+    </>
   );
-});
 
-// ---- SummaryCard (simple, minimal) ----
+  const className = `bg-surface-2 rounded-xl border border-t-border p-5 shadow-card ${border || ""}${href ? " hover:brightness-110 transition-all cursor-pointer" : ""}`;
 
-interface SummaryCardProps {
-  value: string;
-  label: string;
-  color?: string;
-}
-
-export const SummaryCard = memo(function SummaryCard({
-  value,
-  label,
-  color,
-}: SummaryCardProps) {
-  return (
-    <div className="bg-surface border border-t-border rounded-lg p-4 shadow-card">
-      <div key={value} className={`text-3xl font-bold animate-value-flash ${color || "text-foreground"}`}>
-        {value}
-      </div>
-      <div className="text-sm text-muted">{label}</div>
-    </div>
-  );
+  if (href) {
+    return <Link href={href} className={className}>{content}</Link>;
+  }
+  return <div className={className}>{content}</div>;
 });
