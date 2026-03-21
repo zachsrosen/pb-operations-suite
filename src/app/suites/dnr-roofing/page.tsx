@@ -8,6 +8,7 @@ const LINKS: SuitePageCard[] = [
     title: "D&R Pipeline",
     description: "Detach & Reset project tracking through pipeline stages.",
     tag: "D&R",
+    icon: "🔩",
     section: "D&R",
   },
   {
@@ -15,6 +16,7 @@ const LINKS: SuitePageCard[] = [
     title: "D&R Scheduler",
     description: "Calendar view of Zuper detach, reset, and D&R inspection jobs.",
     tag: "SCHEDULING",
+    icon: "📅",
     section: "D&R",
   },
   {
@@ -22,6 +24,7 @@ const LINKS: SuitePageCard[] = [
     title: "Roofing Pipeline",
     description: "Roofing project tracking through pipeline stages.",
     tag: "ROOFING",
+    icon: "🏠",
     section: "Roofing",
   },
   {
@@ -29,6 +32,7 @@ const LINKS: SuitePageCard[] = [
     title: "Roofing Scheduler",
     description: "Calendar view of Zuper roofing jobs.",
     tag: "SCHEDULING",
+    icon: "🗓️",
     section: "Roofing",
   },
 ];
@@ -44,8 +48,6 @@ export default async function DNRRoofingSuitePage() {
       subtitle="Detach & reset and roofing scheduling, pipelines, and tracking."
       cards={LINKS}
       role={user.role}
-      hoverBorderClass="hover:border-purple-500/50"
-      tagColorClass="bg-purple-500/20 text-purple-400 border-purple-500/30"
     />
   );
 }
