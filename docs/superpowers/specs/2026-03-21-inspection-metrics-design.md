@@ -125,7 +125,15 @@ Already in `hubspot-custom-objects.ts`. The following properties are split into 
 
 Add to `CACHE_KEYS` in `cache.ts`: `LOCATIONS_ALL: "locations:all"` (alongside existing `AHJS_ALL: "ahjs:all"`).
 
-Add to `cacheKeyToQueryKeys()` in `query-keys.ts`: inspection-metrics keys should invalidate when `stats`-prefixed server cache keys change (same cascade pattern as other metrics dashboards).
+Add to `cacheKeyToQueryKeys()` in `query-keys.ts`: the inspection-metrics React Query key must invalidate when **any** of its three upstream server caches change:
+
+| Server cache key prefix | Reason |
+|---|---|
+| `projects` | Deal data drives all computed metrics |
+| `locations` | Location custom object rollups used for validation |
+| `ahjs` | AHJ custom object rollups used for validation |
+
+Map all three prefixes to the `inspectionMetrics` query key in `cacheKeyToQueryKeys()`. This is different from other metrics pages (which only depend on `projects`/`stats`) because inspection metrics uniquely depends on custom object data.
 
 **Note:** `construction-metrics` does not currently have its own query key in `query-keys.ts`. The new `inspectionMetrics` key follows the `surveyMetrics` / `daMetrics` pattern.
 
@@ -159,14 +167,28 @@ For locations, read from Location custom object. For AHJs, read from AHJ custom 
 
 ### Validation
 
-Compare computed vs rollup for each group. Key comparisons:
+Compare computed vs rollup for each group.
 
-| Metric | Computed From | Rollup Property (Location) | Rollup Property (AHJ) |
+**Location validation** (365-day rollups exist for all metrics — compare when `days` is 365 or all-time):
+
+| Metric | Computed From | Rollup Property |
+|---|---|---|
+| FPR | `firstTimePassCount / count` | `inspections_first_time_pass_rate__365_days_` |
+| Pass Count | `count(isInspectionPassed)` | `total_inspections_passe_d__365_days_` |
+| Fail Count | `count(hasInspectionFailed)` | `inspections_failed__365_days_` |
+| Turnaround | `avg(inspectionTurnaroundTime)` | `inspection_turnaround_time__365_days_` |
+
+**AHJ validation** (mixed rollup windows — only compare when time windows match):
+
+| Metric | Rollup Property | Window | Compare When |
 |---|---|---|---|
-| FPR | `firstTimePassCount / count` | `inspections_first_time_pass_rate__365_days_` | `inspections_fpr` (all-time only; no 365-day FPR variant exists on AHJ) |
-| Pass Count | `count(isInspectionPassed)` | `total_inspections_passe_d__365_days_` | `total_inspections_passed__365__` |
-| Fail Count | `count(hasInspectionFailed)` | `inspections_failed__365_days_` | `count_of_inspections_failed` |
-| Turnaround | `avg(inspectionTurnaroundTime)` | `inspection_turnaround_time__365_days_` | `inspection_turnaround_time__365_days_` |
+| FPR | `inspections_fpr` | All-time | `days=0` only |
+| Pass Count | `total_inspections_passed__365__` | 365-day | `days=365` |
+| Fail Count | `count_of_inspections_failed` | All-time | `days=0` only |
+| 1st Time Pass | `total_first_time_passed_inspections` | All-time | `days=0` only |
+| Turnaround | `inspection_turnaround_time__365_days_` | 365-day | `days=365` |
+
+**Key rule:** Never compare a windowed computed metric (30/60/90/180 days) against an all-time AHJ rollup — the numbers will always diverge. AHJ validation only runs when the selected time window matches the rollup window. Skip validation silently for mismatched windows (no divergence alert, no log).
 
 Log divergences > 5% with `[Inspection Metrics] Validation:` prefix. Include in response as `validation` object for development visibility.
 
