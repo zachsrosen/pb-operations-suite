@@ -5,7 +5,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { LiveIndicator } from "@/components/ui/LiveIndicator";
-import { MetricCard } from "@/components/ui/MetricCard";
+import { StatCard } from "@/components/ui/MetricCard";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useBaselineTable } from "@/hooks/useBaselineTable";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
@@ -351,36 +351,29 @@ export default function ExecutiveSummaryPage() {
     >
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <MetricCard
+        <StatCard
           label="Total Pipeline"
           value={formatCurrency(metrics.totalValue)}
-          sub={`${metrics.total} projects`}
-          valueColor="text-white"
-          subColor="text-muted"
+          subtitle={`${metrics.total} projects`}
+          color="blue"
         />
-        <MetricCard
+        <StatCard
           label="PTO Overdue"
           value={String(metrics.overduePto)}
-          sub={`${formatCurrencyCompact(metrics.overduePtoValue)} at risk`}
-          border="border-l-4 !border-l-red-500"
-          valueColor="text-red-400"
-          subColor="text-red-400/60"
+          subtitle={`${formatCurrencyCompact(metrics.overduePtoValue)} at risk`}
+          color="red"
         />
-        <MetricCard
+        <StatCard
           label="Install Overdue"
           value={String(metrics.overdueInstall)}
-          sub={`${formatCurrencyCompact(metrics.overdueInstallValue)} delayed`}
-          border="border-l-4 !border-l-yellow-500"
-          valueColor="text-yellow-400"
-          subColor="text-yellow-400/60"
+          subtitle={`${formatCurrencyCompact(metrics.overdueInstallValue)} delayed`}
+          color="yellow"
         />
-        <MetricCard
+        <StatCard
           label="On Track"
           value={String(metrics.onTrack)}
-          sub={`${metrics.total > 0 ? Math.round((metrics.onTrack / metrics.total) * 100) : 0}% healthy`}
-          border="border-l-4 !border-l-emerald-500"
-          valueColor="text-emerald-400"
-          subColor="text-emerald-400/60"
+          subtitle={`${metrics.total > 0 ? Math.round((metrics.onTrack / metrics.total) * 100) : 0}% healthy`}
+          color="emerald"
         />
       </div>
 

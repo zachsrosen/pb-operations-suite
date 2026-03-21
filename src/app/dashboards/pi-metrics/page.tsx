@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import DashboardShell from "@/components/DashboardShell";
-import { MetricCard } from "@/components/ui/MetricCard";
+import { StatCard } from "@/components/ui/MetricCard";
 import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
 import { formatMoney } from "@/lib/format";
@@ -335,25 +335,23 @@ export default function PIMetricsPage() {
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-foreground mb-3">Permits</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-grid">
-          <MetricCard
+          <StatCard
             label="Permits Submitted"
             value={loading ? "—" : String(permitMetrics.submitted.count)}
-            sub={loading ? undefined : formatMoney(permitMetrics.submitted.revenue)}
-            border="border-l-4 border-l-cyan-500"
+            subtitle={loading ? undefined : formatMoney(permitMetrics.submitted.revenue)}
+            color="cyan"
           />
-          <MetricCard
+          <StatCard
             label="Permits Issued"
             value={loading ? "—" : String(permitMetrics.issued.count)}
-            sub={loading ? undefined : formatMoney(permitMetrics.issued.revenue)}
-            border="border-l-4 border-l-emerald-500"
-            valueColor="text-emerald-400"
+            subtitle={loading ? undefined : formatMoney(permitMetrics.issued.revenue)}
+            color="emerald"
           />
-          <MetricCard
+          <StatCard
             label="Permits Pending"
             value={loading ? "—" : String(permitMetrics.pending.count)}
-            sub={loading ? undefined : formatMoney(permitMetrics.pending.revenue)}
-            border="border-l-4 border-l-yellow-500"
-            valueColor={permitMetrics.pending.count > 20 ? "text-yellow-400" : undefined}
+            subtitle={loading ? undefined : formatMoney(permitMetrics.pending.revenue)}
+            color="yellow"
           />
         </div>
       </div>
@@ -362,25 +360,23 @@ export default function PIMetricsPage() {
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-foreground mb-3">Interconnection</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-grid">
-          <MetricCard
+          <StatCard
             label="IC Submitted"
             value={loading ? "—" : String(icMetrics.submitted.count)}
-            sub={loading ? undefined : formatMoney(icMetrics.submitted.revenue)}
-            border="border-l-4 border-l-blue-500"
+            subtitle={loading ? undefined : formatMoney(icMetrics.submitted.revenue)}
+            color="blue"
           />
-          <MetricCard
+          <StatCard
             label="IC Approved"
             value={loading ? "—" : String(icMetrics.approved.count)}
-            sub={loading ? undefined : formatMoney(icMetrics.approved.revenue)}
-            border="border-l-4 border-l-emerald-500"
-            valueColor="text-emerald-400"
+            subtitle={loading ? undefined : formatMoney(icMetrics.approved.revenue)}
+            color="emerald"
           />
-          <MetricCard
+          <StatCard
             label="IC Pending"
             value={loading ? "—" : String(icMetrics.pending.count)}
-            sub={loading ? undefined : formatMoney(icMetrics.pending.revenue)}
-            border="border-l-4 border-l-yellow-500"
-            valueColor={icMetrics.pending.count > 20 ? "text-yellow-400" : undefined}
+            subtitle={loading ? undefined : formatMoney(icMetrics.pending.revenue)}
+            color="yellow"
           />
         </div>
       </div>
@@ -389,25 +385,23 @@ export default function PIMetricsPage() {
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-foreground mb-3">Permission to Operate</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 stagger-grid">
-          <MetricCard
+          <StatCard
             label="PTO Submitted"
             value={loading ? "—" : String(ptoMetrics.submitted.count)}
-            sub={loading ? undefined : formatMoney(ptoMetrics.submitted.revenue)}
-            border="border-l-4 border-l-purple-500"
+            subtitle={loading ? undefined : formatMoney(ptoMetrics.submitted.revenue)}
+            color="purple"
           />
-          <MetricCard
+          <StatCard
             label="PTO Granted"
             value={loading ? "—" : String(ptoMetrics.granted.count)}
-            sub={loading ? undefined : formatMoney(ptoMetrics.granted.revenue)}
-            border="border-l-4 border-l-emerald-500"
-            valueColor="text-emerald-400"
+            subtitle={loading ? undefined : formatMoney(ptoMetrics.granted.revenue)}
+            color="emerald"
           />
-          <MetricCard
+          <StatCard
             label="PTO Pending"
             value={loading ? "—" : String(ptoMetrics.pending.count)}
-            sub={loading ? undefined : formatMoney(ptoMetrics.pending.revenue)}
-            border="border-l-4 border-l-orange-500"
-            valueColor={ptoMetrics.pending.count > 15 ? "text-orange-400" : undefined}
+            subtitle={loading ? undefined : formatMoney(ptoMetrics.pending.revenue)}
+            color="orange"
           />
         </div>
       </div>
