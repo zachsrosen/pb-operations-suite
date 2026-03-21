@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { ReactNode, useCallback } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { ThemeToggle } from "./ThemeToggle";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { SUITE_ACCENT_COLORS, DEFAULT_SUITE_ACCENT } from "@/lib/suite-accents";
 
 
 // Maps dashboard paths to their parent suite
@@ -150,25 +151,18 @@ export default function DashboardShell({
   exportData,
 }: DashboardShellProps) {
   const pathname = usePathname();
-  const router = useRouter();
   const { trackExport } = useActivityTracking();
   const parentSuite = getParentSuiteForPath(pathname);
 
-  const handleBack = useCallback(() => {
-    // If we have browser history from navigating within the app, go back
-    // Otherwise fall back to parent suite or home
-    if (typeof window !== "undefined" && window.history.length > 1) {
-      router.back();
-    } else {
-      const fallbackHref =
-        parentSuite?.href && parentSuite.href !== pathname ? parentSuite.href : "/";
-      router.push(fallbackHref);
-    }
-  }, [router, parentSuite, pathname]);
+  const isRealSuite = parentSuite?.href?.startsWith("/suites/") ?? false;
+  const effectiveParent = isRealSuite ? parentSuite : null;
+  const suiteAccent = effectiveParent
+    ? (SUITE_ACCENT_COLORS[effectiveParent.href] || DEFAULT_SUITE_ACCENT)
+    : DEFAULT_SUITE_ACCENT;
 
   // Auto-generate breadcrumbs from suite mapping if not explicitly provided
-  const effectiveBreadcrumbs = breadcrumbs || (parentSuite
-    ? [{ label: parentSuite.label, href: parentSuite.href }]
+  const effectiveBreadcrumbs = breadcrumbs || (effectiveParent
+    ? [{ label: effectiveParent.label, href: effectiveParent.href }]
     : undefined);
 
   const colorMap: Record<string, string> = {
@@ -180,6 +174,8 @@ export default function DashboardShell({
     emerald: "text-emerald-400",
     cyan: "text-cyan-400",
     yellow: "text-yellow-400",
+    indigo: "text-indigo-400",
+    teal: "text-teal-400",
   };
 
   const handleExport = useCallback(() => {
@@ -217,6 +213,11 @@ export default function DashboardShell({
                     <Link
                       href={crumb.href}
                       className="hover:text-foreground transition-colors"
+                      style={
+                        SUITE_ACCENT_COLORS[crumb.href]
+                          ? { color: SUITE_ACCENT_COLORS[crumb.href].color }
+                          : undefined
+                      }
                     >
                       {crumb.label}
                     </Link>
@@ -228,29 +229,17 @@ export default function DashboardShell({
             </nav>
           )}
 
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-              <button
-                onClick={handleBack}
-                className="text-muted hover:text-foreground transition-colors shrink-0"
-                title={parentSuite ? `Back (or ${parentSuite.label})` : "Go back"}
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0 w-full sm:w-auto">
+              <PhotonBrothersBadge
+                href={effectiveParent?.href ?? "/"}
+                compact
+                label={effectiveParent ? `Back to ${effectiveParent.label} Suite` : "Back to Dashboard"}
+              />
+              <div
+                className="min-w-0 pl-3 border-l-[3px]"
+                style={{ borderColor: suiteAccent.color }}
               >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M10 19l-7-7m0 0l7-7m-7 7h18"
-                  />
-                </svg>
-              </button>
-              <PhotonBrothersBadge compact className="hidden sm:inline-flex" />
-              <div className="min-w-0">
                 <h1
                   className={`text-lg sm:text-xl font-bold truncate ${colorMap[accentColor] || "text-orange-400"}`}
                 >
@@ -261,7 +250,7 @@ export default function DashboardShell({
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
               {lastUpdated && (
                 <span className="text-xs text-muted hidden sm:inline">
                   Updated {lastUpdated}
