@@ -8,6 +8,7 @@ const LINKS: SuitePageCard[] = [
     title: "D&E Overview",
     description: "Summary metrics, status funnel, and action items across all design & engineering.",
     tag: "OVERVIEW",
+    icon: "🎯",
     section: "Design Pipeline",
   },
   {
@@ -15,6 +16,7 @@ const LINKS: SuitePageCard[] = [
     title: "Plan Review Queue",
     description: "Projects in initial or final design review with full detail tracking.",
     tag: "REVIEW",
+    icon: "📝",
     section: "Design Pipeline",
   },
   {
@@ -22,6 +24,7 @@ const LINKS: SuitePageCard[] = [
     title: "Design Approval Queue",
     description: "Action queue: survey done needing design, designs ready to send, and DAs awaiting customer approval.",
     tag: "QUEUE",
+    icon: "✏️",
     section: "Design Pipeline",
   },
   {
@@ -29,6 +32,7 @@ const LINKS: SuitePageCard[] = [
     title: "Design Revisions",
     description: "Projects in revision cycles — rejection reasons, revision counts, and turnaround.",
     tag: "REVISIONS",
+    icon: "🔄",
     section: "Design Pipeline",
   },
   {
@@ -36,6 +40,7 @@ const LINKS: SuitePageCard[] = [
     title: "D&E Metrics",
     description: "DA turnaround and revisions by office, approval pipeline, designer productivity, and monthly trends.",
     tag: "METRICS",
+    icon: "📊",
     section: "Analytics",
   },
   {
@@ -43,6 +48,15 @@ const LINKS: SuitePageCard[] = [
     title: "Clipping & System Analytics",
     description: "Seasonal clipping detection, equipment performance trends, and system review flags.",
     tag: "CLIPPING",
+    icon: "⚡",
+    section: "Analytics",
+  },
+  {
+    href: "/dashboards/design-engineering",
+    title: "D&E Dept Analytics",
+    description: "Cross-state design analytics, status breakdowns, and ops clarification queue.",
+    tag: "ANALYTICS",
+    icon: "📉",
     section: "Analytics",
   },
   {
@@ -50,6 +64,7 @@ const LINKS: SuitePageCard[] = [
     title: "AHJ Design Requirements",
     description: "AHJ-specific design rules, rejection patterns, and turnaround benchmarks.",
     tag: "AHJ",
+    icon: "📖",
     section: "Reference",
   },
   {
@@ -57,6 +72,7 @@ const LINKS: SuitePageCard[] = [
     title: "Utility Design Requirements",
     description: "Utility-specific design constraints, rules, and specifications.",
     tag: "UTILITY",
+    icon: "🔌",
     section: "Reference",
   },
   {
@@ -64,21 +80,15 @@ const LINKS: SuitePageCard[] = [
     title: "Solar Surveyor",
     description: "Interactive solar site survey tool.",
     tag: "TOOL",
+    icon: "☀️",
     section: "Tools",
-  },
-  {
-    href: "/dashboards/design-engineering",
-    title: "D&E Dept Analytics",
-    description: "Cross-state design analytics, status breakdowns, and ops clarification queue.",
-    tag: "ANALYTICS",
-    tagColor: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-    section: "Analytics",
   },
   {
     href: "/dashboards/design",
     title: "Design & Engineering (Legacy)",
     description: "Original design progress tracking, engineering approvals, and plan sets.",
     tag: "LEGACY",
+    icon: "📁",
     section: "Legacy Dashboards",
   },
 ];
@@ -94,8 +104,6 @@ export default async function DesignEngineeringSuitePage() {
       subtitle="Design review, system analytics, and engineering reference tools."
       cards={LINKS}
       role={user.role}
-      hoverBorderClass="hover:border-indigo-500/50"
-      tagColorClass="bg-indigo-500/20 text-indigo-400 border-indigo-500/30"
     />
   );
 }
