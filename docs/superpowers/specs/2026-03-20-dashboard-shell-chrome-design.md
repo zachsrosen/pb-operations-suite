@@ -219,4 +219,3 @@ No changes to any dashboard page files. All existing props (`accentColor`, `brea
 - Theme token definitions in `globals.css`
 - Routing, URLs, or navigation targets
 - The `SUITE_MAP` data or `getParentSuiteForPath` logic
-- The `colorMap` for per-page accent colors
