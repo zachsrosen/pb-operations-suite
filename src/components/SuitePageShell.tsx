@@ -159,7 +159,7 @@ export default function SuitePageShell({
           {/* Left: PB mark + title */}
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <PhotonBrothersBadge href={backHref} compact />
+              <PhotonBrothersBadge href={backHref} compact label="Back to Dashboard" />
             </div>
             <div className="flex items-center gap-3 mb-1">
               <h1
