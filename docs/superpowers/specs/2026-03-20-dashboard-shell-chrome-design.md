@@ -114,6 +114,23 @@ The title color stays per-page via `accentColor` (content identity). The left bo
 
 When no parent suite exists (unmapped dashboards), the border falls back to `DEFAULT_SUITE_ACCENT.color` (orange).
 
+**`colorMap` expansion:** The existing `colorMap` is missing `indigo` and `teal`, which are actively used by dashboards (e.g., Design & Engineering uses `indigo`, Site Survey uses `teal`). These titles silently fall back to orange. Expand `colorMap` to include all accent colors in use:
+
+```typescript
+const colorMap: Record<string, string> = {
+  orange: "text-orange-400",
+  green: "text-green-400",
+  red: "text-red-400",
+  blue: "text-blue-400",
+  purple: "text-purple-400",
+  emerald: "text-emerald-400",
+  cyan: "text-cyan-400",
+  yellow: "text-yellow-400",
+  indigo: "text-indigo-400",
+  teal: "text-teal-400",
+};
+```
+
 ### 5. Utility Controls — Recede
 
 **Before:** Right-side controls use the same visual weight as the title.
@@ -178,13 +195,19 @@ No changes to `SUITE_MAP` or `getParentSuiteForPath` are needed — the existing
 - Breadcrumbs render normally on mobile (existing behavior).
 - Right-side controls: "Updated X ago" stays `hidden sm:inline` (only visible on desktop).
 
+**Bottom tier mobile layout:** On screens below `sm` (640px), the bottom tier stacks into two rows instead of one:
+- **Row 1:** PB badge + title block (full width)
+- **Row 2:** Utility controls (export, theme toggle, `headerRight`) — aligned right
+
+This prevents the badge + title + wide `headerRight` controls (e.g., select dropdowns on `/dashboards/roofing`) from overflowing on narrow screens. Implementation: the bottom tier uses `flex flex-wrap` with the left zone at `w-full sm:w-auto` and the right zone at `ml-auto`.
+
 ## Files Modified
 
 | File | Change |
 |------|--------|
 | `src/lib/suite-accents.ts` | **New file.** Shared `SUITE_ACCENT_COLORS` map, `SuiteAccent` type, `DEFAULT_SUITE_ACCENT`. |
 | `src/components/SuitePageShell.tsx` | Remove local `SUITE_ACCENT_COLORS` and `DEFAULT_ACCENT`, import from `suite-accents.ts` instead. |
-| `src/components/DashboardShell.tsx` | Import suite accents, resolve suite accent from parent suite, replace back arrow with PB badge, add title block left border, accent-color breadcrumb parent link. Remove `handleBack` callback and back arrow SVG. |
+| `src/components/DashboardShell.tsx` | Import suite accents, resolve suite accent from parent suite, replace back arrow with PB badge, add title block left border, accent-color breadcrumb parent link, expand `colorMap` (add indigo + teal), mobile stacking layout. Remove `handleBack` callback and back arrow SVG. |
 
 No changes to any dashboard page files. All existing props (`accentColor`, `breadcrumbs`, `fullWidth`, `exportData`, `headerRight`, etc.) continue to work identically.
 
