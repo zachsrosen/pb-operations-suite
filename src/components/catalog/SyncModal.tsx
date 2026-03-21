@@ -161,7 +161,7 @@ export function getProjectedValue(
 export function getImplicitWrites(
   mappings: FieldMappingEdge[],
   selections: SelectionMap,
-  linkedSystems: Record<ExternalSystem, boolean>,
+  _linkedSystems: Record<ExternalSystem, boolean>,
 ): string[] {
   const implicit: string[] = [];
   const seen = new Set<string>();
@@ -948,7 +948,7 @@ interface InternalCellProps {
 function InternalCell({
   row,
   snapshots,
-  mappings,
+  mappings: _mappings,
   linkedSystems,
   selection,
   onSelectionChange,
