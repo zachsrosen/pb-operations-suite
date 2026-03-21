@@ -31,6 +31,9 @@ export interface ZohoInventoryItem {
   vendor_id?: string;               // vendor reference
   vendor_name?: string;             // vendor name
   unit?: string;                    // unit of measurement
+  brand?: string;                   // manufacturer/brand name
+  manufacturer?: string;            // alternate manufacturer field
+  group_name?: string;              // Zoho category grouping
 }
 
 export interface UpsertZohoItemInput {
