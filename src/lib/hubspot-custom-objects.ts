@@ -26,6 +26,7 @@ const hubspotClient = new Client({
 
 export const AHJ_OBJECT_TYPE = "2-7957390";
 export const UTILITY_OBJECT_TYPE = "2-7957429";
+export const LOCATION_OBJECT_TYPE = "2-50570396";
 
 // ---------------------------------------------------------------------------
 // Properties to fetch (non-hs_ business fields only)
@@ -88,6 +89,9 @@ export const AHJ_PROPERTIES = [
   "inspections_fpr",
   "count_of_inspections_passed",
   "count_of_inspections_failed",
+  "total_first_time_passed_inspections",
+  "total_inspections_passed__365__",
+  "total_inspections_scheduled",
   // Deals
   "deal_count__365_days_",
   "last_90_days_deals",
@@ -157,6 +161,33 @@ export const UTILITY_PROPERTIES = [
   "payment_process",
 ] as const;
 
+/** Location properties relevant to inspection/construction metrics */
+export const LOCATION_PROPERTIES = [
+  "location_name",
+  "pb_location",
+  // Inspection rollups
+  "inspection_turnaround_time",
+  "inspection_turnaround_time__365_days_",
+  "inspections_fpr",
+  "inspections_first_time_pass_rate__365_days_",
+  "fpr_inspections__365___not_rejected_",
+  "count_of_inspections_passed",
+  "total_inspections_passe_d__365_days_",
+  "count_of_inspections_failed",
+  "inspections_failed__365_days_",
+  "count_of_inspections_passed_1st_time",
+  "total_1st_time_passed_inspections__365_days_",
+  "outstanding_failed_inspections",
+  "outstanding_failed_inspections__not_rejected_",
+  "needs_inspection_reinspection",
+  "cc_pending_inspection",
+  "ready_for_inspection",
+  // Construction cross-match
+  "construction_turnaround_time__365_",
+  "count_of_cc__365_",
+  "time_to_cc__365_",
+] as const;
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -167,6 +198,11 @@ export interface AHJRecord {
 }
 
 export interface UtilityRecord {
+  id: string;
+  properties: Record<string, string | null>;
+}
+
+export interface LocationRecord {
   id: string;
   properties: Record<string, string | null>;
 }
@@ -358,4 +394,39 @@ export async function fetchUtilitiesForDeal(
     id: r.id,
     properties: r.properties as Record<string, string | null>,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// Location Fetch Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Fetch all Location records with paginated iteration.
+ */
+export async function fetchAllLocations(): Promise<LocationRecord[]> {
+  const results: LocationRecord[] = [];
+  let after: string | undefined;
+
+  do {
+    const response = await withRetry(() =>
+      hubspotClient.crm.objects.basicApi.getPage(
+        LOCATION_OBJECT_TYPE,
+        100,
+        after,
+        [...LOCATION_PROPERTIES],
+        undefined,
+        undefined,
+      )
+    );
+
+    results.push(
+      ...response.results.map((r) => ({
+        id: r.id,
+        properties: r.properties as Record<string, string | null>,
+      }))
+    );
+    after = response.paging?.next?.after;
+  } while (after);
+
+  return results;
 }
