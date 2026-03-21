@@ -291,10 +291,8 @@ export default function SyncModal({
     setPrevOpen(false);
   }
 
-  // ── Fetch data on open ──
-  useEffect(() => {
-    if (!isOpen) return;
-
+  // ── Shared fetch logic ──
+  const loadSyncData = useCallback(() => {
     fetch(`/api/inventory/products/${internalProductId}/sync`)
       .then((r) => {
         if (!r.ok) throw new Error("Failed to load sync data");
@@ -330,7 +328,13 @@ export default function SyncModal({
         setError(err.message);
         setStep("table");
       });
-  }, [isOpen, internalProductId]);
+  }, [internalProductId]);
+
+  // ── Fetch data on open ──
+  useEffect(() => {
+    if (!isOpen) return;
+    loadSyncData();
+  }, [isOpen, loadSyncData]);
 
   // ── Build rows ──
   const { attention, inSync } = useMemo(
@@ -420,38 +424,8 @@ export default function SyncModal({
   const handleRetry = useCallback(() => {
     setError(null);
     setStep("loading");
-    // Re-trigger the fetch
-    fetch(`/api/inventory/products/${internalProductId}/sync`)
-      .then((r) => {
-        if (!r.ok) throw new Error("Failed to load sync data");
-        return r.json();
-      })
-      .then((data) => {
-        setSnapshots(data.snapshots);
-        setMappings(data.mappings);
-        const snaps: FieldValueSnapshot[] = data.snapshots;
-        const maps: FieldMappingEdge[] = data.mappings;
-        const linked: Record<ExternalSystem, boolean> = {
-          zoho: false,
-          hubspot: false,
-          zuper: false,
-        };
-        for (const sys of EXTERNAL_SYSTEMS) {
-          linked[sys] = snaps.some((s: FieldValueSnapshot) => s.system === sys);
-        }
-        const defaults = computeSmartDefaults(maps, snaps, linked);
-        const selMap: SelectionMap = {};
-        for (const d of defaults) {
-          selMap[`${d.system}:${d.externalField}`] = d.source;
-        }
-        setSelections(selMap);
-        setStep("table");
-      })
-      .catch((err) => {
-        setError(err.message);
-        setStep("table");
-      });
-  }, [internalProductId]);
+    loadSyncData();
+  }, [loadSyncData]);
 
   // ── Execute sync ──
 
@@ -601,7 +575,7 @@ export default function SyncModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+    <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-surface-elevated max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-xl border border-border p-6 shadow-xl">
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
@@ -678,7 +652,7 @@ export default function SyncModal({
                     <>
                       <tr>
                         <td
-                          colSpan={5}
+                          colSpan={2 + EXTERNAL_SYSTEMS.length}
                           className="sticky left-0 bg-surface-elevated px-3 pt-3 pb-1 text-xs font-semibold text-yellow-400"
                         >
                           Needs Attention ({attention.length})
@@ -705,7 +679,7 @@ export default function SyncModal({
                   {inSync.length > 0 && (
                     <>
                       <tr>
-                        <td colSpan={5} className="sticky left-0 bg-surface-elevated px-3 pt-4 pb-1">
+                        <td colSpan={2 + EXTERNAL_SYSTEMS.length} className="sticky left-0 bg-surface-elevated px-3 pt-4 pb-1">
                           <button
                             onClick={() => setShowInSync(!showInSync)}
                             className="text-xs font-medium text-muted hover:text-foreground"
@@ -1030,6 +1004,7 @@ function InternalCell({
       )}
       <select
         value={selection}
+        aria-label={`Source for ${row.label}`}
         onChange={(e) =>
           onSelectionChange(e.target.value as "keep" | ExternalSystem)
         }
@@ -1131,6 +1106,7 @@ function ExternalCell({
       )}
       <select
         value={selection}
+        aria-label={`${SYSTEM_LABELS[system]} source for ${FIELD_LABELS[internalField] ?? internalField}`}
         onChange={(e) =>
           onSelectionChange(e.target.value as "keep" | "internal" | ExternalSystem)
         }
