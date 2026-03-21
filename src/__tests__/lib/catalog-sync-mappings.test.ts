@@ -161,3 +161,118 @@ describe("getPullableMappings", () => {
     expect(priceEdge).toBeDefined();
   });
 });
+
+describe("new mapping edges", () => {
+  it("includes zoho brand edge", () => {
+    const edges = getActiveMappings("MODULE");
+    const zohoBrand = edges.find(
+      (e) => e.system === "zoho" && e.externalField === "brand",
+    );
+    expect(zohoBrand).toBeDefined();
+    expect(zohoBrand!.internalField).toBe("brand");
+    expect(zohoBrand!.normalizeWith).toBe("enum-ci");
+    expect(zohoBrand!.direction).toBeUndefined();
+  });
+
+  it("includes hubspot vendor_part_number edge", () => {
+    const edges = getActiveMappings("MODULE");
+    const hsModel = edges.find(
+      (e) => e.system === "hubspot" && e.externalField === "vendor_part_number",
+    );
+    expect(hsModel).toBeDefined();
+    expect(hsModel!.internalField).toBe("model");
+    expect(hsModel!.normalizeWith).toBe("trimmed-string");
+  });
+
+  it("includes hubspot unit_label edge", () => {
+    const edges = getActiveMappings("MODULE");
+    const hsUnit = edges.find(
+      (e) => e.system === "hubspot" && e.externalField === "unit_label",
+    );
+    expect(hsUnit).toBeDefined();
+    expect(hsUnit!.internalField).toBe("unitLabel");
+  });
+
+  it("includes hubspot vendor_name edge", () => {
+    const edges = getActiveMappings("MODULE");
+    const hsVendor = edges.find(
+      (e) => e.system === "hubspot" && e.externalField === "vendor_name",
+    );
+    expect(hsVendor).toBeDefined();
+    expect(hsVendor!.internalField).toBe("vendorName");
+  });
+
+  it("includes zuper price edge", () => {
+    const edges = getActiveMappings("MODULE");
+    const zuperPrice = edges.find(
+      (e) => e.system === "zuper" && e.externalField === "price",
+    );
+    expect(zuperPrice).toBeDefined();
+    expect(zuperPrice!.internalField).toBe("sellPrice");
+    expect(zuperPrice!.normalizeWith).toBe("number");
+  });
+
+  it("includes zuper purchase_price edge", () => {
+    const edges = getActiveMappings("MODULE");
+    const zuperCost = edges.find(
+      (e) => e.system === "zuper" && e.externalField === "purchase_price",
+    );
+    expect(zuperCost).toBeDefined();
+    expect(zuperCost!.internalField).toBe("unitCost");
+    expect(zuperCost!.normalizeWith).toBe("number");
+  });
+
+  it("includes zuper model edge", () => {
+    const edges = getActiveMappings("MODULE");
+    const zuperModel = edges.find(
+      (e) => e.system === "zuper" && e.externalField === "model",
+    );
+    expect(zuperModel).toBeDefined();
+    expect(zuperModel!.internalField).toBe("model");
+  });
+
+  it("includes zuper uom edge", () => {
+    const edges = getActiveMappings("MODULE");
+    const zuperUom = edges.find(
+      (e) => e.system === "zuper" && e.externalField === "uom",
+    );
+    expect(zuperUom).toBeDefined();
+    expect(zuperUom!.internalField).toBe("unitLabel");
+  });
+
+  it("includes zuper vendor_name edge", () => {
+    const edges = getActiveMappings("MODULE");
+    const zuperVendor = edges.find(
+      (e) => e.system === "zuper" && e.externalField === "vendor_name",
+    );
+    expect(zuperVendor).toBeDefined();
+    expect(zuperVendor!.internalField).toBe("vendorName");
+  });
+
+  it("includes zuper brand edge", () => {
+    const edges = getActiveMappings("MODULE");
+    const zuperBrand = edges.find(
+      (e) => e.system === "zuper" && e.externalField === "brand",
+    );
+    expect(zuperBrand).toBeDefined();
+    expect(zuperBrand!.internalField).toBe("brand");
+  });
+
+  it("zoho part_number is now bidirectional", () => {
+    const edges = getActiveMappings("MODULE");
+    const zohoModel = edges.find(
+      (e) => e.system === "zoho" && e.externalField === "part_number",
+    );
+    expect(zohoModel).toBeDefined();
+    expect(zohoModel!.direction).toBeUndefined();
+  });
+
+  it("zoho unit is now bidirectional", () => {
+    const edges = getActiveMappings("MODULE");
+    const zohoUnit = edges.find(
+      (e) => e.system === "zoho" && e.externalField === "unit",
+    );
+    expect(zohoUnit).toBeDefined();
+    expect(zohoUnit!.direction).toBeUndefined();
+  });
+});

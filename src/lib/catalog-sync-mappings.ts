@@ -101,9 +101,9 @@ const STATIC_EDGES: FieldMappingEdge[] = [
   { system: "zoho", externalField: "description", internalField: "description",
     normalizeWith: "trimmed-string" },
   { system: "zoho", externalField: "part_number", internalField: "model",
-    normalizeWith: "trimmed-string", direction: "push-only" },
+    normalizeWith: "trimmed-string" },
   { system: "zoho", externalField: "unit", internalField: "unitLabel",
-    normalizeWith: "trimmed-string", direction: "push-only" },
+    normalizeWith: "trimmed-string" },
   { system: "zoho", externalField: "vendor_name", internalField: "vendorName",
     normalizeWith: "trimmed-string", companion: "vendor_id" },
   { system: "zoho", externalField: "vendor_id", internalField: "zohoVendorId",
@@ -136,6 +136,32 @@ const STATIC_EDGES: FieldMappingEdge[] = [
     normalizeWith: "enum-ci", transform: "zuperCategoryUid" },
   { system: "zuper", externalField: "specification", internalField: "_specification",
     normalizeWith: "trimmed-string", direction: "push-only", generator: "zuperSpecification" },
+
+  // ── Zoho (new) ──
+  { system: "zoho", externalField: "brand", internalField: "brand",
+    normalizeWith: "enum-ci" },
+
+  // ── HubSpot (new) ──
+  { system: "hubspot", externalField: "vendor_part_number", internalField: "model",
+    normalizeWith: "trimmed-string" },
+  { system: "hubspot", externalField: "unit_label", internalField: "unitLabel",
+    normalizeWith: "trimmed-string" },
+  { system: "hubspot", externalField: "vendor_name", internalField: "vendorName",
+    normalizeWith: "trimmed-string" },
+
+  // ── Zuper (new) ──
+  { system: "zuper", externalField: "brand", internalField: "brand",
+    normalizeWith: "enum-ci" },
+  { system: "zuper", externalField: "price", internalField: "sellPrice",
+    normalizeWith: "number" },
+  { system: "zuper", externalField: "purchase_price", internalField: "unitCost",
+    normalizeWith: "number" },
+  { system: "zuper", externalField: "model", internalField: "model",
+    normalizeWith: "trimmed-string" },
+  { system: "zuper", externalField: "uom", internalField: "unitLabel",
+    normalizeWith: "trimmed-string" },
+  { system: "zuper", externalField: "vendor_name", internalField: "vendorName",
+    normalizeWith: "trimmed-string" },
 ];
 
 // ── Category-conditional edges ──
