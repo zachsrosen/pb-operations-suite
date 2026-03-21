@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { queryKeys } from "@/lib/query-keys";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
-// Single metric — survey turnaround time
+// ── Thresholds ──
 const THRESHOLDS = [3, 7, 14] as const;
 
 function getCellColor(value: number | null | undefined): string {
@@ -25,8 +25,71 @@ function getCellBg(value: number | null | undefined): string {
   return "bg-red-500/10";
 }
 
+function formatMoney(v: number): string {
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
+}
+
 const ZUPER_BASE_URL = "https://web.zuperpro.com";
 
+// ── Sortable column header ──
+type SortDir = "asc" | "desc";
+
+function SortHeader({
+  label,
+  sortKey,
+  currentKey,
+  currentDir,
+  onSort,
+  className = "",
+  title,
+}: {
+  label: string;
+  sortKey: string;
+  currentKey: string | null;
+  currentDir: SortDir;
+  onSort: (key: string) => void;
+  className?: string;
+  title?: string;
+}) {
+  const active = currentKey === sortKey;
+  return (
+    <th
+      className={`px-4 py-3 font-semibold text-foreground cursor-pointer select-none hover:text-emerald-300 transition-colors ${className}`}
+      onClick={() => onSort(sortKey)}
+      title={title}
+    >
+      {label}
+      <span className="ml-1 text-xs">
+        {active ? (currentDir === "asc" ? "▲" : "▼") : "⇅"}
+      </span>
+    </th>
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function sortRows<T extends Record<string, any>>(rows: T[], key: string | null, dir: SortDir): T[] {
+  if (!key) return rows;
+  return [...rows].sort((a, b) => {
+    const av = a[key];
+    const bv = b[key];
+    if (av === null || av === undefined) return 1;
+    if (bv === null || bv === undefined) return -1;
+    if (typeof av === "number" && typeof bv === "number") return dir === "asc" ? av - bv : bv - av;
+    return dir === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
+  });
+}
+
+function useSort(defaultKey: string | null = null, defaultDir: SortDir = "desc") {
+  const [sortKey, setSortKey] = useState<string | null>(defaultKey);
+  const [sortDir, setSortDir] = useState<SortDir>(defaultDir);
+  const toggle = useCallback((key: string) => {
+    if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortKey(key); setSortDir("desc"); }
+  }, [sortKey]);
+  return { sortKey, sortDir, toggle };
+}
+
+// ── Types ──
 interface DealDetail {
   dealId: string;
   projectNumber: string;
@@ -34,6 +97,8 @@ interface DealDetail {
   url: string;
   pbLocation: string;
   surveyor: string;
+  stage: string;
+  amount: number;
   siteSurveyScheduleDate: string | null;
   siteSurveyCompletionDate: string | null;
   turnaroundDays: number | null;
@@ -53,8 +118,10 @@ interface AwaitingSurveyProject {
   url: string;
   pbLocation: string;
   surveyor: string;
+  stage: string;
+  amount: number;
   siteSurveyScheduleDate: string;
-  daysWaiting: number;
+  daysUntil: number;
   zuperJobUid: string | null;
 }
 
@@ -62,7 +129,8 @@ interface SurveyMetricsData {
   byLocation: Record<string, GroupData>;
   bySurveyor: Record<string, GroupData>;
   totals: GroupData;
-  awaitingSurvey: AwaitingSurveyProject[];
+  upcomingSurveys: AwaitingSurveyProject[];
+  pastDueSurveys: AwaitingSurveyProject[];
   daysWindow: number | string;
   lastUpdated: string;
 }
@@ -80,6 +148,7 @@ const LOCATIONS = ["Westminster", "Centennial", "Colorado Springs", "San Luis Ob
 export default function SurveyMetricsDashboardPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
+  const drillDownRef = useRef<HTMLDivElement>(null);
 
   const [daysWindow, setDaysWindow] = useState(60);
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
@@ -87,6 +156,11 @@ export default function SurveyMetricsDashboardPage() {
     groupKey: string;
     groupType: "location" | "surveyor";
   } | null>(null);
+
+  // Sort states
+  const drillSort = useSort("turnaroundDays", "desc");
+  const upcomingSort = useSort("daysUntil", "asc");
+  const pastDueSort = useSort("daysUntil", "asc");
 
   const query = useQuery({
     queryKey: queryKeys.stats.surveyMetrics(daysWindow),
@@ -113,17 +187,20 @@ export default function SurveyMetricsDashboardPage() {
     }
   }, [loading, data, trackDashboardView]);
 
-  // Filter locations for display
+  // Auto-scroll to drill-down when it opens
+  useEffect(() => {
+    if (drillDown && drillDownRef.current) {
+      drillDownRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [drillDown]);
+
   const displayLocations = useMemo(() => {
     if (!data) return [];
     const locs = Object.keys(data.byLocation).sort();
-    if (filterLocations.length > 0) {
-      return locs.filter((l) => filterLocations.includes(l));
-    }
+    if (filterLocations.length > 0) return locs.filter((l) => filterLocations.includes(l));
     return locs;
   }, [data, filterLocations]);
 
-  // Sorted surveyors by count descending
   const displaySurveyors = useMemo(() => {
     if (!data) return [];
     return Object.entries(data.bySurveyor)
@@ -131,37 +208,34 @@ export default function SurveyMetricsDashboardPage() {
       .map(([name]) => name);
   }, [data]);
 
-  // Export data
+  // Filter pipeline tables by location
+  const filteredUpcoming = useMemo(() => {
+    if (!data) return [];
+    if (filterLocations.length === 0) return data.upcomingSurveys;
+    return data.upcomingSurveys.filter((p) => filterLocations.includes(p.pbLocation));
+  }, [data, filterLocations]);
+
+  const filteredPastDue = useMemo(() => {
+    if (!data) return [];
+    if (filterLocations.length === 0) return data.pastDueSurveys;
+    return data.pastDueSurveys.filter((p) => filterLocations.includes(p.pbLocation));
+  }, [data, filterLocations]);
+
   const exportData = useMemo(() => {
     if (!data) return [];
     const rows: Record<string, string | number>[] = [];
-    // Location rows
     for (const loc of displayLocations) {
       const d = data.byLocation[loc];
-      rows.push({
-        Group: loc,
-        Type: "Location",
-        Count: d.count,
-        "Avg Turnaround (days)": d.avg !== null ? d.avg : "--",
-      });
+      rows.push({ Group: loc, Type: "Location", Count: d.count, "Avg Turnaround (days)": d.avg ?? "--" });
     }
-    // Surveyor rows
     for (const name of displaySurveyors) {
       const d = data.bySurveyor[name];
-      rows.push({
-        Group: name,
-        Type: "Surveyor",
-        Count: d.count,
-        "Avg Turnaround (days)": d.avg !== null ? d.avg : "--",
-      });
+      rows.push({ Group: name, Type: "Surveyor", Count: d.count, "Avg Turnaround (days)": d.avg ?? "--" });
     }
     return rows;
   }, [data, displayLocations, displaySurveyors]);
 
-  const fmt = (v: number | null | undefined) => {
-    if (v === null || v === undefined) return "--";
-    return v.toFixed(1);
-  };
+  const fmt = (v: number | null | undefined) => (v === null || v === undefined ? "--" : v.toFixed(1));
 
   if (loading) {
     return (
@@ -180,10 +254,7 @@ export default function SurveyMetricsDashboardPage() {
       <DashboardShell title="Site Survey Metrics" accentColor="green">
         <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 text-center">
           <p className="text-red-400 font-medium">{error}</p>
-          <button
-            onClick={() => query.refetch()}
-            className="mt-3 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-red-300 text-sm transition-colors"
-          >
+          <button onClick={() => query.refetch()} className="mt-3 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-red-300 text-sm transition-colors">
             Retry
           </button>
         </div>
@@ -193,16 +264,153 @@ export default function SurveyMetricsDashboardPage() {
 
   if (!data) return null;
 
-  // Get active drill-down deals
+  // Drill-down data
   const drillDownData = drillDown
     ? drillDown.groupType === "location"
       ? data.byLocation[drillDown.groupKey]
       : data.bySurveyor[drillDown.groupKey]
     : null;
+  const drillDownDeals = sortRows(
+    drillDownData?.deals?.filter((d) => d.turnaroundDays !== null) ?? [],
+    drillSort.sortKey,
+    drillSort.sortDir
+  );
 
-  const drillDownDeals = drillDownData?.deals
-    ?.filter((d) => d.turnaroundDays !== null)
-    .sort((a, b) => (b.turnaroundDays ?? 0) - (a.turnaroundDays ?? 0)) ?? [];
+  // Sorted pipeline tables
+  const sortedUpcoming = sortRows(filteredUpcoming, upcomingSort.sortKey, upcomingSort.sortDir);
+  const sortedPastDue = sortRows(filteredPastDue, pastDueSort.sortKey, pastDueSort.sortDir);
+
+  // Drill-down panel JSX (rendered inline after the relevant table)
+  const drillDownPanel = drillDown && drillDownDeals.length > 0 ? (
+    <div ref={drillDownRef} className="bg-surface border border-emerald-500/30 rounded-xl overflow-hidden mb-8 animate-value-flash">
+      <div className="px-5 py-4 border-b border-t-border flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">
+            {drillDown.groupKey} — Survey Turnaround
+          </h2>
+          <p className="text-sm text-muted mt-0.5">
+            {drillDownDeals.length} deals with data &middot; avg {fmt(drillDownData?.avg)} days
+          </p>
+        </div>
+        <button onClick={() => setDrillDown(null)} className="text-muted hover:text-foreground text-xl px-2">✕</button>
+      </div>
+      <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 z-10">
+            <tr className="border-b border-t-border bg-surface-2/80 backdrop-blur-sm">
+              <SortHeader label="Project" sortKey="projectNumber" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-left" />
+              <SortHeader label="Customer" sortKey="name" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-left" />
+              {drillDown.groupType === "surveyor" && (
+                <SortHeader label="Location" sortKey="pbLocation" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-left" />
+              )}
+              {drillDown.groupType === "location" && (
+                <SortHeader label="Surveyor" sortKey="surveyor" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-left" />
+              )}
+              <SortHeader label="Stage" sortKey="stage" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-left" />
+              <SortHeader label="Amount" sortKey="amount" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-right" />
+              <SortHeader label="Scheduled" sortKey="siteSurveyScheduleDate" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-center" />
+              <SortHeader label="Completed" sortKey="siteSurveyCompletionDate" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-center" />
+              <SortHeader label="Turnaround" sortKey="turnaroundDays" currentKey={drillSort.sortKey} currentDir={drillSort.sortDir} onSort={drillSort.toggle} className="text-center" />
+              <th className="text-center px-4 py-2.5 font-semibold text-foreground">Links</th>
+            </tr>
+          </thead>
+          <tbody>
+            {drillDownDeals.map((d, i) => (
+              <tr key={d.dealId} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+                <td className="px-4 py-2.5 font-mono text-foreground">{d.projectNumber}</td>
+                <td className="px-4 py-2.5 text-foreground truncate max-w-[200px]">{d.name}</td>
+                {drillDown.groupType === "surveyor" && <td className="px-4 py-2.5 text-muted">{d.pbLocation}</td>}
+                {drillDown.groupType === "location" && <td className="px-4 py-2.5 text-muted">{d.surveyor}</td>}
+                <td className="px-4 py-2.5 text-muted">{d.stage}</td>
+                <td className="px-4 py-2.5 text-right text-muted">{formatMoney(d.amount)}</td>
+                <td className="text-center px-4 py-2.5 text-muted">{d.siteSurveyScheduleDate || "--"}</td>
+                <td className="text-center px-4 py-2.5 text-muted">{d.siteSurveyCompletionDate || "--"}</td>
+                <td className={`text-center px-4 py-2.5 font-mono font-medium ${getCellColor(d.turnaroundDays)}`}>
+                  {fmt(d.turnaroundDays)}
+                </td>
+                <td className="text-center px-4 py-2.5">
+                  <div className="flex items-center justify-center gap-2">
+                    <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 underline text-xs">HubSpot ↗</a>
+                    {d.zuperJobUid && (
+                      <a href={`${ZUPER_BASE_URL}/jobs/${d.zuperJobUid}/details`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 underline text-xs">Zuper ↗</a>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  ) : null;
+
+  // Helper for awaiting survey table rendering
+  const renderAwaitingTable = (
+    rows: typeof sortedUpcoming,
+    sort: ReturnType<typeof useSort>,
+    isPastDue: boolean
+  ) => (
+    <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 z-10">
+          <tr className="border-b border-t-border bg-surface-2/50">
+            <SortHeader label="Project" sortKey="projectNumber" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-left" />
+            <SortHeader label="Customer" sortKey="name" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-left" />
+            <SortHeader label="Location" sortKey="pbLocation" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-left" />
+            <SortHeader label="Surveyor" sortKey="surveyor" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-left" />
+            <SortHeader label="Stage" sortKey="stage" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-left" />
+            <SortHeader label="Amount" sortKey="amount" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-right" />
+            <SortHeader label="Scheduled" sortKey="siteSurveyScheduleDate" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-center" />
+            <SortHeader
+              label={isPastDue ? "Days Overdue" : "Days Until"}
+              sortKey="daysUntil"
+              currentKey={sort.sortKey}
+              currentDir={sort.sortDir}
+              onSort={sort.toggle}
+              className="text-center"
+            />
+            <th className="text-center px-4 py-3 font-semibold text-foreground">Links</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((p, i) => (
+            <tr key={p.dealId} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+              <td className="px-4 py-3 font-mono text-foreground">{p.projectNumber}</td>
+              <td className="px-4 py-3 text-foreground truncate max-w-[180px]">{p.name}</td>
+              <td className="px-4 py-3 text-muted">{p.pbLocation}</td>
+              <td className="px-4 py-3 text-muted">{p.surveyor}</td>
+              <td className="px-4 py-3 text-muted">{p.stage}</td>
+              <td className="px-4 py-3 text-right text-muted">{formatMoney(p.amount)}</td>
+              <td className="text-center px-4 py-3 text-muted">{p.siteSurveyScheduleDate}</td>
+              <td className={`text-center px-4 py-3 font-mono font-medium ${
+                isPastDue
+                  ? Math.abs(p.daysUntil) > 7
+                    ? "text-red-400"
+                    : Math.abs(p.daysUntil) > 3
+                      ? "text-orange-400"
+                      : "text-yellow-400"
+                  : p.daysUntil <= 1
+                    ? "text-emerald-400"
+                    : p.daysUntil <= 3
+                      ? "text-yellow-400"
+                      : "text-muted"
+              }`}>
+                {isPastDue ? `${Math.abs(p.daysUntil)}d overdue` : `${p.daysUntil}d`}
+              </td>
+              <td className="text-center px-4 py-3">
+                <div className="flex items-center justify-center gap-2">
+                  <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 underline text-xs">HubSpot ↗</a>
+                  {p.zuperJobUid && (
+                    <a href={`${ZUPER_BASE_URL}/jobs/${p.zuperJobUid}/details`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 underline text-xs">Zuper ↗</a>
+                  )}
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 
   return (
     <DashboardShell
@@ -212,7 +420,7 @@ export default function SurveyMetricsDashboardPage() {
       exportData={{ data: exportData, filename: `survey-metrics-${daysWindow || "all"}.csv` }}
       fullWidth
     >
-      {/* Filters */}
+      {/* ── Filters ── */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
         <div className="flex items-center gap-1 bg-surface border border-t-border rounded-lg p-1">
           {DAYS_OPTIONS.map((opt) => (
@@ -244,11 +452,11 @@ export default function SurveyMetricsDashboardPage() {
           {LOCATIONS.map((loc) => (
             <button
               key={loc}
-              onClick={() => {
+              onClick={() =>
                 setFilterLocations((prev) =>
                   prev.includes(loc) ? prev.filter((l) => l !== loc) : [...prev, loc]
-                );
-              }}
+                )
+              }
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
                 filterLocations.includes(loc)
                   ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
@@ -266,8 +474,8 @@ export default function SurveyMetricsDashboardPage() {
         </div>
       </div>
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+      {/* ── Summary Cards ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <div className="bg-surface border border-emerald-500/30 rounded-xl p-5 text-center">
           <p className="text-sm text-muted mb-1">Avg Turnaround</p>
           <p className={`text-3xl font-mono font-bold ${getCellColor(data.totals.avg)}`}>
@@ -285,334 +493,144 @@ export default function SurveyMetricsDashboardPage() {
           </p>
         </div>
         <div className="bg-surface border border-t-border rounded-xl p-5 text-center">
-          <p className="text-sm text-muted mb-1">Awaiting Survey</p>
+          <p className="text-sm text-muted mb-1">Upcoming Surveys</p>
           <p className="text-3xl font-mono font-bold text-cyan-400">
-            {data.awaitingSurvey.length}
+            {filteredUpcoming.length}
           </p>
-          <p className="text-xs text-muted mt-1">scheduled, not completed</p>
+          <p className="text-xs text-muted mt-1">scheduled ahead</p>
+        </div>
+        <div className="bg-surface border border-t-border rounded-xl p-5 text-center">
+          <p className="text-sm text-muted mb-1">Past Due</p>
+          <p className={`text-3xl font-mono font-bold ${filteredPastDue.length > 0 ? "text-red-400" : "text-emerald-400"}`}>
+            {filteredPastDue.length}
+          </p>
+          <p className="text-xs text-muted mt-1">overdue surveys</p>
         </div>
       </div>
 
-      {/* By Location Table */}
+      {/* ── By Location Table ── */}
       <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8">
         <div className="px-5 py-4 border-b border-t-border">
           <h2 className="text-lg font-semibold text-foreground">Turnaround by Office</h2>
           <p className="text-sm text-muted mt-0.5">
-            Average days from survey scheduled to survey completed &middot; Click any cell to drill
-            into individual deals
+            Average days from survey scheduled to survey completed &middot; Click turnaround cells to drill into deals
           </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-t-border bg-surface-2/50">
-                <th className="text-left px-4 py-3 font-semibold text-foreground min-w-[160px]">
-                  Location
-                </th>
-                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[80px]">
-                  Count
-                </th>
-                <th
-                  className="text-center px-4 py-3 font-semibold text-foreground min-w-[120px]"
-                  title="Average days from survey scheduled date to survey completed date"
-                >
-                  Avg Turnaround
-                </th>
+                <th className="text-left px-4 py-3 font-semibold text-foreground min-w-[160px]">Location</th>
+                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[80px]">Count</th>
+                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[120px]" title="Average days from survey scheduled date to survey completed date">Avg Turnaround</th>
               </tr>
             </thead>
             <tbody>
               {displayLocations.map((loc, i) => {
                 const row = data.byLocation[loc];
                 return (
-                  <tr
-                    key={loc}
-                    className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}
-                  >
+                  <tr key={loc} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
                     <td className="px-4 py-3 font-medium text-foreground">{loc}</td>
                     <td className="text-center px-4 py-3 text-muted">{row.count.toLocaleString()}</td>
                     <td
                       className={`text-center px-4 py-3 font-mono font-medium cursor-pointer hover:ring-1 hover:ring-emerald-500/40 transition-shadow ${getCellColor(row.avg)} ${getCellBg(row.avg)}`}
-                      onClick={() =>
-                        row.avg !== null &&
-                        setDrillDown({ groupKey: loc, groupType: "location" })
-                      }
-                      title={
-                        row.avg !== null ? `Click to see survey deals for ${loc}` : undefined
-                      }
+                      onClick={() => row.avg !== null && setDrillDown({ groupKey: loc, groupType: "location" })}
+                      title={row.avg !== null ? `Click to see survey deals for ${loc}` : undefined}
                     >
                       {fmt(row.avg)}
                     </td>
                   </tr>
                 );
               })}
-              {/* Totals row */}
               <tr className="border-t-2 border-t-border bg-surface-2/40 font-semibold">
                 <td className="px-4 py-3 text-foreground">Report Total</td>
-                <td className="text-center px-4 py-3 text-foreground">
-                  {data.totals.count.toLocaleString()}
-                </td>
-                <td className={`text-center px-4 py-3 font-mono ${getCellColor(data.totals.avg)}`}>
-                  {fmt(data.totals.avg)}
-                </td>
+                <td className="text-center px-4 py-3 text-foreground">{data.totals.count.toLocaleString()}</td>
+                <td className={`text-center px-4 py-3 font-mono ${getCellColor(data.totals.avg)}`}>{fmt(data.totals.avg)}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* By Surveyor Table */}
+      {/* Drill-down after location table */}
+      {drillDown?.groupType === "location" && drillDownPanel}
+
+      {/* ── By Surveyor Table ── */}
       <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8">
         <div className="px-5 py-4 border-b border-t-border">
           <h2 className="text-lg font-semibold text-foreground">Turnaround by Surveyor</h2>
           <p className="text-sm text-muted mt-0.5">
-            Per-surveyor performance &middot; Click any cell to drill into individual deals
+            Per-surveyor performance &middot; Click turnaround cells to drill into deals
           </p>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-t-border bg-surface-2/50">
-                <th className="text-left px-4 py-3 font-semibold text-foreground min-w-[160px]">
-                  Surveyor
-                </th>
-                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[80px]">
-                  Count
-                </th>
-                <th
-                  className="text-center px-4 py-3 font-semibold text-foreground min-w-[120px]"
-                  title="Average days from survey scheduled date to survey completed date"
-                >
-                  Avg Turnaround
-                </th>
+                <th className="text-left px-4 py-3 font-semibold text-foreground min-w-[160px]">Surveyor</th>
+                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[80px]">Count</th>
+                <th className="text-center px-4 py-3 font-semibold text-foreground min-w-[120px]" title="Average days from survey scheduled date to survey completed date">Avg Turnaround</th>
               </tr>
             </thead>
             <tbody>
               {displaySurveyors.map((name, i) => {
                 const row = data.bySurveyor[name];
                 return (
-                  <tr
-                    key={name}
-                    className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}
-                  >
+                  <tr key={name} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
                     <td className="px-4 py-3 font-medium text-foreground">{name}</td>
                     <td className="text-center px-4 py-3 text-muted">{row.count.toLocaleString()}</td>
                     <td
                       className={`text-center px-4 py-3 font-mono font-medium cursor-pointer hover:ring-1 hover:ring-emerald-500/40 transition-shadow ${getCellColor(row.avg)} ${getCellBg(row.avg)}`}
-                      onClick={() =>
-                        row.avg !== null &&
-                        setDrillDown({ groupKey: name, groupType: "surveyor" })
-                      }
-                      title={
-                        row.avg !== null ? `Click to see survey deals for ${name}` : undefined
-                      }
+                      onClick={() => row.avg !== null && setDrillDown({ groupKey: name, groupType: "surveyor" })}
+                      title={row.avg !== null ? `Click to see survey deals for ${name}` : undefined}
                     >
                       {fmt(row.avg)}
                     </td>
                   </tr>
                 );
               })}
-              {/* Totals row */}
               <tr className="border-t-2 border-t-border bg-surface-2/40 font-semibold">
                 <td className="px-4 py-3 text-foreground">Report Total</td>
-                <td className="text-center px-4 py-3 text-foreground">
-                  {data.totals.count.toLocaleString()}
-                </td>
-                <td className={`text-center px-4 py-3 font-mono ${getCellColor(data.totals.avg)}`}>
-                  {fmt(data.totals.avg)}
-                </td>
+                <td className="text-center px-4 py-3 text-foreground">{data.totals.count.toLocaleString()}</td>
+                <td className={`text-center px-4 py-3 font-mono ${getCellColor(data.totals.avg)}`}>{fmt(data.totals.avg)}</td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
 
-      {/* Drill-Down Panel */}
-      {drillDown && drillDownDeals.length > 0 && (
-        <div className="bg-surface border border-emerald-500/30 rounded-xl overflow-hidden mb-8 animate-value-flash">
-          <div className="px-5 py-4 border-b border-t-border flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-foreground">
-                {drillDown.groupKey} — Survey Turnaround
-              </h2>
-              <p className="text-sm text-muted mt-0.5">
-                {drillDownDeals.length} deals with data &middot; avg{" "}
-                {fmt(drillDownData?.avg)} days
-              </p>
-            </div>
-            <button
-              onClick={() => setDrillDown(null)}
-              className="text-muted hover:text-foreground text-xl px-2"
-            >
-              ✕
-            </button>
-          </div>
-          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10">
-                <tr className="border-b border-t-border bg-surface-2/80 backdrop-blur-sm">
-                  <th className="text-left px-4 py-2.5 font-semibold text-foreground">Project</th>
-                  <th className="text-left px-4 py-2.5 font-semibold text-foreground">Customer</th>
-                  {drillDown.groupType === "surveyor" && (
-                    <th className="text-left px-4 py-2.5 font-semibold text-foreground">Location</th>
-                  )}
-                  {drillDown.groupType === "location" && (
-                    <th className="text-left px-4 py-2.5 font-semibold text-foreground">Surveyor</th>
-                  )}
-                  <th className="text-center px-4 py-2.5 font-semibold text-foreground">
-                    Scheduled
-                  </th>
-                  <th className="text-center px-4 py-2.5 font-semibold text-foreground">
-                    Completed
-                  </th>
-                  <th className="text-center px-4 py-2.5 font-semibold text-foreground">
-                    Turnaround
-                  </th>
-                  <th className="text-center px-4 py-2.5 font-semibold text-foreground">Links</th>
-                </tr>
-              </thead>
-              <tbody>
-                {drillDownDeals.map((d, i) => (
-                  <tr
-                    key={d.dealId}
-                    className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}
-                  >
-                    <td className="px-4 py-2.5 font-mono text-foreground">{d.projectNumber}</td>
-                    <td className="px-4 py-2.5 text-foreground truncate max-w-[200px]">{d.name}</td>
-                    {drillDown.groupType === "surveyor" && (
-                      <td className="px-4 py-2.5 text-muted">{d.pbLocation}</td>
-                    )}
-                    {drillDown.groupType === "location" && (
-                      <td className="px-4 py-2.5 text-muted">{d.surveyor}</td>
-                    )}
-                    <td className="text-center px-4 py-2.5 text-muted">
-                      {d.siteSurveyScheduleDate || "--"}
-                    </td>
-                    <td className="text-center px-4 py-2.5 text-muted">
-                      {d.siteSurveyCompletionDate || "--"}
-                    </td>
-                    <td
-                      className={`text-center px-4 py-2.5 font-mono font-medium ${getCellColor(d.turnaroundDays)}`}
-                    >
-                      {fmt(d.turnaroundDays)}
-                    </td>
-                    <td className="text-center px-4 py-2.5">
-                      <div className="flex items-center justify-center gap-2">
-                        <a
-                          href={d.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-emerald-400 hover:text-emerald-300 underline text-xs"
-                        >
-                          HubSpot ↗
-                        </a>
-                        {d.zuperJobUid && (
-                          <a
-                            href={`${ZUPER_BASE_URL}/jobs/${d.zuperJobUid}/details`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-cyan-400 hover:text-cyan-300 underline text-xs"
-                          >
-                            Zuper ↗
-                          </a>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      {/* Drill-down after surveyor table */}
+      {drillDown?.groupType === "surveyor" && drillDownPanel}
 
-      {/* Currently Awaiting Survey */}
-      {data.awaitingSurvey.length > 0 && (
-        <div className="mb-8">
-          <div className="bg-surface border border-t-border rounded-xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-t-border">
-              <h2 className="text-lg font-semibold text-foreground">Currently Awaiting Survey</h2>
-              <p className="text-sm text-muted mt-0.5">
-                {data.awaitingSurvey.length} surveys scheduled but not yet completed — sorted by
-                time waiting
-              </p>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-t-border bg-surface-2/50">
-                    <th className="text-left px-4 py-3 font-semibold text-foreground">Project</th>
-                    <th className="text-left px-4 py-3 font-semibold text-foreground">Customer</th>
-                    <th className="text-left px-4 py-3 font-semibold text-foreground">Location</th>
-                    <th className="text-left px-4 py-3 font-semibold text-foreground">Surveyor</th>
-                    <th className="text-center px-4 py-3 font-semibold text-foreground">
-                      Scheduled
-                    </th>
-                    <th className="text-center px-4 py-3 font-semibold text-foreground">
-                      Days Waiting
-                    </th>
-                    <th className="text-center px-4 py-3 font-semibold text-foreground">Links</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.awaitingSurvey.map((p, i) => (
-                    <tr
-                      key={p.dealId}
-                      className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}
-                    >
-                      <td className="px-4 py-3 font-mono text-foreground">{p.projectNumber}</td>
-                      <td className="px-4 py-3 text-foreground">{p.name}</td>
-                      <td className="px-4 py-3 text-muted">{p.pbLocation}</td>
-                      <td className="px-4 py-3 text-muted">{p.surveyor}</td>
-                      <td className="text-center px-4 py-3 text-muted">
-                        {p.siteSurveyScheduleDate}
-                      </td>
-                      <td
-                        className={`text-center px-4 py-3 font-mono font-medium ${
-                          p.daysWaiting < 0
-                            ? "text-muted"
-                            : p.daysWaiting > 7
-                              ? "text-red-400"
-                              : p.daysWaiting > 3
-                                ? "text-orange-400"
-                                : p.daysWaiting > 1
-                                  ? "text-yellow-400"
-                                  : "text-emerald-400"
-                        }`}
-                      >
-                        {p.daysWaiting < 0
-                          ? `In ${Math.abs(p.daysWaiting)}d`
-                          : p.daysWaiting}
-                      </td>
-                      <td className="text-center px-4 py-3">
-                        <div className="flex items-center justify-center gap-2">
-                          <a
-                            href={p.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-emerald-400 hover:text-emerald-300 underline text-xs"
-                          >
-                            HubSpot ↗
-                          </a>
-                          {p.zuperJobUid && (
-                            <a
-                              href={`${ZUPER_BASE_URL}/jobs/${p.zuperJobUid}/details`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-cyan-400 hover:text-cyan-300 underline text-xs"
-                            >
-                              Zuper ↗
-                            </a>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+      {/* ── Past Due Surveys ── */}
+      <div className="bg-surface border border-red-500/30 rounded-xl overflow-hidden mb-8">
+        <div className="px-5 py-4 border-b border-t-border">
+          <h2 className="text-lg font-semibold text-foreground">Past Due Surveys</h2>
+          <p className="text-sm text-muted mt-0.5">
+            {sortedPastDue.length} surveys where the scheduled date has passed but survey is not complete &middot; Excludes completed and cancelled projects
+          </p>
         </div>
-      )}
+        {sortedPastDue.length === 0 ? (
+          <div className="p-6 text-center text-emerald-400 text-sm">No overdue surveys</div>
+        ) : (
+          renderAwaitingTable(sortedPastDue, pastDueSort, true)
+        )}
+      </div>
+
+      {/* ── Upcoming Surveys ── */}
+      <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8">
+        <div className="px-5 py-4 border-b border-t-border">
+          <h2 className="text-lg font-semibold text-foreground">Upcoming Surveys</h2>
+          <p className="text-sm text-muted mt-0.5">
+            {sortedUpcoming.length} surveys scheduled for a future date &middot; Excludes completed and cancelled projects
+          </p>
+        </div>
+        {sortedUpcoming.length === 0 ? (
+          <div className="p-6 text-center text-muted text-sm">No upcoming surveys scheduled</div>
+        ) : (
+          renderAwaitingTable(sortedUpcoming, upcomingSort, false)
+        )}
+      </div>
     </DashboardShell>
   );
 }
