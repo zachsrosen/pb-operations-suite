@@ -2,6 +2,7 @@ import Link from "next/link";
 import type { ReactNode, CSSProperties } from "react";
 import { getSuiteSwitcherEntriesForRole, SUITE_NAV_ENTRIES } from "@/lib/suite-nav";
 import { canAccessRoute, getDefaultRouteForRole, type UserRole } from "@/lib/role-permissions";
+import PhotonBrothersBadge from "./PhotonBrothersBadge";
 
 export interface SuitePageCard {
   href: string;
@@ -157,16 +158,10 @@ export default function SuitePageShell({
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-8">
           {/* Left: PB mark + title */}
           <div>
+            <div className="flex items-center gap-3 mb-2">
+              <PhotonBrothersBadge href={backHref} compact />
+            </div>
             <div className="flex items-center gap-3 mb-1">
-              <Link
-                href={backHref}
-                aria-label="Back to Dashboard"
-                title="Back to Dashboard"
-                className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center font-extrabold text-xs text-white"
-                style={{ background: `linear-gradient(135deg, ${accent.color}, ${accent.light})` }}
-              >
-                PB
-              </Link>
               <h1
                 className="text-2xl font-bold"
                 style={{
