@@ -50,17 +50,45 @@ Rules:
 
 ### Translation to Existing Intent Model
 
-Client-side function maps dropdown selections to `FieldIntent` objects consumed by the existing plan derivation API:
+The `selectionToIntents()` client-side function converts the per-cell dropdown state into an `IntentsMap` (`Record<ExternalSystem, Record<externalField, FieldIntent>>`). A single dropdown pick may produce **multiple** intent entries across different system keys:
 
-| Selection | Intent |
+| Selection | Intent entries generated |
 |---|---|
-| Internal cell picks "Zoho" | Pull from Zoho, `updateInternal: true` |
-| Internal cell picks "Keep" | Skip (no internal change) |
-| HubSpot cell picks "Internal" | Push internal → HubSpot |
-| HubSpot cell picks "Zoho" | Pull from Zoho (relay) → push to HubSpot |
-| Any cell picks "Keep" | Skip for that system |
+| Internal cell picks "Zoho" | `zoho.sku → { direction: "pull", updateInternalOnPull: true }` |
+| Internal cell picks "Keep" | No entry (skip is the default) |
+| HubSpot cell picks "Internal" | `hubspot.hs_sku → { direction: "push" }` |
+| HubSpot cell picks "Zoho" | `zoho.sku → { direction: "pull" }` **and** `hubspot.hs_sku → { direction: "push" }` (two entries across two system keys) |
+| Any cell picks "Keep" | No entry for that system×field |
+
+**Relay = two intent entries.** When a user picks an external source for another external system's cell, `selectionToIntents()` emits a pull under the source system key AND a push under the target system key. The function iterates all cells, composing intents across all four columns before submission.
+
+**`updateInternalOnPull` control:** Picking an external source in the Internal column sets `updateInternalOnPull: true`. Picking an external source in another external column (relay) sets `updateInternalOnPull: false` by default — the relay flows the value to the target without modifying the internal DB. A per-row "save to internal" checkbox appears when any relay is active, letting users opt in to also persisting the relayed value internally.
 
 The `POST /api/inventory/products/[id]/sync/plan` and `POST /sync` endpoints remain unchanged. The translation layer is purely client-side in the SyncModal component.
+
+### Virtual & Generator-Backed Fields
+
+Fields prefixed with `_` (e.g., `_name`, `_specification`) are virtual — they have no persisted internal value and are computed by generators from other fields (brand, model, category, spec data).
+
+**UI treatment:** Virtual fields appear as **read-only rows** with a label like "Name (auto-generated)" or "Specification (auto-generated)". The Internal column shows the computed value. External columns show their current values. No dropdowns — these fields are always pushed from the generated value. They appear in the "In Sync" section if the generated value matches all externals, or in "Needs Attention" if any external differs.
+
+**Push-only edges** (e.g., `category` on HubSpot — has `direction: "push-only"`): Displayed as read-only rows. The Internal column shows the current category. External columns show their current values. No dropdown — the value always flows from Internal. If Internal and external match, the row is in the "In Sync" section. Note: Zuper's `category` edge is bidirectional (it has a `transform: "zuperCategoryUid"`), so the Zuper category cell gets a normal dropdown like other fields.
+
+### Companion Fields
+
+Companion fields (e.g., `vendor_name` / `vendor_id` on Zoho) appear as a **single row** labeled with the user-facing field (e.g., "Vendor"). Picking a source for the vendor name auto-applies the same source for the companion vendor ID. The companion field value is shown as a subtitle or tooltip, not as a separate row. This prevents users from accidentally splitting vendor name and ID across different sources.
+
+### Unlinked Systems
+
+When a product is not linked to an external system (e.g., no `zuperProductUid`):
+
+- The column **still appears** but all cells show "Not linked" in muted text
+- A column-level **"Create in [System]"** toggle appears in the column header
+- When toggled on, all cells in that column default to "Internal" (push all fields to create the new item)
+- When toggled off, the column remains visible but inert (greyed out, no dropdowns)
+- The summary bar reflects create operations: "Will create Zuper item with N fields"
+
+This replaces the current modal's "Will Create" badge with an explicit user action.
 
 ### Row Organization
 
@@ -88,11 +116,19 @@ The `POST /api/inventory/products/[id]/sync/plan` and `POST /sync` endpoints rem
 
 No separate plan preview step — the table IS the preview. Users see current values, what each system will receive, and where values come from. Plan derivation still runs server-side on Sync click to catch stale data.
 
-**Smart defaults:** When the modal opens, all dropdowns default to "Keep." If Internal has a value and an external system's field is empty, default that cell to "Internal" (pre-fill obvious pushes). Users can override any default.
+**Smart defaults:** When the modal opens, dropdowns are set based on value comparison:
+- If all systems agree on a value → "Keep" (no action needed)
+- If Internal has a value and an external system's field is empty → default to "Internal" (pre-fill the obvious push)
+- If Internal is empty and an external has a value → "Keep" (don't pull by default — user must opt in)
+- If values differ across systems → "Keep" everywhere (user decides)
+
+Users can override any default. This matches the spirit of the existing `deriveDefaultIntents` behavior (push diffs, skip matches) but expressed through dropdown pre-selection.
 
 **Conflict indication:** If a user picks different sources for the same internal field across systems (e.g., pull price from Zoho into Internal but leave HubSpot's cell on "Keep" with its old different price), highlight the inconsistency with a yellow border. Informational only — not blocking.
 
 **Stale data guard:** Same mechanism as current sync relay — if values changed between load and execute, server returns 409 and the modal reloads fresh snapshots.
+
+**Error handling:** If the snapshot fetch fails during Loading (network error, 500, product not found), the modal shows an error message in the table area with a "Retry" button. The modal stays open — user can retry or close. Individual system fetch failures are non-fatal: the system's column appears with "Failed to load" and is inert (no dropdowns). The user can still sync the other systems.
 
 ### Modal Sizing
 
@@ -106,8 +142,8 @@ The following fields already exist in each external system but aren't wired into
 
 | Internal Field | Zoho | HubSpot | Zuper | Notes |
 |---|---|---|---|---|
-| brand | `brand` (standard field) | `manufacturer` (already mapped) | `brand` (already mapped) | Add Zoho edge |
-| model | `part_number` (exists, push-only) | `vendor_part_number` (exists, unmapped) | `model` / `part_number` | Make Zoho bidirectional, add HubSpot + Zuper edges |
+| brand | `brand` (standard field) | `manufacturer` (already mapped) | `brand` (Zuper product field) | Add Zoho + Zuper edges |
+| model | `part_number` (exists, push-only) | `vendor_part_number` (exists, unmapped) | `model` (Zuper product field) | Make Zoho bidirectional, add HubSpot + Zuper edges |
 | unitLabel | `unit` (exists, push-only) | `unit_label` (exists, unmapped) | `uom` | Make Zoho bidirectional, add HubSpot + Zuper edges |
 | sellPrice | `rate` (already mapped) | `price` (already mapped) | `price` | Add Zuper edge |
 | unitCost | `purchase_rate` (already mapped) | `hs_cost_of_goods_sold` (already mapped) | `purchase_price` | Add Zuper edge |
@@ -121,12 +157,12 @@ The following fields already exist in each external system but aren't wired into
 
 ### Total New Edges
 
-~8 new `FieldMappingEdge` entries in the static edges array:
-- Zoho: `brand` (1 new)
+~9 new `FieldMappingEdge` entries in the static edges array:
+- Zoho: `brand` → brand (1 new)
 - HubSpot: `vendor_part_number` → model, `unit_label` → unitLabel (2 new)
-- Zuper: `price` → sellPrice, `purchase_price` → unitCost, `model`, `uom` → unitLabel, `vendor_name` → vendorName (5 new)
+- Zuper: `brand` → brand, `price` → sellPrice (`normalizeWith: "number"`), `purchase_price` → unitCost (`normalizeWith: "number"`), `model` → model, `uom` → unitLabel, `vendor_name` → vendorName (6 new, all `normalizeWith: "trimmed-string"` except price/cost which use `"number"`)
 
-Plus updating 2 existing Zoho edges from push-only to bidirectional.
+Plus updating 2 existing Zoho edges (`part_number`, `unit`) from `direction: "push-only"` to bidirectional (remove the direction property).
 
 ## What Stays Unchanged
 
@@ -134,13 +170,12 @@ Plus updating 2 existing Zoho edges from push-only to bidirectional.
 - `catalog-sync-plan.ts` — plan derivation engine, execution, effective state overlay
 - `catalog-sync-confirmation.ts` — HMAC confirmation tokens
 - API routes: `GET/POST /sync`, `POST /sync/plan`, `POST /sync/confirm`
-- `useSyncCascade.ts` — no longer used by the new UI (dropdown model replaces direction cycling)
 - Server-side plan hash, stale detection, conflict detection
 
 ## What Changes
 
 - `SyncModal.tsx` — complete rewrite of the UI (steps, layout, interaction model)
-- `catalog-sync-mappings.ts` — add ~8 new static edges, make 2 bidirectional
+- `catalog-sync-mappings.ts` — add ~9 new static edges, make 2 bidirectional
 - `ZohoInventoryItem` interface — add 3 optional fields
 - Snapshot builders — read new external fields
 - New client-side utility: `selectionToIntents()` — translates per-cell dropdown state to `FieldIntent` map for the plan API
