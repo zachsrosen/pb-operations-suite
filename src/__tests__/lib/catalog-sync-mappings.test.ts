@@ -162,7 +162,7 @@ describe("getPullableMappings", () => {
   });
 });
 
-describe("new mapping edges", () => {
+describe("extended mapping edges", () => {
   it("includes zoho brand edge", () => {
     const edges = getActiveMappings("MODULE");
     const zohoBrand = edges.find(

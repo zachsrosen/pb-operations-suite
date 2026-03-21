@@ -108,6 +108,8 @@ const STATIC_EDGES: FieldMappingEdge[] = [
     normalizeWith: "trimmed-string", companion: "vendor_id" },
   { system: "zoho", externalField: "vendor_id", internalField: "zohoVendorId",
     normalizeWith: "trimmed-string", companion: "vendor_name" },
+  { system: "zoho", externalField: "brand", internalField: "brand",
+    normalizeWith: "enum-ci" },
 
   // ── HubSpot (universal) ──
   { system: "hubspot", externalField: "name", internalField: "_name",
@@ -124,6 +126,12 @@ const STATIC_EDGES: FieldMappingEdge[] = [
     normalizeWith: "enum-ci" },
   { system: "hubspot", externalField: "product_category", internalField: "category",
     normalizeWith: "enum-ci", direction: "push-only" },
+  { system: "hubspot", externalField: "vendor_part_number", internalField: "model",
+    normalizeWith: "trimmed-string" },
+  { system: "hubspot", externalField: "unit_label", internalField: "unitLabel",
+    normalizeWith: "trimmed-string" },
+  { system: "hubspot", externalField: "vendor_name", internalField: "vendorName",
+    normalizeWith: "trimmed-string" },
 
   // ── Zuper ──
   { system: "zuper", externalField: "name", internalField: "_name",
@@ -136,20 +144,6 @@ const STATIC_EDGES: FieldMappingEdge[] = [
     normalizeWith: "enum-ci", transform: "zuperCategoryUid" },
   { system: "zuper", externalField: "specification", internalField: "_specification",
     normalizeWith: "trimmed-string", direction: "push-only", generator: "zuperSpecification" },
-
-  // ── Zoho (new) ──
-  { system: "zoho", externalField: "brand", internalField: "brand",
-    normalizeWith: "enum-ci" },
-
-  // ── HubSpot (new) ──
-  { system: "hubspot", externalField: "vendor_part_number", internalField: "model",
-    normalizeWith: "trimmed-string" },
-  { system: "hubspot", externalField: "unit_label", internalField: "unitLabel",
-    normalizeWith: "trimmed-string" },
-  { system: "hubspot", externalField: "vendor_name", internalField: "vendorName",
-    normalizeWith: "trimmed-string" },
-
-  // ── Zuper (new) ──
   { system: "zuper", externalField: "brand", internalField: "brand",
     normalizeWith: "enum-ci" },
   { system: "zuper", externalField: "price", internalField: "sellPrice",
