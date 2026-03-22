@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
+import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { formatMoney, formatShortDate } from "@/lib/format";
 
@@ -30,6 +31,7 @@ interface ComparisonRecord {
   completionDateDiffDays: number | null;
   team: string | null;
   assignedTo: string | null;
+  isSuperseded: boolean;
 }
 
 interface CategorySlot {
@@ -97,6 +99,7 @@ interface ApiResponse {
     total: number;
     mismatches: number;
     matched: number;
+    superseded?: number;
     noHubspotDeal: number;
     scheduleDateMismatches: number;
     completionDateMismatches: number;
@@ -109,10 +112,8 @@ interface ApiResponse {
   nonCoreAudit?: NonCoreAudit;
   duplicateJobs?: DuplicateJobGroup[];
   enrichmentStats?: {
-    truncated: boolean;
     enriched: number;
     total: number;
-    capPerCategory: number;
   };
   dateRange: { from: string; to: string };
   lastUpdated: string;
@@ -166,6 +167,7 @@ interface LinkageCoverage {
   linkedByStage: Record<string, number>;
   unlinkedByStage: Record<string, number>;
   unlinkedByLocation: Record<string, number>;
+  allStages?: string[];
   unlinkedProjects: { id: string; name: string; stage: string; location: string; amount: number }[];
 }
 
@@ -262,6 +264,9 @@ export default function ZuperStatusComparisonPage() {
   const [showMismatchesOnly, setShowMismatchesOnly] = useState(false);
   const [showDateMismatchesOnly, setShowDateMismatchesOnly] = useState(false);
   const [selectedPbLocations, setSelectedPbLocations] = useState<string[]>([]);
+  const [selectedZuperStatuses, setSelectedZuperStatuses] = useState<string[]>([]);
+  const [selectedHubspotStatuses, setSelectedHubspotStatuses] = useState<string[]>([]);
+  const [selectedLinkageStages, setSelectedLinkageStages] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<string>("projectNumber");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -291,14 +296,17 @@ export default function ZuperStatusComparisonPage() {
 
   const fetchLinkage = useCallback(async () => {
     try {
-      const response = await fetch("/api/zuper/linkage-coverage");
+      const params = selectedLinkageStages.length > 0
+        ? `?stages=${selectedLinkageStages.join(",")}`
+        : "";
+      const response = await fetch(`/api/zuper/linkage-coverage${params}`);
       if (!response.ok) return;
       const json: LinkageCoverage = await response.json();
       if (json.configured) setLinkage(json);
     } catch {
       // Linkage data is supplementary, don't block on failure
     }
-  }, []);
+  }, [selectedLinkageStages]);
 
   useEffect(() => {
     if (!accessChecked || !isAdmin) return;
@@ -321,6 +329,20 @@ export default function ZuperStatusComparisonPage() {
       data.records
         .map((r) => r.pbLocation || "Unknown")
     )].sort((a, b) => a.localeCompare(b));
+  }, [data]);
+
+  const zuperStatusOptions = useMemo(() => {
+    if (!data?.records) return [];
+    return [...new Set(data.records.map((r) => r.zuperStatus))]
+      .sort()
+      .map((s) => ({ value: s, label: s }));
+  }, [data]);
+
+  const hubspotStatusOptions = useMemo(() => {
+    if (!data?.records) return [];
+    return [...new Set(data.records.map((r) => r.hubspotStatus).filter((s): s is string => !!s))]
+      .sort()
+      .map((s) => ({ value: s, label: s }));
   }, [data]);
 
   const togglePbLocation = useCallback((location: string) => {
@@ -347,6 +369,12 @@ export default function ZuperStatusComparisonPage() {
     }
     if (selectedPbLocations.length > 0) {
       records = records.filter((r) => selectedPbLocations.includes(r.pbLocation || "Unknown"));
+    }
+    if (selectedZuperStatuses.length > 0) {
+      records = records.filter((r) => selectedZuperStatuses.includes(r.zuperStatus));
+    }
+    if (selectedHubspotStatuses.length > 0) {
+      records = records.filter((r) => r.hubspotStatus && selectedHubspotStatuses.includes(r.hubspotStatus));
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -402,7 +430,7 @@ export default function ZuperStatusComparisonPage() {
     });
 
     return records;
-  }, [data, activeCategory, showMismatchesOnly, showDateMismatchesOnly, selectedPbLocations, searchQuery, sortField, sortDir]);
+  }, [data, activeCategory, showMismatchesOnly, showDateMismatchesOnly, selectedPbLocations, selectedZuperStatuses, selectedHubspotStatuses, searchQuery, sortField, sortDir]);
 
   // Filtered project-grouped records
   const filteredProjectRecords = useMemo(() => {
@@ -417,6 +445,18 @@ export default function ZuperStatusComparisonPage() {
     }
     if (selectedPbLocations.length > 0) {
       records = records.filter((r) => selectedPbLocations.includes(r.pbLocation || "Unknown"));
+    }
+    if (selectedZuperStatuses.length > 0) {
+      records = records.filter((r) => {
+        const statuses = [r.survey.zuperStatus, r.construction.zuperStatus, r.inspection.zuperStatus].filter(Boolean) as string[];
+        return statuses.some((s) => selectedZuperStatuses.includes(s));
+      });
+    }
+    if (selectedHubspotStatuses.length > 0) {
+      records = records.filter((r) => {
+        const statuses = [r.survey.hubspotStatus, r.construction.hubspotStatus, r.inspection.hubspotStatus].filter(Boolean) as string[];
+        return statuses.some((s) => selectedHubspotStatuses.includes(s));
+      });
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -434,7 +474,7 @@ export default function ZuperStatusComparisonPage() {
       );
     }
     return records;
-  }, [data, showMismatchesOnly, showDateMismatchesOnly, selectedPbLocations, searchQuery]);
+  }, [data, showMismatchesOnly, showDateMismatchesOnly, selectedPbLocations, selectedZuperStatuses, selectedHubspotStatuses, searchQuery]);
 
   const isProjectView = viewMode === "project-status" || viewMode === "project-dates";
 
@@ -448,7 +488,8 @@ export default function ZuperStatusComparisonPage() {
       Category: CATEGORY_LABELS[r.category] || r.category,
       "Zuper Status": r.zuperStatus,
       "HubSpot Status": r.hubspotStatus || "-",
-      "Status Match": r.isMismatch ? "MISMATCH" : "Match",
+      "Status Match": r.isSuperseded ? "Superseded" : r.isMismatch ? "MISMATCH" : "Match",
+      Superseded: r.isSuperseded ? "Yes" : "No",
       "Zuper Scheduled Start": r.zuperScheduledStart || "-",
       "HubSpot Schedule Date": r.hubspotScheduleDate || "-",
       "Schedule Date Match": r.scheduleDateMatch === null ? "N/A" : r.scheduleDateMatch ? "Match" : "MISMATCH",
@@ -567,6 +608,24 @@ export default function ZuperStatusComparisonPage() {
 
           {!linkageCollapsed && (
             <div className="px-4 pb-4 space-y-4">
+              {/* Stage filter */}
+              {linkage.allStages && linkage.allStages.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <MultiSelectFilter
+                    label="Deal Stage"
+                    options={linkage.allStages.map((s) => ({ value: s, label: s }))}
+                    selected={selectedLinkageStages}
+                    onChange={setSelectedLinkageStages}
+                    accentColor="cyan"
+                  />
+                  {selectedLinkageStages.length > 0 && (
+                    <span className="text-[10px] text-muted">
+                      Filtered to {selectedLinkageStages.length} stage{selectedLinkageStages.length > 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {/* Coverage bar */}
               <div>
                 <div className="h-3 bg-zinc-200 dark:bg-surface-2 rounded-full overflow-hidden">
@@ -685,21 +744,15 @@ export default function ZuperStatusComparisonPage() {
       )}
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 mb-6">
         <StatCard label="Total Jobs" value={stats?.total || 0} />
         <StatCard label="Status Match" value={stats?.matched || 0} color="green" />
         <StatCard label="Status Mismatches" value={stats?.mismatches || 0} color="red" />
+        <StatCard label="Superseded" value={stats?.superseded || 0} />
         <StatCard label="No HubSpot Deal" value={stats?.noHubspotDeal || 0} color="yellow" />
         <StatCard label="Schedule Date Mismatches" value={stats?.scheduleDateMismatches || 0} color="orange" />
         <StatCard label="Completion Date Mismatches" value={stats?.completionDateMismatches || 0} color="purple" />
       </div>
-
-      {data?.enrichmentStats?.truncated && (
-        <div className="mb-4 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-950/20 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
-          ⚠ Completion date stats are approximate — only {data.enrichmentStats.enriched} of {data.enrichmentStats.total} terminal jobs
-          were enriched (capped at {data.enrichmentStats.capPerCategory}/category for API performance).
-        </div>
-      )}
 
       {/* Category Breakdown Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -829,6 +882,22 @@ export default function ZuperStatusComparisonPage() {
             );
           })}
         </div>
+
+        <MultiSelectFilter
+          label="Zuper Status"
+          options={zuperStatusOptions}
+          selected={selectedZuperStatuses}
+          onChange={setSelectedZuperStatuses}
+          accentColor="cyan"
+        />
+
+        <MultiSelectFilter
+          label="HS Status"
+          options={hubspotStatusOptions}
+          selected={selectedHubspotStatuses}
+          onChange={setSelectedHubspotStatuses}
+          accentColor="orange"
+        />
 
         <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
           <input
@@ -1094,7 +1163,7 @@ export default function ZuperStatusComparisonPage() {
                     <tr
                       key={`${record.zuperJobUid}-${idx}`}
                       className={`hover:bg-zinc-50 dark:hover:bg-skeleton transition-colors ${
-                        hasAnyMismatch ? "bg-red-50/40 dark:bg-red-950/10" : ""
+                        record.isSuperseded ? "opacity-40" : hasAnyMismatch ? "bg-red-50/40 dark:bg-red-950/10" : ""
                       }`}
                     >
                       {/* Project */}
@@ -1114,6 +1183,11 @@ export default function ZuperStatusComparisonPage() {
                         <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${CATEGORY_BADGE[record.category]}`}>
                           {CATEGORY_LABELS[record.category]}
                         </span>
+                        {record.isSuperseded && (
+                          <span className="ml-1 text-[9px] font-medium px-1 py-0.5 rounded bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400">
+                            Superseded
+                          </span>
+                        )}
                       </td>
 
                       {/* Status columns */}
