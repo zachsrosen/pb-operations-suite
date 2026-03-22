@@ -522,14 +522,17 @@ import { buildSystemPreview } from "@/lib/catalog-preview";
 Where the approval UI renders each pending request, compute the preview:
 
 ```typescript
-// PendingCatalogPush has `name` as a top-level field (display name override).
-// `metadata` is for category-specific spec values only.
+// PendingCatalogPush has `name` as a top-level field, but the current
+// approval route does NOT pass it to create helpers — they fall back to
+// brand+model. Omit `name` here so the preview matches actual execution.
+// When the approval route is updated to pass `push.name` through (Phase 1
+// hardening scope), this should be updated to `name: request.name`.
 const preview = buildSystemPreview(
   {
     category: request.category,
     brand: request.brand,
     model: request.model,
-    name: request.name,
+    // name intentionally omitted — matches current approval execution behavior
     description: request.description,
     sku: request.sku,
     vendorName: request.vendorName,
