@@ -1221,6 +1221,14 @@ function ExternalCell({
         }`}
       >
         {options.map((opt) => {
+          // Auto-generated options have a fully decorated label — render directly
+          if (opt.value === "auto-generated") {
+            return (
+              <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+                {opt.label}{opt.disabled ? " (same)" : ""}
+              </option>
+            );
+          }
           const display = formatValue(opt.projectedValue);
           const label = truncate(display, 30);
           const suffix = opt.value === "keep"
