@@ -1,7 +1,7 @@
 // src/components/catalog/SyncModal.tsx
 "use client";
 
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import type {
   ExternalSystem,
   FieldMappingEdge,
@@ -24,7 +24,7 @@ type Step = "loading" | "table" | "executing" | "results";
 
 /** Per-cell selection keyed by `${system}:${externalField}` for external columns
  *  or `internal:${internalField}` for the internal column. */
-type SelectionMap = Record<string, "keep" | "internal" | "auto-generated" | ExternalSystem>;
+type SelectionMap = Record<string, "keep" | "internal" | ExternalSystem>;
 
 const SYSTEM_LABELS: Record<ExternalSystem, string> = {
   zoho: "Zoho Inventory",
@@ -39,8 +39,7 @@ const SYSTEM_SHORT: Record<ExternalSystem, string> = {
 };
 
 const FIELD_LABELS: Record<string, string> = {
-  _name: "Name",
-  _specification: "Specification",
+  name: "Name",
   brand: "Brand",
   model: "Model",
   sku: "SKU",
@@ -63,22 +62,6 @@ const FIELD_LABELS: Record<string, string> = {
   componentType: "Component Type",
   deviceType: "Device Type",
 };
-
-/** Maps external system to the InternalProduct DB column used for linking. */
-const LINK_FIELDS: Record<ExternalSystem, string> = {
-  zoho: "zohoItemId",
-  hubspot: "hubspotProductId",
-  zuper: "zuperItemId",
-};
-
-/** Cached product from /api/products/cache. */
-interface CachedProduct {
-  id: number;
-  externalId: string;
-  name: string;
-  sku: string | null;
-  source: string;
-}
 
 // ── Exported pure helpers (testable) ──
 
@@ -106,7 +89,6 @@ export function buildFieldRows(
 
   for (const [internalField, edges] of byInternal) {
     const isPushOnly = edges.every((e) => e.direction === "push-only");
-    const hasGenerator = edges.some((e) => !!e.generator);
 
     const label = FIELD_LABELS[internalField] ?? internalField;
 
@@ -114,7 +96,6 @@ export function buildFieldRows(
       internalField,
       label,
       isPushOnly,
-      hasGenerator,
       edges,
     };
 
@@ -157,7 +138,7 @@ export function buildFieldRows(
  * Get the projected value for a cell given the selected source.
  */
 export function getProjectedValue(
-  source: "keep" | "internal" | "auto-generated" | ExternalSystem,
+  source: "keep" | "internal" | ExternalSystem,
   internalField: string,
   externalField: string,
   system: ExternalSystem,
@@ -167,7 +148,7 @@ export function getProjectedValue(
   if (source === "keep") {
     return getSnapshotValue(snapshots, system, externalField);
   }
-  if (source === "internal" || source === "auto-generated") {
+  if (source === "internal") {
     return getSnapshotValue(snapshots, "internal", internalField);
   }
   // Source is another external system — find its value for this internalField
@@ -301,7 +282,6 @@ export default function SyncModal({
   });
   const [showInSync, setShowInSync] = useState(false);
   const [outcomes, setOutcomes] = useState<SyncOperationOutcome[]>([]);
-  const [linkingSystem, setLinkingSystem] = useState<ExternalSystem | null>(null);
 
   // ── Linked systems ──
   const linkedSystems = useMemo<Record<ExternalSystem, boolean>>(() => {
@@ -388,7 +368,7 @@ export default function SyncModal({
     // Pass 1: Internal column selections (highest priority)
     for (const [key, value] of Object.entries(selections)) {
       if (!key.startsWith("internal:")) continue;
-      if (value === "keep" || value === "internal" || value === "auto-generated") continue;
+      if (value === "keep" || value === "internal") continue;
       const internalField = key.split(":")[1];
       locked[internalField] = value as ExternalSystem;
     }
@@ -398,7 +378,7 @@ export default function SyncModal({
     // cell has picked another external source (relay). That source locks the row.
     for (const [key, value] of Object.entries(selections)) {
       if (key.startsWith("internal:")) continue;
-      if (value === "keep" || value === "internal" || value === "auto-generated") continue;
+      if (value === "keep" || value === "internal") continue;
       // value is an ExternalSystem (relay source)
       const parts = key.split(":");
       const cellSystem = parts[0] as ExternalSystem;
@@ -420,7 +400,7 @@ export default function SyncModal({
   // ── Handlers ──
 
   const handleSelectionChange = useCallback(
-    (key: string, value: "keep" | "internal" | "auto-generated" | ExternalSystem) => {
+    (key: string, value: "keep" | "internal" | ExternalSystem) => {
       setSelections((prev) => {
         const next = { ...prev, [key]: value };
 
@@ -428,7 +408,7 @@ export default function SyncModal({
         // reset any external cells for the same field that would conflict
         if (key.startsWith("internal:")) {
           const internalField = key.split(":")[1];
-          if (value !== "keep" && value !== "internal" && value !== "auto-generated") {
+          if (value !== "keep" && value !== "internal") {
             // Lock: external cells for this field can only be keep/internal/value
             for (const sys of EXTERNAL_SYSTEMS) {
               for (const edge of mappings) {
@@ -439,7 +419,6 @@ export default function SyncModal({
                   extSel &&
                   extSel !== "keep" &&
                   extSel !== "internal" &&
-                  extSel !== "auto-generated" &&
                   extSel !== value
                 ) {
                   // Conflicting source — reset to keep
@@ -468,12 +447,9 @@ export default function SyncModal({
           const updated = { ...prevSel };
           for (const edge of mappings) {
             if (edge.system !== system) continue;
-            // Skip non-generator push-only fields (they have no meaningful choice)
-            if (edge.direction === "push-only" && !edge.generator) continue;
+            if (edge.direction === "push-only") continue;
             const key = `${system}:${edge.externalField}`;
-            // Generator fields use "auto-generated", normal fields use "internal"
-            const isGenerator = edge.direction === "push-only" && !!edge.generator;
-            updated[key] = newVal ? (isGenerator ? "auto-generated" : "internal") : "keep";
+            updated[key] = newVal ? "internal" : "keep";
           }
           return updated;
         });
@@ -489,35 +465,6 @@ export default function SyncModal({
     setStep("loading");
     loadSyncData();
   }, [loadSyncData]);
-
-  /** Link an existing external product to this InternalProduct, then reload sync data. */
-  const handleLinkProduct = useCallback(
-    async (system: ExternalSystem, externalId: string) => {
-      setLinkingSystem(system);
-      setError(null);
-      try {
-        const res = await fetch("/api/inventory/products", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: internalProductId,
-            [LINK_FIELDS[system]]: externalId,
-          }),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error ?? `Failed to link ${SYSTEM_LABELS[system]} product`);
-        }
-        // Reload sync data so the column populates with real values
-        loadSyncData();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Link failed");
-      } finally {
-        setLinkingSystem(null);
-      }
-    },
-    [internalProductId, loadSyncData],
-  );
 
   // ── Execute sync ──
 
@@ -567,8 +514,7 @@ export default function SyncModal({
         // All fields for this system should be pushed
         for (const edge of mappings) {
           if (edge.system !== sys) continue;
-          // Skip non-generator push-only fields
-          if (edge.direction === "push-only" && !edge.generator) continue;
+          if (edge.direction === "push-only") continue;
           cellSelections.push({
             system: sys,
             externalField: edge.externalField,
@@ -719,22 +665,21 @@ export default function SyncModal({
                       Internal
                     </th>
                     {EXTERNAL_SYSTEMS.map((sys) => (
-                      <th key={sys} className="border-l border-border px-3 py-2 text-left text-xs font-medium text-muted align-top">
+                      <th key={sys} className="border-l border-border px-3 py-2 text-left text-xs font-medium text-muted">
                         <div className="flex items-center gap-2">
                           <span>{SYSTEM_SHORT[sys]}</span>
-                          {linkedSystems[sys] && (
-                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500" title="Linked" />
+                          {!linkedSystems[sys] && (
+                            <label className="inline-flex items-center gap-1 text-xs">
+                              <input
+                                type="checkbox"
+                                checked={createToggles[sys]}
+                                onChange={() => handleCreateToggle(sys)}
+                                className="rounded"
+                              />
+                              <span className="text-muted">Create</span>
+                            </label>
                           )}
                         </div>
-                        {!linkedSystems[sys] && (
-                          <ProductSearchDropdown
-                            system={sys}
-                            onLink={(externalId) => handleLinkProduct(sys, externalId)}
-                            onCreateNew={() => handleCreateToggle(sys)}
-                            isCreateChecked={createToggles[sys]}
-                            isLinking={linkingSystem === sys}
-                          />
-                        )}
                       </th>
                     ))}
                   </tr>
@@ -906,7 +851,7 @@ interface FieldRowComponentProps {
   createToggles: Record<ExternalSystem, boolean>;
   selections: SelectionMap;
   lockedPullSources: Record<string, ExternalSystem | null>;
-  onSelectionChange: (key: string, value: "keep" | "internal" | "auto-generated" | ExternalSystem) => void;
+  onSelectionChange: (key: string, value: "keep" | "internal" | ExternalSystem) => void;
   readOnly: boolean;
 }
 
@@ -932,20 +877,17 @@ function FieldRowComponent({
       {/* Field label */}
       <td className="sticky left-0 z-10 bg-surface-elevated px-3 py-2 text-sm font-medium text-foreground whitespace-nowrap">
         {row.label}
-        {row.isPushOnly && !row.hasGenerator && (
+        {row.isPushOnly && (
           <span className="ml-1 text-xs text-muted">(push-only)</span>
         )}
       </td>
 
-      {/* Internal column — read-only for push-only fields (incl. generators) */}
+      {/* Internal column */}
       <td className="px-3 py-2">
-        {row.isPushOnly || readOnly ? (
-          <span className="font-mono text-xs text-muted">
-            {formatValue(internalValue)}
-            {row.hasGenerator && (
-              <span className="ml-1 text-muted/60">(auto)</span>
-            )}
-          </span>
+        {row.isPushOnly ? (
+          <span className="font-mono text-xs text-muted">{formatValue(internalValue)}</span>
+        ) : readOnly ? (
+          <span className="font-mono text-xs text-muted">{formatValue(internalValue)}</span>
         ) : (
           <InternalCell
             row={row}
@@ -979,8 +921,7 @@ function FieldRowComponent({
           );
         }
 
-        // Non-generator push-only fields remain read-only
-        if (row.isPushOnly && !row.hasGenerator) {
+        if (row.isPushOnly) {
           return (
             <td key={sys} className="border-l border-border px-3 py-2">
               <span className="font-mono text-xs text-muted">
@@ -1017,7 +958,6 @@ function FieldRowComponent({
               lockedPullSource={lockedSource}
               onSelectionChange={(val) => onSelectionChange(selKey, val)}
               extValue={extValue}
-              hasGenerator={row.hasGenerator}
             />
           </td>
         );
@@ -1033,8 +973,8 @@ interface InternalCellProps {
   snapshots: FieldValueSnapshot[];
   mappings: FieldMappingEdge[];
   linkedSystems: Record<ExternalSystem, boolean>;
-  selection: "keep" | "internal" | "auto-generated" | ExternalSystem;
-  onSelectionChange: (val: "keep" | "internal" | "auto-generated" | ExternalSystem) => void;
+  selection: "keep" | "internal" | ExternalSystem;
+  onSelectionChange: (val: "keep" | "internal" | ExternalSystem) => void;
   internalValue: string | number | null;
 }
 
@@ -1133,11 +1073,10 @@ interface ExternalCellProps {
   snapshots: FieldValueSnapshot[];
   mappings: FieldMappingEdge[];
   linkedSystems: Record<ExternalSystem, boolean>;
-  selection: "keep" | "internal" | "auto-generated" | ExternalSystem;
+  selection: "keep" | "internal" | ExternalSystem;
   lockedPullSource: ExternalSystem | null;
-  onSelectionChange: (val: "keep" | "internal" | "auto-generated" | ExternalSystem) => void;
+  onSelectionChange: (val: "keep" | "internal" | ExternalSystem) => void;
   extValue: string | number | null;
-  hasGenerator?: boolean;
 }
 
 function ExternalCell({
@@ -1151,7 +1090,6 @@ function ExternalCell({
   lockedPullSource,
   onSelectionChange,
   extValue,
-  hasGenerator,
 }: ExternalCellProps) {
   const options = useMemo(
     () =>
@@ -1163,9 +1101,8 @@ function ExternalCell({
         snapshots,
         linkedSystems,
         lockedPullSource,
-        hasGenerator ?? false,
       ),
-    [system, edge.externalField, internalField, mappings, snapshots, linkedSystems, lockedPullSource, hasGenerator],
+    [system, edge.externalField, internalField, mappings, snapshots, linkedSystems, lockedPullSource],
   );
 
   const projected =
@@ -1210,7 +1147,7 @@ function ExternalCell({
         value={selection}
         aria-label={`${SYSTEM_LABELS[system]} source for ${FIELD_LABELS[internalField] ?? internalField}`}
         onChange={(e) =>
-          onSelectionChange(e.target.value as "keep" | "internal" | "auto-generated" | ExternalSystem)
+          onSelectionChange(e.target.value as "keep" | "internal" | ExternalSystem)
         }
         className={`w-full rounded border px-1.5 py-0.5 text-xs bg-surface-2 text-foreground ${
           selection !== "keep"
@@ -1221,14 +1158,6 @@ function ExternalCell({
         }`}
       >
         {options.map((opt) => {
-          // Auto-generated options have a fully decorated label — render directly
-          if (opt.value === "auto-generated") {
-            return (
-              <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-                {opt.label}{opt.disabled ? " (same)" : ""}
-              </option>
-            );
-          }
           const display = formatValue(opt.projectedValue);
           const label = truncate(display, 30);
           const suffix = opt.value === "keep"
@@ -1241,176 +1170,6 @@ function ExternalCell({
           );
         })}
       </select>
-    </div>
-  );
-}
-
-// ── Product Search Dropdown (for linking unlinked systems) ──
-
-interface ProductSearchDropdownProps {
-  system: ExternalSystem;
-  onLink: (externalId: string) => void;
-  onCreateNew: () => void;
-  isCreateChecked: boolean;
-  isLinking: boolean;
-}
-
-function ProductSearchDropdown({
-  system,
-  onLink,
-  onCreateNew,
-  isCreateChecked,
-  isLinking,
-}: ProductSearchDropdownProps) {
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<CachedProduct[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [showDropdown, setShowDropdown] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Close dropdown on outside click
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setShowDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  // Debounced search
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-
-    if (query.length < 2) {
-      setResults([]);
-      setShowDropdown(false);
-      return;
-    }
-
-    setIsSearching(true);
-    debounceRef.current = setTimeout(async () => {
-      try {
-        const res = await fetch(
-          `/api/products/cache?source=${encodeURIComponent(system)}&search=${encodeURIComponent(query)}&limit=10`,
-        );
-        if (!res.ok) throw new Error("Search failed");
-        const data = await res.json();
-        setResults(data.products ?? []);
-        setShowDropdown(true);
-      } catch {
-        setResults([]);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 300);
-
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [query, system]);
-
-  function handleSelect(product: CachedProduct) {
-    setShowDropdown(false);
-    setQuery("");
-    setResults([]);
-    onLink(product.externalId);
-  }
-
-  function handleCreateNewClick() {
-    setShowDropdown(false);
-    setQuery("");
-    setResults([]);
-    if (!isCreateChecked) {
-      onCreateNew();
-    }
-  }
-
-  if (isLinking) {
-    return (
-      <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted">
-        <div className="h-3 w-3 animate-spin rounded-full border border-orange-500 border-t-transparent" />
-        <span>Linking...</span>
-      </div>
-    );
-  }
-
-  return (
-    <div ref={containerRef} className="relative mt-1.5">
-      {/* When create mode is active, show indicator instead of search */}
-      {isCreateChecked ? (
-        <label className="inline-flex items-center gap-1 text-xs">
-          <input
-            type="checkbox"
-            checked
-            onChange={onCreateNew}
-            className="rounded"
-          />
-          <span className="text-muted">Create new</span>
-        </label>
-      ) : (
-        <>
-          <div className="flex items-center gap-1">
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onFocus={() => {
-                if (query.length >= 2 && results.length > 0) setShowDropdown(true);
-              }}
-              placeholder={`Search ${SYSTEM_SHORT[system]}...`}
-              className="w-full min-w-[100px] rounded border border-border bg-surface-2 px-1.5 py-0.5 text-xs text-foreground placeholder:text-muted/50 focus:border-orange-500/50 focus:outline-none"
-            />
-            {isSearching && (
-              <div className="h-3 w-3 shrink-0 animate-spin rounded-full border border-orange-500 border-t-transparent" />
-            )}
-          </div>
-
-          {/* Search results dropdown */}
-          {showDropdown && (
-            <div className="absolute left-0 top-full z-50 mt-1 max-h-48 w-64 overflow-y-auto rounded-lg border border-border bg-surface-elevated shadow-xl">
-              {results.map((product) => (
-                <button
-                  key={product.externalId}
-                  type="button"
-                  onClick={() => handleSelect(product)}
-                  className="flex w-full flex-col gap-0.5 border-b border-border/30 px-3 py-2 text-left text-xs hover:bg-surface-2 last:border-b-0"
-                >
-                  <span className="font-medium text-foreground">{truncate(product.name, 50)}</span>
-                  {product.sku && (
-                    <span className="text-muted">SKU: {truncate(product.sku, 30)}</span>
-                  )}
-                  <span className="text-muted/60">ID: {product.externalId}</span>
-                </button>
-              ))}
-              {results.length === 0 && query.length >= 2 && !isSearching && (
-                <div className="px-3 py-2 text-xs text-muted">No matches found</div>
-              )}
-              {/* Create new option inside search results too */}
-              <button
-                type="button"
-                onClick={handleCreateNewClick}
-                className="flex w-full items-center gap-1.5 border-t border-border px-3 py-2 text-left text-xs font-medium text-orange-400 hover:bg-surface-2"
-              >
-                <span className="text-base leading-none">+</span>
-                <span>Create new in {SYSTEM_SHORT[system]}</span>
-              </button>
-            </div>
-          )}
-
-          {/* Always-visible "Create new" button below the search input */}
-          <button
-            type="button"
-            onClick={handleCreateNewClick}
-            className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-orange-400 hover:text-orange-300"
-          >
-            <span className="text-sm leading-none">+</span>
-            <span>Create new in {SYSTEM_SHORT[system]}</span>
-          </button>
-        </>
-      )}
     </div>
   );
 }

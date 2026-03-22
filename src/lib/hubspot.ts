@@ -467,6 +467,8 @@ export interface CreateDealLineItemResult {
 export interface UpsertHubSpotProductInput {
   brand: string;
   model: string;
+  /** Display name override. When provided, used directly instead of computing from brand+model. */
+  name?: string | null;
   description?: string | null;
   sku?: string | null;
   productCategory?: string | null;
@@ -2200,7 +2202,7 @@ export async function createOrUpdateHubSpotProduct(
   const sku = trimOrNull(input.sku) || model;
   const description = trimOrNull(input.description);
   const productCategory = trimOrNull(input.productCategory);
-  const name = `${brand || ""} ${model || ""}`.trim();
+  const name = trimOrNull(input.name) || `${brand || ""} ${model || ""}`.trim();
 
   if (!name) throw new Error("HubSpot product requires brand and model");
 

@@ -84,22 +84,21 @@ describe("buildFieldRows", () => {
     expect(inSync[0].internalField).toBe("sku");
   });
 
-  it("marks generator fields with hasGenerator", () => {
+  it("marks name as normal bidirectional field", () => {
     const mappings: FieldMappingEdge[] = [
-      edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
+      edge("zoho", "name", "name"),
     ];
     const snapshots: FieldValueSnapshot[] = [
-      snap("internal", "_name", "Test Product"),
+      snap("internal", "name", "Test Product"),
       snap("zoho", "name", "Test Product"),
     ];
 
     const { inSync } = buildFieldRows(mappings, snapshots, linked);
     expect(inSync).toHaveLength(1);
-    expect(inSync[0].hasGenerator).toBe(true);
-    expect(inSync[0].isPushOnly).toBe(true);
+    expect(inSync[0].isPushOnly).toBe(false);
   });
 
-  it("marks push-only non-generator fields", () => {
+  it("marks push-only non-virtual fields", () => {
     const mappings: FieldMappingEdge[] = [
       edge("hubspot", "product_category", "category", { direction: "push-only" }),
     ];
@@ -110,7 +109,6 @@ describe("buildFieldRows", () => {
 
     const { inSync } = buildFieldRows(mappings, snapshots, linked);
     expect(inSync).toHaveLength(1);
-    expect(inSync[0].hasGenerator).toBe(false);
     expect(inSync[0].isPushOnly).toBe(true);
   });
 
@@ -225,19 +223,6 @@ describe("getProjectedValue", () => {
 // ── getImplicitWrites ──
 
 describe("getImplicitWrites", () => {
-  it("generator fields are NOT implicit (they are explicit rows now)", () => {
-    const mappings: FieldMappingEdge[] = [
-      edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
-      edge("zoho", "rate", "sellPrice"),
-    ];
-    const selections = { "zoho:rate": "internal" as const };
-
-    const writes = getImplicitWrites(mappings, selections, linked);
-    // Generator fields no longer appear in implicit writes
-    expect(writes).not.toContain("Name (auto-generated)");
-    expect(writes).toHaveLength(0);
-  });
-
   it("includes companion fields when primary is selected", () => {
     const mappings: FieldMappingEdge[] = [
       edge("zoho", "vendor_name", "vendorName", { companion: "vendor_id" }),
@@ -259,23 +244,6 @@ describe("getImplicitWrites", () => {
     expect(writes).toHaveLength(0);
   });
 
-  it("returns empty for generator-only mappings with active systems", () => {
-    const mappings: FieldMappingEdge[] = [
-      edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
-      edge("hubspot", "name", "_name", { direction: "push-only", generator: "skuName" }),
-      edge("zoho", "rate", "sellPrice"),
-      edge("hubspot", "price", "sellPrice"),
-    ];
-    const selections = {
-      "zoho:rate": "internal" as const,
-      "hubspot:price": "internal" as const,
-    };
-
-    const writes = getImplicitWrites(mappings, selections, linked);
-    // Generator fields are now explicit rows, not implicit writes
-    const nameEntries = writes.filter((w) => w.startsWith("Name"));
-    expect(nameEntries).toHaveLength(0);
-  });
 });
 
 // ── countChanges ──

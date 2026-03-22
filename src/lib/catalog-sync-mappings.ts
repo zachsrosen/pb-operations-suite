@@ -46,28 +46,6 @@ export function normalizedEqual(
   return String(na) === String(nb);
 }
 
-// ── Generator registry ──
-// Generators produce composite values from internal product state.
-// They run during plan derivation (Step 2: re-materialize).
-
-import { buildSkuName, getSpecData } from "./catalog-sync";
-import { generateZuperSpecification } from "./catalog-fields";
-import type { SkuRecord } from "./catalog-sync";
-
-export type GeneratorFn = (sku: SkuRecord) => string | null;
-
-export const generators: Record<string, GeneratorFn> = {
-  skuName: (sku) => {
-    const name = buildSkuName(sku);
-    return name?.trim() || null;
-  },
-  zuperSpecification: (sku) => {
-    const specData = getSpecData(sku);
-    const spec = generateZuperSpecification(sku.category, specData);
-    return spec?.trim() || null;
-  },
-};
-
 // ── Transform registry ──
 // Transforms convert an internal value to external format at write time.
 
@@ -90,8 +68,8 @@ export const transforms: Record<string, TransformFn> = {
 
 const STATIC_EDGES: FieldMappingEdge[] = [
   // ── Zoho ──
-  { system: "zoho", externalField: "name", internalField: "_name",
-    normalizeWith: "trimmed-string", direction: "push-only", generator: "skuName" },
+  { system: "zoho", externalField: "name", internalField: "name",
+    normalizeWith: "trimmed-string" },
   { system: "zoho", externalField: "sku", internalField: "sku",
     normalizeWith: "trimmed-string" },
   { system: "zoho", externalField: "rate", internalField: "sellPrice",
@@ -112,8 +90,8 @@ const STATIC_EDGES: FieldMappingEdge[] = [
     normalizeWith: "enum-ci" },
 
   // ── HubSpot (universal) ──
-  { system: "hubspot", externalField: "name", internalField: "_name",
-    normalizeWith: "trimmed-string", direction: "push-only", generator: "skuName" },
+  { system: "hubspot", externalField: "name", internalField: "name",
+    normalizeWith: "trimmed-string" },
   { system: "hubspot", externalField: "hs_sku", internalField: "sku",
     normalizeWith: "trimmed-string" },
   { system: "hubspot", externalField: "price", internalField: "sellPrice",
@@ -134,16 +112,14 @@ const STATIC_EDGES: FieldMappingEdge[] = [
     normalizeWith: "trimmed-string" },
 
   // ── Zuper ──
-  { system: "zuper", externalField: "name", internalField: "_name",
-    normalizeWith: "trimmed-string", direction: "push-only", generator: "skuName" },
+  { system: "zuper", externalField: "name", internalField: "name",
+    normalizeWith: "trimmed-string" },
   { system: "zuper", externalField: "sku", internalField: "sku",
     normalizeWith: "trimmed-string" },
   { system: "zuper", externalField: "description", internalField: "description",
     normalizeWith: "trimmed-string" },
   { system: "zuper", externalField: "category", internalField: "category",
     normalizeWith: "enum-ci", transform: "zuperCategoryUid" },
-  { system: "zuper", externalField: "specification", internalField: "_specification",
-    normalizeWith: "trimmed-string", direction: "push-only", generator: "zuperSpecification" },
   { system: "zuper", externalField: "brand", internalField: "brand",
     normalizeWith: "enum-ci" },
   { system: "zuper", externalField: "price", internalField: "sellPrice",
@@ -257,7 +233,3 @@ export function validateMappings(category: string): string[] {
   return errors;
 }
 
-/** Check if an internal field is virtual (prefixed with _). */
-export function isVirtualField(internalField: string): boolean {
-  return internalField.startsWith("_");
-}

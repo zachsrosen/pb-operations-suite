@@ -54,6 +54,7 @@ export interface SkuRecord {
   category: string;
   brand: string;
   model: string;
+  name: string | null;
   description: string | null;
   sku: string | null;
   vendorName: string | null;
@@ -478,17 +479,22 @@ export async function executeZohoSync(sku: SkuRecord, preview: SyncPreview): Pro
   }
 
   if (preview.action === "create") {
-    // Use existing create function
+    // Build create payload from planned changes (effective state) over raw sku defaults
+    const planned: Record<string, string | null> = {};
+    for (const c of preview.changes) {
+      planned[c.field] = c.proposedValue;
+    }
     const { createOrUpdateZohoItem } = await import("@/lib/zoho-inventory");
     const result = await createOrUpdateZohoItem({
-      brand: sku.brand,
-      model: sku.model,
-      description: sku.description,
-      sku: sku.sku,
-      unitLabel: sku.unitLabel,
-      vendorName: sku.vendorName,
-      sellPrice: sku.sellPrice,
-      unitCost: sku.unitCost,
+      name: planned["name"] ?? sku.name,
+      brand: planned["brand"] ?? sku.brand,
+      model: planned["part_number"] ?? sku.model,
+      description: planned["description"] ?? sku.description,
+      sku: planned["sku"] ?? sku.sku,
+      unitLabel: planned["unit"] ?? sku.unitLabel,
+      vendorName: planned["vendor_name"] ?? sku.vendorName,
+      sellPrice: planned["rate"] != null ? Number(planned["rate"]) : sku.sellPrice,
+      unitCost: planned["purchase_rate"] != null ? Number(planned["purchase_rate"]) : sku.unitCost,
     });
 
     // Guarded write: only set zohoItemId if it's still null
@@ -541,6 +547,11 @@ export async function executeHubSpotSync(sku: SkuRecord, preview: SyncPreview): 
   }
 
   if (preview.action === "create") {
+    // Build create payload from planned changes (effective state) over raw sku defaults
+    const planned: Record<string, string | null> = {};
+    for (const c of preview.changes) {
+      planned[c.field] = c.proposedValue;
+    }
     const { createOrUpdateHubSpotProduct } = await import("@/lib/hubspot");
     const specData = getSpecData(sku);
     const specProps = getHubspotPropertiesFromMetadata(sku.category, specData);
@@ -550,13 +561,14 @@ export async function executeHubSpotSync(sku: SkuRecord, preview: SyncPreview): 
     }
 
     const result = await createOrUpdateHubSpotProduct({
-      brand: sku.brand,
-      model: sku.model,
-      description: sku.description,
-      sku: sku.sku,
+      name: planned["name"] ?? sku.name,
+      brand: planned["manufacturer"] ?? sku.brand,
+      model: planned["vendor_part_number"] ?? sku.model,
+      description: planned["description"] ?? sku.description,
+      sku: planned["hs_sku"] ?? sku.sku,
       productCategory: getHubspotCategoryValue(sku.category),
-      sellPrice: sku.sellPrice,
-      unitCost: sku.unitCost,
+      sellPrice: planned["price"] != null ? Number(planned["price"]) : sku.sellPrice,
+      unitCost: planned["hs_cost_of_goods_sold"] != null ? Number(planned["hs_cost_of_goods_sold"]) : sku.unitCost,
       hardToProcure: sku.hardToProcure,
       length: sku.length,
       width: sku.width,
@@ -610,20 +622,25 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
   }
 
   if (preview.action === "create") {
+    // Build create payload from planned changes (effective state) over raw sku defaults
+    const planned: Record<string, string | null> = {};
+    for (const c of preview.changes) {
+      planned[c.field] = c.proposedValue;
+    }
     const { createOrUpdateZuperPart } = await import("@/lib/zuper-catalog");
     const specData = getSpecData(sku);
     const result = await createOrUpdateZuperPart({
-      brand: sku.brand,
-      model: sku.model,
-      description: sku.description,
-      sku: sku.sku,
-      unitLabel: sku.unitLabel,
-      vendorName: sku.vendorName,
+      name: planned["name"] ?? sku.name,
+      brand: planned["brand"] ?? sku.brand,
+      model: planned["model"] ?? sku.model,
+      description: planned["description"] ?? sku.description,
+      sku: planned["sku"] ?? sku.sku,
+      unitLabel: planned["uom"] ?? sku.unitLabel,
+      vendorName: planned["vendor_name"] ?? sku.vendorName,
       vendorPartNumber: sku.vendorPartNumber,
-      sellPrice: sku.sellPrice,
-      unitCost: sku.unitCost,
+      sellPrice: planned["price"] != null ? Number(planned["price"]) : sku.sellPrice,
+      unitCost: planned["purchase_price"] != null ? Number(planned["purchase_price"]) : sku.unitCost,
       category: getZuperCategoryValue(sku.category),
-      specification: generateZuperSpecification(sku.category, specData),
     });
 
     if (result.zuperItemId) {

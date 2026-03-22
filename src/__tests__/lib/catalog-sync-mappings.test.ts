@@ -19,7 +19,6 @@ import {
   getActiveMappings,
   getPullableMappings,
   validateMappings,
-  isVirtualField,
 } from "@/lib/catalog-sync-mappings";
 
 describe("normalizers", () => {
@@ -73,25 +72,22 @@ describe("mapping table", () => {
     expect(edges.length).toBeGreaterThan(15);
   });
 
-  it("has name as push-only on all three systems", () => {
+  it("has name as bidirectional on all three systems mapped to name", () => {
     const edges = getAllMappingEdges();
     const nameEdges = edges.filter((e) => e.externalField === "name");
     expect(nameEdges).toHaveLength(3);
     for (const e of nameEdges) {
-      expect(e.direction).toBe("push-only");
-      expect(e.generator).toBe("skuName");
-      expect(e.internalField).toBe("_name");
+      expect(e.direction).toBeUndefined();
+      expect(e.internalField).toBe("name");
     }
   });
 
-  it("has specification as push-only on zuper", () => {
+  it("does not have a specification edge on zuper", () => {
     const edges = getAllMappingEdges();
     const specEdge = edges.find(
       (e) => e.system === "zuper" && e.externalField === "specification",
     );
-    expect(specEdge).toBeDefined();
-    expect(specEdge!.direction).toBe("push-only");
-    expect(specEdge!.generator).toBe("zuperSpecification");
+    expect(specEdge).toBeUndefined();
   });
 
   it("has companion fields for zoho vendor", () => {
@@ -140,19 +136,12 @@ describe("validateMappings", () => {
   });
 });
 
-describe("isVirtualField", () => {
-  it("identifies virtual fields", () => {
-    expect(isVirtualField("_name")).toBe(true);
-    expect(isVirtualField("_specification")).toBe(true);
-    expect(isVirtualField("sellPrice")).toBe(false);
-  });
-});
-
 describe("getPullableMappings", () => {
-  it("excludes push-only fields like name", () => {
+  it("includes bidirectional name field", () => {
     const pullable = getPullableMappings("hubspot", "MODULE");
     const nameEdge = pullable.find((e) => e.externalField === "name");
-    expect(nameEdge).toBeUndefined();
+    expect(nameEdge).toBeDefined();
+    expect(nameEdge!.internalField).toBe("name");
   });
 
   it("includes bidirectional fields like price", () => {
