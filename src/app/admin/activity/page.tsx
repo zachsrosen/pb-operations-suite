@@ -28,7 +28,7 @@ interface ActivityLog {
 
 const USER_ROLES = [
   "ADMIN",
-  "OWNER",
+  "EXECUTIVE",
   "OPERATIONS",
   "OPERATIONS_MANAGER",
   "PROJECT_MANAGER",
@@ -38,6 +38,7 @@ const USER_ROLES = [
 ] as const;
 
 const ROLE_DISPLAY_ALIASES: Record<string, string> = {
+  EXECUTIVE: "EXECUTIVE",
   OWNER: "EXECUTIVE",
   VIEWER: "UNASSIGNED",
   MANAGER: "PROJECT_MANAGER",

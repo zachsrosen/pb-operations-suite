@@ -69,7 +69,7 @@ const SUITE_SWITCHER_ALLOWLIST: Record<UserRole, string[]> = {
     "/suites/executive",
     "/suites/admin",
   ],
-  OWNER: [
+  EXECUTIVE: [
     "/suites/operations",
     "/suites/design-engineering",
     "/suites/permitting-interconnection",
@@ -86,6 +86,7 @@ const SUITE_SWITCHER_ALLOWLIST: Record<UserRole, string[]> = {
   DESIGNER: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection"],
   PERMITTING: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection"],
   SALES: [],
+  SALES_MANAGER: [],
   VIEWER: [],
 };
 

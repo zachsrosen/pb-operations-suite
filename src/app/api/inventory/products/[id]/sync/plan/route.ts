@@ -11,7 +11,7 @@ import type { SkuRecord } from "@/lib/catalog-sync";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
+const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "EXECUTIVE"]);
 
 const SKU_INCLUDE = {
   moduleSpec: true,

@@ -11,7 +11,7 @@ import {
 
 const ALLOWED_ROLES = new Set<UserRole>([
   "ADMIN",
-  "OWNER",
+  "EXECUTIVE",
   "MANAGER",
   "OPERATIONS",
   "OPERATIONS_MANAGER",

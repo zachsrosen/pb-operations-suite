@@ -10,7 +10,7 @@ import {
 
 export const runtime = "nodejs";
 
-const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER", "MANAGER"]);
+const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "EXECUTIVE", "MANAGER"]);
 
 type DiagnosticSource = "hubspot" | "zuper" | "zoho";
 const VALID_SOURCES: DiagnosticSource[] = ["hubspot", "zuper", "zoho"];

@@ -505,10 +505,10 @@ export default function Home() {
     // Roles with landing cards don't show suite grid (they get Browse All instead)
     if (ROLE_LANDING_CARDS[userRole]) return [];
     const isAdmin = userRole === "ADMIN";
-    const isOwnerOrAdmin = isAdmin || userRole === "OWNER";
+    const isExecutiveOrAdmin = isAdmin || userRole === "EXECUTIVE" || userRole === "OWNER";
     return SUITE_LINKS.filter((suite) => {
       if (suite.visibility === "all") return true;
-      if (suite.visibility === "owner_admin") return isOwnerOrAdmin;
+      if (suite.visibility === "owner_admin") return isExecutiveOrAdmin;
       return isAdmin;
     });
   }, [userRole]);
@@ -865,7 +865,7 @@ export default function Home() {
           </div>
         )}
 
-        {/* Suites (for ADMIN/OWNER) */}
+        {/* Suites (for ADMIN/EXECUTIVE) */}
         {visibleSuites.length > 0 && (() => {
           const mainSuites = visibleSuites.filter((s) => s.visibility !== "admin");
           const adminSuites = visibleSuites.filter((s) => s.visibility === "admin");

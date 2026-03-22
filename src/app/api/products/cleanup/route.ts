@@ -22,7 +22,7 @@ function trim(value: unknown): string {
   return String(value || "").trim();
 }
 
-const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
+const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "EXECUTIVE"]);
 
 const EXTERNAL_FIELD_BY_SOURCE: Record<
   CleanupSource,

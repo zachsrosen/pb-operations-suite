@@ -6,7 +6,7 @@
  * fast and accurate for structured extraction tasks.
  *
  * Guardrails enforced here (not per-route):
- * - Role check: ADMIN | OWNER only
+ * - Role check: ADMIN | EXECUTIVE only
  * - Max input length per field
  * - Strict Zod output schemas
  * - Simple in-memory rate limiter (per-user, per-minute)
@@ -36,7 +36,7 @@ export const AI_MODEL = "claude-haiku-4-5-20251001";
 // Role guard
 // ============================================================
 
-const AI_ALLOWED_ROLES = new Set(["ADMIN", "OWNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER"]);
+const AI_ALLOWED_ROLES = new Set(["ADMIN", "EXECUTIVE", "OWNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER"]);
 
 export function isAIAuthorized(role: string): boolean {
   return AI_ALLOWED_ROLES.has(role);

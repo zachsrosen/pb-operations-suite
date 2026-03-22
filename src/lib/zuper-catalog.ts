@@ -151,6 +151,11 @@ export interface UpdateZuperPartResult {
   httpStatus?: number;
 }
 
+const ZUPER_HUBSPOT_PRODUCT_FIELD_KEY = "hubspot_product_id";
+const ZUPER_HUBSPOT_PRODUCT_FIELD_LABEL = "HubSpot Product ID";
+
+type ZuperCustomFieldEntry = Record<string, unknown>;
+
 interface ZuperIdentity {
   name: string;
   sku?: string;
@@ -178,6 +183,81 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
+}
+
+function normalizeCustomFieldTerm(value: unknown): string | null {
+  const trimmed = trimOrUndefined(value);
+  if (!trimmed) return null;
+  return trimmed
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+}
+
+export function getZuperHubSpotProductFieldKey(): string {
+  return ZUPER_HUBSPOT_PRODUCT_FIELD_KEY;
+}
+
+export function getZuperHubSpotProductFieldLabel(): string {
+  return ZUPER_HUBSPOT_PRODUCT_FIELD_LABEL;
+}
+
+export function buildZuperProductCustomFields(
+  input: { hubspotProductId?: string | null }
+): Record<string, string> | null {
+  const hubspotProductId = trimOrUndefined(input.hubspotProductId);
+  if (!hubspotProductId) return null;
+  return {
+    [ZUPER_HUBSPOT_PRODUCT_FIELD_KEY]: hubspotProductId,
+  };
+}
+
+export function readZuperCustomFieldValue(
+  customFields: unknown,
+  key: string,
+  additionalLabels: string[] = [],
+): string | null {
+  const matchTerms = [key, ...additionalLabels]
+    .map((term) => normalizeCustomFieldTerm(term))
+    .filter((term): term is string => Boolean(term));
+
+  if (matchTerms.length === 0 || customFields == null) return null;
+
+  if (Array.isArray(customFields)) {
+    for (const entry of customFields) {
+      if (!isRecord(entry)) continue;
+      const record = entry as ZuperCustomFieldEntry;
+      const entryTerms = [
+        record.name,
+        record.label,
+        record.key,
+        record.field,
+      ]
+        .map((value) => normalizeCustomFieldTerm(value))
+        .filter((value): value is string => Boolean(value));
+
+      if (!entryTerms.some((term) => matchTerms.includes(term))) continue;
+
+      const value = trimOrUndefined(record.value);
+      if (value) return value;
+      if (record.value != null) return String(record.value);
+      return null;
+    }
+    return null;
+  }
+
+  if (!isRecord(customFields)) return null;
+
+  const record = customFields as ZuperCustomFieldEntry;
+  for (const [fieldKey, rawValue] of Object.entries(record)) {
+    const normalizedKey = normalizeCustomFieldTerm(fieldKey);
+    if (!normalizedKey || !matchTerms.includes(normalizedKey)) continue;
+    const value = trimOrUndefined(rawValue);
+    if (value) return value;
+    if (rawValue != null) return String(rawValue);
+    return null;
+  }
+
+  return null;
 }
 
 function getErrorMessage(error: unknown): string {

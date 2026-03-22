@@ -37,7 +37,7 @@ export async function PUT(
     const currentUser = await getUserByEmail(session.user.email);
     if (
       !currentUser ||
-      (currentUser.role !== "ADMIN" && currentUser.role !== "OWNER")
+      (currentUser.role !== "ADMIN" && currentUser.role !== "EXECUTIVE")
     ) {
       return NextResponse.json(
         { error: "Admin access required" },

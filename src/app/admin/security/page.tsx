@@ -74,6 +74,7 @@ interface SecurityAuditData {
 }
 
 const ROLE_LABELS: Record<string, string> = {
+  EXECUTIVE: "EXECUTIVE",
   OWNER: "EXECUTIVE",
   VIEWER: "UNASSIGNED",
 };
@@ -84,7 +85,7 @@ function formatRoleLabel(role: string): string {
 
 function getRoleBadgeClasses(role: string): string {
   if (role === "ADMIN") return "bg-amber-500/10 text-amber-400";
-  if (role === "OWNER") return "bg-yellow-500/10 text-yellow-400";
+  if (role === "EXECUTIVE" || role === "OWNER") return "bg-yellow-500/10 text-yellow-400";
   if (role === "PROJECT_MANAGER") return "bg-blue-500/10 text-blue-400";
   if (role === "OPERATIONS_MANAGER") return "bg-orange-500/10 text-orange-400";
   if (role === "OPERATIONS") return "bg-orange-500/10 text-orange-400";

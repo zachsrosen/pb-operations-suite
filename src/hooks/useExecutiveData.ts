@@ -54,7 +54,7 @@ export function useExecutiveData(dashboardName: string): UseExecutiveDataReturn 
     if (authQuery.data) {
       const role = authQuery.data.role || "TECH_OPS";
       setAccessChecked(true);
-      if (role !== "ADMIN" && role !== "OWNER") {
+      if (role !== "ADMIN" && role !== "EXECUTIVE" && role !== "OWNER") {
         router.push("/");
       }
     }

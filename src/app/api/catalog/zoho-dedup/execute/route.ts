@@ -15,7 +15,7 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
+const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "EXECUTIVE"]);
 const DELETE_DELAY_MS = 200;
 
 function sleep(ms: number): Promise<void> {

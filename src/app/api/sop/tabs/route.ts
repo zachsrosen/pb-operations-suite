@@ -21,7 +21,7 @@ export async function GET() {
     }
 
     const firstName = (user.name || "").split(" ")[0].toLowerCase();
-    const isAdmin = user.role === "ADMIN" || user.role === "OWNER";
+    const isAdmin = user.role === "ADMIN" || user.role === "EXECUTIVE";
 
     const allTabs = await prisma.sopTab.findMany({
       orderBy: { sortOrder: "asc" },

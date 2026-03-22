@@ -12,7 +12,7 @@ import { appCache, CACHE_KEYS } from "@/lib/cache";
  * Shows which projects have cached Zuper jobs and which don't,
  * broken down by job category.
  */
-export async function GET() {
+export async function GET(request: Request) {
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
@@ -26,23 +26,41 @@ export async function GET() {
   }
 
   try {
+    const { searchParams } = new URL(request.url);
+    const stageFilter = searchParams.getAll("stages").filter(Boolean);
+
     // 1. Get all active projects from HubSpot (uses cache if available)
     const cacheResult = appCache.get<Project[]>(CACHE_KEYS.PROJECTS_ACTIVE);
     const allProjects = cacheResult.hit && cacheResult.data ? cacheResult.data : await fetchAllProjects({ activeOnly: true });
 
-    const projects = allProjects.map((p) => ({
-      id: String(p.id),
-      name: p.name,
-      stage: p.stage,
-      pbLocation: p.pbLocation || "Unknown",
-      amount: p.amount,
-    }));
+    // Collect all unique stages before filtering (for the filter UI)
+    const allStages = [...new Set(allProjects.map((p) => p.stage).filter(Boolean))].sort();
+
+    const projects = allProjects
+      .filter((p) => stageFilter.length === 0 || stageFilter.includes(p.stage))
+      .map((p) => ({
+        id: String(p.id),
+        name: p.name,
+        stage: p.stage,
+        pbLocation: p.pbLocation || "Unknown",
+        amount: p.amount,
+      }));
 
     if (projects.length === 0) {
       return NextResponse.json({
         configured: true,
         totalProjects: 0,
-        message: "No projects found",
+        linkedCount: 0,
+        unlinkedCount: 0,
+        coveragePercent: 0,
+        linkedValue: 0,
+        unlinkedValue: 0,
+        categoryBreakdown: {},
+        linkedByStage: {},
+        unlinkedByStage: {},
+        unlinkedByLocation: {},
+        allStages,
+        unlinkedProjects: [],
       });
     }
 
@@ -121,6 +139,7 @@ export async function GET() {
       linkedByStage,
       unlinkedByStage,
       unlinkedByLocation,
+      allStages,
       unlinkedProjects: unlinked.slice(0, 50).map((p) => ({
         id: p.id,
         name: p.name,

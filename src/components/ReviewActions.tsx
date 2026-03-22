@@ -26,7 +26,7 @@ interface FeedbackState {
 }
 
 const SKILL_CONFIG: Array<{ skill: SkillName; label: string; roles: string[] }> = [
-  { skill: "design-review", label: "Design Review", roles: ["ADMIN", "OWNER", "MANAGER", "DESIGNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"] },
+  { skill: "design-review", label: "Design Review", roles: ["ADMIN", "EXECUTIVE", "MANAGER", "DESIGNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"] },
 ];
 
 const POLL_INTERVAL_MS = 3000;
@@ -229,7 +229,8 @@ export default function ReviewActions({ dealId, dealName, userRole }: ReviewActi
     }
   }
 
-  const visibleSkills = SKILL_CONFIG.filter((s) => s.roles.includes(userRole));
+  const effectiveUserRole = userRole === "OWNER" ? "EXECUTIVE" : userRole;
+  const visibleSkills = SKILL_CONFIG.filter((s) => s.roles.includes(effectiveUserRole));
   if (visibleSkills.length === 0) return null;
 
   return (

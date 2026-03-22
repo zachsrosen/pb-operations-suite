@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import DashboardShell from "@/components/DashboardShell";
+import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { formatMoney, formatShortDate } from "@/lib/format";
 
@@ -30,6 +31,7 @@ interface ComparisonRecord {
   completionDateDiffDays: number | null;
   team: string | null;
   assignedTo: string | null;
+  isSuperseded: boolean;
 }
 
 interface CategorySlot {
@@ -97,6 +99,7 @@ interface ApiResponse {
     total: number;
     mismatches: number;
     matched: number;
+    superseded?: number;
     noHubspotDeal: number;
     scheduleDateMismatches: number;
     completionDateMismatches: number;
@@ -109,10 +112,8 @@ interface ApiResponse {
   nonCoreAudit?: NonCoreAudit;
   duplicateJobs?: DuplicateJobGroup[];
   enrichmentStats?: {
-    truncated: boolean;
     enriched: number;
     total: number;
-    capPerCategory: number;
   };
   dateRange: { from: string; to: string };
   lastUpdated: string;
@@ -166,6 +167,7 @@ interface LinkageCoverage {
   linkedByStage: Record<string, number>;
   unlinkedByStage: Record<string, number>;
   unlinkedByLocation: Record<string, number>;
+  allStages?: string[];
   unlinkedProjects: { id: string; name: string; stage: string; location: string; amount: number }[];
 }
 
@@ -196,11 +198,20 @@ function statusDotColor(status: string): string {
 
 // ---- Date comparison badge ----
 
-function DateMatchBadge({ match, diffDays }: { match: boolean | null; diffDays?: number | null }) {
-  if (match === null) return <span className="text-xs text-muted">-</span>;
+function DateMatchBadge({ match, diffDays, zuperDate, hubspotDate }: {
+  match: boolean | null;
+  diffDays?: number | null;
+  zuperDate?: string | null;
+  hubspotDate?: string | null;
+}) {
+  const tooltip = zuperDate || hubspotDate
+    ? `Zuper: ${zuperDate ? renderShortDate(zuperDate) : "Missing"} | HubSpot: ${hubspotDate ? renderShortDate(hubspotDate) : "Missing"}`
+    : undefined;
+
+  if (match === null) return <span className="text-xs text-muted" title={tooltip}>-</span>;
   if (match) {
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+      <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400" title={tooltip}>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
@@ -208,7 +219,7 @@ function DateMatchBadge({ match, diffDays }: { match: boolean | null; diffDays?:
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+    <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400" title={tooltip}>
       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
       </svg>
@@ -262,6 +273,9 @@ export default function ZuperStatusComparisonPage() {
   const [showMismatchesOnly, setShowMismatchesOnly] = useState(false);
   const [showDateMismatchesOnly, setShowDateMismatchesOnly] = useState(false);
   const [selectedPbLocations, setSelectedPbLocations] = useState<string[]>([]);
+  const [selectedZuperStatuses, setSelectedZuperStatuses] = useState<string[]>([]);
+  const [selectedHubspotStatuses, setSelectedHubspotStatuses] = useState<string[]>([]);
+  const [selectedLinkageStages, setSelectedLinkageStages] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [sortField, setSortField] = useState<string>("projectNumber");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
@@ -291,14 +305,19 @@ export default function ZuperStatusComparisonPage() {
 
   const fetchLinkage = useCallback(async () => {
     try {
-      const response = await fetch("/api/zuper/linkage-coverage");
+      const params = new URLSearchParams();
+      for (const stage of selectedLinkageStages) {
+        params.append("stages", stage);
+      }
+      const qs = params.toString() ? `?${params.toString()}` : "";
+      const response = await fetch(`/api/zuper/linkage-coverage${qs}`);
       if (!response.ok) return;
       const json: LinkageCoverage = await response.json();
       if (json.configured) setLinkage(json);
     } catch {
       // Linkage data is supplementary, don't block on failure
     }
-  }, []);
+  }, [selectedLinkageStages]);
 
   useEffect(() => {
     if (!accessChecked || !isAdmin) return;
@@ -321,6 +340,20 @@ export default function ZuperStatusComparisonPage() {
       data.records
         .map((r) => r.pbLocation || "Unknown")
     )].sort((a, b) => a.localeCompare(b));
+  }, [data]);
+
+  const zuperStatusOptions = useMemo(() => {
+    if (!data?.records) return [];
+    return [...new Set(data.records.map((r) => r.zuperStatus))]
+      .sort()
+      .map((s) => ({ value: s, label: s }));
+  }, [data]);
+
+  const hubspotStatusOptions = useMemo(() => {
+    if (!data?.records) return [];
+    return [...new Set(data.records.map((r) => r.hubspotStatus).filter((s): s is string => !!s))]
+      .sort()
+      .map((s) => ({ value: s, label: s }));
   }, [data]);
 
   const togglePbLocation = useCallback((location: string) => {
@@ -347,6 +380,12 @@ export default function ZuperStatusComparisonPage() {
     }
     if (selectedPbLocations.length > 0) {
       records = records.filter((r) => selectedPbLocations.includes(r.pbLocation || "Unknown"));
+    }
+    if (selectedZuperStatuses.length > 0) {
+      records = records.filter((r) => selectedZuperStatuses.includes(r.zuperStatus));
+    }
+    if (selectedHubspotStatuses.length > 0) {
+      records = records.filter((r) => r.hubspotStatus && selectedHubspotStatuses.includes(r.hubspotStatus));
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -402,7 +441,7 @@ export default function ZuperStatusComparisonPage() {
     });
 
     return records;
-  }, [data, activeCategory, showMismatchesOnly, showDateMismatchesOnly, selectedPbLocations, searchQuery, sortField, sortDir]);
+  }, [data, activeCategory, showMismatchesOnly, showDateMismatchesOnly, selectedPbLocations, selectedZuperStatuses, selectedHubspotStatuses, searchQuery, sortField, sortDir]);
 
   // Filtered project-grouped records
   const filteredProjectRecords = useMemo(() => {
@@ -417,6 +456,18 @@ export default function ZuperStatusComparisonPage() {
     }
     if (selectedPbLocations.length > 0) {
       records = records.filter((r) => selectedPbLocations.includes(r.pbLocation || "Unknown"));
+    }
+    if (selectedZuperStatuses.length > 0) {
+      records = records.filter((r) => {
+        const statuses = [r.survey.zuperStatus, r.construction.zuperStatus, r.inspection.zuperStatus].filter(Boolean) as string[];
+        return statuses.some((s) => selectedZuperStatuses.includes(s));
+      });
+    }
+    if (selectedHubspotStatuses.length > 0) {
+      records = records.filter((r) => {
+        const statuses = [r.survey.hubspotStatus, r.construction.hubspotStatus, r.inspection.hubspotStatus].filter(Boolean) as string[];
+        return statuses.some((s) => selectedHubspotStatuses.includes(s));
+      });
     }
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
@@ -434,7 +485,7 @@ export default function ZuperStatusComparisonPage() {
       );
     }
     return records;
-  }, [data, showMismatchesOnly, showDateMismatchesOnly, selectedPbLocations, searchQuery]);
+  }, [data, showMismatchesOnly, showDateMismatchesOnly, selectedPbLocations, selectedZuperStatuses, selectedHubspotStatuses, searchQuery]);
 
   const isProjectView = viewMode === "project-status" || viewMode === "project-dates";
 
@@ -448,7 +499,8 @@ export default function ZuperStatusComparisonPage() {
       Category: CATEGORY_LABELS[r.category] || r.category,
       "Zuper Status": r.zuperStatus,
       "HubSpot Status": r.hubspotStatus || "-",
-      "Status Match": r.isMismatch ? "MISMATCH" : "Match",
+      "Status Match": r.isSuperseded ? "Superseded" : r.isMismatch ? "MISMATCH" : "Match",
+      Superseded: r.isSuperseded ? "Yes" : "No",
       "Zuper Scheduled Start": r.zuperScheduledStart || "-",
       "HubSpot Schedule Date": r.hubspotScheduleDate || "-",
       "Schedule Date Match": r.scheduleDateMatch === null ? "N/A" : r.scheduleDateMatch ? "Match" : "MISMATCH",
@@ -567,6 +619,24 @@ export default function ZuperStatusComparisonPage() {
 
           {!linkageCollapsed && (
             <div className="px-4 pb-4 space-y-4">
+              {/* Stage filter */}
+              {linkage.allStages && linkage.allStages.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <MultiSelectFilter
+                    label="Deal Stage"
+                    options={linkage.allStages.map((s) => ({ value: s, label: s }))}
+                    selected={selectedLinkageStages}
+                    onChange={setSelectedLinkageStages}
+                    accentColor="cyan"
+                  />
+                  {selectedLinkageStages.length > 0 && (
+                    <span className="text-[10px] text-muted">
+                      Filtered to {selectedLinkageStages.length} stage{selectedLinkageStages.length > 1 ? "s" : ""}
+                    </span>
+                  )}
+                </div>
+              )}
+
               {/* Coverage bar */}
               <div>
                 <div className="h-3 bg-zinc-200 dark:bg-surface-2 rounded-full overflow-hidden">
@@ -685,21 +755,15 @@ export default function ZuperStatusComparisonPage() {
       )}
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-7 gap-3 mb-6">
         <StatCard label="Total Jobs" value={stats?.total || 0} />
         <StatCard label="Status Match" value={stats?.matched || 0} color="green" />
         <StatCard label="Status Mismatches" value={stats?.mismatches || 0} color="red" />
+        <StatCard label="Superseded" value={stats?.superseded || 0} />
         <StatCard label="No HubSpot Deal" value={stats?.noHubspotDeal || 0} color="yellow" />
         <StatCard label="Schedule Date Mismatches" value={stats?.scheduleDateMismatches || 0} color="orange" />
         <StatCard label="Completion Date Mismatches" value={stats?.completionDateMismatches || 0} color="purple" />
       </div>
-
-      {data?.enrichmentStats?.truncated && (
-        <div className="mb-4 rounded-lg border border-amber-200 dark:border-amber-800/50 bg-amber-50 dark:bg-amber-950/20 px-4 py-2 text-xs text-amber-700 dark:text-amber-400">
-          ⚠ Completion date stats are approximate — only {data.enrichmentStats.enriched} of {data.enrichmentStats.total} terminal jobs
-          were enriched (capped at {data.enrichmentStats.capPerCategory}/category for API performance).
-        </div>
-      )}
 
       {/* Category Breakdown Cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -829,6 +893,22 @@ export default function ZuperStatusComparisonPage() {
             );
           })}
         </div>
+
+        <MultiSelectFilter
+          label="Zuper Status"
+          options={zuperStatusOptions}
+          selected={selectedZuperStatuses}
+          onChange={setSelectedZuperStatuses}
+          accentColor="cyan"
+        />
+
+        <MultiSelectFilter
+          label="HS Status"
+          options={hubspotStatusOptions}
+          selected={selectedHubspotStatuses}
+          onChange={setSelectedHubspotStatuses}
+          accentColor="orange"
+        />
 
         <label className="flex items-center gap-2 text-xs cursor-pointer select-none">
           <input
@@ -1025,6 +1105,18 @@ export default function ZuperStatusComparisonPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
+              {viewMode === "all" && (
+                <tr className="bg-zinc-50/80 dark:bg-skeleton/80 border-b border-t-border dark:border-t-border">
+                  <th colSpan={2} className="px-3 py-1"></th>
+                  <th className="px-3 py-1 text-center text-[10px] font-semibold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 border-l-2 border-cyan-500/30" colSpan={3}>
+                    Status
+                  </th>
+                  <th className="px-3 py-1 text-center text-[10px] font-semibold uppercase tracking-wider text-orange-600 dark:text-orange-400 border-l-2 border-orange-500/30" colSpan={6}>
+                    Dates
+                  </th>
+                  <th colSpan={2} className="px-3 py-1"></th>
+                </tr>
+              )}
               <tr className="bg-zinc-50 dark:bg-skeleton border-b border-t-border dark:border-t-border">
                 <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs" onClick={() => handleSort("projectNumber")}>
                   Project <SortIcon field="projectNumber" />
@@ -1033,17 +1125,16 @@ export default function ZuperStatusComparisonPage() {
                   Type <SortIcon field="category" />
                 </th>
 
-                {/* Status columns */}
                 {(viewMode === "status" || viewMode === "all") && (
                   <>
-                    <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs" onClick={() => handleSort("zuperStatus")}>
+                    <th className={`px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs ${viewMode === "all" ? "border-l-2 border-cyan-500/30" : ""}`} onClick={() => handleSort("zuperStatus")}>
                       Zuper Status <SortIcon field="zuperStatus" />
                     </th>
                     <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs" onClick={() => handleSort("hubspotStatus")}>
-                      HS Status <SortIcon field="hubspotStatus" />
+                      HubSpot Status <SortIcon field="hubspotStatus" />
                     </th>
-                    <th className="px-3 py-2.5 text-center font-medium text-muted/70 dark:text-foreground/80 text-xs">
-                      Sts
+                    <th className="px-3 py-2.5 text-center font-medium text-muted/70 dark:text-foreground/80 text-xs" title="Status Match">
+                      Match
                     </th>
                   </>
                 )}
@@ -1051,23 +1142,23 @@ export default function ZuperStatusComparisonPage() {
                 {/* Date columns */}
                 {(viewMode === "dates" || viewMode === "all") && (
                   <>
-                    <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs" onClick={() => handleSort("zuperScheduledStart")}>
-                      Zuper Sched. <SortIcon field="zuperScheduledStart" />
+                    <th className={`px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs ${viewMode === "all" ? "border-l-2 border-orange-500/30" : ""}`} onClick={() => handleSort("zuperScheduledStart")}>
+                      Zuper Scheduled <SortIcon field="zuperScheduledStart" />
                     </th>
                     <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs" onClick={() => handleSort("hubspotScheduleDate")}>
-                      HS Sched. <SortIcon field="hubspotScheduleDate" />
+                      HubSpot Scheduled <SortIcon field="hubspotScheduleDate" />
                     </th>
                     <th className="px-3 py-2.5 text-center font-medium text-muted/70 dark:text-foreground/80 text-xs" title="Schedule Date Match">
-                      Sch
+                      Sched Match
                     </th>
                     <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 text-xs">
-                      Zuper Compl.
+                      Zuper Completed
                     </th>
                     <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 text-xs">
-                      HS Compl.
+                      HubSpot Completed
                     </th>
                     <th className="px-3 py-2.5 text-center font-medium text-muted/70 dark:text-foreground/80 text-xs" title="Completion Date Match">
-                      Cmp
+                      Compl Match
                     </th>
                   </>
                 )}
@@ -1094,11 +1185,14 @@ export default function ZuperStatusComparisonPage() {
                     <tr
                       key={`${record.zuperJobUid}-${idx}`}
                       className={`hover:bg-zinc-50 dark:hover:bg-skeleton transition-colors ${
-                        hasAnyMismatch ? "bg-red-50/40 dark:bg-red-950/10" : ""
+                        record.isSuperseded ? "opacity-40" : hasAnyMismatch ? "bg-red-50/40 dark:bg-red-950/10" : ""
                       }`}
                     >
                       {/* Project */}
-                      <td className="px-3 py-2.5">
+                      <td className={`px-3 py-2.5 border-l-[3px] ${
+                        record.isSuperseded ? "border-l-zinc-400 dark:border-l-zinc-600" :
+                        hasAnyMismatch ? "border-l-red-500" : "border-l-green-500"
+                      }`}>
                         <div className="font-mono font-medium text-foreground dark:text-foreground text-xs">
                           {record.projectNumber}
                         </div>
@@ -1114,6 +1208,11 @@ export default function ZuperStatusComparisonPage() {
                         <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${CATEGORY_BADGE[record.category]}`}>
                           {CATEGORY_LABELS[record.category]}
                         </span>
+                        {record.isSuperseded && (
+                          <span className="ml-1 text-[9px] font-medium px-1 py-0.5 rounded bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400">
+                            Superseded
+                          </span>
+                        )}
                       </td>
 
                       {/* Status columns */}
@@ -1132,7 +1231,11 @@ export default function ZuperStatusComparisonPage() {
                             )}
                           </td>
                           <td className="px-3 py-2.5 text-center">
-                            <MatchIcon match={!record.isMismatch} />
+                            {record.isSuperseded ? (
+                              <span className="text-xs text-muted" title="Superseded — older job for this deal">-</span>
+                            ) : (
+                              <MatchIcon match={!record.isMismatch} />
+                            )}
                           </td>
                         </>
                       )}
@@ -1147,7 +1250,7 @@ export default function ZuperStatusComparisonPage() {
                             {renderShortDate(record.hubspotScheduleDate)}
                           </td>
                           <td className="px-3 py-2.5 text-center">
-                            <DateMatchBadge match={record.scheduleDateMatch} />
+                            <DateMatchBadge match={record.scheduleDateMatch} zuperDate={record.zuperScheduledStart} hubspotDate={record.hubspotScheduleDate} />
                           </td>
                           <td className="px-3 py-2.5 text-[11px] text-muted/70 dark:text-muted whitespace-nowrap">
                             {renderShortDate(record.zuperCompletedAt)}
@@ -1156,7 +1259,7 @@ export default function ZuperStatusComparisonPage() {
                             {renderShortDate(record.hubspotCompletionDate)}
                           </td>
                           <td className="px-3 py-2.5 text-center">
-                            <DateMatchBadge match={record.completionDateMatch} diffDays={record.completionDateDiffDays} />
+                            <DateMatchBadge match={record.completionDateMatch} diffDays={record.completionDateDiffDays} zuperDate={record.zuperCompletedAt} hubspotDate={record.hubspotCompletionDate} />
                           </td>
                         </>
                       )}
@@ -1530,25 +1633,28 @@ function ProjectDateCells({ slot }: { slot: CategorySlot }) {
       </>
     );
   }
-  const hasDateMismatch = slot.scheduleDateMatch === false || slot.completionDateMatch === false;
+  const schedMismatch = slot.scheduleDateMatch === false;
+  const complMismatch = slot.completionDateMatch === false;
+  const muted = "text-muted/70 dark:text-muted";
+  const red = "text-red-600 dark:text-red-400";
   return (
     <>
-      <td className={`px-2 py-2 text-[11px] whitespace-nowrap border-l border-t-border dark:border-t-border ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-muted/70 dark:text-muted"}`}>
+      <td className={`px-2 py-2 text-[11px] whitespace-nowrap border-l border-t-border dark:border-t-border ${schedMismatch ? red : muted}`}>
         {renderShortDate(slot.zuperScheduledStart)}
       </td>
-      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-muted/70 dark:text-muted"}`}>
+      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${schedMismatch ? red : muted}`}>
         {renderShortDate(slot.hubspotScheduleDate)}
       </td>
-      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-muted/70 dark:text-muted"}`}>
+      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${complMismatch ? red : muted}`}>
         {renderShortDate(slot.zuperCompletedAt)}
       </td>
-      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-muted/70 dark:text-muted"}`}>
+      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${complMismatch ? red : muted}`}>
         {renderShortDate(slot.hubspotCompletionDate)}
       </td>
       <td className="px-2 py-2 text-center">
         <div className="flex items-center justify-center gap-0.5">
-          <DateMatchBadge match={slot.scheduleDateMatch} />
-          <DateMatchBadge match={slot.completionDateMatch} diffDays={slot.completionDateDiffDays} />
+          <DateMatchBadge match={slot.scheduleDateMatch} zuperDate={slot.zuperScheduledStart} hubspotDate={slot.hubspotScheduleDate} />
+          <DateMatchBadge match={slot.completionDateMatch} diffDays={slot.completionDateDiffDays} zuperDate={slot.zuperCompletedAt} hubspotDate={slot.hubspotCompletionDate} />
         </div>
       </td>
     </>

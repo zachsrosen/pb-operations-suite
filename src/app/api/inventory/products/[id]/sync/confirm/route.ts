@@ -9,7 +9,7 @@ import {
 
 export const runtime = "nodejs";
 
-const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
+const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "EXECUTIVE"]);
 
 // POST: Generate HMAC confirmation token for sync
 export async function POST(

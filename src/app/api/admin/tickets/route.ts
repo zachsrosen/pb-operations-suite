@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
     }
 
     const user = await getUserByEmail(session.user.email);
-    if (!user || (user.role !== "ADMIN" && user.role !== "OWNER")) {
+    if (!user || (user.role !== "ADMIN" && user.role !== "EXECUTIVE")) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
@@ -75,7 +75,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const user = await getUserByEmail(session.user.email);
-    if (!user || (user.role !== "ADMIN" && user.role !== "OWNER")) {
+    if (!user || (user.role !== "ADMIN" && user.role !== "EXECUTIVE")) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 

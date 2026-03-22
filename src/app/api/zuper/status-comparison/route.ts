@@ -22,6 +22,7 @@ interface ZuperJobSummary {
   team: string | null;
   assignedTo: string | null;
   category: string;
+  isSuperseded?: boolean; // true if a newer non-cancelled job exists for the same deal+category
 }
 
 type ComparisonCategory = "site_survey" | "construction" | "inspection";
@@ -71,6 +72,8 @@ export interface ComparisonRecord {
   // Team info
   team: string | null;
   assignedTo: string | null;
+  // Superseded: older job for same deal+category where a newer non-cancelled job exists
+  isSuperseded: boolean;
 }
 
 // Project-level grouped view: all 3 categories side by side per project
@@ -95,6 +98,8 @@ export interface ProjectGroupedRecord {
     completionDateDiffDays: number | null;
     team: string | null;
     assignedTo: string | null;
+    isSuperseded?: boolean;
+    zuperCreatedAt?: string | null;
   };
   // Construction
   construction: {
@@ -111,6 +116,8 @@ export interface ProjectGroupedRecord {
     completionDateDiffDays: number | null;
     team: string | null;
     assignedTo: string | null;
+    isSuperseded?: boolean;
+    zuperCreatedAt?: string | null;
   };
   // Inspection
   inspection: {
@@ -127,6 +134,8 @@ export interface ProjectGroupedRecord {
     completionDateDiffDays: number | null;
     team: string | null;
     assignedTo: string | null;
+    isSuperseded?: boolean;
+    zuperCreatedAt?: string | null;
   };
   hasAnyMismatch: boolean;
   hasAnyDateMismatch: boolean;
@@ -304,6 +313,13 @@ function dateDiffDays(date1: string | null, date2: string | null): number | null
   }
 }
 
+/** Parse a date string to numeric timestamp for comparison. Returns 0 on failure. */
+function toTimestamp(dateStr: string | null | undefined): number {
+  if (!dateStr) return 0;
+  const t = new Date(dateStr).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
 function isWithinDateWindow(dateStr: string | null, fromDate?: string, toDate?: string): boolean {
   if (!fromDate || !toDate) return !!dateStr;
   if (!dateStr) return false;
@@ -322,13 +338,11 @@ const TERMINAL_STATUS_NAMES = new Set([
 ]);
 
 // Fetch individual job details in batches to get completion dates from status history.
-// Capped at MAX_ENRICHMENT_JOBS to avoid hundreds of extra API calls on large date ranges.
-const MAX_ENRICHMENT_JOBS = 50;
+// No cap — enriches all terminal jobs for accurate completion date comparison.
 
 interface EnrichmentResult {
   enriched: number;
   total: number;
-  truncated: boolean;
 }
 
 async function enrichCompletionDates(jobs: ZuperJobSummary[]): Promise<EnrichmentResult> {
@@ -336,21 +350,13 @@ async function enrichCompletionDates(jobs: ZuperJobSummary[]): Promise<Enrichmen
     (j) => !j.completedAt && TERMINAL_STATUS_NAMES.has(j.zuperStatus.toLowerCase())
   );
 
-  if (needsEnrichment.length === 0) return { enriched: 0, total: 0, truncated: false };
+  if (needsEnrichment.length === 0) return { enriched: 0, total: 0 };
 
-  const truncated = needsEnrichment.length > MAX_ENRICHMENT_JOBS;
-  const capped = needsEnrichment.slice(0, MAX_ENRICHMENT_JOBS);
-  if (truncated) {
-    console.warn(
-      `[status-comparison] ${needsEnrichment.length} jobs need enrichment, capping at ${MAX_ENRICHMENT_JOBS}`
-    );
-  }
+  const CONCURRENCY = 10;
+  const BATCH_DELAY_MS = 200;
 
-  const CONCURRENCY = 5;
-  const BATCH_DELAY_MS = 300;
-
-  for (let i = 0; i < capped.length; i += CONCURRENCY) {
-    const batch = capped.slice(i, i + CONCURRENCY);
+  for (let i = 0; i < needsEnrichment.length; i += CONCURRENCY) {
+    const batch = needsEnrichment.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(
       batch.map((job) => zuper.getJob(job.jobUid))
     );
@@ -365,21 +371,57 @@ async function enrichCompletionDates(jobs: ZuperJobSummary[]): Promise<Enrichmen
       }
     }
 
-    if (i + CONCURRENCY < capped.length) {
+    if (i + CONCURRENCY < needsEnrichment.length) {
       await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
     }
   }
 
-  const enrichedCount = capped.filter((j) => j.completedAt).length;
+  const enrichedCount = needsEnrichment.filter((j) => j.completedAt).length;
   console.info(
-    `[status-comparison] Enriched ${capped.length}/${needsEnrichment.length} jobs ` +
+    `[status-comparison] Enriched ${needsEnrichment.length} jobs ` +
     `(${enrichedCount} completion dates found)`
   );
 
-  return { enriched: enrichedCount, total: needsEnrichment.length, truncated };
+  return { enriched: enrichedCount, total: needsEnrichment.length };
 }
 
 // Fetch all Zuper jobs for a category with pagination (filtered by date range)
+/**
+ * Mark superseded inspection jobs: when multiple non-cancelled inspection jobs
+ * exist for the same deal, the older ones are marked superseded. HubSpot only
+ * tracks the latest inspection's status, so comparing older jobs creates false
+ * mismatches. Only applies to inspection — construction/survey re-dos are rare
+ * and worth flagging as true duplicates.
+ */
+function markSupersededJobs(jobs: ZuperJobSummary[]): void {
+  const CANCELLED = new Set(["cancelled", "canceled"]);
+
+  // Group inspection jobs by dealId (skip non-inspection, no deal link, cancelled)
+  const groups = new Map<string, ZuperJobSummary[]>();
+  for (const job of jobs) {
+    if (job.category !== "inspection") continue;
+    if (!job.hubspotDealId) continue;
+    if (CANCELLED.has(job.zuperStatus.toLowerCase())) continue;
+    const arr = groups.get(job.hubspotDealId) || [];
+    arr.push(job);
+    groups.set(job.hubspotDealId, arr);
+  }
+
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    // Sort by scheduled start descending (newest first), fallback to createdAt
+    group.sort((a, b) => {
+      const dateA = a.scheduledStart || a.createdAt || "";
+      const dateB = b.scheduledStart || b.createdAt || "";
+      return dateB.localeCompare(dateA);
+    });
+    // Mark all but the newest as superseded
+    for (let i = 1; i < group.length; i++) {
+      group[i].isSuperseded = true;
+    }
+  }
+}
+
 const MAX_PAGES = 50; // Safety cap: 50 pages × 100 jobs = 5,000 jobs max per category
 
 interface FetchResult {
@@ -556,10 +598,10 @@ export async function GET() {
       );
     }
 
-    // Default to last 3 months
+    // Default to last 6 months
     const now = new Date();
     const threeMonthsAgo = new Date(now);
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 6);
     const fromDate = threeMonthsAgo.toISOString().split("T")[0];
     const toDate = now.toISOString().split("T")[0];
 
@@ -575,15 +617,12 @@ export async function GET() {
     const inspectionJobs = inspectionResult.jobs;
     const allJobs = [...surveyJobs, ...constructionJobs, ...inspectionJobs];
 
-    // Track whether completion-date enrichment was truncated
-    const enrichmentTruncated = surveyResult.enrichment.truncated ||
-      constructionResult.enrichment.truncated ||
-      inspectionResult.enrichment.truncated;
+    // Mark older jobs as superseded when a newer one exists for the same deal+category
+    markSupersededJobs(allJobs);
+
     const enrichmentStats = {
-      truncated: enrichmentTruncated,
       enriched: surveyResult.enrichment.enriched + constructionResult.enrichment.enriched + inspectionResult.enrichment.enriched,
       total: surveyResult.enrichment.total + constructionResult.enrichment.total + inspectionResult.enrichment.total,
-      capPerCategory: MAX_ENRICHMENT_JOBS,
     };
 
     // Collect unique HubSpot deal IDs from Zuper job metadata
@@ -634,7 +673,9 @@ export async function GET() {
         zuperStatus: job.zuperStatus,
         hubspotStatus,
         category: job.category,
-        isMismatch: isStatusMismatch(job.zuperStatus, hubspotStatus, job.category),
+        // Superseded jobs are expected mismatches — don't count them
+        isMismatch: job.isSuperseded ? false : isStatusMismatch(job.zuperStatus, hubspotStatus, job.category),
+        isSuperseded: job.isSuperseded || false,
         // Zuper dates
         zuperScheduledStart: job.scheduledStart,
         zuperScheduledEnd: job.scheduledEnd,
@@ -643,10 +684,10 @@ export async function GET() {
         // HubSpot dates
         hubspotScheduleDate,
         hubspotCompletionDate,
-        // Date comparisons
-        scheduleDateMatch: compareDates(job.scheduledStart, hubspotScheduleDate),
-        completionDateMatch: compareDates(job.completedAt, hubspotCompletionDate),
-        completionDateDiffDays: dateDiffDays(job.completedAt, hubspotCompletionDate),
+        // Date comparisons (skip for superseded — dates won't match the current job)
+        scheduleDateMatch: job.isSuperseded ? null : compareDates(job.scheduledStart, hubspotScheduleDate),
+        completionDateMatch: job.isSuperseded ? null : compareDates(job.completedAt, hubspotCompletionDate),
+        completionDateDiffDays: job.isSuperseded ? null : dateDiffDays(job.completedAt, hubspotCompletionDate),
         // Team
         team: job.team,
         assignedTo: job.assignedTo,
@@ -658,10 +699,13 @@ export async function GET() {
     const scheduleDateMismatches = records.filter((r) => r.scheduleDateMatch === false).length;
     const completionDateMismatches = records.filter((r) => r.completionDateMatch === false).length;
 
+    const supersededCount = records.filter((r) => r.isSuperseded).length;
+
     const stats = {
       total: records.length,
       mismatches: records.filter((r) => r.isMismatch).length,
-      matched: records.filter((r) => !r.isMismatch).length,
+      matched: records.filter((r) => !r.isMismatch && !r.isSuperseded).length,
+      superseded: supersededCount,
       noHubspotDeal: records.filter((r) => !r.dealId).length,
       scheduleDateMismatches,
       completionDateMismatches,
@@ -830,6 +874,8 @@ export async function GET() {
       completionDateDiffDays: null,
       team: null,
       assignedTo: null,
+      isSuperseded: false,
+      zuperCreatedAt: null,
     };
 
     const projectMap = new Map<string, ProjectGroupedRecord>();
@@ -874,11 +920,30 @@ export async function GET() {
         completionDateDiffDays: record.completionDateDiffDays,
         team: record.team,
         assignedTo: record.assignedTo,
+        isSuperseded: record.isSuperseded,
+        zuperCreatedAt: record.zuperCreatedAt,
       };
 
       if (record.category === "site_survey") grouped.survey = slot;
       else if (record.category === "construction") grouped.construction = slot;
-      else if (record.category === "inspection") grouped.inspection = slot;
+      else if (record.category === "inspection") {
+        const existing = grouped.inspection;
+        if (!existing.zuperJobUid) {
+          // Empty slot — take this record
+          grouped.inspection = slot;
+        } else if (!record.isSuperseded && existing.isSuperseded) {
+          // Current record beats superseded
+          grouped.inspection = slot;
+        } else if (record.isSuperseded === (existing.isSuperseded || false)) {
+          // Same superseded state — take the newer one by timestamp
+          const existingTs = toTimestamp(existing.zuperScheduledStart || existing.zuperCreatedAt);
+          const newTs = toTimestamp(record.zuperScheduledStart || record.zuperCreatedAt);
+          if (newTs > existingTs) {
+            grouped.inspection = slot;
+          }
+        }
+        // else: existing is current and new is superseded — keep existing
+      }
 
       if (record.isMismatch) grouped.hasAnyMismatch = true;
       if (record.scheduleDateMatch === false || record.completionDateMatch === false) {

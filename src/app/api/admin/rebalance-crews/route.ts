@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
     where: { email: session.user.email },
     select: { role: true },
   });
-  if (user?.role !== "ADMIN" && user?.role !== "OWNER") {
+  if (user?.role !== "ADMIN" && user?.role !== "EXECUTIVE") {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 

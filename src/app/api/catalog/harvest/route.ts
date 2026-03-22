@@ -31,7 +31,7 @@ export async function POST() {
   if (authResult instanceof NextResponse) return authResult;
 
   const { role } = authResult;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  if (role !== "ADMIN" && role !== "EXECUTIVE") {
     return NextResponse.json(
       { error: "Admin or Owner access required" },
       { status: 403 },

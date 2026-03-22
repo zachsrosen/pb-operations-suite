@@ -14,7 +14,7 @@ export default async function LayoutRefreshPrototypeLayout({
   }
 
   const user = await getUserByEmail(session.user.email);
-  if (!user || (user.role !== "ADMIN" && user.role !== "OWNER")) {
+  if (!user || (user.role !== "ADMIN" && user.role !== "EXECUTIVE")) {
     redirect("/");
   }
 

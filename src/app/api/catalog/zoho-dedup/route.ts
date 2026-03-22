@@ -9,7 +9,7 @@ import { dedupeProducts } from "@/lib/catalog-dedupe";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
+const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "EXECUTIVE"]);
 
 // POST: Scan Zoho for duplicates
 export async function POST() {

@@ -7,7 +7,7 @@ import { buildBulkSyncConfirmation } from "@/lib/bulk-sync-confirmation";
 
 export const runtime = "nodejs";
 
-const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
+const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "EXECUTIVE"]);
 
 export async function POST(request: NextRequest) {
   if (!isCatalogSyncEnabled()) {
