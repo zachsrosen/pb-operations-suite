@@ -1,7 +1,7 @@
 // src/components/catalog/SyncModal.tsx
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import type {
   ExternalSystem,
   FieldMappingEdge,
@@ -62,6 +62,22 @@ const FIELD_LABELS: Record<string, string> = {
   componentType: "Component Type",
   deviceType: "Device Type",
 };
+
+/** Maps external system to the InternalProduct DB column used for linking. */
+const LINK_FIELDS: Record<ExternalSystem, string> = {
+  zoho: "zohoItemId",
+  hubspot: "hubspotProductId",
+  zuper: "zuperItemId",
+};
+
+/** Cached product from /api/products/cache. */
+interface CachedProduct {
+  id: number;
+  externalId: string;
+  name: string;
+  sku: string | null;
+  source: string;
+}
 
 // ── Exported pure helpers (testable) ──
 
@@ -282,6 +298,7 @@ export default function SyncModal({
   });
   const [showInSync, setShowInSync] = useState(false);
   const [outcomes, setOutcomes] = useState<SyncOperationOutcome[]>([]);
+  const [linkingSystem, setLinkingSystem] = useState<ExternalSystem | null>(null);
 
   // ── Linked systems ──
   const linkedSystems = useMemo<Record<ExternalSystem, boolean>>(() => {
@@ -465,6 +482,35 @@ export default function SyncModal({
     setStep("loading");
     loadSyncData();
   }, [loadSyncData]);
+
+  /** Link an existing external product to this InternalProduct, then reload sync data. */
+  const handleLinkProduct = useCallback(
+    async (system: ExternalSystem, externalId: string) => {
+      setLinkingSystem(system);
+      setError(null);
+      try {
+        const res = await fetch("/api/inventory/products", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: internalProductId,
+            [LINK_FIELDS[system]]: externalId,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error ?? `Failed to link ${SYSTEM_LABELS[system]} product`);
+        }
+        // Reload sync data so the column populates with real values
+        loadSyncData();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Link failed");
+      } finally {
+        setLinkingSystem(null);
+      }
+    },
+    [internalProductId, loadSyncData],
+  );
 
   // ── Execute sync ──
 
@@ -665,21 +711,22 @@ export default function SyncModal({
                       Internal
                     </th>
                     {EXTERNAL_SYSTEMS.map((sys) => (
-                      <th key={sys} className="border-l border-border px-3 py-2 text-left text-xs font-medium text-muted">
+                      <th key={sys} className="border-l border-border px-3 py-2 text-left text-xs font-medium text-muted align-top">
                         <div className="flex items-center gap-2">
                           <span>{SYSTEM_SHORT[sys]}</span>
-                          {!linkedSystems[sys] && (
-                            <label className="inline-flex items-center gap-1 text-xs">
-                              <input
-                                type="checkbox"
-                                checked={createToggles[sys]}
-                                onChange={() => handleCreateToggle(sys)}
-                                className="rounded"
-                              />
-                              <span className="text-muted">Create</span>
-                            </label>
+                          {linkedSystems[sys] && (
+                            <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500" title="Linked" />
                           )}
                         </div>
+                        {!linkedSystems[sys] && (
+                          <ProductSearchDropdown
+                            system={sys}
+                            onLink={(externalId) => handleLinkProduct(sys, externalId)}
+                            onCreateNew={() => handleCreateToggle(sys)}
+                            isCreateChecked={createToggles[sys]}
+                            isLinking={linkingSystem === sys}
+                          />
+                        )}
                       </th>
                     ))}
                   </tr>
@@ -1170,6 +1217,164 @@ function ExternalCell({
           );
         })}
       </select>
+    </div>
+  );
+}
+
+// ── Product Search Dropdown (for linking unlinked systems) ──
+
+interface ProductSearchDropdownProps {
+  system: ExternalSystem;
+  onLink: (externalId: string) => void;
+  onCreateNew: () => void;
+  isCreateChecked: boolean;
+  isLinking: boolean;
+}
+
+function ProductSearchDropdown({
+  system,
+  onLink,
+  onCreateNew,
+  isCreateChecked,
+  isLinking,
+}: ProductSearchDropdownProps) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<CachedProduct[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Debounced search
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+
+    if (query.length < 2) {
+      setResults([]);
+      setShowDropdown(false);
+      return;
+    }
+
+    setIsSearching(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/products/cache?source=${encodeURIComponent(system)}&search=${encodeURIComponent(query)}&limit=10`,
+        );
+        if (!res.ok) throw new Error("Search failed");
+        const data = await res.json();
+        setResults(data.products ?? []);
+        setShowDropdown(true);
+      } catch {
+        setResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [query, system]);
+
+  function handleSelect(product: CachedProduct) {
+    setShowDropdown(false);
+    setQuery("");
+    setResults([]);
+    onLink(product.externalId);
+  }
+
+  function handleCreateNewClick() {
+    setShowDropdown(false);
+    setQuery("");
+    setResults([]);
+    if (!isCreateChecked) {
+      onCreateNew();
+    }
+  }
+
+  if (isLinking) {
+    return (
+      <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted">
+        <div className="h-3 w-3 animate-spin rounded-full border border-orange-500 border-t-transparent" />
+        <span>Linking...</span>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={containerRef} className="relative mt-1.5">
+      <div className="flex items-center gap-1">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onFocus={() => {
+            if (query.length >= 2 && results.length > 0) setShowDropdown(true);
+          }}
+          placeholder={`Search ${SYSTEM_SHORT[system]}...`}
+          className="w-full min-w-[100px] rounded border border-border bg-surface-2 px-1.5 py-0.5 text-xs text-foreground placeholder:text-muted/50 focus:border-orange-500/50 focus:outline-none"
+        />
+        {isSearching && (
+          <div className="h-3 w-3 shrink-0 animate-spin rounded-full border border-orange-500 border-t-transparent" />
+        )}
+      </div>
+
+      {/* Dropdown */}
+      {showDropdown && (
+        <div className="absolute left-0 top-full z-50 mt-1 max-h-48 w-64 overflow-y-auto rounded-lg border border-border bg-surface-elevated shadow-xl">
+          {results.map((product) => (
+            <button
+              key={product.externalId}
+              type="button"
+              onClick={() => handleSelect(product)}
+              className="flex w-full flex-col gap-0.5 border-b border-border/30 px-3 py-2 text-left text-xs hover:bg-surface-2 last:border-b-0"
+            >
+              <span className="font-medium text-foreground">{truncate(product.name, 50)}</span>
+              {product.sku && (
+                <span className="text-muted">SKU: {truncate(product.sku, 30)}</span>
+              )}
+              <span className="text-muted/60">ID: {product.externalId}</span>
+            </button>
+          ))}
+          {results.length === 0 && query.length >= 2 && !isSearching && (
+            <div className="px-3 py-2 text-xs text-muted">No matches found</div>
+          )}
+          {/* Create new option — always visible */}
+          <button
+            type="button"
+            onClick={handleCreateNewClick}
+            className="flex w-full items-center gap-1.5 border-t border-border px-3 py-2 text-left text-xs font-medium text-orange-400 hover:bg-surface-2"
+          >
+            <span className="text-base leading-none">+</span>
+            <span>Create new in {SYSTEM_SHORT[system]}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Show Create checkbox when toggled on via Create New */}
+      {isCreateChecked && (
+        <label className="mt-1 inline-flex items-center gap-1 text-xs">
+          <input
+            type="checkbox"
+            checked
+            onChange={onCreateNew}
+            className="rounded"
+          />
+          <span className="text-muted">Create</span>
+        </label>
+      )}
     </div>
   );
 }
