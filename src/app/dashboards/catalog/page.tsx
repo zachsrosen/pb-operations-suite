@@ -1637,6 +1637,7 @@ export default function CatalogPage() {
                         sku: p.sku,
                         vendorName: p.vendorName,
                         vendorPartNumber: p.vendorPartNumber,
+                        // zohoVendorId not on PushRequest — resolved at approval time
                         unitLabel: p.unitLabel,
                         sellPrice: p.sellPrice,
                         unitCost: p.unitCost,

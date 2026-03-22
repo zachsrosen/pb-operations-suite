@@ -14,6 +14,7 @@ export interface PreviewInput {
   sku?: string | null;
   vendorName?: string | null;
   vendorPartNumber?: string | null;
+  zohoVendorId?: string | null;
   unitLabel?: string | null;
   sellPrice?: number | null;
   unitCost?: number | null;
@@ -49,6 +50,7 @@ const CORE_FIELD_MAP: Record<string, keyof PreviewInput> = {
   sku: "sku",
   vendorName: "vendorName",
   vendorPartNumber: "vendorPartNumber",
+  zohoVendorId: "zohoVendorId",
   unitLabel: "unitLabel",
   sellPrice: "sellPrice",
   unitCost: "unitCost",

@@ -77,6 +77,7 @@ export default function ReviewStep({
       sku: state.sku,
       vendorName: state.vendorName,
       vendorPartNumber: state.vendorPartNumber,
+      zohoVendorId: state.zohoVendorId,
       unitLabel: state.unitLabel,
       sellPrice: state.sellPrice ? Number(state.sellPrice) : null,
       unitCost: state.unitCost ? Number(state.unitCost) : null,
