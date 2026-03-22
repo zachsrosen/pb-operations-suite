@@ -125,6 +125,8 @@ export async function resolveZuperCategoryUid(category: string | undefined): Pro
 export interface UpsertZuperPartInput {
   brand: string;
   model: string;
+  /** Display name override. When provided, used directly instead of computing from brand+model. */
+  name?: string | null;
   description?: string | null;
   sku?: string | null;
   unitLabel?: string | null;
@@ -563,7 +565,7 @@ export async function createOrUpdateZuperPart(
   const category = trimOrUndefined(input.category) || "Parts";
   const specification = trimOrUndefined(input.specification);
 
-  const name = `${brand || ""} ${model || ""}`.trim();
+  const name = trimOrUndefined(input.name) || `${brand || ""} ${model || ""}`.trim();
   if (!name) throw new Error("Zuper item requires brand and model");
 
   const identity: ZuperIdentity = { name, sku, model, partNumber, category };

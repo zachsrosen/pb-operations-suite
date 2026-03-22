@@ -486,6 +486,7 @@ export async function executeZohoSync(sku: SkuRecord, preview: SyncPreview): Pro
     }
     const { createOrUpdateZohoItem } = await import("@/lib/zoho-inventory");
     const result = await createOrUpdateZohoItem({
+      name: planned["name"] ?? sku.name,
       brand: planned["brand"] ?? sku.brand,
       model: planned["part_number"] ?? sku.model,
       description: planned["description"] ?? sku.description,
@@ -560,6 +561,7 @@ export async function executeHubSpotSync(sku: SkuRecord, preview: SyncPreview): 
     }
 
     const result = await createOrUpdateHubSpotProduct({
+      name: planned["name"] ?? sku.name,
       brand: planned["manufacturer"] ?? sku.brand,
       model: planned["vendor_part_number"] ?? sku.model,
       description: planned["description"] ?? sku.description,
@@ -628,6 +630,7 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
     const { createOrUpdateZuperPart } = await import("@/lib/zuper-catalog");
     const specData = getSpecData(sku);
     const result = await createOrUpdateZuperPart({
+      name: planned["name"] ?? sku.name,
       brand: planned["brand"] ?? sku.brand,
       model: planned["model"] ?? sku.model,
       description: planned["description"] ?? sku.description,
@@ -638,7 +641,6 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
       sellPrice: planned["price"] != null ? Number(planned["price"]) : sku.sellPrice,
       unitCost: planned["purchase_price"] != null ? Number(planned["purchase_price"]) : sku.unitCost,
       category: getZuperCategoryValue(sku.category),
-      specification: generateZuperSpecification(sku.category, specData),
     });
 
     if (result.zuperItemId) {
