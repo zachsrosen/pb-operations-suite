@@ -84,7 +84,7 @@ describe("buildFieldRows", () => {
     expect(inSync[0].internalField).toBe("sku");
   });
 
-  it("marks virtual fields correctly and places in inSync when values match", () => {
+  it("marks generator fields with hasGenerator", () => {
     const mappings: FieldMappingEdge[] = [
       edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
     ];
@@ -93,32 +93,13 @@ describe("buildFieldRows", () => {
       snap("zoho", "name", "Test Product"),
     ];
 
-    const { inSync, attention } = buildFieldRows(mappings, snapshots, linked);
-    expect(attention).toHaveLength(0);
+    const { inSync } = buildFieldRows(mappings, snapshots, linked);
     expect(inSync).toHaveLength(1);
-    expect(inSync[0].isVirtual).toBe(true);
+    expect(inSync[0].hasGenerator).toBe(true);
     expect(inSync[0].isPushOnly).toBe(true);
   });
 
-  it("places virtual fields in attention when external value differs", () => {
-    const mappings: FieldMappingEdge[] = [
-      edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
-      edge("hubspot", "name", "_name", { direction: "push-only", generator: "skuName" }),
-    ];
-    const snapshots: FieldValueSnapshot[] = [
-      snap("internal", "_name", "HYUNDAI HiN-T440NF(BK)"),
-      snap("zoho", "name", "HYUNDAI HiN-T440NF(BK)"),
-      snap("hubspot", "name", "Hyundai 440W Solar Panels"),
-    ];
-
-    const { attention, inSync } = buildFieldRows(mappings, snapshots, linked);
-    expect(attention).toHaveLength(1);
-    expect(attention[0].isVirtual).toBe(true);
-    expect(attention[0].internalField).toBe("_name");
-    expect(inSync).toHaveLength(0);
-  });
-
-  it("marks push-only non-virtual fields", () => {
+  it("marks push-only non-generator fields", () => {
     const mappings: FieldMappingEdge[] = [
       edge("hubspot", "product_category", "category", { direction: "push-only" }),
     ];
@@ -129,7 +110,7 @@ describe("buildFieldRows", () => {
 
     const { inSync } = buildFieldRows(mappings, snapshots, linked);
     expect(inSync).toHaveLength(1);
-    expect(inSync[0].isVirtual).toBe(false);
+    expect(inSync[0].hasGenerator).toBe(false);
     expect(inSync[0].isPushOnly).toBe(true);
   });
 
@@ -244,7 +225,7 @@ describe("getProjectedValue", () => {
 // ── getImplicitWrites ──
 
 describe("getImplicitWrites", () => {
-  it("excludes virtual/generated fields (they are now visible in the table)", () => {
+  it("generator fields are NOT implicit (they are explicit rows now)", () => {
     const mappings: FieldMappingEdge[] = [
       edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
       edge("zoho", "rate", "sellPrice"),
@@ -252,6 +233,7 @@ describe("getImplicitWrites", () => {
     const selections = { "zoho:rate": "internal" as const };
 
     const writes = getImplicitWrites(mappings, selections, linked);
+    // Generator fields no longer appear in implicit writes
     expect(writes).not.toContain("Name (auto-generated)");
     expect(writes).toHaveLength(0);
   });
@@ -277,7 +259,7 @@ describe("getImplicitWrites", () => {
     expect(writes).toHaveLength(0);
   });
 
-  it("does not list virtual fields even when multiple systems are active", () => {
+  it("returns empty for generator-only mappings with active systems", () => {
     const mappings: FieldMappingEdge[] = [
       edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
       edge("hubspot", "name", "_name", { direction: "push-only", generator: "skuName" }),
@@ -290,19 +272,9 @@ describe("getImplicitWrites", () => {
     };
 
     const writes = getImplicitWrites(mappings, selections, linked);
+    // Generator fields are now explicit rows, not implicit writes
     const nameEntries = writes.filter((w) => w.startsWith("Name"));
     expect(nameEntries).toHaveLength(0);
-  });
-
-  it("returns empty when only virtual fields exist", () => {
-    const mappings: FieldMappingEdge[] = [
-      edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
-      edge("hubspot", "name", "_name", { direction: "push-only", generator: "skuName" }),
-    ];
-    const selections = {};
-
-    const writes = getImplicitWrites(mappings, selections, linked);
-    expect(writes).toHaveLength(0);
   });
 });
 
