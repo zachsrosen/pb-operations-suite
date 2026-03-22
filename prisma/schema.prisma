@@ -16,14 +16,15 @@ datasource db {
 
 enum UserRole {
   ADMIN               // Full access, user management, all dashboards
-  OWNER               // Like ADMIN but without user management (for Matt & David)
-  MANAGER             // Can schedule all types, view all data, manage operations
+  EXECUTIVE           // Executive — all routes except admin (renamed from OWNER)
+  MANAGER             // Legacy — normalizes to PROJECT_MANAGER
   OPERATIONS          // Can schedule installs/inspections, manage construction flow
   OPERATIONS_MANAGER  // Operations managers — crew oversight, scheduling, availability
   PROJECT_MANAGER     // Project managers — project tracking, scheduling, reporting
+  SALES_MANAGER       // Sales managers — team oversight, pipeline visibility, scheduling
   TECH_OPS            // Field technicians — view schedules, self-service availability
-  DESIGNER            // Design & engineering dashboard access, can update design status
-  PERMITTING          // Permitting & interconnection dashboard access
+  DESIGNER            // Legacy — normalizes to TECH_OPS
+  PERMITTING          // Legacy — normalizes to TECH_OPS
   VIEWER              // Read-only access to all dashboards
   SALES               // Only survey scheduler access (for sales team)
 }
