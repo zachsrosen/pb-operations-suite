@@ -86,10 +86,10 @@ describe("buildFieldRows", () => {
 
   it("marks name as normal bidirectional field", () => {
     const mappings: FieldMappingEdge[] = [
-      edge("zoho", "name", "skuName"),
+      edge("zoho", "name", "name"),
     ];
     const snapshots: FieldValueSnapshot[] = [
-      snap("internal", "skuName", "Test Product"),
+      snap("internal", "name", "Test Product"),
       snap("zoho", "name", "Test Product"),
     ];
 

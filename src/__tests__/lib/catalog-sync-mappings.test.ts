@@ -72,13 +72,13 @@ describe("mapping table", () => {
     expect(edges.length).toBeGreaterThan(15);
   });
 
-  it("has name as bidirectional on all three systems mapped to skuName", () => {
+  it("has name as bidirectional on all three systems mapped to name", () => {
     const edges = getAllMappingEdges();
     const nameEdges = edges.filter((e) => e.externalField === "name");
     expect(nameEdges).toHaveLength(3);
     for (const e of nameEdges) {
       expect(e.direction).toBeUndefined();
-      expect(e.internalField).toBe("skuName");
+      expect(e.internalField).toBe("name");
     }
   });
 
@@ -141,7 +141,7 @@ describe("getPullableMappings", () => {
     const pullable = getPullableMappings("hubspot", "MODULE");
     const nameEdge = pullable.find((e) => e.externalField === "name");
     expect(nameEdge).toBeDefined();
-    expect(nameEdge!.internalField).toBe("skuName");
+    expect(nameEdge!.internalField).toBe("name");
   });
 
   it("includes bidirectional fields like price", () => {

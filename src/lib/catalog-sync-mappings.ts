@@ -68,7 +68,7 @@ export const transforms: Record<string, TransformFn> = {
 
 const STATIC_EDGES: FieldMappingEdge[] = [
   // ── Zoho ──
-  { system: "zoho", externalField: "name", internalField: "skuName",
+  { system: "zoho", externalField: "name", internalField: "name",
     normalizeWith: "trimmed-string" },
   { system: "zoho", externalField: "sku", internalField: "sku",
     normalizeWith: "trimmed-string" },
@@ -90,7 +90,7 @@ const STATIC_EDGES: FieldMappingEdge[] = [
     normalizeWith: "enum-ci" },
 
   // ── HubSpot (universal) ──
-  { system: "hubspot", externalField: "name", internalField: "skuName",
+  { system: "hubspot", externalField: "name", internalField: "name",
     normalizeWith: "trimmed-string" },
   { system: "hubspot", externalField: "hs_sku", internalField: "sku",
     normalizeWith: "trimmed-string" },
@@ -112,7 +112,7 @@ const STATIC_EDGES: FieldMappingEdge[] = [
     normalizeWith: "trimmed-string" },
 
   // ── Zuper ──
-  { system: "zuper", externalField: "name", internalField: "skuName",
+  { system: "zuper", externalField: "name", internalField: "name",
     normalizeWith: "trimmed-string" },
   { system: "zuper", externalField: "sku", internalField: "sku",
     normalizeWith: "trimmed-string" },

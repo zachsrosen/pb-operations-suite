@@ -50,6 +50,7 @@ describe("catalog-sync Zuper", () => {
     category: "BATTERY",
     brand: "Tesla",
     model: "1707000-21-K",
+    name: "Tesla Powerwall 3",
     description: "Powerwall 3",
     sku: "1707000-21-K",
     vendorName: "Tesla",

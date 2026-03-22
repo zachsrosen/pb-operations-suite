@@ -39,6 +39,7 @@ const baseSku: SkuRecord = {
   category: "MODULE",
   brand: "Silfab",
   model: "SIL-410-BG",
+  name: "Silfab SIL-410-BG",
   description: "410W Solar Panel",
   sku: "SIL410BG",
   vendorName: null,
@@ -190,7 +191,7 @@ describe("derivePlan — create operations", () => {
     const createOp = createOps[0];
     if (createOp.kind !== "create") throw new Error("Expected create op");
 
-    // Standard mapped fields should be present (name is now a normal field via skuName)
+    // Standard mapped fields should be present (name is now a normal bidirectional field)
     expect(createOp.fields).toHaveProperty("sku");
     expect(createOp.fields.sku).toBe("SIL410BG");
   });

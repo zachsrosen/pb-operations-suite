@@ -39,7 +39,7 @@ const SYSTEM_SHORT: Record<ExternalSystem, string> = {
 };
 
 const FIELD_LABELS: Record<string, string> = {
-  skuName: "Name",
+  name: "Name",
   brand: "Brand",
   model: "Model",
   sku: "SKU",
