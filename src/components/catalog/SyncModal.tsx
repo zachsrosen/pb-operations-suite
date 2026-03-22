@@ -1363,8 +1363,8 @@ function ProductSearchDropdown({
         </div>
       )}
 
-      {/* Show Create checkbox when toggled on via Create New */}
-      {isCreateChecked && (
+      {/* Always-visible create option */}
+      {isCreateChecked ? (
         <label className="mt-1 inline-flex items-center gap-1 text-xs">
           <input
             type="checkbox"
@@ -1372,8 +1372,16 @@ function ProductSearchDropdown({
             onChange={onCreateNew}
             className="rounded"
           />
-          <span className="text-muted">Create</span>
+          <span className="text-muted">Create new</span>
         </label>
+      ) : (
+        <button
+          type="button"
+          onClick={handleCreateNewClick}
+          className="mt-1 text-xs font-medium text-orange-400 hover:text-orange-300"
+        >
+          + Create new in {SYSTEM_SHORT[system]}
+        </button>
       )}
     </div>
   );
