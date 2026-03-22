@@ -16,7 +16,7 @@ import {
   getDropdownOptions,
 } from "@/lib/selection-to-intents";
 import type { CellSelection, FieldRow, DropdownOption } from "@/lib/selection-to-intents";
-import { isVirtualField, normalizedEqual } from "@/lib/catalog-sync-mappings";
+import { normalizedEqual } from "@/lib/catalog-sync-mappings";
 
 // ── Types ──
 
@@ -39,8 +39,7 @@ const SYSTEM_SHORT: Record<ExternalSystem, string> = {
 };
 
 const FIELD_LABELS: Record<string, string> = {
-  _name: "Name",
-  _specification: "Specification",
+  skuName: "Name",
   brand: "Brand",
   model: "Model",
   sku: "SKU",
@@ -89,7 +88,6 @@ export function buildFieldRows(
   const inSync: FieldRow[] = [];
 
   for (const [internalField, edges] of byInternal) {
-    const isVirtual = isVirtualField(internalField);
     const isPushOnly = edges.every((e) => e.direction === "push-only");
 
     const label = FIELD_LABELS[internalField] ?? internalField;
@@ -97,7 +95,6 @@ export function buildFieldRows(
     const row: FieldRow = {
       internalField,
       label,
-      isVirtual,
       isPushOnly,
       edges,
     };
@@ -173,37 +170,6 @@ export function getImplicitWrites(
 ): string[] {
   const implicit: string[] = [];
   const seen = new Set<string>();
-
-  // Determine which systems have at least one active (non-keep) selection
-  const activeSystems = new Set<ExternalSystem>();
-  for (const [key, value] of Object.entries(selections)) {
-    if (value === "keep") continue;
-    const sys = key.split(":")[0];
-    if (sys !== "internal") activeSystems.add(sys as ExternalSystem);
-  }
-
-  // Virtual/generated fields — only include when at least one system
-  // that carries the virtual edge has an active selection
-  const virtualFields = new Map<string, Set<ExternalSystem>>();
-  for (const edge of mappings) {
-    if (isVirtualField(edge.internalField) && edge.generator) {
-      if (!virtualFields.has(edge.internalField)) {
-        virtualFields.set(edge.internalField, new Set());
-      }
-      virtualFields.get(edge.internalField)!.add(edge.system);
-    }
-  }
-
-  for (const [iField, systems] of virtualFields) {
-    // Only list if at least one system with this virtual edge is active
-    const hasActive = [...systems].some((s) => activeSystems.has(s));
-    if (!hasActive) continue;
-    const label = FIELD_LABELS[iField] ?? iField;
-    if (!seen.has(label)) {
-      seen.add(label);
-      implicit.push(`${label} (auto-generated)`);
-    }
-  }
 
   // Companion fields that auto-apply
   for (const edge of mappings) {
@@ -481,7 +447,6 @@ export default function SyncModal({
           const updated = { ...prevSel };
           for (const edge of mappings) {
             if (edge.system !== system) continue;
-            if (isVirtualField(edge.internalField)) continue;
             if (edge.direction === "push-only") continue;
             const key = `${system}:${edge.externalField}`;
             updated[key] = newVal ? "internal" : "keep";
@@ -549,7 +514,6 @@ export default function SyncModal({
         // All fields for this system should be pushed
         for (const edge of mappings) {
           if (edge.system !== sys) continue;
-          if (isVirtualField(edge.internalField)) continue;
           if (edge.direction === "push-only") continue;
           cellSelections.push({
             system: sys,
@@ -913,17 +877,14 @@ function FieldRowComponent({
       {/* Field label */}
       <td className="sticky left-0 z-10 bg-surface-elevated px-3 py-2 text-sm font-medium text-foreground whitespace-nowrap">
         {row.label}
-        {row.isVirtual && (
-          <span className="ml-1 text-xs text-muted">(auto-generated)</span>
-        )}
-        {row.isPushOnly && !row.isVirtual && (
+        {row.isPushOnly && (
           <span className="ml-1 text-xs text-muted">(push-only)</span>
         )}
       </td>
 
       {/* Internal column */}
       <td className="px-3 py-2">
-        {row.isVirtual || row.isPushOnly ? (
+        {row.isPushOnly ? (
           <span className="font-mono text-xs text-muted">{formatValue(internalValue)}</span>
         ) : readOnly ? (
           <span className="font-mono text-xs text-muted">{formatValue(internalValue)}</span>
@@ -960,7 +921,7 @@ function FieldRowComponent({
           );
         }
 
-        if (row.isVirtual || row.isPushOnly) {
+        if (row.isPushOnly) {
           return (
             <td key={sys} className="border-l border-border px-3 py-2">
               <span className="font-mono text-xs text-muted">

@@ -19,8 +19,6 @@ import {
   getPushableMappings,
   normalize,
   normalizedEqual,
-  generators,
-  isVirtualField,
 } from "./catalog-sync-mappings";
 import type { SkuRecord } from "./catalog-sync";
 import { getSpecData } from "./catalog-sync";
@@ -75,14 +73,7 @@ function buildInternalSnapshot(
     if (seen.has(edge.internalField)) continue;
     seen.add(edge.internalField);
 
-    // Virtual fields get their value from generators
-    let rawValue: string | number | null;
-    if (isVirtualField(edge.internalField) && edge.generator) {
-      const gen = generators[edge.generator];
-      rawValue = gen ? gen(sku) : null;
-    } else {
-      rawValue = getSkuFieldValue(sku, edge.internalField);
-    }
+    const rawValue = getSkuFieldValue(sku, edge.internalField);
 
     snapshots.push({
       system: "internal",
@@ -151,7 +142,6 @@ async function fetchExternalFields(
 
 /** Read a field value from the SkuRecord by field name. */
 function getSkuFieldValue(sku: SkuRecord, field: string): string | number | null {
-  if (isVirtualField(field)) return null;
   // Check spec data for category-specific fields
   const specData = getSpecData(sku);
   if (specData && field in specData) {
@@ -280,17 +270,12 @@ export function derivePlan(
     sku, intents, activeMappings, effectiveState,
   );
 
-  // Step 5: Add generator-backed push-only fields (always server-derived)
-  const generatorOps = deriveGeneratorPushes(
-    sku, activeMappings, snapshots, effectiveState,
-  );
+  const allOps: SyncOperation[] = [...pulls, ...pushesAndCreates];
 
-  const allOps: SyncOperation[] = [...pulls, ...pushesAndCreates, ...generatorOps];
-
-  // Step 6: Mark no-op pulls (pass mappings for field-level downstream check)
+  // Step 5: Mark no-op pulls (pass mappings for field-level downstream check)
   markNoOpPulls(allOps, activeMappings);
 
-  // Step 7: Compute hashes
+  // Step 6: Compute hashes
   const basePreviewHash = computeBasePreviewHash(snapshots);
   const planHash = computePlanHash(sku.id, internalPatch, allOps);
 
@@ -426,7 +411,6 @@ function computeEffectiveState(
 
   // Start with current internal values
   for (const edge of mappings) {
-    if (isVirtualField(edge.internalField)) continue;
     const current = getSkuFieldValue(sku, edge.internalField);
     effectiveState[edge.internalField] = current;
   }
@@ -434,7 +418,7 @@ function computeEffectiveState(
   // Apply pulls. For equal-normalized multi-pulls, use system precedence.
   const pullsByInternal = new Map<string, PullOperation[]>();
   for (const pull of pulls) {
-    if (pull.kind !== "pull" || isVirtualField(pull.internalField)) continue;
+    if (pull.kind !== "pull") continue;
     if (!pullsByInternal.has(pull.internalField)) pullsByInternal.set(pull.internalField, []);
     pullsByInternal.get(pull.internalField)!.push(pull);
   }
@@ -477,7 +461,7 @@ function derivePushOperations(
     );
 
     if (!isLinked) {
-      // Create operation: collect all pushable field values + generator-backed fields
+      // Create operation: collect all pushable field values
       const hasAnyPush = Object.values(systemIntents).some(
         (i) => i.direction === "push",
       );
@@ -485,15 +469,6 @@ function derivePushOperations(
         const fields: Record<string, string | number | null> = {};
         const pushableMappings = getPushableMappings(system, sku.category);
         for (const edge of pushableMappings) {
-          if (edge.direction === "push-only" && edge.generator) {
-            // Include generator-backed push-only fields in creates
-            const gen = generators[edge.generator];
-            if (gen) {
-              const effectiveSku = buildEffectiveSku(sku, effectiveState);
-              fields[edge.externalField] = gen(effectiveSku);
-            }
-            continue;
-          }
           if (edge.direction === "push-only") continue;
           fields[edge.externalField] = effectiveState[edge.internalField] ?? null;
         }
@@ -526,74 +501,6 @@ function derivePushOperations(
   }
 
   return ops;
-}
-
-// ── Generator-backed push-only fields ──
-
-function deriveGeneratorPushes(
-  sku: SkuRecord,
-  mappings: FieldMappingEdge[],
-  snapshots: FieldValueSnapshot[],
-  effectiveState: Record<string, string | number | null>,
-): SyncOperation[] {
-  const ops: SyncOperation[] = [];
-
-  // Build a temporary sku-like object with effective state overlaid
-  const effectiveSku = buildEffectiveSku(sku, effectiveState);
-
-  for (const edge of mappings) {
-    if (!edge.generator || edge.direction !== "push-only") continue;
-    if (!isSystemLinked(edge.system, sku)) continue; // handled by create ops
-
-    const gen = generators[edge.generator];
-    if (!gen) continue;
-
-    const generatedValue = gen(effectiveSku);
-    const externalSnap = snapshots.find(
-      (s) => s.system === edge.system && s.field === edge.externalField,
-    );
-
-    // Only push if the generated value differs from current external
-    if (!normalizedEqual(generatedValue, externalSnap?.rawValue, edge.normalizeWith)) {
-      ops.push({
-        kind: "push",
-        system: edge.system,
-        externalField: edge.externalField,
-        value: generatedValue,
-        source: "cascade",
-      });
-    }
-  }
-
-  return ops;
-}
-
-/** Build a SkuRecord-like object with effective state values overlaid.
- *  Used so generators read the post-patch + relay-overlay values. */
-function buildEffectiveSku(
-  sku: SkuRecord,
-  effectiveState: Record<string, string | number | null>,
-): SkuRecord {
-  const specData = getSpecData(sku) ?? {};
-  const mergedSpec = { ...specData };
-
-  // Overlay effective state onto spec data and core fields
-  const merged = { ...sku } as unknown as Record<string, unknown>;
-  for (const [field, value] of Object.entries(effectiveState)) {
-    if (field in specData) {
-      mergedSpec[field] = value;
-    } else {
-      merged[field] = value;
-    }
-  }
-
-  // Re-inject spec data into the appropriate spec relation
-  const specTable = getSpecData(sku) ? getSpecTableForSku(sku) : null;
-  if (specTable) {
-    merged[specTable] = mergedSpec;
-  }
-
-  return merged as unknown as SkuRecord;
 }
 
 function getSpecTableForSku(sku: SkuRecord): string | null {
@@ -710,9 +617,6 @@ export async function executePlan(
   // Step 2: Re-materialize outbound writes from effective state
   const effectiveState = await buildPostPatchEffectiveState(sku, plan);
 
-  // Build effective SKU for generators
-  const effectiveSku = buildEffectiveSku(sku, effectiveState);
-
   // Step 3: Execute external writes in parallel (one batch per system)
   const externalOps = plan.operations.filter(
     (op) => op.kind === "push" || op.kind === "create",
@@ -721,7 +625,7 @@ export async function executePlan(
 
   const externalOutcomes = await Promise.all(
     Array.from(systemGroups.entries()).map(([system, ops]) =>
-      executeSystemWrites(system, sku, ops, effectiveState, effectiveSku),
+      executeSystemWrites(system, sku, ops, effectiveState),
     ),
   );
   outcomes.push(...externalOutcomes);
@@ -752,7 +656,6 @@ async function applyInternalPatch(
     const existingSpec = getSpecData(sku) ?? {};
 
     for (const [field, value] of Object.entries(patch)) {
-      if (isVirtualField(field)) continue;
       if (field in existingSpec) {
         specData[field] = value;
       } else {
@@ -797,7 +700,6 @@ async function applyInternalPatch(
       status: "success",
       message: `Updated ${totalFields} field(s)`,
       fieldDetails: Object.keys(patch)
-        .filter((f) => !isVirtualField(f))
         .map((f) => ({
           externalField: f,
           source: "manual" as const,
@@ -823,7 +725,6 @@ async function buildPostPatchEffectiveState(
   // Load current SKU values
   const activeMappings = getActiveMappings(sku.category);
   for (const edge of activeMappings) {
-    if (isVirtualField(edge.internalField)) continue;
     state[edge.internalField] = getSkuFieldValue(sku, edge.internalField);
   }
 
@@ -859,7 +760,6 @@ async function executeSystemWrites(
   sku: SkuRecord,
   ops: SyncOperation[],
   effectiveState: Record<string, string | number | null>,
-  effectiveSku: SkuRecord,
 ): Promise<SyncOperationOutcome> {
   const fieldDetails: SyncOperationOutcome["fieldDetails"] = [];
   for (const op of ops) {
@@ -875,7 +775,7 @@ async function executeSystemWrites(
   try {
     const createOp = ops.find((o) => o.kind === "create");
     if (createOp && createOp.kind === "create") {
-      return await executeCreate(system, sku, createOp, effectiveSku, fieldDetails);
+      return await executeCreate(system, sku, createOp, fieldDetails);
     }
 
     const pushOps = ops.filter((o): o is Extract<SyncOperation, { kind: "push" }> =>
@@ -885,7 +785,7 @@ async function executeSystemWrites(
       return { kind: "push", system, status: "skipped", message: "No changes", fieldDetails };
     }
 
-    return await executePushes(system, sku, pushOps, effectiveState, effectiveSku, fieldDetails);
+    return await executePushes(system, sku, pushOps, effectiveState, fieldDetails);
   } catch (err) {
     return {
       kind: ops.some((o) => o.kind === "create") ? "create" : "push",
@@ -901,7 +801,6 @@ async function executeCreate(
   system: ExternalSystem,
   sku: SkuRecord,
   op: Extract<SyncOperation, { kind: "create" }>,
-  effectiveSku: SkuRecord,
   fieldDetails: SyncOperationOutcome["fieldDetails"],
 ): Promise<SyncOperationOutcome> {
   const changes = Object.entries(op.fields).map(([field, value]) => ({
@@ -919,7 +818,7 @@ async function executeCreate(
     noChanges: false,
   };
 
-  const result = await executeSystemSync(system, effectiveSku, preview);
+  const result = await executeSystemSync(system, sku, preview);
 
   return {
     kind: "create",
@@ -936,8 +835,7 @@ async function executePushes(
   system: ExternalSystem,
   sku: SkuRecord,
   ops: Extract<SyncOperation, { kind: "push" }>[],
-  effectiveState: Record<string, string | number | null>,
-  effectiveSku: SkuRecord,
+  _effectiveState: Record<string, string | number | null>,
   fieldDetails: SyncOperationOutcome["fieldDetails"],
 ): Promise<SyncOperationOutcome> {
   const changes = ops.map((op) => ({
@@ -957,7 +855,7 @@ async function executePushes(
     noChanges: false,
   };
 
-  const result = await executeSystemSync(system, effectiveSku, preview);
+  const result = await executeSystemSync(system, sku, preview);
 
   return {
     kind: "push",

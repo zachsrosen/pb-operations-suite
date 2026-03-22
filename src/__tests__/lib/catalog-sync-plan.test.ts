@@ -166,7 +166,7 @@ describe("derivePlan", () => {
 });
 
 describe("derivePlan — create operations", () => {
-  it("includes generator-backed name and specification in unlinked system creates", () => {
+  it("includes mapped fields in unlinked system creates", () => {
     // SKU with no zuperItemId → Zuper is unlinked
     const unlinkedSku: SkuRecord = {
       ...baseSku,
@@ -190,13 +190,9 @@ describe("derivePlan — create operations", () => {
     const createOp = createOps[0];
     if (createOp.kind !== "create") throw new Error("Expected create op");
 
-    // Generator-backed fields should be present
-    expect(createOp.fields).toHaveProperty("name");
-    expect(createOp.fields.name).toBe("Silfab SIL-410-BG");
-    expect(createOp.fields).toHaveProperty("specification");
-    // specification is generated from spec data — just verify it's a non-empty string
-    expect(typeof createOp.fields.specification).toBe("string");
-    expect((createOp.fields.specification as string).length).toBeGreaterThan(0);
+    // Standard mapped fields should be present (name is now a normal field via skuName)
+    expect(createOp.fields).toHaveProperty("sku");
+    expect(createOp.fields.sku).toBe("SIL410BG");
   });
 });
 

@@ -33,8 +33,7 @@ export type NormalizeWith = "number" | "trimmed-string" | "enum-ci";
 export interface FieldMappingEdge {
   system: ExternalSystem;
   externalField: string;
-  /** Internal product field name. Virtual fields prefixed with `_`
-   *  (e.g., `_name`, `_specification`) are never persisted. */
+  /** Internal product field name. */
   internalField: string;
   normalizeWith: NormalizeWith;
   /** Restricts this edge to bidirectional, push-only, or pull-only.
@@ -44,9 +43,6 @@ export interface FieldMappingEdge {
   condition?: { category: string[] };
   /** Auto-paired companion field name (e.g., vendor_name ↔ vendor_id). */
   companion?: string;
-  /** Composite field generator key (e.g., "skuName", "zuperSpecification").
-   *  Only valid on push-only edges with virtual internalField. */
-  generator?: string;
   /** Pre-write transform key (e.g., "zuperCategoryUid").
    *  Runs at execution time before the external API call. */
   transform?: string;

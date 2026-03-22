@@ -33,7 +33,6 @@ export interface FieldRow {
   internalField: string;
   label: string;
   unit?: string;
-  isVirtual: boolean;
   isPushOnly: boolean;
   edges: FieldMappingEdge[];
 }
@@ -201,7 +200,6 @@ export function computeSmartDefaults(
   for (const edgeItem of mappings) {
     if (!linkedSystems[edgeItem.system]) continue;
     if (edgeItem.direction === "push-only") continue;
-    if (edgeItem.internalField.startsWith("_")) continue; // virtual
 
     const internalSnap = snapshots.find(
       (s) => s.system === "internal" && s.field === edgeItem.internalField,
