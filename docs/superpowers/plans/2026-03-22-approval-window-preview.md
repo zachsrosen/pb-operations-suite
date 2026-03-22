@@ -18,7 +18,7 @@
 - Create: `src/lib/catalog-preview.ts`
 - Test: `src/__tests__/lib/catalog-preview.test.ts`
 
-This function takes the form state and selected systems, and returns the exact field→value map each system will receive on approval. It uses the same `STATIC_EDGES` and category-conditional edges from `catalog-sync-mappings.ts`.
+This function takes the form state and selected systems, and returns the exact field→value map each system will receive on approval. It uses the same `STATIC_EDGES` and category-conditional edges from `catalog-sync-mappings.ts`. For fields with transforms (e.g., Zuper category → UID), the preview shows both the raw internal value and a `transformed` flag so the UI can render `raw → (will be mapped)` instead of showing a misleading raw value as final. The only current transform (`zuperCategoryUid`) is async and depends on a Zuper API call, so the preview shows the human-readable category name with a "(will be mapped to system ID)" indicator rather than making an API call at preview time.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -274,7 +274,9 @@ Replace the current "System Sync Preview" section (which shows vague readiness s
 
 - [ ] **Step 1: Import `buildSystemPreview` and build preview data**
 
-In `ReviewStep.tsx`, add the import and call `buildSystemPreview` with the form state:
+In `ReviewStep.tsx`, add the import and call `buildSystemPreview` with the form state.
+
+**Note:** `CatalogFormState` currently has no `name` field. The preview input omits `name`, so `buildSystemPreview` falls back to computing `brand + model` via the `resolveValue` fallback. This matches what the approval API actually sends downstream (the create helpers compute name from brand+model when no override is provided). If a `name` field is later added to the form state, this call should pass it through.
 
 ```typescript
 import { buildSystemPreview } from "@/lib/catalog-preview";
@@ -285,7 +287,8 @@ const systemPreviews = buildSystemPreview(
     category: state.category,
     brand: state.brand,
     model: state.model,
-    name: state.name,
+    // CatalogFormState has no `name` field — preview falls back to brand+model,
+    // which matches what the approval API actually sends downstream.
     description: state.description,
     sku: state.sku,
     vendorName: state.vendorName,
@@ -372,16 +375,12 @@ function formatPreviewValue(value: string | number | null): string {
 }
 ```
 
-- [ ] **Step 4: Check that `CatalogFormState` has a `name` field**
-
-Check `src/lib/catalog-form-state.ts` for the `CatalogFormState` interface. If there's no `name` field, the preview will fall back to computing `brand + model`. This is acceptable for Phase 3 — a `name` field can be added in a follow-up if needed.
-
-- [ ] **Step 5: Verify TypeScript compiles**
+- [ ] **Step 4: Verify TypeScript compiles**
 
 Run: `npx tsc --noEmit -p tsconfig.json 2>&1 | grep -i "ReviewStep\|catalog-preview"`
 Expected: No errors in these files
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add src/components/catalog/ReviewStep.tsx
@@ -396,7 +395,7 @@ git commit -m "feat: replace readiness indicators with per-system payload previe
 - Modify: `src/lib/catalog-preview.ts`
 - Modify: `src/__tests__/lib/catalog-preview.test.ts`
 
-Add a `transformed` flag for fields where the value will be modified before reaching the external system (e.g., category → Zuper category UID, brand → case-normalized).
+Add a `transformed` flag for fields where the value will be modified before reaching the external system (e.g., Zuper category → UID). The preview shows the raw internal value with a visual indicator that it will be mapped, rather than attempting to resolve the final value (which would require async API calls). This is honest: the user sees what they entered and knows the system will transform it.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -455,20 +454,32 @@ fields.push({
 
 - [ ] **Step 4: Update ReviewStep rendering for transformed/pushOnly fields**
 
-In `ReviewStep.tsx`, add visual indicators:
+In `ReviewStep.tsx`, update the field value rendering to show transformed fields honestly:
 
 ```tsx
-{field.transformed && (
-  <span className="ml-1 text-[10px] text-amber-400/70" title="Value will be transformed for this system">
-    (mapped)
-  </span>
-)}
-{field.pushOnly && (
-  <span className="ml-1 text-[10px] text-muted/50" title="This field is push-only and cannot be pulled back">
-    (one-way)
-  </span>
-)}
+<span
+  className={`text-xs font-mono ml-2 truncate max-w-[200px] ${
+    field.missing
+      ? "text-amber-400/60 italic"
+      : "text-foreground"
+  }`}
+  title={field.value != null ? String(field.value) : undefined}
+>
+  {field.missing ? "not set" : formatPreviewValue(field.value)}
+  {field.transformed && (
+    <span className="ml-1 text-[10px] text-amber-400/70 font-sans" title="This value will be mapped to a system-specific ID before sync">
+      → mapped
+    </span>
+  )}
+  {field.pushOnly && (
+    <span className="ml-1 text-[10px] text-muted/50 font-sans" title="This field is push-only and cannot be pulled back">
+      (one-way)
+    </span>
+  )}
+</span>
 ```
+
+This replaces the simpler `formatPreviewValue` rendering from Task 2 Step 2. The `→ mapped` indicator tells the user the raw value they see will be transformed to a system ID during actual sync.
 
 - [ ] **Step 5: Run tests**
 
@@ -511,12 +522,14 @@ import { buildSystemPreview } from "@/lib/catalog-preview";
 Where the approval UI renders each pending request, compute the preview:
 
 ```typescript
+// PendingCatalogPush has `name` as a top-level field (display name override).
+// `metadata` is for category-specific spec values only.
 const preview = buildSystemPreview(
   {
     category: request.category,
     brand: request.brand,
     model: request.model,
-    name: request.metadata?.name as string | null ?? null,
+    name: request.name,
     description: request.description,
     sku: request.sku,
     vendorName: request.vendorName,
