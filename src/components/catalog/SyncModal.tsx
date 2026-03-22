@@ -24,7 +24,7 @@ type Step = "loading" | "table" | "executing" | "results";
 
 /** Per-cell selection keyed by `${system}:${externalField}` for external columns
  *  or `internal:${internalField}` for the internal column. */
-type SelectionMap = Record<string, "keep" | "internal" | ExternalSystem>;
+type SelectionMap = Record<string, "keep" | "internal" | "auto-generated" | ExternalSystem>;
 
 const SYSTEM_LABELS: Record<ExternalSystem, string> = {
   zoho: "Zoho Inventory",
@@ -157,7 +157,7 @@ export function buildFieldRows(
  * Get the projected value for a cell given the selected source.
  */
 export function getProjectedValue(
-  source: "keep" | "internal" | ExternalSystem,
+  source: "keep" | "internal" | "auto-generated" | ExternalSystem,
   internalField: string,
   externalField: string,
   system: ExternalSystem,
@@ -167,7 +167,7 @@ export function getProjectedValue(
   if (source === "keep") {
     return getSnapshotValue(snapshots, system, externalField);
   }
-  if (source === "internal") {
+  if (source === "internal" || source === "auto-generated") {
     return getSnapshotValue(snapshots, "internal", internalField);
   }
   // Source is another external system — find its value for this internalField
@@ -388,7 +388,7 @@ export default function SyncModal({
     // Pass 1: Internal column selections (highest priority)
     for (const [key, value] of Object.entries(selections)) {
       if (!key.startsWith("internal:")) continue;
-      if (value === "keep" || value === "internal") continue;
+      if (value === "keep" || value === "internal" || value === "auto-generated") continue;
       const internalField = key.split(":")[1];
       locked[internalField] = value as ExternalSystem;
     }
@@ -398,7 +398,7 @@ export default function SyncModal({
     // cell has picked another external source (relay). That source locks the row.
     for (const [key, value] of Object.entries(selections)) {
       if (key.startsWith("internal:")) continue;
-      if (value === "keep" || value === "internal") continue;
+      if (value === "keep" || value === "internal" || value === "auto-generated") continue;
       // value is an ExternalSystem (relay source)
       const parts = key.split(":");
       const cellSystem = parts[0] as ExternalSystem;
@@ -420,7 +420,7 @@ export default function SyncModal({
   // ── Handlers ──
 
   const handleSelectionChange = useCallback(
-    (key: string, value: "keep" | "internal" | ExternalSystem) => {
+    (key: string, value: "keep" | "internal" | "auto-generated" | ExternalSystem) => {
       setSelections((prev) => {
         const next = { ...prev, [key]: value };
 
@@ -428,7 +428,7 @@ export default function SyncModal({
         // reset any external cells for the same field that would conflict
         if (key.startsWith("internal:")) {
           const internalField = key.split(":")[1];
-          if (value !== "keep" && value !== "internal") {
+          if (value !== "keep" && value !== "internal" && value !== "auto-generated") {
             // Lock: external cells for this field can only be keep/internal/value
             for (const sys of EXTERNAL_SYSTEMS) {
               for (const edge of mappings) {
@@ -439,6 +439,7 @@ export default function SyncModal({
                   extSel &&
                   extSel !== "keep" &&
                   extSel !== "internal" &&
+                  extSel !== "auto-generated" &&
                   extSel !== value
                 ) {
                   // Conflicting source — reset to keep
@@ -470,7 +471,9 @@ export default function SyncModal({
             // Skip non-generator push-only fields (they have no meaningful choice)
             if (edge.direction === "push-only" && !edge.generator) continue;
             const key = `${system}:${edge.externalField}`;
-            updated[key] = newVal ? "internal" : "keep";
+            // Generator fields use "auto-generated", normal fields use "internal"
+            const isGenerator = edge.direction === "push-only" && !!edge.generator;
+            updated[key] = newVal ? (isGenerator ? "auto-generated" : "internal") : "keep";
           }
           return updated;
         });
@@ -903,7 +906,7 @@ interface FieldRowComponentProps {
   createToggles: Record<ExternalSystem, boolean>;
   selections: SelectionMap;
   lockedPullSources: Record<string, ExternalSystem | null>;
-  onSelectionChange: (key: string, value: "keep" | "internal" | ExternalSystem) => void;
+  onSelectionChange: (key: string, value: "keep" | "internal" | "auto-generated" | ExternalSystem) => void;
   readOnly: boolean;
 }
 
@@ -1030,8 +1033,8 @@ interface InternalCellProps {
   snapshots: FieldValueSnapshot[];
   mappings: FieldMappingEdge[];
   linkedSystems: Record<ExternalSystem, boolean>;
-  selection: "keep" | "internal" | ExternalSystem;
-  onSelectionChange: (val: "keep" | "internal" | ExternalSystem) => void;
+  selection: "keep" | "internal" | "auto-generated" | ExternalSystem;
+  onSelectionChange: (val: "keep" | "internal" | "auto-generated" | ExternalSystem) => void;
   internalValue: string | number | null;
 }
 
@@ -1130,9 +1133,9 @@ interface ExternalCellProps {
   snapshots: FieldValueSnapshot[];
   mappings: FieldMappingEdge[];
   linkedSystems: Record<ExternalSystem, boolean>;
-  selection: "keep" | "internal" | ExternalSystem;
+  selection: "keep" | "internal" | "auto-generated" | ExternalSystem;
   lockedPullSource: ExternalSystem | null;
-  onSelectionChange: (val: "keep" | "internal" | ExternalSystem) => void;
+  onSelectionChange: (val: "keep" | "internal" | "auto-generated" | ExternalSystem) => void;
   extValue: string | number | null;
   hasGenerator?: boolean;
 }
@@ -1151,28 +1154,8 @@ function ExternalCell({
   hasGenerator,
 }: ExternalCellProps) {
   const options = useMemo(
-    () => {
-      // Generator rows only allow Keep or Auto-generated (push from internal).
-      // No cross-system relay sources — generators are push-only by definition.
-      if (hasGenerator) {
-        const currentValue = snapshots.find(
-          (s) => s.system === system && s.field === edge.externalField,
-        )?.rawValue ?? null;
-        const internalValue = snapshots.find(
-          (s) => s.system === "internal" && s.field === internalField,
-        )?.rawValue ?? null;
-        return [
-          { value: "keep" as const, label: "Keep", projectedValue: currentValue },
-          {
-            value: "internal" as const,
-            label: "Auto-generated",
-            projectedValue: internalValue,
-            disabled: internalValue === currentValue,
-          },
-        ];
-      }
-
-      return getDropdownOptions(
+    () =>
+      getDropdownOptions(
         system,
         edge.externalField,
         internalField,
@@ -1180,8 +1163,8 @@ function ExternalCell({
         snapshots,
         linkedSystems,
         lockedPullSource,
-      );
-    },
+        hasGenerator ?? false,
+      ),
     [system, edge.externalField, internalField, mappings, snapshots, linkedSystems, lockedPullSource, hasGenerator],
   );
 
@@ -1227,7 +1210,7 @@ function ExternalCell({
         value={selection}
         aria-label={`${SYSTEM_LABELS[system]} source for ${FIELD_LABELS[internalField] ?? internalField}`}
         onChange={(e) =>
-          onSelectionChange(e.target.value as "keep" | "internal" | ExternalSystem)
+          onSelectionChange(e.target.value as "keep" | "internal" | "auto-generated" | ExternalSystem)
         }
         className={`w-full rounded border px-1.5 py-0.5 text-xs bg-surface-2 text-foreground ${
           selection !== "keep"
