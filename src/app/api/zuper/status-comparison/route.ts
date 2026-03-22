@@ -288,26 +288,44 @@ function isStatusMismatch(
   );
 }
 
-// Compare two date strings (just the date portion, ignoring time)
+// HubSpot date-only properties use the portal timezone (America/Denver for PB).
+// Zuper returns UTC timestamps. Convert to Mountain Time before extracting the date
+// to avoid false 1-day mismatches at the day boundary.
+const PORTAL_TZ = "America/Denver";
+
+function toLocalDate(dateStr: string): string {
+  const d = new Date(dateStr);
+  // Use Intl to get the date in the portal timezone
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: PORTAL_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+  return parts; // Returns YYYY-MM-DD in the portal timezone
+}
+
+// Compare two date strings (just the date portion in portal timezone)
 // Returns true if they are the same day, false if different, null if either is missing
 function compareDates(date1: string | null, date2: string | null): boolean | null {
   if (!date1 || !date2) return null;
   try {
-    const d1 = new Date(date1).toISOString().split("T")[0];
-    const d2 = new Date(date2).toISOString().split("T")[0];
+    const d1 = toLocalDate(date1);
+    const d2 = toLocalDate(date2);
     return d1 === d2;
   } catch {
     return null;
   }
 }
 
-// Calculate absolute difference in days between two date strings
+// Calculate absolute difference in days between two date strings (in portal timezone)
 function dateDiffDays(date1: string | null, date2: string | null): number | null {
   if (!date1 || !date2) return null;
   try {
-    const d1 = new Date(date1);
-    const d2 = new Date(date2);
-    return Math.round(Math.abs(d1.getTime() - d2.getTime()) / (1000 * 60 * 60 * 24));
+    const d1 = toLocalDate(date1);
+    const d2 = toLocalDate(date2);
+    const ms = Math.abs(new Date(d1).getTime() - new Date(d2).getTime());
+    return Math.round(ms / (1000 * 60 * 60 * 24));
   } catch {
     return null;
   }
