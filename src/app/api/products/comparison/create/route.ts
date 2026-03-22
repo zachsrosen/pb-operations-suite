@@ -44,7 +44,7 @@ const LINK_FIELD_BY_SOURCE: Record<
 };
 
 function isAllowedRole(role: UserRole): boolean {
-  return role === "ADMIN" || role === "OWNER";
+  return role === "ADMIN" || role === "EXECUTIVE";
 }
 
 function normalizeText(value: string | null | undefined): string {

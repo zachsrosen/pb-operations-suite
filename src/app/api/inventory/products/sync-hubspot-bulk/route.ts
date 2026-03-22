@@ -16,7 +16,7 @@ import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
-const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
+const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "EXECUTIVE"]);
 const CHUNK_SIZE = 25;
 const ITEM_DELAY_MS = 200;
 const STALE_LOCK_MS = 15 * 60 * 1000; // 15 minutes

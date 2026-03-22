@@ -6,7 +6,7 @@ import AISkillsHub from "./AISkillsHub";
 
 const ALLOWED_ROLES = new Set<UserRole>([
   "ADMIN",
-  "OWNER",
+  "EXECUTIVE",
   "MANAGER",
   "OPERATIONS_MANAGER",
   "PROJECT_MANAGER",

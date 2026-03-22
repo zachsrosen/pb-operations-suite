@@ -145,7 +145,7 @@ function SOPPageInner() {
   const [editing, setEditing] = useState(false);
   const [pendingSuggestionCount, setPendingSuggestionCount] = useState(0);
 
-  const canEdit = userRole === "ADMIN" || userRole === "OWNER";
+  const canEdit = userRole === "ADMIN" || userRole === "EXECUTIVE" || userRole === "OWNER";
   const canSuggest = !!userRole && userRole !== "VIEWER" && !canEdit;
 
   /* ── Tab & Section Visibility ──────────────────────────────────────

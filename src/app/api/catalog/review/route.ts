@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   if (authResult instanceof NextResponse) return authResult;
 
   const { role } = authResult;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  if (role !== "ADMIN" && role !== "EXECUTIVE") {
     return NextResponse.json(
       { error: "Admin or Owner access required" },
       { status: 403 },
@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
   if (authResult instanceof NextResponse) return authResult;
 
   const { role, email } = authResult;
-  if (role !== "ADMIN" && role !== "OWNER") {
+  if (role !== "ADMIN" && role !== "EXECUTIVE") {
     return NextResponse.json(
       { error: "Admin or Owner access required" },
       { status: 403 },

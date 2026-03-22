@@ -3,7 +3,8 @@ import { auth } from "@/auth";
 import { prisma, getUserByEmail, getRecentActivities, getActivityTypes, ActivityType, UserRole, normalizeRole } from "@/lib/db";
 
 const ROLE_INPUT_ALIASES: Record<string, UserRole> = {
-  EXECUTIVE: "OWNER",
+  EXECUTIVE: "EXECUTIVE",
+  OWNER: "EXECUTIVE",
   UNASSIGNED: "VIEWER",
 };
 

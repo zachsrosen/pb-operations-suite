@@ -8,7 +8,7 @@ export default async function SolarCheckoutPrototypePage() {
   if (!session?.user?.email) redirect("/login?callbackUrl=/prototypes/solar-checkout");
 
   const user = await getUserByEmail(session.user.email);
-  if (!user || (user.role !== "ADMIN" && user.role !== "OWNER")) redirect("/");
+  if (!user || (user.role !== "ADMIN" && user.role !== "EXECUTIVE")) redirect("/");
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">

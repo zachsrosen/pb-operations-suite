@@ -54,8 +54,9 @@ export function UserMenu() {
     .slice(0, 2) || "?";
 
   const isAdmin = userRole === "ADMIN";
+  const isExecutive = userRole === "EXECUTIVE" || userRole === "OWNER";
   const roleLabel =
-    userRole === "OWNER" ? "EXECUTIVE" :
+    isExecutive ? "EXECUTIVE" :
     userRole === "VIEWER" ? "UNASSIGNED" :
     userRole;
 
@@ -87,7 +88,7 @@ export function UserMenu() {
             {userRole && (
               <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${
                 userRole === "ADMIN" ? "bg-red-500/20 text-red-400" :
-                userRole === "OWNER" ? "bg-amber-500/20 text-amber-400" :
+                isExecutive ? "bg-amber-500/20 text-amber-400" :
                 userRole === "SALES" ? "bg-cyan-500/20 text-cyan-400" :
                 "bg-zinc-500/20 text-muted"
               }`}>

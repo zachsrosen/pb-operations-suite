@@ -20,7 +20,7 @@ interface ImpersonationState {
 
 function formatRoleLabel(role?: string): string {
   if (!role) return "Unknown";
-  if (role === "OWNER") return "EXECUTIVE";
+  if (role === "EXECUTIVE" || role === "OWNER") return "EXECUTIVE";
   if (role === "VIEWER") return "UNASSIGNED";
   return role.replace(/_/g, " ");
 }

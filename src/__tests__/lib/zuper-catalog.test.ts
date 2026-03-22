@@ -1,4 +1,11 @@
-import { createOrUpdateZuperPart, _resetCategoryCache } from "@/lib/zuper-catalog";
+import {
+  buildZuperProductCustomFields,
+  createOrUpdateZuperPart,
+  getZuperHubSpotProductFieldKey,
+  getZuperHubSpotProductFieldLabel,
+  readZuperCustomFieldValue,
+  _resetCategoryCache,
+} from "@/lib/zuper-catalog";
 
 type MockFetch = jest.MockedFunction<typeof fetch>;
 
@@ -182,5 +189,36 @@ describe("zuper-catalog", () => {
         model: "REC-400AA",
       })
     ).rejects.toThrow(/ZUPER_API_KEY/i);
+  });
+
+  it("returns the shared HubSpot product custom field metadata", () => {
+    expect(getZuperHubSpotProductFieldKey()).toBe("hubspot_product_id");
+    expect(getZuperHubSpotProductFieldLabel()).toBe("HubSpot Product ID");
+    expect(buildZuperProductCustomFields({ hubspotProductId: "1591770479" })).toEqual({
+      hubspot_product_id: "1591770479",
+    });
+    expect(buildZuperProductCustomFields({ hubspotProductId: "   " })).toBeNull();
+  });
+
+  it("reads HubSpot product IDs from object-style Zuper custom fields", () => {
+    expect(
+      readZuperCustomFieldValue(
+        { hubspot_product_id: "1591770479" },
+        getZuperHubSpotProductFieldKey(),
+        [getZuperHubSpotProductFieldLabel()]
+      )
+    ).toBe("1591770479");
+  });
+
+  it("reads HubSpot product IDs from array-style Zuper custom fields", () => {
+    expect(
+      readZuperCustomFieldValue(
+        [
+          { label: "HubSpot Product ID", value: "1591770479", type: "SINGLE_LINE" },
+        ],
+        getZuperHubSpotProductFieldKey(),
+        [getZuperHubSpotProductFieldLabel()]
+      )
+    ).toBe("1591770479");
   });
 });

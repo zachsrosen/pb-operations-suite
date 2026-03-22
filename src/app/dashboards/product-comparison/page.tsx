@@ -1226,11 +1226,12 @@ export default function ProductComparisonPage() {
       .then(async (response) => {
         if (!response.ok) throw new Error(`Auth check failed (${response.status})`);
         const authPayload = (await response.json()) as { role?: string };
-        const allowed = (authPayload.role || "VIEWER") === "ADMIN" || (authPayload.role || "VIEWER") === "OWNER";
+        const role = authPayload.role || "VIEWER";
+        const allowed = role === "ADMIN" || role === "EXECUTIVE" || role === "OWNER";
         setAccessChecked(true);
         setIsAllowed(allowed);
         if (!allowed) {
-          setError("Admin or owner access required for this dashboard.");
+          setError("Admin or executive access required for this dashboard.");
           setLoading(false);
         }
       })

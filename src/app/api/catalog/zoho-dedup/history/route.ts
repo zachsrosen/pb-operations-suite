@@ -6,7 +6,7 @@ import { isCatalogSyncEnabled } from "@/lib/catalog-sync-confirmation";
 
 export const runtime = "nodejs";
 
-const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
+const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "EXECUTIVE"]);
 
 // GET: List past dedup runs for audit
 export async function GET() {

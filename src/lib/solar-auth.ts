@@ -15,7 +15,7 @@ import { prisma } from "./db";
 import type { UserRole } from "@/generated/prisma/enums";
 
 // ── Roles that have elevated Solar access ──────────────────
-const ELEVATED_ROLES: UserRole[] = ["ADMIN", "MANAGER", "OWNER"];
+const ELEVATED_ROLES: UserRole[] = ["ADMIN", "MANAGER", "EXECUTIVE"];
 
 // ── Rate Limiter — in-memory sliding window ────────────────
 // NOTE: This limiter is process-local. On serverless platforms (Vercel),

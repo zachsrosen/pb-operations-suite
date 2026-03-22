@@ -20,7 +20,7 @@ interface ActivityMetricWindow {
 }
 
 function isAllowedRole(role: UserRole): boolean {
-  return role === "ADMIN" || role === "OWNER";
+  return role === "ADMIN" || role === "EXECUTIVE";
 }
 
 function buildZeroSourceCounts(): SourceCountMap {

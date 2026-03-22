@@ -7,7 +7,7 @@ import { canAccessRoute, type UserRole } from "@/lib/role-permissions";
 
 const ROLES: UserRole[] = [
   "ADMIN",
-  "OWNER",
+  "EXECUTIVE",
   "OPERATIONS_MANAGER",
   "PROJECT_MANAGER",
   "OPERATIONS",
@@ -18,12 +18,13 @@ const ROLES: UserRole[] = [
 
 const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: "ADMIN",
-  OWNER: "EXECUTIVE",
+  EXECUTIVE: "EXECUTIVE",
   OPERATIONS_MANAGER: "OPS MGR",
   PROJECT_MANAGER: "PM",
   OPERATIONS: "OPS",
   TECH_OPS: "TECH OPS",
   SALES: "SALES",
+  SALES_MANAGER: "SALES MGR",
   VIEWER: "UNASSIGNED",
   MANAGER: "PM",
   DESIGNER: "TECH OPS",
@@ -32,12 +33,13 @@ const ROLE_LABELS: Record<UserRole, string> = {
 
 const ROLE_STYLES: Record<UserRole, string> = {
   ADMIN: "bg-red-500/20 text-red-300 border-red-500/30",
-  OWNER: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  EXECUTIVE: "bg-amber-500/20 text-amber-300 border-amber-500/30",
   OPERATIONS_MANAGER: "bg-orange-500/20 text-orange-300 border-orange-500/30",
   PROJECT_MANAGER: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
   OPERATIONS: "bg-orange-500/20 text-orange-300 border-orange-500/30",
   TECH_OPS: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
   SALES: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
+  SALES_MANAGER: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
   VIEWER: "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
   MANAGER: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
   DESIGNER: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",

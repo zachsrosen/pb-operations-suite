@@ -17,7 +17,7 @@ import { z } from "zod";
 
 export const runtime = "nodejs";
 
-const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
+const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "EXECUTIVE"]);
 
 const confirmationRequestSchema = z
   .object({

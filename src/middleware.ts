@@ -115,7 +115,7 @@ export default auth((req) => {
   // Never let the cookie elevate to ADMIN/OWNER. VIEWER is accepted only
   // while the dedicated impersonation-state cookie is active.
   const isAdminToken = tokenRole === "ADMIN";
-  const isSafeCookieRole = cookieRole && cookieRole !== "ADMIN" && cookieRole !== "OWNER";
+  const isSafeCookieRole = cookieRole && cookieRole !== "ADMIN" && cookieRole !== "EXECUTIVE";
   const shouldUseCookieRole =
     isAdminToken && !!isSafeCookieRole && (cookieRole !== "VIEWER" || isImpersonatingCookie);
   // Edge-runtime JWT sync gap: When sign-in happens on edge, syncRoleToToken

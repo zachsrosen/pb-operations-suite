@@ -51,7 +51,7 @@ export function resolveEffectiveRoleFromRequest(request: NextRequest, actualRole
   if (normalizedActualRole !== "ADMIN") return normalizedActualRole;
 
   const normalizedCookieRole = normalizeRole(cookieRole);
-  if (normalizedCookieRole === "ADMIN" || normalizedCookieRole === "OWNER") {
+  if (normalizedCookieRole === "ADMIN" || normalizedCookieRole === "EXECUTIVE") {
     return normalizedActualRole;
   }
   if (normalizedCookieRole === "VIEWER" && !isImpersonating) {

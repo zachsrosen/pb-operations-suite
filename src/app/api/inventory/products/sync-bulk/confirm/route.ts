@@ -10,7 +10,7 @@ import {
 
 export const runtime = "nodejs";
 
-const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "OWNER"]);
+const ALLOWED_ROLES = new Set<UserRole>(["ADMIN", "EXECUTIVE"]);
 const VALID_SYSTEMS = new Set<SyncSystem>(["zoho", "hubspot", "zuper"]);
 
 const OPERATION_BY_SYSTEM: Record<SyncSystem, BulkSyncOperation> = {
