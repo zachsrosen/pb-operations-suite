@@ -22,8 +22,8 @@ export interface CellSelection {
   system: ExternalSystem;
   /** The external field name (mapping edge key) */
   externalField: string;
-  /** Which source the user picked: "keep", "internal", "auto-generated", or an ExternalSystem */
-  source: "keep" | "internal" | "auto-generated" | ExternalSystem;
+  /** Which source the user picked: "keep", "internal", or an ExternalSystem */
+  source: "keep" | "internal" | ExternalSystem;
   /** True when this selection is for the Internal column (controls updateInternalOnPull) */
   isInternalColumn?: boolean;
 }
@@ -34,14 +34,12 @@ export interface FieldRow {
   label: string;
   unit?: string;
   isPushOnly: boolean;
-  /** True when the row has a generator (auto-computed value). */
-  hasGenerator: boolean;
   edges: FieldMappingEdge[];
 }
 
 /** Dropdown option */
 export interface DropdownOption {
-  value: "keep" | "internal" | "auto-generated" | ExternalSystem;
+  value: "keep" | "internal" | ExternalSystem;
   label: string;
   projectedValue: string | number | null;
   disabled?: boolean;
@@ -70,16 +68,6 @@ export function selectionToIntents(
 
   for (const sel of expanded) {
     if (sel.source === "keep") continue;
-
-    if (sel.source === "auto-generated") {
-      // Generator-computed value → push to target system
-      result[sel.system][sel.externalField] = {
-        direction: "push",
-        mode: "manual",
-        updateInternalOnPull: false,
-      };
-      continue;
-    }
 
     if (sel.source === "internal") {
       // Push internal value to this external system
@@ -212,30 +200,6 @@ export function computeSmartDefaults(
   for (const edgeItem of mappings) {
     if (!linkedSystems[edgeItem.system]) continue;
 
-    // Generator/virtual fields: default to auto-generated when value differs
-    if (edgeItem.direction === "push-only" && edgeItem.generator) {
-      const internalSnap = snapshots.find(
-        (s) => s.system === "internal" && s.field === edgeItem.internalField,
-      );
-      const externalSnap = snapshots.find(
-        (s) => s.system === edgeItem.system && s.field === edgeItem.externalField,
-      );
-      const internalValue = internalSnap?.rawValue ?? null;
-      const externalValue = externalSnap?.rawValue ?? null;
-
-      // If auto-generated value differs from current external, default to auto-generated
-      const source: "keep" | "auto-generated" = normalizedEqual(internalValue, externalValue, edgeItem.normalizeWith)
-        ? "keep"
-        : "auto-generated";
-
-      defaults.push({
-        system: edgeItem.system,
-        externalField: edgeItem.externalField,
-        source,
-      });
-      continue;
-    }
-
     if (edgeItem.direction === "push-only") continue;
 
     const internalSnap = snapshots.find(
@@ -283,7 +247,6 @@ export function getDropdownOptions(
   snapshots: FieldValueSnapshot[],
   linkedSystems: Record<ExternalSystem, boolean>,
   lockedPullSource: ExternalSystem | null,
-  hasGenerator: boolean = false,
 ): DropdownOption[] {
   const options: DropdownOption[] = [];
 
@@ -302,24 +265,13 @@ export function getDropdownOptions(
     (s) => s.system === "internal" && s.field === internalField,
   )?.rawValue ?? null;
 
-  if (hasGenerator) {
-    // Generator rows: replace "Internal" with "Auto-generated"
-    const display = formatDropdownValue(internalValue);
-    options.push({
-      value: "auto-generated",
-      label: `${display} (Auto-generated)`,
-      projectedValue: internalValue,
-      disabled: internalValue === currentValue,
-    });
-  } else {
-    // Normal rows: include Internal as a source
-    options.push({
-      value: "internal",
-      label: "Internal",
-      projectedValue: internalValue,
-      disabled: internalValue === currentValue,
-    });
-  }
+  // Internal as a source
+  options.push({
+    value: "internal",
+    label: "Internal",
+    projectedValue: internalValue,
+    disabled: internalValue === currentValue,
+  });
 
   // Other external systems as sources (relay)
   for (const otherSys of EXTERNAL_SYSTEMS) {
@@ -351,7 +303,3 @@ export function getDropdownOptions(
 }
 
 /** Format a snapshot value for display in dropdown labels. */
-function formatDropdownValue(val: string | number | null): string {
-  if (val === null || val === undefined || val === "") return "\u2014";
-  return String(val);
-}

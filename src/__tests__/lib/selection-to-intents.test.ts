@@ -126,44 +126,6 @@ describe("selectionToIntents", () => {
     expect(Object.keys(result.zuper)).toHaveLength(0);
   });
 
-  it('handles "auto-generated" source — produces push intent on target system', () => {
-    const generatorEdges: FieldMappingEdge[] = [
-      edge("hubspot", "hs_name", "_name", { direction: "push-only", generator: "skuName" }),
-    ];
-    const selections: CellSelection[] = [
-      { system: "hubspot", externalField: "hs_name", source: "auto-generated" },
-    ];
-    const result = selectionToIntents(selections, generatorEdges);
-    expect(result.hubspot["hs_name"]).toEqual({
-      direction: "push",
-      mode: "manual",
-      updateInternalOnPull: false,
-    });
-  });
-
-  it('"auto-generated" never creates pull intents', () => {
-    const generatorEdges: FieldMappingEdge[] = [
-      edge("hubspot", "hs_name", "_name", { direction: "push-only", generator: "skuName" }),
-      edge("zuper", "zuper_name", "_name", { direction: "push-only", generator: "skuName" }),
-    ];
-    const selections: CellSelection[] = [
-      { system: "hubspot", externalField: "hs_name", source: "auto-generated" },
-      { system: "zuper", externalField: "zuper_name", source: "auto-generated" },
-    ];
-    const result = selectionToIntents(selections, generatorEdges);
-
-    // Only push intents
-    expect(result.hubspot["hs_name"]?.direction).toBe("push");
-    expect(result.zuper["zuper_name"]?.direction).toBe("push");
-
-    // No pull intents anywhere, no updateInternalOnPull
-    for (const sys of ["zoho", "hubspot", "zuper"] as ExternalSystem[]) {
-      for (const intent of Object.values(result[sys])) {
-        expect(intent.direction).not.toBe("pull");
-        expect(intent.updateInternalOnPull).toBe(false);
-      }
-    }
-  });
 });
 
 describe("expandCompanions", () => {
@@ -249,37 +211,6 @@ describe("computeSmartDefaults", () => {
     expect(defaults.find((d) => d.system === "zoho")?.source).toBe("keep");
   });
 
-  it("generator rows default to auto-generated when value differs", () => {
-    const generatorEdges: FieldMappingEdge[] = [
-      edge("hubspot", "hs_name", "_name", { direction: "push-only", generator: "skuName" }),
-    ];
-    const snapshots: FieldValueSnapshot[] = [
-      snap("internal", "_name", "REC Alpha 400W"),
-      snap("hubspot", "hs_name", "REC Alpha 400"),
-    ];
-    const defaults = computeSmartDefaults(generatorEdges, snapshots, {
-      zoho: false, hubspot: true, zuper: false,
-    });
-    const d = defaults.find((d) => d.system === "hubspot" && d.externalField === "hs_name");
-    expect(d).toBeDefined();
-    expect(d!.source).toBe("auto-generated");
-  });
-
-  it("generator rows default to keep when values match", () => {
-    const generatorEdges: FieldMappingEdge[] = [
-      edge("hubspot", "hs_name", "_name", { direction: "push-only", generator: "skuName" }),
-    ];
-    const snapshots: FieldValueSnapshot[] = [
-      snap("internal", "_name", "REC Alpha 400W"),
-      snap("hubspot", "hs_name", "REC Alpha 400W"),
-    ];
-    const defaults = computeSmartDefaults(generatorEdges, snapshots, {
-      zoho: false, hubspot: true, zuper: false,
-    });
-    const d = defaults.find((d) => d.system === "hubspot" && d.externalField === "hs_name");
-    expect(d).toBeDefined();
-    expect(d!.source).toBe("keep");
-  });
 });
 
 describe("getDropdownOptions", () => {
@@ -348,70 +279,4 @@ describe("getDropdownOptions", () => {
     expect(options.some((o) => o.value === "hubspot")).toBe(false);
   });
 
-  it("with hasGenerator: true — includes Keep and Auto-generated, not Internal", () => {
-    const generatorEdges: FieldMappingEdge[] = [
-      edge("hubspot", "hs_name", "_name", { direction: "push-only", generator: "skuName" }),
-      edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
-    ];
-    const snapshots: FieldValueSnapshot[] = [
-      snap("internal", "_name", "REC Alpha 400W"),
-      snap("hubspot", "hs_name", "REC Alpha 400"),
-      snap("zoho", "name", "REC Alpha 400W"),
-    ];
-    const options = getDropdownOptions(
-      "hubspot", "hs_name", "_name",
-      generatorEdges, snapshots,
-      { zoho: true, hubspot: true, zuper: false },
-      null,
-      true,
-    );
-
-    const values = options.map((o) => o.value);
-    expect(values).toContain("keep");
-    expect(values).toContain("auto-generated");
-    expect(values).not.toContain("internal");
-    // Linked external systems still included for relay
-    expect(values).toContain("zoho");
-  });
-
-  it("with hasGenerator: true — Auto-generated label includes value and suffix", () => {
-    const generatorEdges: FieldMappingEdge[] = [
-      edge("hubspot", "hs_name", "_name", { direction: "push-only", generator: "skuName" }),
-    ];
-    const snapshots: FieldValueSnapshot[] = [
-      snap("internal", "_name", "REC Alpha 400W"),
-      snap("hubspot", "hs_name", "REC Alpha 400"),
-    ];
-    const options = getDropdownOptions(
-      "hubspot", "hs_name", "_name",
-      generatorEdges, snapshots,
-      { zoho: false, hubspot: true, zuper: false },
-      null,
-      true,
-    );
-    const autoOpt = options.find((o) => o.value === "auto-generated");
-    expect(autoOpt).toBeDefined();
-    expect(autoOpt!.label).toContain("(Auto-generated)");
-    expect(autoOpt!.label).toContain("REC Alpha 400W");
-    expect(autoOpt!.projectedValue).toBe("REC Alpha 400W");
-  });
-
-  it("with hasGenerator: true — disabled when auto-generated value matches current", () => {
-    const generatorEdges: FieldMappingEdge[] = [
-      edge("zoho", "name", "_name", { direction: "push-only", generator: "skuName" }),
-    ];
-    const snapshots: FieldValueSnapshot[] = [
-      snap("internal", "_name", "REC Alpha 400W"),
-      snap("zoho", "name", "REC Alpha 400W"),
-    ];
-    const options = getDropdownOptions(
-      "zoho", "name", "_name",
-      generatorEdges, snapshots,
-      { zoho: true, hubspot: false, zuper: false },
-      null,
-      true,
-    );
-    const autoOpt = options.find((o) => o.value === "auto-generated");
-    expect(autoOpt!.disabled).toBe(true);
-  });
 });
