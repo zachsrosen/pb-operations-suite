@@ -48,7 +48,9 @@ export function checkSolarRateLimit(key: string): NextResponse | null {
 }
 
 export function isElevatedRole(role: string): boolean {
-  return ELEVATED_ROLES.includes(role as UserRole);
+  // Normalize legacy OWNER → EXECUTIVE (enum was renamed)
+  const normalized = role === "OWNER" ? "EXECUTIVE" : role;
+  return ELEVATED_ROLES.includes(normalized as UserRole);
 }
 
 // ── CSRF Validation ────────────────────────────────────────

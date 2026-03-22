@@ -1231,7 +1231,11 @@ export default function ZuperStatusComparisonPage() {
                             )}
                           </td>
                           <td className="px-3 py-2.5 text-center">
-                            <MatchIcon match={!record.isMismatch} />
+                            {record.isSuperseded ? (
+                              <span className="text-xs text-muted" title="Superseded — older job for this deal">-</span>
+                            ) : (
+                              <MatchIcon match={!record.isMismatch} />
+                            )}
                           </td>
                         </>
                       )}

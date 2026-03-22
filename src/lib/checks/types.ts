@@ -49,6 +49,6 @@ export const VALID_SKILLS: SkillName[] = ["design-review", "install-review"];
 export const RUNNER_SKILLS: SkillName[] = ["design-review"];
 
 export const SKILL_ALLOWED_ROLES: Record<SkillName, string[]> = {
-  "design-review": ["ADMIN", "OWNER", "MANAGER", "DESIGNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"],
-  "install-review": ["ADMIN", "OWNER", "MANAGER", "OPERATIONS", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"],
+  "design-review": ["ADMIN", "EXECUTIVE", "OWNER", "MANAGER", "DESIGNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"],
+  "install-review": ["ADMIN", "EXECUTIVE", "OWNER", "MANAGER", "OPERATIONS", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"],
 };
