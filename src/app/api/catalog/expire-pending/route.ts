@@ -10,13 +10,15 @@
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma, logActivity } from "@/lib/db";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 export async function POST() {
   // ── Auth ──────────────────────────────────────────────────────────────
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
-  const { role, email } = authResult;
+  const role = normalizeRole(authResult.role as UserRole);
+  const { email } = authResult;
   if (role !== "ADMIN" && role !== "EXECUTIVE") {
     return NextResponse.json(
       { error: "Admin or Owner access required" },

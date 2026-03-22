@@ -18,13 +18,14 @@ import { harvestAll } from "@/lib/catalog-harvest";
 import { dedupeProducts } from "@/lib/catalog-dedupe";
 import { crossMatch } from "@/lib/catalog-matcher";
 import type { DedupeCluster } from "@/lib/catalog-dedupe";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 export async function POST() {
   // ── Auth ──────────────────────────────────────────────────────────────
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
-  const { role } = authResult;
+  const role = normalizeRole(authResult.role as UserRole);
   if (role !== "ADMIN" && role !== "EXECUTIVE") {
     return NextResponse.json(
       { error: "Admin or Owner access required" },

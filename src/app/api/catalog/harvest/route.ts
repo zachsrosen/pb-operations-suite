@@ -15,6 +15,7 @@ import { harvestAll, parseHarvestWarnings } from "@/lib/catalog-harvest";
 import { dedupeProducts } from "@/lib/catalog-dedupe";
 import type { DedupeCluster } from "@/lib/catalog-dedupe";
 import type { HarvestSource } from "@/lib/catalog-harvest";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 interface SourceSummary {
   source: HarvestSource;
@@ -30,7 +31,7 @@ export async function POST() {
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
-  const { role } = authResult;
+  const role = normalizeRole(authResult.role as UserRole);
   if (role !== "ADMIN" && role !== "EXECUTIVE") {
     return NextResponse.json(
       { error: "Admin or Owner access required" },

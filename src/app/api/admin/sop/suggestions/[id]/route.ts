@@ -7,6 +7,7 @@ import {
   extractRequestContext,
 } from "@/lib/audit/admin-activity";
 import { sanitizeSopContent } from "@/lib/sop-sanitize";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 /**
  * GET /api/admin/sop/suggestions/[id]
@@ -32,15 +33,14 @@ export async function GET(
     }
 
     const currentUser = await getUserByEmail(session.user.email);
-    if (
-      !currentUser ||
-      (currentUser.role !== "ADMIN" && currentUser.role !== "EXECUTIVE")
-    ) {
+    const role = currentUser?.role ? normalizeRole(currentUser.role as UserRole) : null;
+    if (role !== "ADMIN" && role !== "EXECUTIVE") {
       return NextResponse.json(
         { error: "Admin access required" },
         { status: 403 }
       );
     }
+    const adminUser = currentUser!;
 
     const { id } = await params;
 
@@ -103,15 +103,14 @@ export async function PUT(
     }
 
     const currentUser = await getUserByEmail(session.user.email);
-    if (
-      !currentUser ||
-      (currentUser.role !== "ADMIN" && currentUser.role !== "EXECUTIVE")
-    ) {
+    const role = currentUser?.role ? normalizeRole(currentUser.role as UserRole) : null;
+    if (role !== "ADMIN" && role !== "EXECUTIVE") {
       return NextResponse.json(
         { error: "Admin access required" },
         { status: 403 }
       );
     }
+    const adminUser = currentUser!;
 
     const { id } = await params;
     const body = await request.json();
@@ -152,7 +151,7 @@ export async function PUT(
             where: { id, status: "PENDING" },
             data: {
               status: "REJECTED",
-              reviewedBy: currentUser.email,
+              reviewedBy: adminUser.email,
               reviewNote: reviewNote || null,
               reviewedAt: new Date(),
             },
@@ -179,9 +178,9 @@ export async function PUT(
         await logAdminActivity({
           type: "SETTINGS_CHANGED",
           description: `Rejected SOP suggestion: ${suggestion.summary}`,
-          userId: currentUser.id,
-          userEmail: currentUser.email,
-          userName: currentUser.name || undefined,
+          userId: adminUser.id,
+          userEmail: adminUser.email,
+          userName: adminUser.name || undefined,
           entityType: "sop_suggestion",
           entityId: id,
           entityName: suggestion.summary,
@@ -229,7 +228,7 @@ export async function PUT(
           where: { id, status: "PENDING" },
           data: {
             status: "APPROVED",
-            reviewedBy: currentUser.email,
+            reviewedBy: adminUser.email,
             reviewedAt: new Date(),
           },
         });
@@ -244,7 +243,7 @@ export async function PUT(
           data: {
             content: sanitized,
             version: { increment: 1 },
-            updatedBy: currentUser.email,
+            updatedBy: adminUser.email,
           },
         });
 
@@ -259,7 +258,7 @@ export async function PUT(
           data: {
             sectionId: suggestion.sectionId,
             content: section.content,
-            editedBy: currentUser.email,
+            editedBy: adminUser.email,
             editSummary: `Approved suggestion: ${suggestion.summary}`,
           },
         });
@@ -299,9 +298,9 @@ export async function PUT(
       await logAdminActivity({
         type: "SETTINGS_CHANGED",
         description: `Approved SOP suggestion: ${suggestion.summary} → ${sectionTitle}`,
-        userId: currentUser.id,
-        userEmail: currentUser.email,
-        userName: currentUser.name || undefined,
+        userId: adminUser.id,
+        userEmail: adminUser.email,
+        userName: adminUser.name || undefined,
         entityType: "sop_suggestion",
         entityId: id,
         entityName: suggestion.summary,

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { canAccessTab, ADMIN_ONLY_SECTIONS } from "@/lib/sop-access";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 /**
  * GET /api/sop/tabs
@@ -21,7 +22,8 @@ export async function GET() {
     }
 
     const firstName = (user.name || "").split(" ")[0].toLowerCase();
-    const isAdmin = user.role === "ADMIN" || user.role === "EXECUTIVE";
+    const role = normalizeRole(user.role as UserRole);
+    const isAdmin = role === "ADMIN" || role === "EXECUTIVE";
 
     const allTabs = await prisma.sopTab.findMany({
       orderBy: { sortOrder: "asc" },
@@ -44,7 +46,7 @@ export async function GET() {
 
     // Filter tabs the user can access
     const tabs = allTabs
-      .filter((tab) => canAccessTab(tab.id, user.role, firstName))
+      .filter((tab) => canAccessTab(tab.id, role, firstName))
       .map((tab) => ({
         ...tab,
         // Strip admin-only sections for non-admins

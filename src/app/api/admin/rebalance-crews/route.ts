@@ -15,6 +15,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 // Crew definitions per location (must match CREWS in scheduler/page.tsx)
 const CREWS: Record<string, string[]> = {
@@ -89,7 +90,8 @@ export async function POST(req: NextRequest) {
     where: { email: session.user.email },
     select: { role: true },
   });
-  if (user?.role !== "ADMIN" && user?.role !== "EXECUTIVE") {
+  const role = user?.role ? normalizeRole(user.role as UserRole) : null;
+  if (role !== "ADMIN" && role !== "EXECUTIVE") {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 

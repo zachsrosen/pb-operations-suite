@@ -7,6 +7,7 @@ import {
   extractRequestContext,
 } from "@/lib/audit/admin-activity";
 import { sanitizeSopContent } from "@/lib/sop-sanitize";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 const MAX_CONTENT_LENGTH = 500_000;
 
@@ -35,15 +36,14 @@ export async function PUT(
 
     // Defense-in-depth: verify ADMIN or OWNER (route already gated by ADMIN_ONLY_ROUTES)
     const currentUser = await getUserByEmail(session.user.email);
-    if (
-      !currentUser ||
-      (currentUser.role !== "ADMIN" && currentUser.role !== "EXECUTIVE")
-    ) {
+    const role = currentUser?.role ? normalizeRole(currentUser.role as UserRole) : null;
+    if (role !== "ADMIN" && role !== "EXECUTIVE") {
       return NextResponse.json(
         { error: "Admin access required" },
         { status: 403 }
       );
     }
+    const adminUser = currentUser!;
 
     const { id } = await params;
     const body = await request.json();
@@ -90,7 +90,7 @@ export async function PUT(
         data: {
           content: sanitized,
           version: { increment: 1 },
-          updatedBy: currentUser.email,
+          updatedBy: adminUser.email,
         },
       });
 
@@ -112,7 +112,7 @@ export async function PUT(
         data: {
           sectionId: id,
           content: section.content,
-          editedBy: currentUser.email,
+          editedBy: adminUser.email,
           editSummary: editSummary || null,
         },
       });
@@ -148,9 +148,9 @@ export async function PUT(
       await logAdminActivity({
         type: "SETTINGS_CHANGED",
         description: `Edited SOP section: ${result.title}`,
-        userId: currentUser.id,
-        userEmail: currentUser.email,
-        userName: currentUser.name || undefined,
+        userId: adminUser.id,
+        userEmail: adminUser.email,
+        userName: adminUser.name || undefined,
         entityType: "sop_section",
         entityId: id,
         entityName: result.title,

@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 export default async function LayoutRefreshPrototypeLayout({
   children,
@@ -14,7 +15,8 @@ export default async function LayoutRefreshPrototypeLayout({
   }
 
   const user = await getUserByEmail(session.user.email);
-  if (!user || (user.role !== "ADMIN" && user.role !== "EXECUTIVE")) {
+  const role = user?.role ? normalizeRole(user.role as UserRole) : null;
+  if (role !== "ADMIN" && role !== "EXECUTIVE") {
     redirect("/");
   }
 

@@ -2,13 +2,15 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 export default async function SolarCheckoutPrototypePage() {
   const session = await auth();
   if (!session?.user?.email) redirect("/login?callbackUrl=/prototypes/solar-checkout");
 
   const user = await getUserByEmail(session.user.email);
-  if (!user || (user.role !== "ADMIN" && user.role !== "EXECUTIVE")) redirect("/");
+  const role = user?.role ? normalizeRole(user.role as UserRole) : null;
+  if (role !== "ADMIN" && role !== "EXECUTIVE") redirect("/");
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">

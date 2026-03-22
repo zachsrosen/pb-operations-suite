@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, prisma } from "@/lib/db";
 import { headers } from "next/headers";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 /**
  * GET /api/admin/tickets
@@ -22,7 +23,8 @@ export async function GET(request: NextRequest) {
     }
 
     const user = await getUserByEmail(session.user.email);
-    if (!user || (user.role !== "ADMIN" && user.role !== "EXECUTIVE")) {
+    const role = user?.role ? normalizeRole(user.role as UserRole) : null;
+    if (role !== "ADMIN" && role !== "EXECUTIVE") {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
@@ -75,7 +77,8 @@ export async function PUT(request: NextRequest) {
     }
 
     const user = await getUserByEmail(session.user.email);
-    if (!user || (user.role !== "ADMIN" && user.role !== "EXECUTIVE")) {
+    const role = user?.role ? normalizeRole(user.role as UserRole) : null;
+    if (role !== "ADMIN" && role !== "EXECUTIVE") {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 

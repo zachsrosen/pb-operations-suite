@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma, getUserByEmail } from "@/lib/db";
+import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
 /**
  * GET /api/admin/sop/suggestions
@@ -27,10 +28,8 @@ export async function GET(request: NextRequest) {
 
     // Defense-in-depth role check
     const currentUser = await getUserByEmail(session.user.email);
-    if (
-      !currentUser ||
-      (currentUser.role !== "ADMIN" && currentUser.role !== "EXECUTIVE")
-    ) {
+    const role = currentUser?.role ? normalizeRole(currentUser.role as UserRole) : null;
+    if (role !== "ADMIN" && role !== "EXECUTIVE") {
       return NextResponse.json(
         { error: "Admin access required" },
         { status: 403 }
