@@ -33,8 +33,9 @@ export interface FieldRow {
   internalField: string;
   label: string;
   unit?: string;
-  isVirtual: boolean;
   isPushOnly: boolean;
+  /** True when the row has a generator (auto-computed value). */
+  hasGenerator: boolean;
   edges: FieldMappingEdge[];
 }
 
@@ -200,8 +201,32 @@ export function computeSmartDefaults(
 
   for (const edgeItem of mappings) {
     if (!linkedSystems[edgeItem.system]) continue;
+
+    // Generator/virtual fields: default to auto-generated when value differs
+    if (edgeItem.direction === "push-only" && edgeItem.generator) {
+      const internalSnap = snapshots.find(
+        (s) => s.system === "internal" && s.field === edgeItem.internalField,
+      );
+      const externalSnap = snapshots.find(
+        (s) => s.system === edgeItem.system && s.field === edgeItem.externalField,
+      );
+      const internalValue = internalSnap?.rawValue ?? null;
+      const externalValue = externalSnap?.rawValue ?? null;
+
+      // If auto-generated value differs from current external, default to push
+      const source = normalizedEqual(internalValue, externalValue, edgeItem.normalizeWith)
+        ? "keep"
+        : "internal";
+
+      defaults.push({
+        system: edgeItem.system,
+        externalField: edgeItem.externalField,
+        source,
+      });
+      continue;
+    }
+
     if (edgeItem.direction === "push-only") continue;
-    if (edgeItem.internalField.startsWith("_")) continue; // virtual
 
     const internalSnap = snapshots.find(
       (s) => s.system === "internal" && s.field === edgeItem.internalField,
