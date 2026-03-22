@@ -34,6 +34,7 @@ export interface RolePermissions {
  * This keeps old DB enum values working without granting unintended access.
  */
 export function normalizeRole(role: UserRole): UserRole {
+  if ((role as string) === "OWNER") return "EXECUTIVE";
   if (role === "MANAGER") return "PROJECT_MANAGER";
   if (role === "DESIGNER" || role === "PERMITTING") return "TECH_OPS";
   return role;
@@ -55,7 +56,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canEditPermitting: true,
     canViewAllLocations: true,
   },
-  OWNER: {
+  EXECUTIVE: {
     allowedRoutes: ["*", "/dashboards/ai"], // All routes — like ADMIN but no user management
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -713,6 +714,66 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canScheduleInstalls: false,
     canScheduleInspections: false,
     canSyncZuper: false,
+    canManageUsers: false,
+    canManageAvailability: false,
+    canEditDesign: false,
+    canEditPermitting: false,
+    canViewAllLocations: true,
+  },
+  SALES_MANAGER: {
+    allowedRoutes: [
+      "/",
+      "/suites/operations",
+      "/suites/intelligence",
+      "/suites/executive",
+      // Sales & deals dashboards
+      "/dashboards/sales",
+      "/dashboards/deals",
+      "/dashboards/pipeline",
+      "/dashboards/site-survey-scheduler",
+      "/dashboards/forecast-schedule",
+      "/dashboards/forecast-timeline",
+      "/dashboards/forecast-accuracy",
+      // Operations visibility
+      "/dashboards/scheduler",
+      "/dashboards/construction-scheduler",
+      "/dashboards/inspection-scheduler",
+      "/dashboards/timeline",
+      "/dashboards/construction",
+      "/dashboards/survey-metrics",
+      // Intelligence dashboards
+      "/dashboards/at-risk",
+      "/dashboards/qc",
+      "/dashboards/alerts",
+      "/dashboards/optimizer",
+      "/dashboards/capacity",
+      "/dashboards/pe",
+      "/dashboards/project-management",
+      // Executive dashboards
+      "/dashboards/executive",
+      "/dashboards/executive-calendar",
+      "/dashboards/revenue",
+      "/dashboards/locations",
+      "/dashboards/command-center",
+      // API access
+      "/api/projects",
+      "/api/deals",
+      "/api/forecasting",
+      "/api/revenue-goals",
+      "/api/zuper/availability",
+      "/api/zuper/status",
+      "/api/zuper/jobs/lookup",
+      "/api/zuper/jobs/schedule",
+      "/api/activity/log",
+      "/api/bugs",
+      // SOP Guide
+      "/sop",
+      "/api/sop",
+    ],
+    canScheduleSurveys: true,
+    canScheduleInstalls: false,
+    canScheduleInspections: false,
+    canSyncZuper: true,
     canManageUsers: false,
     canManageAvailability: false,
     canEditDesign: false,
