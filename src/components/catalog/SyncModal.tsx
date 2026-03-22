@@ -1152,7 +1152,27 @@ function ExternalCell({
 }: ExternalCellProps) {
   const options = useMemo(
     () => {
-      const opts = getDropdownOptions(
+      // Generator rows only allow Keep or Auto-generated (push from internal).
+      // No cross-system relay sources — generators are push-only by definition.
+      if (hasGenerator) {
+        const currentValue = snapshots.find(
+          (s) => s.system === system && s.field === edge.externalField,
+        )?.rawValue ?? null;
+        const internalValue = snapshots.find(
+          (s) => s.system === "internal" && s.field === internalField,
+        )?.rawValue ?? null;
+        return [
+          { value: "keep" as const, label: "Keep", projectedValue: currentValue },
+          {
+            value: "internal" as const,
+            label: "Auto-generated",
+            projectedValue: internalValue,
+            disabled: internalValue === currentValue,
+          },
+        ];
+      }
+
+      return getDropdownOptions(
         system,
         edge.externalField,
         internalField,
@@ -1161,15 +1181,6 @@ function ExternalCell({
         linkedSystems,
         lockedPullSource,
       );
-      // For generator rows, relabel "Internal" as "Auto-generated"
-      if (hasGenerator) {
-        for (const opt of opts) {
-          if (opt.value === "internal") {
-            opt.label = "Auto-generated";
-          }
-        }
-      }
-      return opts;
     },
     [system, edge.externalField, internalField, mappings, snapshots, linkedSystems, lockedPullSource, hasGenerator],
   );
@@ -1337,65 +1348,77 @@ function ProductSearchDropdown({
 
   return (
     <div ref={containerRef} className="relative mt-1.5">
-      <div className="flex items-center gap-1">
-        <input
-          type="text"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          onFocus={() => {
-            if (query.length >= 2 && results.length > 0) setShowDropdown(true);
-          }}
-          placeholder={`Search ${SYSTEM_SHORT[system]}...`}
-          className="w-full min-w-[100px] rounded border border-border bg-surface-2 px-1.5 py-0.5 text-xs text-foreground placeholder:text-muted/50 focus:border-orange-500/50 focus:outline-none"
-        />
-        {isSearching && (
-          <div className="h-3 w-3 shrink-0 animate-spin rounded-full border border-orange-500 border-t-transparent" />
-        )}
-      </div>
-
-      {/* Dropdown */}
-      {showDropdown && (
-        <div className="absolute left-0 top-full z-50 mt-1 max-h-48 w-64 overflow-y-auto rounded-lg border border-border bg-surface-elevated shadow-xl">
-          {results.map((product) => (
-            <button
-              key={product.externalId}
-              type="button"
-              onClick={() => handleSelect(product)}
-              className="flex w-full flex-col gap-0.5 border-b border-border/30 px-3 py-2 text-left text-xs hover:bg-surface-2 last:border-b-0"
-            >
-              <span className="font-medium text-foreground">{truncate(product.name, 50)}</span>
-              {product.sku && (
-                <span className="text-muted">SKU: {truncate(product.sku, 30)}</span>
-              )}
-              <span className="text-muted/60">ID: {product.externalId}</span>
-            </button>
-          ))}
-          {results.length === 0 && query.length >= 2 && !isSearching && (
-            <div className="px-3 py-2 text-xs text-muted">No matches found</div>
-          )}
-          {/* Create new option — always visible */}
-          <button
-            type="button"
-            onClick={handleCreateNewClick}
-            className="flex w-full items-center gap-1.5 border-t border-border px-3 py-2 text-left text-xs font-medium text-orange-400 hover:bg-surface-2"
-          >
-            <span className="text-base leading-none">+</span>
-            <span>Create new in {SYSTEM_SHORT[system]}</span>
-          </button>
-        </div>
-      )}
-
-      {/* Show Create checkbox when toggled on via Create New */}
-      {isCreateChecked && (
-        <label className="mt-1 inline-flex items-center gap-1 text-xs">
+      {/* When create mode is active, show indicator instead of search */}
+      {isCreateChecked ? (
+        <label className="inline-flex items-center gap-1 text-xs">
           <input
             type="checkbox"
             checked
             onChange={onCreateNew}
             className="rounded"
           />
-          <span className="text-muted">Create</span>
+          <span className="text-muted">Create new</span>
         </label>
+      ) : (
+        <>
+          <div className="flex items-center gap-1">
+            <input
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onFocus={() => {
+                if (query.length >= 2 && results.length > 0) setShowDropdown(true);
+              }}
+              placeholder={`Search ${SYSTEM_SHORT[system]}...`}
+              className="w-full min-w-[100px] rounded border border-border bg-surface-2 px-1.5 py-0.5 text-xs text-foreground placeholder:text-muted/50 focus:border-orange-500/50 focus:outline-none"
+            />
+            {isSearching && (
+              <div className="h-3 w-3 shrink-0 animate-spin rounded-full border border-orange-500 border-t-transparent" />
+            )}
+          </div>
+
+          {/* Search results dropdown */}
+          {showDropdown && (
+            <div className="absolute left-0 top-full z-50 mt-1 max-h-48 w-64 overflow-y-auto rounded-lg border border-border bg-surface-elevated shadow-xl">
+              {results.map((product) => (
+                <button
+                  key={product.externalId}
+                  type="button"
+                  onClick={() => handleSelect(product)}
+                  className="flex w-full flex-col gap-0.5 border-b border-border/30 px-3 py-2 text-left text-xs hover:bg-surface-2 last:border-b-0"
+                >
+                  <span className="font-medium text-foreground">{truncate(product.name, 50)}</span>
+                  {product.sku && (
+                    <span className="text-muted">SKU: {truncate(product.sku, 30)}</span>
+                  )}
+                  <span className="text-muted/60">ID: {product.externalId}</span>
+                </button>
+              ))}
+              {results.length === 0 && query.length >= 2 && !isSearching && (
+                <div className="px-3 py-2 text-xs text-muted">No matches found</div>
+              )}
+              {/* Create new option inside search results too */}
+              <button
+                type="button"
+                onClick={handleCreateNewClick}
+                className="flex w-full items-center gap-1.5 border-t border-border px-3 py-2 text-left text-xs font-medium text-orange-400 hover:bg-surface-2"
+              >
+                <span className="text-base leading-none">+</span>
+                <span>Create new in {SYSTEM_SHORT[system]}</span>
+              </button>
+            </div>
+          )}
+
+          {/* Always-visible "Create new" button below the search input */}
+          <button
+            type="button"
+            onClick={handleCreateNewClick}
+            className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-orange-400 hover:text-orange-300"
+          >
+            <span className="text-sm leading-none">+</span>
+            <span>Create new in {SYSTEM_SHORT[system]}</span>
+          </button>
+        </>
       )}
     </div>
   );
