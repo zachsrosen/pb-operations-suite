@@ -293,37 +293,52 @@ function isStatusMismatch(
 // to avoid false 1-day mismatches at the day boundary.
 const PORTAL_TZ = "America/Denver";
 
-function toLocalDate(dateStr: string): string {
+/**
+ * Convert a Zuper UTC timestamp to a YYYY-MM-DD date in the portal timezone.
+ * Zuper stores full ISO timestamps (e.g. "2026-01-14T18:00:00.000Z").
+ */
+function zuperDateToLocal(dateStr: string): string {
   const d = new Date(dateStr);
-  // Use Intl to get the date in the portal timezone
-  const parts = new Intl.DateTimeFormat("en-CA", {
+  return new Intl.DateTimeFormat("en-CA", {
     timeZone: PORTAL_TZ,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
   }).format(d);
-  return parts; // Returns YYYY-MM-DD in the portal timezone
 }
 
-// Compare two date strings (just the date portion in portal timezone)
+/**
+ * Extract a YYYY-MM-DD from a HubSpot date property.
+ * HubSpot date-only properties are stored as midnight UTC (e.g. "2026-01-14"
+ * or "2026-01-14T00:00:00.000Z"). Converting to Mountain would shift them
+ * back a day, so we just take the first 10 characters.
+ */
+function hubspotDateToLocal(dateStr: string): string {
+  // If it's already YYYY-MM-DD, return as-is
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return dateStr;
+  // If it's a full ISO timestamp at midnight UTC, extract the date portion
+  return dateStr.slice(0, 10);
+}
+
+// Compare a Zuper date (UTC timestamp) with a HubSpot date (date-only property)
 // Returns true if they are the same day, false if different, null if either is missing
-function compareDates(date1: string | null, date2: string | null): boolean | null {
-  if (!date1 || !date2) return null;
+function compareDates(zuperDate: string | null, hubspotDate: string | null): boolean | null {
+  if (!zuperDate || !hubspotDate) return null;
   try {
-    const d1 = toLocalDate(date1);
-    const d2 = toLocalDate(date2);
+    const d1 = zuperDateToLocal(zuperDate);
+    const d2 = hubspotDateToLocal(hubspotDate);
     return d1 === d2;
   } catch {
     return null;
   }
 }
 
-// Calculate absolute difference in days between two date strings (in portal timezone)
-function dateDiffDays(date1: string | null, date2: string | null): number | null {
-  if (!date1 || !date2) return null;
+// Calculate absolute difference in days between a Zuper date and HubSpot date
+function dateDiffDays(zuperDate: string | null, hubspotDate: string | null): number | null {
+  if (!zuperDate || !hubspotDate) return null;
   try {
-    const d1 = toLocalDate(date1);
-    const d2 = toLocalDate(date2);
+    const d1 = zuperDateToLocal(zuperDate);
+    const d2 = hubspotDateToLocal(hubspotDate);
     const ms = Math.abs(new Date(d1).getTime() - new Date(d2).getTime());
     return Math.round(ms / (1000 * 60 * 60 * 24));
   } catch {
@@ -414,15 +429,18 @@ async function enrichCompletionDates(jobs: ZuperJobSummary[]): Promise<Enrichmen
 function markSupersededJobs(jobs: ZuperJobSummary[]): void {
   const CANCELLED = new Set(["cancelled", "canceled"]);
 
-  // Group inspection jobs by dealId (skip non-inspection, no deal link, cancelled)
+  // Group inspection jobs by projectNumber (works even without deal link).
+  // Both the original inspection and re-inspection share the same Zuper project
+  // and have the same PROJ-XXXX in their title.
   const groups = new Map<string, ZuperJobSummary[]>();
   for (const job of jobs) {
     if (job.category !== "inspection") continue;
-    if (!job.hubspotDealId) continue;
     if (CANCELLED.has(job.zuperStatus.toLowerCase())) continue;
-    const arr = groups.get(job.hubspotDealId) || [];
+    if (!job.projectNumber) continue;
+    const key = job.projectNumber; // e.g. "PROJ-7159"
+    const arr = groups.get(key) || [];
     arr.push(job);
-    groups.set(job.hubspotDealId, arr);
+    groups.set(key, arr);
   }
 
   for (const group of groups.values()) {
