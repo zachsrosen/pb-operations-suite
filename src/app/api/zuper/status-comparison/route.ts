@@ -98,6 +98,8 @@ export interface ProjectGroupedRecord {
     completionDateDiffDays: number | null;
     team: string | null;
     assignedTo: string | null;
+    isSuperseded?: boolean;
+    zuperCreatedAt?: string | null;
   };
   // Construction
   construction: {
@@ -114,6 +116,8 @@ export interface ProjectGroupedRecord {
     completionDateDiffDays: number | null;
     team: string | null;
     assignedTo: string | null;
+    isSuperseded?: boolean;
+    zuperCreatedAt?: string | null;
   };
   // Inspection
   inspection: {
@@ -130,6 +134,8 @@ export interface ProjectGroupedRecord {
     completionDateDiffDays: number | null;
     team: string | null;
     assignedTo: string | null;
+    isSuperseded?: boolean;
+    zuperCreatedAt?: string | null;
   };
   hasAnyMismatch: boolean;
   hasAnyDateMismatch: boolean;
@@ -305,6 +311,13 @@ function dateDiffDays(date1: string | null, date2: string | null): number | null
   } catch {
     return null;
   }
+}
+
+/** Parse a date string to numeric timestamp for comparison. Returns 0 on failure. */
+function toTimestamp(dateStr: string | null | undefined): number {
+  if (!dateStr) return 0;
+  const t = new Date(dateStr).getTime();
+  return Number.isNaN(t) ? 0 : t;
 }
 
 function isWithinDateWindow(dateStr: string | null, fromDate?: string, toDate?: string): boolean {
@@ -861,6 +874,8 @@ export async function GET() {
       completionDateDiffDays: null,
       team: null,
       assignedTo: null,
+      isSuperseded: false,
+      zuperCreatedAt: null,
     };
 
     const projectMap = new Map<string, ProjectGroupedRecord>();
@@ -905,11 +920,30 @@ export async function GET() {
         completionDateDiffDays: record.completionDateDiffDays,
         team: record.team,
         assignedTo: record.assignedTo,
+        isSuperseded: record.isSuperseded,
+        zuperCreatedAt: record.zuperCreatedAt,
       };
 
       if (record.category === "site_survey") grouped.survey = slot;
       else if (record.category === "construction") grouped.construction = slot;
-      else if (record.category === "inspection") grouped.inspection = slot;
+      else if (record.category === "inspection") {
+        const existing = grouped.inspection;
+        if (!existing.zuperJobUid) {
+          // Empty slot — take this record
+          grouped.inspection = slot;
+        } else if (!record.isSuperseded && existing.isSuperseded) {
+          // Current record beats superseded
+          grouped.inspection = slot;
+        } else if (record.isSuperseded === (existing.isSuperseded || false)) {
+          // Same superseded state — take the newer one by timestamp
+          const existingTs = toTimestamp(existing.zuperScheduledStart || existing.zuperCreatedAt);
+          const newTs = toTimestamp(record.zuperScheduledStart || record.zuperCreatedAt);
+          if (newTs > existingTs) {
+            grouped.inspection = slot;
+          }
+        }
+        // else: existing is current and new is superseded — keep existing
+      }
 
       if (record.isMismatch) grouped.hasAnyMismatch = true;
       if (record.scheduleDateMatch === false || record.completionDateMatch === false) {

@@ -27,7 +27,7 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const stageFilter = searchParams.get("stages")?.split(",").filter(Boolean) || [];
+    const stageFilter = searchParams.getAll("stages").filter(Boolean);
 
     // 1. Get all active projects from HubSpot (uses cache if available)
     const cacheResult = appCache.get<Project[]>(CACHE_KEYS.PROJECTS_ACTIVE);
@@ -50,7 +50,17 @@ export async function GET(request: Request) {
       return NextResponse.json({
         configured: true,
         totalProjects: 0,
-        message: "No projects found",
+        linkedCount: 0,
+        unlinkedCount: 0,
+        coveragePercent: 0,
+        linkedValue: 0,
+        unlinkedValue: 0,
+        categoryBreakdown: {},
+        linkedByStage: {},
+        unlinkedByStage: {},
+        unlinkedByLocation: {},
+        allStages,
+        unlinkedProjects: [],
       });
     }
 

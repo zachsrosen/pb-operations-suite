@@ -198,11 +198,20 @@ function statusDotColor(status: string): string {
 
 // ---- Date comparison badge ----
 
-function DateMatchBadge({ match, diffDays }: { match: boolean | null; diffDays?: number | null }) {
-  if (match === null) return <span className="text-xs text-muted">-</span>;
+function DateMatchBadge({ match, diffDays, zuperDate, hubspotDate }: {
+  match: boolean | null;
+  diffDays?: number | null;
+  zuperDate?: string | null;
+  hubspotDate?: string | null;
+}) {
+  const tooltip = zuperDate || hubspotDate
+    ? `Zuper: ${zuperDate ? renderShortDate(zuperDate) : "Missing"} | HubSpot: ${hubspotDate ? renderShortDate(hubspotDate) : "Missing"}`
+    : undefined;
+
+  if (match === null) return <span className="text-xs text-muted" title={tooltip}>-</span>;
   if (match) {
     return (
-      <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+      <span className="inline-flex items-center gap-1 text-xs text-green-600 dark:text-green-400" title={tooltip}>
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
         </svg>
@@ -210,7 +219,7 @@ function DateMatchBadge({ match, diffDays }: { match: boolean | null; diffDays?:
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400">
+    <span className="inline-flex items-center gap-1 text-xs text-red-600 dark:text-red-400" title={tooltip}>
       <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
       </svg>
@@ -296,10 +305,12 @@ export default function ZuperStatusComparisonPage() {
 
   const fetchLinkage = useCallback(async () => {
     try {
-      const params = selectedLinkageStages.length > 0
-        ? `?stages=${selectedLinkageStages.join(",")}`
-        : "";
-      const response = await fetch(`/api/zuper/linkage-coverage${params}`);
+      const params = new URLSearchParams();
+      for (const stage of selectedLinkageStages) {
+        params.append("stages", stage);
+      }
+      const qs = params.toString() ? `?${params.toString()}` : "";
+      const response = await fetch(`/api/zuper/linkage-coverage${qs}`);
       if (!response.ok) return;
       const json: LinkageCoverage = await response.json();
       if (json.configured) setLinkage(json);
@@ -1094,6 +1105,18 @@ export default function ZuperStatusComparisonPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
+              {viewMode === "all" && (
+                <tr className="bg-zinc-50/80 dark:bg-skeleton/80 border-b border-t-border dark:border-t-border">
+                  <th colSpan={2} className="px-3 py-1"></th>
+                  <th className="px-3 py-1 text-center text-[10px] font-semibold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 border-l-2 border-cyan-500/30" colSpan={3}>
+                    Status
+                  </th>
+                  <th className="px-3 py-1 text-center text-[10px] font-semibold uppercase tracking-wider text-orange-600 dark:text-orange-400 border-l-2 border-orange-500/30" colSpan={6}>
+                    Dates
+                  </th>
+                  <th colSpan={2} className="px-3 py-1"></th>
+                </tr>
+              )}
               <tr className="bg-zinc-50 dark:bg-skeleton border-b border-t-border dark:border-t-border">
                 <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs" onClick={() => handleSort("projectNumber")}>
                   Project <SortIcon field="projectNumber" />
@@ -1102,17 +1125,16 @@ export default function ZuperStatusComparisonPage() {
                   Type <SortIcon field="category" />
                 </th>
 
-                {/* Status columns */}
                 {(viewMode === "status" || viewMode === "all") && (
                   <>
-                    <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs" onClick={() => handleSort("zuperStatus")}>
+                    <th className={`px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs ${viewMode === "all" ? "border-l-2 border-cyan-500/30" : ""}`} onClick={() => handleSort("zuperStatus")}>
                       Zuper Status <SortIcon field="zuperStatus" />
                     </th>
                     <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs" onClick={() => handleSort("hubspotStatus")}>
-                      HS Status <SortIcon field="hubspotStatus" />
+                      HubSpot Status <SortIcon field="hubspotStatus" />
                     </th>
-                    <th className="px-3 py-2.5 text-center font-medium text-muted/70 dark:text-foreground/80 text-xs">
-                      Sts
+                    <th className="px-3 py-2.5 text-center font-medium text-muted/70 dark:text-foreground/80 text-xs" title="Status Match">
+                      Match
                     </th>
                   </>
                 )}
@@ -1120,23 +1142,23 @@ export default function ZuperStatusComparisonPage() {
                 {/* Date columns */}
                 {(viewMode === "dates" || viewMode === "all") && (
                   <>
-                    <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs" onClick={() => handleSort("zuperScheduledStart")}>
-                      Zuper Sched. <SortIcon field="zuperScheduledStart" />
+                    <th className={`px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs ${viewMode === "all" ? "border-l-2 border-orange-500/30" : ""}`} onClick={() => handleSort("zuperScheduledStart")}>
+                      Zuper Scheduled <SortIcon field="zuperScheduledStart" />
                     </th>
                     <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 cursor-pointer hover:text-foreground dark:hover:text-foreground text-xs" onClick={() => handleSort("hubspotScheduleDate")}>
-                      HS Sched. <SortIcon field="hubspotScheduleDate" />
+                      HubSpot Scheduled <SortIcon field="hubspotScheduleDate" />
                     </th>
                     <th className="px-3 py-2.5 text-center font-medium text-muted/70 dark:text-foreground/80 text-xs" title="Schedule Date Match">
-                      Sch
+                      Sched Match
                     </th>
                     <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 text-xs">
-                      Zuper Compl.
+                      Zuper Completed
                     </th>
                     <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 text-xs">
-                      HS Compl.
+                      HubSpot Completed
                     </th>
                     <th className="px-3 py-2.5 text-center font-medium text-muted/70 dark:text-foreground/80 text-xs" title="Completion Date Match">
-                      Cmp
+                      Compl Match
                     </th>
                   </>
                 )}
@@ -1167,7 +1189,10 @@ export default function ZuperStatusComparisonPage() {
                       }`}
                     >
                       {/* Project */}
-                      <td className="px-3 py-2.5">
+                      <td className={`px-3 py-2.5 border-l-[3px] ${
+                        record.isSuperseded ? "border-l-zinc-400 dark:border-l-zinc-600" :
+                        hasAnyMismatch ? "border-l-red-500" : "border-l-green-500"
+                      }`}>
                         <div className="font-mono font-medium text-foreground dark:text-foreground text-xs">
                           {record.projectNumber}
                         </div>
@@ -1221,7 +1246,7 @@ export default function ZuperStatusComparisonPage() {
                             {renderShortDate(record.hubspotScheduleDate)}
                           </td>
                           <td className="px-3 py-2.5 text-center">
-                            <DateMatchBadge match={record.scheduleDateMatch} />
+                            <DateMatchBadge match={record.scheduleDateMatch} zuperDate={record.zuperScheduledStart} hubspotDate={record.hubspotScheduleDate} />
                           </td>
                           <td className="px-3 py-2.5 text-[11px] text-muted/70 dark:text-muted whitespace-nowrap">
                             {renderShortDate(record.zuperCompletedAt)}
@@ -1230,7 +1255,7 @@ export default function ZuperStatusComparisonPage() {
                             {renderShortDate(record.hubspotCompletionDate)}
                           </td>
                           <td className="px-3 py-2.5 text-center">
-                            <DateMatchBadge match={record.completionDateMatch} diffDays={record.completionDateDiffDays} />
+                            <DateMatchBadge match={record.completionDateMatch} diffDays={record.completionDateDiffDays} zuperDate={record.zuperCompletedAt} hubspotDate={record.hubspotCompletionDate} />
                           </td>
                         </>
                       )}
@@ -1604,25 +1629,28 @@ function ProjectDateCells({ slot }: { slot: CategorySlot }) {
       </>
     );
   }
-  const hasDateMismatch = slot.scheduleDateMatch === false || slot.completionDateMatch === false;
+  const schedMismatch = slot.scheduleDateMatch === false;
+  const complMismatch = slot.completionDateMatch === false;
+  const muted = "text-muted/70 dark:text-muted";
+  const red = "text-red-600 dark:text-red-400";
   return (
     <>
-      <td className={`px-2 py-2 text-[11px] whitespace-nowrap border-l border-t-border dark:border-t-border ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-muted/70 dark:text-muted"}`}>
+      <td className={`px-2 py-2 text-[11px] whitespace-nowrap border-l border-t-border dark:border-t-border ${schedMismatch ? red : muted}`}>
         {renderShortDate(slot.zuperScheduledStart)}
       </td>
-      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-muted/70 dark:text-muted"}`}>
+      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${schedMismatch ? red : muted}`}>
         {renderShortDate(slot.hubspotScheduleDate)}
       </td>
-      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-muted/70 dark:text-muted"}`}>
+      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${complMismatch ? red : muted}`}>
         {renderShortDate(slot.zuperCompletedAt)}
       </td>
-      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${hasDateMismatch ? "text-red-600 dark:text-red-400" : "text-muted/70 dark:text-muted"}`}>
+      <td className={`px-2 py-2 text-[11px] whitespace-nowrap ${complMismatch ? red : muted}`}>
         {renderShortDate(slot.hubspotCompletionDate)}
       </td>
       <td className="px-2 py-2 text-center">
         <div className="flex items-center justify-center gap-0.5">
-          <DateMatchBadge match={slot.scheduleDateMatch} />
-          <DateMatchBadge match={slot.completionDateMatch} diffDays={slot.completionDateDiffDays} />
+          <DateMatchBadge match={slot.scheduleDateMatch} zuperDate={slot.zuperScheduledStart} hubspotDate={slot.hubspotScheduleDate} />
+          <DateMatchBadge match={slot.completionDateMatch} diffDays={slot.completionDateDiffDays} zuperDate={slot.zuperCompletedAt} hubspotDate={slot.hubspotCompletionDate} />
         </div>
       </td>
     </>
