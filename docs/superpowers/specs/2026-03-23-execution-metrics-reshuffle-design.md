@@ -22,7 +22,7 @@ Both tables use `renderAwaitingTable()` helper with `isPastDue` flag, `max-h-[50
 
 **Placement on target**: After the main project listing table, before page end. Order: Past Due first, Upcoming second.
 
-**Removal from source**: Delete both tables and their supporting sort state, computed data (`pastDueSurveys`, `upcomingSurveys`, `sortedPastDue`, `sortedUpcoming`), and the `renderAwaitingTable()` helper from survey-metrics. Update the stat card for "Past Due" and "Upcoming Surveys" — these summary cards can stay on metrics since they reference the counts, but the drill-down tables move.
+**Removal from source**: Delete both tables and their supporting sort state, computed data (`pastDueSurveys`, `upcomingSurveys`, `sortedPastDue`, `sortedUpcoming`), and the `renderAwaitingTable()` helper from survey-metrics. The summary stat cards for "Past Due" and "Upcoming Surveys" counts stay on metrics — only the drill-down tables move.
 
 ### Move 2: Inspection Metrics → Inspections Execution
 
@@ -35,42 +35,65 @@ Both tables use `SortHeader` component, `DealLinks` component, `max-h-[500px]` s
 **Source file**: `src/app/dashboards/inspection-metrics/page.tsx`
 **Target file**: `src/app/dashboards/inspections/page.tsx`
 
-**Placement on target**: After the main project listing, before AHJ stats section (which itself is being moved out — see Move 3). Order: Outstanding Failed first, CC Pending second.
+**Placement on target**: After the main project listing. Order: Outstanding Failed first, CC Pending second.
 
 **Removal from source**: Delete both tables, their `failedRows`/`pendingRows` computed arrays, related sort state (`failedSort`, `pendingSort`), and the `DealLinks` component (if not used elsewhere on the page — check first). Keep the "Outstanding Failures" summary stat card on metrics.
 
-### Move 3: Inspections Execution → Inspection Metrics
+### Move 3: Remove AHJ Breakdown from Inspections Execution
 
-**Section moving:**
-- **AHJ Breakdown** — simple card list showing top 15 AHJs sorted by pending count. Each row shows AHJ name, avg turnaround days, pending count (yellow), passed count (emerald). Clickable to toggle AHJ filter on the main project list. Container: `bg-surface rounded-xl border border-t-border p-4`, scrollable `max-h-[300px]`.
+The AHJ breakdown widget (top-15 card list, click-to-filter) is removed from the inspections execution page. The inspection metrics page already has a full "Performance by AHJ" sortable table with drill-down that is strictly more capable (sortable, expandable, shows FPR%, electrician/fire requirements). No need to duplicate.
 
-**Source file**: `src/app/dashboards/inspections/page.tsx`
-**Target file**: `src/app/dashboards/inspection-metrics/page.tsx`
+**What to remove from `src/app/dashboards/inspections/page.tsx`:**
+- The AHJ breakdown card and its `ahjStats` computation (`useMemo`)
+- The `filterAhjs` state variable
+- The `filterAhjs` reference in the `hasActiveFilters` check and `clearAllFilters` function
 
-**Placement on target**: The metrics page already has a "Performance by AHJ" sortable table with drill-down. The execution page's AHJ widget is a simpler summary view. Two options:
-
-- **Option A (recommended)**: Drop the simple widget entirely. The metrics page's existing AHJ table is strictly more capable (sortable, expandable, shows FPR%, electrician/fire requirements). The simple widget was useful as a quick filter on the execution page, but that filtering use case doesn't apply on the metrics page.
-- **Option B**: Place the simple widget above the detailed AHJ table as a quick-glance summary. This adds visual weight without clear value since the table already shows the same data and more.
-
-**Recommendation**: Option A — remove the AHJ breakdown widget from inspections execution and don't add it to metrics. The existing "Performance by AHJ" table on metrics already covers this.
-
-**Removal from source**: Delete the AHJ breakdown card and its `ahjStats` computation from the inspections execution page. Also remove the `filterAhjs` state and any filter logic that references it in the main project listing.
+**What to keep:**
+- The AHJ `MultiSelectFilter` dropdown in the filter bar. AHJ is a genuinely useful filter for operators (filter by jurisdiction). The dropdown stays; only the breakdown card widget goes.
 
 ## Data Considerations
 
 ### Survey tables
-The survey metrics page fetches data via `/api/hubspot/survey-metrics?days={daysWindow}` which returns `pastDueSurveys` and `upcomingSurveys` arrays. The site-survey execution page uses `useProjectData` for its main listing. Two options:
 
-- **Option A**: Add a separate fetch to the survey-metrics API from the site-survey page to get past-due and upcoming data.
-- **Option B (recommended)**: Compute past-due and upcoming from the existing `useProjectData` results, matching the same logic (scheduled date passed + not completed = past due; scheduled date future + not completed = upcoming). This avoids an extra API call and keeps the data consistent with the main listing's filters.
+The site-survey execution page uses `useProjectData` for its main listing. Compute past-due and upcoming from these results rather than adding a separate API call:
+
+```
+daysUntil = Math.floor((new Date(scheduledDate + "T12:00:00") - today) / 86400000)
+pastDue  = daysUntil < 0 && !siteSurveyCompletionDate
+upcoming = daysUntil >= 0 && !siteSurveyCompletionDate
+```
+
+**Important**: The main project listing currently filters out completed surveys. Past-due and upcoming must be computed from the **unfiltered** `projects` array (before the completion filter), not from `filteredProjects`.
+
+The `surveyor` / `siteSurveyor` field should be available on `RawProject` — verify the field name matches what the metrics API returns and map if needed.
 
 ### Inspection tables
-The inspection metrics page computes `failedRows` and `pendingRows` from its own HubSpot fetch (deals with inspection dates in a time window). The inspections execution page fetches projects in the "Inspection" stage. The failed/pending tables need deals that may be in stages beyond "Inspection" (e.g., a failed inspection on a deal that moved back to construction).
 
-- **Recommended**: Add a secondary fetch or expand the existing query to include deals with `inspectionFailDate` set (for failed) and `constructionCompleteDate` set without `inspectionPassDate` (for CC pending), regardless of current stage. This matches what the metrics page currently does.
+The inspections execution page currently only fetches projects in the "Inspection" stage. The failed/pending tables need deals across all stages (a failed inspection might be on a deal that moved back to construction, CC-pending deals are pre-inspection).
+
+**Approach**: Add a secondary fetch to `/api/hubspot/inspection-metrics` from the inspections execution page to get the `outstandingFailed` and `ccPendingInspection` arrays. These are "current state" lists (not time-window scoped), so no `days` parameter is needed. Replicating the server-side logic client-side from `useProjectData` would be fragile — the API already handles cross-stage filtering correctly.
 
 ### Shared components
-The `SortHeader`, `DealLinks`, and formatting helpers (`fmtAmount`, `fmtDateShort`) used by the inspection tables should be extracted to a shared location (e.g., `src/components/ui/SortHeader.tsx`, `src/components/ui/DealLinks.tsx`, `src/lib/format-helpers.ts`) if they don't already exist there, to avoid duplication between the metrics and execution pages.
+
+Extract to shared locations to avoid duplication:
+
+**`SortHeader`** — the two existing implementations have different APIs:
+- survey-metrics: `onSort` prop, nullable `currentKey`, larger padding, green hover
+- inspection-metrics: `onToggle` prop, non-nullable `currentKey`, smaller padding, neutral hover
+
+Shared version should use:
+- `onSort` as the callback prop name
+- `currentKey: string | null` (nullable)
+- A `compact` boolean to control sizing (compact = inspection-style `px-3 py-2 text-xs`, default = survey-style `px-4 py-3`)
+- Neutral hover by default (consistent with dashboard conventions)
+
+**`useSort`** — also diverges (default direction on new key: `"desc"` in survey, `"asc"` in inspection). Shared version should accept an optional `defaultDir` parameter, defaulting to `"asc"`.
+
+**`sortRows`** — inspection-metrics version is strictly more capable (handles booleans). Use that as the shared base.
+
+**`DealLinks`** — currently hardcodes the HubSpot portal ID (`21710069`). Shared version should accept either a full `url` prop or use the portal ID from env/constant. Also use `DealLinks` for the survey tables (replacing inline link JSX from `renderAwaitingTable()`).
+
+**Formatters** (`fmtAmount`, `fmtDateShort`) — extract to `src/lib/format-helpers.ts`.
 
 ## Resulting Page Layouts
 
@@ -83,10 +106,10 @@ The `SortHeader`, `DealLinks`, and formatting helpers (`fmtAmount`, `fmtDateShor
 
 ### Inspections Execution (after)
 1. Stat cards (Total, Pending, Avg Days, Failed)
-2. Main project listing with filters
+2. Main project listing with filters + AHJ filter dropdown (kept)
 3. **Outstanding Failed Inspections table** (red left accent)
 4. **CC Pending Inspection table** (standard)
-5. ~~AHJ breakdown~~ (removed)
+5. ~~AHJ breakdown card~~ (removed)
 
 ### Survey Metrics (after)
 1. Stat cards (Avg Turnaround, Completed, Upcoming count, Past Due count)
@@ -106,10 +129,11 @@ The `SortHeader`, `DealLinks`, and formatting helpers (`fmtAmount`, `fmtDateShor
 
 | File | Action |
 |------|--------|
-| `src/app/dashboards/site-survey/page.tsx` | Add past-due and upcoming tables + data logic |
+| `src/app/dashboards/site-survey/page.tsx` | Add past-due and upcoming tables, compute from unfiltered projects |
 | `src/app/dashboards/survey-metrics/page.tsx` | Remove past-due and upcoming tables + `renderAwaitingTable()` |
-| `src/app/dashboards/inspections/page.tsx` | Add failed/pending tables, remove AHJ breakdown + `filterAhjs` state |
+| `src/app/dashboards/inspections/page.tsx` | Add failed/pending tables via metrics API fetch, remove AHJ breakdown card + `filterAhjs` state (keep AHJ filter dropdown) |
 | `src/app/dashboards/inspection-metrics/page.tsx` | Remove failed/pending tables + related state |
-| `src/components/ui/SortHeader.tsx` | Extract shared component (if not already shared) |
-| `src/components/ui/DealLinks.tsx` | Extract shared component (if not already shared) |
-| `src/lib/format-helpers.ts` | Extract shared formatters (if not already shared) |
+| `src/components/ui/SortHeader.tsx` | New shared component (superset API with `compact` prop) |
+| `src/components/ui/DealLinks.tsx` | New shared component (configurable portal ID) |
+| `src/lib/format-helpers.ts` | New shared formatters (`fmtAmount`, `fmtDateShort`) |
+| `src/hooks/useSort.ts` | New shared hook (with `defaultDir` parameter) |
