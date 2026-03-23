@@ -702,7 +702,7 @@ export async function GET() {
     // Default to last 6 months
     const now = new Date();
     const threeMonthsAgo = new Date(now);
-    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 6);
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
     const fromDate = threeMonthsAgo.toISOString().split("T")[0];
     const toDate = now.toISOString().split("T")[0];
 
