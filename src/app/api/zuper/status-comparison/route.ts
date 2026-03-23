@@ -159,9 +159,13 @@ function extractProjectNumber(title: string): string | null {
   return match ? `PROJ-${match[1]}` : null;
 }
 
-// Extract HubSpot deal id from Zuper job metadata (custom fields, tags, notes)
+// Extract HubSpot deal id from Zuper job metadata (external_id, custom fields, tags, notes)
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractHubspotDealId(job: any): string | null {
+  // Check external_id first — most reliable, available on all jobs
+  const extDealId = job.external_id?.hubspot_deal;
+  if (extDealId && String(extDealId).trim()) return String(extDealId).trim();
+
   const normalizeId = (value: unknown): string | null => {
     if (!value) return null;
     const raw = String(value).trim();

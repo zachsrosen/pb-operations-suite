@@ -55,8 +55,13 @@ export async function GET(request: NextRequest) {
     scheduledStart: job.scheduled_start_time,
     scheduledEnd: job.scheduled_end_time,
     hubspotDealId,
+    projectUid: job.project_uid || job.project || null,
     customFields: job.custom_fields,
     statusHistory,
+    childJobs: job.child_jobs,
+    associations: job.associations,
+    externalId: job.external_id,
+    _keys: Object.keys(job),
   });
 }
 
