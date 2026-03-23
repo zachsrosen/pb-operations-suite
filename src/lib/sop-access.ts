@@ -14,7 +14,7 @@ const PM_NAMES = new Set(["alexis", "kaitlyn", "kat", "natasha"]);
 /** Admin-only sections within otherwise-visible tabs */
 export const ADMIN_ONLY_SECTIONS = ["ref-user-roles", "ref-system"];
 
-const ADMIN_ROLES = new Set(["ADMIN", "OWNER"]);
+const ADMIN_ROLES = new Set(["ADMIN", "EXECUTIVE", "OWNER"]);
 
 /**
  * Can the given user access a tab?

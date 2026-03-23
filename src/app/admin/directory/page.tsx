@@ -19,6 +19,7 @@ const ROLES: UserRole[] = [
 const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: "ADMIN",
   EXECUTIVE: "EXECUTIVE",
+  OWNER: "EXECUTIVE",
   OPERATIONS_MANAGER: "OPS MGR",
   PROJECT_MANAGER: "PM",
   OPERATIONS: "OPS",
@@ -34,6 +35,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
 const ROLE_STYLES: Record<UserRole, string> = {
   ADMIN: "bg-red-500/20 text-red-300 border-red-500/30",
   EXECUTIVE: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  OWNER: "bg-amber-500/20 text-amber-300 border-amber-500/30",
   OPERATIONS_MANAGER: "bg-orange-500/20 text-orange-300 border-orange-500/30",
   PROJECT_MANAGER: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
   OPERATIONS: "bg-orange-500/20 text-orange-300 border-orange-500/30",

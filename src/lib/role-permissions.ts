@@ -68,6 +68,19 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canEditPermitting: true,
     canViewAllLocations: true,
   },
+  OWNER: {
+    // Legacy role: normalized to EXECUTIVE at runtime
+    allowedRoutes: ["*", "/dashboards/ai"],
+    canScheduleSurveys: true,
+    canScheduleInstalls: true,
+    canScheduleInspections: true,
+    canSyncZuper: true,
+    canManageUsers: false,
+    canManageAvailability: true,
+    canEditDesign: true,
+    canEditPermitting: true,
+    canViewAllLocations: true,
+  },
   MANAGER: {
     // Legacy role: normalized to PROJECT_MANAGER at runtime
     allowedRoutes: [
