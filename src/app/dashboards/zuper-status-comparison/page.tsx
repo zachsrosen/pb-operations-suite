@@ -761,9 +761,9 @@ export default function ZuperStatusComparisonPage() {
         <StatCard label="Total Jobs" value={stats?.total || 0} />
         <StatCard label="Status Match" value={stats?.matched || 0} color="green" />
         <StatCard label="Status Mismatches" value={stats?.mismatches || 0} color="red" />
-        <StatCard label="Superseded" value={stats?.superseded || 0} />
-        <StatCard label="HS Ahead" value={stats?.hubspotAhead || 0} />
-        <StatCard label="No HubSpot Deal" value={stats?.noHubspotDeal || 0} color="yellow" />
+        {(stats?.superseded || 0) > 0 && <StatCard label="Superseded" value={stats?.superseded || 0} />}
+        {(stats?.hubspotAhead || 0) > 0 && <StatCard label="HS Ahead" value={stats?.hubspotAhead || 0} />}
+        {(stats?.noHubspotDeal || 0) > 0 && <StatCard label="No HubSpot Deal" value={stats?.noHubspotDeal || 0} color="yellow" />}
         <StatCard label="Schedule Date Mismatches" value={stats?.scheduleDateMismatches || 0} color="orange" />
         <StatCard label="Completion Date Mismatches" value={stats?.completionDateMismatches || 0} color="purple" />
       </div>
