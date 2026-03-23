@@ -25,6 +25,7 @@ interface ZuperJobSummary {
   isSuperseded?: boolean; // true if a newer non-cancelled job exists for the same deal+category
   scheduledCount?: number; // how many times "Scheduled" appears in job_status history (>1 = rescheduled)
   statusTimeline?: { status: string; at: string }[]; // full status history from job detail
+  failedAt?: string | null; // when "Failed" status was recorded in Zuper history
 }
 
 type ComparisonCategory = "site_survey" | "construction" | "inspection";
@@ -72,6 +73,10 @@ export interface ComparisonRecord {
   scheduleDateMatch: boolean | null; // null if either date missing
   completionDateMatch: boolean | null;
   completionDateDiffDays: number | null; // abs difference in days when both dates exist
+  // Fail date cross-check (inspections only)
+  zuperFailedAt: string | null; // when Zuper recorded "Failed" status
+  hubspotFailDate: string | null; // HubSpot inspections_fail_date property
+  failDateMatch: boolean | null; // true if both exist and match (±1 day)
   // Team info
   team: string | null;
   assignedTo: string | null;
@@ -316,11 +321,12 @@ const POST_FAILURE_STATUSES = new Set([
 ]);
 
 // Check if HubSpot is ahead: HS shows terminal but Zuper doesn't,
-// OR Zuper failed and HS moved to a post-failure status with the fail date recorded
+// OR Zuper failed and HS moved to a post-failure status with the fail date recorded AND matching
 function checkHubspotAhead(
   zuperStatus: string,
   hubspotStatus: string | null,
   deal?: HubSpotDealData,
+  job?: ZuperJobSummary,
 ): boolean {
   if (!hubspotStatus) return false;
   const hsLower = hubspotStatus.toLowerCase();
@@ -329,8 +335,16 @@ function checkHubspotAhead(
   // Case 1: HS is terminal, Zuper isn't
   if (HS_TERMINAL_STATUSES.has(hsLower) && !HS_TERMINAL_STATUSES.has(zLower)) return true;
 
-  // Case 2: Zuper failed, HS moved to post-failure status, AND fail date was recorded
-  if (zLower === "failed" && POST_FAILURE_STATUSES.has(hsLower) && deal?.inspectionFailDate) return true;
+  // Case 2: Zuper failed, HS moved to post-failure status, AND fail date was recorded correctly
+  if (zLower === "failed" && POST_FAILURE_STATUSES.has(hsLower) && deal?.inspectionFailDate) {
+    // If we have the Zuper fail date, verify it matches HubSpot's fail date (±1 day tolerance)
+    if (job?.failedAt) {
+      const match = compareDates(job.failedAt, deal.inspectionFailDate);
+      return match === true; // only mark as HS-ahead if fail dates align
+    }
+    // No Zuper fail date available — trust HubSpot's fail date existence
+    return true;
+  }
 
   return false;
 }
@@ -463,6 +477,13 @@ async function enrichCompletionDates(jobs: ZuperJobSummary[]): Promise<Enrichmen
             status: e.status_name || "Unknown",
             at: e.created_at || "",
           }));
+          // Extract when "Failed" was recorded
+          const failedEntry = [...history].reverse().find(
+            (e: { status_name?: string }) => (e.status_name || "").toLowerCase() === "failed"
+          );
+          if (failedEntry) {
+            batch[j].failedAt = (failedEntry as { created_at?: string }).created_at || null;
+          }
         }
       }
     }
@@ -854,11 +875,11 @@ export async function GET() {
         // Superseded and hubspot-ahead jobs are expected mismatches — don't count them
         isMismatch: (() => {
           if (job.isSuperseded) return false;
-          if (checkHubspotAhead(job.zuperStatus, hubspotStatus, deal)) return false;
+          if (checkHubspotAhead(job.zuperStatus, hubspotStatus, deal, job)) return false;
           return isStatusMismatch(job.zuperStatus, hubspotStatus, job.category);
         })(),
         isSuperseded: job.isSuperseded || false,
-        isHubspotAhead: job.isSuperseded ? false : checkHubspotAhead(job.zuperStatus, hubspotStatus, deal),
+        isHubspotAhead: job.isSuperseded ? false : checkHubspotAhead(job.zuperStatus, hubspotStatus, deal, job),
         scheduledCount: job.scheduledCount ?? null,
         zuperTimeline: job.statusTimeline || null,
         // Zuper dates
@@ -870,9 +891,13 @@ export async function GET() {
         hubspotScheduleDate,
         hubspotCompletionDate,
         // Date comparisons (skip for superseded and HS-ahead — stale jobs won't have matching dates)
-        scheduleDateMatch: (job.isSuperseded || checkHubspotAhead(job.zuperStatus, hubspotStatus, deal)) ? null : compareDates(job.scheduledStart, hubspotScheduleDate),
-        completionDateMatch: (job.isSuperseded || checkHubspotAhead(job.zuperStatus, hubspotStatus, deal)) ? null : compareDates(job.completedAt, hubspotCompletionDate),
-        completionDateDiffDays: (job.isSuperseded || checkHubspotAhead(job.zuperStatus, hubspotStatus, deal)) ? null : dateDiffDays(job.completedAt, hubspotCompletionDate),
+        scheduleDateMatch: (job.isSuperseded || checkHubspotAhead(job.zuperStatus, hubspotStatus, deal, job)) ? null : compareDates(job.scheduledStart, hubspotScheduleDate),
+        completionDateMatch: (job.isSuperseded || checkHubspotAhead(job.zuperStatus, hubspotStatus, deal, job)) ? null : compareDates(job.completedAt, hubspotCompletionDate),
+        completionDateDiffDays: (job.isSuperseded || checkHubspotAhead(job.zuperStatus, hubspotStatus, deal, job)) ? null : dateDiffDays(job.completedAt, hubspotCompletionDate),
+        // Fail date cross-check
+        zuperFailedAt: job.failedAt || null,
+        hubspotFailDate: deal?.inspectionFailDate || null,
+        failDateMatch: job.failedAt && deal?.inspectionFailDate ? compareDates(job.failedAt, deal.inspectionFailDate) : null,
         // Team
         team: job.team,
         assignedTo: job.assignedTo,
