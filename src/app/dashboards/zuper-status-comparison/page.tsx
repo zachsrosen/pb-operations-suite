@@ -32,6 +32,7 @@ interface ComparisonRecord {
   team: string | null;
   assignedTo: string | null;
   isSuperseded: boolean;
+  isHubspotAhead: boolean;
 }
 
 interface CategorySlot {
@@ -100,6 +101,7 @@ interface ApiResponse {
     mismatches: number;
     matched: number;
     superseded?: number;
+    hubspotAhead?: number;
     noHubspotDeal: number;
     scheduleDateMismatches: number;
     completionDateMismatches: number;
@@ -499,7 +501,7 @@ export default function ZuperStatusComparisonPage() {
       Category: CATEGORY_LABELS[r.category] || r.category,
       "Zuper Status": r.zuperStatus,
       "HubSpot Status": r.hubspotStatus || "-",
-      "Status Match": r.isSuperseded ? "Superseded" : r.isMismatch ? "MISMATCH" : "Match",
+      "Status Match": r.isSuperseded ? "Superseded" : r.isHubspotAhead ? "HS Ahead" : r.isMismatch ? "MISMATCH" : "Match",
       Superseded: r.isSuperseded ? "Yes" : "No",
       "Zuper Scheduled Start": r.zuperScheduledStart || "-",
       "HubSpot Schedule Date": r.hubspotScheduleDate || "-",
@@ -760,6 +762,7 @@ export default function ZuperStatusComparisonPage() {
         <StatCard label="Status Match" value={stats?.matched || 0} color="green" />
         <StatCard label="Status Mismatches" value={stats?.mismatches || 0} color="red" />
         <StatCard label="Superseded" value={stats?.superseded || 0} />
+        <StatCard label="HS Ahead" value={stats?.hubspotAhead || 0} />
         <StatCard label="No HubSpot Deal" value={stats?.noHubspotDeal || 0} color="yellow" />
         <StatCard label="Schedule Date Mismatches" value={stats?.scheduleDateMismatches || 0} color="orange" />
         <StatCard label="Completion Date Mismatches" value={stats?.completionDateMismatches || 0} color="purple" />
@@ -1185,7 +1188,7 @@ export default function ZuperStatusComparisonPage() {
                     <tr
                       key={`${record.zuperJobUid}-${idx}`}
                       className={`hover:bg-zinc-50 dark:hover:bg-skeleton transition-colors ${
-                        record.isSuperseded ? "opacity-40" : hasAnyMismatch ? "bg-red-50/40 dark:bg-red-950/10" : ""
+                        record.isSuperseded || record.isHubspotAhead ? "opacity-40" : hasAnyMismatch ? "bg-red-50/40 dark:bg-red-950/10" : ""
                       }`}
                     >
                       {/* Project */}
@@ -1211,6 +1214,11 @@ export default function ZuperStatusComparisonPage() {
                         {record.isSuperseded && (
                           <span className="ml-1 text-[9px] font-medium px-1 py-0.5 rounded bg-zinc-200 text-zinc-600 dark:bg-zinc-700 dark:text-zinc-400">
                             Superseded
+                          </span>
+                        )}
+                        {record.isHubspotAhead && (
+                          <span className="ml-1 text-[9px] font-medium px-1 py-0.5 rounded bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400">
+                            HS Ahead
                           </span>
                         )}
                       </td>

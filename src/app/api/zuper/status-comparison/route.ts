@@ -23,6 +23,8 @@ interface ZuperJobSummary {
   assignedTo: string | null;
   category: string;
   isSuperseded?: boolean; // true if a newer non-cancelled job exists for the same deal+category
+  scheduledCount?: number; // how many times "Scheduled" appears in job_status history (>1 = rescheduled)
+  statusTimeline?: { status: string; at: string }[]; // full status history from job detail
 }
 
 type ComparisonCategory = "site_survey" | "construction" | "inspection";
@@ -43,6 +45,7 @@ interface HubSpotDealData {
   siteSurveyCompletionDate: string | null;
   constructionCompleteDate: string | null;
   inspectionPassDate: string | null;
+  inspectionFailDate: string | null;
 }
 
 export interface ComparisonRecord {
@@ -74,6 +77,12 @@ export interface ComparisonRecord {
   assignedTo: string | null;
   // Superseded: older job for same deal+category where a newer non-cancelled job exists
   isSuperseded: boolean;
+  // HubSpot ahead: HS shows terminal status but Zuper hasn't caught up (not a real problem)
+  isHubspotAhead: boolean;
+  // Rescheduling: how many times "Scheduled" appeared in job_status history (>1 = rescheduled)
+  scheduledCount: number | null;
+  // Full Zuper status timeline (from job detail enrichment)
+  zuperTimeline: { status: string; at: string }[] | null;
 }
 
 // Project-level grouped view: all 3 categories side by side per project
@@ -99,6 +108,7 @@ export interface ProjectGroupedRecord {
     team: string | null;
     assignedTo: string | null;
     isSuperseded?: boolean;
+    isHubspotAhead?: boolean;
     zuperCreatedAt?: string | null;
   };
   // Construction
@@ -117,6 +127,7 @@ export interface ProjectGroupedRecord {
     team: string | null;
     assignedTo: string | null;
     isSuperseded?: boolean;
+    isHubspotAhead?: boolean;
     zuperCreatedAt?: string | null;
   };
   // Inspection
@@ -135,6 +146,7 @@ export interface ProjectGroupedRecord {
     team: string | null;
     assignedTo: string | null;
     isSuperseded?: boolean;
+    isHubspotAhead?: boolean;
     zuperCreatedAt?: string | null;
   };
   hasAnyMismatch: boolean;
@@ -267,6 +279,11 @@ const STATUS_MAPPING: Record<string, Record<string, string[]>> = {
   },
 };
 
+// HubSpot terminal statuses — if HS shows one of these and Zuper is behind, it's not a real problem
+const HS_TERMINAL_STATUSES = new Set([
+  "completed", "passed", "construction complete", "partial pass",
+]);
+
 // Check if Zuper status and HubSpot status are in sync
 function isStatusMismatch(
   zuperStatus: string,
@@ -286,6 +303,32 @@ function isStatusMismatch(
   return !expectedHubspotStatuses.some(
     (s) => s.toLowerCase() === hubspotStatus.toLowerCase()
   );
+}
+
+// Post-failure statuses — if Zuper is "Failed" and HS shows one of these,
+// it means the team moved on to re-inspection. Not a real mismatch IF the fail date was recorded.
+const POST_FAILURE_STATUSES = new Set([
+  "ready for inspection", "waiting on revisions", "scheduled",
+]);
+
+// Check if HubSpot is ahead: HS shows terminal but Zuper doesn't,
+// OR Zuper failed and HS moved to a post-failure status with the fail date recorded
+function checkHubspotAhead(
+  zuperStatus: string,
+  hubspotStatus: string | null,
+  deal?: HubSpotDealData,
+): boolean {
+  if (!hubspotStatus) return false;
+  const hsLower = hubspotStatus.toLowerCase();
+  const zLower = zuperStatus.toLowerCase();
+
+  // Case 1: HS is terminal, Zuper isn't
+  if (HS_TERMINAL_STATUSES.has(hsLower) && !HS_TERMINAL_STATUSES.has(zLower)) return true;
+
+  // Case 2: Zuper failed, HS moved to post-failure status, AND fail date was recorded
+  if (zLower === "failed" && POST_FAILURE_STATUSES.has(hsLower) && deal?.inspectionFailDate) return true;
+
+  return false;
 }
 
 // HubSpot date-only properties use the portal timezone (America/Denver for PB).
@@ -400,6 +443,17 @@ async function enrichCompletionDates(jobs: ZuperJobSummary[]): Promise<Enrichmen
         const completedTime = getCompletedTimeFromHistory(result.value.data);
         if (completedTime) {
           batch[j].completedAt = completedTime.toISOString();
+        }
+        // Extract full status timeline and reschedule count
+        const history = result.value.data.job_status;
+        if (Array.isArray(history)) {
+          batch[j].scheduledCount = history.filter(
+            (e: { status_name?: string }) => (e.status_name || "").toLowerCase() === "scheduled"
+          ).length;
+          batch[j].statusTimeline = history.map((e: { status_name?: string; created_at?: string }) => ({
+            status: e.status_name || "Unknown",
+            at: e.created_at || "",
+          }));
         }
       }
     }
@@ -584,6 +638,7 @@ async function fetchHubspotDealsByDealIds(
           "site_survey_date",           // site survey completion
           "construction_complete_date",
           "inspections_completion_date", // inspection pass date
+          "inspections_fail_date",      // inspection fail date
         ],
         propertiesWithHistory: [],
       });
@@ -602,6 +657,7 @@ async function fetchHubspotDealsByDealIds(
           siteSurveyCompletionDate: deal.properties.site_survey_date || null,
           constructionCompleteDate: deal.properties.construction_complete_date || null,
           inspectionPassDate: deal.properties.inspections_completion_date || null,
+          inspectionFailDate: deal.properties.inspections_fail_date || null,
         });
       }
     } catch (err) {
@@ -709,9 +765,16 @@ export async function GET() {
         zuperStatus: job.zuperStatus,
         hubspotStatus,
         category: job.category,
-        // Superseded jobs are expected mismatches — don't count them
-        isMismatch: job.isSuperseded ? false : isStatusMismatch(job.zuperStatus, hubspotStatus, job.category),
+        // Superseded and hubspot-ahead jobs are expected mismatches — don't count them
+        isMismatch: job.isSuperseded
+          ? false
+          : checkHubspotAhead(job.zuperStatus, hubspotStatus, deal)
+            ? false
+            : isStatusMismatch(job.zuperStatus, hubspotStatus, job.category),
         isSuperseded: job.isSuperseded || false,
+        isHubspotAhead: job.isSuperseded ? false : checkHubspotAhead(job.zuperStatus, hubspotStatus, deal),
+        scheduledCount: job.scheduledCount ?? null,
+        zuperTimeline: job.statusTimeline || null,
         // Zuper dates
         zuperScheduledStart: job.scheduledStart,
         zuperScheduledEnd: job.scheduledEnd,
@@ -730,18 +793,65 @@ export async function GET() {
       };
     });
 
+    // Second enrichment pass: fetch job details for schedule-mismatched records
+    // that weren't already enriched (non-terminal jobs skipped by first pass).
+    const needsSchedEnrichment = records.filter(
+      (r) => r.scheduleDateMatch === false && r.scheduledCount === null && !r.isSuperseded
+    );
+    if (needsSchedEnrichment.length > 0) {
+      const jobMap = new Map(allJobs.map((j) => [j.jobUid, j]));
+      const CONCURRENCY = 10;
+      const BATCH_DELAY_MS = 200;
+      for (let i = 0; i < needsSchedEnrichment.length; i += CONCURRENCY) {
+        const batch = needsSchedEnrichment.slice(i, i + CONCURRENCY);
+        const results = await Promise.allSettled(
+          batch.map((rec) => zuper.getJob(rec.zuperJobUid))
+        );
+        for (let j = 0; j < batch.length; j++) {
+          const result = results[j];
+          if (result.status === "fulfilled" && result.value.type === "success" && result.value.data) {
+            const history = result.value.data.job_status;
+            if (Array.isArray(history)) {
+              const count = history.filter(
+                (e: { status_name?: string }) => (e.status_name || "").toLowerCase() === "scheduled"
+              ).length;
+              batch[j].scheduledCount = count;
+              // Also update the job summary for downstream use
+              const summaryJob = jobMap.get(batch[j].zuperJobUid);
+              if (summaryJob) {
+                summaryJob.scheduledCount = count;
+                summaryJob.statusTimeline = history.map((e: { status_name?: string; created_at?: string }) => ({
+                  status: e.status_name || "Unknown",
+                  at: e.created_at || "",
+                }));
+              }
+            }
+          }
+        }
+        if (i + CONCURRENCY < needsSchedEnrichment.length) {
+          await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
+        }
+      }
+      console.info(
+        `[status-comparison] Schedule enrichment: checked ${needsSchedEnrichment.length} jobs, ` +
+        `${needsSchedEnrichment.filter((r) => (r.scheduledCount ?? 0) > 1).length} rescheduled`
+      );
+    }
+
     // Compute summary stats
     const recordsWithDates = records.filter((r) => r.hubspotScheduleDate || r.zuperScheduledStart);
     const scheduleDateMismatches = records.filter((r) => r.scheduleDateMatch === false).length;
     const completionDateMismatches = records.filter((r) => r.completionDateMatch === false).length;
 
     const supersededCount = records.filter((r) => r.isSuperseded).length;
+    const hubspotAheadCount = records.filter((r) => r.isHubspotAhead).length;
 
     const stats = {
       total: records.length,
       mismatches: records.filter((r) => r.isMismatch).length,
-      matched: records.filter((r) => !r.isMismatch && !r.isSuperseded).length,
+      matched: records.filter((r) => !r.isMismatch && !r.isSuperseded && !r.isHubspotAhead).length,
       superseded: supersededCount,
+      hubspotAhead: hubspotAheadCount,
       noHubspotDeal: records.filter((r) => !r.dealId).length,
       scheduleDateMismatches,
       completionDateMismatches,
@@ -911,6 +1021,7 @@ export async function GET() {
       team: null,
       assignedTo: null,
       isSuperseded: false,
+      isHubspotAhead: false,
       zuperCreatedAt: null,
     };
 
@@ -957,6 +1068,7 @@ export async function GET() {
         team: record.team,
         assignedTo: record.assignedTo,
         isSuperseded: record.isSuperseded,
+        isHubspotAhead: record.isHubspotAhead,
         zuperCreatedAt: record.zuperCreatedAt,
       };
 
