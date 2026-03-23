@@ -852,11 +852,11 @@ export async function GET() {
         hubspotStatus,
         category: job.category,
         // Superseded and hubspot-ahead jobs are expected mismatches — don't count them
-        isMismatch: job.isSuperseded
-          ? false
-          : checkHubspotAhead(job.zuperStatus, hubspotStatus, deal)
-            ? false
-            : isStatusMismatch(job.zuperStatus, hubspotStatus, job.category),
+        isMismatch: (() => {
+          if (job.isSuperseded) return false;
+          if (checkHubspotAhead(job.zuperStatus, hubspotStatus, deal)) return false;
+          return isStatusMismatch(job.zuperStatus, hubspotStatus, job.category);
+        })(),
         isSuperseded: job.isSuperseded || false,
         isHubspotAhead: job.isSuperseded ? false : checkHubspotAhead(job.zuperStatus, hubspotStatus, deal),
         scheduledCount: job.scheduledCount ?? null,
@@ -869,10 +869,10 @@ export async function GET() {
         // HubSpot dates
         hubspotScheduleDate,
         hubspotCompletionDate,
-        // Date comparisons (skip for superseded — dates won't match the current job)
-        scheduleDateMatch: job.isSuperseded ? null : compareDates(job.scheduledStart, hubspotScheduleDate),
-        completionDateMatch: job.isSuperseded ? null : compareDates(job.completedAt, hubspotCompletionDate),
-        completionDateDiffDays: job.isSuperseded ? null : dateDiffDays(job.completedAt, hubspotCompletionDate),
+        // Date comparisons (skip for superseded and HS-ahead — stale jobs won't have matching dates)
+        scheduleDateMatch: (job.isSuperseded || checkHubspotAhead(job.zuperStatus, hubspotStatus, deal)) ? null : compareDates(job.scheduledStart, hubspotScheduleDate),
+        completionDateMatch: (job.isSuperseded || checkHubspotAhead(job.zuperStatus, hubspotStatus, deal)) ? null : compareDates(job.completedAt, hubspotCompletionDate),
+        completionDateDiffDays: (job.isSuperseded || checkHubspotAhead(job.zuperStatus, hubspotStatus, deal)) ? null : dateDiffDays(job.completedAt, hubspotCompletionDate),
         // Team
         team: job.team,
         assignedTo: job.assignedTo,
