@@ -723,9 +723,86 @@ export async function GET() {
     // Fetch HubSpot deals by deal ID
     const dealMap = await fetchHubspotDealsByDealIds(dealIds);
 
+    // Build a secondary lookup by project_number for jobs missing deal IDs.
+    // This lets us match re-inspection jobs that share the same PROJ-XXXX.
+    const dealByProject = new Map<string, HubSpotDealData>();
+    for (const deal of dealMap.values()) {
+      const projNum = deal.dealName?.match(/PROJ-\d+/)?.[0];
+      if (projNum && !dealByProject.has(projNum)) {
+        dealByProject.set(projNum, deal);
+      }
+    }
+
+    // For jobs without a deal ID, try to find the deal by project number
+    // via the deals we already fetched. If still not found, search HubSpot.
+    const unmatchedProjects = new Set<string>();
+    for (const job of allJobs) {
+      if (!job.hubspotDealId && job.projectNumber && !dealByProject.has(job.projectNumber)) {
+        unmatchedProjects.add(job.projectNumber);
+      }
+    }
+
+    if (unmatchedProjects.size > 0) {
+      // Batch search HubSpot for these project numbers
+      const projectNumbers = [...unmatchedProjects];
+      const BATCH = 10; // HubSpot IN filter max ~10 values
+      for (let i = 0; i < projectNumbers.length; i += BATCH) {
+        const batch = projectNumbers.slice(i, i + BATCH);
+        try {
+          const searchResponse = await hubspotClient.crm.deals.searchApi.doSearch({
+            filterGroups: [{
+              filters: [{
+                propertyName: "project_number",
+                operator: "IN",
+                values: batch,
+              }],
+            }],
+            properties: [
+              "project_number", "dealname", "pb_location",
+              "site_survey_status", "install_status", "final_inspection_status",
+              "site_survey_schedule_date", "install_schedule_date", "inspections_schedule_date",
+              "site_survey_date", "construction_complete_date", "inspections_completion_date",
+              "inspections_fail_date",
+            ],
+            limit: batch.length,
+            sorts: [],
+            after: "0",
+          } as any);
+
+          for (const deal of searchResponse.results || []) {
+            const projNum = deal.properties.project_number;
+            if (!projNum) continue;
+            const dealData: HubSpotDealData = {
+              dealId: deal.id,
+              dealName: deal.properties.dealname || "",
+              pbLocation: deal.properties.pb_location || null,
+              siteSurveyStatus: deal.properties.site_survey_status || null,
+              constructionStatus: deal.properties.install_status || null,
+              inspectionStatus: deal.properties.final_inspection_status || null,
+              siteSurveyScheduleDate: deal.properties.site_survey_schedule_date || null,
+              constructionScheduleDate: deal.properties.install_schedule_date || null,
+              inspectionScheduleDate: deal.properties.inspections_schedule_date || null,
+              siteSurveyCompletionDate: deal.properties.site_survey_date || null,
+              constructionCompleteDate: deal.properties.construction_complete_date || null,
+              inspectionPassDate: deal.properties.inspections_completion_date || null,
+              inspectionFailDate: deal.properties.inspections_fail_date || null,
+            };
+            dealByProject.set(projNum, dealData);
+            dealMap.set(deal.id, dealData);
+          }
+        } catch (err) {
+          console.error(`[status-comparison] Error searching deals by project_number batch ${i}:`, err);
+        }
+        if (i + BATCH < projectNumbers.length) await new Promise((r) => setTimeout(r, 200));
+      }
+      console.info(`[status-comparison] Project-number fallback: searched ${unmatchedProjects.size} projects, found ${[...unmatchedProjects].filter(p => dealByProject.has(p)).length}`);
+    }
+
     // Build comparison records
     const records: ComparisonRecord[] = allJobs.map((job) => {
-      const deal = job.hubspotDealId ? dealMap.get(job.hubspotDealId) : undefined;
+      const deal = job.hubspotDealId
+        ? dealMap.get(job.hubspotDealId)
+        : dealByProject.get(job.projectNumber);
       let hubspotStatus: string | null = null;
       let hubspotScheduleDate: string | null = null;
       let hubspotCompletionDate: string | null = null;

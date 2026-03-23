@@ -33,8 +33,25 @@ export async function POST(request: NextRequest) {
 
   for (const { jobUid, dealId } of links) {
     try {
+      // Add deal ID as a job tag (hubspot-{dealId}) — works on all jobs
+      // regardless of custom field template. The comparison route already
+      // checks job_tags as a fallback for deal ID extraction.
+      const tag = `hubspot-${dealId}`;
+
+      // First get current tags to avoid overwriting
+      const current = await zuper.getJob(jobUid);
+      const existingTags: string[] =
+        current.type === "success" && Array.isArray((current.data as any)?.job_tags)
+          ? (current.data as any).job_tags
+          : [];
+
+      if (existingTags.includes(tag)) {
+        results.push({ jobUid, dealId, success: true, error: undefined });
+        continue;
+      }
+
       const res = await zuper.updateJob(jobUid, {
-        custom_fields: { hubspot_deal_id: dealId },
+        job_tags: [...existingTags, tag],
       });
 
       results.push({

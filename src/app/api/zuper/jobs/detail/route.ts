@@ -35,12 +35,27 @@ export async function GET(request: NextRequest) {
       }))
     : [];
 
+  // Extract hubspot_deal_id from custom fields
+  let hubspotDealId: string | null = null;
+  const cf = job.custom_fields;
+  if (Array.isArray(cf)) {
+    const match = cf.find((f: { label?: string }) =>
+      (f.label || "").toLowerCase().replace(/[\s_-]/g, "") === "hubspotdealid"
+    ) as { value?: string } | undefined;
+    if (match?.value) hubspotDealId = String(match.value);
+  } else if (cf && typeof cf === "object") {
+    const val = (cf as Record<string, unknown>).hubspot_deal_id;
+    if (val) hubspotDealId = String(val);
+  }
+
   return NextResponse.json({
     jobUid: job.job_uid,
     title: job.job_title,
     currentStatus: (job.current_job_status as { status_name?: string })?.status_name || "Unknown",
     scheduledStart: job.scheduled_start_time,
     scheduledEnd: job.scheduled_end_time,
+    hubspotDealId,
+    customFields: job.custom_fields,
     statusHistory,
   });
 }
