@@ -122,6 +122,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/construction-metrics",
       "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
+      "/dashboards/preconstruction-metrics",
       "/dashboards/incentives",
       // Intelligence dashboards
       "/dashboards/at-risk",
@@ -316,6 +317,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/capacity",
       "/dashboards/forecast-accuracy",
       "/dashboards/forecast-timeline",
+      "/dashboards/preconstruction-metrics",
       "/api/forecasting",
       // Equipment catalog
       "/dashboards/catalog",
@@ -416,6 +418,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/command-center",
       "/dashboards/forecast-accuracy",
       "/dashboards/forecast-timeline",
+      "/dashboards/preconstruction-metrics",
       "/api/forecasting",
       // D&E Suite dashboards
       "/dashboards/de-overview",
