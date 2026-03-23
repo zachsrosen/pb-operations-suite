@@ -370,7 +370,12 @@ function compareDates(zuperDate: string | null, hubspotDate: string | null): boo
   try {
     const d1 = zuperDateToLocal(zuperDate);
     const d2 = hubspotDateToLocal(hubspotDate);
-    return d1 === d2;
+    if (d1 === d2) return true;
+    // Allow 1-day tolerance — timezone handling differences between
+    // Zuper, Zapier, and HubSpot cause unavoidable ±1 day drift
+    const ms = Math.abs(new Date(d1).getTime() - new Date(d2).getTime());
+    const days = Math.round(ms / (1000 * 60 * 60 * 24));
+    return days <= 1;
   } catch {
     return null;
   }
