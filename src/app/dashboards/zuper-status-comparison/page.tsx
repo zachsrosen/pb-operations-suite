@@ -29,6 +29,11 @@ interface ComparisonRecord {
   scheduleDateMatch: boolean | null;
   completionDateMatch: boolean | null;
   completionDateDiffDays: number | null;
+  // Fail date cross-check (inspections only)
+  zuperFailedAt: string | null;
+  hubspotFailDate: string | null;
+  failDateMatch: boolean | null;
+  failDateDiffDays: number | null;
   team: string | null;
   assignedTo: string | null;
   isSuperseded: boolean;
@@ -105,6 +110,7 @@ interface ApiResponse {
     noHubspotDeal: number;
     scheduleDateMismatches: number;
     completionDateMismatches: number;
+    failDateMismatches?: number;
     byCategory: {
       site_survey: CategoryStats;
       construction: CategoryStats;
@@ -510,6 +516,10 @@ export default function ZuperStatusComparisonPage() {
       "HubSpot Completion Date": r.hubspotCompletionDate || "-",
       "Completion Date Match": r.completionDateMatch === null ? "N/A" : r.completionDateMatch ? "Match" : "MISMATCH",
       "Completion Date Diff (days)": r.completionDateDiffDays != null ? String(r.completionDateDiffDays) : "-",
+      "Zuper Failed At": r.zuperFailedAt || "-",
+      "HubSpot Fail Date": r.hubspotFailDate || "-",
+      "Fail Date Match": r.failDateMatch === null ? "N/A" : r.failDateMatch ? "Match" : "MISMATCH",
+      "Fail Date Diff (days)": r.failDateDiffDays != null ? String(r.failDateDiffDays) : "-",
       Team: r.team || "-",
       "Assigned To": r.assignedTo || "-",
       "HubSpot URL": r.dealUrl || "-",
@@ -766,6 +776,7 @@ export default function ZuperStatusComparisonPage() {
         {(stats?.noHubspotDeal || 0) > 0 && <StatCard label="No HubSpot Deal" value={stats?.noHubspotDeal || 0} color="yellow" />}
         <StatCard label="Schedule Date Mismatches" value={stats?.scheduleDateMismatches || 0} color="orange" />
         <StatCard label="Completion Date Mismatches" value={stats?.completionDateMismatches || 0} color="purple" />
+        {(stats?.failDateMismatches || 0) > 0 && <StatCard label="Fail Date Mismatches" value={stats?.failDateMismatches || 0} color="red" />}
       </div>
 
       {/* Category Breakdown Cards */}
@@ -1163,6 +1174,15 @@ export default function ZuperStatusComparisonPage() {
                     <th className="px-3 py-2.5 text-center font-medium text-muted/70 dark:text-foreground/80 text-xs" title="Completion Date Match">
                       Compl Match
                     </th>
+                    <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 text-xs">
+                      Zuper Failed
+                    </th>
+                    <th className="px-3 py-2.5 text-left font-medium text-muted/70 dark:text-foreground/80 text-xs">
+                      HS Fail Date
+                    </th>
+                    <th className="px-3 py-2.5 text-center font-medium text-muted/70 dark:text-foreground/80 text-xs" title="Fail Date Match">
+                      Fail Match
+                    </th>
                   </>
                 )}
 
@@ -1183,7 +1203,7 @@ export default function ZuperStatusComparisonPage() {
                 </tr>
               ) : (
                 filteredRecords.map((record, idx) => {
-                  const hasAnyMismatch = record.isMismatch || record.scheduleDateMatch === false || record.completionDateMatch === false;
+                  const hasAnyMismatch = record.isMismatch || record.scheduleDateMatch === false || record.completionDateMatch === false || record.failDateMatch === false;
                   return (
                     <tr
                       key={`${record.zuperJobUid}-${idx}`}
@@ -1268,6 +1288,15 @@ export default function ZuperStatusComparisonPage() {
                           </td>
                           <td className="px-3 py-2.5 text-center">
                             <DateMatchBadge match={record.completionDateMatch} diffDays={record.completionDateDiffDays} zuperDate={record.zuperCompletedAt} hubspotDate={record.hubspotCompletionDate} />
+                          </td>
+                          <td className="px-3 py-2.5 text-[11px] text-muted/70 dark:text-muted whitespace-nowrap">
+                            {renderShortDate(record.zuperFailedAt)}
+                          </td>
+                          <td className="px-3 py-2.5 text-[11px] text-muted/70 dark:text-muted whitespace-nowrap">
+                            {renderShortDate(record.hubspotFailDate)}
+                          </td>
+                          <td className="px-3 py-2.5 text-center">
+                            <DateMatchBadge match={record.failDateMatch} diffDays={record.failDateDiffDays} zuperDate={record.zuperFailedAt} hubspotDate={record.hubspotFailDate} />
                           </td>
                         </>
                       )}

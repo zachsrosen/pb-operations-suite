@@ -77,6 +77,7 @@ export interface ComparisonRecord {
   zuperFailedAt: string | null; // when Zuper recorded "Failed" status
   hubspotFailDate: string | null; // HubSpot inspections_fail_date property
   failDateMatch: boolean | null; // true if both exist and match (±1 day)
+  failDateDiffDays: number | null; // abs difference in days when both fail dates exist
   // Team info
   team: string | null;
   assignedTo: string | null;
@@ -898,6 +899,7 @@ export async function GET() {
         zuperFailedAt: job.failedAt || null,
         hubspotFailDate: deal?.inspectionFailDate || null,
         failDateMatch: job.failedAt && deal?.inspectionFailDate ? compareDates(job.failedAt, deal.inspectionFailDate) : null,
+        failDateDiffDays: job.failedAt && deal?.inspectionFailDate ? dateDiffDays(job.failedAt, deal.inspectionFailDate) : null,
         // Team
         team: job.team,
         assignedTo: job.assignedTo,
@@ -953,6 +955,7 @@ export async function GET() {
     const recordsWithDates = records.filter((r) => r.hubspotScheduleDate || r.zuperScheduledStart);
     const scheduleDateMismatches = records.filter((r) => r.scheduleDateMatch === false).length;
     const completionDateMismatches = records.filter((r) => r.completionDateMatch === false).length;
+    const failDateMismatches = records.filter((r) => r.failDateMatch === false).length;
 
     const supersededCount = records.filter((r) => r.isSuperseded).length;
     const hubspotAheadCount = records.filter((r) => r.isHubspotAhead).length;
@@ -966,6 +969,7 @@ export async function GET() {
       noHubspotDeal: records.filter((r) => !r.dealId).length,
       scheduleDateMismatches,
       completionDateMismatches,
+      failDateMismatches,
       recordsWithDates: recordsWithDates.length,
       byCategory: {
         site_survey: {
@@ -985,6 +989,7 @@ export async function GET() {
           mismatches: records.filter((r) => r.category === "inspection" && r.isMismatch).length,
           scheduleDateMismatches: records.filter((r) => r.category === "inspection" && r.scheduleDateMatch === false).length,
           completionDateMismatches: records.filter((r) => r.category === "inspection" && r.completionDateMatch === false).length,
+          failDateMismatches: records.filter((r) => r.category === "inspection" && r.failDateMatch === false).length,
         },
       },
     };
