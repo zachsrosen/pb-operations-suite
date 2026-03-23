@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: result.error || "Job not found" }, { status: 404 });
   }
 
-  const job = result.data as Record<string, unknown>;
+  const job = result.data as unknown as Record<string, unknown>;
   const statusHistory = Array.isArray(job.job_status)
     ? (job.job_status as { status_name?: string; created_at?: string }[]).map((e) => ({
         status: e.status_name || "Unknown",
