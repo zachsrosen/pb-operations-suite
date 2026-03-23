@@ -58,7 +58,7 @@ export function aggregateMonthly(
   // Fill buckets
   for (const item of items) {
     if (!item.date) continue;
-    const d = new Date(item.date);
+    const d = new Date(item.date + "T12:00:00");
     if (isNaN(d.getTime())) continue;
     const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
     const bucket = buckets.get(key);
