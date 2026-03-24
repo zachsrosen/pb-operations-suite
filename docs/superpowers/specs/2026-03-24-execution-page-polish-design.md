@@ -55,7 +55,7 @@ Replace all plain div stat cards with `StatCard` components. Cut from 8 cards to
 
 **Subtitle convention**: Workload shows dollar value (`$2.2M`). Needs Action and In Progress show dollar value where available. At Risk shows contextual subtitle ("action needed" for survey/construction, dollar value for inspections Failed).
 
-**Survey "At Risk" card detail**: The value is the **sum** of on-hold count + filtered past-due count: `onHoldCount + filteredPastDue.length`. On-hold = projects where `siteSurveyStatus` contains "hold", "waiting", or "pending" (existing logic). Past-due = `filteredPastDue.length` from the survey classification memo (respects active location/search filters). Single number displayed, not slash-separated.
+**Survey "At Risk" card detail**: The value is the **distinct count** of projects that are either on-hold OR past-due (union, not sum, to avoid double-counting a project that is both). On-hold = projects where `siteSurveyStatus` contains "hold", "waiting", or "pending" (existing logic). Past-due = projects from `filteredPastDue` (respects active location/search filters). Compute by collecting project IDs from both sets into a `Set` and using its size. Single number displayed.
 
 **Inspections card computations**:
 - **Needs Scheduling**: `stage === 'Inspection' && !inspectionScheduleDate && !inspectionPassDate` — projects in the inspection stage with no inspection date set yet
@@ -86,6 +86,7 @@ interface StatusPillRowProps {
   selected: string[];                     // currently selected statuses
   onToggle: (status: string) => void;     // toggle a status filter
   getStatusColor: (status: string) => string; // returns tailwind color classes for a status
+  accentColor: string;                    // ring color for active pills (e.g., "orange", "teal")
   getDisplayName?: (status: string) => string; // optional display name mapping
   maxVisible?: number;                    // default 8, remaining collapsed into "+N more"
 }
@@ -114,7 +115,7 @@ Move action tables from below the main project table to above it. These are the 
 
 **Table styling**: All action tables use shared `SortHeader`, `DealLinks`, and `format-helpers` from the reshuffle PR. Consistent styling: `bg-surface border border-t-border rounded-xl overflow-hidden mb-6`, with `max-h-[500px] overflow-y-auto` and sticky headers.
 
-**Filter interaction**: Action tables apply the page's active location and search filters. Stage/status filters do NOT apply — action tables define their own criteria (overdue, failed, loose ends) which may span multiple stages/statuses.
+**Filter interaction**: Action tables apply the page's active location and search filters. Stage/status filters do NOT apply — action tables define their own criteria (overdue, failed, loose ends) which may span multiple stages/statuses. **Exception**: On inspections, action tables also apply the AHJ filter (since AHJ is a core operational axis for inspections, not a status filter).
 
 **Empty state**: When no items match, hide the table entirely (don't show an empty container).
 
