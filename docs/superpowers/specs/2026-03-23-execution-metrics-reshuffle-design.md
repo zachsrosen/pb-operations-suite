@@ -67,9 +67,7 @@ upcoming = daysUntil >= 0 && !siteSurveyCompletionDate
 
 **Important**: The main project listing currently filters out completed surveys. Past-due and upcoming must be computed from the **unfiltered** `projects` array (before the completion filter), not from `filteredProjects`.
 
-**Filter interaction**: After computing the raw past-due and upcoming lists from unfiltered projects, apply the page's active filters (location, search, surveyor) before rendering. This keeps the tables consistent with whatever the operator has selected in the filter bar. Status filter does **not** apply to these tables — they define their own status criteria (past-due vs upcoming).
-
-The `surveyor` / `siteSurveyor` field should be available on `RawProject` — verify the field name matches what the metrics API returns and map if needed.
+**Filter interaction**: After computing the raw past-due and upcoming lists from unfiltered projects, apply the page's active location and search filters before rendering. This keeps the tables consistent with whatever the operator has selected in the filter bar. Stage and status filters do **not** apply to these tables — they define their own status criteria (past-due vs upcoming) and span multiple stages. The site-survey page does not currently have a surveyor filter dropdown; adding one is out of scope for this change but would be a natural follow-up.
 
 ### Inspection tables
 

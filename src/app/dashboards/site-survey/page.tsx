@@ -150,10 +150,12 @@ export default function SiteSurveyDashboardPage() {
     return { pastDue, upcoming };
   }, [rawProjects, isInSiteSurveyPhase]);
 
+  // Filter past-due/upcoming by location and search only.
+  // Stage and status filters do NOT apply — these tables define their own
+  // status semantics (past-due vs upcoming) and span multiple stages.
   const filteredPastDue = useMemo(() => {
     return surveyClassification.pastDue.filter((p) => {
       if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || "")) return false;
-      if (filterStages.length > 0 && !filterStages.includes(p.stage || "")) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         if (
@@ -163,12 +165,11 @@ export default function SiteSurveyDashboardPage() {
       }
       return true;
     });
-  }, [surveyClassification.pastDue, filterLocations, filterStages, searchQuery]);
+  }, [surveyClassification.pastDue, filterLocations, searchQuery]);
 
   const filteredUpcoming = useMemo(() => {
     return surveyClassification.upcoming.filter((p) => {
       if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || "")) return false;
-      if (filterStages.length > 0 && !filterStages.includes(p.stage || "")) return false;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         if (
@@ -178,7 +179,7 @@ export default function SiteSurveyDashboardPage() {
       }
       return true;
     });
-  }, [surveyClassification.upcoming, filterLocations, filterStages, searchQuery]);
+  }, [surveyClassification.upcoming, filterLocations, searchQuery]);
 
   const pastDueSort = useSort("daysUntil", "asc");
   const upcomingSort = useSort("daysUntil", "asc");
