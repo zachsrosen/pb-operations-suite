@@ -18,7 +18,7 @@ export default function PreconstMetricsPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
+  const { data: projects, loading, error, lastUpdated, refetch } = useProjectData<RawProject[]>({
     params: { context: "executive" },
     transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
@@ -241,6 +241,19 @@ export default function PreconstMetricsPage() {
       })),
     [filteredProjects]
   );
+
+  if (error) {
+    return (
+      <DashboardShell title="Preconstruction Metrics" accentColor="blue">
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-6 text-center">
+          <p className="text-red-400 font-medium">{error}</p>
+          <button onClick={() => refetch()} className="mt-3 px-4 py-2 bg-red-500/20 hover:bg-red-500/30 rounded-lg text-red-300 text-sm transition-colors">
+            Retry
+          </button>
+        </div>
+      </DashboardShell>
+    );
+  }
 
   return (
     <DashboardShell
