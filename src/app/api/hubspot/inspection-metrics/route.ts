@@ -319,6 +319,46 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const daysWindow = parseInt(searchParams.get("days") || "0") || 0;
     const forceRefresh = searchParams.get("refresh") === "true";
+    const scope = searchParams.get("scope");
+
+    // Fast path: return only action queue data for execution pages
+    if (scope === "pipeline") {
+      const { data: allProjects, lastUpdated } = await appCache.getOrFetch<Project[]>(
+        CACHE_KEYS.PROJECTS_ALL,
+        () => fetchAllProjects({ activeOnly: false }),
+        forceRefresh,
+      );
+      const projects = allProjects || [];
+
+      // Only fetch Zuper jobs for active pipeline-relevant deals
+      const pipelineIds: string[] = [];
+      for (const p of projects) {
+        if (p.isActive && (p.constructionCompleteDate || p.hasInspectionFailed)) {
+          pipelineIds.push(String(p.id));
+        }
+      }
+      const zuperJobs = await getCachedZuperJobsByDealIds(pipelineIds, "Construction");
+      const zuperByDeal = new Map<string, string>();
+      for (const job of zuperJobs) {
+        if (job.hubspotDealId) zuperByDeal.set(job.hubspotDealId, job.jobUid);
+      }
+
+      const ccPendingInspection = projects
+        .filter((p) => p.constructionCompleteDate && !p.inspectionPassDate && p.isActive)
+        .map((p) => buildPipelineDeal(p, zuperByDeal))
+        .sort((a, b) => (b.daysSinceCc ?? 0) - (a.daysSinceCc ?? 0));
+
+      const outstandingFailed = projects
+        .filter((p) => p.hasInspectionFailed && !p.inspectionPassDate && p.isActive)
+        .map((p) => buildPipelineDeal(p, zuperByDeal))
+        .sort((a, b) => (b.daysSinceLastFail ?? 0) - (a.daysSinceLastFail ?? 0));
+
+      return NextResponse.json({
+        ccPendingInspection,
+        outstandingFailed,
+        lastUpdated: lastUpdated || new Date().toISOString(),
+      });
+    }
 
     // 1. Fetch all data sources in parallel
     const [
