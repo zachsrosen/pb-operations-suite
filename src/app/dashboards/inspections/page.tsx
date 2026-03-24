@@ -415,9 +415,6 @@ if (filterInspectionStatuses.length > 0 && !filterInspectionStatuses.includes(p.
     const needsScheduling = filteredProjects.filter(
       p => p.stage === "Inspection" && !p.inspectionScheduleDate && !p.inspectionPassDate
     );
-    const inspectionScheduled = filteredProjects.filter(
-      p => p.inspectionScheduleDate && !p.inspectionPassDate
-    );
 
     return {
       total: filteredProjects.length,
@@ -426,13 +423,31 @@ if (filterInspectionStatuses.length > 0 && !filterInspectionStatuses.includes(p.
       inspectionPassed,
       inspectionFailed,
       needsScheduling,
-      inspectionScheduled,
       avgDaysInInspection,
       avgTurnaround,
       passRate,
       inspectionStatusStats,
     };
   }, [filteredProjects]);
+
+  // Cross-stage: projects with inspection scheduled but not yet passed.
+  // Computed from safeProjects (all stages) with location/AHJ/search filters only.
+  const inspectionScheduled = useMemo(() => {
+    return safeProjects.filter(p => {
+      if (!p.inspectionScheduleDate || p.inspectionPassDate) return false;
+      if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || "")) return false;
+      if (filterAhjs.length > 0 && !filterAhjs.includes(p.ahj || "")) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        if (
+          !(p.name || "").toLowerCase().includes(q) &&
+          !(p.pbLocation || "").toLowerCase().includes(q) &&
+          !(p.ahj || "").toLowerCase().includes(q)
+        ) return false;
+      }
+      return true;
+    });
+  }, [safeProjects, filterLocations, filterAhjs, searchQuery]);
 
   // Get unique values for filters
   const ahjs = useMemo(() =>
@@ -587,7 +602,7 @@ setFilterInspectionStatuses([]);
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger-grid mb-6">
         <StatCard label="Total Projects" value={stats.total} subtitle={formatMoney(stats.totalValue)} color="orange" />
         <StatCard label="Needs Scheduling" value={stats.needsScheduling.length} subtitle={formatMoney(stats.needsScheduling.reduce((s: number, p: RawProject) => s + (p.amount || 0), 0))} color="cyan" />
-        <StatCard label="Scheduled" value={stats.inspectionScheduled.length} subtitle={formatMoney(stats.inspectionScheduled.reduce((s: number, p: RawProject) => s + (p.amount || 0), 0))} color="yellow" />
+        <StatCard label="Scheduled" value={inspectionScheduled.length} subtitle={formatMoney(inspectionScheduled.reduce((s: number, p: RawProject) => s + (p.amount || 0), 0))} color="yellow" />
         <StatCard label="Failed" value={stats.inspectionFailed.length} subtitle={formatMoney(stats.inspectionFailed.reduce((s: number, p: RawProject) => s + (p.amount || 0), 0))} color="red" />
       </div>
 
