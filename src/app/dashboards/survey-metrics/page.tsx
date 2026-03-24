@@ -159,8 +159,6 @@ export default function SurveyMetricsDashboardPage() {
 
   // Sort states
   const drillSort = useSort("turnaroundDays", "desc");
-  const upcomingSort = useSort("daysUntil", "asc");
-  const pastDueSort = useSort("daysUntil", "asc");
 
   const query = useQuery({
     queryKey: queryKeys.stats.surveyMetrics(daysWindow),
@@ -207,19 +205,6 @@ export default function SurveyMetricsDashboardPage() {
       .sort((a, b) => b[1].count - a[1].count)
       .map(([name]) => name);
   }, [data]);
-
-  // Filter pipeline tables by location
-  const filteredUpcoming = useMemo(() => {
-    if (!data) return [];
-    if (filterLocations.length === 0) return data.upcomingSurveys;
-    return data.upcomingSurveys.filter((p) => filterLocations.includes(p.pbLocation));
-  }, [data, filterLocations]);
-
-  const filteredPastDue = useMemo(() => {
-    if (!data) return [];
-    if (filterLocations.length === 0) return data.pastDueSurveys;
-    return data.pastDueSurveys.filter((p) => filterLocations.includes(p.pbLocation));
-  }, [data, filterLocations]);
 
   const exportData = useMemo(() => {
     if (!data) return [];
@@ -275,10 +260,6 @@ export default function SurveyMetricsDashboardPage() {
     drillSort.sortKey,
     drillSort.sortDir
   );
-
-  // Sorted pipeline tables
-  const sortedUpcoming = sortRows(filteredUpcoming, upcomingSort.sortKey, upcomingSort.sortDir);
-  const sortedPastDue = sortRows(filteredPastDue, pastDueSort.sortKey, pastDueSort.sortDir);
 
   // Drill-down panel JSX (rendered inline after the relevant table)
   const drillDownPanel = drillDown && drillDownDeals.length > 0 ? (
@@ -343,74 +324,6 @@ export default function SurveyMetricsDashboardPage() {
       </div>
     </div>
   ) : null;
-
-  // Helper for awaiting survey table rendering
-  const renderAwaitingTable = (
-    rows: typeof sortedUpcoming,
-    sort: ReturnType<typeof useSort>,
-    isPastDue: boolean
-  ) => (
-    <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 z-10">
-          <tr className="border-b border-t-border bg-surface-2/50">
-            <SortHeader label="Project" sortKey="projectNumber" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-left" />
-            <SortHeader label="Customer" sortKey="name" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-left" />
-            <SortHeader label="Location" sortKey="pbLocation" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-left" />
-            <SortHeader label="Surveyor" sortKey="surveyor" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-left" />
-            <SortHeader label="Stage" sortKey="stage" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-left" />
-            <SortHeader label="Amount" sortKey="amount" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-right" />
-            <SortHeader label="Scheduled" sortKey="siteSurveyScheduleDate" currentKey={sort.sortKey} currentDir={sort.sortDir} onSort={sort.toggle} className="text-center" />
-            <SortHeader
-              label={isPastDue ? "Days Overdue" : "Days Until"}
-              sortKey="daysUntil"
-              currentKey={sort.sortKey}
-              currentDir={sort.sortDir}
-              onSort={sort.toggle}
-              className="text-center"
-            />
-            <th className="text-center px-4 py-3 font-semibold text-foreground">Links</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((p, i) => (
-            <tr key={p.dealId} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
-              <td className="px-4 py-3 font-mono text-foreground">{p.projectNumber}</td>
-              <td className="px-4 py-3 text-foreground truncate max-w-[180px]">{p.name}</td>
-              <td className="px-4 py-3 text-muted">{p.pbLocation}</td>
-              <td className="px-4 py-3 text-muted">{p.surveyor}</td>
-              <td className="px-4 py-3 text-muted">{p.stage}</td>
-              <td className="px-4 py-3 text-right text-muted">{formatMoney(p.amount)}</td>
-              <td className="text-center px-4 py-3 text-muted">{p.siteSurveyScheduleDate}</td>
-              <td className={`text-center px-4 py-3 font-mono font-medium ${
-                isPastDue
-                  ? Math.abs(p.daysUntil) > 7
-                    ? "text-red-400"
-                    : Math.abs(p.daysUntil) > 3
-                      ? "text-orange-400"
-                      : "text-yellow-400"
-                  : p.daysUntil <= 1
-                    ? "text-emerald-400"
-                    : p.daysUntil <= 3
-                      ? "text-yellow-400"
-                      : "text-muted"
-              }`}>
-                {isPastDue ? `${Math.abs(p.daysUntil)}d overdue` : `${p.daysUntil}d`}
-              </td>
-              <td className="text-center px-4 py-3">
-                <div className="flex items-center justify-center gap-2">
-                  <a href={p.url} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 underline text-xs">HubSpot ↗</a>
-                  {p.zuperJobUid && (
-                    <a href={`${ZUPER_BASE_URL}/jobs/${p.zuperJobUid}/details`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 underline text-xs">Zuper ↗</a>
-                  )}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
 
   return (
     <DashboardShell
@@ -495,14 +408,14 @@ export default function SurveyMetricsDashboardPage() {
         <div className="bg-surface border border-t-border rounded-xl p-5 text-center">
           <p className="text-sm text-muted mb-1">Upcoming Surveys</p>
           <p className="text-3xl font-mono font-bold text-cyan-400">
-            {filteredUpcoming.length}
+            {data?.upcomingSurveys?.length ?? 0}
           </p>
           <p className="text-xs text-muted mt-1">scheduled ahead</p>
         </div>
         <div className="bg-surface border border-t-border rounded-xl p-5 text-center">
           <p className="text-sm text-muted mb-1">Past Due</p>
-          <p className={`text-3xl font-mono font-bold ${filteredPastDue.length > 0 ? "text-red-400" : "text-emerald-400"}`}>
-            {filteredPastDue.length}
+          <p className={`text-3xl font-mono font-bold ${(data?.pastDueSurveys?.length ?? 0) > 0 ? "text-red-400" : "text-emerald-400"}`}>
+            {data?.pastDueSurveys?.length ?? 0}
           </p>
           <p className="text-xs text-muted mt-1">overdue surveys</p>
         </div>
@@ -601,36 +514,6 @@ export default function SurveyMetricsDashboardPage() {
 
       {/* Drill-down after surveyor table */}
       {drillDown?.groupType === "surveyor" && drillDownPanel}
-
-      {/* ── Past Due Surveys ── */}
-      <div className="bg-surface border border-red-500/30 rounded-xl overflow-hidden mb-8">
-        <div className="px-5 py-4 border-b border-t-border">
-          <h2 className="text-lg font-semibold text-foreground">Past Due Surveys</h2>
-          <p className="text-sm text-muted mt-0.5">
-            {sortedPastDue.length} surveys where the scheduled date has passed but survey is not complete &middot; Excludes completed and cancelled projects
-          </p>
-        </div>
-        {sortedPastDue.length === 0 ? (
-          <div className="p-6 text-center text-emerald-400 text-sm">No overdue surveys</div>
-        ) : (
-          renderAwaitingTable(sortedPastDue, pastDueSort, true)
-        )}
-      </div>
-
-      {/* ── Upcoming Surveys ── */}
-      <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8">
-        <div className="px-5 py-4 border-b border-t-border">
-          <h2 className="text-lg font-semibold text-foreground">Upcoming Surveys</h2>
-          <p className="text-sm text-muted mt-0.5">
-            {sortedUpcoming.length} surveys scheduled for a future date &middot; Excludes completed and cancelled projects
-          </p>
-        </div>
-        {sortedUpcoming.length === 0 ? (
-          <div className="p-6 text-center text-muted text-sm">No upcoming surveys scheduled</div>
-        ) : (
-          renderAwaitingTable(sortedUpcoming, upcomingSort, false)
-        )}
-      </div>
     </DashboardShell>
   );
 }

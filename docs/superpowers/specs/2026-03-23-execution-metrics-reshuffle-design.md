@@ -44,12 +44,11 @@ Both tables use `SortHeader` component, `DealLinks` component, `max-h-[500px]` s
 The AHJ breakdown widget (top-15 card list, click-to-filter) is removed from the inspections execution page. The inspection metrics page already has a full "Performance by AHJ" sortable table with drill-down that is strictly more capable (sortable, expandable, shows FPR%, electrician/fire requirements). No need to duplicate.
 
 **What to remove from `src/app/dashboards/inspections/page.tsx`:**
-- The AHJ breakdown card and its `ahjStats` computation (`useMemo`)
-- The `filterAhjs` state variable
-- The `filterAhjs` reference in the `hasActiveFilters` check and `clearAllFilters` function
+- The AHJ breakdown card JSX (the `bg-surface rounded-xl` container with top-15 AHJ rows)
+- The `ahjStats` computation (`useMemo` that groups `filteredProjects` by AHJ)
 
 **What to keep:**
-- The AHJ `MultiSelectFilter` dropdown in the filter bar. AHJ is a genuinely useful filter for operators (filter by jurisdiction). The dropdown stays; only the breakdown card widget goes.
+- The `filterAhjs` state variable — it drives the AHJ `MultiSelectFilter` dropdown in the filter bar, which is useful for operators (filter by jurisdiction). The dropdown, its state, and its references in `hasActiveFilters` / `clearAllFilters` / `filteredProjects` all stay. Only the breakdown card widget goes.
 
 ## Data Considerations
 
@@ -58,20 +57,29 @@ The AHJ breakdown widget (top-15 card list, click-to-filter) is removed from the
 The site-survey execution page uses `useProjectData` for its main listing. Compute past-due and upcoming from these results rather than adding a separate API call:
 
 ```
-daysUntil = Math.floor((new Date(scheduledDate + "T12:00:00") - today) / 86400000)
+// Normalize both dates to local midnight to avoid mid-day classification errors
+const schedDate = new Date(scheduledDate + "T00:00:00");
+const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
+const daysUntil = Math.floor((schedDate.getTime() - todayMidnight.getTime()) / 86400000);
 pastDue  = daysUntil < 0 && !siteSurveyCompletionDate
 upcoming = daysUntil >= 0 && !siteSurveyCompletionDate
 ```
 
 **Important**: The main project listing currently filters out completed surveys. Past-due and upcoming must be computed from the **unfiltered** `projects` array (before the completion filter), not from `filteredProjects`.
 
-The `surveyor` / `siteSurveyor` field should be available on `RawProject` — verify the field name matches what the metrics API returns and map if needed.
+**Filter interaction**: After computing the raw past-due and upcoming lists from unfiltered projects, apply the page's active location and search filters before rendering. This keeps the tables consistent with whatever the operator has selected in the filter bar. Stage and status filters do **not** apply to these tables — they define their own status criteria (past-due vs upcoming) and span multiple stages. The site-survey page does not currently have a surveyor filter dropdown; adding one is out of scope for this change but would be a natural follow-up.
 
 ### Inspection tables
 
 The inspections execution page currently only fetches projects in the "Inspection" stage. The failed/pending tables need deals across all stages (a failed inspection might be on a deal that moved back to construction, CC-pending deals are pre-inspection).
 
 **Approach**: Add a secondary fetch to `/api/hubspot/inspection-metrics` from the inspections execution page to get the `outstandingFailed` and `ccPendingInspection` arrays. These are "current state" lists (not time-window scoped), so no `days` parameter is needed. Replicating the server-side logic client-side from `useProjectData` would be fragile — the API already handles cross-stage filtering correctly.
+
+**Slim payload**: The full metrics response includes location/AHJ performance tables, turnaround stats, and drill-down data that the execution page doesn't need. Add a `scope=pipeline` query parameter (or similar) to the inspection-metrics API that returns only the `outstandingFailed` and `ccPendingInspection` arrays, skipping the expensive aggregation work.
+
+**Refresh**: The inspections page's existing Refresh action must refetch both the main project query and the secondary metrics query. Wire both React Query keys to the refresh handler.
+
+**Filter interaction**: The failed/pending arrays come from the secondary API (cross-stage, unfiltered). After fetching, apply the page's active location and AHJ filters before rendering. Search filter applies too (match on project number or customer name). The page's "Inspection Status" filter does **not** apply to these tables — they span multiple stages by definition and have their own status semantics (failed-not-passed, CC-without-pass).
 
 ### Shared components
 
@@ -131,8 +139,9 @@ Shared version should use:
 |------|--------|
 | `src/app/dashboards/site-survey/page.tsx` | Add past-due and upcoming tables, compute from unfiltered projects |
 | `src/app/dashboards/survey-metrics/page.tsx` | Remove past-due and upcoming tables + `renderAwaitingTable()` |
-| `src/app/dashboards/inspections/page.tsx` | Add failed/pending tables via metrics API fetch, remove AHJ breakdown card + `filterAhjs` state (keep AHJ filter dropdown) |
+| `src/app/dashboards/inspections/page.tsx` | Add failed/pending tables via metrics API fetch, remove AHJ breakdown card + `ahjStats` memo (keep `filterAhjs` state and AHJ dropdown) |
 | `src/app/dashboards/inspection-metrics/page.tsx` | Remove failed/pending tables + related state |
+| `src/app/api/hubspot/inspection-metrics/route.ts` | Add `scope=pipeline` fast path returning only `outstandingFailed` + `ccPendingInspection` |
 | `src/components/ui/SortHeader.tsx` | New shared component (superset API with `compact` prop) |
 | `src/components/ui/DealLinks.tsx` | New shared component (configurable portal ID) |
 | `src/lib/format-helpers.ts` | New shared formatters (`fmtAmount`, `fmtDateShort`) |
