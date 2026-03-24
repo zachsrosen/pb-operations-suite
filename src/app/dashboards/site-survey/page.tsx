@@ -8,6 +8,10 @@ import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/u
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useSiteSurveyFilters } from "@/stores/dashboard-filters";
+import { useSort, sortRows } from "@/hooks/useSort";
+import { SortHeader } from "@/components/ui/SortHeader";
+import { DealLinks } from "@/components/ui/DealLinks";
+import { fmtAmount, fmtDateShort } from "@/lib/format-helpers";
 
 // Site Survey Status Groups
 const SITE_SURVEY_STATUS_GROUPS: FilterGroup[] = [
@@ -116,6 +120,68 @@ export default function SiteSurveyDashboardPage() {
       return true;
     });
   }, [projects, filterLocations, filterStages, filterSiteSurveyStatuses, searchQuery, isInSiteSurveyPhase]);
+
+  const surveyClassification = useMemo(() => {
+    if (!rawProjects) return { pastDue: [], upcoming: [] };
+
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0, 0, 0, 0);
+
+    const pastDue: Array<typeof rawProjects[number] & { daysUntil: number }> = [];
+    const upcoming: Array<typeof rawProjects[number] & { daysUntil: number }> = [];
+
+    for (const p of rawProjects) {
+      // Must have a scheduled date and no completion date
+      if (!p.siteSurveyScheduleDate || p.siteSurveyCompletionDate) continue;
+      // Must be in a site-survey-relevant phase
+      if (!isInSiteSurveyPhase(p)) continue;
+
+      const schedDate = new Date(p.siteSurveyScheduleDate + "T00:00:00");
+      const daysUntil = Math.floor((schedDate.getTime() - todayMidnight.getTime()) / 86400000);
+
+      const augmented = { ...p, daysUntil };
+      if (daysUntil < 0) {
+        pastDue.push(augmented);
+      } else {
+        upcoming.push(augmented);
+      }
+    }
+
+    return { pastDue, upcoming };
+  }, [rawProjects, isInSiteSurveyPhase]);
+
+  const filteredPastDue = useMemo(() => {
+    return surveyClassification.pastDue.filter((p) => {
+      if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || "")) return false;
+      if (filterStages.length > 0 && !filterStages.includes(p.stage || "")) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        if (
+          !(p.name || "").toLowerCase().includes(q) &&
+          !(p.pbLocation || "").toLowerCase().includes(q)
+        ) return false;
+      }
+      return true;
+    });
+  }, [surveyClassification.pastDue, filterLocations, filterStages, searchQuery]);
+
+  const filteredUpcoming = useMemo(() => {
+    return surveyClassification.upcoming.filter((p) => {
+      if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || "")) return false;
+      if (filterStages.length > 0 && !filterStages.includes(p.stage || "")) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        if (
+          !(p.name || "").toLowerCase().includes(q) &&
+          !(p.pbLocation || "").toLowerCase().includes(q)
+        ) return false;
+      }
+      return true;
+    });
+  }, [surveyClassification.upcoming, filterLocations, filterStages, searchQuery]);
+
+  const pastDueSort = useSort("daysUntil", "asc");
+  const upcomingSort = useSort("daysUntil", "asc");
 
   const stats = useMemo(() => {
     const inSiteSurveyStage = filteredProjects.filter(p => p.stage === 'Site Survey');
@@ -472,6 +538,107 @@ export default function SiteSurveyDashboardPage() {
           </table>
         </div>
       </div>
+      {/* Past Due Surveys */}
+      {filteredPastDue.length > 0 && (
+        <div className="bg-surface border border-red-500/30 rounded-xl overflow-hidden mt-6">
+          <div className="px-5 py-4 border-b border-t-border">
+            <h2 className="text-lg font-semibold text-foreground">Past Due Surveys</h2>
+            <p className="text-sm text-muted mt-0.5">
+              {filteredPastDue.length} survey{filteredPastDue.length !== 1 ? "s" : ""} where the scheduled date has passed but survey is not complete
+            </p>
+          </div>
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-t-border bg-surface-2/50">
+                  <SortHeader label="Project" sortKey="name" currentKey={pastDueSort.sortKey} currentDir={pastDueSort.sortDir} onSort={pastDueSort.toggle} className="text-left" />
+                  <SortHeader label="Customer" sortKey="name" currentKey={pastDueSort.sortKey} currentDir={pastDueSort.sortDir} onSort={pastDueSort.toggle} className="text-left" />
+                  <SortHeader label="Location" sortKey="pbLocation" currentKey={pastDueSort.sortKey} currentDir={pastDueSort.sortDir} onSort={pastDueSort.toggle} className="text-left" />
+                  <SortHeader label="Surveyor" sortKey="siteSurveyor" currentKey={pastDueSort.sortKey} currentDir={pastDueSort.sortDir} onSort={pastDueSort.toggle} className="text-left" />
+                  <SortHeader label="Stage" sortKey="stage" currentKey={pastDueSort.sortKey} currentDir={pastDueSort.sortDir} onSort={pastDueSort.toggle} className="text-left" />
+                  <SortHeader label="Amount" sortKey="amount" currentKey={pastDueSort.sortKey} currentDir={pastDueSort.sortDir} onSort={pastDueSort.toggle} className="text-right" />
+                  <SortHeader label="Scheduled" sortKey="siteSurveyScheduleDate" currentKey={pastDueSort.sortKey} currentDir={pastDueSort.sortDir} onSort={pastDueSort.toggle} className="text-center" />
+                  <SortHeader label="Days Overdue" sortKey="daysUntil" currentKey={pastDueSort.sortKey} currentDir={pastDueSort.sortDir} onSort={pastDueSort.toggle} className="text-center" />
+                  <th className="text-center px-4 py-3 font-semibold text-foreground">Links</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortRows(filteredPastDue, pastDueSort.sortKey, pastDueSort.sortDir).map((p, i) => (
+                  <tr key={p.id} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+                    <td className="px-4 py-3 font-mono text-foreground">{p.name.split("|")[0].trim()}</td>
+                    <td className="px-4 py-3 text-foreground truncate max-w-[180px]">{p.name.split("|")[1]?.trim() || ""}</td>
+                    <td className="px-4 py-3 text-muted">{p.pbLocation}</td>
+                    <td className="px-4 py-3 text-muted">{p.siteSurveyor || "--"}</td>
+                    <td className="px-4 py-3 text-muted">{p.stage}</td>
+                    <td className="px-4 py-3 text-right text-muted">{fmtAmount(p.amount)}</td>
+                    <td className="text-center px-4 py-3 text-muted">{fmtDateShort(p.siteSurveyScheduleDate)}</td>
+                    <td className={`text-center px-4 py-3 font-mono font-medium ${
+                      Math.abs(p.daysUntil) > 7 ? "text-red-400" :
+                      Math.abs(p.daysUntil) > 3 ? "text-orange-400" : "text-yellow-400"
+                    }`}>
+                      {Math.abs(p.daysUntil)}d overdue
+                    </td>
+                    <td className="text-center px-4 py-3">
+                      <DealLinks dealId={p.id} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Upcoming Surveys */}
+      {filteredUpcoming.length > 0 && (
+        <div className="bg-surface border border-t-border rounded-xl overflow-hidden mt-6">
+          <div className="px-5 py-4 border-b border-t-border">
+            <h2 className="text-lg font-semibold text-foreground">Upcoming Surveys</h2>
+            <p className="text-sm text-muted mt-0.5">
+              {filteredUpcoming.length} survey{filteredUpcoming.length !== 1 ? "s" : ""} scheduled for a future date
+            </p>
+          </div>
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-t-border bg-surface-2/50">
+                  <SortHeader label="Project" sortKey="name" currentKey={upcomingSort.sortKey} currentDir={upcomingSort.sortDir} onSort={upcomingSort.toggle} className="text-left" />
+                  <SortHeader label="Customer" sortKey="name" currentKey={upcomingSort.sortKey} currentDir={upcomingSort.sortDir} onSort={upcomingSort.toggle} className="text-left" />
+                  <SortHeader label="Location" sortKey="pbLocation" currentKey={upcomingSort.sortKey} currentDir={upcomingSort.sortDir} onSort={upcomingSort.toggle} className="text-left" />
+                  <SortHeader label="Surveyor" sortKey="siteSurveyor" currentKey={upcomingSort.sortKey} currentDir={upcomingSort.sortDir} onSort={upcomingSort.toggle} className="text-left" />
+                  <SortHeader label="Stage" sortKey="stage" currentKey={upcomingSort.sortKey} currentDir={upcomingSort.sortDir} onSort={upcomingSort.toggle} className="text-left" />
+                  <SortHeader label="Amount" sortKey="amount" currentKey={upcomingSort.sortKey} currentDir={upcomingSort.sortDir} onSort={upcomingSort.toggle} className="text-right" />
+                  <SortHeader label="Scheduled" sortKey="siteSurveyScheduleDate" currentKey={upcomingSort.sortKey} currentDir={upcomingSort.sortDir} onSort={upcomingSort.toggle} className="text-center" />
+                  <SortHeader label="Days Until" sortKey="daysUntil" currentKey={upcomingSort.sortKey} currentDir={upcomingSort.sortDir} onSort={upcomingSort.toggle} className="text-center" />
+                  <th className="text-center px-4 py-3 font-semibold text-foreground">Links</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortRows(filteredUpcoming, upcomingSort.sortKey, upcomingSort.sortDir).map((p, i) => (
+                  <tr key={p.id} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+                    <td className="px-4 py-3 font-mono text-foreground">{p.name.split("|")[0].trim()}</td>
+                    <td className="px-4 py-3 text-foreground truncate max-w-[180px]">{p.name.split("|")[1]?.trim() || ""}</td>
+                    <td className="px-4 py-3 text-muted">{p.pbLocation}</td>
+                    <td className="px-4 py-3 text-muted">{p.siteSurveyor || "--"}</td>
+                    <td className="px-4 py-3 text-muted">{p.stage}</td>
+                    <td className="px-4 py-3 text-right text-muted">{fmtAmount(p.amount)}</td>
+                    <td className="text-center px-4 py-3 text-muted">{fmtDateShort(p.siteSurveyScheduleDate)}</td>
+                    <td className={`text-center px-4 py-3 font-mono font-medium ${
+                      p.daysUntil <= 1 ? "text-emerald-400" :
+                      p.daysUntil <= 3 ? "text-yellow-400" : "text-muted"
+                    }`}>
+                      {p.daysUntil}d
+                    </td>
+                    <td className="text-center px-4 py-3">
+                      <DealLinks dealId={p.id} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </DashboardShell>
   );
 }
