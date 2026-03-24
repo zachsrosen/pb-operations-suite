@@ -103,4 +103,66 @@ describe("canAccessRoute - new suite structure", () => {
   it("blocks SALES from preconstruction metrics", () => {
     expect(canAccessRoute("SALES", "/dashboards/preconstruction-metrics")).toBe(false);
   });
+
+  // Construction suite card routes (hotfix 2026-03-24)
+  describe("construction suite cards visible to ops roles", () => {
+    const routes = [
+      "/dashboards/construction",
+      "/dashboards/construction-metrics",
+      "/dashboards/construction-scheduler",
+      "/api/hubspot/qc-metrics",
+    ];
+    for (const route of routes) {
+      it(`OPERATIONS can access ${route}`, () => {
+        expect(canAccessRoute("OPERATIONS", route)).toBe(true);
+      });
+      it(`OPERATIONS_MANAGER can access ${route}`, () => {
+        expect(canAccessRoute("OPERATIONS_MANAGER", route)).toBe(true);
+      });
+    }
+  });
+
+  // Site survey execution route (hotfix 2026-03-24)
+  describe("site-survey execution visible to ops roles", () => {
+    it("OPERATIONS can access /dashboards/site-survey", () => {
+      expect(canAccessRoute("OPERATIONS", "/dashboards/site-survey")).toBe(true);
+    });
+    it("OPERATIONS_MANAGER can access /dashboards/site-survey", () => {
+      expect(canAccessRoute("OPERATIONS_MANAGER", "/dashboards/site-survey")).toBe(true);
+    });
+  });
+
+  // Product comparison is admin-only (ADMIN_ONLY_ROUTES overrides allowedRoutes)
+  describe("admin-only routes blocked for ops roles", () => {
+    it("OPERATIONS cannot access /dashboards/product-comparison (admin-only)", () => {
+      expect(canAccessRoute("OPERATIONS", "/dashboards/product-comparison")).toBe(false);
+    });
+    it("OPERATIONS_MANAGER cannot access /dashboards/product-comparison (admin-only)", () => {
+      expect(canAccessRoute("OPERATIONS_MANAGER", "/dashboards/product-comparison")).toBe(false);
+    });
+    it("ADMIN can access /dashboards/product-comparison", () => {
+      expect(canAccessRoute("ADMIN", "/dashboards/product-comparison")).toBe(true);
+    });
+  });
+
+  // QC metrics API accessible to all roles with construction-metrics dashboard
+  describe("qc-metrics API matches construction-metrics dashboard access", () => {
+    const rolesWithDashboard = [
+      "PROJECT_MANAGER",
+      "TECH_OPS",
+      "MANAGER",
+    ] as const;
+    for (const role of rolesWithDashboard) {
+      it(`${role} can access /api/hubspot/qc-metrics`, () => {
+        expect(canAccessRoute(role, "/api/hubspot/qc-metrics")).toBe(true);
+      });
+    }
+
+    it("SALES cannot access /api/hubspot/qc-metrics", () => {
+      expect(canAccessRoute("SALES", "/api/hubspot/qc-metrics")).toBe(false);
+    });
+    it("VIEWER cannot access /api/hubspot/qc-metrics", () => {
+      expect(canAccessRoute("VIEWER", "/api/hubspot/qc-metrics")).toBe(false);
+    });
+  });
 });
