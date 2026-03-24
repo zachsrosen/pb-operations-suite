@@ -1,11 +1,15 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
 import { queryKeys } from "@/lib/query-keys";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { useSort, sortRows } from "@/hooks/useSort";
+import { SortHeader } from "@/components/ui/SortHeader";
+import { DealLinks } from "@/components/ui/DealLinks";
+import { fmtAmount, fmtDateShort } from "@/lib/format-helpers";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -105,9 +109,6 @@ interface InspectionMetricsData {
 
 // ── Constants ──────────────────────────────────────────────────────────
 
-const HUBSPOT_BASE = "https://app.hubspot.com/contacts/21710069/deal";
-const ZUPER_BASE_URL = "https://web.zuperpro.com";
-
 const DAYS_OPTIONS = [
   { label: "30 Days", value: 30 },
   { label: "60 Days", value: 60 },
@@ -165,105 +166,6 @@ function fmtPct(v: number | null | undefined): string {
   return `${v.toFixed(1)}%`;
 }
 
-function fmtAmount(v: number | null | undefined): string {
-  if (v === null || v === undefined) return "--";
-  return "$" + v.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 });
-}
-
-function fmtDateShort(dateStr: string | null | undefined): string {
-  if (!dateStr) return "--";
-  const d = new Date(dateStr + "T12:00:00");
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-}
-
-// ── Sort helpers ──────────────────────────────────────────────────────
-
-type SortDir = "asc" | "desc";
-
-function useSort(defaultKey = "", defaultDir: SortDir = "asc") {
-  const [sortKey, setSortKey] = useState(defaultKey);
-  const [sortDir, setSortDir] = useState<SortDir>(defaultDir);
-  const toggle = useCallback(
-    (key: string) => {
-      if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-      else {
-        setSortKey(key);
-        setSortDir("asc");
-      }
-    },
-    [sortKey],
-  );
-  return { sortKey, sortDir, toggle };
-}
-
-function sortRows<T>(rows: T[], key: string, dir: SortDir): T[] {
-  if (!key) return rows;
-  return [...rows].sort((a, b) => {
-    const av = (a as Record<string, unknown>)[key];
-    const bv = (b as Record<string, unknown>)[key];
-    if (av == null && bv == null) return 0;
-    if (av == null) return 1;
-    if (bv == null) return -1;
-    if (typeof av === "number" && typeof bv === "number") return dir === "asc" ? av - bv : bv - av;
-    if (typeof av === "boolean" && typeof bv === "boolean") return dir === "asc" ? (av === bv ? 0 : av ? -1 : 1) : (av === bv ? 0 : av ? 1 : -1);
-    return dir === "asc" ? String(av).localeCompare(String(bv)) : String(bv).localeCompare(String(av));
-  });
-}
-
-function SortHeader({
-  label,
-  sortKey,
-  currentKey,
-  currentDir,
-  onToggle,
-  className = "",
-}: {
-  label: string;
-  sortKey: string;
-  currentKey: string;
-  currentDir: SortDir;
-  onToggle: (key: string) => void;
-  className?: string;
-}) {
-  const active = currentKey === sortKey;
-  return (
-    <th
-      className={`px-3 py-2 text-left text-xs font-medium text-muted cursor-pointer select-none hover:text-foreground transition-colors ${className}`}
-      onClick={() => onToggle(sortKey)}
-    >
-      {label}{" "}
-      <span className="ml-1">{active ? (currentDir === "asc" ? "\u25B2" : "\u25BC") : "\u21C5"}</span>
-    </th>
-  );
-}
-
-// ── Link helpers ──────────────────────────────────────────────────────
-
-function DealLinks({ dealId, zuperJobUid }: { dealId: string; zuperJobUid: string | null }) {
-  return (
-    <div className="flex items-center justify-center gap-2">
-      <a
-        href={`${HUBSPOT_BASE}/${dealId}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="text-emerald-400 hover:text-emerald-300 underline text-xs"
-      >
-        HubSpot &#8599;
-      </a>
-      {zuperJobUid && (
-        <a
-          href={`${ZUPER_BASE_URL}/jobs/${zuperJobUid}/details`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-cyan-400 hover:text-cyan-300 underline text-xs"
-        >
-          Zuper &#8599;
-        </a>
-      )}
-    </div>
-  );
-}
-
 // ── Main Page ─────────────────────────────────────────────────────────
 
 export default function InspectionMetricsDashboardPage() {
@@ -277,11 +179,9 @@ export default function InspectionMetricsDashboardPage() {
   const [locationDrillMode, setLocationDrillMode] = useState<"deals" | "ahjs">("deals");
   const [expandedAhjRow, setExpandedAhjRow] = useState<string | null>(null);
 
-  // Sort state for all four sections
+  // Sort state for performance tables
   const locationSort = useSort("", "asc");
   const ahjSort = useSort("", "asc");
-  const failedSort = useSort("daysSinceLastFail", "desc");
-  const pendingSort = useSort("daysSinceCc", "desc");
 
   // Drill-down scroll refs
   const locationDrillRef = useRef<HTMLTableRowElement>(null);
@@ -377,32 +277,6 @@ export default function InspectionMetricsDashboardPage() {
   const sortedAhjRows = useMemo(
     () => sortRows(ahjRows, ahjSort.sortKey, ahjSort.sortDir),
     [ahjRows, ahjSort.sortKey, ahjSort.sortDir],
-  );
-
-  // Outstanding failed rows
-  const failedRows = useMemo(() => {
-    if (!data) return [];
-    let rows = data.outstandingFailed;
-    if (filterLocations.length > 0) rows = rows.filter((r) => filterLocations.includes(r.pbLocation));
-    return rows;
-  }, [data, filterLocations]);
-
-  const sortedFailedRows = useMemo(
-    () => sortRows(failedRows, failedSort.sortKey, failedSort.sortDir),
-    [failedRows, failedSort.sortKey, failedSort.sortDir],
-  );
-
-  // CC pending inspection rows
-  const pendingRows = useMemo(() => {
-    if (!data) return [];
-    let rows = data.ccPendingInspection;
-    if (filterLocations.length > 0) rows = rows.filter((r) => filterLocations.includes(r.pbLocation));
-    return rows;
-  }, [data, filterLocations]);
-
-  const sortedPendingRows = useMemo(
-    () => sortRows(pendingRows, pendingSort.sortKey, pendingSort.sortDir),
-    [pendingRows, pendingSort.sortKey, pendingSort.sortDir],
   );
 
   // Filtered totals (recompute when location filter active)
@@ -614,12 +488,6 @@ export default function InspectionMetricsDashboardPage() {
             subtitle={filteredTotals.fpr !== null ? (filteredTotals.fpr >= 90 ? "Excellent" : filteredTotals.fpr >= 75 ? "Good" : "Needs improvement") : null}
             color={fprStatColor(filteredTotals.fpr)}
           />
-          <StatCard
-            label="Outstanding Failures"
-            value={failedRows.length.toLocaleString()}
-            subtitle={failedRows.length === 0 ? "All clear" : "Need reinspection"}
-            color={failedRows.length > 0 ? "red" : "green"}
-          />
         </div>
       )}
 
@@ -640,12 +508,12 @@ export default function InspectionMetricsDashboardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-t-border bg-surface-2/50">
-                  <SortHeader label="PB Location" sortKey="location" currentKey={locationSort.sortKey} currentDir={locationSort.sortDir} onToggle={locationSort.toggle} />
-                  <SortHeader label="Inspections" sortKey="count" currentKey={locationSort.sortKey} currentDir={locationSort.sortDir} onToggle={locationSort.toggle} />
-                  <SortHeader label="Avg Turnaround" sortKey="avgTurnaround" currentKey={locationSort.sortKey} currentDir={locationSort.sortDir} onToggle={locationSort.toggle} />
-                  <SortHeader label="FPR %" sortKey="fpr" currentKey={locationSort.sortKey} currentDir={locationSort.sortDir} onToggle={locationSort.toggle} />
-                  <SortHeader label="Fail Count" sortKey="failCount" currentKey={locationSort.sortKey} currentDir={locationSort.sortDir} onToggle={locationSort.toggle} />
-                  <SortHeader label="Avg CC to Pass" sortKey="avgCcToPass" currentKey={locationSort.sortKey} currentDir={locationSort.sortDir} onToggle={locationSort.toggle} />
+                  <SortHeader label="PB Location" sortKey="location" currentKey={locationSort.sortKey} currentDir={locationSort.sortDir} onSort={locationSort.toggle} compact />
+                  <SortHeader label="Inspections" sortKey="count" currentKey={locationSort.sortKey} currentDir={locationSort.sortDir} onSort={locationSort.toggle} compact />
+                  <SortHeader label="Avg Turnaround" sortKey="avgTurnaround" currentKey={locationSort.sortKey} currentDir={locationSort.sortDir} onSort={locationSort.toggle} compact />
+                  <SortHeader label="FPR %" sortKey="fpr" currentKey={locationSort.sortKey} currentDir={locationSort.sortDir} onSort={locationSort.toggle} compact />
+                  <SortHeader label="Fail Count" sortKey="failCount" currentKey={locationSort.sortKey} currentDir={locationSort.sortDir} onSort={locationSort.toggle} compact />
+                  <SortHeader label="Avg CC to Pass" sortKey="avgCcToPass" currentKey={locationSort.sortKey} currentDir={locationSort.sortDir} onSort={locationSort.toggle} compact />
                 </tr>
               </thead>
               <tbody>
@@ -851,14 +719,14 @@ export default function InspectionMetricsDashboardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-t-border bg-surface-2/50">
-                  <SortHeader label="AHJ" sortKey="ahj" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onToggle={ahjSort.toggle} />
-                  <SortHeader label="PB Location" sortKey="location" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onToggle={ahjSort.toggle} />
-                  <SortHeader label="Inspections" sortKey="count" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onToggle={ahjSort.toggle} />
-                  <SortHeader label="Avg Turnaround" sortKey="avgTurnaround" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onToggle={ahjSort.toggle} />
-                  <SortHeader label="FPR %" sortKey="fpr" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onToggle={ahjSort.toggle} />
-                  <SortHeader label="Fail Count" sortKey="failCount" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onToggle={ahjSort.toggle} />
-                  <SortHeader label="Electrician Req" sortKey="electricianRequired" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onToggle={ahjSort.toggle} />
-                  <SortHeader label="Fire Insp Req" sortKey="fireInspectionRequired" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onToggle={ahjSort.toggle} />
+                  <SortHeader label="AHJ" sortKey="ahj" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onSort={ahjSort.toggle} compact />
+                  <SortHeader label="PB Location" sortKey="location" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onSort={ahjSort.toggle} compact />
+                  <SortHeader label="Inspections" sortKey="count" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onSort={ahjSort.toggle} compact />
+                  <SortHeader label="Avg Turnaround" sortKey="avgTurnaround" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onSort={ahjSort.toggle} compact />
+                  <SortHeader label="FPR %" sortKey="fpr" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onSort={ahjSort.toggle} compact />
+                  <SortHeader label="Fail Count" sortKey="failCount" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onSort={ahjSort.toggle} compact />
+                  <SortHeader label="Electrician Req" sortKey="electricianRequired" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onSort={ahjSort.toggle} compact />
+                  <SortHeader label="Fire Insp Req" sortKey="fireInspectionRequired" currentKey={ahjSort.sortKey} currentDir={ahjSort.sortDir} onSort={ahjSort.toggle} compact />
                 </tr>
               </thead>
               <tbody>
@@ -975,157 +843,6 @@ export default function InspectionMetricsDashboardPage() {
         )}
       </div>
 
-      {/* ── Section 3: Outstanding Failed Inspections ───────────────── */}
-      <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8 border-l-4 border-l-red-500">
-        <div className="px-5 py-4 border-b border-t-border">
-          <h2 className="text-lg font-semibold text-foreground">
-            Outstanding Failed Inspections
-            <span className="ml-2 text-sm font-normal text-muted">({failedRows.length})</span>
-          </h2>
-          <p className="text-sm text-muted mt-0.5">
-            Active projects where inspection has failed and hasn&apos;t yet passed. These need reinspection or resolution.
-          </p>
-        </div>
-        {sortedFailedRows.length === 0 ? (
-          <div className="p-8 text-center">
-            <span className="text-emerald-400 text-2xl">&#10003;</span>
-            <p className="text-emerald-400 font-medium mt-2">No outstanding failed inspections</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10">
-                <tr className="border-b border-t-border bg-surface-2/50">
-                  <SortHeader label="Project" sortKey="projectNumber" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onToggle={failedSort.toggle} />
-                  <SortHeader label="Customer" sortKey="name" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onToggle={failedSort.toggle} />
-                  <SortHeader label="PB Location" sortKey="pbLocation" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onToggle={failedSort.toggle} />
-                  <SortHeader label="AHJ" sortKey="ahj" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onToggle={failedSort.toggle} />
-                  <SortHeader label="Stage" sortKey="stage" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onToggle={failedSort.toggle} />
-                  <SortHeader label="Amount" sortKey="amount" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onToggle={failedSort.toggle} />
-                  <SortHeader label="Fail Date" sortKey="inspectionFailDate" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onToggle={failedSort.toggle} />
-                  <SortHeader label="Fail Count" sortKey="inspectionFailCount" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onToggle={failedSort.toggle} />
-                  <SortHeader label="Failure Reason" sortKey="inspectionFailureReason" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onToggle={failedSort.toggle} />
-                  <SortHeader label="Days Since Fail" sortKey="daysSinceLastFail" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onToggle={failedSort.toggle} />
-                  <th className="px-3 py-2 text-center text-xs font-medium text-muted">Links</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedFailedRows.map((p, i) => (
-                  <tr
-                    key={p.dealId}
-                    className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}
-                  >
-                    <td className="px-3 py-2.5 font-mono text-foreground">{p.projectNumber}</td>
-                    <td className="px-3 py-2.5 text-foreground truncate max-w-[180px]">{p.name}</td>
-                    <td className="px-3 py-2.5 text-muted">{p.pbLocation}</td>
-                    <td className="px-3 py-2.5 text-muted">{p.ahj || "--"}</td>
-                    <td className="px-3 py-2.5 text-muted">{p.stage || "--"}</td>
-                    <td className="px-3 py-2.5 text-muted">{fmtAmount(p.amount)}</td>
-                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(p.inspectionFailDate)}</td>
-                    <td className={`px-3 py-2.5 font-mono ${p.inspectionFailCount > 1 ? "text-red-400 font-bold" : "text-red-400"}`}>
-                      {p.inspectionFailCount}
-                    </td>
-                    <td className="px-3 py-2.5 text-muted truncate max-w-[200px]" title={p.inspectionFailureReason || undefined}>
-                      {p.inspectionFailureReason || "--"}
-                    </td>
-                    <td className={`px-3 py-2.5 font-mono font-medium ${
-                      p.daysSinceLastFail !== null && p.daysSinceLastFail > 14
-                        ? "text-red-400"
-                        : p.daysSinceLastFail !== null && p.daysSinceLastFail > 7
-                          ? "text-orange-400"
-                          : "text-yellow-400"
-                    }`}>
-                      {p.daysSinceLastFail !== null ? `${p.daysSinceLastFail}d` : "--"}
-                    </td>
-                    <td className="px-3 py-2.5 text-center">
-                      <DealLinks dealId={p.dealId} zuperJobUid={p.zuperJobUid} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* ── Section 4: CC Pending Inspection ────────────────────────── */}
-      <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-8">
-        <div className="px-5 py-4 border-b border-t-border">
-          <h2 className="text-lg font-semibold text-foreground">
-            CC Pending Inspection
-            <span className="ml-2 text-sm font-normal text-muted">({pendingRows.length})</span>
-          </h2>
-          <p className="text-sm text-muted mt-0.5">
-            Construction complete projects waiting on inspection scheduling or results.
-          </p>
-        </div>
-        {sortedPendingRows.length === 0 ? (
-          <div className="p-8 text-center">
-            <span className="text-emerald-400 text-2xl">&#10003;</span>
-            <p className="text-emerald-400 font-medium mt-2">No projects pending inspection</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10">
-                <tr className="border-b border-t-border bg-surface-2/50">
-                  <SortHeader label="Project" sortKey="projectNumber" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onToggle={pendingSort.toggle} />
-                  <SortHeader label="Customer" sortKey="name" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onToggle={pendingSort.toggle} />
-                  <SortHeader label="PB Location" sortKey="pbLocation" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onToggle={pendingSort.toggle} />
-                  <SortHeader label="AHJ" sortKey="ahj" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onToggle={pendingSort.toggle} />
-                  <SortHeader label="Stage" sortKey="stage" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onToggle={pendingSort.toggle} />
-                  <SortHeader label="Amount" sortKey="amount" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onToggle={pendingSort.toggle} />
-                  <SortHeader label="CC Date" sortKey="constructionCompleteDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onToggle={pendingSort.toggle} />
-                  <SortHeader label="Days Since CC" sortKey="daysSinceCc" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onToggle={pendingSort.toggle} />
-                  <SortHeader label="Insp Scheduled" sortKey="inspectionScheduleDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onToggle={pendingSort.toggle} />
-                  <SortHeader label="Booked Date" sortKey="inspectionBookedDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onToggle={pendingSort.toggle} />
-                  <SortHeader label="Ready" sortKey="readyForInspection" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onToggle={pendingSort.toggle} />
-                  <th className="px-3 py-2 text-center text-xs font-medium text-muted">Links</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedPendingRows.map((p, i) => (
-                  <tr
-                    key={p.dealId}
-                    className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}
-                  >
-                    <td className="px-3 py-2.5 font-mono text-foreground">{p.projectNumber}</td>
-                    <td className="px-3 py-2.5 text-foreground truncate max-w-[180px]">{p.name}</td>
-                    <td className="px-3 py-2.5 text-muted">{p.pbLocation}</td>
-                    <td className="px-3 py-2.5 text-muted">{p.ahj || "--"}</td>
-                    <td className="px-3 py-2.5 text-muted">{p.stage || "--"}</td>
-                    <td className="px-3 py-2.5 text-muted">{fmtAmount(p.amount)}</td>
-                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(p.constructionCompleteDate)}</td>
-                    <td className={`px-3 py-2.5 font-mono font-medium ${
-                      p.daysSinceCc !== null && p.daysSinceCc > 30
-                        ? "text-red-400"
-                        : p.daysSinceCc !== null && p.daysSinceCc > 14
-                          ? "text-orange-400"
-                          : p.daysSinceCc !== null && p.daysSinceCc > 7
-                            ? "text-yellow-400"
-                            : "text-emerald-400"
-                    }`}>
-                      {p.daysSinceCc !== null ? `${p.daysSinceCc}d` : "--"}
-                    </td>
-                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(p.inspectionScheduleDate)}</td>
-                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(p.inspectionBookedDate)}</td>
-                    <td className="px-3 py-2.5 text-center">
-                      {p.readyForInspection ? (
-                        <span className="text-emerald-400" title="Ready">&#10003;</span>
-                      ) : (
-                        <span className="text-muted" title="Not ready">&#10007;</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-center">
-                      <DealLinks dealId={p.dealId} zuperJobUid={p.zuperJobUid} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </DashboardShell>
   );
 }
