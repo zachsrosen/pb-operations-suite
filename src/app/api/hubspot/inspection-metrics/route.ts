@@ -144,6 +144,13 @@ function parseNum(val: string | null | undefined): number | null {
   return isNaN(n) ? null : n;
 }
 
+/** Parse a HubSpot duration property (stored as ms) and convert to days */
+function parseMsToDays(val: string | null | undefined): number | null {
+  const ms = parseNum(val);
+  if (ms === null) return null;
+  return Math.round((ms / 86400000) * 10) / 10;
+}
+
 function groupBy<T>(items: T[], keyFn: (item: T) => string): Record<string, T[]> {
   const groups: Record<string, T[]> = {};
   for (const item of items) {
@@ -242,11 +249,11 @@ function extractLocationRollup(
     passCount: parseNum(useAllTime ? p.count_of_inspections_passed : p.total_inspections_passe_d__365_days_),
     failCount: parseNum(useAllTime ? p.count_of_inspections_failed : p.inspections_failed__365_days_),
     firstTimePassCount: parseNum(useAllTime ? p.count_of_inspections_passed_1st_time : p.total_1st_time_passed_inspections__365_days_),
-    turnaround: parseNum(useAllTime ? p.inspection_turnaround_time : p.inspection_turnaround_time__365_days_),
+    turnaround: parseMsToDays(useAllTime ? p.inspection_turnaround_time : p.inspection_turnaround_time__365_days_),
     outstandingFailed: parseNum(p.outstanding_failed_inspections),
     outstandingFailedNotRejected: parseNum(p.outstanding_failed_inspections__not_rejected_),
     ccPendingInspection: parseNum(p.cc_pending_inspection),
-    constructionTurnaround: parseNum(p.construction_turnaround_time__365_),
+    constructionTurnaround: parseMsToDays(p.construction_turnaround_time__365_),
   };
 }
 
@@ -270,7 +277,7 @@ function extractAHJRollup(
     passCount: use365 ? parseNum(p.total_inspections_passed__365__) : parseNum(p.count_of_inspections_passed),
     failCount: useAllTime ? parseNum(p.count_of_inspections_failed) : null,
     firstTimePassCount: useAllTime ? parseNum(p.total_first_time_passed_inspections) : null,
-    turnaround: parseNum(use365 ? p.inspection_turnaround_time__365_days_ : p.inspection_turnaround_time),
+    turnaround: parseMsToDays(use365 ? p.inspection_turnaround_time__365_days_ : p.inspection_turnaround_time),
   };
 }
 
