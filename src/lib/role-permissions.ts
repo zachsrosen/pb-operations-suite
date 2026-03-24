@@ -124,6 +124,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/survey-metrics",
       "/dashboards/preconstruction-metrics",
       "/dashboards/incentives",
+      "/api/hubspot/qc-metrics",
       // Intelligence dashboards
       "/dashboards/at-risk",
       "/dashboards/qc",
@@ -206,7 +207,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/scheduler",
       "/dashboards/forecast-schedule",
       "/dashboards/site-survey-scheduler",
+      "/dashboards/site-survey",
       "/dashboards/construction-scheduler",
+      "/dashboards/construction",
       "/dashboards/inspection-scheduler",
       "/dashboards/service-scheduler",
       "/dashboards/dnr-scheduler",
@@ -227,9 +230,11 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/construction-metrics",
       "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
+      "/api/hubspot/qc-metrics",
       // Equipment catalog
       "/dashboards/catalog",
       "/dashboards/submit-product",
+      "/dashboards/product-comparison",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
@@ -273,7 +278,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/scheduler",
       "/dashboards/forecast-schedule",
       "/dashboards/site-survey-scheduler",
+      "/dashboards/site-survey",
       "/dashboards/construction-scheduler",
+      "/dashboards/construction",
       "/dashboards/inspection-scheduler",
       "/dashboards/service-scheduler",
       "/dashboards/dnr-scheduler",
@@ -295,6 +302,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/construction-metrics",
       "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
+      "/api/hubspot/qc-metrics",
       // Intelligence dashboards
       "/dashboards/at-risk",
       "/dashboards/qc",
@@ -322,6 +330,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // Equipment catalog
       "/dashboards/catalog",
       "/dashboards/submit-product",
+      "/dashboards/product-comparison",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
@@ -398,6 +407,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
       "/dashboards/incentives",
+      "/api/hubspot/qc-metrics",
       // Intelligence dashboards
       "/dashboards/at-risk",
       "/dashboards/qc",
@@ -497,6 +507,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
       "/dashboards/incentives",
+      "/api/hubspot/qc-metrics",
       "/dashboards/scheduler",
       "/dashboards/forecast-schedule",
       "/dashboards/site-survey-scheduler",
@@ -599,6 +610,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
       "/dashboards/incentives",
+      "/api/hubspot/qc-metrics",
       // D&E Suite dashboards
       "/dashboards/de-overview",
       "/dashboards/plan-review",
@@ -665,6 +677,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/inspection-metrics",
       "/dashboards/survey-metrics",
       "/dashboards/incentives",
+      "/api/hubspot/qc-metrics",
       // D&E Suite dashboards
       "/dashboards/de-overview",
       "/dashboards/plan-review",
