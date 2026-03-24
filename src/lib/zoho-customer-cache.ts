@@ -40,6 +40,9 @@ interface CustomerCache {
 
 let cache: CustomerCache | null = null;
 
+/** In-flight load promise — prevents stampede when multiple requests hit a cold cache. */
+let inflightLoad: Promise<void> | null = null;
+
 // ---------------------------------------------------------------------------
 // HubSpot ID extraction helpers
 // ---------------------------------------------------------------------------
@@ -243,8 +246,20 @@ export async function ensureCustomerCacheLoaded(): Promise<void> {
   if (cache && Date.now() < cache.expiresAt && cache.version === CACHE_VERSION) {
     return; // cache is warm and valid
   }
+
+  // Deduplicate concurrent cold-start loads — prevents stampede when
+  // multiple API requests hit an expired/empty cache simultaneously.
+  if (inflightLoad) {
+    return inflightLoad;
+  }
+
   cache = null;
-  await loadAllCustomers();
+  inflightLoad = loadAllCustomers();
+  try {
+    await inflightLoad;
+  } finally {
+    inflightLoad = null;
+  }
 }
 
 /** Find a customer by HubSpot contact ID. Returns null if not found. */
@@ -293,6 +308,12 @@ export function findByPhone(phone: string): CachedCustomer | null {
   const normalized = normalizePhone(phone);
   if (!normalized) return null;
   return cache.customers.find((c) => c.phone === normalized) ?? null;
+}
+
+/** Reset cache state — test-only. */
+export function __resetForTest(): void {
+  cache = null;
+  inflightLoad = null;
 }
 
 /** Get cache stats for debug endpoint. */

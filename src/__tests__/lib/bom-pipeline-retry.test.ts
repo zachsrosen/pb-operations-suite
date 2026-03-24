@@ -486,11 +486,19 @@ describe("resolvePipelineRecipients", () => {
 // ── 7. pickBestPlanset — document selection ────────────────────────────────
 
 describe("pickBestPlanset", () => {
-  function file(name: string, id = "file-1"): { id: string; name: string; modifiedTime: string } {
-    return { id, name, modifiedTime: "2026-03-01T00:00:00Z" };
+  function file(name: string, id = "file-1", size?: string): { id: string; name: string; modifiedTime: string; size?: string } {
+    return { id, name, modifiedTime: "2026-03-01T00:00:00Z", ...(size ? { size } : {}) };
   }
 
-  it("prefers stamped files", () => {
+  it("prefers stamped files of comparable size", () => {
+    const result = pickBestPlanset([
+      file("PROJ-8904 Sobrevilla Stamped Planset.pdf", "stamped", "20000000"),
+      file("PROJ-8904 Sobrevilla Planset.pdf", "plain", "25000000"),
+    ]);
+    expect(result?.id).toBe("stamped");
+  });
+
+  it("prefers stamped files when no size info is available", () => {
     const result = pickBestPlanset([
       file("PROJ-8904 Sobrevilla Stamped Planset.pdf", "stamped"),
       file("PROJ-8904 Sobrevilla Planset.pdf", "plain"),
@@ -554,6 +562,29 @@ describe("pickBestPlanset", () => {
 
   it("returns null for empty list", () => {
     expect(pickBestPlanset([])).toBeNull();
+  });
+
+  it("skips tiny stamped file when much larger planset exists (PROJ-9530 barn plans)", () => {
+    // Exact scenario: "Stamped barn plans" at 2.8MB matched /stamped/i
+    // but the actual planset is the 29MB PROJ file
+    const files = [
+      file("Design Approval | Cool, Monte | 535 Avila Beach Dr, Avila Beach, CA 93424", "da", "1900000"),
+      file("PROJ9530CoolMonte_REV_A0312202669b2d3edf1e35.pdf", "planset", "29400000"),
+      file("Stamped barn plans reduced-compressed (1).pdf", "barn", "2800000"),
+    ];
+    const result = pickBestPlanset(files);
+    // Should NOT pick the barn plans just because "stamped" is in the name
+    expect(result?.id).toBe("planset");
+  });
+
+  it("still picks stamped file when it is the largest or comparable in size", () => {
+    const files = [
+      file("PROJ-9530 Cool Monte Stamped Plans.pdf", "stamped-real", "28000000"),
+      file("PROJ9530CoolMonte_REV_A0312202669b2d3edf1e35.pdf", "rev", "29400000"),
+    ];
+    const result = pickBestPlanset(files);
+    // 28MB is >1/3 of 29MB — stamped preference still holds
+    expect(result?.id).toBe("stamped-real");
   });
 
   it("would have selected the Sobrevilla response letter before the fix", () => {
