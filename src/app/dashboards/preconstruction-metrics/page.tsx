@@ -380,10 +380,10 @@ export default function PreconstMetricsPage() {
         />
       </div>
 
-      {/* Section 3: Permitting & Interconnection */}
+      {/* Section 3: Permitting */}
       <div className="mb-8">
-        <h2 className="text-lg font-semibold text-foreground mb-3">Permitting & Interconnection</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 stagger-grid mb-4">
+        <h2 className="text-lg font-semibold text-foreground mb-3">Permitting</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 stagger-grid mb-4">
           <StatCard
             label="Permits Submitted"
             value={loading ? "—" : String(permitMetrics.submitted.count)}
@@ -396,6 +396,22 @@ export default function PreconstMetricsPage() {
             subtitle={loading ? undefined : formatMoney(permitMetrics.issued.revenue)}
             color="emerald"
           />
+        </div>
+        <MonthlyBarChart
+          title="Permits (12 months)"
+          data={permitSubmitTrend}
+          secondaryData={permitIssueTrend}
+          primaryLabel="submitted"
+          secondaryLabel="issued"
+          months={12}
+          accentColor="cyan"
+        />
+      </div>
+
+      {/* Section 4: Interconnection */}
+      <div className="mb-8">
+        <h2 className="text-lg font-semibold text-foreground mb-3">Interconnection</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 stagger-grid mb-4">
           <StatCard
             label="IC Submitted"
             value={loading ? "—" : String(icMetrics.submitted.count)}
@@ -409,26 +425,15 @@ export default function PreconstMetricsPage() {
             color="emerald"
           />
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <MonthlyBarChart
-            title="Permits (12 months)"
-            data={permitSubmitTrend}
-            secondaryData={permitIssueTrend}
-            primaryLabel="submitted"
-            secondaryLabel="issued"
-            months={12}
-            accentColor="cyan"
-          />
-          <MonthlyBarChart
-            title="Interconnection (12 months)"
-            data={icSubmitTrend}
-            secondaryData={icApprovedTrend}
-            primaryLabel="submitted"
-            secondaryLabel="approved"
-            months={12}
-            accentColor="blue"
-          />
-        </div>
+        <MonthlyBarChart
+          title="Interconnection (12 months)"
+          data={icSubmitTrend}
+          secondaryData={icApprovedTrend}
+          primaryLabel="submitted"
+          secondaryLabel="approved"
+          months={12}
+          accentColor="blue"
+        />
       </div>
     </DashboardShell>
   );
