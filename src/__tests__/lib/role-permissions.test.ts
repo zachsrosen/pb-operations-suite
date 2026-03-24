@@ -86,4 +86,21 @@ describe("canAccessRoute - new suite structure", () => {
     expect(canAccessRoute("PROJECT_MANAGER", "/api/forecasting")).toBe(true);
     expect(canAccessRoute("MANAGER", "/api/forecasting")).toBe(true);
   });
+
+  // Preconstruction metrics access
+  it("allows OPERATIONS_MANAGER to access preconstruction metrics", () => {
+    expect(canAccessRoute("OPERATIONS_MANAGER", "/dashboards/preconstruction-metrics")).toBe(true);
+  });
+
+  it("allows PROJECT_MANAGER to access preconstruction metrics", () => {
+    expect(canAccessRoute("PROJECT_MANAGER", "/dashboards/preconstruction-metrics")).toBe(true);
+  });
+
+  it("blocks OPERATIONS from preconstruction metrics", () => {
+    expect(canAccessRoute("OPERATIONS", "/dashboards/preconstruction-metrics")).toBe(false);
+  });
+
+  it("blocks SALES from preconstruction metrics", () => {
+    expect(canAccessRoute("SALES", "/dashboards/preconstruction-metrics")).toBe(false);
+  });
 });

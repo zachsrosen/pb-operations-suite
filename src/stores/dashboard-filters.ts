@@ -293,3 +293,28 @@ export function useClippingAnalyticsFilters() {
       useDashboardFilters.getState().clearFilters("clipping-analytics"),
   };
 }
+
+// ===== Preconstruction Metrics filters =====
+
+export interface PreconstMetricsFilters {
+  locations: string[];
+  leads: string[];
+}
+
+const defaultPreconstMetricsFilters: PreconstMetricsFilters = {
+  locations: [],
+  leads: [],
+};
+
+export function usePreconstMetricsFilters() {
+  const raw = useDashboardFilters(
+    (s) => s.filters["preconst-metrics"]
+  ) as PreconstMetricsFilters | undefined;
+  const setFilters = useDashboardFilters((s) => s.setFilters);
+  return {
+    filters: raw ?? defaultPreconstMetricsFilters,
+    setFilters: (f: PreconstMetricsFilters) => setFilters("preconst-metrics", f),
+    clearFilters: () =>
+      useDashboardFilters.getState().clearFilters("preconst-metrics"),
+  };
+}

@@ -29,6 +29,14 @@ const LINKS: SuitePageCard[] = [
     section: "Executive Views",
   },
   {
+    href: "/dashboards/preconstruction-metrics",
+    title: "Preconstruction Metrics",
+    description: "Survey, design approval, permitting, and interconnection KPIs with 12-month trends.",
+    tag: "PRECON",
+    icon: "🏗️",
+    section: "Executive Views",
+  },
+  {
     href: "/dashboards/command-center",
     title: "Command Center",
     description: "Real-time executive command center with live metrics and alerts.",
