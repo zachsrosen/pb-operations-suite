@@ -207,6 +207,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/scheduler",
       "/dashboards/forecast-schedule",
       "/dashboards/site-survey-scheduler",
+      "/dashboards/site-survey",
       "/dashboards/construction-scheduler",
       "/dashboards/construction",
       "/dashboards/inspection-scheduler",
@@ -233,6 +234,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // Equipment catalog
       "/dashboards/catalog",
       "/dashboards/submit-product",
+      "/dashboards/product-comparison",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
@@ -276,6 +278,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/scheduler",
       "/dashboards/forecast-schedule",
       "/dashboards/site-survey-scheduler",
+      "/dashboards/site-survey",
       "/dashboards/construction-scheduler",
       "/dashboards/construction",
       "/dashboards/inspection-scheduler",
@@ -327,6 +330,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // Equipment catalog
       "/dashboards/catalog",
       "/dashboards/submit-product",
+      "/dashboards/product-comparison",
       "/api/projects",
       "/api/bom",
       "/api/catalog",
