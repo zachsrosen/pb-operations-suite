@@ -7,6 +7,11 @@ import { RawProject } from "@/lib/types";
 import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useProjectData } from "@/hooks/useProjectData";
+import { useQuery } from "@tanstack/react-query";
+import { useSort, sortRows } from "@/hooks/useSort";
+import { SortHeader } from "@/components/ui/SortHeader";
+import { DealLinks } from "@/components/ui/DealLinks";
+import { fmtAmount, fmtDateShort } from "@/lib/format-helpers";
 
 // Display name mappings
 const DISPLAY_NAMES: Record<string, string> = {
@@ -134,6 +139,35 @@ export default function InspectionsPage() {
   });
   const safeProjects = useMemo(() => projects ?? [], [projects]);
 
+  const { data: pipelineData, refetch: refetchPipeline } = useQuery({
+    queryKey: ["inspection-pipeline"],
+    queryFn: async () => {
+      const res = await fetch("/api/hubspot/inspection-metrics?scope=pipeline");
+      if (!res.ok) throw new Error("Failed to fetch pipeline data");
+      return res.json() as Promise<{
+        outstandingFailed: Array<{
+          dealId: string; projectNumber: string; name: string; url: string;
+          pbLocation: string; ahj: string; stage: string; amount: number;
+          inspectionFailDate: string | null; inspectionFailCount: number | null;
+          inspectionFailureReason: string | null; daysSinceLastFail: number | null;
+          constructionCompleteDate: string | null; daysSinceCc: number | null;
+          inspectionScheduleDate: string | null; inspectionBookedDate: string | null;
+          readyForInspection: string | null; zuperJobUid: string | null;
+        }>;
+        ccPendingInspection: Array<{
+          dealId: string; projectNumber: string; name: string; url: string;
+          pbLocation: string; ahj: string; stage: string; amount: number;
+          constructionCompleteDate: string | null; daysSinceCc: number | null;
+          inspectionScheduleDate: string | null; inspectionBookedDate: string | null;
+          readyForInspection: string | null; zuperJobUid: string | null;
+          inspectionFailDate: string | null; inspectionFailCount: number | null;
+          inspectionFailureReason: string | null; daysSinceLastFail: number | null;
+        }>;
+      }>;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Multi-select filters
   const [filterAhjs, setFilterAhjs] = useState<string[]>([]);
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
@@ -227,6 +261,45 @@ if (filterInspectionStatuses.length > 0 && !filterInspectionStatuses.includes(p.
       return true;
     });
   }, [safeProjects, filterAhjs, filterLocations, filterInspectionStatuses, searchQuery]);
+
+  const filteredFailed = useMemo(() => {
+    if (!pipelineData?.outstandingFailed) return [];
+    return pipelineData.outstandingFailed.filter((r) => {
+      if (filterLocations.length > 0 && !filterLocations.includes(r.pbLocation)) return false;
+      if (filterAhjs.length > 0 && !filterAhjs.includes(r.ahj)) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        if (
+          !(r.projectNumber || "").toLowerCase().includes(q) &&
+          !(r.name || "").toLowerCase().includes(q) &&
+          !(r.pbLocation || "").toLowerCase().includes(q) &&
+          !(r.ahj || "").toLowerCase().includes(q)
+        ) return false;
+      }
+      return true;
+    });
+  }, [pipelineData, filterLocations, filterAhjs, searchQuery]);
+
+  const filteredPending = useMemo(() => {
+    if (!pipelineData?.ccPendingInspection) return [];
+    return pipelineData.ccPendingInspection.filter((r) => {
+      if (filterLocations.length > 0 && !filterLocations.includes(r.pbLocation)) return false;
+      if (filterAhjs.length > 0 && !filterAhjs.includes(r.ahj)) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        if (
+          !(r.projectNumber || "").toLowerCase().includes(q) &&
+          !(r.name || "").toLowerCase().includes(q) &&
+          !(r.pbLocation || "").toLowerCase().includes(q) &&
+          !(r.ahj || "").toLowerCase().includes(q)
+        ) return false;
+      }
+      return true;
+    });
+  }, [pipelineData, filterLocations, filterAhjs, searchQuery]);
+
+  const failedSort = useSort("daysSinceLastFail", "desc");
+  const pendingSort = useSort("daysSinceCc", "desc");
 
   const photoReviewCandidates = useMemo(() => {
     const query = photoReviewProjectSearch.trim().toLowerCase();
@@ -335,32 +408,6 @@ if (filterInspectionStatuses.length > 0 && !filterInspectionStatuses.includes(p.
       }
     });
 
-    // Group by AHJ
-    const ahjStats: Record<string, { total: number; inspectionPending: number; inspectionPassed: number; inspectionFailed: number; avgDays: number[]; totalValue: number }> = {};
-    filteredProjects.forEach(p => {
-      const ahj = p.ahj || 'Unknown';
-      if (!ahjStats[ahj]) {
-        ahjStats[ahj] = { total: 0, inspectionPending: 0, inspectionPassed: 0, inspectionFailed: 0, avgDays: [], totalValue: 0 };
-      }
-      ahjStats[ahj].total++;
-      ahjStats[ahj].totalValue += p.amount || 0;
-
-      const status = (p.finalInspectionStatus || '').toLowerCase();
-      if (p.inspectionPassDate || (status && ['passed', 'complete'].some(s => status.includes(s)))) {
-        ahjStats[ahj].inspectionPassed++;
-        if (p.inspectionScheduleDate && p.inspectionPassDate) {
-          const d1 = new Date(p.inspectionScheduleDate + "T12:00:00");
-          const d2 = new Date(p.inspectionPassDate + "T12:00:00");
-          const days = Math.floor((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
-          if (days >= 0) ahjStats[ahj].avgDays.push(days);
-        }
-      } else if (status && ['failed', 'rejected'].some(s => status.includes(s))) {
-        ahjStats[ahj].inspectionFailed++;
-      } else if (p.stage === 'Inspection' && !p.inspectionPassDate) {
-        ahjStats[ahj].inspectionPending++;
-      }
-    });
-
     return {
       total: filteredProjects.length,
       totalValue: filteredProjects.reduce((s, p) => s + (p.amount || 0), 0),
@@ -371,7 +418,6 @@ if (filterInspectionStatuses.length > 0 && !filterInspectionStatuses.includes(p.
       avgTurnaround,
       passRate,
       inspectionStatusStats,
-      ahjStats,
     };
   }, [filteredProjects]);
 
@@ -452,7 +498,7 @@ setFilterInspectionStatuses([]);
           <div className="text-center text-red-500">
             <p className="text-xl mb-2">Error loading data</p>
             <p className="text-sm text-muted">{error}</p>
-            <button onClick={() => refetch()} className="mt-4 px-4 py-2 bg-orange-600 rounded-lg hover:bg-orange-700">
+            <button onClick={() => { refetch(); refetchPipeline(); }} className="mt-4 px-4 py-2 bg-orange-600 rounded-lg hover:bg-orange-700">
               Retry
             </button>
           </div>
@@ -482,7 +528,7 @@ setFilterInspectionStatuses([]);
             onSearch={setSearchQuery}
             placeholder="Search by PROJ #, name, location, or AHJ..."
           />
-          <button onClick={() => refetch()} className="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
+          <button onClick={() => { refetch(); refetchPipeline(); }} className="bg-orange-600 hover:bg-orange-700 px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap">
             Refresh
           </button>
         </div>
@@ -548,9 +594,8 @@ setFilterInspectionStatuses([]);
         </div>
       </div>
 
-      {/* Status Breakdown & AHJ side-by-side */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Inspection Status Breakdown */}
+      {/* Status Breakdown */}
+      <div className="mb-6">
         <div className="bg-surface rounded-xl border border-t-border p-4">
           <h2 className="text-lg font-semibold mb-4 text-orange-400">By Inspection Status</h2>
           <div className="space-y-2 max-h-[300px] overflow-y-auto">
@@ -585,47 +630,6 @@ setFilterInspectionStatuses([]);
           </div>
         </div>
 
-        {/* AHJ Breakdown */}
-        <div className="bg-surface rounded-xl border border-t-border p-4">
-          <h2 className="text-lg font-semibold mb-4">By AHJ (Authority Having Jurisdiction)</h2>
-          <div className="space-y-2 max-h-[300px] overflow-y-auto">
-            {Object.entries(stats.ahjStats)
-              .filter(([ahj]) => ahj !== 'Unknown')
-              .sort((a, b) => b[1].inspectionPending - a[1].inspectionPending)
-              .slice(0, 15)
-              .map(([ahj, ahjData]) => {
-                const avgDays = ahjData.avgDays.length > 0
-                  ? Math.round(ahjData.avgDays.reduce((a, b) => a + b, 0) / ahjData.avgDays.length)
-                  : null;
-                return (
-                  <div
-                    key={ahj}
-                    className={`flex items-center justify-between p-2 bg-skeleton rounded-lg cursor-pointer hover:bg-surface-2 transition-colors ${
-                      filterAhjs.includes(ahj) ? 'ring-1 ring-orange-500' : ''
-                    }`}
-                    onClick={() => {
-                      if (filterAhjs.includes(ahj)) {
-                        setFilterAhjs(filterAhjs.filter(a => a !== ahj));
-                      } else {
-                        setFilterAhjs([...filterAhjs, ahj]);
-                      }
-                    }}
-                  >
-                    <div>
-                      <span className="text-sm text-foreground/80">{ahj}</span>
-                      {avgDays !== null && <span className="text-xs text-muted ml-2">~{avgDays}d avg</span>}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-yellow-400 font-bold">{ahjData.inspectionPending}</span>
-                      <span className="text-muted/70 text-xs">pending</span>
-                      <span className="text-emerald-400 font-medium">{ahjData.inspectionPassed}</span>
-                      <span className="text-muted/70 text-xs">passed</span>
-                    </div>
-                  </div>
-                );
-              })}
-          </div>
-        </div>
       </div>
 
       {/* Install Photo Review */}
@@ -972,6 +976,123 @@ setFilterInspectionStatuses([]);
           </table>
         </div>
       </div>
+
+      {/* Outstanding Failed Inspections */}
+      {filteredFailed.length > 0 && (
+        <div className="bg-surface border border-t-border rounded-xl overflow-hidden mt-6 border-l-4 border-l-red-500">
+          <div className="px-5 py-4 border-b border-t-border">
+            <h2 className="text-lg font-semibold text-foreground">Outstanding Failed Inspections</h2>
+            <p className="text-sm text-muted mt-0.5">
+              {filteredFailed.length} project{filteredFailed.length !== 1 ? "s" : ""} with failed inspection awaiting reinspection
+            </p>
+          </div>
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-t-border bg-surface-2/50">
+                  <SortHeader compact label="Project" sortKey="projectNumber" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="Customer" sortKey="name" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="PB Location" sortKey="pbLocation" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="AHJ" sortKey="ahj" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="Stage" sortKey="stage" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="Amount" sortKey="amount" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} className="text-right" />
+                  <SortHeader compact label="Fail Date" sortKey="inspectionFailDate" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="Fail Count" sortKey="inspectionFailCount" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} className="text-center" />
+                  <SortHeader compact label="Failure Reason" sortKey="inspectionFailureReason" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="Days Since Fail" sortKey="daysSinceLastFail" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} className="text-center" />
+                  <th className="px-3 py-2 text-center text-xs font-medium text-muted">Links</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortRows(filteredFailed, failedSort.sortKey, failedSort.sortDir).map((row, i) => (
+                  <tr key={row.dealId} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+                    <td className="px-3 py-2.5 font-mono text-foreground">{row.projectNumber}</td>
+                    <td className="px-3 py-2.5 text-foreground truncate max-w-[180px]">{row.name}</td>
+                    <td className="px-3 py-2.5 text-muted">{row.pbLocation}</td>
+                    <td className="px-3 py-2.5 text-muted">{row.ahj}</td>
+                    <td className="px-3 py-2.5 text-muted">{row.stage}</td>
+                    <td className="px-3 py-2.5 text-right text-muted">{fmtAmount(row.amount)}</td>
+                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(row.inspectionFailDate)}</td>
+                    <td className={`px-3 py-2.5 text-center font-mono ${(row.inspectionFailCount ?? 0) > 0 ? "text-red-400" : "text-muted"}`}>
+                      {row.inspectionFailCount ?? 0}
+                    </td>
+                    <td className="px-3 py-2.5 text-muted truncate max-w-[200px]">{row.inspectionFailureReason || "--"}</td>
+                    <td className={`px-3 py-2.5 text-center font-mono font-medium ${
+                      (row.daysSinceLastFail ?? 0) > 14 ? "text-red-400" :
+                      (row.daysSinceLastFail ?? 0) > 7 ? "text-orange-400" : "text-yellow-400"
+                    }`}>
+                      {row.daysSinceLastFail ?? "--"}d
+                    </td>
+                    <td className="px-3 py-2.5"><DealLinks dealId={row.dealId} zuperJobUid={row.zuperJobUid} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* CC Pending Inspection */}
+      {filteredPending.length > 0 && (
+        <div className="bg-surface border border-t-border rounded-xl overflow-hidden mt-6">
+          <div className="px-5 py-4 border-b border-t-border">
+            <h2 className="text-lg font-semibold text-foreground">CC Pending Inspection</h2>
+            <p className="text-sm text-muted mt-0.5">
+              {filteredPending.length} project{filteredPending.length !== 1 ? "s" : ""} construction-complete awaiting inspection
+            </p>
+          </div>
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-t-border bg-surface-2/50">
+                  <SortHeader compact label="Project" sortKey="projectNumber" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="Customer" sortKey="name" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="PB Location" sortKey="pbLocation" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="AHJ" sortKey="ahj" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="Stage" sortKey="stage" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="Amount" sortKey="amount" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-right" />
+                  <SortHeader compact label="CC Date" sortKey="constructionCompleteDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="Days Since CC" sortKey="daysSinceCc" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-center" />
+                  <SortHeader compact label="Insp Scheduled" sortKey="inspectionScheduleDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="Booked Date" sortKey="inspectionBookedDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="Ready" sortKey="readyForInspection" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-center" />
+                  <th className="px-3 py-2 text-center text-xs font-medium text-muted">Links</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortRows(filteredPending, pendingSort.sortKey, pendingSort.sortDir).map((row, i) => (
+                  <tr key={row.dealId} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+                    <td className="px-3 py-2.5 font-mono text-foreground">{row.projectNumber}</td>
+                    <td className="px-3 py-2.5 text-foreground truncate max-w-[180px]">{row.name}</td>
+                    <td className="px-3 py-2.5 text-muted">{row.pbLocation}</td>
+                    <td className="px-3 py-2.5 text-muted">{row.ahj}</td>
+                    <td className="px-3 py-2.5 text-muted">{row.stage}</td>
+                    <td className="px-3 py-2.5 text-right text-muted">{fmtAmount(row.amount)}</td>
+                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(row.constructionCompleteDate)}</td>
+                    <td className={`px-3 py-2.5 text-center font-mono font-medium ${
+                      (row.daysSinceCc ?? 0) > 30 ? "text-red-400" :
+                      (row.daysSinceCc ?? 0) > 14 ? "text-orange-400" :
+                      (row.daysSinceCc ?? 0) > 7 ? "text-yellow-400" : "text-emerald-400"
+                    }`}>
+                      {row.daysSinceCc ?? "--"}d
+                    </td>
+                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(row.inspectionScheduleDate)}</td>
+                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(row.inspectionBookedDate)}</td>
+                    <td className="px-3 py-2.5 text-center">
+                      {row.readyForInspection ? (
+                        <span className="text-emerald-400" title="Ready">&#10003;</span>
+                      ) : (
+                        <span className="text-muted" title="Not ready">&#10007;</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5"><DealLinks dealId={row.dealId} zuperJobUid={row.zuperJobUid} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </DashboardShell>
   );
 }
