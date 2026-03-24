@@ -12,6 +12,8 @@ import { useSort, sortRows } from "@/hooks/useSort";
 import { SortHeader } from "@/components/ui/SortHeader";
 import { DealLinks } from "@/components/ui/DealLinks";
 import { fmtAmount, fmtDateShort } from "@/lib/format-helpers";
+import { StatCard } from "@/components/ui/MetricCard";
+import { StatusPillRow } from "@/components/ui/StatusPillRow";
 
 // Display name mappings
 const DISPLAY_NAMES: Record<string, string> = {
@@ -133,7 +135,7 @@ export default function InspectionsPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
-  const { data: projects, loading, error, refetch } = useProjectData<RawProject[]>({
+  const { data: projects, loading, error, refetch, lastUpdated } = useProjectData<RawProject[]>({
     params: { context: "executive" },
     transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
@@ -410,18 +412,42 @@ if (filterInspectionStatuses.length > 0 && !filterInspectionStatuses.includes(p.
       }
     });
 
+    const needsScheduling = filteredProjects.filter(
+      p => p.stage === "Inspection" && !p.inspectionScheduleDate && !p.inspectionPassDate
+    );
+
     return {
       total: filteredProjects.length,
       totalValue: filteredProjects.reduce((s, p) => s + (p.amount || 0), 0),
       inspectionPending,
       inspectionPassed,
       inspectionFailed,
+      needsScheduling,
       avgDaysInInspection,
       avgTurnaround,
       passRate,
       inspectionStatusStats,
     };
   }, [filteredProjects]);
+
+  // Cross-stage: projects with inspection scheduled but not yet passed.
+  // Computed from safeProjects (all stages) with location/AHJ/search filters only.
+  const inspectionScheduled = useMemo(() => {
+    return safeProjects.filter(p => {
+      if (!p.inspectionScheduleDate || p.inspectionPassDate) return false;
+      if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || "")) return false;
+      if (filterAhjs.length > 0 && !filterAhjs.includes(p.ahj || "")) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        if (
+          !(p.name || "").toLowerCase().includes(q) &&
+          !(p.pbLocation || "").toLowerCase().includes(q) &&
+          !(p.ahj || "").toLowerCase().includes(q)
+        ) return false;
+      }
+      return true;
+    });
+  }, [safeProjects, filterLocations, filterAhjs, searchQuery]);
 
   // Get unique values for filters
   const ahjs = useMemo(() =>
@@ -522,7 +548,7 @@ setFilterInspectionStatuses([]);
   };
 
   return (
-    <DashboardShell title="Inspections Execution" accentColor="orange">
+    <DashboardShell title="Inspections Execution" accentColor="orange" lastUpdated={lastUpdated}>
       {/* Search and Filters */}
       <div className="flex flex-col gap-4 mb-6">
         <div className="flex items-center gap-3">
@@ -573,65 +599,145 @@ setFilterInspectionStatuses([]);
       </div>
 
       {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-orange-400">{stats.total}</div>
-          <div className="text-sm text-muted">Total Projects</div>
-          <div className="text-xs text-muted">{formatMoney(stats.totalValue)}</div>
-        </div>
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-yellow-400">{stats.inspectionPending.length}</div>
-          <div className="text-sm text-muted">Pending Inspection</div>
-          <div className="text-xs text-muted">{formatMoney(stats.inspectionPending.reduce((s, p) => s + (p.amount || 0), 0))}</div>
-        </div>
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-amber-400">{stats.avgDaysInInspection}d</div>
-          <div className="text-sm text-muted">Avg Days Pending</div>
-          <div className="text-xs text-muted">{stats.avgTurnaround}d avg turnaround</div>
-        </div>
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-red-400">{stats.inspectionFailed.length}</div>
-          <div className="text-sm text-muted">Failed</div>
-          <div className="text-xs text-muted">{formatMoney(stats.inspectionFailed.reduce((s, p) => s + (p.amount || 0), 0))}</div>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger-grid mb-6">
+        <StatCard label="Total Projects" value={stats.total} subtitle={formatMoney(stats.totalValue)} color="orange" />
+        <StatCard label="Needs Scheduling" value={stats.needsScheduling.length} subtitle={formatMoney(stats.needsScheduling.reduce((s: number, p: RawProject) => s + (p.amount || 0), 0))} color="cyan" />
+        <StatCard label="Scheduled" value={inspectionScheduled.length} subtitle={formatMoney(inspectionScheduled.reduce((s: number, p: RawProject) => s + (p.amount || 0), 0))} color="yellow" />
+        <StatCard label="Failed" value={stats.inspectionFailed.length} subtitle={formatMoney(stats.inspectionFailed.reduce((s: number, p: RawProject) => s + (p.amount || 0), 0))} color="red" />
       </div>
 
-      {/* Status Breakdown */}
-      <div className="mb-6">
-        <div className="bg-surface rounded-xl border border-t-border p-4">
-          <h2 className="text-lg font-semibold mb-4 text-orange-400">By Inspection Status</h2>
-          <div className="space-y-2 max-h-[300px] overflow-y-auto">
-            {Object.keys(stats.inspectionStatusStats).length === 0 ? (
-              <p className="text-muted text-sm">No inspection status data available</p>
-            ) : (
-              Object.entries(stats.inspectionStatusStats)
-                .sort((a, b) => b[1] - a[1])
-                .map(([status, count]) => (
-                  <div
-                    key={status}
-                    className={`flex items-center justify-between p-2 bg-skeleton rounded-lg cursor-pointer hover:bg-surface-2 transition-colors ${
-                      filterInspectionStatuses.includes(status) ? 'ring-1 ring-orange-500' : ''
-                    }`}
-                    onClick={() => {
-                      if (filterInspectionStatuses.includes(status)) {
-                        setFilterInspectionStatuses(filterInspectionStatuses.filter(s => s !== status));
-                      } else {
-                        setFilterInspectionStatuses([...filterInspectionStatuses, status]);
-                      }
-                    }}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${getInspectionStatusColor(status)}`}>
-                        {getDisplayName(status)}
-                      </span>
-                    </div>
-                    <span className="text-lg font-bold text-orange-400">{count}</span>
-                  </div>
-                ))
-            )}
+      {/* Status Pill Row */}
+      <StatusPillRow
+        stats={stats.inspectionStatusStats}
+        selected={filterInspectionStatuses}
+        onToggle={(status) => {
+          if (filterInspectionStatuses.includes(status)) {
+            setFilterInspectionStatuses(filterInspectionStatuses.filter(s => s !== status));
+          } else {
+            setFilterInspectionStatuses([...filterInspectionStatuses, status]);
+          }
+        }}
+        getStatusColor={getInspectionStatusColor}
+        getDisplayName={getDisplayName}
+        accentColor="orange"
+      />
+
+      {/* Outstanding Failed Inspections */}
+      {filteredFailed.length > 0 && (
+        <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-6 border-l-4 border-l-red-500">
+          <div className="px-5 py-4 border-b border-t-border">
+            <h2 className="text-lg font-semibold text-foreground">Outstanding Failed Inspections</h2>
+            <p className="text-sm text-muted mt-0.5">
+              {filteredFailed.length} project{filteredFailed.length !== 1 ? "s" : ""} with failed inspection awaiting reinspection
+            </p>
+          </div>
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-t-border bg-surface-2/50">
+                  <SortHeader compact label="Project" sortKey="projectNumber" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="Customer" sortKey="name" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="PB Location" sortKey="pbLocation" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="AHJ" sortKey="ahj" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="Stage" sortKey="stage" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="Amount" sortKey="amount" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} className="text-right" />
+                  <SortHeader compact label="Fail Date" sortKey="inspectionFailDate" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="Fail Count" sortKey="inspectionFailCount" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} className="text-center" />
+                  <SortHeader compact label="Failure Reason" sortKey="inspectionFailureReason" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
+                  <SortHeader compact label="Days Since Fail" sortKey="daysSinceLastFail" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} className="text-center" />
+                  <th className="px-3 py-2 text-center text-xs font-medium text-muted">Links</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortRows(filteredFailed, failedSort.sortKey, failedSort.sortDir).map((row, i) => (
+                  <tr key={row.dealId} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+                    <td className="px-3 py-2.5 font-mono text-foreground">{row.projectNumber}</td>
+                    <td className="px-3 py-2.5 text-foreground truncate max-w-[180px]">{row.name}</td>
+                    <td className="px-3 py-2.5 text-muted">{row.pbLocation}</td>
+                    <td className="px-3 py-2.5 text-muted">{row.ahj}</td>
+                    <td className="px-3 py-2.5 text-muted">{row.stage}</td>
+                    <td className="px-3 py-2.5 text-right text-muted">{fmtAmount(row.amount)}</td>
+                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(row.inspectionFailDate)}</td>
+                    <td className={`px-3 py-2.5 text-center font-mono ${(row.inspectionFailCount ?? 0) > 0 ? "text-red-400" : "text-muted"}`}>
+                      {row.inspectionFailCount ?? 0}
+                    </td>
+                    <td className="px-3 py-2.5 text-muted truncate max-w-[200px]">{row.inspectionFailureReason || "--"}</td>
+                    <td className={`px-3 py-2.5 text-center font-mono font-medium ${
+                      (row.daysSinceLastFail ?? 0) > 14 ? "text-red-400" :
+                      (row.daysSinceLastFail ?? 0) > 7 ? "text-orange-400" : "text-yellow-400"
+                    }`}>
+                      {row.daysSinceLastFail ?? "--"}d
+                    </td>
+                    <td className="px-3 py-2.5"><DealLinks dealId={row.dealId} zuperJobUid={row.zuperJobUid} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* CC Pending Inspection */}
+      {filteredPending.length > 0 && (
+        <div className="bg-surface border border-t-border rounded-xl overflow-hidden mb-6">
+          <div className="px-5 py-4 border-b border-t-border">
+            <h2 className="text-lg font-semibold text-foreground">CC Pending Inspection</h2>
+            <p className="text-sm text-muted mt-0.5">
+              {filteredPending.length} project{filteredPending.length !== 1 ? "s" : ""} construction-complete awaiting inspection
+            </p>
+          </div>
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-t-border bg-surface-2/50">
+                  <SortHeader compact label="Project" sortKey="projectNumber" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="Customer" sortKey="name" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="PB Location" sortKey="pbLocation" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="AHJ" sortKey="ahj" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="Stage" sortKey="stage" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="Amount" sortKey="amount" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-right" />
+                  <SortHeader compact label="CC Date" sortKey="constructionCompleteDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="Days Since CC" sortKey="daysSinceCc" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-center" />
+                  <SortHeader compact label="Insp Scheduled" sortKey="inspectionScheduleDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="Booked Date" sortKey="inspectionBookedDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
+                  <SortHeader compact label="Ready" sortKey="readyForInspection" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-center" />
+                  <th className="px-3 py-2 text-center text-xs font-medium text-muted">Links</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortRows(filteredPending, pendingSort.sortKey, pendingSort.sortDir).map((row, i) => (
+                  <tr key={row.dealId} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+                    <td className="px-3 py-2.5 font-mono text-foreground">{row.projectNumber}</td>
+                    <td className="px-3 py-2.5 text-foreground truncate max-w-[180px]">{row.name}</td>
+                    <td className="px-3 py-2.5 text-muted">{row.pbLocation}</td>
+                    <td className="px-3 py-2.5 text-muted">{row.ahj}</td>
+                    <td className="px-3 py-2.5 text-muted">{row.stage}</td>
+                    <td className="px-3 py-2.5 text-right text-muted">{fmtAmount(row.amount)}</td>
+                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(row.constructionCompleteDate)}</td>
+                    <td className={`px-3 py-2.5 text-center font-mono font-medium ${
+                      (row.daysSinceCc ?? 0) > 30 ? "text-red-400" :
+                      (row.daysSinceCc ?? 0) > 14 ? "text-orange-400" :
+                      (row.daysSinceCc ?? 0) > 7 ? "text-yellow-400" : "text-emerald-400"
+                    }`}>
+                      {row.daysSinceCc ?? "--"}d
+                    </td>
+                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(row.inspectionScheduleDate)}</td>
+                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(row.inspectionBookedDate)}</td>
+                    <td className="px-3 py-2.5 text-center">
+                      {row.readyForInspection ? (
+                        <span className="text-emerald-400" title="Ready">&#10003;</span>
+                      ) : (
+                        <span className="text-muted" title="Not ready">&#10007;</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5"><DealLinks dealId={row.dealId} zuperJobUid={row.zuperJobUid} /></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Install Photo Review */}
       <div className="bg-surface rounded-xl border border-t-border mb-6 overflow-hidden">
@@ -978,122 +1084,6 @@ setFilterInspectionStatuses([]);
         </div>
       </div>
 
-      {/* Outstanding Failed Inspections */}
-      {filteredFailed.length > 0 && (
-        <div className="bg-surface border border-t-border rounded-xl overflow-hidden mt-6 border-l-4 border-l-red-500">
-          <div className="px-5 py-4 border-b border-t-border">
-            <h2 className="text-lg font-semibold text-foreground">Outstanding Failed Inspections</h2>
-            <p className="text-sm text-muted mt-0.5">
-              {filteredFailed.length} project{filteredFailed.length !== 1 ? "s" : ""} with failed inspection awaiting reinspection
-            </p>
-          </div>
-          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10">
-                <tr className="border-b border-t-border bg-surface-2/50">
-                  <SortHeader compact label="Project" sortKey="projectNumber" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
-                  <SortHeader compact label="Customer" sortKey="name" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
-                  <SortHeader compact label="PB Location" sortKey="pbLocation" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
-                  <SortHeader compact label="AHJ" sortKey="ahj" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
-                  <SortHeader compact label="Stage" sortKey="stage" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
-                  <SortHeader compact label="Amount" sortKey="amount" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} className="text-right" />
-                  <SortHeader compact label="Fail Date" sortKey="inspectionFailDate" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
-                  <SortHeader compact label="Fail Count" sortKey="inspectionFailCount" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} className="text-center" />
-                  <SortHeader compact label="Failure Reason" sortKey="inspectionFailureReason" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} />
-                  <SortHeader compact label="Days Since Fail" sortKey="daysSinceLastFail" currentKey={failedSort.sortKey} currentDir={failedSort.sortDir} onSort={failedSort.toggle} className="text-center" />
-                  <th className="px-3 py-2 text-center text-xs font-medium text-muted">Links</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortRows(filteredFailed, failedSort.sortKey, failedSort.sortDir).map((row, i) => (
-                  <tr key={row.dealId} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
-                    <td className="px-3 py-2.5 font-mono text-foreground">{row.projectNumber}</td>
-                    <td className="px-3 py-2.5 text-foreground truncate max-w-[180px]">{row.name}</td>
-                    <td className="px-3 py-2.5 text-muted">{row.pbLocation}</td>
-                    <td className="px-3 py-2.5 text-muted">{row.ahj}</td>
-                    <td className="px-3 py-2.5 text-muted">{row.stage}</td>
-                    <td className="px-3 py-2.5 text-right text-muted">{fmtAmount(row.amount)}</td>
-                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(row.inspectionFailDate)}</td>
-                    <td className={`px-3 py-2.5 text-center font-mono ${(row.inspectionFailCount ?? 0) > 0 ? "text-red-400" : "text-muted"}`}>
-                      {row.inspectionFailCount ?? 0}
-                    </td>
-                    <td className="px-3 py-2.5 text-muted truncate max-w-[200px]">{row.inspectionFailureReason || "--"}</td>
-                    <td className={`px-3 py-2.5 text-center font-mono font-medium ${
-                      (row.daysSinceLastFail ?? 0) > 14 ? "text-red-400" :
-                      (row.daysSinceLastFail ?? 0) > 7 ? "text-orange-400" : "text-yellow-400"
-                    }`}>
-                      {row.daysSinceLastFail ?? "--"}d
-                    </td>
-                    <td className="px-3 py-2.5"><DealLinks dealId={row.dealId} zuperJobUid={row.zuperJobUid} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* CC Pending Inspection */}
-      {filteredPending.length > 0 && (
-        <div className="bg-surface border border-t-border rounded-xl overflow-hidden mt-6">
-          <div className="px-5 py-4 border-b border-t-border">
-            <h2 className="text-lg font-semibold text-foreground">CC Pending Inspection</h2>
-            <p className="text-sm text-muted mt-0.5">
-              {filteredPending.length} project{filteredPending.length !== 1 ? "s" : ""} construction-complete awaiting inspection
-            </p>
-          </div>
-          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10">
-                <tr className="border-b border-t-border bg-surface-2/50">
-                  <SortHeader compact label="Project" sortKey="projectNumber" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
-                  <SortHeader compact label="Customer" sortKey="name" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
-                  <SortHeader compact label="PB Location" sortKey="pbLocation" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
-                  <SortHeader compact label="AHJ" sortKey="ahj" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
-                  <SortHeader compact label="Stage" sortKey="stage" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
-                  <SortHeader compact label="Amount" sortKey="amount" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-right" />
-                  <SortHeader compact label="CC Date" sortKey="constructionCompleteDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
-                  <SortHeader compact label="Days Since CC" sortKey="daysSinceCc" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-center" />
-                  <SortHeader compact label="Insp Scheduled" sortKey="inspectionScheduleDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
-                  <SortHeader compact label="Booked Date" sortKey="inspectionBookedDate" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} />
-                  <SortHeader compact label="Ready" sortKey="readyForInspection" currentKey={pendingSort.sortKey} currentDir={pendingSort.sortDir} onSort={pendingSort.toggle} className="text-center" />
-                  <th className="px-3 py-2 text-center text-xs font-medium text-muted">Links</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortRows(filteredPending, pendingSort.sortKey, pendingSort.sortDir).map((row, i) => (
-                  <tr key={row.dealId} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
-                    <td className="px-3 py-2.5 font-mono text-foreground">{row.projectNumber}</td>
-                    <td className="px-3 py-2.5 text-foreground truncate max-w-[180px]">{row.name}</td>
-                    <td className="px-3 py-2.5 text-muted">{row.pbLocation}</td>
-                    <td className="px-3 py-2.5 text-muted">{row.ahj}</td>
-                    <td className="px-3 py-2.5 text-muted">{row.stage}</td>
-                    <td className="px-3 py-2.5 text-right text-muted">{fmtAmount(row.amount)}</td>
-                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(row.constructionCompleteDate)}</td>
-                    <td className={`px-3 py-2.5 text-center font-mono font-medium ${
-                      (row.daysSinceCc ?? 0) > 30 ? "text-red-400" :
-                      (row.daysSinceCc ?? 0) > 14 ? "text-orange-400" :
-                      (row.daysSinceCc ?? 0) > 7 ? "text-yellow-400" : "text-emerald-400"
-                    }`}>
-                      {row.daysSinceCc ?? "--"}d
-                    </td>
-                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(row.inspectionScheduleDate)}</td>
-                    <td className="px-3 py-2.5 text-muted">{fmtDateShort(row.inspectionBookedDate)}</td>
-                    <td className="px-3 py-2.5 text-center">
-                      {row.readyForInspection ? (
-                        <span className="text-emerald-400" title="Ready">&#10003;</span>
-                      ) : (
-                        <span className="text-muted" title="Not ready">&#10007;</span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5"><DealLinks dealId={row.dealId} zuperJobUid={row.zuperJobUid} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </DashboardShell>
   );
 }
