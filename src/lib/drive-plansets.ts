@@ -110,7 +110,24 @@ export function pickBestPlanset(files: DrivePdfFile[]): DrivePdfFile | null {
 
   // Prefer files with "stamped" in the name (case-insensitive)
   const stamped = candidates.filter((f) => /stamped/i.test(f.name));
-  if (stamped.length > 0) return stamped[0]; // already sorted by modifiedTime desc
+  if (stamped.length > 0) {
+    const bestStamped = pickLargest(stamped);
+    const overallLargest = pickLargest(candidates);
+    const stampedSize = Number(bestStamped.size) || 0;
+    const largestSize = Number(overallLargest.size) || 0;
+
+    // If the stamped file is significantly smaller than the largest candidate,
+    // it's likely not a real planset (e.g., "Stamped barn plans" at 2.8MB vs
+    // the actual 29MB planset). Skip the stamped tier and fall through.
+    if (stampedSize > 0 && largestSize > 0 && stampedSize < largestSize / 3) {
+      console.warn(
+        `[drive-plansets] Stamped file "${bestStamped.name}" (${(stampedSize / 1e6).toFixed(1)}MB) ` +
+        `is <1/3 size of largest candidate "${overallLargest.name}" (${(largestSize / 1e6).toFixed(1)}MB) — skipping stamped preference`,
+      );
+    } else {
+      return bestStamped;
+    }
+  }
 
   // Fallback to files with "planset" or "plan set" in the name
   const planset = candidates.filter((f) => /plan\s*set/i.test(f.name));

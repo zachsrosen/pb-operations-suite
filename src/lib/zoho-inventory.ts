@@ -524,6 +524,9 @@ export class ZohoInventoryClient {
   private dynamicAccessToken?: string;
   private dynamicTokenExpiresAtMs = 0;
 
+  /** In-flight refresh promise — prevents thundering herd on concurrent requests. */
+  private inflightRefresh?: Promise<string>;
+
   constructor() {
     this.organizationId = trimOrUndefined(process.env.ZOHO_INVENTORY_ORG_ID);
     this.configuredBaseUrl = trimOrUndefined(process.env.ZOHO_INVENTORY_API_BASE_URL) || DEFAULT_BASE_URL;
@@ -1399,6 +1402,24 @@ export class ZohoInventoryClient {
       throw new Error("Zoho Inventory credentials are not configured");
     }
 
+    // Deduplicate concurrent refresh requests — prevents thundering herd
+    // when multiple API calls detect an expired token simultaneously.
+    // Zoho's OAuth endpoint rate-limits concurrent refresh attempts,
+    // returning "Access Denied" on excess requests.
+    if (this.inflightRefresh) {
+      return this.inflightRefresh;
+    }
+
+    this.inflightRefresh = this.executeTokenRefresh();
+    try {
+      return await this.inflightRefresh;
+    } finally {
+      this.inflightRefresh = undefined;
+    }
+  }
+
+  /** Performs the actual OAuth token refresh against Zoho's endpoint. */
+  private async executeTokenRefresh(): Promise<string> {
     const tokenUrl = buildUrl(this.accountsBaseUrl, "/oauth/v2/token");
     const body = new URLSearchParams({
       refresh_token: this.refreshToken!,
