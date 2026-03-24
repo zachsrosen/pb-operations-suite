@@ -73,7 +73,7 @@ export function ConstructionMonthView<T extends ConstructionSchedulerProject>({
   const calendarDays = useMemo(() => {
     const firstDay = new Date(currentYear, currentMonth, 1);
     const lastDay = new Date(currentYear, currentMonth + 1, 0);
-    const startDow = ((firstDay.getDay() + 6) % 7) + 1;
+    const startDow = (firstDay.getDay() + 6) % 7;
     const days: string[] = [];
 
     for (let i = startDow - 1; i >= 0; i--) {
