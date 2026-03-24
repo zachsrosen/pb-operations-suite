@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
+import { StatCard } from "@/components/ui/MetricCard";
 import { queryKeys } from "@/lib/query-keys";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
@@ -206,6 +207,28 @@ export default function SurveyMetricsDashboardPage() {
       .map(([name]) => name);
   }, [data]);
 
+  // Recompute totals based on selected locations (same pattern as inspection-metrics)
+  const filteredTotals = useMemo(() => {
+    if (!data) return { count: 0, avg: null as number | null };
+    if (filterLocations.length === 0) return data.totals;
+    let totalCount = 0;
+    let turnaroundSum = 0;
+    let turnaroundCount = 0;
+    for (const loc of filterLocations) {
+      const ld = data.byLocation[loc];
+      if (!ld) continue;
+      totalCount += ld.count;
+      if (ld.avg !== null) {
+        turnaroundSum += ld.avg * ld.count;
+        turnaroundCount += ld.count;
+      }
+    }
+    return {
+      count: totalCount,
+      avg: turnaroundCount > 0 ? Math.round((turnaroundSum / turnaroundCount) * 10) / 10 : null,
+    };
+  }, [data, filterLocations]);
+
   const exportData = useMemo(() => {
     if (!data) return [];
     const rows: Record<string, string | number>[] = [];
@@ -382,43 +405,37 @@ export default function SurveyMetricsDashboardPage() {
         </div>
 
         <div className="ml-auto text-sm text-muted">
-          {data.totals.count.toLocaleString()} surveys &middot;{" "}
+          {filteredTotals.count.toLocaleString()} surveys &middot;{" "}
           {daysWindow > 0 ? `Completed in last ${daysWindow} days` : "All time"}
         </div>
       </div>
 
       {/* ── Summary Cards ── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-        <div className="bg-surface border border-emerald-500/30 rounded-xl p-5 text-center">
-          <p className="text-sm text-muted mb-1">Avg Turnaround</p>
-          <p className={`text-3xl font-mono font-bold ${getCellColor(data.totals.avg)}`}>
-            {fmt(data.totals.avg)}
-          </p>
-          <p className="text-xs text-muted mt-1">days</p>
-        </div>
-        <div className="bg-surface border border-t-border rounded-xl p-5 text-center">
-          <p className="text-sm text-muted mb-1">Surveys Completed</p>
-          <p className="text-3xl font-mono font-bold text-foreground">
-            {data.totals.count.toLocaleString()}
-          </p>
-          <p className="text-xs text-muted mt-1">
-            {daysWindow > 0 ? `last ${daysWindow} days` : "all time"}
-          </p>
-        </div>
-        <div className="bg-surface border border-t-border rounded-xl p-5 text-center">
-          <p className="text-sm text-muted mb-1">Upcoming Surveys</p>
-          <p className="text-3xl font-mono font-bold text-cyan-400">
-            {data?.upcomingSurveys?.length ?? 0}
-          </p>
-          <p className="text-xs text-muted mt-1">scheduled ahead</p>
-        </div>
-        <div className="bg-surface border border-t-border rounded-xl p-5 text-center">
-          <p className="text-sm text-muted mb-1">Past Due</p>
-          <p className={`text-3xl font-mono font-bold ${(data?.pastDueSurveys?.length ?? 0) > 0 ? "text-red-400" : "text-emerald-400"}`}>
-            {data?.pastDueSurveys?.length ?? 0}
-          </p>
-          <p className="text-xs text-muted mt-1">overdue surveys</p>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger-grid mb-8">
+        <StatCard
+          label="Avg Turnaround"
+          value={filteredTotals.avg !== null ? `${fmt(filteredTotals.avg)} days` : "--"}
+          subtitle={filteredTotals.avg !== null ? (filteredTotals.avg <= 3 ? "On target" : filteredTotals.avg <= 7 ? "Acceptable" : "Needs improvement") : null}
+          color={filteredTotals.avg !== null ? (filteredTotals.avg <= 3 ? "green" : filteredTotals.avg <= 7 ? "yellow" : filteredTotals.avg <= 14 ? "orange" : "red") : "green"}
+        />
+        <StatCard
+          label="Surveys Completed"
+          value={filteredTotals.count.toLocaleString()}
+          subtitle={daysWindow > 0 ? `last ${daysWindow} days` : "all time"}
+          color="green"
+        />
+        <StatCard
+          label="Upcoming Surveys"
+          value={(data?.upcomingSurveys?.length ?? 0).toLocaleString()}
+          subtitle="scheduled ahead"
+          color="cyan"
+        />
+        <StatCard
+          label="Past Due"
+          value={(data?.pastDueSurveys?.length ?? 0).toLocaleString()}
+          subtitle={(data?.pastDueSurveys?.length ?? 0) === 0 ? "All on track" : "overdue surveys"}
+          color={(data?.pastDueSurveys?.length ?? 0) > 0 ? "red" : "green"}
+        />
       </div>
 
       {/* ── By Location Table ── */}
