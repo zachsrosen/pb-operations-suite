@@ -195,7 +195,6 @@ Delete the status breakdown section (lines ~437–466) and replace with:
     }
   }}
   getStatusColor={getSiteSurveyStatusColor}
-  getDisplayName={getDisplayName}
   accentColor="teal"
 />
 ```
@@ -383,7 +382,6 @@ Delete the status breakdown section (lines ~362–391) and replace with:
     }
   }}
   getStatusColor={getConstructionStatusColor}
-  getDisplayName={getDisplayName}
   accentColor="orange"
 />
 ```
@@ -421,7 +419,7 @@ Insert before the main project table. Only render if `filteredOverdue.length > 0
         <tbody>
           {sortRows(filteredOverdue, overdueSort.sortKey, overdueSort.sortDir).map((p, i) => (
             <tr key={p.id} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
-              <td className="px-3 py-2 font-mono text-foreground">{p.projectNumber || p.name}</td>
+              <td className="px-3 py-2 font-mono text-foreground">{(p.name || "").split("|")[0].trim()}</td>
               <td className="px-3 py-2 text-foreground truncate max-w-[180px]">{p.name}</td>
               <td className="px-3 py-2 text-muted">{p.pbLocation || "--"}</td>
               <td className="px-3 py-2 text-muted">{p.stage || "--"}</td>
@@ -473,7 +471,7 @@ Insert after the overdue table, before the main project table. Only render if `f
         <tbody>
           {sortRows(filteredLooseEnds, looseEndsSort.sortKey, looseEndsSort.sortDir).map((p, i) => (
             <tr key={p.id} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
-              <td className="px-3 py-2 font-mono text-foreground">{p.projectNumber || p.name}</td>
+              <td className="px-3 py-2 font-mono text-foreground">{(p.name || "").split("|")[0].trim()}</td>
               <td className="px-3 py-2 text-foreground truncate max-w-[180px]">{p.name}</td>
               <td className="px-3 py-2 text-muted">{p.pbLocation || "--"}</td>
               <td className="px-3 py-2 text-muted">{p.stage || "--"}</td>
