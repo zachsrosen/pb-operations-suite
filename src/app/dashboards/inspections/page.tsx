@@ -282,20 +282,22 @@ if (filterInspectionStatuses.length > 0 && !filterInspectionStatuses.includes(p.
 
   const filteredPending = useMemo(() => {
     if (!pipelineData?.ccPendingInspection) return [];
-    return pipelineData.ccPendingInspection.filter((r) => {
-      if (filterLocations.length > 0 && !filterLocations.includes(r.pbLocation)) return false;
-      if (filterAhjs.length > 0 && !filterAhjs.includes(r.ahj)) return false;
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        if (
-          !(r.projectNumber || "").toLowerCase().includes(q) &&
-          !(r.name || "").toLowerCase().includes(q) &&
-          !(r.pbLocation || "").toLowerCase().includes(q) &&
-          !(r.ahj || "").toLowerCase().includes(q)
-        ) return false;
-      }
-      return true;
-    });
+    return pipelineData.ccPendingInspection
+      .filter((r) => {
+        if (filterLocations.length > 0 && !filterLocations.includes(r.pbLocation)) return false;
+        if (filterAhjs.length > 0 && !filterAhjs.includes(r.ahj)) return false;
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          if (
+            !(r.projectNumber || "").toLowerCase().includes(q) &&
+            !(r.name || "").toLowerCase().includes(q) &&
+            !(r.pbLocation || "").toLowerCase().includes(q) &&
+            !(r.ahj || "").toLowerCase().includes(q)
+          ) return false;
+        }
+        return true;
+      })
+      .map((r) => ({ ...r, readyForInspection: !!r.readyForInspection }));
   }, [pipelineData, filterLocations, filterAhjs, searchQuery]);
 
   const failedSort = useSort("daysSinceLastFail", "desc");

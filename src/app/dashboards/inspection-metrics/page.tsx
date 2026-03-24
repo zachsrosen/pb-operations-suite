@@ -488,6 +488,12 @@ export default function InspectionMetricsDashboardPage() {
             subtitle={filteredTotals.fpr !== null ? (filteredTotals.fpr >= 90 ? "Excellent" : filteredTotals.fpr >= 75 ? "Good" : "Needs improvement") : null}
             color={fprStatColor(filteredTotals.fpr)}
           />
+          <StatCard
+            label="Outstanding Failures"
+            value={(data?.outstandingFailed?.length ?? 0).toLocaleString()}
+            subtitle={(data?.outstandingFailed?.length ?? 0) === 0 ? "All clear" : "Need reinspection"}
+            color={(data?.outstandingFailed?.length ?? 0) > 0 ? "red" : "green"}
+          />
         </div>
       )}
 
