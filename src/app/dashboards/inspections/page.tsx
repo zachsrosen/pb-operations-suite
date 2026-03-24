@@ -629,7 +629,6 @@ setFilterInspectionStatuses([]);
             )}
           </div>
         </div>
-
       </div>
 
       {/* Install Photo Review */}
