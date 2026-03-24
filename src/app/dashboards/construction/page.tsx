@@ -8,6 +8,12 @@ import { MultiSelectFilter, ProjectSearchBar, FilterGroup } from "@/components/u
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useConstructionFilters } from "@/stores/dashboard-filters";
+import { StatCard } from "@/components/ui/MetricCard";
+import { StatusPillRow } from "@/components/ui/StatusPillRow";
+import { useSort, sortRows } from "@/hooks/useSort";
+import { SortHeader } from "@/components/ui/SortHeader";
+import { DealLinks } from "@/components/ui/DealLinks";
+import { fmtAmount, fmtDateShort } from "@/lib/format-helpers";
 
 // Construction Status Groups
 const CONSTRUCTION_STATUS_GROUPS: FilterGroup[] = [
@@ -121,11 +127,14 @@ export default function ConstructionDashboardPage() {
   }, [safeProjects, filterLocations, filterStages, filterConstructionStatuses, searchQuery, isInConstructionPhase]);
 
   const stats = useMemo(() => {
-    const today = new Date();
     const inConstruction = filteredProjects.filter(p => p.stage === 'Construction');
     const readyToBuild = filteredProjects.filter(p => p.stage === 'Ready To Build' || p.stage === 'RTB - Blocked');
-    const completed = filteredProjects.filter(p => p.constructionCompleteDate);
-    const scheduled = filteredProjects.filter(p => p.constructionScheduleDate && !p.constructionCompleteDate);
+
+    // Blocked/Rejected by constructionStatus (not stage) — avoids double-counting RTB - Blocked
+    const blockedRejected = filteredProjects.filter(p => {
+      const status = (p.constructionStatus || "").toLowerCase();
+      return status.includes("blocked") || status.includes("rejected");
+    });
 
     // Calculate construction status breakdown
     const constructionStatusStats: Record<string, number> = {};
@@ -136,25 +145,67 @@ export default function ConstructionDashboardPage() {
       }
     });
 
-    // Calculate average days in construction
-    const daysInConstruction = inConstruction
-      .filter(p => p.constructionScheduleDate)
-      .map(p => Math.floor((today.getTime() - new Date(p.constructionScheduleDate! + "T12:00:00").getTime()) / (1000 * 60 * 60 * 24)));
-    const avgDaysInConstruction = daysInConstruction.length > 0
-      ? Math.round(daysInConstruction.reduce((a, b) => a + b, 0) / daysInConstruction.length)
-      : 0;
-
     return {
       total: filteredProjects.length,
       totalValue: filteredProjects.reduce((s, p) => s + (p.amount || 0), 0),
       inConstruction,
       readyToBuild,
-      completed,
-      scheduled,
+      blockedRejected,
       constructionStatusStats,
-      avgDaysInConstruction,
     };
   }, [filteredProjects]);
+
+  // ---- Action table data (use raw safeProjects, not filteredProjects) ----
+  const overdueProjects = useMemo(() => {
+    const todayMidnight = new Date();
+    todayMidnight.setHours(0, 0, 0, 0);
+    return safeProjects
+      .filter((p) => {
+        if (!p.constructionScheduleDate || p.constructionCompleteDate) return false;
+        const schedDate = new Date(p.constructionScheduleDate + "T00:00:00");
+        const daysAgo = Math.floor((todayMidnight.getTime() - schedDate.getTime()) / 86400000);
+        return daysAgo >= 3;
+      })
+      .map((p) => {
+        const schedDate = new Date(p.constructionScheduleDate + "T00:00:00");
+        const todayMid = new Date();
+        todayMid.setHours(0, 0, 0, 0);
+        const daysOverdue = Math.floor((todayMid.getTime() - schedDate.getTime()) / 86400000);
+        return { ...p, daysOverdue };
+      });
+  }, [safeProjects]);
+
+  const looseEndsProjects = useMemo(() => {
+    return safeProjects.filter(
+      (p) => (p.constructionStatus || "").toLowerCase().includes("loose ends")
+    );
+  }, [safeProjects]);
+
+  // Apply location + search filters only (no stage/status filters) for action tables
+  const filteredOverdue = useMemo(() => {
+    return overdueProjects.filter((p) => {
+      if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || "")) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        if (!(p.name || "").toLowerCase().includes(q) && !(p.pbLocation || "").toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [overdueProjects, filterLocations, searchQuery]);
+
+  const filteredLooseEnds = useMemo(() => {
+    return looseEndsProjects.filter((p) => {
+      if (filterLocations.length > 0 && !filterLocations.includes(p.pbLocation || "")) return false;
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        if (!(p.name || "").toLowerCase().includes(q) && !(p.pbLocation || "").toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [looseEndsProjects, filterLocations, searchQuery]);
+
+  const overdueSort = useSort("daysOverdue", "desc");
+  const looseEndsSort = useSort("amount", "desc");
 
   // Get unique values for filters
   const locations = useMemo(() =>
@@ -313,82 +364,113 @@ export default function ConstructionDashboardPage() {
         </div>
       </div>
 
-      {/* Summary Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-orange-400">{stats.total}</div>
-          <div className="text-sm text-muted">Total Projects</div>
-          <div className="text-xs text-muted">{formatMoney(stats.totalValue)}</div>
-        </div>
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-cyan-400">{stats.readyToBuild.length}</div>
-          <div className="text-sm text-muted">Ready To Build</div>
-          <div className="text-xs text-muted">{formatMoney(stats.readyToBuild.reduce((s, p) => s + (p.amount || 0), 0))}</div>
-        </div>
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-yellow-400">{stats.inConstruction.length}</div>
-          <div className="text-sm text-muted">In Construction</div>
-          <div className="text-xs text-muted">{formatMoney(stats.inConstruction.reduce((s, p) => s + (p.amount || 0), 0))}</div>
-        </div>
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-green-400">{stats.completed.length}</div>
-          <div className="text-sm text-muted">Completed</div>
-          <div className="text-xs text-muted">{formatMoney(stats.completed.reduce((s, p) => s + (p.amount || 0), 0))}</div>
-        </div>
+      {/* StatCards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger-grid mb-6">
+        <StatCard label="Total Projects" value={stats.total} subtitle={formatMoney(stats.totalValue)} color="orange" />
+        <StatCard label="Ready To Build" value={stats.readyToBuild.length} subtitle={formatMoney(stats.readyToBuild.reduce((s: number, p: RawProject) => s + (p.amount || 0), 0))} color="cyan" />
+        <StatCard label="In Construction" value={stats.inConstruction.length} subtitle={formatMoney(stats.inConstruction.reduce((s: number, p: RawProject) => s + (p.amount || 0), 0))} color="yellow" />
+        <StatCard label="Blocked / Rejected" value={stats.blockedRejected.length} subtitle="action needed" color="red" />
       </div>
 
-      {/* Additional Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-blue-400">{stats.scheduled.length}</div>
-          <div className="text-sm text-muted">Scheduled</div>
-        </div>
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-purple-400">{stats.avgDaysInConstruction}d</div>
-          <div className="text-sm text-muted">Avg Days in Construction</div>
-        </div>
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-amber-400">{Object.keys(stats.constructionStatusStats).length}</div>
-          <div className="text-sm text-muted">Active Statuses</div>
-        </div>
-        <div className="bg-surface rounded-xl p-4 border border-t-border">
-          <div className="text-2xl font-bold text-red-400">
-            {filteredProjects.filter(p => p.constructionStatus?.toLowerCase().includes('blocked') || p.constructionStatus?.toLowerCase().includes('rejected')).length}
+      {/* Status Pill Row */}
+      <StatusPillRow
+        stats={stats.constructionStatusStats}
+        selected={filters.constructionStatuses}
+        onToggle={(status) => {
+          const current = filters.constructionStatuses;
+          setFilters({
+            ...filters,
+            constructionStatuses: current.includes(status) ? current.filter((s: string) => s !== status) : [...current, status],
+          });
+        }}
+        getStatusColor={getConstructionStatusColor}
+        accentColor="orange"
+      />
+
+      {/* Construction Overdue */}
+      {filteredOverdue.length > 0 && (
+        <div className="bg-surface border border-t-border border-l-4 border-l-red-500 rounded-xl overflow-hidden mb-6">
+          <div className="px-5 py-4 border-b border-t-border">
+            <h2 className="text-lg font-semibold text-foreground">Construction Overdue <span className="text-muted font-normal text-sm ml-1">({filteredOverdue.length})</span></h2>
+            <p className="text-sm text-muted mt-0.5">Scheduled construction date was 3+ days ago without completion</p>
           </div>
-          <div className="text-sm text-muted">Blocked/Rejected</div>
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-t-border bg-surface-2/50">
+                  <SortHeader label="Project" sortKey="name" currentKey={overdueSort.sortKey} currentDir={overdueSort.sortDir} onSort={overdueSort.toggle} compact className="text-left" />
+                  <SortHeader label="Customer" sortKey="name" currentKey={overdueSort.sortKey} currentDir={overdueSort.sortDir} onSort={overdueSort.toggle} compact className="text-left" />
+                  <SortHeader label="Location" sortKey="pbLocation" currentKey={overdueSort.sortKey} currentDir={overdueSort.sortDir} onSort={overdueSort.toggle} compact className="text-left" />
+                  <SortHeader label="Stage" sortKey="stage" currentKey={overdueSort.sortKey} currentDir={overdueSort.sortDir} onSort={overdueSort.toggle} compact className="text-left" />
+                  <SortHeader label="Amount" sortKey="amount" currentKey={overdueSort.sortKey} currentDir={overdueSort.sortDir} onSort={overdueSort.toggle} compact className="text-right" />
+                  <SortHeader label="Scheduled" sortKey="constructionScheduleDate" currentKey={overdueSort.sortKey} currentDir={overdueSort.sortDir} onSort={overdueSort.toggle} compact className="text-center" />
+                  <SortHeader label="Days Overdue" sortKey="daysOverdue" currentKey={overdueSort.sortKey} currentDir={overdueSort.sortDir} onSort={overdueSort.toggle} compact className="text-center" />
+                  <th className="text-center px-3 py-2 text-xs font-medium text-muted">Links</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortRows(filteredOverdue, overdueSort.sortKey, overdueSort.sortDir).map((p, i) => (
+                  <tr key={p.id} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+                    <td className="px-3 py-2 font-mono text-foreground">{(p.name || "").split("|")[0].trim()}</td>
+                    <td className="px-3 py-2 text-foreground truncate max-w-[180px]">{(p.name || "").split("|")[1]?.trim() || ""}</td>
+                    <td className="px-3 py-2 text-muted">{p.pbLocation}</td>
+                    <td className="px-3 py-2 text-muted">{p.stage}</td>
+                    <td className="px-3 py-2 text-right text-muted">{fmtAmount(p.amount)}</td>
+                    <td className="text-center px-3 py-2 text-muted">{fmtDateShort(p.constructionScheduleDate)}</td>
+                    <td className={`text-center px-3 py-2 font-mono font-medium ${
+                      p.daysOverdue > 14 ? "text-red-400" :
+                      p.daysOverdue > 7 ? "text-orange-400" : "text-yellow-400"
+                    }`}>
+                      {p.daysOverdue}d
+                    </td>
+                    <td className="text-center px-3 py-2">
+                      <DealLinks dealId={p.id} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Status Breakdown */}
-      <div className="bg-surface rounded-xl border border-t-border p-4 mb-6">
-        <h2 className="text-lg font-semibold mb-4 text-orange-400">By Construction Status</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-          {Object.keys(stats.constructionStatusStats).length === 0 ? (
-            <p className="text-muted text-sm col-span-full">No construction status data available</p>
-          ) : (
-            Object.entries(stats.constructionStatusStats)
-              .sort((a, b) => b[1] - a[1])
-              .map(([status, count]) => (
-                <div
-                  key={status}
-                  className={`flex items-center justify-between p-3 bg-skeleton rounded-lg cursor-pointer hover:bg-surface-2 transition-colors ${
-                    filterConstructionStatuses.includes(status) ? 'ring-1 ring-orange-500' : ''
-                  }`}
-                  onClick={() => {
-                    if (filterConstructionStatuses.includes(status)) {
-                      setFilterConstructionStatuses(filterConstructionStatuses.filter(s => s !== status));
-                    } else {
-                      setFilterConstructionStatuses([...filterConstructionStatuses, status]);
-                    }
-                  }}
-                >
-                  <span className="text-xs text-foreground/80 truncate mr-2">{status}</span>
-                  <span className="text-lg font-bold text-orange-400">{count}</span>
-                </div>
-              ))
-          )}
+      {/* Loose Ends */}
+      {filteredLooseEnds.length > 0 && (
+        <div className="bg-surface border border-t-border border-l-4 border-l-orange-500 rounded-xl overflow-hidden mb-6">
+          <div className="px-5 py-4 border-b border-t-border">
+            <h2 className="text-lg font-semibold text-foreground">Loose Ends <span className="text-muted font-normal text-sm ml-1">({filteredLooseEnds.length})</span></h2>
+            <p className="text-sm text-muted mt-0.5">Projects with construction status indicating loose ends remaining</p>
+          </div>
+          <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10">
+                <tr className="border-b border-t-border bg-surface-2/50">
+                  <SortHeader label="Project" sortKey="name" currentKey={looseEndsSort.sortKey} currentDir={looseEndsSort.sortDir} onSort={looseEndsSort.toggle} compact className="text-left" />
+                  <SortHeader label="Customer" sortKey="name" currentKey={looseEndsSort.sortKey} currentDir={looseEndsSort.sortDir} onSort={looseEndsSort.toggle} compact className="text-left" />
+                  <SortHeader label="Location" sortKey="pbLocation" currentKey={looseEndsSort.sortKey} currentDir={looseEndsSort.sortDir} onSort={looseEndsSort.toggle} compact className="text-left" />
+                  <SortHeader label="Stage" sortKey="stage" currentKey={looseEndsSort.sortKey} currentDir={looseEndsSort.sortDir} onSort={looseEndsSort.toggle} compact className="text-left" />
+                  <SortHeader label="Amount" sortKey="amount" currentKey={looseEndsSort.sortKey} currentDir={looseEndsSort.sortDir} onSort={looseEndsSort.toggle} compact className="text-right" />
+                  <th className="text-center px-3 py-2 text-xs font-medium text-muted">Links</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortRows(filteredLooseEnds, looseEndsSort.sortKey, looseEndsSort.sortDir).map((p, i) => (
+                  <tr key={p.id} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
+                    <td className="px-3 py-2 font-mono text-foreground">{(p.name || "").split("|")[0].trim()}</td>
+                    <td className="px-3 py-2 text-foreground truncate max-w-[180px]">{(p.name || "").split("|")[1]?.trim() || ""}</td>
+                    <td className="px-3 py-2 text-muted">{p.pbLocation}</td>
+                    <td className="px-3 py-2 text-muted">{p.stage}</td>
+                    <td className="px-3 py-2 text-right text-muted">{fmtAmount(p.amount)}</td>
+                    <td className="text-center px-3 py-2">
+                      <DealLinks dealId={p.id} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Projects Table */}
       <div className="bg-surface rounded-xl border border-t-border overflow-hidden">
