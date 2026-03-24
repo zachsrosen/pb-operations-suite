@@ -387,8 +387,8 @@ export default function SiteSurveyDashboardPage() {
       {/* StatCards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger-grid mb-6">
         <StatCard label="Total Projects" value={stats.total} subtitle={formatMoney(stats.totalValue)} color="teal" />
-        <StatCard label="Needs Scheduling" value={stats.needsScheduling.length} subtitle={formatMoney(stats.needsScheduling.reduce((s: number, p: any) => s + (p.amount || 0), 0))} color="cyan" />
-        <StatCard label="Scheduled" value={stats.scheduled.length} subtitle={formatMoney(stats.scheduled.reduce((s: number, p: any) => s + (p.amount || 0), 0))} color="yellow" />
+        <StatCard label="Needs Scheduling" value={stats.needsScheduling.length} subtitle={formatMoney(stats.needsScheduling.reduce((s: number, p: RawProject) => s + (p.amount || 0), 0))} color="cyan" />
+        <StatCard label="Scheduled" value={stats.scheduled.length} subtitle={formatMoney(stats.scheduled.reduce((s: number, p: RawProject) => s + (p.amount || 0), 0))} color="yellow" />
         <StatCard label="On Hold / Past Due" value={stats.atRiskCount} subtitle="action needed" color="red" />
       </div>
 
