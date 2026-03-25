@@ -118,6 +118,14 @@ const SUITE_LINKS: SuiteLinkData[] = [
     visibility: "all",
   },
   {
+    href: "/suites/accounting",
+    title: "Accounting Suite",
+    description: "PE deal payments, pricing tools, and financial tracking.",
+    tag: "ACCOUNTING",
+    tagColor: "green",
+    visibility: "owner_admin",
+  },
+  {
     href: "/suites/admin",
     title: "Admin Suite",
     description: "Admin tools, compliance, documentation, and prototypes.",

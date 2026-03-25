@@ -51,6 +51,12 @@ export const SUITE_NAV_ENTRIES: SuiteNavEntry[] = [
     description: "Leadership metrics, revenue, and cross-location analysis.",
   },
   {
+    href: "/suites/accounting",
+    title: "Accounting Suite",
+    shortLabel: "Accounting",
+    description: "PE deal payments, pricing tools, and financial tracking.",
+  },
+  {
     href: "/suites/admin",
     title: "Admin Suite",
     shortLabel: "Admin",
@@ -67,6 +73,7 @@ const SUITE_SWITCHER_ALLOWLIST: Record<UserRole, string[]> = {
     "/suites/service",
     "/suites/dnr-roofing",
     "/suites/executive",
+    "/suites/accounting",
     "/suites/admin",
   ],
   EXECUTIVE: [
@@ -77,6 +84,7 @@ const SUITE_SWITCHER_ALLOWLIST: Record<UserRole, string[]> = {
     "/suites/service",
     "/suites/dnr-roofing",
     "/suites/executive",
+    "/suites/accounting",
   ],
   OWNER: [
     "/suites/operations",
