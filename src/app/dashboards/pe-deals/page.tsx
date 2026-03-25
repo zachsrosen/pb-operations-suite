@@ -72,6 +72,30 @@ function fmtFull(n: number | null): string {
   });
 }
 
+const LOCATION_SHORT: Record<string, string> = {
+  "Denver Tech Center": "DTC",
+  "Westminster": "WST",
+  "Colorado Springs": "CSP",
+  "San Luis Obispo": "SLO",
+  "Camarillo": "CAM",
+};
+
+function shortLocation(loc: string): string {
+  return LOCATION_SHORT[loc] || loc.slice(0, 3).toUpperCase();
+}
+
+function shortType(t: string): string {
+  if (t === "solar+battery") return "PV+ESS";
+  if (t === "solar") return "PV";
+  if (t === "battery") return "ESS";
+  return t;
+}
+
+function truncateName(name: string, max = 20): string {
+  if (name.length <= max) return name;
+  return name.slice(0, max) + "…";
+}
+
 type SortKey = keyof PeDeal;
 type SortDir = "asc" | "desc";
 
@@ -97,18 +121,18 @@ function sortDeals(deals: PeDeal[], key: SortKey, dir: SortDir): PeDeal[] {
 
 const COLUMNS: [SortKey, string][] = [
   ["dealName", "Deal"],
-  ["pbLocation", "Location"],
+  ["pbLocation", "Loc"],
   ["dealStageLabel", "Stage"],
-  ["closeDate", "Close Date"],
+  ["closeDate", "Close"],
   ["systemType", "Type"],
   ["energyCommunity", "EC"],
   ["leaseFactor", "Factor"],
-  ["epcPrice", "EPC Price"],
-  ["customerPays", "Customer"],
-  ["pePaymentTotal", "PE Total"],
-  ["pePaymentIC", "PE @ IC"],
-  ["pePaymentPC", "PE @ PC"],
-  ["totalPBRevenue", "PB Revenue"],
+  ["epcPrice", "EPC"],
+  ["customerPays", "Cust."],
+  ["pePaymentTotal", "PE Tot"],
+  ["pePaymentIC", "PE IC"],
+  ["pePaymentPC", "PE PC"],
+  ["totalPBRevenue", "Revenue"],
   ["peM1Status", "M1"],
   ["peM2Status", "M2"],
 ];
@@ -181,7 +205,7 @@ function DealSection({
                 <th
                   key={key}
                   onClick={() => toggleSort(key)}
-                  className="px-3 py-2.5 text-xs font-medium text-muted whitespace-nowrap cursor-pointer hover:text-foreground select-none"
+                  className="px-2 py-2 text-xs font-medium text-muted whitespace-nowrap cursor-pointer hover:text-foreground select-none"
                 >
                   {label}{sortArrow(key)}
                 </th>
@@ -198,48 +222,49 @@ function DealSection({
             ) : (
               deals.map((deal) => (
                 <tr key={deal.dealId} className="border-b border-border/50 hover:bg-surface-2/50">
-                  <td className="px-3 py-2 whitespace-nowrap">
+                  <td className="px-2 py-2 whitespace-nowrap max-w-[160px]">
                     <a
                       href={deal.hubspotUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-orange-400 hover:text-orange-300 hover:underline"
+                      title={deal.dealName}
                     >
-                      {deal.dealName}
+                      {truncateName(deal.dealName)}
                     </a>
                   </td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap">{deal.pbLocation || "—"}</td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap">{deal.dealStageLabel}</td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap">
-                    {deal.closeDate ? new Date(deal.closeDate).toLocaleDateString() : "—"}
+                  <td className="px-2 py-2 text-muted whitespace-nowrap" title={deal.pbLocation}>{shortLocation(deal.pbLocation) || "—"}</td>
+                  <td className="px-2 py-2 text-muted whitespace-nowrap">{deal.dealStageLabel}</td>
+                  <td className="px-2 py-2 text-muted whitespace-nowrap">
+                    {deal.closeDate ? new Date(deal.closeDate).toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" }) : "—"}
                   </td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap capitalize">
-                    {deal.systemType.replace("+", " + ")}
+                  <td className="px-2 py-2 text-muted whitespace-nowrap" title={deal.systemType}>
+                    {shortType(deal.systemType)}
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
+                  <td className="px-2 py-2 whitespace-nowrap text-center">
                     {deal.ecLookupFailed ? (
                       <span className="text-yellow-400" title="EC lookup failed">⚠️</span>
                     ) : deal.energyCommunity ? (
-                      <span className="text-emerald-400">Yes</span>
+                      <span className="text-emerald-400">✓</span>
                     ) : (
-                      <span className="text-muted">No</span>
+                      <span className="text-muted">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap text-right">{deal.leaseFactor.toFixed(3)}</td>
-                  <td className="px-3 py-2 text-foreground whitespace-nowrap text-right font-medium">{fmtFull(deal.epcPrice)}</td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap text-right">{fmtFull(deal.customerPays)}</td>
-                  <td className="px-3 py-2 text-blue-400 whitespace-nowrap text-right font-medium">{fmtFull(deal.pePaymentTotal)}</td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap text-right">{fmtFull(deal.pePaymentIC)}</td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap text-right">{fmtFull(deal.pePaymentPC)}</td>
-                  <td className="px-3 py-2 text-emerald-400 whitespace-nowrap text-right font-medium">{fmtFull(deal.totalPBRevenue)}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">
+                  <td className="px-2 py-2 text-muted whitespace-nowrap text-right">{deal.leaseFactor.toFixed(3)}</td>
+                  <td className="px-2 py-2 text-foreground whitespace-nowrap text-right font-medium">{fmt(deal.epcPrice)}</td>
+                  <td className="px-2 py-2 text-muted whitespace-nowrap text-right">{fmt(deal.customerPays)}</td>
+                  <td className="px-2 py-2 text-blue-400 whitespace-nowrap text-right font-medium">{fmt(deal.pePaymentTotal)}</td>
+                  <td className="px-2 py-2 text-muted whitespace-nowrap text-right">{fmt(deal.pePaymentIC)}</td>
+                  <td className="px-2 py-2 text-muted whitespace-nowrap text-right">{fmt(deal.pePaymentPC)}</td>
+                  <td className="px-2 py-2 text-emerald-400 whitespace-nowrap text-right font-medium">{fmt(deal.totalPBRevenue)}</td>
+                  <td className="px-2 py-2 whitespace-nowrap">
                     <StatusDropdown
                       value={deal.peM1Status}
                       onChange={(val) => onStatusChange(deal.dealId, "pe_m1_status", val)}
                       saving={savingDeals.has(`${deal.dealId}:pe_m1_status`)}
                     />
                   </td>
-                  <td className="px-3 py-2 whitespace-nowrap">
+                  <td className="px-2 py-2 whitespace-nowrap">
                     <StatusDropdown
                       value={deal.peM2Status}
                       onChange={(val) => onStatusChange(deal.dealId, "pe_m2_status", val)}
@@ -455,7 +480,7 @@ export default function PeDealsPage() {
         />
         <MultiSelectFilter
           label="Location"
-          options={locationOptions.map((l) => ({ value: l, label: l }))}
+          options={locationOptions.map((l) => ({ value: l, label: `${shortLocation(l)} — ${l}` }))}
           selected={locationFilter}
           onChange={setLocationFilter}
         />
