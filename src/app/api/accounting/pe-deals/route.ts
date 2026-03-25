@@ -121,6 +121,7 @@ const PE_DEAL_PROPERTIES = [
   "battery_count",
   "battery_brand",
   "module_brand",
+  "tags",
   // PE-specific
   "participate_energy_status",
   "is_participate_energy",
@@ -133,65 +134,35 @@ const PE_DEAL_PROPERTIES = [
 // Fetch PE deals from a single pipeline
 // ---------------------------------------------------------------------------
 
+const PE_TAG_VALUE = "Participate Energy";
+
 async function fetchPeDealsFromPipeline(
   pipelineKey: string,
-  peFilterProperty: string,
 ): Promise<Record<string, unknown>[]> {
   const pipelineId = PIPELINE_IDS[pipelineKey];
   if (!pipelineId) return [];
 
   const allDeals: Record<string, unknown>[] = [];
 
-  if (pipelineId === "default") {
-    // HubSpot's search API rejects pipeline="default" as a filter value.
-    // Workaround: query by deal stage IDs (same pattern as deals/route.ts).
-    const stageMaps = await getStageMaps();
-    const stageIds = Object.keys(stageMaps[pipelineKey] || {});
-    const BATCH_SIZE = 5;
-
-    for (let i = 0; i < stageIds.length; i += BATCH_SIZE) {
-      const batch = stageIds.slice(i, i + BATCH_SIZE);
-      if (i > 0) await new Promise((r) => setTimeout(r, 150));
-
-      let after: string | undefined;
-      do {
-        const searchRequest = {
-          filterGroups: batch.map((stageId) => ({
-            filters: [
-              { propertyName: "dealstage", operator: FilterOperatorEnum.Eq, value: stageId },
-              { propertyName: peFilterProperty, operator: FilterOperatorEnum.HasProperty },
-            ] as any,
-          })),
-          properties: PE_DEAL_PROPERTIES,
-          limit: 100,
-          ...(after ? { after } : {}),
-        } as any;
-        const response = await searchWithRetry(searchRequest);
-        allDeals.push(...response.results.map((d) => d.properties));
-        after = response.paging?.next?.after;
-      } while (after);
-    }
-  } else {
-    // Non-default pipelines can filter by pipeline ID directly
-    let after: string | undefined;
-    do {
-      const searchRequest = {
-        filterGroups: [{
-          filters: [
-            { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: pipelineId },
-            { propertyName: peFilterProperty, operator: FilterOperatorEnum.HasProperty },
-          ] as any,
-        }],
-        properties: PE_DEAL_PROPERTIES,
-        sorts: [{ propertyName: "closedate", direction: "DESCENDING" }] as unknown as string[],
-        limit: 100,
-        ...(after ? { after } : {}),
-      } as any;
-      const response = await searchWithRetry(searchRequest);
-      allDeals.push(...response.results.map((d) => d.properties));
-      after = response.paging?.next?.after;
-    } while (after);
-  }
+  // Project pipeline uses a numeric ID — filter by pipeline + tag
+  let after: string | undefined;
+  do {
+    const searchRequest = {
+      filterGroups: [{
+        filters: [
+          { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: pipelineId },
+          { propertyName: "tags", operator: FilterOperatorEnum.ContainsToken, value: PE_TAG_VALUE },
+        ],
+      }],
+      properties: PE_DEAL_PROPERTIES,
+      sorts: [{ propertyName: "closedate", direction: "DESCENDING" }] as unknown as string[],
+      limit: 100,
+      ...(after ? { after } : {}),
+    } as any;
+    const response = await searchWithRetry(searchRequest);
+    allDeals.push(...response.results.map((d) => d.properties));
+    after = response.paging?.next?.after;
+  } while (after);
 
   return allDeals;
 }
@@ -209,11 +180,9 @@ export async function GET() {
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
 
   try {
-    const peFilterProperty = "participate_energy_status";
-
     // Only project pipeline — active deals (exclude Project Complete + Cancelled)
     const INACTIVE_PROJECT_STAGES = ["20440343", "68229433"];
-    const projectDeals = await fetchPeDealsFromPipeline("project", peFilterProperty);
+    const projectDeals = await fetchPeDealsFromPipeline("project");
     const rawDeals = projectDeals.filter(
       (d) => !INACTIVE_PROJECT_STAGES.includes(String(d.dealstage)),
     );
