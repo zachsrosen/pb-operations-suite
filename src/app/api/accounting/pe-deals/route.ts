@@ -122,13 +122,13 @@ async function fetchPeDealsFromPipeline(
           filterGroups: batch.map((stageId) => ({
             filters: [
               { propertyName: "dealstage", operator: FilterOperatorEnum.Eq, value: stageId },
-              { propertyName: peFilterProperty, operator: FilterOperatorEnum.HasProperty, value: "" },
-            ],
+              { propertyName: peFilterProperty, operator: FilterOperatorEnum.HasProperty },
+            ] as any,
           })),
           properties: PE_DEAL_PROPERTIES,
           limit: 100,
           ...(after ? { after } : {}),
-        };
+        } as any;
         const response = await searchWithRetry(searchRequest);
         allDeals.push(...response.results.map((d) => d.properties));
         after = response.paging?.next?.after;
@@ -142,14 +142,14 @@ async function fetchPeDealsFromPipeline(
         filterGroups: [{
           filters: [
             { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: pipelineId },
-            { propertyName: peFilterProperty, operator: FilterOperatorEnum.HasProperty, value: "" },
-          ],
+            { propertyName: peFilterProperty, operator: FilterOperatorEnum.HasProperty },
+          ] as any,
         }],
         properties: PE_DEAL_PROPERTIES,
-        sorts: [JSON.stringify({ propertyName: "closedate", direction: "DESCENDING" })],
+        sorts: [{ propertyName: "closedate", direction: "DESCENDING" }] as unknown as string[],
         limit: 100,
         ...(after ? { after } : {}),
-      };
+      } as any;
       const response = await searchWithRetry(searchRequest);
       allDeals.push(...response.results.map((d) => d.properties));
       after = response.paging?.next?.after;

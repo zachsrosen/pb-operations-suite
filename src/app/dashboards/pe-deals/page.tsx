@@ -328,25 +328,25 @@ export default function PeDealsPage() {
       {/* Hero Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 stagger-grid">
         <StatCard
-          key={String(filtered.length)}
+          key={`deals-${filtered.length}`}
           label="PE Deals"
           value={String(filtered.length)}
           color="orange"
         />
         <StatCard
-          key={String(totalEPC)}
+          key={`epc-${totalEPC}`}
           label="Total EPC"
           value={fmt(totalEPC)}
           color="blue"
         />
         <StatCard
-          key={String(totalPEReceivable)}
+          key={`recv-${totalPEReceivable}`}
           label="Total PE Receivable"
           value={fmt(totalPEReceivable)}
           color="emerald"
         />
         <StatCard
-          key={String(totalRevenue)}
+          key={`rev-${totalRevenue}`}
           label="Total PB Revenue"
           value={fmt(totalRevenue)}
           color="green"
