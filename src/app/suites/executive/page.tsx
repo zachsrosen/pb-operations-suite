@@ -69,14 +69,6 @@ const LINKS: SuitePageCard[] = [
     section: "Sales",
   },
   {
-    href: "/dashboards/pe",
-    title: "PE Dashboard",
-    description: "Participate Energy milestone tracking and compliance monitoring.",
-    tag: "PE",
-    icon: "⚡",
-    section: "Programs",
-  },
-  {
     href: "/dashboards/zuper-compliance",
     title: "Zuper Compliance",
     description: "Per-user compliance scorecards and crew-composition comparisons.",
