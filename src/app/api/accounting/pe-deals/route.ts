@@ -43,11 +43,37 @@ interface PeDeal {
 }
 
 // ---------------------------------------------------------------------------
-// EC cache — simple Map with 24h TTL (EC designations update annually)
+// EC lookup — inline (no self-fetch) with 24h cache
 // ---------------------------------------------------------------------------
 
 const EC_TTL = 24 * 60 * 60 * 1000;
 const ecCache = new Map<string, { result: boolean; ts: number }>();
+
+const COAL_CLOSURE_URL =
+  "https://arcgis.netl.doe.gov/server/rest/services/Hosted/2024_Coal_Closure_Energy_Communities/FeatureServer/0/query";
+const STATISTICAL_AREA_URL =
+  "https://arcgis.netl.doe.gov/server/rest/services/Hosted/2024_MSAs_NonMSAs_that_are_Energy_Communities/FeatureServer/0/query";
+
+async function queryArcGISLayer(
+  url: string,
+  lat: number,
+  lng: number,
+  labelField: string,
+): Promise<boolean> {
+  const params = new URLSearchParams({
+    geometry: `${lng},${lat}`,
+    geometryType: "esriGeometryPoint",
+    inSR: "4326",
+    spatialRel: "esriSpatialRelIntersects",
+    outFields: labelField,
+    returnGeometry: "false",
+    f: "json",
+  });
+  const res = await fetch(`${url}?${params}`);
+  if (!res.ok) return false;
+  const data = await res.json();
+  return (data?.features?.length ?? 0) > 0;
+}
 
 async function lookupEC(zip: string): Promise<{ ec: boolean; failed: boolean }> {
   const cached = ecCache.get(zip);
@@ -55,13 +81,25 @@ async function lookupEC(zip: string): Promise<{ ec: boolean; failed: boolean }> 
     return { ec: cached.result, failed: false };
   }
   try {
-    const res = await fetch(
-      `${process.env.NEXTAUTH_URL || "http://localhost:3000"}/api/energy-community/check?zip=${zip}`,
-    );
-    if (!res.ok) return { ec: false, failed: true };
-    const data = await res.json();
-    ecCache.set(zip, { result: data.isEnergyCommunity, ts: Date.now() });
-    return { ec: data.isEnergyCommunity, failed: false };
+    // Geocode zip via Zippopotam.us
+    const geoRes = await fetch(`https://api.zippopotam.us/us/${zip}`);
+    if (!geoRes.ok) return { ec: false, failed: true };
+    const geoData = await geoRes.json();
+    const place = geoData?.places?.[0];
+    if (!place) return { ec: false, failed: true };
+
+    const lat = parseFloat(place.latitude);
+    const lng = parseFloat(place.longitude);
+
+    // Query both DOE layers in parallel
+    const [coal, stat] = await Promise.all([
+      queryArcGISLayer(COAL_CLOSURE_URL, lat, lng, "label"),
+      queryArcGISLayer(STATISTICAL_AREA_URL, lat, lng, "label_ec"),
+    ]);
+
+    const isEC = coal || stat;
+    ecCache.set(zip, { result: isEC, ts: Date.now() });
+    return { ec: isEC, failed: false };
   } catch {
     return { ec: false, failed: true };
   }
