@@ -73,7 +73,7 @@ function fmtFull(n: number | null): string {
 }
 
 const LOCATION_SHORT: Record<string, string> = {
-  "Denver Tech Center": "DTC",
+  "Centennial": "DTC",
   "Westminster": "WST",
   "Colorado Springs": "CSP",
   "San Luis Obispo": "SLO",
