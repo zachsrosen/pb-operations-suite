@@ -73,6 +73,10 @@ export const queryKeys = {
     root: ["revenue-goals"] as const,
     byYear: (year: number) => ["revenue-goals", year] as const,
   },
+  peDeals: {
+    root: ["peDeals"] as const,
+    list: () => [...queryKeys.peDeals.root, "list"] as const,
+  },
 } as const;
 
 /**
