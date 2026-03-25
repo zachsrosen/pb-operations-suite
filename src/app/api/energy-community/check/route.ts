@@ -17,8 +17,8 @@ const COAL_CLOSURE_URL =
 const STATISTICAL_AREA_URL =
   "https://arcgis.netl.doe.gov/server/rest/services/Hosted/2024_MSAs_NonMSAs_that_are_Energy_Communities/FeatureServer/0/query";
 
-// Census Bureau geocoder — free, no API key needed
-const GEOCODER_URL = "https://geocoding.geo.census.gov/geocoder/geographies/onelineaddress";
+// Zippopotam.us — free zip-to-centroid, no API key needed
+const ZIP_API_URL = "https://api.zippopotam.us/us";
 
 interface GeocodeResult {
   lat: number;
@@ -27,24 +27,17 @@ interface GeocodeResult {
 }
 
 async function geocodeZip(zip: string): Promise<GeocodeResult | null> {
-  const params = new URLSearchParams({
-    address: zip,
-    benchmark: "Public_AR_Current",
-    vintage: "Current_Current",
-    format: "json",
-  });
-
-  const res = await fetch(`${GEOCODER_URL}?${params}`, { next: { revalidate: 86400 } });
+  const res = await fetch(`${ZIP_API_URL}/${zip}`, { next: { revalidate: 86400 } });
   if (!res.ok) return null;
 
   const data = await res.json();
-  const match = data?.result?.addressMatches?.[0];
-  if (!match) return null;
+  const place = data?.places?.[0];
+  if (!place) return null;
 
   return {
-    lat: match.coordinates.y,
-    lng: match.coordinates.x,
-    matchedAddress: match.matchedAddress,
+    lat: parseFloat(place.latitude),
+    lng: parseFloat(place.longitude),
+    matchedAddress: `${place["place name"]}, ${place["state abbreviation"]} ${data["post code"]}`,
   };
 }
 
