@@ -152,6 +152,16 @@ When lease factor > baseline (DC bonus): Total PB Revenue > EPC.
 | PE M1 Status | HubSpot property (discover during implementation) |
 | PE M2 Status | HubSpot property (discover during implementation) |
 
+### Section Layout
+
+The page displays three sections:
+
+1. **M1 — Permission To Operate** (orange accent): PE deals currently at the PTO stage, pending 2/3 PE payment submission. Only shown when deals exist at this stage.
+2. **M2 — Close Out** (emerald accent): PE deals currently at the Close Out stage, pending 1/3 PE payment submission. Only shown when deals exist at this stage.
+3. **All PE Deals**: Complete table of all PE-tagged deals across all stages.
+
+Each section renders the same sortable table. M1 and M2 sections appear at the top for priority visibility.
+
 ### Table Features
 
 - Sort by any column (default: close date descending)
