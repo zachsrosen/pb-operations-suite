@@ -25,7 +25,7 @@ Future pages (not in v1): Revenue Reconciliation, Project Margins, Sales Order S
 
 **Route**: `/suites/accounting`
 **Component**: `SuitePageShell` (existing pattern)
-**Accent color**: green
+**Accent color**: green (`{ color: "#10b981", light: "#34d399" }`)
 
 ### Cards
 
@@ -45,13 +45,13 @@ Future pages (not in v1): Revenue Reconciliation, Project Margins, Sales Order S
 
 ### Role Access
 
-**ADMIN, EXECUTIVE** only. (OWNER normalizes to EXECUTIVE per Prisma schema.)
+**ADMIN, EXECUTIVE** only. (OWNER normalizes to EXECUTIVE per Prisma schema.) Both roles already have wildcard `"*"` route access in `role-permissions.ts`, so no explicit route entries are needed — only suite-nav and suite-accent registration.
 
 Add Accounting to the suite switcher in `suite-nav.ts` for ADMIN and EXECUTIVE, positioned after Intelligence and before Admin.
 
-### Route Permissions
+### Home Page Grid
 
-Add `/suites/accounting` and `/dashboards/pe-deals` to `role-permissions.ts` for EXECUTIVE. ADMIN already has wildcard access.
+Add an Accounting Suite card to the home page grid (`src/app/page.tsx` `SUITE_LINKS` array) with `visibility: "owner_admin"` so it appears on the landing page for ADMIN and EXECUTIVE users.
 
 ---
 
@@ -68,7 +68,9 @@ HubSpot deals where the PE tag is set. During implementation, discover which pro
 - `is_participate_energy` (boolean flag)
 - `tags` containing "Participate Energy" (fallback)
 
-Query across Sales and Project pipelines (`HUBSPOT_PIPELINE_SALES`, `HUBSPOT_PIPELINE_PROJECT`) using `searchWithRetry()`.
+Query across Sales and Project pipelines using `PIPELINE_IDS` from `deals-pipeline.ts`.
+
+**Sales pipeline exception**: The sales pipeline ID is `"default"`, and HubSpot's search API rejects `pipeline="default"` as a filter value. Use the same workaround as `deals/route.ts`: search by individual deal stage IDs instead of pipeline ID. See `fetchDealsForPipeline()` in `src/app/api/deals/route.ts` L141–143 for the pattern. The Project pipeline (`6900017`) can be filtered normally.
 
 ### HubSpot Properties Required
 
@@ -101,7 +103,16 @@ Each deal gets its own lease factor using `calcLeaseFactorAdjustment()` from `pr
 | Battery DC | Check `battery_brand` against a qualifying brands list (`DC_QUALIFYING_BATTERY_BRANDS = ["Tesla"]`). Currently Tesla PW3 at 60.5% meets the 55% threshold. |
 | Energy Community | Auto-lookup via `/api/energy-community/check` using deal's `postal_code` |
 
-**EC lookup optimization**: Cache results by zip code in the server-side cache (`lib/cache.ts`) with 24h TTL. PB operates in ~5 Colorado + California markets, so most deals share a small set of zips.
+**EC lookup caching**: The shared `appCache` singleton in `lib/cache.ts` uses fixed 5m/10m TTL and is not configurable per key. For EC results (which change rarely — IRA designations update annually), create a dedicated `CacheStore` instance in the API route with 24h TTL:
+
+```typescript
+import { CacheStore } from "@/lib/cache";
+const ecCache = new CacheStore(24 * 60 * 60 * 1000); // 24h TTL
+```
+
+This requires exporting the `CacheStore` class (currently only the `appCache` singleton is exported). Alternatively, use a simple `Map<string, { result: boolean; ts: number }>` with manual TTL check in the API route — simpler and no changes to `cache.ts`.
+
+PB operates in ~5 Colorado + California markets, so most deals share a small set of zips.
 
 ### Payment Formulas
 
@@ -161,14 +172,14 @@ Four `StatCard` components at the top:
 | Total PE Receivable | Sum of PE Payment Total | emerald |
 | Total PB Revenue | Sum of Total PB Revenue | green |
 
-Stats update reactively when filters change (show filtered totals).
+Stats update reactively when filters change (show filtered totals). Deals with null pricing data are excluded from sums.
 
 ### Error Handling
 
 - **HubSpot API errors**: Use `searchWithRetry()` with standard exponential backoff on 429s. Show error state in UI if all retries fail.
 - **EC lookup failures**: If the EC check fails for a zip code, default `energyCommunity = false` for that deal and show a warning indicator in the EC Status column. Do not block the entire page for partial failures.
-- **Missing deal properties**: If `amount` is null/0, show "—" for all calculated columns. If `postal_code` is missing, skip EC lookup and default to false. If `project_type` is missing, default to "solar" (most common).
-- **Stage label mapping**: Use the pipeline stage map cache (5-min TTL, existing pattern) to resolve stage IDs to labels. Deals may span Sales and Project pipelines.
+- **Missing deal properties**: If `amount` is null/0, all calculated payment fields are `null` in the API response (not 0). UI renders "—" for these columns and excludes the deal from summary totals. If `postal_code` is missing, skip EC lookup and default to false. If `project_type` is missing, default to "solar" (most common).
+- **Stage label mapping**: Use the pipeline stage map cache (5-min TTL, existing pattern) to resolve stage IDs to labels. Deals may span Sales and Project pipelines — resolve stage labels from the correct pipeline's map.
 
 ### Caching & Data Fetching
 
@@ -185,7 +196,7 @@ Follows the existing API grouping pattern (domain prefix).
 
 - Fetches all PE-tagged deals from HubSpot with required properties
 - Resolves company associations (batch read)
-- Performs EC lookups for unique zip codes (cached)
+- Performs EC lookups for unique zip codes (cached, 24h TTL)
 - Returns deal array with all calculated fields
 
 Response shape:
@@ -193,25 +204,26 @@ Response shape:
 interface PeDeal {
   dealId: string;
   dealName: string;
-  companyName: string;
+  companyName: string | null;
   pbLocation: string;
   dealStage: string;
   dealStageLabel: string;
   closeDate: string | null;
   systemType: "solar" | "battery" | "solar+battery";
-  epcPrice: number;
+  // Pricing — null when deal amount is missing
+  epcPrice: number | null;
+  customerPays: number | null;
+  pePaymentTotal: number | null;
+  pePaymentIC: number | null;
+  pePaymentPC: number | null;
+  totalPBRevenue: number | null;
   // EC & lease factor
-  postalCode: string;
+  postalCode: string | null;
   energyCommunity: boolean;
+  ecLookupFailed: boolean; // true if EC lookup errored for this zip
   solarDC: boolean;
   batteryDC: boolean;
   leaseFactor: number;
-  // Calculated payments
-  customerPays: number;
-  pePaymentTotal: number;
-  pePaymentIC: number;
-  pePaymentPC: number;
-  totalPBRevenue: number;
   // PE milestones
   peM1Status: string | null;
   peM2Status: string | null;
@@ -237,17 +249,20 @@ interface PeDeal {
 | File | Change |
 |------|--------|
 | `src/lib/suite-nav.ts` | Add Accounting suite for ADMIN, EXECUTIVE |
-| `src/lib/role-permissions.ts` | Add `/suites/accounting` and `/dashboards/pe-deals` to EXECUTIVE routes |
+| `src/lib/suite-accents.ts` | Add `"/suites/accounting"` entry with green accent |
+| `src/components/DashboardShell.tsx` | Add `SUITE_MAP` entries: `/dashboards/pricing-calculator` and `/dashboards/pe-deals` → `{ href: "/suites/accounting", label: "Accounting" }` |
+| `src/app/page.tsx` | Add Accounting Suite card to `SUITE_LINKS` with `visibility: "owner_admin"` |
 | `src/lib/query-keys.ts` | Add `peDeals` query key |
 | `src/lib/pricing-calculator.ts` | Export `DC_QUALIFYING_MODULE_BRANDS` and `DC_QUALIFYING_BATTERY_BRANDS` config constants |
+| `src/lib/cache.ts` | Export `CacheStore` class (currently only `appCache` singleton is exported) |
 
 ### Reused
 
 - `calcLeaseFactorAdjustment()` and `PE_LEASE` constants from `pricing-calculator.ts`
 - `/api/energy-community/check` for EC lookups (already built)
 - `searchWithRetry()` from `hubspot.ts` for deal fetching
+- `PIPELINE_IDS` and stage map resolution from `deals-pipeline.ts`
 - `DashboardShell`, `StatCard`, `MultiSelectFilter` UI components
-- Server-side cache (`lib/cache.ts`) for EC results
 
 ---
 
