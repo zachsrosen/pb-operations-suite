@@ -18,7 +18,6 @@ import {
 interface PeDeal {
   dealId: string;
   dealName: string;
-  companyName: string | null;
   pbLocation: string;
   dealStage: string;
   dealStageLabel: string;
@@ -198,63 +197,6 @@ async function fetchPeDealsFromPipeline(
 }
 
 // ---------------------------------------------------------------------------
-// Resolve company names from deal associations
-// ---------------------------------------------------------------------------
-
-async function resolveCompanyNames(
-  dealIds: string[],
-): Promise<Map<string, string>> {
-  const map = new Map<string, string>();
-  if (dealIds.length === 0) return map;
-
-  try {
-    const batchSize = 100;
-    for (let i = 0; i < dealIds.length; i += batchSize) {
-      const batch = dealIds.slice(i, i + batchSize);
-      const response =
-        await hubspotClient.crm.associations.batchApi.read("deals", "companies", {
-          inputs: batch.map((id) => ({ id })),
-        });
-
-      const companyIds = new Set<string>();
-      const dealToCompany = new Map<string, string>();
-
-      // IMPORTANT: use _from (underscore) — this codebase's HubSpot SDK version
-      for (const result of response.results || []) {
-        const dealId = result._from?.id;
-        const companyId = (result.to || [])[0]?.id;
-        if (dealId && companyId) {
-          companyIds.add(companyId);
-          dealToCompany.set(dealId, companyId);
-        }
-      }
-
-      if (companyIds.size > 0) {
-        const companies =
-          await hubspotClient.crm.companies.batchApi.read({
-            inputs: Array.from(companyIds).map((id) => ({ id })),
-            properties: ["name"],
-            propertiesWithHistory: [],
-          });
-
-        const companyNameMap = new Map<string, string>();
-        for (const co of companies.results) {
-          companyNameMap.set(co.id, co.properties.name || "Unknown");
-        }
-
-        for (const [dId, cId] of dealToCompany) {
-          map.set(dId, companyNameMap.get(cId) || "Unknown");
-        }
-      }
-    }
-  } catch (err) {
-    console.error("[pe-deals] Failed to resolve company names:", err);
-  }
-
-  return map;
-}
-
-// ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
 
@@ -262,11 +204,6 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const allowed = ["ADMIN", "EXECUTIVE"];
-  if (!allowed.includes(user.role)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
@@ -284,10 +221,6 @@ export async function GET() {
     // Resolve stage labels
     const stageMaps = await getStageMaps();
     const allStageMaps = (stageMaps.project || {}) as Record<string, string>;
-
-    // Resolve company names
-    const dealIds = rawDeals.map((d) => String(d.hs_object_id));
-    const companyNames = await resolveCompanyNames(dealIds);
 
     // Batch EC lookups by unique zip code
     const uniqueZips = new Set<string>();
@@ -365,7 +298,6 @@ export async function GET() {
       return {
         dealId,
         dealName: String(deal.dealname || "Untitled"),
-        companyName: companyNames.get(dealId) || null,
         pbLocation: String(deal.pb_location || ""),
         dealStage: stageId,
         dealStageLabel: stageLabel,
@@ -397,5 +329,60 @@ export async function GET() {
   } catch (err) {
     console.error("[pe-deals] Error fetching PE deals:", err);
     return NextResponse.json({ error: "Failed to fetch PE deals" }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PATCH — Update M1/M2 status on a deal in HubSpot
+// ---------------------------------------------------------------------------
+
+const VALID_M1M2_VALUES = [
+  "Ready to Submit",
+  "Waiting on Information",
+  "Submitted",
+  "Rejected",
+  "Ready to Resubmit",
+  "Resubmitted",
+  "Approved",
+  "Paid",
+];
+
+export async function PATCH(req: Request) {
+  const user = await getCurrentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const body = await req.json();
+    const { dealId, field, value } = body as {
+      dealId: string;
+      field: "pe_m1_status" | "pe_m2_status";
+      value: string;
+    };
+
+    if (!dealId || !field) {
+      return NextResponse.json({ error: "Missing dealId or field" }, { status: 400 });
+    }
+
+    if (field !== "pe_m1_status" && field !== "pe_m2_status") {
+      return NextResponse.json({ error: "Invalid field" }, { status: 400 });
+    }
+
+    // Allow clearing (empty string) or setting to a valid value
+    if (value && !VALID_M1M2_VALUES.includes(value)) {
+      return NextResponse.json({ error: "Invalid status value" }, { status: 400 });
+    }
+
+    await hubspotClient.crm.deals.basicApi.update(dealId, {
+      properties: { [field]: value || "" },
+    });
+
+    console.log(`[pe-deals] ${user.email} updated ${field}="${value}" on deal ${dealId}`);
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("[pe-deals] Error updating milestone status:", err);
+    return NextResponse.json({ error: "Failed to update status" }, { status: 500 });
   }
 }

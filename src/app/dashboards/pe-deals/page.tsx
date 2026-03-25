@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
@@ -11,10 +11,21 @@ import { queryKeys } from "@/lib/query-keys";
 // Types (mirrors API response)
 // ---------------------------------------------------------------------------
 
+const M1M2_OPTIONS = [
+  "",
+  "Ready to Submit",
+  "Waiting on Information",
+  "Submitted",
+  "Rejected",
+  "Ready to Resubmit",
+  "Resubmitted",
+  "Approved",
+  "Paid",
+] as const;
+
 interface PeDeal {
   dealId: string;
   dealName: string;
-  companyName: string | null;
   pbLocation: string;
   dealStage: string;
   dealStageLabel: string;
@@ -86,7 +97,6 @@ function sortDeals(deals: PeDeal[], key: SortKey, dir: SortDir): PeDeal[] {
 
 const COLUMNS: [SortKey, string][] = [
   ["dealName", "Deal"],
-  ["companyName", "Company"],
   ["pbLocation", "Location"],
   ["dealStageLabel", "Stage"],
   ["closeDate", "Close Date"],
@@ -103,6 +113,31 @@ const COLUMNS: [SortKey, string][] = [
   ["peM2Status", "M2"],
 ];
 
+function StatusDropdown({
+  value,
+  onChange,
+  saving,
+}: {
+  value: string | null;
+  onChange: (val: string) => void;
+  saving: boolean;
+}) {
+  return (
+    <select
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={saving}
+      className={`text-xs rounded px-1.5 py-0.5 border border-border bg-surface-2 text-foreground cursor-pointer hover:bg-surface-elevated transition-colors ${saving ? "opacity-50" : ""}`}
+    >
+      {M1M2_OPTIONS.map((opt) => (
+        <option key={opt} value={opt}>
+          {opt || "—"}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function DealSection({
   title,
   subtitle,
@@ -112,6 +147,8 @@ function DealSection({
   sortDir,
   sortArrow,
   toggleSort,
+  onStatusChange,
+  savingDeals,
 }: {
   title: string;
   subtitle: string;
@@ -121,6 +158,8 @@ function DealSection({
   sortDir: SortDir;
   sortArrow: (key: SortKey) => string;
   toggleSort: (key: SortKey) => void;
+  onStatusChange: (dealId: string, field: "pe_m1_status" | "pe_m2_status", value: string) => void;
+  savingDeals: Set<string>;
 }) {
   const accentBorder = accent === "orange"
     ? "border-l-orange-400"
@@ -169,7 +208,6 @@ function DealSection({
                       {deal.dealName}
                     </a>
                   </td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap">{deal.companyName ?? "—"}</td>
                   <td className="px-3 py-2 text-muted whitespace-nowrap">{deal.pbLocation || "—"}</td>
                   <td className="px-3 py-2 text-muted whitespace-nowrap">{deal.dealStageLabel}</td>
                   <td className="px-3 py-2 text-muted whitespace-nowrap">
@@ -194,8 +232,20 @@ function DealSection({
                   <td className="px-3 py-2 text-muted whitespace-nowrap text-right">{fmtFull(deal.pePaymentIC)}</td>
                   <td className="px-3 py-2 text-muted whitespace-nowrap text-right">{fmtFull(deal.pePaymentPC)}</td>
                   <td className="px-3 py-2 text-emerald-400 whitespace-nowrap text-right font-medium">{fmtFull(deal.totalPBRevenue)}</td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap">{deal.peM1Status ?? "—"}</td>
-                  <td className="px-3 py-2 text-muted whitespace-nowrap">{deal.peM2Status ?? "—"}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <StatusDropdown
+                      value={deal.peM1Status}
+                      onChange={(val) => onStatusChange(deal.dealId, "pe_m1_status", val)}
+                      saving={savingDeals.has(`${deal.dealId}:pe_m1_status`)}
+                    />
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <StatusDropdown
+                      value={deal.peM2Status}
+                      onChange={(val) => onStatusChange(deal.dealId, "pe_m2_status", val)}
+                      saving={savingDeals.has(`${deal.dealId}:pe_m2_status`)}
+                    />
+                  </td>
                 </tr>
               ))
             )}
@@ -211,6 +261,7 @@ function DealSection({
 // ---------------------------------------------------------------------------
 
 export default function PeDealsPage() {
+  const queryClient = useQueryClient();
   const { data, isLoading, error } = useQuery({
     queryKey: queryKeys.peDeals.list(),
     queryFn: async () => {
@@ -224,6 +275,49 @@ export default function PeDealsPage() {
   const [search, setSearch] = useState("");
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
   const [stageFilter, setStageFilter] = useState<string[]>([]);
+  const [savingDeals, setSavingDeals] = useState<Set<string>>(new Set());
+
+  const handleStatusChange = useCallback(
+    async (dealId: string, field: "pe_m1_status" | "pe_m2_status", value: string) => {
+      const key = `${dealId}:${field}`;
+      setSavingDeals((prev) => new Set(prev).add(key));
+
+      // Optimistic update
+      queryClient.setQueryData(
+        queryKeys.peDeals.list(),
+        (old: { deals: PeDeal[]; lastUpdated: string } | undefined) => {
+          if (!old) return old;
+          return {
+            ...old,
+            deals: old.deals.map((d) =>
+              d.dealId === dealId
+                ? { ...d, [field === "pe_m1_status" ? "peM1Status" : "peM2Status"]: value || null }
+                : d,
+            ),
+          };
+        },
+      );
+
+      try {
+        const res = await fetch("/api/accounting/pe-deals", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dealId, field, value }),
+        });
+        if (!res.ok) throw new Error("Failed to update");
+      } catch {
+        // Revert on failure
+        queryClient.invalidateQueries({ queryKey: queryKeys.peDeals.list() });
+      } finally {
+        setSavingDeals((prev) => {
+          const next = new Set(prev);
+          next.delete(key);
+          return next;
+        });
+      }
+    },
+    [queryClient],
+  );
   const [sortKey, setSortKey] = useState<SortKey>("closeDate");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
@@ -260,9 +354,7 @@ export default function PeDealsPage() {
     if (search) {
       const q = search.toLowerCase();
       result = result.filter(
-        (d) =>
-          d.dealName.toLowerCase().includes(q) ||
-          (d.companyName && d.companyName.toLowerCase().includes(q)),
+        (d) => d.dealName.toLowerCase().includes(q),
       );
     }
     if (locationFilter.length > 0) {
@@ -287,7 +379,6 @@ export default function PeDealsPage() {
   // CSV export data
   const exportData = filtered.map((d) => ({
     "Deal Name": d.dealName,
-    Company: d.companyName ?? "",
     "PB Location": d.pbLocation,
     "Deal Stage": d.dealStageLabel,
     "Close Date": d.closeDate ?? "",
@@ -357,7 +448,7 @@ export default function PeDealsPage() {
       <div className="flex flex-wrap gap-3 mb-4">
         <input
           type="text"
-          placeholder="Search deals or companies..."
+          placeholder="Search deals..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="px-3 py-1.5 rounded bg-surface-2 border border-border text-foreground text-sm w-64"
@@ -391,6 +482,8 @@ export default function PeDealsPage() {
               sortDir={sortDir}
               sortArrow={sortArrow}
               toggleSort={toggleSort}
+              onStatusChange={handleStatusChange}
+              savingDeals={savingDeals}
             />
           )}
           {m2Deals.length > 0 && (
@@ -403,6 +496,8 @@ export default function PeDealsPage() {
               sortDir={sortDir}
               sortArrow={sortArrow}
               toggleSort={toggleSort}
+              onStatusChange={handleStatusChange}
+              savingDeals={savingDeals}
             />
           )}
           <DealSection
@@ -413,6 +508,8 @@ export default function PeDealsPage() {
             sortDir={sortDir}
             sortArrow={sortArrow}
             toggleSort={toggleSort}
+            onStatusChange={handleStatusChange}
+            savingDeals={savingDeals}
           />
         </div>
       )}
