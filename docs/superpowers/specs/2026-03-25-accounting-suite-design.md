@@ -250,7 +250,7 @@ interface PeDeal {
 |------|--------|
 | `src/lib/suite-nav.ts` | Add Accounting suite for ADMIN, EXECUTIVE |
 | `src/lib/suite-accents.ts` | Add `"/suites/accounting"` entry with green accent |
-| `src/components/DashboardShell.tsx` | Add `SUITE_MAP` entries: `/dashboards/pricing-calculator` and `/dashboards/pe-deals` → `{ href: "/suites/accounting", label: "Accounting" }` |
+| `src/components/DashboardShell.tsx` | Add `SUITE_MAP` entry: `/dashboards/pe-deals` → `{ href: "/suites/accounting", label: "Accounting" }`. **Do not remap `/dashboards/pricing-calculator`** — it keeps its existing Executive breadcrumb parent since it's accessible to broader roles (PM, Ops, Tech Ops). The Accounting suite links to it as a card but doesn't own its breadcrumb. |
 | `src/app/page.tsx` | Add Accounting Suite card to `SUITE_LINKS` with `visibility: "owner_admin"` |
 | `src/lib/query-keys.ts` | Add `peDeals` query key |
 | `src/lib/pricing-calculator.ts` | Export `DC_QUALIFYING_MODULE_BRANDS` and `DC_QUALIFYING_BATTERY_BRANDS` config constants |
