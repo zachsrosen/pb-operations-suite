@@ -236,22 +236,16 @@ export async function GET() {
   try {
     const peFilterProperty = "participate_energy_status";
 
-    const [salesDeals, projectDeals] = await Promise.all([
-      fetchPeDealsFromPipeline("sales", peFilterProperty),
-      fetchPeDealsFromPipeline("project", peFilterProperty),
-    ]);
-
-    // Deduplicate by deal ID
-    const dealsMap = new Map<string, Record<string, unknown>>();
-    for (const deal of [...salesDeals, ...projectDeals]) {
-      const id = String(deal.hs_object_id);
-      if (!dealsMap.has(id)) dealsMap.set(id, deal);
-    }
-    const rawDeals = Array.from(dealsMap.values());
+    // Only project pipeline — active deals (exclude Project Complete + Cancelled)
+    const INACTIVE_PROJECT_STAGES = ["20440343", "68229433"];
+    const projectDeals = await fetchPeDealsFromPipeline("project", peFilterProperty);
+    const rawDeals = projectDeals.filter(
+      (d) => !INACTIVE_PROJECT_STAGES.includes(String(d.dealstage)),
+    );
 
     // Resolve stage labels
     const stageMaps = await getStageMaps();
-    const allStageMaps = { ...stageMaps.sales, ...stageMaps.project } as Record<string, string>;
+    const allStageMaps = (stageMaps.project || {}) as Record<string, string>;
 
     // Resolve company names
     const dealIds = rawDeals.map((d) => String(d.hs_object_id));
