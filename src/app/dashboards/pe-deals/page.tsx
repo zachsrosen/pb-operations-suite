@@ -323,7 +323,7 @@ export default function PeDealsPage() {
       accentColor="orange"
       fullWidth
       lastUpdated={lastUpdated}
-      exportData={{ data: exportData, filename: "pe-deals-payments.csv" }}
+      exportData={{ data: exportData, filename: "pe-deals-payments" }}
     >
       {/* Hero Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 stagger-grid">

@@ -65,7 +65,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/alerts": { href: "/suites/intelligence", label: "Intelligence" },
   "/dashboards/pipeline": { href: "/suites/intelligence", label: "Intelligence" },
   "/dashboards/optimizer": { href: "/suites/intelligence", label: "Intelligence" },
-  "/dashboards/pe": { href: "/suites/accounting", label: "Accounting" },
+  "/dashboards/pe": { href: "/suites/intelligence", label: "Intelligence" },
   // Accounting Suite
   "/dashboards/pe-deals": { href: "/suites/accounting", label: "Accounting" },
   "/dashboards/sales": { href: "/suites/intelligence", label: "Intelligence" },

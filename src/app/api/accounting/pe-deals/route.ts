@@ -84,10 +84,10 @@ const PE_DEAL_PROPERTIES = [
   "battery_count",
   "battery_brand",
   "module_brand",
-  // PE-specific — update these after discovering exact property names
+  // PE-specific
   "participate_energy_status",
   "is_participate_energy",
-  // PE M1/M2 — placeholder names, update after HubSpot inspection
+  // PE milestone statuses (confirmed via HubSpot property search)
   "pe_m1_status",
   "pe_m2_status",
 ];
@@ -351,7 +351,7 @@ export async function GET() {
           stageLabel === "Permission To Operate" ? "m1" as const
           : stageLabel === "Close Out" ? "m2" as const
           : null,
-        hubspotUrl: `https://app.hubspot.com/contacts/${portalId}/deal/${dealId}`,
+        hubspotUrl: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`,
       };
     });
 
