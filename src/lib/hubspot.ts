@@ -482,8 +482,11 @@ export interface UpsertHubSpotProductInput {
   vendorPartNumber?: string | null;
   unitLabel?: string | null;
   qboProductId?: string | null;
+  /** InternalProduct UUID — written to internal_product_id HubSpot property */
   internalProductId?: string | null;
+  /** Zuper product UID — written to zuper_item_id HubSpot property */
   zuperItemId?: string | null;
+  /** Zoho Inventory item ID — written to zoho_item_id HubSpot property */
   zohoItemId?: string | null;
   additionalProperties?: Record<string, string | number | boolean>;
 }
