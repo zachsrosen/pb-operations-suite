@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard, MetricCard } from "@/components/ui/MetricCard";
 import {
@@ -12,9 +12,51 @@ import {
   PITCH_ADDERS,
   ORG_ADDERS,
   PE_LEASE,
+  LOCATION_SCHEME,
   type CalcInput,
   type EquipmentSelection,
 } from "@/lib/pricing-calculator";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+
+// ---------------------------------------------------------------------------
+// Deal import types
+// ---------------------------------------------------------------------------
+
+interface DealSearchResult {
+  dealId: string;
+  dealName: string;
+  amount: number | null;
+  location: string | null;
+  stageLabel: string;
+  pipeline: string;
+}
+
+interface ImportedLineItem {
+  id: string;
+  name: string;
+  sku: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  category: string;
+  manufacturer: string;
+  matchedEquipment: string | null;
+}
+
+interface ImportedDeal {
+  deal: {
+    dealId: string;
+    dealName: string;
+    amount: number | null;
+    pbLocation: string | null;
+    postalCode: string | null;
+    projectType: string;
+    isPE: boolean;
+    closeDate: string | null;
+    hubspotUrl: string;
+  };
+  lineItems: ImportedLineItem[];
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -195,6 +237,60 @@ export default function PricingCalculatorPage() {
   } | null>(null);
   const [ecError, setEcError] = useState<string | null>(null);
 
+  // Deal import
+  const [dealSearch, setDealSearch] = useState("");
+  const [dealResults, setDealResults] = useState<DealSearchResult[]>([]);
+  const [dealSearching, setDealSearching] = useState(false);
+  const [dealSearchOpen, setDealSearchOpen] = useState(false);
+  const [importedDeal, setImportedDeal] = useState<ImportedDeal | null>(null);
+  const [dealImporting, setDealImporting] = useState(false);
+  const [showImportConfirm, setShowImportConfirm] = useState<string | null>(null);
+  const [unmatchedItems, setUnmatchedItems] = useState<ImportedLineItem[]>([]);
+
+  // Deal search — debounced
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleDealSearch = useCallback((query: string) => {
+    setDealSearch(query);
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    if (query.length < 2) {
+      setDealResults([]);
+      setDealSearchOpen(false);
+      return;
+    }
+    setDealSearching(true);
+    setDealSearchOpen(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch(
+          `/api/accounting/pricing-calculator/deal-import?q=${encodeURIComponent(query)}`,
+        );
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setDealResults(data.results || []);
+      } catch {
+        setDealResults([]);
+      } finally {
+        setDealSearching(false);
+      }
+    }, 300);
+  }, []);
+
+  // Close search dropdown on outside click
+  const searchRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setDealSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const hasExistingData =
+    modSel.length > 0 || invSel.length > 0 || batSel.length > 0 || othSel.length > 0;
+
   const checkEnergyCommunity = useCallback(async (zip: string) => {
     if (!/^\d{5}$/.test(zip)) return;
     setEcLoading(true);
@@ -214,6 +310,122 @@ export default function PricingCalculatorPage() {
     } finally {
       setEcLoading(false);
     }
+  }, []);
+
+  const executeDealImport = useCallback(
+    async (dealId: string) => {
+      setDealImporting(true);
+      setShowImportConfirm(null);
+      try {
+        const res = await fetch(
+          `/api/accounting/pricing-calculator/deal-import?dealId=${dealId}`,
+        );
+        if (!res.ok) throw new Error();
+        const data: ImportedDeal = await res.json();
+        setImportedDeal(data);
+
+        // Partition line items into matched and unmatched
+        const matched = data.lineItems.filter((li) => li.matchedEquipment);
+        const unmatched = data.lineItems.filter((li) => !li.matchedEquipment);
+        setUnmatchedItems(unmatched);
+
+        // Group matched items by category
+        const newMods: EquipmentSelection[] = [];
+        const newInvs: EquipmentSelection[] = [];
+        const newBats: EquipmentSelection[] = [];
+        const newOther: EquipmentSelection[] = [];
+
+        for (const li of matched) {
+          const equip = EQUIPMENT_CATALOG.find(
+            (e) => e.code === li.matchedEquipment,
+          );
+          if (!equip) continue;
+          const sel = { code: equip.code, qty: li.quantity };
+          switch (equip.category) {
+            case "module":
+              newMods.push(sel);
+              break;
+            case "inverter":
+              newInvs.push(sel);
+              break;
+            case "battery":
+              newBats.push(sel);
+              break;
+            case "other":
+              newOther.push(sel);
+              break;
+          }
+        }
+
+        // Merge duplicates (same code → sum qty)
+        const merge = (arr: EquipmentSelection[]) => {
+          const map = new Map<string, number>();
+          for (const s of arr) map.set(s.code, (map.get(s.code) || 0) + s.qty);
+          return Array.from(map, ([code, qty]) => ({ code, qty }));
+        };
+
+        setModSel(merge(newMods));
+        setInvSel(merge(newInvs));
+        setBatSel(merge(newBats));
+        setOthSel(merge(newOther));
+
+        // Set pricing scheme from location
+        if (data.deal.pbLocation) {
+          const scheme = LOCATION_SCHEME[data.deal.pbLocation];
+          if (scheme) setSchemeId(scheme);
+        }
+
+        // Set PE status
+        if (data.deal.isPE) {
+          setActiveAdders((prev) =>
+            prev.includes("pe") ? prev : [...prev, "pe"],
+          );
+          // Trigger EC lookup if zip available
+          if (data.deal.postalCode && /^\d{5}$/.test(data.deal.postalCode)) {
+            setEcZip(data.deal.postalCode);
+            checkEnergyCommunity(data.deal.postalCode);
+          }
+        } else {
+          setActiveAdders((prev) => prev.filter((a) => a !== "pe"));
+        }
+
+        setDealSearch(data.deal.dealName);
+      } catch {
+        console.error("[deal-import] Failed to import deal");
+      } finally {
+        setDealImporting(false);
+      }
+    },
+    [setModSel, setInvSel, setBatSel, setOthSel, setSchemeId, setActiveAdders, setEcZip, checkEnergyCommunity],
+  );
+
+  const handleDealSelect = useCallback(
+    (dealId: string) => {
+      setDealSearchOpen(false);
+      if (hasExistingData) {
+        setShowImportConfirm(dealId);
+        return;
+      }
+      executeDealImport(dealId);
+    },
+    [hasExistingData, executeDealImport],
+  );
+
+  const clearDeal = useCallback(() => {
+    setImportedDeal(null);
+    setUnmatchedItems([]);
+    setDealSearch("");
+    setModSel([]);
+    setInvSel([]);
+    setBatSel([]);
+    setOthSel([]);
+    setSchemeId("base");
+    setActiveAdders(["pe"]);
+    setEcZip("");
+    setEnergyCommunity(false);
+    setEcResult(null);
+    setEcError(null);
+    setCustomAdder(0);
   }, []);
 
   const toggleAdder = (id: string) => {
@@ -247,6 +459,70 @@ export default function PricingCalculatorPage() {
 
   return (
     <DashboardShell title="Pricing Calculator" accentColor="orange">
+      {/* Deal Search */}
+      <div className="relative mb-4" ref={searchRef}>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-md">
+            <input
+              type="text"
+              placeholder="Search HubSpot deal to import..."
+              value={dealSearch}
+              onChange={(e) => handleDealSearch(e.target.value)}
+              onFocus={() => dealResults.length > 0 && setDealSearchOpen(true)}
+              className="w-full px-3 py-2 rounded-lg bg-surface-2 border border-border text-foreground text-sm placeholder:text-muted"
+            />
+            {dealSearching && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                <div className="w-4 h-4 border-2 border-orange-400 border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+            {dealSearchOpen && dealResults.length > 0 && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-surface-elevated border border-border rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                {dealResults.map((d) => (
+                  <button
+                    key={d.dealId}
+                    onClick={() => handleDealSelect(d.dealId)}
+                    className="w-full text-left px-3 py-2 hover:bg-surface-2 transition-colors border-b border-border/50 last:border-0"
+                  >
+                    <div className="text-sm font-medium text-foreground truncate">
+                      {d.dealName}
+                    </div>
+                    <div className="text-xs text-muted flex gap-2">
+                      {d.amount != null && (
+                        <span>
+                          {d.amount.toLocaleString("en-US", {
+                            style: "currency",
+                            currency: "USD",
+                            maximumFractionDigits: 0,
+                          })}
+                        </span>
+                      )}
+                      {d.location && <span>{d.location}</span>}
+                      <span>{d.stageLabel}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          {dealImporting && (
+            <span className="text-xs text-muted">Importing...</span>
+          )}
+        </div>
+      </div>
+
+      {/* Import confirm dialog */}
+      {showImportConfirm && (
+        <ConfirmDialog
+          open={true}
+          title="Replace Calculator Data?"
+          message="Importing a deal will replace your current equipment and settings. Continue?"
+          confirmLabel="Replace"
+          onConfirm={() => executeDealImport(showImportConfirm)}
+          onCancel={() => setShowImportConfirm(null)}
+        />
+      )}
+
       {/* Hero stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 stagger-grid">
         <StatCard
@@ -277,6 +553,89 @@ export default function PricingCalculatorPage() {
         />
       </div>
 
+      {/* Deal Comparison Banner */}
+      {importedDeal && (
+        <div className="mb-6 bg-surface rounded-lg border border-border p-4 shadow-card">
+          <div className="flex items-center justify-between mb-2">
+            <a
+              href={importedDeal.deal.hubspotUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-semibold text-orange-400 hover:underline truncate"
+            >
+              {importedDeal.deal.dealName}
+            </a>
+            <button
+              onClick={clearDeal}
+              className="text-xs text-muted hover:text-foreground px-2 py-1 rounded hover:bg-surface-2"
+            >
+              Clear Deal
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-6 text-sm">
+            <div>
+              <span className="text-muted">Deal Amount: </span>
+              <span className="font-semibold text-foreground">
+                {importedDeal.deal.amount != null
+                  ? importedDeal.deal.amount.toLocaleString("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                      maximumFractionDigits: 0,
+                    })
+                  : "\u2014"}
+              </span>
+            </div>
+            <div>
+              <span className="text-muted">Calculated: </span>
+              <span className="font-semibold text-foreground">
+                {result.finalPrice.toLocaleString("en-US", {
+                  style: "currency",
+                  currency: "USD",
+                  maximumFractionDigits: 0,
+                })}
+              </span>
+            </div>
+            {importedDeal.deal.amount != null && (
+              <div>
+                <span className="text-muted">{"\u0394"} </span>
+                <span
+                  className={`font-semibold ${
+                    unmatchedItems.length > 0
+                      ? "text-muted"
+                      : importedDeal.deal.amount >= result.finalPrice
+                        ? "text-emerald-400"
+                        : "text-red-400"
+                  }`}
+                >
+                  {(importedDeal.deal.amount - result.finalPrice).toLocaleString(
+                    "en-US",
+                    {
+                      style: "currency",
+                      currency: "USD",
+                      maximumFractionDigits: 0,
+                      signDisplay: "always",
+                    },
+                  )}
+                </span>
+              </div>
+            )}
+          </div>
+          {unmatchedItems.length > 0 && (
+            <div className="mt-2 text-xs text-yellow-400">
+              Comparison incomplete &mdash;{" "}
+              {unmatchedItems
+                .reduce((s, li) => s + li.totalPrice, 0)
+                .toLocaleString("en-US", {
+                  style: "currency",
+                  currency: "USD",
+                  maximumFractionDigits: 0,
+                })}{" "}
+              in unrecognized items not included in calculated price
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* LEFT: Equipment & Settings */}
         <div className="lg:col-span-1 space-y-6">
@@ -287,6 +646,43 @@ export default function PricingCalculatorPage() {
             <EquipSection title="Inverters" catalog={inverters} selections={invSel} setSelections={setInvSel} />
             <EquipSection title="Batteries" catalog={batteries} selections={batSel} setSelections={setBatSel} />
             <EquipSection title="Other" catalog={otherEquip} selections={othSel} setSelections={setOthSel} />
+
+            {/* Unrecognized line items from deal import */}
+            {unmatchedItems.length > 0 && (
+              <details className="mt-3 bg-surface-2 rounded-lg border border-border p-3">
+                <summary className="text-sm font-medium text-yellow-400 cursor-pointer">
+                  Unrecognized Line Items ({unmatchedItems.length})
+                </summary>
+                <div className="mt-2 space-y-1">
+                  {unmatchedItems.map((li) => (
+                    <div
+                      key={li.id}
+                      className="flex justify-between text-xs text-muted"
+                    >
+                      <span className="truncate mr-2">{li.name}</span>
+                      <span className="whitespace-nowrap">
+                        {li.quantity} &times; $
+                        {li.unitPrice.toLocaleString()} = $
+                        {li.totalPrice.toLocaleString()}
+                      </span>
+                    </div>
+                  ))}
+                  <div className="flex justify-between text-xs font-medium text-foreground border-t border-border pt-1 mt-1">
+                    <span>Total</span>
+                    <span>
+                      $
+                      {unmatchedItems
+                        .reduce((s, li) => s + li.totalPrice, 0)
+                        .toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="text-xs text-muted mt-1">
+                    These items aren&apos;t in the calculator catalog and are not
+                    included in the calculated price.
+                  </p>
+                </div>
+              </details>
+            )}
           </div>
 
           {/* Site & Pricing Card */}
