@@ -153,6 +153,52 @@ interface ScheduledEvent extends SchedulerProject {
   isForecast?: boolean;
 }
 
+interface OverlayEvent {
+  id: string;
+  name: string;
+  date: string;
+  days: number;
+  amount: number;
+  crew: string;
+  address: string;
+  location: string;
+  eventType: "service" | "dnr";
+  eventSubtype: string;
+  isOverlay: true;
+  isOverdue: false;
+  isForecast: false;
+  isTentative: false;
+  status: string;
+}
+
+type DisplayEvent = ScheduledEvent | OverlayEvent;
+
+function isOverlayEvent(e: DisplayEvent): e is OverlayEvent {
+  return "isOverlay" in e && e.isOverlay === true;
+}
+
+interface ZuperCategoryJob {
+  jobUid: string;
+  title: string;
+  categoryName: string;
+  categoryUid: string;
+  statusName: string;
+  statusColor: string;
+  dueDate: string;
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
+  customerName: string;
+  address: string;
+  city: string;
+  state: string;
+  assignedUser: string;
+  teamName: string;
+  hubspotDealId: string;
+  jobTotal: number;
+  createdAt: string;
+  workOrderNumber: string;
+}
+
 interface PendingSchedule {
   project: SchedulerProject;
   date: string;
@@ -205,6 +251,17 @@ const LOCATION_COLORS: Record<string, string> = {
   "San Luis Obispo": "#06b6d4",
   Camarillo: "#f43f5e",
 };
+
+const SERVICE_CATEGORY_UIDS = [
+  "cff6f839-c043-46ee-a09f-8d0e9f363437", // Service Visit
+  "8a29a1c0-9141-4db6-b8bb-9d9a65e2a1de", // Service Revisit
+].join(",");
+
+const DNR_CATEGORY_UIDS = [
+  "d9d888a1-efc3-4f01-a8d6-c9e867374d71", // Detach
+  "43df49e9-3835-48f2-80ca-cc77ad7c3f0d", // Reset
+  "a5e54b76-8b79-4cd7-a960-bad53d24e1c5", // D&R Inspection
+].join(",");
 
 /* ---- Zuper default assignees per location (for auto-assignment when scheduling) ---- */
 // Construction default assignee per location (same defaults as construction scheduler).
