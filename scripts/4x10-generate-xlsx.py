@@ -107,7 +107,7 @@ ws1.title = "Current State (5x8)"
 # Section A: Location Summary Table
 headers_a = [
     "Location", "Installs", "Avg Duration (days)", "Median Duration",
-    "Total Revenue", "Avg Revenue", "Utilization"
+    "Total Revenue", "Avg Revenue", "Demand Pressure"
 ]
 widths_a = [22, 12, 18, 16, 18, 16, 14]
 write_header_row(ws1, 1, headers_a, widths_a)
@@ -124,10 +124,10 @@ for i, loc in enumerate(loc_summaries):
         (loc["medianCrewDays"], "0.0", "center"),
         (loc["totalRevenue"], '"$"#,##0', "right"),
         (loc["avgRevenue"], '"$"#,##0', "right"),
-        (loc["utilization"], "0.0%", "center"),
+        (loc["demandPressure"], "0.0%", "center"),
     ]
     for col, (val, fmt, align) in enumerate(vals, 1):
-        # Utilization is stored as e.g. 199.6 meaning 199.6% — convert to fraction
+        # Demand pressure is stored as e.g. 199.6 meaning 199.6% — convert to fraction for Excel
         if col == 7:
             val = val / 100.0
         write_data_cell(ws1, row, col, val, fmt=fmt, align=align, fill=fill)
@@ -139,7 +139,7 @@ total_revenue = sum(l["totalRevenue"] for l in loc_summaries)
 avg_crew = current["overall"]["avgCrewDays"]
 median_crew = current["overall"]["medianCrewDays"]
 avg_rev = total_revenue / total_installs if total_installs else 0
-total_util = sum(l["utilization"] for l in loc_summaries) / len(loc_summaries) / 100.0
+total_pressure = sum(l["demandPressure"] for l in loc_summaries) / len(loc_summaries) / 100.0
 
 totals_vals = [
     ("TOTAL", None, "left"),
@@ -148,7 +148,7 @@ totals_vals = [
     (median_crew, "0.0", "center"),
     (total_revenue, '"$"#,##0', "right"),
     (avg_rev, '"$"#,##0', "right"),
-    (total_util, "0.0%", "center"),
+    (total_pressure, "0.0%", "center"),
 ]
 for col, (val, fmt, align) in enumerate(totals_vals, 1):
     write_data_cell(ws1, totals_row, col, val, fmt=fmt, align=align,
