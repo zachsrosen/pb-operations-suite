@@ -37,7 +37,7 @@ All service pages use this single enriched type. Defined once in `lib/service-en
 interface ServiceEnrichment {
   serviceType: string | null;
   lastContactDate: string | null;       // from contact hs_last_sales_activity_timestamp
-  lastContactSource: "contact" | "deal" | null;  // tracks which source was used
+  lastContactSource: "contact" | "deal" | "ticket" | null;  // tracks which source was used
   lineItems: ServiceLineItem[] | null;
   zuperJobs: ServiceZuperJob[] | null;
 }
@@ -104,12 +104,23 @@ async function enrichServiceItems(
 
 **Prerequisite**: Verify this property is populated on contacts in the PB HubSpot portal before implementation. This is a standard HubSpot property that tracks sales engagement activity (logged calls, emails, meetings — not marketing). Run a sample query of ~20 service deal contacts during implementation to confirm the field has values. If it's empty on most contacts, fall back to `notes_last_contacted` on the contact (not the deal) as the primary source.
 
-**Resolution**:
-1. Resolve deal/ticket → contact associations (batch read; tickets use ticket→contact, deals use deal→contact)
+**Resolution by item type**:
+
+For **deals**:
+1. Resolve deal → contact associations (batch read)
 2. Batch-read `hs_last_sales_activity_timestamp` from associated contacts
 3. If multiple contacts, use the most recent timestamp
-4. **Fallback**: If no associated contacts or field is empty, fall back to deal-level `notes_last_contacted`
-5. Track which source was used in `lastContactSource` for transparency
+4. **Fallback**: deal-level `notes_last_contacted` → `lastContactSource: "deal"`
+5. `null` if all sources empty
+
+For **tickets**:
+1. Resolve ticket → contact associations (batch read, separate from deal→contact)
+2. Batch-read `hs_last_sales_activity_timestamp` from associated contacts
+3. If multiple contacts, use the most recent timestamp
+4. **Fallback**: ticket-level `notes_last_contacted` (already fetched in `TICKET_PROPERTIES`) → `lastContactSource: "ticket"`
+5. `null` if all sources empty
+
+This preserves the existing ticket scoring behavior — tickets already use their own `notes_last_contacted` via `hubspot-tickets.ts`. The new enrichment only improves on it by trying contact-level activity first; it never drops an existing timestamp.
 
 **Scoring impact**: The priority queue scoring function (`scorePriorityItem`) uses this timestamp for the "Last Contact Recency" factor (up to 35 pts). Existing thresholds (>7 days = +35, >3 days = +25, >1 day = +5) remain unchanged.
 
@@ -179,7 +190,8 @@ Each item gets all categories that contributed to its score (not just the highes
 ### 4b. Customer History (`/api/service/customers/[contactId]`)
 
 **Changes**:
-- Call `enrichServiceItems()` with `{ includeLineItems: true, includeZuperJobs: true }` for all associated deals
+- Call `enrichServiceItems()` for all associated **deals** with `{ itemType: "deal", includeLineItems: true, includeZuperJobs: true }`
+- Call `enrichServiceItems()` for all associated **tickets** with `{ itemType: "ticket", includeLineItems: false, includeZuperJobs: false }` — tickets get `serviceType` and `lastContactDate` but not line items (those belong to deals)
 - Merge enrichment data into existing `ContactDetail` response
 - Fix Zuper jobs bug (see Section 6)
 
@@ -214,18 +226,34 @@ Each item gets all categories that contributed to its score (not just the highes
 - Ticket cards: add service type badge, days in stage
 - Job cards: add assigned technicians, completion status
 
-### 4c. Service Tickets (`/api/service/tickets`)
+### 4c. Service Tickets
 
-**Changes**:
+**List route** (`/api/service/tickets`):
 - Add `service_type` to `TICKET_PROPERTIES` in `hubspot-tickets.ts`
 - Pass through to `EnrichedTicketItem` response
-- No line items or Zuper jobs needed on this route
+- No line items or Zuper jobs needed on the list route — this powers the Kanban board where cards need to be lightweight
+
+**Detail route** (`/api/service/tickets/[id]`):
+- Add `service_type` to the detail response (already fetches `TICKET_PROPERTIES`, so this comes for free once the property is added)
+- The detail route already resolves associated deals and renders them in the slide-over. Enrich those associated deals with `enrichServiceItems({ includeLineItems: true, includeZuperJobs: false })` so the slide-over shows deal line items alongside existing deal info
+- This is a small batch (typically 1-3 associated deals per ticket), so enrichment cost is minimal
 
 **Frontend changes** (service-tickets page):
 - Kanban cards: add service type badge below priority
-- Detail slide-over: add service type in header area
+- Detail slide-over: add service type in header area, show line items on associated deal cards
 
-### 4d. Service Backlog (`/api/service/equipment` → consumed by `service-backlog` page)
+### 4d. Service Pipeline (`/dashboards/service/page.tsx` via `/api/deals/stream`)
+
+**Current state**: The service pipeline page uses the generic `useProgressiveDeals` hook which streams deals from `/api/deals/stream?pipeline=service`. This stream returns the standard `TransformedProject` shape with `projectType` — it does not go through a service-specific API route and cannot call `enrichServiceItems()` in the same way as the other routes.
+
+**Approach**: Rather than refactoring the streaming architecture, add `service_type` to the deal properties fetched by `/api/deals/stream` and include it in the streamed response when `pipeline=service`. This is a targeted change to the stream route:
+1. Add `service_type` to the properties list in the stream route's HubSpot search request
+2. Map it into the streamed deal shape alongside the existing `projectType` field
+3. On the service pipeline page, display `serviceType` instead of `projectType` when present
+
+This does **not** use the shared enrichment function — the stream route's SSE architecture makes batch enrichment impractical (deals arrive in chunks). Contact-level last contact, line items, and Zuper jobs are not added to this page in this spec; those require clicking through to a deal detail view (which routes to the priority queue or customer history).
+
+### 4e. Service Backlog (`/api/service/equipment` → consumed by `service-backlog` page)
 
 **Note**: The `/api/service/equipment` endpoint is consumed by `/dashboards/service-backlog/page.tsx`, not the project-level `equipment-backlog` page.
 
@@ -246,7 +274,7 @@ Each item gets all categories that contributed to its score (not just the highes
 
 Enrichment is **additive, never blocking**. If any enrichment sub-step fails:
 - `serviceType`: falls through precedence chain, worst case `null`
-- `lastContactDate`: falls back to deal-level, worst case `null` (scores as "no contact" — conservative, acceptable)
+- `lastContactDate`: falls back to deal-level or ticket-level `notes_last_contacted` (preserving existing behavior), worst case `null` (scores as "no contact" — conservative, acceptable)
 - `lineItems`: returns `null`, pages show existing deal-property fallback or "No line items"
 - `zuperJobs`: returns `null`, customer history shows empty jobs section (same as today)
 
