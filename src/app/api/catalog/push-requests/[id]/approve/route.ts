@@ -423,7 +423,13 @@ export async function POST(
         internalProductId: internalSkuId,
       });
       if (zuperCustomFields) {
-        await updateZuperPart(zuperId, { custom_fields: zuperCustomFields });
+        const zuperResult = await updateZuperPart(zuperId, { custom_fields: zuperCustomFields });
+        if (zuperResult.status !== "updated") {
+          const msg = `Zuper cross-link update returned ${zuperResult.status}: ${zuperResult.message || "unknown"}`;
+          if (outcomes.ZUPER?.message) {
+            outcomes.ZUPER.message += ` (Warning: ${msg})`;
+          }
+        }
       }
     } catch {
       const msg = "Could not write cross-link IDs to Zuper product";

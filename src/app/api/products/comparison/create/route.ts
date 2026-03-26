@@ -248,7 +248,12 @@ export async function POST(request: NextRequest) {
             zohoItemId: freshSku.zohoItemId,
             internalProductId: internalSkuId,
           });
-          if (zuperCf) await updateZuperPart(freshSku.zuperItemId, { custom_fields: zuperCf });
+          if (zuperCf) {
+            const zuperResult = await updateZuperPart(freshSku.zuperItemId, { custom_fields: zuperCf });
+            if (zuperResult.status !== "updated") {
+              console.warn(`[comparison/create] Zuper cross-link update returned ${zuperResult.status}: ${zuperResult.message || "unknown"}`);
+            }
+          }
         }
         // Write cross-link IDs to HubSpot product properties
         if (freshSku.hubspotProductId) {
