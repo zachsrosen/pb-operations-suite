@@ -400,16 +400,20 @@ export async function POST(
     }
   }
 
-  // Cross-link: write Zuper product ID to Zoho item's cf_zuper_product_id custom field.
-  // This ensures Zoho items reference their linked Zuper product for field-service lookups.
+  // Cross-link: write Zuper product ID (and HubSpot ID) to Zoho item custom fields.
+  // Zoho Inventory requires custom_fields array format for custom field updates.
   const zohoId = outcomes.ZOHO?.externalId || basePush.zohoItemId;
   const zuperId = outcomes.ZUPER?.externalId || basePush.zuperItemId;
-  if (zohoId && zuperId && outcomes.ZOHO?.status === "success" && outcomes.ZUPER?.status === "success") {
+  const hsId = outcomes.HUBSPOT?.externalId || basePush.hubspotProductId;
+  if (zohoId && (zuperId || hsId) && outcomes.ZOHO?.status === "success") {
     try {
-      await zohoInventory.updateItem(zohoId, { cf_zuper_product_id: zuperId });
+      const customFields: Array<{ api_name: string; value: string }> = [];
+      if (zuperId) customFields.push({ api_name: "cf_zuper_product_id", value: zuperId });
+      if (hsId) customFields.push({ api_name: "cf_hubspot_product_id", value: hsId });
+      await zohoInventory.updateItem(zohoId, { custom_fields: customFields });
     } catch {
       // Non-fatal: log warning but don't fail the approval
-      const msg = "Could not write cf_zuper_product_id to Zoho item";
+      const msg = "Could not write custom field cross-links to Zoho item";
       if (outcomes.ZOHO.message) {
         outcomes.ZOHO.message += ` (Warning: ${msg})`;
       }
