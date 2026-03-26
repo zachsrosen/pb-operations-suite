@@ -227,7 +227,7 @@ interface LocationSummary {
   totalRevenue: number;
   avgRevenue: number;
   crewDaysPerWeek: number;
-  utilization: number;
+  demandPressure: number;    // crew-days demanded / crew-days available (>100% = more work than one crew can handle)
   dayOfWeekDistribution: Record<string, number>;
   monthlyBreakdown: Record<string, { count: number; revenue: number; crewDays: number }>;
 }
@@ -258,7 +258,9 @@ function summarizeLocation(records: InstallRecord[], location: string): Location
   const totalCrewDays = crewDays.reduce((a, b) => a + b, 0);
   const crewDaysPerWeek = totalCrewDays / ANALYSIS_WEEKS;
   const capacityPerWeek = crews * CURRENT_DAYS_PER_CREW;
-  const utilization = capacityPerWeek > 0 ? (crewDaysPerWeek / capacityPerWeek) * 100 : 0;
+  // Demand pressure: ratio of crew-days demanded to single-crew capacity.
+  // Values >100% are expected — that's why locations have multiple crews.
+  const demandPressure = capacityPerWeek > 0 ? (crewDaysPerWeek / capacityPerWeek) * 100 : 0;
 
   return {
     location,
@@ -268,7 +270,7 @@ function summarizeLocation(records: InstallRecord[], location: string): Location
     totalRevenue: filtered.reduce((a, r) => a + r.amount, 0),
     avgRevenue: filtered.length ? filtered.reduce((a, r) => a + r.amount, 0) / filtered.length : 0,
     crewDaysPerWeek,
-    utilization,
+    demandPressure,
     dayOfWeekDistribution: dowDist,
     monthlyBreakdown: monthly,
   };
@@ -623,7 +625,7 @@ async function main() {
   console.log(`Avg crew-days: ${output.currentState.overall.avgCrewDays.toFixed(1)}`);
   console.log(`Median crew-days: ${output.currentState.overall.medianCrewDays}`);
   for (const loc of locationSummaries) {
-    console.log(`  ${loc.location}: ${loc.totalInstalls} installs, ${loc.utilization.toFixed(0)}% utilization`);
+    console.log(`  ${loc.location}: ${loc.totalInstalls} installs, ${loc.demandPressure.toFixed(0)}% demand pressure`);
   }
   console.log(`\nFit (pause OK): ${fitDistPause.fitsInBlock} block + ${fitDistPause.fitsWithPause} pause + ${fitDistPause.needsHandoff} handoff`);
   console.log(`Fit (no pause): ${fitDistNoPause.fitsInBlock} block + ${fitDistNoPause.needsHandoff} handoff`);
