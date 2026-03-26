@@ -3056,14 +3056,20 @@ export default function SchedulerPage() {
     <div className="h-screen overflow-hidden bg-background text-foreground/90 font-sans max-[900px]:h-auto max-[900px]:min-h-screen max-[900px]:overflow-auto">
       {/* Grid layout: project queue | calendar | optional revenue sidebar */}
       <div className={`grid h-full max-[900px]:h-auto max-[900px]:grid-cols-[1fr] ${
-        revenueSidebarOpen
-          ? "grid-cols-[360px_1fr_200px] max-[1400px]:grid-cols-[320px_1fr_180px] max-[1100px]:grid-cols-[300px_1fr]"
-          : "grid-cols-[360px_1fr_32px] max-[1100px]:grid-cols-[320px_1fr] max-[900px]:grid-cols-[1fr]"
+        sidebarCollapsed
+          ? (revenueSidebarOpen
+              ? "grid-cols-[0px_1fr_200px] max-[1400px]:grid-cols-[0px_1fr_180px] max-[1100px]:grid-cols-[0px_1fr]"
+              : "grid-cols-[0px_1fr_32px] max-[1100px]:grid-cols-[0px_1fr] max-[900px]:grid-cols-[1fr]")
+          : (revenueSidebarOpen
+              ? "grid-cols-[360px_1fr_200px] max-[1400px]:grid-cols-[320px_1fr_180px] max-[1100px]:grid-cols-[300px_1fr]"
+              : "grid-cols-[360px_1fr_32px] max-[1100px]:grid-cols-[320px_1fr] max-[900px]:grid-cols-[1fr]")
       }`}>
         {/* ============================================================ */}
         {/* LEFT SIDEBAR - Pipeline Queue                                */}
         {/* ============================================================ */}
-        <aside className="bg-surface border-r border-t-border flex flex-col overflow-hidden max-[900px]:max-h-[50vh] max-[900px]:border-r-0 max-[900px]:border-b">
+        <aside className={`bg-surface border-r border-t-border flex flex-col overflow-hidden max-[900px]:max-h-[50vh] max-[900px]:border-r-0 max-[900px]:border-b transition-all duration-200 ${
+          sidebarCollapsed ? "w-0 min-w-0 border-r-0 opacity-0 pointer-events-none" : ""
+        }`}>
           {/* Header */}
           <header className="p-4 border-b border-t-border bg-gradient-to-br from-[#12121a] to-[#1a1a28]">
             <div className="flex justify-between items-center">
@@ -3077,6 +3083,13 @@ export default function SchedulerPage() {
               </div>
               <div className="flex gap-1.5 items-center">
                 <ThemeToggle />
+                <button
+                  onClick={toggleSidebar}
+                  className="px-1.5 py-1.5 text-[0.7rem] rounded-md bg-background border border-t-border text-foreground/80 hover:border-orange-500 hover:text-orange-400 transition-colors"
+                  title="Collapse sidebar"
+                >
+                  ◀
+                </button>
                 <Link
                   href="/"
                   className="px-2.5 py-1.5 text-[0.7rem] rounded-md bg-background border border-t-border text-foreground/80 hover:border-orange-500 hover:text-orange-400 transition-colors"
@@ -3713,6 +3726,15 @@ export default function SchedulerPage() {
         <main className="flex flex-col overflow-hidden max-[900px]:min-h-[60vh]">
           {/* View tabs */}
           <div className="flex gap-0.5 p-2 bg-background border-b border-t-border">
+            {sidebarCollapsed && (
+              <button
+                onClick={toggleSidebar}
+                className="px-1.5 py-1 text-[0.65rem] rounded border border-t-border text-muted hover:text-foreground hover:border-orange-500 transition-colors mr-1"
+                title="Show project sidebar"
+              >
+                ▶ Queue
+              </button>
+            )}
             {(
               [
                 { key: "calendar", label: "Month" },
