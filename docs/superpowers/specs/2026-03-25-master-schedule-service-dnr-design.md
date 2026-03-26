@@ -53,29 +53,33 @@ The master scheduler (`/dashboards/scheduler`) currently shows only solar instal
 
 **Query configuration:**
 - `enabled` flag tied to the respective toggle state
-- `from_date` / `to_date` derived from the current calendar view window (month start/end, week start/end, or Gantt range)
+- Date range: always fetch a 3-month rolling window (prev month → next month) regardless of current view mode. This avoids incomplete data when switching between month/week/Gantt views that may cross month boundaries.
 - Stale time: 2 minutes (matches existing scheduler patterns)
 - Refetch on window focus
+- On fetch error: silently fail (no toast, no auto-disable). The toggle stays on but no events render. Matches existing forecast toggle error behavior.
 
 ### 4. Event Mapping
 
-Zuper jobs are mapped into the existing `ScheduledEvent`-compatible shape used by the calendar renderer.
+Overlay events use a new lightweight `OverlayEvent` type — they do NOT use the full `ScheduledEvent` shape (which extends `SchedulerProject` with ~40 HubSpot-specific fields). The calendar renderers (month, week, Gantt) will accept `ScheduledEvent | OverlayEvent` via a union type.
 
-**Mapped fields:**
-| Zuper field | Calendar event field |
-|-------------|---------------------|
-| `job_title` | `title` |
-| `scheduled_start_time` or `due_date` | `date` |
-| `scheduled_end_time` | `endDate` (if present) |
-| `current_job_status` | `status` |
-| `assigned_to[0].first_name + last_name` | `assignee` |
-| Job category name | `eventSubtype` (e.g., "Service Visit", "Detach") |
-| Customer address from job | `address` |
+**`OverlayEvent` type:**
+```ts
+interface OverlayEvent {
+  id: string;           // jobUid
+  title: string;        // job title
+  date: string;         // YYYY-MM-DD from scheduledStart or dueDate
+  endDate?: string;     // YYYY-MM-DD from scheduledEnd
+  address: string;      // customer address
+  assignee: string;     // assigned user name
+  status: string;       // Zuper status name
+  location: string;     // canonical location via normalizeLocation(teamName)
+  eventType: "service" | "dnr";
+  eventSubtype: string; // category name (e.g., "Service Visit", "Detach")
+  isOverlay: true;      // discriminator — always true for overlay events
+}
+```
 
-**Additional flags on mapped events:**
-- `isReadOnly: true` — prevents drag/drop and scheduling actions
-- `isService: true` or `isDnr: true` — for styling and filtering
-- `eventType: "service"` or `"dnr"` — for the calendar filter system
+**Location mapping:** Use `normalizeLocation(teamName)` from `lib/locations.ts` to map Zuper team names (e.g., "PB Westminster Ops") to canonical locations ("Westminster"). Falls back to `normalizeLocation(city)` if teamName doesn't match. Events with no resolvable location get `location: "Unknown"` and appear when no location filter is active.
 
 ### 5. Event Rendering
 
@@ -92,13 +96,15 @@ Zuper jobs are mapped into the existing `ScheduledEvent`-compatible shape used b
 - D&R: 3
 - Service: 4 (lowest — least likely to conflict with install scheduling decisions)
 
-**Location filtering:** Service and D&R events respect the existing `calendarLocations` multi-select filter. Location is derived from the Zuper job's team assignment or address.
+Sort priority must be added to `WEEK_STAGE_ORDER` and equivalent sort maps in all three view renderers (month, week, Gantt).
+
+**Location filtering:** Service and D&R events respect the existing `calendarLocations` multi-select filter using the canonical location derived from `normalizeLocation(teamName || city)`.
 
 ### 6. Click / Detail Popover
 
-Clicking a service or D&R event opens a **read-only detail popover** (not the scheduling modal):
+Clicking a service or D&R event opens a **separate read-only popover component** — NOT the existing `detailModal` which requires a full `SchedulerProject`. The click handler checks `isOverlay` on the event and routes to the overlay popover instead.
 
-**Contents:**
+**Overlay popover contents:**
 - Job title
 - Job type badge (e.g., "Service Visit", "Detach")
 - Customer address
@@ -114,18 +120,34 @@ Clicking a service or D&R event opens a **read-only detail popover** (not the sc
 - Service/D&R events are **not selectable** for scheduling actions
 - They do not appear in the project sidebar list
 - They do not count toward revenue buckets or capacity metrics
-- They are excluded from CSV export (unless we decide otherwise later)
+- They are excluded from CSV and iCal exports
+
+### 8. Data Pipeline Integration
+
+Overlay events are merged at the `displayEvents` level — alongside forecast ghosts — NOT injected into `scheduledEvents` or `filteredScheduledEvents`. This means:
+- `scheduledEvents` stays HubSpot-only (existing behavior)
+- `filteredScheduledEvents` stays HubSpot-only (existing behavior)
+- `displayEvents = [...filteredScheduledEvents, ...forecastGhostEvents, ...overlayEvents]`
+- Revenue buckets (`computeRevenueBuckets`) operate on `filteredScheduledEvents` — overlays excluded automatically
+- Weekly revenue sidebar must filter out overlay events (check `isOverlay` flag)
+- SSE invalidation does not apply to overlay data — Zuper data refreshes via stale time + window focus only
 
 ## Files to Modify
 
 1. **`src/app/dashboards/scheduler/page.tsx`** — Main scheduler page:
+   - Add `OverlayEvent` type and `isOverlay` type guard
+   - Add collapsible sidebar state + localStorage persistence
    - Add toggle state + localStorage persistence for service/D&R
-   - Add `useQuery` calls for Zuper jobs by category
-   - Add event mapping logic
-   - Add toggle buttons to toolbar
-   - Add read-only detail popover
-   - Implement collapsible sidebar
-   - Update `filteredScheduledEvents` to include/exclude overlays
+   - Add `useQuery` calls for Zuper jobs by category (enabled by toggles)
+   - Add `mapZuperJobToOverlay()` mapping function using `normalizeLocation`
+   - Add toggle buttons to toolbar (next to Forecasts)
+   - Add read-only overlay detail popover component
+   - Update click handlers: check `isOverlay` → route to overlay popover
+   - Merge overlay events into `displayEvents` memo (not `scheduledEvents`)
+   - Update sort maps in month/week/Gantt renderers with new priority values
+   - Add overlay event rendering with dashed border + distinct colors
+   - Guard drag/drop handlers against overlay events
+   - Exclude overlay events from CSV/iCal export
 
 2. **No new API endpoints** — reuses existing `/api/zuper/jobs/by-category`
 
@@ -138,3 +160,5 @@ Clicking a service or D&R event opens a **read-only detail popover** (not the sc
 - Including overlay events in revenue/capacity metrics
 - Creating new API endpoints
 - Syncing overlay toggle state across devices (localStorage only)
+- SSE real-time invalidation for overlay data (uses stale time + refetchOnWindowFocus only)
+- Adding "Service" / "D&R" to the `calendarScheduleTypes` filter pills (overlays are controlled solely by their toggle buttons)
