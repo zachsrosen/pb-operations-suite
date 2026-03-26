@@ -153,6 +153,8 @@ export interface UpdateZuperPartResult {
 
 const ZUPER_HUBSPOT_PRODUCT_FIELD_KEY = "hubspot_product_id";
 const ZUPER_HUBSPOT_PRODUCT_FIELD_LABEL = "HubSpot Product ID";
+const ZUPER_ZOHO_ITEM_FIELD_KEY = "zoho_item_id";
+const ZUPER_INTERNAL_PRODUCT_FIELD_KEY = "internal_product_id";
 
 type ZuperCustomFieldEntry = Record<string, unknown>;
 
@@ -202,13 +204,21 @@ export function getZuperHubSpotProductFieldLabel(): string {
 }
 
 export function buildZuperProductCustomFields(
-  input: { hubspotProductId?: string | null }
+  input: {
+    hubspotProductId?: string | null;
+    zohoItemId?: string | null;
+    internalProductId?: string | null;
+  }
 ): Record<string, string> | null {
   const hubspotProductId = trimOrUndefined(input.hubspotProductId);
-  if (!hubspotProductId) return null;
-  return {
-    [ZUPER_HUBSPOT_PRODUCT_FIELD_KEY]: hubspotProductId,
-  };
+  const zohoItemId = trimOrUndefined(input.zohoItemId);
+  const internalProductId = trimOrUndefined(input.internalProductId);
+  if (!hubspotProductId && !zohoItemId && !internalProductId) return null;
+  const fields: Record<string, string> = {};
+  if (hubspotProductId) fields[ZUPER_HUBSPOT_PRODUCT_FIELD_KEY] = hubspotProductId;
+  if (zohoItemId) fields[ZUPER_ZOHO_ITEM_FIELD_KEY] = zohoItemId;
+  if (internalProductId) fields[ZUPER_INTERNAL_PRODUCT_FIELD_KEY] = internalProductId;
+  return fields;
 }
 
 export function readZuperCustomFieldValue(

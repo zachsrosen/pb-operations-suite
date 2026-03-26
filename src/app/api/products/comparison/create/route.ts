@@ -171,6 +171,7 @@ export async function POST(request: NextRequest) {
         hardToProcure: typeof skuRecord.hardToProcure === "boolean" ? skuRecord.hardToProcure : null,
         length: parsePrice(skuRecord.length),
         width: parsePrice(skuRecord.width),
+        internalProductId: internalSkuId,
         additionalProperties: getHubspotPropertiesFromMetadata(skuRecord.category, metadata),
       });
       externalId = result.hubspotProductId;
@@ -203,6 +204,7 @@ export async function POST(request: NextRequest) {
         vendorName: String(skuRecord.vendorName || "").trim() || null,
         sellPrice: parsePrice(skuRecord.sellPrice),
         unitCost: parsePrice(skuRecord.unitCost),
+        internalProductId: internalSkuId,
       });
       externalId = result.zohoItemId;
       created = result.created;
@@ -226,17 +228,37 @@ export async function POST(request: NextRequest) {
         select: { hubspotProductId: true, zuperItemId: true, zohoItemId: true },
       });
       if (freshSku) {
-        // Write Zuper + HubSpot IDs to Zoho custom fields
-        if (freshSku.zohoItemId && (freshSku.zuperItemId || freshSku.hubspotProductId)) {
+        // Write cross-link IDs to Zoho custom fields
+        if (freshSku.zohoItemId) {
           const cf: Array<{ api_name: string; value: string }> = [];
           if (freshSku.zuperItemId) cf.push({ api_name: "cf_zuper_product_id", value: freshSku.zuperItemId });
           if (freshSku.hubspotProductId) cf.push({ api_name: "cf_hubspot_product_id", value: freshSku.hubspotProductId });
-          await zohoInventory.updateItem(freshSku.zohoItemId, { custom_fields: cf });
+          cf.push({ api_name: "cf_internal_product_id", value: internalSkuId });
+          if (cf.length > 0) await zohoInventory.updateItem(freshSku.zohoItemId, { custom_fields: cf });
         }
-        // Write HubSpot ID to Zuper custom fields
-        if (freshSku.zuperItemId && freshSku.hubspotProductId) {
-          const zuperCf = buildZuperProductCustomFields({ hubspotProductId: freshSku.hubspotProductId });
+        // Write cross-link IDs to Zuper custom fields
+        if (freshSku.zuperItemId) {
+          const zuperCf = buildZuperProductCustomFields({
+            hubspotProductId: freshSku.hubspotProductId,
+            zohoItemId: freshSku.zohoItemId,
+            internalProductId: internalSkuId,
+          });
           if (zuperCf) await updateZuperPart(freshSku.zuperItemId, { custom_fields: zuperCf });
+        }
+        // Write cross-link IDs to HubSpot product properties
+        if (freshSku.hubspotProductId) {
+          const hsProps: Record<string, string> = {};
+          if (freshSku.zuperItemId) hsProps.zuper_item_id = freshSku.zuperItemId;
+          if (freshSku.zohoItemId) hsProps.zoho_item_id = freshSku.zohoItemId;
+          hsProps.internal_product_id = internalSkuId;
+          const token = process.env.HUBSPOT_ACCESS_TOKEN;
+          if (token) {
+            await fetch(`https://api.hubapi.com/crm/v3/objects/products/${freshSku.hubspotProductId}`, {
+              method: "PATCH",
+              headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+              body: JSON.stringify({ properties: hsProps }),
+            });
+          }
         }
       }
     } catch {

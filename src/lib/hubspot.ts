@@ -482,6 +482,9 @@ export interface UpsertHubSpotProductInput {
   vendorPartNumber?: string | null;
   unitLabel?: string | null;
   qboProductId?: string | null;
+  internalProductId?: string | null;
+  zuperItemId?: string | null;
+  zohoItemId?: string | null;
   additionalProperties?: Record<string, string | number | boolean>;
 }
 
@@ -2257,6 +2260,9 @@ export async function createOrUpdateHubSpotProduct(
   if (trimOrNull(input.vendorPartNumber)) optionalProperties.vendor_part_number = trimOrNull(input.vendorPartNumber)!;
   if (trimOrNull(input.unitLabel)) optionalProperties.unit_label = trimOrNull(input.unitLabel)!;
   if (trimOrNull(input.qboProductId)) optionalProperties.qbo_product_id = trimOrNull(input.qboProductId)!;
+  if (trimOrNull(input.internalProductId)) optionalProperties.internal_product_id = trimOrNull(input.internalProductId)!;
+  if (trimOrNull(input.zuperItemId)) optionalProperties.zuper_item_id = trimOrNull(input.zuperItemId)!;
+  if (trimOrNull(input.zohoItemId)) optionalProperties.zoho_item_id = trimOrNull(input.zohoItemId)!;
 
   // Auto-generate product_dimensions from available physical measurements
   const dims: string[] = [];
