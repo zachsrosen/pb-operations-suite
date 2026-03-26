@@ -54,6 +54,8 @@ export interface UpsertZohoItemInput {
   width?: number | null;
   /** Internal category enum (e.g. "MODULE", "INVERTER") — mapped to Zoho group_name */
   category?: string | null;
+  /** InternalProduct UUID — written to cf_internal_product_id custom field */
+  internalProductId?: string | null;
 }
 
 export interface UpsertZohoItemResult {
@@ -803,6 +805,12 @@ export class ZohoInventoryClient {
       if (vendorName) updatePayload.vendor_name = vendorName;
       if (zohoVendorId) updatePayload.vendor_id = zohoVendorId;
 
+      // Write internal product ID custom field if provided
+      const internalProductId = trimOrUndefined(input.internalProductId);
+      if (internalProductId) {
+        updatePayload.custom_fields = [{ api_name: "cf_internal_product_id", value: internalProductId }];
+      }
+
       if (Object.keys(updatePayload).length > 0) {
         try {
           const updateResult = await this.updateItem(existingItemId, updatePayload);
@@ -886,6 +894,18 @@ export class ZohoInventoryClient {
 
     // Bust matching cache so subsequent lookups can immediately see the new item.
     _itemCache = null;
+
+    // Write internal product ID custom field on newly created item (non-fatal)
+    const internalProductId = trimOrUndefined(input.internalProductId);
+    if (internalProductId) {
+      try {
+        await this.updateItem(createdId, {
+          custom_fields: [{ api_name: "cf_internal_product_id", value: internalProductId }],
+        });
+      } catch {
+        // Non-fatal: field may not exist yet in Zoho admin
+      }
+    }
 
     return { zohoItemId: createdId, created: true, ...(zohoWarnings ? { warnings: zohoWarnings } : {}) };
   }

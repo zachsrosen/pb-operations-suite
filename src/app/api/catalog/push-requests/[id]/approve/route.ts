@@ -12,8 +12,8 @@ import {
   getZuperCategoryValue,
 } from "@/lib/catalog-fields";
 import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
-import { createOrUpdateZohoItem } from "@/lib/zoho-inventory";
-import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
+import { createOrUpdateZohoItem, zohoInventory } from "@/lib/zoho-inventory";
+import { createOrUpdateZuperPart, updateZuperPart, buildZuperProductCustomFields } from "@/lib/zuper-catalog";
 import { notifyAdminsOfApprovalWarnings } from "@/lib/catalog-notify";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
@@ -218,6 +218,7 @@ export async function POST(
         vendorName: push.vendorName,
         vendorPartNumber: push.vendorPartNumber,
         unitLabel: push.unitLabel,
+        internalProductId: basePush.internalSkuId,
         additionalProperties: mappedMetadataProps,
       });
 
@@ -281,6 +282,7 @@ export async function POST(
         length: push.length,
         width: push.width,
         category: push.category,
+        internalProductId: basePush.internalSkuId,
       });
 
         await prisma.$transaction(async (tx) => {
@@ -382,6 +384,70 @@ export async function POST(
               ? error.message
               : "Zuper part push failed.",
         };
+      }
+    }
+  }
+
+  // Cross-link: write Zuper, HubSpot, and Internal Product IDs to Zoho item custom fields.
+  const zohoId = outcomes.ZOHO?.externalId || basePush.zohoItemId;
+  const zuperId = outcomes.ZUPER?.externalId || basePush.zuperItemId;
+  const hsId = outcomes.HUBSPOT?.externalId || basePush.hubspotProductId;
+  const internalSkuId = basePush.internalSkuId;
+  if (zohoId && (zuperId || hsId || internalSkuId)) {
+    try {
+      const customFields: Array<{ api_name: string; value: string }> = [];
+      if (zuperId) customFields.push({ api_name: "cf_zuper_product_id", value: zuperId });
+      if (hsId) customFields.push({ api_name: "cf_hubspot_product_id", value: hsId });
+      if (internalSkuId) customFields.push({ api_name: "cf_internal_product_id", value: internalSkuId });
+      if (customFields.length > 0) await zohoInventory.updateItem(zohoId, { custom_fields: customFields });
+    } catch {
+      const msg = "Could not write custom field cross-links to Zoho item";
+      if (outcomes.ZOHO?.message) {
+        outcomes.ZOHO.message += ` (Warning: ${msg})`;
+      }
+    }
+  }
+
+  // Cross-link: write HubSpot, Zoho, and Internal Product IDs to Zuper product custom fields.
+  if (zuperId && (hsId || zohoId || internalSkuId)) {
+    try {
+      const zuperCustomFields = buildZuperProductCustomFields({
+        hubspotProductId: hsId,
+        zohoItemId: zohoId,
+        internalProductId: internalSkuId,
+      });
+      if (zuperCustomFields) {
+        await updateZuperPart(zuperId, { custom_fields: zuperCustomFields });
+      }
+    } catch {
+      const msg = "Could not write cross-link IDs to Zuper product";
+      if (outcomes.ZUPER?.message) {
+        outcomes.ZUPER.message += ` (Warning: ${msg})`;
+      }
+    }
+  }
+
+  // Cross-link: write Zuper, Zoho, and Internal Product IDs to HubSpot product properties.
+  if (hsId && (zuperId || zohoId || internalSkuId)) {
+    try {
+      const hsProps: Record<string, string> = {};
+      if (zuperId) hsProps.zuper_item_id = zuperId;
+      if (zohoId) hsProps.zoho_item_id = zohoId;
+      if (internalSkuId) hsProps.internal_product_id = internalSkuId;
+      if (Object.keys(hsProps).length > 0) {
+        const token = process.env.HUBSPOT_ACCESS_TOKEN;
+        if (token) {
+          await fetch(`https://api.hubapi.com/crm/v3/objects/products/${hsId}`, {
+            method: "PATCH",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ properties: hsProps }),
+          });
+        }
+      }
+    } catch {
+      const msg = "Could not write cross-link IDs to HubSpot product";
+      if (outcomes.HUBSPOT?.message) {
+        outcomes.HUBSPOT.message += ` (Warning: ${msg})`;
       }
     }
   }
