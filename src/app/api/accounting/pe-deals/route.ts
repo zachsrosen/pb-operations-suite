@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { searchWithRetry, hubspotClient } from "@/lib/hubspot";
+import { searchWithRetry, hubspotClient, updateDealProperty } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { PIPELINE_IDS, getStageMaps } from "@/lib/deals-pipeline";
 import {
@@ -10,10 +10,33 @@ import {
   DC_QUALIFYING_BATTERY_BRANDS,
   type PeSystemType,
 } from "@/lib/pricing-calculator";
+import { safeWaitUntil } from "@/lib/safe-wait-until";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/** Round to 2dp and serialise as a string for HubSpot compare / store. */
+function currencyStr(n: number | null): string | null {
+  return n === null ? null : n.toFixed(2);
+}
+
+/** Normalise a fetched HubSpot number property to the same 2dp string shape. */
+function currencyPropStr(raw: unknown): string | null {
+  if (raw === null || raw === undefined || raw === "") return null;
+  const parsed = Number.parseFloat(String(raw));
+  return Number.isFinite(parsed) ? parsed.toFixed(2) : null;
+}
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/** Pending HubSpot write for a single deal's PE payment properties. */
+interface PeSyncEntry {
+  dealId: string;
+  properties: Record<string, string>;
+}
 
 interface PeDeal {
   dealId: string;
@@ -128,6 +151,10 @@ const PE_DEAL_PROPERTIES = [
   // PE milestone statuses (confirmed via HubSpot property search)
   "pe_m1_status",
   "pe_m2_status",
+  // PE payment properties — synced back to HubSpot on each load
+  "pe_payment_ic",
+  "pe_payment_pc",
+  "pe_total_pb_revenue",
 ];
 
 // ---------------------------------------------------------------------------
@@ -206,7 +233,10 @@ export async function GET() {
       }),
     );
 
-    // Transform deals
+    // Transform deals + build HubSpot sync batch in one pass
+    // (raw `deal` properties are only in scope inside this .map())
+    const syncBatch: PeSyncEntry[] = [];
+
     const deals: PeDeal[] = rawDeals.map((deal) => {
       const dealId = String(deal.hs_object_id);
       const amount = deal.amount ? parseFloat(String(deal.amount)) : null;
@@ -264,6 +294,30 @@ export async function GET() {
         totalPBRevenue = customerPays + pePaymentTotal;
       }
 
+      // ------------------------------------------------------------------
+      // HubSpot sync: compare calculated values against fetched properties.
+      // Uses currencyStr() for both compare and store so rounding is
+      // identical and floating-point drift never triggers a false write.
+      // ------------------------------------------------------------------
+      if (epcPrice !== null) {
+        const calcIC = currencyStr(pePaymentIC)!;
+        const calcPC = currencyStr(pePaymentPC)!;
+        const calcRev = currencyStr(totalPBRevenue)!;
+
+        const storedIC = currencyPropStr(deal.pe_payment_ic);
+        const storedPC = currencyPropStr(deal.pe_payment_pc);
+        const storedRev = currencyPropStr(deal.pe_total_pb_revenue);
+
+        const propsToUpdate: Record<string, string> = {};
+        if (storedIC !== calcIC) propsToUpdate.pe_payment_ic = calcIC;
+        if (storedPC !== calcPC) propsToUpdate.pe_payment_pc = calcPC;
+        if (storedRev !== calcRev) propsToUpdate.pe_total_pb_revenue = calcRev;
+
+        if (Object.keys(propsToUpdate).length > 0) {
+          syncBatch.push({ dealId, properties: propsToUpdate });
+        }
+      }
+
       return {
         dealId,
         dealName: String(deal.dealname || "Untitled"),
@@ -293,6 +347,26 @@ export async function GET() {
         hubspotUrl: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`,
       };
     });
+
+    // Sync stale PE payment properties to HubSpot in the background
+    if (syncBatch.length > 0) {
+      safeWaitUntil(
+        (async () => {
+          const results = await Promise.allSettled(
+            syncBatch.map(({ dealId, properties }) =>
+              updateDealProperty(dealId, properties),
+            ),
+          );
+          const synced = results.filter(
+            (r) => r.status === "fulfilled" && r.value === true,
+          ).length;
+          const failed = results.length - synced;
+          console.log(
+            `[pe-deals] PE payment sync: ${synced} updated, ${failed} failed out of ${results.length} stale deals`,
+          );
+        })(),
+      );
+    }
 
     return NextResponse.json({ deals, lastUpdated: new Date().toISOString() });
   } catch (err) {
