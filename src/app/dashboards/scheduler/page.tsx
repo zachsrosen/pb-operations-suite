@@ -3833,6 +3833,46 @@ export default function SchedulerPage() {
                   {forecastGhostEvents.length} forecasted install{forecastGhostEvents.length !== 1 ? "s" : ""}
                 </span>
               )}
+              <button
+                onClick={toggleService}
+                className={`flex items-center gap-1 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ${
+                  showService
+                    ? "border-purple-400 text-purple-400 bg-purple-500/10"
+                    : "border-t-border text-muted opacity-60 hover:border-muted"
+                }`}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${
+                  showService ? "border-purple-400" : "border-t-border"
+                }`}>
+                  {showService && <span className="w-1 h-1 rounded-full bg-purple-400" />}
+                </span>
+                Service
+              </button>
+              {showService && overlayEvents.filter(e => e.eventType === "service").length > 0 && (
+                <span className="text-[0.55rem] text-purple-400/70 ml-0.5">
+                  {overlayEvents.filter(e => e.eventType === "service").length} service job{overlayEvents.filter(e => e.eventType === "service").length !== 1 ? "s" : ""}
+                </span>
+              )}
+              <button
+                onClick={toggleDnr}
+                className={`flex items-center gap-1 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ${
+                  showDnr
+                    ? "border-amber-400 text-amber-400 bg-amber-500/10"
+                    : "border-t-border text-muted opacity-60 hover:border-muted"
+                }`}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${
+                  showDnr ? "border-amber-400" : "border-t-border"
+                }`}>
+                  {showDnr && <span className="w-1 h-1 rounded-full bg-amber-400" />}
+                </span>
+                D&R
+              </button>
+              {showDnr && overlayEvents.filter(e => e.eventType === "dnr").length > 0 && (
+                <span className="text-[0.55rem] text-amber-400/70 ml-0.5">
+                  {overlayEvents.filter(e => e.eventType === "dnr").length} D&R job{overlayEvents.filter(e => e.eventType === "dnr").length !== 1 ? "s" : ""}
+                </span>
+              )}
             </div>
           </div>
 
