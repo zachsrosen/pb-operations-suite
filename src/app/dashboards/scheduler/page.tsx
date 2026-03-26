@@ -478,6 +478,51 @@ function normalizeLocation(location?: string | null): string {
   return value;
 }
 
+function mapZuperJobsToOverlays(
+  jobs: ZuperCategoryJob[],
+  eventType: "service" | "dnr"
+): OverlayEvent[] {
+  return jobs
+    .map((j): OverlayEvent | null => {
+      const dateStr = j.scheduledStart
+        ? j.scheduledStart.slice(0, 10)
+        : j.dueDate
+          ? j.dueDate.slice(0, 10)
+          : null;
+      if (!dateStr) return null;
+
+      let days = 1;
+      if (j.scheduledStart && j.scheduledEnd) {
+        const startYmd = j.scheduledStart.slice(0, 10);
+        const endYmd = j.scheduledEnd.slice(0, 10);
+        if (endYmd > startYmd) {
+          days = countBusinessDaysInclusive(startYmd, endYmd);
+        }
+      }
+
+      const loc = normalizeLocation(j.teamName) || normalizeLocation(j.city) || "Unknown";
+
+      return {
+        id: j.jobUid,
+        name: j.title || j.customerName || "Untitled",
+        date: dateStr,
+        days,
+        amount: 0,
+        crew: j.assignedUser || "",
+        address: j.address || "",
+        location: loc,
+        eventType,
+        eventSubtype: j.categoryName,
+        isOverlay: true,
+        isOverdue: false,
+        isForecast: false,
+        isTentative: false,
+        status: j.statusName || "",
+      };
+    })
+    .filter((e): e is OverlayEvent => e !== null);
+}
+
 /* ------------------------------------------------------------------ */
 /*  Transform API data                                                 */
 /* ------------------------------------------------------------------ */
@@ -942,6 +987,78 @@ export default function SchedulerPage() {
     enabled: showForecasts,
     refetchInterval: 5 * 60 * 1000,
   });
+
+  /* ---- overlay date range (visible span + 1mo buffer each side) ---- */
+  const overlayDateRange = useMemo(() => {
+    const now = new Date();
+    let anchor: Date;
+    if (currentView === "week") {
+      const dayOfWeek = now.getDay();
+      const mondayOffset = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      anchor = new Date(now);
+      anchor.setDate(now.getDate() + mondayOffset + weekOffset * 7);
+    } else if (currentView === "gantt") {
+      // Gantt always shows 10 business days from THIS Monday, ignores currentMonth
+      anchor = new Date(now);
+    } else {
+      anchor = new Date(currentYear, currentMonth, 1);
+    }
+    const from = new Date(anchor);
+    from.setMonth(from.getMonth() - 1);
+    from.setDate(1);
+    const to = new Date(anchor);
+    to.setMonth(to.getMonth() + 2);
+    to.setDate(0);
+    return { from_date: toDateStr(from), to_date: toDateStr(to) };
+  }, [currentView, currentYear, currentMonth, weekOffset]);
+
+  const serviceJobsQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
+    queryKey: ["zuper-service-overlay", overlayDateRange.from_date, overlayDateRange.to_date],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        categories: SERVICE_CATEGORY_UIDS,
+        from_date: overlayDateRange.from_date,
+        to_date: overlayDateRange.to_date,
+      });
+      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
+      if (!res.ok) return { jobs: [] };
+      return res.json();
+    },
+    enabled: showService,
+    staleTime: 2 * 60 * 1000,
+    refetchOnWindowFocus: true,
+  });
+
+  const dnrJobsQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
+    queryKey: ["zuper-dnr-overlay", overlayDateRange.from_date, overlayDateRange.to_date],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        categories: DNR_CATEGORY_UIDS,
+        from_date: overlayDateRange.from_date,
+        to_date: overlayDateRange.to_date,
+      });
+      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
+      if (!res.ok) return { jobs: [] };
+      return res.json();
+    },
+    enabled: showDnr,
+    staleTime: 2 * 60 * 1000,
+    refetchOnWindowFocus: true,
+  });
+
+  const overlayEvents = useMemo((): OverlayEvent[] => {
+    const service = showService && serviceJobsQuery.data?.jobs
+      ? mapZuperJobsToOverlays(serviceJobsQuery.data.jobs, "service")
+      : [];
+    const dnr = showDnr && dnrJobsQuery.data?.jobs
+      ? mapZuperJobsToOverlays(dnrJobsQuery.data.jobs, "dnr")
+      : [];
+    let combined = [...service, ...dnr];
+    if (calendarLocations.length > 0) {
+      combined = combined.filter(e => calendarLocations.includes(e.location));
+    }
+    return combined;
+  }, [showService, showDnr, serviceJobsQuery.data, dnrJobsQuery.data, calendarLocations]);
 
   const fetchProjects = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["scheduler", "main-projects"] });
