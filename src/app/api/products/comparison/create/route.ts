@@ -12,8 +12,8 @@ import {
   generateZuperSpecification,
 } from "@/lib/catalog-fields";
 import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
-import { createOrUpdateZohoItem } from "@/lib/zoho-inventory";
-import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
+import { createOrUpdateZohoItem, zohoInventory } from "@/lib/zoho-inventory";
+import { createOrUpdateZuperPart, updateZuperPart, buildZuperProductCustomFields } from "@/lib/zuper-catalog";
 import {
   getHubSpotProductUrl,
   getZohoItemUrl,
@@ -218,6 +218,30 @@ export async function POST(request: NextRequest) {
       where: { id: internalSkuId },
       data: { [linkField]: externalId },
     });
+
+    // Cross-link IDs to other systems (non-fatal)
+    try {
+      const freshSku = await prisma.internalProduct.findUnique({
+        where: { id: internalSkuId },
+        select: { hubspotProductId: true, zuperItemId: true, zohoItemId: true },
+      });
+      if (freshSku) {
+        // Write Zuper + HubSpot IDs to Zoho custom fields
+        if (freshSku.zohoItemId && (freshSku.zuperItemId || freshSku.hubspotProductId)) {
+          const cf: Array<{ api_name: string; value: string }> = [];
+          if (freshSku.zuperItemId) cf.push({ api_name: "cf_zuper_product_id", value: freshSku.zuperItemId });
+          if (freshSku.hubspotProductId) cf.push({ api_name: "cf_hubspot_product_id", value: freshSku.hubspotProductId });
+          await zohoInventory.updateItem(freshSku.zohoItemId, { custom_fields: cf });
+        }
+        // Write HubSpot ID to Zuper custom fields
+        if (freshSku.zuperItemId && freshSku.hubspotProductId) {
+          const zuperCf = buildZuperProductCustomFields({ hubspotProductId: freshSku.hubspotProductId });
+          if (zuperCf) await updateZuperPart(freshSku.zuperItemId, { custom_fields: zuperCf });
+        }
+      }
+    } catch {
+      // Cross-linking is best-effort; don't fail the creation
+    }
 
     await prisma.catalogProduct.upsert({
       where: {

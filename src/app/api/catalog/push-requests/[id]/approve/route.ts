@@ -13,7 +13,7 @@ import {
 } from "@/lib/catalog-fields";
 import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
 import { createOrUpdateZohoItem, zohoInventory } from "@/lib/zoho-inventory";
-import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
+import { createOrUpdateZuperPart, updateZuperPart, buildZuperProductCustomFields } from "@/lib/zuper-catalog";
 import { notifyAdminsOfApprovalWarnings } from "@/lib/catalog-notify";
 import { buildCanonicalKey, canonicalToken } from "@/lib/canonical";
 
@@ -416,6 +416,21 @@ export async function POST(
       const msg = "Could not write custom field cross-links to Zoho item";
       if (outcomes.ZOHO.message) {
         outcomes.ZOHO.message += ` (Warning: ${msg})`;
+      }
+    }
+  }
+
+  // Cross-link: write HubSpot Product ID to Zuper product's custom fields.
+  if (zuperId && hsId && outcomes.ZUPER?.status === "success") {
+    try {
+      const zuperCustomFields = buildZuperProductCustomFields({ hubspotProductId: hsId });
+      if (zuperCustomFields) {
+        await updateZuperPart(zuperId, { custom_fields: zuperCustomFields });
+      }
+    } catch {
+      const msg = "Could not write HubSpot Product ID to Zuper product";
+      if (outcomes.ZUPER.message) {
+        outcomes.ZUPER.message += ` (Warning: ${msg})`;
       }
     }
   }
