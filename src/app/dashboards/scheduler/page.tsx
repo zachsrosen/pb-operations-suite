@@ -1682,11 +1682,14 @@ export default function SchedulerPage() {
     scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled,
   ]);
 
-  // ---- Merged display events: real filtered events + ghost forecast events ----
-  const displayEvents = useMemo((): ScheduledEvent[] => {
-    if (forecastGhostEvents.length === 0) return filteredScheduledEvents;
-    return [...filteredScheduledEvents, ...forecastGhostEvents];
-  }, [filteredScheduledEvents, forecastGhostEvents]);
+  // ---- Merged display events: real filtered events + ghost forecast events + overlays ----
+  const displayEvents = useMemo((): DisplayEvent[] => {
+    const base: DisplayEvent[] = forecastGhostEvents.length === 0
+      ? filteredScheduledEvents
+      : [...filteredScheduledEvents, ...forecastGhostEvents];
+    if (overlayEvents.length === 0) return base;
+    return [...base, ...overlayEvents];
+  }, [filteredScheduledEvents, forecastGhostEvents, overlayEvents]);
 
   const queueRevenue = useMemo(
     () => formatRevenueCompact(filteredProjects.reduce((s, p) => s + p.amount, 0)),
@@ -1718,7 +1721,7 @@ export default function SchedulerPage() {
     forecasted: RevenueBucket;
   };
 
-  const computeRevenueBuckets = useCallback((events: typeof filteredScheduledEvents) => {
+  const computeRevenueBuckets = useCallback((events: DisplayEvent[]) => {
     const scheduledEvts = events.filter((e) =>
       (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && !e.isOverdue && !e.isTentative && !e.isForecast
     );
@@ -1728,7 +1731,7 @@ export default function SchedulerPage() {
       (e.eventType === "construction" || e.eventType === "rtb" || e.eventType === "blocked" || e.eventType === "scheduled") && e.isOverdue && !e.isTentative && !e.isForecast
     );
     const forecastedEvts = events.filter((e) => e.isForecast);
-    const dedupeRevenue = (evts: typeof events) => {
+    const dedupeRevenue = (evts: DisplayEvent[]) => {
       const ids = new Set(evts.map((e) => e.id));
       return {
         count: ids.size,
