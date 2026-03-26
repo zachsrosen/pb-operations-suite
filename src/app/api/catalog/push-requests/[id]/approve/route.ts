@@ -413,7 +413,13 @@ export async function POST(
       if (zuperId) customFields.push({ api_name: "cf_zuper_product_id", value: zuperId });
       if (hsId) customFields.push({ api_name: "cf_hubspot_product_id", value: hsId });
       if (internalSkuId) customFields.push({ api_name: "cf_internal_product_id", value: internalSkuId });
-      if (customFields.length > 0) await zohoInventory.updateItem(zohoId, { custom_fields: customFields });
+      if (customFields.length > 0) {
+        const zohoResult = await zohoInventory.updateItem(zohoId, { custom_fields: customFields });
+        if (zohoResult.status !== "updated") {
+          const msg = `Zoho cross-link update returned ${zohoResult.status}: ${zohoResult.message || "unknown"}`;
+          if (outcomes.ZOHO?.message) outcomes.ZOHO.message += ` (Warning: ${msg})`;
+        }
+      }
     } catch {
       const msg = "Could not write custom field cross-links to Zoho item";
       if (outcomes.ZOHO?.message) {
@@ -451,11 +457,15 @@ export async function POST(
       if (Object.keys(hsProps).length > 0) {
         const token = process.env.HUBSPOT_ACCESS_TOKEN;
         if (token) {
-          await fetch(`https://api.hubapi.com/crm/v3/objects/products/${hsId}`, {
+          const hsRes = await fetch(`https://api.hubapi.com/crm/v3/objects/products/${hsId}`, {
             method: "PATCH",
             headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
             body: JSON.stringify({ properties: hsProps }),
           });
+          if (!hsRes.ok) {
+            const msg = `HubSpot cross-link PATCH returned ${hsRes.status}`;
+            if (outcomes.HUBSPOT?.message) outcomes.HUBSPOT.message += ` (Warning: ${msg})`;
+          }
         }
       }
     } catch {
