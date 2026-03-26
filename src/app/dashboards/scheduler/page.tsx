@@ -20,6 +20,7 @@ import {
   normalizeZuperBoundaryDates as normalizeZuperBoundaryDatesShared,
   toDateStr,
 } from "@/lib/scheduling-utils";
+import { normalizeLocation as normalizeLocationAlias } from "@/lib/locations";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -170,6 +171,7 @@ interface OverlayEvent {
   isForecast: false;
   isTentative: false;
   status: string;
+  scheduledTime: string | null;
 }
 
 type DisplayEvent = ScheduledEvent | OverlayEvent;
@@ -500,7 +502,7 @@ function mapZuperJobsToOverlays(
         }
       }
 
-      const loc = normalizeLocation(j.teamName) || normalizeLocation(j.city) || "Unknown";
+      const loc = normalizeLocationAlias(j.teamName) || normalizeLocationAlias(j.city) || "Unknown";
 
       return {
         id: j.jobUid,
@@ -518,6 +520,11 @@ function mapZuperJobsToOverlays(
         isForecast: false,
         isTentative: false,
         status: j.statusName || "",
+        scheduledTime: j.scheduledStart && j.scheduledEnd
+          ? `${new Date(j.scheduledStart).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} – ${new Date(j.scheduledEnd).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
+          : j.scheduledStart
+            ? new Date(j.scheduledStart).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+            : null,
       };
     })
     .filter((e): e is OverlayEvent => e !== null);
@@ -5702,6 +5709,9 @@ export default function SchedulerPage() {
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Assigned</span><span className="text-foreground">{overlayDetail.crew || "Unassigned"}</span></div>
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Status</span><span className={`font-medium ${overlayDetail.eventType === "service" ? "text-purple-400" : "text-amber-400"}`}>{overlayDetail.status || "—"}</span></div>
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Date</span><span className="text-foreground">{formatDateShort(overlayDetail.date)}{overlayDetail.days > 1 ? ` (${overlayDetail.days} days)` : ""}</span></div>
+              {overlayDetail.scheduledTime && (
+                <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Time</span><span className="text-foreground">{overlayDetail.scheduledTime}</span></div>
+              )}
             </div>
             <button onClick={() => setOverlayDetail(null)} className="mt-4 w-full py-1.5 text-[0.7rem] rounded-md bg-background border border-t-border text-muted hover:text-foreground transition-colors">Close</button>
           </div>
