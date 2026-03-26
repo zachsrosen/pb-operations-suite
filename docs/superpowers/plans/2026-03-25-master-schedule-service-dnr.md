@@ -294,18 +294,10 @@ function mapZuperJobsToOverlays(
       // Compute business-day span
       let days = 1;
       if (j.scheduledStart && j.scheduledEnd) {
-        const start = new Date(j.scheduledStart.slice(0, 10) + "T12:00:00");
-        const end = new Date(j.scheduledEnd.slice(0, 10) + "T12:00:00");
-        if (end > start) {
-          // Count business days manually
-          let count = 0;
-          const cursor = new Date(start);
-          while (cursor <= end) {
-            const dow = cursor.getDay();
-            if (dow !== 0 && dow !== 6) count++;
-            cursor.setDate(cursor.getDate() + 1);
-          }
-          if (count > 0) days = count;
+        const startYmd = j.scheduledStart.slice(0, 10);
+        const endYmd = j.scheduledEnd.slice(0, 10);
+        if (endYmd > startYmd) {
+          days = countBusinessDaysInclusive(startYmd, endYmd);
         }
       }
 
