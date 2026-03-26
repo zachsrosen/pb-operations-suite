@@ -1,0 +1,1197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>4x10 Crew Rotation Simulator</title>
+<style>
+:root {
+  --bg: #F8FAFC;
+  --surface: #FFFFFF;
+  --surface-2: #F1F5F9;
+  --text: #1E293B;
+  --text-muted: #64748B;
+  --border: #E2E8F0;
+  --blue-100: #DBEAFE;
+  --blue-500: #3B82F6;
+  --blue-600: #2563EB;
+  --blue-700: #1D4ED8;
+  --amber-100: #FEF3C7;
+  --amber-400: #FBBF24;
+  --amber-500: #F59E0B;
+  --green-500: #22C55E;
+  --green-100: #DCFCE7;
+  --yellow-500: #EAB308;
+  --yellow-100: #FEF9C3;
+  --red-500: #EF4444;
+  --red-100: #FEE2E2;
+  --orange-500: #F97316;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+.header {
+  background: linear-gradient(135deg, var(--blue-700), var(--blue-600));
+  color: #fff;
+  padding: 24px 32px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.12);
+}
+.header h1 { font-size: 22px; font-weight: 700; }
+.header p { font-size: 13px; opacity: .8; margin-top: 2px; }
+.layout {
+  display: flex;
+  min-height: calc(100vh - 80px);
+}
+.panel {
+  width: 340px;
+  min-width: 340px;
+  background: var(--surface-2);
+  border-right: 1px solid var(--border);
+  padding: 20px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+}
+.main {
+  flex: 1;
+  padding: 24px 28px;
+  overflow-y: auto;
+}
+.section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  margin-top: 20px;
+}
+.section-label:first-child { margin-top: 0; }
+.toggle-group {
+  display: flex;
+  gap: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.toggle-btn {
+  flex: 1;
+  padding: 10px 12px;
+  border: none;
+  background: var(--surface);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+}
+.toggle-btn.active {
+  background: var(--blue-600);
+  color: #fff;
+}
+.toggle-btn:hover:not(.active) { background: var(--border); }
+.control-group { margin-top: 14px; }
+.control-group label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+.control-group select,
+.control-group input[type=range] {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 13px;
+  background: var(--surface);
+  color: var(--text);
+}
+.control-group select { cursor: pointer; }
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.checkbox-row input[type=checkbox] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--blue-600);
+}
+.checkbox-row label {
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.slider-value {
+  font-size: 12px;
+  color: var(--blue-600);
+  font-weight: 600;
+  margin-left: 6px;
+}
+.crew-assignments { margin-top: 4px; }
+.crew-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.crew-row span {
+  font-size: 12px;
+  color: var(--text);
+  flex: 1;
+}
+.crew-row select {
+  width: 100px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 12px;
+  background: var(--surface);
+  cursor: pointer;
+}
+.sixth-crew-options {
+  margin-top: 8px;
+  padding: 10px;
+  background: var(--surface);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.sixth-crew-options .control-group { margin-top: 8px; }
+.sixth-crew-options .control-group:first-child { margin-top: 0; }
+#proposed-controls { display: none; }
+/* ---- Right panel ---- */
+.metrics-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.metric-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.metric-card .value {
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text);
+  line-height: 1.2;
+}
+.metric-card .label {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  font-weight: 500;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 16px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+}
+.card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  color: var(--text);
+}
+/* Calendar grid */
+.cal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.cal-table th {
+  padding: 6px 8px;
+  text-align: center;
+  font-weight: 600;
+  color: var(--text-muted);
+  border-bottom: 2px solid var(--border);
+  font-size: 11px;
+}
+.cal-table td {
+  padding: 8px 6px;
+  text-align: center;
+  border-bottom: 1px solid var(--border);
+  font-weight: 500;
+  font-size: 11px;
+}
+.cal-table td.loc-label {
+  text-align: left;
+  font-weight: 600;
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.cell-green { background: var(--green-100); color: var(--green-500); }
+.cell-gray { background: #F3F4F6; color: #9CA3AF; }
+.cell-blue { background: var(--blue-100); color: var(--blue-600); font-weight: 600; }
+.cell-amber { background: var(--amber-100); color: #B45309; font-weight: 600; }
+.cell-both {
+  background: linear-gradient(135deg, var(--blue-100) 50%, var(--amber-100) 50%);
+  color: var(--text);
+  font-weight: 600;
+}
+.cell-off { background: #F3F4F6; color: #9CA3AF; }
+/* Two-column viz */
+.viz-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.viz-grid .card { margin-bottom: 0; }
+@media (max-width: 900px) {
+  .viz-grid { grid-template-columns: 1fr; }
+}
+/* Score gauge */
+.gauge-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  margin-bottom: 4px;
+}
+.gauge-number {
+  font-size: 52px;
+  font-weight: 800;
+  line-height: 1;
+}
+.gauge-number.green { color: var(--green-500); }
+.gauge-number.yellow { color: var(--yellow-500); }
+.gauge-number.red { color: var(--red-500); }
+.gauge-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+/* Progress bars (rubric) */
+.rubric-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 10px;
+}
+.rubric-label {
+  width: 160px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text);
+  flex-shrink: 0;
+}
+.rubric-bar-bg {
+  flex: 1;
+  height: 20px;
+  background: var(--surface-2);
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.rubric-bar-fill {
+  height: 100%;
+  border-radius: 10px;
+  transition: width .3s;
+}
+.rubric-score {
+  width: 54px;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  flex-shrink: 0;
+}
+/* SVG donut */
+.donut-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+}
+.donut-legend {
+  font-size: 12px;
+  line-height: 2;
+}
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+/* Bar chart */
+.bar-chart-wrap {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 170px;
+  padding-top: 10px;
+}
+.bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+.bar-rect {
+  width: 100%;
+  max-width: 28px;
+  border-radius: 3px 3px 0 0;
+  transition: height .3s;
+}
+.bar-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  text-align: center;
+}
+.bar-value {
+  font-size: 9px;
+  color: var(--text);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+/* Capacity bars */
+.cap-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  gap: 10px;
+}
+.cap-label {
+  width: 130px;
+  font-size: 12px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.cap-bars {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cap-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cap-bar-bg {
+  flex: 1;
+  height: 18px;
+  background: var(--surface-2);
+  border-radius: 9px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.cap-bar-fill {
+  height: 100%;
+  border-radius: 9px;
+  transition: width .3s;
+}
+.cap-bar-label {
+  font-size: 11px;
+  width: 70px;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+.cap-val {
+  font-size: 12px;
+  font-weight: 700;
+  width: 40px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.no-data-msg {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--text-muted);
+  font-size: 16px;
+}
+.hidden { display: none !important; }
+.info-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 16px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  line-height: 1.8;
+}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>4x10 Crew Rotation Simulator</h1>
+  <p>Photon Brothers &mdash; Colorado Install Crews</p>
+</div>
+<div class="layout">
+  <div class="panel">
+    <div class="section-label">Schedule Mode</div>
+    <div class="toggle-group">
+      <button class="toggle-btn active" id="btn-current" onclick="setMode('current')">Current 5&times;8</button>
+      <button class="toggle-btn" id="btn-proposed" onclick="setMode('proposed')">Proposed 4&times;10</button>
+    </div>
+
+    <div id="proposed-controls">
+      <div class="section-label">Crew Assignments</div>
+      <div class="crew-assignments">
+        <div class="crew-row"><span>Westminster Crew 1</span><select id="crew-west1" onchange="recalc()"><option value="A" selected>Group A</option><option value="B">Group B</option></select></div>
+        <div class="crew-row"><span>Westminster Crew 2</span><select id="crew-west2" onchange="recalc()"><option value="A">Group A</option><option value="B" selected>Group B</option></select></div>
+        <div class="crew-row"><span>Centennial Crew 1</span><select id="crew-cent1" onchange="recalc()"><option value="A" selected>Group A</option><option value="B">Group B</option></select></div>
+        <div class="crew-row"><span>Centennial Crew 2</span><select id="crew-cent2" onchange="recalc()"><option value="A">Group A</option><option value="B" selected>Group B</option></select></div>
+        <div class="crew-row"><span>Colorado Springs</span><select id="crew-cosp" onchange="recalc()"><option value="A" selected>Group A</option><option value="B">Group B</option></select></div>
+      </div>
+
+      <div class="section-label">Turnaround Compression</div>
+      <div class="control-group">
+        <label>Reduce crew-days by <span class="slider-value" id="compress-label">0</span> day(s)</label>
+        <input type="range" id="compress-slider" min="0" max="2" value="0" step="1" oninput="updateCompressLabel(); recalc();">
+      </div>
+
+      <div class="checkbox-row">
+        <input type="checkbox" id="pause-toggle" checked onchange="recalc()">
+        <label for="pause-toggle">Pause Tolerance (allow mid-install pause)</label>
+      </div>
+
+      <div class="section-label">6th Crew</div>
+      <div class="checkbox-row">
+        <input type="checkbox" id="sixth-crew-toggle" onchange="toggleSixthCrew(); recalc();">
+        <label for="sixth-crew-toggle">Add a 6th crew</label>
+      </div>
+      <div id="sixth-crew-opts" class="sixth-crew-options hidden">
+        <div class="control-group">
+          <label>Location</label>
+          <select id="sixth-loc" onchange="recalc()">
+            <option value="Westminster">Westminster</option>
+            <option value="Centennial">Centennial</option>
+            <option value="Colorado Springs">Colorado Springs</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label>Group</label>
+          <select id="sixth-group" onchange="recalc()">
+            <option value="A">Group A</option>
+            <option value="B">Group B</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-note" id="data-note">
+      Data range: <span id="date-range">--</span><br>
+      Installs analyzed: <span id="install-count">--</span>
+    </div>
+  </div>
+  <div class="main" id="viz-area">
+    <div class="no-data-msg" id="no-data-msg">No data loaded. Run the generation pipeline to embed install data.</div>
+    <div id="current-view" class="hidden"></div>
+    <div id="proposed-view" class="hidden"></div>
+  </div>
+</div>
+
+<script>
+/* eslint-disable */
+// ========== DATA ==========
+var DATA = __DATA_PLACEHOLDER__;
+
+// ========== SIMULATION ENGINE (1:1 port of TypeScript) ==========
+var GROUP_A_DAYS = new Set([1, 2, 3, 4]); // Mon-Thu
+var GROUP_B_DAYS = new Set([3, 4, 5, 6]); // Wed-Sat
+
+function getGroupDays(g) { return g === 'A' ? GROUP_A_DAYS : GROUP_B_DAYS; }
+
+function simulateInstall(crewDaysRequired, startDayOfWeek, group, allowPause) {
+  var onDays = getGroupDays(group);
+  var remaining = crewDaysRequired;
+  var currentDow = startDayOfWeek;
+  var calendarDays = 0;
+  var pauseDays = 0;
+  var spansMultipleBlocks = false;
+  var consecutiveOffDays = 0;
+
+  // If start day is not an ON day for this group, immediate needs_handoff
+  if (!onDays.has(currentDow)) {
+    return {
+      group: group,
+      calendarDaysToComplete: crewDaysRequired,
+      fitClassification: 'needs_handoff',
+      pauseDays: 0,
+      handoffRequired: true
+    };
+  }
+
+  calendarDays = 1; // start day counts as day 1
+
+  while (remaining > 0) {
+    if (onDays.has(currentDow)) {
+      remaining--;
+      consecutiveOffDays = 0;
+    } else {
+      pauseDays++;
+      consecutiveOffDays++;
+      if (consecutiveOffDays >= 2) {
+        spansMultipleBlocks = true;
+      }
+    }
+    if (remaining > 0) {
+      calendarDays++;
+      currentDow = (currentDow + 1) % 7;
+    }
+  }
+
+  var fitClassification;
+  if (pauseDays === 0) {
+    fitClassification = 'fits_in_block';
+  } else if (allowPause) {
+    fitClassification = spansMultipleBlocks ? 'fits_with_pause' : 'fits_in_block';
+  } else {
+    fitClassification = 'needs_handoff';
+  }
+
+  return {
+    group: group,
+    calendarDaysToComplete: calendarDays,
+    fitClassification: fitClassification,
+    pauseDays: pauseDays,
+    handoffRequired: fitClassification === 'needs_handoff'
+  };
+}
+
+function assignGroup(startDow, location, cospGroup) {
+  if (location === 'Colorado Springs') return cospGroup || 'A';
+  if (startDow === 0) return 'A'; // Sunday guard
+  if (startDow === 1 || startDow === 2) return 'A'; // Mon, Tue -> A
+  if (startDow === 5 || startDow === 6) return 'B'; // Fri, Sat -> B
+  return startDow === 3 ? 'A' : 'B'; // Wed->A, Thu->B
+}
+
+var CREWS_PER_LOCATION = { 'Westminster': 2, 'Centennial': 2, 'Colorado Springs': 1 };
+var ANALYSIS_WEEKS = 26;
+var CURRENT_DAYS_PER_CREW = 5;
+var PROPOSED_DAYS_PER_CREW = 4;
+var CURRENT_HRS_PER_DAY = 8;
+var PROPOSED_HRS_PER_DAY = 10;
+var LOCATIONS = ['Westminster', 'Centennial', 'Colorado Springs'];
+
+function scoreConfig(installs, locationGroups, allowPause) {
+  var adjusted = installs.map(function(si) {
+    var locGroups = locationGroups[si.location] || ['A'];
+    var group;
+    if (locGroups.length === 1) {
+      group = locGroups[0];
+    } else {
+      var cospG = (locationGroups['Colorado Springs'] || ['A'])[0];
+      group = assignGroup(si.startDayOfWeek, si.location, cospG);
+      if (locGroups.indexOf(group) === -1) {
+        group = locGroups[0];
+      }
+    }
+    var sim = simulateInstall(si.crewDaysRequired, si.startDayOfWeek, group, allowPause);
+    return { install: si, group: group, sim: sim };
+  });
+
+  var total = adjusted.length;
+  var noHandoff = adjusted.filter(function(a) { return !a.sim.handoffRequired; }).length;
+  var handoffs = total - noHandoff;
+  var coverableRevenue = adjusted.filter(function(a) { return !a.sim.handoffRequired; })
+    .reduce(function(sum, a) { return sum + a.install.amount; }, 0);
+  var revenuePerWeek = coverableRevenue / ANALYSIS_WEEKS;
+
+  var totalDarkDays = 0;
+  Object.keys(locationGroups).forEach(function(loc) {
+    var crewGroups = locationGroups[loc];
+    var coveredDays = new Set();
+    crewGroups.forEach(function(g) {
+      getGroupDays(g).forEach(function(d) { coveredDays.add(d); });
+    });
+    for (var d = 1; d <= 6; d++) {
+      if (!coveredDays.has(d)) totalDarkDays++;
+    }
+  });
+
+  var installCoverage = total > 0 ? noHandoff / total : 1;
+  var handoffRate = total > 0 ? handoffs / total : 0;
+  var maxRevenue = adjusted.reduce(function(sum, a) { return sum + a.install.amount; }, 0) / ANALYSIS_WEEKS;
+  var revNorm = maxRevenue > 0 ? revenuePerWeek / maxRevenue : 1;
+  var darkNorm = 1 - totalDarkDays / 6;
+
+  var weightedScore = installCoverage * 40 + (1 - handoffRate) * 25 + revNorm * 20 + darkNorm * 15;
+
+  // Build fit distribution
+  var fitsInBlock = 0, fitsWithPause = 0, needsHandoff = 0;
+  adjusted.forEach(function(a) {
+    if (a.sim.fitClassification === 'fits_in_block') fitsInBlock++;
+    else if (a.sim.fitClassification === 'fits_with_pause') fitsWithPause++;
+    else needsHandoff++;
+  });
+
+  return {
+    installCoverage: installCoverage,
+    handoffRate: handoffRate,
+    revenueCapacity: revenuePerWeek,
+    darkDays: totalDarkDays,
+    darkNorm: darkNorm,
+    revNorm: revNorm,
+    weightedScore: weightedScore,
+    total: total,
+    noHandoff: noHandoff,
+    handoffs: handoffs,
+    fitDist: { fitsInBlock: fitsInBlock, fitsWithPause: fitsWithPause, needsHandoff: needsHandoff },
+    adjusted: adjusted
+  };
+}
+
+// ========== UI STATE ==========
+var mode = 'current';
+var hasData = false;
+
+function init() {
+  try {
+    if (typeof DATA === 'object' && DATA !== null && DATA.installs) {
+      hasData = true;
+    }
+  } catch (e) {
+    hasData = false;
+  }
+  if (!hasData) {
+    document.getElementById('no-data-msg').classList.remove('hidden');
+    return;
+  }
+  document.getElementById('no-data-msg').classList.add('hidden');
+  var meta = DATA.metadata;
+  document.getElementById('date-range').textContent =
+    (meta.dateRange.from || '--') + ' to ' + (meta.dateRange.to || '--');
+  document.getElementById('install-count').textContent = String(meta.validInstalls);
+  recalc();
+}
+
+function setMode(m) {
+  mode = m;
+  document.getElementById('btn-current').classList.toggle('active', m === 'current');
+  document.getElementById('btn-proposed').classList.toggle('active', m === 'proposed');
+  document.getElementById('proposed-controls').style.display = m === 'proposed' ? 'block' : 'none';
+  recalc();
+}
+
+function updateCompressLabel() {
+  document.getElementById('compress-label').textContent =
+    document.getElementById('compress-slider').value;
+}
+
+function toggleSixthCrew() {
+  var on = document.getElementById('sixth-crew-toggle').checked;
+  document.getElementById('sixth-crew-opts').classList.toggle('hidden', !on);
+}
+
+// ========== RECALCULATION ==========
+function recalc() {
+  if (!hasData) return;
+  if (mode === 'current') {
+    renderCurrent();
+  } else {
+    renderProposed();
+  }
+}
+
+// ========== HELPERS ==========
+function esc(s) {
+  var d = document.createElement('div');
+  d.textContent = String(s);
+  return d.innerHTML;
+}
+
+function fmtK(n) {
+  if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
+  if (n >= 1000) return (n / 1000).toFixed(0) + 'K';
+  return String(Math.round(n));
+}
+
+function buildEl(tag, attrs, children) {
+  var el = document.createElement(tag);
+  if (attrs) {
+    Object.keys(attrs).forEach(function(k) {
+      if (k === 'className') el.className = attrs[k];
+      else if (k === 'style' && typeof attrs[k] === 'object') {
+        Object.keys(attrs[k]).forEach(function(sk) { el.style[sk] = attrs[k][sk]; });
+      } else el.setAttribute(k, attrs[k]);
+    });
+  }
+  if (children) {
+    if (typeof children === 'string') el.textContent = children;
+    else if (Array.isArray(children)) children.forEach(function(c) { if (c) el.appendChild(c); });
+    else el.appendChild(children);
+  }
+  return el;
+}
+
+function buildMetricCard(value, label) {
+  var card = buildEl('div', { className: 'metric-card' });
+  var valEl = buildEl('div', { className: 'value' }, String(value));
+  var labEl = buildEl('div', { className: 'label' }, label);
+  card.appendChild(valEl);
+  card.appendChild(labEl);
+  return card;
+}
+
+// ========== RENDER: CURRENT 5x8 ==========
+function renderCurrent() {
+  document.getElementById('current-view').classList.remove('hidden');
+  document.getElementById('proposed-view').classList.add('hidden');
+  var container = document.getElementById('current-view');
+  container.textContent = '';
+  var cs = DATA.currentState;
+  var ov = cs.overall;
+
+  // Metrics row
+  var row = buildEl('div', { className: 'metrics-row' });
+  row.appendChild(buildMetricCard(ov.totalInstalls, 'Total Installs'));
+  row.appendChild(buildMetricCard(ov.avgCrewDays.toFixed(1) + ' days', 'Avg Duration'));
+  row.appendChild(buildMetricCard('$' + fmtK(ov.totalRevenue), 'Total Revenue'));
+  row.appendChild(buildMetricCard(ov.totalCrewDaysPerWeek, 'Crew-Days/Week'));
+  row.appendChild(buildMetricCard(ov.totalCrewHoursPerWeek, 'Crew-Hours/Week'));
+  container.appendChild(row);
+
+  // Calendar card
+  var calCard = buildEl('div', { className: 'card' });
+  var calTitle = buildEl('h3');
+  calTitle.textContent = 'Weekly Calendar \u2014 Current 5\u00D78 Schedule';
+  calCard.appendChild(calTitle);
+  var table = document.createElement('table');
+  table.className = 'cal-table';
+  var thead = document.createElement('thead');
+  var headRow = document.createElement('tr');
+  ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].forEach(function(d) {
+    var th = document.createElement('th');
+    th.textContent = d;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+  var tbody = document.createElement('tbody');
+  LOCATIONS.forEach(function(loc) {
+    var tr = document.createElement('tr');
+    var locTd = document.createElement('td');
+    locTd.className = 'loc-label';
+    var crews = CREWS_PER_LOCATION[loc];
+    locTd.textContent = loc + ' (' + crews + ' crew' + (crews > 1 ? 's' : '') + ')';
+    tr.appendChild(locTd);
+    for (var d = 0; d < 6; d++) {
+      var td = document.createElement('td');
+      if (d < 5) {
+        td.className = 'cell-green';
+        td.textContent = 'ON';
+      } else {
+        td.className = 'cell-gray';
+        td.textContent = 'OFF';
+      }
+      tr.appendChild(td);
+    }
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  calCard.appendChild(table);
+  container.appendChild(calCard);
+
+  // Histogram card
+  var histCard = buildEl('div', { className: 'card' });
+  var histTitle = buildEl('h3');
+  histTitle.textContent = 'Crew-Days Distribution (How long installs take)';
+  histCard.appendChild(histTitle);
+  histCard.appendChild(buildHistogram(cs.crewDaysDistribution));
+  container.appendChild(histCard);
+}
+
+function buildHistogram(dist) {
+  var keys = Object.keys(dist).map(Number).sort(function(a, b) { return a - b; });
+  var maxVal = 0;
+  keys.forEach(function(k) { if (dist[k] > maxVal) maxVal = dist[k]; });
+  var chartHeight = 130;
+  var wrap = buildEl('div', { className: 'bar-chart-wrap', style: { height: (chartHeight + 36) + 'px' } });
+  if (maxVal === 0) { wrap.textContent = 'No data'; return wrap; }
+  keys.forEach(function(k) {
+    var v = dist[k];
+    var h = Math.max(2, (v / maxVal) * chartHeight);
+    var col = buildEl('div', { className: 'bar-col' });
+    var valLabel = buildEl('div', { className: 'bar-value' }, String(v));
+    var bar = buildEl('div', { className: 'bar-rect', style: { height: h + 'px', background: 'var(--blue-500)' } });
+    var dayLabel = buildEl('div', { className: 'bar-label' }, k + 'd');
+    col.appendChild(valLabel);
+    col.appendChild(bar);
+    col.appendChild(dayLabel);
+    wrap.appendChild(col);
+  });
+  return wrap;
+}
+
+// ========== RENDER: PROPOSED 4x10 ==========
+function renderProposed() {
+  document.getElementById('current-view').classList.add('hidden');
+  document.getElementById('proposed-view').classList.remove('hidden');
+  var container = document.getElementById('proposed-view');
+  container.textContent = '';
+
+  // Read controls
+  var groups = buildLocationGroups();
+  var compress = parseInt(document.getElementById('compress-slider').value, 10) || 0;
+  var allowPause = document.getElementById('pause-toggle').checked;
+
+  // Build working installs with compression
+  var workingInstalls = DATA.installs.map(function(inst) {
+    var cd = Math.max(1, inst.crewDaysRequired - compress);
+    return {
+      dealId: inst.dealId,
+      location: inst.location,
+      amount: inst.amount,
+      crewDaysRequired: cd,
+      startDayOfWeek: inst.startDayOfWeek,
+      startDayName: inst.startDayName
+    };
+  });
+
+  var result = scoreConfig(workingInstalls, groups, allowPause);
+
+  // Compute proposed capacity
+  var totalCrews = 0;
+  Object.keys(groups).forEach(function(loc) { totalCrews += groups[loc].length; });
+  var propCrewDaysPerWeek = totalCrews * PROPOSED_DAYS_PER_CREW;
+  var propCrewHoursPerWeek = totalCrews * PROPOSED_DAYS_PER_CREW * PROPOSED_HRS_PER_DAY;
+
+  // Score gauge card
+  var gaugeCard = buildEl('div', { className: 'card' });
+  var gaugeWrap = buildEl('div', { className: 'gauge-wrap' });
+  var sc = result.weightedScore;
+  var gaugeClass = sc >= 80 ? 'green' : (sc >= 60 ? 'yellow' : 'red');
+  var gaugeInner = buildEl('div');
+  var gaugeNum = buildEl('div', { className: 'gauge-number ' + gaugeClass }, sc.toFixed(1));
+  var gaugeLbl = buildEl('div', { className: 'gauge-label' }, 'Weighted Score / 100');
+  gaugeInner.appendChild(gaugeNum);
+  gaugeInner.appendChild(gaugeLbl);
+  gaugeWrap.appendChild(gaugeInner);
+  gaugeCard.appendChild(gaugeWrap);
+  container.appendChild(gaugeCard);
+
+  // Metrics row
+  var row = buildEl('div', { className: 'metrics-row' });
+  row.appendChild(buildMetricCard(result.total, 'Total Installs'));
+  row.appendChild(buildMetricCard((result.installCoverage * 100).toFixed(1) + '%', 'Fit Rate'));
+  row.appendChild(buildMetricCard(result.handoffs, 'Handoff Count'));
+  row.appendChild(buildMetricCard(propCrewHoursPerWeek, 'Crew-Hours/Week'));
+  row.appendChild(buildMetricCard(sc.toFixed(1), 'Score'));
+  container.appendChild(row);
+
+  // Two-column: calendar + donut
+  var vizRow1 = buildEl('div', { className: 'viz-grid' });
+
+  // Coverage calendar
+  var calCard = buildEl('div', { className: 'card' });
+  var calTitle = buildEl('h3');
+  calTitle.textContent = 'Weekly Coverage Calendar';
+  calCard.appendChild(calTitle);
+  calCard.appendChild(buildCoverageCalendar(groups));
+  vizRow1.appendChild(calCard);
+
+  // Donut chart
+  var donutCard = buildEl('div', { className: 'card' });
+  var donutTitle = buildEl('h3');
+  donutTitle.textContent = 'Install Fit Distribution';
+  donutCard.appendChild(donutTitle);
+  donutCard.appendChild(buildDonut(result.fitDist, result.total));
+  vizRow1.appendChild(donutCard);
+
+  container.appendChild(vizRow1);
+
+  // Two-column: capacity + rubric
+  var vizRow2 = buildEl('div', { className: 'viz-grid' });
+
+  // Capacity comparison
+  var capCard = buildEl('div', { className: 'card' });
+  var capTitle = buildEl('h3');
+  capTitle.textContent = 'Capacity Comparison';
+  capCard.appendChild(capTitle);
+  capCard.appendChild(buildCapacityBars(propCrewDaysPerWeek, propCrewHoursPerWeek));
+  vizRow2.appendChild(capCard);
+
+  // Rubric
+  var rubCard = buildEl('div', { className: 'card' });
+  var rubTitle = buildEl('h3');
+  rubTitle.textContent = 'Decision Rubric Breakdown';
+  rubCard.appendChild(rubTitle);
+  rubCard.appendChild(buildRubric(result));
+  vizRow2.appendChild(rubCard);
+
+  container.appendChild(vizRow2);
+}
+
+function buildLocationGroups() {
+  var groups = {};
+  groups['Westminster'] = [
+    document.getElementById('crew-west1').value,
+    document.getElementById('crew-west2').value
+  ];
+  groups['Centennial'] = [
+    document.getElementById('crew-cent1').value,
+    document.getElementById('crew-cent2').value
+  ];
+  groups['Colorado Springs'] = [
+    document.getElementById('crew-cosp').value
+  ];
+
+  if (document.getElementById('sixth-crew-toggle').checked) {
+    var loc = document.getElementById('sixth-loc').value;
+    var grp = document.getElementById('sixth-group').value;
+    groups[loc] = groups[loc].concat([grp]);
+  }
+  return groups;
+}
+
+// ========== COVERAGE CALENDAR (DOM) ==========
+function buildCoverageCalendar(groups) {
+  var dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  var dayNums = [1, 2, 3, 4, 5, 6];
+
+  var table = document.createElement('table');
+  table.className = 'cal-table';
+  var thead = document.createElement('thead');
+  var headRow = document.createElement('tr');
+  var emptyTh = document.createElement('th');
+  headRow.appendChild(emptyTh);
+  dayNames.forEach(function(d) {
+    var th = document.createElement('th');
+    th.textContent = d;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  var tbody = document.createElement('tbody');
+  LOCATIONS.forEach(function(loc) {
+    var crewGroups = groups[loc] || ['A'];
+    var tr = document.createElement('tr');
+    var locTd = document.createElement('td');
+    locTd.className = 'loc-label';
+    locTd.textContent = loc + ' (' + crewGroups.length + ' crew' + (crewGroups.length > 1 ? 's' : '') + ')';
+    tr.appendChild(locTd);
+
+    dayNums.forEach(function(dayNum) {
+      var td = document.createElement('td');
+      var countA = crewGroups.filter(function(g) { return g === 'A' && GROUP_A_DAYS.has(dayNum); }).length;
+      var countB = crewGroups.filter(function(g) { return g === 'B' && GROUP_B_DAYS.has(dayNum); }).length;
+      var totalActive = countA + countB;
+
+      if (totalActive === 0) {
+        td.className = 'cell-off';
+        td.textContent = 'OFF';
+      } else if (countA > 0 && countB > 0) {
+        td.className = 'cell-both';
+        var label = 'A+B';
+        if (totalActive > 2) label += ' (' + totalActive + ')';
+        td.textContent = label;
+      } else if (countA > 0) {
+        td.className = 'cell-blue';
+        td.textContent = countA > 1 ? 'A (' + countA + ')' : 'A';
+      } else {
+        td.className = 'cell-amber';
+        td.textContent = countB > 1 ? 'B (' + countB + ')' : 'B';
+      }
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+  return table;
+}
+
+// ========== DONUT CHART (SVG via DOM) ==========
+function buildDonut(fitDist, total) {
+  var wrap = buildEl('div', { className: 'donut-wrap' });
+  if (total === 0) { wrap.textContent = 'No data'; return wrap; }
+
+  var fitsBlock = fitDist.fitsInBlock;
+  var fitsPause = fitDist.fitsWithPause;
+  var needsHandoff = fitDist.needsHandoff;
+  var noHandoffPct = ((fitsBlock + fitsPause) / total * 100).toFixed(1);
+
+  var radius = 70;
+  var circumference = 2 * Math.PI * radius;
+  var pBlock = fitsBlock / total;
+  var pPause = fitsPause / total;
+  var pHandoff = needsHandoff / total;
+
+  var svgNS = 'http://www.w3.org/2000/svg';
+  var svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('viewBox', '0 0 200 200');
+  svg.setAttribute('width', '180');
+  svg.setAttribute('height', '180');
+
+  // Background
+  var bgCircle = document.createElementNS(svgNS, 'circle');
+  bgCircle.setAttribute('cx', '100');
+  bgCircle.setAttribute('cy', '100');
+  bgCircle.setAttribute('r', String(radius));
+  bgCircle.setAttribute('fill', 'none');
+  bgCircle.setAttribute('stroke', '#E2E8F0');
+  bgCircle.setAttribute('stroke-width', '24');
+  svg.appendChild(bgCircle);
+
+  var offset = 0;
+  var segments = [
+    { pct: pBlock, color: '#22C55E' },
+    { pct: pPause, color: '#EAB308' },
+    { pct: pHandoff, color: '#EF4444' }
+  ];
+  segments.forEach(function(seg) {
+    if (seg.pct > 0) {
+      var c = document.createElementNS(svgNS, 'circle');
+      c.setAttribute('cx', '100');
+      c.setAttribute('cy', '100');
+      c.setAttribute('r', String(radius));
+      c.setAttribute('fill', 'none');
+      c.setAttribute('stroke', seg.color);
+      c.setAttribute('stroke-width', '24');
+      c.setAttribute('stroke-dasharray', (seg.pct * circumference) + ' ' + circumference);
+      c.setAttribute('stroke-dashoffset', String(-offset * circumference));
+      c.setAttribute('transform', 'rotate(-90 100 100)');
+      c.setAttribute('stroke-linecap', 'butt');
+      svg.appendChild(c);
+      offset += seg.pct;
+    }
+  });
+
+  // Center text
+  var txt1 = document.createElementNS(svgNS, 'text');
+  txt1.setAttribute('x', '100');
+  txt1.setAttribute('y', '94');
+  txt1.setAttribute('text-anchor', 'middle');
+  txt1.setAttribute('font-size', '22');
+  txt1.setAttribute('font-weight', '700');
+  txt1.setAttribute('fill', '#1E293B');
+  txt1.textContent = noHandoffPct + '%';
+  svg.appendChild(txt1);
+
+  var txt2 = document.createElementNS(svgNS, 'text');
+  txt2.setAttribute('x', '100');
+  txt2.setAttribute('y', '114');
+  txt2.setAttribute('text-anchor', 'middle');
+  txt2.setAttribute('font-size', '10');
+  txt2.setAttribute('fill', '#64748B');
+  txt2.textContent = 'same crew';
+  svg.appendChild(txt2);
+
+  wrap.appendChild(svg);
+
+  // Legend
+  var legend = buildEl('div', { className: 'donut-legend' });
+  var items = [
+    { color: '#22C55E', text: 'Fits in block: ' + fitsBlock },
+    { color: '#EAB308', text: 'Fits with pause: ' + fitsPause },
+    { color: '#EF4444', text: 'Needs handoff: ' + needsHandoff }
+  ];
+  items.forEach(function(item) {
+    var line = document.createElement('div');
+    var dot = buildEl('span', { className: 'legend-dot', style: { background: item.color } });
+    line.appendChild(dot);
+    line.appendChild(document.createTextNode(item.text));
+    legend.appendChild(line);
+  });
+  wrap.appendChild(legend);
+  return wrap;
+}
+
+// ========== CAPACITY BARS (DOM) ==========
+function buildCapacityBars(propDays, propHours) {
+  var curDays = DATA.currentState.overall.totalCrewDaysPerWeek;
+  var curHours = DATA.currentState.overall.totalCrewHoursPerWeek;
+  var maxDays = Math.max(curDays, propDays);
+  var maxHours = Math.max(curHours, propHours);
+
+  var frag = document.createDocumentFragment();
+
+  function makeRow(labelText, cur, prop, maxV) {
+    var row = buildEl('div', { className: 'cap-row' });
+    var label = buildEl('div', { className: 'cap-label' }, labelText);
+    row.appendChild(label);
+    var bars = buildEl('div', { className: 'cap-bars' });
+
+    [
+      { name: 'Current', val: cur, color: 'var(--blue-500)', labelColor: 'var(--blue-600)' },
+      { name: 'Proposed', val: prop, color: 'var(--orange-500)', labelColor: 'var(--orange-500)' }
+    ].forEach(function(b) {
+      var bar = buildEl('div', { className: 'cap-bar' });
+      var lbl = buildEl('div', { className: 'cap-bar-label', style: { color: b.labelColor } }, b.name);
+      var bg = buildEl('div', { className: 'cap-bar-bg' });
+      var fill = buildEl('div', {
+        className: 'cap-bar-fill',
+        style: { width: (b.val / maxV * 100) + '%', background: b.color }
+      });
+      bg.appendChild(fill);
+      var valEl = buildEl('div', { className: 'cap-val' }, String(b.val));
+      bar.appendChild(lbl);
+      bar.appendChild(bg);
+      bar.appendChild(valEl);
+      bars.appendChild(bar);
+    });
+
+    row.appendChild(bars);
+    return row;
+  }
+
+  frag.appendChild(makeRow('Crew-Days/Week', curDays, propDays, maxDays));
+  frag.appendChild(makeRow('Crew-Hours/Week', curHours, propHours, maxHours));
+
+  var container = document.createElement('div');
+  container.appendChild(frag);
+  return container;
+}
+
+// ========== RUBRIC (DOM) ==========
+function buildRubric(result) {
+  var items = [
+    { label: 'Coverage (40%)', score: result.installCoverage * 40, max: 40, color: 'var(--blue-600)' },
+    { label: 'Handoff (25%)', score: (1 - result.handoffRate) * 25, max: 25, color: 'var(--green-500)' },
+    { label: 'Revenue (20%)', score: result.revNorm * 20, max: 20, color: 'var(--amber-500)' },
+    { label: 'Dark Days (15%)', score: result.darkNorm * 15, max: 15, color: 'var(--orange-500)' }
+  ];
+
+  var container = document.createElement('div');
+  items.forEach(function(item) {
+    var pct = (item.score / item.max * 100).toFixed(0);
+    var row = buildEl('div', { className: 'rubric-row' });
+    var label = buildEl('div', { className: 'rubric-label' }, item.label);
+    var barBg = buildEl('div', { className: 'rubric-bar-bg' });
+    var barFill = buildEl('div', {
+      className: 'rubric-bar-fill',
+      style: { width: pct + '%', background: item.color }
+    });
+    barBg.appendChild(barFill);
+    var scoreEl = buildEl('div', { className: 'rubric-score' }, item.score.toFixed(1) + '/' + item.max);
+    row.appendChild(label);
+    row.appendChild(barBg);
+    row.appendChild(scoreEl);
+    container.appendChild(row);
+  });
+  return container;
+}
+
+// ========== INIT ==========
+document.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>
