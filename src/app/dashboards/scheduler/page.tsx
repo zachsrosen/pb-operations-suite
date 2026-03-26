@@ -1849,7 +1849,7 @@ export default function SchedulerPage() {
       if (dow !== 0 && dow !== 6) weekdays.push(d);
     }
 
-    const eventsByDate: Record<number, (ScheduledEvent & { dayNum: number; totalCalDays: number })[]> = {};
+    const eventsByDate: Record<number, (DisplayEvent & { dayNum: number; totalCalDays: number })[]> = {};
     displayEvents.forEach((e) => {
       const startDate = new Date(e.date + "T12:00:00");
       const businessDays = Math.ceil(e.days || 1);
@@ -1885,6 +1885,7 @@ export default function SchedulerPage() {
       construction: 0, "construction-complete": 0,
       inspection: 1, "inspection-pass": 1, "inspection-fail": 1,
       survey: 2, "survey-complete": 2,
+      dnr: 3, service: 4,
     };
     for (const day of Object.keys(eventsByDate)) {
       eventsByDate[Number(day)].sort((a, b) => {
@@ -3941,7 +3942,7 @@ export default function SchedulerPage() {
                             const isCompletedType = ev.eventType === "construction-complete" || ev.eventType === "inspection-pass" || ev.eventType === "survey-complete";
                             const isFailedType = ev.eventType === "inspection-fail";
                             const isActiveType = !isCompletedType && !isFailedType;
-                            const isDraggable = isActiveType && !ev.isOverdue && !ev.isForecast;
+                            const isDraggable = isActiveType && !ev.isOverdue && !ev.isForecast && !isOverlayEvent(ev);
 
                             // Completed events use same base color at low opacity
                             const completedColorClass =
@@ -3959,7 +3960,8 @@ export default function SchedulerPage() {
                               ev.eventType === "blocked" ? "bg-yellow-500/60 text-black ring-2 ring-red-500" :
                               "bg-zinc-600/60 text-white ring-2 ring-red-500";
 
-                            const eventColorClass =
+                            const overlayColor = getOverlayColorClass(ev);
+                            const eventColorClass = overlayColor ? overlayColor :
                               isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                               isCompletedType ? completedColorClass :
                               ev.isOverdue ? overdueColorClass :
@@ -3985,11 +3987,12 @@ export default function SchedulerPage() {
                                 onDragEnd={handleDragEnd}
                                 onClick={(e) => {
                                   e.stopPropagation();
+                                  if (isOverlayEvent(ev)) { setOverlayDetail(ev); return; }
                                   const proj = projects.find((pr) => pr.id === ev.id) || null;
                                   setDetailModal(proj);
-                                  setDetailModalEvent(ev);
+                                  setDetailModalEvent(ev as ScheduledEvent);
                                 }}
-                                title={ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : " (drag to reschedule)"}`}
+                                title={isOverlayEvent(ev) ? `${ev.name} — ${ev.eventSubtype}${ev.crew ? ` — ${ev.crew}` : ""}` : ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : " (drag to reschedule)"}`}
                                 className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
                                   isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
                                 } ${eventColorClass} ${draggedProjectId === ev.id ? "opacity-60" : ""}`}
@@ -3999,6 +4002,7 @@ export default function SchedulerPage() {
                                 {isFailedType && <span className="mr-0.5">✗</span>}
                                 {isCompletedType && <span className="mr-0.5">✓</span>}
                                 {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
+                                {isOverlayEvent(ev) && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">{getOverlayBadge(ev)}</span>}
                                 {dayLabel}
                                 <span className={isCompletedType ? "line-through" : ""}>{shortName}</span>
                                 {ev.isOverdue && isActiveType && (
@@ -4107,7 +4111,7 @@ export default function SchedulerPage() {
                         {weekDates.map((d, di) => {
                           const dateStr = toDateStr(d);
                           // Find events that span this date using business days (skip weekends)
-                          const dayEvents: { event: ScheduledEvent; dayNum: number }[] = [];
+                          const dayEvents: { event: DisplayEvent; dayNum: number }[] = [];
                           displayEvents.forEach((e) => {
                             if (e.location !== loc) return;
                             const businessDays = Math.ceil(e.days || 1);
@@ -4133,6 +4137,7 @@ export default function SchedulerPage() {
                             construction: 0, "construction-complete": 0,
                             inspection: 1, "inspection-pass": 1, "inspection-fail": 1,
                             survey: 2, "survey-complete": 2,
+                            dnr: 3, service: 4,
                           };
                           dayEvents.sort((a, b) => {
                             const stageDiff = (WEEK_STAGE_ORDER[a.event.eventType] ?? 9) - (WEEK_STAGE_ORDER[b.event.eventType] ?? 9);
@@ -4175,7 +4180,8 @@ export default function SchedulerPage() {
                                   ev.eventType === "inspection" ? "bg-violet-500/60 text-white ring-2 ring-red-500" :
                                   "bg-zinc-600/60 text-white ring-2 ring-red-500";
 
-                                const eventColorClass =
+                                const overlayColorW = getOverlayColorClass(ev);
+                                const eventColorClass = overlayColorW ? overlayColorW :
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? completedColorClassW :
                                   ev.isOverdue ? overdueColorClassW :
@@ -4192,9 +4198,10 @@ export default function SchedulerPage() {
                                     key={ei}
                                     onClick={(e) => {
                                       e.stopPropagation();
+                                      if (isOverlayEvent(ev)) { setOverlayDetail(ev); return; }
                                       const proj = projects.find((pr) => pr.id === ev.id) || null;
                                       setDetailModal(proj);
-                                      setDetailModalEvent(ev);
+                                      setDetailModalEvent(ev as ScheduledEvent);
                                     }}
                                     title={ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : ""}`}
                                     className={`text-[0.6rem] px-1.5 py-1 rounded mb-1 cursor-pointer transition-transform hover:scale-[1.02] hover:shadow-lg ${eventColorClass}`}
@@ -4204,6 +4211,7 @@ export default function SchedulerPage() {
                                     {isFailedType && <span className="mr-0.5">✗</span>}
                                     {isCompletedType && <span className="mr-0.5">✓</span>}
                                     {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
+                                    {isOverlayEvent(ev) && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">{getOverlayBadge(ev)}</span>}
                                     {ev.days > 1 ? `D${dayNum} ` : ""}
                                     <span className={isCompletedType ? "line-through" : ""}>{shortName}</span>
                                   </div>
@@ -4317,6 +4325,7 @@ export default function SchedulerPage() {
                                   construction: 0, "construction-complete": 0,
                                   inspection: 1, "inspection-pass": 1, "inspection-fail": 1,
                                   survey: 2, "survey-complete": 2,
+                                  dnr: 3, service: 4,
                                 };
                                 const stageDiff = (order[a.eventType] ?? 9) - (order[b.eventType] ?? 9);
                                 if (stageDiff !== 0) return stageDiff;
@@ -4351,7 +4360,8 @@ export default function SchedulerPage() {
                                   e.eventType === "blocked" ? "bg-yellow-500/60 text-black ring-2 ring-red-500" :
                                   "bg-zinc-600/60 text-white ring-2 ring-red-500";
 
-                                const eventColorClass =
+                                const overlayColorG = getOverlayColorClass(e);
+                                const eventColorClass = overlayColorG ? overlayColorG :
                                   isFailedType ? "bg-amber-900/70 text-amber-200 ring-1 ring-amber-500 opacity-70 line-through" :
                                   isCompletedType ? completedColorClassG :
                                   e.isOverdue ? overdueColorClassG :
@@ -4369,9 +4379,10 @@ export default function SchedulerPage() {
                                   <div
                                     key={ei}
                                     onClick={() => {
+                                      if (isOverlayEvent(e)) { setOverlayDetail(e); return; }
                                       const proj = projects.find((pr) => pr.id === e.id) || null;
                                       setDetailModal(proj);
-                                      setDetailModalEvent(e);
+                                      setDetailModalEvent(e as ScheduledEvent);
                                     }}
                                     title={e.isForecast ? "Forecasted install — not yet scheduled" : `${e.name} - ${daysLabel} - ${amount}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : e.isOverdue ? " ⚠ Incomplete" : ""}`}
                                     className={`absolute top-2 bottom-2 rounded flex items-center px-1.5 text-[0.55rem] font-medium cursor-pointer transition-transform hover:scale-y-110 hover:shadow-lg hover:z-10 overflow-hidden truncate ${eventColorClass}`}
@@ -4386,6 +4397,7 @@ export default function SchedulerPage() {
                                     {isFailedType && <span className="mr-0.5">✗</span>}
                                     {isCompletedType && <span className="mr-0.5">✓</span>}
                                     {e.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
+                                    {isOverlayEvent(e) && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">{getOverlayBadge(e)}</span>}
                                     <span className={isCompletedType ? "line-through" : ""}>{shortName}</span> ({daysLabel})
                                   </div>
                                 );
