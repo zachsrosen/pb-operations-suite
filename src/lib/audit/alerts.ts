@@ -35,7 +35,7 @@ const ADMIN_EMAILS = (process.env.AUDIT_ALERT_EMAILS || "")
 const DASHBOARD_URL =
   process.env.NEXTAUTH_URL
     ? `${process.env.NEXTAUTH_URL}/admin/audit`
-    : "https://ops.photonbrothers.com/admin/audit";
+    : "https://pbtechops.com/admin/audit";
 
 // ---------------------------------------------------------------------------
 // Immediate alert (Two-Gate Dedup -- Amendment A5)

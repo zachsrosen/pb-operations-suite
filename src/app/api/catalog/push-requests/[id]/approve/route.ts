@@ -15,6 +15,7 @@ import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
 import { createOrUpdateZohoItem, zohoInventory } from "@/lib/zoho-inventory";
 import { createOrUpdateZuperPart, updateZuperPart, buildZuperProductCustomFields } from "@/lib/zuper-catalog";
 import { notifyAdminsOfApprovalWarnings } from "@/lib/catalog-notify";
+import { buildCanonicalKey, canonicalToken } from "@/lib/canonical";
 
 const ADMIN_ROLES = ["ADMIN", "OWNER", "MANAGER"];
 const INTERNAL_CATEGORIES = Object.values(EquipmentCategory) as string[];
@@ -113,6 +114,16 @@ export async function POST(
       const parsedUnitSpec = push.unitSpec ? parseFloat(push.unitSpec) : null;
       const unitSpecValue = parsedUnitSpec != null && !isNaN(parsedUnitSpec) ? parsedUnitSpec : null;
 
+      const cBrand = canonicalToken(push.brand);
+      const cModel = canonicalToken(push.model);
+      const cKey = buildCanonicalKey(push.category, push.brand, push.model);
+
+      const parseOptFloat = (v: unknown): number | null => {
+        if (v == null) return null;
+        const n = parseFloat(String(v));
+        return isNaN(n) ? null : n;
+      };
+
       const commonFields = {
         description: push.description || null,
         unitSpec: unitSpecValue,
@@ -121,12 +132,15 @@ export async function POST(
         vendorName: push.vendorName || null,
         zohoVendorId: push.zohoVendorId,
         vendorPartNumber: push.vendorPartNumber || null,
-        unitCost: push.unitCost,
-        sellPrice: push.sellPrice,
+        unitCost: parseOptFloat(push.unitCost),
+        sellPrice: parseOptFloat(push.sellPrice),
         hardToProcure: push.hardToProcure,
-        length: push.length,
-        width: push.width,
-        weight: push.weight,
+        length: parseOptFloat(push.length),
+        width: parseOptFloat(push.width),
+        weight: parseOptFloat(push.weight),
+        canonicalBrand: cBrand || null,
+        canonicalModel: cModel || null,
+        canonicalKey: cKey,
       };
 
       // 1. Upsert InternalProduct with all common fields

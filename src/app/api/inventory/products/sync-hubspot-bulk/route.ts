@@ -394,6 +394,9 @@ async function processChunk(
           description: sku.description || undefined,
           sku: sku.model,
           productCategory: sku.category,
+          internalProductId: sku.id,
+          zuperItemId: sku.zuperItemId || undefined,
+          zohoItemId: sku.zohoItemId || undefined,
         }),
       `BulkSync(${sku.brand} ${sku.model})`,
     );

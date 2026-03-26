@@ -35,7 +35,7 @@ export function notifyAdminsOfApprovalWarnings(data: CatalogApprovalWarning): vo
 
   const dashboardUrl = process.env.NEXTAUTH_URL
     ? `${process.env.NEXTAUTH_URL}/dashboards/catalog?tab=pending`
-    : "https://ops.photonbrothers.com/dashboards/catalog?tab=pending";
+    : "https://pbtechops.com/dashboards/catalog?tab=pending";
 
   const warningRows = Object.entries(data.systemWarnings)
     .flatMap(([system, warnings]) =>
@@ -94,7 +94,7 @@ export function notifyAdminsOfNewCatalogRequest(push: CatalogPushNotification): 
 
   const dashboardUrl = process.env.NEXTAUTH_URL
     ? `${process.env.NEXTAUTH_URL}/dashboards/catalog?tab=pending`
-    : "https://ops.photonbrothers.com/dashboards/catalog?tab=pending";
+    : "https://pbtechops.com/dashboards/catalog?tab=pending";
 
   const systemsList = push.systems.join(", ");
   const subject = `New Catalog Request: ${push.brand} ${push.model}`;
