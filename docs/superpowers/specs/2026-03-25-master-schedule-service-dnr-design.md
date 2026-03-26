@@ -53,7 +53,11 @@ The master scheduler (`/dashboards/scheduler`) currently shows only solar instal
 
 **Query configuration:**
 - `enabled` flag tied to the respective toggle state
-- Date range: always fetch a 3-month rolling window (prev month → next month) regardless of current view mode. This avoids incomplete data when switching between month/week/Gantt views that may cross month boundaries.
+- Date range: derived from the **visible date span + 1 month buffer on each side**. The anchor depends on the active view:
+  - **Month view:** `currentYear`/`currentMonth` → fetch from 1st of prev month to end of next month
+  - **Week view:** `weekOffset` → compute the Monday of the target week, then fetch from 1 month before to 1 month after
+  - **Gantt view:** 10-business-day range from current Monday → fetch from 1 month before to 1 month after
+  - The query `from_date`/`to_date` recomputes when the view or navigation state changes. The 1-month buffer ensures smooth transitions without data gaps.
 - Stale time: 2 minutes (matches existing scheduler patterns)
 - Refetch on window focus
 - On fetch error: silently fail (no toast, no auto-disable). The toggle stays on but no events render. Matches existing forecast toggle error behavior.
@@ -63,23 +67,34 @@ The master scheduler (`/dashboards/scheduler`) currently shows only solar instal
 Overlay events use a new lightweight `OverlayEvent` type — they do NOT use the full `ScheduledEvent` shape (which extends `SchedulerProject` with ~40 HubSpot-specific fields). The calendar renderers (month, week, Gantt) will accept `ScheduledEvent | OverlayEvent` via a union type.
 
 **`OverlayEvent` type:**
+
+The renderers read `name`, `days`, `amount`, `crew`, and `location` directly from display events. `OverlayEvent` must include these fields so it satisfies the shared display contract without requiring runtime guards everywhere.
+
 ```ts
 interface OverlayEvent {
   id: string;           // jobUid
-  title: string;        // job title
+  name: string;         // job title (aliased to `name` to match renderer reads)
   date: string;         // YYYY-MM-DD from scheduledStart or dueDate
-  endDate?: string;     // YYYY-MM-DD from scheduledEnd
+  days: number;         // business-day span: computed from scheduledStart→scheduledEnd, default 1
+  amount: number;       // always 0 — overlays have no revenue
+  crew: string;         // assignedUser name (renderers read `crew` for display)
   address: string;      // customer address
-  assignee: string;     // assigned user name
-  status: string;       // Zuper status name
   location: string;     // canonical location via normalizeLocation(teamName)
   eventType: "service" | "dnr";
   eventSubtype: string; // category name (e.g., "Service Visit", "Detach")
   isOverlay: true;      // discriminator — always true for overlay events
+  isOverdue: false;     // never overdue
+  isForecast: false;    // not a forecast ghost
+  isTentative: false;   // not tentative
+  status: string;       // Zuper status name (for detail popover)
 }
 ```
 
-**Location mapping:** Use `normalizeLocation(teamName)` from `lib/locations.ts` to map Zuper team names (e.g., "PB Westminster Ops") to canonical locations ("Westminster"). Falls back to `normalizeLocation(city)` if teamName doesn't match. Events with no resolvable location get `location: "Unknown"` and appear when no location filter is active.
+**Multi-day span calculation:** If both `scheduledStart` and `scheduledEnd` are present, compute `days` as the count of business days in that range (using existing `countBusinessDaysInclusive` from `scheduling-utils.ts`). Otherwise default to `1`. This ensures month and week renderers correctly spread overlays across multiple calendar cells.
+
+**Location mapping:** Use `normalizeLocation(teamName)` from `lib/locations.ts` to map Zuper team names (e.g., "PB Westminster Ops") to canonical locations ("Westminster"). Falls back to `normalizeLocation(city)` if teamName doesn't match.
+
+**Unresolved locations:** Events where neither `teamName` nor `city` resolve to a canonical location are **dropped from week and Gantt views** (which only render fixed canonical location rows) but **still appear in month view** (which does not use location lanes). This avoids needing a phantom "Unknown" row in lane-based views.
 
 ### 5. Event Rendering
 
