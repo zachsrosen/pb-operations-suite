@@ -119,20 +119,21 @@ function sortDeals(deals: PeDeal[], key: SortKey, dir: SortDir): PeDeal[] {
 // Section component — renders a labeled table of deals
 // ---------------------------------------------------------------------------
 
-const COLUMNS: [SortKey, string][] = [
+/** [sortKey, label, headerAlign] — headerAlign defaults to "text-left" */
+const COLUMNS: [SortKey, string, string?][] = [
   ["dealName", "Deal"],
   ["pbLocation", "Loc"],
   ["dealStageLabel", "Stage"],
   ["closeDate", "Close"],
   ["systemType", "Type"],
-  ["energyCommunity", "EC"],
-  ["leaseFactor", "Factor"],
-  ["epcPrice", "EPC"],
-  ["customerPays", "Cust."],
-  ["pePaymentTotal", "PE Tot"],
-  ["pePaymentIC", "PE IC"],
-  ["pePaymentPC", "PE PC"],
-  ["totalPBRevenue", "Revenue"],
+  ["energyCommunity", "EC", "text-center"],
+  ["leaseFactor", "Factor", "text-right"],
+  ["epcPrice", "EPC", "text-right"],
+  ["customerPays", "Cust.", "text-right"],
+  ["pePaymentTotal", "PE Tot", "text-right"],
+  ["pePaymentIC", "PE IC", "text-right"],
+  ["pePaymentPC", "PE PC", "text-right"],
+  ["totalPBRevenue", "Revenue", "text-right"],
   ["peM1Status", "M1"],
   ["peM2Status", "M2"],
 ];
@@ -200,12 +201,12 @@ function DealSection({
       <div className="overflow-x-auto bg-surface rounded-lg border border-border shadow-card">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-border text-left">
-              {COLUMNS.map(([key, label]) => (
+            <tr className="border-b border-border">
+              {COLUMNS.map(([key, label, align]) => (
                 <th
                   key={key}
                   onClick={() => toggleSort(key)}
-                  className="px-2 py-2 text-xs font-medium text-muted whitespace-nowrap cursor-pointer hover:text-foreground select-none"
+                  className={`px-2 py-2 text-xs font-medium text-muted whitespace-nowrap cursor-pointer hover:text-foreground select-none ${align ?? "text-left"}`}
                 >
                   {label}{sortArrow(key)}
                 </th>
