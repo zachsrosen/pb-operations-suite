@@ -234,7 +234,12 @@ export async function POST(request: NextRequest) {
           if (freshSku.zuperItemId) cf.push({ api_name: "cf_zuper_product_id", value: freshSku.zuperItemId });
           if (freshSku.hubspotProductId) cf.push({ api_name: "cf_hubspot_product_id", value: freshSku.hubspotProductId });
           cf.push({ api_name: "cf_internal_product_id", value: internalSkuId });
-          if (cf.length > 0) await zohoInventory.updateItem(freshSku.zohoItemId, { custom_fields: cf });
+          if (cf.length > 0) {
+            const zohoResult = await zohoInventory.updateItem(freshSku.zohoItemId, { custom_fields: cf });
+            if (zohoResult.status !== "updated") {
+              console.warn(`[comparison/create] Zoho cross-link update returned ${zohoResult.status}: ${zohoResult.message || "unknown"}`);
+            }
+          }
         }
         // Write cross-link IDs to Zuper custom fields
         if (freshSku.zuperItemId) {
@@ -253,11 +258,14 @@ export async function POST(request: NextRequest) {
           hsProps.internal_product_id = internalSkuId;
           const token = process.env.HUBSPOT_ACCESS_TOKEN;
           if (token) {
-            await fetch(`https://api.hubapi.com/crm/v3/objects/products/${freshSku.hubspotProductId}`, {
+            const hsRes = await fetch(`https://api.hubapi.com/crm/v3/objects/products/${freshSku.hubspotProductId}`, {
               method: "PATCH",
               headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
               body: JSON.stringify({ properties: hsProps }),
             });
+            if (!hsRes.ok) {
+              console.warn(`[comparison/create] HubSpot cross-link PATCH returned ${hsRes.status}`);
+            }
           }
         }
       }
