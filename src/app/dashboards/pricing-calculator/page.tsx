@@ -586,9 +586,9 @@ export default function PricingCalculatorPage() {
               </span>
             </div>
             <div>
-              <span className="text-muted">Calculated: </span>
+              <span className="text-muted">Calculated EPC: </span>
               <span className="font-semibold text-foreground">
-                {result.finalPrice.toLocaleString("en-US", {
+                {result.hsAmount.toLocaleString("en-US", {
                   style: "currency",
                   currency: "USD",
                   maximumFractionDigits: 0,
@@ -602,12 +602,12 @@ export default function PricingCalculatorPage() {
                   className={`font-semibold ${
                     unmatchedItems.length > 0
                       ? "text-muted"
-                      : importedDeal.deal.amount >= result.finalPrice
+                      : importedDeal.deal.amount >= result.hsAmount
                         ? "text-emerald-400"
                         : "text-red-400"
                   }`}
                 >
-                  {(importedDeal.deal.amount - result.finalPrice).toLocaleString(
+                  {(importedDeal.deal.amount - result.hsAmount).toLocaleString(
                     "en-US",
                     {
                       style: "currency",
