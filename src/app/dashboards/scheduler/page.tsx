@@ -13,6 +13,7 @@ import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset,
 import {
   addBusinessDaysYmd,
   addDaysYmd,
+  countBusinessDaysInclusive,
   getBusinessDatesInSpan as getBusinessDatesInSpanShared,
   getConstructionSpanDaysFromZuper,
   isWeekendDateYmd,
@@ -625,6 +626,41 @@ export default function SchedulerPage() {
     setShowForecasts((prev) => {
       const next = !prev;
       localStorage.setItem("scheduler-show-forecasts", String(next));
+      return next;
+    });
+  }, []);
+
+  /* ---- service & D&R overlay toggles ---- */
+  const [showService, setShowService] = useState(false);
+  const [showDnr, setShowDnr] = useState(false);
+  useEffect(() => {
+    if (localStorage.getItem("scheduler-show-service") === "true") setShowService(true);
+    if (localStorage.getItem("scheduler-show-dnr") === "true") setShowDnr(true);
+  }, []);
+  const toggleService = useCallback(() => {
+    setShowService((prev) => {
+      const next = !prev;
+      localStorage.setItem("scheduler-show-service", String(next));
+      return next;
+    });
+  }, []);
+  const toggleDnr = useCallback(() => {
+    setShowDnr((prev) => {
+      const next = !prev;
+      localStorage.setItem("scheduler-show-dnr", String(next));
+      return next;
+    });
+  }, []);
+
+  /* ---- collapsible sidebar ---- */
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  useEffect(() => {
+    if (localStorage.getItem("scheduler-sidebar-collapsed") === "true") setSidebarCollapsed(true);
+  }, []);
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem("scheduler-sidebar-collapsed", String(next));
       return next;
     });
   }, []);
