@@ -26,7 +26,7 @@ Users want to pull a HubSpot deal into the pricing calculator to auto-populate e
 
 New endpoint that returns everything needed to populate the calculator from a deal. Makes two HubSpot calls:
 
-1. **Deal properties** via `hubspotClient.crm.deals.basicApi.getById()` — fetches `amount`, `dealname`, `pb_location`, `postal_code`, `project_type`, `closedate`, `is_participate_energy`, `pipeline`, `dealstage`
+1. **Deal properties** via `hubspotClient.crm.deals.basicApi.getById()` — fetches `amount`, `dealname`, `pb_location`, `postal_code`, `project_type`, `closedate`, `is_participate_energy`, `pipeline`, `dealstage`. The raw `pb_location` is normalized via `normalizeLocation()` from `lib/locations.ts` before returning (handles aliases like "DTC" → "Centennial").
 2. **Line items** via existing `fetchLineItemsForDeal(dealId)` — returns associated line items with product enrichment
 
 **Response shape:**
@@ -66,7 +66,9 @@ Match HubSpot line items to `EQUIPMENT_CATALOG` entries by:
 
 The matching runs server-side so the client gets pre-resolved results.
 
-**Deal search:** New lightweight search in the deal-import endpoint that searches across all pipelines (sales, project, D&R). The existing `/api/deals/search` is limited to the sales pipeline and would miss project-stage deals. The new search accepts `?q=` for name search and returns top 10 results with deal ID, name, amount, location, stage label.
+**Deal search:** New lightweight search in the deal-import endpoint that searches across all pipelines (sales, project, D&R). The existing `/api/deals/search` is limited to the sales pipeline and would miss project-stage deals. The new search accepts `?q=` for name search and returns top 10 results with deal ID, name, amount, location, and stage label.
+
+**Stage label resolution:** The search uses `getStageMaps()` from `lib/deals-pipeline.ts` to resolve raw `dealstage` IDs to human-readable labels. Each search result includes its `pipeline` ID so the correct pipeline-specific stage map is used (e.g., project pipeline stages like "Ready to Build" vs. sales stages like "Qualified Lead"). Stage maps are cached with a 5-min TTL so this adds no extra API overhead.
 
 ### Frontend Changes (`pricing-calculator/page.tsx`)
 
@@ -80,7 +82,7 @@ The matching runs server-side so the client gets pre-resolved results.
 **Auto-Population:**
 - Matched line items → add to calculator equipment sections with correct qty
 - Unmatched line items → shown in an "Unrecognized Items" card below equipment with name, qty, unit price, total. User can see the cost but items don't feed into calculator formulas
-- Location → set pricing scheme ID (map `pbLocation` to scheme ID)
+- Location → normalize via `normalizeLocation()` from `lib/locations.ts` (handles aliases like "DTC" → "Centennial"), then map to scheme ID via `LOCATION_SCHEME`
 - `isPE` → check PE adder, trigger EC lookup with zip code
 - Clear existing equipment before populating
 
@@ -93,6 +95,7 @@ The matching runs server-side so the client gets pre-resolved results.
 └─────────────────────────────────────────────────────────┘
 ```
 - Delta color: green when `deal amount >= calculated` (deal priced at or above calculator), red when `deal amount < calculated` (deal is underpriced — pricing concern)
+- **Incomplete comparison state:** When unmatched line items exist (total > $0), the banner shows a yellow "⚠ Comparison incomplete — $X in unrecognized items not included in calculated price" warning below the delta. Delta color reverts to neutral (muted/gray) since the comparison is unreliable. This prevents a deal from looking "healthy" simply because the calculator missed costs.
 - Margin shown for both
 - "Clear Deal" button removes the comparison and resets to blank calculator
 - Banner updates live as user adjusts inputs
