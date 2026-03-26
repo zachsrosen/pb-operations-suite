@@ -48,14 +48,33 @@ jest.mock("@/lib/hubspot", () => ({
 
 // ── Zoho adapter ───────────────────────────────────────────────────────────────
 const mockCreateOrUpdateZohoItem = jest.fn();
+const mockZohoUpdateItem = jest.fn();
 jest.mock("@/lib/zoho-inventory", () => ({
   createOrUpdateZohoItem: (...args: unknown[]) => mockCreateOrUpdateZohoItem(...args),
+  zohoInventory: { updateItem: (...args: unknown[]) => mockZohoUpdateItem(...args) },
 }));
 
 // ── Zuper adapter ──────────────────────────────────────────────────────────────
 const mockCreateOrUpdateZuperPart = jest.fn();
+const mockUpdateZuperPart = jest.fn();
+const mockBuildZuperProductCustomFields = jest.fn();
 jest.mock("@/lib/zuper-catalog", () => ({
   createOrUpdateZuperPart: (...args: unknown[]) => mockCreateOrUpdateZuperPart(...args),
+  updateZuperPart: (...args: unknown[]) => mockUpdateZuperPart(...args),
+  buildZuperProductCustomFields: (...args: unknown[]) => mockBuildZuperProductCustomFields(...args),
+}));
+
+// ── Catalog notify ──────────────────────────────────────────────────────────────
+jest.mock("@/lib/catalog-notify", () => ({
+  notifyAdminsOfApprovalWarnings: jest.fn(),
+}));
+
+// ── Canonical ───────────────────────────────────────────────────────────────────
+jest.mock("@/lib/canonical", () => ({
+  canonicalToken: jest.fn((s: string) => s?.toLowerCase().replace(/[^a-z0-9]/g, "") || ""),
+  buildCanonicalKey: jest.fn((_cat: string, brand: string, model: string) =>
+    `${brand}::${model}`.toLowerCase()
+  ),
 }));
 
 // ── Prisma ────────────────────────────────────────────────────────────────────
@@ -193,6 +212,13 @@ beforeEach(() => {
     zuperItemId: "zuper_item_1",
     created: true,
   });
+  // Cross-link defaults (succeed silently)
+  mockZohoUpdateItem.mockResolvedValue({ status: "updated", message: "ok" });
+  mockUpdateZuperPart.mockResolvedValue({ status: "updated", zuperItemId: "zuper_item_1", message: "ok" });
+  mockBuildZuperProductCustomFields.mockReturnValue({ hubspot_product_id: "hs_prod_1", zoho_item_id: "zoho_item_1", internal_product_id: "sku_1" });
+  // Global fetch for HubSpot cross-link PATCH
+  global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 }) as jest.Mock;
+  process.env.HUBSPOT_ACCESS_TOKEN = "test-token";
 });
 
 // ── Auth & Guard tests ───────────────────────────────────────────────────────
@@ -660,6 +686,111 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
         skipped: 0,
         notImplemented: 0,
       });
+    });
+  });
+
+  // ── Cross-link warning paths ───────────────────────────────────────────
+
+  describe("cross-link warning paths", () => {
+    // Helper: push all 4 systems so cross-links run for all 3 external systems
+    function setupAllSystems() {
+      mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] }));
+    }
+
+    it("surfaces Zoho cross-link warning when updateItem returns non-updated status", async () => {
+      setupAllSystems();
+      mockZohoUpdateItem.mockResolvedValue({ status: "error", message: "Field not found" });
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      // Approval still succeeds (cross-link is best-effort)
+      expect(res.status).toBe(200);
+      expect(data.outcomes.ZOHO.status).toBe("success");
+      expect(data.outcomes.ZOHO.message).toMatch(/Zoho cross-link update returned error/);
+      expect(data.outcomes.ZOHO.message).toMatch(/Field not found/);
+    });
+
+    it("surfaces Zoho cross-link warning when updateItem throws", async () => {
+      setupAllSystems();
+      mockZohoUpdateItem.mockRejectedValue(new Error("Zoho timeout"));
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.outcomes.ZOHO.status).toBe("success");
+      expect(data.outcomes.ZOHO.message).toMatch(/Could not write custom field cross-links/);
+    });
+
+    it("surfaces Zuper cross-link warning when updateZuperPart returns failed status", async () => {
+      setupAllSystems();
+      mockUpdateZuperPart.mockResolvedValue({ status: "failed", zuperItemId: "zuper_item_1", message: "Endpoint rejected" });
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.outcomes.ZUPER.status).toBe("success");
+      expect(data.outcomes.ZUPER.message).toMatch(/Zuper cross-link update returned failed/);
+      expect(data.outcomes.ZUPER.message).toMatch(/Endpoint rejected/);
+    });
+
+    it("surfaces Zuper cross-link warning when updateZuperPart returns not_found status", async () => {
+      setupAllSystems();
+      mockUpdateZuperPart.mockResolvedValue({ status: "not_found", zuperItemId: "zuper_item_1", message: "Item not found" });
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.outcomes.ZUPER.message).toMatch(/Zuper cross-link update returned not_found/);
+    });
+
+    it("surfaces Zuper cross-link warning when updateZuperPart throws", async () => {
+      setupAllSystems();
+      mockUpdateZuperPart.mockRejectedValue(new Error("Zuper network error"));
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.outcomes.ZUPER.status).toBe("success");
+      expect(data.outcomes.ZUPER.message).toMatch(/Could not write cross-link IDs to Zuper/);
+    });
+
+    it("surfaces HubSpot cross-link warning when PATCH returns non-2xx", async () => {
+      setupAllSystems();
+      (global.fetch as jest.Mock).mockResolvedValue({ ok: false, status: 404 });
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.outcomes.HUBSPOT.status).toBe("success");
+      expect(data.outcomes.HUBSPOT.message).toMatch(/HubSpot cross-link PATCH returned 404/);
+    });
+
+    it("surfaces HubSpot cross-link warning when fetch throws", async () => {
+      setupAllSystems();
+      (global.fetch as jest.Mock).mockRejectedValue(new Error("Network failure"));
+
+      const res = await POST(new NextRequest("http://localhost"), makeParams());
+      const data = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(data.outcomes.HUBSPOT.status).toBe("success");
+      expect(data.outcomes.HUBSPOT.message).toMatch(/Could not write cross-link IDs to HubSpot/);
+    });
+
+    it("does not run cross-links when only INTERNAL system is selected", async () => {
+      mockFindUnique.mockResolvedValue(makePush({ systems: ["INTERNAL"] }));
+
+      await POST(new NextRequest("http://localhost"), makeParams());
+
+      expect(mockZohoUpdateItem).not.toHaveBeenCalled();
+      expect(mockUpdateZuperPart).not.toHaveBeenCalled();
+      // fetch may still be called by other code, but not for cross-link PATCH
     });
   });
 });
