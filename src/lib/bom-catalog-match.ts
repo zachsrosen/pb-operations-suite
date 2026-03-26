@@ -51,6 +51,36 @@ export function pickUniqueInternalCandidate(
 // DB-backed helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Broad fallback search: find active InternalProducts in the same category
+ * where the model or SKU matches the BOM item's model string (case-insensitive).
+ * Used as a last resort before creating a PendingCatalogPush.
+ */
+export async function findInternalByModelOrSku(
+  item: CatalogMatchItem,
+): Promise<InternalAliasCandidate[]> {
+  const model = item.model.trim();
+  if (!model) return [];
+
+  const candidates = await prisma!.internalProduct.findMany({
+    where: {
+      category: item.category as EquipmentCategory,
+      isActive: true,
+      OR: [
+        { model: { equals: model, mode: "insensitive" } },
+        { sku: { equals: model, mode: "insensitive" } },
+      ],
+    },
+    select: { id: true, model: true, canonicalKey: true },
+  });
+
+  return candidates.map((c) => ({
+    id: c.id,
+    model: String(c.model || "").trim(),
+    canonicalKey: c.canonicalKey,
+  }));
+}
+
 export async function findInternalAliasCandidates(
   item: CatalogMatchItem,
 ): Promise<InternalAliasCandidate[]> {

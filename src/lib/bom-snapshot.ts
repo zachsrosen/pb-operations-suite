@@ -22,6 +22,7 @@ import {
   extractModelFamily,
   pickUniqueInternalCandidate,
   findInternalAliasCandidates,
+  findInternalByModelOrSku,
 } from "@/lib/bom-catalog-match";
 
 // ---------------------------------------------------------------------------
@@ -352,6 +353,20 @@ async function matchItemsAgainstInventory(
           continue;
         }
       }
+    }
+
+    // ── Step 2c: Broad model/SKU fallback ──
+    const modelSkuMatches = await findInternalByModelOrSku(item);
+    const uniqueModelSkuMatch = pickUniqueInternalCandidate(modelSkuMatches);
+    if (uniqueModelSkuMatch) {
+      updated++;
+      itemResults.push({
+        ...itemBase(item),
+        matchSource: "internal",
+        internalProductId: uniqueModelSkuMatch.id,
+        action: "matched",
+      });
+      continue;
     }
 
     // ── Step 3: No match — create PendingCatalogPush ──

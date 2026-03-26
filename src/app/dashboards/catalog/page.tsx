@@ -43,7 +43,12 @@ interface Sku {
   zuperItemId: string | null;
   syncHealth: SkuSyncHealth;
   stockLevels: { location: string; quantityOnHand: number }[];
+  createdAt: string;
+  updatedAt: string;
 }
+
+type StatusFilter = "all" | "active" | "inactive";
+type SortOption = "brand" | "newest" | "recently-modified";
 
 interface SkuSummary {
   total: number;
@@ -270,6 +275,8 @@ export default function CatalogPage() {
   const [pendingLoading, setPendingLoading] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
   const [categoryFilter, setCategoryFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("active");
+  const [sortOption, setSortOption] = useState<SortOption>("brand");
   const [search, setSearch] = useState("");
   const [editingSkuId, setEditingSkuId] = useState<string | null>(null);
   const [skuEditDraft, setSkuEditDraft] = useState<SkuEditDraft | null>(null);
@@ -438,7 +445,9 @@ export default function CatalogPage() {
   }, [tab, fetchPending]);
 
   const filtered = useMemo(() => {
-    return skus.filter((s) => {
+    const result = skus.filter((s) => {
+      if (statusFilter === "active" && !s.isActive) return false;
+      if (statusFilter === "inactive" && s.isActive) return false;
       if (categoryFilter && s.category !== categoryFilter) return false;
       if (search) {
         const q = search.toLowerCase();
@@ -451,7 +460,16 @@ export default function CatalogPage() {
       }
       return true;
     });
-  }, [skus, categoryFilter, search]);
+
+    if (sortOption === "newest") {
+      result.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    } else if (sortOption === "recently-modified") {
+      result.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    }
+    // "brand" keeps the default API order (category → brand → model)
+
+    return result;
+  }, [skus, categoryFilter, statusFilter, sortOption, search]);
 
   const unsynced = useMemo(
     () => filtered.filter((sku) => !sku.syncHealth?.fullySynced),
@@ -979,6 +997,24 @@ export default function CatalogPage() {
           >
             <option value="">All categories</option>
             {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            className="rounded-lg border border-t-border bg-surface px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+          >
+            <option value="active">Active only</option>
+            <option value="inactive">Inactive only</option>
+            <option value="all">All statuses</option>
+          </select>
+          <select
+            value={sortOption}
+            onChange={(e) => setSortOption(e.target.value as SortOption)}
+            className="rounded-lg border border-t-border bg-surface px-3 py-2 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+          >
+            <option value="brand">Sort: Brand A→Z</option>
+            <option value="newest">Sort: Newest created</option>
+            <option value="recently-modified">Sort: Recently modified</option>
           </select>
           <input
             type="text"
