@@ -303,6 +303,91 @@ export function calcLeaseFactorAdjustment(
 }
 
 // ---------------------------------------------------------------------------
+// Deal import helpers
+// ---------------------------------------------------------------------------
+
+/** Map normalized PB location → pricing scheme ID */
+export const LOCATION_SCHEME: Record<string, string> = {
+  Westminster: "base",
+  Centennial: "base",
+  "Colorado Springs": "base",
+  "San Luis Obispo": "ventura",
+  Camarillo: "ventura",
+};
+
+/** Token sets for fuzzy matching line items to catalog equipment */
+const MATCH_TOKENS: Array<{ code: string; category: string; tokens: string[] }> =
+  EQUIPMENT_CATALOG.map((e) => {
+    const raw = `${e.code} ${e.label}`
+      .toLowerCase()
+      .replace(/[()]/g, "")
+      .split(/[\s/]+/)
+      .filter((t) => t.length > 2);
+    return {
+      code: e.code,
+      category: e.category,
+      tokens: [...new Set(raw)],
+    };
+  });
+
+/** Map HubSpot product_category to our internal category */
+const catMap: Record<string, string> = {
+  module: "module",
+  solar_panel: "module",
+  inverter: "inverter",
+  battery: "battery",
+  energy_storage: "battery",
+  ev_charger: "other",
+  other: "other",
+};
+
+/**
+ * Match a HubSpot line item to an EQUIPMENT_CATALOG entry.
+ * Returns the equipment code or null if no match found.
+ *
+ * Strategy:
+ * 1. Aspirational SKU match against code field.
+ * 2. Category-aware fuzzy name match — line item name/manufacturer must
+ *    contain enough tokens from the catalog code.
+ */
+export function matchLineItemToEquipment(
+  name: string,
+  sku: string,
+  category: string,
+  manufacturer: string,
+): string | null {
+  const haystack = `${name} ${manufacturer}`.toLowerCase();
+
+  const mappedCat = catMap[category.toLowerCase()] || "";
+
+  // Try SKU exact match first (rarely succeeds but cheap)
+  const skuMatch = EQUIPMENT_CATALOG.find(
+    (e) => sku && e.code.toLowerCase() === sku.toLowerCase(),
+  );
+  if (skuMatch) return skuMatch.code;
+
+  // Fuzzy name match — find catalog item with highest token overlap
+  let bestCode: string | null = null;
+  let bestScore = 0;
+
+  for (const entry of MATCH_TOKENS) {
+    // If we know the category, filter to matching category
+    if (mappedCat && entry.category !== mappedCat) continue;
+
+    const matched = entry.tokens.filter((t) => haystack.includes(t));
+    // Require at least 2 tokens or all tokens if only 1
+    const score = matched.length;
+    const threshold = entry.tokens.length === 1 ? 1 : 2;
+    if (score >= threshold && score > bestScore) {
+      bestScore = score;
+      bestCode = entry.code;
+    }
+  }
+
+  return bestCode;
+}
+
+// ---------------------------------------------------------------------------
 // Calculator input / output types
 // ---------------------------------------------------------------------------
 
