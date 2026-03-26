@@ -60,3 +60,8 @@ public/remotion/montage/*.png
 public/remotion/montage/*.jpg
 public/remotion/music/*.mp3
 public/remotion/music/*.wav
+
+# 4x10 analysis — generated artifacts contain real HubSpot deal data
+scripts/4x10-analysis-data.json
+reports/4x10-crew-rotation-analysis.xlsx
+reports/4x10-crew-rotation-playground.html
