@@ -523,6 +523,18 @@ function mapZuperJobsToOverlays(
     .filter((e): e is OverlayEvent => e !== null);
 }
 
+function getOverlayColorClass(e: DisplayEvent): string | null {
+  if (!isOverlayEvent(e)) return null;
+  return e.eventType === "service"
+    ? "bg-purple-500/20 text-purple-300 border border-dashed border-purple-400"
+    : "bg-amber-500/20 text-amber-300 border border-dashed border-amber-400";
+}
+
+function getOverlayBadge(e: DisplayEvent): string | null {
+  if (!isOverlayEvent(e)) return null;
+  return e.eventType === "service" ? "SVC" : "D&R";
+}
+
 /* ------------------------------------------------------------------ */
 /*  Transform API data                                                 */
 /* ------------------------------------------------------------------ */
@@ -719,6 +731,7 @@ export default function SchedulerPage() {
   const [scheduleModal, setScheduleModal] = useState<PendingSchedule | null>(null);
   const [detailModal, setDetailModal] = useState<SchedulerProject | null>(null);
   const [detailModalEvent, setDetailModalEvent] = useState<ScheduledEvent | null>(null);
+  const [overlayDetail, setOverlayDetail] = useState<OverlayEvent | null>(null);
   const [installDaysInput, setInstallDaysInput] = useState(2);
   const [crewSelectInput, setCrewSelectInput] = useState("");
   const [constructionAssigneeNames, setConstructionAssigneeNames] = useState<string[]>([]);
@@ -2977,6 +2990,7 @@ export default function SchedulerPage() {
       if (e.key === "Escape") {
         if (scheduleModal) setScheduleModal(null);
         else if (detailModal) { setDetailModal(null); setDetailModalEvent(null); }
+        else if (overlayDetail) { setOverlayDetail(null); }
         else if (selectedProject) setSelectedProject(null);
         return;
       }
@@ -3001,6 +3015,7 @@ export default function SchedulerPage() {
   }, [
     scheduleModal,
     detailModal,
+    overlayDetail,
     selectedProject,
     currentView,
     prevMonth,
@@ -5581,6 +5596,40 @@ export default function SchedulerPage() {
                 Close
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* OVERLAY DETAIL POPOVER */}
+      {overlayDetail && (
+        <div
+          className="fixed inset-0 bg-black/60 flex items-center justify-center z-[1000]"
+          onClick={(e) => { if (e.target === e.currentTarget) setOverlayDetail(null); }}
+        >
+          <div className={`bg-surface border rounded-xl p-5 max-w-[400px] w-[90%] ${
+            overlayDetail.eventType === "service" ? "border-purple-500/50" : "border-amber-500/50"
+          }`}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-base font-semibold">
+                {overlayDetail.eventType === "service" ? "Service Job" : "D&R Job"}
+              </h3>
+              <span className={`text-[0.65rem] px-2 py-0.5 rounded-full font-medium ${
+                overlayDetail.eventType === "service"
+                  ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                  : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+              }`}>
+                {overlayDetail.eventSubtype}
+              </span>
+            </div>
+            <div className="space-y-2 text-[0.75rem]">
+              <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Job</span><span className="text-foreground">{overlayDetail.name}</span></div>
+              <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Address</span><span className="text-foreground">{overlayDetail.address || "—"}</span></div>
+              <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Location</span><span className="text-foreground">{overlayDetail.location}</span></div>
+              <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Assigned</span><span className="text-foreground">{overlayDetail.crew || "Unassigned"}</span></div>
+              <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Status</span><span className={`font-medium ${overlayDetail.eventType === "service" ? "text-purple-400" : "text-amber-400"}`}>{overlayDetail.status || "—"}</span></div>
+              <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Date</span><span className="text-foreground">{formatDateShort(overlayDetail.date)}{overlayDetail.days > 1 ? ` (${overlayDetail.days} days)` : ""}</span></div>
+            </div>
+            <button onClick={() => setOverlayDetail(null)} className="mt-4 w-full py-1.5 text-[0.7rem] rounded-md bg-background border border-t-border text-muted hover:text-foreground transition-colors">Close</button>
           </div>
         </div>
       )}
