@@ -80,8 +80,8 @@ async function searchDeals(query: string) {
           pipeline: pKey,
         });
       }
-    } catch {
-      // Skip pipeline if search fails
+    } catch (err) {
+      console.warn(`[deal-import] Search failed for pipeline "${pKey}":`, err);
     }
   }
 
@@ -180,6 +180,10 @@ export async function GET(req: Request) {
       { error: "Provide ?q= for search or ?dealId= for import" },
       { status: 400 },
     );
+  }
+
+  if (query && query.length < 2) {
+    return NextResponse.json({ results: [] });
   }
 
   try {

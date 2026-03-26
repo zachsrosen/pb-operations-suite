@@ -317,15 +317,18 @@ export const LOCATION_SCHEME: Record<string, string> = {
 
 /** Token sets for fuzzy matching line items to catalog equipment */
 const MATCH_TOKENS: Array<{ code: string; category: string; tokens: string[] }> =
-  EQUIPMENT_CATALOG.map((e) => ({
-    code: e.code,
-    category: e.category,
-    tokens: e.code
+  EQUIPMENT_CATALOG.map((e) => {
+    const raw = `${e.code} ${e.label}`
       .toLowerCase()
       .replace(/[()]/g, "")
       .split(/[\s/]+/)
-      .filter((t) => t.length > 2),
-  }));
+      .filter((t) => t.length > 2);
+    return {
+      code: e.code,
+      category: e.category,
+      tokens: [...new Set(raw)],
+    };
+  });
 
 /** Map HubSpot product_category to our internal category */
 const catMap: Record<string, string> = {
