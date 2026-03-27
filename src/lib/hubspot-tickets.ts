@@ -66,7 +66,15 @@ export interface TicketDetail {
   url: string;
   associations: {
     contacts: Array<{ id: string; name: string; email: string }>;
-    deals: Array<{ id: string; name: string; amount: string | null; location: string | null; url: string }>;
+    deals: Array<{
+      id: string;
+      name: string;
+      amount: string | null;
+      location: string | null;
+      url: string;
+      lineItems?: Array<{ name: string; quantity: number; category: string | null; unitPrice: number | null }> | null;
+      serviceType?: string | null;
+    }>;
     companies: Array<{ id: string; name: string }>;
   };
   timeline: TimelineEntry[];

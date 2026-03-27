@@ -3,6 +3,7 @@ import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
 import { getTicketDetail, updateTicket, getTicketStageMap } from "@/lib/hubspot-tickets";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
+import { enrichServiceItems, type EnrichmentInput } from "@/lib/service-enrichment";
 
 export async function GET(
   _request: NextRequest,
@@ -24,6 +25,37 @@ export async function GET(
 
     if (!ticket) {
       return NextResponse.json({ error: "Ticket not found" }, { status: 404 });
+    }
+
+    // Enrich associated deals with line items and service type
+    const associatedDeals = ticket.associations.deals;
+    if (associatedDeals.length > 0) {
+      try {
+        const contactIds = ticket.associations.contacts?.map(c => c.id) || [];
+
+        const enrichInputs: EnrichmentInput[] = associatedDeals.map(d => ({
+          itemId: d.id,
+          itemType: "deal" as const,
+          contactIds,
+          serviceType: null,
+          dealLastContacted: null,
+        }));
+
+        const enrichments = await enrichServiceItems(enrichInputs, {
+          includeLineItems: true,
+          includeZuperJobs: false,
+        });
+
+        for (const deal of associatedDeals) {
+          const e = enrichments.get(deal.id);
+          if (e) {
+            deal.lineItems = e.lineItems ?? null;
+            deal.serviceType = e.serviceType ?? null;
+          }
+        }
+      } catch (err) {
+        console.warn("[ServiceTickets] Deal enrichment failed:", err);
+      }
     }
 
     // Include stage map for context
