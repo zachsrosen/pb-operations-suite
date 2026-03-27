@@ -76,6 +76,7 @@ interface Deal {
   state: string;
   postalCode: string;
   projectType: string;
+  serviceType: string | null;
   closeDate: string | null;
   createDate: string | null;
   lastModified: string | null;
@@ -121,6 +122,7 @@ function transformDeal(
     state: String(deal.state || ""),
     postalCode: String(deal.postal_code || ""),
     projectType: String(deal.project_type || "Unknown"),
+    serviceType: deal.service_type ? String(deal.service_type) : null,
     closeDate: parseDate(deal.closedate),
     createDate: parseDate(deal.createdate),
     lastModified: parseDate(deal.hs_lastmodifieddate),

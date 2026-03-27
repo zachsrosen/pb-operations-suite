@@ -138,6 +138,69 @@ describe("scorePriorityItem", () => {
   });
 });
 
+describe("scorePriorityItem reason categories", () => {
+  const now = new Date("2026-03-26T12:00:00Z");
+  const baseItem: PriorityItem = {
+    id: "1", type: "deal", title: "Test",
+    stage: "Work In Progress", lastModified: "2026-03-26T12:00:00Z",
+    createDate: "2026-03-20T00:00:00Z", amount: null,
+    location: "Westminster", ownerId: null,
+  };
+
+  it("includes no_contact when lastContactDate is >7 days old", () => {
+    const result = scorePriorityItem(
+      { ...baseItem, lastContactDate: "2026-03-10T00:00:00Z" },
+      now
+    );
+    expect(result.reasonCategories).toContain("no_contact");
+  });
+
+  it("includes no_contact when lastContactDate is >1 day old", () => {
+    const result = scorePriorityItem(
+      { ...baseItem, lastContactDate: "2026-03-24T00:00:00Z" },
+      now
+    );
+    expect(result.reasonCategories).toContain("no_contact");
+  });
+
+  it("includes warranty_expiring when warranty is within 30 days", () => {
+    const result = scorePriorityItem(
+      { ...baseItem, warrantyExpiry: "2026-04-10T00:00:00Z" },
+      now
+    );
+    expect(result.reasonCategories).toContain("warranty_expiring");
+  });
+
+  it("includes stuck_in_stage when lastModified > 7 days", () => {
+    const result = scorePriorityItem(
+      { ...baseItem, lastModified: "2026-03-15T00:00:00Z" },
+      now
+    );
+    expect(result.reasonCategories).toContain("stuck_in_stage");
+  });
+
+  it("includes high_value when amount > 10000", () => {
+    const result = scorePriorityItem(
+      { ...baseItem, amount: 15000 },
+      now
+    );
+    expect(result.reasonCategories).toContain("high_value");
+  });
+
+  it("includes stage_urgency for Inspection stage", () => {
+    const result = scorePriorityItem(
+      { ...baseItem, stage: "Inspection" },
+      now
+    );
+    expect(result.reasonCategories).toContain("stage_urgency");
+  });
+
+  it("returns empty array when no reasons triggered", () => {
+    const result = scorePriorityItem(baseItem, now);
+    expect(result.reasonCategories).toEqual([]);
+  });
+});
+
 describe("buildPriorityQueue", () => {
   const now = new Date("2026-03-16T12:00:00Z");
 

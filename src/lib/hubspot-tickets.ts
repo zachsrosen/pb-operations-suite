@@ -66,7 +66,15 @@ export interface TicketDetail {
   url: string;
   associations: {
     contacts: Array<{ id: string; name: string; email: string }>;
-    deals: Array<{ id: string; name: string; amount: string | null; location: string | null; url: string }>;
+    deals: Array<{
+      id: string;
+      name: string;
+      amount: string | null;
+      location: string | null;
+      url: string;
+      lineItems?: Array<{ name: string; quantity: number; category: string | null; unitPrice: number | null }> | null;
+      serviceType?: string | null;
+    }>;
     companies: Array<{ id: string; name: string }>;
   };
   timeline: TimelineEntry[];
@@ -92,6 +100,7 @@ const TICKET_PROPERTIES = [
   "hs_lastmodifieddate",
   "notes_last_contacted",
   "hubspot_owner_id",
+  "service_type",
 ];
 
 // ---------------------------------------------------------------------------
@@ -171,6 +180,7 @@ export function transformTicketToPriorityItem(
     url: `https://app.hubspot.com/contacts/${PORTAL_ID}/ticket/${ticket.id}`,
     priority: props.hs_ticket_priority || null,
     ownerId: props.hubspot_owner_id || null,
+    serviceType: props.service_type || null,
   };
 }
 
@@ -449,7 +459,7 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
     if (dealIds.length > 0) {
       const dealBatch = await hubspotClient.crm.deals.batchApi.read({
         inputs: dealIds.map((id: string) => ({ id })),
-        properties: ["dealname", "amount", "pb_location"],
+        properties: ["dealname", "amount", "pb_location", "service_type"],
         propertiesWithHistory: [],
       });
       for (const d of dealBatch.results || []) {
@@ -461,6 +471,7 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
           amount: d.properties.amount || null,
           location: loc,
           url: `https://app.hubspot.com/contacts/${PORTAL_ID}/deal/${d.id}`,
+          serviceType: d.properties.service_type || null,
         });
       }
     }

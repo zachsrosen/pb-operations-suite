@@ -39,6 +39,7 @@ describe("transformTicketToPriorityItem", () => {
       url: expect.stringContaining("/ticket/12345"),
       priority: "HIGH",
       ownerId: "123",
+      serviceType: null,
     });
   });
 

@@ -28,6 +28,7 @@ interface QueueItem {
   url?: string;
   warrantyExpiry?: string | null;
   ownerId?: string | null;
+  serviceType?: string | null;
 }
 
 interface PriorityScore {
@@ -36,6 +37,9 @@ interface PriorityScore {
   tier: PriorityTier;
   reasons: string[];
   overridden?: boolean;
+  reasonCategories?: string[];
+  serviceType?: string | null;
+  lastContactSource?: string | null;
 }
 
 interface QueueStats {
@@ -51,6 +55,7 @@ interface PriorityQueueResponse {
   stats: QueueStats;
   locations: string[];
   owners: Array<{ id: string; name: string }>;
+  reasonCategories?: string[];
   lastUpdated: string;
 }
 
@@ -108,6 +113,7 @@ export default function ServiceOverviewPage() {
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
   const [filterOwners, setFilterOwners] = useState<string[]>([]);
   const [filterTiers, setFilterTiers] = useState<PriorityTier[]>([]);
+  const [filterReasons, setFilterReasons] = useState<string[]>([]);
   const [overridingId, setOverridingId] = useState<string | null>(null);
   const [overrideLoading, setOverrideLoading] = useState(false);
 
@@ -207,6 +213,14 @@ export default function ServiceOverviewPage() {
     return preTierFiltered.filter(entry => filterTiers.includes(entry.tier));
   }, [preTierFiltered, filterTiers]);
 
+  // Reason category filter (applied AFTER tier, does NOT affect tier badge counts)
+  const reasonFiltered = useMemo(() => {
+    if (filterReasons.length === 0) return filteredQueue;
+    return filteredQueue.filter(entry =>
+      entry.reasonCategories?.some((r: string) => filterReasons.includes(r))
+    );
+  }, [filteredQueue, filterReasons]);
+
   // Tier counts from pre-tier-filtered subset (accurate to location + owner selection)
   const tierCounts = useMemo(() => ({
     total: preTierFiltered.length,
@@ -270,6 +284,16 @@ export default function ServiceOverviewPage() {
         onChange={setFilterOwners}
         accentColor="cyan"
       />
+      <MultiSelectFilter
+        label="Reason"
+        options={(data?.reasonCategories || []).map((r: string) => ({
+          value: r,
+          label: r.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()),
+        }))}
+        selected={filterReasons}
+        onChange={setFilterReasons}
+        accentColor="cyan"
+      />
       {/* SSE indicator */}
       <span
         className={`h-2 w-2 rounded-full ${connected ? "bg-green-400" : "bg-zinc-500"}`}
@@ -328,7 +352,7 @@ export default function ServiceOverviewPage() {
             <h2 className="text-lg font-semibold text-foreground">
               Priority Queue
               <span className="ml-2 text-sm font-normal text-muted">
-                ({filteredQueue.length} items)
+                ({reasonFiltered.length} items)
               </span>
             </h2>
 
@@ -372,14 +396,14 @@ export default function ServiceOverviewPage() {
 
         {/* Queue items */}
         <div className="divide-y divide-t-border">
-          {filteredQueue.length === 0 ? (
+          {reasonFiltered.length === 0 ? (
             <div className="px-4 py-12 text-center text-muted">
-              {filterTiers.length > 0 || filterLocations.length > 0 || filterOwners.length > 0
+              {filterTiers.length > 0 || filterLocations.length > 0 || filterOwners.length > 0 || filterReasons.length > 0
                 ? "No items match current filters"
                 : "No items in priority queue"}
             </div>
           ) : (
-            filteredQueue.map((entry) => {
+            reasonFiltered.map((entry) => {
               const { item, tier, score, reasons, overridden } = entry;
               const cfg = TIER_CONFIG[tier];
 
@@ -411,6 +435,13 @@ export default function ServiceOverviewPage() {
                       <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-surface-2 text-muted capitalize">
                         {item.type}
                       </span>
+
+                      {/* Service type badge */}
+                      {(entry.serviceType || entry.item.serviceType) && (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-500/20 text-cyan-300">
+                          {entry.serviceType || entry.item.serviceType}
+                        </span>
+                      )}
 
                       {/* Override indicator */}
                       {overridden && (

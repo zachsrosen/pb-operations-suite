@@ -536,6 +536,7 @@ export async function cacheZuperJob(job: {
   jobPriority?: string;
   scheduledStart?: Date;
   scheduledEnd?: Date;
+  completedDate?: Date;
   assignedUsers?: { user_uid: string; user_name?: string }[];
   assignedTeam?: string;
   customerAddress?: { street?: string; city?: string; state?: string; zip_code?: string };
@@ -557,6 +558,7 @@ export async function cacheZuperJob(job: {
         jobPriority: job.jobPriority,
         scheduledStart: job.scheduledStart,
         scheduledEnd: job.scheduledEnd,
+        completedDate: job.completedDate,
         assignedUsers: job.assignedUsers ? JSON.parse(JSON.stringify(job.assignedUsers)) : null,
         assignedTeam: job.assignedTeam,
         customerAddress: job.customerAddress ? JSON.parse(JSON.stringify(job.customerAddress)) : null,
@@ -575,6 +577,7 @@ export async function cacheZuperJob(job: {
         jobPriority: job.jobPriority,
         scheduledStart: job.scheduledStart,
         scheduledEnd: job.scheduledEnd,
+        completedDate: job.completedDate,
         assignedUsers: job.assignedUsers ? JSON.parse(JSON.stringify(job.assignedUsers)) : null,
         assignedTeam: job.assignedTeam,
         customerAddress: job.customerAddress ? JSON.parse(JSON.stringify(job.customerAddress)) : null,

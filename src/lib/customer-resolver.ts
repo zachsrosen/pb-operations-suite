@@ -13,6 +13,8 @@ import { chunk } from "@/lib/utils";
 import { getCachedZuperJobsByDealIds, prisma } from "@/lib/db";
 import { FilterOperatorEnum as ContactFilterOp } from "@hubspot/api-client/lib/codegen/crm/contacts";
 import { FilterOperatorEnum as CompanyFilterOp } from "@hubspot/api-client/lib/codegen/crm/companies";
+import { enrichServiceItems, type EnrichmentInput } from "@/lib/service-enrichment";
+import { getZuperJobUrl } from "@/lib/external-links";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -49,6 +51,11 @@ export interface ContactDeal {
   location: string | null;
   closeDate: string | null;
   lastModified: string;
+  serviceType?: string | null;
+  lastContactDate?: string | null;
+  daysInStage?: number | null;
+  lineItems?: Array<{ name: string; quantity: number; category: string | null; unitPrice: number | null }> | null;
+  hubspotUrl?: string | null;
 }
 
 export interface ContactTicket {
@@ -58,6 +65,8 @@ export interface ContactTicket {
   priority: string | null;
   createDate: string;
   lastModified: string;
+  serviceType?: string | null;
+  daysInStage?: number | null;
 }
 
 export interface ContactJob {
@@ -67,6 +76,9 @@ export interface ContactJob {
   status: string | null;
   scheduledDate: string | null;
   createdAt: string | null;
+  assignedUsers?: string[];
+  completedDate?: string | null;
+  zuperUrl?: string | null;
 }
 
 export interface ContactDetail {
@@ -429,6 +441,7 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
 
   // 4. Batch-read deal properties
   const deals: ContactDeal[] = [];
+  const rawDealProps = new Map<string, Record<string, string | null>>();
   const dealIds = Array.from(dealIdSet);
   for (const batch of chunk(dealIds, BATCH_SIZE)) {
     try {
@@ -437,10 +450,12 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
         properties: [
           "dealname", "dealstage", "pipeline", "amount",
           "pb_location", "closedate", "hs_lastmodifieddate",
+          "service_type", "notes_last_contacted",
         ],
         propertiesWithHistory: [],
       });
       for (const d of batchResp.results || []) {
+        rawDealProps.set(d.id, d.properties as Record<string, string | null>);
         deals.push({
           id: d.id,
           name: d.properties?.dealname || "Untitled Deal",
@@ -461,8 +476,43 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
   // Sort deals by lastModified descending
   deals.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
 
+  // Enrich deals with contact-level activity, line items
+  if (deals.length > 0) {
+    try {
+      const dealEnrichInputs: EnrichmentInput[] = deals.map(d => ({
+        itemId: d.id,
+        itemType: "deal" as const,
+        contactIds: [contactId],
+        serviceType: rawDealProps.get(d.id)?.service_type ?? null,
+        dealLastContacted: rawDealProps.get(d.id)?.notes_last_contacted ?? null,
+      }));
+
+      const dealEnrichments = await enrichServiceItems(dealEnrichInputs, {
+        includeLineItems: true,
+        includeZuperJobs: false,
+      });
+
+      for (const deal of deals) {
+        const e = dealEnrichments.get(deal.id);
+        if (e) {
+          deal.serviceType = e.serviceType ?? null;
+          deal.lastContactDate = e.lastContactDate ?? null;
+          deal.lineItems = e.lineItems ?? null;
+        }
+        deal.daysInStage = deal.lastModified
+          ? Math.floor((Date.now() - new Date(deal.lastModified).getTime()) / 86400000)
+          : null;
+        deal.hubspotUrl = `https://app.hubspot.com/contacts/${process.env.HUBSPOT_PORTAL_ID || ""}/deal/${deal.id}`;
+      }
+    } catch (err) {
+      console.warn("[CustomerResolver] Deal enrichment failed:", err);
+      // Non-blocking — deals will have null enrichment fields
+    }
+  }
+
   // 5. Batch-read ticket properties
   const tickets: ContactTicket[] = [];
+  const rawTicketProps = new Map<string, Record<string, string | null>>();
   const ticketIds = Array.from(ticketIdSet);
   for (const batch of chunk(ticketIds, BATCH_SIZE)) {
     try {
@@ -471,10 +521,12 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
         properties: [
           "subject", "hs_pipeline_stage", "hs_ticket_priority",
           "createdate", "hs_lastmodifieddate",
+          "service_type", "notes_last_contacted",
         ],
         propertiesWithHistory: [],
       });
       for (const t of batchResp.results || []) {
+        rawTicketProps.set(t.id, t.properties as Record<string, string | null>);
         tickets.push({
           id: t.id,
           subject: t.properties?.subject || "Untitled Ticket",
@@ -493,6 +545,33 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
   // Sort tickets by lastModified descending
   tickets.sort((a, b) => new Date(b.lastModified).getTime() - new Date(a.lastModified).getTime());
 
+  // Enrich tickets with service type
+  if (tickets.length > 0) {
+    try {
+      const ticketEnrichInputs: EnrichmentInput[] = tickets.map(t => ({
+        itemId: t.id,
+        itemType: "ticket" as const,
+        contactIds: [contactId],
+        serviceType: rawTicketProps.get(t.id)?.service_type ?? null,
+        ticketLastContacted: rawTicketProps.get(t.id)?.notes_last_contacted ?? null,
+      }));
+
+      const ticketEnrichments = await enrichServiceItems(ticketEnrichInputs);
+
+      for (const ticket of tickets) {
+        const e = ticketEnrichments.get(ticket.id);
+        if (e) {
+          ticket.serviceType = e.serviceType ?? null;
+        }
+        ticket.daysInStage = ticket.lastModified
+          ? Math.floor((Date.now() - new Date(ticket.lastModified).getTime()) / 86400000)
+          : null;
+      }
+    } catch (err) {
+      console.warn("[CustomerResolver] Ticket enrichment failed:", err);
+    }
+  }
+
   // 6. Zuper jobs via two paths
   const jobMap = new Map<string, ContactJob>();
 
@@ -508,6 +587,11 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
           status: j.jobStatus || null,
           scheduledDate: j.scheduledStart?.toISOString() || null,
           createdAt: j.lastSyncedAt?.toISOString() || null,
+          assignedUsers: Array.isArray(j.assignedUsers)
+            ? (j.assignedUsers as Array<{ user_name?: string }>).map(u => u.user_name || "Unknown")
+            : [],
+          completedDate: j.completedDate?.toISOString() ?? null,
+          zuperUrl: getZuperJobUrl(j.jobUid) ?? `https://app.zuper.co/app/job/${j.jobUid}`,
         });
       }
     } catch (err) {
@@ -558,6 +642,11 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
               status: j.jobStatus || null,
               scheduledDate: j.scheduledStart?.toISOString() || null,
               createdAt: j.lastSyncedAt?.toISOString() || null,
+              assignedUsers: Array.isArray(j.assignedUsers)
+                ? (j.assignedUsers as Array<{ user_name?: string }>).map(u => u.user_name || "Unknown")
+                : [],
+              completedDate: j.completedDate?.toISOString() ?? null,
+              zuperUrl: getZuperJobUrl(j.jobUid) ?? `https://app.zuper.co/app/job/${j.jobUid}`,
             });
           }
         }

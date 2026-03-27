@@ -389,6 +389,7 @@ model ZuperJobCache {
   // Schedule info
   scheduledStart  DateTime?
   scheduledEnd    DateTime?
+  completedDate   DateTime? // Populated when jobStatus is COMPLETED
 
   // Assignment
   assignedUsers   Json?    // Array of { user_uid, user_name }
