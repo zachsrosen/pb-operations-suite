@@ -21,6 +21,12 @@
     },
     "src/app/api/zuper/jobs/schedule/confirm/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/cron/daily-focus/route.ts": {
+      "maxDuration": 180
+    },
+    "src/app/api/zuper/sync-cache/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -47,6 +53,14 @@
     {
       "path": "/api/cron/pipeline-health",
       "schedule": "0 15 * * *"
+    },
+    {
+      "path": "/api/cron/daily-focus",
+      "schedule": "0 13 * * 1-5"
+    },
+    {
+      "path": "/api/zuper/sync-cache",
+      "schedule": "*/30 * * * *"
     }
   ],
   "redirects": [
