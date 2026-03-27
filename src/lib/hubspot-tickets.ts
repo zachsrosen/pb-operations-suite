@@ -92,6 +92,7 @@ const TICKET_PROPERTIES = [
   "hs_lastmodifieddate",
   "notes_last_contacted",
   "hubspot_owner_id",
+  "service_type",
 ];
 
 // ---------------------------------------------------------------------------
@@ -171,6 +172,7 @@ export function transformTicketToPriorityItem(
     url: `https://app.hubspot.com/contacts/${PORTAL_ID}/ticket/${ticket.id}`,
     priority: props.hs_ticket_priority || null,
     ownerId: props.hubspot_owner_id || null,
+    serviceType: props.service_type || null,
   };
 }
 
