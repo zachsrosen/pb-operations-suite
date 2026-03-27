@@ -340,6 +340,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/forecast-accuracy",
       "/dashboards/forecast-timeline",
       "/dashboards/preconstruction-metrics",
+      "/dashboards/zuper-compliance",
       "/api/forecasting",
       // Equipment catalog
       "/dashboards/catalog",
@@ -896,7 +897,6 @@ export const ADMIN_ONLY_ROUTES: string[] = [
   "/api/admin",
   "/suites/admin",
   "/dashboards/zuper-status-comparison",
-  "/dashboards/zuper-compliance",
   "/dashboards/product-comparison",
   "/dashboards/mobile",
   "/dashboards/inventory",

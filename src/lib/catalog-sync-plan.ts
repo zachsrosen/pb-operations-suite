@@ -180,6 +180,8 @@ export function deriveDefaultIntents(
     for (const edge of systemMappings) {
       // Push-only fields don't get user intents — server auto-includes them
       if (edge.direction === "push-only") continue;
+      // Pull-only fields can't be pushed — exclude from plan UI
+      if (edge.direction === "pull-only") continue;
 
       if (!isLinked) {
         // Unlinked system = create: all fields default to push/manual

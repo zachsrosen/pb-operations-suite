@@ -115,7 +115,7 @@ const STATIC_EDGES: FieldMappingEdge[] = [
   { system: "zuper", externalField: "name", internalField: "name",
     normalizeWith: "trimmed-string" },
   { system: "zuper", externalField: "sku", internalField: "sku",
-    normalizeWith: "trimmed-string" },
+    normalizeWith: "trimmed-string", direction: "pull-only" },  // product_no auto-assigned by Zuper
   { system: "zuper", externalField: "description", internalField: "description",
     normalizeWith: "trimmed-string" },
   { system: "zuper", externalField: "category", internalField: "category",

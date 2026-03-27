@@ -661,13 +661,20 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
     };
   }
 
-  // Update existing — map internal preview field names to Zuper /product API
-  // field names, resolve category to UID, and nest dotted keys.
-  const ZUPER_FIELD_MAP: Record<string, string> = {
+  // Update existing — map sync-plan field names to Zuper /product API field
+  // names, resolve category to UID, and nest dotted keys.
+  // Must stay in sync with parseZuperCurrentFields read-back and the create
+  // path in createOrUpdateZuperPart.
+  const ZUPER_FIELD_MAP: Record<string, string | string[]> = {
     name: "product_name",
     description: "product_description",
+    model: "part_number",
+    vendor_name: ["vendor_name", "vendor"],  // Zuper stores in either field
+    price: ["unit_price", "price", "rate"],
+    purchase_price: ["cost_price", "purchase_rate", "cost"],
+    uom: "unit",
     // category handled separately (needs UID resolution)
-    // sku omitted (product_no is auto-assigned by Zuper)
+    // sku skipped (product_no is auto-assigned by Zuper)
     // specification stays as-is
   };
 
@@ -686,8 +693,15 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
         // product_no is auto-assigned by Zuper — skip SKU updates
         continue;
       } else {
-        const apiField = ZUPER_FIELD_MAP[change.field] ?? change.field;
-        fields[apiField] = change.proposedValue;
+        const mapping = ZUPER_FIELD_MAP[change.field];
+        if (Array.isArray(mapping)) {
+          for (const apiField of mapping) {
+            fields[apiField] = change.proposedValue;
+          }
+        } else {
+          const apiField = mapping ?? change.field;
+          fields[apiField] = change.proposedValue;
+        }
       }
     }
   }

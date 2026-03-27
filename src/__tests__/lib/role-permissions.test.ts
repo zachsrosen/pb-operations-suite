@@ -44,14 +44,19 @@ describe("canAccessRoute - new suite structure", () => {
   });
 
   // Admin-only dashboards
-  it("blocks non-admin from Zuper Compliance", () => {
-    expect(canAccessRoute("OPERATIONS_MANAGER", "/dashboards/zuper-compliance")).toBe(false);
+  it("blocks non-admin from admin-only dashboards", () => {
     expect(canAccessRoute("PROJECT_MANAGER", "/dashboards/mobile")).toBe(false);
   });
 
   it("allows ADMIN to access admin-only dashboards", () => {
-    expect(canAccessRoute("ADMIN", "/dashboards/zuper-compliance")).toBe(true);
     expect(canAccessRoute("ADMIN", "/dashboards/mobile")).toBe(true);
+  });
+
+  // Zuper Compliance access
+  it("allows EXECUTIVE and OPERATIONS_MANAGER to access Zuper Compliance", () => {
+    expect(canAccessRoute("EXECUTIVE", "/dashboards/zuper-compliance")).toBe(true);
+    expect(canAccessRoute("OPERATIONS_MANAGER", "/dashboards/zuper-compliance")).toBe(true);
+    expect(canAccessRoute("ADMIN", "/dashboards/zuper-compliance")).toBe(true);
   });
 
   // Legacy role normalization still works
