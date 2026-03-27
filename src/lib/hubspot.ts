@@ -1795,6 +1795,11 @@ export async function getDealProjectManagerContact(dealId: string): Promise<{
   };
 }
 
+/** Aliases for surveyor display names that differ from HubSpot owner names. */
+const SURVEYOR_NAME_ALIASES: Record<string, string> = {
+  "nick scarpellino": "nickolas scarpellino",
+};
+
 /**
  * Update site_surveyor with defensive value resolution.
  * Some tenants require owner/property option IDs, not display names.
@@ -1803,20 +1808,26 @@ export async function updateSiteSurveyorProperty(dealId: string, assignee: strin
   const raw = assignee.trim();
   if (!raw) return updateDealProperty(dealId, { site_surveyor: "" });
 
-  let resolvedValue = raw;
+  // Apply known name aliases before lookup (e.g. "Nick" → "Nickolas")
+  const normalizedRaw = normalizeLookupKey(raw);
+  const aliasedRaw = SURVEYOR_NAME_ALIASES[normalizedRaw] || raw;
+
+  let resolvedValue = aliasedRaw;
   let hasKnownAllowedValues = false;
   let isDirectValue = false;
   try {
     const lookup = await loadSiteSurveyorLookup();
     hasKnownAllowedValues = lookup.directValues.size > 0;
-    if (lookup.directValues.has(raw)) {
-      resolvedValue = raw;
+    if (lookup.directValues.has(aliasedRaw)) {
+      resolvedValue = aliasedRaw;
       isDirectValue = true;
     } else {
-      const mapped = lookup.normalizedToValue.get(normalizeLookupKey(raw));
+      const mapped =
+        lookup.normalizedToValue.get(normalizeLookupKey(aliasedRaw)) ||
+        lookup.normalizedToValue.get(normalizedRaw);
       if (mapped) resolvedValue = mapped;
     }
-    if (hasKnownAllowedValues && resolvedValue === raw && !isDirectValue) {
+    if (hasKnownAllowedValues && resolvedValue === aliasedRaw && !isDirectValue) {
       console.warn(
         `[HubSpot] Skipping site_surveyor update for deal ${dealId}: ` +
           `assignee "${raw}" is not a valid HubSpot owner/property option`

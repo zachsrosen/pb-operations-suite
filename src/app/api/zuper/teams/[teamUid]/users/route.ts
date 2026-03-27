@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { zuper } from "@/lib/zuper";
+import { COMPLIANCE_EXCLUDED_USER_UIDS } from "@/lib/compliance-team-overrides";
 
 const EXCLUDED_TEAM_PREFIXES = ["backoffice", "back office", "admin", "office", "sales"];
 const EXCLUDED_USERS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -106,6 +107,7 @@ export async function GET(
           .filter((user) => {
             if (!user.userUid) return false;
             if (excludedUserUids.has(user.userUid)) return false;
+            if (COMPLIANCE_EXCLUDED_USER_UIDS.has(user.userUid)) return false;
             return !!`${user.firstName || ""} ${user.lastName || ""}`.trim();
           })
       : [];
