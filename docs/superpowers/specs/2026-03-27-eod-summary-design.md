@@ -148,7 +148,7 @@ A "milestone" is a status change where the new value represents a significant co
 | Department | Status Property | Raw Value | Display Label |
 |---|---|---|---|
 | Design | `design_status` | `"Complete"` | Design Complete |
-| Design | `layout_status` | `"Sent to Customer"` | DA Sent to Customer |
+| Design | `layout_status` | `"Sent to Customer"` | Sent For Approval |
 | Permitting | `permitting_status` | `"Submitted to AHJ"` | Submitted to AHJ |
 | Permitting | `permitting_status` | `"Complete"` | Permit Issued |
 | Interconnection | `interconnection_status` | `"Application Approved"` | IC Approved |
@@ -303,7 +303,7 @@ model DealStatusSnapshot {
 ```
 
 **`ownerId` preserved, `ownerType` removed.** The snapshot stores one row per `(date, deal, lead)` triple. This enables:
-- **Lead-scoped false-positive guard:** When a lead's evening query fails, exclude their snapshot rows from the "resolved" list.
+- **Lead-scoped false-positive guard:** When a lead's evening query fails, any deal that had that lead as a morning-snapshot owner is excluded from the "resolved" list entirely — even if other owners' queries succeeded.
 - **Grouping changes by lead:** The email's "Status Changes by Department" section groups deals under the lead who owns them. Lead association comes from the snapshot; department is derived from *which status property changed* (not from a stored type string). A deal with both `design_status` and `permitting_status` changes appears in both department sections.
 - **Cross-lead dedup for diff:** When computing status changes, deduplicate by `dealId` so a deal owned by two leads produces one status-change entry (not two). Lead grouping uses the evening query's `ownerId` to decide which lead's section a change appears under.
 
