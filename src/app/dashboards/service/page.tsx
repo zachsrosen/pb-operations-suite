@@ -24,6 +24,7 @@ interface Deal {
   state: string;
   postalCode: string;
   projectType: string;
+  serviceType?: string | null;
   closeDate: string | null;
   createDate: string | null;
   lastModified: string | null;

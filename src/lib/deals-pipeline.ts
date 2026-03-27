@@ -259,6 +259,7 @@ export const DEAL_PROPERTIES = [
   "project_type",
   "hubspot_owner_id",
   "deal_currency_code",
+  "service_type",
   // D&R specific
   "detach_status",
   "reset_status",
