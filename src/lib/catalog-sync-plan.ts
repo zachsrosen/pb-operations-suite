@@ -656,10 +656,18 @@ async function applyInternalPatch(
     const existingSpec = getSpecData(sku) ?? {};
 
     for (const [field, value] of Object.entries(patch)) {
+      // Prisma Float columns reject string-typed numbers (e.g. "180.35").
+      // Coerce any string that is a valid number — no legitimate text field
+      // would contain a bare numeric value like "180.35".
+      const coerced =
+        typeof value === "string" && value !== "" && !isNaN(Number(value))
+          ? Number(value)
+          : value;
+
       if (field in existingSpec) {
-        specData[field] = value;
+        specData[field] = coerced;
       } else {
-        coreData[field] = value;
+        coreData[field] = coerced;
       }
     }
 
