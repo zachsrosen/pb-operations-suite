@@ -21,6 +21,15 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Database not configured" }, { status: 503 });
   }
 
+  // Skip weekends — no plansets are processed Sat/Sun
+  const denverNow = new Date(
+    new Date().toLocaleString("en-US", { timeZone: "America/Denver" })
+  );
+  const dayOfWeek = denverNow.getDay(); // 0=Sun, 6=Sat
+  if (dayOfWeek === 0 || dayOfWeek === 6) {
+    return NextResponse.json({ healthy: true, skipped: "weekend" });
+  }
+
   const STALE_HOURS = 48;
   const cutoff = new Date(Date.now() - STALE_HOURS * 60 * 60 * 1000);
 
