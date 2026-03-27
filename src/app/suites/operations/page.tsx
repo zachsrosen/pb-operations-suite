@@ -113,13 +113,12 @@ const LINKS: SuitePageCard[] = [
 
   // ── Inventory & Equipment ──
   {
-    href: "#",
+    href: "/dashboards/product-catalog",
     title: "Product Catalog",
-    description: "Browse all equipment — modules, inverters, batteries, racking, and specs. (Incoming)",
-    tag: "INCOMING",
+    description: "Browse all equipment — modules, inverters, batteries, racking, and specs.",
+    tag: "CATALOG",
     icon: "🛒",
     section: "Inventory & Equipment",
-    disabled: true,
   },
   {
     href: "/dashboards/bom",

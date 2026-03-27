@@ -165,6 +165,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/pi-timeline",
       // Equipment catalog
       "/dashboards/catalog",
+      "/dashboards/product-catalog",
       "/dashboards/submit-product",
       "/api/projects",
       "/api/bom",
@@ -241,6 +242,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/hubspot/qc-metrics",
       // Equipment catalog
       "/dashboards/catalog",
+      "/dashboards/product-catalog",
       "/dashboards/submit-product",
       "/dashboards/product-comparison",
       "/api/projects",
@@ -341,6 +343,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/forecasting",
       // Equipment catalog
       "/dashboards/catalog",
+      "/dashboards/product-catalog",
       "/dashboards/submit-product",
       "/dashboards/product-comparison",
       "/api/projects",
@@ -470,6 +473,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/pi-timeline",
       // Equipment catalog
       "/dashboards/catalog",
+      "/dashboards/product-catalog",
       "/dashboards/submit-product",
       "/api/projects",
       "/api/bom",
@@ -572,6 +576,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/pi-timeline",
       // Equipment catalog
       "/dashboards/catalog",
+      "/dashboards/product-catalog",
       "/dashboards/submit-product",
       "/api/projects",
       "/api/bom",
