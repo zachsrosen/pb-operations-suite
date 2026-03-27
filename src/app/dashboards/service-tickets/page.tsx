@@ -27,6 +27,7 @@ interface TicketItem {
   priority?: string | null;
   ownerId?: string | null;
   ownerName?: string | null;
+  serviceType?: string | null;
 }
 
 interface TimelineEntry {
@@ -52,7 +53,7 @@ interface TicketDetail {
   url: string;
   associations: {
     contacts: Array<{ id: string; name: string; email: string }>;
-    deals: Array<{ id: string; name: string; amount: string | null; location: string | null; url: string }>;
+    deals: Array<{ id: string; name: string; amount: string | null; location: string | null; url: string; serviceType?: string | null }>;
     companies: Array<{ id: string; name: string }>;
   };
   timeline: TimelineEntry[];
@@ -447,6 +448,11 @@ export default function ServiceTicketBoardPage() {
                               {PRIORITY_CONFIG[ticket.priority].label}
                             </span>
                           )}
+                          {ticket.serviceType && (
+                            <span className="shrink-0 rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-medium text-cyan-300">
+                              {ticket.serviceType}
+                            </span>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 text-xs text-muted">
                           {ticket.location && (
@@ -572,6 +578,11 @@ export default function ServiceTicketBoardPage() {
                           <span className="text-foreground font-medium">{d.name}</span>
                           {d.amount && <span className="text-muted ml-2">${Number(d.amount).toLocaleString()}</span>}
                           {d.location && <span className="text-muted ml-2">· {d.location}</span>}
+                          {d.serviceType && (
+                            <span className="ml-2 rounded-full bg-cyan-500/20 px-2 py-0.5 text-xs text-cyan-300">
+                              {d.serviceType}
+                            </span>
+                          )}
                         </a>
                       ))}
                     </div>
