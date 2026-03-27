@@ -7,12 +7,40 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import type {
   ContactSearchResult,
   ContactDetail,
+  ContactDeal as BaseContactDeal,
+  ContactTicket as BaseContactTicket,
+  ContactJob as BaseContactJob,
 } from "@/lib/customer-resolver";
 import { getZuperJobUrl } from "@/lib/external-links";
 
 // ---------------------------------------------------------------------------
-// Types (client-side mirrors)
+// Types (client-side mirrors — extends server types with enrichment fields)
 // ---------------------------------------------------------------------------
+
+interface EnrichedDeal extends BaseContactDeal {
+  serviceType?: string | null;
+  lastContactDate?: string | null;
+  daysInStage?: number | null;
+  lineItems?: Array<{ name: string; quantity: number; category: string | null; unitPrice: number | null }> | null;
+  hubspotUrl?: string | null;
+}
+
+interface EnrichedTicket extends BaseContactTicket {
+  serviceType?: string | null;
+  daysInStage?: number | null;
+}
+
+interface EnrichedJob extends BaseContactJob {
+  assignedUsers?: string[];
+  completedDate?: string | null;
+  zuperUrl?: string | null;
+}
+
+interface EnrichedContactDetail extends Omit<ContactDetail, "deals" | "tickets" | "jobs"> {
+  deals: EnrichedDeal[];
+  tickets: EnrichedTicket[];
+  jobs: EnrichedJob[];
+}
 
 interface SearchResponse {
   results: ContactSearchResult[];
@@ -22,7 +50,7 @@ interface SearchResponse {
 }
 
 interface DetailResponse {
-  customer: ContactDetail;
+  customer: EnrichedContactDetail;
   lastUpdated: string;
 }
 
@@ -74,7 +102,7 @@ export default function CustomerHistoryPage() {
   // Detail panel state
   const [selectedContact, setSelectedContact] =
     useState<ContactSearchResult | null>(null);
-  const [detail, setDetail] = useState<ContactDetail | null>(null);
+  const [detail, setDetail] = useState<EnrichedContactDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -314,16 +342,27 @@ export default function CustomerHistoryPage() {
                           {detail.deals.map((d) => (
                             <a
                               key={d.id}
-                              href={hubspotDealUrl(d.id)}
+                              href={d.hubspotUrl || hubspotDealUrl(d.id)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="block p-2 rounded bg-surface-2 hover:bg-surface-2/80 transition-colors"
                             >
-                              <p className="text-sm font-medium text-foreground truncate">
-                                {d.name}
-                              </p>
+                              <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                                <p className="text-sm font-medium text-foreground truncate">
+                                  {d.name}
+                                </p>
+                                {d.serviceType && (
+                                  <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-xs text-cyan-300">
+                                    {d.serviceType}
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-xs text-muted">
-                                {d.stage} ·{" "}
+                                {d.stage}
+                                {d.daysInStage != null && d.daysInStage > 0 && (
+                                  <span> · {d.daysInStage}d in stage</span>
+                                )}
+                                {" · "}
                                 {d.location || "No location"}
                               </p>
                               <p className="text-xs text-muted">
@@ -331,6 +370,14 @@ export default function CustomerHistoryPage() {
                                 {d.amount &&
                                   ` · $${Number(d.amount).toLocaleString()}`}
                               </p>
+                              {d.lineItems && d.lineItems.length > 0 && (
+                                <div className="mt-1 text-xs text-muted">
+                                  <span className="font-medium">{d.lineItems.length} line item{d.lineItems.length !== 1 ? "s" : ""}</span>
+                                  {" — "}
+                                  {d.lineItems.slice(0, 2).map(li => li.name).join(", ")}
+                                  {d.lineItems.length > 2 && `, +${d.lineItems.length - 2} more`}
+                                </div>
+                              )}
                             </a>
                           ))}
                         </div>
@@ -356,12 +403,22 @@ export default function CustomerHistoryPage() {
                               rel="noopener noreferrer"
                               className="block p-2 rounded bg-surface-2 hover:bg-surface-2/80 transition-colors"
                             >
-                              <p className="text-sm font-medium text-foreground truncate">
-                                {t.subject}
-                              </p>
+                              <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                                <p className="text-sm font-medium text-foreground truncate">
+                                  {t.subject}
+                                </p>
+                                {t.serviceType && (
+                                  <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-xs text-cyan-300">
+                                    {t.serviceType}
+                                  </span>
+                                )}
+                              </div>
                               <p className="text-xs text-muted">
                                 {t.status}
                                 {t.priority && ` · ${t.priority}`}
+                                {t.daysInStage != null && t.daysInStage > 0 && (
+                                  <span> · {t.daysInStage}d in stage</span>
+                                )}
                               </p>
                               <p className="text-xs text-muted">
                                 {formatDate(t.createDate)}
@@ -384,7 +441,7 @@ export default function CustomerHistoryPage() {
                       ) : (
                         <div className="space-y-2">
                           {detail.jobs.map((j) => {
-                            const url = getZuperJobUrl(j.uid);
+                            const url = j.zuperUrl || getZuperJobUrl(j.uid);
                             const Wrapper = url ? "a" : "div";
                             const linkProps = url
                               ? {
@@ -399,13 +456,25 @@ export default function CustomerHistoryPage() {
                                 {...linkProps}
                                 className={`block p-2 rounded bg-surface-2${url ? " hover:bg-surface transition-colors" : ""}`}
                               >
-                                <p className="text-sm font-medium text-foreground truncate">
-                                  {j.title}
-                                </p>
+                                <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                                  <p className="text-sm font-medium text-foreground truncate">
+                                    {j.title}
+                                  </p>
+                                  {j.completedDate && (
+                                    <span className="rounded-full bg-green-500/20 px-2 py-0.5 text-xs text-green-400">
+                                      Completed
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-xs text-muted">
                                   {j.category || "No category"}
                                   {j.status && ` · ${j.status}`}
                                 </p>
+                                {j.assignedUsers && j.assignedUsers.length > 0 && (
+                                  <p className="text-xs text-muted">
+                                    {j.assignedUsers.join(", ")}
+                                  </p>
+                                )}
                                 <p className="text-xs text-muted">
                                   {formatDate(j.scheduledDate)}
                                 </p>
