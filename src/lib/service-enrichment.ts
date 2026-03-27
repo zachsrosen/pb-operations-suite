@@ -59,3 +59,30 @@ export interface EnrichmentOptions {
   includeLineItems?: boolean;
   includeZuperJobs?: boolean;
 }
+
+/**
+ * Pure function: resolve the best "last contact" timestamp from available sources.
+ * Priority: contact-level > deal-level > ticket-level > null
+ */
+export function resolveLastContact(
+  contactTimestamps: Record<string, string | null | undefined>,
+  contactIds: string[],
+  dealFallback: string | null | undefined,
+  ticketFallback?: string | null | undefined,
+): { lastContactDate: string | null; lastContactSource: "contact" | "deal" | "ticket" | null } {
+  // 1. Try contact-level timestamps — pick most recent
+  let best: string | null = null;
+  for (const cid of contactIds) {
+    const ts = contactTimestamps[cid];
+    if (ts && (!best || ts > best)) best = ts;
+  }
+  if (best) return { lastContactDate: best, lastContactSource: "contact" };
+
+  // 2. Deal-level fallback
+  if (dealFallback) return { lastContactDate: dealFallback, lastContactSource: "deal" };
+
+  // 3. Ticket-level fallback
+  if (ticketFallback) return { lastContactDate: ticketFallback, lastContactSource: "ticket" };
+
+  return { lastContactDate: null, lastContactSource: null };
+}
