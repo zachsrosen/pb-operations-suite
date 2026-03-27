@@ -240,27 +240,37 @@ export async function fetchServiceTickets(): Promise<EnrichedTicketItem[]> {
   try {
     const { map: stageMap } = await getTicketStageMap();
 
-    // Get all closed/resolved stage IDs to EXCLUDE them
-    // Convention: stages with displayOrder >= 900 or label containing "Closed"/"Done"
+    // Get all closed/resolved stage IDs to EXCLUDE them server-side
+    // Convention: stages whose label contains "Closed", "Done", "Resolved", or "Completed"
     const closedStageIds = Object.entries(stageMap)
       .filter(([, label]) => /closed|done|resolved|completed/i.test(label))
       .map(([id]) => id);
 
-    // Paginate through all tickets in the service pipeline
+    // Paginate through open tickets only — exclude closed stages server-side
+    // to avoid fetching thousands of historical tickets and filtering client-side
     let tickets: HubSpotTicket[] = [];
     let after: string | undefined;
 
     do {
+      const filters: Array<Record<string, unknown>> = [
+        {
+          propertyName: "hs_pipeline",
+          operator: FilterOperatorEnum.Eq,
+          value: SERVICE_TICKET_PIPELINE_ID,
+        },
+      ];
+
+      // Exclude closed stages server-side via NOT_IN filter
+      if (closedStageIds.length > 0) {
+        filters.push({
+          propertyName: "hs_pipeline_stage",
+          operator: "NOT_IN",
+          values: closedStageIds,
+        });
+      }
+
       const searchRequest = {
-        filterGroups: [{
-          filters: [
-            {
-              propertyName: "hs_pipeline",
-              operator: FilterOperatorEnum.Eq,
-              value: SERVICE_TICKET_PIPELINE_ID,
-            },
-          ],
-        }],
+        filterGroups: [{ filters }],
         properties: TICKET_PROPERTIES,
         limit: 100,
         ...(after ? { after } : {}),
@@ -275,12 +285,6 @@ export async function fetchServiceTickets(): Promise<EnrichedTicketItem[]> {
 
       after = response.paging?.next?.after;
     } while (after);
-
-    // Filter out closed tickets client-side
-    if (closedStageIds.length > 0) {
-      const closedSet = new Set(closedStageIds);
-      tickets = tickets.filter(t => !closedSet.has(t.properties.hs_pipeline_stage ?? ""));
-    }
 
     // Batch-resolve ticket → deal associations for location derivation
     const ticketIds = tickets.map(t => t.id);

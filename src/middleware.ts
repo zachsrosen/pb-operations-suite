@@ -23,7 +23,6 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/pipeline-health",
   "/api/portal/survey", // Customer portal — token-validated, no session needed
   "/api/solar/cron/cleanup-pending", // Solar cron — CRON_SECRET validated in route
-  "/api/zuper/sync-cache", // Zuper cache sync cron — CRON_SECRET validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed", "/api/install-review", "/api/zuper/sync-cache"] as const;
 

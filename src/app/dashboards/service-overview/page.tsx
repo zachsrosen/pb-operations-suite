@@ -323,8 +323,8 @@ export default function ServiceOverviewPage() {
       {/* KPI Strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 stagger-grid">
         <StatCard
-          label="Active Deals"
-          value={data?.stats.total ?? 0}
+          label="Service Deals"
+          value={data?.queue.filter(i => i.item.type === "deal").length ?? 0}
           color="cyan"
         />
         <StatCard
