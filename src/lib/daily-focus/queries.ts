@@ -89,7 +89,7 @@ async function runQuery(
         properties: QUERY_PROPERTIES,
         limit: 200,
         ...(after ? { after } : {}),
-      } as Parameters<typeof searchWithRetry>[0]);
+      } as unknown as Parameters<typeof searchWithRetry>[0]);
 
       for (const deal of response.results ?? []) {
         rows.push({

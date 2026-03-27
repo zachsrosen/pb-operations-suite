@@ -276,7 +276,7 @@ export async function fetchServiceTickets(): Promise<EnrichedTicketItem[]> {
         ...(after ? { after } : {}),
       };
 
-      const response = await searchTicketsWithRetry(searchRequest as Parameters<typeof searchTicketsWithRetry>[0]);
+      const response = await searchTicketsWithRetry(searchRequest as unknown as Parameters<typeof searchTicketsWithRetry>[0]);
       const page = (response.results || []).map(t => ({
         id: t.id,
         properties: t.properties as Record<string, string | undefined>,
