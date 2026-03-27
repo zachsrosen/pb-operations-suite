@@ -8,6 +8,8 @@ import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES } from "@/lib/deals-pipeline";
 import { hubspotClient } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { fetchServiceTickets } from "@/lib/hubspot-tickets";
+import { enrichServiceItems, type EnrichmentInput, ALL_REASON_CATEGORIES } from "@/lib/service-enrichment";
+import { chunk } from "@/lib/utils";
 
 // Initialize cascade listener at module scope (singleton, process-local)
 initPriorityQueueCascade();
@@ -21,6 +23,7 @@ async function fetchServiceDeals(): Promise<PriorityItem[]> {
     "hs_object_id", "dealname", "amount", "dealstage", "pipeline",
     "closedate", "createdate", "hs_lastmodifieddate",
     "pb_location", "hubspot_owner_id", "notes_last_contacted",
+    "service_type",
   ];
 
   const activeStageIds = Object.entries(stageMap)
@@ -62,6 +65,7 @@ async function fetchServiceDeals(): Promise<PriorityItem[]> {
           location: deal.properties.pb_location || null,
           url: `https://app.hubspot.com/contacts/${process.env.HUBSPOT_PORTAL_ID || ""}/deal/${deal.id}`,
           ownerId: deal.properties.hubspot_owner_id || null,
+          serviceType: deal.properties.service_type || null,
         });
       }
 
@@ -102,6 +106,45 @@ export async function GET(request: NextRequest) {
 
         const allItems = [...deals, ...tickets];
 
+        // Resolve deal→contact associations for enrichment input
+        const dealIds = deals.map(d => d.id);
+        const dealContactMap = new Map<string, string[]>();
+        if (dealIds.length > 0) {
+          try {
+            for (const batch of chunk(dealIds, 100)) {
+              const assocResponse = await hubspotClient.crm.associations.batchApi.read(
+                "deals", "contacts",
+                { inputs: batch.map(id => ({ id })) } as any,
+              );
+              for (const r of assocResponse.results || []) {
+                const contactIds = (r.to || []).map((t: { id: string }) => t.id);
+                if (r._from?.id) dealContactMap.set(r._from.id, contactIds);
+              }
+            }
+          } catch {
+            console.warn("[PriorityQueue] Contact association resolution failed, using deal-level fallback");
+          }
+        }
+
+        const enrichInputs: EnrichmentInput[] = allItems.map(item => ({
+          itemId: item.id,
+          itemType: item.type,
+          contactIds: dealContactMap.get(item.id) || [],
+          serviceType: item.serviceType ?? null,
+          dealLastContacted: item.type === "deal" ? item.lastContactDate || null : null,
+          ticketLastContacted: item.type === "ticket" ? item.lastContactDate || null : null,
+        }));
+
+        const enrichments = await enrichServiceItems(enrichInputs);
+
+        // Override lastContactDate with enriched version (contact-level when available)
+        for (const item of allItems) {
+          const enrichment = enrichments.get(item.id);
+          if (enrichment?.lastContactDate) {
+            item.lastContactDate = enrichment.lastContactDate;
+          }
+        }
+
         // Fetch overrides from DB
         const overrides = prisma
           ? await prisma.servicePriorityOverride.findMany({
@@ -123,7 +166,13 @@ export async function GET(request: NextRequest) {
           }))
         );
 
-        return { queue, fetchedAt: new Date().toISOString() };
+        const enrichedQueue = queue.map(q => ({
+          ...q,
+          serviceType: enrichments.get(q.item.id)?.serviceType ?? null,
+          lastContactSource: enrichments.get(q.item.id)?.lastContactSource ?? null,
+        }));
+
+        return { queue: enrichedQueue, fetchedAt: new Date().toISOString() };
       },
       forceRefresh
     );
@@ -182,6 +231,7 @@ export async function GET(request: NextRequest) {
       stats,
       locations,
       owners,
+      reasonCategories: ALL_REASON_CATEGORIES,
       lastUpdated,
     });
   } catch (error) {

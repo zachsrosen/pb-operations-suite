@@ -146,7 +146,7 @@ export async function enrichServiceItems(
         );
 
         for (const r of assocResponse.results || []) {
-          const fromId = r.from?.id;
+          const fromId = r._from?.id;
           const ids = (r.to || []).map((t: { id: string }) => t.id);
           if (fromId && ids.length > 0) {
             lineItemIdsByDeal.set(fromId, ids);
