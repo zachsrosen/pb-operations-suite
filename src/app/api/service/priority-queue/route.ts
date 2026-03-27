@@ -106,9 +106,12 @@ export async function GET(request: NextRequest) {
 
         const allItems = [...deals, ...tickets];
 
-        // Resolve deal→contact associations for enrichment input
+        // Resolve item→contact associations for enrichment input
+        const itemContactMap = new Map<string, string[]>();
         const dealIds = deals.map(d => d.id);
-        const dealContactMap = new Map<string, string[]>();
+        const ticketIds = tickets.map(t => t.id);
+
+        // Deal→contact associations
         if (dealIds.length > 0) {
           try {
             for (const batch of chunk(dealIds, 100)) {
@@ -118,18 +121,36 @@ export async function GET(request: NextRequest) {
               );
               for (const r of assocResponse.results || []) {
                 const contactIds = (r.to || []).map((t: { id: string }) => t.id);
-                if (r._from?.id) dealContactMap.set(r._from.id, contactIds);
+                if (r._from?.id) itemContactMap.set(r._from.id, contactIds);
               }
             }
           } catch {
-            console.warn("[PriorityQueue] Contact association resolution failed, using deal-level fallback");
+            console.warn("[PriorityQueue] Deal→contact association failed, using deal-level fallback");
+          }
+        }
+
+        // Ticket→contact associations
+        if (ticketIds.length > 0) {
+          try {
+            for (const batch of chunk(ticketIds, 100)) {
+              const assocResponse = await hubspotClient.crm.associations.batchApi.read(
+                "tickets", "contacts",
+                { inputs: batch.map(id => ({ id })) } as any,
+              );
+              for (const r of assocResponse.results || []) {
+                const contactIds = (r.to || []).map((t: { id: string }) => t.id);
+                if (r._from?.id) itemContactMap.set(r._from.id, contactIds);
+              }
+            }
+          } catch {
+            console.warn("[PriorityQueue] Ticket→contact association failed, using ticket-level fallback");
           }
         }
 
         const enrichInputs: EnrichmentInput[] = allItems.map(item => ({
           itemId: item.id,
           itemType: item.type,
-          contactIds: dealContactMap.get(item.id) || [],
+          contactIds: itemContactMap.get(item.id) || [],
           serviceType: item.serviceType ?? null,
           dealLastContacted: item.type === "deal" ? item.lastContactDate || null : null,
           ticketLastContacted: item.type === "ticket" ? item.lastContactDate || null : null,

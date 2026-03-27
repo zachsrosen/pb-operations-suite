@@ -459,7 +459,7 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
     if (dealIds.length > 0) {
       const dealBatch = await hubspotClient.crm.deals.batchApi.read({
         inputs: dealIds.map((id: string) => ({ id })),
-        properties: ["dealname", "amount", "pb_location"],
+        properties: ["dealname", "amount", "pb_location", "service_type"],
         propertiesWithHistory: [],
       });
       for (const d of dealBatch.results || []) {
@@ -471,6 +471,7 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
           amount: d.properties.amount || null,
           location: loc,
           url: `https://app.hubspot.com/contacts/${PORTAL_ID}/deal/${d.id}`,
+          serviceType: d.properties.service_type || null,
         });
       }
     }

@@ -37,7 +37,7 @@ export async function GET(
           itemId: d.id,
           itemType: "deal" as const,
           contactIds,
-          serviceType: null,
+          serviceType: d.serviceType ?? null,
           dealLastContacted: null,
         }));
 
