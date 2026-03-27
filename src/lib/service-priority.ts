@@ -5,6 +5,8 @@
  * Buckets: Critical (75-100), High (50-74), Medium (25-49), Low (0-24).
  */
 
+import type { ReasonCategory } from "@/lib/service-enrichment";
+
 export interface PriorityItem {
   id: string;
   type: "deal" | "ticket";
@@ -18,6 +20,7 @@ export interface PriorityItem {
   url?: string;
   warrantyExpiry?: string | null;
   ownerId?: string | null;
+  serviceType?: string | null;
 }
 
 export type PriorityTier = "critical" | "high" | "medium" | "low";
@@ -27,6 +30,7 @@ export interface PriorityScore {
   score: number;
   tier: PriorityTier;
   reasons: string[];
+  reasonCategories: ReasonCategory[];
   overridden?: boolean;
 }
 
@@ -45,6 +49,7 @@ function tierFromScore(score: number): PriorityTier {
 export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): PriorityScore {
   let score = 0;
   const reasons: string[] = [];
+  const categories = new Set<ReasonCategory>();
 
   // 1. Warranty expiry urgency
   if (item.warrantyExpiry) {
@@ -53,12 +58,15 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
       // Already expired
       score += 30;
       reasons.push("Warranty expired");
+      categories.add("warranty_expiring");
     } else if (daysToExpiry <= 7) {
       score += 40;
       reasons.push(`Warranty expires in ${Math.ceil(daysToExpiry)} days`);
+      categories.add("warranty_expiring");
     } else if (daysToExpiry <= 30) {
       score += 15;
       reasons.push(`Warranty expires in ${Math.ceil(daysToExpiry)} days`);
+      categories.add("warranty_expiring");
     }
   }
 
@@ -68,11 +76,14 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
     if (daysSinceContact > 7) {
       score += 35;
       reasons.push(`No contact in ${Math.floor(daysSinceContact)} days`);
+      categories.add("no_contact");
     } else if (daysSinceContact > 3) {
       score += 25;
       reasons.push(`Last contact ${Math.floor(daysSinceContact)} days ago`);
+      categories.add("no_contact");
     } else if (daysSinceContact > 1) {
       score += 5;
+      categories.add("no_contact");
     }
   }
 
@@ -81,17 +92,21 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
   if (daysSinceModified > 7) {
     score += 20;
     reasons.push(`Stuck in "${item.stage}" for ${Math.floor(daysSinceModified)} days`);
+    categories.add("stuck_in_stage");
   } else if (daysSinceModified > 3) {
     score += 10;
     reasons.push(`In "${item.stage}" for ${Math.floor(daysSinceModified)} days`);
+    categories.add("stuck_in_stage");
   }
 
   // 4. Deal value (higher value = higher priority)
   if (item.amount && item.amount > 10000) {
     score += 10;
     reasons.push("High-value service ($" + item.amount.toLocaleString() + ")");
+    categories.add("high_value");
   } else if (item.amount && item.amount > 5000) {
     score += 5;
+    categories.add("high_value");
   }
 
   // 5. Stage-specific urgency
@@ -99,10 +114,12 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
   const activeStages = ["Site Visit Scheduling", "Work In Progress"];
   if (urgentStages.includes(item.stage)) {
     score += 5;
+    categories.add("stage_urgency");
   }
   if (activeStages.includes(item.stage) && daysSinceModified > 5) {
     score += 10;
     reasons.push(`"${item.stage}" overdue`);
+    categories.add("stage_urgency");
   }
 
   // Cap at 100
@@ -118,6 +135,7 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
     score,
     tier: tierFromScore(score),
     reasons,
+    reasonCategories: [...categories],
   };
 }
 
@@ -145,6 +163,7 @@ export function buildPriorityQueue(
         score: overrideScore,
         overridden: true,
         reasons: [`Manually set to ${override}`, ...result.reasons],
+        reasonCategories: result.reasonCategories,
       };
     }
 
