@@ -200,14 +200,36 @@ export async function GET(request: NextRequest) {
 
     const queue = data.queue;
 
-    // Stats computed client-side now — still send global stats for initial render
+    // Stats computed server-side for KPI cards
     const stats = {
       total: queue.length,
       critical: queue.filter(i => i.tier === "critical").length,
       high: queue.filter(i => i.tier === "high").length,
       medium: queue.filter(i => i.tier === "medium").length,
       low: queue.filter(i => i.tier === "low").length,
+      stuckInStage: queue.filter(i =>
+        i.reasonCategories?.includes("stuck_in_stage")
+      ).length,
     };
+
+    // Count Zuper service jobs scheduled for today
+    let scheduledToday = 0;
+    if (prisma) {
+      try {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const todayEnd = new Date();
+        todayEnd.setHours(23, 59, 59, 999);
+        scheduledToday = await prisma.zuperJobCache.count({
+          where: {
+            scheduledStart: { gte: todayStart, lte: todayEnd },
+            jobStatus: { not: "Cancelled" },
+          },
+        });
+      } catch {
+        console.warn("[PriorityQueue] Failed to count scheduled-today jobs");
+      }
+    }
 
     // Get unique locations for filter
     const locations = [...new Set(
@@ -253,6 +275,7 @@ export async function GET(request: NextRequest) {
       locations,
       owners,
       reasonCategories: ALL_REASON_CATEGORIES,
+      scheduledToday,
       lastUpdated,
     });
   } catch (error) {

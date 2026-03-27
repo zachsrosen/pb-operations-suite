@@ -48,6 +48,7 @@ interface QueueStats {
   high: number;
   medium: number;
   low: number;
+  stuckInStage: number;
 }
 
 interface PriorityQueueResponse {
@@ -56,6 +57,7 @@ interface PriorityQueueResponse {
   locations: string[];
   owners: Array<{ id: string; name: string }>;
   reasonCategories?: string[];
+  scheduledToday: number;
   lastUpdated: string;
 }
 
@@ -243,10 +245,10 @@ export default function ServiceOverviewPage() {
     [data?.owners]
   );
 
-  // Scheduled today: items whose createDate is today (placeholder logic — API doesn't expose scheduled date yet)
-  const scheduledToday = 0;
-  // Overdue items: critical or high tier
-  const overdueCount = tierCounts.critical + tierCounts.high;
+  // Stuck in stage: items flagged by the scoring engine as stuck (>3 days in same stage)
+  const stuckCount = data?.stats.stuckInStage ?? 0;
+  // Scheduled today: Zuper service jobs with scheduledStart = today
+  const scheduledToday = data?.scheduledToday ?? 0;
 
   // ---- Loading / error states -----------------------------------------------
 
@@ -333,8 +335,8 @@ export default function ServiceOverviewPage() {
           color="blue"
         />
         <StatCard
-          label="Overdue Items"
-          value={overdueCount}
+          label="Stuck in Stage"
+          value={stuckCount}
           color="red"
         />
         <StatCard
