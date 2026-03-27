@@ -29,20 +29,43 @@ Same leads, pipelines, excluded stages, and display name mappings as the existin
 
 ## Architecture: Hybrid Snapshot + Property History
 
-### Phase 1: Morning Snapshot (piggybacks on daily focus cron)
+### Phase 1: Morning Snapshot (runs after daily focus cron, separate queries)
 
-After the morning daily focus emails send (~7:05 AM Denver), the existing cron run saves a snapshot of every queried deal's status fields to a new `DealStatusSnapshot` DB table.
+After the morning daily focus emails send (~7:05 AM Denver), the cron run executes a **separate, broader query** for each lead to snapshot ALL their active deals — not just deals in actionable statuses. This is critical because the daily-focus queries filter by specific status buckets (e.g., `permitting_status IN ["Ready For Permitting", ...]`). If a deal moves from "Ready For Permitting" to "Submitted to AHJ" during the day, it leaves the actionable bucket. If the evening re-ran the same narrow queries, that deal would vanish from the results and be misclassified as "resolved" instead of recognized as accomplished work.
 
-**Required change to `QUERY_PROPERTIES`:** Add `pb_location` to the properties array in `src/lib/daily-focus/queries.ts` so that location data is available for the snapshot and EOD email without an extra API call.
+**Broad snapshot query per lead (new, defined in `eod-summary/snapshot.ts`):**
 
-**Snapshot fields per deal:**
+For each PI lead, one query per `roleProperty` they're assigned to:
+```
+filters:
+  - {roleProperty} = {ownerId}          // e.g., permit_tech = 78035785
+  - dealstage NOT_IN EXCLUDED_STAGES    // same terminal-stage exclusion
+  - pipeline IN INCLUDED_PIPELINES      // same pipeline filter
+properties: hs_object_id, dealname, dealstage, pipeline, pb_location,
+            design_status, layout_status, permitting_status,
+            interconnection_status, pto_status
+```
+
+For each Design lead, one query:
+```
+filters:
+  - design = {ownerId}
+  - dealstage NOT_IN EXCLUDED_STAGES
+  - pipeline IN INCLUDED_PIPELINES
+properties: (same as above)
+```
+
+**Key difference from daily-focus queries:** No `statusProperty IN [...]` filter. This returns ALL active deals for a lead regardless of their current status, capturing the full state needed for accurate diffing.
+
+**Snapshot fields per row:**
 - `dealId`, `dealName`, `pipeline`, `dealStage`, `pbLocation`
 - `designStatus`, `layoutStatus`, `permittingStatus`, `interconnectionStatus`, `ptoStatus`
+- `ownerId` (HubSpot owner ID of the lead whose query produced this row)
 - `snapshotDate` (date only, computed in Denver timezone via `toLocaleDateString("en-CA", { timeZone: "America/Denver" })`)
 
-**How `saveSnapshot()` receives data:** Each orchestrator (`runPIDailyFocus`, `runDesignDailyFocus`) accumulates `leadSummaries` which contain `SectionResult[]` per lead. The snapshot function takes these results plus the lead's `hubspotOwnerId`, flattens all `DealRow` entries, and upserts one row per unique `dealId`. The `DealRow` type must be extended to carry all 5 status properties (not just the one that matched the query) — this requires adding the extra properties to `QUERY_PROPERTIES` and populating them on `DealRow`.
+**Lead association:** A deal may be owned by multiple leads (e.g., Peter Zaun as `permit_tech` and Layla Counts as `interconnections_tech`). The snapshot stores one row per `(date, dealId, ownerId)` triple. Status fields are identical across rows for the same deal — the duplication is intentional to preserve the lead→deal relationship for later grouping and false-positive guards.
 
-**Deduplication:** A deal may appear in multiple leads' query results. The snapshot uses `@@unique([snapshotDate, dealId])` — upsert (create-or-update) ensures last-write wins on the status fields, which is fine since the statuses are deal-level properties.
+**API cost:** ~9 additional HubSpot search calls per morning run (6 PI leads × ~1.5 queries avg + 3 Design leads × 1 query). Sequential to respect rate limits. Results are paginated (limit 200, page if needed).
 
 ### Phase 2: Evening Query + Diff (new cron route, ~5 PM Denver)
 
@@ -51,8 +74,8 @@ After the morning daily focus emails send (~7:05 AM Denver), the existing cron r
 SELECT * FROM DealStatusSnapshot WHERE snapshotDate = today
 ```
 
-**Step 2: Re-query HubSpot**
-Run the same queries as the morning focus (both PI and Design query defs) to get current deal states. Collect all unique deals into a map keyed by `dealId`.
+**Step 2: Re-query HubSpot (broad queries, same as morning snapshot)**
+Run the same broad queries used for the morning snapshot — one per lead per `roleProperty`, filtered only by owner + excluded stages + included pipelines (NO status-value filter). Collect all results into a map keyed by `(dealId, ownerId)` to preserve lead association.
 
 **Step 3: Diff**
 For each deal in the evening results that also exists in the morning snapshot, compare the 5 monitored status fields + `dealStage`. Any field where `morning !== evening` is a "status change."
@@ -61,7 +84,7 @@ Deals in the evening results but NOT in the morning snapshot are "new" (appeared
 
 Deals in the morning snapshot but NOT in evening results are "resolved" (moved to an excluded stage like Complete or Cancelled, or reassigned to a non-tracked owner, or pipeline changed out of scope).
 
-**False positive guard:** If any lead's evening HubSpot query failed (error path), exclude all deals associated with that lead from the "resolved" list. The email notes which leads had query failures so the absence isn't misleading.
+**False positive guard:** If any lead's evening HubSpot query failed (error path), exclude all snapshot rows with that lead's `ownerId` from the "resolved" list. A deal that has snapshot rows for multiple leads is only excluded if ALL of those leads' queries failed. The email notes which leads had query failures so the absence isn't misleading.
 
 **Step 4: Milestone enrichment (targeted property history)**
 For deals where a status change matches a defined milestone, call HubSpot's `basicApi.getById` with `propertiesWithHistory` populated:
@@ -80,10 +103,15 @@ The response includes `deal.propertiesWithHistory[statusProperty]` — an array 
 
 1. Find the history entry whose `value` matches the milestone status and `timestamp` falls within today (Denver timezone).
 2. Filter to `sourceType === "CRM_UI"` or `sourceType === "INTEGRATION"` — skip `sourceType === "CALCULATED"` (formula fields) and `sourceType === "AUTOMATION"` (workflows) since those don't represent human action.
-3. The `sourceId` for `CRM_UI` entries is a HubSpot user ID. Map to a lead name via the `PI_LEADS` + `DESIGN_LEADS` roster. If the `sourceId` doesn't match any tracked lead, display "Team member" as fallback.
+3. **Map `sourceId` to a person name.** The `sourceId` for `CRM_UI` entries is a HubSpot **user ID**, which is NOT necessarily the same as the `hubspotOwnerId` stored in `PI_LEADS`/`DESIGN_LEADS`. To resolve this:
+   - At the start of each EOD run, call `GET /crm/v3/owners?limit=500` (via `hubspotClient.crm.owners.ownersApi.getPage()`). This returns owner objects, each with `id` (owner ID, matches roster) and `userId` (user ID, matches property history `sourceId`), plus `firstName`/`lastName`.
+   - Build a `Map<string, string>` from `userId → "firstName lastName"`. Cache for the duration of the run.
+   - When a milestone's `sourceId` matches an entry, display that name. If no match, display "Team member" as fallback.
 4. Convert `timestamp` (ISO 8601 UTC) to Denver timezone for display.
 
-**New code required:** A `getPropertyHistory(dealId, properties)` helper in `milestones.ts` that wraps `basicApi.getById` with retry logic (reuse `searchWithRetry` backoff pattern for 429s). This is new — no existing wrapper does this in the codebase.
+**New code required:**
+- A `getPropertyHistory(dealId, properties)` helper in `milestones.ts` that wraps `basicApi.getById` with retry logic (reuse `searchWithRetry` backoff pattern for 429s). This is new — no existing wrapper does this in the codebase.
+- A `buildUserIdMap()` helper in `milestones.ts` that calls the owners API once per run and caches the `userId → name` mapping.
 
 **Rate limit safety:** Cap at 20 property history calls per run. Excess milestones report without who/when detail. Each call fetches history for all 5 status properties at once to minimize requests.
 
@@ -256,6 +284,7 @@ model DealStatusSnapshot {
   pipeline                String
   dealStage               String
   pbLocation              String?
+  ownerId                 String   // HubSpot owner ID of the lead whose query produced this row
   designStatus            String?
   layoutStatus            String?
   permittingStatus        String?
@@ -263,12 +292,15 @@ model DealStatusSnapshot {
   ptoStatus               String?
   createdAt               DateTime @default(now())
 
-  @@unique([snapshotDate, dealId])
+  @@unique([snapshotDate, dealId, ownerId])
   @@index([snapshotDate])
 }
 ```
 
-**Removed `ownerType` and `ownerId`:** Department grouping in the EOD email is derived at diff time from *which status properties actually changed*, not from a stored owner type. A deal that has both `design_status` and `permitting_status` changes will appear in both department sections. This avoids the cross-department attribution problem where a deal appearing in both design and PI query results would have an arbitrary `ownerType`.
+**`ownerId` preserved, `ownerType` removed.** The snapshot stores one row per `(date, deal, lead)` triple. This enables:
+- **Lead-scoped false-positive guard:** When a lead's evening query fails, exclude their snapshot rows from the "resolved" list.
+- **Grouping changes by lead:** The email's "Status Changes by Department" section groups deals under the lead who owns them. Lead association comes from the snapshot; department is derived from *which status property changed* (not from a stored type string). A deal with both `design_status` and `permitting_status` changes appears in both department sections.
+- **Cross-lead dedup for diff:** When computing status changes, deduplicate by `dealId` so a deal owned by two leads produces one status-change entry (not two). Lead grouping uses the evening query's `ownerId` to decide which lead's section a change appears under.
 
 ### Retention
 
@@ -293,11 +325,12 @@ src/
 
 ### Changes to Existing Files
 
-- **`src/lib/daily-focus/queries.ts`**: Add `pb_location`, `design_status`, `layout_status`, `permitting_status`, `interconnection_status`, `pto_status` to `QUERY_PROPERTIES` (some are already present; ensure all 5 status fields + `pb_location` are included). Extend `DealRow` type to carry all status fields (currently only carries the one that matched the query).
-- **`src/lib/daily-focus/send.ts`**: After sending emails in each orchestrator, call `saveSnapshot()` from `eod-summary/snapshot.ts` with the accumulated `leadSummaries`. This is a single function call at the end of each orchestrator.
+- **`src/app/api/cron/daily-focus/route.ts`**: After sending emails, call `saveEodSnapshot()` from `eod-summary/snapshot.ts`. This runs the broad snapshot queries (separate from the narrow daily-focus queries) and writes to `DealStatusSnapshot`. The snapshot step is wrapped in try/catch — failure does not block the daily focus emails from completing.
 - **`prisma/schema.prisma`**: Add `DealStatusSnapshot` model.
 - **`vercel.json`** (or Vercel dashboard): Add cron schedule for `/api/cron/eod-summary` at `0 23 * * 1-5` (23:00 UTC = 5 PM MDT / 4 PM MST, weekdays).
-- **`vercel.json`**: Consider bumping `maxDuration` for the daily-focus cron from 180s to 240s to accommodate the snapshot write (hundreds of upserts after the email sends).
+- **`vercel.json`**: Bump `maxDuration` for the daily-focus cron from 180s to 300s to accommodate the additional ~9 HubSpot searches + DB writes for the snapshot step.
+
+**No changes to `daily-focus/queries.ts` or `daily-focus/send.ts`** — the snapshot uses its own broader query logic in `eod-summary/snapshot.ts`, independent of the daily-focus actionable-status queries.
 
 ---
 
