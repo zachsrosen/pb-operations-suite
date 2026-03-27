@@ -84,7 +84,7 @@ Deals in the evening results but NOT in the morning snapshot are "new" (appeared
 
 Deals in the morning snapshot but NOT in evening results are "resolved" (moved to an excluded stage like Complete or Cancelled, or reassigned to a non-tracked owner, or pipeline changed out of scope).
 
-**False positive guard:** If any lead's evening HubSpot query failed (error path), exclude all snapshot rows with that lead's `ownerId` from the "resolved" list. A deal that has snapshot rows for multiple leads is only excluded if ALL of those leads' queries failed. The email notes which leads had query failures so the absence isn't misleading.
+**False positive guard:** If ANY of a deal's morning-snapshot owners had their evening query fail, that deal is excluded from the "resolved" list entirely. Rationale: if a deal had morning rows for Peter and Layla, and Peter's evening query failed, we can't tell whether the deal is genuinely gone or just missing from Peter's failed result set. Err on the side of omission — a missed "resolved" entry is harmless, a false one is confusing. The email notes which leads had query failures.
 
 **Step 4: Milestone enrichment (targeted property history)**
 For deals where a status change matches a defined milestone, call HubSpot's `basicApi.getById` with `propertiesWithHistory` populated:
@@ -143,13 +143,18 @@ Build HTML email, send to `zach@photonbrothers.com` via `sendEmailMessage()` (Go
 
 A "milestone" is a status change where the new value represents a significant completion point. These get property history enrichment for who/when attribution.
 
-| Department | Status Property | Milestone Values |
-|---|---|---|
-| Design | `design_status` | "Stamped", "Design Complete" |
-| Design | `layout_status` | "Sent" (DA sent to customer) |
-| Permitting | `permitting_status` | "Approved By AHJ", "Permit Issued", "Submitted to AHJ" |
-| Interconnection | `interconnection_status` | "IC Approved", "Submitted to Utility" |
-| PTO | `pto_status` | "PTO Granted", "Submitted to Utility" |
+**Values below are raw HubSpot enum strings** (not display labels). Display labels for the email are derived from the `STATUS_DISPLAY_LABELS` map in `deals-types.ts`.
+
+| Department | Status Property | Raw Value | Display Label |
+|---|---|---|---|
+| Design | `design_status` | `"Complete"` | Design Complete |
+| Design | `layout_status` | `"Sent to Customer"` | DA Sent to Customer |
+| Permitting | `permitting_status` | `"Submitted to AHJ"` | Submitted to AHJ |
+| Permitting | `permitting_status` | `"Complete"` | Permit Issued |
+| Interconnection | `interconnection_status` | `"Application Approved"` | IC Approved |
+| Interconnection | `interconnection_status` | `"Submitted To Utility"` | Submitted to Utility |
+| PTO | `pto_status` | `"PTO"` | PTO Granted |
+| PTO | `pto_status` | `"Inspection Submitted to Utility"` | PTO Submitted to Utility |
 
 ---
 
