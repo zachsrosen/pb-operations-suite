@@ -1,3 +1,20 @@
+// Mock heavy dependencies so the pure-function tests don't pull in Prisma/HubSpot SDK
+jest.mock("@/lib/hubspot", () => ({
+  hubspotClient: {
+    crm: {
+      contacts: { batchApi: { read: jest.fn() } },
+      associations: { batchApi: { read: jest.fn() } },
+      lineItems: { batchApi: { read: jest.fn() } },
+    },
+  },
+}));
+jest.mock("@/lib/db", () => ({
+  getCachedZuperJobsByDealIds: jest.fn(),
+}));
+jest.mock("@/lib/external-links", () => ({
+  getZuperJobUrl: jest.fn(),
+}));
+
 import { resolveLastContact } from "@/lib/service-enrichment";
 
 describe("resolveLastContact", () => {
