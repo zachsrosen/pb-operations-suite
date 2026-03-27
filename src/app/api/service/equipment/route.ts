@@ -5,6 +5,7 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { appCache } from "@/lib/cache";
+import { enrichServiceItems, type EnrichmentInput } from "@/lib/service-enrichment";
 
 /**
  * Service pipeline equipment endpoint.
@@ -79,6 +80,7 @@ interface ServiceDeal {
   amount: number;
   address: string;
   city: string;
+  serviceType?: string | null;
   url: string;
   equipment: {
     modules: { brand: string; model: string; count: number; wattage: number; productName: string };
@@ -173,6 +175,43 @@ async function fetchServiceDeals(): Promise<ServiceDeal[]> {
 
     if (after) await sleep(150); // Rate limit
   } while (after);
+
+  // Enrich with line items to resolve equipment names
+  if (allDeals.length > 0) {
+    try {
+      const enrichInputs: EnrichmentInput[] = allDeals.map(p => ({
+        itemId: String(p.id),
+        itemType: "deal" as const,
+        contactIds: [],
+        serviceType: null,
+        dealLastContacted: null,
+      }));
+
+      const enrichments = await enrichServiceItems(enrichInputs, {
+        includeLineItems: true,
+        includeZuperJobs: false,
+      });
+
+      for (const project of allDeals) {
+        const e = enrichments.get(String(project.id));
+        if (e?.lineItems && e.lineItems.length > 0) {
+          for (const li of e.lineItems) {
+            const name = li.name.toLowerCase();
+            if ((name.includes("module") || name.includes("panel") || name.includes("solar")) && !project.equipment.modules.productName) {
+              project.equipment.modules.productName = li.name;
+            } else if (name.includes("inverter") && !project.equipment.inverter.productName) {
+              project.equipment.inverter.productName = li.name;
+            } else if ((name.includes("battery") || name.includes("powerwall") || name.includes("encharge")) && !project.equipment.battery.productName) {
+              project.equipment.battery.productName = li.name;
+            }
+          }
+        }
+        project.serviceType = e?.serviceType ?? null;
+      }
+    } catch (err) {
+      console.warn("[Service Equipment] Line item enrichment failed:", err);
+    }
+  }
 
   return allDeals;
 }
