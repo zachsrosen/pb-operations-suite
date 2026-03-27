@@ -655,12 +655,30 @@ async function applyInternalPatch(
     const specData: Record<string, unknown> = {};
     const existingSpec = getSpecData(sku) ?? {};
 
+    // Prisma rejects type mismatches: Float/Int columns need numbers,
+    // String columns (like zohoVendorId) must stay strings even when numeric.
+    // Whitelist all Float/Int fields from InternalProduct + spec tables.
+    const NUMERIC_FIELDS = new Set([
+      // InternalProduct
+      "unitSpec", "unitCost", "sellPrice", "length", "width", "weight",
+      // ModuleSpec
+      "wattage", "efficiency", "voc", "isc", "vmp", "imp", "tempCoefficient",
+      // InverterSpec
+      "acOutputKw", "maxDcInput", "maxInputVoltage", "mpptChannels",
+      // BatterySpec
+      "capacityKwh", "energyStorageCapacity", "usableCapacityKwh",
+      "continuousPowerKw", "peakPowerKw", "roundTripEfficiency", "nominalVoltage",
+      // EvChargerSpec
+      "powerKw", "amperage", "voltage",
+      // MountingHardwareSpec
+      "windRating", "snowLoad",
+      // ElectricalHardwareSpec
+      "voltageRating",
+    ]);
+
     for (const [field, value] of Object.entries(patch)) {
-      // Prisma Float columns reject string-typed numbers (e.g. "180.35").
-      // Coerce any string that is a valid number — no legitimate text field
-      // would contain a bare numeric value like "180.35".
       const coerced =
-        typeof value === "string" && value !== "" && !isNaN(Number(value))
+        NUMERIC_FIELDS.has(field) && typeof value === "string" && value !== "" && !isNaN(Number(value))
           ? Number(value)
           : value;
 
