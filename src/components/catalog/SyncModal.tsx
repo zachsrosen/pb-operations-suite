@@ -395,7 +395,7 @@ export default function SyncModal({
     // Pass 1: Internal column selections (highest priority)
     for (const [key, value] of Object.entries(selections)) {
       if (!key.startsWith("internal:")) continue;
-      if (value === "keep" || value === "internal") continue;
+      if (value === "keep" || value === "internal" || value === "custom") continue;
       const internalField = key.split(":")[1];
       locked[internalField] = value as ExternalSystem;
     }

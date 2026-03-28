@@ -3137,8 +3137,8 @@ export default function SchedulerPage() {
       }
       if (e.key === "1" && !e.ctrlKey && !e.metaKey) setCurrentView("calendar");
       if (e.key === "2" && !e.ctrlKey && !e.metaKey) setCurrentView("week");
-      if (e.key === "3" && !e.ctrlKey && !e.metaKey) setCurrentView("gantt");
-      if (e.key === "4" && !e.ctrlKey && !e.metaKey) setCurrentView("day");
+      if (e.key === "3" && !e.ctrlKey && !e.metaKey) setCurrentView("day");
+      if (e.key === "4" && !e.ctrlKey && !e.metaKey) setCurrentView("gantt");
       if (e.key === "ArrowLeft" && e.altKey) {
         if (currentView === "calendar") prevMonth();
         if (currentView === "week") setWeekOffset((w) => w - 1);
