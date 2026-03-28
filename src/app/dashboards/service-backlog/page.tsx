@@ -81,13 +81,13 @@ const SERVICE_STAGE_COLORS: Record<string, { tw: string; hex: string }> = {
 /*  Stage classification                                               */
 /* ------------------------------------------------------------------ */
 
-const COMPLETED_STAGES = new Set(["Completed", "Cancelled"]);
 const IN_PROGRESS_STAGES = new Set(["Work In Progress"]);
+const BUILT_STAGES = new Set(["Inspection", "Invoicing"]);
 
-type StageClass = "backlog" | "in_progress" | "completed";
+type StageClass = "backlog" | "in_progress" | "built";
 
 function classifyStage(stage: string): StageClass {
-  if (COMPLETED_STAGES.has(stage)) return "completed";
+  if (BUILT_STAGES.has(stage)) return "built";
   if (IN_PROGRESS_STAGES.has(stage)) return "in_progress";
   return "backlog";
 }
@@ -414,19 +414,19 @@ export default function ServiceBacklogPage() {
     });
   }, [projects, filterLocations, filterStages, searchQuery]);
 
-  /* ---- Split into backlog / in-progress / completed ---- */
+  /* ---- Split into backlog / in-progress / built ---- */
 
-  const { backlogProjects, inProgressProjects, completedProjects } = useMemo(() => {
+  const { backlogProjects, inProgressProjects, builtProjects } = useMemo(() => {
     const backlog: Project[] = [];
     const inProgress: Project[] = [];
-    const completed: Project[] = [];
+    const built: Project[] = [];
     for (const p of filteredProjects) {
       const cls = classifyStage(p.stage);
-      if (cls === "completed") completed.push(p);
+      if (cls === "built") built.push(p);
       else if (cls === "in_progress") inProgress.push(p);
       else backlog.push(p);
     }
-    return { backlogProjects: backlog, inProgressProjects: inProgress, completedProjects: completed };
+    return { backlogProjects: backlog, inProgressProjects: inProgress, builtProjects: built };
   }, [filteredProjects]);
 
   /* ---- Sorted projects (respects stat row filter) ---- */
@@ -435,8 +435,9 @@ export default function ServiceBacklogPage() {
     if (!activeStatFilter) return filteredProjects;
     if (activeStatFilter === "backlog") return backlogProjects;
     if (activeStatFilter === "in_progress") return inProgressProjects;
-    return completedProjects;
-  }, [filteredProjects, backlogProjects, inProgressProjects, completedProjects, activeStatFilter]);
+    if (activeStatFilter === "built") return builtProjects;
+    return filteredProjects;
+  }, [filteredProjects, backlogProjects, inProgressProjects, builtProjects, activeStatFilter]);
 
   const sortedProjects = useMemo(() => {
     return [...displayProjects].sort((a, b) => {
@@ -467,6 +468,7 @@ export default function ServiceBacklogPage() {
 
   const backlogTotals = useMemo(() => aggregateEquipment(backlogProjects), [backlogProjects]);
   const inProgressTotals = useMemo(() => aggregateEquipment(inProgressProjects), [inProgressProjects]);
+  const builtTotals = useMemo(() => aggregateEquipment(builtProjects), [builtProjects]);
   const allTotals = useMemo(() => aggregateEquipment(filteredProjects), [filteredProjects]);
 
   /* ---- Product name breakdowns (backlog only) ---- */
@@ -492,12 +494,12 @@ export default function ServiceBacklogPage() {
     [backlogProjects]
   );
 
-  /* ---- Stage breakdown (exclude completed stages) ---- */
+  /* ---- Stage breakdown (exclude built stages) ---- */
 
   const stageBreakdown = useMemo(() => {
     const map = new Map<string, { count: number; modules: number; inverters: number; batteries: number; batteryExpansions: number; ev: number; value: number; missing: number }>();
     for (const p of filteredProjects) {
-      if (classifyStage(p.stage) === "completed") continue;
+      if (classifyStage(p.stage) === "built") continue;
       const stage = p.stage || "Unknown";
       const existing = map.get(stage);
       const eq = p.equipment;
@@ -556,7 +558,7 @@ export default function ServiceBacklogPage() {
       "Project #": p.projectNumber,
       Location: p.pbLocation,
       Stage: p.stage,
-      Status: classifyStage(p.stage) === "completed" ? "Completed" : classifyStage(p.stage) === "in_progress" ? "In Progress" : "Backlog",
+      Status: classifyStage(p.stage) === "built" ? "Built" : classifyStage(p.stage) === "in_progress" ? "In Progress" : "Backlog",
       Modules: p.equipment?.modules?.count || 0,
       "Module Product": formatProduct(p.equipment?.modules?.productName, p.equipment?.modules?.model),
       Inverters: p.equipment?.inverter?.count || 0,
@@ -678,7 +680,7 @@ export default function ServiceBacklogPage() {
             onClick={() => setActiveStatFilter(null)}
             className="flex items-center gap-1.5 px-2.5 py-1.5 bg-purple-500/10 text-purple-400 text-xs font-medium rounded-lg border border-purple-500/20 hover:bg-purple-500/20 transition-colors"
           >
-            {activeStatFilter === "backlog" ? "Backlog" : activeStatFilter === "in_progress" ? "In Progress" : "Completed"}
+            {activeStatFilter === "backlog" ? "Backlog" : activeStatFilter === "in_progress" ? "In Progress" : "Built"}
             <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
             </svg>
@@ -711,7 +713,14 @@ export default function ServiceBacklogPage() {
           <StatRowSvc label="Backlog" totals={backlogTotals} accent="bg-purple-400" cls="backlog" activeStatFilter={activeStatFilter} onStatRowClick={handleStatRowClick} />
           <StatRowSvc label="In Progress (Work In Progress)" totals={inProgressTotals} accent="bg-orange-400" cls="in_progress" activeStatFilter={activeStatFilter} onStatRowClick={handleStatRowClick} />
 
-          {/* Stage Breakdown Table (excludes completed, expandable rows with projects) */}
+          {builtTotals.projects > 0 && (
+            <div className="text-xs text-muted mb-6 text-center">
+              <span className="text-green-400">{builtTotals.projects}</span> built projects not shown
+              ({builtTotals.modules.toLocaleString()} modules, {builtTotals.inverters.toLocaleString()} inverters, {builtTotals.batteries.toLocaleString()} batteries)
+            </div>
+          )}
+
+          {/* Stage Breakdown Table (excludes built, expandable rows with projects) */}
           <div className="bg-surface/50 border border-t-border rounded-xl p-6 mb-6">
             <h2 className="text-lg font-semibold mb-4">Equipment by Stage</h2>
             <div className="overflow-x-auto">
@@ -852,7 +861,7 @@ export default function ServiceBacklogPage() {
           {activeStatFilter && (
             <div className="mb-3 text-xs text-muted">
               Showing <span className="text-purple-400 font-medium">
-                {activeStatFilter === "backlog" ? "Backlog" : activeStatFilter === "in_progress" ? "In Progress" : "Completed"}
+                {activeStatFilter === "backlog" ? "Backlog" : activeStatFilter === "in_progress" ? "In Progress" : "Built"}
               </span> jobs ({sortedProjects.length})
             </div>
           )}
@@ -886,7 +895,7 @@ export default function ServiceBacklogPage() {
                   {sortedProjects.map((p) => {
                     const eq = p.equipment;
                     const cls = classifyStage(p.stage);
-                    const rowBg = cls === "completed" ? "bg-green-500/5" : cls === "in_progress" ? "bg-orange-500/5" : "";
+                    const rowBg = cls === "built" ? "bg-green-500/5" : cls === "in_progress" ? "bg-orange-500/5" : "";
                     const isMissing = hasMissingEquipment(eq);
                     return (
                       <tr key={p.id} className={`border-b border-t-border/50 hover:bg-surface-2/30 ${rowBg}`}>
