@@ -477,6 +477,31 @@ model HubSpotProjectCache {
   @@index([lastSyncedAt])
   @@index([zuperJobUid])
 }
+// ===========================================
+// DEAL STATUS SNAPSHOTS (EOD Summary Email)
+// ===========================================
+
+model DealStatusSnapshot {
+  id                    Int      @id @default(autoincrement())
+  snapshotDate          DateTime @db.Date
+  dealId                String
+  dealName              String
+  pipeline              String
+  dealStage             String
+  pbLocation            String?
+  ownerId               String
+  designStatus          String?
+  layoutStatus          String?
+  permittingStatus      String?
+  interconnectionStatus String?
+  ptoStatus             String?
+  createdAt             DateTime @default(now())
+
+  @@unique([snapshotDate, dealId, ownerId])
+  @@index([snapshotDate])
+}
+
+
 
 // ===========================================
 // CREW MEMBERS (Zuper User Configuration)
