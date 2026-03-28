@@ -275,8 +275,9 @@ function buildTasksSection(tasks: CompletedTask[]): string {
 
   for (const ownerName of sortedOwners) {
     const ownerTasks = ownerMap.get(ownerName)!;
+    const count = ownerTasks.length;
     parts.push(
-      `<div style="font-size:12px;font-weight:600;color:#d4d4d8;margin:8px 0 3px 0;">${esc(ownerName)}</div>`
+      `<div style="font-size:12px;font-weight:600;color:#d4d4d8;margin:8px 0 3px 0;">${esc(ownerName)} <span style="${MUTED_STYLE}">\u2014 ${count} task${count === 1 ? "" : "s"}</span></div>`
     );
     for (const task of ownerTasks) {
       const dealPart =
@@ -383,9 +384,18 @@ function buildPlainText(data: EodEmailData): string {
 
   if (data.tasks.length > 0) {
     lines.push("", "TASKS COMPLETED");
+    const byOwner = new Map<string, CompletedTask[]>();
     for (const task of data.tasks) {
-      const dealSuffix = task.associatedDealName ? ` (${task.associatedDealName})` : "";
-      lines.push(`  ✓ ${task.ownerName}: ${task.subject}${dealSuffix}`);
+      const name = task.ownerName || task.ownerId;
+      if (!byOwner.has(name)) byOwner.set(name, []);
+      byOwner.get(name)!.push(task);
+    }
+    for (const [name, ownerTasks] of [...byOwner.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+      lines.push(`  ${name} — ${ownerTasks.length} task${ownerTasks.length === 1 ? "" : "s"}`);
+      for (const task of ownerTasks) {
+        const dealSuffix = task.associatedDealName ? ` (${task.associatedDealName})` : "";
+        lines.push(`    ✓ ${task.subject}${dealSuffix}`);
+      }
     }
   }
 
