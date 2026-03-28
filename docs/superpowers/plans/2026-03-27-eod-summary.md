@@ -1062,13 +1062,11 @@ export async function queryCompletedTasks(): Promise<{
       } as never);
     }
 
-    const tasks: CompletedTask[] = [];
-    const MAX_ASSOCIATION_LOOKUPS = 50;
-    let associationLookups = 0;
+    const rawTasks = (response as { results?: Array<{ id: string; properties: Record<string, string> }> }).results ?? [];
 
-    for (const task of (response as { results?: Array<{ id: string; properties: Record<string, string> }> }).results ?? []) {
+    const tasks: CompletedTask[] = rawTasks.map((task) => {
       const ownerId = task.properties.hubspot_owner_id ?? "";
-      const completedTask: CompletedTask = {
+      return {
         taskId: task.id,
         subject: task.properties.hs_task_subject ?? "(no subject)",
         ownerId,
@@ -1077,30 +1075,37 @@ export async function queryCompletedTasks(): Promise<{
         associatedDealId: null,
         associatedDealName: null,
       };
+    });
 
-      // Resolve deal association
-      if (associationLookups < MAX_ASSOCIATION_LOOKUPS) {
-        try {
-          const assoc = await hubspotClient.crm.objects.tasks.associationsApi.getAll(
-            task.id, "deals"
-          );
-          const dealAssoc = (assoc.results ?? [])[0];
-          if (dealAssoc) {
-            completedTask.associatedDealId = dealAssoc.id ?? (dealAssoc as unknown as { toObjectId: string }).toObjectId;
+    // Batch-resolve task → deal associations via the top-level associations API.
+    // hubspotClient.crm.objects.tasks does NOT have associationsApi — must use
+    // hubspotClient.crm.associations.batchApi.read() instead.
+    // Cap at 50 tasks per batch to stay within API limits.
+    const taskIdsToResolve = tasks.slice(0, 50).map((t) => t.taskId);
+    if (taskIdsToResolve.length > 0) {
+      try {
+        const assocResponse = await hubspotClient.crm.associations.batchApi.read(
+          "tasks",
+          "deals",
+          { inputs: taskIdsToResolve.map((id) => ({ id })) },
+        );
+        for (const result of assocResponse.results ?? []) {
+          const fromId = (result as unknown as { _from: { id: string } })._from?.id;
+          const toId = (result.to ?? [])[0]?.id;
+          if (fromId && toId) {
+            const task = tasks.find((t) => t.taskId === fromId);
+            if (task) task.associatedDealId = toId;
           }
-          associationLookups++;
-        } catch {
-          // Best-effort — skip association
         }
+      } catch {
+        // Best-effort — associations stay null
       }
-
-      tasks.push(completedTask);
     }
 
     // Batch-resolve deal names for tasks that have deal associations
-    const dealIds = tasks
-      .map((t) => t.associatedDealId)
-      .filter((id): id is string => id != null);
+    const dealIds = [...new Set(
+      tasks.map((t) => t.associatedDealId).filter((id): id is string => id != null)
+    )];
 
     if (dealIds.length > 0) {
       try {
