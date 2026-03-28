@@ -138,15 +138,14 @@ Mirror the ops equipment backlog (`/dashboards/equipment-backlog`) pattern by ad
 const BUILT_STAGES = new Set(["Inspection", "Invoicing"]);
 ```
 
-2. Expand `StageClass` type (drop `"completed"` — the API never returns Completed/Cancelled stages):
+2. Expand `StageClass` type (drop `"completed"` — the API never returns Completed/Cancelled stages, so remove `COMPLETED_STAGES` and the completed branch entirely):
 ```typescript
 type StageClass = "backlog" | "in_progress" | "built";
 ```
 
-3. Update `classifyStage()`:
+3. Update `classifyStage()` (remove the completed branch — server already filters those):
 ```typescript
 function classifyStage(stage: string): StageClass {
-  if (COMPLETED_STAGES.has(stage)) return "completed";
   if (BUILT_STAGES.has(stage)) return "built";
   if (IN_PROGRESS_STAGES.has(stage)) return "in_progress";
   return "backlog";
@@ -223,12 +222,17 @@ The tinted background (`/10` opacity) extends to the full column body so system 
 - This allows the user to type a correction once and push it to all systems
 - If the custom value is cleared (via "×"), the "Custom" option disappears from sibling dropdowns
 
-**Scope:** Custom input is available on both Internal and external system columns. If a custom value is entered on an external column, the Internal column also gets a "Custom" option so the user can pull the corrected value into the InternalProduct record.
+**Scope:** Custom input is available on both Internal and external system columns. A custom value is row-level — one custom value per field row, shared across all columns.
+
+**Row-level custom value model:**
+- Add a parallel `customValues: Record<string, string>` state map keyed by **field name only** (not `{system}:{field}`). Each field row has at most one custom value.
+- When the user types a custom value in any column (Internal, HubSpot, Zoho, or Zuper), it writes to `customValues[fieldName]`.
+- **Overwrite rule:** If the user enters a custom value on HubSpot for field "name", then enters a different custom value on Zoho for the same field, the second entry overwrites the first — there is only one custom value per row. The previously-selected "Custom" on the HubSpot column now reflects the updated value. This keeps the mental model simple: "Custom" means "the corrected value for this field."
+- If the user clears a custom value (via "×"), all columns on that row that had selected "Custom" revert to "Keep."
 
 **Type system changes:**
 - Add `"custom"` as a new literal to the `SelectionMap` value type (alongside `"keep"`, `"internal"`, and system names)
-- Add a parallel `customValues: Record<string, string>` state map keyed by `{system}:{field}` to hold the actual typed strings
-- In `selectionToIntents`, when source is `"custom"`, resolve the value from `customValues` and emit a `FieldIntent` with `mode: "manual"` and a new `customValue: string` field added to the `FieldIntent` type
+- In `selectionToIntents`, when source is `"custom"`, resolve the value from `customValues[fieldName]` and emit a `FieldIntent` with `mode: "manual"` and a new `customValue: string` field added to the `FieldIntent` type
 - The sync plan/confirm/execute endpoints accept the custom value as an override — the backend writes it directly instead of copying from a source system
 
 Note: `mode: "manual"` already exists in `FieldIntent` (meaning "user-selected" vs "auto-selected"). The new `customValue` field distinguishes "user picked a source" from "user typed a value." When `customValue` is present, the sync executor uses it instead of reading from any system.
