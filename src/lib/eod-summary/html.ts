@@ -185,8 +185,9 @@ function buildStatusChangesSection(
         a.dealName.localeCompare(b.dealName)
       );
 
+      const changeCount = sortedChanges.length;
       parts.push(
-        `<div style="font-size:12px;font-weight:600;color:#d4d4d8;margin:6px 0 3px 0;">${esc(leadName)}</div>`
+        `<div style="font-size:12px;font-weight:600;color:#d4d4d8;margin:6px 0 3px 0;">${esc(leadName)} <span style="${MUTED_STYLE}">\u2014 ${changeCount} change${changeCount === 1 ? "" : "s"}</span></div>`
       );
 
       for (const change of sortedChanges) {
