@@ -2,6 +2,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sendCronHealthAlert } from "@/lib/audit/alerts";
 import { runPIDailyFocus, runDesignDailyFocus } from "@/lib/daily-focus/send";
+import { queryAllBroad, saveSnapshot } from "@/lib/eod-summary/snapshot";
 
 /**
  * GET /api/cron/daily-focus
@@ -41,6 +42,26 @@ export async function GET(request: NextRequest) {
     const totalSent = results.reduce((s, r) => s + r.emailsSent, 0);
     const totalItems = results.reduce((s, r) => s + r.totalItems, 0);
 
+    // ── EOD Snapshot (best-effort, does not block daily focus emails) ──
+    // Skip on dry-run — snapshot writes are production DB mutations.
+    const snapshotResult = { saved: 0, errors: [] as string[] };
+    if (!dryRun) {
+      try {
+        const broadResult = await queryAllBroad();
+        await saveSnapshot(broadResult);
+        // Count total (dealId, ownerId) rows written
+        for (const [dealId, owners] of broadResult.dealOwnerSets) {
+          void dealId;
+          snapshotResult.saved += owners.size;
+        }
+        console.log(`[daily-focus] EOD snapshot saved: ${snapshotResult.saved} rows`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[daily-focus] EOD snapshot failed (non-blocking): ${msg}`);
+        snapshotResult.errors.push(msg);
+      }
+    }
+
     return NextResponse.json({
       dryRun,
       emailsSent: totalSent,
@@ -55,6 +76,7 @@ export async function GET(request: NextRequest) {
         skippedReason: r.skippedReason,
       })),
       errors: allErrors.length > 0 ? allErrors : undefined,
+      snapshot: { saved: snapshotResult.saved, errors: snapshotResult.errors },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown error";

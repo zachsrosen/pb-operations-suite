@@ -255,16 +255,19 @@ export function derivePlan(
   category: string,
 ): SyncPlan {
   const activeMappings = getActiveMappings(category);
+  const customOverrides = deriveCustomOverrides(intents, activeMappings);
 
   // Step 1: Derive pull operations from intents
   const pulls = derivePullOperations(intents, activeMappings, snapshots);
 
   // Step 2: Detect conflicts (pass mappings for correct normalizeWith lookup)
-  const conflicts = detectConflicts(pulls, activeMappings);
+  const conflicts = detectConflicts(pulls, activeMappings).filter(
+    (conflict) => !(conflict.internalField in customOverrides),
+  );
 
   // Step 3: Compute effective internal state (with relay-only overlays)
   const { internalPatch, effectiveState } = computeEffectiveState(
-    sku, pulls, activeMappings,
+    sku, pulls, activeMappings, customOverrides,
   );
 
   // Step 4: Derive push and create operations
@@ -297,6 +300,26 @@ export function derivePlan(
   };
 }
 
+function deriveCustomOverrides(
+  intents: Record<ExternalSystem, Record<string, FieldIntent>>,
+  mappings: FieldMappingEdge[],
+): Record<string, string> {
+  const overrides: Record<string, string> = {};
+  for (const system of EXTERNAL_SYSTEMS) {
+    const systemIntents = intents[system] ?? {};
+    for (const [externalField, intent] of Object.entries(systemIntents)) {
+      if (intent.customValue == null) continue;
+      const internalField =
+        intent.internalField ||
+        mappings.find((e) => e.system === system && e.externalField === externalField)
+          ?.internalField;
+      if (!internalField) continue;
+      overrides[internalField] = String(intent.customValue);
+    }
+  }
+  return overrides;
+}
+
 // ── Pull operations ──
 
 function derivePullOperations(
@@ -319,13 +342,14 @@ function derivePullOperations(
       const snap = snapshots.find(
         (s) => s.system === system && s.field === externalField,
       );
+      const pullValue = intent.customValue != null ? intent.customValue : (snap?.rawValue ?? null);
 
       pulls.push({
         kind: "pull",
         system,
         externalField,
         internalField: edge.internalField,
-        value: snap?.rawValue ?? null,
+        value: pullValue,
         updateInternal: intent.updateInternalOnPull,
         source: "manual",
       });
@@ -407,6 +431,7 @@ function computeEffectiveState(
   sku: SkuRecord,
   pulls: SyncOperation[],
   mappings: FieldMappingEdge[],
+  customOverrides: Record<string, string>,
 ): { internalPatch: Record<string, string | number | null>; effectiveState: Record<string, string | number | null> } {
   const internalPatch: Record<string, string | number | null> = {};
   const effectiveState: Record<string, string | number | null> = {};
@@ -440,6 +465,11 @@ function computeEffectiveState(
     if (anyPersist) {
       internalPatch[internalField] = winner.value;
     }
+  }
+
+  for (const [internalField, value] of Object.entries(customOverrides)) {
+    effectiveState[internalField] = value;
+    internalPatch[internalField] = value;
   }
 
   return { internalPatch, effectiveState };
@@ -491,7 +521,7 @@ function derivePushOperations(
       const edge = systemMappings.find((e) => e.externalField === externalField);
       if (!edge) continue;
 
-      const value = effectiveState[edge.internalField] ?? null;
+      const value = intent.customValue != null ? intent.customValue : (effectiveState[edge.internalField] ?? null);
       ops.push({
         kind: "push",
         system,
