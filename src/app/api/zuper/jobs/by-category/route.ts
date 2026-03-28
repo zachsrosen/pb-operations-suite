@@ -66,15 +66,15 @@ export async function GET(request: NextRequest) {
       const team = Array.isArray(job.assigned_to_team) ? job.assigned_to_team : [];
       const ext = (job.external_id || {}) as Record<string, string>;
 
-      // Extract assigned user name
-      let assignedUser = "";
+      // Extract assigned user names (all assignees)
+      const assignedUsers: string[] = [];
       for (const a of assigned) {
         if (typeof a === "object" && a !== null) {
           const user = (a as Record<string, unknown>).user || a;
           if (typeof user === "object" && user !== null) {
             const u = user as Record<string, string>;
-            assignedUser = `${u.first_name || ""} ${u.last_name || ""}`.trim();
-            break;
+            const name = `${u.first_name || ""} ${u.last_name || ""}`.trim();
+            if (name) assignedUsers.push(name);
           }
         }
       }
@@ -105,7 +105,8 @@ export async function GET(request: NextRequest) {
         address: `${address.street || ""}, ${address.city || ""}, ${address.state || ""}`.replace(/, $/, ""),
         city: address.city || "",
         state: address.state || "",
-        assignedUser,
+        assignedUser: assignedUsers[0] || "",
+        assignedUsers,
         teamName,
         hubspotDealId: ext.hubspot_deal || "",
         jobTotal: (job.job_total as number) || 0,
