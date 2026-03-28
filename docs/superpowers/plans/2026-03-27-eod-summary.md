@@ -164,6 +164,16 @@ export const PROPERTY_TO_DEPARTMENT: Record<string, string> = {
   pto_status: "PTO",
 };
 
+// Map from status property → the HubSpot role property that owns it.
+// Used to resolve which lead a status change should be grouped under.
+export const STATUS_TO_ROLE_PROPERTY: Record<string, string> = {
+  design_status: "design",
+  layout_status: "design",
+  permitting_status: "permit_tech",
+  interconnection_status: "interconnections_tech",
+  pto_status: "interconnections_tech",
+};
+
 // ── Milestone definitions ────────────────────────────────────────────
 // Raw HubSpot enum values. Display labels come from deals-types.ts
 // STATUS_DISPLAY_LABELS at render time.
@@ -432,8 +442,12 @@ export function diffSnapshots(
 
 interface BroadQueryResult {
   deals: Map<string, SnapshotDeal>;
-  /** Map from dealId → Set of ownerIds */
-  dealOwners: Map<string, Set<string>>;
+  /** Map from dealId → Map<roleProperty, ownerId>. Tracks which lead
+   *  owns which role for each deal, so status changes can be grouped
+   *  under the correct lead (e.g., permitting_status → permit_tech owner). */
+  dealPropertyOwners: Map<string, Map<string, string>>;
+  /** Flat set of ownerIds for false-positive guard on resolved deals */
+  dealOwnerSets: Map<string, Set<string>>;
   failedOwnerIds: Set<string>;
 }
 
@@ -488,8 +502,19 @@ async function queryBroadForLead(
 
 export async function queryAllBroad(): Promise<BroadQueryResult> {
   const dealsMap = new Map<string, SnapshotDeal>();
-  const dealOwners = new Map<string, Set<string>>();
+  const dealPropertyOwners = new Map<string, Map<string, string>>();
+  const dealOwnerSets = new Map<string, Set<string>>();
   const failedOwnerIds = new Set<string>();
+
+  function recordDeal(deal: SnapshotDeal, roleProperty: string, ownerId: string) {
+    dealsMap.set(deal.dealId, deal);
+    // Property-level: roleProperty → ownerId
+    if (!dealPropertyOwners.has(deal.dealId)) dealPropertyOwners.set(deal.dealId, new Map());
+    dealPropertyOwners.get(deal.dealId)!.set(roleProperty, ownerId);
+    // Flat set for false-positive guard
+    if (!dealOwnerSets.has(deal.dealId)) dealOwnerSets.set(deal.dealId, new Set());
+    dealOwnerSets.get(deal.dealId)!.add(ownerId);
+  }
 
   // PI leads — one query per role (role strings are already HubSpot property names)
   for (const lead of PI_LEADS) {
@@ -500,9 +525,7 @@ export async function queryAllBroad(): Promise<BroadQueryResult> {
         continue;
       }
       for (const deal of result.deals) {
-        dealsMap.set(deal.dealId, deal);
-        if (!dealOwners.has(deal.dealId)) dealOwners.set(deal.dealId, new Set());
-        dealOwners.get(deal.dealId)!.add(lead.hubspotOwnerId);
+        recordDeal(deal, role, lead.hubspotOwnerId);
       }
     }
   }
@@ -515,13 +538,11 @@ export async function queryAllBroad(): Promise<BroadQueryResult> {
       continue;
     }
     for (const deal of result.deals) {
-      dealsMap.set(deal.dealId, deal);
-      if (!dealOwners.has(deal.dealId)) dealOwners.set(deal.dealId, new Set());
-      dealOwners.get(deal.dealId)!.add(lead.hubspotOwnerId);
+      recordDeal(deal, "design", lead.hubspotOwnerId);
     }
   }
 
-  return { deals: dealsMap, dealOwners, failedOwnerIds };
+  return { deals: dealsMap, dealPropertyOwners, dealOwnerSets, failedOwnerIds };
 }
 
 // ── DB save/load ────────────────────────────────────────────────────────
@@ -539,7 +560,7 @@ export async function saveSnapshot(
   const errors: string[] = [];
 
   for (const [dealId, deal] of broadResult.deals) {
-    const owners = broadResult.dealOwners.get(dealId) ?? new Set<string>();
+    const owners = broadResult.dealOwnerSets.get(dealId) ?? new Set<string>();
     for (const ownerId of owners) {
       try {
         await prisma.dealStatusSnapshot.upsert({
@@ -818,23 +839,41 @@ export function clearUserIdMapCache(): void {
 
 const MAX_HISTORY_CALLS = 20;
 
+type HistoryEntry = { value: string; timestamp: string; sourceType: string; sourceId: string };
+
 async function getPropertyHistory(
   dealId: string,
   properties: string[],
-): Promise<Record<string, Array<{ value: string; timestamp: string; sourceType: string; sourceId: string }>> | null> {
-  try {
-    const deal = await hubspotClient.crm.deals.basicApi.getById(
-      dealId,
-      properties,
-      properties,  // propertiesWithHistory
-      undefined,
-      false,
-    );
-    return (deal as unknown as { propertiesWithHistory?: Record<string, Array<{ value: string; timestamp: string; sourceType: string; sourceId: string }>> }).propertiesWithHistory ?? null;
-  } catch (err) {
-    console.error(`[eod] Property history failed for deal ${dealId}: ${err instanceof Error ? err.message : String(err)}`);
-    return null;
+  maxRetries = 3,
+): Promise<Record<string, HistoryEntry[]> | null> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      const deal = await hubspotClient.crm.deals.basicApi.getById(
+        dealId,
+        properties,
+        properties,  // propertiesWithHistory
+        undefined,
+        false,
+      );
+      return (deal as unknown as { propertiesWithHistory?: Record<string, HistoryEntry[]> }).propertiesWithHistory ?? null;
+    } catch (err) {
+      const isRateLimit =
+        err instanceof Error &&
+        (err.message.includes("429") || err.message.includes("rate"));
+      const statusCode = (err as { code?: number })?.code;
+
+      if ((isRateLimit || statusCode === 429) && attempt < maxRetries - 1) {
+        const delay = Math.round(Math.pow(2, attempt) * 1100 + Math.random() * 400);
+        console.log(`[eod] Property history rate-limited for ${dealId}, retry ${attempt + 1}/${maxRetries} in ${delay}ms`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      console.error(`[eod] Property history failed for deal ${dealId}: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
   }
+  return null;
 }
 
 // ── Milestone detection ────────────────────────────────────────────────
@@ -967,11 +1006,17 @@ export async function queryCompletedTasks(): Promise<{
   error?: string;
 }> {
   try {
-    // Calculate today 6 AM Denver in UTC
+    // Calculate today 6 AM Denver in UTC (DST-safe).
+    // Probe Denver's current UTC offset via Intl — works for both MDT (-06:00)
+    // and MST (-07:00) without hardcoding.
     const now = new Date();
     const todayStr = now.toLocaleDateString("en-CA", { timeZone: "America/Denver" });
-    // 6 AM Denver → approximate as start-of-business
-    const startOfDay = new Date(`${todayStr}T06:00:00-06:00`);
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Denver",
+      timeZoneName: "longOffset",
+    }).formatToParts(now);
+    const gmtOffset = (parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT-06:00").replace("GMT", "");
+    const startOfDay = new Date(`${todayStr}T06:00:00${gmtOffset}`);
 
     // Prefer hs_task_completion_date (semantically correct for "completed today").
     // Fall back to hs_lastmodifieddate only if the first query returns 0 results
@@ -1205,12 +1250,12 @@ export async function runEodSummary(options: { dryRun: boolean }): Promise<EodSu
   // Step 2: Query evening state (broad queries)
   const eveningResult = await queryAllBroad();
 
-  // Step 3: Diff
+  // Step 3: Diff (use morning dealOwnerMap for false-positive guard)
   let diff;
   if (morningData) {
     diff = diffSnapshots(morningData.deals, eveningResult.deals, {
       failedOwnerIds: eveningResult.failedOwnerIds,
-      dealOwnerMap: morningData.dealOwnerMap,
+      dealOwnerMap: morningData.dealOwnerMap, // from loadSnapshot()
     });
   } else {
     errors.push("No morning baseline — diff unavailable");
@@ -1256,7 +1301,7 @@ export async function runEodSummary(options: { dryRun: boolean }): Promise<EodSu
     stillInScopeCount,
     errors,
     dryRun: options.dryRun,
-    dealOwners: eveningResult.dealOwners,
+    dealPropertyOwners: eveningResult.dealPropertyOwners,
     ownerNameMap,
   });
 
@@ -1272,6 +1317,8 @@ export async function runEodSummary(options: { dryRun: boolean }): Promise<EodSu
     subject,
     html,
     text: `EOD Summary — ${diff.changes.length} changes, ${milestones.length} milestones, ${taskResult.tasks.length} tasks.`,
+    debugFallbackTitle: subject,
+    debugFallbackBody: `${diff.changes.length} changes, ${milestones.length} milestones, ${taskResult.tasks.length} tasks`,
   });
 
   if (!emailResult.success) {
@@ -1335,7 +1382,7 @@ This is the largest file. Follow the existing `daily-focus/html.ts` patterns: in
 
 import { getHubSpotDealUrl } from "@/lib/external-links";
 import { getStatusDisplayName } from "@/lib/daily-focus/format";
-import { PIPELINE_SUFFIXES, PROPERTY_TO_DEPARTMENT, FIELD_TO_HS_PROPERTY } from "./config";
+import { PIPELINE_SUFFIXES, PROPERTY_TO_DEPARTMENT, STATUS_TO_ROLE_PROPERTY } from "./config";
 import type { StatusChange, SnapshotDeal } from "./snapshot";
 import type { MilestoneHit } from "./milestones";
 import type { CompletedTask } from "./tasks";
@@ -1383,7 +1430,8 @@ export interface EodEmailData {
   stillInScopeCount: number;
   errors: string[];
   dryRun: boolean;
-  dealOwners: Map<string, Set<string>>;
+  /** Map from dealId → Map<roleProperty, ownerId> for property-level lead grouping */
+  dealPropertyOwners: Map<string, Map<string, string>>;
   ownerNameMap: Map<string, string>;
 }
 
@@ -1435,15 +1483,18 @@ export function buildEodEmail(data: EodEmailData): string {
   // Status changes by department
   if (data.changes.length > 0) {
     // Group: department → ownerId → changes
+    // Uses property-level ownership: a permitting_status change is grouped
+    // under the permit_tech owner, not an arbitrary set member.
     const byDept = new Map<string, Map<string, StatusChange[]>>();
     for (const change of data.changes) {
       const dept = PROPERTY_TO_DEPARTMENT[change.hsProperty] ?? "Other";
       if (!byDept.has(dept)) byDept.set(dept, new Map());
       const deptMap = byDept.get(dept)!;
 
-      // Find the owner for this deal from evening query
-      const owners = data.dealOwners.get(change.dealId);
-      const ownerId = owners ? [...owners][0] : "unknown";
+      // Resolve the correct lead via STATUS_TO_ROLE_PROPERTY
+      const roleProperty = STATUS_TO_ROLE_PROPERTY[change.hsProperty];
+      const propOwners = data.dealPropertyOwners.get(change.dealId);
+      const ownerId = (roleProperty && propOwners?.get(roleProperty)) ?? "unknown";
       if (!deptMap.has(ownerId)) deptMap.set(ownerId, []);
       deptMap.get(ownerId)!.push(change);
     }
