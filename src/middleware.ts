@@ -22,6 +22,7 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/audit-retention",
   "/api/cron/pipeline-health",
   "/api/cron/daily-focus",
+  "/api/cron/eod-summary",
   "/api/portal/survey", // Customer portal — token-validated, no session needed
   "/api/solar/cron/cleanup-pending", // Solar cron — CRON_SECRET validated in route
 ];
