@@ -22,6 +22,10 @@ export interface FieldIntent {
   /** Only meaningful when direction === "pull". Controls whether the
    *  pulled value writes to the internal product DB record. */
   updateInternalOnPull: boolean;
+  /** Custom value override (when user selects Custom...) */
+  customValue?: string | null;
+  /** Optional internal field identifier for custom values */
+  internalField?: string;
 }
 
 // ── Normalization ──

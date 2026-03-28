@@ -24,7 +24,7 @@ type Step = "loading" | "table" | "executing" | "results";
 
 /** Per-cell selection keyed by `${system}:${externalField}` for external columns
  *  or `internal:${internalField}` for the internal column. */
-type SelectionMap = Record<string, "keep" | "internal" | ExternalSystem>;
+type SelectionMap = Record<string, "keep" | "internal" | ExternalSystem | "custom">;
 
 const SYSTEM_LABELS: Record<ExternalSystem, string> = {
   zoho: "Zoho Inventory",
@@ -154,18 +154,22 @@ export function buildFieldRows(
  * Get the projected value for a cell given the selected source.
  */
 export function getProjectedValue(
-  source: "keep" | "internal" | ExternalSystem,
+  source: "keep" | "internal" | ExternalSystem | "custom",
   internalField: string,
   externalField: string,
   system: ExternalSystem,
   snapshots: FieldValueSnapshot[],
   mappings: FieldMappingEdge[],
+  customValue?: string | null,
 ): string | number | null {
   if (source === "keep") {
     return getSnapshotValue(snapshots, system, externalField);
   }
   if (source === "internal") {
     return getSnapshotValue(snapshots, "internal", internalField);
+  }
+  if (source === "custom") {
+    return customValue ?? null;
   }
   // Source is another external system — find its value for this internalField
   const sourceEdge = mappings.find(
@@ -291,6 +295,7 @@ export default function SyncModal({
   const [snapshots, setSnapshots] = useState<FieldValueSnapshot[]>([]);
   const [mappings, setMappings] = useState<FieldMappingEdge[]>([]);
   const [selections, setSelections] = useState<SelectionMap>({});
+  const [customValues, setCustomValues] = useState<Record<string, string>>({});
   const [createToggles, setCreateToggles] = useState<Record<ExternalSystem, boolean>>({
     zoho: false,
     hubspot: false,
@@ -309,6 +314,10 @@ export default function SyncModal({
     return result;
   }, [snapshots]);
 
+  const orderedSystems = useMemo<ExternalSystem[]>(() => {
+    return [...EXTERNAL_SYSTEMS].sort((a, b) => SYSTEM_SHORT[a].localeCompare(SYSTEM_SHORT[b]));
+  }, []);
+
   // ── Reset when modal opens ──
   const [prevOpen, setPrevOpen] = useState(false);
   if (isOpen && !prevOpen) {
@@ -317,6 +326,7 @@ export default function SyncModal({
     setError(null);
     setOutcomes([]);
     setSelections({});
+    setCustomValues({});
     setCreateToggles({ zoho: false, hubspot: false, zuper: false });
     setShowInSync(false);
   }
@@ -395,7 +405,7 @@ export default function SyncModal({
     // cell has picked another external source (relay). That source locks the row.
     for (const [key, value] of Object.entries(selections)) {
       if (key.startsWith("internal:")) continue;
-      if (value === "keep" || value === "internal") continue;
+      if (value === "keep" || value === "internal" || value === "custom") continue;
       // value is an ExternalSystem (relay source)
       const parts = key.split(":");
       const cellSystem = parts[0] as ExternalSystem;
@@ -417,15 +427,16 @@ export default function SyncModal({
   // ── Handlers ──
 
   const handleSelectionChange = useCallback(
-    (key: string, value: "keep" | "internal" | ExternalSystem) => {
+    (key: string, value: "keep" | "internal" | ExternalSystem | "custom") => {
       setSelections((prev) => {
         const next = { ...prev, [key]: value };
+        const isCustom = value === "custom";
 
         // Conflict prevention: if this is the Internal column changing,
         // reset any external cells for the same field that would conflict
         if (key.startsWith("internal:")) {
           const internalField = key.split(":")[1];
-          if (value !== "keep" && value !== "internal") {
+          if (value !== "keep" && value !== "internal" && value !== "custom") {
             // Lock: external cells for this field can only be keep/internal/value
             for (const sys of EXTERNAL_SYSTEMS) {
               for (const edge of mappings) {
@@ -436,13 +447,22 @@ export default function SyncModal({
                   extSel &&
                   extSel !== "keep" &&
                   extSel !== "internal" &&
-                  extSel !== value
+                  extSel !== value &&
+                  extSel !== "custom"
                 ) {
                   // Conflicting source — reset to keep
                   next[extKey] = "keep";
                 }
               }
             }
+          }
+          if (!isCustom) {
+            setCustomValues((prevCustom) => {
+              if (!(internalField in prevCustom)) return prevCustom;
+              const copy = { ...prevCustom };
+              delete copy[internalField];
+              return copy;
+            });
           }
         }
 
@@ -451,6 +471,45 @@ export default function SyncModal({
     },
     [mappings],
   );
+
+  const handleCustomValueChange = useCallback((fieldKey: string, value: string) => {
+    setCustomValues((prev) => ({
+      ...prev,
+      [fieldKey]: value,
+    }));
+    setSelections((prev) => {
+      const next = { ...prev };
+      next[`internal:${fieldKey}`] = "custom";
+      for (const sys of EXTERNAL_SYSTEMS) {
+        for (const edge of mappings) {
+          if (edge.system !== sys || edge.internalField !== fieldKey) continue;
+          next[`${sys}:${edge.externalField}`] = "custom";
+        }
+      }
+      return next;
+    });
+  }, [mappings]);
+
+  const handleCustomCancel = useCallback((fieldKey: string) => {
+    setCustomValues((prev) => {
+      if (!(fieldKey in prev)) return prev;
+      const copy = { ...prev };
+      delete copy[fieldKey];
+      return copy;
+    });
+    setSelections((prev) => {
+      const next = { ...prev };
+      if (next[`internal:${fieldKey}`] === "custom") next[`internal:${fieldKey}`] = "keep";
+      for (const sys of EXTERNAL_SYSTEMS) {
+        for (const edge of mappings) {
+          if (edge.system !== sys || edge.internalField !== fieldKey) continue;
+          const key = `${sys}:${edge.externalField}`;
+          if (next[key] === "custom") next[key] = "keep";
+        }
+      }
+      return next;
+    });
+  }, [mappings]);
 
   const handleCreateToggle = useCallback(
     (system: ExternalSystem) => {
@@ -526,30 +585,55 @@ export default function SyncModal({
         const parts = key.split(":");
         const colType = parts[0];
         const field = parts.slice(1).join(":");
+        const isCustom = source === "custom";
+        const internalField = colType === "internal"
+          ? field
+          : mappings.find((e) => e.system === (colType as ExternalSystem) && e.externalField === field)?.internalField;
+        const customValue = isCustom && internalField ? (customValues[internalField] ?? "") : undefined;
 
         if (colType === "internal") {
           // Internal column pulling from an external source
-          // Need to find the edge for this internal field on the source system
-          const sourceSystem = source as ExternalSystem;
-          const sourceEdge = mappings.find(
-            (e) => e.system === sourceSystem && e.internalField === field,
-          );
-          if (sourceEdge) {
-            cellSelections.push({
-              system: sourceSystem,
-              externalField: sourceEdge.externalField,
-              source: sourceSystem,
-              isInternalColumn: true,
-            });
+          if (isCustom) {
+            const edge = mappings.find((e) => e.internalField === field);
+            if (edge) {
+              cellSelections.push({
+                system: edge.system,
+                externalField: edge.externalField,
+                source: "custom",
+                isInternalColumn: true,
+                customValue,
+                internalField: field,
+              });
+            }
+          } else {
+            // Need to find the edge for this internal field on the source system
+            const sourceSystem = source as ExternalSystem;
+            const sourceEdge = mappings.find(
+              (e) => e.system === sourceSystem && e.internalField === field,
+            );
+            if (sourceEdge) {
+              cellSelections.push({
+                system: sourceSystem,
+                externalField: sourceEdge.externalField,
+                source: sourceSystem,
+                isInternalColumn: true,
+                internalField: field,
+              });
+            }
           }
         } else {
           // External column
           const system = colType as ExternalSystem;
-          cellSelections.push({
-            system,
-            externalField: field,
-            source,
-          });
+          const edge = mappings.find((e) => e.system === system && e.externalField === field);
+          if (edge) {
+            cellSelections.push({
+              system,
+              externalField: field,
+              source,
+              customValue,
+              internalField: edge.internalField,
+            });
+          }
         }
       }
 
@@ -702,16 +786,25 @@ export default function SyncModal({
             {/* Table container with horizontal scroll */}
             <div className="overflow-x-auto">
               <table className="w-full border-collapse text-sm">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-surface-elevated">
                   <tr className="border-b border-border">
                     <th className="sticky left-0 z-10 min-w-[130px] bg-surface-elevated px-3 py-2 text-left text-xs font-medium text-muted whitespace-nowrap">
                       Field
                     </th>
-                    <th className="min-w-[120px] px-3 py-2 text-left text-xs font-medium text-muted">
+                    <th className="min-w-[120px] px-3 py-2 text-left text-xs font-medium text-muted border-t-2 border-emerald-500 bg-emerald-500/10">
                       Internal
                     </th>
-                    {EXTERNAL_SYSTEMS.map((sys) => (
-                      <th key={sys} className="border-l border-border px-3 py-2 text-left text-xs font-medium text-muted align-top">
+                    {orderedSystems.map((sys) => (
+                      <th
+                        key={sys}
+                        className={`border-l border-border px-3 py-2 text-left text-xs font-medium text-muted align-top border-t-2 ${
+                          sys === "hubspot"
+                            ? "border-orange-500 bg-orange-500/10"
+                            : sys === "zoho"
+                              ? "border-red-500 bg-red-500/10"
+                              : "border-purple-500 bg-purple-500/10"
+                        }`}
+                      >
                         <div className="flex items-center gap-2">
                           <span>{SYSTEM_SHORT[sys]}</span>
                           {linkedSystems[sys] && (
@@ -737,7 +830,7 @@ export default function SyncModal({
                     <>
                       <tr>
                         <td
-                          colSpan={2 + EXTERNAL_SYSTEMS.length}
+                          colSpan={2 + orderedSystems.length}
                           className="sticky left-0 bg-surface-elevated px-3 pt-3 pb-1 text-xs font-semibold text-yellow-400"
                         >
                           Needs Attention ({attention.length})
@@ -750,10 +843,14 @@ export default function SyncModal({
                           snapshots={snapshots}
                           mappings={mappings}
                           linkedSystems={linkedSystems}
+                          orderedSystems={orderedSystems}
                           createToggles={createToggles}
                           selections={selections}
+                          customValues={customValues}
                           lockedPullSources={lockedPullSources}
                           onSelectionChange={handleSelectionChange}
+                          onCustomValueChange={handleCustomValueChange}
+                          onCustomCancel={handleCustomCancel}
                           readOnly={false}
                         />
                       ))}
@@ -764,7 +861,7 @@ export default function SyncModal({
                   {inSync.length > 0 && (
                     <>
                       <tr>
-                        <td colSpan={2 + EXTERNAL_SYSTEMS.length} className="sticky left-0 bg-surface-elevated px-3 pt-4 pb-1">
+                        <td colSpan={2 + orderedSystems.length} className="sticky left-0 bg-surface-elevated px-3 pt-4 pb-1">
                           <button
                             onClick={() => setShowInSync(!showInSync)}
                             className="text-xs font-medium text-muted hover:text-foreground"
@@ -782,10 +879,14 @@ export default function SyncModal({
                             snapshots={snapshots}
                             mappings={mappings}
                             linkedSystems={linkedSystems}
+                            orderedSystems={orderedSystems}
                             createToggles={createToggles}
                             selections={selections}
+                            customValues={customValues}
                             lockedPullSources={lockedPullSources}
                             onSelectionChange={handleSelectionChange}
+                            onCustomValueChange={handleCustomValueChange}
+                            onCustomCancel={handleCustomCancel}
                             readOnly={true}
                           />
                         ))}
@@ -895,10 +996,14 @@ interface FieldRowComponentProps {
   snapshots: FieldValueSnapshot[];
   mappings: FieldMappingEdge[];
   linkedSystems: Record<ExternalSystem, boolean>;
+  orderedSystems: ExternalSystem[];
   createToggles: Record<ExternalSystem, boolean>;
   selections: SelectionMap;
+  customValues: Record<string, string>;
   lockedPullSources: Record<string, ExternalSystem | null>;
-  onSelectionChange: (key: string, value: "keep" | "internal" | ExternalSystem) => void;
+  onSelectionChange: (key: string, value: "keep" | "internal" | ExternalSystem | "custom") => void;
+  onCustomValueChange: (fieldKey: string, value: string) => void;
+  onCustomCancel: (fieldKey: string) => void;
   readOnly: boolean;
 }
 
@@ -907,10 +1012,14 @@ function FieldRowComponent({
   snapshots,
   mappings,
   linkedSystems,
+  orderedSystems,
   createToggles,
   selections,
+  customValues,
   lockedPullSources,
   onSelectionChange,
+  onCustomValueChange,
+  onCustomCancel,
   readOnly,
 }: FieldRowComponentProps) {
   const internalValue = getSnapshotValue(snapshots, "internal", row.internalField);
@@ -918,6 +1027,7 @@ function FieldRowComponent({
   // For the internal column, determine the dropdown option for pulling
   const internalKey = `internal:${row.internalField}`;
   const internalSelection = selections[internalKey] ?? "keep";
+  const rowCustomValue = customValues[row.internalField] ?? "";
 
   return (
     <tr className="border-b border-border/30">
@@ -930,7 +1040,7 @@ function FieldRowComponent({
       </td>
 
       {/* Internal column */}
-      <td className="px-3 py-2">
+      <td className="px-3 py-2 bg-emerald-500/10">
         {row.isPushOnly ? (
           <span className="font-mono text-xs text-muted">{formatValue(internalValue)}</span>
         ) : readOnly ? (
@@ -941,19 +1051,28 @@ function FieldRowComponent({
             snapshots={snapshots}
             mappings={mappings}
             linkedSystems={linkedSystems}
+            customValue={rowCustomValue}
             selection={internalSelection}
             onSelectionChange={(val) => onSelectionChange(internalKey, val)}
+            onCustomValueChange={(val) => onCustomValueChange(row.internalField, val)}
+            onCustomCancel={() => onCustomCancel(row.internalField)}
             internalValue={internalValue}
           />
         )}
       </td>
 
       {/* External system columns */}
-      {EXTERNAL_SYSTEMS.map((sys) => {
+      {orderedSystems.map((sys) => {
+        const systemBg =
+          sys === "hubspot"
+            ? "bg-orange-500/10"
+            : sys === "zoho"
+              ? "bg-red-500/10"
+              : "bg-purple-500/10";
         const edge = row.edges.find((e) => e.system === sys);
         if (!edge) {
           return (
-            <td key={sys} className="border-l border-border px-3 py-2 text-xs text-muted">
+            <td key={sys} className={`border-l border-border px-3 py-2 text-xs text-muted ${systemBg}`}>
             </td>
           );
         }
@@ -963,14 +1082,14 @@ function FieldRowComponent({
 
         if (!linked && !createToggles[sys]) {
           return (
-            <td key={sys} className="border-l border-border px-3 py-2 text-xs text-muted/40">
+            <td key={sys} className={`border-l border-border px-3 py-2 text-xs text-muted/40 ${systemBg}`}>
             </td>
           );
         }
 
         if (row.isPushOnly) {
           return (
-            <td key={sys} className="border-l border-border px-3 py-2">
+            <td key={sys} className={`border-l border-border px-3 py-2 ${systemBg}`}>
               <span className="font-mono text-xs text-muted">
                 {linked ? formatValue(extValue) : "\u2014"}
               </span>
@@ -980,7 +1099,7 @@ function FieldRowComponent({
 
         if (readOnly) {
           return (
-            <td key={sys} className="border-l border-border px-3 py-2">
+            <td key={sys} className={`border-l border-border px-3 py-2 ${systemBg}`}>
               <span className="font-mono text-xs text-muted">
                 {linked ? formatValue(extValue) : "\u2014"}
               </span>
@@ -993,7 +1112,7 @@ function FieldRowComponent({
         const lockedSource = lockedPullSources[row.internalField] ?? null;
 
         return (
-          <td key={sys} className="border-l border-border px-3 py-2">
+          <td key={sys} className={`border-l border-border px-3 py-2 ${systemBg}`}>
             <ExternalCell
               system={sys}
               edge={edge}
@@ -1002,8 +1121,11 @@ function FieldRowComponent({
               mappings={mappings}
               linkedSystems={linkedSystems}
               selection={cellSelection}
+              customValue={rowCustomValue}
               lockedPullSource={lockedSource}
               onSelectionChange={(val) => onSelectionChange(selKey, val)}
+              onCustomValueChange={(val) => onCustomValueChange(row.internalField, val)}
+              onCustomCancel={() => onCustomCancel(row.internalField)}
               extValue={extValue}
             />
           </td>
@@ -1020,8 +1142,11 @@ interface InternalCellProps {
   snapshots: FieldValueSnapshot[];
   mappings: FieldMappingEdge[];
   linkedSystems: Record<ExternalSystem, boolean>;
-  selection: "keep" | "internal" | ExternalSystem;
-  onSelectionChange: (val: "keep" | "internal" | ExternalSystem) => void;
+  customValue: string;
+  selection: "keep" | "internal" | ExternalSystem | "custom";
+  onSelectionChange: (val: "keep" | "internal" | ExternalSystem | "custom") => void;
+  onCustomValueChange: (val: string) => void;
+  onCustomCancel: () => void;
   internalValue: string | number | null;
 }
 
@@ -1030,8 +1155,11 @@ function InternalCell({
   snapshots,
   mappings: _mappings,
   linkedSystems,
+  customValue,
   selection,
   onSelectionChange,
+  onCustomValueChange,
+  onCustomCancel,
   internalValue,
 }: InternalCellProps) {
   // Build options for the internal column: Keep + external sources only
@@ -1055,8 +1183,16 @@ function InternalCell({
       });
     }
 
+    if (customValue) {
+      opts.push({
+        value: "custom",
+        label: "Custom",
+        projectedValue: customValue,
+      });
+    }
+
     return opts;
-  }, [row.edges, snapshots, linkedSystems, internalValue]);
+  }, [row.edges, snapshots, linkedSystems, internalValue, customValue]);
 
   const projected =
     selection !== "keep"
@@ -1082,31 +1218,60 @@ function InternalCell({
           {formatValue(internalValue)}
         </span>
       )}
-      <select
-        value={selection}
-        aria-label={`Source for ${row.label}`}
-        onChange={(e) =>
-          onSelectionChange(e.target.value as "keep" | ExternalSystem)
-        }
-        className={`w-full rounded border px-1.5 py-0.5 text-xs bg-surface-2 text-foreground ${
-          selection !== "keep"
-            ? "border-green-500/50"
-            : "border-border"
-        }`}
-      >
-        {options.map((opt) => {
-          const display = formatValue(opt.projectedValue);
-          const label = truncate(display, 30);
-          const suffix = opt.value === "keep"
-            ? "(current)"
-            : `(${opt.label})`;
-          return (
-            <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-              {label} {suffix}{opt.disabled ? " (same)" : ""}
-            </option>
-          );
-        })}
-      </select>
+      {selection === "custom" ? (
+        <div className="flex items-center gap-1">
+          <input
+            autoFocus
+            value={customValue}
+            onChange={(e) => onCustomValueChange(e.target.value)}
+            onBlur={() => {
+              if (!customValue.trim()) onCustomCancel();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !customValue.trim()) {
+                onCustomCancel();
+              }
+            }}
+            className="w-full rounded border border-green-500/50 bg-surface-2 px-2 py-1 text-xs text-foreground"
+            placeholder="Enter custom value"
+          />
+          <button
+            type="button"
+            onClick={onCustomCancel}
+            className="rounded border border-t-border px-2 py-1 text-xs text-muted hover:text-foreground"
+            title="Cancel custom value"
+          >
+            &times;
+          </button>
+        </div>
+      ) : (
+        <select
+          value={selection}
+          aria-label={`Source for ${row.label}`}
+          onChange={(e) =>
+            onSelectionChange(e.target.value as "keep" | ExternalSystem | "custom")
+          }
+          className={`w-full rounded border px-1.5 py-0.5 text-xs bg-surface-2 text-foreground ${
+            selection !== "keep"
+              ? "border-green-500/50"
+              : "border-border"
+          }`}
+        >
+          {options.map((opt) => {
+            const display = formatValue(opt.projectedValue);
+            const label = truncate(display, 30);
+            const suffix = opt.value === "keep"
+              ? "(current)"
+              : `(${opt.label})`;
+            return (
+              <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+                {label} {suffix}{opt.disabled ? " (same)" : ""}
+              </option>
+            );
+          })}
+          <option value="custom">Custom...</option>
+        </select>
+      )}
     </div>
   );
 }
@@ -1120,9 +1285,12 @@ interface ExternalCellProps {
   snapshots: FieldValueSnapshot[];
   mappings: FieldMappingEdge[];
   linkedSystems: Record<ExternalSystem, boolean>;
-  selection: "keep" | "internal" | ExternalSystem;
+  customValue: string;
+  selection: "keep" | "internal" | ExternalSystem | "custom";
   lockedPullSource: ExternalSystem | null;
-  onSelectionChange: (val: "keep" | "internal" | ExternalSystem) => void;
+  onSelectionChange: (val: "keep" | "internal" | ExternalSystem | "custom") => void;
+  onCustomValueChange: (val: string) => void;
+  onCustomCancel: () => void;
   extValue: string | number | null;
 }
 
@@ -1133,9 +1301,12 @@ function ExternalCell({
   snapshots,
   mappings,
   linkedSystems,
+  customValue,
   selection,
   lockedPullSource,
   onSelectionChange,
+  onCustomValueChange,
+  onCustomCancel,
   extValue,
 }: ExternalCellProps) {
   const options = useMemo(
@@ -1161,6 +1332,7 @@ function ExternalCell({
           system,
           snapshots,
           mappings,
+          customValue,
         )
       : null;
 
@@ -1190,33 +1362,62 @@ function ExternalCell({
           {formatValue(extValue)}
         </span>
       )}
-      <select
-        value={selection}
-        aria-label={`${SYSTEM_LABELS[system]} source for ${FIELD_LABELS[internalField] ?? internalField}`}
-        onChange={(e) =>
-          onSelectionChange(e.target.value as "keep" | "internal" | ExternalSystem)
-        }
-        className={`w-full rounded border px-1.5 py-0.5 text-xs bg-surface-2 text-foreground ${
-          selection !== "keep"
-            ? "border-blue-500/50"
-            : isDiverging
-              ? "border-yellow-500/40"
-              : "border-border"
-        }`}
-      >
-        {options.map((opt) => {
-          const display = formatValue(opt.projectedValue);
-          const label = truncate(display, 30);
-          const suffix = opt.value === "keep"
-            ? "(current)"
-            : `(${opt.label})`;
-          return (
-            <option key={opt.value} value={opt.value} disabled={opt.disabled}>
-              {label} {suffix}{opt.disabled ? " (same)" : ""}
-            </option>
-          );
-        })}
-      </select>
+      {selection === "custom" ? (
+        <div className="flex items-center gap-1">
+          <input
+            autoFocus
+            value={customValue}
+            onChange={(e) => onCustomValueChange(e.target.value)}
+            onBlur={() => {
+              if (!customValue.trim()) onCustomCancel();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !customValue.trim()) {
+                onCustomCancel();
+              }
+            }}
+            className="w-full rounded border border-blue-500/50 bg-surface-2 px-2 py-1 text-xs text-foreground"
+            placeholder="Enter custom value"
+          />
+          <button
+            type="button"
+            onClick={onCustomCancel}
+            className="rounded border border-t-border px-2 py-1 text-xs text-muted hover:text-foreground"
+            title="Cancel custom value"
+          >
+            &times;
+          </button>
+        </div>
+      ) : (
+        <select
+          value={selection}
+          aria-label={`${SYSTEM_LABELS[system]} source for ${FIELD_LABELS[internalField] ?? internalField}`}
+          onChange={(e) =>
+            onSelectionChange(e.target.value as "keep" | "internal" | ExternalSystem | "custom")
+          }
+          className={`w-full rounded border px-1.5 py-0.5 text-xs bg-surface-2 text-foreground ${
+            selection !== "keep"
+              ? "border-blue-500/50"
+              : isDiverging
+                ? "border-yellow-500/40"
+                : "border-border"
+          }`}
+        >
+          {options.map((opt) => {
+            const display = formatValue(opt.projectedValue);
+            const label = truncate(display, 30);
+            const suffix = opt.value === "keep"
+              ? "(current)"
+              : `(${opt.label})`;
+            return (
+              <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+                {label} {suffix}{opt.disabled ? " (same)" : ""}
+              </option>
+            );
+          })}
+          <option value="custom">Custom...</option>
+        </select>
+      )}
     </div>
   );
 }
