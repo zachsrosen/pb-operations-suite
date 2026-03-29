@@ -215,28 +215,63 @@ export async function POST(req: NextRequest) {
   // -- 1. Read raw body --
   const rawBody = await req.text();
 
-  // -- 2. Validate HubSpot signature --
-  const signature = req.headers.get("x-hubspot-signature-v3") ?? "";
-  const timestamp = req.headers.get("x-hubspot-request-timestamp") ?? "";
+  // -- 2. Authenticate: Bearer token OR HubSpot v3 signature --
+  const bearerToken = req.headers.get("authorization")?.replace("Bearer ", "");
+  const webhookSecret = process.env.PIPELINE_WEBHOOK_SECRET || process.env.API_SECRET_TOKEN;
+  const isBearerAuth = bearerToken && webhookSecret && bearerToken === webhookSecret;
 
-  const validation = validateHubSpotWebhook({
-    rawBody,
-    signature,
-    timestamp,
-    requestUrl: req.url,
-    method: "POST",
-  });
+  if (!isBearerAuth) {
+    const signature = req.headers.get("x-hubspot-signature-v3") ?? "";
+    const timestamp = req.headers.get("x-hubspot-request-timestamp") ?? "";
 
-  if (!validation.valid) {
-    console.warn(`[fdr-check] Signature validation failed: ${validation.error}`);
-    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    const validation = validateHubSpotWebhook({
+      rawBody,
+      signature,
+      timestamp,
+      requestUrl: req.url,
+      method: "POST",
+    });
+
+    if (!validation.valid) {
+      console.warn(`[fdr-check] Auth failed: ${validation.error} (no valid bearer token either)`);
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
   }
 
   // -- 3. Parse payload --
+  // Supports two formats:
+  //   a) App-scope: [{eventId, subscriptionType, propertyName, propertyValue, objectId}]
+  //   b) Workflow: {objectId, properties:{design_status:"..."}} or {dealId}
   let events: HubSpotWebhookEvent[];
   try {
-    events = JSON.parse(rawBody) as HubSpotWebhookEvent[];
-    if (!Array.isArray(events)) events = [events];
+    const parsed = JSON.parse(rawBody);
+
+    if (Array.isArray(parsed)) {
+      events = parsed;
+    } else if (parsed && typeof parsed === "object") {
+      const objectId = parsed.objectId ?? parsed.hs_object_id ?? parsed.dealId ?? parsed.vid;
+
+      const designStatus =
+        parsed.propertyValue ??
+        parsed.properties?.design_status?.value ??
+        parsed.properties?.design_status ??
+        undefined;
+
+      if (!objectId) {
+        return NextResponse.json({ error: "Missing objectId or dealId" }, { status: 400 });
+      }
+
+      events = [{
+        eventId: Date.now(),
+        subscriptionType: "deal.propertyChange",
+        propertyName: "design_status",
+        propertyValue: designStatus,
+        objectId: Number(objectId),
+      }];
+      console.log(`[fdr-check] Normalized workflow payload: deal ${objectId}, design_status ${designStatus || "(trusting workflow)"}`);
+    } else {
+      return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
+    }
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -255,9 +290,10 @@ export async function POST(req: NextRequest) {
     if (event.subscriptionType !== "deal.propertyChange") continue;
     if (event.propertyName !== "design_status") continue;
 
-    // Gate: only run when design_status matches target
-    if (targetStatuses) {
-      if (!event.propertyValue || !targetStatuses.has(event.propertyValue.toLowerCase())) {
+    // Gate: only run when design_status matches target.
+    // If propertyValue is missing (workflow payloads), trust the workflow enrollment criteria.
+    if (targetStatuses && event.propertyValue) {
+      if (!targetStatuses.has(event.propertyValue.toLowerCase())) {
         skipped.push(String(event.objectId));
         continue;
       }
