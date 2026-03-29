@@ -23,9 +23,13 @@ export interface CellSelection {
   /** The external field name (mapping edge key) */
   externalField: string;
   /** Which source the user picked: "keep", "internal", or an ExternalSystem */
-  source: "keep" | "internal" | ExternalSystem;
+  source: "keep" | "internal" | ExternalSystem | "custom";
   /** True when this selection is for the Internal column (controls updateInternalOnPull) */
   isInternalColumn?: boolean;
+  /** Explicit internal field (used for custom values) */
+  internalField?: string;
+  /** Custom value override (when source === "custom") */
+  customValue?: string;
 }
 
 /** A row in the comparison table */
@@ -39,7 +43,7 @@ export interface FieldRow {
 
 /** Dropdown option */
 export interface DropdownOption {
-  value: "keep" | "internal" | ExternalSystem;
+  value: "keep" | "internal" | ExternalSystem | "custom";
   label: string;
   projectedValue: string | number | null;
   disabled?: boolean;
@@ -79,6 +83,21 @@ export function selectionToIntents(
       continue;
     }
 
+    if (sel.source === "custom") {
+      const internalField = sel.internalField || findInternalField(mappings, sel);
+      if (!internalField) continue;
+
+      // External column custom value — push custom value
+      result[sel.system][sel.externalField] = {
+        direction: "push",
+        mode: "manual",
+        updateInternalOnPull: false,
+        customValue: sel.customValue ?? "",
+        internalField,
+      };
+      continue;
+    }
+
     // Source is an external system
     const sourceSystem = sel.source as ExternalSystem;
 
@@ -105,6 +124,16 @@ export function selectionToIntents(
   }
 
   return result;
+}
+
+function findInternalField(
+  mappings: FieldMappingEdge[],
+  sel: CellSelection,
+): string | undefined {
+  const targetEdge = mappings.find(
+    (e) => e.system === sel.system && e.externalField === sel.externalField,
+  );
+  return targetEdge?.internalField;
 }
 
 /** Find the mapping edge on `sourceSystem` that shares the same internalField as `sel` */
@@ -151,6 +180,8 @@ export function expandCompanions(
         externalField: matchedEdge.companion,
         source: sel.source,
         isInternalColumn: sel.isInternalColumn,
+        internalField: sel.internalField,
+        customValue: sel.customValue,
       });
     }
   }

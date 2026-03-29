@@ -161,7 +161,7 @@ interface OverlayEvent {
   date: string;
   days: number;
   amount: number;
-  crew: string;
+  assignedUsers: string[];
   address: string;
   location: string;
   eventType: "service" | "dnr";
@@ -172,6 +172,9 @@ interface OverlayEvent {
   isTentative: false;
   status: string;
   scheduledTime: string | null;
+  scheduledStart?: string | null;
+  scheduledEnd?: string | null;
+  hubspotDealId?: string;
 }
 
 type DisplayEvent = ScheduledEvent | OverlayEvent;
@@ -195,6 +198,7 @@ interface ZuperCategoryJob {
   city: string;
   state: string;
   assignedUser: string;
+  assignedUsers?: string[];
   teamName: string;
   hubspotDealId: string;
   jobTotal: number;
@@ -232,6 +236,11 @@ const CREWS: Record<string, CrewConfig[]> = {
     { name: "CAM Crew", roofers: 2, electricians: 1, color: "#f43f5e" },
   ],
 };
+
+const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "21710069";
+const DAY_START_HOUR = 6;
+const DAY_END_HOUR = 20;
+const DAY_HOUR_HEIGHT = 60;
 
 // Pre-computed set of all valid crew names for crew resolution
 const ALL_CREW_NAMES = new Set(
@@ -497,6 +506,12 @@ function mapZuperJobsToOverlays(
       }
 
       const loc = normalizeLocationAlias(j.teamName) || normalizeLocationAlias(j.city) || "Unknown";
+      const assignedUsers =
+        Array.isArray(j.assignedUsers) && j.assignedUsers.length > 0
+          ? j.assignedUsers
+          : j.assignedUser
+            ? [j.assignedUser]
+            : [];
 
       return {
         id: j.jobUid,
@@ -504,7 +519,7 @@ function mapZuperJobsToOverlays(
         date: dateStr,
         days,
         amount: 0,
-        crew: j.assignedUser || "",
+        assignedUsers,
         address: j.address || "",
         location: loc,
         eventType,
@@ -514,6 +529,9 @@ function mapZuperJobsToOverlays(
         isForecast: false,
         isTentative: false,
         status: j.statusName || "",
+        hubspotDealId: j.hubspotDealId || undefined,
+        scheduledStart: j.scheduledStart,
+        scheduledEnd: j.scheduledEnd,
         scheduledTime: j.scheduledStart && j.scheduledEnd
           ? `${new Date(j.scheduledStart).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })} – ${new Date(j.scheduledEnd).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}`
           : j.scheduledStart
@@ -534,6 +552,63 @@ function getOverlayColorClass(e: DisplayEvent): string | null {
 function getOverlayBadge(e: DisplayEvent): string | null {
   if (!isOverlayEvent(e)) return null;
   return e.eventType === "service" ? "SVC" : "D&R";
+}
+
+function formatOverlayAssigneeLabel(users: string[]): string {
+  if (!users || users.length === 0) return "Unassigned";
+  const first = users[0]?.split(" ")[0] || users[0];
+  if (users.length === 1) return first;
+  return `${first} +${users.length - 1}`;
+}
+
+function formatOverlayAssigneeList(users: string[]): string {
+  if (!users || users.length === 0) return "Unassigned";
+  return users.join(", ");
+}
+
+type TimedDayEvent = {
+  event: DisplayEvent;
+  startMinutes: number;
+  endMinutes: number;
+  column: number;
+  columnSpan: number;
+};
+
+function layoutTimedDayEvents(events: Array<Omit<TimedDayEvent, "column" | "columnSpan">>): TimedDayEvent[] {
+  const sorted = [...events].sort((a, b) => {
+    if (a.startMinutes !== b.startMinutes) return a.startMinutes - b.startMinutes;
+    return a.endMinutes - b.endMinutes;
+  });
+
+  const columns: Array<Array<Omit<TimedDayEvent, "column" | "columnSpan">>> = [];
+  const placed: TimedDayEvent[] = [];
+
+  for (const ev of sorted) {
+    let colIndex = -1;
+    for (let i = 0; i < columns.length; i++) {
+      const last = columns[i][columns[i].length - 1];
+      if (last.endMinutes <= ev.startMinutes) {
+        colIndex = i;
+        break;
+      }
+    }
+    if (colIndex === -1) {
+      colIndex = columns.length;
+      columns.push([]);
+    }
+    columns[colIndex].push(ev);
+    placed.push({ ...ev, column: colIndex, columnSpan: 1 });
+  }
+
+  for (const ev of placed) {
+    const overlapping = placed.filter((other) =>
+      !(other.endMinutes <= ev.startMinutes || other.startMinutes >= ev.endMinutes)
+    );
+    const maxCol = Math.max(...overlapping.map((o) => o.column));
+    ev.columnSpan = maxCol + 1;
+  }
+
+  return placed;
 }
 
 /* ------------------------------------------------------------------ */
@@ -647,18 +722,20 @@ export default function SchedulerPage() {
   const [error, setError] = useState<string | null>(null);
 
   /* ---- view / nav ---- */
-  const [currentView, setCurrentView] = useState<"calendar" | "week" | "gantt">("calendar");
+  const [currentView, setCurrentView] = useState<"calendar" | "week" | "day" | "gantt">("calendar");
   // Hydration-safe: defer Date-dependent state to client via useEffect
   const [mounted, setMounted] = useState(false);
   const [currentYear, setCurrentYear] = useState(2026);
   const [currentMonth, setCurrentMonth] = useState(0);
   const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedDay, setSelectedDay] = useState("");
   const todayStr = useRef("");
   useEffect(() => {
     const now = new Date();
     setCurrentYear(now.getFullYear());
     setCurrentMonth(now.getMonth());
     todayStr.current = now.toDateString();
+    setSelectedDay(toDateStr(now));
     setMounted(true);
   }, []);
 
@@ -1912,6 +1989,48 @@ export default function SchedulerPage() {
   }, [weekOffset]);
 
   /* ================================================================ */
+  /*  Day view logic                                                   */
+  /* ================================================================ */
+
+  const dayViewDate = useMemo(() => {
+    if (!selectedDay) return new Date();
+    return new Date(selectedDay + "T12:00:00");
+  }, [selectedDay]);
+
+  const dayViewEvents = useMemo(() => {
+    if (!selectedDay) return { allDay: [] as DisplayEvent[], timed: [] as TimedDayEvent[] };
+    const dayStr = selectedDay;
+    const allDay: DisplayEvent[] = [];
+    const timedRaw: Array<Omit<TimedDayEvent, "column" | "columnSpan">> = [];
+
+    const matchesDay = (e: DisplayEvent) => {
+      const businessDays = Math.ceil(e.days || 1);
+      const spanDates = getBusinessDatesInSpan(e.date, businessDays);
+      return spanDates.includes(dayStr);
+    };
+
+    for (const e of displayEvents) {
+      if (!matchesDay(e)) continue;
+
+      if (isOverlayEvent(e) && e.scheduledStart) {
+        const startDate = new Date(e.scheduledStart);
+        if (toDateStr(startDate) !== dayStr) {
+          allDay.push(e);
+          continue;
+        }
+        const endDate = e.scheduledEnd ? new Date(e.scheduledEnd) : new Date(startDate.getTime() + 60 * 60 * 1000);
+        const startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
+        const endMinutes = Math.max(startMinutes + 30, endDate.getHours() * 60 + endDate.getMinutes());
+        timedRaw.push({ event: e, startMinutes, endMinutes });
+      } else {
+        allDay.push(e);
+      }
+    }
+
+    return { allDay, timed: layoutTimedDayEvents(timedRaw) };
+  }, [displayEvents, selectedDay]);
+
+  /* ================================================================ */
   /*  Gantt view logic                                                 */
   /* ================================================================ */
 
@@ -2968,6 +3087,20 @@ export default function SchedulerPage() {
     const today = new Date();
     setCurrentYear(today.getFullYear());
     setCurrentMonth(today.getMonth());
+    setSelectedDay(toDateStr(today));
+  }, []);
+
+  const shiftSelectedDay = useCallback((deltaDays: number) => {
+    setSelectedDay((prev) => {
+      const base = prev ? new Date(prev + "T12:00:00") : new Date();
+      base.setDate(base.getDate() + deltaDays);
+      return toDateStr(base);
+    });
+  }, []);
+
+  const openDayView = useCallback((dateStr: string) => {
+    setSelectedDay(dateStr);
+    setCurrentView("day");
   }, []);
 
   /* ---- Keyboard shortcuts ---- */
@@ -2990,7 +3123,8 @@ export default function SchedulerPage() {
       }
       if (e.key === "1" && !e.ctrlKey && !e.metaKey) setCurrentView("calendar");
       if (e.key === "2" && !e.ctrlKey && !e.metaKey) setCurrentView("week");
-      if (e.key === "3" && !e.ctrlKey && !e.metaKey) setCurrentView("gantt");
+      if (e.key === "3" && !e.ctrlKey && !e.metaKey) setCurrentView("day");
+      if (e.key === "4" && !e.ctrlKey && !e.metaKey) setCurrentView("gantt");
       if (e.key === "ArrowLeft" && e.altKey) {
         if (currentView === "calendar") prevMonth();
         if (currentView === "week") setWeekOffset((w) => w - 1);
@@ -2998,6 +3132,12 @@ export default function SchedulerPage() {
       if (e.key === "ArrowRight" && e.altKey) {
         if (currentView === "calendar") nextMonth();
         if (currentView === "week") setWeekOffset((w) => w + 1);
+      }
+      if (currentView === "day" && e.key === "ArrowLeft" && !e.altKey && !e.metaKey && !e.ctrlKey) {
+        shiftSelectedDay(-1);
+      }
+      if (currentView === "day" && e.key === "ArrowRight" && !e.altKey && !e.metaKey && !e.ctrlKey) {
+        shiftSelectedDay(1);
       }
       if (e.key === "e" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
@@ -3014,6 +3154,7 @@ export default function SchedulerPage() {
     currentView,
     prevMonth,
     nextMonth,
+    shiftSelectedDay,
     exportCSV,
   ]);
 
@@ -3732,6 +3873,7 @@ export default function SchedulerPage() {
               [
                 { key: "calendar", label: "Month" },
                 { key: "week", label: "Week" },
+                { key: "day", label: "Day" },
                 { key: "gantt", label: "Gantt" },
               ] as const
             ).map((v) => (
@@ -3979,18 +4121,27 @@ export default function SchedulerPage() {
                           onDragOver={(e) => e.preventDefault()}
                           onDrop={(e) => handleDrop(e, dateStr)}
                         >
-                          <div
-                            className={`text-[0.7rem] font-semibold mb-0.5 ${
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openDayView(dateStr);
+                            }}
+                            className={`text-[0.7rem] font-semibold mb-0.5 text-left ${
                               isToday ? "text-orange-400" : "text-muted"
                             }`}
+                            title="Open day view"
                           >
                             {day}
-                          </div>
+                          </button>
                           {dayEvents.map((ev, ei) => {
                             const shortName = getCustomerName(ev.name).substring(
                               0,
                               10
                             );
+                            const overlayAssigneeTitle = isOverlayEvent(ev) && ev.assignedUsers.length > 0
+                              ? ` — ${formatOverlayAssigneeList(ev.assignedUsers)}`
+                              : "";
                             const dayLabel =
                               ev.totalCalDays > 1 ? `D${ev.dayNum} ` : "";
                             const showRevenue = (ev.eventType === "construction" || ev.eventType === "construction-complete") && ev.amount > 0;
@@ -4047,25 +4198,34 @@ export default function SchedulerPage() {
                                   setDetailModal(proj);
                                   setDetailModalEvent(ev as ScheduledEvent);
                                 }}
-                                title={isOverlayEvent(ev) ? `${ev.name} — ${ev.eventSubtype}${ev.crew ? ` — ${ev.crew}` : ""}` : ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : " (drag to reschedule)"}`}
-                                className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden truncate ${
+                                title={isOverlayEvent(ev) ? `${ev.name} — ${ev.eventSubtype}${overlayAssigneeTitle}` : ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : " (drag to reschedule)"}`}
+                                className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden ${
                                   isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
                                 } ${eventColorClass} ${draggedProjectId === ev.id ? "opacity-60" : ""}`}
                               >
-                                {ev.isForecast && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">FORECAST</span>}
-                                {ev.isTentative && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">TENT {ev.days > 0 ? `${ev.days}d` : ""}</span>}
-                                {isFailedType && <span className="mr-0.5">✗</span>}
-                                {isCompletedType && <span className="mr-0.5">✓</span>}
-                                {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
-                                {isOverlayEvent(ev) && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">{getOverlayBadge(ev)}</span>}
-                                {dayLabel}
-                                <span className={isCompletedType ? "line-through" : ""}>{shortName}</span>
-                                {ev.isOverdue && isActiveType && (
-                                  <span className="ml-0.5 text-[0.45rem] opacity-70">
-                                    {ev.eventType === "construction" ? "🔨" : ev.eventType === "survey" ? "📋" : ev.eventType === "inspection" ? "🔍" : ""}
-                                  </span>
-                                )}
-                                {showRevenue && <span className="ml-0.5 opacity-80">${formatRevenueCompact(ev.amount)}</span>}
+                                <div className="flex flex-col leading-tight">
+                                  <div className="truncate">
+                                    {ev.isForecast && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">FORECAST</span>}
+                                    {ev.isTentative && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">TENT {ev.days > 0 ? `${ev.days}d` : ""}</span>}
+                                    {isFailedType && <span className="mr-0.5">✗</span>}
+                                    {isCompletedType && <span className="mr-0.5">✓</span>}
+                                    {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
+                                    {isOverlayEvent(ev) && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">{getOverlayBadge(ev)}</span>}
+                                    {dayLabel}
+                                    <span className={isCompletedType ? "line-through" : ""}>{shortName}</span>
+                                    {ev.isOverdue && isActiveType && (
+                                      <span className="ml-0.5 text-[0.45rem] opacity-70">
+                                        {ev.eventType === "construction" ? "🔨" : ev.eventType === "survey" ? "📋" : ev.eventType === "inspection" ? "🔍" : ""}
+                                      </span>
+                                    )}
+                                    {showRevenue && <span className="ml-0.5 opacity-80">${formatRevenueCompact(ev.amount)}</span>}
+                                  </div>
+                                  {isOverlayEvent(ev) && (
+                                    <div className="text-[0.45rem] opacity-60 truncate">
+                                      {formatOverlayAssigneeLabel(ev.assignedUsers)}
+                                    </div>
+                                  )}
+                                </div>
                               </div>
                             );
                           })}
@@ -4091,6 +4251,169 @@ export default function SchedulerPage() {
                     }
                     return null;
                   })()}
+                </div>
+              </>
+            )}
+
+            {/* ===== DAY VIEW ===== */}
+            {currentView === "day" && (
+              <>
+                <div className="flex items-center justify-between mb-3 px-2">
+                  <button
+                    onClick={() => shiftSelectedDay(-1)}
+                    className="bg-surface border border-t-border text-foreground/80 px-3 py-1.5 rounded-md text-[0.7rem] hover:bg-surface-2 transition-colors"
+                  >
+                    &larr; Prev Day
+                  </button>
+                  <div className="text-[0.9rem] font-semibold">
+                    {dayViewDate.toLocaleDateString("en-US", {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={goToToday}
+                      className="bg-surface border border-t-border text-foreground/80 px-2 py-1 rounded-md text-[0.65rem] hover:bg-surface-2 transition-colors"
+                    >
+                      Today
+                    </button>
+                    <button
+                      onClick={() => shiftSelectedDay(1)}
+                      className="bg-surface border border-t-border text-foreground/80 px-3 py-1.5 rounded-md text-[0.7rem] hover:bg-surface-2 transition-colors"
+                    >
+                      Next Day &rarr;
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-surface border border-t-border rounded-lg overflow-hidden">
+                  <div className="border-b border-t-border p-3">
+                    <div className="text-[0.6rem] text-muted uppercase tracking-wide mb-2">
+                      All Day / Unscheduled
+                    </div>
+                    {dayViewEvents.allDay.length === 0 ? (
+                      <div className="text-[0.65rem] text-muted">No unscheduled jobs</div>
+                    ) : (
+                      <div className="flex flex-wrap gap-1.5">
+                        {dayViewEvents.allDay.map((e, i) => {
+                          const overlayColor = getOverlayColorClass(e);
+                          const eventColor =
+                            overlayColor ||
+                            (e.eventType === "construction" ? "bg-blue-500 text-white" :
+                             e.eventType === "survey" ? "bg-cyan-500 text-white" :
+                             e.eventType === "inspection" ? "bg-violet-500 text-white" :
+                             e.eventType === "rtb" ? "bg-emerald-500 text-black" :
+                             e.eventType === "blocked" ? "bg-yellow-500 text-black" :
+                             e.eventType === "construction-complete" ? "bg-blue-500/30 text-blue-300/80" :
+                             e.eventType === "inspection-pass" ? "bg-violet-500/30 text-violet-300/80" :
+                             e.eventType === "survey-complete" ? "bg-cyan-500/30 text-cyan-300/80" :
+                             "bg-zinc-600 text-white");
+
+                          return (
+                            <div
+                              key={i}
+                              onClick={() => {
+                                if (isOverlayEvent(e)) { setOverlayDetail(e); return; }
+                                const proj = projects.find((pr) => pr.id === e.id) || null;
+                                setDetailModal(proj);
+                                setDetailModalEvent(e as ScheduledEvent);
+                              }}
+                              className={`px-2 py-1 rounded text-[0.6rem] cursor-pointer ${eventColor}`}
+                              title={e.name}
+                            >
+                              {isOverlayEvent(e) && <span className="mr-0.5 font-bold opacity-80">{getOverlayBadge(e)}</span>}
+                              <span className="truncate">{getCustomerName(e.name)}</span>
+                              {isOverlayEvent(e) && (
+                                <span className="ml-1 text-[0.5rem] opacity-70">
+                                  {formatOverlayAssigneeLabel(e.assignedUsers)}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex">
+                    <div className="w-16 border-r border-t-border bg-surface/60">
+                      {Array.from({ length: DAY_END_HOUR - DAY_START_HOUR + 1 }, (_, i) => {
+                        const hour = DAY_START_HOUR + i;
+                        const label = new Date(2020, 0, 1, hour).toLocaleTimeString("en-US", { hour: "numeric" });
+                        return (
+                          <div
+                            key={hour}
+                            className="h-[60px] px-2 text-[0.6rem] text-muted flex items-start pt-1"
+                          >
+                            {label}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="relative flex-1" style={{ height: `${(DAY_END_HOUR - DAY_START_HOUR + 1) * DAY_HOUR_HEIGHT}px` }}>
+                      {Array.from({ length: DAY_END_HOUR - DAY_START_HOUR + 1 }, (_, i) => (
+                        <div
+                          key={i}
+                          className="border-b border-t-border/60 h-[60px]"
+                        />
+                      ))}
+                      {dayViewEvents.allDay.length === 0 && dayViewEvents.timed.length === 0 && (
+                        <div className="absolute inset-0 flex items-center justify-center text-sm text-muted">
+                          No scheduled jobs
+                        </div>
+                      )}
+                      {dayViewEvents.timed.map((entry, idx) => {
+                        const overlayColor = getOverlayColorClass(entry.event);
+                        const eventColor =
+                          overlayColor ||
+                          (entry.event.eventType === "construction" ? "bg-blue-500 text-white" :
+                           entry.event.eventType === "survey" ? "bg-cyan-500 text-white" :
+                           entry.event.eventType === "inspection" ? "bg-violet-500 text-white" :
+                           entry.event.eventType === "rtb" ? "bg-emerald-500 text-black" :
+                           entry.event.eventType === "blocked" ? "bg-yellow-500 text-black" :
+                           "bg-zinc-600 text-white");
+
+                        const dayStartMinutes = DAY_START_HOUR * 60;
+                        const dayEndMinutes = DAY_END_HOUR * 60;
+                        const start = Math.max(dayStartMinutes, entry.startMinutes);
+                        const end = Math.min(dayEndMinutes, entry.endMinutes);
+                        const height = Math.max(24, ((end - start) / 60) * DAY_HOUR_HEIGHT);
+                        const top = ((start - dayStartMinutes) / 60) * DAY_HOUR_HEIGHT;
+                        const widthPct = 100 / entry.columnSpan;
+                        const leftPct = entry.column * widthPct;
+
+                        return (
+                          <div
+                            key={idx}
+                            onClick={() => {
+                              if (isOverlayEvent(entry.event)) { setOverlayDetail(entry.event); return; }
+                              const proj = projects.find((pr) => pr.id === entry.event.id) || null;
+                              setDetailModal(proj);
+                              setDetailModalEvent(entry.event as ScheduledEvent);
+                            }}
+                            className={`absolute rounded px-2 py-1 text-[0.6rem] shadow-sm cursor-pointer overflow-hidden ${eventColor}`}
+                            style={{
+                              top,
+                              height,
+                              left: `calc(${leftPct}% + 4px)`,
+                              width: `calc(${widthPct}% - 6px)`,
+                            }}
+                          >
+                            {isOverlayEvent(entry.event) && <span className="mr-0.5 font-bold opacity-80">{getOverlayBadge(entry.event)}</span>}
+                            <div className="truncate">{getCustomerName(entry.event.name)}</div>
+                            {isOverlayEvent(entry.event) && (
+                              <div className="text-[0.5rem] opacity-70 truncate">
+                                {formatOverlayAssigneeLabel(entry.event.assignedUsers)}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </>
             )}
@@ -4142,9 +4465,17 @@ export default function SchedulerPage() {
                         }`}
                       >
                         {d.toLocaleDateString("en-US", { weekday: "short" })}
-                        <span className="text-base font-bold block mt-0.5 text-foreground/90">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openDayView(toDateStr(d));
+                          }}
+                          className="text-base font-bold block mt-0.5 text-foreground/90"
+                          title="Open day view"
+                        >
                           {d.getDate()}
-                        </span>
+                        </button>
                       </div>
                     );
                   })}
@@ -4261,14 +4592,23 @@ export default function SchedulerPage() {
                                     title={ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : ""}`}
                                     className={`text-[0.6rem] px-1.5 py-1 rounded mb-1 cursor-pointer transition-transform hover:scale-[1.02] hover:shadow-lg ${eventColorClass}`}
                                   >
-                                    {ev.isForecast && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">FORECAST</span>}
-                                    {ev.isTentative && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">TENT {ev.days > 0 ? `${ev.days}d` : ""}</span>}
-                                    {isFailedType && <span className="mr-0.5">✗</span>}
-                                    {isCompletedType && <span className="mr-0.5">✓</span>}
-                                    {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
-                                    {isOverlayEvent(ev) && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">{getOverlayBadge(ev)}</span>}
-                                    {ev.days > 1 ? `D${dayNum} ` : ""}
-                                    <span className={isCompletedType ? "line-through" : ""}>{shortName}</span>
+                                    <div className="flex flex-col leading-tight">
+                                      <div className="truncate">
+                                        {ev.isForecast && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">FORECAST</span>}
+                                        {ev.isTentative && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">TENT {ev.days > 0 ? `${ev.days}d` : ""}</span>}
+                                        {isFailedType && <span className="mr-0.5">✗</span>}
+                                        {isCompletedType && <span className="mr-0.5">✓</span>}
+                                        {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
+                                        {isOverlayEvent(ev) && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">{getOverlayBadge(ev)}</span>}
+                                        {ev.days > 1 ? `D${dayNum} ` : ""}
+                                        <span className={isCompletedType ? "line-through" : ""}>{shortName}</span>
+                                      </div>
+                                      {isOverlayEvent(ev) && (
+                                        <div className="text-[0.45rem] opacity-60 truncate">
+                                          {formatOverlayAssigneeLabel(ev.assignedUsers)}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 );
                               })}
@@ -4440,20 +4780,29 @@ export default function SchedulerPage() {
                                       setDetailModalEvent(e as ScheduledEvent);
                                     }}
                                     title={e.isForecast ? "Forecasted install — not yet scheduled" : `${e.name} - ${daysLabel} - ${amount}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : e.isOverdue ? " ⚠ Incomplete" : ""}`}
-                                    className={`absolute top-2 bottom-2 rounded flex items-center px-1.5 text-[0.55rem] font-medium cursor-pointer transition-transform hover:scale-y-110 hover:shadow-lg hover:z-10 overflow-hidden truncate ${eventColorClass}`}
+                                    className={`absolute top-2 bottom-2 rounded flex items-center px-1.5 text-[0.55rem] font-medium cursor-pointer transition-transform hover:scale-y-110 hover:shadow-lg hover:z-10 overflow-hidden ${eventColorClass}`}
                                     style={{
                                       left: 0,
                                       width: `calc(${calendarDays * 100}% + ${calendarDays - 1}px)`,
                                       zIndex: 1,
                                     }}
                                   >
-                                    {e.isForecast && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">FORECAST</span>}
-                                    {e.isTentative && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">TENT</span>}
-                                    {isFailedType && <span className="mr-0.5">✗</span>}
-                                    {isCompletedType && <span className="mr-0.5">✓</span>}
-                                    {e.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
-                                    {isOverlayEvent(e) && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">{getOverlayBadge(e)}</span>}
-                                    <span className={isCompletedType ? "line-through" : ""}>{shortName}</span> ({daysLabel})
+                                    <div className="flex flex-col leading-tight truncate">
+                                      <div className="truncate">
+                                        {e.isForecast && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">FORECAST</span>}
+                                        {e.isTentative && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">TENT</span>}
+                                        {isFailedType && <span className="mr-0.5">✗</span>}
+                                        {isCompletedType && <span className="mr-0.5">✓</span>}
+                                        {e.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
+                                        {isOverlayEvent(e) && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">{getOverlayBadge(e)}</span>}
+                                        <span className={isCompletedType ? "line-through" : ""}>{shortName}</span> ({daysLabel})
+                                      </div>
+                                      {isOverlayEvent(e) && (
+                                        <div className="text-[0.45rem] opacity-60 truncate">
+                                          {formatOverlayAssigneeLabel(e.assignedUsers)}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 );
                               })}
@@ -5692,14 +6041,39 @@ export default function SchedulerPage() {
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Job</span><span className="text-foreground">{overlayDetail.name}</span></div>
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Address</span><span className="text-foreground">{overlayDetail.address || "—"}</span></div>
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Location</span><span className="text-foreground">{overlayDetail.location}</span></div>
-              <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Assigned</span><span className="text-foreground">{overlayDetail.crew || "Unassigned"}</span></div>
+              <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Assigned</span><span className="text-foreground">{formatOverlayAssigneeList(overlayDetail.assignedUsers)}</span></div>
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Status</span><span className={`font-medium ${overlayDetail.eventType === "service" ? "text-purple-400" : "text-amber-400"}`}>{overlayDetail.status || "—"}</span></div>
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Date</span><span className="text-foreground">{formatDateShort(overlayDetail.date)}{overlayDetail.days > 1 ? ` (${overlayDetail.days} days)` : ""}</span></div>
               {overlayDetail.scheduledTime && (
                 <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Time</span><span className="text-foreground">{overlayDetail.scheduledTime}</span></div>
               )}
             </div>
-            <button onClick={() => setOverlayDetail(null)} className="mt-4 w-full py-1.5 text-[0.7rem] rounded-md bg-background border border-t-border text-muted hover:text-foreground transition-colors">Close</button>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <a
+                href={`${zuperWebBaseUrl}/jobs/${overlayDetail.id}/details`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-3 py-1.5 rounded-md border border-cyan-500/60 text-cyan-300 text-[0.7rem] font-semibold no-underline hover:bg-cyan-500/10 transition-colors"
+              >
+                Open in Zuper
+              </a>
+              {overlayDetail.hubspotDealId && (
+                <a
+                  href={`https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${overlayDetail.hubspotDealId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 rounded-md border border-orange-500/60 text-orange-300 text-[0.7rem] font-semibold no-underline hover:bg-orange-500/10 transition-colors"
+                >
+                  Open in HubSpot
+                </a>
+              )}
+              <button
+                onClick={() => setOverlayDetail(null)}
+                className="ml-auto px-3 py-1.5 rounded-md bg-background border border-t-border text-muted text-[0.7rem] hover:text-foreground transition-colors"
+              >
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}
