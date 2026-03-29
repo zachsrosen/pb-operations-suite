@@ -257,19 +257,26 @@ export async function POST(req: NextRequest) {
   try {
     const parsed = JSON.parse(rawBody);
 
-    // TEMP DEBUG: Dump the raw payload structure so we can see what
-    // HubSpot workflow "Send a webhook" actually sends.
-    const payloadSample = rawBody.slice(0, 2000);
-    const isArray = Array.isArray(parsed);
-    const topKeys = !isArray && typeof parsed === "object" ? Object.keys(parsed) : [];
-
-    // Return immediately with the payload dump — skip processing for now
-    return NextResponse.json({
-      status: "debug",
-      isArray,
-      topKeys,
-      payloadSample,
-    });
+    // TEMP DEBUG: Save the raw payload to activity log, then return.
+    // Remove this block once we know the payload structure.
+    if (!Array.isArray(parsed) && typeof parsed === "object") {
+      await logActivity({
+        type: "DESIGN_REVIEW_COMPLETED",
+        description: `DEBUG: raw webhook payload (first 1500 chars)`,
+        userEmail: PIPELINE_ACTOR.email,
+        userName: PIPELINE_ACTOR.name,
+        entityType: "review",
+        entityId: "debug-payload",
+        entityName: "debug-payload",
+        metadata: {
+          topKeys: Object.keys(parsed),
+          payloadSample: rawBody.slice(0, 1500),
+        },
+        requestPath: "/api/webhooks/hubspot/site-survey-readiness",
+        requestMethod: "POST",
+      });
+      return NextResponse.json({ status: "debug-logged" });
+    }
 
     if (Array.isArray(parsed)) {
       events = parsed;
