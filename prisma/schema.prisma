@@ -1593,6 +1593,7 @@ model SolarFeedback {
   @@index([userId])
   @@index([category])
   @@index([createdAt])
+  @@index([status, createdAt])
 }
 
 model SolarProjectShare {
