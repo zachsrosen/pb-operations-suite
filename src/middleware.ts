@@ -18,6 +18,8 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/hubspot/design-complete",
   "/api/webhooks/hubspot/ready-to-build",
   "/api/webhooks/hubspot/design-review",
+  "/api/webhooks/hubspot/site-survey-readiness",
+  "/api/webhooks/hubspot/fdr-check",
   "/api/cron/audit-digest",
   "/api/cron/audit-retention",
   "/api/cron/pipeline-health",

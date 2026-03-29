@@ -36,19 +36,22 @@ export interface ReviewResult {
   durationMs: number;
 }
 
-export type SkillName = "design-review" | "install-review";
+export type SkillName = "design-review" | "install-review" | "site-survey-readiness" | "fdr-check";
 
 /** All valid skill names — used for DB queries (e.g. latest review per skill). */
-export const VALID_SKILLS: SkillName[] = ["design-review", "install-review"];
+export const VALID_SKILLS: SkillName[] = ["design-review", "install-review", "site-survey-readiness", "fdr-check"];
 
 /**
  * Skills the generic /api/reviews/run runner can execute.
  * install-review has its own endpoint (/api/install-review) with AI vision pipeline,
  * so it's excluded here to prevent false "passed" results from empty check lists.
+ * site-survey-readiness and fdr-check have their own webhook endpoints.
  */
 export const RUNNER_SKILLS: SkillName[] = ["design-review"];
 
 export const SKILL_ALLOWED_ROLES: Record<SkillName, string[]> = {
   "design-review": ["ADMIN", "EXECUTIVE", "OWNER", "MANAGER", "DESIGNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"],
   "install-review": ["ADMIN", "EXECUTIVE", "OWNER", "MANAGER", "OPERATIONS", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"],
+  "site-survey-readiness": ["ADMIN", "EXECUTIVE", "OWNER", "MANAGER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"],
+  "fdr-check": ["ADMIN", "EXECUTIVE", "OWNER", "MANAGER", "DESIGNER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS"],
 };

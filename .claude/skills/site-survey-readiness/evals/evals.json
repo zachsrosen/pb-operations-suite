@@ -1,0 +1,23 @@
+{
+  "skill_name": "site-survey-readiness",
+  "evals": [
+    {
+      "id": 0,
+      "prompt": "Check site survey readiness for PROJ-9009",
+      "expected_output": "Structured readiness report with checklist table showing pass/missing status for each item, action items if anything is missing, and list of files found in the site survey folder",
+      "files": []
+    },
+    {
+      "id": 1,
+      "prompt": "Is the site survey complete for the Johnson deal? We have IDR tomorrow",
+      "expected_output": "Structured readiness report for a Johnson deal, with urgency noted given IDR is tomorrow. Should search HubSpot by customer name, find the right deal, and produce the same checklist format",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "What's missing from the SS folder for PROJ-8732 before the design team can start?",
+      "expected_output": "Should trigger the site-survey-readiness skill even though user said 'SS folder' not 'site survey'. Should produce the readiness checklist focused on what's missing rather than what's present",
+      "files": []
+    }
+  ]
+}
