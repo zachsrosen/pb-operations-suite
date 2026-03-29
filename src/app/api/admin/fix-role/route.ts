@@ -7,9 +7,15 @@ import { prisma } from "@/lib/db";
  * Emergency endpoint to restore admin role for specific user
  * Only works for zach@photonbrothers.com
  */
-export async function POST() {
+export async function POST(request: Request) {
   // Explicit kill-switch: this recovery endpoint should remain disabled unless needed.
   if (process.env.ENABLE_ADMIN_ROLE_RECOVERY !== "true") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  // Require a recovery code as a second factor
+  const recoveryCode = process.env.ADMIN_RECOVERY_CODE;
+  if (!recoveryCode) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
@@ -28,6 +34,11 @@ export async function POST() {
 
   if (!adminEmails.includes(session.user.email)) {
     return NextResponse.json({ error: "Not authorized" }, { status: 403 });
+  }
+
+  const body = await request.json().catch(() => ({}));
+  if (body.recoveryCode !== recoveryCode) {
+    return NextResponse.json({ error: "Invalid recovery code" }, { status: 403 });
   }
 
   try {
