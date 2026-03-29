@@ -6,9 +6,7 @@ import crypto from "crypto";
 const getSecretKey = (): Buffer => {
   const base =
     process.env.AUTH_TOKEN_SECRET ||
-    process.env.NEXTAUTH_SECRET ||
-    process.env.RESEND_API_KEY ||
-    process.env.SITE_PASSWORD;
+    process.env.NEXTAUTH_SECRET;
   if (!base) {
     throw new Error("Missing auth secret. Set AUTH_TOKEN_SECRET (recommended) or NEXTAUTH_SECRET.");
   }
