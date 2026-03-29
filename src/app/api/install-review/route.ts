@@ -375,7 +375,7 @@ export async function POST(request: NextRequest) {
 // Core review logic (extracted to support try/catch + lock cleanup)
 // ---------------------------------------------------------------------------
 
-async function runInstallReview(
+export async function runInstallReview(
   dealId: string | undefined,
   jobUid: string | undefined,
   photoUrls: string[] | undefined,

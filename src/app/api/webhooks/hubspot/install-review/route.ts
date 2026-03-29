@@ -8,11 +8,10 @@
  * then emails the Inspections Lead and Operations Lead with the results.
  *
  * Uses the review lock system for deduplication.
- * Responds 200 immediately with background processing via waitUntil().
+ * Responds 200 immediately with background processing via after().
  */
 
-import { NextRequest, NextResponse } from "next/server";
-import { waitUntil } from "@vercel/functions";
+import { NextRequest, NextResponse, after } from "next/server";
 import { prisma, logActivity } from "@/lib/db";
 import { validateHubSpotWebhook } from "@/lib/hubspot-webhook-auth";
 import { PIPELINE_ACTOR } from "@/lib/actor-context";
@@ -47,7 +46,7 @@ interface HubSpotWebhookEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Deal properties to fetch
+// Deal properties to fetch (for recipient resolution + email context)
 // ---------------------------------------------------------------------------
 
 const DEAL_PROPERTIES = [
@@ -131,46 +130,33 @@ async function processInstallReview(
   eventId: number,
 ) {
   const start = Date.now();
-  console.log(`[install-review-webhook] BG START: deal ${dealId}, review ${reviewId}`);
+  console.log(`[install-review-webhook] Starting review for deal ${dealId} (review ${reviewId})`);
 
-  // 1. Fetch deal properties
+  // 1. Fetch deal properties (for recipient resolution + email context)
   const { hubspotClient } = await import("@/lib/hubspot");
-  console.log(`[install-review-webhook] Fetching deal properties for ${dealId}...`);
   const deal = await hubspotClient.crm.deals.basicApi.getById(dealId, DEAL_PROPERTIES);
   const properties = deal.properties;
-  console.log(`[install-review-webhook] Got properties for deal ${dealId}: ${properties.dealname}`);
 
   await touchReviewRun(reviewId);
 
-  // 2. Call the install-review API internally (reuse all the photo/planset/AI logic)
-  // We call the existing endpoint via internal fetch to avoid duplicating ~400 lines
-  // of complex photo sourcing + Claude vision logic.
-  const baseUrl = process.env.NEXTAUTH_URL
-    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
-    || "http://localhost:3000";
-  // Must use API_SECRET_TOKEN — middleware only recognizes that for machine-to-machine auth
-  const apiSecret = process.env.API_SECRET_TOKEN;
-  console.log(`[install-review-webhook] Calling ${baseUrl}/api/install-review for deal ${dealId} (auth: ${apiSecret ? "yes" : "NO TOKEN"})`);
-
-  const reviewResponse = await fetch(`${baseUrl}/api/install-review`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(apiSecret ? { Authorization: `Bearer ${apiSecret}` } : {}),
-    },
-    body: JSON.stringify({ dealId }),
-  });
+  // 2. Call the install-review logic directly (no HTTP round-trip).
+  //    Pass reviewId=null so the install-review function skips its own lock —
+  //    we manage the webhook's review lock separately.
+  const { runInstallReview } = await import("@/app/api/install-review/route");
+  const reviewResponse = await runInstallReview(dealId, undefined, undefined, null, Date.now());
 
   await touchReviewRun(reviewId);
 
-  const reviewResult = await reviewResponse.json();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const reviewResult: any = await reviewResponse.json();
+  const statusCode = reviewResponse.status;
 
-  if (!reviewResponse.ok) {
-    const errMsg = reviewResult.error || reviewResult.details || `HTTP ${reviewResponse.status}`;
+  if (statusCode < 200 || statusCode >= 300) {
+    const errMsg = reviewResult.error || reviewResult.details || `Status ${statusCode}`;
     console.error(`[install-review-webhook] Review failed for deal ${dealId}: ${errMsg}`);
 
     // If no photos or no planset, complete with a warning instead of failing
-    if (reviewResponse.status === 422) {
+    if (statusCode === 422) {
       await completeReviewRun(reviewId, {
         findings: [{
           check: "install-review-skipped",
@@ -218,16 +204,15 @@ async function processInstallReview(
     duration_ms: reviewResult.duration_ms ?? Date.now() - start,
   };
 
-  // 4. Complete the review run (the install-review endpoint already persisted
-  //    its own review run, but we have a separate webhook review lock)
-  const findings = report.findings.map((f) => ({
+  // 4. Complete the review run
+  const findings = report.findings.map((f: { category: string; status: string; notes?: string; observed?: string }) => ({
     check: `install-${f.category}`,
     severity: (f.status === "fail" ? "error" : f.status === "unable_to_verify" ? "warning" : "info") as "error" | "warning" | "info",
     message: `[${f.status.toUpperCase()}] ${f.category}: ${f.notes || f.observed}`,
   }));
 
-  const errorCount = report.findings.filter((f) => f.status === "fail").length;
-  const warningCount = report.findings.filter((f) => f.status === "unable_to_verify").length;
+  const errorCount = report.findings.filter((f: { status: string }) => f.status === "fail").length;
+  const warningCount = report.findings.filter((f: { status: string }) => f.status === "unable_to_verify").length;
   const projectIdMatch = dealName.match(/PROJ-\d+/);
   const projectId = projectIdMatch?.[0] ?? null;
 
@@ -441,14 +426,17 @@ export async function POST(req: NextRequest) {
       throw err;
     }
 
-    // Run in background
-    console.log(`[install-review-webhook] Spawning waitUntil for deal ${dealId} (review ${reviewId})`);
-    waitUntil(
-      processInstallReview(reviewId, dealId, event.eventId).catch(async (err) => {
-        console.error(`[install-review-webhook] BG ERROR for deal ${dealId}:`, err instanceof Error ? err.message : err);
+    // Run in background using Next.js after() API.
+    // Unlike @vercel/functions waitUntil(), after() is a native Next.js API
+    // that reliably extends the serverless function lifetime after response.
+    after(async () => {
+      try {
+        await processInstallReview(reviewId, dealId, event.eventId);
+      } catch (err) {
+        console.error(`[install-review-webhook] Error for deal ${dealId}:`, err instanceof Error ? err.message : err);
         await failReviewRun(reviewId, err instanceof Error ? err.message : "unknown").catch(() => {});
-      }),
-    );
+      }
+    });
 
     triggered.push(dealId);
   }
