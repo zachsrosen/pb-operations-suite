@@ -327,7 +327,7 @@ export async function POST(req: NextRequest) {
     // Gate: only run when design_status matches target.
     // If propertyValue is missing (workflow payloads), trust the workflow enrollment criteria.
     if (targetStatuses && event.propertyValue) {
-      if (!targetStatuses.has(event.propertyValue.toLowerCase())) {
+      if (!targetStatuses!.has(event.propertyValue!.toLowerCase())) {
         skipped.push(String(event.objectId));
         continue;
       }
