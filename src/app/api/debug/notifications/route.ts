@@ -35,6 +35,9 @@ export async function GET() {
     if (!val) return "❌ NOT SET";
     if (val.length > 50) return `✅ set (${val.length} chars)`;
     // Mask sensitive values
+    if (name.includes("PRIVATE_KEY")) {
+      return `✅ set (${val.length} chars)`;
+    }
     if (name.includes("KEY") || name.includes("SECRET") || name.includes("PRIVATE")) {
       return `✅ set (${val.length} chars, starts with "${val.slice(0, 6)}…")`;
     }
