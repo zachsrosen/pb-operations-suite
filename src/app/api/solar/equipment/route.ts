@@ -43,10 +43,14 @@ export async function GET(req: NextRequest) {
   }
 
   // Fetch custom equipment (active only)
+  const SAFETY_CAP = 1000;
   const custom = await prisma.solarCustomEquipment.findMany({
     where: { isArchived: false },
     orderBy: { createdAt: "desc" },
+    take: SAFETY_CAP + 1,
   });
+  const hasMore = custom.length > SAFETY_CAP;
+  if (hasMore) custom.pop();
 
   const builtIn = getBuiltInEquipment();
 
@@ -61,6 +65,7 @@ export async function GET(req: NextRequest) {
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),
     })),
+    hasMore,
   });
 }
 
