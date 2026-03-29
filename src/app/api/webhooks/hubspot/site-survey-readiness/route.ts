@@ -257,27 +257,6 @@ export async function POST(req: NextRequest) {
   try {
     const parsed = JSON.parse(rawBody);
 
-    // TEMP DEBUG: Save the raw payload to activity log, then return.
-    // Remove this block once we know the payload structure.
-    if (!Array.isArray(parsed) && typeof parsed === "object") {
-      await logActivity({
-        type: "DESIGN_REVIEW_COMPLETED",
-        description: `DEBUG: raw webhook payload (first 1500 chars)`,
-        userEmail: PIPELINE_ACTOR.email,
-        userName: PIPELINE_ACTOR.name,
-        entityType: "review",
-        entityId: "debug-payload",
-        entityName: "debug-payload",
-        metadata: {
-          topKeys: Object.keys(parsed),
-          payloadSample: rawBody.slice(0, 1500),
-        },
-        requestPath: "/api/webhooks/hubspot/site-survey-readiness",
-        requestMethod: "POST",
-      });
-      return NextResponse.json({ status: "debug-logged" });
-    }
-
     if (Array.isArray(parsed)) {
       events = parsed;
     } else if (parsed && typeof parsed === "object") {
@@ -334,7 +313,7 @@ export async function POST(req: NextRequest) {
     // Gate: only run when design_status matches target.
     // If propertyValue is missing (workflow payloads), trust the workflow enrollment criteria.
     if (targetStatuses && event.propertyValue) {
-      if (!targetStatuses!.has(event.propertyValue!.toLowerCase())) {
+      if (!targetStatuses.has(event.propertyValue.toLowerCase())) {
         skipped.push(String(event.objectId));
         continue;
       }
