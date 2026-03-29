@@ -1,4 +1,4 @@
-import { transformTicketToPriorityItem, type HubSpotTicket, type EnrichedTicketItem } from "@/lib/hubspot-tickets";
+import { transformTicketToPriorityItem, type HubSpotTicket } from "@/lib/hubspot-tickets";
 
 describe("transformTicketToPriorityItem", () => {
   it("transforms a HubSpot ticket to a PriorityItem", () => {

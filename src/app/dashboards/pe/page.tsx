@@ -8,7 +8,7 @@ import { formatCurrency } from "@/lib/format";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useBaselineTable } from "@/hooks/useBaselineTable";
-import { usePEFilters, type PEFilters } from "@/stores/dashboard-filters";
+import { usePEFilters } from "@/stores/dashboard-filters";
 import type { BaselineTable } from "@/lib/forecasting";
 import { computeProjectForecasts } from "@/lib/forecasting";
 import type { Project } from "@/lib/hubspot";

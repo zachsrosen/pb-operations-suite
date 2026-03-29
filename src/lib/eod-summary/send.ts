@@ -130,7 +130,7 @@ export async function runEodSummary(options: {
     // ── 4. Query evening state from HubSpot ─────────────────────────────────
     console.log("[eod-summary] Querying evening state from HubSpot…");
     const eveningResult = await queryAllBroad();
-    const { deals: eveningDeals, failedOwnerIds, dealPropertyOwners } = eveningResult;
+    const { deals: eveningDeals, failedOwnerIds } = eveningResult;
     console.log(`[eod-summary] Evening query: ${eveningDeals.size} deals, ${failedOwnerIds.size} failed owner(s)`);
 
     if (failedOwnerIds.size > 0) {

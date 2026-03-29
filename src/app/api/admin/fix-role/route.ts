@@ -52,8 +52,7 @@ export async function POST(request: Request) {
     }
 
     // Update user role to ADMIN using Prisma
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const _updatedUser = await prisma.user.update({
+    await prisma.user.update({
       where: { email: session.user.email },
       data: { role: "ADMIN" },
     });

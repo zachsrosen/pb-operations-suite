@@ -212,7 +212,7 @@ async function firePostCancelSideEffects(ctx: {
   crewName: string | null;
   portalUrl: string;
 }) {
-  const { invite, crewEmail, crewName } = ctx;
+  const { invite, crewEmail } = ctx;
   const warnings: string[] = [];
   const timezone = getTimezoneForLocation(invite.pbLocation);
 

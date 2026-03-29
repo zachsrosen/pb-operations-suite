@@ -1,7 +1,6 @@
 import {
   RISK_SCORES,
   RISK_LEVELS_BY_SCORE,
-  ACTIVITY_RISK_MAP,
   getActivityRiskLevel,
   detectEnvironment,
   detectClientType,

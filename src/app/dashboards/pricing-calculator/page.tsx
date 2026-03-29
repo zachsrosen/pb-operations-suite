@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import DashboardShell from "@/components/DashboardShell";
-import { StatCard, MetricCard } from "@/components/ui/MetricCard";
+import { StatCard } from "@/components/ui/MetricCard";
 import {
   calcPrice,
   EQUIPMENT_CATALOG,
@@ -64,13 +64,6 @@ interface ImportedDeal {
 
 function fmt(n: number): string {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
-}
-
-function fmtShort(n: number): string {
-  if (Math.abs(n) >= 1000) {
-    return "$" + (n / 1000).toFixed(1).replace(/\.0$/, "") + "k";
-  }
-  return fmt(n);
 }
 
 const modules = EQUIPMENT_CATALOG.filter((e) => e.category === "module");

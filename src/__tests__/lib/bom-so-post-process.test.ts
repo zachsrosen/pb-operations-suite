@@ -6,8 +6,6 @@ import {
   type BomProject,
   type BomItem,
   type SoLineItem,
-  type JobContext,
-  type PostProcessResult,
 } from "@/lib/bom-so-post-process";
 
 // ---------------------------------------------------------------------------

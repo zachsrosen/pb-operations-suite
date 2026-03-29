@@ -34,7 +34,7 @@ export default function RevenueGoalsConfigPage() {
   useEffect(() => {
     if (!data) return;
     const initial: Record<string, number[]> = {};
-    for (const [groupKey, group] of Object.entries(REVENUE_GROUPS)) {
+    for (const [groupKey, _group] of Object.entries(REVENUE_GROUPS)) {
       const months = data.groups[groupKey] || [];
       initial[groupKey] = months.map((m) => m.target);
     }

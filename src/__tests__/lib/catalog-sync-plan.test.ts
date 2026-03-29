@@ -24,7 +24,6 @@ import {
   deriveDefaultIntents,
   derivePlan,
   computePlanHash,
-  computeBasePreviewHash,
 } from "@/lib/catalog-sync-plan";
 import type {
   ExternalSystem,

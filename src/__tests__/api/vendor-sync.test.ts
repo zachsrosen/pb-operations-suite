@@ -1,4 +1,4 @@
-import { POST, GET } from "@/app/api/catalog/vendors/sync/route";
+import { POST } from "@/app/api/catalog/vendors/sync/route";
 import { prisma } from "@/lib/db";
 import { NextRequest, NextResponse } from "next/server";
 

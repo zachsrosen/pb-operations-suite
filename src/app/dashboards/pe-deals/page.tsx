@@ -63,15 +63,6 @@ function fmt(n: number | null): string {
   });
 }
 
-function fmtFull(n: number | null): string {
-  if (n === null) return "—";
-  return n.toLocaleString("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-  });
-}
-
 const LOCATION_SHORT: Record<string, string> = {
   "Centennial": "DTC",
   "Westminster": "WST",

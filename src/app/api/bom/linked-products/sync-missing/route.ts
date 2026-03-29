@@ -9,7 +9,6 @@ import {
   hashToken,
   computeDealSyncChangesHash,
   withHubSpotRetry,
-  type DealSyncRow,
 } from "@/lib/bulk-sync-confirmation";
 import {
   fetchLineItemsForDeal,

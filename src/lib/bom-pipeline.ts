@@ -24,7 +24,7 @@
  */
 
 import { prisma, logActivity } from "@/lib/db";
-import { getServiceAccountToken } from "@/lib/google-auth";
+// getServiceAccountToken available from "@/lib/google-auth" if needed
 import {
   type DrivePdfFile,
   getDriveToken,

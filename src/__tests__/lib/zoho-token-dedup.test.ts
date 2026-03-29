@@ -16,8 +16,6 @@ const client = zohoInventory as any;
 let refreshCallCount: number;
 let refreshDelay: number;
 let refreshShouldFail: boolean;
-const originalExecuteTokenRefresh = client.executeTokenRefresh.bind(client);
-
 beforeEach(() => {
   refreshCallCount = 0;
   refreshDelay = 50;

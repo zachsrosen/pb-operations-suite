@@ -40,8 +40,6 @@ export async function GET(
         { status: 403 }
       );
     }
-    const adminUser = currentUser!;
-
     const { id } = await params;
 
     const suggestion = await prisma.sopSuggestion.findUnique({

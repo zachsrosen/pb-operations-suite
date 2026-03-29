@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import { formatCurrency, formatShortDate } from "@/lib/format";
 
 export interface ConstructionProjectDetailPanelProject {

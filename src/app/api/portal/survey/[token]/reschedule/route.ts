@@ -20,7 +20,6 @@ import { updateDealProperty, getDealProperties, updateSiteSurveyorProperty } fro
 import { sendSchedulingNotification, sendPortalEmail } from "@/lib/email";
 import {
   upsertSiteSurveyCalendarEvent,
-  deleteSiteSurveyCalendarEvent,
   getDenverSiteSurveyCalendarId,
   getSharedCalendarImpersonationEmail,
   getSurveyCalendarEventId,

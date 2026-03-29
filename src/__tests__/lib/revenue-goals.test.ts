@@ -5,8 +5,6 @@ import {
   computePaceStatus,
   aggregateRevenue,
   type DealLike,
-  type RevenueGroupConfig,
-  type PaceStatus,
 } from "@/lib/revenue-groups-config";
 
 // ---------------------------------------------------------------------------

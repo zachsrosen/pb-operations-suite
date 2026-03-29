@@ -6,9 +6,7 @@ import {
   computeForecast,
   MILESTONE_CHAIN,
   MILESTONE_DATE_FIELD,
-  type MilestoneKey,
   type ForecastBasis,
-  type ForecastSet,
   type BaselineTable,
 } from "@/lib/forecasting";
 

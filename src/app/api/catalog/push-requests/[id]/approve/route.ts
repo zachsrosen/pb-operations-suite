@@ -30,31 +30,6 @@ interface SystemOutcome {
   externalId?: string | null;
 }
 
-function normalizeText(value: string | null | undefined): string {
-  return String(value || "")
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function normalizeSku(value: string | null | undefined): string {
-  return String(value || "")
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]+/g, "");
-}
-
-function compactUnique(values: Array<string | null | undefined>): string[] {
-  const output = new Set<string>();
-  for (const value of values) {
-    const normalized = String(value || "").trim();
-    if (normalized) output.add(normalized);
-  }
-  return [...output];
-}
-
 function makeSummary(outcomes: Partial<Record<SystemName, SystemOutcome>>) {
   const selected = Object.keys(outcomes).length;
   const counts = Object.values(outcomes).reduce(

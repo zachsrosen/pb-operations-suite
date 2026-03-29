@@ -18,8 +18,6 @@ import {
   getUserByEmail,
   getCrewMemberByEmail,
   getCrewAvailabilities,
-  upsertCrewAvailability,
-  deleteCrewAvailability,
 } from "@/lib/db";
 import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 
@@ -113,7 +111,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { location, jobType, dayOfWeek, startTime, endTime, reason } = body;
+    const { location, jobType, dayOfWeek, startTime, endTime } = body;
 
     if (!location || !jobType || dayOfWeek === undefined || !startTime || !endTime) {
       return NextResponse.json({
@@ -179,7 +177,7 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { id, location, jobType, dayOfWeek, startTime, endTime, reason } = body;
+    const { id, location, jobType, dayOfWeek, startTime, endTime } = body;
 
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });

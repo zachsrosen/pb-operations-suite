@@ -135,7 +135,6 @@ export function runDispatch(
     }
 
     // PHASE 2: DC Battery Charging (PW3 only, BEFORE inverter clip)
-    const rawDcInputs = dcInputs.slice();
 
     for (let invIdx = 0; invIdx < inverters.length; invIdx++) {
       const spec = resolvedInverters[inverters[invIdx].inverterKey];

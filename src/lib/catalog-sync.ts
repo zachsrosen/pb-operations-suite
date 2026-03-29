@@ -628,7 +628,6 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
       planned[c.field] = c.proposedValue;
     }
     const { createOrUpdateZuperPart } = await import("@/lib/zuper-catalog");
-    const specData = getSpecData(sku);
     const result = await createOrUpdateZuperPart({
       name: planned["name"] ?? sku.name,
       brand: planned["brand"] ?? sku.brand,

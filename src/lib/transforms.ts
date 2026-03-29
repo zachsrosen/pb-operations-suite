@@ -3,8 +3,8 @@
 // which all had nearly identical transformProject() functions
 
 import { RawProject, TransformedProject } from "./types";
-import type { BaselineTable, ForecastSet } from "./forecasting";
-import { computeProjectForecasts, MILESTONE_CHAIN } from "./forecasting";
+import type { BaselineTable } from "./forecasting";
+import { computeProjectForecasts } from "./forecasting";
 import type { Project } from "./hubspot";
 
 export const MS_PER_DAY = 1000 * 60 * 60 * 24;

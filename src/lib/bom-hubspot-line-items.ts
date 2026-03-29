@@ -8,7 +8,7 @@
  */
 
 import { prisma } from "@/lib/db";
-import { Prisma } from "@/generated/prisma/client";
+// Prisma client available via "@/generated/prisma/client" if needed
 import { buildCanonicalKey } from "@/lib/canonical";
 import {
   findInternalAliasCandidates,

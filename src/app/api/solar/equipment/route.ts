@@ -32,7 +32,7 @@ const CreateEquipmentSchema = z.object({
 // ── GET — List equipment ──────────────────────────────────
 
 export async function GET(req: NextRequest) {
-  const [user, authError] = await requireSolarAuth(req);
+  const [, authError] = await requireSolarAuth(req);
   if (authError) return authError;
 
   if (!prisma) {

@@ -1054,23 +1054,6 @@ export async function sendAvailabilityConflictNotification(
     : "Full day";
   const subject = `Action Needed: ${params.conflicts.length} scheduled survey conflict${params.conflicts.length === 1 ? "" : "s"} for ${params.surveyorName}`;
 
-  const conflictRowsHtml = params.conflicts
-    .map((conflict) => {
-      const time = conflict.scheduledStart && conflict.scheduledEnd
-        ? `${formatTime(conflict.scheduledStart)} - ${formatTime(conflict.scheduledEnd)}`
-        : "Time not set";
-      return `
-        <tr>
-          <td style="color: #ffffff; font-size: 13px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">${conflict.customerName}</td>
-          <td style="color: #a1a1aa; font-size: 12px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">${conflict.customerAddress}</td>
-          <td style="color: #a1a1aa; font-size: 12px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">${formatDate(conflict.scheduledDate)}</td>
-          <td style="color: #a1a1aa; font-size: 12px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">${time}</td>
-          <td style="color: #a1a1aa; font-size: 12px; padding: 8px 0; border-bottom: 1px solid #1e1e2e;">${conflict.projectId}</td>
-        </tr>
-      `;
-    })
-    .join("");
-
   const conflictRowsText = params.conflicts
     .map((conflict) => {
       const time = conflict.scheduledStart && conflict.scheduledEnd
@@ -1160,9 +1143,6 @@ export async function sendProductUpdateEmail(
 ): Promise<{ success: boolean; error?: string }> {
   const updatesUrl = (params.updatesUrl || "").trim() || resolveUpdatesUrl();
   const formattedDate = formatDate(params.update.date);
-  const changesHtml = params.update.changes
-    .map((change) => `<li style="margin: 0 0 8px 0;"><strong>${change.type.toUpperCase()}:</strong> ${change.text}</li>`)
-    .join("");
   const changesText = params.update.changes
     .map((change) => `- [${change.type.toUpperCase()}] ${change.text}`)
     .join("\n");

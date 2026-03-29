@@ -63,7 +63,7 @@ export default function AnalysisWorkspace({
   const [loadPhase, setLoadPhase] = useState<LoadPhase>("loading");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [project, setProject] = useState<ProjectData | null>(null);
-  const [weatherData, setWeatherData] = useState<WeatherDataForAdapter | null>(
+  const [, setWeatherData] = useState<WeatherDataForAdapter | null>(
     null
   );
   const [isQuickEstimate, setIsQuickEstimate] = useState(false);
