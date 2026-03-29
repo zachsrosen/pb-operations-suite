@@ -37,11 +37,10 @@ async function searchDeals(query: string) {
     pipeline: string;
   }> = [];
 
-  for (const pKey of pipelineKeys) {
-    const pipelineId = PIPELINE_IDS[pKey];
-    if (!pipelineId) continue;
-
-    try {
+  const searchPromises = pipelineKeys
+    .filter((pKey) => PIPELINE_IDS[pKey])
+    .map(async (pKey) => {
+      const pipelineId = PIPELINE_IDS[pKey];
       const response = await searchWithRetry({
         filterGroups: [
           {
@@ -67,9 +66,9 @@ async function searchDeals(query: string) {
       });
 
       const stageMap = stageMaps[pKey] || {};
-      for (const deal of response.results) {
+      return response.results.map((deal) => {
         const props = deal.properties;
-        allResults.push({
+        return {
           dealId: String(props.hs_object_id),
           dealName: String(props.dealname || ""),
           amount: props.amount ? parseFloat(String(props.amount)) : null,
@@ -78,10 +77,14 @@ async function searchDeals(query: string) {
             stageMap[String(props.dealstage || "")] ||
             String(props.dealstage || ""),
           pipeline: pKey,
-        });
-      }
-    } catch (err) {
-      console.warn(`[deal-import] Search failed for pipeline "${pKey}":`, err);
+        };
+      });
+    });
+
+  const results = await Promise.allSettled(searchPromises);
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      allResults.push(...result.value);
     }
   }
 

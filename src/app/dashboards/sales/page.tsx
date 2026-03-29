@@ -146,6 +146,14 @@ export default function SalesPipelinePage() {
     [stageCounts]
   );
 
+  const stageValues = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const deal of activeDeals) {
+      map.set(deal.stage, (map.get(deal.stage) || 0) + deal.amount);
+    }
+    return map;
+  }, [activeDeals]);
+
   // Loading state ----------------------------------------------------------
   if (loading && allDeals.length === 0) {
     return (
@@ -264,9 +272,7 @@ export default function SalesPipelinePage() {
         <div className="space-y-2">
           {ACTIVE_STAGES.map((stage) => {
             const count = stageCounts[stage] || 0;
-            const value = activeDeals
-              .filter((d) => d.stage === stage)
-              .reduce((sum, d) => sum + d.amount, 0);
+            const value = stageValues.get(stage) || 0;
             const widthPct =
               maxFunnelCount > 0 ? (count / maxFunnelCount) * 100 : 0;
             const barWidth = Math.max(widthPct, count > 0 ? 15 : 0);

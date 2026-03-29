@@ -103,6 +103,20 @@ const CATEGORY_ORDER = [
 ];
 
 /* ------------------------------------------------------------------ */
+/*  Pure helpers                                                       */
+/* ------------------------------------------------------------------ */
+
+function relativeTime(dateStr: string | null, nowMs: number): { text: string; isStale: boolean } {
+  if (!dateStr) return { text: "Never", isStale: true };
+  const diff = nowMs - new Date(dateStr).getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (days > 30) return { text: "30+ days", isStale: true };
+  if (days === 0) return { text: "Today", isStale: false };
+  if (days === 1) return { text: "1 day ago", isStale: false };
+  return { text: `${days} days ago`, isStale: false };
+}
+
+/* ------------------------------------------------------------------ */
 /*  Placeholder tab components (Tasks 9-11)                            */
 /* ------------------------------------------------------------------ */
 
@@ -149,17 +163,6 @@ function StockOverviewTab(props: {
     RACKING: { short: "RCK", color: "text-orange-400" },
     ELECTRICAL_BOS: { short: "BOS", color: "text-cyan-400" },
     MONITORING: { short: "MON", color: "text-indigo-400" },
-  };
-
-  /* Compute relative time string */
-  const relativeTime = (dateStr: string | null): { text: string; isStale: boolean } => {
-    if (!dateStr) return { text: "Never", isStale: true };
-    const diff = nowMs - new Date(dateStr).getTime();
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-    if (days > 30) return { text: "30+ days", isStale: true };
-    if (days === 0) return { text: "Today", isStale: false };
-    if (days === 1) return { text: "1 day ago", isStale: false };
-    return { text: `${days} days ago`, isStale: false };
   };
 
   /* Sorted and filtered rows */
@@ -301,7 +304,7 @@ function StockOverviewTab(props: {
                     short: row.internalProduct.category.slice(0, 3),
                     color: "text-muted",
                   };
-                  const counted = relativeTime(row.lastCountedAt);
+                  const counted = relativeTime(row.lastCountedAt, nowMs);
                   const specStr =
                     row.internalProduct.unitSpec != null
                       ? `${row.internalProduct.unitSpec}${row.internalProduct.unitLabel ? ` ${row.internalProduct.unitLabel}` : ""}`
