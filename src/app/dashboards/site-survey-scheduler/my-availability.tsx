@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { formatTimeRange12h } from "@/lib/format";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 

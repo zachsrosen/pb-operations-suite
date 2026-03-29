@@ -1,4 +1,4 @@
-import { scorePriorityItem, buildPriorityQueue, type PriorityItem, type PriorityScore } from "@/lib/service-priority";
+import { scorePriorityItem, buildPriorityQueue, type PriorityItem } from "@/lib/service-priority";
 
 describe("scorePriorityItem", () => {
   const now = new Date("2026-03-16T12:00:00Z");

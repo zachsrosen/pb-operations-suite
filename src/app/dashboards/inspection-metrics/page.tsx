@@ -199,7 +199,7 @@ export default function InspectionMetricsDashboardPage() {
       if (!res.ok) throw new Error("Failed to fetch inspection metrics");
       return res.json() as Promise<InspectionMetricsData>;
     },
-    refetchInterval: 5 * 60 * 1000,
+    refetchInterval: 15 * 60 * 1000,
   });
 
   const data = query.data ?? null;

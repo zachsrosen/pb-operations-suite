@@ -6,7 +6,6 @@ import {
   checkNewIP,
   checkSensitiveFromNewContext,
   checkImpossibleTravel,
-  type AnomalyRuleResult,
 } from "@/lib/audit/anomaly-rules";
 
 describe("checkOffHours", () => {

@@ -24,8 +24,6 @@ export function mapPayloadToRunnerInput(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const lp = payload.lossProfile as any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const bc = payload.batteryConfig as any;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const hc = payload.homeConsumptionConfig as any;
 
   return {

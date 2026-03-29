@@ -28,8 +28,6 @@ const TIME_METRICS = [
   "daToPermit",
 ] as const;
 
-type TimeMetricKey = (typeof TIME_METRICS)[number];
-
 interface MetricAverages {
   count: number;
   [key: string]: number | null;

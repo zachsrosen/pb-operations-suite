@@ -916,7 +916,7 @@ function BomDashboardInner() {
   const { data: session } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { trackDashboardView, trackFeature } = useActivityTracking();
+  const { trackDashboardView } = useActivityTracking();
 
   // Track page view on mount
   useEffect(() => {
@@ -930,7 +930,7 @@ function BomDashboardInner() {
 
   // Import panel
   const [importTab, setImportTab] = useState<ImportTab>("upload");
-  const [jsonInput, setJsonInput] = useState("");
+  const [, setJsonInput] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
 
   // PDF upload
@@ -938,9 +938,6 @@ function BomDashboardInner() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [extracting, setExtracting] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>("");
-
-  // Drive link
-  const [driveUrl, setDriveUrl] = useState("");
 
   // Project link
   const [projectSearch, setProjectSearch] = useState("");
@@ -1674,43 +1671,6 @@ function BomDashboardInner() {
     }
   }, [uploadFile, loadBomData, addToast, linkedProject, saveSnapshot]);
 
-  /* ---- Extract from Google Drive URL ---- */
-  const handleExtractDrive = useCallback(async () => {
-    const url = driveUrl.trim();
-    if (!url) return;
-    const projectAtExtractStart = linkedProject;
-
-    // Convert Drive share URL → direct download URL
-    // https://drive.google.com/file/d/FILE_ID/view → /uc?export=download&id=FILE_ID
-    const fileIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/);
-    if (!fileIdMatch) {
-      setImportError("Couldn't parse a Google Drive file ID from that URL. Make sure it's a /file/d/... share link.");
-      return;
-    }
-    const fileId = fileIdMatch[1];
-    const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
-
-    setExtracting(true);
-    setImportError(null);
-    setUploadProgress("");
-    try {
-      const data = await fetchExtractStream(
-        { driveUrl: downloadUrl, fileId },
-        (msg) => setUploadProgress(msg)
-      );
-      loadBomData(data as unknown as BomData, true, projectAtExtractStart);
-      addToast({ type: "success", title: "BOM extracted from Google Drive" });
-      if (projectAtExtractStart) {
-        await saveSnapshot(data as unknown as BomData, driveUrl, undefined, projectAtExtractStart);
-      }
-    } catch (e) {
-      setImportError(e instanceof Error ? e.message : "Drive extraction failed");
-    } finally {
-      setExtracting(false);
-      setUploadProgress("");
-    }
-  }, [driveUrl, loadBomData, addToast, linkedProject, saveSnapshot]);
-
   /* ---- Extract from a Drive file ID directly (from design files picker) ---- */
   const handleExtractDriveFile = useCallback(async (file: DriveFile) => {
     const projectAtExtractStart = linkedProject;
@@ -1735,17 +1695,6 @@ function BomDashboardInner() {
       setUploadProgress("");
     }
   }, [loadBomData, addToast, linkedProject, saveSnapshot]);
-
-  /* ---- Paste JSON import ---- */
-  const handleImport = useCallback(() => {
-    setImportError(null);
-    try {
-      const parsed = JSON.parse(jsonInput.trim()) as BomData;
-      loadBomData(parsed);
-    } catch (e) {
-      setImportError(e instanceof Error ? e.message : "Invalid JSON");
-    }
-  }, [jsonInput, loadBomData]);
 
   /* ---- Backfill empty BOM fields from linked HubSpot/Zoho products ---- */
   const handleBackfillFromLinkedProducts = useCallback(async () => {

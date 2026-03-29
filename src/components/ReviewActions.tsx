@@ -188,7 +188,6 @@ export default function ReviewActions({ dealId, dealName, userRole }: ReviewActi
   }
 
   async function submitFeedback(skill: string, rating: "positive" | "negative") {
-    const result = results[skill];
     const fb = feedback[skill] || { rating: null, notes: "", submitted: false, submitting: false };
 
     // If clicking the same rating again, toggle off

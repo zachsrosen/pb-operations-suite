@@ -8,9 +8,8 @@ import { runModelA } from "@/lib/solar/engine/model-a";
 import { runModelB } from "@/lib/solar/engine/model-b";
 import { prepareTmyLookup } from "@/lib/solar/engine/weather";
 import { computeMismatchLoss } from "@/lib/solar/engine/architecture";
-import { expectClose, expectInRange } from "./test-helpers";
 import type { WorkerProgressMessage } from "@/lib/solar/types";
-import type { PanelStat, ResolvedPanel, StringConfig } from "@/lib/solar/engine/engine-types";
+import type { PanelStat, StringConfig } from "@/lib/solar/engine/engine-types";
 import fixture from "./fixtures/fixture-single-panel.json";
 
 const noopProgress = (_msg: WorkerProgressMessage) => {};

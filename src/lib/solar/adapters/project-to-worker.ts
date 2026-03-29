@@ -27,7 +27,6 @@ import type {
   ResolvedEss,
   StringConfig,
   InverterConfig,
-  BatteryConfig,
 } from "../engine/engine-types";
 
 // ── Error Types ─────────────────────────────────────────────

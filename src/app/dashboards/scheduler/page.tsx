@@ -476,12 +476,6 @@ function getBusinessDatesInSpan(startDate: string, totalDays: number): string[] 
   return getBusinessDatesInSpanShared(startDate, totalDays);
 }
 
-function hasBlockedDateConflict(blockedDates: Set<string> | undefined, startDate: string, totalDays: number): boolean {
-  if (!blockedDates || blockedDates.size === 0) return false;
-  const spanDates = getBusinessDatesInSpan(startDate, totalDays);
-  return spanDates.some((date) => blockedDates.has(date));
-}
-
 function normalizeLocation(location?: string | null): string {
   const value = (location || "").trim();
   if (!value) return "Unknown";
@@ -1264,14 +1258,6 @@ export default function SchedulerPage() {
   }, [addToast]);
 
   /* ---- Crew booking helpers ---- */
-
-  const resolveCrewName = useCallback(
-    (crewValue: string): string | null => {
-      if (ALL_CREW_NAMES.has(crewValue)) return crewValue;
-      return null;
-    },
-    []
-  );
 
   const getEffectiveConstructionDays = useCallback((project: SchedulerProject): number | undefined => {
     if (project.zuperJobCategory !== "construction") return undefined;

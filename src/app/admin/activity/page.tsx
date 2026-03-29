@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { useToast } from "@/contexts/ToastContext";

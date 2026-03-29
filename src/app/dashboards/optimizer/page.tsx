@@ -410,7 +410,7 @@ export default function OptimizerDashboard() {
       if (!response.ok) throw new Error("Failed to fetch projects");
       return response.json();
     },
-    refetchInterval: 5 * 60 * 1000,
+    refetchInterval: 15 * 60 * 1000,
   });
   const projects: Project[] = projectsQuery.data?.projects ?? [];
   const loading = projectsQuery.isLoading;

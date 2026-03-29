@@ -16,7 +16,6 @@ import {
   scenarioStats,
 } from "@/lib/solar/scenarios/scenario-logic";
 import type {
-  Scenario,
   ScenarioResult,
   ScenariosJson,
 } from "@/lib/solar/scenarios/scenario-types";

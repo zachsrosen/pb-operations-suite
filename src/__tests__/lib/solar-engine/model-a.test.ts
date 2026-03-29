@@ -6,7 +6,7 @@
 
 import { runModelA } from "@/lib/solar/engine/model-a";
 import { prepareTmyLookup } from "@/lib/solar/engine/weather";
-import { TIMESTEPS, HALF_HOUR_FACTOR } from "@/lib/solar/engine/constants";
+import { TIMESTEPS } from "@/lib/solar/engine/constants";
 import { expectInRange, expectClose } from "./test-helpers";
 import type { WorkerProgressMessage } from "@/lib/solar/types";
 import fixture from "./fixtures/fixture-single-panel.json";

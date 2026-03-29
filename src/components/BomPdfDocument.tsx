@@ -1,6 +1,5 @@
 // src/components/BomPdfDocument.tsx
 // Server-only — used exclusively by /api/bom/export-pdf, never imported client-side
-import React from "react";
 import {
   Document, Page, Text, View, StyleSheet,
 } from "@react-pdf/renderer";

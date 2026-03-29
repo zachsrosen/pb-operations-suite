@@ -105,7 +105,7 @@ export default function ConstructionMetricsDashboardPage() {
       if (!res.ok) throw new Error("Failed to fetch construction metrics");
       return res.json() as Promise<QCData>;
     },
-    refetchInterval: 5 * 60 * 1000,
+    refetchInterval: 15 * 60 * 1000,
   });
   const data: QCData | null = qcQuery.data ?? null;
   const loading = qcQuery.isLoading;

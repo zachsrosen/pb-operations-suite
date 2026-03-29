@@ -58,11 +58,6 @@ const batteryResult: AnalysisResult = {
   },
 };
 
-const quickEstimateResult: AnalysisResult = {
-  ...stringResult,
-  isQuickEstimate: true,
-};
-
 // ── RunControls ─────────────────────────────────────────────
 
 describe("RunControls", () => {

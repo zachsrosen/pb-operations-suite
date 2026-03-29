@@ -25,7 +25,7 @@ jest.mock("@/lib/db", () => ({
 // ── Route under test ──────────────────────────────────────────────────────────
 import { NextRequest } from "next/server";
 import { POST as postRequest, GET as getRequests } from "@/app/api/catalog/push-requests/route";
-import { prisma } from "@/lib/db";
+// prisma mock is set up above via jest.mock
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function makeRequest(body: unknown, method = "POST") {

@@ -15,7 +15,6 @@ import {
   validateCatalogForm,
   type CatalogFormState,
 } from "@/lib/catalog-form-state";
-import type { ValidationError, ValidationWarning } from "@/lib/catalog-form-state";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useState, useReducer, useEffect, useCallback, Suspense } from "react";
 

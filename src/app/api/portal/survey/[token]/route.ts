@@ -6,7 +6,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { validateToken, hashToken } from "@/lib/portal-token";
+import { validateToken } from "@/lib/portal-token";
 import { getPortalAvailability } from "@/lib/portal-availability";
 
 export async function GET(

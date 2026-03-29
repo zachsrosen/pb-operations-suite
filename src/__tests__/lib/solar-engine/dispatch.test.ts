@@ -5,8 +5,8 @@
  */
 
 import { runDispatch } from "@/lib/solar/engine/dispatch";
-import { TIMESTEPS, HALF_HOUR_FACTOR } from "@/lib/solar/engine/constants";
-import { expectClose, expectInRange } from "./test-helpers";
+import { TIMESTEPS } from "@/lib/solar/engine/constants";
+import { expectClose } from "./test-helpers";
 import type { WorkerProgressMessage } from "@/lib/solar/types";
 import type { InverterConfig, ResolvedInverter } from "@/lib/solar/engine/engine-types";
 

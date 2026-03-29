@@ -15,10 +15,8 @@
  * Maps RunnerInput → SimulationResult → WorkerResultMessage payload.
  */
 
-import { HALF_HOUR_FACTOR, sumToMonthly, sumTotal } from "./constants";
 import type {
   RunnerInput,
-  SimulationResult,
   ModelBResult,
 } from "./engine-types";
 import { computeMismatchLoss, getSystemDerate } from "./architecture";

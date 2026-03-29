@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { getBusinessDatesInSpan, toDateStr } from "@/lib/scheduling-utils";
 import type { ConstructionSchedulerProject } from "./types";
 

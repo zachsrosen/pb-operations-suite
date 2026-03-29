@@ -6,12 +6,10 @@ import {
 } from "@/lib/compliance-team-overrides";
 import { JOB_CATEGORIES, JOB_CATEGORY_UIDS, zuper } from "@/lib/zuper";
 import {
-  type AssignedUser,
   STUCK_STATUSES,
   NEVER_STARTED_STATUSES,
   COMPLETED_STATUSES,
   GRACE_MS,
-  getCategoryUid,
   getStatusName,
   getCompletedTimeFromHistory,
   getOnOurWayTime,

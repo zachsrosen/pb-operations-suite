@@ -3,7 +3,7 @@
 import { useState } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { useExecutiveData } from "@/hooks/useExecutiveData";
-import { formatCurrencyExec } from "@/lib/executive-shared";
+// formatCurrencyExec available from "@/lib/executive-shared" if needed
 import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 

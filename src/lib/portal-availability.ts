@@ -439,7 +439,6 @@ function getDayOfWeek(dateStr: string, timezone: string): number {
 function localTimeToUtc(dateStr: string, timeStr: string, timezone: string): Date {
   // Build an ISO-ish string and use the timezone to find the UTC offset
   // We use a two-pass approach: format in the target TZ, then compute offset
-  const [hours, minutes] = timeStr.split(":").map(Number);
 
   // Create a reference date at noon UTC to get the timezone offset for that date
   const ref = new Date(dateStr + "T12:00:00Z");
