@@ -131,11 +131,14 @@ async function processInstallReview(
   eventId: number,
 ) {
   const start = Date.now();
+  console.log(`[install-review-webhook] BG START: deal ${dealId}, review ${reviewId}`);
 
   // 1. Fetch deal properties
   const { hubspotClient } = await import("@/lib/hubspot");
+  console.log(`[install-review-webhook] Fetching deal properties for ${dealId}...`);
   const deal = await hubspotClient.crm.deals.basicApi.getById(dealId, DEAL_PROPERTIES);
   const properties = deal.properties;
+  console.log(`[install-review-webhook] Got properties for deal ${dealId}: ${properties.dealname}`);
 
   await touchReviewRun(reviewId);
 
@@ -147,6 +150,7 @@ async function processInstallReview(
     || "http://localhost:3000";
   // Must use API_SECRET_TOKEN — middleware only recognizes that for machine-to-machine auth
   const apiSecret = process.env.API_SECRET_TOKEN;
+  console.log(`[install-review-webhook] Calling ${baseUrl}/api/install-review for deal ${dealId} (auth: ${apiSecret ? "yes" : "NO TOKEN"})`);
 
   const reviewResponse = await fetch(`${baseUrl}/api/install-review`, {
     method: "POST",
@@ -438,9 +442,10 @@ export async function POST(req: NextRequest) {
     }
 
     // Run in background
+    console.log(`[install-review-webhook] Spawning waitUntil for deal ${dealId} (review ${reviewId})`);
     waitUntil(
       processInstallReview(reviewId, dealId, event.eventId).catch(async (err) => {
-        console.error(`[install-review-webhook] Error for deal ${dealId}:`, err);
+        console.error(`[install-review-webhook] BG ERROR for deal ${dealId}:`, err instanceof Error ? err.message : err);
         await failReviewRun(reviewId, err instanceof Error ? err.message : "unknown").catch(() => {});
       }),
     );
