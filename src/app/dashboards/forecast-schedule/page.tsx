@@ -81,7 +81,7 @@ export default function ForecastSchedulePage() {
         lastUpdated: new Date().toISOString(),
       };
     },
-    refetchInterval: 5 * 60 * 1000,
+    refetchInterval: 15 * 60 * 1000,
   });
 
   // Build all forecast ghosts (including overdue — this page shows everything)

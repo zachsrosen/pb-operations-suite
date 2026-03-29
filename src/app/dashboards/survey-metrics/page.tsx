@@ -172,7 +172,7 @@ export default function SurveyMetricsDashboardPage() {
       if (!res.ok) throw new Error("Failed to fetch survey metrics");
       return res.json() as Promise<SurveyMetricsData>;
     },
-    refetchInterval: 5 * 60 * 1000,
+    refetchInterval: 15 * 60 * 1000,
   });
 
   const data: SurveyMetricsData | null = query.data ?? null;
