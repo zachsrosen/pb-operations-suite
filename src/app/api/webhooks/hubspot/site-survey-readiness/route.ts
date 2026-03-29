@@ -257,10 +257,25 @@ export async function POST(req: NextRequest) {
   try {
     const parsed = JSON.parse(rawBody);
 
+    // Debug: log top-level keys and any nested hs_object_id so we can
+    // see the exact shape HubSpot workflows send.
+    if (!Array.isArray(parsed) && typeof parsed === "object") {
+      const topKeys = Object.keys(parsed).slice(0, 20);
+      const nestedHsId = parsed.properties?.hs_object_id?.value ?? parsed.properties?.hs_object_id;
+      console.log(`[site-survey-readiness] Workflow payload keys: ${JSON.stringify(topKeys)}, properties.hs_object_id=${nestedHsId ?? "n/a"}, objectId=${parsed.objectId ?? "n/a"}, vid=${parsed.vid ?? "n/a"}`);
+    }
+
     if (Array.isArray(parsed)) {
       events = parsed;
     } else if (parsed && typeof parsed === "object") {
-      const objectId = parsed.objectId ?? parsed.hs_object_id ?? parsed.dealId ?? parsed.vid;
+      // HubSpot workflow payloads may nest the deal ID inside properties
+      const objectId =
+        parsed.objectId ??
+        parsed.hs_object_id ??
+        parsed.dealId ??
+        parsed.properties?.hs_object_id?.value ??
+        parsed.properties?.hs_object_id ??
+        parsed.vid;
 
       // Extract design_status from workflow payload (nested or flat)
       const designStatus =
@@ -270,6 +285,7 @@ export async function POST(req: NextRequest) {
         undefined;
 
       if (!objectId) {
+        console.error(`[site-survey-readiness] Could not extract deal ID. Raw keys: ${JSON.stringify(Object.keys(parsed))}`);
         return NextResponse.json({ error: "Missing objectId or dealId" }, { status: 400 });
       }
 
