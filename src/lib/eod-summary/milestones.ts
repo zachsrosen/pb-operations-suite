@@ -276,7 +276,9 @@ export async function enrichMilestones(
       changedBy = userMap.get(matchingEntry.sourceId) ?? null;
     }
 
-    const changedAtIso = matchingEntry.timestamp ?? null;
+    // HubSpot SDK may return timestamp as a Date object at runtime despite string types — coerce
+    const rawTs = matchingEntry.timestamp as unknown;
+    const changedAtIso = rawTs ? (rawTs instanceof Date ? rawTs.toISOString() : String(rawTs)) : null;
     const changedAt = changedAtIso ? formatDenverTime(changedAtIso) : null;
 
     return {

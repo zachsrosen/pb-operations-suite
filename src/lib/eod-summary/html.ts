@@ -112,7 +112,7 @@ function buildMilestonesSection(milestones: MilestoneHit[]): string {
     if (!a.changedAtIso && !b.changedAtIso) return 0;
     if (!a.changedAtIso) return 1;
     if (!b.changedAtIso) return -1;
-    return b.changedAtIso.localeCompare(a.changedAtIso);
+    return String(b.changedAtIso).localeCompare(String(a.changedAtIso));
   });
 
   const rows = sorted.map((hit) => {
