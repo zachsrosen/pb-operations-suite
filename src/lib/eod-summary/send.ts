@@ -73,34 +73,56 @@ export async function runEodSummary(options: {
       });
       idempotencyId = record.id;
     } catch (err) {
-      // Unique constraint violation → already ran today
+      // Unique constraint violation → key exists for today
       const msg = err instanceof Error ? err.message : String(err);
       if (
         msg.toLowerCase().includes("unique") ||
         msg.toLowerCase().includes("duplicate")
       ) {
-        console.log(
-          `[eod-summary] Already ran today (${todayStr}), skipping.`
-        );
-        return {
-          sent: false,
-          skipped: true,
-          skipReason: `Already sent for ${todayStr}`,
-          dryRun,
-          errors: [],
-          changeCount: 0,
-          milestoneCount: 0,
-          taskCount: 0,
-          newDealCount: 0,
-          resolvedDealCount: 0,
-        };
+        // Try to reclaim a "failed" key — allows automatic retry after errors
+        try {
+          const reclaimed = await prisma.idempotencyKey.updateMany({
+            where: {
+              key: idempotencyKey,
+              scope: IDEMPOTENCY_SCOPE,
+              status: "failed",
+            },
+            data: { status: "processing" },
+          });
+          if (reclaimed.count > 0) {
+            console.log(`[eod-summary] Reclaimed failed key for ${todayStr}, retrying.`);
+            const reclaimedRecord = await prisma.idempotencyKey.findFirst({
+              where: { key: idempotencyKey, scope: IDEMPOTENCY_SCOPE },
+            });
+            idempotencyId = reclaimedRecord?.id ?? null;
+          } else {
+            // Key is "processing" or "completed" — another run owns it
+            console.log(
+              `[eod-summary] Already ran today (${todayStr}), skipping.`
+            );
+            return {
+              sent: false,
+              skipped: true,
+              skipReason: `Already sent for ${todayStr}`,
+              dryRun,
+              errors: [],
+              changeCount: 0,
+              milestoneCount: 0,
+              taskCount: 0,
+              newDealCount: 0,
+              resolvedDealCount: 0,
+            };
+          }
+        } catch (reclaimErr) {
+          console.error("[eod-summary] Idempotency reclaim failed, proceeding:", reclaimErr);
+        }
+      } else {
+        // Unexpected error — log and continue without idempotency guard
+        const errorMsg = `Idempotency insert failed: ${msg}`;
+        console.error(`[eod-summary] ${errorMsg}`);
+        errors.push(errorMsg);
+        Sentry.captureException(err, { tags: { module: "eod-summary", step: "idempotency" } });
       }
-
-      // Unexpected error — log and continue without idempotency guard
-      const errorMsg = `Idempotency insert failed: ${msg}`;
-      console.error(`[eod-summary] ${errorMsg}`);
-      errors.push(errorMsg);
-      Sentry.captureException(err, { tags: { module: "eod-summary", step: "idempotency" } });
     }
   }
 
