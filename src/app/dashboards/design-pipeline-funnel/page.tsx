@@ -9,7 +9,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { useSSE } from "@/hooks/useSSE";
 import { queryKeys } from "@/lib/query-keys";
 import { formatCurrencyCompact } from "@/lib/format";
-import type { FunnelResponse, FunnelStageData, MonthlyActivity, PendingSalesChange, StageGroup } from "@/lib/funnel-aggregation";
+import type { FunnelResponse, FunnelStageData, MonthlyActivity, PendingSalesChange, DrillDownDeal, DrillDown, StageGroup } from "@/lib/funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 
@@ -143,7 +143,7 @@ export default function DesignPipelineFunnelPage() {
           </div>
 
           {/* Row 2: Backlog & DA Pacing */}
-          <BacklogAndPacing summary={s} cohorts={data.cohorts} monthlyActivity={data.monthlyActivity} pendingSalesChange={data.pendingSalesChange} />
+          <BacklogAndPacing summary={s} cohorts={data.cohorts} monthlyActivity={data.monthlyActivity} pendingSalesChange={data.pendingSalesChange} drillDown={data.drillDown} />
 
           {/* Row 3: Funnel bars */}
           <FunnelBars summary={s} medianDays={data.medianDays} />
@@ -163,12 +163,16 @@ function BacklogAndPacing({
   cohorts,
   monthlyActivity,
   pendingSalesChange,
+  drillDown,
 }: {
   summary: FunnelResponse["summary"];
   cohorts: FunnelResponse["cohorts"];
   monthlyActivity: MonthlyActivity[];
   pendingSalesChange: PendingSalesChange;
+  drillDown: DrillDown;
 }) {
+  const [expanded, setExpanded] = useState<string | null>(null);
+
   // Active-only backlog (cancelled deals don't need to progress)
   const awaitingSurvey = summary.salesClosed.count - summary.surveyDone.count;
   const awaitingDaSend = summary.surveyDone.count - summary.daSent.count;
@@ -199,10 +203,14 @@ function BacklogAndPacing({
     : null;
 
   const backlogs = [
-    { label: "Awaiting Survey", count: awaitingSurvey, color: "bg-amber-500" },
-    { label: "Awaiting DA Send", count: awaitingDaSend, color: "bg-purple-500" },
-    { label: "Awaiting Approval", count: awaitingApproval, color: "bg-green-500" },
+    { key: "awaitingSurvey", label: "Awaiting Survey", count: awaitingSurvey, color: "bg-amber-500", deals: drillDown.awaitingSurvey },
+    { key: "awaitingDaSend", label: "Awaiting DA Send", count: awaitingDaSend, color: "bg-purple-500", deals: drillDown.awaitingDaSend },
+    { key: "awaitingApproval", label: "Awaiting Approval", count: awaitingApproval, color: "bg-green-500", deals: drillDown.awaitingApproval },
   ];
+
+  function toggle(key: string) {
+    setExpanded((prev) => (prev === key ? null : key));
+  }
 
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
@@ -211,43 +219,70 @@ function BacklogAndPacing({
       </h3>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Backlog bars */}
-        <div className="space-y-3">
+        <div className="space-y-1">
           {backlogs.map((b) => (
-            <div key={b.label} className="flex items-center gap-3">
-              <span className="w-32 text-xs text-muted text-right shrink-0">
-                {b.label}
-              </span>
-              <div className="flex items-center gap-2 flex-1">
-                {b.count > 0 ? (
-                  <div
-                    className={`${b.color} h-6 rounded-md flex items-center px-2.5`}
-                    style={{ width: `${Math.max(8, (b.count / maxBacklog) * 100)}%` }}
-                  >
-                    <span className="text-white text-xs font-bold">{b.count}</span>
-                  </div>
-                ) : (
-                  <span className="text-xs text-muted/60 italic">—</span>
-                )}
-              </div>
+            <div key={b.key}>
+              <button
+                type="button"
+                className="flex items-center gap-3 w-full py-1.5 rounded-md hover:bg-surface-2/50 transition-colors cursor-pointer"
+                onClick={() => b.count > 0 && toggle(b.key)}
+                disabled={b.count <= 0}
+              >
+                <span className="w-32 text-xs text-muted text-right shrink-0 flex items-center justify-end gap-1">
+                  {b.count > 0 && (
+                    <span className={`text-[10px] transition-transform ${expanded === b.key ? "rotate-90" : ""}`}>
+                      ▶
+                    </span>
+                  )}
+                  {b.label}
+                </span>
+                <div className="flex items-center gap-2 flex-1">
+                  {b.count > 0 ? (
+                    <div
+                      className={`${b.color} h-6 rounded-md flex items-center px-2.5`}
+                      style={{ width: `${Math.max(8, (b.count / maxBacklog) * 100)}%` }}
+                    >
+                      <span className="text-white text-xs font-bold">{b.count}</span>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted/60 italic">—</span>
+                  )}
+                </div>
+              </button>
+              {expanded === b.key && b.deals.length > 0 && (
+                <DrillDownTable deals={b.deals} />
+              )}
             </div>
           ))}
           {/* Pending Sales Changes callout */}
           {pendingSalesChange.count > 0 && (
-            <div className="flex items-center gap-3 mt-1 pt-3 border-t border-t-border/50">
-              <span className="w-32 text-xs text-red-400 text-right shrink-0 font-medium">
-                Pending Sales Change
-              </span>
-              <div className="flex items-center gap-2 flex-1">
-                <div
-                  className="bg-red-500/80 h-6 rounded-md flex items-center px-2.5"
-                  style={{ width: `${Math.max(8, (pendingSalesChange.count / maxBacklog) * 100)}%` }}
-                >
-                  <span className="text-white text-xs font-bold">{pendingSalesChange.count}</span>
-                </div>
-                <span className="text-[11px] text-muted shrink-0">
-                  {formatCurrencyCompact(pendingSalesChange.amount)}
+            <div className="mt-1 pt-3 border-t border-t-border/50">
+              <button
+                type="button"
+                className="flex items-center gap-3 w-full py-1.5 rounded-md hover:bg-surface-2/50 transition-colors cursor-pointer"
+                onClick={() => toggle("pendingSalesChange")}
+              >
+                <span className="w-32 text-xs text-red-400 text-right shrink-0 font-medium flex items-center justify-end gap-1">
+                  <span className={`text-[10px] transition-transform ${expanded === "pendingSalesChange" ? "rotate-90" : ""}`}>
+                    ▶
+                  </span>
+                  Pending Sales Change
                 </span>
-              </div>
+                <div className="flex items-center gap-2 flex-1">
+                  <div
+                    className="bg-red-500/80 h-6 rounded-md flex items-center px-2.5"
+                    style={{ width: `${Math.max(8, (pendingSalesChange.count / maxBacklog) * 100)}%` }}
+                  >
+                    <span className="text-white text-xs font-bold">{pendingSalesChange.count}</span>
+                  </div>
+                  <span className="text-[11px] text-muted shrink-0">
+                    {formatCurrencyCompact(pendingSalesChange.amount)}
+                  </span>
+                </div>
+              </button>
+              {expanded === "pendingSalesChange" && drillDown.pendingSalesChange.length > 0 && (
+                <DrillDownTable deals={drillDown.pendingSalesChange} />
+              )}
             </div>
           )}
         </div>
@@ -287,6 +322,62 @@ function BacklogAndPacing({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Compact inline deal table for backlog drill-down. */
+function DrillDownTable({ deals }: { deals: DrillDownDeal[] }) {
+  return (
+    <div className="ml-[8.5rem] mt-1 mb-2 overflow-x-auto">
+      <table className="w-full text-[11px]">
+        <thead>
+          <tr className="border-b border-t-border/50">
+            <th className="text-left py-1 px-1.5 text-muted font-medium">Project</th>
+            <th className="text-right py-1 px-1.5 text-muted font-medium">Amount</th>
+            <th className="text-left py-1 px-1.5 text-muted font-medium">Location</th>
+            <th className="text-left py-1 px-1.5 text-muted font-medium">Stage</th>
+            <th className="text-right py-1 px-1.5 text-muted font-medium">Days</th>
+            <th className="text-left py-1 px-1.5 text-muted font-medium">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {deals.map((d) => (
+            <tr
+              key={d.id}
+              className={`border-b border-t-border/30 ${d.daysWaiting > 30 ? "bg-red-500/5" : ""}`}
+            >
+              <td className="py-1 px-1.5">
+                <a
+                  href={d.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-foreground hover:text-orange-400 transition-colors"
+                  title={d.name}
+                >
+                  {d.projectNumber ? `${d.projectNumber} — ` : ""}
+                  <span className="max-w-[180px] truncate inline-block align-bottom">{d.name}</span>
+                </a>
+              </td>
+              <td className="text-right py-1 px-1.5 text-muted">
+                {formatCurrencyCompact(d.amount)}
+              </td>
+              <td className="py-1 px-1.5 text-muted truncate max-w-[100px]" title={d.pbLocation}>
+                {d.pbLocation}
+              </td>
+              <td className="py-1 px-1.5 text-muted truncate max-w-[140px]" title={d.stage}>
+                {d.stage}
+              </td>
+              <td className={`text-right py-1 px-1.5 font-medium ${d.daysWaiting > 30 ? "text-red-400" : d.daysWaiting > 14 ? "text-amber-400" : "text-muted"}`}>
+                {d.daysWaiting}d
+              </td>
+              <td className="py-1 px-1.5 text-muted truncate max-w-[120px]" title={d.status || "—"}>
+                {d.status || <span className="italic text-muted/60">—</span>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

@@ -217,4 +217,122 @@ describe("buildFunnelData", () => {
     expect(result.pendingSalesChange.count).toBe(0);
     expect(result.pendingSalesChange.amount).toBe(0);
   });
+
+  describe("drillDown", () => {
+    it("puts deals without survey in awaitingSurvey", () => {
+      const projects = [
+        makeProject({
+          id: 1,
+          closeDate: "2026-02-10",
+          siteSurveyCompletionDate: null,
+          siteSurveyStatus: "Scheduled",
+          stage: "Site Survey",
+        }),
+        makeProject({
+          id: 2,
+          closeDate: "2026-02-15",
+          siteSurveyCompletionDate: "2026-02-20",
+          stage: "Design & Engineering",
+        }),
+      ];
+      const result = buildFunnelData(projects, 6);
+      expect(result.drillDown.awaitingSurvey).toHaveLength(1);
+      expect(result.drillDown.awaitingSurvey[0].id).toBe(1);
+      expect(result.drillDown.awaitingSurvey[0].status).toBe("Scheduled");
+    });
+
+    it("puts surveyed deals without DA sent in awaitingDaSend", () => {
+      const projects = [
+        makeProject({
+          id: 1,
+          closeDate: "2026-02-10",
+          siteSurveyCompletionDate: "2026-02-15",
+          designApprovalSentDate: null,
+          designStatus: "Ready for Design",
+          stage: "Design & Engineering",
+        }),
+      ];
+      const result = buildFunnelData(projects, 6);
+      expect(result.drillDown.awaitingDaSend).toHaveLength(1);
+      expect(result.drillDown.awaitingDaSend[0].status).toBe("Ready for Design");
+    });
+
+    it("puts DA-sent deals without approval in awaitingApproval", () => {
+      const projects = [
+        makeProject({
+          id: 1,
+          closeDate: "2026-02-10",
+          siteSurveyCompletionDate: "2026-02-15",
+          designApprovalSentDate: "2026-02-20",
+          designApprovalDate: null,
+          layoutStatus: "Sent For Approval",
+          stage: "Design & Engineering",
+        }),
+      ];
+      const result = buildFunnelData(projects, 6);
+      expect(result.drillDown.awaitingApproval).toHaveLength(1);
+      expect(result.drillDown.awaitingApproval[0].status).toBe("Sent For Approval");
+    });
+
+    it("excludes cancelled deals from drill-down lists", () => {
+      const projects = [
+        makeProject({
+          id: 1,
+          closeDate: "2026-02-10",
+          siteSurveyCompletionDate: null,
+          stageId: "68229433",
+          stage: "Cancelled",
+        }),
+      ];
+      const result = buildFunnelData(projects, 6);
+      expect(result.drillDown.awaitingSurvey).toHaveLength(0);
+    });
+
+    it("sorts drill-down lists by daysWaiting descending", () => {
+      const projects = [
+        makeProject({ id: 1, closeDate: "2026-03-01" }),
+        makeProject({ id: 2, closeDate: "2026-01-15" }),
+        makeProject({ id: 3, closeDate: "2026-02-10" }),
+      ];
+      const result = buildFunnelData(projects, 6);
+      // All lack survey, so all in awaitingSurvey, sorted longest-waiting first
+      expect(result.drillDown.awaitingSurvey[0].id).toBe(2); // Jan — longest wait
+      expect(result.drillDown.awaitingSurvey[1].id).toBe(3); // Feb
+      expect(result.drillDown.awaitingSurvey[2].id).toBe(1); // Mar — shortest wait
+    });
+
+    it("populates pendingSalesChange drill-down", () => {
+      const projects = [
+        makeProject({
+          id: 1,
+          closeDate: "2026-02-10",
+          siteSurveyCompletionDate: "2026-02-15",
+          designApprovalSentDate: "2026-02-20",
+          designApprovalDate: null,
+          layoutStatus: "Pending Sales Changes",
+        }),
+      ];
+      const result = buildFunnelData(projects, 6);
+      expect(result.drillDown.pendingSalesChange).toHaveLength(1);
+      expect(result.drillDown.pendingSalesChange[0].status).toBe("Pending Sales Changes");
+      // Also appears in awaitingApproval since DA sent but not approved
+      expect(result.drillDown.awaitingApproval).toHaveLength(1);
+    });
+
+    it("returns empty drill-down for fully progressed deal", () => {
+      const projects = [
+        makeProject({
+          closeDate: "2026-02-10",
+          siteSurveyCompletionDate: "2026-02-15",
+          designApprovalSentDate: "2026-02-20",
+          designApprovalDate: "2026-02-25",
+        }),
+      ];
+      const result = buildFunnelData(projects, 6);
+      expect(result.drillDown.awaitingSurvey).toHaveLength(0);
+      expect(result.drillDown.awaitingDaSend).toHaveLength(0);
+      expect(result.drillDown.awaitingApproval).toHaveLength(0);
+      expect(result.drillDown.pendingSalesChange).toHaveLength(0);
+    });
+  });
 });

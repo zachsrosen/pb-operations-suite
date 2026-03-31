@@ -46,6 +46,28 @@ export interface PendingSalesChange {
   amount: number;
 }
 
+/** Slim deal record for drill-down tables. */
+export interface DrillDownDeal {
+  id: number;
+  name: string;
+  projectNumber: string;
+  amount: number;
+  pbLocation: string;
+  closeDate: string;
+  stage: string;
+  url: string;
+  daysWaiting: number;
+  /** Context-dependent status: siteSurveyStatus, designStatus, or layoutStatus. */
+  status: string | null;
+}
+
+export interface DrillDown {
+  awaitingSurvey: DrillDownDeal[];
+  awaitingDaSend: DrillDownDeal[];
+  awaitingApproval: DrillDownDeal[];
+  pendingSalesChange: DrillDownDeal[];
+}
+
 export interface FunnelResponse {
   summary: {
     salesClosed: FunnelStageData;
@@ -60,11 +82,38 @@ export interface FunnelResponse {
   stageDistribution: StageGroup[];
   /** Deals currently blocked — DA pending sales change order. */
   pendingSalesChange: PendingSalesChange;
+  /** Deal-level drill-down lists for each backlog bucket. */
+  drillDown: DrillDown;
   medianDays: FunnelMedianDays;
   generatedAt: string;
 }
 
 const CANCELLED_STAGE_ID = "68229433";
+
+/** Today as YYYY-MM-DD for daysWaiting calculations. */
+function todayStr(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function toDrillDown(
+  p: Project,
+  daysWaiting: number,
+  status: string | null
+): DrillDownDeal {
+  return {
+    id: p.id,
+    name: p.name,
+    projectNumber: p.projectNumber,
+    amount: p.amount || 0,
+    pbLocation: p.pbLocation,
+    closeDate: p.closeDate!,
+    stage: p.stage,
+    url: p.url,
+    daysWaiting,
+    status,
+  };
+}
 
 function emptyStage(): FunnelStageData {
   return { count: 0, amount: 0, cancelledCount: 0, cancelledAmount: 0 };
@@ -255,12 +304,54 @@ export function buildFunnelData(
     }
   }
 
+  // Drill-down: deal-level lists for each backlog bucket (active only, sorted longest-stuck first)
+  const today = todayStr();
+  const drillDown: DrillDown = {
+    awaitingSurvey: [],
+    awaitingDaSend: [],
+    awaitingApproval: [],
+    pendingSalesChange: [],
+  };
+  for (const p of filtered) {
+    if (p.stageId === CANCELLED_STAGE_ID) continue;
+
+    if (!p.siteSurveyCompletionDate) {
+      // Closed but no survey yet
+      drillDown.awaitingSurvey.push(
+        toDrillDown(p, daysBetween(p.closeDate!, today), p.siteSurveyStatus ?? null)
+      );
+    } else if (!p.designApprovalSentDate) {
+      // Surveyed but DA not sent
+      drillDown.awaitingDaSend.push(
+        toDrillDown(p, daysBetween(p.siteSurveyCompletionDate, today), p.designStatus ?? null)
+      );
+    } else if (!p.designApprovalDate) {
+      // DA sent but not approved
+      drillDown.awaitingApproval.push(
+        toDrillDown(p, daysBetween(p.designApprovalSentDate, today), p.layoutStatus ?? null)
+      );
+    }
+
+    if (p.layoutStatus === "Pending Sales Changes") {
+      drillDown.pendingSalesChange.push(
+        toDrillDown(p, daysBetween(p.closeDate!, today), p.layoutStatus)
+      );
+    }
+  }
+  // Sort each list by daysWaiting descending (longest-stuck first)
+  const byWaitDesc = (a: DrillDownDeal, b: DrillDownDeal) => b.daysWaiting - a.daysWaiting;
+  drillDown.awaitingSurvey.sort(byWaitDesc);
+  drillDown.awaitingDaSend.sort(byWaitDesc);
+  drillDown.awaitingApproval.sort(byWaitDesc);
+  drillDown.pendingSalesChange.sort(byWaitDesc);
+
   return {
     summary,
     cohorts,
     monthlyActivity,
     stageDistribution,
     pendingSalesChange,
+    drillDown,
     medianDays: {
       closedToSurvey: median(daysClosedToSurvey),
       surveyToDaSent: median(daysSurveyToDaSent),
