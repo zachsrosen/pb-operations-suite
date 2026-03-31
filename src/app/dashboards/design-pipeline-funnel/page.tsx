@@ -9,8 +9,9 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { useSSE } from "@/hooks/useSSE";
 import { queryKeys } from "@/lib/query-keys";
 import { formatCurrencyCompact } from "@/lib/format";
-import type { FunnelResponse, FunnelStageData, MonthlyActivity } from "@/lib/funnel-aggregation";
+import type { FunnelResponse, FunnelStageData, MonthlyActivity, StageGroup } from "@/lib/funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
+import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 
 const TIMEFRAMES = [
   { label: "3 months", value: 3 },
@@ -27,13 +28,18 @@ export function monthLabel(month: string, includeYear = true): string {
 
 export default function DesignPipelineFunnelPage() {
   const [months, setMonths] = useState(6);
-  const [location, setLocation] = useState("all");
+  const [locations, setLocations] = useState<string[]>([]);
+
+  const locationOptions = useMemo(
+    () => CANONICAL_LOCATIONS.map((loc) => ({ value: loc, label: loc })),
+    []
+  );
 
   const { data, isLoading, error, dataUpdatedAt, refetch } = useQuery<FunnelResponse>({
-    queryKey: queryKeys.funnel.designPipeline(months, location),
+    queryKey: queryKeys.funnel.designPipeline(months, locations),
     queryFn: async () => {
       const params = new URLSearchParams({ months: String(months) });
-      if (location !== "all") params.set("location", location);
+      if (locations.length > 0) params.set("locations", locations.join(","));
       const res = await fetch(`/api/deals/funnel?${params}`);
       if (!res.ok) throw new Error("Failed to fetch funnel data");
       return res.json();
@@ -75,29 +81,29 @@ export default function DesignPipelineFunnelPage() {
     >
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-3 mb-6">
-        <select
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          className="bg-surface border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground"
-        >
-          <option value="all">All Locations</option>
-          {CANONICAL_LOCATIONS.map((loc) => (
-            <option key={loc} value={loc}>
-              {loc}
-            </option>
-          ))}
-        </select>
-        <select
-          value={months}
-          onChange={(e) => setMonths(Number(e.target.value))}
-          className="bg-surface border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground"
-        >
-          {TIMEFRAMES.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
-            </option>
-          ))}
-        </select>
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={locations}
+          onChange={setLocations}
+          placeholder="All Locations"
+          accentColor="orange"
+        />
+        <div className="flex items-center gap-2">
+          <label htmlFor="timeframe" className="text-xs text-muted font-medium">Timeframe</label>
+          <select
+            id="timeframe"
+            value={months}
+            onChange={(e) => setMonths(Number(e.target.value))}
+            className="bg-surface border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground"
+          >
+            {TIMEFRAMES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {isLoading || !s ? (
@@ -139,6 +145,9 @@ export default function DesignPipelineFunnelPage() {
           <FunnelBars summary={s} medianDays={data.medianDays} />
           <MonthlyFunnelChart cohorts={data.cohorts} />
           <CohortTable cohorts={data.cohorts} monthlyActivity={data.monthlyActivity} />
+          <div className="mt-6">
+            <StageDistribution stages={data.stageDistribution} totalDeals={closedTotal} />
+          </div>
         </>
       )}
     </DashboardShell>
@@ -233,13 +242,19 @@ function BacklogAndPacing({
                   {pacingActual} of {pacingTarget} target
                 </span>
               </div>
+              {currentActivity && (
+                <div className="text-xs text-muted mt-1">
+                  {formatCurrencyCompact(currentActivity.dasApprovedAmount)} approved in {monthLabel(currentMonth.month)}
+                </div>
+              )}
               {priorPacingPct != null && priorMonth && priorPriorMonth && (
-                <div className="text-xs text-muted mt-2">
+                <div className="text-xs text-muted mt-1">
                   {monthLabel(priorMonth.month)} was{" "}
                   <span className={priorPacingPct >= 100 ? "text-green-400 font-semibold" : ""}>
                     {priorPacingPct}%
                   </span>{" "}
-                  ({priorPacingActual} / {priorPacingTarget})
+                  ({priorPacingActual} / {priorPacingTarget}
+                  {priorActivity ? ` · ${formatCurrencyCompact(priorActivity.dasApprovedAmount)}` : ""})
                   {priorPacingPct >= 100 && " — design was ahead"}
                 </div>
               )}
@@ -543,6 +558,74 @@ function CohortTable({ cohorts, monthlyActivity }: { cohorts: FunnelResponse["co
             })}
           </tbody>
         </table>
+      </div>
+    </div>
+  );
+}
+
+function StageDistribution({
+  stages,
+  totalDeals,
+}: {
+  stages: StageGroup[];
+  totalDeals: number;
+}) {
+  const maxCount = Math.max(1, ...stages.map((s) => s.count));
+
+  // Color by pipeline phase
+  const STAGE_COLORS: Record<string, string> = {
+    "Site Survey": "bg-amber-500",
+    "Design & Engineering": "bg-blue-500",
+    "Permitting & Interconnection": "bg-purple-500",
+    "RTB - Blocked": "bg-red-500",
+    "Ready To Build": "bg-cyan-500",
+    "Construction": "bg-green-500",
+    "Inspection": "bg-emerald-500",
+    "Permission To Operate": "bg-teal-500",
+    "Close Out": "bg-sky-500",
+    "Project Complete": "bg-green-600",
+    "On Hold": "bg-yellow-500",
+    "Cancelled": "bg-zinc-600",
+    "Project Rejected - Needs Review": "bg-red-400",
+  };
+
+  return (
+    <div className="bg-surface rounded-xl border border-t-border p-5">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-1">
+        Current Pipeline Position
+      </h3>
+      <p className="text-xs text-muted mb-4">
+        Where all {totalDeals} deals from this period currently sit
+      </p>
+      <div className="space-y-2">
+        {stages.map((stage) => {
+          const pct = totalDeals > 0 ? Math.round((stage.count / totalDeals) * 100) : 0;
+          const color = STAGE_COLORS[stage.stageName] || "bg-zinc-500";
+          return (
+            <div key={stage.stageId} className="flex items-center gap-3">
+              <span className="w-44 text-xs text-muted text-right shrink-0 truncate" title={stage.stageName}>
+                {stage.stageName}
+              </span>
+              <div className="flex items-center gap-2 flex-1">
+                {stage.count > 0 ? (
+                  <div
+                    className={`${color} h-6 rounded-md flex items-center px-2.5`}
+                    style={{ width: `${Math.max(6, (stage.count / maxCount) * 100)}%` }}
+                  >
+                    <span className="text-white text-xs font-bold truncate">
+                      {stage.count}
+                    </span>
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted/60 italic">—</span>
+                )}
+                <span className="text-[11px] text-muted shrink-0">
+                  {formatCurrencyCompact(stage.amount)} · {pct}%
+                </span>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

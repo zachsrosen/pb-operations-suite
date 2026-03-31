@@ -18,9 +18,11 @@ export async function GET(request: NextRequest) {
       24,
       Math.max(1, parseInt(searchParams.get("months") || "6") || 6)
     );
-    const location = searchParams.get("location") || "all";
+    const locationParam = searchParams.get("locations") || "";
+    const locations = locationParam ? locationParam.split(",").filter(Boolean) : [];
+    const cacheLocation = locations.length > 0 ? locations.sort().join(",") : "all";
 
-    const cacheKey = CACHE_KEYS.DESIGN_FUNNEL(months, location);
+    const cacheKey = CACHE_KEYS.DESIGN_FUNNEL(months, cacheLocation);
 
     const { data, cached, stale, lastUpdated } = await appCache.getOrFetch(
       cacheKey,
@@ -29,7 +31,7 @@ export async function GET(request: NextRequest) {
         return buildFunnelData(
           projects,
           months,
-          location === "all" ? undefined : location
+          locations.length > 0 ? locations : undefined
         );
       }
     );

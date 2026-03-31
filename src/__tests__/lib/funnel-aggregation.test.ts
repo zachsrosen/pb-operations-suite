@@ -97,7 +97,7 @@ describe("buildFunnelData", () => {
       makeProject({ closeDate: "2026-02-10", pbLocation: "Centennial" }),
       makeProject({ closeDate: "2026-02-12", pbLocation: "Westminster" }),
     ];
-    const result = buildFunnelData(projects, 6, "Westminster");
+    const result = buildFunnelData(projects, 6, ["Westminster"]);
     expect(result.summary.salesClosed.count).toBe(1);
   });
 
@@ -107,7 +107,7 @@ describe("buildFunnelData", () => {
       makeProject({ closeDate: "2026-02-12", pbLocation: "Westminster" }),
     ];
     // "Denver Tech Center" normalizes to "Centennial" — filtering by Centennial should match it
-    const result = buildFunnelData(projects, 6, "Centennial");
+    const result = buildFunnelData(projects, 6, ["Centennial"]);
     expect(result.summary.salesClosed.count).toBe(1);
     expect(result.summary.salesClosed.amount).toBe(50000);
   });
@@ -168,6 +168,7 @@ describe("buildFunnelData", () => {
     // Activity-based: both DAs happened in March
     const marActivity = result.monthlyActivity.find((a) => a.month === "2026-03");
     expect(marActivity?.dasApproved).toBe(2);
+    expect(marActivity?.dasApprovedAmount).toBe(100000); // 50000 + 50000
 
     // February activity: 2 surveys completed, 1 DA sent
     const febActivity = result.monthlyActivity.find((a) => a.month === "2026-02");

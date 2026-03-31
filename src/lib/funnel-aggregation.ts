@@ -1,4 +1,5 @@
 import type { Project } from "@/lib/hubspot";
+import { DEAL_STAGE_MAP } from "@/lib/hubspot";
 import { normalizeLocation } from "@/lib/locations";
 
 export interface FunnelStageData {
@@ -28,6 +29,15 @@ export interface MonthlyActivity {
   surveysCompleted: number;
   dasSent: number;
   dasApproved: number;
+  dasApprovedAmount: number;
+}
+
+/** Current deal stage distribution for all deals in the filtered window. */
+export interface StageGroup {
+  stageId: string;
+  stageName: string;
+  count: number;
+  amount: number;
 }
 
 export interface FunnelResponse {
@@ -40,6 +50,8 @@ export interface FunnelResponse {
   cohorts: FunnelCohort[];
   /** Milestone counts by the month the work happened — for throughput pacing. */
   monthlyActivity: MonthlyActivity[];
+  /** Where all deals from the filtered window currently sit in the pipeline. */
+  stageDistribution: StageGroup[];
   medianDays: FunnelMedianDays;
   generatedAt: string;
 }
@@ -87,16 +99,23 @@ function addToStage(
 export function buildFunnelData(
   projects: Project[],
   months: number,
-  location?: string
+  locations?: string[]
 ): FunnelResponse {
   const now = new Date();
   // "6 months" on March 30 → cutoff Oct 1 → includes Oct through Mar (6 months)
   const cutoff = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
 
+  const locSet = locations && locations.length > 0 ? new Set(locations) : null;
+  function matchesLocation(p: Project): boolean {
+    if (!locSet) return true;
+    const canonical = normalizeLocation(p.pbLocation);
+    return canonical != null && locSet.has(canonical);
+  }
+
   const filtered = projects.filter((p) => {
     if (!p.closeDate) return false;
     if (new Date(p.closeDate + "T12:00:00") < cutoff) return false;
-    if (location && location !== "all" && normalizeLocation(p.pbLocation) !== location) return false;
+    if (!matchesLocation(p)) return false;
     return true;
   });
 
@@ -166,14 +185,14 @@ export function buildFunnelData(
   const activityMap = new Map<string, MonthlyActivity>();
   function ensureActivity(mk: string): MonthlyActivity {
     if (!activityMap.has(mk)) {
-      activityMap.set(mk, { month: mk, surveysCompleted: 0, dasSent: 0, dasApproved: 0 });
+      activityMap.set(mk, { month: mk, surveysCompleted: 0, dasSent: 0, dasApproved: 0, dasApprovedAmount: 0 });
     }
     return activityMap.get(mk)!;
   }
 
   for (const p of projects) {
     // Apply location filter only — no closeDate filter for activity counts
-    if (location && location !== "all" && normalizeLocation(p.pbLocation) !== location) continue;
+    if (!matchesLocation(p)) continue;
 
     if (p.siteSurveyCompletionDate) {
       const d = new Date(p.siteSurveyCompletionDate + "T12:00:00");
@@ -185,7 +204,11 @@ export function buildFunnelData(
     }
     if (p.designApprovalDate) {
       const d = new Date(p.designApprovalDate + "T12:00:00");
-      if (d >= cutoff) ensureActivity(monthKey(p.designApprovalDate)).dasApproved++;
+      if (d >= cutoff) {
+        const act = ensureActivity(monthKey(p.designApprovalDate));
+        act.dasApproved++;
+        act.dasApprovedAmount += p.amount || 0;
+      }
     }
   }
 
@@ -193,10 +216,33 @@ export function buildFunnelData(
     b.month.localeCompare(a.month)
   );
 
+  // Stage distribution: where all deals from the filtered window currently sit.
+  // Ordered by pipeline progression (DEAL_STAGE_MAP key order).
+  const stageOrder = Object.keys(DEAL_STAGE_MAP);
+  const stageMap = new Map<string, StageGroup>();
+  for (const p of filtered) {
+    const sid = p.stageId || "unknown";
+    if (!stageMap.has(sid)) {
+      stageMap.set(sid, {
+        stageId: sid,
+        stageName: p.stage || DEAL_STAGE_MAP[sid] || sid,
+        count: 0,
+        amount: 0,
+      });
+    }
+    const sg = stageMap.get(sid)!;
+    sg.count++;
+    sg.amount += p.amount || 0;
+  }
+  const stageDistribution = [...stageMap.values()].sort(
+    (a, b) => stageOrder.indexOf(a.stageId) - stageOrder.indexOf(b.stageId)
+  );
+
   return {
     summary,
     cohorts,
     monthlyActivity,
+    stageDistribution,
     medianDays: {
       closedToSurvey: median(daysClosedToSurvey),
       surveyToDaSent: median(daysSurveyToDaSent),

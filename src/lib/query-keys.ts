@@ -79,8 +79,8 @@ export const queryKeys = {
   },
   funnel: {
     root: ["funnel"] as const,
-    designPipeline: (months?: number, location?: string) =>
-      [...queryKeys.funnel.root, "design-pipeline", months, location] as const,
+    designPipeline: (months?: number, locations?: string[]) =>
+      [...queryKeys.funnel.root, "design-pipeline", months, locations] as const,
   },
 } as const;
 
