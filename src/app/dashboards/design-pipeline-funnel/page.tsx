@@ -9,7 +9,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { useSSE } from "@/hooks/useSSE";
 import { queryKeys } from "@/lib/query-keys";
 import { formatCurrencyCompact } from "@/lib/format";
-import type { FunnelResponse } from "@/lib/funnel-aggregation";
+import type { FunnelResponse, FunnelStageData } from "@/lib/funnel-aggregation";
 
 const LOCATIONS = [
   "All Locations",
@@ -149,10 +149,112 @@ export default function DesignPipelineFunnelPage() {
   );
 }
 
-// Placeholder components — implemented in Tasks 6-8
-function FunnelBars({ summary, medianDays }: { summary: FunnelResponse["summary"]; medianDays: FunnelResponse["medianDays"] }) {
-  return <div className="mb-6" />;
+function FunnelBars({
+  summary,
+  medianDays,
+}: {
+  summary: FunnelResponse["summary"];
+  medianDays: FunnelResponse["medianDays"];
+}) {
+  const stages = [
+    { key: "salesClosed", label: "Sales Closed", color: "bg-orange-500", data: summary.salesClosed },
+    { key: "surveyDone", label: "Survey Done", color: "bg-blue-500", data: summary.surveyDone },
+    { key: "daSent", label: "DA Sent", color: "bg-purple-500", data: summary.daSent },
+    { key: "daApproved", label: "DA Approved", color: "bg-green-500", data: summary.daApproved },
+  ] as const;
+
+  const maxTotal = stages[0].data.count + stages[0].data.cancelledCount || 1;
+
+  // Stage-to-stage conversion using totals (active + cancelled)
+  function total(d: FunnelStageData) { return d.count + d.cancelledCount; }
+
+  const conversions = [
+    {
+      pct: total(stages[0].data) > 0
+        ? Math.round((total(stages[1].data) / total(stages[0].data)) * 100)
+        : 0,
+      days: medianDays.closedToSurvey,
+    },
+    {
+      pct: total(stages[1].data) > 0
+        ? Math.round((total(stages[2].data) / total(stages[1].data)) * 100)
+        : 0,
+      days: medianDays.surveyToDaSent,
+    },
+    {
+      pct: total(stages[2].data) > 0
+        ? Math.round((total(stages[3].data) / total(stages[2].data)) * 100)
+        : 0,
+      days: medianDays.daSentToApproved,
+    },
+  ];
+
+  return (
+    <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-4">
+        Pipeline Throughput
+      </h3>
+      {stages.map((stage, i) => {
+        const active = stage.data.count;
+        const cancelled = stage.data.cancelledCount;
+        const stageTotal = active + cancelled;
+        const widthPct = Math.max(2, (stageTotal / maxTotal) * 100);
+        const activeWidthPct = stageTotal > 0 ? (active / stageTotal) * 100 : 100;
+
+        return (
+          <div key={stage.key}>
+            <div className="flex items-center gap-3 mb-1">
+              <span className="w-24 text-xs text-muted text-right shrink-0">
+                {stage.label}
+              </span>
+              <div className="flex h-7" style={{ width: `${widthPct}%` }}>
+                <div
+                  className={`${stage.color} rounded-l-md flex items-center px-2.5 min-w-0`}
+                  style={{ width: `${activeWidthPct}%` }}
+                >
+                  <span className="text-white text-xs font-semibold truncate">
+                    {active} · {formatCurrencyCompact(stage.data.amount)}
+                  </span>
+                </div>
+                {cancelled > 0 && (
+                  <div
+                    className="bg-zinc-600 rounded-r-md flex items-center justify-center px-1.5 min-w-0"
+                    style={{ width: `${100 - activeWidthPct}%` }}
+                  >
+                    <span className="text-zinc-300 text-[10px]">{cancelled}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+            {/* Conversion arrow between bars */}
+            {i < stages.length - 1 && (
+              <div className="flex items-center gap-3 mb-2">
+                <span className="w-24" />
+                <div className="flex items-center gap-1.5 pl-2 text-muted">
+                  <span className="text-base">↓</span>
+                  <span className="text-[11px]">
+                    {conversions[i].pct}% conversion
+                    {conversions[i].days != null && ` · median ${conversions[i].days}d`}
+                  </span>
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <div className="flex gap-4 mt-3 text-[11px] text-muted">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 bg-orange-500 rounded-sm" /> Active
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 bg-zinc-600 rounded-sm" /> Cancelled
+        </span>
+      </div>
+    </div>
+  );
 }
+
+// Placeholder components — implemented in Tasks 7-8
 function MonthlyFunnelChart({ cohorts }: { cohorts: FunnelResponse["cohorts"] }) {
   return <div className="mb-6" />;
 }
