@@ -10,15 +10,7 @@ import { useSSE } from "@/hooks/useSSE";
 import { queryKeys } from "@/lib/query-keys";
 import { formatCurrencyCompact } from "@/lib/format";
 import type { FunnelResponse, FunnelStageData } from "@/lib/funnel-aggregation";
-
-const LOCATIONS = [
-  "All Locations",
-  "Denver Tech Center",
-  "Westminster",
-  "Colorado Springs",
-  "California",
-  "Camarillo",
-] as const;
+import { CANONICAL_LOCATIONS } from "@/lib/locations";
 
 const TIMEFRAMES = [
   { label: "3 months", value: 3 },
@@ -88,8 +80,9 @@ export default function DesignPipelineFunnelPage() {
           onChange={(e) => setLocation(e.target.value)}
           className="bg-surface border border-t-border rounded-lg px-3 py-1.5 text-sm text-foreground"
         >
-          {LOCATIONS.map((loc) => (
-            <option key={loc} value={loc === "All Locations" ? "all" : loc}>
+          <option value="all">All Locations</option>
+          {CANONICAL_LOCATIONS.map((loc) => (
+            <option key={loc} value={loc}>
               {loc}
             </option>
           ))}
@@ -198,8 +191,6 @@ function FunnelBars({
         const active = stage.data.count;
         const cancelled = stage.data.cancelledCount;
         const stageTotal = active + cancelled;
-        const widthPct = Math.max(2, (stageTotal / maxTotal) * 100);
-        const activeWidthPct = stageTotal > 0 ? (active / stageTotal) * 100 : 100;
 
         return (
           <div key={stage.key}>
@@ -207,24 +198,28 @@ function FunnelBars({
               <span className="w-24 text-xs text-muted text-right shrink-0">
                 {stage.label}
               </span>
-              <div className="flex h-7" style={{ width: `${widthPct}%` }}>
-                <div
-                  className={`${stage.color} rounded-l-md flex items-center px-2.5 min-w-0`}
-                  style={{ width: `${activeWidthPct}%` }}
-                >
-                  <span className="text-white text-xs font-semibold truncate">
-                    {active} · {formatCurrencyCompact(stage.data.amount)}
-                  </span>
-                </div>
-                {cancelled > 0 && (
+              {stageTotal === 0 ? (
+                <span className="text-xs text-muted/60 italic">—</span>
+              ) : (
+                <div className="flex h-7" style={{ width: `${Math.max(2, (stageTotal / maxTotal) * 100)}%` }}>
                   <div
-                    className="bg-zinc-600 rounded-r-md flex items-center justify-center px-1.5 min-w-0"
-                    style={{ width: `${100 - activeWidthPct}%` }}
+                    className={`${stage.color} rounded-l-md flex items-center px-2.5 min-w-0`}
+                    style={{ width: `${(active / stageTotal) * 100}%` }}
                   >
-                    <span className="text-zinc-300 text-[10px]">{cancelled}</span>
+                    <span className="text-white text-xs font-semibold truncate">
+                      {active} · {formatCurrencyCompact(stage.data.amount)}
+                    </span>
                   </div>
-                )}
-              </div>
+                  {cancelled > 0 && (
+                    <div
+                      className="bg-zinc-600 rounded-r-md flex items-center justify-center px-1.5 min-w-0"
+                      style={{ width: `${(cancelled / stageTotal) * 100}%` }}
+                    >
+                      <span className="text-zinc-300 text-[10px]">{cancelled}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
             {/* Conversion arrow between bars */}
             {i < stages.length - 1 && (

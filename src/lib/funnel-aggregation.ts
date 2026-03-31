@@ -1,4 +1,5 @@
 import type { Project } from "@/lib/hubspot";
+import { normalizeLocation } from "@/lib/locations";
 
 export interface FunnelStageData {
   count: number;
@@ -79,12 +80,13 @@ export function buildFunnelData(
   location?: string
 ): FunnelResponse {
   const now = new Date();
-  const cutoff = new Date(now.getFullYear(), now.getMonth() - months, 1);
+  // "6 months" on March 30 → cutoff Oct 1 → includes Oct through Mar (6 months)
+  const cutoff = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
 
   const filtered = projects.filter((p) => {
     if (!p.closeDate) return false;
     if (new Date(p.closeDate + "T12:00:00") < cutoff) return false;
-    if (location && location !== "all" && p.pbLocation !== location) return false;
+    if (location && location !== "all" && normalizeLocation(p.pbLocation) !== location) return false;
     return true;
   });
 

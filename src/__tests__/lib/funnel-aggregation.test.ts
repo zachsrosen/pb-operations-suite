@@ -11,7 +11,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
     siteSurveyCompletionDate: null,
     designApprovalSentDate: null,
     designApprovalDate: null,
-    pbLocation: "Denver Tech Center",
+    pbLocation: "Centennial",
     ...overrides,
   } as Project;
 }
@@ -92,13 +92,24 @@ describe("buildFunnelData", () => {
     expect(result.cohorts[2].month).toBe("2026-01");
   });
 
-  it("filters by location when provided", () => {
+  it("filters by canonical location when provided", () => {
     const projects = [
-      makeProject({ closeDate: "2026-02-10", pbLocation: "Denver Tech Center" }),
+      makeProject({ closeDate: "2026-02-10", pbLocation: "Centennial" }),
       makeProject({ closeDate: "2026-02-12", pbLocation: "Westminster" }),
     ];
     const result = buildFunnelData(projects, 6, "Westminster");
     expect(result.summary.salesClosed.count).toBe(1);
+  });
+
+  it("normalizes raw pbLocation aliases to canonical before filtering", () => {
+    const projects = [
+      makeProject({ closeDate: "2026-02-10", pbLocation: "Denver Tech Center" }),
+      makeProject({ closeDate: "2026-02-12", pbLocation: "Westminster" }),
+    ];
+    // "Denver Tech Center" normalizes to "Centennial" — filtering by Centennial should match it
+    const result = buildFunnelData(projects, 6, "Centennial");
+    expect(result.summary.salesClosed.count).toBe(1);
+    expect(result.summary.salesClosed.amount).toBe(50000);
   });
 
   it("excludes deals outside the months lookback window", () => {
