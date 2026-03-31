@@ -302,12 +302,22 @@ const LOCATION_ALIASES: Record<string, string[]> = {
   DTC: ["DTC", "Centennial"],
   "Colorado Springs": ["Colorado Springs"],
   "San Luis Obispo": ["San Luis Obispo", "SLO"],
-  // Camarillo jobs can be staffed by either Camarillo or SLO teams.
+  // Camarillo and SLO share install/construction crews but have SEPARATE survey
+  // availability. Only expand to SLO for non-survey job types.
+  Camarillo: ["Camarillo"],
+};
+
+// For install/construction, Camarillo can use SLO crews too.
+const LOCATION_ALIASES_INSTALL: Record<string, string[]> = {
+  ...LOCATION_ALIASES,
   Camarillo: ["Camarillo", "San Luis Obispo", "SLO"],
 };
 
-function getLocationMatches(location: string): string[] {
-  return LOCATION_ALIASES[location] || [location];
+function getLocationMatches(location: string, jobType?: string): string[] {
+  const aliases = jobType && jobType !== "survey"
+    ? LOCATION_ALIASES_INSTALL
+    : LOCATION_ALIASES;
+  return aliases[location] || [location];
 }
 
 export async function GET(request: NextRequest) {
@@ -432,8 +442,8 @@ export async function GET(request: NextRequest) {
   };
 
   // Generate availability from local crew schedules
-  const locationMatches = location ? getLocationMatches(location) : null;
   const jobType = type || "survey";
+  const locationMatches = location ? getLocationMatches(location, jobType) : null;
 
   // Try loading crew schedules from DB first, fall back to hardcoded
   let activeSchedules = CREW_SCHEDULES;

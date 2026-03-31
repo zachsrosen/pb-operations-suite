@@ -37,7 +37,11 @@ const LOCATION_ALIASES: Record<string, string[]> = {
   DTC: ["DTC", "Centennial"],
   "Colorado Springs": ["Colorado Springs"],
   "San Luis Obispo": ["San Luis Obispo", "SLO"],
-  Camarillo: ["Camarillo", "San Luis Obispo", "SLO"],
+  // Camarillo and SLO share install crews but have SEPARATE survey availability.
+  // Do NOT include SLO here — a crew member with different per-location survey
+  // schedules (e.g. Nick: Wed-only for Camarillo, Mon–Fri for SLO) would bleed
+  // SLO availability into Camarillo slots.
+  Camarillo: ["Camarillo"],
 };
 
 function getLocationMatches(location: string): string[] {

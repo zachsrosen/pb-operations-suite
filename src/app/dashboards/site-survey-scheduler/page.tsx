@@ -205,8 +205,9 @@ function locationKey(value: string | null | undefined): string {
 const PROJECT_LOCATION_MATCHES: Record<string, string[]> = {
   dtc: ["dtc", "centennial"],
   centennial: ["centennial", "dtc"],
-  // Camarillo projects may be assigned to Camarillo or SLO teams.
-  camarillo: ["camarillo", "san luis obispo", "slo"],
+  // Camarillo and SLO share install crews but have SEPARATE survey availability.
+  // Do NOT cross-pollinate here — crew members may have different per-location
+  // survey schedules (e.g. Nick: Wed-only for Camarillo, Mon–Fri for SLO).
 };
 
 function slotMatchesProjectLocation(slotLocation?: string, projectLocation?: string): boolean {

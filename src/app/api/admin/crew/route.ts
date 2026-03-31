@@ -31,10 +31,17 @@ const ZUPER_TEAM_UIDS: Record<string, string> = {
   Camarillo: "0168d963-84af-4214-ad81-d6c43cee8e65",
 };
 
-// Generate email from name: "Drew Perry" → "drew@photonbrothers.com"
+// Generate email from name.
+// Most crew use "firstname@photonbrothers.com", but some Google Workspace
+// accounts use "firstname.lastname@".  Fall back to firstname.lastname when the
+// person has a multi-word name to avoid bounces (e.g. Nathan Kirkegaard).
+// Explicit emails in SEED_DATA / the admin UI always take precedence.
 function generateCrewEmail(name: string): string {
-  const firstName = name.split(" ")[0].toLowerCase();
-  return `${firstName}@photonbrothers.com`;
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return `${parts[0].toLowerCase()}.${parts[parts.length - 1].toLowerCase()}@photonbrothers.com`;
+  }
+  return `${parts[0].toLowerCase()}@photonbrothers.com`;
 }
 
 // Initial seed data (migrate from hardcoded values)

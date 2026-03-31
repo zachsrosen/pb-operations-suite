@@ -147,11 +147,15 @@ export async function POST(
   // then check BookedSlot uniqueness, insert BookedSlot + update invite.
   try {
     const result = await prisma.$transaction(async (tx) => {
-      // Lock the crew availability row for this day/time to serialize concurrent bookings
+      // Lock the crew availability row for this day/time/location to serialize
+      // concurrent bookings.  The location filter ensures we lock the correct
+      // availability record when a crew member has different schedules per
+      // location (e.g. Nick: Wed-only for Camarillo, Mon–Fri for SLO).
       const dayOfWeek = getDayOfWeekForTz(slot.date, timezone);
       await tx.$queryRaw`
         SELECT id FROM "CrewAvailability"
         WHERE "crewMemberId" = ${slot.crewMemberId}
+          AND "location" = ${invite.pbLocation}
           AND "dayOfWeek" = ${dayOfWeek}
           AND "startTime" <= ${slot.time}
           AND "endTime" > ${slot.time}
