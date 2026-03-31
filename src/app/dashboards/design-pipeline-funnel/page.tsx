@@ -320,7 +320,80 @@ function MonthlyFunnelChart({
   );
 }
 
-// Placeholder — implemented in Task 8
 function CohortTable({ cohorts }: { cohorts: FunnelResponse["cohorts"] }) {
-  return <div />;
+  const STAGES = [
+    { key: "salesClosed", label: "Sales Closed", textColor: "text-orange-400" },
+    { key: "surveyDone", label: "Survey Done", textColor: "text-blue-400" },
+    { key: "daSent", label: "DA Sent", textColor: "text-purple-400" },
+    { key: "daApproved", label: "DA Approved", textColor: "text-green-400" },
+  ] as const;
+
+  return (
+    <div className="bg-surface rounded-xl border border-t-border p-5">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-3">
+        Cohort Detail
+      </h3>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-t-border">
+              <th className="text-left py-2 px-2 text-muted font-medium">Month</th>
+              {STAGES.map((s) => (
+                <th key={s.key} className={`text-center py-2 px-2 font-medium ${s.textColor}`}>
+                  {s.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {cohorts.map((cohort, i) => {
+              const closedTotal =
+                cohort.salesClosed.count + cohort.salesClosed.cancelledCount;
+
+              return (
+                <tr
+                  key={cohort.month}
+                  className={`border-b border-t-border/50 ${i % 2 === 0 ? "bg-surface-2/50" : ""}`}
+                >
+                  <td className="py-2 px-2 font-semibold text-foreground">
+                    {monthLabel(cohort.month)}
+                  </td>
+                  {STAGES.map((stage) => {
+                    const d = cohort[stage.key as keyof typeof cohort] as FunnelStageData;
+                    const total = d.count + d.cancelledCount;
+                    // Conversion from Sales Closed (not stage-to-stage)
+                    const conversionPct =
+                      stage.key === "salesClosed" || closedTotal === 0
+                        ? null
+                        : Math.round((total / closedTotal) * 100);
+
+                    return (
+                      <td key={stage.key} className="text-center py-2 px-2">
+                        <div className={`font-semibold ${stage.textColor}`}>
+                          {total}
+                        </div>
+                        <div className="text-muted">
+                          {formatCurrencyCompact(d.amount + d.cancelledAmount)}
+                        </div>
+                        {d.cancelledCount > 0 && (
+                          <div className="text-zinc-500">
+                            {d.cancelledCount} cancelled
+                          </div>
+                        )}
+                        {conversionPct != null && (
+                          <div className={`${stage.textColor} text-[10px]`}>
+                            {conversionPct}%
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
