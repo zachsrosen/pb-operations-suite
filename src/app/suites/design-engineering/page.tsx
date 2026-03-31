@@ -36,6 +36,14 @@ const LINKS: SuitePageCard[] = [
     section: "Design Pipeline",
   },
   {
+    href: "/dashboards/design-pipeline-funnel",
+    title: "Design Pipeline Funnel",
+    description: "Sales-to-DA throughput funnel — shows upstream volume driving design workload.",
+    tag: "CROSS-REF",
+    icon: "📊",
+    section: "Design Pipeline",
+  },
+  {
     href: "/dashboards/de-metrics",
     title: "D&E Metrics",
     description: "DA turnaround and revisions by office, approval pipeline, designer productivity, and monthly trends.",
