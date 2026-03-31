@@ -82,6 +82,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/executive-calendar": { href: "/suites/executive", label: "Executive" },
   "/dashboards/forecast-accuracy": { href: "/suites/executive", label: "Executive" },
   "/dashboards/forecast-timeline": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/design-pipeline-funnel": { href: "/suites/executive", label: "Executive" },
   // Service Suite dashboards
   "/dashboards/service-scheduler": { href: "/suites/service", label: "Service" },
   "/dashboards/service-backlog": { href: "/suites/service", label: "Service" },

@@ -69,6 +69,14 @@ const LINKS: SuitePageCard[] = [
     section: "Sales",
   },
   {
+    href: "/dashboards/design-pipeline-funnel",
+    title: "Design Pipeline Funnel",
+    description: "Sales → Survey → DA Sent → DA Approved throughput with monthly cohorts and conversion rates.",
+    tag: "PIPELINE",
+    icon: "📊",
+    section: "Sales",
+  },
+  {
     href: "/dashboards/zuper-compliance",
     title: "Zuper Compliance",
     description: "Per-user compliance scorecards and crew-composition comparisons.",

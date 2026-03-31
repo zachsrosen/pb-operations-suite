@@ -77,6 +77,11 @@ export const queryKeys = {
     root: ["peDeals"] as const,
     list: () => [...queryKeys.peDeals.root, "list"] as const,
   },
+  funnel: {
+    root: ["funnel"] as const,
+    designPipeline: (months?: number, location?: string) =>
+      [...queryKeys.funnel.root, "design-pipeline", months, location] as const,
+  },
 } as const;
 
 /**
@@ -102,5 +107,6 @@ export function cacheKeyToQueryKeys(
   // pipelines: no RQ consumer depends on it in this batch
   if (serverKey.startsWith("pipelines")) return [];
   if (serverKey.startsWith("revenue-goals")) return [queryKeys.revenueGoals.root];
+  if (serverKey.startsWith("funnel")) return [queryKeys.funnel.root];
   return [];
 }
