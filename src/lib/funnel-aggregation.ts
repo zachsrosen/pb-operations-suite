@@ -40,6 +40,12 @@ export interface StageGroup {
   amount: number;
 }
 
+/** Deals currently blocked on a sales change order (layoutStatus === "Pending Sales Changes"). */
+export interface PendingSalesChange {
+  count: number;
+  amount: number;
+}
+
 export interface FunnelResponse {
   summary: {
     salesClosed: FunnelStageData;
@@ -52,6 +58,8 @@ export interface FunnelResponse {
   monthlyActivity: MonthlyActivity[];
   /** Where all deals from the filtered window currently sit in the pipeline. */
   stageDistribution: StageGroup[];
+  /** Deals currently blocked — DA pending sales change order. */
+  pendingSalesChange: PendingSalesChange;
   medianDays: FunnelMedianDays;
   generatedAt: string;
 }
@@ -238,11 +246,21 @@ export function buildFunnelData(
     (a, b) => stageOrder.indexOf(a.stageId) - stageOrder.indexOf(b.stageId)
   );
 
+  // Deals currently blocked on a sales change order
+  const pendingSalesChange: PendingSalesChange = { count: 0, amount: 0 };
+  for (const p of filtered) {
+    if (p.layoutStatus === "Pending Sales Changes") {
+      pendingSalesChange.count++;
+      pendingSalesChange.amount += p.amount || 0;
+    }
+  }
+
   return {
     summary,
     cohorts,
     monthlyActivity,
     stageDistribution,
+    pendingSalesChange,
     medianDays: {
       closedToSurvey: median(daysClosedToSurvey),
       surveyToDaSent: median(daysSurveyToDaSent),

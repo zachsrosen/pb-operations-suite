@@ -9,14 +9,18 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { useSSE } from "@/hooks/useSSE";
 import { queryKeys } from "@/lib/query-keys";
 import { formatCurrencyCompact } from "@/lib/format";
-import type { FunnelResponse, FunnelStageData, MonthlyActivity, StageGroup } from "@/lib/funnel-aggregation";
+import type { FunnelResponse, FunnelStageData, MonthlyActivity, PendingSalesChange, StageGroup } from "@/lib/funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 
 const TIMEFRAMES = [
+  { label: "1 month", value: 1 },
   { label: "3 months", value: 3 },
   { label: "6 months", value: 6 },
+  { label: "9 months", value: 9 },
   { label: "12 months", value: 12 },
+  { label: "18 months", value: 18 },
+  { label: "24 months", value: 24 },
 ] as const;
 
 // Month label helpers — used by FunnelBars / MonthlyFunnelChart / CohortTable (Tasks 6-8)
@@ -90,7 +94,7 @@ export default function DesignPipelineFunnelPage() {
           accentColor="orange"
         />
         <div className="flex items-center gap-2">
-          <label htmlFor="timeframe" className="text-xs text-muted font-medium">Timeframe</label>
+          <label htmlFor="timeframe" className="text-xs text-muted font-medium">Closed In Last</label>
           <select
             id="timeframe"
             value={months}
@@ -139,7 +143,7 @@ export default function DesignPipelineFunnelPage() {
           </div>
 
           {/* Row 2: Backlog & DA Pacing */}
-          <BacklogAndPacing summary={s} cohorts={data.cohorts} monthlyActivity={data.monthlyActivity} />
+          <BacklogAndPacing summary={s} cohorts={data.cohorts} monthlyActivity={data.monthlyActivity} pendingSalesChange={data.pendingSalesChange} />
 
           {/* Row 3: Funnel bars */}
           <FunnelBars summary={s} medianDays={data.medianDays} />
@@ -158,10 +162,12 @@ function BacklogAndPacing({
   summary,
   cohorts,
   monthlyActivity,
+  pendingSalesChange,
 }: {
   summary: FunnelResponse["summary"];
   cohorts: FunnelResponse["cohorts"];
   monthlyActivity: MonthlyActivity[];
+  pendingSalesChange: PendingSalesChange;
 }) {
   // Active-only backlog (cancelled deals don't need to progress)
   const awaitingSurvey = summary.salesClosed.count - summary.surveyDone.count;
@@ -225,6 +231,25 @@ function BacklogAndPacing({
               </div>
             </div>
           ))}
+          {/* Pending Sales Changes callout */}
+          {pendingSalesChange.count > 0 && (
+            <div className="flex items-center gap-3 mt-1 pt-3 border-t border-t-border/50">
+              <span className="w-32 text-xs text-red-400 text-right shrink-0 font-medium">
+                Pending Sales Change
+              </span>
+              <div className="flex items-center gap-2 flex-1">
+                <div
+                  className="bg-red-500/80 h-6 rounded-md flex items-center px-2.5"
+                  style={{ width: `${Math.max(8, (pendingSalesChange.count / maxBacklog) * 100)}%` }}
+                >
+                  <span className="text-white text-xs font-bold">{pendingSalesChange.count}</span>
+                </div>
+                <span className="text-[11px] text-muted shrink-0">
+                  {formatCurrencyCompact(pendingSalesChange.amount)}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* DA Pacing */}

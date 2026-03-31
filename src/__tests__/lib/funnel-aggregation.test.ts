@@ -187,4 +187,34 @@ describe("buildFunnelData", () => {
     expect(result.summary.salesClosed.count).toBe(1);
     expect(result.summary.salesClosed.cancelledCount).toBe(0);
   });
+
+  it("counts deals with layoutStatus 'Pending Sales Changes'", () => {
+    const projects = [
+      makeProject({
+        closeDate: "2026-02-10",
+        amount: 30000,
+        layoutStatus: "Pending Sales Changes",
+      }),
+      makeProject({
+        closeDate: "2026-02-12",
+        amount: 45000,
+        layoutStatus: "Pending Sales Changes",
+      }),
+      makeProject({
+        closeDate: "2026-02-15",
+        amount: 60000,
+        layoutStatus: "Sent For Approval",
+      }),
+    ];
+    const result = buildFunnelData(projects, 6);
+    expect(result.pendingSalesChange.count).toBe(2);
+    expect(result.pendingSalesChange.amount).toBe(75000);
+  });
+
+  it("returns zero pendingSalesChange when none exist", () => {
+    const projects = [makeProject({ closeDate: "2026-02-10" })];
+    const result = buildFunnelData(projects, 6);
+    expect(result.pendingSalesChange.count).toBe(0);
+    expect(result.pendingSalesChange.amount).toBe(0);
+  });
 });
