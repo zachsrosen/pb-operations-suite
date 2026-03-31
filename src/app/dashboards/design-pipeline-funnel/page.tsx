@@ -9,7 +9,7 @@ import { ErrorState } from "@/components/ui/ErrorState";
 import { useSSE } from "@/hooks/useSSE";
 import { queryKeys } from "@/lib/query-keys";
 import { formatCurrencyCompact } from "@/lib/format";
-import type { FunnelResponse, FunnelStageData } from "@/lib/funnel-aggregation";
+import type { FunnelResponse, FunnelStageData, MonthlyActivity } from "@/lib/funnel-aggregation";
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 
 const TIMEFRAMES = [
@@ -133,12 +133,12 @@ export default function DesignPipelineFunnelPage() {
           </div>
 
           {/* Row 2: Backlog & DA Pacing */}
-          <BacklogAndPacing summary={s} cohorts={data.cohorts} />
+          <BacklogAndPacing summary={s} cohorts={data.cohorts} monthlyActivity={data.monthlyActivity} />
 
           {/* Row 3: Funnel bars */}
           <FunnelBars summary={s} medianDays={data.medianDays} />
           <MonthlyFunnelChart cohorts={data.cohorts} />
-          <CohortTable cohorts={data.cohorts} />
+          <CohortTable cohorts={data.cohorts} monthlyActivity={data.monthlyActivity} />
         </>
       )}
     </DashboardShell>
@@ -148,9 +148,11 @@ export default function DesignPipelineFunnelPage() {
 function BacklogAndPacing({
   summary,
   cohorts,
+  monthlyActivity,
 }: {
   summary: FunnelResponse["summary"];
   cohorts: FunnelResponse["cohorts"];
+  monthlyActivity: MonthlyActivity[];
 }) {
   // Active-only backlog (cancelled deals don't need to progress)
   const awaitingSurvey = summary.salesClosed.count - summary.surveyDone.count;
@@ -160,19 +162,23 @@ function BacklogAndPacing({
 
   function totalCount(d: FunnelStageData) { return d.count + d.cancelledCount; }
 
-  // DA Pacing: current month's DA Approved vs prior month's Sales Closed
+  // Activity-based DA Pacing: DAs the team actually completed this month
+  // vs deals that closed last month (Matt's "1 month behind" benchmark).
+  // cohorts[0] = newest close-date cohort; monthlyActivity[0] = newest activity month
   const currentMonth = cohorts[0];
   const priorMonth = cohorts[1];
+  const currentActivity = monthlyActivity.find((a) => a.month === currentMonth?.month);
   const pacingTarget = priorMonth ? totalCount(priorMonth.salesClosed) : null;
-  const pacingActual = currentMonth ? totalCount(currentMonth.daApproved) : null;
+  const pacingActual = currentActivity?.dasApproved ?? null;
   const pacingPct = pacingTarget && pacingTarget > 0 && pacingActual != null
     ? Math.round((pacingActual / pacingTarget) * 100)
     : null;
 
   // Prior month pacing for context ("design was ahead last month")
   const priorPriorMonth = cohorts[2];
+  const priorActivity = monthlyActivity.find((a) => a.month === priorMonth?.month);
   const priorPacingTarget = priorPriorMonth ? totalCount(priorPriorMonth.salesClosed) : null;
-  const priorPacingActual = priorMonth ? totalCount(priorMonth.daApproved) : null;
+  const priorPacingActual = priorActivity?.dasApproved ?? null;
   const priorPacingPct = priorPacingTarget && priorPacingTarget > 0 && priorPacingActual != null
     ? Math.round((priorPacingActual / priorPacingTarget) * 100)
     : null;
@@ -421,7 +427,7 @@ function MonthlyFunnelChart({
   );
 }
 
-function CohortTable({ cohorts }: { cohorts: FunnelResponse["cohorts"] }) {
+function CohortTable({ cohorts, monthlyActivity }: { cohorts: FunnelResponse["cohorts"]; monthlyActivity: MonthlyActivity[] }) {
   const STAGES = [
     { key: "salesClosed", label: "Sales Closed", textColor: "text-orange-400" },
     { key: "surveyDone", label: "Survey Done", textColor: "text-blue-400" },
@@ -462,9 +468,10 @@ function CohortTable({ cohorts }: { cohorts: FunnelResponse["cohorts"] }) {
                 ? Math.round(((closedTotal - priorClosedTotal) / priorClosedTotal) * 100)
                 : null;
 
-              // DA Pacing: this month's DA Approved vs prior month's Sales Closed
+              // DA Pacing: DAs actually completed this month vs prior month's Sales Closed
+              const activity = monthlyActivity.find((a) => a.month === cohort.month);
               const pacingTarget = priorClosedTotal;
-              const pacingActual = totalCount(cohort.daApproved);
+              const pacingActual = activity?.dasApproved ?? 0;
               const pacingPct = pacingTarget && pacingTarget > 0
                 ? Math.round((pacingActual / pacingTarget) * 100)
                 : null;

@@ -22,6 +22,14 @@ export interface FunnelMedianDays {
   daSentToApproved: number | null;
 }
 
+/** Milestones binned by the month the activity actually occurred (not close date). */
+export interface MonthlyActivity {
+  month: string;
+  surveysCompleted: number;
+  dasSent: number;
+  dasApproved: number;
+}
+
 export interface FunnelResponse {
   summary: {
     salesClosed: FunnelStageData;
@@ -30,6 +38,8 @@ export interface FunnelResponse {
     daApproved: FunnelStageData;
   };
   cohorts: FunnelCohort[];
+  /** Milestone counts by the month the work happened — for throughput pacing. */
+  monthlyActivity: MonthlyActivity[];
   medianDays: FunnelMedianDays;
   generatedAt: string;
 }
@@ -150,9 +160,43 @@ export function buildFunnelData(
     b.month.localeCompare(a.month)
   );
 
+  // Activity-based counts: bin milestones by the month they happened,
+  // across ALL projects (not just closeDate-filtered), so pacing reflects
+  // actual team throughput regardless of when the deal originally closed.
+  const activityMap = new Map<string, MonthlyActivity>();
+  function ensureActivity(mk: string): MonthlyActivity {
+    if (!activityMap.has(mk)) {
+      activityMap.set(mk, { month: mk, surveysCompleted: 0, dasSent: 0, dasApproved: 0 });
+    }
+    return activityMap.get(mk)!;
+  }
+
+  for (const p of projects) {
+    // Apply location filter only — no closeDate filter for activity counts
+    if (location && location !== "all" && normalizeLocation(p.pbLocation) !== location) continue;
+
+    if (p.siteSurveyCompletionDate) {
+      const d = new Date(p.siteSurveyCompletionDate + "T12:00:00");
+      if (d >= cutoff) ensureActivity(monthKey(p.siteSurveyCompletionDate)).surveysCompleted++;
+    }
+    if (p.designApprovalSentDate) {
+      const d = new Date(p.designApprovalSentDate + "T12:00:00");
+      if (d >= cutoff) ensureActivity(monthKey(p.designApprovalSentDate)).dasSent++;
+    }
+    if (p.designApprovalDate) {
+      const d = new Date(p.designApprovalDate + "T12:00:00");
+      if (d >= cutoff) ensureActivity(monthKey(p.designApprovalDate)).dasApproved++;
+    }
+  }
+
+  const monthlyActivity = [...activityMap.values()].sort((a, b) =>
+    b.month.localeCompare(a.month)
+  );
+
   return {
     summary,
     cohorts,
+    monthlyActivity,
     medianDays: {
       closedToSurvey: median(daysClosedToSurvey),
       surveyToDaSent: median(daysSurveyToDaSent),

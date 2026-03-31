@@ -140,6 +140,41 @@ describe("buildFunnelData", () => {
     expect(result.medianDays.closedToSurvey).toBe(10);
   });
 
+  it("bins monthlyActivity by milestone date, not close date", () => {
+    // Deal closed in Jan, survey in Feb, DA approved in Mar
+    const projects = [
+      makeProject({
+        closeDate: "2026-01-10",
+        siteSurveyCompletionDate: "2026-02-05",
+        designApprovalSentDate: "2026-02-20",
+        designApprovalDate: "2026-03-10",
+      }),
+      // Second deal closed in Feb, DA approved in Mar
+      makeProject({
+        closeDate: "2026-02-15",
+        siteSurveyCompletionDate: "2026-02-25",
+        designApprovalSentDate: "2026-03-01",
+        designApprovalDate: "2026-03-12",
+      }),
+    ];
+    const result = buildFunnelData(projects, 6);
+
+    // Cohort-based: Jan cohort has 1 DA approved, Feb cohort has 1
+    const jan = result.cohorts.find((c) => c.month === "2026-01");
+    const feb = result.cohorts.find((c) => c.month === "2026-02");
+    expect(jan?.daApproved.count).toBe(1);
+    expect(feb?.daApproved.count).toBe(1);
+
+    // Activity-based: both DAs happened in March
+    const marActivity = result.monthlyActivity.find((a) => a.month === "2026-03");
+    expect(marActivity?.dasApproved).toBe(2);
+
+    // February activity: 2 surveys completed, 1 DA sent
+    const febActivity = result.monthlyActivity.find((a) => a.month === "2026-02");
+    expect(febActivity?.surveysCompleted).toBe(2);
+    expect(febActivity?.dasSent).toBe(1);
+  });
+
   it("treats Project Rejected (20461935) as active, not cancelled", () => {
     const projects = [
       makeProject({
