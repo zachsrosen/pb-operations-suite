@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
@@ -254,10 +254,73 @@ function FunnelBars({
   );
 }
 
-// Placeholder components — implemented in Tasks 7-8
-function MonthlyFunnelChart({ cohorts }: { cohorts: FunnelResponse["cohorts"] }) {
-  return <div className="mb-6" />;
+function MonthlyFunnelChart({
+  cohorts,
+}: {
+  cohorts: FunnelResponse["cohorts"];
+}) {
+  // Reverse to chronological order for display (oldest left → newest right)
+  const chronological = useMemo(() => [...cohorts].reverse(), [cohorts]);
+
+  const maxCount = useMemo(
+    () =>
+      Math.max(
+        1,
+        ...chronological.map(
+          (c) => c.salesClosed.count + c.salesClosed.cancelledCount
+        )
+      ),
+    [chronological]
+  );
+
+  const STAGE_COLORS = [
+    { key: "salesClosed", color: "bg-orange-500", label: "Sales Closed" },
+    { key: "surveyDone", color: "bg-blue-500", label: "Survey Done" },
+    { key: "daSent", color: "bg-purple-500", label: "DA Sent" },
+    { key: "daApproved", color: "bg-green-500", label: "DA Approved" },
+  ] as const;
+
+  return (
+    <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-4">
+        Monthly Cohort Trend
+      </h3>
+      <div className="flex items-end justify-around gap-2" style={{ height: 160 }}>
+        {chronological.map((cohort) => (
+          <div key={cohort.month} className="flex flex-col items-center gap-1 flex-1 min-w-0">
+            <div className="flex gap-0.5 items-end" style={{ height: 130 }}>
+              {STAGE_COLORS.map(({ key, color }) => {
+                const d = cohort[key as keyof typeof cohort] as FunnelStageData;
+                const total = d.count + d.cancelledCount;
+                const heightPct = (total / maxCount) * 100;
+                return (
+                  <div
+                    key={key}
+                    className={`${color} rounded-t-sm w-3 transition-all duration-300`}
+                    style={{ height: `${Math.max(heightPct, total > 0 ? 3 : 0)}%` }}
+                    title={`${STAGE_COLORS.find((s) => s.key === key)?.label}: ${total} · ${formatCurrencyCompact(d.amount + d.cancelledAmount)}`}
+                  />
+                );
+              })}
+            </div>
+            <span className="text-[10px] text-muted truncate">
+              {monthLabel(cohort.month, false)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-4 mt-3 text-[11px] text-muted">
+        {STAGE_COLORS.map(({ color, label }) => (
+          <span key={label} className="flex items-center gap-1.5">
+            <span className={`w-2.5 h-2.5 ${color} rounded-sm`} /> {label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
 }
+
+// Placeholder — implemented in Task 8
 function CohortTable({ cohorts }: { cohorts: FunnelResponse["cohorts"] }) {
   return <div />;
 }
