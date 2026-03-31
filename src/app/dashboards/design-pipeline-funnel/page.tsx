@@ -109,36 +109,139 @@ export default function DesignPipelineFunnelPage() {
             <StatCard
               label="Sales Closed"
               value={s.salesClosed.count + s.salesClosed.cancelledCount}
-              subtitle={`${formatCurrencyCompact(s.salesClosed.amount + s.salesClosed.cancelledAmount)}${s.salesClosed.cancelledCount > 0 ? ` · ${s.salesClosed.cancelledCount} cancelled` : ""}`}
+              subtitle={`${formatCurrencyCompact(s.salesClosed.amount + s.salesClosed.cancelledAmount)}${s.salesClosed.cancelledCount > 0 ? ` · ${s.salesClosed.cancelledCount} cancelled (${formatCurrencyCompact(s.salesClosed.cancelledAmount)})` : ""}`}
               color="orange"
             />
             <StatCard
               label="Survey Done"
               value={s.surveyDone.count + s.surveyDone.cancelledCount}
-              subtitle={`${formatCurrencyCompact(s.surveyDone.amount + s.surveyDone.cancelledAmount)} · ${surveyPct}% of closed`}
+              subtitle={`${formatCurrencyCompact(s.surveyDone.amount + s.surveyDone.cancelledAmount)} · ${surveyPct}% of closed${s.surveyDone.cancelledCount > 0 ? ` · ${s.surveyDone.cancelledCount} cancelled (${formatCurrencyCompact(s.surveyDone.cancelledAmount)})` : ""}`}
               color="blue"
             />
             <StatCard
               label="DA Sent"
               value={s.daSent.count + s.daSent.cancelledCount}
-              subtitle={`${formatCurrencyCompact(s.daSent.amount + s.daSent.cancelledAmount)} · ${daSentPct}% of surveyed`}
+              subtitle={`${formatCurrencyCompact(s.daSent.amount + s.daSent.cancelledAmount)} · ${daSentPct}% of surveyed${s.daSent.cancelledCount > 0 ? ` · ${s.daSent.cancelledCount} cancelled (${formatCurrencyCompact(s.daSent.cancelledAmount)})` : ""}`}
               color="purple"
             />
             <StatCard
               label="DA Approved"
               value={s.daApproved.count + s.daApproved.cancelledCount}
-              subtitle={`${formatCurrencyCompact(s.daApproved.amount + s.daApproved.cancelledAmount)} · ${daApprovedPct}% of DA sent`}
+              subtitle={`${formatCurrencyCompact(s.daApproved.amount + s.daApproved.cancelledAmount)} · ${daApprovedPct}% of DA sent${s.daApproved.cancelledCount > 0 ? ` · ${s.daApproved.cancelledCount} cancelled (${formatCurrencyCompact(s.daApproved.cancelledAmount)})` : ""}`}
               color="green"
             />
           </div>
 
-          {/* Rows 2-4 added in subsequent tasks */}
+          {/* Row 2: Backlog & DA Pacing */}
+          <BacklogAndPacing summary={s} cohorts={data.cohorts} />
+
+          {/* Row 3: Funnel bars */}
           <FunnelBars summary={s} medianDays={data.medianDays} />
           <MonthlyFunnelChart cohorts={data.cohorts} />
           <CohortTable cohorts={data.cohorts} />
         </>
       )}
     </DashboardShell>
+  );
+}
+
+function BacklogAndPacing({
+  summary,
+  cohorts,
+}: {
+  summary: FunnelResponse["summary"];
+  cohorts: FunnelResponse["cohorts"];
+}) {
+  // Active-only backlog (cancelled deals don't need to progress)
+  const awaitingSurvey = summary.salesClosed.count - summary.surveyDone.count;
+  const awaitingDaSend = summary.surveyDone.count - summary.daSent.count;
+  const awaitingApproval = summary.daSent.count - summary.daApproved.count;
+  const maxBacklog = Math.max(awaitingSurvey, awaitingDaSend, awaitingApproval, 1);
+
+  function totalCount(d: FunnelStageData) { return d.count + d.cancelledCount; }
+
+  // DA Pacing: current month's DA Approved vs prior month's Sales Closed
+  const currentMonth = cohorts[0];
+  const priorMonth = cohorts[1];
+  const pacingTarget = priorMonth ? totalCount(priorMonth.salesClosed) : null;
+  const pacingActual = currentMonth ? totalCount(currentMonth.daApproved) : null;
+  const pacingPct = pacingTarget && pacingTarget > 0 && pacingActual != null
+    ? Math.round((pacingActual / pacingTarget) * 100)
+    : null;
+
+  // Prior month pacing for context ("design was ahead last month")
+  const priorPriorMonth = cohorts[2];
+  const priorPacingTarget = priorPriorMonth ? totalCount(priorPriorMonth.salesClosed) : null;
+  const priorPacingActual = priorMonth ? totalCount(priorMonth.daApproved) : null;
+  const priorPacingPct = priorPacingTarget && priorPacingTarget > 0 && priorPacingActual != null
+    ? Math.round((priorPacingActual / priorPacingTarget) * 100)
+    : null;
+
+  const backlogs = [
+    { label: "Awaiting Survey", count: awaitingSurvey, color: "bg-amber-500" },
+    { label: "Awaiting DA Send", count: awaitingDaSend, color: "bg-purple-500" },
+    { label: "Awaiting Approval", count: awaitingApproval, color: "bg-green-500" },
+  ];
+
+  return (
+    <div className="bg-surface rounded-xl border border-t-border p-5 mb-6">
+      <h3 className="text-sm font-semibold text-foreground/80 mb-4">
+        Pipeline Backlog & DA Pacing
+      </h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Backlog bars */}
+        <div className="space-y-3">
+          {backlogs.map((b) => (
+            <div key={b.label} className="flex items-center gap-3">
+              <span className="w-32 text-xs text-muted text-right shrink-0">
+                {b.label}
+              </span>
+              <div className="flex items-center gap-2 flex-1">
+                {b.count > 0 ? (
+                  <div
+                    className={`${b.color} h-6 rounded-md flex items-center px-2.5`}
+                    style={{ width: `${Math.max(8, (b.count / maxBacklog) * 100)}%` }}
+                  >
+                    <span className="text-white text-xs font-bold">{b.count}</span>
+                  </div>
+                ) : (
+                  <span className="text-xs text-muted/60 italic">—</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* DA Pacing */}
+        <div className="flex flex-col justify-center">
+          {pacingPct != null && currentMonth && priorMonth && (
+            <div className="bg-surface-2 rounded-lg p-4">
+              <div className="text-xs text-muted mb-1">
+                DA Pacing — {monthLabel(currentMonth.month)} DAs vs {monthLabel(priorMonth.month)} sales
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className={`text-2xl font-bold ${pacingPct >= 100 ? "text-green-400" : "text-foreground"}`}>
+                  {pacingPct}%
+                </span>
+                <span className="text-sm text-muted">
+                  {pacingActual} of {pacingTarget} target
+                </span>
+              </div>
+              {priorPacingPct != null && priorMonth && priorPriorMonth && (
+                <div className="text-xs text-muted mt-2">
+                  {monthLabel(priorMonth.month)} was{" "}
+                  <span className={priorPacingPct >= 100 ? "text-green-400 font-semibold" : ""}>
+                    {priorPacingPct}%
+                  </span>{" "}
+                  ({priorPacingActual} / {priorPacingTarget})
+                  {priorPacingPct >= 100 && " — design was ahead"}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -214,8 +317,11 @@ function FunnelBars({
                     <div
                       className="bg-zinc-600 rounded-r-md flex items-center justify-center px-1.5 min-w-0"
                       style={{ width: `${(cancelled / stageTotal) * 100}%` }}
+                      title={`${cancelled} cancelled · ${formatCurrencyCompact(stage.data.cancelledAmount)}`}
                     >
-                      <span className="text-zinc-300 text-[10px]">{cancelled}</span>
+                      <span className="text-zinc-300 text-[10px] truncate">
+                        {cancelled} · {formatCurrencyCompact(stage.data.cancelledAmount)}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -323,6 +429,8 @@ function CohortTable({ cohorts }: { cohorts: FunnelResponse["cohorts"] }) {
     { key: "daApproved", label: "DA Approved", textColor: "text-green-400" },
   ] as const;
 
+  function totalCount(d: FunnelStageData) { return d.count + d.cancelledCount; }
+
   return (
     <div className="bg-surface rounded-xl border border-t-border p-5">
       <h3 className="text-sm font-semibold text-foreground/80 mb-3">
@@ -338,12 +446,28 @@ function CohortTable({ cohorts }: { cohorts: FunnelResponse["cohorts"] }) {
                   {s.label}
                 </th>
               ))}
+              <th className="text-center py-2 px-2 font-medium text-cyan-400">
+                DA Pacing
+              </th>
             </tr>
           </thead>
           <tbody>
             {cohorts.map((cohort, i) => {
-              const closedTotal =
-                cohort.salesClosed.count + cohort.salesClosed.cancelledCount;
+              const closedTotal = totalCount(cohort.salesClosed);
+
+              // MoM sales delta (cohorts are newest-first, so i+1 is prior month)
+              const priorCohort = cohorts[i + 1];
+              const priorClosedTotal = priorCohort ? totalCount(priorCohort.salesClosed) : null;
+              const momDelta = priorClosedTotal && priorClosedTotal > 0
+                ? Math.round(((closedTotal - priorClosedTotal) / priorClosedTotal) * 100)
+                : null;
+
+              // DA Pacing: this month's DA Approved vs prior month's Sales Closed
+              const pacingTarget = priorClosedTotal;
+              const pacingActual = totalCount(cohort.daApproved);
+              const pacingPct = pacingTarget && pacingTarget > 0
+                ? Math.round((pacingActual / pacingTarget) * 100)
+                : null;
 
               return (
                 <tr
@@ -372,7 +496,7 @@ function CohortTable({ cohorts }: { cohorts: FunnelResponse["cohorts"] }) {
                         </div>
                         {d.cancelledCount > 0 && (
                           <div className="text-zinc-500">
-                            {d.cancelledCount} cancelled
+                            {d.cancelledCount} cancelled ({formatCurrencyCompact(d.cancelledAmount)})
                           </div>
                         )}
                         {conversionPct != null && (
@@ -380,9 +504,33 @@ function CohortTable({ cohorts }: { cohorts: FunnelResponse["cohorts"] }) {
                             {conversionPct}%
                           </div>
                         )}
+                        {/* MoM delta on Sales Closed column */}
+                        {stage.key === "salesClosed" && momDelta != null && (
+                          <div className={`text-[10px] font-medium ${momDelta >= 0 ? "text-orange-400" : "text-muted"}`}>
+                            {momDelta >= 0 ? "+" : ""}{momDelta}% MoM
+                          </div>
+                        )}
                       </td>
                     );
                   })}
+                  {/* DA Pacing column */}
+                  <td className="text-center py-2 px-2">
+                    {pacingPct != null ? (
+                      <>
+                        <div className={`font-bold ${pacingPct >= 100 ? "text-green-400" : "text-cyan-400"}`}>
+                          {pacingPct}%
+                        </div>
+                        <div className="text-muted">
+                          {pacingActual} / {pacingTarget}
+                        </div>
+                        {pacingPct >= 100 && (
+                          <div className="text-green-400 text-[10px]">on pace</div>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-muted/60 italic">—</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
