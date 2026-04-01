@@ -55,7 +55,7 @@ export interface SoLineItem {
 }
 
 export interface JobContext {
-  jobType: "solar" | "battery_only" | "hybrid";
+  jobType: "solar" | "battery_only" | "hybrid" | "ev_only";
   roofType: "asphalt_shingle" | "standing_seam_metal" | "tile" | "trapezoidal_metal" | "unknown";
   isStandingSeamS5: boolean;
   hasExpansion: boolean;
@@ -127,10 +127,12 @@ export function detectJobContext(
 ): JobContext {
   const hasModules = items.some(i => i.category === "MODULE");
   const hasBattery = items.some(i => i.category === "BATTERY");
+  const hasEvChargerItem = items.some(i => i.category === "EV_CHARGER");
 
   let jobType: JobContext["jobType"];
   if (hasModules && hasBattery) jobType = "hybrid";
   else if (hasModules) jobType = "solar";
+  else if (!hasBattery && hasEvChargerItem) jobType = "ev_only";
   else jobType = "battery_only";
 
   // Roof type from project metadata + item descriptions
@@ -176,7 +178,7 @@ export function detectJobContext(
   const hasEnphase = items.some(i =>
     /enphase/i.test(i.brand ?? "") || /IQ8|Q-12-RAW/i.test(i.model ?? ""));
   const hasEvCharger = items.some(i =>
-    /ev\s*charger|1734411/i.test(`${i.model ?? ""} ${i.description}`));
+    /ev\s*charger|173441[12]/i.test(`${i.model ?? ""} ${i.description}`));
 
   let moduleCount = 0;
   const projCount = Number(project?.moduleCount);
@@ -297,6 +299,14 @@ export async function postProcessSoItems(
 
   const toRemove: Set<number> = new Set();
 
+  // Universal: remove NEMA outlet/receptacle designations (site infrastructure, not orderable)
+  for (let i = 0; i < items.length; i++) {
+    if (matchesSku(items[i], /\bNEMA\s*\d+-\d+/i) && !matchesSku(items[i], /\bNEMA\s*3R?\b/i)) {
+      corrections.push({ action: "item_removed", itemName: items[i].name, reason: "NEMA outlet designation is site infrastructure, not orderable equipment" });
+      toRemove.add(i);
+    }
+  }
+
   if (ctx.isStandingSeamS5) {
     for (let i = 0; i < items.length; i++) {
       if (matchesSku(items[i], /snow\s*dog/i)) {
@@ -368,6 +378,38 @@ export async function postProcessSoItems(
       }
       if (matchesSku(item, /solobox|SBOXCOMP/i)) {
         corrections.push({ action: "item_removed", itemName: item.name, reason: "SOLOBOX not used on battery-only jobs" });
+        toRemove.add(i);
+      }
+    }
+  }
+
+  // EV-only jobs: keep charger + dedicated breaker, remove solar/battery roof items
+  if (ctx.jobType === "ev_only") {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (matchesSku(item, /snow\s*dog/i)) {
+        corrections.push({ action: "item_removed", itemName: item.name, reason: "Snow dogs not used on EV-only jobs" });
+        toRemove.add(i);
+      }
+      if (matchesSku(item, /critter\s*guard|S6466/i)) {
+        corrections.push({ action: "item_removed", itemName: item.name, reason: "Critter guard not used on EV-only jobs" });
+        toRemove.add(i);
+      }
+      if (matchesSku(item, /sunscreener|S6438/i)) {
+        corrections.push({ action: "item_removed", itemName: item.name, reason: "SunScreener not used on EV-only jobs" });
+        toRemove.add(i);
+      }
+      if (matchesSku(item, /strain\s*relief|M3317GBZ/i)) {
+        corrections.push({ action: "item_removed", itemName: item.name, reason: "Strain relief not used on EV-only jobs" });
+        toRemove.add(i);
+      }
+      if (matchesSku(item, /solobox|SBOXCOMP/i)) {
+        corrections.push({ action: "item_removed", itemName: item.name, reason: "SOLOBOX not used on EV-only jobs" });
+        toRemove.add(i);
+      }
+      // Remove NEMA outlet items if Claude extracted them despite prompt instructions
+      if (matchesSku(item, /\bNEMA\s*\d+-\d+/i)) {
+        corrections.push({ action: "item_removed", itemName: item.name, reason: "NEMA outlet designation is site infrastructure, not orderable equipment" });
         toRemove.add(i);
       }
     }
@@ -520,7 +562,7 @@ export async function postProcessSoItems(
   }
 
   // Solar PW3 jobs: add TL270RCU + THQL2160
-  if (ctx.jobType !== "battery_only" && ctx.hasPowerwall) {
+  if (ctx.jobType !== "battery_only" && ctx.jobType !== "ev_only" && ctx.hasPowerwall) {
     await addIfMissing("TL270RCU", "TL270RCU", 1, "OPS_STANDARD: Load center always needed for PW3 solar jobs");
     await addIfMissing("THQL2160", "THQL2160", 1, "OPS_STANDARD: 60A 2P GE breaker always needed for PW3 solar jobs");
   }
@@ -532,7 +574,7 @@ export async function postProcessSoItems(
   }
 
   // Tile roof items
-  if (ctx.roofType === "tile" && ctx.jobType !== "battery_only") {
+  if (ctx.roofType === "tile" && ctx.jobType !== "battery_only" && ctx.jobType !== "ev_only") {
     const tileHookQty = ctx.moduleCount > 0 ? ctx.moduleCount * 4 : 20; // ~4 hooks per module
     await addIfMissing("ATH-01-M1", "ATH-01-M1", tileHookQty, "Tile hooks required for tile roof installation");
     await addIfMissing("BHW-TB-03-A1", "BHW-TB-03-A1", tileHookQty, "T-bolt bonding hardware required for tile roof");
@@ -540,7 +582,7 @@ export async function postProcessSoItems(
   }
 
   // Standing seam S-5!/L-Foot: add L-Foot if missing
-  if (ctx.isStandingSeamS5 && ctx.jobType !== "battery_only") {
+  if (ctx.isStandingSeamS5 && ctx.jobType !== "battery_only" && ctx.jobType !== "ev_only") {
     // Default qty: ~3 per module (observed from ops data)
     const lFootQty = ctx.moduleCount > 0 ? ctx.moduleCount * 3 : 30;
     await addIfMissing("LFT-03-M1", "LFT-03-M1", lFootQty, "L-Foot mounts required for standing seam S-5! system");

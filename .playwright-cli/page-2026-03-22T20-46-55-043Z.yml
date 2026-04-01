@@ -1,0 +1,20 @@
+- generic [active] [ref=e1]:
+  - paragraph [ref=e5]: Computing forecasts for all projects…
+  - button "Open chat" [ref=e6]:
+    - img [ref=e7]
+  - generic [ref=e9]:
+    - img [ref=e11]
+    - button "Open Tanstack query devtools" [ref=e59] [cursor=pointer]:
+      - img [ref=e60]
+  - generic [ref=e112] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e113]:
+      - img [ref=e114]
+    - generic [ref=e117]:
+      - button "Open issues overlay" [ref=e118]:
+        - generic [ref=e119]:
+          - generic [ref=e120]: "0"
+          - generic [ref=e121]: "1"
+        - generic [ref=e122]: Issue
+      - button "Collapse issues badge" [ref=e123]:
+        - img [ref=e124]
+  - alert [ref=e126]

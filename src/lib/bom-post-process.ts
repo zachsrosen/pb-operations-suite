@@ -87,7 +87,7 @@ const MODEL_TO_BRAND: Array<{ pattern: RegExp; brand: string }> = [
   { pattern: /^1841000/, brand: "Tesla" },
   { pattern: /^1978069|^1978070/, brand: "Tesla" },
   { pattern: /^1875157/, brand: "Tesla" },
-  { pattern: /^1734411/, brand: "Tesla" },
+  { pattern: /^173441[12]/, brand: "Tesla" },
   { pattern: /^2045796|^P2045794|^P2060713/, brand: "Tesla" },
   { pattern: /^MCI-2/i, brand: "Tesla" },
   // ── Enphase ──

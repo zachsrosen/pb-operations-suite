@@ -1,0 +1,455 @@
+<?xml version="1.0" encoding="utf-8"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr>
+        <p:cNvPr id="1" name="">
+          <a:extLst>
+            <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+              <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{9A1E325A-2AD9-CED8-FE91-04D00C71647A}"/>
+            </a:ext>
+          </a:extLst>
+        </p:cNvPr>
+        <p:cNvGrpSpPr/>
+        <p:nvPr/>
+      </p:nvGrpSpPr>
+      <p:grpSpPr>
+        <a:xfrm>
+          <a:off x="0" y="0"/>
+          <a:ext cx="0" cy="0"/>
+          <a:chOff x="0" y="0"/>
+          <a:chExt cx="0" cy="0"/>
+        </a:xfrm>
+      </p:grpSpPr>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="Rectangle 1"/>
+          <p:cNvSpPr/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="0" y="0"/>
+            <a:ext cx="12192000" cy="73152"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:solidFill>
+            <a:schemeClr val="tx1"/>
+          </a:solidFill>
+          <a:ln>
+            <a:noFill/>
+          </a:ln>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="1">
+            <a:schemeClr val="accent1"/>
+          </a:lnRef>
+          <a:fillRef idx="3">
+            <a:schemeClr val="accent1"/>
+          </a:fillRef>
+          <a:effectRef idx="2">
+            <a:schemeClr val="accent1"/>
+          </a:effectRef>
+          <a:fontRef idx="minor">
+            <a:schemeClr val="lt1"/>
+          </a:fontRef>
+        </p:style>
+        <p:txBody>
+          <a:bodyPr rtlCol="0" anchor="ctr"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="ctr"/>
+            <a:endParaRPr/>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="20" name="TextBox 20"/>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="731520" y="914400"/>
+            <a:ext cx="10728960" cy="4300000"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square" rtlCol="0">
+            <a:normAutofit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr>
+              <a:spcAft><a:spcPts val="600"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1500" b="1" dirty="0">
+                <a:solidFill><a:srgbClr val="002060"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Company Info</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1300" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Legal company name, address, Tax ID, SIC code / industry</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr>
+              <a:spcAft><a:spcPts val="600"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1500" b="1" dirty="0">
+                <a:solidFill><a:srgbClr val="002060"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Employee Data</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="200"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1300" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Census (password-protected)</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1300" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Job titles and salaries (if quoting life/disability)</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr>
+              <a:spcAft><a:spcPts val="600"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1500" b="1" dirty="0">
+                <a:solidFill><a:srgbClr val="002060"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Plan Info</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="200"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1300" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Current plan designs (SBC, COC/SPD, benefit summaries)</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="200"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1300" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Current rates and renewal rates</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1300" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Employer contribution strategy</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr>
+              <a:spcAft><a:spcPts val="600"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1500" b="1" dirty="0">
+                <a:solidFill><a:srgbClr val="002060"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Crucial for Underwriting</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="200"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1300" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Medical Questionnaire (required for 50+ lives)</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="200"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1300" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Claims data (if self-funded, level-funded, or 100+ enrolled in medical)</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1300" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>ATNE (if near the 50 or 100 life cusp between SG and LG)</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr>
+              <a:spcAft><a:spcPts val="600"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1500" b="1" dirty="0">
+                <a:solidFill><a:srgbClr val="002060"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Producer Info</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="200"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1300" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Producer name, agency, and commission request</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="13" name="Rounded Rectangle 12"/>
+          <p:cNvSpPr/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="731520" y="5394960"/>
+            <a:ext cx="10728960" cy="685800"/>
+          </a:xfrm>
+          <a:prstGeom prst="roundRect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:solidFill>
+            <a:srgbClr val="FDF2D5"/>
+          </a:solidFill>
+          <a:ln w="12700">
+            <a:solidFill>
+              <a:srgbClr val="C8962E"/>
+            </a:solidFill>
+          </a:ln>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="1">
+            <a:schemeClr val="accent1"/>
+          </a:lnRef>
+          <a:fillRef idx="3">
+            <a:schemeClr val="accent1"/>
+          </a:fillRef>
+          <a:effectRef idx="2">
+            <a:schemeClr val="accent1"/>
+          </a:effectRef>
+          <a:fontRef idx="minor">
+            <a:schemeClr val="lt1"/>
+          </a:fontRef>
+        </p:style>
+        <p:txBody>
+          <a:bodyPr wrap="square" tIns="73152" rtlCol="0" anchor="ctr"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="ctr">
+              <a:spcAft>
+                <a:spcPts val="200"/>
+              </a:spcAft>
+              <a:defRPr sz="1100" b="1">
+                <a:solidFill>
+                  <a:srgbClr val="8B6E1A"/>
+                </a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:defRPr>
+            </a:pPr>
+            <a:r>
+              <a:rPr dirty="0"/>
+              <a:t>TIP</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr algn="ctr">
+              <a:defRPr sz="1200">
+                <a:solidFill>
+                  <a:srgbClr val="5D4E20"/>
+                </a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:defRPr>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" dirty="0"/>
+              <a:t>Job titles and salaries are NOT required for flat-dollar basic life quotes.</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="14" name="Rectangle 13"/>
+          <p:cNvSpPr/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="0" y="6803136"/>
+            <a:ext cx="12192000" cy="54864"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:solidFill>
+            <a:schemeClr val="tx1"/>
+          </a:solidFill>
+          <a:ln>
+            <a:noFill/>
+          </a:ln>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="1">
+            <a:schemeClr val="accent1"/>
+          </a:lnRef>
+          <a:fillRef idx="3">
+            <a:schemeClr val="accent1"/>
+          </a:fillRef>
+          <a:effectRef idx="2">
+            <a:schemeClr val="accent1"/>
+          </a:effectRef>
+          <a:fontRef idx="minor">
+            <a:schemeClr val="lt1"/>
+          </a:fontRef>
+        </p:style>
+        <p:txBody>
+          <a:bodyPr rtlCol="0" anchor="ctr"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="ctr"/>
+            <a:endParaRPr/>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="12" name="TextBox 11">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{C3A1DFD2-EA32-4006-7FB0-957ABF96B21C}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="731520" y="228600"/>
+            <a:ext cx="10728960" cy="523220"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr>
+              <a:defRPr sz="2800" b="1">
+                <a:solidFill>
+                  <a:srgbClr val="4B2E12"/>
+                </a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:defRPr>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" dirty="0">
+                <a:solidFill>
+                  <a:srgbClr val="002060"/>
+                </a:solidFill>
+              </a:rPr>
+              <a:t>Required Information Checklist</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+    <p:extLst>
+      <p:ext uri="{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}">
+        <p14:creationId xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" val="3258477789"/>
+      </p:ext>
+    </p:extLst>
+  </p:cSld>
+  <p:clrMapOvr>
+    <a:masterClrMapping/>
+  </p:clrMapOvr>
+</p:sld>

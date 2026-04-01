@@ -1,0 +1,30 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e5]:
+        - generic [ref=e6]:
+          - link "Back to Dashboard" [ref=e7] [cursor=pointer]:
+            - /url: /
+            - img "Photon Brothers" [ref=e8]
+          - heading "Inspection Metrics" [level=1] [ref=e10]
+        - button "Dark mode" [ref=e12]:
+          - img [ref=e13]
+    - main [ref=e15]
+  - button "Open chat" [ref=e21]:
+    - img [ref=e22]
+  - generic [ref=e24]:
+    - img [ref=e26]
+    - button "Open Tanstack query devtools" [ref=e74] [cursor=pointer]:
+      - img [ref=e75]
+  - generic [ref=e127] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e128]:
+      - img [ref=e129]
+    - generic [ref=e132]:
+      - button "Open issues overlay" [ref=e133]:
+        - generic [ref=e134]:
+          - generic [ref=e135]: "0"
+          - generic [ref=e136]: "1"
+        - generic [ref=e137]: Issue
+      - button "Collapse issues badge" [ref=e138]:
+        - img [ref=e139]
+  - alert [ref=e141]

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<p:cmAuthorLst xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cmAuthor id="1" name="Carrie Eidem" initials="CE" lastIdx="6" clrIdx="0">
+    <p:extLst>
+      <p:ext uri="{19B8F6BF-5375-455C-9EA6-DF929625EA0E}">
+        <p15:presenceInfo xmlns:p15="http://schemas.microsoft.com/office/powerpoint/2012/main" userId="S::ceidem@bbins.com::ad723645-0376-466b-8ea9-9fd3dd25cefa" providerId="AD"/>
+      </p:ext>
+    </p:extLst>
+  </p:cmAuthor>
+  <p:cmAuthor id="2" name="Rachel Fred" initials="RF" lastIdx="21" clrIdx="1">
+    <p:extLst>
+      <p:ext uri="{19B8F6BF-5375-455C-9EA6-DF929625EA0E}">
+        <p15:presenceInfo xmlns:p15="http://schemas.microsoft.com/office/powerpoint/2012/main" userId="S::Rfred@bbins.com::38636d0d-0b41-42de-8e69-bf2c20a30054" providerId="AD"/>
+      </p:ext>
+    </p:extLst>
+  </p:cmAuthor>
+  <p:cmAuthor id="3" name="Tara Katona" initials="TK" lastIdx="12" clrIdx="2">
+    <p:extLst>
+      <p:ext uri="{19B8F6BF-5375-455C-9EA6-DF929625EA0E}">
+        <p15:presenceInfo xmlns:p15="http://schemas.microsoft.com/office/powerpoint/2012/main" userId="S::Tara.Katona@bbrown.com::0cd670ad-9fbb-44c3-9d1e-4446c6253aa5" providerId="AD"/>
+      </p:ext>
+    </p:extLst>
+  </p:cmAuthor>
+  <p:cmAuthor id="4" name="Megan Adam" initials="MA" lastIdx="14" clrIdx="3">
+    <p:extLst>
+      <p:ext uri="{19B8F6BF-5375-455C-9EA6-DF929625EA0E}">
+        <p15:presenceInfo xmlns:p15="http://schemas.microsoft.com/office/powerpoint/2012/main" userId="S::Megan.Adam@bbrown.com::259d071f-d701-466f-97d0-faf4777ed3d1" providerId="AD"/>
+      </p:ext>
+    </p:extLst>
+  </p:cmAuthor>
+</p:cmAuthorLst>

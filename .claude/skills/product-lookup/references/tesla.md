@@ -262,6 +262,39 @@ Used for wall-mounting an Expansion unit adjacent to (not stacked on) the master
 
 ---
 
+## Wall Connector (EV Charger)
+
+Tesla's residential EV charging products. Two part number families exist on PB jobs:
+
+### 1734411 — Universal Wall Connector
+
+**Model Number:** 1734411-xx (e.g., 1734411-02)
+
+Already in Zoho as "Tesla Universal EV Charger" (SKU: 1734411-02). The original Tesla Wall Connector for residential EV charging.
+
+### 1734412 — Wall Connector (Gen 3 / Updated)
+
+**Model Number:** 1734412-xx-y (e.g., 1734412-02-X, 1734412-03-X)
+
+Updated Wall Connector variant. Multiple style codes exist (02, 03) — these indicate hardware revisions but the product is functionally the same Wall Connector.
+
+### Known Part Number Variants
+
+| Part Number | Product | Notes |
+|---|---|---|
+| 1734411-02 | Universal Wall Connector | In Zoho catalog, used on older EV jobs |
+| 1734412-02-X | Wall Connector | Newer variant, seen on 2026 plansets |
+| 1734412-03-X | Wall Connector | Newer variant |
+
+### PB Usage
+
+- Qty 1 per EV charger installation (standalone or add-on to solar job)
+- Typically paired with a GE THQL2160 60A 2-pole circuit breaker
+- NEMA 14-50 outlet is the standard receptacle (sometimes NEMA 14-30 or 6-50)
+- EV-only jobs use a separate planset ("EV PLANS") from the solar planset
+
+---
+
 ## Part Number Quick Reference
 
 All known Tesla part number families used on PB installations:
@@ -274,6 +307,8 @@ All known Tesla part number families used on PB installations:
 | 1624171-xx-y | Backup Switch | 1624171-00-X |
 | 1978069-xx-y | PW3 Stacking/Wall Mount Kit | 1978069-00-B |
 | 1879359-xx-y | MCI-2 | 1879359-15-B |
+| 1734411-xx | Universal Wall Connector (EV) | 1734411-02 |
+| 1734412-xx-y | Wall Connector (EV, updated) | 1734412-02-X |
 | 2065063-xx-y | GW3 Square D Lug Divider Kit | 2065063-xx-y |
 | 1549184-xx-y | GW3 Conduit Hub Kit | 1549184-xx-y |
 

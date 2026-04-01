@@ -1,0 +1,35 @@
+[     172ms] [ERROR] Creating a worker from 'blob:http://localhost:3000/c162fd61-d53f-494e-a2d4-8a4433e62e52' violates the following Content Security Policy directive: "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com". Note that 'worker-src' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked. @ http://localhost:3000/_next/static/chunks/11o9_%40sentry-internal_replay_build_npm_esm_index_00bkc.j.js:5098
+[     177ms] [ERROR] eval() is not supported in this environment. If this page was served with a `Content-Security-Policy` header, make sure that `unsafe-eval` is included. React requires eval() in development mode for various debugging features like reconstructing callstacks from a different environment.
+React will never use eval() in production mode @ http://localhost:3000/_next/static/chunks/11o9_%40sentry_core_build_esm_0v2b_~x._.js:10069
+[  612724ms] [WARNING] [Fast Refresh] performing full reload
+
+Fast Refresh will perform a full reload when you edit a file that's imported by modules outside of the React rendering tree.
+You might have a file which exports a React component but also exports a value that is imported by a non-React component file.
+Consider migrating the non-React component export to a separate file and importing it into both files.
+
+It is also possible the parent component of the component you edited is a class component, which disables Fast Refresh.
+Fast Refresh requires at least one parent function component in your React tree. @ http://localhost:3000/_next/static/chunks/11o9_%40sentry_core_build_esm_0v2b_~x._.js:10069
+[  613395ms] [WARNING] [Fast Refresh] performing full reload
+
+Fast Refresh will perform a full reload when you edit a file that's imported by modules outside of the React rendering tree.
+You might have a file which exports a React component but also exports a value that is imported by a non-React component file.
+Consider migrating the non-React component export to a separate file and importing it into both files.
+
+It is also possible the parent component of the component you edited is a class component, which disables Fast Refresh.
+Fast Refresh requires at least one parent function component in your React tree. @ http://localhost:3000/_next/static/chunks/11o9_%40sentry_core_build_esm_0v2b_~x._.js:10069
+[  614616ms] [ERROR] Creating a worker from 'blob:http://localhost:3000/4aae84aa-8a64-411c-8237-4f1f8833554d' violates the following Content Security Policy directive: "script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com". Note that 'worker-src' was not explicitly set, so 'script-src' is used as a fallback. The action has been blocked. @ http://localhost:3000/_next/static/chunks/11o9_%40sentry-internal_replay_build_npm_esm_index_00bkc.j.js:5098
+[  614623ms] [ERROR] eval() is not supported in this environment. If this page was served with a `Content-Security-Policy` header, make sure that `unsafe-eval` is included. React requires eval() in development mode for various debugging features like reconstructing callstacks from a different environment.
+React will never use eval() in production mode @ http://localhost:3000/_next/static/chunks/11o9_%40sentry_core_build_esm_0v2b_~x._.js:10069
+[ 2721404ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qY6mQxcVklmK57-xXBosE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/11o9_next_dist_client_0z05suo._.js:14499
+[ 2722406ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qY6mQxcVklmK57-xXBosE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/11o9_next_dist_client_0z05suo._.js:14499
+[ 2723409ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qY6mQxcVklmK57-xXBosE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/11o9_next_dist_client_0z05suo._.js:14499
+[ 2724413ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qY6mQxcVklmK57-xXBosE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/11o9_next_dist_client_0z05suo._.js:14499
+[ 2725417ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qY6mQxcVklmK57-xXBosE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/11o9_next_dist_client_0z05suo._.js:14499
+[ 2730425ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qY6mQxcVklmK57-xXBosE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/11o9_next_dist_client_0z05suo._.js:14499
+[ 2735431ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qY6mQxcVklmK57-xXBosE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/11o9_next_dist_client_0z05suo._.js:14499
+[ 2740455ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qY6mQxcVklmK57-xXBosE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/11o9_next_dist_client_0z05suo._.js:14499
+[ 2745478ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qY6mQxcVklmK57-xXBosE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/11o9_next_dist_client_0z05suo._.js:14499
+[ 2750538ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qY6mQxcVklmK57-xXBosE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/11o9_next_dist_client_0z05suo._.js:14499
+[ 2755671ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qY6mQxcVklmK57-xXBosE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/11o9_next_dist_client_0z05suo._.js:14499
+[ 2760819ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=qY6mQxcVklmK57-xXBosE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/11o9_next_dist_client_0z05suo._.js:14499
+[ 2760870ms] [ERROR] Failed to load resource: net::ERR_FAILED @ http://localhost:3000/favicon.ico:0

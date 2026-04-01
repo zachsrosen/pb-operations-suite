@@ -1,0 +1,587 @@
+<?xml version="1.0" encoding="utf-8"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr>
+        <p:cNvPr id="1" name=""/>
+        <p:cNvGrpSpPr/>
+        <p:nvPr/>
+      </p:nvGrpSpPr>
+      <p:grpSpPr>
+        <a:xfrm>
+          <a:off x="0" y="0"/>
+          <a:ext cx="0" cy="0"/>
+          <a:chOff x="0" y="0"/>
+          <a:chExt cx="0" cy="0"/>
+        </a:xfrm>
+      </p:grpSpPr>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="Rectangle 1">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{36E3461C-D1E0-E525-3A09-E52F303AA6DE}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvSpPr/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="0" y="0"/>
+            <a:ext cx="12202370" cy="811527"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:gradFill flip="none" rotWithShape="1">
+            <a:gsLst>
+              <a:gs pos="0">
+                <a:schemeClr val="tx1"/>
+              </a:gs>
+              <a:gs pos="90000">
+                <a:srgbClr val="00162F"/>
+              </a:gs>
+            </a:gsLst>
+            <a:lin ang="16200000" scaled="1"/>
+            <a:tileRect/>
+          </a:gradFill>
+          <a:ln>
+            <a:noFill/>
+          </a:ln>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="2">
+            <a:schemeClr val="accent1">
+              <a:shade val="50000"/>
+            </a:schemeClr>
+          </a:lnRef>
+          <a:fillRef idx="1">
+            <a:schemeClr val="accent1"/>
+          </a:fillRef>
+          <a:effectRef idx="0">
+            <a:schemeClr val="accent1"/>
+          </a:effectRef>
+          <a:fontRef idx="minor">
+            <a:schemeClr val="lt1"/>
+          </a:fontRef>
+        </p:style>
+        <p:txBody>
+          <a:bodyPr rtlCol="0" anchor="ctr"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="ctr"/>
+            <a:endParaRPr lang="en-US" sz="1091"/>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:pic>
+        <p:nvPicPr>
+          <p:cNvPr id="16" name="Picture 15">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{FE6AB29F-DA4E-4759-9AFB-9C00E1E98DF6}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvPicPr>
+            <a:picLocks noChangeAspect="1"/>
+          </p:cNvPicPr>
+          <p:nvPr/>
+        </p:nvPicPr>
+        <p:blipFill>
+          <a:blip r:embed="rId3" cstate="print">
+            <a:extLst>
+              <a:ext uri="{28A0092B-C50C-407E-A947-70E740481C1C}">
+                <a14:useLocalDpi xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"/>
+              </a:ext>
+            </a:extLst>
+          </a:blip>
+          <a:srcRect/>
+          <a:stretch/>
+        </p:blipFill>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="4736306" y="218001"/>
+            <a:ext cx="2719390" cy="369837"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+        </p:spPr>
+      </p:pic>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="4" name="Rectangle 3">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{503938E5-01CA-4F19-A40A-1AA3E02526F3}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvSpPr/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="0" y="805839"/>
+            <a:ext cx="12191998" cy="4154293"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:blipFill>
+            <a:blip r:embed="rId4">
+              <a:extLst>
+                <a:ext uri="{28A0092B-C50C-407E-A947-70E740481C1C}">
+                  <a14:useLocalDpi xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"/>
+                </a:ext>
+              </a:extLst>
+            </a:blip>
+            <a:srcRect/>
+            <a:stretch>
+              <a:fillRect t="-58234" b="-37652"/>
+            </a:stretch>
+          </a:blipFill>
+          <a:ln>
+            <a:noFill/>
+          </a:ln>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="2">
+            <a:schemeClr val="accent1">
+              <a:shade val="50000"/>
+            </a:schemeClr>
+          </a:lnRef>
+          <a:fillRef idx="1">
+            <a:schemeClr val="accent1"/>
+          </a:fillRef>
+          <a:effectRef idx="0">
+            <a:schemeClr val="accent1"/>
+          </a:effectRef>
+          <a:fontRef idx="minor">
+            <a:schemeClr val="lt1"/>
+          </a:fontRef>
+        </p:style>
+        <p:txBody>
+          <a:bodyPr rtlCol="0" anchor="ctr"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="ctr"/>
+            <a:endParaRPr lang="en-US" sz="837"/>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="14" name="Rectangle 13">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{A3120F87-1D4C-4933-B9A2-B6264841513E}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvSpPr/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="-10368" y="3678383"/>
+            <a:ext cx="12192000" cy="1281749"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:gradFill flip="none" rotWithShape="1">
+            <a:gsLst>
+              <a:gs pos="0">
+                <a:schemeClr val="tx2">
+                  <a:alpha val="0"/>
+                </a:schemeClr>
+              </a:gs>
+              <a:gs pos="100000">
+                <a:schemeClr val="tx2">
+                  <a:alpha val="60000"/>
+                </a:schemeClr>
+              </a:gs>
+            </a:gsLst>
+            <a:lin ang="5400000" scaled="1"/>
+            <a:tileRect/>
+          </a:gradFill>
+          <a:ln>
+            <a:noFill/>
+          </a:ln>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="2">
+            <a:schemeClr val="accent1">
+              <a:shade val="50000"/>
+            </a:schemeClr>
+          </a:lnRef>
+          <a:fillRef idx="1">
+            <a:schemeClr val="accent1"/>
+          </a:fillRef>
+          <a:effectRef idx="0">
+            <a:schemeClr val="accent1"/>
+          </a:effectRef>
+          <a:fontRef idx="minor">
+            <a:schemeClr val="lt1"/>
+          </a:fontRef>
+        </p:style>
+        <p:txBody>
+          <a:bodyPr rtlCol="0" anchor="ctr"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="ctr"/>
+            <a:endParaRPr lang="en-US" sz="837"/>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="15" name="Rectangle 14">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{CFF37741-B71F-48A0-9559-E79FF927E858}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvSpPr/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="9536087" y="4363689"/>
+            <a:ext cx="2574524" cy="477695"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square" anchor="b">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="r">
+              <a:lnSpc>
+                <a:spcPts val="641"/>
+              </a:lnSpc>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="682" b="1" i="1">
+                <a:solidFill>
+                  <a:schemeClr val="accent5"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:cs typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              </a:rPr>
+              <a:t>The Cheetah: </a:t>
+            </a:r>
+            <a:r>
+              <a:rPr lang="en-US" sz="682" i="1">
+                <a:solidFill>
+                  <a:schemeClr val="accent5"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:cs typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              </a:rPr>
+              <a:t>Since our beginning, we have known that doing what is best for our customers requires constant persistence and vision. The cheetah, which represents vision, swiftness, strength, and agility, embodies our company culture and has served as a symbol for Brown &amp; Brown since the 1980s.</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:grpSp>
+        <p:nvGrpSpPr>
+          <p:cNvPr id="17" name="Group 16">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{69018F57-9AE3-4316-924B-2C492622504B}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvGrpSpPr/>
+          <p:nvPr/>
+        </p:nvGrpSpPr>
+        <p:grpSpPr>
+          <a:xfrm>
+            <a:off x="662676" y="5177076"/>
+            <a:ext cx="5433324" cy="1076520"/>
+            <a:chOff x="971925" y="3834992"/>
+            <a:chExt cx="7968875" cy="1392222"/>
+          </a:xfrm>
+        </p:grpSpPr>
+        <p:sp>
+          <p:nvSpPr>
+            <p:cNvPr id="19" name="Rectangle 18">
+              <a:extLst>
+                <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                  <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{CBA7FD58-6EE3-4F28-A34E-A41D56355060}"/>
+                </a:ext>
+              </a:extLst>
+            </p:cNvPr>
+            <p:cNvSpPr/>
+            <p:nvPr/>
+          </p:nvSpPr>
+          <p:spPr>
+            <a:xfrm>
+              <a:off x="1500427" y="3834992"/>
+              <a:ext cx="7440373" cy="756267"/>
+            </a:xfrm>
+            <a:prstGeom prst="rect">
+              <a:avLst/>
+            </a:prstGeom>
+          </p:spPr>
+          <p:txBody>
+            <a:bodyPr wrap="square">
+              <a:spAutoFit/>
+            </a:bodyPr>
+            <a:lstStyle/>
+            <a:p>
+              <a:pPr defTabSz="311711">
+                <a:defRPr/>
+              </a:pPr>
+              <a:r>
+                <a:rPr lang="en-US" sz="3200" b="1" dirty="0">
+                  <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                  <a:cs typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                </a:rPr>
+                <a:t>Back to Basics</a:t>
+              </a:r>
+            </a:p>
+          </p:txBody>
+        </p:sp>
+        <p:cxnSp>
+          <p:nvCxnSpPr>
+            <p:cNvPr id="20" name="Straight Connector 19">
+              <a:extLst>
+                <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                  <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{17A338F6-6AFB-4347-903D-04F3B063D96D}"/>
+                </a:ext>
+              </a:extLst>
+            </p:cNvPr>
+            <p:cNvCxnSpPr>
+              <a:cxnSpLocks/>
+            </p:cNvCxnSpPr>
+            <p:nvPr/>
+          </p:nvCxnSpPr>
+          <p:spPr>
+            <a:xfrm flipV="1">
+              <a:off x="971925" y="3865065"/>
+              <a:ext cx="0" cy="1362149"/>
+            </a:xfrm>
+            <a:prstGeom prst="line">
+              <a:avLst/>
+            </a:prstGeom>
+            <a:ln w="38100">
+              <a:solidFill>
+                <a:schemeClr val="bg2"/>
+              </a:solidFill>
+            </a:ln>
+          </p:spPr>
+          <p:style>
+            <a:lnRef idx="1">
+              <a:schemeClr val="accent1"/>
+            </a:lnRef>
+            <a:fillRef idx="0">
+              <a:schemeClr val="accent1"/>
+            </a:fillRef>
+            <a:effectRef idx="0">
+              <a:schemeClr val="accent1"/>
+            </a:effectRef>
+            <a:fontRef idx="minor">
+              <a:schemeClr val="tx1"/>
+            </a:fontRef>
+          </p:style>
+        </p:cxnSp>
+        <p:sp>
+          <p:nvSpPr>
+            <p:cNvPr id="21" name="TextBox 20">
+              <a:extLst>
+                <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                  <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{0201420C-5905-4525-B827-BA59E8D9EE27}"/>
+                </a:ext>
+              </a:extLst>
+            </p:cNvPr>
+            <p:cNvSpPr txBox="1"/>
+            <p:nvPr/>
+          </p:nvSpPr>
+          <p:spPr>
+            <a:xfrm>
+              <a:off x="1500427" y="4735807"/>
+              <a:ext cx="7440368" cy="398036"/>
+            </a:xfrm>
+            <a:prstGeom prst="rect">
+              <a:avLst/>
+            </a:prstGeom>
+            <a:noFill/>
+          </p:spPr>
+          <p:txBody>
+            <a:bodyPr wrap="square" anchor="ctr">
+              <a:spAutoFit/>
+            </a:bodyPr>
+            <a:lstStyle/>
+            <a:p>
+              <a:pPr>
+                <a:defRPr/>
+              </a:pPr>
+              <a:r>
+                <a:rPr lang="en-US" sz="1400" dirty="0"/>
+                <a:t>Marketing</a:t>
+              </a:r>
+              <a:endParaRPr lang="en-US" sz="1400" dirty="0">
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:cs typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              </a:endParaRPr>
+            </a:p>
+          </p:txBody>
+        </p:sp>
+      </p:grpSp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="9" name="TextBox 8">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{8733894F-E547-2866-9A6F-A30BFAD57E52}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="7741334" y="5874346"/>
+            <a:ext cx="4440298" cy="507831"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square" anchor="ctr">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="r" defTabSz="457200" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="100000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="0"/>
+              </a:spcBef>
+              <a:spcAft>
+                <a:spcPts val="600"/>
+              </a:spcAft>
+              <a:buClrTx/>
+              <a:buSzTx/>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:tabLst/>
+              <a:defRPr/>
+            </a:pPr>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" sz="1050" b="0" i="1" u="none" strike="noStrike" kern="1200" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:srgbClr val="6D6E71"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              </a:rPr>
+              <a:t>Brown &amp; Brown </a:t>
+            </a:r>
+            <a:r>
+              <a:rPr lang="en-US" sz="1050" i="1" dirty="0">
+                <a:solidFill>
+                  <a:srgbClr val="6D6E71"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:cs typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              </a:rPr>
+              <a:t>Insurance Services</a:t>
+            </a:r>
+            <a:r>
+              <a:rPr kumimoji="0" lang="en-US" sz="1050" b="0" i="1" u="none" strike="noStrike" kern="1200" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+                <a:ln>
+                  <a:noFill/>
+                </a:ln>
+                <a:solidFill>
+                  <a:srgbClr val="6D6E71"/>
+                </a:solidFill>
+                <a:effectLst/>
+                <a:uLnTx/>
+                <a:uFillTx/>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              </a:rPr>
+              <a:t>, Inc.</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="0" marR="0" lvl="0" indent="0" algn="r" defTabSz="457200" rtl="0" eaLnBrk="1" fontAlgn="auto" latinLnBrk="0" hangingPunct="1">
+              <a:lnSpc>
+                <a:spcPct val="100000"/>
+              </a:lnSpc>
+              <a:spcBef>
+                <a:spcPts val="0"/>
+              </a:spcBef>
+              <a:spcAft>
+                <a:spcPts val="600"/>
+              </a:spcAft>
+              <a:buClrTx/>
+              <a:buSzTx/>
+              <a:buFontTx/>
+              <a:buNone/>
+              <a:tabLst/>
+              <a:defRPr/>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1050" i="1" dirty="0">
+                <a:solidFill>
+                  <a:srgbClr val="6D6E71"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:cs typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              </a:rPr>
+              <a:t>April 2026</a:t>
+            </a:r>
+            <a:endParaRPr kumimoji="0" lang="en-US" sz="1050" b="0" i="1" u="none" strike="noStrike" kern="1200" cap="none" spc="0" normalizeH="0" baseline="0" noProof="0" dirty="0">
+              <a:ln>
+                <a:noFill/>
+              </a:ln>
+              <a:solidFill>
+                <a:srgbClr val="6D6E71"/>
+              </a:solidFill>
+              <a:effectLst/>
+              <a:uLnTx/>
+              <a:uFillTx/>
+              <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+              <a:ea typeface="+mn-ea"/>
+              <a:cs typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+            </a:endParaRPr>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+    <p:extLst>
+      <p:ext uri="{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}">
+        <p14:creationId xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" val="1535894944"/>
+      </p:ext>
+    </p:extLst>
+  </p:cSld>
+  <p:clrMapOvr>
+    <a:masterClrMapping/>
+  </p:clrMapOvr>
+</p:sld>

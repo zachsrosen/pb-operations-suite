@@ -8,7 +8,7 @@ import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/db";
 import { sendEmailMessage } from "@/lib/email";
 import { buildStageDisplayMap } from "@/lib/daily-focus/format";
-import { MANAGER_EMAIL, PI_LEADS, DESIGN_LEADS } from "./config";
+import { MANAGER_EMAIL, getAllOwnerNameMap } from "./config";
 import {
   queryAllBroad,
   loadSnapshot,
@@ -19,6 +19,7 @@ import {
 import {
   detectMilestones,
   enrichMilestones,
+  enrichAllChanges,
   clearUserIdMapCache,
 } from "./milestones";
 import { queryCompletedTasks } from "./tasks";
@@ -190,6 +191,11 @@ export async function runEodSummary(options: {
     const milestones = await enrichMilestones(rawMilestones);
     console.log(`[eod-summary] Milestones: ${milestones.length}`);
 
+    // ── 6b. Enrich ALL status changes with who-made-it attribution ──────────
+    console.log("[eod-summary] Enriching all changes with attribution…");
+    const changeAttributions = await enrichAllChanges(changes);
+    console.log(`[eod-summary] Attributed ${changeAttributions.filter(a => a.changedByOwnerId).length}/${changeAttributions.length} changes`);
+
     // ── 7. Query completed tasks ─────────────────────────────────────────────
     console.log("[eod-summary] Querying completed tasks…");
     const { tasks, error: tasksError } = await queryCompletedTasks();
@@ -201,19 +207,14 @@ export async function runEodSummary(options: {
     // ── 8. Build stage display map ───────────────────────────────────────────
     const stageMap = await buildStageDisplayMap();
 
-    // ── 9. Build owner name map from lead rosters ────────────────────────────
-    const ownerNameMap = new Map<string, string>();
-    for (const lead of PI_LEADS) {
-      ownerNameMap.set(lead.hubspotOwnerId, lead.name);
-    }
-    for (const lead of DESIGN_LEADS) {
-      ownerNameMap.set(lead.hubspotOwnerId, lead.name);
-    }
+    // ── 9. Build owner name map from all tracked leads (PI + Design + PMs) ─
+    const ownerNameMap = getAllOwnerNameMap();
 
     // ── 10. Build EOD email HTML ─────────────────────────────────────────────
     console.log("[eod-summary] Building email…");
     const { html, text } = buildEodEmail({
       changes,
+      changeAttributions,
       milestones,
       tasks,
       newDeals,

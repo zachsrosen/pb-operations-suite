@@ -148,6 +148,8 @@ Every PB planset has these standard sheets:
 - PV-6: Warning labels — ESS SIZE (battery kWh confirmation)
 - PV-8+: Equipment spec sheets
 
+**EV Charger Plansets** ("EV PLANS" in filename): Simpler layout — may only have 1-2 sheets. Extract the EV charger equipment and its dedicated circuit breaker. Do NOT add solar ops-standard items (snow dogs, critter guard, etc.) to EV-only jobs.
+
 ## Category Mapping
 
 Map each BOM row to these categories:
@@ -169,11 +171,15 @@ Map each BOM row to these categories:
 | SUB PANEL | ELECTRICAL_BOS |
 | TESLA BACKUP GATEWAY / BACKUP SWITCH | MONITORING |
 | PRODUCTION METER | MONITORING |
+| EV CHARGER / WALL CONNECTOR | EV_CHARGER |
+| CAR CHARGER | EV_CHARGER |
+| CIRCUIT BREAKER (for EV) | ELECTRICAL_BOS |
 
 ## Important Rules
 
 1. **(N) = new equipment** — include in BOM. **(E) = existing** — omit (do not include).
 2. **Do NOT extract wires or conductors** (e.g., THHN, NM-B, USE-2, XHHW). Skip the entire conductor schedule on PV-4 (Tags A/B/C/D). Wires are stocked internally and not needed in the BOM. **Exception:** Enphase Q-Cable is a structured cable assembly (not loose wire) — extract it per the Enphase rules below.
+3. **Do NOT extract NEMA outlet/receptacle designations** (e.g., NEMA 14-50, NEMA 14-30, NEMA 6-50, NEMA 14-15). These describe the site's electrical outlet configuration, not orderable equipment. Skip any row that is only a NEMA outlet type.
 3. **Metal roofs**: ATTACHMENT = "S-5! PROTEABRACKET ATTACHMENTS", rail = XR100 (not XR10), no RD STRUCTURAL SCREW row.
 4. **Powerwall-3 part number**: 1707000-XX-Y (found in PV-4 specifications table).
 5. **Gateway-3 part number**: 1841000-X1-Y (found in PV-4 or PV-2 callout).
@@ -232,8 +238,17 @@ When the job uses Enphase micro-inverters (IQ8 series), extract the following it
 - **Q-Cable Termination Caps**: Always add on Enphase jobs → { "category": "ELECTRICAL_BOS", "brand": "Enphase", "model": "Q-TERM-10", "description": "ENPHASE Q-TERM TERMINATION CAPS", "qty": 1, "source": "OPS_STANDARD" }
 - **Microinverter Mounting Clip**: Add 1 clip per IQ8 microinverter (qty = IQ8 count from PV-2 BOM) → { "category": "RACKING", "brand": "Enphase", "model": "BHW-MI-01-A1", "description": "ENPHASE MICROINVERTER MOUNTING CLIP", "qty": [IQ8 qty], "source": "OPS_STANDARD" }
 
+### EV CHARGER PLANSETS — Tesla Wall Connector
+EV-only plansets (filename contains "EV PLANS") typically contain just 1-2 orderable items:
+- **Wall Connector**: Extract as { "category": "EV_CHARGER", "brand": "Tesla", "model": "[exact part number from planset]", "description": "TESLA WALL CONNECTOR", "qty": 1, "source": "PV-2" }
+  - Common part numbers: 1734411-xx (Universal Wall Connector), 1734412-xx-y (Gen 3 Wall Connector)
+  - Preserve the exact part number suffix (e.g., 1734412-02-X, 1734412-03-X) — the suffix matters for catalog matching
+- **Dedicated circuit breaker**: If a breaker is shown (typically GE THQL2160 60A 2-pole), extract as ELECTRICAL_BOS
+- **Do NOT extract**: NEMA outlet designations (14-50, 14-30, 6-50, etc.), wire runs, conduit specs — these are site infrastructure, not orderable equipment
+- **Do NOT add** any solar ops-standard items (snow dogs, critter guard, strain relief, junction boxes) to EV-only jobs
+
 ## Ops-Standard Additions
-These items MUST be added to solar jobs with roof-mounted PV modules. Do NOT add to battery-only or storage-only jobs (no PV modules).
+These items MUST be added to solar jobs with roof-mounted PV modules. Do NOT add to battery-only, storage-only, or EV-charger-only jobs (no PV modules).
 
 ### Always Add (Every Solar Job with Roof-Mounted PV Modules)
 Always include ALL of the following items on every solar job:

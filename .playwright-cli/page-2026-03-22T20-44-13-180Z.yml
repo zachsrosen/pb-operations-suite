@@ -1,0 +1,139 @@
+- generic [active] [ref=e1]:
+  - main [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - link "Back to Dashboard" [ref=e7] [cursor=pointer]:
+          - /url: /
+          - img "Photon Brothers" [ref=e8]
+        - heading "Executive Suite" [level=1] [ref=e10]
+        - paragraph [ref=e11]: Leadership dashboards, pipeline intelligence, and executive views.
+      - generic [ref=e12]:
+        - link "Operations" [ref=e13] [cursor=pointer]:
+          - /url: /suites/operations
+        - link "D&E" [ref=e14] [cursor=pointer]:
+          - /url: /suites/design-engineering
+        - link "P&I" [ref=e15] [cursor=pointer]:
+          - /url: /suites/permitting-interconnection
+        - link "Intelligence" [ref=e16] [cursor=pointer]:
+          - /url: /suites/intelligence
+        - link "Service" [ref=e17] [cursor=pointer]:
+          - /url: /suites/service
+        - link "D&R + Roofing" [ref=e18] [cursor=pointer]:
+          - /url: /suites/dnr-roofing
+        - link "Executive" [ref=e19] [cursor=pointer]:
+          - /url: /suites/executive
+        - link "Admin" [ref=e20] [cursor=pointer]:
+          - /url: /suites/admin
+    - generic [ref=e31]:
+      - heading "Executive Views" [level=2] [ref=e34]
+      - generic [ref=e35]:
+        - link "💰 Revenue Revenue by stage, backlog forecasts, location breakdowns, and milestone timelines. Open →" [ref=e36] [cursor=pointer]:
+          - /url: /dashboards/revenue
+          - generic [ref=e38]:
+            - generic [ref=e39]: 💰
+            - heading "Revenue" [level=3] [ref=e40]
+          - paragraph [ref=e41]: Revenue by stage, backlog forecasts, location breakdowns, and milestone timelines.
+          - generic [ref=e42]: Open →
+        - link "📊 Executive Summary High-level pipeline and stage analysis with location and monthly trends. Open →" [ref=e43] [cursor=pointer]:
+          - /url: /dashboards/executive
+          - generic [ref=e45]:
+            - generic [ref=e46]: 📊
+            - heading "Executive Summary" [level=3] [ref=e47]
+          - paragraph [ref=e48]: High-level pipeline and stage analysis with location and monthly trends.
+          - generic [ref=e49]: Open →
+        - link "📅 Revenue Calendar Monthly calendar showing daily deal value of scheduled field service work. Open →" [ref=e50] [cursor=pointer]:
+          - /url: /dashboards/executive-calendar
+          - generic [ref=e52]:
+            - generic [ref=e53]: 📅
+            - heading "Revenue Calendar" [level=3] [ref=e54]
+          - paragraph [ref=e55]: Monthly calendar showing daily deal value of scheduled field service work.
+          - generic [ref=e56]: Open →
+    - generic [ref=e57]:
+      - heading "Command & Planning" [level=2] [ref=e60]
+      - generic [ref=e61]:
+        - link "🎛️ Command Center Real-time executive command center with live metrics and alerts. Open →" [ref=e62] [cursor=pointer]:
+          - /url: /dashboards/command-center
+          - generic [ref=e64]:
+            - generic [ref=e65]: 🎛️
+            - heading "Command Center" [level=3] [ref=e66]
+          - paragraph [ref=e67]: Real-time executive command center with live metrics and alerts.
+          - generic [ref=e68]: Open →
+        - link "📐 Capacity Planning Crew capacity vs. forecasted installs by location and month. Open →" [ref=e69] [cursor=pointer]:
+          - /url: /dashboards/capacity
+          - generic [ref=e71]:
+            - generic [ref=e72]: 📐
+            - heading "Capacity Planning" [level=3] [ref=e73]
+          - paragraph [ref=e74]: Crew capacity vs. forecasted installs by location and month.
+          - generic [ref=e75]: Open →
+        - link "🗺️ Location Comparison Side-by-side location performance, capacity, and pipeline breakdown. Open →" [ref=e76] [cursor=pointer]:
+          - /url: /dashboards/locations
+          - generic [ref=e78]:
+            - generic [ref=e79]: 🗺️
+            - heading "Location Comparison" [level=3] [ref=e80]
+          - paragraph [ref=e81]: Side-by-side location performance, capacity, and pipeline breakdown.
+          - generic [ref=e82]: Open →
+    - generic [ref=e83]:
+      - heading "Sales" [level=2] [ref=e86]
+      - link "💼 Sales Pipeline Active deals, funnel visualization, and proposal tracking. Open →" [ref=e88] [cursor=pointer]:
+        - /url: /dashboards/sales
+        - generic [ref=e90]:
+          - generic [ref=e91]: 💼
+          - heading "Sales Pipeline" [level=3] [ref=e92]
+        - paragraph [ref=e93]: Active deals, funnel visualization, and proposal tracking.
+        - generic [ref=e94]: Open →
+    - generic [ref=e95]:
+      - heading "Programs" [level=2] [ref=e98]
+      - link "⚡ PE Dashboard Participate Energy milestone tracking and compliance monitoring. Open →" [ref=e100] [cursor=pointer]:
+        - /url: /dashboards/pe
+        - generic [ref=e102]:
+          - generic [ref=e103]: ⚡
+          - heading "PE Dashboard" [level=3] [ref=e104]
+        - paragraph [ref=e105]: Participate Energy milestone tracking and compliance monitoring.
+        - generic [ref=e106]: Open →
+    - generic [ref=e107]:
+      - heading "Field Performance" [level=2] [ref=e110]
+      - link "✅ Zuper Compliance Per-user compliance scorecards and crew-composition comparisons. Open →" [ref=e112] [cursor=pointer]:
+        - /url: /dashboards/zuper-compliance
+        - generic [ref=e114]:
+          - generic [ref=e115]: ✅
+          - heading "Zuper Compliance" [level=3] [ref=e116]
+        - paragraph [ref=e117]: Per-user compliance scorecards and crew-composition comparisons.
+        - generic [ref=e118]: Open →
+    - generic [ref=e119]:
+      - heading "Meta" [level=2] [ref=e122]
+      - generic [ref=e123]:
+        - link "🎯 Forecast Accuracy How well the forecasting model predicts reality across milestones and segments. Open →" [ref=e124] [cursor=pointer]:
+          - /url: /dashboards/forecast-accuracy
+          - generic [ref=e126]:
+            - generic [ref=e127]: 🎯
+            - heading "Forecast Accuracy" [level=3] [ref=e128]
+          - paragraph [ref=e129]: How well the forecasting model predicts reality across milestones and segments.
+          - generic [ref=e130]: Open →
+        - link "⏳ Forecast Timeline All 10 milestone forecasts for every active project with variance tracking. Open →" [ref=e131] [cursor=pointer]:
+          - /url: /dashboards/forecast-timeline
+          - generic [ref=e133]:
+            - generic [ref=e134]: ⏳
+            - heading "Forecast Timeline" [level=3] [ref=e135]
+          - paragraph [ref=e136]: All 10 milestone forecasts for every active project with variance tracking.
+          - generic [ref=e137]: Open →
+  - button "Open chat" [ref=e138]:
+    - img [ref=e139]
+  - button "Report Bug" [ref=e259] [cursor=pointer]:
+    - img [ref=e260]
+    - generic [ref=e262]: Report Bug
+  - generic [ref=e141]:
+    - img [ref=e143]
+    - button "Open Tanstack query devtools" [ref=e191] [cursor=pointer]:
+      - img [ref=e192]
+  - generic [ref=e244] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e245]:
+      - img [ref=e246]
+    - generic [ref=e249]:
+      - button "Open issues overlay" [ref=e250]:
+        - generic [ref=e251]:
+          - generic [ref=e252]: "0"
+          - generic [ref=e253]: "1"
+        - generic [ref=e254]: Issue
+      - button "Collapse issues badge" [ref=e255]:
+        - img [ref=e256]
+  - alert [ref=e258]

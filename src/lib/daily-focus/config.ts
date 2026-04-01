@@ -146,12 +146,6 @@ export const DESIGN_LEADS: DesignLead[] = [
     email: "zach@photonbrothers.com",
     hubspotOwnerId: "2068088473",
   },
-  {
-    name: "Daniel Kelly",
-    firstName: "Dan",
-    email: "dan@photonbrothers.com",
-    hubspotOwnerId: "216569623",
-  },
 ];
 
 // ── P&I Query Definitions ──────────────────────────────────────────────

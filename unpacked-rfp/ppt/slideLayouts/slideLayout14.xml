@@ -1,0 +1,439 @@
+<?xml version="1.0" encoding="utf-8"?>
+<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" showMasterSp="0" type="blank" preserve="1">
+  <p:cSld name="Required Disclaimer 1 of 2">
+    <p:spTree>
+      <p:nvGrpSpPr>
+        <p:cNvPr id="1" name=""/>
+        <p:cNvGrpSpPr/>
+        <p:nvPr/>
+      </p:nvGrpSpPr>
+      <p:grpSpPr>
+        <a:xfrm>
+          <a:off x="0" y="0"/>
+          <a:ext cx="0" cy="0"/>
+          <a:chOff x="0" y="0"/>
+          <a:chExt cx="0" cy="0"/>
+        </a:xfrm>
+      </p:grpSpPr>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="22" name="Rectangle 21">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{EAAE1E8E-6615-284A-A1B0-EC7F462BF8AA}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvSpPr/>
+          <p:nvPr userDrawn="1"/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm rot="10800000">
+            <a:off x="-1" y="0"/>
+            <a:ext cx="4572000" cy="6858000"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:gradFill flip="none" rotWithShape="1">
+            <a:gsLst>
+              <a:gs pos="0">
+                <a:schemeClr val="tx1"/>
+              </a:gs>
+              <a:gs pos="100000">
+                <a:schemeClr val="tx1">
+                  <a:lumMod val="55000"/>
+                </a:schemeClr>
+              </a:gs>
+            </a:gsLst>
+            <a:lin ang="16200000" scaled="1"/>
+            <a:tileRect/>
+          </a:gradFill>
+          <a:ln>
+            <a:noFill/>
+          </a:ln>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="2">
+            <a:schemeClr val="accent1">
+              <a:shade val="50000"/>
+            </a:schemeClr>
+          </a:lnRef>
+          <a:fillRef idx="1">
+            <a:schemeClr val="accent1"/>
+          </a:fillRef>
+          <a:effectRef idx="0">
+            <a:schemeClr val="accent1"/>
+          </a:effectRef>
+          <a:fontRef idx="minor">
+            <a:schemeClr val="lt1"/>
+          </a:fontRef>
+        </p:style>
+        <p:txBody>
+          <a:bodyPr rtlCol="0" anchor="ctr"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="ctr"/>
+            <a:endParaRPr lang="en-US" sz="837"/>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:pic>
+        <p:nvPicPr>
+          <p:cNvPr id="23" name="Picture 22">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{7197C8DF-79F8-9D4D-8CE3-2D98A7C78043}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvPicPr>
+            <a:picLocks noChangeAspect="1"/>
+          </p:cNvPicPr>
+          <p:nvPr userDrawn="1"/>
+        </p:nvPicPr>
+        <p:blipFill>
+          <a:blip r:embed="rId2" cstate="print">
+            <a:extLst>
+              <a:ext uri="{28A0092B-C50C-407E-A947-70E740481C1C}">
+                <a14:useLocalDpi xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"/>
+              </a:ext>
+            </a:extLst>
+          </a:blip>
+          <a:srcRect/>
+          <a:stretch/>
+        </p:blipFill>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="845508" y="2043880"/>
+            <a:ext cx="2719390" cy="369837"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+        </p:spPr>
+      </p:pic>
+      <p:pic>
+        <p:nvPicPr>
+          <p:cNvPr id="28" name="Picture 27">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{237BF8A7-679F-E54E-91A4-51480859D3FB}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvPicPr>
+            <a:picLocks noChangeAspect="1"/>
+          </p:cNvPicPr>
+          <p:nvPr userDrawn="1"/>
+        </p:nvPicPr>
+        <p:blipFill rotWithShape="1">
+          <a:blip r:embed="rId3" cstate="hqprint">
+            <a:alphaModFix amt="80000"/>
+            <a:extLst>
+              <a:ext uri="{28A0092B-C50C-407E-A947-70E740481C1C}">
+                <a14:useLocalDpi xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"/>
+              </a:ext>
+            </a:extLst>
+          </a:blip>
+          <a:srcRect l="28674" t="38470" r="2600" b="22318"/>
+          <a:stretch/>
+        </p:blipFill>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="0" y="4614672"/>
+            <a:ext cx="4571998" cy="2243328"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+        </p:spPr>
+      </p:pic>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="29" name="Rectangle 28">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{45CFFFEA-50FC-2446-A6F0-A5724FB868B5}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvSpPr/>
+          <p:nvPr userDrawn="1"/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="1" y="4605224"/>
+            <a:ext cx="4571998" cy="2243328"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:solidFill>
+            <a:schemeClr val="tx1">
+              <a:alpha val="46789"/>
+            </a:schemeClr>
+          </a:solidFill>
+          <a:ln>
+            <a:noFill/>
+          </a:ln>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="2">
+            <a:schemeClr val="accent1">
+              <a:shade val="50000"/>
+            </a:schemeClr>
+          </a:lnRef>
+          <a:fillRef idx="1">
+            <a:schemeClr val="accent1"/>
+          </a:fillRef>
+          <a:effectRef idx="0">
+            <a:schemeClr val="accent1"/>
+          </a:effectRef>
+          <a:fontRef idx="minor">
+            <a:schemeClr val="lt1"/>
+          </a:fontRef>
+        </p:style>
+        <p:txBody>
+          <a:bodyPr rtlCol="0" anchor="ctr"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="ctr"/>
+            <a:endParaRPr lang="en-US" sz="837"/>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="10" name="TextBox 9">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{E34D6576-6A99-4E47-A03A-06F7429931E4}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr userDrawn="1"/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="5029200" y="1546433"/>
+            <a:ext cx="6729984" cy="3765133"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square" numCol="1" spcCol="182880" rtlCol="0">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="l">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>This analysis contains a summary of benefit provisions. Please refer to the final contract, when issued, for a full list of coverage and exclusions.</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr algn="l">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>The rates and benefits in this proposal are based upon underwriting factors which include, but are not limited to, the census provided, the effective date shown, the status of employees/ dependents (e.g., actively at work, COBRA, FMLA), final enrollment, etc. Although we make every effort to convey final rates and terms, certain changes to the aforementioned frequently arise during the implementation process. Some changes may result in rate modifications being required by the carriers. </a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr algn="l">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>If you elect to change carriers, Brown &amp; Brown of MA, LLC. – Southborough will provide sample language and will be happy submit the cancellation letter to the carrier on your behalf if you would like. If you are cancelling coverage on your own, please feel free to contact your Brown &amp; Brown of MA, LLC. – Southborough representative if you have any questions about the timing for submission of the cancellation letter. Brown &amp; Brown of MA, LLC. – Southborough wants to ensure that any gap in coverage is avoided during the cancellation process. </a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr algn="l">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>This report reflects current and alternate benefit options. Different benefit levels may be available upon request.</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr algn="l">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>This presentation is the proprietary work product of Brown &amp; Brown of MA, LLC. – Southborough and is not authorized for further use or distribution. Brown &amp; Brown of MA, LLC – Southborough representatives are available to explain any items presented. It is assumed that the recipients of this proposal will seek an explanation of any items that may be in question.</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr algn="l">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>All insurance carriers have their own operating procedures. A change in carrier could affect the way certain services are covered.</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr algn="l">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>Brown &amp; Brown of MA, LLC. – Southborough representatives may from time to time provide guidance regarding certain requirements affecting health plans, including the requirements of federal and state health care reform legislation. Such guidance is based on good-faith interpretation of laws and regulations currently in effect and is not intended to be a substitute for legal advice. Employers should contact their own legal counsel for advice regarding legal requirements.</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr algn="l">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>The network provider/facility lists obtained via carrier websites may contain providers and facilities that are no longer participating in the insurance carriers&#x2019; networks. We cannot be responsible for any changes to the provider/facility listings that are not reflected. To ensure that a specific provider or facility is still participating in the provider&#x2019;s preferred network, we recommend contacting the provider/facility directly. </a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr algn="l">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>Failure to adhere to state and federal regulations for employee benefit plans, such as reporting and disclosure requirements </a:t>
+            </a:r>
+            <a:br>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+            </a:br>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:latin typeface="Arial" panose="020B0604020202020204" pitchFamily="34" charset="0"/>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>(e.g., SBC distribution for medical plans) may result in significant fees and penalties to the employer. For a more comprehensive explanation of the requirements and prevailing penalties, you may contact your Brown &amp; Brown of MA, LLC. – Southborough representative at any time. </a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+    <p:extLst>
+      <p:ext uri="{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}">
+        <p14:creationId xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" val="3532222210"/>
+      </p:ext>
+    </p:extLst>
+  </p:cSld>
+  <p:clrMapOvr>
+    <a:masterClrMapping/>
+  </p:clrMapOvr>
+  <p:extLst>
+    <p:ext uri="{DCECCB84-F9BA-43D5-87BE-67443E8EF086}">
+      <p15:sldGuideLst xmlns:p15="http://schemas.microsoft.com/office/powerpoint/2012/main">
+        <p15:guide id="1" pos="3168">
+          <p15:clr>
+            <a:srgbClr val="FBAE40"/>
+          </p15:clr>
+        </p15:guide>
+      </p15:sldGuideLst>
+    </p:ext>
+  </p:extLst>
+</p:sldLayout>

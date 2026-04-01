@@ -11,13 +11,14 @@ import {
   FIELD_TO_HS_PROPERTY,
 } from "./config";
 import type { StatusChange, SnapshotDeal } from "./snapshot";
-import type { MilestoneHit } from "./milestones";
+import type { MilestoneHit, ChangeAttribution } from "./milestones";
 import type { CompletedTask } from "./tasks";
 
 // ── Public interface ───────────────────────────────────────────────────
 
 export interface EodEmailData {
   changes: StatusChange[];
+  changeAttributions: ChangeAttribution[];
   milestones: MilestoneHit[];
   tasks: CompletedTask[];
   newDeals: SnapshotDeal[];
@@ -113,17 +114,27 @@ function aggregateByPerson(data: EodEmailData): PersonData[] {
     return people.get(ownerId)!;
   }
 
-  // Milestones → person via change's role property
+  // Milestones → person via property history attribution (who actually made it)
+  // Build a lookup from milestone's dealId+field to its enriched attribution
+  const milestoneAttrLookup = new Map<string, ChangeAttribution>();
+  for (const attr of data.changeAttributions) {
+    milestoneAttrLookup.set(`${attr.change.dealId}:${attr.change.field}`, attr);
+  }
+
   for (const hit of data.milestones) {
-    const ownerId = resolveOwnerId(hit.change, data.dealPropertyOwners);
+    const attrKey = `${hit.change.dealId}:${hit.change.field}`;
+    const attr = milestoneAttrLookup.get(attrKey);
+    const ownerId = attr?.changedByOwnerId
+      ?? resolveOwnerId(hit.change, data.dealPropertyOwners);
     getOrCreate(ownerId).milestones.push(hit);
   }
 
-  // Status changes → person (filter noise first)
-  for (const change of data.changes) {
-    if (isNoiseChange(change)) continue;
-    const ownerId = resolveOwnerId(change, data.dealPropertyOwners);
-    getOrCreate(ownerId).changes.push(change);
+  // Status changes → person via property history attribution (who actually made it)
+  for (const attr of data.changeAttributions) {
+    if (isNoiseChange(attr.change)) continue;
+    const ownerId = attr.changedByOwnerId
+      ?? resolveOwnerId(attr.change, data.dealPropertyOwners);
+    getOrCreate(ownerId).changes.push(attr.change);
   }
 
   // Tasks → person via ownerId

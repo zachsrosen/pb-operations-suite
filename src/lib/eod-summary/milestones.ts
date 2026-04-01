@@ -25,14 +25,18 @@ export interface MilestoneHit {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const MAX_HISTORY_CALLS = 20;
+const MAX_MILESTONE_HISTORY_CALLS = 20;
+const MAX_CHANGE_HISTORY_CALLS = 200;
 
 // ── Module-level cache ─────────────────────────────────────────────────────────
 
 let _userIdMapCache: Map<string, string> | null = null;
+/** Reverse map: userId → ownerId (for attributing changes to an owner) */
+let userIdToOwnerIdMap = new Map<string, string>();
 
 export function clearUserIdMapCache(): void {
   _userIdMapCache = null;
+  userIdToOwnerIdMap = new Map();
 }
 
 // ── User ID Map ────────────────────────────────────────────────────────────────
@@ -65,6 +69,10 @@ export async function buildUserIdMap(): Promise<Map<string, string>> {
       }
       if (owner.userId != null) {
         map.set(String(owner.userId), fullName || owner.email || String(owner.userId));
+        // Reverse map: userId → ownerId
+        if (owner.id) {
+          userIdToOwnerIdMap.set(String(owner.userId), owner.id);
+        }
       }
     }
   } catch (err) {
@@ -211,7 +219,7 @@ export async function enrichMilestones(
 
   // Group hits by dealId to batch history calls
   const dealIds = [...new Set(hits.map((h) => h.change.dealId))];
-  const limitedDealIds = dealIds.slice(0, MAX_HISTORY_CALLS);
+  const limitedDealIds = dealIds.slice(0, MAX_MILESTONE_HISTORY_CALLS);
 
   // Collect all HS properties we need per deal
   const dealPropertiesNeeded = new Map<string, Set<string>>();
@@ -287,5 +295,98 @@ export async function enrichMilestones(
       changedAt,
       changedAtIso,
     };
+  });
+}
+
+// ── Enrich ALL status changes with who-made-it attribution ────────────────────
+
+export interface ChangeAttribution {
+  change: StatusChange;
+  changedByOwnerId: string | null; // HubSpot owner ID of who made the change
+  changedByName: string | null;
+  changedAtIso: string | null;
+}
+
+/**
+ * For every status change, call property history to determine WHO made the change.
+ * Returns the same changes with attribution attached.
+ * Cap at MAX_CHANGE_HISTORY_CALLS deals (200). Excess changes get null attribution.
+ */
+export async function enrichAllChanges(
+  changes: StatusChange[],
+): Promise<ChangeAttribution[]> {
+  if (changes.length === 0) return [];
+
+  const userMap = await buildUserIdMap();
+  const todayDenver = getTodayDenver();
+
+  // Deduplicate deals — fetch history once per deal, covering all its changed properties
+  const dealPropertiesNeeded = new Map<string, Set<string>>();
+  for (const change of changes) {
+    const hsProperty = FIELD_TO_HS_PROPERTY[change.field];
+    if (!hsProperty) continue;
+    if (!dealPropertiesNeeded.has(change.dealId)) {
+      dealPropertiesNeeded.set(change.dealId, new Set());
+    }
+    dealPropertiesNeeded.get(change.dealId)!.add(hsProperty);
+  }
+
+  const dealIds = [...dealPropertiesNeeded.keys()].slice(0, MAX_CHANGE_HISTORY_CALLS);
+  const dealIdSet = new Set(dealIds);
+
+  // Fetch history for each deal (sequential for rate limits)
+  const historyCache = new Map<string, PropertiesWithHistoryMap | null>();
+  for (const dealId of dealIds) {
+    const properties = [...(dealPropertiesNeeded.get(dealId) ?? [])];
+    if (properties.length === 0) continue;
+    const history = await getPropertyHistory(dealId, properties);
+    historyCache.set(dealId, history);
+  }
+
+  // Attribute each change
+  return changes.map((change): ChangeAttribution => {
+    const hsProperty = FIELD_TO_HS_PROPERTY[change.field];
+    if (!hsProperty || !dealIdSet.has(change.dealId)) {
+      return { change, changedByOwnerId: null, changedByName: null, changedAtIso: null };
+    }
+
+    const history = historyCache.get(change.dealId);
+    if (!history) {
+      return { change, changedByOwnerId: null, changedByName: null, changedAtIso: null };
+    }
+
+    const propertyHistory: PropertyHistoryEntry[] = history[hsProperty] ?? [];
+
+    // Find the entry matching this change's target value, made today
+    const matchingEntry = propertyHistory.find((entry) => {
+      if (entry.value !== change.to) return false;
+      if (entry.sourceType !== "CRM_UI" && entry.sourceType !== "INTEGRATION") return false;
+      if (!entry.timestamp) return false;
+      const entryDateDenver = new Date(entry.timestamp).toLocaleDateString("en-CA", { timeZone: "America/Denver" });
+      return entryDateDenver === todayDenver;
+    });
+
+    if (!matchingEntry) {
+      return { change, changedByOwnerId: null, changedByName: null, changedAtIso: null };
+    }
+
+    // Resolve who made the change
+    let changedByName: string | null = null;
+    let changedByOwnerId: string | null = null;
+
+    if (matchingEntry.updatedByUserId != null) {
+      const userId = String(matchingEntry.updatedByUserId);
+      changedByName = userMap.get(userId) ?? null;
+      // Reverse-lookup: find the owner ID for this user
+      changedByOwnerId = userIdToOwnerIdMap.get(userId) ?? userId;
+    } else if (matchingEntry.sourceId) {
+      changedByName = userMap.get(matchingEntry.sourceId) ?? null;
+      changedByOwnerId = matchingEntry.sourceId;
+    }
+
+    const rawTs = matchingEntry.timestamp as unknown;
+    const changedAtIso = rawTs ? (rawTs instanceof Date ? rawTs.toISOString() : String(rawTs)) : null;
+
+    return { change, changedByOwnerId, changedByName, changedAtIso };
   });
 }

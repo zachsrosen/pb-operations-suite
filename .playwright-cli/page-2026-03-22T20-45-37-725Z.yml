@@ -1,0 +1,68 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - navigation [ref=e5]:
+          - link "Home" [ref=e6] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e7]:
+            - generic [ref=e8]: /
+            - link "Operations" [ref=e9] [cursor=pointer]:
+              - /url: /suites/operations
+        - generic [ref=e10]:
+          - generic [ref=e11]:
+            - link "Back to Operations Suite" [ref=e12] [cursor=pointer]:
+              - /url: /suites/operations
+              - img "Photon Brothers" [ref=e13]
+            - heading "Submit New Product" [level=1] [ref=e15]
+          - button "Dark mode" [ref=e17]:
+            - img [ref=e18]
+    - main [ref=e20]:
+      - generic [ref=e21]:
+        - generic [ref=e23]:
+          - generic [ref=e25]:
+            - generic [ref=e26]: "1"
+            - generic [ref=e27]: Start
+          - generic [ref=e30]:
+            - generic [ref=e31]: "2"
+            - generic [ref=e32]: Basics
+          - generic [ref=e35]:
+            - generic [ref=e36]: "3"
+            - generic [ref=e37]: Details
+          - generic [ref=e40]:
+            - generic [ref=e41]: "4"
+            - generic [ref=e42]: Review
+        - generic [ref=e43]:
+          - button "Start from Scratch Blank form — fill in everything manually" [ref=e44]:
+            - img [ref=e46]
+            - generic [ref=e48]: Start from Scratch
+            - generic [ref=e49]: Blank form — fill in everything manually
+          - button "Clone Existing Product Copy from an existing catalog item" [ref=e50]:
+            - img [ref=e52]
+            - generic [ref=e54]: Clone Existing Product
+            - generic [ref=e55]: Copy from an existing catalog item
+          - button "Import from Datasheet Upload PDF or paste specs — AI fills the form" [ref=e56]:
+            - img [ref=e58]
+            - generic [ref=e60]: Import from Datasheet
+            - generic [ref=e61]: Upload PDF or paste specs — AI fills the form
+  - button "Open chat" [ref=e62]:
+    - img [ref=e63]
+  - button "Report Bug" [ref=e183] [cursor=pointer]:
+    - img [ref=e184]
+    - generic [ref=e186]: Report Bug
+  - generic [ref=e65]:
+    - img [ref=e67]
+    - button "Open Tanstack query devtools" [ref=e115] [cursor=pointer]:
+      - img [ref=e116]
+  - generic [ref=e168] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e169]:
+      - img [ref=e170]
+    - generic [ref=e173]:
+      - button "Open issues overlay" [ref=e174]:
+        - generic [ref=e175]:
+          - generic [ref=e176]: "0"
+          - generic [ref=e177]: "1"
+        - generic [ref=e178]: Issue
+      - button "Collapse issues badge" [ref=e179]:
+        - img [ref=e180]
+  - alert [ref=e182]

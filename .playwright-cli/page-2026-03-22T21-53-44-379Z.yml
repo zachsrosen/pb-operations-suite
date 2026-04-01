@@ -1,0 +1,119 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]:
+          - link "Photon Brothers" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - img "Photon Brothers" [ref=e7]
+          - heading "PB Tech Ops Suite" [level=1] [ref=e8]
+        - generic [ref=e9]:
+          - button "Search ⌘+K" [ref=e10]:
+            - img [ref=e11]
+            - text: Search
+            - generic [ref=e13]: ⌘+K
+          - generic [ref=e14]: Live
+          - generic [ref=e16]: Loading...
+          - button "Dark mode" [ref=e17]:
+            - img [ref=e18]
+          - button "User menu" [ref=e21]:
+            - generic [ref=e22]: Z
+            - generic [ref=e23]: zach
+            - img [ref=e24]
+    - main [ref=e26]:
+      - generic [ref=e27]:
+        - link "Active Projects" [ref=e28] [cursor=pointer]:
+          - /url: /dashboards/deals?pipeline=project
+          - generic [ref=e30]: Active Projects
+        - link "Active D&R" [ref=e31] [cursor=pointer]:
+          - /url: /dashboards/deals?pipeline=dnr
+          - generic [ref=e33]: Active D&R
+        - link "22 Active Roofing $299k" [ref=e34] [cursor=pointer]:
+          - /url: /dashboards/deals?pipeline=roofing
+          - generic [ref=e35]: "22"
+          - generic [ref=e36]: Active Roofing
+          - generic [ref=e37]: $299k
+        - link "Active Service" [ref=e38] [cursor=pointer]:
+          - /url: /dashboards/deals?pipeline=service
+          - generic [ref=e40]: Active Service
+      - generic [ref=e75]:
+        - heading "Suites" [level=2] [ref=e76]
+        - generic [ref=e77]:
+          - link "Operations Suite OPERATIONS Scheduling, timeline, inventory, and equipment operations." [ref=e78] [cursor=pointer]:
+            - /url: /suites/operations
+            - generic [ref=e79]:
+              - heading "Operations Suite" [level=3] [ref=e80]
+              - generic [ref=e81]: OPERATIONS
+            - paragraph [ref=e82]: Scheduling, timeline, inventory, and equipment operations.
+          - link "Design & Engineering Suite D&E Design review, clipping analytics, AHJ requirements, and engineering tools." [ref=e83] [cursor=pointer]:
+            - /url: /suites/design-engineering
+            - generic [ref=e84]:
+              - heading "Design & Engineering Suite" [level=3] [ref=e85]
+              - generic [ref=e86]: D&E
+            - paragraph [ref=e87]: Design review, clipping analytics, AHJ requirements, and engineering tools.
+          - link "Permitting & Interconnection Suite P&I Permit tracking, utility management, action queues, and SLA monitoring." [ref=e88] [cursor=pointer]:
+            - /url: /suites/permitting-interconnection
+            - generic [ref=e89]:
+              - heading "Permitting & Interconnection Suite" [level=3] [ref=e90]
+              - generic [ref=e91]: P&I
+            - paragraph [ref=e92]: Permit tracking, utility management, action queues, and SLA monitoring.
+          - link "Executive Suite EXECUTIVE Leadership and executive views grouped in one place." [ref=e93] [cursor=pointer]:
+            - /url: /suites/executive
+            - generic [ref=e94]:
+              - heading "Executive Suite" [level=3] [ref=e95]
+              - generic [ref=e96]: EXECUTIVE
+            - paragraph [ref=e97]: Leadership and executive views grouped in one place.
+          - link "AI Skills AI All AI-powered tools in one place." [ref=e98] [cursor=pointer]:
+            - /url: /dashboards/ai
+            - generic [ref=e99]:
+              - heading "AI Skills" [level=3] [ref=e100]
+              - generic [ref=e101]: AI
+            - paragraph [ref=e102]: All AI-powered tools in one place.
+      - generic [ref=e103]:
+        - heading "Admin" [level=2] [ref=e104]
+        - generic [ref=e105]:
+          - link "Intelligence Suite INTELLIGENCE Risk analysis, QC metrics, and pipeline forecasting." [ref=e106] [cursor=pointer]:
+            - /url: /suites/intelligence
+            - generic [ref=e107]:
+              - heading "Intelligence Suite" [level=3] [ref=e108]
+              - generic [ref=e109]: INTELLIGENCE
+            - paragraph [ref=e110]: Risk analysis, QC metrics, and pipeline forecasting.
+          - link "Service Suite SERVICE Service scheduling, equipment tracking, priority queue, and pipelines." [ref=e111] [cursor=pointer]:
+            - /url: /suites/service
+            - generic [ref=e112]:
+              - heading "Service Suite" [level=3] [ref=e113]
+              - generic [ref=e114]: SERVICE
+            - paragraph [ref=e115]: Service scheduling, equipment tracking, priority queue, and pipelines.
+          - link "D&R + Roofing Suite D&R + ROOFING Detach & reset and roofing scheduling, pipelines, and tracking." [ref=e116] [cursor=pointer]:
+            - /url: /suites/dnr-roofing
+            - generic [ref=e117]:
+              - heading "D&R + Roofing Suite" [level=3] [ref=e118]
+              - generic [ref=e119]: D&R + ROOFING
+            - paragraph [ref=e120]: Detach & reset and roofing scheduling, pipelines, and tracking.
+          - link "Admin Suite ADMIN Admin tools, compliance, documentation, and prototypes." [ref=e121] [cursor=pointer]:
+            - /url: /suites/admin
+            - generic [ref=e122]:
+              - heading "Admin Suite" [level=3] [ref=e123]
+              - generic [ref=e124]: ADMIN
+            - paragraph [ref=e125]: Admin tools, compliance, documentation, and prototypes.
+  - button "Open chat" [ref=e126]:
+    - img [ref=e127]
+  - button "Report Bug" [ref=e129] [cursor=pointer]:
+    - img [ref=e130]
+    - generic [ref=e132]: Report Bug
+  - generic [ref=e133]:
+    - img [ref=e135]
+    - button "Open Tanstack query devtools" [ref=e183] [cursor=pointer]:
+      - img [ref=e184]
+  - generic [ref=e236] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e237]:
+      - img [ref=e238]
+    - generic [ref=e241]:
+      - button "Open issues overlay" [ref=e242]:
+        - generic [ref=e243]:
+          - generic [ref=e244]: "0"
+          - generic [ref=e245]: "1"
+        - generic [ref=e246]: Issue
+      - button "Collapse issues badge" [ref=e247]:
+        - img [ref=e248]
+  - alert [ref=e250]

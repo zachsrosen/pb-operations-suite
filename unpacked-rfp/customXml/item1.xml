@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<p:properties xmlns:p="http://schemas.microsoft.com/office/2006/metadata/properties" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:pc="http://schemas.microsoft.com/office/infopath/2007/PartnerControls">
+  <documentManagement>
+    <TaxCatchAll xmlns="19f06960-23c0-4378-8201-6586e380d617" xsi:nil="true"/>
+    <lcf76f155ced4ddcb4097134ff3c332f xmlns="6d532686-2309-4fba-8a10-14d6f1382466">
+      <Terms xmlns="http://schemas.microsoft.com/office/infopath/2007/PartnerControls"/>
+    </lcf76f155ced4ddcb4097134ff3c332f>
+    <_ip_UnifiedCompliancePolicyUIAction xmlns="http://schemas.microsoft.com/sharepoint/v3" xsi:nil="true"/>
+    <_ip_UnifiedCompliancePolicyProperties xmlns="http://schemas.microsoft.com/sharepoint/v3" xsi:nil="true"/>
+  </documentManagement>
+</p:properties>

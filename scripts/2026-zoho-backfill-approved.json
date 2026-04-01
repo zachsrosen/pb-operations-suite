@@ -1,0 +1,222 @@
+[
+  {
+    "ip_id": "fe19053c-a9df-4378-94db-8caef32d86b9",
+    "ip_brand": "IronRidge",
+    "ip_model": "GBL-4DBT",
+    "so_item_name": "IronRidge XR Low Profile Grounding Lug (Ground Lug)",
+    "so_sku": "XR-LUG-03-A1",
+    "zoho_item_id": "5385454000000135176",
+    "zoho_item_name": "IronRidge XR Low Profile Grounding Lug (Ground Lug)",
+    "zoho_item_sku": "XR-LUG-03-A1",
+    "times_used": 49
+  },
+  {
+    "ip_id": "cmm41hh8d01nb04l4pzc8gsyz",
+    "ip_brand": "IRONRIDGE",
+    "ip_model": "HW-RD1430-01-M1",
+    "so_item_name": "IronRidge RD Structural Screw 3.0L (HUG Screws)",
+    "so_sku": "2101175/ HW-RD1430-01-M1",
+    "zoho_item_id": "5385454000000135054",
+    "zoho_item_name": "IronRidge RD Structural Screw 3.0L (HUG Screws)",
+    "zoho_item_sku": "2101175/ HW-RD1430-01-M1",
+    "times_used": 42
+  },
+  {
+    "ip_id": "9b00900a-5a43-46b4-b38c-c3b69d581095",
+    "ip_brand": "Arlington",
+    "ip_model": "M3317GBZ-SM",
+    "so_item_name": "Strain Relief 3/4\" 5 hole",
+    "so_sku": "M3317GBZ-SM",
+    "zoho_item_id": "5385454000000143173",
+    "zoho_item_name": "Strain Relief 3/4\" 5 hole",
+    "zoho_item_sku": "M3317GBZ-SM",
+    "times_used": 42
+  },
+  {
+    "ip_id": "cmm4dwqr900e204i86gl7ssx8",
+    "ip_brand": "Tesla",
+    "ip_model": "MCI-2 HIGH CURRENT",
+    "so_item_name": "MCI-2 High Current",
+    "so_sku": "1879359-15-B",
+    "zoho_item_id": "5385454000000102881",
+    "zoho_item_name": "MCI-2 High Current",
+    "zoho_item_sku": "1879359-15-B",
+    "times_used": 40
+  },
+  {
+    "ip_id": "cmm49nkas000a04l6c7z1nmp9",
+    "ip_brand": "IRONRIDGE",
+    "ip_model": "XR-10-168M",
+    "so_item_name": "IronRidge XR10 14ft Anodized Rail Mill",
+    "so_sku": "XR-10-168M",
+    "zoho_item_id": "5385454000000135193",
+    "zoho_item_name": "IronRidge XR10 14ft Anodized Rail Mill",
+    "zoho_item_sku": "XR-10-168M",
+    "times_used": 36
+  },
+  {
+    "ip_id": "ce1edc71-4874-47c3-88a6-7080cd8cf1dd",
+    "ip_brand": "IronRidge",
+    "ip_model": "UFO-END-01-M1",
+    "so_item_name": "End Fastening Object (End Clamp, 30-40Mm), Black",
+    "so_sku": "UFO-END-01-B1",
+    "zoho_item_id": "5385454000010741243",
+    "zoho_item_name": "End Fastening Object (End Clamp, 30-40Mm), Black",
+    "zoho_item_sku": "UFO-END-01-B1",
+    "times_used": 35
+  },
+  {
+    "ip_id": "cmm48ahg1000904ld0yqujt2l",
+    "ip_brand": "ALPINE",
+    "ip_model": "SNOW DOG-BLK",
+    "so_item_name": "SNOW DOGS",
+    "so_sku": "SNOW DOG-BLK",
+    "zoho_item_id": "5385454000000135710",
+    "zoho_item_name": "SNOW DOGS",
+    "zoho_item_sku": "SNOW DOG-BLK",
+    "times_used": 28
+  },
+  {
+    "ip_id": "cmm49nkde000b04l617n70l18",
+    "ip_brand": "IRONRIDGE",
+    "ip_model": "XR10-BOSS-01-M1",
+    "so_item_name": "IronRidge XR10 Bonded Splice Mill",
+    "so_sku": "XR10-BOSS-01-M1",
+    "zoho_item_id": "5385454000016968084",
+    "zoho_item_name": "Ironridge X10 Splice -US",
+    "zoho_item_sku": "XR10-BOSS-01-M1-US",
+    "times_used": 26
+  },
+  {
+    "ip_id": "a30b114b-2848-48fe-bd30-1902dc1bfb56",
+    "ip_brand": "Tesla",
+    "ip_model": "2045796-xx-y",
+    "so_item_name": "Tesla Remote Meter Energy Kit",
+    "so_sku": "2045796-xx-y",
+    "zoho_item_id": "5385454000000106025",
+    "zoho_item_name": "Tesla Remote Meter Energy Kit",
+    "zoho_item_sku": "2045796-xx-y",
+    "times_used": 25
+  },
+  {
+    "ip_id": "3e86429d-0ec2-4ba5-807f-40878fdbc557",
+    "ip_brand": "SEG Solar",
+    "ip_model": "SEG-430-BTD-BG",
+    "so_item_name": "Seg 430W BLK",
+    "so_sku": "SEG-430-BTD-BG",
+    "zoho_item_id": "5385454000000386094",
+    "zoho_item_name": "Seg 430W BLK",
+    "zoho_item_sku": "SEG-430-BTD-BG",
+    "times_used": 21
+  },
+  {
+    "ip_id": "510ca939-cd13-4ecf-9b62-0513b62f6a4e",
+    "ip_brand": "Tesla",
+    "ip_model": "1978069-00-x",
+    "so_item_name": "Powerwall 3 Expansion Wall Mount Kit",
+    "so_sku": "1978069-00-x",
+    "zoho_item_id": "5385454000000102800",
+    "zoho_item_name": "Powerwall 3 Expansion Wall Mount Kit",
+    "zoho_item_sku": "1978069-00-x",
+    "times_used": 13
+  },
+  {
+    "ip_id": "6cdb0422-6a35-4614-9d49-96ec9e221a62",
+    "ip_brand": "Tesla",
+    "ip_model": "THQL2160",
+    "so_item_name": "60 Amp 2p GE",
+    "so_sku": "THQL2160",
+    "zoho_item_id": "5385454000000797026",
+    "zoho_item_name": "60 Amp 2p GE",
+    "zoho_item_sku": "THQL2160",
+    "times_used": 13
+  },
+  {
+    "ip_id": "cmlkz60dl000d04ldxuc95brp",
+    "ip_brand": "Tesla",
+    "ip_model": "1538000-45-A",
+    "so_item_name": "Tesla Solar Inverter 7.6kW",
+    "so_sku": "153800-45-X",
+    "zoho_item_id": "5385454000000495008",
+    "zoho_item_name": "Tesla Solar Inverter 7.6kW",
+    "zoho_item_sku": "153800-45-X",
+    "times_used": 9
+  },
+  {
+    "ip_id": "3da29f22-2029-4aa6-bda8-d10f02b8d3b9",
+    "ip_brand": "Tesla",
+    "ip_model": "1875157-20-y",
+    "so_item_name": "2.0 M Expansion Harness -6.5'",
+    "so_sku": "1875157-20-y",
+    "zoho_item_id": "5385454000000102827",
+    "zoho_item_name": "2.0 M Expansion Harness -6.5'",
+    "zoho_item_sku": "1875157-20-y",
+    "times_used": 9
+  },
+  {
+    "ip_id": "cmm4bspt8000c04l5rz4zigq3",
+    "ip_brand": "ILSCO",
+    "ip_model": "GBL-4DBT",
+    "so_item_name": "ILSCO GBL-4DBT",
+    "so_sku": "XR-LUG-03-A1",
+    "zoho_item_id": "5385454000000135176",
+    "zoho_item_name": "IronRidge XR Low Profile Grounding Lug (Ground Lug)",
+    "zoho_item_sku": "XR-LUG-03-A1",
+    "times_used": 8
+  },
+  {
+    "ip_id": "cmm4bspdn000504l5i7vtpwgx",
+    "ip_brand": "ENPHASE",
+    "ip_model": "IQ COMBINER BOX-5",
+    "so_item_name": "Enphase Combiner w/Gateway, X-IQ-AM1-240-5",
+    "so_sku": "ENP X-IQ-AM1-240-5",
+    "zoho_item_id": "5385454000008180175",
+    "zoho_item_name": "Enphase Combiner w/Gateway, X-IQ-AM1-240-5",
+    "zoho_item_sku": "ENP X-IQ-AM1-240-5",
+    "times_used": 5
+  },
+  {
+    "ip_id": "cmm41hhbz01nd04l4f2g1afkw",
+    "ip_brand": "ENPHASE",
+    "ip_model": "Q-CABLE",
+    "so_item_name": "Enphase- Portrait cable",
+    "so_sku": "Q-12-10-240",
+    "zoho_item_id": "5385454000002730118",
+    "zoho_item_name": "Enphase- Portrait cable",
+    "zoho_item_sku": "Q-12-10-240",
+    "times_used": 4
+  },
+  {
+    "ip_id": "09523076-6ef0-4a89-97a3-968baa014e01",
+    "ip_brand": "IronRidge",
+    "ip_model": "KOB-1L02-B1",
+    "so_item_name": "IronRidge KO Tile Replacement BASE",
+    "so_sku": "KOB-1L02-B1",
+    "zoho_item_id": "5385454000000145194",
+    "zoho_item_name": "IronRidge KO Tile Replacement BASE",
+    "zoho_item_sku": "KOB-1L02-B1",
+    "times_used": 3
+  },
+  {
+    "ip_id": "cmm49nl0w000k04l6wtcg7rb9",
+    "ip_brand": "GE",
+    "ip_model": "TL270RCU",
+    "so_item_name": "Load Center, 70A, Main Lugs, 1PH, 65kA, 120/240VAC, 2/4 Circuit",
+    "so_sku": "TL270RCU",
+    "zoho_item_id": "5385454000001001198",
+    "zoho_item_name": "Load Center, 70A, Main Lugs, 1PH, 65kA, 120/240VAC, 2/4 Circuit",
+    "zoho_item_sku": "TL270RCU",
+    "times_used": 3
+  },
+  {
+    "ip_id": "cmm3k3ozh001m04i9qqzv1f0i",
+    "ip_brand": "EZ SOLAR",
+    "ip_model": "JB-1.2",
+    "so_item_name": "EZ Solar JB 1.2 Roof Mount",
+    "so_sku": "EZSLR JB-1.2",
+    "zoho_item_id": "5385454000000143216",
+    "zoho_item_name": "EZ Solar JB 1.2 Roof Mount",
+    "zoho_item_sku": "EZSLR JB-1.2",
+    "times_used": 3
+  }
+]

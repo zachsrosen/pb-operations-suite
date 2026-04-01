@@ -1,0 +1,2172 @@
+<?xml version="1.0" encoding="utf-8"?>
+<p:sldLayout xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" showMasterSp="0" type="blank" preserve="1">
+  <p:cSld name="Required Disclaimer 2 of 2">
+    <p:spTree>
+      <p:nvGrpSpPr>
+        <p:cNvPr id="1" name=""/>
+        <p:cNvGrpSpPr/>
+        <p:nvPr/>
+      </p:nvGrpSpPr>
+      <p:grpSpPr>
+        <a:xfrm>
+          <a:off x="0" y="0"/>
+          <a:ext cx="0" cy="0"/>
+          <a:chOff x="0" y="0"/>
+          <a:chExt cx="0" cy="0"/>
+        </a:xfrm>
+      </p:grpSpPr>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="22" name="Rectangle 21">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{EAAE1E8E-6615-284A-A1B0-EC7F462BF8AA}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvSpPr/>
+          <p:nvPr userDrawn="1"/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm rot="10800000">
+            <a:off x="-1" y="0"/>
+            <a:ext cx="4572000" cy="6858000"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:gradFill flip="none" rotWithShape="1">
+            <a:gsLst>
+              <a:gs pos="0">
+                <a:schemeClr val="tx1"/>
+              </a:gs>
+              <a:gs pos="100000">
+                <a:schemeClr val="tx1">
+                  <a:lumMod val="55000"/>
+                </a:schemeClr>
+              </a:gs>
+            </a:gsLst>
+            <a:lin ang="16200000" scaled="1"/>
+            <a:tileRect/>
+          </a:gradFill>
+          <a:ln>
+            <a:noFill/>
+          </a:ln>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="2">
+            <a:schemeClr val="accent1">
+              <a:shade val="50000"/>
+            </a:schemeClr>
+          </a:lnRef>
+          <a:fillRef idx="1">
+            <a:schemeClr val="accent1"/>
+          </a:fillRef>
+          <a:effectRef idx="0">
+            <a:schemeClr val="accent1"/>
+          </a:effectRef>
+          <a:fontRef idx="minor">
+            <a:schemeClr val="lt1"/>
+          </a:fontRef>
+        </p:style>
+        <p:txBody>
+          <a:bodyPr rtlCol="0" anchor="ctr"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="ctr"/>
+            <a:endParaRPr lang="en-US" sz="837"/>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:pic>
+        <p:nvPicPr>
+          <p:cNvPr id="23" name="Picture 22">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{7197C8DF-79F8-9D4D-8CE3-2D98A7C78043}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvPicPr>
+            <a:picLocks noChangeAspect="1"/>
+          </p:cNvPicPr>
+          <p:nvPr userDrawn="1"/>
+        </p:nvPicPr>
+        <p:blipFill>
+          <a:blip r:embed="rId2" cstate="print">
+            <a:extLst>
+              <a:ext uri="{28A0092B-C50C-407E-A947-70E740481C1C}">
+                <a14:useLocalDpi xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"/>
+              </a:ext>
+            </a:extLst>
+          </a:blip>
+          <a:srcRect/>
+          <a:stretch/>
+        </p:blipFill>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="845508" y="2043880"/>
+            <a:ext cx="2719390" cy="369837"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+        </p:spPr>
+      </p:pic>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="24" name="TextBox 23">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{62F894B2-88A3-214D-8296-98FF13A69CCC}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr userDrawn="1"/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="5029200" y="965003"/>
+            <a:ext cx="6553200" cy="2463997"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square" numCol="1" spcCol="182880" rtlCol="0">
+            <a:noAutofit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="l">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="900" b="1" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent1"/>
+                </a:solidFill>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>Notice of Carrier Financial Status </a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr algn="l">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>Brown &amp; Brown makes every attempt to place coverage with carriers rated A- or better* through AM Best (</a:t>
+            </a:r>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:hlinkClick r:id="rId3">
+                  <a:extLst>
+                    <a:ext uri="{A12FA001-AC4F-418D-AE19-62706E023703}">
+                      <ahyp:hlinkClr xmlns:ahyp="http://schemas.microsoft.com/office/drawing/2018/hyperlinkcolor" val="tx"/>
+                    </a:ext>
+                  </a:extLst>
+                </a:hlinkClick>
+              </a:rPr>
+              <a:t>www.ambest.com</a:t>
+            </a:r>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>), a national credit rating agency with a specific focus on the insurance industry. Because an AM Best rating is not required by the various state departments of insurance, there are many carriers in the Employee Benefits industry that elect not to participate in AM Best&#x2019;s rating process for various reasons. Therefore, Brown &amp; Brown periodically places coverage with carriers rated less than A- or non-rated by AM Best.</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr algn="l">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>Please be advised that Brown &amp; Brown does monitor carriers rated less than A- or non-rated on an ongoing basis. However, because Brown &amp; Brown cannot certify the financial soundness or stability of any insurance company or alternative risk transfer entity, or otherwise predict whether the financial condition of a company might improve or deteriorate, we encourage you to review the financial information for each carrier at AM Best&#x2019;s website (</a:t>
+            </a:r>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+                <a:hlinkClick r:id="rId3">
+                  <a:extLst>
+                    <a:ext uri="{A12FA001-AC4F-418D-AE19-62706E023703}">
+                      <ahyp:hlinkClr xmlns:ahyp="http://schemas.microsoft.com/office/drawing/2018/hyperlinkcolor" val="tx"/>
+                    </a:ext>
+                  </a:extLst>
+                </a:hlinkClick>
+              </a:rPr>
+              <a:t>www.ambest.com</a:t>
+            </a:r>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>), a state department of insurance website, the applicable carrier website and/or with your accountant, legal counsel and other advisors.</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr algn="l">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>If you need assistance identifying the appliable issuing carriers for your current coverage, renewal coverage, or the coverage options being presented to you, please feel free to contact us at 508-485-4000 for assistance. Alternative quotes with an A- </a:t>
+            </a:r>
+            <a:br>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+            </a:br>
+            <a:r>
+              <a:rPr lang="en-US" sz="800" kern="1200" baseline="0">
+                <a:solidFill>
+                  <a:schemeClr val="accent6"/>
+                </a:solidFill>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>or better rated carrier may also be available upon your request.</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:graphicFrame>
+        <p:nvGraphicFramePr>
+          <p:cNvPr id="25" name="Table 7">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{FCC730DF-716F-8543-8014-F4756E5B42D4}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvGraphicFramePr>
+            <a:graphicFrameLocks noGrp="1"/>
+          </p:cNvGraphicFramePr>
+          <p:nvPr userDrawn="1">
+            <p:extLst>
+              <p:ext uri="{D42A27DB-BD31-4B8C-83A1-F6EECF244321}">
+                <p14:modId xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" val="4222631408"/>
+              </p:ext>
+            </p:extLst>
+          </p:nvPr>
+        </p:nvGraphicFramePr>
+        <p:xfrm>
+          <a:off x="5120640" y="3750260"/>
+          <a:ext cx="2232058" cy="1542288"/>
+        </p:xfrm>
+        <a:graphic>
+          <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">
+            <a:tbl>
+              <a:tblPr firstRow="1" bandRow="1">
+                <a:tableStyleId>{3B4B98B0-60AC-42C2-AFA5-B58CD77FA1E5}</a:tableStyleId>
+              </a:tblPr>
+              <a:tblGrid>
+                <a:gridCol w="575137">
+                  <a:extLst>
+                    <a:ext uri="{9D8B030D-6E8A-4147-A177-3AD203B41FA5}">
+                      <a16:colId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="3572691369"/>
+                    </a:ext>
+                  </a:extLst>
+                </a:gridCol>
+                <a:gridCol w="1656921">
+                  <a:extLst>
+                    <a:ext uri="{9D8B030D-6E8A-4147-A177-3AD203B41FA5}">
+                      <a16:colId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="2968135658"/>
+                    </a:ext>
+                  </a:extLst>
+                </a:gridCol>
+              </a:tblGrid>
+              <a:tr h="0">
+                <a:tc gridSpan="2">
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent1"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Financial Strength Rating</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc hMerge="1">
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:endParaRPr lang="en-US"/>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="3434666392"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>A++, A+</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Superior</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="2617929629"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>A,A-</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Excellent</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="1641358258"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>B++, B+</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Good</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="1326514482"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="0">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>B, B-</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Fair</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="1592610609"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>C++, C+</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Marginal</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="2381187720"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>C, C-</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Weak</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="3916568033"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>D</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Poor</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="3285820867"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>E</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Under Regulatory Supervision</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="1530024507"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>F</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>In Liquidation</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="2270626649"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>S</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Suspended</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="4173751276"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+            </a:tbl>
+          </a:graphicData>
+        </a:graphic>
+      </p:graphicFrame>
+      <p:graphicFrame>
+        <p:nvGraphicFramePr>
+          <p:cNvPr id="26" name="Table 7">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{57943010-4E3A-104B-9CD8-4FA393F583E7}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvGraphicFramePr>
+            <a:graphicFrameLocks noGrp="1"/>
+          </p:cNvGraphicFramePr>
+          <p:nvPr userDrawn="1">
+            <p:extLst>
+              <p:ext uri="{D42A27DB-BD31-4B8C-83A1-F6EECF244321}">
+                <p14:modId xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" val="2111136335"/>
+              </p:ext>
+            </p:extLst>
+          </p:nvPr>
+        </p:nvGraphicFramePr>
+        <p:xfrm>
+          <a:off x="8193351" y="3750260"/>
+          <a:ext cx="2960192" cy="2243328"/>
+        </p:xfrm>
+        <a:graphic>
+          <a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">
+            <a:tbl>
+              <a:tblPr firstRow="1" bandRow="1">
+                <a:tableStyleId>{3B4B98B0-60AC-42C2-AFA5-B58CD77FA1E5}</a:tableStyleId>
+              </a:tblPr>
+              <a:tblGrid>
+                <a:gridCol w="953592">
+                  <a:extLst>
+                    <a:ext uri="{9D8B030D-6E8A-4147-A177-3AD203B41FA5}">
+                      <a16:colId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="3572691369"/>
+                    </a:ext>
+                  </a:extLst>
+                </a:gridCol>
+                <a:gridCol w="846667">
+                  <a:extLst>
+                    <a:ext uri="{9D8B030D-6E8A-4147-A177-3AD203B41FA5}">
+                      <a16:colId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="1959779072"/>
+                    </a:ext>
+                  </a:extLst>
+                </a:gridCol>
+                <a:gridCol w="270933">
+                  <a:extLst>
+                    <a:ext uri="{9D8B030D-6E8A-4147-A177-3AD203B41FA5}">
+                      <a16:colId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="1588172755"/>
+                    </a:ext>
+                  </a:extLst>
+                </a:gridCol>
+                <a:gridCol w="889000">
+                  <a:extLst>
+                    <a:ext uri="{9D8B030D-6E8A-4147-A177-3AD203B41FA5}">
+                      <a16:colId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="2968135658"/>
+                    </a:ext>
+                  </a:extLst>
+                </a:gridCol>
+              </a:tblGrid>
+              <a:tr h="0">
+                <a:tc gridSpan="4">
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent1"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Financial Size Category (in Thousands)</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc hMerge="1">
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:endParaRPr lang="en-US"/>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr/>
+                </a:tc>
+                <a:tc hMerge="1">
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:endParaRPr lang="en-US"/>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr/>
+                </a:tc>
+                <a:tc hMerge="1">
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:endParaRPr lang="en-US"/>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="3434666392"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class I</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Up to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc gridSpan="2">
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$1,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc hMerge="1">
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="700"/>
+                        <a:t>Superior</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="45720" marR="45720" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="2617929629"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class II</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$1,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$2,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="1641358258"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class III</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$2,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$5,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="1326514482"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class IV</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$5,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$10,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="1592610609"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class V</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$10,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$25,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="2381187720"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class VI</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$25,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$50,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="3916568033"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class VII</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$50,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$100,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="3285820867"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class VIII</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$100,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$250,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="1530024507"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class IX</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$250,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$500,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="2270626649"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class X</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$500,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$750,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="4173751276"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class XI</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$750,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$1,000,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="2117098191"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class XII</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$1,000,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$1,250,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="2839725729"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class XIII</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$1,250,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$1,500,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="1310243424"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class XIV</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$1,500,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$2,000,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="2068369327"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+              <a:tr h="118037">
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Class XV</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>$2,000,000</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>to</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:tc>
+                  <a:txBody>
+                    <a:bodyPr/>
+                    <a:lstStyle/>
+                    <a:p>
+                      <a:r>
+                        <a:rPr lang="en-US" sz="800">
+                          <a:solidFill>
+                            <a:schemeClr val="accent6"/>
+                          </a:solidFill>
+                        </a:rPr>
+                        <a:t>Greater</a:t>
+                      </a:r>
+                    </a:p>
+                  </a:txBody>
+                  <a:tcPr marL="60960" marR="60960" marT="9144" marB="9144"/>
+                </a:tc>
+                <a:extLst>
+                  <a:ext uri="{0D108BD9-81ED-4DB2-BD59-A6C34878D82A}">
+                    <a16:rowId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" val="2964941874"/>
+                  </a:ext>
+                </a:extLst>
+              </a:tr>
+            </a:tbl>
+          </a:graphicData>
+        </a:graphic>
+      </p:graphicFrame>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="27" name="TextBox 26">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{698D0999-F7C4-4043-8F1F-7AE9632B6784}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr userDrawn="1"/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="5289256" y="3429000"/>
+            <a:ext cx="5588733" cy="230832"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square" rtlCol="0">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="ctr">
+              <a:spcAft>
+                <a:spcPts val="700"/>
+              </a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="900" b="1" kern="1200">
+                <a:solidFill>
+                  <a:schemeClr val="accent1"/>
+                </a:solidFill>
+                <a:ea typeface="+mn-ea"/>
+                <a:cs typeface="+mn-cs"/>
+              </a:rPr>
+              <a:t>*AM Best General Rating Guide</a:t>
+            </a:r>
+            <a:endParaRPr lang="en-US" sz="900" b="1" u="sng" kern="1200">
+              <a:solidFill>
+                <a:schemeClr val="accent1"/>
+              </a:solidFill>
+              <a:ea typeface="+mn-ea"/>
+              <a:cs typeface="+mn-cs"/>
+            </a:endParaRPr>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:pic>
+        <p:nvPicPr>
+          <p:cNvPr id="28" name="Picture 27">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{237BF8A7-679F-E54E-91A4-51480859D3FB}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvPicPr>
+            <a:picLocks noChangeAspect="1"/>
+          </p:cNvPicPr>
+          <p:nvPr userDrawn="1"/>
+        </p:nvPicPr>
+        <p:blipFill rotWithShape="1">
+          <a:blip r:embed="rId4" cstate="hqprint">
+            <a:alphaModFix amt="80000"/>
+            <a:extLst>
+              <a:ext uri="{28A0092B-C50C-407E-A947-70E740481C1C}">
+                <a14:useLocalDpi xmlns:a14="http://schemas.microsoft.com/office/drawing/2010/main"/>
+              </a:ext>
+            </a:extLst>
+          </a:blip>
+          <a:srcRect l="28674" t="38470" r="2600" b="22318"/>
+          <a:stretch/>
+        </p:blipFill>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="0" y="4614672"/>
+            <a:ext cx="4571998" cy="2243328"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+        </p:spPr>
+      </p:pic>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="29" name="Rectangle 28">
+            <a:extLst>
+              <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+                <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{45CFFFEA-50FC-2446-A6F0-A5724FB868B5}"/>
+              </a:ext>
+            </a:extLst>
+          </p:cNvPr>
+          <p:cNvSpPr/>
+          <p:nvPr userDrawn="1"/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="1" y="4605224"/>
+            <a:ext cx="4571998" cy="2243328"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:solidFill>
+            <a:schemeClr val="tx1">
+              <a:alpha val="46789"/>
+            </a:schemeClr>
+          </a:solidFill>
+          <a:ln>
+            <a:noFill/>
+          </a:ln>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="2">
+            <a:schemeClr val="accent1">
+              <a:shade val="50000"/>
+            </a:schemeClr>
+          </a:lnRef>
+          <a:fillRef idx="1">
+            <a:schemeClr val="accent1"/>
+          </a:fillRef>
+          <a:effectRef idx="0">
+            <a:schemeClr val="accent1"/>
+          </a:effectRef>
+          <a:fontRef idx="minor">
+            <a:schemeClr val="lt1"/>
+          </a:fontRef>
+        </p:style>
+        <p:txBody>
+          <a:bodyPr rtlCol="0" anchor="ctr"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="ctr"/>
+            <a:endParaRPr lang="en-US" sz="837"/>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+    <p:extLst>
+      <p:ext uri="{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}">
+        <p14:creationId xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" val="4020968959"/>
+      </p:ext>
+    </p:extLst>
+  </p:cSld>
+  <p:clrMapOvr>
+    <a:masterClrMapping/>
+  </p:clrMapOvr>
+</p:sldLayout>

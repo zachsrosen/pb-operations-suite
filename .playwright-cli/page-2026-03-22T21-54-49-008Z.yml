@@ -1,0 +1,250 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]:
+          - link "Photon Brothers" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - img "Photon Brothers" [ref=e7]
+          - heading "PB Tech Ops Suite" [level=1] [ref=e8]
+        - generic [ref=e9]:
+          - button "Search ⌘+K" [ref=e10]:
+            - img [ref=e11]
+            - text: Search
+            - generic [ref=e13]: ⌘+K
+          - generic [ref=e14]: Live
+          - generic [ref=e16]: "Last updated: 3/22/2026, 5:53:49 PM"
+          - button "Dark mode" [ref=e17]:
+            - img [ref=e18]
+          - button "User menu" [ref=e21]:
+            - generic [ref=e22]: Z
+            - generic [ref=e23]: zach
+            - img [ref=e24]
+    - main [ref=e26]:
+      - generic [ref=e27]:
+        - link "581 Active Projects $24.1M pipeline" [ref=e28] [cursor=pointer]:
+          - /url: /dashboards/deals?pipeline=project
+          - generic [ref=e29]: "581"
+          - generic [ref=e30]: Active Projects
+          - generic [ref=e31]: $24.1M pipeline
+        - link "58 Active D&R $385k" [ref=e32] [cursor=pointer]:
+          - /url: /dashboards/deals?pipeline=dnr
+          - generic [ref=e33]: "58"
+          - generic [ref=e34]: Active D&R
+          - generic [ref=e35]: $385k
+        - link "22 Active Roofing $299k" [ref=e36] [cursor=pointer]:
+          - /url: /dashboards/deals?pipeline=roofing
+          - generic [ref=e37]: "22"
+          - generic [ref=e38]: Active Roofing
+          - generic [ref=e39]: $299k
+        - link "37 Active Service $191k" [ref=e40] [cursor=pointer]:
+          - /url: /dashboards/deals?pipeline=service
+          - generic [ref=e41]: "37"
+          - generic [ref=e42]: Active Service
+          - generic [ref=e43]: $191k
+      - generic [ref=e44]:
+        - heading "Projects by Location" [level=2] [ref=e46]
+        - paragraph [ref=e47]: Click a location to filter all data
+        - generic [ref=e48]:
+          - generic [ref=e49]:
+            - button "54 Camarillo $1.6M" [ref=e50] [cursor=pointer]:
+              - generic [ref=e51]: "54"
+              - generic [ref=e52]: Camarillo
+              - generic [ref=e53]: $1.6M
+            - link "View Camarillo deals" [ref=e54] [cursor=pointer]:
+              - /url: /dashboards/deals?location=Camarillo
+              - img [ref=e55]
+          - generic [ref=e57]:
+            - button "151 Centennial $6.6M" [ref=e58] [cursor=pointer]:
+              - generic [ref=e59]: "151"
+              - generic [ref=e60]: Centennial
+              - generic [ref=e61]: $6.6M
+            - link "View Centennial deals" [ref=e62] [cursor=pointer]:
+              - /url: /dashboards/deals?location=Centennial
+              - img [ref=e63]
+          - generic [ref=e65]:
+            - button "51 Colorado Springs $2.1M" [ref=e66] [cursor=pointer]:
+              - generic [ref=e67]: "51"
+              - generic [ref=e68]: Colorado Springs
+              - generic [ref=e69]: $2.1M
+            - link "View Colorado Springs deals" [ref=e70] [cursor=pointer]:
+              - /url: /dashboards/deals?location=Colorado%20Springs
+              - img [ref=e71]
+          - generic [ref=e73]:
+            - button "143 San Luis Obispo $5.5M" [ref=e74] [cursor=pointer]:
+              - generic [ref=e75]: "143"
+              - generic [ref=e76]: San Luis Obispo
+              - generic [ref=e77]: $5.5M
+            - link "View San Luis Obispo deals" [ref=e78] [cursor=pointer]:
+              - /url: /dashboards/deals?location=San%20Luis%20Obispo
+              - img [ref=e79]
+          - generic [ref=e81]:
+            - button "182 Westminster $8.4M" [ref=e82] [cursor=pointer]:
+              - generic [ref=e83]: "182"
+              - generic [ref=e84]: Westminster
+              - generic [ref=e85]: $8.4M
+            - link "View Westminster deals" [ref=e86] [cursor=pointer]:
+              - /url: /dashboards/deals?location=Westminster
+              - img [ref=e87]
+      - generic [ref=e89]:
+        - generic [ref=e90]:
+          - generic [ref=e91]:
+            - heading "Pipeline by Stage" [level=2] [ref=e92]
+            - combobox [ref=e93] [cursor=pointer]:
+              - option "Project Pipeline" [selected]
+              - option "Sales Pipeline"
+              - option "D&R Pipeline"
+              - option "Service Pipeline"
+              - option "Roofing Pipeline"
+          - link "View All Deals →" [ref=e94] [cursor=pointer]:
+            - /url: /dashboards/deals
+        - generic [ref=e95]:
+          - link "Close Out 154 $7.4M 27%" [ref=e96] [cursor=pointer]:
+            - /url: /dashboards/deals?stage=Close%20Out
+            - generic [ref=e97]:
+              - generic "Close Out" [ref=e98]
+              - generic [ref=e101]: "154"
+              - generic [ref=e102]: $7.4M
+              - generic [ref=e103]: 27%
+          - link "Permission To Operate 92 $3.3M 16%" [ref=e104] [cursor=pointer]:
+            - /url: /dashboards/deals?stage=Permission%20To%20Operate
+            - generic [ref=e105]:
+              - generic "Permission To Operate" [ref=e106]
+              - generic [ref=e109]: "92"
+              - generic [ref=e110]: $3.3M
+              - generic [ref=e111]: 16%
+          - link "Inspection 80 $3.3M 14%" [ref=e112] [cursor=pointer]:
+            - /url: /dashboards/deals?stage=Inspection
+            - generic [ref=e113]:
+              - generic "Inspection" [ref=e114]
+              - generic [ref=e117]: "80"
+              - generic [ref=e118]: $3.3M
+              - generic [ref=e119]: 14%
+          - link "Construction 22 $765k 4%" [ref=e120] [cursor=pointer]:
+            - /url: /dashboards/deals?stage=Construction
+            - generic [ref=e121]:
+              - generic "Construction" [ref=e122]
+              - generic [ref=e125]: "22"
+              - generic [ref=e126]: $765k
+              - generic [ref=e127]: 4%
+          - link "Ready To Build 15 $569k 3%" [ref=e128] [cursor=pointer]:
+            - /url: /dashboards/deals?stage=Ready%20To%20Build
+            - generic [ref=e129]:
+              - generic "Ready To Build" [ref=e130]
+              - generic [ref=e133]: "15"
+              - generic [ref=e134]: $569k
+              - generic [ref=e135]: 3%
+          - link "RTB - Blocked 36 $2.2M 6%" [ref=e136] [cursor=pointer]:
+            - /url: /dashboards/deals?stage=RTB%20-%20Blocked
+            - generic [ref=e137]:
+              - generic "RTB - Blocked" [ref=e138]
+              - generic [ref=e141]: "36"
+              - generic [ref=e142]: $2.2M
+              - generic [ref=e143]: 6%
+          - link "Permitting & Interconnection 56 $2.2M 10%" [ref=e144] [cursor=pointer]:
+            - /url: /dashboards/deals?stage=Permitting%20%26%20Interconnection
+            - generic [ref=e145]:
+              - generic "Permitting & Interconnection" [ref=e146]
+              - generic [ref=e149]: "56"
+              - generic [ref=e150]: $2.2M
+              - generic [ref=e151]: 10%
+          - link "Design & Engineering 56 $2.0M 10%" [ref=e152] [cursor=pointer]:
+            - /url: /dashboards/deals?stage=Design%20%26%20Engineering
+            - generic [ref=e153]:
+              - generic "Design & Engineering" [ref=e154]
+              - generic [ref=e157]: "56"
+              - generic [ref=e158]: $2.0M
+              - generic [ref=e159]: 10%
+          - link "Site Survey 32 $1.1M 6%" [ref=e160] [cursor=pointer]:
+            - /url: /dashboards/deals?stage=Site%20Survey
+            - generic [ref=e161]:
+              - generic "Site Survey" [ref=e162]
+              - generic [ref=e165]: "32"
+              - generic [ref=e166]: $1.1M
+              - generic [ref=e167]: 6%
+          - link "On Hold 30 $1.1M 5%" [ref=e168] [cursor=pointer]:
+            - /url: /dashboards/deals?stage=On%20Hold
+            - generic [ref=e169]:
+              - generic "On Hold" [ref=e170]
+              - generic [ref=e173]: "30"
+              - generic [ref=e174]: $1.1M
+              - generic [ref=e175]: 5%
+          - link "Project Rejected - Needs Review 8 $217k 1%" [ref=e176] [cursor=pointer]:
+            - /url: /dashboards/deals?stage=Project%20Rejected%20-%20Needs%20Review
+            - generic [ref=e177]:
+              - generic "Project Rejected - Needs Review" [ref=e178]
+              - generic [ref=e181]: "8"
+              - generic [ref=e182]: $217k
+              - generic [ref=e183]: 1%
+      - generic [ref=e184]:
+        - heading "Suites" [level=2] [ref=e185]
+        - generic [ref=e186]:
+          - link "Operations Suite OPERATIONS Scheduling, timeline, inventory, and equipment operations." [ref=e187] [cursor=pointer]:
+            - /url: /suites/operations
+            - generic [ref=e188]:
+              - heading "Operations Suite" [level=3] [ref=e189]
+              - generic [ref=e190]: OPERATIONS
+            - paragraph [ref=e191]: Scheduling, timeline, inventory, and equipment operations.
+          - link "Design & Engineering Suite D&E Design review, clipping analytics, AHJ requirements, and engineering tools." [ref=e192] [cursor=pointer]:
+            - /url: /suites/design-engineering
+            - generic [ref=e193]:
+              - heading "Design & Engineering Suite" [level=3] [ref=e194]
+              - generic [ref=e195]: D&E
+            - paragraph [ref=e196]: Design review, clipping analytics, AHJ requirements, and engineering tools.
+          - link "Permitting & Interconnection Suite P&I Permit tracking, utility management, action queues, and SLA monitoring." [ref=e197] [cursor=pointer]:
+            - /url: /suites/permitting-interconnection
+            - generic [ref=e198]:
+              - heading "Permitting & Interconnection Suite" [level=3] [ref=e199]
+              - generic [ref=e200]: P&I
+            - paragraph [ref=e201]: Permit tracking, utility management, action queues, and SLA monitoring.
+          - link "Executive Suite EXECUTIVE Leadership and executive views grouped in one place." [ref=e202] [cursor=pointer]:
+            - /url: /suites/executive
+            - generic [ref=e203]:
+              - heading "Executive Suite" [level=3] [ref=e204]
+              - generic [ref=e205]: EXECUTIVE
+            - paragraph [ref=e206]: Leadership and executive views grouped in one place.
+          - link "AI Skills AI All AI-powered tools in one place." [ref=e207] [cursor=pointer]:
+            - /url: /dashboards/ai
+            - generic [ref=e208]:
+              - heading "AI Skills" [level=3] [ref=e209]
+              - generic [ref=e210]: AI
+            - paragraph [ref=e211]: All AI-powered tools in one place.
+      - generic [ref=e212]:
+        - heading "Admin" [level=2] [ref=e213]
+        - generic [ref=e214]:
+          - link "Intelligence Suite INTELLIGENCE Risk analysis, QC metrics, and pipeline forecasting." [ref=e215] [cursor=pointer]:
+            - /url: /suites/intelligence
+            - generic [ref=e216]:
+              - heading "Intelligence Suite" [level=3] [ref=e217]
+              - generic [ref=e218]: INTELLIGENCE
+            - paragraph [ref=e219]: Risk analysis, QC metrics, and pipeline forecasting.
+          - link "Service Suite SERVICE Service scheduling, equipment tracking, priority queue, and pipelines." [ref=e220] [cursor=pointer]:
+            - /url: /suites/service
+            - generic [ref=e221]:
+              - heading "Service Suite" [level=3] [ref=e222]
+              - generic [ref=e223]: SERVICE
+            - paragraph [ref=e224]: Service scheduling, equipment tracking, priority queue, and pipelines.
+          - link "D&R + Roofing Suite D&R + ROOFING Detach & reset and roofing scheduling, pipelines, and tracking." [ref=e225] [cursor=pointer]:
+            - /url: /suites/dnr-roofing
+            - generic [ref=e226]:
+              - heading "D&R + Roofing Suite" [level=3] [ref=e227]
+              - generic [ref=e228]: D&R + ROOFING
+            - paragraph [ref=e229]: Detach & reset and roofing scheduling, pipelines, and tracking.
+          - link "Admin Suite ADMIN Admin tools, compliance, documentation, and prototypes." [ref=e230] [cursor=pointer]:
+            - /url: /suites/admin
+            - generic [ref=e231]:
+              - heading "Admin Suite" [level=3] [ref=e232]
+              - generic [ref=e233]: ADMIN
+            - paragraph [ref=e234]: Admin tools, compliance, documentation, and prototypes.
+  - button "Open chat" [ref=e235]:
+    - img [ref=e236]
+  - button "Report Bug" [ref=e238] [cursor=pointer]:
+    - img [ref=e239]
+    - generic [ref=e241]: Report Bug
+  - generic [ref=e242]:
+    - img [ref=e244]
+    - button "Open Tanstack query devtools" [ref=e292] [cursor=pointer]:
+      - img [ref=e293]
+  - button "Open Next.js Dev Tools" [ref=e346] [cursor=pointer]:
+    - img [ref=e347]
+  - alert [ref=e350]

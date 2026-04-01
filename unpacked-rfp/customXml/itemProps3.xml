@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ds:datastoreItem xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml" ds:itemID="{FBC390F4-3665-42F5-9E63-B7631770A077}">
+  <ds:schemaRefs>
+    <ds:schemaRef ds:uri="19f06960-23c0-4378-8201-6586e380d617"/>
+    <ds:schemaRef ds:uri="1aae3c62-d42f-4f4c-a2d2-477f23bce10d"/>
+    <ds:schemaRef ds:uri="6d532686-2309-4fba-8a10-14d6f1382466"/>
+    <ds:schemaRef ds:uri="http://purl.org/dc/elements/1.1/"/>
+    <ds:schemaRef ds:uri="http://purl.org/dc/terms/"/>
+    <ds:schemaRef ds:uri="http://schemas.microsoft.com/internal/obd"/>
+    <ds:schemaRef ds:uri="http://schemas.microsoft.com/office/2006/documentManagement/types"/>
+    <ds:schemaRef ds:uri="http://schemas.microsoft.com/office/2006/metadata/contentType"/>
+    <ds:schemaRef ds:uri="http://schemas.microsoft.com/office/2006/metadata/properties"/>
+    <ds:schemaRef ds:uri="http://schemas.microsoft.com/office/2006/metadata/properties/metaAttributes"/>
+    <ds:schemaRef ds:uri="http://schemas.microsoft.com/office/infopath/2007/PartnerControls"/>
+    <ds:schemaRef ds:uri="http://schemas.microsoft.com/sharepoint/v3"/>
+    <ds:schemaRef ds:uri="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"/>
+    <ds:schemaRef ds:uri="http://www.w3.org/2001/XMLSchema"/>
+  </ds:schemaRefs>
+</ds:datastoreItem>

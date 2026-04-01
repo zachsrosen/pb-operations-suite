@@ -1,0 +1,23 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e3]: Checking access...
+  - button "Open chat" [ref=e4]:
+    - img [ref=e5]
+  - button "Report Bug" [ref=e7] [cursor=pointer]:
+    - img [ref=e8]
+    - generic [ref=e10]: Report Bug
+  - generic [ref=e11]:
+    - img [ref=e13]
+    - button "Open Tanstack query devtools" [ref=e61] [cursor=pointer]:
+      - img [ref=e62]
+  - generic [ref=e114] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e115]:
+      - img [ref=e116]
+    - generic [ref=e119]:
+      - button "Open issues overlay" [ref=e120]:
+        - generic [ref=e121]:
+          - generic [ref=e122]: "0"
+          - generic [ref=e123]: "1"
+        - generic [ref=e124]: Issue
+      - button "Collapse issues badge" [ref=e125]:
+        - img [ref=e126]
+  - alert [ref=e128]

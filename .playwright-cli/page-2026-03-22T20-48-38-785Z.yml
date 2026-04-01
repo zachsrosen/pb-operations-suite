@@ -1,0 +1,173 @@
+- generic [active] [ref=e1]:
+  - main [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]:
+        - link "Back to Dashboard" [ref=e7] [cursor=pointer]:
+          - /url: /
+          - img "Photon Brothers" [ref=e8]
+        - heading "Operations Suite" [level=1] [ref=e10]
+        - paragraph [ref=e11]: Scheduling, field execution, and equipment management.
+      - generic [ref=e12]:
+        - link "Operations" [ref=e13] [cursor=pointer]:
+          - /url: /suites/operations
+        - link "D&E" [ref=e14] [cursor=pointer]:
+          - /url: /suites/design-engineering
+        - link "P&I" [ref=e15] [cursor=pointer]:
+          - /url: /suites/permitting-interconnection
+        - link "Intelligence" [ref=e16] [cursor=pointer]:
+          - /url: /suites/intelligence
+        - link "Service" [ref=e17] [cursor=pointer]:
+          - /url: /suites/service
+        - link "D&R + Roofing" [ref=e18] [cursor=pointer]:
+          - /url: /suites/dnr-roofing
+        - link "Executive" [ref=e19] [cursor=pointer]:
+          - /url: /suites/executive
+        - link "Admin" [ref=e20] [cursor=pointer]:
+          - /url: /suites/admin
+    - generic [ref=e21]:
+      - heading "Scheduling & Planning" [level=2] [ref=e24]
+      - generic [ref=e25]:
+        - link "📅 Master Schedule Drag-and-drop scheduling calendar with crew management. Open →" [ref=e26] [cursor=pointer]:
+          - /url: /dashboards/scheduler
+          - generic [ref=e28]:
+            - generic [ref=e29]: 📅
+            - heading "Master Schedule" [level=3] [ref=e30]
+          - paragraph [ref=e31]: Drag-and-drop scheduling calendar with crew management.
+          - generic [ref=e32]: Open →
+        - link "📊 Forecast Schedule Calendar view of all forecasted installs by stage and location with pipeline breakdown. Open →" [ref=e33] [cursor=pointer]:
+          - /url: /dashboards/forecast-schedule
+          - generic [ref=e35]:
+            - generic [ref=e36]: 📊
+            - heading "Forecast Schedule" [level=3] [ref=e37]
+          - paragraph [ref=e38]: Calendar view of all forecasted installs by stage and location with pipeline breakdown.
+          - generic [ref=e39]: Open →
+        - link "📦 Equipment Backlog Equipment forecasting by brand, model, and stage with location filtering. Open →" [ref=e40] [cursor=pointer]:
+          - /url: /dashboards/equipment-backlog
+          - generic [ref=e42]:
+            - generic [ref=e43]: 📦
+            - heading "Equipment Backlog" [level=3] [ref=e44]
+          - paragraph [ref=e45]: Equipment forecasting by brand, model, and stage with location filtering.
+          - generic [ref=e46]: Open →
+    - generic [ref=e47]:
+      - heading "Site Survey" [level=2] [ref=e50]
+      - generic [ref=e51]:
+        - link "🗓️ Site Survey Schedule Dedicated calendar for scheduling site surveys with Zuper integration. Open →" [ref=e52] [cursor=pointer]:
+          - /url: /dashboards/site-survey-scheduler
+          - generic [ref=e54]:
+            - generic [ref=e55]: 🗓️
+            - heading "Site Survey Schedule" [level=3] [ref=e56]
+          - paragraph [ref=e57]: Dedicated calendar for scheduling site surveys with Zuper integration.
+          - generic [ref=e58]: Open →
+        - link "✅ Site Survey Execution Site survey scheduling, status tracking, and completion monitoring. Open →" [ref=e59] [cursor=pointer]:
+          - /url: /dashboards/site-survey
+          - generic [ref=e61]:
+            - generic [ref=e62]: ✅
+            - heading "Site Survey Execution" [level=3] [ref=e63]
+          - paragraph [ref=e64]: Site survey scheduling, status tracking, and completion monitoring.
+          - generic [ref=e65]: Open →
+        - link "📈 Survey Metrics Site survey turnaround by office and surveyor, completion rates, and awaiting-survey queue. Open →" [ref=e66] [cursor=pointer]:
+          - /url: /dashboards/survey-metrics
+          - generic [ref=e68]:
+            - generic [ref=e69]: 📈
+            - heading "Survey Metrics" [level=3] [ref=e70]
+          - paragraph [ref=e71]: Site survey turnaround by office and surveyor, completion rates, and awaiting-survey queue.
+          - generic [ref=e72]: Open →
+    - generic [ref=e73]:
+      - heading "Construction" [level=2] [ref=e76]
+      - generic [ref=e77]:
+        - link "🏗️ Construction Schedule Dedicated calendar for scheduling construction installs with Zuper integration. Open →" [ref=e78] [cursor=pointer]:
+          - /url: /dashboards/construction-scheduler
+          - generic [ref=e80]:
+            - generic [ref=e81]: 🏗️
+            - heading "Construction Schedule" [level=3] [ref=e82]
+          - paragraph [ref=e83]: Dedicated calendar for scheduling construction installs with Zuper integration.
+          - generic [ref=e84]: Open →
+        - link "🔨 Construction Execution Construction status, scheduling, and progress tracking. Open →" [ref=e85] [cursor=pointer]:
+          - /url: /dashboards/construction
+          - generic [ref=e87]:
+            - generic [ref=e88]: 🔨
+            - heading "Construction Execution" [level=3] [ref=e89]
+          - paragraph [ref=e90]: Construction status, scheduling, and progress tracking.
+          - generic [ref=e91]: Open →
+        - link "⏱️ Construction Completion Metrics Average start-to-completion times for construction projects across all office locations. Open →" [ref=e92] [cursor=pointer]:
+          - /url: /dashboards/construction-metrics
+          - generic [ref=e94]:
+            - generic [ref=e95]: ⏱️
+            - heading "Construction Completion Metrics" [level=3] [ref=e96]
+          - paragraph [ref=e97]: Average start-to-completion times for construction projects across all office locations.
+          - generic [ref=e98]: Open →
+    - generic [ref=e99]:
+      - heading "Inspections" [level=2] [ref=e102]
+      - generic [ref=e103]:
+        - link "📋 Inspection Schedule Dedicated calendar for scheduling inspections with Zuper integration. Open →" [ref=e104] [cursor=pointer]:
+          - /url: /dashboards/inspection-scheduler
+          - generic [ref=e106]:
+            - generic [ref=e107]: 📋
+            - heading "Inspection Schedule" [level=3] [ref=e108]
+          - paragraph [ref=e109]: Dedicated calendar for scheduling inspections with Zuper integration.
+          - generic [ref=e110]: Open →
+        - link "🔍 Inspections Execution Inspection status tracking and AHJ analysis. Open →" [ref=e111] [cursor=pointer]:
+          - /url: /dashboards/inspections
+          - generic [ref=e113]:
+            - generic [ref=e114]: 🔍
+            - heading "Inspections Execution" [level=3] [ref=e115]
+          - paragraph [ref=e116]: Inspection status tracking and AHJ analysis.
+          - generic [ref=e117]: Open →
+        - link "📊 Inspection Metrics Turnaround times, first-time pass rates, and failure tracking by PB Location and AHJ. Open →" [ref=e118] [cursor=pointer]:
+          - /url: /dashboards/inspection-metrics
+          - generic [ref=e120]:
+            - generic [ref=e121]: 📊
+            - heading "Inspection Metrics" [level=3] [ref=e122]
+          - paragraph [ref=e123]: Turnaround times, first-time pass rates, and failure tracking by PB Location and AHJ.
+          - generic [ref=e124]: Open →
+    - generic [ref=e125]:
+      - heading "Inventory & Equipment" [level=2] [ref=e128]
+      - generic [ref=e129]:
+        - generic [ref=e130]:
+          - generic [ref=e132]:
+            - generic [ref=e133]: 🛒
+            - heading "Product Catalog" [level=3] [ref=e134]
+          - paragraph [ref=e135]: Browse all equipment — modules, inverters, batteries, racking, and specs. (Incoming)
+          - generic [ref=e136]: INCOMING
+        - link "📐 Planset BOM Import a planset bill of materials, edit inline, and cross-reference against catalogs. Open →" [ref=e137] [cursor=pointer]:
+          - /url: /dashboards/bom
+          - generic [ref=e139]:
+            - generic [ref=e140]: 📐
+            - heading "Planset BOM" [level=3] [ref=e141]
+          - paragraph [ref=e142]: Import a planset bill of materials, edit inline, and cross-reference against catalogs.
+          - generic [ref=e143]: Open →
+        - link "➕ Submit New Product Add a new equipment item to the catalog — fill in details or import from a datasheet with AI. Open →" [ref=e144] [cursor=pointer]:
+          - /url: /dashboards/submit-product
+          - generic [ref=e146]:
+            - generic [ref=e147]: ➕
+            - heading "Submit New Product" [level=3] [ref=e148]
+          - paragraph [ref=e149]: Add a new equipment item to the catalog — fill in details or import from a datasheet with AI.
+          - generic [ref=e150]: Open →
+    - generic [ref=e151]:
+      - heading "Catalog & Inventory" [level=2] [ref=e154]
+      - generic [ref=e155]:
+        - link "🏭 Inventory Hub Warehouse stock levels, receiving, and demand vs. supply gap analysis. Open →" [ref=e156] [cursor=pointer]:
+          - /url: /dashboards/inventory
+          - generic [ref=e158]:
+            - generic [ref=e159]: 🏭
+            - heading "Inventory Hub" [level=3] [ref=e160]
+          - paragraph [ref=e161]: Warehouse stock levels, receiving, and demand vs. supply gap analysis.
+          - generic [ref=e162]: Open →
+        - link "⚙️ Catalog Management Manage products, sync health, pending approvals, and deduplication. Open →" [ref=e163] [cursor=pointer]:
+          - /url: /dashboards/catalog
+          - generic [ref=e165]:
+            - generic [ref=e166]: ⚙️
+            - heading "Catalog Management" [level=3] [ref=e167]
+          - paragraph [ref=e168]: Manage products, sync health, pending approvals, and deduplication.
+          - generic [ref=e169]: Open →
+        - link "🔗 Product Catalog Comparison Match and link Internal, HubSpot, Zuper, and Zoho products. Open →" [ref=e170] [cursor=pointer]:
+          - /url: /dashboards/product-comparison
+          - generic [ref=e172]:
+            - generic [ref=e173]: 🔗
+            - heading "Product Catalog Comparison" [level=3] [ref=e174]
+          - paragraph [ref=e175]: Match and link Internal, HubSpot, Zuper, and Zoho products.
+          - generic [ref=e176]: Open →
+  - button "Open chat" [ref=e177]:
+    - img [ref=e178]
+  - button "Open Next.js Dev Tools" [ref=e185] [cursor=pointer]:
+    - img [ref=e186]

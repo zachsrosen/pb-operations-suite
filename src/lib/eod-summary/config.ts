@@ -26,6 +26,35 @@ export {
   type DesignLead,
 };
 
+// ── Tasks-only leads (PMs — no status change tracking, just tasks) ───
+
+export interface TasksOnlyLead {
+  name: string;
+  hubspotOwnerId: string;
+}
+
+export const TASKS_ONLY_LEADS: TasksOnlyLead[] = [
+  { name: "Natasha Wooten-Sanford", hubspotOwnerId: "77265642" },
+];
+
+/** All owner IDs tracked for task queries (PI + Design + Tasks-only) */
+export function getAllTrackedOwnerIds(): string[] {
+  const ids = new Set<string>();
+  for (const l of PI_LEADS) ids.add(l.hubspotOwnerId);
+  for (const l of DESIGN_LEADS) ids.add(l.hubspotOwnerId);
+  for (const l of TASKS_ONLY_LEADS) ids.add(l.hubspotOwnerId);
+  return [...ids];
+}
+
+/** All tracked people name map (for owner name resolution) */
+export function getAllOwnerNameMap(): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const l of PI_LEADS) map.set(l.hubspotOwnerId, l.name);
+  for (const l of DESIGN_LEADS) map.set(l.hubspotOwnerId, l.name);
+  for (const l of TASKS_ONLY_LEADS) map.set(l.hubspotOwnerId, l.name);
+  return map;
+}
+
 // ── Broad query properties ───────────────────────────────────────────
 // Used by both morning snapshot and evening refresh. Returns ALL status
 // fields so the diff can detect changes across any department.

@@ -1,0 +1,37 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - navigation [ref=e5]:
+          - link "Home" [ref=e6] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e7]:
+            - generic [ref=e8]: /
+            - link "Executive" [ref=e9] [cursor=pointer]:
+              - /url: /suites/executive
+        - generic [ref=e10]:
+          - generic [ref=e11]:
+            - link "Back to Executive Suite" [ref=e12] [cursor=pointer]:
+              - /url: /suites/executive
+              - img "Photon Brothers" [ref=e13]
+            - generic [ref=e14]:
+              - heading "Executive Summary" [level=1] [ref=e15]
+              - paragraph [ref=e16]: Pipeline Overview
+          - button "Dark mode" [ref=e18]:
+            - img [ref=e19]
+    - main [ref=e21]:
+      - paragraph [ref=e25]: Loading pipeline data...
+  - button "Open chat" [ref=e26]:
+    - img [ref=e27]
+  - generic [ref=e33] [cursor=pointer]:
+    - button "Open Next.js Dev Tools" [ref=e34]:
+      - img [ref=e35]
+    - generic [ref=e38]:
+      - button "Open issues overlay" [ref=e39]:
+        - generic [ref=e40]:
+          - generic [ref=e41]: "0"
+          - generic [ref=e42]: "1"
+        - generic [ref=e43]: Issue
+      - button "Collapse issues badge" [ref=e44]:
+        - img [ref=e45]
+  - alert [ref=e47]

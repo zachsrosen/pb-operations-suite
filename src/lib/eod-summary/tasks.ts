@@ -4,7 +4,7 @@
 
 import { hubspotClient } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/objects/tasks/models/Filter";
-import { PI_LEADS, DESIGN_LEADS } from "./config";
+import { getAllTrackedOwnerIds, getAllOwnerNameMap } from "./config";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -20,9 +20,8 @@ export interface CompletedTask {
 
 // ── Owner lookup ───────────────────────────────────────────────────────
 
-const ALL_LEADS = [...PI_LEADS, ...DESIGN_LEADS];
-const OWNER_NAME_MAP = new Map(ALL_LEADS.map((l) => [l.hubspotOwnerId, l.name]));
-const ALL_OWNER_IDS = [...new Set(ALL_LEADS.map((l) => l.hubspotOwnerId))];
+const OWNER_NAME_MAP = getAllOwnerNameMap();
+const ALL_OWNER_IDS = getAllTrackedOwnerIds();
 
 // ── DST-safe Denver offset helper ──────────────────────────────────────
 

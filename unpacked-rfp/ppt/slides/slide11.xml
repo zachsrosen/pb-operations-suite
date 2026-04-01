@@ -1,0 +1,542 @@
+<?xml version="1.0" encoding="utf-8"?>
+<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">
+  <p:cSld>
+    <p:spTree>
+      <p:nvGrpSpPr>
+        <p:cNvPr id="1" name="">
+          <a:extLst>
+            <a:ext uri="{FF2B5EF4-FFF2-40B4-BE49-F238E27FC236}">
+              <a16:creationId xmlns:a16="http://schemas.microsoft.com/office/drawing/2014/main" id="{8899820C-F33D-6F0B-904B-424B15699A1A}"/>
+            </a:ext>
+          </a:extLst>
+        </p:cNvPr>
+        <p:cNvGrpSpPr/>
+        <p:nvPr/>
+      </p:nvGrpSpPr>
+      <p:grpSpPr>
+        <a:xfrm>
+          <a:off x="0" y="0"/>
+          <a:ext cx="0" cy="0"/>
+          <a:chOff x="0" y="0"/>
+          <a:chExt cx="0" cy="0"/>
+        </a:xfrm>
+      </p:grpSpPr>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="2" name="Rectangle 1"/>
+          <p:cNvSpPr/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="0" y="0"/>
+            <a:ext cx="12192000" cy="73152"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:solidFill>
+            <a:schemeClr val="tx1"/>
+          </a:solidFill>
+          <a:ln>
+            <a:noFill/>
+          </a:ln>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="1">
+            <a:schemeClr val="accent1"/>
+          </a:lnRef>
+          <a:fillRef idx="3">
+            <a:schemeClr val="accent1"/>
+          </a:fillRef>
+          <a:effectRef idx="2">
+            <a:schemeClr val="accent1"/>
+          </a:effectRef>
+          <a:fontRef idx="minor">
+            <a:schemeClr val="lt1"/>
+          </a:fontRef>
+        </p:style>
+        <p:txBody>
+          <a:bodyPr rtlCol="0" anchor="ctr"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="ctr"/>
+            <a:endParaRPr/>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="3" name="TextBox 2"/>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="731520" y="228600"/>
+            <a:ext cx="10728960" cy="523220"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr>
+              <a:defRPr sz="2800" b="1">
+                <a:solidFill>
+                  <a:srgbClr val="4B2E12"/>
+                </a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:defRPr>
+            </a:pPr>
+            <a:r>
+              <a:rPr dirty="0">
+                <a:solidFill>
+                  <a:srgbClr val="002060"/>
+                </a:solidFill>
+              </a:rPr>
+              <a:t>Key Takeaways</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="4" name="TextBox 3"/>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="731520" y="1112002"/>
+            <a:ext cx="5029200" cy="365760"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="none">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr>
+              <a:defRPr sz="1700" b="1">
+                <a:solidFill>
+                  <a:srgbClr val="27AE60"/>
+                </a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:defRPr>
+            </a:pPr>
+            <a:r>
+              <a:rPr dirty="0"/>
+              <a:t>Process Essentials</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="6" name="TextBox 5"/>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="6217920" y="1133856"/>
+            <a:ext cx="5029200" cy="365760"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="none">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr>
+              <a:defRPr sz="1700" b="1">
+                <a:solidFill>
+                  <a:srgbClr val="C0392B"/>
+                </a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:defRPr>
+            </a:pPr>
+            <a:r>
+              <a:t>Common Mistakes to Avoid</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="20" name="TextBox 19"/>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="731520" y="1550000"/>
+            <a:ext cx="5029200" cy="4500000"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Always include complete census (password-protected)</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Attach all current plan documents and rates</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Include renewal rates alongside current rates</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Include MQ for groups with 50+ lives</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Include claims data for self-funded or 100+ enrolled</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Include ATNE if near the SG/LG cusp</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Always request tech credits on ancillary</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Discuss carrier strategy with producer before sending</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Use a PowerPoint for complex alternate plan designs</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Password-protect sensitive files</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="21" name="TextBox 20"/>
+          <p:cNvSpPr txBox="1"/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="6217920" y="1550000"/>
+            <a:ext cx="5029200" cy="4500000"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:noFill/>
+        </p:spPr>
+        <p:txBody>
+          <a:bodyPr wrap="square">
+            <a:spAutoFit/>
+          </a:bodyPr>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Sending an incomplete census</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Forgetting MQ for 50+ lives</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Not including current plan documents</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Missing renewal rates</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Not requesting tech credits or wellness funds</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Sending census without password protection</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Including SSNs in census files</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Not specifying what lines of coverage to quote</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Sending a disorganized email that is hard to follow</a:t>
+            </a:r>
+          </a:p>
+          <a:p>
+            <a:pPr marL="228600">
+              <a:buChar char="&#x2013;"/>
+              <a:spcAft><a:spcPts val="300"/></a:spcAft>
+            </a:pPr>
+            <a:r>
+              <a:rPr lang="en-US" sz="1200" dirty="0">
+                <a:solidFill><a:srgbClr val="333333"/></a:solidFill>
+                <a:latin typeface="Calibri"/>
+              </a:rPr>
+              <a:t>Not confirming carrier strategy with the producer first</a:t>
+            </a:r>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+      <p:sp>
+        <p:nvSpPr>
+          <p:cNvPr id="9" name="Rectangle 8"/>
+          <p:cNvSpPr/>
+          <p:nvPr/>
+        </p:nvSpPr>
+        <p:spPr>
+          <a:xfrm>
+            <a:off x="0" y="6803136"/>
+            <a:ext cx="12192000" cy="54864"/>
+          </a:xfrm>
+          <a:prstGeom prst="rect">
+            <a:avLst/>
+          </a:prstGeom>
+          <a:solidFill>
+            <a:schemeClr val="tx1"/>
+          </a:solidFill>
+          <a:ln>
+            <a:noFill/>
+          </a:ln>
+        </p:spPr>
+        <p:style>
+          <a:lnRef idx="1">
+            <a:schemeClr val="accent1"/>
+          </a:lnRef>
+          <a:fillRef idx="3">
+            <a:schemeClr val="accent1"/>
+          </a:fillRef>
+          <a:effectRef idx="2">
+            <a:schemeClr val="accent1"/>
+          </a:effectRef>
+          <a:fontRef idx="minor">
+            <a:schemeClr val="lt1"/>
+          </a:fontRef>
+        </p:style>
+        <p:txBody>
+          <a:bodyPr rtlCol="0" anchor="ctr"/>
+          <a:lstStyle/>
+          <a:p>
+            <a:pPr algn="ctr"/>
+            <a:endParaRPr/>
+          </a:p>
+        </p:txBody>
+      </p:sp>
+    </p:spTree>
+    <p:extLst>
+      <p:ext uri="{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}">
+        <p14:creationId xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" val="3067052279"/>
+      </p:ext>
+    </p:extLst>
+  </p:cSld>
+  <p:clrMapOvr>
+    <a:masterClrMapping/>
+  </p:clrMapOvr>
+</p:sld>
