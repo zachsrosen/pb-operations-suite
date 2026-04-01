@@ -159,8 +159,9 @@ export function buildFunnelData(
   locations?: string[]
 ): FunnelResponse {
   const now = new Date();
-  // "6 months" on March 30 → cutoff Oct 1 → includes Oct through Mar (6 months)
-  const cutoff = new Date(now.getFullYear(), now.getMonth() - months + 1, 1);
+  // Rolling days: "3 months" = ~90 days back from today, not calendar-month aligned.
+  // Avoids the cliff where an entire month drops off on the 1st.
+  const cutoff = new Date(now.getFullYear(), now.getMonth() - months, now.getDate());
 
   const locSet = locations && locations.length > 0 ? new Set(locations) : null;
   function matchesLocation(p: Project): boolean {
