@@ -1,12 +1,12 @@
 // src/lib/eod-summary/html.ts
 //
-// Builds the HTML email for the EOD summary.
+// Builds the EOD summary email — organized BY PERSON, not by section type.
+// Each person gets their milestones, status changes, and tasks grouped together.
 
 import { getHubSpotDealUrl } from "@/lib/external-links";
-import { getStatusDisplayName } from "@/lib/daily-focus/format";
+import { getStatusDisplayName, trimDealName } from "@/lib/daily-focus/format";
 import {
   PIPELINE_SUFFIXES,
-  PROPERTY_TO_DEPARTMENT,
   STATUS_TO_ROLE_PROPERTY,
   FIELD_TO_HS_PROPERTY,
 } from "./config";
@@ -27,8 +27,8 @@ export interface EodEmailData {
   stillInScopeCount: number;
   errors: string[];
   dryRun: boolean;
-  dealPropertyOwners: Map<string, Map<string, string>>; // dealId → roleProperty → ownerId
-  ownerNameMap: Map<string, string>; // ownerId → name
+  dealPropertyOwners: Map<string, Map<string, string>>;
+  ownerNameMap: Map<string, string>;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -41,373 +41,267 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function pipelineSuffix(pipelineId: string): string {
-  return PIPELINE_SUFFIXES[pipelineId] ?? "";
-}
-
-function dealLink(dealId: string, dealName: string): string {
+function dealLink(dealId: string, rawDealName: string): string {
   const url = getHubSpotDealUrl(dealId);
-  return `<a href="${url}" style="color:#3b82f6;text-decoration:none;">${esc(dealName)}</a>`;
+  const trimmed = trimDealName(rawDealName);
+  return `<a href="${url}" style="color:#3b82f6;text-decoration:none;">${esc(trimmed)}</a>`;
 }
 
-const SECTION_HEADER_STYLE =
-  "margin:20px 0 8px 0;padding:5px 0 5px 0;font-size:11px;font-weight:700;" +
+function resolveStage(stageId: string, pipelineId: string, stageMap: Record<string, string>): string {
+  const name = stageMap[stageId];
+  if (name) return name; // stageMap already includes pipeline suffix from buildStageDisplayMap
+  // Fallback: try pipeline suffix on raw ID
+  const suffix = PIPELINE_SUFFIXES[pipelineId] ?? "";
+  return stageId + suffix;
+}
+
+const M = "color:#a1a1aa;font-size:11px;"; // muted
+const PERSON_HEADER =
+  "margin:20px 0 6px 0;padding:8px 12px;border-radius:6px;background:#1a1a2e;" +
+  "border-left:3px solid #f97316;";
+const SUB_HEADER =
+  "font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;" +
+  "color:#71717a;margin:10px 0 4px 0;";
+const SECTION_DIVIDER =
+  "margin:20px 0 8px 0;padding:5px 0;font-size:11px;font-weight:700;" +
   "text-transform:uppercase;letter-spacing:0.5px;color:#f97316;" +
   "border-bottom:1px solid #2a2a3a;";
 
-const MUTED_STYLE = "color:#a1a1aa;font-size:11px;";
+// ── Noise filter: skip dealStage-only changes (pipeline progression) ──
 
-// ── Resolve lead name for a status change ─────────────────────────────
+function isNoiseChange(change: StatusChange): boolean {
+  // If only the dealStage field changed (not a status property), it's just
+  // a pipeline stage move — not actionable for the P&I/design audience.
+  if (change.field === "dealStage") return true;
+  return false;
+}
 
-function resolveLeadName(
+// ── Resolve which person owns a status change ─────────────────────────
+
+function resolveOwnerId(
   change: StatusChange,
   dealPropertyOwners: Map<string, Map<string, string>>,
-  ownerNameMap: Map<string, string>
 ): string {
   const hsProperty = FIELD_TO_HS_PROPERTY[change.field];
-  if (!hsProperty) return "Unknown";
-
+  if (!hsProperty) return "unknown";
   const roleProperty = STATUS_TO_ROLE_PROPERTY[hsProperty];
-  if (!roleProperty) return "Unknown";
-
-  const ownerId = dealPropertyOwners.get(change.dealId)?.get(roleProperty);
-  if (!ownerId) return "Unknown";
-
-  return ownerNameMap.get(ownerId) ?? ownerId;
+  if (!roleProperty) return "unknown";
+  return dealPropertyOwners.get(change.dealId)?.get(roleProperty) ?? "unknown";
 }
 
-// ── Section builders ───────────────────────────────────────────────────
+// ── Per-person data aggregation ───────────────────────────────────────
 
-function buildDryRunBanner(): string {
-  return `<div style="background:#451a03;border:1px solid #f97316;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#fdba74;">
-  <strong>\u26a0 DRY RUN MODE</strong> \u2014 This is a preview only. No email was sent to recipients.
-</div>`;
+interface PersonData {
+  name: string;
+  milestones: MilestoneHit[];
+  changes: StatusChange[];
+  tasks: CompletedTask[];
 }
 
-function buildHeadlineStats(data: EodEmailData): string {
-  const { changes, milestones, tasks } = data;
-  const total = changes.length + milestones.length + tasks.length;
+function aggregateByPerson(data: EodEmailData): PersonData[] {
+  const people = new Map<string, PersonData>();
 
-  let text: string;
-  if (total === 0) {
-    text = "All quiet \u2014 no status changes, milestones, or task completions today.";
-  } else {
-    const parts: string[] = [];
-    if (changes.length > 0)
-      parts.push(`${changes.length} status change${changes.length === 1 ? "" : "s"}`);
-    if (milestones.length > 0)
-      parts.push(`${milestones.length} milestone${milestones.length === 1 ? "" : "s"}`);
-    if (tasks.length > 0)
-      parts.push(`${tasks.length} task${tasks.length === 1 ? "" : "s"} completed`);
-    text = parts.join(" \u00b7 ");
+  function getOrCreate(ownerId: string): PersonData {
+    if (!people.has(ownerId)) {
+      people.set(ownerId, {
+        name: data.ownerNameMap.get(ownerId) ?? ownerId,
+        milestones: [],
+        changes: [],
+        tasks: [],
+      });
+    }
+    return people.get(ownerId)!;
   }
 
-  return `<div style="font-size:14px;font-weight:600;color:#e4e4e7;margin-bottom:16px;">${esc(text)}</div>`;
+  // Milestones → person via change's role property
+  for (const hit of data.milestones) {
+    const ownerId = resolveOwnerId(hit.change, data.dealPropertyOwners);
+    getOrCreate(ownerId).milestones.push(hit);
+  }
+
+  // Status changes → person (filter noise first)
+  for (const change of data.changes) {
+    if (isNoiseChange(change)) continue;
+    const ownerId = resolveOwnerId(change, data.dealPropertyOwners);
+    getOrCreate(ownerId).changes.push(change);
+  }
+
+  // Tasks → person via ownerId
+  for (const task of data.tasks) {
+    getOrCreate(task.ownerId).tasks.push(task);
+  }
+
+  // Sort by total activity descending
+  return [...people.values()]
+    .filter((p) => p.milestones.length + p.changes.length + p.tasks.length > 0)
+    .sort((a, b) => {
+      const aTotal = a.milestones.length + a.changes.length + a.tasks.length;
+      const bTotal = b.milestones.length + b.changes.length + b.tasks.length;
+      return bTotal - aTotal;
+    });
 }
 
-function buildMilestonesSection(milestones: MilestoneHit[]): string {
-  if (milestones.length === 0) return "";
+// ── Build HTML for one person ─────────────────────────────────────────
 
-  const sorted = [...milestones].sort((a, b) => {
-    if (!a.changedAtIso && !b.changedAtIso) return 0;
-    if (!a.changedAtIso) return 1;
-    if (!b.changedAtIso) return -1;
-    return String(b.changedAtIso).localeCompare(String(a.changedAtIso));
-  });
-
-  const rows = sorted.map((hit) => {
-    const { change } = hit;
-    const location = change.pbLocation ? ` \u00b7 ${esc(change.pbLocation)}` : "";
-    const suffix = pipelineSuffix(change.pipeline);
-    const suffixHtml = suffix ? ` <span style="${MUTED_STYLE}">${esc(suffix.trim())}</span>` : "";
-    const fromDisplay = change.from
-      ? getStatusDisplayName(change.from, FIELD_TO_HS_PROPERTY[change.field] ?? change.field)
-      : null;
-    const wasPart = fromDisplay ? ` <span style="${MUTED_STYLE}">(was: ${esc(fromDisplay)})</span>` : "";
-    const whoPart =
-      hit.changedBy || hit.changedAt
-        ? ` <span style="${MUTED_STYLE}">\u2014 ${hit.changedBy ? esc(hit.changedBy) : ""}${hit.changedAt ? `, ${esc(hit.changedAt)}` : ""}</span>`
-        : "";
-
-    return `<div style="border-left:3px solid #22c55e;padding:6px 10px;margin-bottom:6px;background:#0f1a0f;border-radius:0 4px 4px 0;">
-  <span style="color:#4ade80;font-size:13px;margin-right:4px;">\u2605</span>
-  ${dealLink(change.dealId, change.dealName)}${suffixHtml}<span style="${MUTED_STYLE}">${location}</span>
-  <br><span style="font-size:12px;color:#86efac;font-weight:600;">${esc(hit.displayLabel)}</span>${wasPart}${whoPart}
-</div>`;
-  });
-
-  return `<div style="${SECTION_HEADER_STYLE}">Milestones (${milestones.length})</div>
-${rows.join("\n")}`;
-}
-
-function buildStatusChangesSection(
-  changes: StatusChange[],
+function buildPersonHtml(
+  person: PersonData,
   stageMap: Record<string, string>,
-  dealPropertyOwners: Map<string, Map<string, string>>,
-  ownerNameMap: Map<string, string>
 ): string {
-  if (changes.length === 0) return "";
+  const summary: string[] = [];
+  if (person.tasks.length > 0) summary.push(`${person.tasks.length} tasks`);
+  if (person.changes.length > 0) summary.push(`${person.changes.length} changes`);
+  if (person.milestones.length > 0) summary.push(`${person.milestones.length} milestones`);
 
-  // Group by department → lead name → changes
-  const deptMap = new Map<string, Map<string, StatusChange[]>>();
+  const parts: string[] = [];
 
-  for (const change of changes) {
-    const hsProperty = FIELD_TO_HS_PROPERTY[change.field] ?? "";
-    const dept = PROPERTY_TO_DEPARTMENT[hsProperty] ?? "Other";
-    const leadName = resolveLeadName(change, dealPropertyOwners, ownerNameMap);
+  // Person header
+  parts.push(`<div style="${PERSON_HEADER}">
+  <span style="font-size:14px;font-weight:700;color:#e4e4e7;">${esc(person.name)}</span>
+  <span style="font-size:12px;color:#71717a;margin-left:8px;">${summary.join(", ")}</span>
+</div>`);
 
-    if (!deptMap.has(dept)) deptMap.set(dept, new Map());
-    const leadMap = deptMap.get(dept)!;
-    if (!leadMap.has(leadName)) leadMap.set(leadName, []);
-    leadMap.get(leadName)!.push(change);
+  // Milestones
+  if (person.milestones.length > 0) {
+    parts.push(`<div style="${SUB_HEADER}">Milestones</div>`);
+    for (const hit of person.milestones) {
+      const { change } = hit;
+      const fromDisplay = change.from
+        ? getStatusDisplayName(change.from, FIELD_TO_HS_PROPERTY[change.field] ?? change.field)
+        : null;
+      const wasPart = fromDisplay ? ` <span style="${M}">(was: ${esc(fromDisplay)})</span>` : "";
+      const timePart = hit.changedAt ? ` <span style="${M}">\u00b7 ${esc(hit.changedAt)}</span>` : "";
+
+      parts.push(`<div style="border-left:3px solid #22c55e;padding:4px 10px;margin-bottom:4px;background:#0f1a0f;border-radius:0 4px 4px 0;">
+  <span style="color:#4ade80;margin-right:4px;">\u2605</span>
+  <span style="font-size:12px;color:#86efac;font-weight:600;">${esc(hit.displayLabel)}</span>${wasPart}${timePart}
+  <br>${dealLink(change.dealId, change.dealName)}
+</div>`);
+    }
   }
 
-  const deptOrder = ["Design", "Permitting", "Interconnection", "PTO", "Other"];
-  const sortedDepts = [...deptMap.keys()].sort(
-    (a, b) => deptOrder.indexOf(a) - deptOrder.indexOf(b)
-  );
+  // Status changes
+  if (person.changes.length > 0) {
+    parts.push(`<div style="${SUB_HEADER}">Status Changes</div>`);
+    const sorted = [...person.changes].sort((a, b) => a.dealName.localeCompare(b.dealName));
+    for (const change of sorted) {
+      const hsProperty = FIELD_TO_HS_PROPERTY[change.field] ?? change.field;
+      const fromDisplay = change.from ? getStatusDisplayName(change.from, hsProperty) : "\u2014";
+      const toDisplay = change.to ? getStatusDisplayName(change.to, hsProperty) : "cleared";
 
-  const parts: string[] = [
-    `<div style="${SECTION_HEADER_STYLE}">Status Changes by Department (${changes.length})</div>`,
-  ];
+      parts.push(`<div style="padding:3px 0 3px 8px;border-left:2px solid #2a2a3a;margin-bottom:3px;">
+  ${dealLink(change.dealId, change.dealName)}
+  <br><span style="${M}">${esc(fromDisplay)} \u2192 </span><span style="color:#d4d4d8;font-weight:600;font-size:12px;">${esc(toDisplay)}</span>
+</div>`);
+    }
+  }
 
-  for (const dept of sortedDepts) {
-    const leadMap = deptMap.get(dept)!;
-    const sortedLeads = [...leadMap.keys()].sort((a, b) => a.localeCompare(b));
-
-    parts.push(
-      `<div style="font-size:11px;font-weight:700;color:#71717a;text-transform:uppercase;letter-spacing:0.4px;margin:10px 0 4px 0;">${esc(dept)}</div>`
-    );
-
-    for (const leadName of sortedLeads) {
-      const leadChanges = leadMap.get(leadName)!;
-      const sortedChanges = [...leadChanges].sort((a, b) =>
-        a.dealName.localeCompare(b.dealName)
-      );
-
-      const changeCount = sortedChanges.length;
-      parts.push(
-        `<div style="font-size:12px;font-weight:600;color:#d4d4d8;margin:6px 0 3px 0;">${esc(leadName)} <span style="${MUTED_STYLE}">\u2014 ${changeCount} change${changeCount === 1 ? "" : "s"}</span></div>`
-      );
-
-      for (const change of sortedChanges) {
-        const hsProperty = FIELD_TO_HS_PROPERTY[change.field] ?? change.field;
-        const fromDisplay = change.from ? getStatusDisplayName(change.from, hsProperty) : null;
-        const toDisplay = change.to ? getStatusDisplayName(change.to, hsProperty) : null;
-        const stageName = stageMap[change.dealStage] ?? change.dealStage;
-        const location = change.pbLocation ? ` \u00b7 ${esc(change.pbLocation)}` : "";
-        const suffix = pipelineSuffix(change.pipeline);
-        const suffixHtml = suffix
-          ? ` <span style="${MUTED_STYLE}">${esc(suffix.trim())}</span>`
-          : "";
-
-        const fromHtml = fromDisplay
-          ? `<span style="color:#a1a1aa;">${esc(fromDisplay)}</span> \u2192 `
-          : "";
-        const toHtml = toDisplay
-          ? `<span style="color:#d4d4d8;font-weight:600;">${esc(toDisplay)}</span>`
-          : "<span style=\"color:#a1a1aa;\">cleared</span>";
-
-        parts.push(
-          `<div style="padding:4px 0 4px 8px;border-left:2px solid #2a2a3a;margin-bottom:4px;">
-  ${dealLink(change.dealId, change.dealName)}${suffixHtml}<span style="${MUTED_STYLE}">${location}</span>
-  <br><span style="${MUTED_STYLE}">${esc(stageName)} \u00b7 </span>${fromHtml}${toHtml}
-</div>`
-        );
-      }
+  // Tasks
+  if (person.tasks.length > 0) {
+    parts.push(`<div style="${SUB_HEADER}">Tasks Completed</div>`);
+    for (const task of person.tasks) {
+      const dealPart = task.associatedDealId && task.associatedDealName
+        ? ` <span style="${M}">(${dealLink(task.associatedDealId, task.associatedDealName)})</span>`
+        : "";
+      parts.push(`<div style="padding:2px 0 2px 8px;">
+  <span style="color:#4ade80;">\u2713</span> <span style="font-size:12px;">${esc(task.subject)}</span>${dealPart}
+</div>`);
     }
   }
 
   return parts.join("\n");
 }
 
-function buildNewDealsSection(
-  newDeals: SnapshotDeal[],
-  stageMap: Record<string, string>
-): string {
-  if (newDeals.length === 0) return "";
+// ── Top-level sections (new deals, resolved, errors, footer) ──────────
 
+function buildNewDealsSection(newDeals: SnapshotDeal[], stageMap: Record<string, string>): string {
+  if (newDeals.length === 0) return "";
   const rows = newDeals.map((deal) => {
-    const stageName = stageMap[deal.dealStage] ?? deal.dealStage;
-    const location = deal.pbLocation ? ` \u00b7 ${esc(deal.pbLocation)}` : "";
-    const suffix = pipelineSuffix(deal.pipeline);
-    const suffixHtml = suffix ? ` <span style="${MUTED_STYLE}">${esc(suffix.trim())}</span>` : "";
+    const stageName = resolveStage(deal.dealStage, deal.pipeline, stageMap);
     return `<div style="padding:3px 0;">
-  <span style="color:#4ade80;font-weight:700;">+</span> ${dealLink(deal.dealId, deal.dealName)}${suffixHtml}<span style="${MUTED_STYLE}">${location} \u00b7 ${esc(stageName)}</span>
+  <span style="color:#4ade80;font-weight:700;">+</span> ${dealLink(deal.dealId, deal.dealName)} <span style="${M}">\u00b7 ${esc(stageName)}</span>
 </div>`;
   });
-
-  return `<div style="${SECTION_HEADER_STYLE}">New Deals In Scope (${newDeals.length})</div>
-${rows.join("\n")}`;
+  return `<div style="${SECTION_DIVIDER}">New Deals In Scope (${newDeals.length})</div>\n${rows.join("\n")}`;
 }
 
 function buildResolvedDealsSection(resolvedDeals: SnapshotDeal[]): string {
   if (resolvedDeals.length === 0) return "";
-
   const rows = resolvedDeals.map((deal) => {
-    const location = deal.pbLocation ? ` \u00b7 ${esc(deal.pbLocation)}` : "";
-    const suffix = pipelineSuffix(deal.pipeline);
-    const suffixHtml = suffix ? ` <span style="${MUTED_STYLE}">${esc(suffix.trim())}</span>` : "";
     return `<div style="padding:3px 0;">
-  <span style="color:#a1a1aa;">\u2713</span> ${dealLink(deal.dealId, deal.dealName)}${suffixHtml}<span style="${MUTED_STYLE}">${location}</span>
+  <span style="color:#a1a1aa;">\u2713</span> ${dealLink(deal.dealId, deal.dealName)}
 </div>`;
   });
-
-  return `<div style="${SECTION_HEADER_STYLE}">Deals Resolved (${resolvedDeals.length})</div>
-${rows.join("\n")}`;
-}
-
-function buildTasksSection(tasks: CompletedTask[]): string {
-  if (tasks.length === 0) return "";
-
-  // Group by owner name
-  const ownerMap = new Map<string, CompletedTask[]>();
-  for (const task of tasks) {
-    const name = task.ownerName || task.ownerId;
-    if (!ownerMap.has(name)) ownerMap.set(name, []);
-    ownerMap.get(name)!.push(task);
-  }
-
-  const sortedOwners = [...ownerMap.keys()].sort((a, b) => a.localeCompare(b));
-
-  const parts: string[] = [
-    `<div style="${SECTION_HEADER_STYLE}">Tasks Completed (${tasks.length})</div>`,
-  ];
-
-  for (const ownerName of sortedOwners) {
-    const ownerTasks = ownerMap.get(ownerName)!;
-    const count = ownerTasks.length;
-    parts.push(
-      `<div style="font-size:12px;font-weight:600;color:#d4d4d8;margin:8px 0 3px 0;">${esc(ownerName)} <span style="${MUTED_STYLE}">\u2014 ${count} task${count === 1 ? "" : "s"}</span></div>`
-    );
-    for (const task of ownerTasks) {
-      const dealPart =
-        task.associatedDealId && task.associatedDealName
-          ? ` <span style="${MUTED_STYLE}">(${dealLink(task.associatedDealId, task.associatedDealName)})</span>`
-          : task.associatedDealId
-            ? ` <span style="${MUTED_STYLE}">(deal ${esc(task.associatedDealId)})</span>`
-            : "";
-      parts.push(
-        `<div style="padding:2px 0 2px 8px;">
-  <span style="color:#4ade80;">\u2713</span> <span style="font-size:12px;">${esc(task.subject)}</span>${dealPart}
-</div>`
-      );
-    }
-  }
-
-  return parts.join("\n");
-}
-
-function buildStillPendingSection(
-  morningDealCount: number,
-  stillInScopeCount: number
-): string {
-  return `<div style="margin-top:20px;padding:10px 12px;background:#17171f;border-radius:6px;font-size:12px;color:#71717a;">
-  Morning focus had <strong style="color:#a1a1aa;">${morningDealCount}</strong> deal${morningDealCount === 1 ? "" : "s"} across the team \u00b7
-  <strong style="color:#a1a1aa;">${stillInScopeCount}</strong> still in scope
-</div>`;
+  return `<div style="${SECTION_DIVIDER}">Deals Resolved (${resolvedDeals.length})</div>\n${rows.join("\n")}`;
 }
 
 function buildErrorsSection(errors: string[]): string {
   if (errors.length === 0) return "";
-
-  const rows = errors.map(
-    (e) =>
-      `<div style="padding:2px 0;font-size:11px;">\u2022 ${esc(e)}</div>`
-  );
-
+  const rows = errors.map((e) => `<div style="padding:2px 0;font-size:11px;">\u2022 ${esc(e)}</div>`);
   return `<div style="margin-top:16px;border:1px solid #dc2626;border-radius:6px;padding:10px 14px;background:#1a0808;">
-  <div style="font-size:12px;font-weight:700;color:#f87171;margin-bottom:6px;">\u26a0 Errors encountered during generation:</div>
+  <div style="font-size:12px;font-weight:700;color:#f87171;margin-bottom:6px;">\u26a0 Errors:</div>
   ${rows.join("\n")}
 </div>`;
 }
 
-function buildTimestampFooter(): string {
-  const now = new Date();
-  const formatted = now.toLocaleString("en-US", {
-    timeZone: "America/Denver",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-    timeZoneName: "short",
-  });
-
-  return `<div style="margin-top:20px;text-align:center;font-size:10px;color:#52525b;">
-  Generated at ${esc(formatted)} \u00b7 Powered by PB Operations Suite
-</div>`;
-}
-
-// ── Plain-text summary ─────────────────────────────────────────────────
+// ── Plain-text (also organized by person) ─────────────────────────────
 
 function buildPlainText(data: EodEmailData): string {
-  const lines: string[] = ["PB Operations — EOD Summary", ""];
+  const lines: string[] = ["PB Operations \u2014 EOD Summary", ""];
+  const people = aggregateByPerson(data);
 
-  const total = data.changes.length + data.milestones.length + data.tasks.length;
-  if (total === 0) {
-    lines.push("All quiet — no status changes, milestones, or task completions today.");
-  } else {
-    const parts: string[] = [];
-    if (data.changes.length > 0)
-      parts.push(`${data.changes.length} status change${data.changes.length === 1 ? "" : "s"}`);
-    if (data.milestones.length > 0)
-      parts.push(`${data.milestones.length} milestone${data.milestones.length === 1 ? "" : "s"}`);
-    if (data.tasks.length > 0)
-      parts.push(`${data.tasks.length} task${data.tasks.length === 1 ? "" : "s"} completed`);
-    lines.push(parts.join(" · "));
+  if (people.length === 0) {
+    lines.push("All quiet \u2014 no activity today.");
+    return lines.join("\n");
   }
 
-  if (data.milestones.length > 0) {
-    lines.push("", "MILESTONES");
-    for (const hit of data.milestones) {
-      lines.push(`  ★ ${hit.displayLabel} — ${hit.change.dealName}${hit.changedBy ? ` (by ${hit.changedBy})` : ""}`);
+  // Headline
+  const stats: string[] = [];
+  const totalChanges = data.changes.filter((c) => !isNoiseChange(c)).length;
+  if (totalChanges > 0) stats.push(`${totalChanges} status changes`);
+  if (data.milestones.length > 0) stats.push(`${data.milestones.length} milestones`);
+  if (data.tasks.length > 0) stats.push(`${data.tasks.length} tasks completed`);
+  lines.push(stats.join(" \u00b7 "), "");
+
+  for (const person of people) {
+    const summary: string[] = [];
+    if (person.tasks.length > 0) summary.push(`${person.tasks.length} tasks`);
+    if (person.changes.length > 0) summary.push(`${person.changes.length} changes`);
+    if (person.milestones.length > 0) summary.push(`${person.milestones.length} milestones`);
+    lines.push(`${person.name} \u2014 ${summary.join(", ")}`);
+
+    for (const hit of person.milestones) {
+      lines.push(`  \u2605 ${hit.displayLabel} \u2014 ${trimDealName(hit.change.dealName)}`);
     }
-  }
-
-  if (data.changes.length > 0) {
-    lines.push("", "STATUS CHANGES");
-    for (const change of data.changes) {
+    for (const change of person.changes) {
       const hsProperty = FIELD_TO_HS_PROPERTY[change.field] ?? change.field;
-      const from = change.from ? getStatusDisplayName(change.from, hsProperty) : "—";
+      const from = change.from ? getStatusDisplayName(change.from, hsProperty) : "\u2014";
       const to = change.to ? getStatusDisplayName(change.to, hsProperty) : "cleared";
-      lines.push(`  ${change.dealName}: ${from} → ${to}`);
+      lines.push(`  ${trimDealName(change.dealName)}: ${from} \u2192 ${to}`);
     }
+    for (const task of person.tasks) {
+      const dealSuffix = task.associatedDealName ? ` (${trimDealName(task.associatedDealName)})` : "";
+      lines.push(`  \u2713 ${task.subject}${dealSuffix}`);
+    }
+    lines.push("");
   }
 
   if (data.newDeals.length > 0) {
-    lines.push("", "NEW DEALS IN SCOPE");
-    for (const deal of data.newDeals) lines.push(`  + ${deal.dealName}`);
+    lines.push("NEW DEALS IN SCOPE");
+    for (const deal of data.newDeals) lines.push(`  + ${trimDealName(deal.dealName)}`);
+    lines.push("");
   }
 
   if (data.resolvedDeals.length > 0) {
-    lines.push("", "DEALS RESOLVED");
-    for (const deal of data.resolvedDeals) lines.push(`  ✓ ${deal.dealName}`);
+    lines.push("DEALS RESOLVED");
+    for (const deal of data.resolvedDeals) lines.push(`  \u2713 ${trimDealName(deal.dealName)}`);
+    lines.push("");
   }
 
-  if (data.tasks.length > 0) {
-    lines.push("", "TASKS COMPLETED");
-    const byOwner = new Map<string, CompletedTask[]>();
-    for (const task of data.tasks) {
-      const name = task.ownerName || task.ownerId;
-      if (!byOwner.has(name)) byOwner.set(name, []);
-      byOwner.get(name)!.push(task);
-    }
-    for (const [name, ownerTasks] of [...byOwner.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-      lines.push(`  ${name} — ${ownerTasks.length} task${ownerTasks.length === 1 ? "" : "s"}`);
-      for (const task of ownerTasks) {
-        const dealSuffix = task.associatedDealName ? ` (${task.associatedDealName})` : "";
-        lines.push(`    ✓ ${task.subject}${dealSuffix}`);
-      }
-    }
-  }
-
-  lines.push(
-    "",
-    `Morning focus had ${data.morningDealCount} deal${data.morningDealCount === 1 ? "" : "s"} across the team · ${data.stillInScopeCount} still in scope`
-  );
+  lines.push(`Morning focus had ${data.morningDealCount} deals \u00b7 ${data.stillInScopeCount} still in scope`);
 
   if (data.errors.length > 0) {
     lines.push("", "ERRORS");
-    for (const e of data.errors) lines.push(`  • ${e}`);
+    for (const e of data.errors) lines.push(`  \u2022 ${e}`);
   }
 
   return lines.join("\n");
@@ -418,39 +312,70 @@ function buildPlainText(data: EodEmailData): string {
 export function buildEodEmail(data: EodEmailData): { html: string; text: string } {
   const parts: string[] = [];
 
+  // Dry-run banner
   if (data.dryRun) {
-    parts.push(buildDryRunBanner());
+    parts.push(`<div style="background:#451a03;border:1px solid #f97316;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#fdba74;">
+  <strong>\u26a0 DRY RUN</strong> \u2014 Preview only
+</div>`);
   }
 
-  parts.push(buildHeadlineStats(data));
+  // Aggregate everything by person
+  const people = aggregateByPerson(data);
 
-  const milestonesHtml = buildMilestonesSection(data.milestones);
-  if (milestonesHtml) parts.push(milestonesHtml);
+  // Headline stats
+  const totalChanges = data.changes.filter((c) => !isNoiseChange(c)).length;
+  if (people.length === 0) {
+    parts.push(`<div style="font-size:14px;color:#a1a1aa;">All quiet \u2014 no activity today.</div>`);
+  } else {
+    const stats: string[] = [];
+    if (totalChanges > 0) stats.push(`${totalChanges} status changes`);
+    if (data.milestones.length > 0) stats.push(`${data.milestones.length} milestones`);
+    if (data.tasks.length > 0) stats.push(`${data.tasks.length} tasks completed`);
+    parts.push(`<div style="font-size:14px;font-weight:600;color:#e4e4e7;margin-bottom:4px;">${stats.join(" \u00b7 ")}</div>`);
 
-  const changesHtml = buildStatusChangesSection(
-    data.changes,
-    data.stageMap,
-    data.dealPropertyOwners,
-    data.ownerNameMap
-  );
-  if (changesHtml) parts.push(changesHtml);
+    // Team summary bar
+    const teamSummary = people
+      .map((p) => {
+        const total = p.milestones.length + p.changes.length + p.tasks.length;
+        return `<span style="display:inline-block;padding:2px 8px;margin:2px 4px 2px 0;background:#1a1a2e;border-radius:4px;font-size:11px;"><strong style="color:#e4e4e7;">${esc(p.name.split(" ")[0])}</strong> <span style="${M}">${total}</span></span>`;
+      })
+      .join("");
+    parts.push(`<div style="margin:8px 0 16px 0;">${teamSummary}</div>`);
+  }
 
+  // Per-person sections
+  for (const person of people) {
+    parts.push(buildPersonHtml(person, data.stageMap));
+  }
+
+  // New deals + resolved (not person-specific)
   const newDealsHtml = buildNewDealsSection(data.newDeals, data.stageMap);
   if (newDealsHtml) parts.push(newDealsHtml);
 
   const resolvedHtml = buildResolvedDealsSection(data.resolvedDeals);
   if (resolvedHtml) parts.push(resolvedHtml);
 
-  const tasksHtml = buildTasksSection(data.tasks);
-  if (tasksHtml) parts.push(tasksHtml);
+  // Still pending
+  parts.push(`<div style="margin-top:20px;padding:10px 12px;background:#17171f;border-radius:6px;font-size:12px;color:#71717a;">
+  Morning focus had <strong style="color:#a1a1aa;">${data.morningDealCount}</strong> deals \u00b7
+  <strong style="color:#a1a1aa;">${data.stillInScopeCount}</strong> still in scope
+</div>`);
 
-  parts.push(buildStillPendingSection(data.morningDealCount, data.stillInScopeCount));
-
+  // Errors
   const errorsHtml = buildErrorsSection(data.errors);
   if (errorsHtml) parts.push(errorsHtml);
 
-  parts.push(buildTimestampFooter());
+  // Timestamp
+  const timeStr = new Date().toLocaleString("en-US", {
+    timeZone: "America/Denver",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZoneName: "short",
+  });
+  parts.push(`<div style="margin-top:20px;text-align:center;font-size:10px;color:#52525b;">Generated at ${esc(timeStr)} \u00b7 Powered by PB Operations Suite</div>`);
 
+  // Wrap
   const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
@@ -467,7 +392,5 @@ export function buildEodEmail(data: EodEmailData): { html: string; text: string 
 </body>
 </html>`;
 
-  const text = buildPlainText(data);
-
-  return { html, text };
+  return { html, text: buildPlainText(data) };
 }
