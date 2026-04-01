@@ -207,27 +207,33 @@ export function buildFunnelData(
     addToStage(summary.salesClosed, amt, cancelled);
     addToStage(cohort.salesClosed, amt, cancelled);
 
-    if (p.siteSurveyCompletionDate) {
+    // Implied progression: approved → implies sent → implies surveyed.
+    // HubSpot data sometimes has later milestones without earlier ones.
+    const hasSurvey = !!(p.siteSurveyCompletionDate || p.designApprovalSentDate || p.designApprovalDate);
+    const hasDaSent = !!(p.designApprovalSentDate || p.designApprovalDate);
+    const hasDaApproved = !!p.designApprovalDate;
+
+    if (hasSurvey) {
       addToStage(summary.surveyDone, amt, cancelled);
       addToStage(cohort.surveyDone, amt, cancelled);
-      if (!cancelled) {
+      if (!cancelled && p.siteSurveyCompletionDate) {
         daysClosedToSurvey.push(daysBetween(p.closeDate!, p.siteSurveyCompletionDate));
       }
     }
 
-    if (p.designApprovalSentDate) {
+    if (hasDaSent) {
       addToStage(summary.daSent, amt, cancelled);
       addToStage(cohort.daSent, amt, cancelled);
-      if (!cancelled && p.siteSurveyCompletionDate) {
+      if (!cancelled && p.siteSurveyCompletionDate && p.designApprovalSentDate) {
         daysSurveyToDaSent.push(daysBetween(p.siteSurveyCompletionDate, p.designApprovalSentDate));
       }
     }
 
-    if (p.designApprovalDate) {
+    if (hasDaApproved) {
       addToStage(summary.daApproved, amt, cancelled);
       addToStage(cohort.daApproved, amt, cancelled);
       if (!cancelled && p.designApprovalSentDate) {
-        daysDaSentToApproved.push(daysBetween(p.designApprovalSentDate, p.designApprovalDate));
+        daysDaSentToApproved.push(daysBetween(p.designApprovalSentDate, p.designApprovalDate!));
       }
     }
   }
@@ -315,20 +321,28 @@ export function buildFunnelData(
   for (const p of filtered) {
     if (p.stageId === CANCELLED_STAGE_ID) continue;
 
-    if (!p.siteSurveyCompletionDate) {
-      // Closed but no survey yet
+    // Use same implied progression for drill-down bucketing:
+    // approved → implies sent → implies surveyed
+    const ddSurvey = !!(p.siteSurveyCompletionDate || p.designApprovalSentDate || p.designApprovalDate);
+    const ddDaSent = !!(p.designApprovalSentDate || p.designApprovalDate);
+    const ddDaApproved = !!p.designApprovalDate;
+
+    if (!ddSurvey) {
+      // Closed but no survey (and no later milestones)
       drillDown.awaitingSurvey.push(
         toDrillDown(p, daysBetween(p.closeDate!, today), p.siteSurveyStatus ?? null)
       );
-    } else if (!p.designApprovalSentDate) {
-      // Surveyed but DA not sent
+    } else if (!ddDaSent) {
+      // Surveyed but DA not sent (and not approved)
+      const waitSince = p.siteSurveyCompletionDate || p.closeDate!;
       drillDown.awaitingDaSend.push(
-        toDrillDown(p, daysBetween(p.siteSurveyCompletionDate, today), p.designStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), p.designStatus ?? null)
       );
-    } else if (!p.designApprovalDate) {
+    } else if (!ddDaApproved) {
       // DA sent but not approved
+      const waitSince = p.designApprovalSentDate || p.closeDate!;
       drillDown.awaitingApproval.push(
-        toDrillDown(p, daysBetween(p.designApprovalSentDate, today), p.layoutStatus ?? null)
+        toDrillDown(p, daysBetween(waitSince, today), p.layoutStatus ?? null)
       );
     }
 

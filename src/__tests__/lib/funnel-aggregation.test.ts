@@ -176,6 +176,57 @@ describe("buildFunnelData", () => {
     expect(febActivity?.dasSent).toBe(1);
   });
 
+  it("uses implied progression: approved implies sent implies surveyed", () => {
+    // DA approved but no survey date or DA sent date — should still count for all stages
+    const projects = [
+      makeProject({
+        closeDate: "2026-02-10",
+        siteSurveyCompletionDate: null,
+        designApprovalSentDate: null,
+        designApprovalDate: "2026-03-05",
+      }),
+    ];
+    const result = buildFunnelData(projects, 6);
+    expect(result.summary.salesClosed.count).toBe(1);
+    expect(result.summary.surveyDone.count).toBe(1);
+    expect(result.summary.daSent.count).toBe(1);
+    expect(result.summary.daApproved.count).toBe(1);
+  });
+
+  it("uses implied progression: DA sent implies surveyed", () => {
+    // DA sent but no survey date — should count as survey done + DA sent
+    const projects = [
+      makeProject({
+        closeDate: "2026-02-10",
+        siteSurveyCompletionDate: null,
+        designApprovalSentDate: "2026-02-25",
+        designApprovalDate: null,
+      }),
+    ];
+    const result = buildFunnelData(projects, 6);
+    expect(result.summary.salesClosed.count).toBe(1);
+    expect(result.summary.surveyDone.count).toBe(1);
+    expect(result.summary.daSent.count).toBe(1);
+    expect(result.summary.daApproved.count).toBe(0);
+  });
+
+  it("implied progression: approved without sent does NOT appear in awaitingDaSend drill-down", () => {
+    const projects = [
+      makeProject({
+        id: 1,
+        closeDate: "2026-02-10",
+        siteSurveyCompletionDate: null,
+        designApprovalSentDate: null,
+        designApprovalDate: "2026-03-05",
+      }),
+    ];
+    const result = buildFunnelData(projects, 6);
+    // Fully progressed — should not appear in any backlog bucket
+    expect(result.drillDown.awaitingSurvey).toHaveLength(0);
+    expect(result.drillDown.awaitingDaSend).toHaveLength(0);
+    expect(result.drillDown.awaitingApproval).toHaveLength(0);
+  });
+
   it("treats Project Rejected (20461935) as active, not cancelled", () => {
     const projects = [
       makeProject({
