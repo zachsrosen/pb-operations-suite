@@ -41,6 +41,11 @@ export interface QueryDef {
   resubmitStatuses?: string[];
   /** Section header color tokens */
   headerColor: { bg: string; border: string; text: string };
+  /** When true, skip the owner filter — query ALL deals with matching statuses.
+   *  Used for properties with no per-lead assignment (e.g., PE M1/M2 for Layla). */
+  skipOwnerFilter?: boolean;
+  /** Only show this section for specific lead owner IDs. Empty = show for all. */
+  onlyForOwnerIds?: string[];
 }
 
 export interface SectionColorTokens {
@@ -207,6 +212,40 @@ export const PI_QUERY_DEFS: QueryDef[] = [
       "Xcel Photos Ready to Resubmit",
     ],
     headerColor: { bg: "#fefce8", border: "#ca8a04", text: "#ca8a04" },
+  },
+  {
+    key: "pe-m1",
+    label: "P.E. M1",
+    subsections: "split",
+    statusProperty: "pe_m1_status",
+    roleProperty: "interconnections_tech", // used for role-gating only
+    readyStatuses: [
+      "Ready to Submit",
+    ],
+    resubmitStatuses: [
+      "Rejected",
+      "Ready to Resubmit",
+    ],
+    headerColor: { bg: "#faf5ff", border: "#7c3aed", text: "#7c3aed" },
+    skipOwnerFilter: true,
+    onlyForOwnerIds: ["216565308"], // Layla only
+  },
+  {
+    key: "pe-m2",
+    label: "P.E. M2",
+    subsections: "split",
+    statusProperty: "pe_m2_status",
+    roleProperty: "interconnections_tech",
+    readyStatuses: [
+      "Ready to Submit",
+    ],
+    resubmitStatuses: [
+      "Rejected",
+      "Ready to Resubmit",
+    ],
+    headerColor: { bg: "#faf5ff", border: "#7c3aed", text: "#7c3aed" },
+    skipOwnerFilter: true,
+    onlyForOwnerIds: ["216565308"], // Layla only
   },
 ];
 

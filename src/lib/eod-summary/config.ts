@@ -70,6 +70,8 @@ export const SNAPSHOT_PROPERTIES = [
   "permitting_status",
   "interconnection_status",
   "pto_status",
+  "pe_m1_status",
+  "pe_m2_status",
 ];
 
 // ── Status properties we monitor for changes ─────────────────────────

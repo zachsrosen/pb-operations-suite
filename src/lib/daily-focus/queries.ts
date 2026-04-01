@@ -59,33 +59,37 @@ async function runQuery(
     let after: string | undefined;
 
     do {
+      const filters: Record<string, unknown>[] = [];
+
+      // Owner filter — skip for defs like PE M1/M2 that have no per-lead assignment
+      if (!def.skipOwnerFilter) {
+        filters.push({
+          propertyName: def.roleProperty,
+          operator: FilterOperatorEnum.Eq,
+          value: ownerId,
+        });
+      }
+
+      filters.push(
+        {
+          propertyName: def.statusProperty,
+          operator: FilterOperatorEnum.In,
+          values: statuses,
+        },
+        {
+          propertyName: "dealstage",
+          operator: FilterOperatorEnum.NotIn,
+          values: EXCLUDED_STAGES,
+        },
+        {
+          propertyName: "pipeline",
+          operator: FilterOperatorEnum.In,
+          values: INCLUDED_PIPELINES,
+        },
+      );
+
       const response = await searchWithRetry({
-        filterGroups: [
-          {
-            filters: [
-              {
-                propertyName: def.roleProperty,
-                operator: FilterOperatorEnum.Eq,
-                value: ownerId,
-              },
-              {
-                propertyName: def.statusProperty,
-                operator: FilterOperatorEnum.In,
-                values: statuses,
-              },
-              {
-                propertyName: "dealstage",
-                operator: FilterOperatorEnum.NotIn,
-                values: EXCLUDED_STAGES,
-              },
-              {
-                propertyName: "pipeline",
-                operator: FilterOperatorEnum.In,
-                values: INCLUDED_PIPELINES,
-              },
-            ],
-          },
-        ],
+        filterGroups: [{ filters }],
         properties: QUERY_PROPERTIES,
         limit: 200,
         ...(after ? { after } : {}),
@@ -161,7 +165,12 @@ export async function queryAllSections(
   const results: SectionResult[] = [];
 
   for (const def of defs) {
+    // Skip if lead doesn't have the required role
     if (leadRoles && !leadRoles.includes(def.roleProperty)) {
+      continue;
+    }
+    // Skip if this def is restricted to specific owners and this lead isn't one of them
+    if (def.onlyForOwnerIds && def.onlyForOwnerIds.length > 0 && !def.onlyForOwnerIds.includes(ownerId)) {
       continue;
     }
     results.push(await querySection(def, ownerId));
