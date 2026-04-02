@@ -114,8 +114,21 @@ function aggregateByPerson(data: EodEmailData): PersonData[] {
     return people.get(ownerId)!;
   }
 
-  // Milestones → person via property history attribution (who actually made it)
-  // Build a lookup from milestone's dealId+field to its enriched attribution
+  // Helper: resolve the best owner for a change. If property history attributed
+  // it to a tracked team member, use that. Otherwise fall back to the deal's
+  // role-property owner. This handles automation/integration IDs (e.g., PandaDoc
+  // auto-approving a DA) by crediting the design/permit lead instead.
+  const trackedOwnerIds = new Set(data.ownerNameMap.keys());
+
+  function resolveChangeOwner(
+    attrOwnerId: string | null,
+    change: StatusChange,
+  ): string {
+    if (attrOwnerId && trackedOwnerIds.has(attrOwnerId)) return attrOwnerId;
+    return resolveOwnerId(change, data.dealPropertyOwners);
+  }
+
+  // Milestones → person
   const milestoneAttrLookup = new Map<string, ChangeAttribution>();
   for (const attr of data.changeAttributions) {
     milestoneAttrLookup.set(`${attr.change.dealId}:${attr.change.field}`, attr);
@@ -124,16 +137,14 @@ function aggregateByPerson(data: EodEmailData): PersonData[] {
   for (const hit of data.milestones) {
     const attrKey = `${hit.change.dealId}:${hit.change.field}`;
     const attr = milestoneAttrLookup.get(attrKey);
-    const ownerId = attr?.changedByOwnerId
-      ?? resolveOwnerId(hit.change, data.dealPropertyOwners);
+    const ownerId = resolveChangeOwner(attr?.changedByOwnerId ?? null, hit.change);
     getOrCreate(ownerId).milestones.push(hit);
   }
 
-  // Status changes → person via property history attribution (who actually made it)
+  // Status changes → person
   for (const attr of data.changeAttributions) {
     if (isNoiseChange(attr.change)) continue;
-    const ownerId = attr.changedByOwnerId
-      ?? resolveOwnerId(attr.change, data.dealPropertyOwners);
+    const ownerId = resolveChangeOwner(attr.changedByOwnerId, attr.change);
     getOrCreate(ownerId).changes.push(attr.change);
   }
 
