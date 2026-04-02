@@ -42,6 +42,22 @@ export async function getDriveToken(): Promise<string> {
   return getServiceAccountToken(["https://www.googleapis.com/auth/drive.readonly"]);
 }
 
+/** Get a Drive-scoped token with write access (for creating folders, copying files). */
+export async function getDriveWriteToken(): Promise<string> {
+  const impersonateEmail = process.env.GOOGLE_ADMIN_EMAIL ?? process.env.GMAIL_SENDER_EMAIL;
+  if (impersonateEmail) {
+    try {
+      return await getServiceAccountToken(
+        ["https://www.googleapis.com/auth/drive"],
+        impersonateEmail,
+      );
+    } catch {
+      // DWD not configured — fall through to plain SA
+    }
+  }
+  return getServiceAccountToken(["https://www.googleapis.com/auth/drive"]);
+}
+
 // ---------------------------------------------------------------------------
 // List
 // ---------------------------------------------------------------------------
@@ -492,4 +508,215 @@ export async function downloadDriveImage(
 
   const arrayBuffer = await dlRes.arrayBuffer();
   return { buffer: Buffer.from(arrayBuffer), filename, mimeType };
+}
+
+// ---------------------------------------------------------------------------
+// General-purpose folder/file listing (used by pe-turnover)
+// ---------------------------------------------------------------------------
+
+export interface DriveFolder {
+  id: string;
+  name: string;
+}
+
+/** List immediate subfolders of a Drive folder. */
+export async function listDriveSubfolders(folderId: string): Promise<DriveFolder[]> {
+  const token = await getDriveToken();
+
+  const query = `'${folderId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const fields = "files(id,name)";
+  const url =
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
+    `&fields=${encodeURIComponent(fields)}` +
+    `&pageSize=100` +
+    `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Drive API ${res.status}: ${body.slice(0, 200)}`);
+  }
+
+  const data = (await res.json()) as { files?: DriveFolder[] };
+  return data.files ?? [];
+}
+
+export interface DriveGenericFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime: string;
+  size?: string;
+}
+
+/** List ALL non-folder files in a Drive folder (any type), sorted by modifiedTime desc. */
+export async function listDriveFiles(folderId: string): Promise<DriveGenericFile[]> {
+  const token = await getDriveToken();
+
+  const query = `'${folderId}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false`;
+  const fields = "files(id,name,mimeType,modifiedTime,size)";
+  const orderBy = "modifiedTime desc";
+  const url =
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(query)}` +
+    `&fields=${encodeURIComponent(fields)}` +
+    `&orderBy=${encodeURIComponent(orderBy)}` +
+    `&pageSize=100` +
+    `&supportsAllDrives=true&includeItemsFromAllDrives=true`;
+
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Drive API ${res.status}: ${body.slice(0, 200)}`);
+  }
+
+  const data = (await res.json()) as { files?: DriveGenericFile[] };
+  return data.files ?? [];
+}
+
+/** Download any file from Drive as a Buffer. For images, prefer downloadDriveImage() for HEIC support. */
+export async function downloadDriveFile(fileId: string): Promise<{ buffer: Buffer; filename: string; mimeType: string }> {
+  const token = await getDriveToken();
+
+  // Get metadata first for filename
+  const metaUrl =
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}` +
+    `?fields=name,mimeType&supportsAllDrives=true`;
+  const metaRes = await fetch(metaUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!metaRes.ok) throw new Error(`Drive metadata ${metaRes.status}`);
+  const meta = (await metaRes.json()) as { name: string; mimeType: string };
+
+  // Download content
+  const dlUrl =
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}` +
+    `?alt=media&supportsAllDrives=true`;
+  const dlRes = await fetch(dlUrl, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!dlRes.ok) throw new Error(`Drive download ${dlRes.status}`);
+
+  const arrayBuffer = await dlRes.arrayBuffer();
+  return {
+    buffer: Buffer.from(arrayBuffer),
+    filename: meta.name,
+    mimeType: meta.mimeType,
+  };
+}
+
+/** Create a subfolder inside a Drive folder. Returns the new folder. */
+export async function createDriveFolder(parentId: string, name: string): Promise<DriveFolder> {
+  const token = await getDriveWriteToken();
+
+  const res = await fetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      name,
+      mimeType: "application/vnd.google-apps.folder",
+      parents: [parentId],
+    }),
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Drive create folder ${res.status}: ${body.slice(0, 200)}`);
+  }
+
+  const data = (await res.json()) as { id: string; name: string };
+  return { id: data.id, name: data.name };
+}
+
+/** Copy a file within Drive, optionally renaming it. Returns the new file. */
+export async function copyDriveFile(
+  fileId: string,
+  destFolderId: string,
+  newName?: string,
+): Promise<{ id: string; name: string }> {
+  const token = await getDriveWriteToken();
+
+  const body: Record<string, unknown> = { parents: [destFolderId] };
+  if (newName) body.name = newName;
+
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}/copy?supportsAllDrives=true`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    },
+  );
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Drive copy file ${res.status}: ${body.slice(0, 200)}`);
+  }
+
+  const data = (await res.json()) as { id: string; name: string };
+  return { id: data.id, name: data.name };
+}
+
+/** Upload a text file to a Drive folder. Returns the new file. */
+export async function uploadDriveTextFile(
+  parentId: string,
+  filename: string,
+  content: string,
+): Promise<{ id: string; name: string }> {
+  const token = await getDriveWriteToken();
+
+  // Multipart upload: metadata + content
+  const boundary = "pe_turnover_boundary";
+  const metadata = JSON.stringify({
+    name: filename,
+    mimeType: "text/plain",
+    parents: [parentId],
+  });
+
+  const body =
+    `--${boundary}\r\n` +
+    `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+    `${metadata}\r\n` +
+    `--${boundary}\r\n` +
+    `Content-Type: text/plain\r\n\r\n` +
+    `${content}\r\n` +
+    `--${boundary}--`;
+
+  const res = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": `multipart/related; boundary=${boundary}`,
+      },
+      body,
+      cache: "no-store",
+    },
+  );
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Drive upload ${res.status}: ${errBody.slice(0, 200)}`);
+  }
+
+  const data = (await res.json()) as { id: string; name: string };
+  return { id: data.id, name: data.name };
 }
