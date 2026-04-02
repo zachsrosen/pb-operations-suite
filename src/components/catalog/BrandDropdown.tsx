@@ -23,6 +23,14 @@ export default function BrandDropdown({ value, onChange }: BrandDropdownProps) {
     setQuery(value);
   }, [value]);
 
+  // Commit custom brand value (shared by blur + click-outside)
+  const commitCustomValue = useCallback(() => {
+    if (customMode && query.trim()) {
+      onChange(query.trim());
+    }
+    setCustomMode(false);
+  }, [customMode, query, onChange]);
+
   // Click-outside detection
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -31,13 +39,21 @@ export default function BrandDropdown({ value, onChange }: BrandDropdownProps) {
         !containerRef.current.contains(e.target as Node)
       ) {
         setOpen(false);
-        // Reset query to the committed value when closing without selection
-        if (!customMode) setQuery(value);
+        if (customMode) {
+          // Auto-commit typed custom brand on click-outside
+          if (query.trim()) {
+            onChange(query.trim());
+          }
+          setCustomMode(false);
+        } else {
+          // Reset query to the committed value when closing without selection
+          setQuery(value);
+        }
       }
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [value, customMode]);
+  }, [value, customMode, query, onChange]);
 
   const filtered = MANUFACTURERS.filter((m) =>
     m.toLowerCase().includes(query.toLowerCase()),
@@ -141,6 +157,9 @@ export default function BrandDropdown({ value, onChange }: BrandDropdownProps) {
         className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
         onFocus={() => {
           if (!customMode) setOpen(true);
+        }}
+        onBlur={() => {
+          if (customMode) commitCustomValue();
         }}
         onChange={(e) => {
           setQuery(e.target.value);
