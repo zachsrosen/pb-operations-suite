@@ -19,7 +19,7 @@ type CacheListener = (key: string, timestamp: number) => void;
 const DEFAULT_TTL = 5 * 60 * 1000; // 5 minutes
 const STALE_TTL = 10 * 60 * 1000; // 10 minutes - serve stale data up to this long
 
-class CacheStore {
+export class CacheStore {
   private cache = new Map<string, CacheEntry<unknown>>();
   private inflight = new Map<string, Promise<unknown>>();
   private listeners: CacheListener[] = [];
@@ -271,6 +271,7 @@ export const CACHE_KEYS = {
   REVENUE_GOALS: (year: number) => `revenue-goals:${year}` as const,
   DESIGN_FUNNEL: (months: number, location: string) =>
     `funnel:design-pipeline:${months}:${location}` as const,
+  TERRITORY_MAP: "territory-map",
 } as const;
 
 // Revenue goals cache cascade: invalidate when deals change

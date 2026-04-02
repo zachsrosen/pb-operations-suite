@@ -45,6 +45,12 @@ export const LOCATION_COLORS: Record<string, { tw: string; hex: string }> = {
   Unknown: { tw: "bg-zinc-500", hex: "#71717A" },
 };
 
+/** Territory boundary latitudes for Colorado office routing */
+export const TERRITORY_BOUNDARIES = {
+  current: { westminster: 39.815, centennial: 39.29 },
+  proposed: { westminster: 39.81, centennial: 39.52 },
+} as const;
+
 /** Ordered list of location color classes for dynamic assignment */
 export const LOCATION_COLOR_CLASSES = [
   "bg-blue-500",

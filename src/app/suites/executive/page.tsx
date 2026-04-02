@@ -37,6 +37,14 @@ const LINKS: SuitePageCard[] = [
     section: "Executive Views",
   },
   {
+    href: "/dashboards/territory-map",
+    title: "Territory Map",
+    description: "Colorado office territory boundaries, deal distribution, and proposed rebalancing on an interactive map.",
+    tag: "MAP",
+    icon: "📍",
+    section: "Executive Views",
+  },
+  {
     href: "/dashboards/command-center",
     title: "Command Center",
     description: "Real-time executive command center with live metrics and alerts.",

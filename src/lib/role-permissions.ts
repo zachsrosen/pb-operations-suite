@@ -342,6 +342,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/preconstruction-metrics",
       "/dashboards/zuper-compliance",
       "/dashboards/design-pipeline-funnel",
+      "/dashboards/territory-map",
+      "/api/territory-map",
       "/api/forecasting",
       // Equipment catalog
       "/dashboards/catalog",
@@ -451,6 +453,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/forecast-timeline",
       "/dashboards/preconstruction-metrics",
       "/dashboards/design-pipeline-funnel",
+      "/dashboards/territory-map",
+      "/api/territory-map",
       "/api/forecasting",
       // D&E Suite dashboards
       "/dashboards/de-overview",

@@ -82,6 +82,10 @@ export const queryKeys = {
     designPipeline: (months?: number, locations?: string[]) =>
       [...queryKeys.funnel.root, "design-pipeline", months, locations] as const,
   },
+  territoryMap: {
+    root: ["territory-map"] as const,
+    all: () => ["territory-map", "all"] as const,
+  },
 } as const;
 
 /**
@@ -108,5 +112,6 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("pipelines")) return [];
   if (serverKey.startsWith("revenue-goals")) return [queryKeys.revenueGoals.root];
   if (serverKey.startsWith("funnel")) return [queryKeys.funnel.root];
+  if (serverKey.startsWith("territory-map")) return [queryKeys.territoryMap.root];
   return [];
 }
