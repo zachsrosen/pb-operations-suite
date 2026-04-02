@@ -29,19 +29,10 @@ export interface TerritoryDeal {
 
 interface TerritoryResponse {
   deals: TerritoryDeal[];
+  activeStages: string[];
   total: number;
   lastUpdated: string;
 }
-
-/* ------------------------------------------------------------------ */
-/*  Closed stages (client-side active filter)                          */
-/* ------------------------------------------------------------------ */
-
-const CLOSED_STAGES = new Set([
-  "Project Complete",
-  "Close Out",
-  "Project Rejected - Needs Review",
-]);
 
 /* ------------------------------------------------------------------ */
 /*  Dynamic import — Google Maps requires browser APIs                  */
@@ -107,15 +98,21 @@ export default function TerritoryMapPage() {
     ? TERRITORY_BOUNDARIES.proposed
     : TERRITORY_BOUNDARIES.current;
 
+  /* ---- active stages set (from shared pipeline config via API) ---- */
+  const activeStagesSet = useMemo(
+    () => new Set(data?.activeStages || []),
+    [data?.activeStages],
+  );
+
   /* ---- filtered + computed deals ---- */
   const filteredDeals = useMemo(() => {
     if (!data?.deals) return [];
 
     let deals = data.deals;
 
-    // Client-side active filter
+    // Client-side active filter using shared pipeline stage definitions
     if (activeOnly) {
-      deals = deals.filter((d) => !CLOSED_STAGES.has(d.stage));
+      deals = deals.filter((d) => activeStagesSet.has(d.stage));
     }
 
     // Compute territory assignment based on current boundary mode
@@ -125,7 +122,7 @@ export default function TerritoryMapPage() {
         ? assignTerritory(d.latitude, boundaries)
         : d.pbLocation,
     }));
-  }, [data?.deals, activeOnly, useProposed, boundaries]);
+  }, [data?.deals, activeOnly, activeStagesSet, useProposed, boundaries]);
 
   /* ---- per-office stats ---- */
   const officeStats = useMemo(() => {

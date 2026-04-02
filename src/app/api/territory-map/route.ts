@@ -6,6 +6,7 @@ import { searchWithRetry } from "@/lib/hubspot";
 import { requireApiAuth } from "@/lib/api-auth";
 import { CacheStore, CACHE_KEYS } from "@/lib/cache";
 import { normalizeLocation } from "@/lib/locations";
+import { getStageMaps, getActiveStages } from "@/lib/deals-pipeline";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -54,7 +55,10 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function transformDeal(raw: Record<string, string>): TerritoryDeal {
+function transformDeal(
+  raw: Record<string, string>,
+  stageMap: Record<string, string>,
+): TerritoryDeal {
   const lat = parseFloat(raw.latitude);
   const lng = parseFloat(raw.longitude);
   const id = parseInt(raw.hs_object_id, 10);
@@ -66,7 +70,7 @@ function transformDeal(raw: Record<string, string>): TerritoryDeal {
     longitude: lng,
     pbLocation: normalizeLocation(raw.pb_location) || "Unknown",
     amount: parseFloat(raw.amount) || 0,
-    stage: raw.dealstage || "",
+    stage: stageMap[raw.dealstage] || raw.dealstage || "",
     url: `https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-3/${id}`,
   };
 }
@@ -75,7 +79,18 @@ function transformDeal(raw: Record<string, string>): TerritoryDeal {
 /*  Fetcher — paginate through all CO project-pipeline deals           */
 /* ------------------------------------------------------------------ */
 
-async function fetchTerritoryDeals(): Promise<TerritoryDeal[]> {
+interface TerritoryPayload {
+  deals: TerritoryDeal[];
+  activeStages: string[];
+}
+
+async function fetchTerritoryDeals(): Promise<TerritoryPayload> {
+  // Resolve stage ID → label map and active stage list from shared pipeline config
+  const stageMaps = await getStageMaps();
+  const activeStagesMap = await getActiveStages();
+  const stageMap = stageMaps.project || {};
+  const activeStages = activeStagesMap.project || [];
+
   const deals: TerritoryDeal[] = [];
   let after: string | undefined;
 
@@ -106,7 +121,7 @@ async function fetchTerritoryDeals(): Promise<TerritoryDeal[]> {
 
     for (const result of results) {
       const props = result.properties as unknown as Record<string, string>;
-      const deal = transformDeal(props);
+      const deal = transformDeal(props, stageMap);
       // Only include deals with valid coordinates
       if (!isNaN(deal.latitude) && !isNaN(deal.longitude)) {
         deals.push(deal);
@@ -124,7 +139,7 @@ async function fetchTerritoryDeals(): Promise<TerritoryDeal[]> {
     }
   }
 
-  return deals;
+  return { deals, activeStages };
 }
 
 /* ------------------------------------------------------------------ */
@@ -137,15 +152,16 @@ export async function GET(request: NextRequest) {
     const authResult = await requireApiAuth();
     if (authResult instanceof NextResponse) return authResult;
 
-    const { data, cached, stale, lastUpdated } = await territoryCache.getOrFetch<TerritoryDeal[]>(
+    const { data, cached, stale, lastUpdated } = await territoryCache.getOrFetch<TerritoryPayload>(
       CACHE_KEYS.TERRITORY_MAP,
       fetchTerritoryDeals,
     );
 
     return NextResponse.json(
       {
-        deals: data,
-        total: data.length,
+        deals: data.deals,
+        activeStages: data.activeStages,
+        total: data.deals.length,
         lastUpdated,
         cached,
         stale,
