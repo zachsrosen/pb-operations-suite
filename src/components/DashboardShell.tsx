@@ -47,6 +47,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/ahj-requirements": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/utility-design-requirements": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/solar-surveyor": { href: "/suites/design-engineering", label: "D&E" },
+  "/dashboards/idr-meeting": { href: "/suites/design-engineering", label: "D&E" },
   // Permitting & Interconnection Suite
   "/dashboards/pi-overview": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/pi-metrics": { href: "/suites/permitting-interconnection", label: "P&I" },

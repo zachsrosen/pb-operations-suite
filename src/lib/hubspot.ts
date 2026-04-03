@@ -702,6 +702,10 @@ const DEAL_PROPERTIES = [
   "os_project_link",
   "os_project_id",
   "zuper_site_survey_uid",
+  // IDR Meeting fields
+  "disco__reco",
+  "interior_access",
+  "site_survey_documents",
 ];
 
 const MS_PER_DAY = 86_400_000;
