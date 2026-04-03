@@ -6,7 +6,7 @@
  */
 
 import { prisma } from "@/lib/db";
-import { hubspotClient, searchWithRetry } from "@/lib/hubspot";
+import { hubspotClient, searchWithRetry, resolveHubSpotOwnerContact } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import {
   AssociationSpecAssociationCategoryEnum,
@@ -26,6 +26,7 @@ const PROJECT_PIPELINE_ID = process.env.HUBSPOT_PIPELINE_PROJECT || "6900017";
 /** Properties fetched for each deal during session creation / snapshot refresh. */
 export const SNAPSHOT_PROPERTIES = [
   "dealname", "pb_location", "project_type", "address_line_1", "city", "state",
+  "amount",
   "calculated_system_size__kwdc_", "site_survey_status", "site_survey_date",
   "design_status", "design_draft_completion_date", "is_site_survey_completed_",
   "all_document_parent_folder_id", "site_survey_documents", "design_documents",
@@ -33,7 +34,7 @@ export const SNAPSHOT_PROPERTIES = [
   "inverter_brand", "inverter_model", "inverter_qty",
   "battery_brand", "battery_model", "battery_count",
   "ahj", "utility_company",
-  "hubspot_owner_id", "site_surveyor", "design", "operations_manager",
+  "hubspot_owner_id", "site_surveyor", "design", "operations_manager", "project_manager",
   "disco__reco", "interior_access", "notes_for_install",
   "link_to_opensolar", "os_project_link",
 ];
@@ -74,16 +75,18 @@ function buildEquipmentSummary(p: Record<string, string | null>): string {
   return parts.join(" | ") || "No equipment listed";
 }
 
-/** Map raw HubSpot deal properties to the IdrMeetingItem snapshot fields. */
-export function snapshotDealProperties(
-  p: Record<string, string | null>,
-): {
+export type SnapshotFields = {
   dealName: string;
   region: string;
   address: string | null;
   projectType: string | null;
   equipmentSummary: string;
   systemSizeKw: number | null;
+  dealAmount: number | null;
+  dealOwner: string | null;
+  siteSurveyor: string | null;
+  projectManager: string | null;
+  operationsManager: string | null;
   surveyStatus: string | null;
   surveyDate: string | null;
   designStatus: string | null;
@@ -95,12 +98,24 @@ export function snapshotDealProperties(
   utilityCompany: string | null;
   openSolarUrl: string | null;
   surveyCompleted: boolean;
-} {
+};
+
+/** Map raw HubSpot deal properties to the IdrMeetingItem snapshot fields. */
+export function snapshotDealProperties(
+  p: Record<string, string | null>,
+  ownerMap?: Map<string, string>,
+): SnapshotFields {
   const addr = [p.address_line_1, p.city, p.state].filter(Boolean).join(", ") || null;
   const sizeRaw = parseFloat(p.calculated_system_size__kwdc_ ?? "");
+  const amountRaw = parseFloat(p.amount ?? "");
   const surveyCompleted =
     p.is_site_survey_completed_ === "true" ||
     p.is_site_survey_completed_ === "Yes";
+
+  const resolveName = (id: string | null | undefined): string | null => {
+    if (!id) return null;
+    return ownerMap?.get(id) ?? id;
+  };
 
   return {
     dealName: p.dealname ?? "Unknown",
@@ -109,6 +124,11 @@ export function snapshotDealProperties(
     projectType: p.project_type ?? null,
     equipmentSummary: buildEquipmentSummary(p),
     systemSizeKw: isNaN(sizeRaw) ? null : sizeRaw,
+    dealAmount: isNaN(amountRaw) ? null : amountRaw,
+    dealOwner: resolveName(p.hubspot_owner_id),
+    siteSurveyor: resolveName(p.site_surveyor),
+    projectManager: resolveName(p.project_manager),
+    operationsManager: resolveName(p.operations_manager),
     surveyStatus: p.site_survey_status ?? null,
     surveyDate: p.site_survey_date ?? null,
     designStatus: p.design_status ?? null,
@@ -121,6 +141,27 @@ export function snapshotDealProperties(
     openSolarUrl: p.link_to_opensolar ?? p.os_project_link ?? null,
     surveyCompleted,
   };
+}
+
+/** Build an owner ID→name map for a batch of deals. */
+export async function buildOwnerMap(
+  deals: Array<{ properties: Record<string, string | null> }>,
+): Promise<Map<string, string>> {
+  const ownerIds = new Set<string>();
+  for (const deal of deals) {
+    for (const key of ["hubspot_owner_id", "site_surveyor", "project_manager", "operations_manager"]) {
+      const val = deal.properties[key];
+      if (val) ownerIds.add(val);
+    }
+  }
+
+  const map = new Map<string, string>();
+  const resolvePromises = [...ownerIds].map(async (id) => {
+    const contact = await resolveHubSpotOwnerContact(id);
+    if (contact) map.set(id, contact.name);
+  });
+  await Promise.allSettled(resolvePromises);
+  return map;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +197,11 @@ interface NoteFields {
   operationsNotes: string | null;
   designNotes: string | null;
   conclusion: string | null;
+  salesChangeRequested?: boolean | null;
+  salesChangeNotes?: string | null;
+  needsSurveyInfo?: boolean | null;
+  opsChangeNotes?: string | null;
+  needsResurvey?: boolean | null;
 }
 
 /** Build the formatted note body for the HubSpot timeline. */
@@ -187,6 +233,11 @@ export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string): strin
   }
   if (fields.discoReco != null) lines.push(`Disco/Reco: ${fields.discoReco ? "Yes" : "No"}`);
   if (fields.interiorAccess != null) lines.push(`Interior Access: ${fields.interiorAccess ? "Yes" : "No"}`);
+  if (fields.salesChangeRequested) lines.push(`Sales Change Requested: Yes`);
+  if (fields.salesChangeNotes) lines.push(`Sales Communication Reason: ${fields.salesChangeNotes}`);
+  if (fields.needsSurveyInfo) lines.push(`Needs Survey Info: Yes`);
+  if (fields.opsChangeNotes) lines.push(`Ops Communication Reason: ${fields.opsChangeNotes}`);
+  if (fields.needsResurvey) lines.push(`Needs Resurvey: Yes`);
   if (fields.designNotes) lines.push(`Design Notes: ${fields.designNotes}`);
   if (fields.conclusion) lines.push(`Conclusion: ${fields.conclusion}`);
 
@@ -206,6 +257,11 @@ interface PropertyFields {
   discoReco: boolean | null;
   interiorAccess: boolean | null;
   operationsNotes: string | null;
+  needsSurveyInfo: boolean | null;
+  needsResurvey: boolean | null;
+  salesChangeRequested: boolean | null;
+  salesChangeNotes: string | null;
+  opsChangeNotes: string | null;
 }
 
 /** Map item fields to HubSpot deal property key-value pairs. Only includes non-null fields. */
@@ -221,6 +277,20 @@ export function buildHubSpotPropertyUpdates(
   if (fields.discoReco != null) updates.disco__reco = fields.discoReco ? "Yes" : "No";
   if (fields.interiorAccess != null) updates.interior_access = fields.interiorAccess ? "Yes" : "No";
   if (fields.operationsNotes != null) updates.notes_for_install = fields.operationsNotes;
+
+  // DA status flags — priority: resurvey > survey info > sales change
+  if (fields.needsResurvey) {
+    updates.layout_status = "Pending Resurvey";
+  } else if (fields.needsSurveyInfo) {
+    updates.layout_status = "Pending Ops Changes";
+  } else if (fields.salesChangeRequested) {
+    updates.layout_status = "Pending Sales Changes";
+  }
+
+  // Communication reason notes
+  if (fields.salesChangeNotes) updates.sales_communication_reason = fields.salesChangeNotes;
+  if (fields.opsChangeNotes) updates.ops_communication_reason = fields.opsChangeNotes;
+
   return updates;
 }
 

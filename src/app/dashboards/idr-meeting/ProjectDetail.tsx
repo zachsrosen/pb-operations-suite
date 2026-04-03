@@ -6,6 +6,7 @@ import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
 import type { IdrItem } from "./IdrMeetingClient";
 import { InstallPlanningForm } from "./InstallPlanningForm";
+import { StatusActionsForm } from "./StatusActionsForm";
 import { MeetingNotesForm } from "./MeetingNotesForm";
 import { NoteHistory } from "./NoteHistory";
 
@@ -111,134 +112,134 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
     );
   }
 
+  const amountStr = item.dealAmount
+    ? `$${item.dealAmount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+    : null;
+
   return (
     <div className="flex-1 rounded-xl border border-t-border bg-surface overflow-y-auto">
-      <div className="p-6 space-y-6">
-        {/* Deal Info */}
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">
-            Deal Info
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            <InfoCell label="Name" value={item.dealName} />
-            <InfoCell label="Type" value={item.projectType} />
-            <InfoCell label="System Size" value={item.systemSizeKw ? `${item.systemSizeKw} kW` : null} />
-            <InfoCell label="AHJ" value={item.ahj} />
-            <InfoCell label="Utility" value={item.utilityCompany} />
-            <InfoCell label="Survey Date" value={item.surveyDate} />
-            <InfoCell label="Design Status" value={item.designStatus} />
+      <div className="p-4 space-y-3">
+        {/* ── Header: Deal name + quick links + sync ── */}
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold text-foreground truncate">{item.dealName}</h2>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+              {item.address && <span className="text-xs text-muted truncate">{item.address}</span>}
+              {item.projectType && <span className="text-xs text-muted">{item.projectType}</span>}
+            </div>
           </div>
-          {/* Line Items / Equipment */}
-          <div className="mt-3">
-            <p className="text-xs text-muted mb-1">Equipment (Line Items)</p>
-            {lineItemsQuery.isLoading && (
-              <div className="h-5 w-48 rounded bg-surface-2 animate-pulse" />
+          <div className="flex items-center gap-2 shrink-0">
+            {!readOnly && (
+              <button
+                className="rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-600 transition-colors disabled:opacity-50"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+              >
+                {syncMutation.isPending ? "Syncing..." : "Sync to HubSpot"}
+              </button>
             )}
-            {lineItemsQuery.data && lineItemsQuery.data.lineItems.length > 0 ? (
-              <div className="flex flex-wrap gap-1.5">
-                {lineItemsQuery.data.lineItems.map((li, i) => (
-                  <span
-                    key={i}
-                    className="inline-flex items-center rounded-md bg-surface-2 px-2 py-0.5 text-xs text-foreground"
-                  >
-                    {li.name}{li.quantity > 1 ? ` x${li.quantity}` : ""}
-                  </span>
-                ))}
+          </div>
+        </div>
+
+        {/* ── Quick links row ── */}
+        <div className="flex flex-wrap gap-1.5">
+          <QuickLink
+            href={`https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${item.dealId}`}
+            label="HubSpot"
+          />
+          {item.designFolderUrl && <QuickLink href={item.designFolderUrl} label="Design" />}
+          {item.surveyFolderUrl && <QuickLink href={item.surveyFolderUrl} label="Survey" />}
+          {item.openSolarUrl && <QuickLink href={item.openSolarUrl} label="OpenSolar" />}
+          {item.driveFolderUrl && <QuickLink href={item.driveFolderUrl} label="Drive" />}
+        </div>
+
+        {/* ── Two-column body ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          {/* LEFT COLUMN: Deal info + readiness */}
+          <div className="space-y-3">
+            {/* Deal details grid */}
+            <Section title="Deal Details">
+              <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
+                <InfoCell label="System Size" value={item.systemSizeKw ? `${item.systemSizeKw} kW` : null} />
+                <InfoCell label="Amount" value={amountStr} />
+                <InfoCell label="Design Status" value={item.designStatus} />
+                <InfoCell label="AHJ" value={item.ahj} />
+                <InfoCell label="Utility" value={item.utilityCompany} />
+                <InfoCell label="Survey Date" value={item.surveyDate} />
+                <InfoCell label="Deal Owner" value={item.dealOwner} />
+                <InfoCell label="Surveyor" value={item.siteSurveyor} />
+                <InfoCell label="Project Mgr" value={item.projectManager} />
+                <InfoCell label="Ops Mgr" value={item.operationsManager} />
               </div>
-            ) : lineItemsQuery.data ? (
-              <p className="text-sm text-muted">No line items</p>
-            ) : null}
-          </div>
-        </section>
+            </Section>
 
-        {/* Quick Links */}
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">
-            Quick Links
-          </h2>
-          <div className="flex flex-wrap gap-2">
-            {item.designFolderUrl && (
-              <QuickLink href={item.designFolderUrl} label="Design Folder" />
-            )}
-            {item.surveyFolderUrl && (
-              <QuickLink href={item.surveyFolderUrl} label="Survey Folder" />
-            )}
-            <QuickLink
-              href={`https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${item.dealId}`}
-              label="HubSpot Deal"
-            />
-            {item.openSolarUrl && (
-              <QuickLink href={item.openSolarUrl} label="OpenSolar" />
-            )}
-            {item.driveFolderUrl && (
-              <QuickLink href={item.driveFolderUrl} label="Drive Folder" />
-            )}
-          </div>
-        </section>
-
-        {/* Survey Readiness */}
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">
-            Survey Readiness
-          </h2>
-          {readinessQuery.isLoading && (
-            <div className="space-y-2">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="h-6 rounded bg-surface-2 animate-pulse" />
-              ))}
-            </div>
-          )}
-          {readinessQuery.error && (
-            <p className="text-sm text-red-500">Failed to load readiness checks.</p>
-          )}
-          {readinessQuery.data && (
-            <div className="space-y-1.5">
-              {readinessQuery.data.checklist.map((check, i) => (
-                <div key={i} className="flex items-start gap-2 text-sm">
-                  <span className="shrink-0">{STATUS_EMOJI[check.status] ?? "\u2139\uFE0F"}</span>
-                  <div>
-                    <span className="font-medium text-foreground">{check.item}</span>
-                    {check.note && (
-                      <span className="text-muted ml-1">— {check.note}</span>
-                    )}
-                  </div>
+            {/* Equipment */}
+            <Section title="Equipment">
+              {lineItemsQuery.isLoading && (
+                <div className="h-5 w-48 rounded bg-surface-2 animate-pulse" />
+              )}
+              {lineItemsQuery.data && lineItemsQuery.data.lineItems.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                  {lineItemsQuery.data.lineItems.map((li, i) => (
+                    <span
+                      key={i}
+                      className="inline-flex items-center rounded bg-surface-2 px-1.5 py-0.5 text-xs text-foreground"
+                    >
+                      {li.name}{li.quantity > 1 ? ` x${li.quantity}` : ""}
+                    </span>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )}
-        </section>
+              ) : lineItemsQuery.data ? (
+                <p className="text-xs text-muted">No line items</p>
+              ) : null}
+            </Section>
 
-        {/* Install Planning */}
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">
-            Install Planning
-          </h2>
-          <InstallPlanningForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
-        </section>
-
-        {/* Meeting Notes */}
-        <section>
-          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted mb-3">
-            Meeting Notes
-          </h2>
-          <MeetingNotesForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
-        </section>
-
-        {/* History */}
-        <NoteHistory item={item} userEmail={userEmail} />
-
-        {/* Save & Sync */}
-        {!readOnly && (
-          <div className="flex justify-end pt-2 border-t border-t-border">
-            <button
-              className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white hover:bg-orange-600 transition-colors disabled:opacity-50"
-              onClick={() => syncMutation.mutate()}
-              disabled={syncMutation.isPending}
-            >
-              {syncMutation.isPending ? "Syncing..." : "Save & Sync to HubSpot"}
-            </button>
+            {/* Survey Readiness */}
+            <Section title="Survey Readiness">
+              {readinessQuery.isLoading && (
+                <div className="space-y-1">
+                  {[...Array(4)].map((_, i) => (
+                    <div key={i} className="h-5 rounded bg-surface-2 animate-pulse" />
+                  ))}
+                </div>
+              )}
+              {readinessQuery.error && (
+                <p className="text-xs text-red-500">Failed to load readiness checks.</p>
+              )}
+              {readinessQuery.data && (
+                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                  {readinessQuery.data.checklist.map((check, i) => (
+                    <div key={i} className="flex items-center gap-1.5 text-xs">
+                      <span className="shrink-0 text-[11px]">{STATUS_EMOJI[check.status] ?? "\u2139\uFE0F"}</span>
+                      <span className="font-medium text-foreground truncate">{check.item}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Section>
           </div>
-        )}
+
+          {/* RIGHT COLUMN: Planning + actions + notes */}
+          <div className="space-y-3">
+            {/* Install Planning */}
+            <Section title="Install Planning">
+              <InstallPlanningForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
+            </Section>
+
+            {/* DA Status Actions */}
+            <Section title="DA Status Actions">
+              <StatusActionsForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
+            </Section>
+
+            {/* Meeting Notes */}
+            <Section title="Meeting Notes">
+              <MeetingNotesForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
+            </Section>
+          </div>
+        </div>
+
+        {/* ── History (full-width, collapsed by default) ── */}
+        <NoteHistory item={item} userEmail={userEmail} />
       </div>
     </div>
   );
@@ -248,11 +249,22 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
 // Sub-components
 // ---------------------------------------------------------------------------
 
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-lg border border-t-border bg-surface-2/50 p-3">
+      <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-2">
+        {title}
+      </h3>
+      {children}
+    </div>
+  );
+}
+
 function InfoCell({ label, value }: { label: string; value: string | null | undefined }) {
   return (
-    <div>
-      <p className="text-xs text-muted">{label}</p>
-      <p className="text-sm font-medium text-foreground truncate">{value || "--"}</p>
+    <div className="min-w-0">
+      <p className="text-[10px] text-muted leading-tight">{label}</p>
+      <p className="text-xs font-medium text-foreground truncate leading-snug">{value || "--"}</p>
     </div>
   );
 }
@@ -263,7 +275,7 @@ function QuickLink({ href, label }: { href: string; label: string }) {
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex items-center gap-1 rounded-lg border border-t-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface transition-colors"
+      className="inline-flex items-center gap-0.5 rounded border border-t-border bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-surface transition-colors"
     >
       {label}
       <span className="text-muted">&#8599;</span>

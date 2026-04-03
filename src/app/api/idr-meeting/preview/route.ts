@@ -5,6 +5,7 @@ import {
   fetchInitialReviewDeals,
   snapshotDealProperties,
   computeReadinessBadge,
+  buildOwnerMap,
 } from "@/lib/idr-meeting";
 
 /**
@@ -21,10 +22,11 @@ export async function GET() {
   }
 
   const deals = await fetchInitialReviewDeals();
+  const ownerMap = await buildOwnerMap(deals);
 
   let sortOrder = 0;
   const items = deals.map((deal) => {
-    const snapshot = snapshotDealProperties(deal.properties);
+    const snapshot = snapshotDealProperties(deal.properties, ownerMap);
     const badge = computeReadinessBadge(snapshot.surveyCompleted, snapshot.plansetDate);
 
     return {
@@ -42,6 +44,11 @@ export async function GET() {
       electricianDays: null,
       discoReco: null,
       interiorAccess: null,
+      needsSurveyInfo: null,
+      needsResurvey: null,
+      salesChangeRequested: null,
+      salesChangeNotes: null,
+      opsChangeNotes: null,
       customerNotes: null,
       operationsNotes: null,
       designNotes: null,

@@ -5,7 +5,9 @@ import { isIdrAllowedRole } from "@/lib/idr-meeting";
 
 const EDITABLE_FIELDS = [
   "difficulty", "installerCount", "installerDays", "electricianCount",
-  "electricianDays", "discoReco", "interiorAccess", "customerNotes",
+  "electricianDays", "discoReco", "interiorAccess", "needsSurveyInfo",
+  "needsResurvey", "salesChangeRequested", "salesChangeNotes", "opsChangeNotes",
+  "customerNotes",
   "operationsNotes", "designNotes", "conclusion", "sortOrder",
   "escalationReason", "type",
 ];

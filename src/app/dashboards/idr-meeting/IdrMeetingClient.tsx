@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
@@ -8,6 +8,8 @@ import { SessionHeader } from "./SessionHeader";
 import { ProjectQueue } from "./ProjectQueue";
 import { ProjectDetail } from "./ProjectDetail";
 import { AddProjectDialog } from "./AddProjectDialog";
+import { EscalationQueue } from "./EscalationQueue";
+import { AddEscalationDialog } from "./AddEscalationDialog";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -36,6 +38,11 @@ export interface IdrItem {
   projectType: string | null;
   equipmentSummary: string | null;
   systemSizeKw: number | null;
+  dealAmount: number | null;
+  dealOwner: string | null;
+  siteSurveyor: string | null;
+  projectManager: string | null;
+  operationsManager: string | null;
   surveyStatus: string | null;
   surveyDate: string | null;
   designStatus: string | null;
@@ -55,6 +62,11 @@ export interface IdrItem {
   electricianDays: number | null;
   discoReco: boolean | null;
   interiorAccess: boolean | null;
+  needsSurveyInfo: boolean | null;
+  needsResurvey: boolean | null;
+  salesChangeRequested: boolean | null;
+  salesChangeNotes: string | null;
+  opsChangeNotes: string | null;
   customerNotes: string | null;
   operationsNotes: string | null;
   designNotes: string | null;
@@ -97,6 +109,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
+  const [showEscalationDialog, setShowEscalationDialog] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
   // Is the user viewing the live preview (no session selected)?
@@ -197,24 +210,61 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  // Update item locally + on server
-  const handleItemChange = useCallback(
-    async (itemId: string, updates: Partial<IdrItem>) => {
+  // Debounced save — queues field updates and flushes after 600ms of inactivity
+  const pendingRef = useRef<Record<string, { itemId: string; updates: Partial<IdrItem> }>>({});
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushPending = useCallback(async () => {
+    const pending = { ...pendingRef.current };
+    pendingRef.current = {};
+
+    for (const [itemId, entry] of Object.entries(pending)) {
       try {
         const res = await fetch(`/api/idr-meeting/items/${itemId}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(updates),
+          body: JSON.stringify(entry.updates),
         });
         if (!res.ok) throw new Error("Save failed");
-        if (sessionId) {
-          queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(sessionId) });
-        }
       } catch {
         addToast({ type: "error", title: "Failed to save changes" });
       }
+    }
+    if (sessionId) {
+      queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(sessionId) });
+    }
+  }, [sessionId, queryClient, addToast]);
+
+  const handleItemChange = useCallback(
+    async (itemId: string, updates: Partial<IdrItem>) => {
+      // Merge into pending updates for this item
+      const existing = pendingRef.current[itemId];
+      pendingRef.current[itemId] = {
+        itemId,
+        updates: { ...(existing?.updates ?? {}), ...updates },
+      };
+
+      // Optimistically update the local query cache
+      if (sessionId) {
+        queryClient.setQueryData(
+          queryKeys.idrMeeting.session(sessionId),
+          (old: IdrSession | undefined) => {
+            if (!old) return old;
+            return {
+              ...old,
+              items: old.items.map((i) =>
+                i.id === itemId ? { ...i, ...updates } : i,
+              ),
+            };
+          },
+        );
+      }
+
+      // Debounce the server call
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(flushPending, 600);
     },
-    [sessionId, queryClient, addToast],
+    [sessionId, queryClient, flushPending],
   );
 
   // Resolve which items to display
@@ -239,6 +289,9 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
         isPreview={isPreview}
         previewCount={previewQuery.data?.items?.length ?? 0}
       />
+
+      {/* Escalation queue — always visible for meeting prep */}
+      <EscalationQueue onAddEscalation={() => setShowEscalationDialog(true)} />
 
       <div className="flex gap-4 h-[calc(100vh-16rem)] overflow-hidden">
         <ProjectQueue
@@ -266,6 +319,10 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
             setShowAddDialog(false);
           }}
         />
+      )}
+
+      {showEscalationDialog && (
+        <AddEscalationDialog onClose={() => setShowEscalationDialog(false)} />
       )}
     </div>
   );

@@ -44,6 +44,11 @@ export async function POST(
     discoReco: item.discoReco,
     interiorAccess: item.interiorAccess,
     operationsNotes: item.operationsNotes,
+    needsSurveyInfo: item.needsSurveyInfo,
+    needsResurvey: item.needsResurvey,
+    salesChangeRequested: item.salesChangeRequested,
+    salesChangeNotes: item.salesChangeNotes,
+    opsChangeNotes: item.opsChangeNotes,
   });
 
   try {
@@ -74,6 +79,11 @@ export async function POST(
       operationsNotes: item.operationsNotes,
       designNotes: item.designNotes,
       conclusion: item.conclusion,
+      salesChangeRequested: item.salesChangeRequested,
+      salesChangeNotes: item.salesChangeNotes,
+      needsSurveyInfo: item.needsSurveyInfo,
+      opsChangeNotes: item.opsChangeNotes,
+      needsResurvey: item.needsResurvey,
     },
     item.session.date.toISOString(),
   );

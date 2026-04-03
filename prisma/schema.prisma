@@ -1861,7 +1861,12 @@ model IdrMeetingItem {
   projectType      String?
   equipmentSummary String?
   systemSizeKw     Float?
-  surveyStatus     String?
+  dealAmount       Float?
+  dealOwner         String?
+  siteSurveyor      String?
+  projectManager    String?
+  operationsManager String?
+  surveyStatus      String?
   surveyDate       String?
   designStatus     String?
   plansetDate      String?
@@ -1882,6 +1887,11 @@ model IdrMeetingItem {
   electricianDays  Int?
   discoReco        Boolean?
   interiorAccess   Boolean?
+  needsSurveyInfo       Boolean?  // Flag: needs info from site surveyor → DA status "Pending Ops Changes"
+  needsResurvey         Boolean?  // Flag: requires resurvey → DA status "Pending Resurvey"
+  salesChangeRequested  Boolean?  // Flag: trigger sales change → DA status "Pending Sales Changes"
+  salesChangeNotes      String?   // Reason for sales change → HubSpot sales_communication_reason
+  opsChangeNotes        String?   // Reason for ops/survey change → HubSpot ops_communication_reason
   customerNotes    String?
   operationsNotes  String?
   designNotes      String?
@@ -1917,4 +1927,44 @@ model IdrMeetingNote {
 
   @@index([itemId])
   @@index([dealId, createdAt])
+}
+
+/// Persistent meeting prep queue — deals flagged for the next IDR meeting.
+/// When a session is created, QUEUED items are auto-pulled in and marked CONSUMED.
+/// ESCALATION type becomes an ESCALATION item; DESIGN_REVIEW prefills an IDR item.
+/// Supports prefilled planning notes that carry over into the session item.
+model IdrEscalationQueue {
+  id               String   @id @default(cuid())
+  dealId           String
+  dealName         String   // snapshot for display without HubSpot fetch
+  region           String?
+  queueType        String   @default("ESCALATION") // ESCALATION | DESIGN_REVIEW
+  reason           String   // why this deal needs discussion / review context
+  status           IdrEscalationStatus @default(QUEUED)
+  requestedBy      String   // user email
+  consumedBySession String?  // session ID that consumed this item
+
+  // Optional prefilled fields — carried into the session item on consume
+  difficulty       Int?
+  installerCount   Int?
+  installerDays    Int?
+  electricianCount Int?
+  electricianDays  Int?
+  discoReco        Boolean?
+  interiorAccess   Boolean?
+  customerNotes    String?
+  operationsNotes  String?
+  designNotes      String?
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([status])
+  @@index([dealId])
+}
+
+enum IdrEscalationStatus {
+  QUEUED
+  CONSUMED
+  DISMISSED
 }

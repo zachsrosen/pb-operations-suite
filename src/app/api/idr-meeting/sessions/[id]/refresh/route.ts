@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
-import { isIdrAllowedRole, snapshotDealProperties, SNAPSHOT_PROPERTIES } from "@/lib/idr-meeting";
+import { isIdrAllowedRole, snapshotDealProperties, buildOwnerMap, SNAPSHOT_PROPERTIES } from "@/lib/idr-meeting";
 import { hubspotClient } from "@/lib/hubspot";
 
 export async function POST(
@@ -42,10 +42,16 @@ export async function POST(
       (batchResponse.results ?? []).map((d) => [d.id, d.properties]),
     );
 
+    // Resolve owner names
+    const dealsForOwnerMap = [...dealMap.values()].map((p) => ({
+      properties: p as Record<string, string | null>,
+    }));
+    const ownerMap = await buildOwnerMap(dealsForOwnerMap);
+
     for (const item of session.items) {
       const props = dealMap.get(item.dealId);
       if (!props) continue;
-      const snapshot = snapshotDealProperties(props as Record<string, string | null>);
+      const snapshot = snapshotDealProperties(props as Record<string, string | null>, ownerMap);
       await prisma.idrMeetingItem.update({
         where: { id: item.id },
         data: { ...snapshot, snapshotUpdatedAt: new Date() },

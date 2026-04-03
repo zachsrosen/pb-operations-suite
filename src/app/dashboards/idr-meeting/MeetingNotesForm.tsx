@@ -25,26 +25,28 @@ export function MeetingNotesForm({ item, onChange, readOnly }: Props) {
   );
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       {/* Escalation reason (read-only display) */}
       {item.type === "ESCALATION" && item.escalationReason && (
-        <div className="rounded-lg border border-orange-500/30 bg-orange-500/10 p-3">
-          <p className="text-xs font-semibold uppercase tracking-wider text-orange-500 mb-1">
+        <div className="rounded border border-orange-500/30 bg-orange-500/10 px-2 py-1.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-orange-500 mb-0.5">
             Escalation Reason
           </p>
-          <p className="text-sm text-foreground">{item.escalationReason}</p>
+          <p className="text-xs text-foreground">{item.escalationReason}</p>
         </div>
       )}
 
-      {NOTE_FIELDS.map(({ key, label }) => (
-        <AutoResizeTextarea
-          key={key}
-          label={label}
-          value={(item[key] as string | null) ?? ""}
-          onChange={(val) => handleChange(key, val)}
-          readOnly={readOnly}
-        />
-      ))}
+      <div className="grid grid-cols-2 gap-2">
+        {NOTE_FIELDS.map(({ key, label }) => (
+          <AutoResizeTextarea
+            key={key}
+            label={label}
+            value={(item[key] as string | null) ?? ""}
+            onChange={(val) => handleChange(key, val)}
+            readOnly={readOnly}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -75,17 +77,17 @@ function AutoResizeTextarea({
 
   return (
     <div>
-      <label className="text-xs font-semibold uppercase tracking-wider text-muted block mb-1">
+      <label className="text-[10px] font-semibold uppercase tracking-wider text-muted block mb-0.5">
         {label}
       </label>
       <textarea
         ref={ref}
-        rows={2}
+        rows={1}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         disabled={readOnly}
-        className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground resize-none disabled:opacity-50 placeholder:text-muted"
-        placeholder={readOnly ? "" : `Enter ${label.toLowerCase()}...`}
+        className="w-full rounded border border-t-border bg-surface-2 px-2 py-1 text-xs text-foreground resize-none disabled:opacity-50 placeholder:text-muted"
+        placeholder={readOnly ? "" : `${label.toLowerCase()}...`}
       />
     </div>
   );

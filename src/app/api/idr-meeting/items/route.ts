@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
-import { isIdrAllowedRole, snapshotDealProperties, SNAPSHOT_PROPERTIES } from "@/lib/idr-meeting";
+import { isIdrAllowedRole, snapshotDealProperties, buildOwnerMap, SNAPSHOT_PROPERTIES } from "@/lib/idr-meeting";
 import { hubspotClient } from "@/lib/hubspot";
 
 export async function POST(req: NextRequest) {
@@ -44,9 +44,10 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Fetch deal from HubSpot
+  // Fetch deal from HubSpot + resolve owner names
   const deal = await hubspotClient.crm.deals.basicApi.getById(dealId, SNAPSHOT_PROPERTIES);
-  const snapshot = snapshotDealProperties(deal.properties as Record<string, string | null>);
+  const ownerMap = await buildOwnerMap([{ properties: deal.properties as Record<string, string | null> }]);
+  const snapshot = snapshotDealProperties(deal.properties as Record<string, string | null>, ownerMap);
 
   // Get max sortOrder in session
   const maxSort = await prisma.idrMeetingItem.findFirst({
