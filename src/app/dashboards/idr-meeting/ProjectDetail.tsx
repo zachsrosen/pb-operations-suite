@@ -201,20 +201,25 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
 
         {/* ── Two-column body ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {/* LEFT: Deal info + readiness */}
+          {/* LEFT: Deal info + equipment + readiness */}
           <div className="space-y-3">
             <Section title="Deal Details">
-              <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                 <InfoCell label="System Size" value={item.systemSizeKw ? `${item.systemSizeKw} kW` : null} />
                 <InfoCell label="Amount" value={amountStr} />
                 <InfoCell label="Design Status" value={item.designStatus} />
+                <InfoCell label="Survey Date" value={item.surveyDate} />
                 <InfoCell label="AHJ" value={item.ahj} />
                 <InfoCell label="Utility" value={item.utilityCompany} />
-                <InfoCell label="Survey Date" value={item.surveyDate} />
+              </div>
+            </Section>
+
+            <Section title="Team">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                 <InfoCell label="Deal Owner" value={item.dealOwner} />
-                <InfoCell label="Surveyor" value={item.siteSurveyor} />
-                <InfoCell label="Project Mgr" value={item.projectManager} />
-                <InfoCell label="Ops Mgr" value={item.operationsManager} />
+                <InfoCell label="Site Surveyor" value={item.siteSurveyor} />
+                <InfoCell label="Project Manager" value={item.projectManager} />
+                <InfoCell label="Ops Manager" value={item.operationsManager} />
               </div>
             </Section>
 
@@ -241,7 +246,7 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
             {/* Survey Readiness — only in session mode */}
             {!isPreview && readinessQuery.data && (
               <Section title="Survey Readiness">
-                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                   {readinessQuery.data.checklist.map((check, i) => (
                     <div key={i} className="flex items-center gap-1.5 text-xs">
                       <span className="shrink-0 text-[11px]">{STATUS_EMOJI[check.status] ?? "\u2139\uFE0F"}</span>

@@ -133,12 +133,17 @@ export function snapshotDealProperties(
     surveyDate: p.site_survey_date ?? null,
     designStatus: p.design_status ?? null,
     plansetDate: p.design_draft_completion_date ?? null,
-    driveFolderUrl: p.all_document_parent_folder_id ?? null,
+    driveFolderUrl: p.all_document_parent_folder_id
+      ? (p.all_document_parent_folder_id.startsWith("http")
+        ? p.all_document_parent_folder_id
+        : `https://drive.google.com/drive/folders/${p.all_document_parent_folder_id}`)
+      : null,
     surveyFolderUrl: p.site_survey_documents ?? null,
     designFolderUrl: p.design_documents ?? null,
     ahj: p.ahj ?? null,
     utilityCompany: p.utility_company ?? null,
-    openSolarUrl: p.link_to_opensolar ?? p.os_project_link ?? null,
+    // link_to_opensolar is a "Yes"/"No" flag, not a URL — use os_project_link for the actual URL
+    openSolarUrl: p.os_project_link ?? null,
     surveyCompleted,
   };
 }

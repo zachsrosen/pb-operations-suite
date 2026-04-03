@@ -69,8 +69,8 @@ describe("snapshotDealProperties", () => {
       is_site_survey_completed_: "true",
       ahj: "Denver",
       utility_company: "Xcel Energy",
-      link_to_opensolar: "https://app.opensolar.com/project/123",
-      os_project_link: null,
+      link_to_opensolar: "Yes",
+      os_project_link: "https://app.opensolar.com/project/123",
     };
     const snapshot = snapshotDealProperties(properties);
     expect(snapshot.dealName).toBe("PROJ-9612 | Pieren | 1234 Elm St");
