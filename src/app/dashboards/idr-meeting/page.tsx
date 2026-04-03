@@ -9,7 +9,7 @@ export default async function IdrMeetingPage() {
 
   return (
     <DashboardShell
-      title="IDR Meeting Hub"
+      title="Design & Ops Meeting Hub"
       accentColor="orange"
       fullWidth
     >

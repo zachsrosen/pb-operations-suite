@@ -45,6 +45,18 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
   const { addToast } = useToast();
   const queryClient = useQueryClient();
 
+  // Line items query — lazy-loaded per deal
+  const lineItemsQuery = useQuery({
+    queryKey: [...queryKeys.idrMeeting.root, "lineItems", item?.dealId ?? ""],
+    queryFn: async () => {
+      const res = await fetch(`/api/idr-meeting/line-items/${item!.dealId}`);
+      if (!res.ok) throw new Error("Failed to fetch line items");
+      return res.json() as Promise<{ lineItems: Array<{ name: string; quantity: number; manufacturer: string; productCategory: string }> }>;
+    },
+    enabled: !!item,
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Readiness query — lazy-loaded per item
   const readinessQuery = useQuery({
     queryKey: queryKeys.idrMeeting.readiness(item?.id ?? ""),
@@ -115,12 +127,27 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
             <InfoCell label="Utility" value={item.utilityCompany} />
             <InfoCell label="Survey Date" value={item.surveyDate} />
             <InfoCell label="Design Status" value={item.designStatus} />
-            <InfoCell label="Planset Date" value={item.plansetDate} />
-            {item.equipmentSummary && (
-              <div className="col-span-2">
-                <InfoCell label="Equipment" value={item.equipmentSummary} />
-              </div>
+          </div>
+          {/* Line Items / Equipment */}
+          <div className="mt-3">
+            <p className="text-xs text-muted mb-1">Equipment (Line Items)</p>
+            {lineItemsQuery.isLoading && (
+              <div className="h-5 w-48 rounded bg-surface-2 animate-pulse" />
             )}
+            {lineItemsQuery.data && lineItemsQuery.data.lineItems.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {lineItemsQuery.data.lineItems.map((li, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex items-center rounded-md bg-surface-2 px-2 py-0.5 text-xs text-foreground"
+                  >
+                    {li.name}{li.quantity > 1 ? ` x${li.quantity}` : ""}
+                  </span>
+                ))}
+              </div>
+            ) : lineItemsQuery.data ? (
+              <p className="text-sm text-muted">No line items</p>
+            ) : null}
           </div>
         </section>
 

@@ -93,7 +93,7 @@ const LINKS: SuitePageCard[] = [
   },
   {
     href: "/dashboards/idr-meeting",
-    title: "IDR Meeting Hub",
+    title: "Design & Ops Meeting Hub",
     description: "Design/ops meeting review queue with auto-populated projects, inline editing, and HubSpot sync",
     tag: "MEETING",
     icon: "📋",

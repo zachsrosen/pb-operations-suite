@@ -22,20 +22,22 @@ const SYNC_INDICATOR: Record<string, { symbol: string; color: string }> = {
   FAILED: { symbol: "\u2717", color: "text-red-500" },
 };
 
-/** Parse project number and customer last name from dealName like "PROJ-1234 | Smith, John | 123 Main St" */
-function parseDealLabel(dealName: string): { projNum: string | null; lastName: string } {
+/** Parse project number and customer name from dealName like "PROJ-1234 | Smith, John | 123 Main St" */
+function parseDealLabel(dealName: string): { projNum: string | null; fullName: string } {
   const parts = dealName.split("|").map((s) => s.trim());
   // Extract PROJ-XXXX from the first segment
   const projMatch = parts[0]?.match(/PROJ-\d+/);
   const projNum = projMatch?.[0] ?? null;
   // Name is usually the second segment; fall back to first
   const namePart = parts[1] ?? parts[0] ?? dealName;
-  // If "Last, First" format, take the last name
+  // If "Last, First" format, flip to "First Last"
   const comma = namePart.indexOf(",");
-  if (comma > 0) return { projNum, lastName: namePart.slice(0, comma).trim() };
-  // If "First Last" format, take the last word
-  const words = namePart.trim().split(/\s+/);
-  return { projNum, lastName: words[words.length - 1] ?? namePart };
+  if (comma > 0) {
+    const last = namePart.slice(0, comma).trim();
+    const first = namePart.slice(comma + 1).trim();
+    return { projNum, fullName: first ? `${first} ${last}` : last };
+  }
+  return { projNum, fullName: namePart.trim() };
 }
 
 // Custom region sort order — CO shops first (meeting priority), then CA
@@ -126,8 +128,8 @@ export function ProjectQueue({ items, selectedItemId, onSelectItem, loading }: P
                     {/* Project number + Name */}
                     <span className="truncate text-foreground">
                       {(() => {
-                        const { projNum, lastName } = parseDealLabel(item.dealName);
-                        return projNum ? `${projNum} ${lastName}` : lastName;
+                        const { projNum, fullName } = parseDealLabel(item.dealName);
+                        return projNum ? `${projNum} ${fullName}` : fullName;
                       })()}
                     </span>
 
