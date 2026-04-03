@@ -60,14 +60,13 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
   });
 
   const readinessQuery = useQuery({
-    queryKey: queryKeys.idrMeeting.readiness(item?.id ?? ""),
+    queryKey: queryKeys.idrMeeting.readiness(item?.dealId ?? ""),
     queryFn: async () => {
-      const res = await fetch(`/api/idr-meeting/items/${item!.id}/readiness`);
+      const res = await fetch(`/api/idr-meeting/readiness?dealId=${item!.dealId}`);
       if (!res.ok) throw new Error("Readiness check failed");
       return res.json() as Promise<ReadinessReport>;
     },
-    // Only fetch readiness for session items (not preview)
-    enabled: !!item && !isPreview,
+    enabled: !!item,
     staleTime: 5 * 60 * 1000,
   });
 
@@ -243,8 +242,8 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
               ) : null}
             </Section>
 
-            {/* Survey Readiness — only in session mode */}
-            {!isPreview && readinessQuery.data && (
+            {/* Survey Readiness */}
+            {readinessQuery.data && (
               <Section title="Survey Readiness">
                 <div className="grid grid-cols-2 gap-x-4 gap-y-1">
                   {readinessQuery.data.checklist.map((check, i) => (
