@@ -86,6 +86,14 @@ export const queryKeys = {
     root: ["territory-map"] as const,
     all: () => ["territory-map", "all"] as const,
   },
+  idrMeeting: {
+    root: ["idr-meeting"] as const,
+    sessions: () => [...queryKeys.idrMeeting.root, "sessions"] as const,
+    session: (id: string) => [...queryKeys.idrMeeting.root, "session", id] as const,
+    readiness: (itemId: string) => [...queryKeys.idrMeeting.root, "readiness", itemId] as const,
+    dealHistory: (dealId: string) => [...queryKeys.idrMeeting.root, "deal-history", dealId] as const,
+    dealSearch: (q: string) => [...queryKeys.idrMeeting.root, "deal-search", q] as const,
+  },
 } as const;
 
 /**
@@ -113,5 +121,6 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("revenue-goals")) return [queryKeys.revenueGoals.root];
   if (serverKey.startsWith("funnel")) return [queryKeys.funnel.root];
   if (serverKey.startsWith("territory-map")) return [queryKeys.territoryMap.root];
+  if (serverKey.startsWith("idr-meeting")) return [queryKeys.idrMeeting.root];
   return [];
 }
