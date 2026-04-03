@@ -150,20 +150,18 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            {/* Shit Show flag */}
-            {!readOnly && (
+            {/* Mark as reviewed */}
+            {!readOnly && !isPreview && (
               <button
                 className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  item.shitShowFlagged
-                    ? "border-red-500 bg-red-500/10 text-red-500"
+                  item.reviewed
+                    ? "border-emerald-500 bg-emerald-500/10 text-emerald-500"
                     : "border-t-border bg-surface-2 text-muted hover:text-foreground"
                 }`}
-                onClick={() => handleFieldChange({
-                  shitShowFlagged: !item.shitShowFlagged,
-                } as Partial<IdrItem>)}
-                title={item.shitShowFlagged ? "Remove from Shit Show" : "Flag for Shit Show meeting"}
+                onClick={() => handleFieldChange({ reviewed: !item.reviewed } as Partial<IdrItem>)}
+                title={item.reviewed ? "Mark as not reviewed" : "Mark as reviewed"}
               >
-                {item.shitShowFlagged ? "\uD83D\uDD25 Shit Show" : "\uD83D\uDD25 Shit Show"}
+                {item.reviewed ? "✓ Reviewed" : "Mark Reviewed"}
               </button>
             )}
             {/* Skip / push to next meeting */}

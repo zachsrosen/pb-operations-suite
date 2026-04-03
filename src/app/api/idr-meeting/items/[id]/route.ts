@@ -9,7 +9,7 @@ const EDITABLE_FIELDS = [
   "needsResurvey", "salesChangeRequested", "salesChangeNotes", "opsChangeNotes",
   "customerNotes",
   "operationsNotes", "designNotes", "conclusion", "sortOrder",
-  "escalationReason", "type", "shitShowFlagged", "shitShowReason",
+  "escalationReason", "type", "reviewed", "shitShowFlagged", "shitShowReason",
 ];
 
 export async function PATCH(

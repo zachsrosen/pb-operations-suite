@@ -111,6 +111,36 @@ export function StatusActionsForm({ item, onChange, readOnly }: Props) {
             />
           )}
         </div>
+
+        {/* Divider */}
+        <div className="border-t border-t-border my-1" />
+
+        {/* Shit Show — flag for the Shit Show meeting */}
+        <div>
+          <div className="flex items-center gap-2">
+            <ToggleSwitch
+              checked={!!item.shitShowFlagged}
+              onChange={() => handleToggle("shitShowFlagged")}
+              disabled={readOnly}
+            />
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+              🔥 Add to Shit Show Meeting
+            </span>
+          </div>
+          {item.shitShowFlagged && (
+            <CompactTextarea
+              value={item.shitShowReason ?? ""}
+              onChange={(val) => handleText("shitShowReason", val)}
+              readOnly={readOnly}
+              placeholder="Why is this a shit show? (optional)..."
+            />
+          )}
+          {item.shitShowFlagged && (
+            <p className="text-[10px] text-red-400 mt-0.5">
+              Will appear in the next Shit Show meeting for discussion.
+            </p>
+          )}
+        </div>
       </div>
     </div>
   );

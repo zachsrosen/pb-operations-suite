@@ -1900,6 +1900,9 @@ model IdrMeetingItem {
   // Escalation
   escalationReason String?
 
+  // Reviewed — marks that the team has finished reviewing this item in the meeting
+  reviewed         Boolean  @default(false)
+
   // Shit Show flag — flagged for discussion in a shit show meeting
   shitShowFlagged  Boolean  @default(false)
   shitShowReason   String?

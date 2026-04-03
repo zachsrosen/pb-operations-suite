@@ -104,13 +104,19 @@ export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isP
                     key={item.id}
                     className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm transition-colors hover:bg-surface-2 ${
                       isSelected ? "bg-surface-2" : ""
-                    }`}
+                    } ${item.reviewed ? "opacity-60" : ""}`}
                     onClick={() => onSelectItem(item.id)}
                   >
-                    {/* Badge dot */}
-                    <span
-                      className={`h-2.5 w-2.5 shrink-0 rounded-full ${BADGE_COLORS[item.badge] ?? "bg-zinc-400"}`}
-                    />
+                    {/* Badge dot — or checkmark if reviewed */}
+                    {item.reviewed ? (
+                      <span className="h-2.5 w-2.5 shrink-0 flex items-center justify-center text-emerald-500 text-[10px]" title="Reviewed">
+                        ✓
+                      </span>
+                    ) : (
+                      <span
+                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${BADGE_COLORS[item.badge] ?? "bg-zinc-400"}`}
+                      />
+                    )}
 
                     {/* Returning indicator */}
                     {item.isReturning && (
@@ -126,8 +132,15 @@ export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isP
                       </span>
                     )}
 
+                    {/* Shit show flag */}
+                    {item.shitShowFlagged && (
+                      <span className="text-xs shrink-0" title="Flagged for Shit Show meeting">
+                        🔥
+                      </span>
+                    )}
+
                     {/* Project number + Name */}
-                    <span className="truncate text-foreground">
+                    <span className={`truncate ${item.reviewed ? "text-muted line-through" : "text-foreground"}`}>
                       {(() => {
                         const { projNum, fullName } = parseDealLabel(item.dealName);
                         return projNum ? `${projNum} ${fullName}` : fullName;

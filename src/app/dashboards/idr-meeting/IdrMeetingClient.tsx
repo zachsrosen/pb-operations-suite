@@ -71,6 +71,7 @@ export interface IdrItem {
   designNotes: string | null;
   conclusion: string | null;
   escalationReason: string | null;
+  reviewed: boolean;
   shitShowFlagged: boolean;
   shitShowReason: string | null;
   hubspotSyncStatus: "DRAFT" | "SYNCED" | "FAILED";
@@ -225,7 +226,14 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
   }, [sessionId]);
 
   // ── Debounced save ──
-  const pendingRef = useRef<Record<string, { itemId: string; dealId: string; updates: Partial<IdrItem> }>>({});
+  interface PendingEntry {
+    itemId: string;
+    dealId: string;
+    dealName: string;
+    region: string | null;
+    updates: Partial<IdrItem>;
+  }
+  const pendingRef = useRef<Record<string, PendingEntry>>({});
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flushPending = useCallback(async () => {
@@ -235,21 +243,18 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
     for (const [, entry] of Object.entries(pending)) {
       try {
         if (isPreview) {
-          // Preview mode: save to prep endpoint
-          const item = (previewQuery.data?.items ?? []).find((i) => i.id === entry.itemId);
           const res = await fetch("/api/idr-meeting/prep", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               dealId: entry.dealId,
-              dealName: item?.dealName ?? "",
-              region: item?.region ?? null,
+              dealName: entry.dealName,
+              region: entry.region,
               ...entry.updates,
             }),
           });
           if (!res.ok) throw new Error("Prep save failed");
         } else {
-          // Session mode: save to items endpoint
           const res = await fetch(`/api/idr-meeting/items/${entry.itemId}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -270,7 +275,6 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
 
   const handleItemChange = useCallback(
     async (itemId: string, updates: Partial<IdrItem>) => {
-      // Find the item to get dealId
       const allItems = isPreview
         ? (previewQuery.data?.items ?? [])
         : (sessionQuery.data?.items ?? []);
@@ -281,6 +285,8 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
       pendingRef.current[itemId] = {
         itemId,
         dealId,
+        dealName: existing?.dealName ?? item?.dealName ?? "",
+        region: existing?.region ?? item?.region ?? null,
         updates: { ...(existing?.updates ?? {}), ...updates },
       };
 
