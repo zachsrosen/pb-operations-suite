@@ -92,6 +92,14 @@ const LINKS: SuitePageCard[] = [
     section: "Tools",
   },
   {
+    href: "/dashboards/idr-meeting",
+    title: "IDR Meeting Hub",
+    description: "Design/ops meeting review queue with auto-populated projects, inline editing, and HubSpot sync",
+    tag: "MEETING",
+    icon: "📋",
+    section: "Tools",
+  },
+  {
     href: "/dashboards/design",
     title: "Design & Engineering (Legacy)",
     description: "Original design progress tracking, engineering approvals, and plan sets.",

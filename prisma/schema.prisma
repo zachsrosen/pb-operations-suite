@@ -1803,3 +1803,118 @@ model RevenueGoal {
   @@unique([year, groupKey, month])
   @@index([year])
 }
+
+// ---------------------------------------------------------------------------
+// IDR Meeting Hub
+// ---------------------------------------------------------------------------
+
+enum IdrSessionStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+}
+
+enum IdrItemType {
+  IDR
+  ESCALATION
+}
+
+enum IdrSyncStatus {
+  DRAFT
+  SYNCED
+  FAILED
+}
+
+enum IdrThreadPostStatus {
+  PENDING
+  POSTED
+  FAILED
+  SKIPPED
+}
+
+model IdrMeetingSession {
+  id        String           @id @default(cuid())
+  date      DateTime
+  status    IdrSessionStatus @default(DRAFT)
+  source    String?          // "app" or "google-doc-import"
+  createdBy String
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  items IdrMeetingItem[]
+
+  @@index([date])
+}
+
+model IdrMeetingItem {
+  id        String      @id @default(cuid())
+  sessionId String
+  session   IdrMeetingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  dealId    String
+  type      IdrItemType @default(IDR)
+  region    String      // pb_location
+  sortOrder Int         @default(0)
+
+  // Snapshot fields (refreshed via stale-while-revalidate)
+  dealName         String
+  address          String?
+  projectType      String?
+  equipmentSummary String?
+  systemSizeKw     Float?
+  surveyStatus     String?
+  surveyDate       String?
+  designStatus     String?
+  plansetDate      String?
+  driveFolderUrl   String?
+  surveyFolderUrl  String?
+  designFolderUrl  String?
+  ahj              String?
+  utilityCompany   String?
+  openSolarUrl     String?
+  surveyCompleted  Boolean  @default(false)
+  snapshotUpdatedAt DateTime @default(now())
+
+  // Editable fields
+  difficulty       Int?
+  installerCount   Int?
+  installerDays    Int?
+  electricianCount Int?
+  electricianDays  Int?
+  discoReco        Boolean?
+  interiorAccess   Boolean?
+  customerNotes    String?
+  operationsNotes  String?
+  designNotes      String?
+  conclusion       String?
+
+  // Escalation
+  escalationReason String?
+
+  // Sync status
+  hubspotSyncStatus IdrSyncStatus       @default(DRAFT)
+  hubspotSyncedAt   DateTime?
+  threadPostStatus  IdrThreadPostStatus  @default(SKIPPED)
+
+  addedBy   String    // "system" or user email
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  notes IdrMeetingNote[]
+
+  @@unique([sessionId, dealId])
+  @@index([sessionId, region])
+  @@index([dealId])
+}
+
+model IdrMeetingNote {
+  id        String   @id @default(cuid())
+  itemId    String
+  item      IdrMeetingItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  dealId    String   // denormalized for cross-meeting queries
+  content   String
+  author    String
+  createdAt DateTime @default(now())
+
+  @@index([itemId])
+  @@index([dealId, createdAt])
+}
