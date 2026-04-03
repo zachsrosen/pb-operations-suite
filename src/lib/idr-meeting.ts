@@ -7,6 +7,10 @@
 
 import { prisma } from "@/lib/db";
 import { hubspotClient, searchWithRetry } from "@/lib/hubspot";
+import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
+import {
+  AssociationSpecAssociationCategoryEnum,
+} from "@hubspot/api-client/lib/codegen/crm/objects/notes/models/AssociationSpec";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -232,8 +236,8 @@ export async function fetchInitialReviewDeals(): Promise<
     filterGroups: [
       {
         filters: [
-          { propertyName: "pipeline", operator: "EQ", value: PROJECT_PIPELINE_ID },
-          { propertyName: "design_status", operator: "EQ", value: "Initial Review" },
+          { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: PROJECT_PIPELINE_ID },
+          { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: "Initial Review" },
         ],
       },
     ],
@@ -290,7 +294,7 @@ export async function createDealTimelineNote(
         to: { id: dealId },
         types: [
           {
-            associationCategory: "HUBSPOT_DEFINED",
+            associationCategory: AssociationSpecAssociationCategoryEnum.HubspotDefined,
             associationTypeId: 214, // note-to-deal
           },
         ],
