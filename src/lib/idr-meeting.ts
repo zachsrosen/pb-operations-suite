@@ -228,19 +228,23 @@ export function buildHubSpotPropertyUpdates(
 // Session creation — query HubSpot + build items
 // ---------------------------------------------------------------------------
 
-/** Query HubSpot for all Project pipeline deals in Initial Review. */
+// Terminal deal stages — deals in these stages should never appear in the IDR queue
+const TERMINAL_DEAL_STAGES = [
+  "68229433",  // Cancelled
+  "20440343",  // Project Complete
+];
+
+/** Query HubSpot for all active Project pipeline deals in Initial Review. */
 export async function fetchInitialReviewDeals(): Promise<
   Array<{ dealId: string; properties: Record<string, string | null> }>
 > {
+  const filters: Record<string, unknown>[] = [
+    { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: PROJECT_PIPELINE_ID },
+    { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: "Initial Review" },
+    { propertyName: "dealstage", operator: FilterOperatorEnum.NotIn, values: TERMINAL_DEAL_STAGES },
+  ];
   const response = await searchWithRetry({
-    filterGroups: [
-      {
-        filters: [
-          { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: PROJECT_PIPELINE_ID },
-          { propertyName: "design_status", operator: FilterOperatorEnum.Eq, value: "Initial Review" },
-        ],
-      },
-    ],
+    filterGroups: [{ filters }] as unknown as { filters: { propertyName: string; operator: typeof FilterOperatorEnum.Eq; value: string }[] }[],
     properties: SNAPSHOT_PROPERTIES,
     limit: 200,
   });

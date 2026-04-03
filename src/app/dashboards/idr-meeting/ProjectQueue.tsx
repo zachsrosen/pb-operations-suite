@@ -22,16 +22,20 @@ const SYNC_INDICATOR: Record<string, { symbol: string; color: string }> = {
   FAILED: { symbol: "\u2717", color: "text-red-500" },
 };
 
-/** Parse customer last name from dealName like "12345 | Smith, John" */
-function parseLastName(dealName: string): string {
-  const parts = dealName.split("|");
-  const namePart = (parts[1] ?? parts[0]).trim();
+/** Parse project number and customer last name from dealName like "PROJ-1234 | Smith, John | 123 Main St" */
+function parseDealLabel(dealName: string): { projNum: string | null; lastName: string } {
+  const parts = dealName.split("|").map((s) => s.trim());
+  // Extract PROJ-XXXX from the first segment
+  const projMatch = parts[0]?.match(/PROJ-\d+/);
+  const projNum = projMatch?.[0] ?? null;
+  // Name is usually the second segment; fall back to first
+  const namePart = parts[1] ?? parts[0] ?? dealName;
   // If "Last, First" format, take the last name
   const comma = namePart.indexOf(",");
-  if (comma > 0) return namePart.slice(0, comma).trim();
+  if (comma > 0) return { projNum, lastName: namePart.slice(0, comma).trim() };
   // If "First Last" format, take the last word
-  const words = namePart.split(/\s+/);
-  return words[words.length - 1] ?? namePart;
+  const words = namePart.trim().split(/\s+/);
+  return { projNum, lastName: words[words.length - 1] ?? namePart };
 }
 
 export function ProjectQueue({ items, selectedItemId, onSelectItem, loading }: Props) {
@@ -106,9 +110,12 @@ export function ProjectQueue({ items, selectedItemId, onSelectItem, loading }: P
                       </span>
                     )}
 
-                    {/* Name */}
+                    {/* Project number + Name */}
                     <span className="truncate text-foreground">
-                      {parseLastName(item.dealName)}
+                      {(() => {
+                        const { projNum, lastName } = parseDealLabel(item.dealName);
+                        return projNum ? `${projNum} ${lastName}` : lastName;
+                      })()}
                     </span>
 
                     {/* Sync indicator */}
