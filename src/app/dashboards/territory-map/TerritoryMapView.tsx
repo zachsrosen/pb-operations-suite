@@ -27,6 +27,13 @@ const MAP_ID = "territory-map";
 const LNG_WEST = -106.6;
 const LNG_EAST = -103.8;
 
+// Photon Brothers office locations
+const OFFICES = [
+  { name: "Westminster", lat: 39.8397, lng: -105.0353 },
+  { name: "Centennial", lat: 39.5977, lng: -104.8722 },
+  { name: "Colorado Springs", lat: 38.8609, lng: -104.7905 },
+] as const;
+
 /* ------------------------------------------------------------------ */
 /*  Zone overlay component                                             */
 /* ------------------------------------------------------------------ */
@@ -223,6 +230,80 @@ function DealMarkers({
 }
 
 /* ------------------------------------------------------------------ */
+/*  Office location markers                                            */
+/* ------------------------------------------------------------------ */
+
+function OfficeMarkers({
+  locationColors,
+}: {
+  locationColors: Record<string, { tw: string; hex: string }>;
+}) {
+  const map = useMap(MAP_ID);
+  const markersRef = useRef<google.maps.Marker[]>([]);
+  const labelsRef = useRef<google.maps.InfoWindow[]>([]);
+
+  useEffect(() => {
+    if (!map) return;
+
+    // Clean up
+    markersRef.current.forEach((m) => m.setMap(null));
+    labelsRef.current.forEach((l) => l.close());
+    markersRef.current = [];
+    labelsRef.current = [];
+
+    for (const office of OFFICES) {
+      const color = locationColors[office.name]?.hex || "#71717A";
+
+      // Large star marker for the office
+      const marker = new google.maps.Marker({
+        position: { lat: office.lat, lng: office.lng },
+        map,
+        title: `PB ${office.name} Office`,
+        icon: {
+          path: "M 0,-8 2,-2.5 8,-2.5 3.5,1 5.5,7 0,3.5 -5.5,7 -3.5,1 -8,-2.5 -2,-2.5 Z",
+          fillColor: color,
+          fillOpacity: 1,
+          strokeColor: "#ffffff",
+          strokeWeight: 2.5,
+          scale: 2.2,
+          anchor: new google.maps.Point(0, 0),
+        },
+        zIndex: 1000,
+      });
+      markersRef.current.push(marker);
+
+      // Always-visible label
+      const label = new google.maps.InfoWindow({
+        content: `<div style="
+          font-family: system-ui, sans-serif;
+          font-size: 11px;
+          font-weight: 700;
+          color: ${color};
+          background: rgba(0,0,0,0.75);
+          padding: 3px 8px;
+          border-radius: 4px;
+          white-space: nowrap;
+          text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+          letter-spacing: 0.02em;
+        ">PB ${office.name}</div>`,
+        position: { lat: office.lat + 0.06, lng: office.lng },
+        disableAutoPan: true,
+        pixelOffset: new google.maps.Size(0, -8),
+      });
+      label.open({ map });
+      labelsRef.current.push(label);
+    }
+
+    return () => {
+      markersRef.current.forEach((m) => m.setMap(null));
+      labelsRef.current.forEach((l) => l.close());
+    };
+  }, [map, locationColors]);
+
+  return null;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Main component                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -277,6 +358,7 @@ export default function TerritoryMapView({
             boundaries={boundaries}
             locationColors={locationColors}
           />
+          <OfficeMarkers locationColors={locationColors} />
           <DealMarkers
             deals={deals}
             locationColors={locationColors}
@@ -351,6 +433,10 @@ export default function TerritoryMapView({
             {name}
           </span>
         ))}
+        <span className="flex items-center gap-1.5 border-l border-white/30 pl-3 ml-1">
+          <span className="text-yellow-300 text-[10px] leading-none">&#9733;</span>
+          Office
+        </span>
       </div>
     </div>
   );
