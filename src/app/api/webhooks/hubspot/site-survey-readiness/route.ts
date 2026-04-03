@@ -75,7 +75,7 @@ const DEAL_PROPERTIES = [
   // Recipients
   "hubspot_owner_id",
   "design",
-  "rtb_lead",
+  "operations_manager",
 ];
 
 // ---------------------------------------------------------------------------
@@ -100,7 +100,7 @@ async function resolveRecipients(
   const ownerIds = [
     properties.site_surveyor,
     properties.design,
-    properties.rtb_lead,
+    properties.operations_manager,
   ];
 
   const emails: string[] = [];
@@ -166,7 +166,7 @@ async function processSurveyReadiness(
     projectId,
   });
 
-  // 5. Send email to surveyor, design lead, preconstruction lead
+  // 5. Send email to surveyor, design lead, operations lead
   const { emails, names } = await resolveRecipients(properties);
 
   if (emails.length > 0) {
