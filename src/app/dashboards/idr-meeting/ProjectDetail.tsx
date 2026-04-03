@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
 import type { IdrItem } from "./IdrMeetingClient";
@@ -19,26 +19,31 @@ interface Props {
   userEmail: string;
 }
 
-interface ReadinessCheck {
-  label: string;
-  status: "pass" | "fail" | "warn" | "info";
-  message?: string;
+interface ReadinessChecklistItem {
+  item: string;
+  status: "pass" | "missing" | "not_found" | "na" | "unable_to_verify";
+  severity: "error" | "warning" | "info";
+  count: number;
+  note: string;
 }
 
 interface ReadinessReport {
-  checks: ReadinessCheck[];
-  score?: number;
+  checklist: ReadinessChecklistItem[];
+  readyForIDR: boolean;
+  totalFiles: number;
 }
 
 const STATUS_EMOJI: Record<string, string> = {
   pass: "\u2705",
-  fail: "\u274C",
-  warn: "\u26A0\uFE0F",
-  info: "\u2139\uFE0F",
+  missing: "\u274C",
+  not_found: "\u274C",
+  na: "\u2796",
+  unable_to_verify: "\u26A0\uFE0F",
 };
 
 export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }: Props) {
   const { addToast } = useToast();
+  const queryClient = useQueryClient();
 
   // Readiness query — lazy-loaded per item
   const readinessQuery = useQuery({
@@ -69,6 +74,9 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
         title: "Synced to HubSpot",
         message: data.noteWarning ?? undefined,
       });
+      if (sessionId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(sessionId) });
+      }
     },
     onError: (err: Error) => {
       addToast({ type: "error", title: "Sync failed", message: err.message });
@@ -158,13 +166,13 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
           )}
           {readinessQuery.data && (
             <div className="space-y-1.5">
-              {readinessQuery.data.checks.map((check, i) => (
+              {readinessQuery.data.checklist.map((check, i) => (
                 <div key={i} className="flex items-start gap-2 text-sm">
-                  <span className="shrink-0">{STATUS_EMOJI[check.status] ?? STATUS_EMOJI.info}</span>
+                  <span className="shrink-0">{STATUS_EMOJI[check.status] ?? "\u2139\uFE0F"}</span>
                   <div>
-                    <span className="font-medium text-foreground">{check.label}</span>
-                    {check.message && (
-                      <span className="text-muted ml-1">-- {check.message}</span>
+                    <span className="font-medium text-foreground">{check.item}</span>
+                    {check.note && (
+                      <span className="text-muted ml-1">— {check.note}</span>
                     )}
                   </div>
                 </div>

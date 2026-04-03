@@ -21,6 +21,19 @@ export async function PATCH(
   }
 
   const { id } = await params;
+
+  // Guard: reject mutations on completed sessions
+  const existing = await prisma.idrMeetingItem.findUnique({
+    where: { id },
+    select: { session: { select: { status: true } } },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: "Item not found" }, { status: 404 });
+  }
+  if (existing.session.status === "COMPLETED") {
+    return NextResponse.json({ error: "Cannot modify a completed session" }, { status: 400 });
+  }
+
   const body = await req.json();
 
   // Filter to only editable fields
@@ -33,12 +46,12 @@ export async function PATCH(
     return NextResponse.json({ error: "No editable fields provided" }, { status: 400 });
   }
 
-  const item = await prisma.idrMeetingItem.update({
+  const updated = await prisma.idrMeetingItem.update({
     where: { id },
     data,
   });
 
-  return NextResponse.json(item);
+  return NextResponse.json(updated);
 }
 
 export async function DELETE(
@@ -52,6 +65,19 @@ export async function DELETE(
   }
 
   const { id } = await params;
+
+  // Guard: reject mutations on completed sessions
+  const target = await prisma.idrMeetingItem.findUnique({
+    where: { id },
+    select: { session: { select: { status: true } } },
+  });
+  if (!target) {
+    return NextResponse.json({ error: "Item not found" }, { status: 404 });
+  }
+  if (target.session.status === "COMPLETED") {
+    return NextResponse.json({ error: "Cannot modify a completed session" }, { status: 400 });
+  }
+
   await prisma.idrMeetingItem.delete({ where: { id } });
   return NextResponse.json({ ok: true });
 }

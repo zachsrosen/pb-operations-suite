@@ -21,6 +21,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "escalationReason required for escalations" }, { status: 400 });
   }
 
+  // Guard: reject mutations on completed sessions
+  const session = await prisma.idrMeetingSession.findUnique({
+    where: { id: sessionId },
+    select: { status: true },
+  });
+  if (!session) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 });
+  }
+  if (session.status === "COMPLETED") {
+    return NextResponse.json({ error: "Cannot modify a completed session" }, { status: 400 });
+  }
+
   // Check for duplicates
   const existing = await prisma.idrMeetingItem.findUnique({
     where: { sessionId_dealId: { sessionId, dealId } },

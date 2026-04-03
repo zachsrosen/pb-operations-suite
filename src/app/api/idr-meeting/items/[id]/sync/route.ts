@@ -22,11 +22,16 @@ export async function POST(
   const { id } = await params;
   const item = await prisma.idrMeetingItem.findUnique({
     where: { id },
-    include: { session: { select: { date: true } } },
+    include: { session: { select: { date: true, status: true } } },
   });
 
   if (!item) {
     return NextResponse.json({ error: "Item not found" }, { status: 404 });
+  }
+
+  // Guard: reject sync on completed sessions
+  if (item.session.status === "COMPLETED") {
+    return NextResponse.json({ error: "Cannot sync items in a completed session" }, { status: 400 });
   }
 
   // A) Push property updates
