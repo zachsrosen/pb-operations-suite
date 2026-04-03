@@ -68,9 +68,10 @@ function addSecurityHeaders(requestId: string, response: NextResponse): NextResp
 
   // Content Security Policy - allow same origin, inline styles/scripts for Next.js
   // Note: unsafe-inline required for Next.js inline scripts; unsafe-eval removed for security
+  // Google Maps JS API requires maps.googleapis.com (scripts) + maps.gstatic.com (resources)
   response.headers.set(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self';"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com https://maps.googleapis.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; worker-src 'self' blob:; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self';"
   );
 
   // Strict Transport Security (HTTPS only in production)

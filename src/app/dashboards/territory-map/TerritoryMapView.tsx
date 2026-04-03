@@ -21,7 +21,9 @@ interface TerritoryMapViewProps {
 
 const COLORADO_CENTER = { lat: 39.5, lng: -104.8 };
 const DEFAULT_ZOOM = 7;
-const MAP_ID = "territory-map";
+// Cloud Map ID enables vector maps + AdvancedMarkerElement.
+// Set NEXT_PUBLIC_GOOGLE_MAP_ID in env, or falls back to DEMO_MAP_ID for development.
+const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAP_ID || "DEMO_MAP_ID";
 
 // Longitude bounds for boundary lines (covers most of Colorado Front Range)
 const LNG_WEST = -105.8;
@@ -244,7 +246,7 @@ export default function TerritoryMapView({
   }
 
   return (
-    <div className="rounded-xl overflow-hidden border border-t-border" style={{ height: "calc(100vh - 340px)" }}>
+    <div className="relative rounded-xl overflow-hidden border border-t-border" style={{ height: "calc(100vh - 340px)" }}>
       <APIProvider apiKey={apiKey}>
         <Map
           id={MAP_ID}
