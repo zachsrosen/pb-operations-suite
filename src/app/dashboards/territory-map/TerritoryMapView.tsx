@@ -21,9 +21,7 @@ interface TerritoryMapViewProps {
 
 const COLORADO_CENTER = { lat: 39.5, lng: -104.8 };
 const DEFAULT_ZOOM = 7;
-// Cloud Map ID enables vector maps + AdvancedMarkerElement.
-// Set NEXT_PUBLIC_GOOGLE_MAP_ID in env, or falls back to DEMO_MAP_ID for development.
-const MAP_ID = process.env.NEXT_PUBLIC_GOOGLE_MAP_ID || "DEMO_MAP_ID";
+const MAP_ID = "territory-map";
 
 // Longitude bounds for boundary lines (covers most of Colorado Front Range)
 const LNG_WEST = -105.8;
@@ -148,7 +146,7 @@ function DealMarkers({
   onMarkerClick: (deal: TerritoryDeal & { computedLocation: string }) => void;
 }) {
   const map = useMap(MAP_ID);
-  const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const markersRef = useRef<google.maps.Marker[]>([]);
   const clustererRef = useRef<MarkerClusterer | null>(null);
 
   useEffect(() => {
@@ -158,27 +156,23 @@ function DealMarkers({
     if (clustererRef.current) {
       clustererRef.current.clearMarkers();
     }
-    markersRef.current.forEach((m) => (m.map = null));
+    markersRef.current.forEach((m) => m.setMap(null));
     markersRef.current = [];
 
     const markers = deals.map((deal) => {
       const color = locationColors[deal.computedLocation]?.hex || "#71717A";
 
-      // Create a small colored circle as the marker content
-      const pin = document.createElement("div");
-      pin.style.width = "10px";
-      pin.style.height = "10px";
-      pin.style.borderRadius = "50%";
-      pin.style.backgroundColor = color;
-      pin.style.border = "1.5px solid rgba(255,255,255,0.8)";
-      pin.style.boxShadow = "0 1px 3px rgba(0,0,0,0.3)";
-      pin.style.cursor = "pointer";
-
-      const marker = new google.maps.marker.AdvancedMarkerElement({
+      const marker = new google.maps.Marker({
         position: { lat: deal.latitude, lng: deal.longitude },
-        map: null, // Clusterer will manage map assignment
-        content: pin,
         title: deal.name,
+        icon: {
+          path: google.maps.SymbolPath.CIRCLE,
+          fillColor: color,
+          fillOpacity: 0.9,
+          strokeColor: "#fff",
+          strokeWeight: 1.5,
+          scale: 5,
+        },
       });
 
       marker.addListener("click", () => onMarkerClick(deal));
@@ -202,7 +196,7 @@ function DealMarkers({
       if (clustererRef.current) {
         clustererRef.current.clearMarkers();
       }
-      markersRef.current.forEach((m) => (m.map = null));
+      markersRef.current.forEach((m) => m.setMap(null));
     };
   }, [map, deals, locationColors, onMarkerClick]);
 
@@ -252,7 +246,6 @@ export default function TerritoryMapView({
           id={MAP_ID}
           defaultCenter={COLORADO_CENTER}
           defaultZoom={DEFAULT_ZOOM}
-          mapId={MAP_ID}
           gestureHandling="greedy"
           disableDefaultUI={false}
           zoomControl
