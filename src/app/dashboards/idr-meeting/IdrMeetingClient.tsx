@@ -285,6 +285,10 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
         onNewSession={() => createSession.mutate()}
         onOpenAddDialog={() => setShowAddDialog(true)}
         onViewPreview={() => setSessionId(null)}
+        onSessionEnded={() => {
+          setSessionId(null);
+          setSelectedItemId(null);
+        }}
         creating={createSession.isPending}
         isPreview={isPreview}
         previewCount={previewQuery.data?.items?.length ?? 0}

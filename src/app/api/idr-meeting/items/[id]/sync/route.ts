@@ -53,15 +53,18 @@ export async function POST(
 
   try {
     if (Object.keys(properties).length > 0) {
+      console.log(`[idr-meeting] Syncing deal ${item.dealId} properties:`, JSON.stringify(properties));
       await pushDealProperties(item.dealId, properties);
     }
-  } catch (err) {
-    console.error(`[idr-meeting] Property sync failed for deal ${item.dealId}:`, err);
+  } catch (err: unknown) {
+    const errBody = (err as { body?: unknown })?.body ?? (err as { message?: string })?.message ?? err;
+    console.error(`[idr-meeting] Property sync failed for deal ${item.dealId}:`, JSON.stringify(errBody, null, 2));
     await prisma.idrMeetingItem.update({
       where: { id },
       data: { hubspotSyncStatus: "FAILED" },
     });
-    return NextResponse.json({ error: "Property sync failed", hubspotSyncStatus: "FAILED" }, { status: 502 });
+    const detail = typeof errBody === "object" && errBody !== null ? JSON.stringify(errBody) : String(errBody);
+    return NextResponse.json({ error: "Property sync failed", detail, hubspotSyncStatus: "FAILED" }, { status: 502 });
   }
 
   // B) Create timeline note

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
@@ -20,6 +21,7 @@ interface Props {
   onNewSession: () => void;
   onOpenAddDialog: () => void;
   onViewPreview: () => void;
+  onSessionEnded: () => void;
   creating: boolean;
   isPreview: boolean;
   previewCount: number;
@@ -31,11 +33,6 @@ const STATUS_COLORS: Record<string, string> = {
   COMPLETED: "bg-emerald-500 text-white",
 };
 
-const STATUS_NEXT: Record<string, string> = {
-  DRAFT: "ACTIVE",
-  ACTIVE: "COMPLETED",
-};
-
 export function SessionHeader({
   session,
   sessions,
@@ -43,34 +40,38 @@ export function SessionHeader({
   onNewSession,
   onOpenAddDialog,
   onViewPreview,
+  onSessionEnded,
   creating,
   isPreview,
   previewCount,
 }: Props) {
   const queryClient = useQueryClient();
   const { addToast } = useToast();
+  const [showEndConfirm, setShowEndConfirm] = useState(false);
 
-  const advanceStatus = useMutation({
-    mutationFn: async () => {
+  const updateStatus = useMutation({
+    mutationFn: async (newStatus: string) => {
       if (!session) return;
-      const next = STATUS_NEXT[session.status];
-      if (!next) return;
       const res = await fetch(`/api/idr-meeting/sessions/${session.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: next }),
+        body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) throw new Error("Failed to update status");
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (_, newStatus) => {
       if (session) {
         queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(session.id) });
         queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.sessions() });
       }
+      if (newStatus === "COMPLETED") {
+        addToast({ type: "success", title: "Session ended" });
+        onSessionEnded();
+      }
     },
     onError: () => {
-      addToast({ type: "error", title: "Failed to advance session status" });
+      addToast({ type: "error", title: "Failed to update session status" });
     },
   });
 
@@ -86,6 +87,10 @@ export function SessionHeader({
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([region, count]) => `${count} ${region}`),
   ].join(" \u00B7 ");
+
+  const isActive = session && session.status !== "COMPLETED";
+  const syncedCount = items.filter((i) => i.hubspotSyncStatus === "SYNCED").length;
+  const unsyncedCount = items.length - syncedCount;
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-xl border border-t-border bg-surface px-4 py-3">
@@ -107,6 +112,7 @@ export function SessionHeader({
         {sessions.map((s) => (
           <option key={s.id} value={s.id}>
             {new Date(s.date).toLocaleDateString()} ({s._count.items} projects)
+            {s.status === "COMPLETED" ? " \u2713" : ""}
           </option>
         ))}
       </select>
@@ -128,24 +134,17 @@ export function SessionHeader({
           </span>
         )}
 
-        {/* Status badge (clickable to advance) */}
+        {/* Status badge */}
         {session && !isPreview && (
-          <button
+          <span
             className={`rounded-full px-3 py-0.5 text-xs font-semibold ${STATUS_COLORS[session.status] ?? "bg-zinc-500 text-white"}`}
-            onClick={() => advanceStatus.mutate()}
-            disabled={!STATUS_NEXT[session.status] || advanceStatus.isPending}
-            title={
-              STATUS_NEXT[session.status]
-                ? `Click to advance to ${STATUS_NEXT[session.status]}`
-                : "Session completed"
-            }
           >
             {session.status}
-          </button>
+          </span>
         )}
 
-        {/* Add Project */}
-        {session && session.status !== "COMPLETED" && !isPreview && (
+        {/* Add Project — only in active sessions */}
+        {isActive && !isPreview && (
           <button
             className="rounded-lg bg-surface-2 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface transition-colors border border-t-border"
             onClick={onOpenAddDialog}
@@ -154,14 +153,54 @@ export function SessionHeader({
           </button>
         )}
 
-        {/* Start / New Session */}
-        <button
-          className="rounded-lg bg-orange-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-600 transition-colors disabled:opacity-50"
-          onClick={onNewSession}
-          disabled={creating}
-        >
-          {creating ? "Creating..." : isPreview ? "Start Session" : "New Session"}
-        </button>
+        {/* End Session — active sessions only */}
+        {isActive && !isPreview && (
+          <>
+            {!showEndConfirm ? (
+              <button
+                className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm font-medium text-red-500 hover:bg-red-500/20 transition-colors"
+                onClick={() => setShowEndConfirm(true)}
+              >
+                End Session
+              </button>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                {unsyncedCount > 0 && (
+                  <span className="text-[10px] text-orange-500">
+                    {unsyncedCount} unsynced
+                  </span>
+                )}
+                <button
+                  className="rounded-lg bg-red-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-600 transition-colors disabled:opacity-50"
+                  onClick={() => {
+                    updateStatus.mutate("COMPLETED");
+                    setShowEndConfirm(false);
+                  }}
+                  disabled={updateStatus.isPending}
+                >
+                  {updateStatus.isPending ? "Ending..." : "Confirm End"}
+                </button>
+                <button
+                  className="rounded-lg border border-t-border bg-surface-2 px-2 py-1.5 text-xs text-muted hover:text-foreground transition-colors"
+                  onClick={() => setShowEndConfirm(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Start Session — from preview */}
+        {isPreview && (
+          <button
+            className="rounded-lg bg-orange-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-600 transition-colors disabled:opacity-50"
+            onClick={onNewSession}
+            disabled={creating}
+          >
+            {creating ? "Creating..." : "Start Session"}
+          </button>
+        )}
       </div>
     </div>
   );

@@ -77,7 +77,7 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
       const res = await fetch(`/api/idr-meeting/items/${item.id}/sync`, { method: "POST" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "Sync failed");
+        throw new Error(body.detail ?? body.error ?? "Sync failed");
       }
       return res.json();
     },
