@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
-import type { IdrSession } from "./IdrMeetingClient";
+import type { IdrSession, PresenceUser } from "./IdrMeetingClient";
 
 interface SessionListItem {
   id: string;
@@ -25,6 +25,7 @@ interface Props {
   creating: boolean;
   isPreview: boolean;
   previewCount: number;
+  presenceUsers: PresenceUser[];
 }
 
 export function SessionHeader({
@@ -38,6 +39,7 @@ export function SessionHeader({
   creating,
   isPreview,
   previewCount,
+  presenceUsers,
 }: Props) {
   const queryClient = useQueryClient();
   const { addToast } = useToast();
@@ -97,6 +99,11 @@ export function SessionHeader({
               Fill in planning fields now — everything carries over when you start a meeting.
             </span>
 
+            {/* Presence avatars */}
+            {presenceUsers.length > 0 && (
+              <PresenceAvatars users={presenceUsers} />
+            )}
+
             <div className="ml-auto flex items-center gap-2">
               {/* Past meetings dropdown */}
               <select
@@ -149,6 +156,11 @@ export function SessionHeader({
                 {session ? new Date(session.date).toLocaleDateString() : ""} — {items.length} projects
               </span>
             </div>
+
+            {/* Presence avatars */}
+            {presenceUsers.length > 0 && (
+              <PresenceAvatars users={presenceUsers} />
+            )}
 
             <div className="flex items-center gap-1.5 text-xs text-muted">
               {[...regionCounts.entries()]
@@ -219,5 +231,49 @@ export function SessionHeader({
         </div>
       )}
     </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Presence Avatars — shows who else is in the meeting
+// ---------------------------------------------------------------------------
+
+const AVATAR_COLORS = [
+  "bg-blue-500", "bg-emerald-500", "bg-purple-500", "bg-pink-500",
+  "bg-amber-500", "bg-cyan-500", "bg-rose-500", "bg-indigo-500",
+];
+
+function PresenceAvatars({ users }: { users: PresenceUser[] }) {
+  return (
+    <div className="flex items-center gap-1">
+      <span className="text-[10px] text-muted mr-0.5">Also here:</span>
+      <div className="flex -space-x-1.5">
+        {users.slice(0, 6).map((user, i) => {
+          const initials = (user.name ?? user.email)
+            .split(/[\s@]+/)
+            .slice(0, 2)
+            .map((w) => w[0]?.toUpperCase() ?? "")
+            .join("");
+          const colorClass = AVATAR_COLORS[i % AVATAR_COLORS.length];
+          return (
+            <div
+              key={user.email}
+              className={`h-6 w-6 rounded-full ${colorClass} flex items-center justify-center text-[9px] font-bold text-white ring-2 ring-surface`}
+              title={user.name ?? user.email}
+            >
+              {user.image ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={user.image} alt="" className="h-6 w-6 rounded-full" />
+              ) : (
+                initials
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {users.length > 6 && (
+        <span className="text-[10px] text-muted">+{users.length - 6}</span>
+      )}
+    </div>
   );
 }

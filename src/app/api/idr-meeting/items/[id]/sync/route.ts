@@ -8,6 +8,7 @@ import {
   pushDealProperties,
   createDealTimelineNote,
 } from "@/lib/idr-meeting";
+import { appCache } from "@/lib/cache";
 
 export async function POST(
   req: NextRequest,
@@ -106,6 +107,9 @@ export async function POST(
       hubspotSyncedAt: new Date(),
     },
   });
+
+  // Broadcast so other clients see the sync status update
+  appCache.invalidate(`idr-meeting:session:${item.sessionId}`);
 
   return NextResponse.json({
     hubspotSyncStatus: "SYNCED",

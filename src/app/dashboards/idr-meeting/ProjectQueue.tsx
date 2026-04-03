@@ -1,6 +1,6 @@
 "use client";
 
-import type { IdrItem } from "./IdrMeetingClient";
+import type { IdrItem, PresenceUser } from "./IdrMeetingClient";
 
 interface Props {
   items: IdrItem[];
@@ -8,6 +8,7 @@ interface Props {
   onSelectItem: (id: string) => void;
   loading: boolean;
   isPreview?: boolean;
+  presenceUsers?: PresenceUser[];
 }
 
 const BADGE_COLORS: Record<string, string> = {
@@ -54,7 +55,16 @@ function regionSortKey(region: string): number {
   return REGION_ORDER[region] ?? 99;
 }
 
-export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isPreview }: Props) {
+export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isPreview, presenceUsers = [] }: Props) {
+  // Build a map of itemId → users viewing it
+  const viewersByItem = new Map<string, PresenceUser[]>();
+  for (const u of presenceUsers) {
+    if (u.selectedItemId) {
+      const list = viewersByItem.get(u.selectedItemId) ?? [];
+      list.push(u);
+      viewersByItem.set(u.selectedItemId, list);
+    }
+  }
   // Group by region
   const regionGroups = new Map<string, IdrItem[]>();
   for (const item of items) {
@@ -98,13 +108,14 @@ export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isP
               .map((item) => {
                 const sync = SYNC_INDICATOR[item.hubspotSyncStatus] ?? SYNC_INDICATOR.DRAFT;
                 const isSelected = item.id === selectedItemId;
+                const viewers = viewersByItem.get(item.id);
 
                 return (
                   <button
                     key={item.id}
                     className={`w-full text-left px-3 py-2 flex items-center gap-2 text-sm transition-colors hover:bg-surface-2 ${
                       isSelected ? "bg-surface-2" : ""
-                    } ${item.reviewed ? "opacity-60" : ""}`}
+                    } ${item.reviewed ? "opacity-60" : ""} ${viewers?.length ? "ring-1 ring-inset ring-blue-400/50" : ""}`}
                     onClick={() => onSelectItem(item.id)}
                   >
                     {/* Badge dot — or checkmark if reviewed */}
@@ -147,8 +158,17 @@ export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isP
                       })()}
                     </span>
 
+                    {/* Viewer presence dots */}
+                    {viewers?.length ? (
+                      <span className="ml-auto flex items-center gap-0.5 shrink-0" title={viewers.map((v) => v.name ?? v.email).join(", ")}>
+                        {viewers.slice(0, 2).map((v) => (
+                          <span key={v.email} className="h-2 w-2 rounded-full bg-blue-400 animate-pulse" />
+                        ))}
+                      </span>
+                    ) : null}
+
                     {/* Sync indicator */}
-                    <span className={`ml-auto shrink-0 text-xs ${sync.color}`}>
+                    <span className={`${viewers?.length ? "" : "ml-auto"} shrink-0 text-xs ${sync.color}`}>
                       {sync.symbol}
                     </span>
                   </button>

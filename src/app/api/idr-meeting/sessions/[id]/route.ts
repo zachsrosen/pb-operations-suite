@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
+import { appCache } from "@/lib/cache";
 import { isIdrAllowedRole, computeReadinessBadge, getReturningDealIds } from "@/lib/idr-meeting";
 
 export async function GET(
@@ -60,6 +61,10 @@ export async function PATCH(
     where: { id },
     data: { status },
   });
+
+  // Broadcast status change (e.g. meeting ended) to all clients
+  appCache.invalidate(`idr-meeting:session:${id}`);
+  appCache.invalidate("idr-meeting:sessions");
 
   return NextResponse.json(session);
 }

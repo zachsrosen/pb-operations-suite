@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
 import { isIdrAllowedRole } from "@/lib/idr-meeting";
+import { appCache } from "@/lib/cache";
 
 /**
  * POST /api/idr-meeting/prep
@@ -65,6 +66,9 @@ export async function POST(req: NextRequest) {
       },
     });
   }
+
+  // Broadcast so other clients in preview mode see the edit
+  appCache.invalidate("idr-meeting:preview");
 
   return NextResponse.json(record);
 }

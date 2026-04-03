@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
 import { isIdrAllowedRole } from "@/lib/idr-meeting";
+import { appCache } from "@/lib/cache";
 
 /**
  * GET /api/idr-meeting/escalation-queue
@@ -79,6 +80,9 @@ export async function POST(req: NextRequest) {
       ...prefillData,
     },
   });
+
+  // Broadcast so other clients see the new escalation in preview
+  appCache.invalidate("idr-meeting:preview");
 
   return NextResponse.json(item, { status: 201 });
 }

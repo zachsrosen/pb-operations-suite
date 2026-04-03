@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
+import { appCache } from "@/lib/cache";
 import {
   isIdrAllowedRole,
   fetchInitialReviewDeals,
@@ -199,6 +200,9 @@ export async function POST(req: NextRequest) {
       data: { status: "CONSUMED", consumedBySession: session.id },
     });
   }
+
+  // Broadcast session creation so other clients see the new meeting
+  appCache.invalidate("idr-meeting:sessions");
 
   return NextResponse.json({ session, items }, { status: 201 });
 }

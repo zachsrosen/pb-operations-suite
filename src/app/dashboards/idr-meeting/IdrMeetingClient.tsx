@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
+import { useSSE } from "@/hooks/useSSE";
 import { useToast } from "@/contexts/ToastContext";
 import { SessionHeader } from "./SessionHeader";
 import { ProjectQueue } from "./ProjectQueue";
@@ -105,6 +106,15 @@ interface SessionListItem {
 // Component
 // ---------------------------------------------------------------------------
 
+export interface PresenceUser {
+  email: string;
+  name: string | null;
+  image: string | null;
+  sessionId: string | null;
+  selectedItemId: string | null;
+  lastSeen: number;
+}
+
 export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
   const queryClient = useQueryClient();
   const { addToast } = useToast();
@@ -115,6 +125,56 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
   const [initialized, setInitialized] = useState(false);
 
   const isPreview = !sessionId;
+
+  // ── Real-time sync via SSE ──
+  useSSE(null, { cacheKeyFilter: "idr-meeting" });
+
+  // ── Presence heartbeat (every 8s) ──
+  const presencePayloadRef = useRef({ sessionId, selectedItemId });
+  presencePayloadRef.current = { sessionId, selectedItemId };
+
+  useEffect(() => {
+    const sendHeartbeat = () => {
+      const { sessionId: sid, selectedItemId: selId } = presencePayloadRef.current;
+      fetch("/api/idr-meeting/presence", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId: sid, selectedItemId: selId }),
+      }).catch(() => {}); // fire-and-forget
+    };
+    sendHeartbeat(); // immediate
+    const interval = setInterval(sendHeartbeat, 8000);
+    return () => {
+      clearInterval(interval);
+      // Signal departure
+      fetch("/api/idr-meeting/presence", { method: "DELETE" }).catch(() => {});
+    };
+  }, []);
+
+  // Send heartbeat on view change (session switch or item selection)
+  useEffect(() => {
+    fetch("/api/idr-meeting/presence", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId, selectedItemId }),
+    }).catch(() => {});
+  }, [sessionId, selectedItemId]);
+
+  // ── Presence query ──
+  const presenceQuery = useQuery({
+    queryKey: [...queryKeys.idrMeeting.root, "presence", sessionId ?? "preview"],
+    queryFn: async () => {
+      const params = sessionId ? `?sessionId=${sessionId}` : "";
+      const res = await fetch(`/api/idr-meeting/presence${params}`);
+      if (!res.ok) return { users: [] as PresenceUser[] };
+      return res.json() as Promise<{ users: PresenceUser[] }>;
+    },
+    refetchInterval: 10000, // poll every 10s as backup to SSE
+  });
+
+  const presenceUsers = (presenceQuery.data?.users ?? []).filter(
+    (u) => u.email !== userEmail,
+  );
 
   // ── Queries ──
   const sessionsQuery = useQuery({
@@ -356,6 +416,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
         creating={createSession.isPending}
         isPreview={isPreview}
         previewCount={previewQuery.data?.items?.length ?? 0}
+        presenceUsers={presenceUsers}
       />
 
       <div className="flex gap-4 h-[calc(100vh-13rem)] overflow-hidden">
@@ -365,6 +426,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
           onSelectItem={setSelectedItemId}
           loading={displayLoading}
           isPreview={isPreview}
+          presenceUsers={presenceUsers}
         />
 
         <ProjectDetail

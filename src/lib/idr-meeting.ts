@@ -220,28 +220,34 @@ export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string): strin
       : `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
   }
 
-  const lines: string[] = [`IDR Meeting -- ${formatted}`, ""];
+  // HubSpot hs_note_body is rendered as HTML — use <br> for line breaks
+  const lines: string[] = [`<strong>IDR Meeting -- ${formatted}</strong>`];
 
-  if (fields.customerNotes) lines.push(`Customer Notes: ${fields.customerNotes}`);
-  if (fields.operationsNotes) lines.push(`Operation Notes: ${fields.operationsNotes}`);
-  if (fields.difficulty != null) lines.push(`Difficulty: ${fields.difficulty}/5`);
+  if (fields.customerNotes) lines.push(`<strong>Customer Notes:</strong> ${esc(fields.customerNotes)}`);
+  if (fields.operationsNotes) lines.push(`<strong>Operation Notes:</strong> ${esc(fields.operationsNotes)}`);
+  if (fields.difficulty != null) lines.push(`<strong>Difficulty:</strong> ${fields.difficulty}/5`);
   if (fields.installerCount != null || fields.installerDays != null) {
-    lines.push(`Roofers: ${fields.installerCount ?? "?"} count / ${fields.installerDays ?? "?"} day${(fields.installerDays ?? 0) !== 1 ? "s" : ""}`);
+    lines.push(`<strong>Roofers:</strong> ${fields.installerCount ?? "?"} count / ${fields.installerDays ?? "?"} day${(fields.installerDays ?? 0) !== 1 ? "s" : ""}`);
   }
   if (fields.electricianCount != null || fields.electricianDays != null) {
-    lines.push(`Electricians: ${fields.electricianCount ?? "?"} count / ${fields.electricianDays ?? "?"} day${(fields.electricianDays ?? 0) !== 1 ? "s" : ""}`);
+    lines.push(`<strong>Electricians:</strong> ${fields.electricianCount ?? "?"} count / ${fields.electricianDays ?? "?"} day${(fields.electricianDays ?? 0) !== 1 ? "s" : ""}`);
   }
-  if (fields.discoReco != null) lines.push(`Disco/Reco: ${fields.discoReco ? "Yes" : "No"}`);
-  if (fields.interiorAccess != null) lines.push(`Interior Access: ${fields.interiorAccess ? "Yes" : "No"}`);
-  if (fields.salesChangeRequested) lines.push(`Sales Change Requested: Yes`);
-  if (fields.salesChangeNotes) lines.push(`Sales Communication Reason: ${fields.salesChangeNotes}`);
-  if (fields.needsSurveyInfo) lines.push(`Needs Survey Info: Yes`);
-  if (fields.opsChangeNotes) lines.push(`Ops Communication Reason: ${fields.opsChangeNotes}`);
-  if (fields.needsResurvey) lines.push(`Needs Resurvey: Yes`);
-  if (fields.designNotes) lines.push(`Design Notes: ${fields.designNotes}`);
-  if (fields.conclusion) lines.push(`Conclusion: ${fields.conclusion}`);
+  if (fields.discoReco != null) lines.push(`<strong>Disco/Reco:</strong> ${fields.discoReco ? "Yes" : "No"}`);
+  if (fields.interiorAccess != null) lines.push(`<strong>Interior Access:</strong> ${fields.interiorAccess ? "Yes" : "No"}`);
+  if (fields.salesChangeRequested) lines.push(`<strong>Sales Change Requested:</strong> Yes`);
+  if (fields.salesChangeNotes) lines.push(`<strong>Sales Communication Reason:</strong> ${esc(fields.salesChangeNotes)}`);
+  if (fields.needsSurveyInfo) lines.push(`<strong>Needs Survey Info:</strong> Yes`);
+  if (fields.opsChangeNotes) lines.push(`<strong>Ops Communication Reason:</strong> ${esc(fields.opsChangeNotes)}`);
+  if (fields.needsResurvey) lines.push(`<strong>Needs Resurvey:</strong> Yes`);
+  if (fields.designNotes) lines.push(`<strong>Design Notes:</strong> ${esc(fields.designNotes)}`);
+  if (fields.conclusion) lines.push(`<strong>Conclusion:</strong> ${esc(fields.conclusion)}`);
 
-  return lines.join("\n");
+  return lines.join("<br>");
+}
+
+/** Escape HTML special characters in user-provided text */
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 // ---------------------------------------------------------------------------
@@ -354,16 +360,33 @@ export async function pushDealProperties(
   await hubspotClient.crm.deals.basicApi.update(dealId, { properties });
 }
 
+/**
+ * HubSpot owner IDs to @mention on IDR meeting notes.
+ * Comma-separated list of HubSpot owner IDs.
+ * Set IDR_MEETING_MENTION_OWNER_IDS in .env.
+ */
+const IDR_MENTION_OWNER_IDS = (process.env.IDR_MEETING_MENTION_OWNER_IDS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 /** Create a note engagement on a HubSpot deal timeline. */
 export async function createDealTimelineNote(
   dealId: string,
   noteBody: string,
 ): Promise<void> {
+  const properties: Record<string, string> = {
+    hs_note_body: noteBody,
+    hs_timestamp: new Date().toISOString(),
+  };
+
+  // @mention configured owners so they get notified
+  if (IDR_MENTION_OWNER_IDS.length > 0) {
+    properties.hs_at_mentioned_owner_ids = IDR_MENTION_OWNER_IDS.join(";");
+  }
+
   await hubspotClient.crm.objects.notes.basicApi.create({
-    properties: {
-      hs_note_body: noteBody,
-      hs_timestamp: new Date().toISOString(),
-    },
+    properties,
     associations: [
       {
         to: { id: dealId },

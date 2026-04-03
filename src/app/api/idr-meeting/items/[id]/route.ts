@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
 import { isIdrAllowedRole } from "@/lib/idr-meeting";
+import { appCache } from "@/lib/cache";
 
 const EDITABLE_FIELDS = [
   "difficulty", "installerCount", "installerDays", "electricianCount",
@@ -53,6 +54,9 @@ export async function PATCH(
     data,
   });
 
+  // Broadcast change so other clients refetch in real time
+  appCache.invalidate(`idr-meeting:session:${updated.sessionId}`);
+
   return NextResponse.json(updated);
 }
 
@@ -80,6 +84,14 @@ export async function DELETE(
     return NextResponse.json({ error: "Cannot modify a completed session" }, { status: 400 });
   }
 
+  const deleted = await prisma.idrMeetingItem.findUnique({
+    where: { id },
+    select: { sessionId: true },
+  });
   await prisma.idrMeetingItem.delete({ where: { id } });
+
+  // Broadcast deletion so other clients update
+  if (deleted) appCache.invalidate(`idr-meeting:session:${deleted.sessionId}`);
+
   return NextResponse.json({ ok: true });
 }

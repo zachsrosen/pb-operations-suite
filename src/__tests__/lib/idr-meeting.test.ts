@@ -117,8 +117,8 @@ describe("buildHubSpotNoteBody", () => {
     };
     const body = buildHubSpotNoteBody(item, "2026-04-01");
     expect(body).toContain("IDR Meeting -- 4/1/2026");
-    expect(body).toContain("Customer Notes: Wants panels hidden");
-    expect(body).toContain("Difficulty: 3/5");
+    expect(body).toContain("<strong>Customer Notes:</strong> Wants panels hidden");
+    expect(body).toContain("<strong>Difficulty:</strong> 3/5");
     expect(body).not.toContain("undefined");
   });
 
@@ -137,7 +137,7 @@ describe("buildHubSpotNoteBody", () => {
       conclusion: null,
     };
     const body = buildHubSpotNoteBody(item, "2026-04-01");
-    expect(body).toContain("Operation Notes: Just ops notes");
+    expect(body).toContain("<strong>Operation Notes:</strong> Just ops notes");
     expect(body).not.toContain("Customer Notes");
     expect(body).not.toContain("Difficulty");
   });
