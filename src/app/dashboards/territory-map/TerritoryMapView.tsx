@@ -23,8 +23,8 @@ const COLORADO_CENTER = { lat: 39.5, lng: -104.8 };
 const DEFAULT_ZOOM = 7;
 const MAP_ID = "territory-map";
 
-// Longitude bounds for boundary lines (covers most of Colorado Front Range)
-const LNG_WEST = -105.8;
+// Longitude bounds for boundary lines — extends west to include Breckenridge / Summit County
+const LNG_WEST = -106.6;
 const LNG_EAST = -103.8;
 
 /* ------------------------------------------------------------------ */
@@ -85,42 +85,61 @@ function ZoneOverlays({
         strokeOpacity: 0.3,
         strokeWeight: 1,
         fillColor: zone.color,
-        fillOpacity: 0.06,
+        fillOpacity: 0.1,
         map,
         clickable: false,
       });
       overlaysRef.current.push(rect);
     }
 
-    // Boundary lines (dashed)
+    // Boundary lines — thick solid white + colored dashed overlay for visibility
     const lineLatitudes = [boundaries.westminster, boundaries.centennial];
-    const lineColors = [
-      locationColors.Centennial?.hex || "#10B981",
-      locationColors["Colorado Springs"]?.hex || "#F59E0B",
-    ];
 
     for (let i = 0; i < lineLatitudes.length; i++) {
-      const line = new google.maps.Polyline({
+      // Thick white underline for contrast
+      const bgLine = new google.maps.Polyline({
         path: [
           { lat: lineLatitudes[i], lng: LNG_WEST },
           { lat: lineLatitudes[i], lng: LNG_EAST },
         ],
-        strokeColor: lineColors[i],
-        strokeOpacity: 0.8,
-        strokeWeight: 2,
+        strokeColor: "#ffffff",
+        strokeOpacity: 0.85,
+        strokeWeight: 4,
+        map,
+        clickable: false,
+        zIndex: 10,
+      });
+      polylinesRef.current.push(bgLine);
+
+      // Colored dashed line on top
+      const dashLine = new google.maps.Polyline({
+        path: [
+          { lat: lineLatitudes[i], lng: LNG_WEST },
+          { lat: lineLatitudes[i], lng: LNG_EAST },
+        ],
+        strokeColor: "#000000",
+        strokeOpacity: 0,
+        strokeWeight: 0,
         icons: [
           {
-            icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 3 },
+            icon: {
+              path: "M 0,-1 0,1",
+              strokeOpacity: 1,
+              strokeColor: i === 0
+                ? (locationColors.Westminster?.hex || "#3B82F6")
+                : (locationColors["Colorado Springs"]?.hex || "#F59E0B"),
+              strokeWeight: 3,
+              scale: 4,
+            },
             offset: "0",
-            repeat: "15px",
+            repeat: "12px",
           },
         ],
         map,
         clickable: false,
+        zIndex: 11,
       });
-      // Make the main stroke invisible — the icons create the dashed effect
-      line.setOptions({ strokeOpacity: 0 });
-      polylinesRef.current.push(line);
+      polylinesRef.current.push(dashLine);
     }
 
     return () => {

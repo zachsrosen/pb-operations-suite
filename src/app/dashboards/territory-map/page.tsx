@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
@@ -11,6 +11,100 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { queryKeys } from "@/lib/query-keys";
 import { formatCurrencyCompact } from "@/lib/format";
 import { LOCATION_COLORS, TERRITORY_BOUNDARIES } from "@/lib/constants";
+
+/* ------------------------------------------------------------------ */
+/*  AI Analysis component                                              */
+/* ------------------------------------------------------------------ */
+
+interface OfficeStat {
+  name: string;
+  count: number;
+  totalRevenue: number;
+  pct: number;
+}
+
+function TerritoryAIAnalysis({
+  officeStats,
+  useProposed,
+  boundaries,
+  totalDeals,
+}: {
+  officeStats: OfficeStat[];
+  useProposed: boolean;
+  boundaries: { westminster: number; centennial: number };
+  totalDeals: number;
+}) {
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const runAnalysis = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    setAnalysis(null);
+
+    try {
+      const res = await fetch("/api/territory-map/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          officeStats,
+          useProposed,
+          boundaries,
+          totalDeals,
+        }),
+      });
+      if (!res.ok) throw new Error(`Analysis failed: ${res.status}`);
+      const data = await res.json();
+      setAnalysis(data.analysis);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Analysis failed");
+    } finally {
+      setLoading(false);
+    }
+  }, [officeStats, useProposed, boundaries, totalDeals]);
+
+  return (
+    <div className="mt-6 bg-surface rounded-xl border border-t-border p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">AI Territory Analysis</span>
+        </div>
+        <button
+          onClick={runAnalysis}
+          disabled={loading}
+          className="px-4 py-2 text-sm font-medium rounded-lg bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {loading ? "Analyzing..." : analysis ? "Re-analyze" : "Run Analysis"}
+        </button>
+      </div>
+
+      {loading && (
+        <div className="flex items-center gap-3 text-muted py-8 justify-center">
+          <LoadingSpinner />
+          <span className="text-sm">Analyzing territory distribution and patterns...</span>
+        </div>
+      )}
+
+      {error && (
+        <div className="text-red-400 text-sm bg-red-500/10 rounded-lg p-3">{error}</div>
+      )}
+
+      {analysis && !loading && (
+        <div className="prose prose-sm prose-invert max-w-none text-foreground/90 leading-relaxed whitespace-pre-wrap">
+          {analysis}
+        </div>
+      )}
+
+      {!analysis && !loading && !error && (
+        <p className="text-muted text-sm">
+          Click &ldquo;Run Analysis&rdquo; to get AI-powered insights on territory distribution, deal
+          balance, revenue patterns, and boundary optimization recommendations.
+        </p>
+      )}
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -251,6 +345,16 @@ export default function TerritoryMapPage() {
           deals={filteredDeals}
           boundaries={boundaries}
           locationColors={LOCATION_COLORS}
+        />
+      )}
+
+      {/* ---- AI Analysis ---- */}
+      {!isLoading && filteredDeals.length > 0 && (
+        <TerritoryAIAnalysis
+          officeStats={officeStats}
+          useProposed={useProposed}
+          boundaries={boundaries}
+          totalDeals={filteredDeals.length}
         />
       )}
     </DashboardShell>
