@@ -44,8 +44,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const validTypes = ["ESCALATION", "DESIGN_REVIEW"];
-  const resolvedType = validTypes.includes(queueType) ? queueType : "ESCALATION";
+  const resolvedType = "ESCALATION";
 
   // Check for existing queued entry for same deal
   const existing = await prisma.idrEscalationQueue.findFirst({

@@ -8,7 +8,6 @@ import type { IdrItem } from "./IdrMeetingClient";
 import { InstallPlanningForm } from "./InstallPlanningForm";
 import { StatusActionsForm } from "./StatusActionsForm";
 import { MeetingNotesForm } from "./MeetingNotesForm";
-import { NoteHistory } from "./NoteHistory";
 
 const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "7086286";
 
@@ -16,8 +15,11 @@ interface Props {
   item: IdrItem | null;
   onChange: (itemId: string, updates: Partial<IdrItem>) => Promise<void>;
   readOnly: boolean;
+  isPreview: boolean;
   sessionId: string | null;
   userEmail: string;
+  onSkipItem?: () => void;
+  skipping?: boolean;
 }
 
 interface ReadinessChecklistItem {
@@ -42,11 +44,10 @@ const STATUS_EMOJI: Record<string, string> = {
   unable_to_verify: "\u26A0\uFE0F",
 };
 
-export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }: Props) {
+export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, userEmail, onSkipItem, skipping }: Props) {
   const { addToast } = useToast();
   const queryClient = useQueryClient();
 
-  // Line items query — lazy-loaded per deal
   const lineItemsQuery = useQuery({
     queryKey: [...queryKeys.idrMeeting.root, "lineItems", item?.dealId ?? ""],
     queryFn: async () => {
@@ -58,7 +59,6 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
     staleTime: 5 * 60 * 1000,
   });
 
-  // Readiness query — lazy-loaded per item
   const readinessQuery = useQuery({
     queryKey: queryKeys.idrMeeting.readiness(item?.id ?? ""),
     queryFn: async () => {
@@ -66,11 +66,11 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
       if (!res.ok) throw new Error("Readiness check failed");
       return res.json() as Promise<ReadinessReport>;
     },
-    enabled: !!item,
+    // Only fetch readiness for session items (not preview)
+    enabled: !!item && !isPreview,
     staleTime: 5 * 60 * 1000,
   });
 
-  // Sync mutation
   const syncMutation = useMutation({
     mutationFn: async () => {
       if (!item) throw new Error("No item selected");
@@ -107,7 +107,14 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
   if (!item) {
     return (
       <div className="flex-1 rounded-xl border border-t-border bg-surface flex items-center justify-center">
-        <p className="text-sm text-muted">Select a project from the queue to begin review.</p>
+        <div className="text-center">
+          <p className="text-sm text-muted">Select a project to begin.</p>
+          {isPreview && (
+            <p className="text-xs text-muted mt-1">
+              Edits here are saved as prep and carry into the next meeting.
+            </p>
+          )}
+        </div>
       </div>
     );
   }
@@ -116,20 +123,61 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
     ? `$${item.dealAmount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
     : null;
 
+  const canSync = !isPreview && !readOnly;
+
   return (
     <div className="flex-1 rounded-xl border border-t-border bg-surface overflow-y-auto">
       <div className="p-4 space-y-3">
-        {/* ── Header: Deal name + quick links + sync ── */}
+        {/* ── Header ── */}
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="text-base font-semibold text-foreground truncate">{item.dealName}</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-base font-semibold text-foreground truncate">{item.dealName}</h2>
+              {item.type === "ESCALATION" && (
+                <span className="rounded-full bg-orange-500 px-2 py-0.5 text-[10px] font-bold text-white shrink-0">
+                  ESCALATION
+                </span>
+              )}
+            </div>
             <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
               {item.address && <span className="text-xs text-muted truncate">{item.address}</span>}
               {item.projectType && <span className="text-xs text-muted">{item.projectType}</span>}
             </div>
+            {item.escalationReason && (
+              <p className="text-xs text-orange-500 mt-1">
+                <span className="font-medium">Reason:</span> {item.escalationReason}
+              </p>
+            )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            {/* Shit Show flag */}
             {!readOnly && (
+              <button
+                className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                  item.shitShowFlagged
+                    ? "border-red-500 bg-red-500/10 text-red-500"
+                    : "border-t-border bg-surface-2 text-muted hover:text-foreground"
+                }`}
+                onClick={() => handleFieldChange({
+                  shitShowFlagged: !item.shitShowFlagged,
+                } as Partial<IdrItem>)}
+                title={item.shitShowFlagged ? "Remove from Shit Show" : "Flag for Shit Show meeting"}
+              >
+                {item.shitShowFlagged ? "\uD83D\uDD25 Shit Show" : "\uD83D\uDD25 Shit Show"}
+              </button>
+            )}
+            {/* Skip / push to next meeting */}
+            {onSkipItem && (
+              <button
+                className="rounded-lg border border-t-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground transition-colors disabled:opacity-50"
+                onClick={onSkipItem}
+                disabled={skipping}
+                title="Remove from this meeting, will appear in next one"
+              >
+                {skipping ? "Skipping..." : "Skip \u2192"}
+              </button>
+            )}
+            {canSync && (
               <button
                 className="rounded-lg bg-orange-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-orange-600 transition-colors disabled:opacity-50"
                 onClick={() => syncMutation.mutate()}
@@ -141,7 +189,7 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
           </div>
         </div>
 
-        {/* ── Quick links row ── */}
+        {/* ── Quick links ── */}
         <div className="flex flex-wrap gap-1.5">
           <QuickLink
             href={`https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${item.dealId}`}
@@ -155,9 +203,8 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
 
         {/* ── Two-column body ── */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          {/* LEFT COLUMN: Deal info + readiness */}
+          {/* LEFT: Deal info + readiness */}
           <div className="space-y-3">
-            {/* Deal details grid */}
             <Section title="Deal Details">
               <div className="grid grid-cols-3 gap-x-3 gap-y-1.5">
                 <InfoCell label="System Size" value={item.systemSizeKw ? `${item.systemSizeKw} kW` : null} />
@@ -173,7 +220,6 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
               </div>
             </Section>
 
-            {/* Equipment */}
             <Section title="Equipment">
               {lineItemsQuery.isLoading && (
                 <div className="h-5 w-48 rounded bg-surface-2 animate-pulse" />
@@ -194,19 +240,9 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
               ) : null}
             </Section>
 
-            {/* Survey Readiness */}
-            <Section title="Survey Readiness">
-              {readinessQuery.isLoading && (
-                <div className="space-y-1">
-                  {[...Array(4)].map((_, i) => (
-                    <div key={i} className="h-5 rounded bg-surface-2 animate-pulse" />
-                  ))}
-                </div>
-              )}
-              {readinessQuery.error && (
-                <p className="text-xs text-red-500">Failed to load readiness checks.</p>
-              )}
-              {readinessQuery.data && (
+            {/* Survey Readiness — only in session mode */}
+            {!isPreview && readinessQuery.data && (
+              <Section title="Survey Readiness">
                 <div className="grid grid-cols-2 gap-x-2 gap-y-0.5">
                   {readinessQuery.data.checklist.map((check, i) => (
                     <div key={i} className="flex items-center gap-1.5 text-xs">
@@ -215,31 +251,25 @@ export function ProjectDetail({ item, onChange, readOnly, sessionId, userEmail }
                     </div>
                   ))}
                 </div>
-              )}
-            </Section>
+              </Section>
+            )}
           </div>
 
-          {/* RIGHT COLUMN: Planning + actions + notes */}
+          {/* RIGHT: Planning + actions + notes */}
           <div className="space-y-3">
-            {/* Install Planning */}
             <Section title="Install Planning">
               <InstallPlanningForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
             </Section>
 
-            {/* DA Status Actions */}
             <Section title="DA Status Actions">
               <StatusActionsForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
             </Section>
 
-            {/* Meeting Notes */}
             <Section title="Meeting Notes">
               <MeetingNotesForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
             </Section>
           </div>
         </div>
-
-        {/* ── History (full-width, collapsed by default) ── */}
-        <NoteHistory item={item} userEmail={userEmail} />
       </div>
     </div>
   );

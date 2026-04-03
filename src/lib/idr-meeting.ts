@@ -274,8 +274,8 @@ export function buildHubSpotPropertyUpdates(
   if (fields.installerDays != null) updates.days_for_installers = String(fields.installerDays);
   if (fields.electricianCount != null) updates.expected_electrician_count = String(fields.electricianCount);
   if (fields.electricianDays != null) updates.days_for_electricians = String(fields.electricianDays);
-  if (fields.discoReco != null) updates.disco__reco = fields.discoReco ? "Yes" : "No";
-  if (fields.interiorAccess != null) updates.interior_access = fields.interiorAccess ? "Yes" : "No";
+  if (fields.discoReco != null) updates.disco__reco = fields.discoReco ? "true" : "false";
+  if (fields.interiorAccess != null) updates.interior_access = fields.interiorAccess ? "true" : "false";
   if (fields.operationsNotes != null) updates.notes_for_install = fields.operationsNotes;
 
   // DA status flags — priority: resurvey > survey info > sales change

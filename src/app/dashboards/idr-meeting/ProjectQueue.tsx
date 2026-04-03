@@ -7,6 +7,7 @@ interface Props {
   selectedItemId: string | null;
   onSelectItem: (id: string) => void;
   loading: boolean;
+  isPreview?: boolean;
 }
 
 const BADGE_COLORS: Record<string, string> = {
@@ -53,7 +54,7 @@ function regionSortKey(region: string): number {
   return REGION_ORDER[region] ?? 99;
 }
 
-export function ProjectQueue({ items, selectedItemId, onSelectItem, loading }: Props) {
+export function ProjectQueue({ items, selectedItemId, onSelectItem, loading, isPreview }: Props) {
   // Group by region
   const regionGroups = new Map<string, IdrItem[]>();
   for (const item of items) {

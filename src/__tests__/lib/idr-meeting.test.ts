@@ -165,8 +165,8 @@ describe("buildHubSpotPropertyUpdates", () => {
     expect(updates.days_for_installers).toBe("1");
     expect(updates.expected_electrician_count).toBe("1");
     expect(updates.days_for_electricians).toBe("1");
-    expect(updates.disco__reco).toBe("Yes");
-    expect(updates.interior_access).toBe("No");
+    expect(updates.disco__reco).toBe("true");
+    expect(updates.interior_access).toBe("false");
     expect(updates.notes_for_install).toBe("Standard install");
   });
 

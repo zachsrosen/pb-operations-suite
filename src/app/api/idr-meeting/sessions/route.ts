@@ -97,22 +97,44 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // ── Consume queued items (escalations + design reviews) ──
+  // ── Consume queued items (escalations + prep edits) ──
   const queuedItems = await prisma.idrEscalationQueue.findMany({
     where: { status: "QUEUED" },
     orderBy: { createdAt: "asc" },
   });
 
   if (queuedItems.length > 0) {
-    // Collect deal IDs that aren't already in the session
     const existingDealIds = new Set(items.map((i) => i.dealId));
-    const newQueueItems = queuedItems.filter((e) => !existingDealIds.has(e.dealId));
 
-    // Fetch HubSpot snapshots for queued deals not yet in session
-    if (newQueueItems.length > 0) {
+    // Helper: pick non-null prep fields from a queue record
+    const pickPrepFields = (q: typeof queuedItems[0]) => ({
+      ...(q.difficulty != null ? { difficulty: q.difficulty } : {}),
+      ...(q.installerCount != null ? { installerCount: q.installerCount } : {}),
+      ...(q.installerDays != null ? { installerDays: q.installerDays } : {}),
+      ...(q.electricianCount != null ? { electricianCount: q.electricianCount } : {}),
+      ...(q.electricianDays != null ? { electricianDays: q.electricianDays } : {}),
+      ...(q.discoReco != null ? { discoReco: q.discoReco } : {}),
+      ...(q.interiorAccess != null ? { interiorAccess: q.interiorAccess } : {}),
+      ...(q.needsSurveyInfo != null ? { needsSurveyInfo: q.needsSurveyInfo } : {}),
+      ...(q.needsResurvey != null ? { needsResurvey: q.needsResurvey } : {}),
+      ...(q.salesChangeRequested != null ? { salesChangeRequested: q.salesChangeRequested } : {}),
+      ...(q.salesChangeNotes ? { salesChangeNotes: q.salesChangeNotes } : {}),
+      ...(q.opsChangeNotes ? { opsChangeNotes: q.opsChangeNotes } : {}),
+      ...(q.customerNotes ? { customerNotes: q.customerNotes } : {}),
+      ...(q.operationsNotes ? { operationsNotes: q.operationsNotes } : {}),
+      ...(q.designNotes ? { designNotes: q.designNotes } : {}),
+      ...(q.conclusion ? { conclusion: q.conclusion } : {}),
+    });
+
+    // New escalation deals (not already in session) — fetch snapshots and create items
+    const newEscalations = queuedItems.filter(
+      (q) => q.queueType === "ESCALATION" && !existingDealIds.has(q.dealId),
+    );
+
+    if (newEscalations.length > 0) {
       try {
         const batchResponse = await hubspotClient.crm.deals.batchApi.read({
-          inputs: newQueueItems.map((e) => ({ id: e.dealId })),
+          inputs: newEscalations.map((e) => ({ id: e.dealId })),
           properties: SNAPSHOT_PROPERTIES,
           propertiesWithHistory: [],
         });
@@ -120,14 +142,13 @@ export async function POST(req: NextRequest) {
           (batchResponse.results ?? []).map((d) => [d.id, d.properties]),
         );
 
-        // Build owner map for queued deals
         const qDeals = [...dealMap.values()].map((p) => ({
           properties: p as Record<string, string | null>,
         }));
         const qOwnerMap = await buildOwnerMap(qDeals);
 
-        for (const q of newQueueItems) {
-          const props = dealMap.get(q.dealId);
+        for (const esc of newEscalations) {
+          const props = dealMap.get(esc.dealId);
           if (!props) continue;
 
           const snapshot = snapshotDealProperties(
@@ -135,29 +156,16 @@ export async function POST(req: NextRequest) {
             qOwnerMap,
           );
 
-          // ESCALATION → type ESCALATION; DESIGN_REVIEW → type IDR (with prefilled notes)
-          const isEscalation = q.queueType === "ESCALATION";
-
           const item = await prisma.idrMeetingItem.create({
             data: {
               sessionId: session.id,
-              dealId: q.dealId,
-              type: isEscalation ? "ESCALATION" : "IDR",
+              dealId: esc.dealId,
+              type: "ESCALATION",
               sortOrder: sortOrder++,
               ...snapshot,
-              escalationReason: isEscalation ? q.reason : null,
-              // Carry prefilled notes from the queue
-              difficulty: q.difficulty,
-              installerCount: q.installerCount,
-              installerDays: q.installerDays,
-              electricianCount: q.electricianCount,
-              electricianDays: q.electricianDays,
-              discoReco: q.discoReco,
-              interiorAccess: q.interiorAccess,
-              customerNotes: q.customerNotes,
-              operationsNotes: q.operationsNotes,
-              designNotes: q.designNotes ?? (isEscalation ? null : q.reason),
-              addedBy: q.requestedBy,
+              escalationReason: esc.reason,
+              ...pickPrepFields(esc),
+              addedBy: esc.requestedBy,
             },
           });
 
@@ -165,34 +173,29 @@ export async function POST(req: NextRequest) {
           items.push({ ...item, badge, isReturning: false });
         }
       } catch (err) {
-        console.error("[idr-meeting] Failed to fetch queued deal snapshots:", err);
+        console.error("[idr-meeting] Failed to fetch escalation deal snapshots:", err);
       }
     }
 
-    // For deals already in session, merge prefilled data
-    const existingQueueItems = queuedItems.filter((e) => existingDealIds.has(e.dealId));
+    // For deals already in session — merge prep/escalation fields
+    const existingQueueItems = queuedItems.filter((q) => existingDealIds.has(q.dealId));
     for (const q of existingQueueItems) {
       const existingItem = items.find((i) => i.dealId === q.dealId);
-      if (existingItem) {
-        const isEscalation = q.queueType === "ESCALATION";
-        await prisma.idrMeetingItem.update({
-          where: { id: existingItem.id },
-          data: {
-            // Only upgrade to ESCALATION if it's an escalation queue item
-            ...(isEscalation ? { type: "ESCALATION", escalationReason: q.reason } : {}),
-            // Merge prefilled notes (don't overwrite if already set)
-            ...(q.difficulty != null ? { difficulty: q.difficulty } : {}),
-            ...(q.customerNotes ? { customerNotes: q.customerNotes } : {}),
-            ...(q.operationsNotes ? { operationsNotes: q.operationsNotes } : {}),
-            ...(q.designNotes ? { designNotes: q.designNotes } : {}),
-          },
-        });
-      }
+      if (!existingItem) continue;
+
+      const isEscalation = q.queueType === "ESCALATION";
+      await prisma.idrMeetingItem.update({
+        where: { id: existingItem.id },
+        data: {
+          ...(isEscalation ? { type: "ESCALATION", escalationReason: q.reason } : {}),
+          ...pickPrepFields(q),
+        },
+      });
     }
 
     // Mark all consumed
     await prisma.idrEscalationQueue.updateMany({
-      where: { id: { in: queuedItems.map((e) => e.id) } },
+      where: { id: { in: queuedItems.map((q) => q.id) } },
       data: { status: "CONSUMED", consumedBySession: session.id },
     });
   }

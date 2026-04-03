@@ -8,7 +8,6 @@ import { SessionHeader } from "./SessionHeader";
 import { ProjectQueue } from "./ProjectQueue";
 import { ProjectDetail } from "./ProjectDetail";
 import { AddProjectDialog } from "./AddProjectDialog";
-import { EscalationQueue } from "./EscalationQueue";
 import { AddEscalationDialog } from "./AddEscalationDialog";
 
 // ---------------------------------------------------------------------------
@@ -72,6 +71,8 @@ export interface IdrItem {
   designNotes: string | null;
   conclusion: string | null;
   escalationReason: string | null;
+  shitShowFlagged: boolean;
+  shitShowReason: string | null;
   hubspotSyncStatus: "DRAFT" | "SYNCED" | "FAILED";
   hubspotSyncedAt: string | null;
   addedBy: string;
@@ -112,10 +113,9 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
   const [showEscalationDialog, setShowEscalationDialog] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
-  // Is the user viewing the live preview (no session selected)?
   const isPreview = !sessionId;
 
-  // Fetch session list
+  // ── Queries ──
   const sessionsQuery = useQuery({
     queryKey: queryKeys.idrMeeting.sessions(),
     queryFn: async () => {
@@ -125,7 +125,6 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
     },
   });
 
-  // Fetch live preview (no session required)
   const previewQuery = useQuery({
     queryKey: [...queryKeys.idrMeeting.root, "preview"],
     queryFn: async () => {
@@ -137,7 +136,6 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
     staleTime: 2 * 60 * 1000,
   });
 
-  // Fetch current session detail
   const sessionQuery = useQuery({
     queryKey: queryKeys.idrMeeting.session(sessionId ?? ""),
     queryFn: async () => {
@@ -148,7 +146,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
     enabled: !!sessionId,
   });
 
-  // Create session mutation
+  // ── Mutations ──
   const createSession = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/idr-meeting/sessions", { method: "POST" });
@@ -162,14 +160,13 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
       setSessionId(data.session.id);
       queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.sessions() });
       queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(data.session.id) });
-      addToast({ type: "success", title: "Session started" });
+      addToast({ type: "success", title: "Session started — prep data carried over" });
     },
     onError: (err: Error) => {
       addToast({ type: "error", title: "Failed to create session", message: err.message });
     },
   });
 
-  // Background refresh mutation
   const refreshSession = useMutation({
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/idr-meeting/sessions/${id}/refresh`, { method: "POST" });
@@ -183,26 +180,43 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
     },
   });
 
-  // Auto-initialize: if there's a session for today, load it. Otherwise stay in preview.
+  // Skip (push to next session) — removes item from current session
+  const skipItem = useMutation({
+    mutationFn: async (itemId: string) => {
+      const res = await fetch(`/api/idr-meeting/items/${itemId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed to skip");
+      return res.json();
+    },
+    onSuccess: () => {
+      if (sessionId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(sessionId) });
+      }
+      setSelectedItemId(null);
+      addToast({ type: "success", title: "Pushed to next session" });
+    },
+    onError: () => {
+      addToast({ type: "error", title: "Failed to skip item" });
+    },
+  });
+
+  // ── Auto-init ──
   useEffect(() => {
     if (initialized || !sessionsQuery.data) return;
     setInitialized(true);
 
     const sessions = sessionsQuery.data.sessions;
-    if (sessions.length === 0) return; // Stay in preview
+    if (sessions.length === 0) return;
 
     const today = new Date().toISOString().slice(0, 10);
     const todaySession = sessions.find(
       (s) => s.status !== "COMPLETED" && new Date(s.date).toISOString().slice(0, 10) === today,
     );
 
-    if (todaySession) {
-      setSessionId(todaySession.id);
-    }
-    // Otherwise stay in preview — don't auto-load old sessions
+    if (todaySession) setSessionId(todaySession.id);
   }, [sessionsQuery.data, initialized]);
 
-  // Auto-refresh on session load
   useEffect(() => {
     if (!sessionId || !sessionQuery.data) return;
     if (sessionQuery.data.status === "COMPLETED") return;
@@ -210,42 +224,81 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  // Debounced save — queues field updates and flushes after 600ms of inactivity
-  const pendingRef = useRef<Record<string, { itemId: string; updates: Partial<IdrItem> }>>({});
+  // ── Debounced save ──
+  const pendingRef = useRef<Record<string, { itemId: string; dealId: string; updates: Partial<IdrItem> }>>({});
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const flushPending = useCallback(async () => {
     const pending = { ...pendingRef.current };
     pendingRef.current = {};
 
-    for (const [itemId, entry] of Object.entries(pending)) {
+    for (const [, entry] of Object.entries(pending)) {
       try {
-        const res = await fetch(`/api/idr-meeting/items/${itemId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(entry.updates),
-        });
-        if (!res.ok) throw new Error("Save failed");
+        if (isPreview) {
+          // Preview mode: save to prep endpoint
+          const item = (previewQuery.data?.items ?? []).find((i) => i.id === entry.itemId);
+          const res = await fetch("/api/idr-meeting/prep", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              dealId: entry.dealId,
+              dealName: item?.dealName ?? "",
+              region: item?.region ?? null,
+              ...entry.updates,
+            }),
+          });
+          if (!res.ok) throw new Error("Prep save failed");
+        } else {
+          // Session mode: save to items endpoint
+          const res = await fetch(`/api/idr-meeting/items/${entry.itemId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(entry.updates),
+          });
+          if (!res.ok) throw new Error("Save failed");
+        }
       } catch {
         addToast({ type: "error", title: "Failed to save changes" });
       }
     }
+
     if (sessionId) {
       queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(sessionId) });
     }
-  }, [sessionId, queryClient, addToast]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, isPreview, queryClient, addToast]);
 
   const handleItemChange = useCallback(
     async (itemId: string, updates: Partial<IdrItem>) => {
-      // Merge into pending updates for this item
+      // Find the item to get dealId
+      const allItems = isPreview
+        ? (previewQuery.data?.items ?? [])
+        : (sessionQuery.data?.items ?? []);
+      const item = allItems.find((i) => i.id === itemId);
+      const dealId = item?.dealId ?? itemId.replace("preview-", "");
+
       const existing = pendingRef.current[itemId];
       pendingRef.current[itemId] = {
         itemId,
+        dealId,
         updates: { ...(existing?.updates ?? {}), ...updates },
       };
 
-      // Optimistically update the local query cache
-      if (sessionId) {
+      // Optimistic update
+      if (isPreview) {
+        queryClient.setQueryData(
+          [...queryKeys.idrMeeting.root, "preview"],
+          (old: { items: IdrItem[] } | undefined) => {
+            if (!old) return old;
+            return {
+              ...old,
+              items: old.items.map((i) =>
+                i.id === itemId ? { ...i, ...updates } : i,
+              ),
+            };
+          },
+        );
+      } else if (sessionId) {
         queryClient.setQueryData(
           queryKeys.idrMeeting.session(sessionId),
           (old: IdrSession | undefined) => {
@@ -260,14 +313,13 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
         );
       }
 
-      // Debounce the server call
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(flushPending, 600);
     },
-    [sessionId, queryClient, flushPending],
+    [sessionId, isPreview, queryClient, flushPending, previewQuery.data, sessionQuery.data],
   );
 
-  // Resolve which items to display
+  // ── Resolve display ──
   const displayItems = isPreview
     ? (previewQuery.data?.items ?? [])
     : (sessionQuery.data?.items ?? []);
@@ -283,7 +335,13 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
         sessions={sessionsQuery.data?.sessions ?? []}
         onSelectSession={setSessionId}
         onNewSession={() => createSession.mutate()}
-        onOpenAddDialog={() => setShowAddDialog(true)}
+        onOpenAddDialog={() => {
+          if (isPreview) {
+            setShowEscalationDialog(true);
+          } else {
+            setShowAddDialog(true);
+          }
+        }}
         onViewPreview={() => setSessionId(null)}
         onSessionEnded={() => {
           setSessionId(null);
@@ -294,23 +352,28 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
         previewCount={previewQuery.data?.items?.length ?? 0}
       />
 
-      {/* Escalation queue — always visible for meeting prep */}
-      <EscalationQueue onAddEscalation={() => setShowEscalationDialog(true)} />
-
-      <div className="flex gap-4 h-[calc(100vh-16rem)] overflow-hidden">
+      <div className="flex gap-4 h-[calc(100vh-13rem)] overflow-hidden">
         <ProjectQueue
           items={displayItems}
           selectedItemId={selectedItemId}
           onSelectItem={setSelectedItemId}
           loading={displayLoading}
+          isPreview={isPreview}
         />
 
         <ProjectDetail
           item={selectedItem}
           onChange={handleItemChange}
-          readOnly={isPreview || isArchive}
+          readOnly={isArchive}
+          isPreview={isPreview}
           sessionId={sessionId}
           userEmail={userEmail}
+          onSkipItem={
+            !isPreview && !isArchive && selectedItem
+              ? () => skipItem.mutate(selectedItem.id)
+              : undefined
+          }
+          skipping={skipItem.isPending}
         />
       </div>
 

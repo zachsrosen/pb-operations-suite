@@ -1900,6 +1900,10 @@ model IdrMeetingItem {
   // Escalation
   escalationReason String?
 
+  // Shit Show flag — flagged for discussion in a shit show meeting
+  shitShowFlagged  Boolean  @default(false)
+  shitShowReason   String?
+
   // Sync status
   hubspotSyncStatus IdrSyncStatus       @default(DRAFT)
   hubspotSyncedAt   DateTime?
@@ -1929,32 +1933,38 @@ model IdrMeetingNote {
   @@index([dealId, createdAt])
 }
 
-/// Persistent meeting prep queue — deals flagged for the next IDR meeting.
-/// When a session is created, QUEUED items are auto-pulled in and marked CONSUMED.
-/// ESCALATION type becomes an ESCALATION item; DESIGN_REVIEW prefills an IDR item.
-/// Supports prefilled planning notes that carry over into the session item.
+/// Meeting prep queue — escalations + preview field edits for the next session.
+/// ESCALATION = deal added to sidebar for discussion.
+/// PREP = field edits saved on preview items (merged into session on start).
+/// When a session is created, all QUEUED items are consumed.
 model IdrEscalationQueue {
   id               String   @id @default(cuid())
   dealId           String
   dealName         String   // snapshot for display without HubSpot fetch
   region           String?
-  queueType        String   @default("ESCALATION") // ESCALATION | DESIGN_REVIEW
-  reason           String   // why this deal needs discussion / review context
+  queueType        String   @default("ESCALATION") // ESCALATION | PREP
+  reason           String   @default("") // escalation reason (empty for PREP)
   status           IdrEscalationStatus @default(QUEUED)
   requestedBy      String   // user email
   consumedBySession String?  // session ID that consumed this item
 
-  // Optional prefilled fields — carried into the session item on consume
-  difficulty       Int?
-  installerCount   Int?
-  installerDays    Int?
-  electricianCount Int?
-  electricianDays  Int?
-  discoReco        Boolean?
-  interiorAccess   Boolean?
-  customerNotes    String?
-  operationsNotes  String?
-  designNotes      String?
+  // Prefilled fields — carried into the session item on consume
+  difficulty           Int?
+  installerCount       Int?
+  installerDays        Int?
+  electricianCount     Int?
+  electricianDays      Int?
+  discoReco            Boolean?
+  interiorAccess       Boolean?
+  needsSurveyInfo      Boolean?
+  needsResurvey        Boolean?
+  salesChangeRequested Boolean?
+  salesChangeNotes     String?
+  opsChangeNotes       String?
+  customerNotes        String?
+  operationsNotes      String?
+  designNotes          String?
+  conclusion           String?
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
