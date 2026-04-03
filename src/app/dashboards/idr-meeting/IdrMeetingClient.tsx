@@ -99,6 +99,9 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [initialized, setInitialized] = useState(false);
 
+  // Is the user viewing the live preview (no session selected)?
+  const isPreview = !sessionId;
+
   // Fetch session list
   const sessionsQuery = useQuery({
     queryKey: queryKeys.idrMeeting.sessions(),
@@ -107,6 +110,18 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
       if (!res.ok) throw new Error("Failed to fetch sessions");
       return res.json() as Promise<{ sessions: SessionListItem[]; total: number }>;
     },
+  });
+
+  // Fetch live preview (no session required)
+  const previewQuery = useQuery({
+    queryKey: [...queryKeys.idrMeeting.root, "preview"],
+    queryFn: async () => {
+      const res = await fetch("/api/idr-meeting/preview");
+      if (!res.ok) throw new Error("Failed to fetch preview");
+      return res.json() as Promise<{ items: IdrItem[] }>;
+    },
+    enabled: isPreview,
+    staleTime: 2 * 60 * 1000,
   });
 
   // Fetch current session detail
@@ -134,7 +149,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
       setSessionId(data.session.id);
       queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.sessions() });
       queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(data.session.id) });
-      addToast({ type: "success", title: "New session created" });
+      addToast({ type: "success", title: "Session started" });
     },
     onError: (err: Error) => {
       addToast({ type: "error", title: "Failed to create session", message: err.message });
@@ -155,29 +170,24 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
     },
   });
 
-  // Auto-initialize: load latest or create if none today
+  // Auto-initialize: if there's a session for today, load it. Otherwise stay in preview.
   useEffect(() => {
     if (initialized || !sessionsQuery.data) return;
     setInitialized(true);
 
     const sessions = sessionsQuery.data.sessions;
-    if (sessions.length === 0) {
-      createSession.mutate();
-      return;
-    }
+    if (sessions.length === 0) return; // Stay in preview
 
     const today = new Date().toISOString().slice(0, 10);
     const todaySession = sessions.find(
-      (s) => new Date(s.date).toISOString().slice(0, 10) === today,
+      (s) => s.status !== "COMPLETED" && new Date(s.date).toISOString().slice(0, 10) === today,
     );
 
     if (todaySession) {
       setSessionId(todaySession.id);
-    } else {
-      // Load the latest session
-      setSessionId(sessions[0].id);
     }
-  }, [sessionsQuery.data, initialized, createSession]);
+    // Otherwise stay in preview — don't auto-load old sessions
+  }, [sessionsQuery.data, initialized]);
 
   // Auto-refresh on session load
   useEffect(() => {
@@ -207,32 +217,41 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
     [sessionId, queryClient, addToast],
   );
 
-  const selectedItem = sessionQuery.data?.items?.find((i) => i.id === selectedItemId) ?? null;
-  const isArchive = sessionQuery.data?.status === "COMPLETED";
+  // Resolve which items to display
+  const displayItems = isPreview
+    ? (previewQuery.data?.items ?? [])
+    : (sessionQuery.data?.items ?? []);
+  const displayLoading = isPreview ? previewQuery.isLoading : sessionQuery.isLoading;
+
+  const selectedItem = displayItems.find((i) => i.id === selectedItemId) ?? null;
+  const isArchive = !isPreview && sessionQuery.data?.status === "COMPLETED";
 
   return (
     <div className="flex flex-col gap-4">
       <SessionHeader
-        session={sessionQuery.data ?? null}
+        session={isPreview ? null : (sessionQuery.data ?? null)}
         sessions={sessionsQuery.data?.sessions ?? []}
         onSelectSession={setSessionId}
         onNewSession={() => createSession.mutate()}
         onOpenAddDialog={() => setShowAddDialog(true)}
+        onViewPreview={() => setSessionId(null)}
         creating={createSession.isPending}
+        isPreview={isPreview}
+        previewCount={previewQuery.data?.items?.length ?? 0}
       />
 
       <div className="flex gap-4 h-[calc(100vh-16rem)] overflow-hidden">
         <ProjectQueue
-          items={sessionQuery.data?.items ?? []}
+          items={displayItems}
           selectedItemId={selectedItemId}
           onSelectItem={setSelectedItemId}
-          loading={sessionQuery.isLoading}
+          loading={displayLoading}
         />
 
         <ProjectDetail
           item={selectedItem}
           onChange={handleItemChange}
-          readOnly={isArchive}
+          readOnly={isPreview || isArchive}
           sessionId={sessionId}
           userEmail={userEmail}
         />

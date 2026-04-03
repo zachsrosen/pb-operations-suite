@@ -232,6 +232,7 @@ export function buildHubSpotPropertyUpdates(
 const TERMINAL_DEAL_STAGES = [
   "68229433",  // Cancelled
   "20440343",  // Project Complete
+  "20440344",  // On Hold
 ];
 
 /** Query HubSpot for all active Project pipeline deals in Initial Review. */

@@ -19,7 +19,10 @@ interface Props {
   onSelectSession: (id: string) => void;
   onNewSession: () => void;
   onOpenAddDialog: () => void;
+  onViewPreview: () => void;
   creating: boolean;
+  isPreview: boolean;
+  previewCount: number;
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -39,7 +42,10 @@ export function SessionHeader({
   onSelectSession,
   onNewSession,
   onOpenAddDialog,
+  onViewPreview,
   creating,
+  isPreview,
+  previewCount,
 }: Props) {
   const queryClient = useQueryClient();
   const { addToast } = useToast();
@@ -83,12 +89,21 @@ export function SessionHeader({
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-xl border border-t-border bg-surface px-4 py-3">
-      {/* Session selector */}
+      {/* Session selector / preview toggle */}
       <select
         className="rounded-lg border border-t-border bg-surface-2 px-3 py-1.5 text-sm text-foreground"
-        value={session?.id ?? ""}
-        onChange={(e) => onSelectSession(e.target.value)}
+        value={isPreview ? "__preview__" : (session?.id ?? "")}
+        onChange={(e) => {
+          if (e.target.value === "__preview__") {
+            onViewPreview();
+          } else {
+            onSelectSession(e.target.value);
+          }
+        }}
       >
+        <option value="__preview__">
+          Live Preview ({previewCount} projects)
+        </option>
         {sessions.map((s) => (
           <option key={s.id} value={s.id}>
             {new Date(s.date).toLocaleDateString()} ({s._count.items} projects)
@@ -97,11 +112,24 @@ export function SessionHeader({
       </select>
 
       {/* Stats */}
-      <span className="text-sm text-muted">{statsLine}</span>
+      {isPreview ? (
+        <span className="text-sm text-muted">
+          Live from HubSpot — start a session to edit
+        </span>
+      ) : (
+        <span className="text-sm text-muted">{statsLine}</span>
+      )}
 
       <div className="ml-auto flex items-center gap-2">
+        {/* Preview badge */}
+        {isPreview && (
+          <span className="rounded-full bg-blue-500 px-3 py-0.5 text-xs font-semibold text-white">
+            PREVIEW
+          </span>
+        )}
+
         {/* Status badge (clickable to advance) */}
-        {session && (
+        {session && !isPreview && (
           <button
             className={`rounded-full px-3 py-0.5 text-xs font-semibold ${STATUS_COLORS[session.status] ?? "bg-zinc-500 text-white"}`}
             onClick={() => advanceStatus.mutate()}
@@ -117,7 +145,7 @@ export function SessionHeader({
         )}
 
         {/* Add Project */}
-        {session && session.status !== "COMPLETED" && (
+        {session && session.status !== "COMPLETED" && !isPreview && (
           <button
             className="rounded-lg bg-surface-2 px-3 py-1.5 text-sm font-medium text-foreground hover:bg-surface transition-colors border border-t-border"
             onClick={onOpenAddDialog}
@@ -126,13 +154,13 @@ export function SessionHeader({
           </button>
         )}
 
-        {/* New Session */}
+        {/* Start / New Session */}
         <button
           className="rounded-lg bg-orange-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-orange-600 transition-colors disabled:opacity-50"
           onClick={onNewSession}
           disabled={creating}
         >
-          {creating ? "Creating..." : "New Session"}
+          {creating ? "Creating..." : isPreview ? "Start Session" : "New Session"}
         </button>
       </div>
     </div>
