@@ -267,6 +267,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/sop",
       // Forecasting API (read-only, needed for scheduler ghost events)
       "/api/forecasting",
+      // IDR Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: true,
@@ -373,6 +376,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // SOP Guide
       "/sop",
       "/api/sop",
+      // IDR Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -507,6 +513,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // SOP Guide
       "/sop",
       "/api/sop",
+      // IDR Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -615,6 +624,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/sop",
       // Forecasting API (read-only, needed for scheduler ghost events)
       "/api/forecasting",
+      // IDR Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
