@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
   presenceMap.set(auth.email, {
     email: auth.email,
     name: auth.name ?? null,
-    image: auth.image ?? null,
+    image: null,
     sessionId: sessionId ?? null,
     selectedItemId: selectedItemId ?? null,
     lastSeen: Date.now(),
