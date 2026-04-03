@@ -109,7 +109,6 @@ interface SessionListItem {
 export interface PresenceUser {
   email: string;
   name: string | null;
-  image: string | null;
   sessionId: string | null;
   selectedItemId: string | null;
   lastSeen: number;
@@ -127,7 +126,20 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
   const isPreview = !sessionId;
 
   // ── Real-time sync via SSE ──
-  useSSE(null, { cacheKeyFilter: "idr-meeting" });
+  // Suppress SSE-driven refetches while the user has pending local edits.
+  // Without this, SSE invalidation overwrites optimistic state mid-typing.
+  const dirtyRef = useRef(false);
+  useSSE(
+    () => {
+      if (dirtyRef.current) return; // local edits pending — skip refetch
+      if (sessionId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(sessionId) });
+      } else {
+        queryClient.invalidateQueries({ queryKey: [...queryKeys.idrMeeting.root, "preview"] });
+      }
+    },
+    { cacheKeyFilter: "idr-meeting" },
+  );
 
   // ── Presence heartbeat (every 8s) ──
   const presencePayloadRef = useRef({ sessionId, selectedItemId });
@@ -299,6 +311,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
   const flushPending = useCallback(async () => {
     const pending = { ...pendingRef.current };
     pendingRef.current = {};
+    dirtyRef.current = false; // allow SSE refetches again
 
     for (const [, entry] of Object.entries(pending)) {
       try {
@@ -327,8 +340,11 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
       }
     }
 
+    // Refetch to pick up server-side state after our save completes
     if (sessionId) {
       queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(sessionId) });
+    } else {
+      queryClient.invalidateQueries({ queryKey: [...queryKeys.idrMeeting.root, "preview"] });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId, isPreview, queryClient, addToast]);
@@ -340,6 +356,8 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
         : (sessionQuery.data?.items ?? []);
       const item = allItems.find((i) => i.id === itemId);
       const dealId = item?.dealId ?? itemId.replace("preview-", "");
+
+      dirtyRef.current = true; // suppress SSE refetch while editing
 
       const existing = pendingRef.current[itemId];
       pendingRef.current[itemId] = {
@@ -380,7 +398,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
       }
 
       if (timerRef.current) clearTimeout(timerRef.current);
-      timerRef.current = setTimeout(flushPending, 600);
+      timerRef.current = setTimeout(flushPending, 400);
     },
     [sessionId, isPreview, queryClient, flushPending, previewQuery.data, sessionQuery.data],
   );

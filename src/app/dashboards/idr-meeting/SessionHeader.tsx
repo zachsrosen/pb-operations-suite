@@ -261,12 +261,7 @@ function PresenceAvatars({ users }: { users: PresenceUser[] }) {
               className={`h-6 w-6 rounded-full ${colorClass} flex items-center justify-center text-[9px] font-bold text-white ring-2 ring-surface`}
               title={user.name ?? user.email}
             >
-              {user.image ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={user.image} alt="" className="h-6 w-6 rounded-full" />
-              ) : (
-                initials
-              )}
+              {initials}
             </div>
           );
         })}
