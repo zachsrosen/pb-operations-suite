@@ -1,6 +1,6 @@
 // src/lib/eod-summary/html.ts
 //
-// Builds the EOD summary email — organized BY PERSON, not by section type.
+// Builds the EOD summary email — organized BY PERSON.
 // Each person gets their milestones, status changes, and tasks grouped together.
 
 import { getHubSpotDealUrl } from "@/lib/external-links";
@@ -30,6 +30,10 @@ export interface EodEmailData {
   dryRun: boolean;
   dealPropertyOwners: Map<string, Map<string, string>>;
   ownerNameMap: Map<string, string>;
+  /** Morning snapshot: dealId → Set of ownerIds (for per-person resolution tracking) */
+  morningDealOwnerMap: Map<string, Set<string>>;
+  /** Evening deal IDs (for computing which morning deals are still in scope) */
+  eveningDealIds: Set<string>;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -50,13 +54,12 @@ function dealLink(dealId: string, rawDealName: string): string {
 
 function resolveStage(stageId: string, pipelineId: string, stageMap: Record<string, string>): string {
   const name = stageMap[stageId];
-  if (name) return name; // stageMap already includes pipeline suffix from buildStageDisplayMap
-  // Fallback: try pipeline suffix on raw ID
+  if (name) return name;
   const suffix = PIPELINE_SUFFIXES[pipelineId] ?? "";
   return stageId + suffix;
 }
 
-const M = "color:#a1a1aa;font-size:11px;"; // muted
+const M = "color:#a1a1aa;font-size:11px;";
 const PERSON_HEADER =
   "margin:20px 0 6px 0;padding:8px 12px;border-radius:6px;background:#1a1a2e;" +
   "border-left:3px solid #f97316;";
@@ -68,12 +71,13 @@ const SECTION_DIVIDER =
   "text-transform:uppercase;letter-spacing:0.5px;color:#f97316;" +
   "border-bottom:1px solid #2a2a3a;";
 
-// ── Noise filter: skip dealStage-only changes (pipeline progression) ──
+// ── Noise filter ──────────────────────────────────────────────────────
 
 function isNoiseChange(change: StatusChange): boolean {
-  // If only the dealStage field changed (not a status property), it's just
-  // a pipeline stage move — not actionable for the P&I/design audience.
+  // Stage-only pipeline moves
   if (change.field === "dealStage") return true;
+  // First-set changes ("\u2014 \u2192 status") are low-signal — property was null, now set
+  if (!change.from && change.to) return true;
   return false;
 }
 
@@ -97,29 +101,46 @@ interface PersonData {
   milestones: MilestoneHit[];
   changes: StatusChange[];
   tasks: CompletedTask[];
+  /** How many morning focus deals this person had */
+  morningDealCount: number;
+  /** How many of those are still in scope at EOD */
+  morningStillInScope: number;
 }
 
 function aggregateByPerson(data: EodEmailData): PersonData[] {
   const people = new Map<string, PersonData>();
+  const trackedOwnerIds = new Set(data.ownerNameMap.keys());
+
+  // Precompute per-owner morning resolution stats
+  const ownerMorningCounts = new Map<string, { total: number; stillInScope: number }>();
+  for (const [dealId, owners] of data.morningDealOwnerMap) {
+    for (const ownerId of owners) {
+      if (!ownerMorningCounts.has(ownerId)) ownerMorningCounts.set(ownerId, { total: 0, stillInScope: 0 });
+      const stats = ownerMorningCounts.get(ownerId)!;
+      stats.total++;
+      if (data.eveningDealIds.has(dealId)) stats.stillInScope++;
+    }
+  }
 
   function getOrCreate(ownerId: string): PersonData {
     if (!people.has(ownerId)) {
+      const morningStats = ownerMorningCounts.get(ownerId);
       people.set(ownerId, {
         name: data.ownerNameMap.get(ownerId) ?? ownerId,
         milestones: [],
         changes: [],
         tasks: [],
+        morningDealCount: morningStats?.total ?? 0,
+        morningStillInScope: morningStats?.stillInScope ?? 0,
       });
     }
     return people.get(ownerId)!;
   }
 
-  // Helper: resolve the best owner for a change. If property history attributed
-  // it to a tracked team member, use that. Otherwise fall back to the deal's
-  // role-property owner. This handles automation/integration IDs (e.g., PandaDoc
-  // auto-approving a DA) by crediting the design/permit lead instead.
-  const trackedOwnerIds = new Set(data.ownerNameMap.keys());
-
+  // Resolve the best owner: if property history attributed it to a tracked
+  // team member, use that. Otherwise fall back to the deal's role-property
+  // owner. Handles automation IDs (PandaDoc, workflows) by crediting the
+  // design/permit lead instead.
   function resolveChangeOwner(
     attrOwnerId: string | null,
     change: StatusChange,
@@ -128,7 +149,14 @@ function aggregateByPerson(data: EodEmailData): PersonData[] {
     return resolveOwnerId(change, data.dealPropertyOwners);
   }
 
-  // Milestones → person
+  // Build a set of dealId:field keys that are milestones, so we can
+  // exclude them from the status changes list (avoid duplication).
+  const milestoneKeys = new Set<string>();
+  for (const hit of data.milestones) {
+    milestoneKeys.add(`${hit.change.dealId}:${hit.change.field}`);
+  }
+
+  // Milestones \u2192 person
   const milestoneAttrLookup = new Map<string, ChangeAttribution>();
   for (const attr of data.changeAttributions) {
     milestoneAttrLookup.set(`${attr.change.dealId}:${attr.change.field}`, attr);
@@ -141,14 +169,16 @@ function aggregateByPerson(data: EodEmailData): PersonData[] {
     getOrCreate(ownerId).milestones.push(hit);
   }
 
-  // Status changes → person
+  // Status changes \u2192 person (skip noise + skip milestones already shown)
   for (const attr of data.changeAttributions) {
     if (isNoiseChange(attr.change)) continue;
+    const key = `${attr.change.dealId}:${attr.change.field}`;
+    if (milestoneKeys.has(key)) continue; // already shown as milestone
     const ownerId = resolveChangeOwner(attr.changedByOwnerId, attr.change);
     getOrCreate(ownerId).changes.push(attr.change);
   }
 
-  // Tasks → person via ownerId
+  // Tasks \u2192 person via ownerId
   for (const task of data.tasks) {
     getOrCreate(task.ownerId).tasks.push(task);
   }
@@ -165,21 +195,29 @@ function aggregateByPerson(data: EodEmailData): PersonData[] {
 
 // ── Build HTML for one person ─────────────────────────────────────────
 
-function buildPersonHtml(
-  person: PersonData,
-  stageMap: Record<string, string>,
-): string {
-  const summary: string[] = [];
-  if (person.tasks.length > 0) summary.push(`${person.tasks.length} tasks`);
-  if (person.changes.length > 0) summary.push(`${person.changes.length} changes`);
-  if (person.milestones.length > 0) summary.push(`${person.milestones.length} milestones`);
-
+function buildPersonHtml(person: PersonData, stageMap: Record<string, string>): string {
   const parts: string[] = [];
+
+  // Summary badges
+  const badges: string[] = [];
+  if (person.milestones.length > 0)
+    badges.push(`<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;background:#052e16;color:#4ade80;margin-right:4px;">${person.milestones.length} \u2605</span>`);
+  if (person.changes.length > 0)
+    badges.push(`<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;background:#172554;color:#60a5fa;margin-right:4px;">${person.changes.length} \u2194</span>`);
+  if (person.tasks.length > 0)
+    badges.push(`<span style="display:inline-block;padding:1px 6px;border-radius:3px;font-size:10px;font-weight:600;background:#1c1917;color:#a1a1aa;margin-right:4px;">${person.tasks.length} \u2713</span>`);
+
+  // Morning resolution line
+  const resolved = person.morningDealCount - person.morningStillInScope;
+  const resolutionLine = person.morningDealCount > 0
+    ? `<div style="font-size:10px;color:#52525b;margin-top:3px;">${resolved} of ${person.morningDealCount} morning items resolved</div>`
+    : "";
 
   // Person header
   parts.push(`<div style="${PERSON_HEADER}">
   <span style="font-size:14px;font-weight:700;color:#e4e4e7;">${esc(person.name)}</span>
-  <span style="font-size:12px;color:#71717a;margin-left:8px;">${summary.join(", ")}</span>
+  <span style="margin-left:8px;">${badges.join("")}</span>
+  ${resolutionLine}
 </div>`);
 
   // Milestones
@@ -233,7 +271,7 @@ function buildPersonHtml(
   return parts.join("\n");
 }
 
-// ── Top-level sections (new deals, resolved, errors, footer) ──────────
+// ── Top-level sections ────────────────────────────────────────────────
 
 function buildNewDealsSection(newDeals: SnapshotDeal[], stageMap: Record<string, string>): string {
   if (newDeals.length === 0) return "";
@@ -265,7 +303,7 @@ function buildErrorsSection(errors: string[]): string {
 </div>`;
 }
 
-// ── Plain-text (also organized by person) ─────────────────────────────
+// ── Plain-text ────────────────────────────────────────────────────────
 
 function buildPlainText(data: EodEmailData): string {
   const lines: string[] = ["PB Operations \u2014 EOD Summary", ""];
@@ -276,20 +314,19 @@ function buildPlainText(data: EodEmailData): string {
     return lines.join("\n");
   }
 
-  // Headline
+  const nonNoiseChanges = data.changeAttributions.filter((a) => !isNoiseChange(a.change));
   const stats: string[] = [];
-  const totalChanges = data.changes.filter((c) => !isNoiseChange(c)).length;
-  if (totalChanges > 0) stats.push(`${totalChanges} status changes`);
+  if (nonNoiseChanges.length > 0) stats.push(`${nonNoiseChanges.length} status changes`);
   if (data.milestones.length > 0) stats.push(`${data.milestones.length} milestones`);
   if (data.tasks.length > 0) stats.push(`${data.tasks.length} tasks completed`);
   lines.push(stats.join(" \u00b7 "), "");
 
   for (const person of people) {
     const summary: string[] = [];
-    if (person.tasks.length > 0) summary.push(`${person.tasks.length} tasks`);
-    if (person.changes.length > 0) summary.push(`${person.changes.length} changes`);
-    if (person.milestones.length > 0) summary.push(`${person.milestones.length} milestones`);
-    lines.push(`${person.name} \u2014 ${summary.join(", ")}`);
+    if (person.milestones.length > 0) summary.push(`${person.milestones.length}\u2605`);
+    if (person.changes.length > 0) summary.push(`${person.changes.length}\u2194`);
+    if (person.tasks.length > 0) summary.push(`${person.tasks.length}\u2713`);
+    lines.push(`${person.name} \u2014 ${summary.join("  ")}`);
 
     for (const hit of person.milestones) {
       lines.push(`  \u2605 ${hit.displayLabel} \u2014 ${trimDealName(hit.change.dealName)}`);
@@ -334,32 +371,37 @@ function buildPlainText(data: EodEmailData): string {
 export function buildEodEmail(data: EodEmailData): { html: string; text: string } {
   const parts: string[] = [];
 
-  // Dry-run banner
   if (data.dryRun) {
     parts.push(`<div style="background:#451a03;border:1px solid #f97316;border-radius:6px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:#fdba74;">
   <strong>\u26a0 DRY RUN</strong> \u2014 Preview only
 </div>`);
   }
 
-  // Aggregate everything by person
   const people = aggregateByPerson(data);
 
-  // Headline stats
-  const totalChanges = data.changes.filter((c) => !isNoiseChange(c)).length;
+  // Headline stats (exclude noise from count)
+  const nonNoiseChanges = data.changeAttributions.filter((a) => !isNoiseChange(a.change));
+  // Also exclude milestones from change count since they're shown separately
+  const milestoneKeys = new Set(data.milestones.map((h) => `${h.change.dealId}:${h.change.field}`));
+  const uniqueChanges = nonNoiseChanges.filter((a) => !milestoneKeys.has(`${a.change.dealId}:${a.change.field}`));
+
   if (people.length === 0) {
     parts.push(`<div style="font-size:14px;color:#a1a1aa;">All quiet \u2014 no activity today.</div>`);
   } else {
     const stats: string[] = [];
-    if (totalChanges > 0) stats.push(`${totalChanges} status changes`);
     if (data.milestones.length > 0) stats.push(`${data.milestones.length} milestones`);
+    if (uniqueChanges.length > 0) stats.push(`${uniqueChanges.length} status changes`);
     if (data.tasks.length > 0) stats.push(`${data.tasks.length} tasks completed`);
     parts.push(`<div style="font-size:14px;font-weight:600;color:#e4e4e7;margin-bottom:4px;">${stats.join(" \u00b7 ")}</div>`);
 
-    // Team summary bar
+    // Team summary bar with micro-icons
     const teamSummary = people
       .map((p) => {
-        const total = p.milestones.length + p.changes.length + p.tasks.length;
-        return `<span style="display:inline-block;padding:2px 8px;margin:2px 4px 2px 0;background:#1a1a2e;border-radius:4px;font-size:11px;"><strong style="color:#e4e4e7;">${esc(p.name.split(" ")[0])}</strong> <span style="${M}">${total}</span></span>`;
+        const badges: string[] = [];
+        if (p.milestones.length > 0) badges.push(`${p.milestones.length}\u2605`);
+        if (p.changes.length > 0) badges.push(`${p.changes.length}\u2194`);
+        if (p.tasks.length > 0) badges.push(`${p.tasks.length}\u2713`);
+        return `<span style="display:inline-block;padding:2px 8px;margin:2px 4px 2px 0;background:#1a1a2e;border-radius:4px;font-size:11px;"><strong style="color:#e4e4e7;">${esc(p.name.split(" ")[0])}</strong> <span style="${M}">${badges.join(" ")}</span></span>`;
       })
       .join("");
     parts.push(`<div style="margin:8px 0 16px 0;">${teamSummary}</div>`);
@@ -370,7 +412,7 @@ export function buildEodEmail(data: EodEmailData): { html: string; text: string 
     parts.push(buildPersonHtml(person, data.stageMap));
   }
 
-  // New deals + resolved (not person-specific)
+  // New deals + resolved
   const newDealsHtml = buildNewDealsSection(data.newDeals, data.stageMap);
   if (newDealsHtml) parts.push(newDealsHtml);
 
@@ -397,7 +439,6 @@ export function buildEodEmail(data: EodEmailData): { html: string; text: string 
   });
   parts.push(`<div style="margin-top:20px;text-align:center;font-size:10px;color:#52525b;">Generated at ${esc(timeStr)} \u00b7 Powered by PB Operations Suite</div>`);
 
-  // Wrap
   const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>

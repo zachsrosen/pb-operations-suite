@@ -226,6 +226,8 @@ export async function runEodSummary(options: {
       dryRun,
       dealPropertyOwners: eveningResult.dealPropertyOwners,
       ownerNameMap,
+      morningDealOwnerMap: dealOwnerMap,
+      eveningDealIds: new Set(eveningDeals.keys()),
     });
 
     // ── 11. Send email ───────────────────────────────────────────────────────

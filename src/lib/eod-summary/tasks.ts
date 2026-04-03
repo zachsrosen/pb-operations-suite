@@ -168,8 +168,8 @@ export async function queryCompletedTasks(): Promise<{
       return { tasks };
     }
 
-    // ── 4. Batch-resolve task → deal associations (cap at 50) ─────────
-    const tasksToResolve = tasks.slice(0, 50);
+    // ── 4. Batch-resolve task → deal associations ─────────────────────
+    const tasksToResolve = tasks.slice(0, 200);
     const taskIdSet = new Set(tasksToResolve.map((t) => t.taskId));
 
     // taskId → dealId
