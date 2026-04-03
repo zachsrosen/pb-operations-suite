@@ -344,6 +344,8 @@ export default function TerritoryMapPage() {
         <TerritoryMapView
           deals={filteredDeals}
           boundaries={boundaries}
+          allBoundaries={TERRITORY_BOUNDARIES}
+          useProposed={useProposed}
           locationColors={LOCATION_COLORS}
         />
       )}

@@ -9,9 +9,16 @@ import type { TerritoryDeal } from "./page";
 /*  Types                                                              */
 /* ------------------------------------------------------------------ */
 
+interface BoundaryPair {
+  westminster: number;
+  centennial: number;
+}
+
 interface TerritoryMapViewProps {
   deals: (TerritoryDeal & { computedLocation: string })[];
-  boundaries: { westminster: number; centennial: number };
+  boundaries: BoundaryPair;
+  allBoundaries: { current: BoundaryPair; proposed: BoundaryPair };
+  useProposed: boolean;
   locationColors: Record<string, { tw: string; hex: string }>;
 }
 
@@ -23,9 +30,9 @@ const COLORADO_CENTER = { lat: 39.5, lng: -104.8 };
 const DEFAULT_ZOOM = 7;
 const MAP_ID = "territory-map";
 
-// Longitude bounds for boundary lines — extends west to include Breckenridge / Summit County
-const LNG_WEST = -106.6;
-const LNG_EAST = -103.8;
+// Longitude bounds — full Colorado width so no deals are outside the zones
+const LNG_WEST = -109.1;
+const LNG_EAST = -102.0;
 
 // Photon Brothers office locations
 const OFFICES = [
@@ -40,14 +47,19 @@ const OFFICES = [
 
 function ZoneOverlays({
   boundaries,
+  allBoundaries,
+  useProposed,
   locationColors,
 }: {
-  boundaries: { westminster: number; centennial: number };
+  boundaries: BoundaryPair;
+  allBoundaries: { current: BoundaryPair; proposed: BoundaryPair };
+  useProposed: boolean;
   locationColors: Record<string, { tw: string; hex: string }>;
 }) {
   const map = useMap(MAP_ID);
   const overlaysRef = useRef<google.maps.Rectangle[]>([]);
   const polylinesRef = useRef<google.maps.Polyline[]>([]);
+  const labelsRef = useRef<google.maps.InfoWindow[]>([]);
 
   useEffect(() => {
     if (!map) return;
@@ -55,8 +67,10 @@ function ZoneOverlays({
     // Clean up previous overlays
     overlaysRef.current.forEach((r) => r.setMap(null));
     polylinesRef.current.forEach((p) => p.setMap(null));
+    labelsRef.current.forEach((l) => l.close());
     overlaysRef.current = [];
     polylinesRef.current = [];
+    labelsRef.current = [];
 
     const zones = [
       {
@@ -79,7 +93,7 @@ function ZoneOverlays({
       },
     ];
 
-    // Zone rectangles
+    // Zone rectangles (based on active boundary mode)
     for (const zone of zones) {
       const rect = new google.maps.Rectangle({
         bounds: {
@@ -99,61 +113,158 @@ function ZoneOverlays({
       overlaysRef.current.push(rect);
     }
 
-    // Boundary lines — thick solid white + colored dashed overlay for visibility
-    const lineLatitudes = [boundaries.westminster, boundaries.centennial];
+    // --- Draw BOTH boundary sets so user can compare ---
+    const active = useProposed ? allBoundaries.proposed : allBoundaries.current;
+    const inactive = useProposed ? allBoundaries.current : allBoundaries.proposed;
+    const activeLabel = useProposed ? "Proposed" : "Current";
+    const inactiveLabel = useProposed ? "Current" : "Proposed";
 
-    for (let i = 0; i < lineLatitudes.length; i++) {
-      // Thick white underline for contrast
-      const bgLine = new google.maps.Polyline({
-        path: [
-          { lat: lineLatitudes[i], lng: LNG_WEST },
-          { lat: lineLatitudes[i], lng: LNG_EAST },
-        ],
-        strokeColor: "#ffffff",
-        strokeOpacity: 0.85,
-        strokeWeight: 4,
-        map,
-        clickable: false,
-        zIndex: 10,
-      });
-      polylinesRef.current.push(bgLine);
+    // Helper to draw one boundary line
+    function drawBoundaryLine(
+      lat: number,
+      label: string,
+      color: string,
+      isActive: boolean,
+      labelLng: number,
+    ) {
+      if (isActive) {
+        // Active: thick white bg + colored dashed
+        const bg = new google.maps.Polyline({
+          path: [
+            { lat, lng: LNG_WEST },
+            { lat, lng: LNG_EAST },
+          ],
+          strokeColor: "#ffffff",
+          strokeOpacity: 0.85,
+          strokeWeight: 4,
+          map,
+          clickable: false,
+          zIndex: 10,
+        });
+        polylinesRef.current.push(bg);
 
-      // Colored dashed line on top
-      const dashLine = new google.maps.Polyline({
-        path: [
-          { lat: lineLatitudes[i], lng: LNG_WEST },
-          { lat: lineLatitudes[i], lng: LNG_EAST },
-        ],
-        strokeColor: "#000000",
-        strokeOpacity: 0,
-        strokeWeight: 0,
-        icons: [
-          {
-            icon: {
-              path: "M 0,-1 0,1",
-              strokeOpacity: 1,
-              strokeColor: i === 0
-                ? (locationColors.Westminster?.hex || "#3B82F6")
-                : (locationColors["Colorado Springs"]?.hex || "#F59E0B"),
-              strokeWeight: 3,
-              scale: 4,
+        const dash = new google.maps.Polyline({
+          path: [
+            { lat, lng: LNG_WEST },
+            { lat, lng: LNG_EAST },
+          ],
+          strokeColor: "#000",
+          strokeOpacity: 0,
+          strokeWeight: 0,
+          icons: [
+            {
+              icon: {
+                path: "M 0,-1 0,1",
+                strokeOpacity: 1,
+                strokeColor: color,
+                strokeWeight: 3,
+                scale: 4,
+              },
+              offset: "0",
+              repeat: "12px",
             },
-            offset: "0",
-            repeat: "12px",
-          },
-        ],
-        map,
-        clickable: false,
-        zIndex: 11,
+          ],
+          map,
+          clickable: false,
+          zIndex: 11,
+        });
+        polylinesRef.current.push(dash);
+      } else {
+        // Inactive: thin dotted gray line
+        const dotted = new google.maps.Polyline({
+          path: [
+            { lat, lng: LNG_WEST },
+            { lat, lng: LNG_EAST },
+          ],
+          strokeColor: "#888",
+          strokeOpacity: 0,
+          strokeWeight: 0,
+          icons: [
+            {
+              icon: {
+                path: "M 0,-1 0,1",
+                strokeOpacity: 0.6,
+                strokeColor: "#aaa",
+                strokeWeight: 2,
+                scale: 2,
+              },
+              offset: "0",
+              repeat: "8px",
+            },
+          ],
+          map,
+          clickable: false,
+          zIndex: 8,
+        });
+        polylinesRef.current.push(dotted);
+      }
+
+      // Label on the right side of the line
+      const iw = new google.maps.InfoWindow({
+        content: `<div style="
+          font-family: system-ui, sans-serif;
+          font-size: 10px;
+          font-weight: ${isActive ? "700" : "500"};
+          color: ${isActive ? color : "#999"};
+          background: rgba(0,0,0,${isActive ? "0.8" : "0.6"});
+          padding: 2px 7px;
+          border-radius: 3px;
+          white-space: nowrap;
+          border: 1px solid ${isActive ? color : "#666"};
+        ">${label} ${lat.toFixed(2)}</div>`,
+        position: { lat, lng: labelLng },
+        disableAutoPan: true,
+        pixelOffset: new google.maps.Size(0, 0),
       });
-      polylinesRef.current.push(dashLine);
+      iw.open({ map });
+      labelsRef.current.push(iw);
+    }
+
+    // Draw active boundaries (bold)
+    const labelLngRight = -102.8;
+    const labelLngLeft = -108.4;
+
+    drawBoundaryLine(
+      active.westminster,
+      `${activeLabel} W/C`,
+      locationColors.Westminster?.hex || "#3B82F6",
+      true,
+      labelLngRight,
+    );
+    drawBoundaryLine(
+      active.centennial,
+      `${activeLabel} C/CS`,
+      locationColors["Colorado Springs"]?.hex || "#F59E0B",
+      true,
+      labelLngRight,
+    );
+
+    // Draw inactive boundaries (subtle) — only if different from active
+    if (inactive.westminster !== active.westminster) {
+      drawBoundaryLine(
+        inactive.westminster,
+        `${inactiveLabel} W/C`,
+        "#999",
+        false,
+        labelLngLeft,
+      );
+    }
+    if (inactive.centennial !== active.centennial) {
+      drawBoundaryLine(
+        inactive.centennial,
+        `${inactiveLabel} C/CS`,
+        "#999",
+        false,
+        labelLngLeft,
+      );
     }
 
     return () => {
       overlaysRef.current.forEach((r) => r.setMap(null));
       polylinesRef.current.forEach((p) => p.setMap(null));
+      labelsRef.current.forEach((l) => l.close());
     };
-  }, [map, boundaries, locationColors]);
+  }, [map, boundaries, allBoundaries, useProposed, locationColors]);
 
   return null;
 }
@@ -310,6 +421,8 @@ function OfficeMarkers({
 export default function TerritoryMapView({
   deals,
   boundaries,
+  allBoundaries,
+  useProposed,
   locationColors,
 }: TerritoryMapViewProps) {
   const [selectedDeal, setSelectedDeal] = useState<
@@ -356,6 +469,8 @@ export default function TerritoryMapView({
         >
           <ZoneOverlays
             boundaries={boundaries}
+            allBoundaries={allBoundaries}
+            useProposed={useProposed}
             locationColors={locationColors}
           />
           <OfficeMarkers locationColors={locationColors} />
@@ -423,7 +538,7 @@ export default function TerritoryMapView({
       </APIProvider>
 
       {/* ---- Legend ---- */}
-      <div className="absolute bottom-4 left-4 bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 flex gap-4 text-xs text-white pointer-events-none">
+      <div className="absolute bottom-4 left-4 bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-white pointer-events-none">
         {(["Westminster", "Centennial", "Colorado Springs"] as const).map((name) => (
           <span key={name} className="flex items-center gap-1.5">
             <span
@@ -436,6 +551,14 @@ export default function TerritoryMapView({
         <span className="flex items-center gap-1.5 border-l border-white/30 pl-3 ml-1">
           <span className="text-yellow-300 text-[10px] leading-none">&#9733;</span>
           Office
+        </span>
+        <span className="flex items-center gap-1.5 border-l border-white/30 pl-3 ml-1">
+          <span className="inline-block w-4 border-t-2 border-dashed border-white" />
+          {useProposed ? "Proposed" : "Current"}
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-4 border-t border-dotted border-gray-400" />
+          {useProposed ? "Current" : "Proposed"}
         </span>
       </div>
     </div>
