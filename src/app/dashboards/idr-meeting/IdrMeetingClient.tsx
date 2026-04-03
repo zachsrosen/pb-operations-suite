@@ -221,7 +221,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
         creating={createSession.isPending}
       />
 
-      <div className="flex gap-4 min-h-[calc(100vh-16rem)]">
+      <div className="flex gap-4 h-[calc(100vh-16rem)] overflow-hidden">
         <ProjectQueue
           items={sessionQuery.data?.items ?? []}
           selectedItemId={selectedItemId}

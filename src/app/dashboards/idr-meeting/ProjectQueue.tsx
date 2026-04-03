@@ -38,6 +38,19 @@ function parseDealLabel(dealName: string): { projNum: string | null; lastName: s
   return { projNum, lastName: words[words.length - 1] ?? namePart };
 }
 
+// Custom region sort order — CO shops first (meeting priority), then CA
+const REGION_ORDER: Record<string, number> = {
+  Centennial: 0,
+  Westminster: 1,
+  "Colorado Springs": 2,
+  "San Luis Obispo": 3,
+  Camarillo: 4,
+};
+
+function regionSortKey(region: string): number {
+  return REGION_ORDER[region] ?? 99;
+}
+
 export function ProjectQueue({ items, selectedItemId, onSelectItem, loading }: Props) {
   // Group by region
   const regionGroups = new Map<string, IdrItem[]>();
@@ -66,7 +79,7 @@ export function ProjectQueue({ items, selectedItemId, onSelectItem, loading }: P
       )}
 
       {[...regionGroups.entries()]
-        .sort((a, b) => a[0].localeCompare(b[0]))
+        .sort((a, b) => regionSortKey(a[0]) - regionSortKey(b[0]))
         .map(([region, regionItems]) => (
           <div key={region}>
             {/* Region header */}
