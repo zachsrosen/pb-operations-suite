@@ -45,7 +45,7 @@ interface PeDeal {
   leaseFactor: number;
   peM1Status: string | null;
   peM2Status: string | null;
-  milestoneHighlight: "m1" | "m2" | null;
+  milestoneHighlight: "m1" | "m2" | "complete" | null;
   hubspotUrl: string;
 }
 
@@ -384,14 +384,15 @@ export default function PeDealsPage() {
   }, [deals, search, locationFilter, stageFilter, sortKey, sortDir]);
 
   // Split into priority sections
-  const m1Deals = useMemo(() => filtered.filter((d) => d.milestoneHighlight === "m1"), [filtered]);
   const m2Deals = useMemo(() => filtered.filter((d) => d.milestoneHighlight === "m2"), [filtered]);
-  const allDeals = filtered;
+  const m1Deals = useMemo(() => filtered.filter((d) => d.milestoneHighlight === "m1"), [filtered]);
+  const completedDeals = useMemo(() => filtered.filter((d) => d.milestoneHighlight === "complete"), [filtered]);
+  const allDeals = useMemo(() => filtered.filter((d) => d.milestoneHighlight !== "complete"), [filtered]);
 
-  // Summary stats (exclude deals with null pricing)
-  const totalEPC = filtered.reduce((s, d) => s + (d.epcPrice ?? 0), 0);
-  const totalPEReceivable = filtered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
-  const totalRevenue = filtered.reduce((s, d) => s + (d.totalPBRevenue ?? 0), 0);
+  // Summary stats (active deals only, exclude Project Complete)
+  const totalEPC = allDeals.reduce((s, d) => s + (d.epcPrice ?? 0), 0);
+  const totalPEReceivable = allDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
+  const totalRevenue = allDeals.reduce((s, d) => s + (d.totalPBRevenue ?? 0), 0);
 
   // CSV export data
   const exportData = filtered.map((d) => ({
@@ -436,9 +437,9 @@ export default function PeDealsPage() {
       {/* Hero Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 stagger-grid">
         <StatCard
-          key={`deals-${filtered.length}`}
-          label="PE Deals"
-          value={String(filtered.length)}
+          key={`deals-${allDeals.length}`}
+          label="Active PE Deals"
+          value={String(allDeals.length)}
           color="orange"
         />
         <StatCard
@@ -518,7 +519,7 @@ export default function PeDealsPage() {
             />
           )}
           <DealSection
-            title="All PE Deals"
+            title="All Active PE Deals"
             subtitle={`${allDeals.length} total`}
             deals={allDeals}
             sortKey={sortKey}
@@ -528,6 +529,19 @@ export default function PeDealsPage() {
             onStatusChange={handleStatusChange}
             savingDeals={savingDeals}
           />
+          {completedDeals.length > 0 && (
+            <DealSection
+              title="Project Complete — PE In Progress"
+              subtitle={`${completedDeals.length} deal${completedDeals.length !== 1 ? "s" : ""} with pending PE payments`}
+              deals={completedDeals}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              sortArrow={sortArrow}
+              toggleSort={toggleSort}
+              onStatusChange={handleStatusChange}
+              savingDeals={savingDeals}
+            />
+          )}
         </div>
       )}
     </DashboardShell>

@@ -61,7 +61,7 @@ interface PeDeal {
   leaseFactor: number;
   peM1Status: string | null;
   peM2Status: string | null;
-  milestoneHighlight: "m1" | "m2" | null;
+  milestoneHighlight: "m1" | "m2" | "complete" | null;
   hubspotUrl: string;
 }
 
@@ -151,11 +151,11 @@ export async function GET() {
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
 
   try {
-    // Only project pipeline — active deals (exclude Project Complete + Cancelled)
-    const INACTIVE_PROJECT_STAGES = ["20440343", "68229433"];
+    // Exclude Cancelled only — Project Complete may still have pending PE payments
+    const EXCLUDED_STAGES = ["68229433"];
     const projectDeals = await fetchPeDealsFromPipeline("project");
     const rawDeals = projectDeals.filter(
-      (d) => !INACTIVE_PROJECT_STAGES.includes(String(d.dealstage)),
+      (d) => !EXCLUDED_STAGES.includes(String(d.dealstage)),
     );
 
     // Resolve stage labels
@@ -275,6 +275,7 @@ export async function GET() {
         milestoneHighlight:
           stageLabel === "Permission To Operate" ? "m1" as const
           : stageLabel === "Close Out" ? "m2" as const
+          : stageLabel === "Project Complete" ? "complete" as const
           : null,
         hubspotUrl: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`,
       };
