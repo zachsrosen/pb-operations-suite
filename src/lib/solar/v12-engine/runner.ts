@@ -27,7 +27,7 @@ export function runCoreAnalysis(
   input: CoreSolarDesignerInput,
   reportProgress: (msg: WorkerProgressMessage) => void
 ): CoreSolarDesignerResult {
-  const { panels, shadeData, strings, inverters, equipment, siteConditions, lossProfile } = input;
+  const { panels, shadeData, strings, equipment, siteConditions, lossProfile } = input;
 
   if (panels.length === 0) {
     return emptyResult();

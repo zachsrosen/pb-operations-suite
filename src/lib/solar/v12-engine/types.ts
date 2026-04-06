@@ -23,6 +23,15 @@ export type {
   PanelStat,
 } from '../engine/engine-types';
 
+// Local imports for use within this file's interfaces
+import type {
+  LossProfile,
+  StringConfig,
+  InverterConfig,
+  HomeConsumptionConfig as ConsumptionConfig,
+  PanelStat,
+} from '../engine/engine-types';
+
 // ── Shade Timeseries (explicit definition — not aliased from ShadeData) ──
 // Per-point shade data: keys are shade point IDs, values are binary shade strings.
 // Each string is 17,520 chars (365 days × 48 half-hour intervals), '0' = sun, '1' = shade.

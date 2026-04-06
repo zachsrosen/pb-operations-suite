@@ -1,5 +1,5 @@
-import { runCoreAnalysis, CORE_SCHEMA_VERSION } from '@/lib/solar/v12-engine/runner';
-import type { CoreSolarDesignerInput, CoreSolarDesignerResult } from '@/lib/solar/v12-engine/types';
+import { runCoreAnalysis } from '@/lib/solar/v12-engine/runner';
+import type { CoreSolarDesignerInput } from '@/lib/solar/v12-engine/types';
 import type { WorkerProgressMessage } from '@/lib/solar/types';
 
 const noopProgress = (_msg: WorkerProgressMessage) => {};
