@@ -9,15 +9,21 @@ import SiteConditionsPanel from '@/components/solar-designer/SiteConditionsPanel
 import FileUploadPanel from '@/components/solar-designer/FileUploadPanel';
 import SystemSummaryBar from '@/components/solar-designer/SystemSummaryBar';
 import { DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE } from '@/lib/solar/v12-engine';
-import type { SolarDesignerState, SolarDesignerAction, SolarDesignerTab } from '@/components/solar-designer/types';
+import type { SolarDesignerState, SolarDesignerAction, SolarDesignerTab, UIStringConfig } from '@/components/solar-designer/types';
+import { DEFAULT_MAP_ALIGNMENT } from '@/components/solar-designer/types';
 
 const INITIAL_STATE: SolarDesignerState = {
   panels: [],
   shadeData: {},
   shadeFidelity: 'full',
   shadeSource: 'manual',
-  radiancePointCount: 0,
+  radiancePoints: [],
   uploadedFiles: [],
+  panelShadeMap: {},
+  siteAddress: null,
+  siteFormattedAddress: null,
+  siteLatLng: null,
+  mapAlignment: DEFAULT_MAP_ALIGNMENT,
   panelKey: '',
   inverterKey: '',
   selectedPanel: null,
@@ -25,6 +31,8 @@ const INITIAL_STATE: SolarDesignerState = {
   siteConditions: DEFAULT_SITE_CONDITIONS,
   lossProfile: DEFAULT_LOSS_PROFILE,
   strings: [],
+  activeStringId: null,
+  nextStringId: 1,
   inverters: [],
   result: null,
   activeTab: 'visualizer',
@@ -46,16 +54,18 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
         shadeData: action.shadeData,
         shadeFidelity: action.shadeFidelity,
         shadeSource: action.shadeSource,
-        radiancePointCount: action.radiancePointCount,
+        radiancePoints: action.radiancePoints,
         uploadedFiles: action.files,
         uploadError: null,
-        // Reset equipment + downstream state on new upload so stale
-        // selections from a prior job don't leak into the new layout
+        panelShadeMap: {},
         panelKey: '',
         inverterKey: '',
         selectedPanel: null,
         selectedInverter: null,
         strings: [],
+        activeStringId: null,
+        nextStringId: 1,
+        mapAlignment: DEFAULT_MAP_ALIGNMENT,
         inverters: [],
         result: null,
       };
@@ -70,9 +80,84 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
     case 'SET_LOSS_PROFILE':
       return { ...state, lossProfile: { ...state.lossProfile, ...action.profile } };
     case 'SET_STRINGS':
-      return { ...state, strings: action.strings, inverters: action.inverters };
+      // TODO(Stage 4): Add proper StringConfig[] → UIStringConfig[] bridge
+      // This action is only dispatched by the full engine in Stage 4.
+      // For now, cast to satisfy the type system.
+      return {
+        ...state,
+        strings: action.strings as unknown as UIStringConfig[],
+        inverters: action.inverters,
+      };
     case 'SET_RESULT':
       return { ...state, result: action.result };
+    case 'SET_SHADE_POINT_IDS':
+      return { ...state, panelShadeMap: action.panelShadeMap };
+    case 'SET_ADDRESS':
+      return {
+        ...state,
+        siteAddress: action.address,
+        siteFormattedAddress: action.formattedAddress,
+        siteLatLng: { lat: action.lat, lng: action.lng },
+      };
+    case 'SET_MAP_ALIGNMENT':
+      return { ...state, mapAlignment: { ...state.mapAlignment, ...action.alignment } };
+    case 'SET_ACTIVE_STRING':
+      return { ...state, activeStringId: action.stringId };
+    case 'ASSIGN_PANEL': {
+      if (state.activeStringId === null) return state;
+      // Remove panel from any existing string first
+      const cleaned = state.strings.map(s => ({
+        ...s,
+        panelIds: s.panelIds.filter(id => id !== action.panelId),
+      }));
+      // Add to active string
+      return {
+        ...state,
+        strings: cleaned.map(s =>
+          s.id === state.activeStringId
+            ? { ...s, panelIds: [...s.panelIds, action.panelId] }
+            : s
+        ),
+      };
+    }
+    case 'UNASSIGN_PANEL':
+      return {
+        ...state,
+        strings: state.strings.map(s => ({
+          ...s,
+          panelIds: s.panelIds.filter(id => id !== action.panelId),
+        })),
+      };
+    case 'CREATE_STRING': {
+      const newString = { id: state.nextStringId, panelIds: [] as string[] };
+      return {
+        ...state,
+        strings: [...state.strings, newString],
+        activeStringId: state.nextStringId,
+        nextStringId: state.nextStringId + 1,
+      };
+    }
+    case 'DELETE_STRING':
+      return {
+        ...state,
+        strings: state.strings.filter(s => s.id !== action.stringId),
+        activeStringId: state.activeStringId === action.stringId ? null : state.activeStringId,
+      };
+    case 'AUTO_STRING': {
+      const manualPanelIds = new Set(state.strings.flatMap(s => s.panelIds));
+      let currentId = state.nextStringId;
+      const newStrings = action.strings
+        .map(es => ({
+          panelIds: es.panels.map(i => action.panels[i].id).filter(id => !manualPanelIds.has(id)),
+        }))
+        .filter(s => s.panelIds.length > 0)
+        .map(s => ({ id: currentId++, panelIds: s.panelIds }));
+      return {
+        ...state,
+        strings: [...state.strings, ...newStrings],
+        nextStringId: currentId,
+      };
+    }
     case 'RESET':
       return INITIAL_STATE;
     default:
@@ -80,8 +165,7 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
   }
 }
 
-// Tabs with real content in Stage 2 (none yet — all placeholders)
-const ENABLED_TABS: SolarDesignerTab[] = [];
+const ENABLED_TABS: SolarDesignerTab[] = ['visualizer', 'stringing'];
 
 export default function SolarDesignerPage() {
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
@@ -96,7 +180,7 @@ export default function SolarDesignerPage() {
         {/* Left sidebar: Upload + Equipment + Site Conditions */}
         <aside className="w-full lg:w-80 lg:shrink-0 space-y-4">
           <FileUploadPanel uploadedFiles={state.uploadedFiles} panelCount={state.panels.length}
-            radiancePointCount={state.radiancePointCount} isUploading={state.isUploading}
+            radiancePointCount={state.radiancePoints.length} isUploading={state.isUploading}
             uploadError={state.uploadError} dispatch={dispatch} />
 
           <EquipmentPanel panelKey={state.panelKey} inverterKey={state.inverterKey}
