@@ -14,19 +14,23 @@ Replace the standalone Solar Surveyor V12 HTML tool and the partially-built nati
 
 - **Source of truth:** Jacob's V12 HTML calculation engine
 - **Location:** `src/lib/solar/v12-engine/`
-- **Modules to extract from V12:**
+- **Modules to extract from V12** (staged — core MVP first, extended modules with their UI stages):
+
+  **Stage 1 — Core engine MVP** (minimum to support upload → string → analyze):
+  - `layout-parser.ts` — DXF/JSON file parsing → `PanelGeometry[]` (V12 has a custom DXF parser; evaluate whether a third-party DXF library like `dxf-parser` is needed or if V12's parser can be ported directly)
+  - `physics.ts` — irradiance, temperature derating, bifacial gain, system derate
   - `production.ts` — per-panel production calculation (independent + string-level + EagleView models)
   - `stringing.ts` — string builder logic, auto-string algorithm, voltage validation
   - `mismatch.ts` — string mismatch loss calculation
   - `clipping.ts` — inverter clipping detection, severity classification, event logging
-  - `dispatch.ts` — battery dispatch simulation (self-consumption, TOU, export-first modes)
   - `timeseries.ts` — 30-minute interval production timeseries generation
-  - `ai-analysis.ts` — design score calculation, issue detection, recommendations
-  - `scenarios.ts` — scenario save/load/compare, delta calculations, export
   - `equipment.ts` — equipment catalog (panels, inverters, ESS, optimizers)
   - `consumption.ts` — home consumption profile (annual, monthly CSV, zip-based climate)
-  - `physics.ts` — irradiance, temperature derating, bifacial gain, system derate
-  - `layout-parser.ts` — DXF/JSON file parsing → `PanelGeometry[]` (V12 has a custom DXF parser; evaluate whether a third-party DXF library like `dxf-parser` is needed or if V12's parser can be ported directly)
+
+  **Stage 5 — Extended engine** (extracted when UI demands it):
+  - `dispatch.ts` — battery dispatch simulation (self-consumption, TOU, export-first modes)
+  - `ai-analysis.ts` — design score calculation, issue detection, recommendations
+  - `scenarios.ts` — scenario save/load/compare, delta calculations, export
 - **Existing engine overlap:** `src/lib/solar/engine/` already has partial V12 ports. Mapping:
 
   | Existing module | V12 equivalent | Action |
@@ -109,8 +113,26 @@ type ShadeTimeseries = Record<string, string>;
 **Data source adapters** (each produces `PanelGeometry[]` + `ShadeTimeseries`):
 - `layout-parser.ts` — DXF/JSON file → `PanelGeometry[]`
 - `eagleview-adapter.ts` (Stage 7) — EagleView API response → `PanelGeometry[]` + `ShadeTimeseries`
-- `google-solar-adapter.ts` — Google Solar API response → `PanelGeometry[]` + `ShadeTimeseries` (reduced fidelity: sunshine quantiles converted to binary shade approximation)
+- `google-solar-adapter.ts` — Google Solar API response → `PanelGeometry[]` + `ShadeTimeseries` (reduced fidelity — see below)
 - `csv-shade-parser.ts` — Shade CSV upload → `ShadeTimeseries`
+
+### Shade Fidelity Model
+
+Not all data sources produce the same quality of shade data. The engine always consumes the same `ShadeTimeseries` binary format, but the accuracy of results depends on the input fidelity. Each adapter must declare its fidelity tier, and the UI must surface this.
+
+| Source | Fidelity | Shade resolution | Approximation method | Validation target |
+|--------|----------|-----------------|---------------------|-------------------|
+| Manual upload (CSV/DXF) | **Full** | Per-point, 30-min, 365-day binary strings | None — native V12 format | Baseline: exact match to V12 output |
+| EagleView API | **Full** | Per-point shade values from LiDAR measurement | Map EagleView TSRF/shade percentages to binary shade strings using solar position + threshold. Each shade point gets a binary string derived from the EagleView shade factor at each time step. | Annual production within 2% of manual-upload result for the same site |
+| Google Solar API | **Approximate** | Roof segment-level sunshine quantiles, not per-point | Convert segment sunshine hours to uniform binary shade string for all panels on that segment. All panels on the same roof face get the same shade string. No inter-panel shade differentiation. | Results carry a "±5-10% estimated" disclaimer. UI shows "Approximate — Google Solar" badge. Not used for warranty decisions. |
+
+**Fidelity tag on results:** `SolarDesignerResult` includes a `shadeFidelity: 'full' | 'approximate'` field. The production guarantee comparison panel must show the fidelity level. If `approximate`, show a warning: "Shade data is segment-level only (Google Solar). Results may vary ±5-10% from actual. Use EagleView or manual upload for warranty-grade analysis."
+
+```typescript
+// Added to SolarDesignerResult:
+shadeFidelity: 'full' | 'approximate';
+shadeSource: 'manual' | 'eagleview' | 'google-solar';
+```
 
 Remaining sub-interface types (`StringConfig`, `InverterConfig`, `EquipmentSelection`, `SiteConditions`, `ConsumptionConfig`, `BatteryConfig`, `LossProfile`, `ClippingEvent`, `EnergyBalance`, `DesignIssue`) will be defined during Stage 1 implementation — they are engine-internal and do not affect the adapter contracts above.
 
@@ -161,13 +183,13 @@ Grouped by the stage that introduces them:
 
 | Stage | Route | Purpose |
 |-------|-------|---------|
-| 2 | `POST /api/solar-designer/projects` | Create project |
-| 2 | `GET /api/solar-designer/projects` | List projects (paginated, searchable) |
-| 2 | `GET /api/solar-designer/projects/[id]` | Get project + latest revision |
-| 2 | `PUT /api/solar-designer/projects/[id]` | Update project metadata |
-| 2 | `POST /api/solar-designer/projects/[id]/revisions` | Save revision (auto-increment) |
-| 2 | `DELETE /api/solar-designer/projects/[id]` | Soft-delete (archive) project |
 | 2 | `POST /api/solar-designer/upload` | Upload DXF/JSON/CSV files, return parsed layout |
+| 5 | `POST /api/solar-designer/projects` | Create project |
+| 5 | `GET /api/solar-designer/projects` | List projects (paginated, searchable) |
+| 5 | `GET /api/solar-designer/projects/[id]` | Get project + latest revision |
+| 5 | `PUT /api/solar-designer/projects/[id]` | Update project metadata |
+| 5 | `POST /api/solar-designer/projects/[id]/revisions` | Save revision (auto-increment) |
+| 5 | `DELETE /api/solar-designer/projects/[id]` | Soft-delete (archive) project |
 | 5 | `POST /api/solar-designer/projects/[id]/scenarios` | Save scenario snapshot |
 | 5 | `GET /api/solar-designer/projects/[id]/scenarios` | List scenarios for project |
 | 5 | `POST /api/solar-designer/export` | Export PDF/CSV/JSON report |
@@ -183,7 +205,7 @@ Existing routes reused as-is: `/api/solar/weather` (NREL TMY), `/api/solar/shade
 
 ### Schema Changes
 
-**Stage 2** — Add to existing `SolarProject` model:
+**Stage 5** — Add to existing `SolarProject` model (when persistence is introduced):
 ```prisma
 linkedHubspotDealId String?   // user-linked deal for guarantee comparison (distinct from ZuperJobCache.hubspotDealId which is tag-derived)
 ```
@@ -212,7 +234,7 @@ model SolarProjectNote {
 ```
 Notes are flat (not threaded). Any user with Solar Designer access can post. No notifications in V1 — revisit if cross-team handoff volume warrants it. Stage 8 migration must also add `solarProjectNotes SolarProjectNote[]` relation to the `User` model and `notes SolarProjectNote[]` to `SolarProject`.
 
-Migration runs with `prisma migrate deploy` in the stage that introduces the change. The `linkedHubspotDealId` field is nullable and non-breaking, so Stage 2 migration is safe to run against production with zero downtime.
+Migration runs with `prisma migrate deploy` in the stage that introduces the change. The `linkedHubspotDealId` field is nullable and non-breaking, so the Stage 5 migration is safe to run against production with zero downtime.
 
 ### Role Permissions & Access
 
@@ -234,22 +256,22 @@ Migration runs with `prisma migrate deploy` in the stage that introduces the cha
 
 ## Build Stages
 
-### Stage 1: Engine Extraction
-Extract V12's core math into `src/lib/solar/v12-engine/` as typed TS modules. Unit tests validating output matches V12 for known inputs. No UI — just the math layer.
+### Stage 1: Core Engine Extraction
+Extract V12's core analysis math into `src/lib/solar/v12-engine/` as typed TS modules. Only the modules needed to support the first service-usable path: upload layout → pick equipment → build strings → run production analysis → see clipping. Battery dispatch, AI analysis, and scenario comparison are deferred to Stage 5 where their UI appears.
 
-**Deliverable:** All V12 calculation functions ported and tested.
+**Deliverable:** Core V12 calculation functions (layout parsing, physics, production, stringing, mismatch, clipping, timeseries, equipment, consumption) ported and tested.
 
 **Acceptance criteria:**
-1. Each V12 module (`production`, `stringing`, `mismatch`, `clipping`, `dispatch`, `timeseries`, `ai-analysis`, `scenarios`, `equipment`, `consumption`, `physics`) exists as a typed TS file
-2. Unit tests for each module pass with known V12 input/output pairs (Jacob's test data)
+1. Each core module (`layout-parser`, `physics`, `production`, `stringing`, `mismatch`, `clipping`, `timeseries`, `equipment`, `consumption`) exists as a typed TS file
+2. Unit tests for each module pass with known V12 input/output pairs (Jacob's test data or synthetic fixture)
 3. Independent panel production (Model A) matches V12 output within 0.1% for the test project
 4. String-level production (Model B) matches V12 output within 0.1% for the test project
 5. Engine runs in a Web Worker without blocking the main thread
 
 ### Stage 2: Core UI Shell
-New page at `/dashboards/solar-designer`. Search bar, project browser, tab layout matching V12's 8 tabs, equipment selection panel, site conditions panel, manual file upload (DXF/JSON/CSV). Uses suite theme tokens and `DashboardShell`. Prisma migration adds `linkedHubspotDealId` to `SolarProject`.
+New page at `/dashboards/solar-designer`. Tab layout matching V12's 8 tabs, equipment selection panel, site conditions panel, manual file upload (DXF/JSON/CSV). Uses suite theme tokens and `DashboardShell`. **No persistence yet** — all state is in-memory. Project CRUD, revisions, and the project browser are deferred to Stage 5 so the early path stays focused on the analysis workflow: upload → pick equipment → string → analyze.
 
-**Deliverable:** Working shell with file upload → panel count displayed.
+**Deliverable:** Working shell with file upload → panel count displayed, equipment selectable, site conditions editable.
 
 **Acceptance criteria:**
 1. Page loads at `/dashboards/solar-designer` wrapped in `DashboardShell`
@@ -282,20 +304,32 @@ Wire engine to UI. Production table, system summary card (triple model), 30-minu
 4. Inverter cards show MPPT channels, DC/AC ratio, clipping events
 5. Progress indicator visible during engine computation (Web Worker messages). Evaluate existing `src/lib/solar/hooks/useSimulation.ts` for reuse — it already orchestrates worker communication
 
-### Stage 5: Scenarios + AI + Battery
-Save/load/compare scenarios. Scenario comparison table with best-value highlighting. AI analysis recommendations (design score, issues, suggestions). Battery dispatch simulation. Export (PDF, CSV, JSON).
+### Stage 5: Scenarios + AI + Battery + Persistence
+Extract deferred V12 engine modules (`dispatch.ts`, `ai-analysis.ts`, `scenarios.ts`). Build their UI: save/load/compare scenarios, scenario comparison table with best-value highlighting, AI analysis recommendations (design score, issues, suggestions), battery dispatch simulation. Export (PDF, CSV, JSON). Also introduce project persistence (project CRUD, revisions, project browser) — deferred from Stage 2 to keep the early path focused on analysis.
 
-**Deliverable:** All 8 tabs fully functional with file-based data input.
+**Deliverable:** All 8 tabs fully functional. Projects can be saved, loaded, and browsed.
 
 **Acceptance criteria:**
-1. Save scenario captures current stringing + equipment + site conditions
-2. Compare view shows side-by-side metrics with best-value highlighting
-3. AI tab shows design score (0-100), detected issues, and actionable recommendations
-4. Battery tab runs dispatch simulation with self-consumption, TOU, and export-first modes
-5. Export generates PDF report, CSV data, and JSON project file
+1. `dispatch.ts`, `ai-analysis.ts`, `scenarios.ts` extracted from V12 and unit-tested
+2. Save scenario captures current stringing + equipment + site conditions
+3. Compare view shows side-by-side metrics with best-value highlighting
+4. AI tab shows design score (0-100), detected issues, and actionable recommendations
+5. Battery tab runs dispatch simulation with self-consumption, TOU, and export-first modes
+6. Export generates PDF report, CSV data, and JSON project file
+7. Project browser lists saved projects; create, open, and archive work end-to-end
 
 ### Stage 6: HubSpot Integration
 Search deals by name/address/deal ID. Pull production guarantee from deal properties. Production guarantee comparison panel — modeled vs guaranteed, threshold decision support. Link projects to deals. Pull installed equipment from deal line items.
+
+**Equipment auto-populate from HubSpot line items:**
+
+HubSpot line items have a `name`, `hs_sku`, and BOM-managed properties (brand, model, category via `InternalProduct`). The Solar Designer equipment catalog has its own entries (V12 built-in + `SolarCustomEquipment`). A canonicalization layer resolves the match:
+
+1. **SKU match** — if line item `hs_sku` matches an `InternalProduct.zohoItemId` or `InternalProduct.hubspotProductId`, use that product's specs directly (wattage, Voc, Isc, etc. from the linked `ModuleSpec`/`InverterSpec`/`BatterySpec`).
+2. **Brand+model fuzzy match** — if SKU miss, extract brand and model from line item name. Fuzzy-match against `InternalProduct` catalog and V12 built-in equipment list. Score by Levenshtein distance + category match.
+3. **Manual selection fallback** — if no confident match (score < 0.8), present the user with the line item name and a dropdown of candidate matches. User picks or creates a custom equipment entry.
+
+The UI shows a match confidence badge per equipment item: ✅ Exact, ⚠️ Fuzzy (click to verify), ❌ Unmatched (select manually). This prevents silent wrong selections.
 
 **Production guarantee comparison:**
 - Display: modeled annual kWh vs guaranteed annual kWh (from deal property)
