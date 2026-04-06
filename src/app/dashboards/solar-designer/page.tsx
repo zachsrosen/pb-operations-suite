@@ -49,7 +49,12 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
         radiancePointCount: action.radiancePointCount,
         uploadedFiles: action.files,
         uploadError: null,
-        // Reset downstream state on new upload
+        // Reset equipment + downstream state on new upload so stale
+        // selections from a prior job don't leak into the new layout
+        panelKey: '',
+        inverterKey: '',
+        selectedPanel: null,
+        selectedInverter: null,
         strings: [],
         inverters: [],
         result: null,
