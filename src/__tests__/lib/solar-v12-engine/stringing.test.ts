@@ -1,4 +1,4 @@
-import { autoString, type AutoStringInput } from '@/lib/solar/v12-engine/stringing';
+import { autoString } from '@/lib/solar/v12-engine/stringing';
 import type { PanelStat, ResolvedPanel, ResolvedInverter } from '@/lib/solar/v12-engine/types';
 
 const mockPanel: ResolvedPanel = {

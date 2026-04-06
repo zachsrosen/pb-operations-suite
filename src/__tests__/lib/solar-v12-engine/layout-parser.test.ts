@@ -1,4 +1,4 @@
-import { parseJSON, parseDXF, type LayoutParseResult } from '@/lib/solar/v12-engine/layout-parser';
+import { parseJSON, parseDXF } from '@/lib/solar/v12-engine/layout-parser';
 import * as fs from 'fs';
 import * as path from 'path';
 

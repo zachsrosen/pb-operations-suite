@@ -7,11 +7,8 @@
 import type {
   CoreSolarDesignerInput,
   CoreSolarDesignerResult,
-  PanelGeometry,
   ShadeTimeseries,
   ClippingEvent,
-  SiteConditions,
-  EquipmentSelection,
 } from '@/lib/solar/v12-engine/types';
 
 describe('CoreSolarDesignerInput', () => {

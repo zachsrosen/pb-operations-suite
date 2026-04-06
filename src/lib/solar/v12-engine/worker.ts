@@ -21,7 +21,7 @@ type PostMessageFn = (
  * Exported for testability — tests call this directly with a mock postMessage.
  */
 export function handleWorkerMessage(
-  msg: { type: string; payload: any },
+  msg: { type: string; payload: unknown },
   postMessage: PostMessageFn
 ): void {
   if (msg.type !== 'RUN_SIMULATION') return;
@@ -35,10 +35,11 @@ export function handleWorkerMessage(
       type: 'SIMULATION_RESULT',
       payload: result,
     } as unknown as WorkerResultMessage);
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
     postMessage({
       type: 'SIMULATION_ERROR',
-      payload: { message: err?.message || 'Unknown error' },
+      payload: { message },
     });
   }
 }

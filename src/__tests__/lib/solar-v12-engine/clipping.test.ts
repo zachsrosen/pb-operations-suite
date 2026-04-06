@@ -1,5 +1,4 @@
 import { detectClippingEvents } from '@/lib/solar/v12-engine/clipping';
-import type { ClippingEvent } from '@/lib/solar/v12-engine/types';
 
 describe('detectClippingEvents', () => {
   it('detects a contiguous clipping event', () => {

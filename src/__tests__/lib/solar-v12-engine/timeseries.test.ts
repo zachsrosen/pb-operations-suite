@@ -1,4 +1,4 @@
-import { aggregateTimeseries, sumTimeseries, type TimeseriesView } from '@/lib/solar/v12-engine/timeseries';
+import { aggregateTimeseries, sumTimeseries } from '@/lib/solar/v12-engine/timeseries';
 
 describe('aggregateTimeseries', () => {
   it('aggregates a full-year timeseries to daily view for day 0', () => {
