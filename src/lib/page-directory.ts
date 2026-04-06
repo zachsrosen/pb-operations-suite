@@ -78,6 +78,7 @@ export const APP_PAGE_ROUTES = [
   "/dashboards/service-customers",
   "/dashboards/site-survey",
   "/dashboards/site-survey-scheduler",
+  "/dashboards/solar-designer",
   "/dashboards/solar-surveyor",
   "/dashboards/survey-metrics",
   "/dashboards/submit-product",
