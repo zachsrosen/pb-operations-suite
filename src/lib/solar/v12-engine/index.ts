@@ -52,5 +52,5 @@ export { detectClippingEvents } from './clipping';
 // Constants
 export { TIMESTEPS, HALF_HOUR_FACTOR, DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE } from './constants';
 
-// Worker — added in Task 14
-// export { handleWorkerMessage } from './worker';
+// Worker
+export { handleWorkerMessage } from './worker';
