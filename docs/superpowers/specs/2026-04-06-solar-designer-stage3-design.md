@@ -11,7 +11,8 @@ Stage 3 adds the two interactive tabs that make the Solar Designer usable: a pan
 ## Prerequisites
 
 - Stage 1 (v12-engine) and Stage 2 (UI shell) merged or available on the working branch
-- Google Geocoding API and Static Maps API enabled on the project's Google Cloud credentials (existing `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` or a separate API key)
+- `GOOGLE_MAPS_API_KEY` env var (existing, server-side — for geocoding via `/api/solar/geocode`)
+- `NEXT_PUBLIC_GOOGLE_MAPS_STATIC_KEY` env var (new, browser-restricted — for Static Maps satellite tile)
 
 ## File Structure
 
@@ -219,8 +220,6 @@ Two shade-point references exist. Their roles are distinct:
 - **`PanelGeometry.shadePointIds`** (on each panel): Initialized as `[]` by the layout parser. Not populated in Stage 3. Will be populated in Stage 4 when the full engine runs — the `PanelGeometry → PanelStat` bridge writes `panelShadeMap[pg.id]` into `PanelStat.points`, which is what the engine reads.
 
 **Rule:** UI components read from `panelShadeMap`. Engine reads from `PanelStat.points`. The bridge function is the only place that connects them.
-
-### Existing State Reset Behavior
 
 ### Upload Contract Change (Stage 2 → Stage 3)
 
