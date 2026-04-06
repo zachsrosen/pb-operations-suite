@@ -1,6 +1,6 @@
 'use client';
 
-import { useReducer } from 'react';
+import { useReducer, useEffect } from 'react';
 import DashboardShell from '@/components/DashboardShell';
 import TabBar from '@/components/solar-designer/TabBar';
 import PlaceholderTab from '@/components/solar-designer/PlaceholderTab';
@@ -8,7 +8,9 @@ import EquipmentPanel from '@/components/solar-designer/EquipmentPanel';
 import SiteConditionsPanel from '@/components/solar-designer/SiteConditionsPanel';
 import FileUploadPanel from '@/components/solar-designer/FileUploadPanel';
 import SystemSummaryBar from '@/components/solar-designer/SystemSummaryBar';
-import { DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE } from '@/lib/solar/v12-engine';
+import VisualizerTab from '@/components/solar-designer/VisualizerTab';
+import AddressInput from '@/components/solar-designer/AddressInput';
+import { DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE, associateShadePoints } from '@/lib/solar/v12-engine';
 import type { SolarDesignerState, SolarDesignerAction, SolarDesignerTab, UIStringConfig } from '@/components/solar-designer/types';
 import { DEFAULT_MAP_ALIGNMENT } from '@/components/solar-designer/types';
 
@@ -170,6 +172,14 @@ const ENABLED_TABS: SolarDesignerTab[] = ['visualizer', 'stringing'];
 export default function SolarDesignerPage() {
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
 
+  // Run shade association after panels + radiance points are loaded
+  useEffect(() => {
+    if (state.panels.length > 0 && state.radiancePoints.length > 0) {
+      const map = associateShadePoints(state.panels, state.radiancePoints);
+      dispatch({ type: 'SET_SHADE_POINT_IDS', panelShadeMap: map });
+    }
+  }, [state.panels, state.radiancePoints]);
+
   const handleTabChange = (tab: SolarDesignerTab) => {
     dispatch({ type: 'SET_TAB', tab });
   };
@@ -182,6 +192,8 @@ export default function SolarDesignerPage() {
           <FileUploadPanel uploadedFiles={state.uploadedFiles} panelCount={state.panels.length}
             radiancePointCount={state.radiancePoints.length} isUploading={state.isUploading}
             uploadError={state.uploadError} dispatch={dispatch} />
+
+          <AddressInput dispatch={dispatch} formattedAddress={state.siteFormattedAddress} />
 
           <EquipmentPanel panelKey={state.panelKey} inverterKey={state.inverterKey}
             selectedPanel={state.selectedPanel} selectedInverter={state.selectedInverter} dispatch={dispatch} />
@@ -200,7 +212,7 @@ export default function SolarDesignerPage() {
             enabledTabs={ENABLED_TABS}
           />
           <div className="mt-4">
-            {state.activeTab === 'visualizer' && <PlaceholderTab tabName="Visualizer" targetStage={3} />}
+            {state.activeTab === 'visualizer' && <VisualizerTab state={state} dispatch={dispatch} />}
             {state.activeTab === 'stringing' && <PlaceholderTab tabName="Stringing" targetStage={3} />}
             {state.activeTab === 'production' && <PlaceholderTab tabName="Production" targetStage={4} />}
             {state.activeTab === 'timeseries' && <PlaceholderTab tabName="30-Min Series" targetStage={4} />}
