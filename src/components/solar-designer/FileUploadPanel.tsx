@@ -42,8 +42,14 @@ export default function FileUploadPanel({
       });
 
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || `Upload failed (${res.status})`);
+        let errorMsg = `Upload failed (${res.status})`;
+        try {
+          const err = await res.json();
+          if (err.error) errorMsg = err.error;
+        } catch {
+          // Response body not JSON (e.g. Vercel error page) — use status-based message
+        }
+        throw new Error(errorMsg);
       }
 
       const data = await res.json();
@@ -97,7 +103,11 @@ export default function FileUploadPanel({
         )}
       </div>
       <input ref={fileInputRef} type="file" accept=".dxf,.json,.csv" multiple className="hidden"
-        onChange={(e) => { if (e.target.files) handleFiles(e.target.files); }} />
+        onChange={(e) => {
+          if (e.target.files) handleFiles(e.target.files);
+          // Reset so re-selecting the same file triggers onChange
+          e.target.value = '';
+        }} />
       {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
       {uploadedFiles.length > 0 && (
         <div className="space-y-1">

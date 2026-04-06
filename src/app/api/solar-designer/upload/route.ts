@@ -25,6 +25,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<UploadResult 
     const allShadeData: ShadeTimeseries = {};
     const allErrors: string[] = [];
     let radiancePointCount = 0;
+    // Track shade fidelity/source from parsed files (last CSV wins).
+    // Today all sources return 'full'/'manual', but Stage 7 will add
+    // EagleView and Google Solar adapters with different values.
+    let shadeFidelity: ShadeFidelity = 'full';
+    let shadeSource: ShadeSource = 'manual';
 
     for (const file of files) {
       const text = await file.text();
@@ -49,6 +54,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<UploadResult 
           allErrors.push(...result.errors.map(e => `${file.name}: ${e}`));
         }
         Object.assign(allShadeData, result.data);
+        shadeFidelity = result.fidelity;
+        shadeSource = result.source;
       } else {
         allErrors.push(`${file.name}: Unsupported file type .${ext}. Expected .dxf, .json, or .csv`);
       }
@@ -57,8 +64,8 @@ export async function POST(req: NextRequest): Promise<NextResponse<UploadResult 
     return NextResponse.json({
       panels: allPanels,
       shadeData: allShadeData,
-      shadeFidelity: 'full',
-      shadeSource: 'manual',
+      shadeFidelity,
+      shadeSource,
       radiancePointCount,
       fileCount: files.length,
       errors: allErrors,
