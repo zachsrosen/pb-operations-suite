@@ -665,7 +665,7 @@ Three states: valid, warning (within 5%), error. 7 tests."
 
 - [ ] **Step 1: Write a test for the upload route response shape**
 
-Create `src/__tests__/app/solar-designer-upload.test.ts`:
+Add to the existing `src/__tests__/api/solar-designer-upload.test.ts`:
 
 ```typescript
 /**
@@ -708,7 +708,7 @@ describe('upload route contract', () => {
 
 - [ ] **Step 2: Run test to verify it passes (type-level)**
 
-Run: `npx jest src/__tests__/app/solar-designer-upload.test.ts --no-coverage 2>&1 | tail -10`
+Run: `npx jest src/__tests__/api/solar-designer-upload.test.ts --no-coverage 2>&1 | tail -10`
 
 Expected: PASS (this is a type-shape test).
 
@@ -761,19 +761,13 @@ Alternatively, since `FileUploadPanel` only displays the count as text, keep the
 
 - [ ] **Step 5: Update FileUploadPanel dispatch to send radiancePoints**
 
-In `src/components/solar-designer/FileUploadPanel.tsx`, in the `handleFiles` callback, change the dispatch call to pass `radiancePoints` instead of `radiancePointCount`:
+In `src/components/solar-designer/FileUploadPanel.tsx`, in the `handleFiles` callback, find the `dispatch({ type: 'UPLOAD_SUCCESS', ... })` call. Change the `radiancePointCount` field to pass the full array from the upload response:
 
-Replace:
-```typescript
-radiancePointCount: data.radiancePointCount ?? 0,
-```
-
-With:
 ```typescript
 radiancePoints: data.radiancePoints ?? [],
 ```
 
-(The action type was already updated in Task 1 to expect `radiancePoints: RadiancePoint[]`.)
+This replaces the old `radiancePointCount: data.radiancePointCount ?? 0` line. The upload route (Step 3) now returns `radiancePoints: RadiancePoint[]` and the action type (Task 1) expects `radiancePoints: RadiancePoint[]`.
 
 - [ ] **Step 6: Verify TypeScript compiles (partial — page.tsx will still have errors)**
 
@@ -782,7 +776,7 @@ Run: `npx tsc --noEmit 2>&1 | grep -c "error TS"` — note the count. Errors sho
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/app/api/solar-designer/upload/route.ts src/components/solar-designer/FileUploadPanel.tsx src/__tests__/app/solar-designer-upload.test.ts
+git add src/app/api/solar-designer/upload/route.ts src/components/solar-designer/FileUploadPanel.tsx src/__tests__/api/solar-designer-upload.test.ts
 git commit -m "feat(solar-designer): upload route returns full radiancePoints[] array
 
 Change upload contract from radiancePointCount to radiancePoints[].
