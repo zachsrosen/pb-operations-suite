@@ -48,7 +48,7 @@ export function autoString(input: AutoStringInput): AutoStringResult {
   // 5. Validate each string
   for (const s of strings) {
     const stringVocCold = vocCold * s.panels.length;
-    const stringVmpHot = panel.vmp * (1 + panel.tempCoVoc * (45 - 25)) * s.panels.length;
+    const stringVmpHot = panel.vmp * (1 + panel.tempCoPmax * (45 - 25)) * s.panels.length;
 
     if (stringVocCold > inverter.mpptMax) {
       warnings.push(`String of ${s.panels.length} panels: Voc_cold (${stringVocCold.toFixed(0)}V) exceeds MPPT max (${inverter.mpptMax}V)`);

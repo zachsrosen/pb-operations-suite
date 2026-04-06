@@ -62,7 +62,7 @@ export function runCoreAnalysis(
     id: i,
     // Use per-panel TSRF override if present (for parity with legacy),
     // otherwise default to 0.85
-    tsrf: (pg as PanelGeometryWithTsrf).tsrf ?? 0.85,
+    tsrf: pg.tsrf ?? 0.85,
     points: pg.shadePointIds,
     panelKey: equipment.panelKey,
     bifacialGain,
@@ -137,14 +137,6 @@ export function runCoreAnalysis(
     systemTsrf,
     specificYield,
   };
-}
-
-/**
- * Internal type to allow optional TSRF on PanelGeometry for legacy parity.
- * PanelGeometry spec doesn't include tsrf, but the adapter injects it.
- */
-interface PanelGeometryWithTsrf {
-  tsrf?: number;
 }
 
 /**

@@ -50,6 +50,9 @@ export interface PanelGeometry {
   tilt: number;         // degrees from horizontal 0-90°
   roofSegmentId?: string;
   shadePointIds: string[];
+  /** Optional per-panel TSRF override. Used by legacy adapter for parity testing.
+   *  In production, TSRF should be derived from shade data + panel orientation. */
+  tsrf?: number;
 }
 
 // ── Equipment Selection ──────────────────────────────────────
