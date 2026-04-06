@@ -64,7 +64,7 @@ export default function FileUploadPanel({
         shadeData: data.shadeData,
         shadeFidelity: data.shadeFidelity,
         shadeSource: data.shadeSource,
-        radiancePointCount: data.radiancePointCount ?? 0,
+        radiancePoints: data.radiancePoints ?? [],
         files: files.map((f) => ({
           name: f.name,
           type: f.name.split('.').pop()?.toLowerCase() as 'dxf' | 'json' | 'csv',

@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseJSON, parseDXF, parseShadeCSV } from '@/lib/solar/v12-engine';
 import type { PanelGeometry, ShadeTimeseries, ShadeFidelity, ShadeSource } from '@/lib/solar/v12-engine';
+import type { RadiancePoint } from '@/lib/solar/v12-engine/layout-parser';
 
 interface UploadResult {
   panels: PanelGeometry[];
   shadeData: ShadeTimeseries;
   shadeFidelity: ShadeFidelity;
   shadeSource: ShadeSource;
-  radiancePointCount: number;
+  radiancePoints: RadiancePoint[];
   fileCount: number;
   errors: string[];
 }
@@ -24,7 +25,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<UploadResult 
     const allPanels: PanelGeometry[] = [];
     const allShadeData: ShadeTimeseries = {};
     const allErrors: string[] = [];
-    let radiancePointCount = 0;
+    const allRadiancePoints: RadiancePoint[] = [];
     // Track shade fidelity/source from parsed files (last CSV wins).
     // Today all sources return 'full'/'manual', but Stage 7 will add
     // EagleView and Google Solar adapters with different values.
@@ -47,7 +48,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<UploadResult 
           allErrors.push(...result.errors.map(e => `${file.name}: ${e}`));
         }
         allPanels.push(...result.panels);
-        radiancePointCount += result.radiancePoints.length;
+        allRadiancePoints.push(...result.radiancePoints);
       } else if (ext === 'csv') {
         const result = parseShadeCSV(text);
         if (result.errors.length > 0) {
@@ -66,7 +67,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<UploadResult 
       shadeData: allShadeData,
       shadeFidelity,
       shadeSource,
-      radiancePointCount,
+      radiancePoints: allRadiancePoints,
       fileCount: files.length,
       errors: allErrors,
     });
