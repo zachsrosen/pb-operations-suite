@@ -100,6 +100,10 @@ export interface CoreSolarDesignerInput {
   siteConditions: SiteConditions;
   consumption?: ConsumptionConfig;
   lossProfile: LossProfile;
+  /** Shade data quality — adapters set this based on source. Defaults to 'full'. */
+  shadeFidelity?: ShadeFidelity;
+  /** Where shade data came from — adapters set this based on source. Defaults to 'manual'. */
+  shadeSource?: ShadeSource;
 }
 
 // ── Core Result (Stages 1-4) ────────────────────────────────

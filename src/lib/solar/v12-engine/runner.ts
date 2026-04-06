@@ -27,13 +27,18 @@ export function runCoreAnalysis(
   input: CoreSolarDesignerInput,
   reportProgress: (msg: WorkerProgressMessage) => void
 ): CoreSolarDesignerResult {
-  const { panels, shadeData, strings, equipment, siteConditions, lossProfile } = input;
+  const { panels, shadeData, strings, equipment, siteConditions, lossProfile,
+    shadeFidelity: inputFidelity, shadeSource: inputSource } = input;
 
   if (panels.length === 0) {
     return emptyResult();
   }
 
   // 1. Resolve equipment from built-in catalog
+  // TODO(Stage 5): Support multi-inverter resolution. Currently resolves a single
+  // inverter for system-level stats (derate, architecture type). The inverters[]
+  // array is used for string-to-inverter assignment in Model B, but system stats
+  // assume a single primary inverter type — matches existing engine and residential use.
   const panelSpec = resolvePanel(equipment.panelKey);
   const inverterSpec = resolveInverter(equipment.inverterKey);
 
@@ -47,6 +52,9 @@ export function runCoreAnalysis(
   };
 
   // Compute bifacial gain if applicable
+  // TODO(Stage 4): Use per-panel tilt from PanelGeometry instead of fixed 30°.
+  // The existing engine/runner.ts has the same limitation — fix both together
+  // when the UI surfaces per-segment tilt. For now, matches existing parity.
   let bifacialGain = 1.0;
   if (panelSpec.isBifacial && panelSpec.bifacialityFactor > 0) {
     bifacialGain = calculateBifacialGain({
@@ -130,8 +138,8 @@ export function runCoreAnalysis(
     clippingEvents,
     independentTimeseries: modelA.panelTimeseries,
     stringTimeseries: modelBResult?.stringTimeseries || [],
-    shadeFidelity: 'full',
-    shadeSource: 'manual',
+    shadeFidelity: inputFidelity ?? 'full',
+    shadeSource: inputSource ?? 'manual',
     panelCount: panels.length,
     systemSizeKw,
     systemTsrf,
