@@ -26,6 +26,7 @@ Replace the standalone Solar Surveyor V12 HTML tool and the partially-built nati
   - `equipment.ts` — equipment catalog (panels, inverters, ESS, optimizers)
   - `consumption.ts` — home consumption profile (annual, monthly CSV, zip-based climate)
   - `physics.ts` — irradiance, temperature derating, bifacial gain, system derate
+  - `layout-parser.ts` — DXF/JSON file parsing → `PanelGeometry[]` (V12 has a custom DXF parser; evaluate whether a third-party DXF library like `dxf-parser` is needed or if V12's parser can be ported directly)
 - **Existing engine overlap:** `src/lib/solar/engine/` already has partial V12 ports. Mapping:
 
   | Existing module | V12 equivalent | Action |
@@ -82,7 +83,36 @@ interface SolarDesignerResult {
 }
 ```
 
-Detailed type definitions for sub-interfaces will be defined during Stage 1 implementation.
+### Core Input Types
+
+These are the universal contracts that all data sources (DXF upload, JSON upload, EagleView API, Google Solar API) must normalize into:
+
+```typescript
+interface PanelGeometry {
+  id: string;                    // unique panel identifier
+  x: number;                     // position in layout coordinates (meters)
+  y: number;                     // position in layout coordinates (meters)
+  width: number;                 // panel width (meters)
+  height: number;                // panel height (meters)
+  azimuth: number;               // compass bearing (0-360°)
+  tilt: number;                  // tilt from horizontal (0-90°)
+  roofSegmentId?: string;        // which roof face this panel sits on
+  shadePointIds: string[];       // references into ShadeTimeseries keys
+}
+
+// Per-point shade data: keys are shade point IDs, values are binary shade strings
+// Each string is 17,520 chars (365 days × 48 half-hour intervals), '0' = sun, '1' = shade
+// This matches V12's shade encoding. EagleView and Google Solar adapters must normalize to this format.
+type ShadeTimeseries = Record<string, string>;
+```
+
+**Data source adapters** (each produces `PanelGeometry[]` + `ShadeTimeseries`):
+- `layout-parser.ts` — DXF/JSON file → `PanelGeometry[]`
+- `eagleview-adapter.ts` (Stage 7) — EagleView API response → `PanelGeometry[]` + `ShadeTimeseries`
+- `google-solar-adapter.ts` — Google Solar API response → `PanelGeometry[]` + `ShadeTimeseries` (reduced fidelity: sunshine quantiles converted to binary shade approximation)
+- `csv-shade-parser.ts` — Shade CSV upload → `ShadeTimeseries`
+
+Remaining sub-interface types (`StringConfig`, `InverterConfig`, `EquipmentSelection`, `SiteConditions`, `ConsumptionConfig`, `BatteryConfig`, `LossProfile`, `ClippingEvent`, `EnergyBalance`, `DesignIssue`) will be defined during Stage 1 implementation — they are engine-internal and do not affect the adapter contracts above.
 
 ### UI
 
@@ -112,7 +142,7 @@ Detailed type definitions for sub-interfaces will be defined during Stage 1 impl
 ### Data Storage
 
 - **Projects:** `SolarProject` + `SolarProjectRevision` (existing Prisma models)
-- **Deal linking:** Add `hubspotDealId: String?` field to `SolarProject`
+- **Deal linking:** Add `linkedHubspotDealId: String?` field to `SolarProject`
 - **EagleView cache:** New `EagleViewCache` model:
   ```
   model EagleViewCache {
@@ -136,6 +166,7 @@ Grouped by the stage that introduces them:
 | 2 | `GET /api/solar-designer/projects/[id]` | Get project + latest revision |
 | 2 | `PUT /api/solar-designer/projects/[id]` | Update project metadata |
 | 2 | `POST /api/solar-designer/projects/[id]/revisions` | Save revision (auto-increment) |
+| 2 | `DELETE /api/solar-designer/projects/[id]` | Soft-delete (archive) project |
 | 2 | `POST /api/solar-designer/upload` | Upload DXF/JSON/CSV files, return parsed layout |
 | 5 | `POST /api/solar-designer/projects/[id]/scenarios` | Save scenario snapshot |
 | 5 | `GET /api/solar-designer/projects/[id]/scenarios` | List scenarios for project |
@@ -152,7 +183,7 @@ Existing routes reused as-is: `/api/solar/weather` (NREL TMY), `/api/solar/shade
 
 **Stage 2** — Add to existing `SolarProject` model:
 ```prisma
-hubspotDealId String?   // linked HubSpot deal for guarantee comparison
+linkedHubspotDealId String?   // user-linked deal for guarantee comparison (distinct from ZuperJobCache.hubspotDealId which is tag-derived)
 ```
 
 **Stage 7** — New model:
@@ -165,7 +196,21 @@ model EagleViewCache {
 }
 ```
 
-Migration runs with `prisma migrate deploy` in the stage that introduces the change. The `hubspotDealId` field is nullable and non-breaking, so Stage 2 migration is safe to run against production with zero downtime.
+**Stage 8** — New model for cross-team notes:
+```prisma
+model SolarProjectNote {
+  id        String   @id @default(cuid())
+  projectId String
+  project   SolarProject @relation(fields: [projectId], references: [id])
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id])
+  body      String   // markdown text
+  createdAt DateTime @default(now())
+}
+```
+Notes are flat (not threaded). Any user with Solar Designer access can post. No notifications in V1 — revisit if cross-team handoff volume warrants it.
+
+Migration runs with `prisma migrate deploy` in the stage that introduces the change. The `linkedHubspotDealId` field is nullable and non-breaking, so Stage 2 migration is safe to run against production with zero downtime.
 
 ### Role Permissions & Access
 
@@ -174,7 +219,7 @@ Migration runs with `prisma migrate deploy` in the stage that introduces the cha
 - **Files to update**:
   - `src/lib/role-permissions.ts` — add route to allowed lists for above roles
   - `src/lib/suite-nav.ts` — add entry under Service Suite and Design & Engineering Suite
-  - `src/lib/page-directory.ts` — register page metadata
+  - `src/lib/page-directory.ts` — register: `{ path: '/dashboards/solar-designer', title: 'Solar Designer', description: 'Solar design analysis and production modeling', suites: ['service', 'design-engineering'], icon: 'Sun' }`
   - `src/components/DashboardShell.tsx` — no changes needed (uses existing pattern)
 - **No suite-specific feature gating** — identical tool for all roles
 
@@ -230,10 +275,10 @@ Wire engine to UI. Production table, system summary card (triple model), 30-minu
 
 **Acceptance criteria:**
 1. Production table shows per-panel: TSRF, independent kWh, string kWh, mismatch %, EV SAV, status
-2. System summary shows independent, string-level, and EagleView annual totals
+2. System summary shows independent and string-level annual totals (EagleView column shows N/A until Stage 7; if TSRF/SAV data available from manual upload, derive EagleView estimate)
 3. 30-minute timeseries chart renders with Model A/B/C overlays
 4. Inverter cards show MPPT channels, DC/AC ratio, clipping events
-5. Progress indicator visible during engine computation (Web Worker messages)
+5. Progress indicator visible during engine computation (Web Worker messages). Evaluate existing `src/lib/solar/hooks/useSimulation.ts` for reuse — it already orchestrates worker communication
 
 ### Stage 5: Scenarios + AI + Battery
 Save/load/compare scenarios. Scenario comparison table with best-value highlighting. AI analysis recommendations (design score, issues, suggestions). Battery dispatch simulation. Export (PDF, CSV, JSON).
@@ -264,7 +309,7 @@ Search deals by name/address/deal ID. Pull production guarantee from deal proper
 2. Selecting a deal auto-populates equipment from line items
 3. Production guarantee value pulled from deal property and displayed
 4. Comparison panel shows modeled vs guaranteed with color-coded threshold
-5. Project linked to deal via `hubspotDealId` field
+5. Project linked to deal via `linkedHubspotDealId` field
 
 ### Stage 7: EagleView API Integration
 Set up EagleView developer account + API credentials. API client for ordering/retrieving measurements. Auto-fetch roof geometry, shade data, TSRF/SAV by address. `EagleViewCache` table with TTL. Fallback chain: EagleView → Google Solar API → manual upload.
@@ -277,6 +322,7 @@ Set up EagleView developer account + API credentials. API client for ordering/re
 - **Google Solar API fallback:** Reduced fidelity (roof segments + sunshine quantiles, no per-point shade timeseries). Show "Reduced fidelity — Google Solar data" badge so user knows
 - **All APIs fail:** Manual upload flow (DXF/JSON/CSV) with clear instructions
 - **Cost guard:** If EagleView charges per-report, add confirmation dialog before API call: "This will order a new EagleView report for [address]. Continue?"
+- **Server-side only:** All EagleView API calls go through `/api/solar-designer/eagleview/fetch` (server-side). No CSP or CORS changes needed. API key stays in environment variables.
 
 **Deliverable:** Open a project by address → roof and shade data auto-populate without file upload.
 
@@ -308,12 +354,13 @@ Help/glossary panel. Production guarantee threshold guidance for service team. T
 2. Service team guide explains production guarantee comparison workflow
 3. Old Solar Surveyor routes redirect to Solar Designer
 4. Old `src/lib/solar/engine/` code removed (after confirming no other consumers)
+5. Existing `SolarProject` records from old Solar Surveyor open in read-only legacy view (old JSON shapes not migrated — new projects use Solar Designer format going forward)
 
 ## Dependencies
 
 - **EagleView API credentials** — must be set up before Stage 7. Does not block Stages 1-6.
 - **HubSpot production guarantee field** — need to confirm the exact property name. Does not block Stages 1-5.
-- **Jacob's V12 test data** — need sample DXF/JSON/shade files for a known project to validate engine extraction in Stage 1. Jacob committed to sharing test data to the shared drive.
+- **Jacob's V12 test data** — need sample DXF/JSON/shade files for a known project to validate engine extraction in Stage 1. Jacob committed to sharing test data to the shared drive. **Contingency:** If test data is delayed, create a synthetic 10-panel test fixture with known shade/weather inputs to validate engine math independently. Use Jacob's data as a second validation pass when available.
 
 ## What This Replaces
 
