@@ -9,6 +9,7 @@ import SiteConditionsPanel from '@/components/solar-designer/SiteConditionsPanel
 import FileUploadPanel from '@/components/solar-designer/FileUploadPanel';
 import SystemSummaryBar from '@/components/solar-designer/SystemSummaryBar';
 import VisualizerTab from '@/components/solar-designer/VisualizerTab';
+import StringingTab from '@/components/solar-designer/StringingTab';
 import AddressInput from '@/components/solar-designer/AddressInput';
 import { DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE, associateShadePoints } from '@/lib/solar/v12-engine';
 import type { SolarDesignerState, SolarDesignerAction, SolarDesignerTab, UIStringConfig } from '@/components/solar-designer/types';
@@ -213,7 +214,7 @@ export default function SolarDesignerPage() {
           />
           <div className="mt-4">
             {state.activeTab === 'visualizer' && <VisualizerTab state={state} dispatch={dispatch} />}
-            {state.activeTab === 'stringing' && <PlaceholderTab tabName="Stringing" targetStage={3} />}
+            {state.activeTab === 'stringing' && <StringingTab state={state} dispatch={dispatch} />}
             {state.activeTab === 'production' && <PlaceholderTab tabName="Production" targetStage={4} />}
             {state.activeTab === 'timeseries' && <PlaceholderTab tabName="30-Min Series" targetStage={4} />}
             {state.activeTab === 'inverters' && <PlaceholderTab tabName="Inverters" targetStage={4} />}
