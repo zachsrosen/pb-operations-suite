@@ -11,6 +11,7 @@ import {
   type PeSystemType,
 } from "@/lib/pricing-calculator";
 import { safeWaitUntil } from "@/lib/safe-wait-until";
+import { EC_QUALIFYING_ZIPS } from "@/lib/ec-qualifying-zips";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -65,67 +66,10 @@ interface PeDeal {
 }
 
 // ---------------------------------------------------------------------------
-// EC lookup — inline (no self-fetch) with 24h cache
+// EC lookup — static zip set from Treasury IRS Notice 2025-31 data
+// Source: EC_MSA_FFE_U2024 (Statistical Area) + Census ZCTA-County crosswalk
+// Covers all CO (53 counties) + CA (35 counties) qualifying under FFE+unemployment
 // ---------------------------------------------------------------------------
-
-const EC_TTL = 24 * 60 * 60 * 1000;
-const ecCache = new Map<string, { result: boolean; ts: number }>();
-
-const COAL_CLOSURE_URL =
-  "https://arcgis.netl.doe.gov/server/rest/services/Hosted/2024_Coal_Closure_Energy_Communities/FeatureServer/0/query";
-const STATISTICAL_AREA_URL =
-  "https://arcgis.netl.doe.gov/server/rest/services/Hosted/2024_MSAs_NonMSAs_that_are_Energy_Communities/FeatureServer/0/query";
-
-async function queryArcGISLayer(
-  url: string,
-  lat: number,
-  lng: number,
-  labelField: string,
-): Promise<boolean> {
-  const params = new URLSearchParams({
-    geometry: `${lng},${lat}`,
-    geometryType: "esriGeometryPoint",
-    inSR: "4326",
-    spatialRel: "esriSpatialRelIntersects",
-    outFields: labelField,
-    returnGeometry: "false",
-    f: "json",
-  });
-  const res = await fetch(`${url}?${params}`);
-  if (!res.ok) return false;
-  const data = await res.json();
-  return (data?.features?.length ?? 0) > 0;
-}
-
-async function lookupEC(zip: string): Promise<{ ec: boolean; failed: boolean }> {
-  const cached = ecCache.get(zip);
-  if (cached && Date.now() - cached.ts < EC_TTL) {
-    return { ec: cached.result, failed: false };
-  }
-  try {
-    // Geocode zip via Zippopotam.us
-    const geoRes = await fetch(`https://api.zippopotam.us/us/${zip}`);
-    if (!geoRes.ok) return { ec: false, failed: true };
-    const geoData = await geoRes.json();
-    const place = geoData?.places?.[0];
-    if (!place) return { ec: false, failed: true };
-
-    const lat = parseFloat(place.latitude);
-    const lng = parseFloat(place.longitude);
-
-    // Query both DOE layers in parallel
-    const [coal, stat] = await Promise.all([
-      queryArcGISLayer(COAL_CLOSURE_URL, lat, lng, "label"),
-      queryArcGISLayer(STATISTICAL_AREA_URL, lat, lng, "label_ec"),
-    ]);
-
-    const isEC = coal || stat;
-    ecCache.set(zip, { result: isEC, ts: Date.now() });
-    return { ec: isEC, failed: false };
-  } catch {
-    return { ec: false, failed: true };
-  }
-}
 
 // ---------------------------------------------------------------------------
 // HubSpot deal properties to fetch
@@ -218,20 +162,7 @@ export async function GET() {
     const stageMaps = await getStageMaps();
     const allStageMaps = (stageMaps.project || {}) as Record<string, string>;
 
-    // Batch EC lookups by unique zip code
-    const uniqueZips = new Set<string>();
-    for (const deal of rawDeals) {
-      const zip = String(deal.postal_code || "").trim();
-      if (/^\d{5}$/.test(zip)) uniqueZips.add(zip);
-    }
-
-    const ecResults = new Map<string, { ec: boolean; failed: boolean }>();
-    await Promise.all(
-      Array.from(uniqueZips).map(async (zip) => {
-        const result = await lookupEC(zip);
-        ecResults.set(zip, result);
-      }),
-    );
+    // EC lookup — static set, no network calls needed
 
     // Transform deals + build HubSpot sync batch in one pass
     // (raw `deal` properties are only in scope inside this .map())
@@ -242,7 +173,9 @@ export async function GET() {
       const amount = deal.amount ? parseFloat(String(deal.amount)) : null;
       const epcPrice = amount && amount > 0 ? amount : null;
       const postalCode = String(deal.postal_code || "").trim() || null;
-      const zip5 = postalCode && /^\d{5}$/.test(postalCode) ? postalCode : null;
+      // Extract first 5 digits — handles ZIP+4 ("80027-8024") and leading spaces
+      const zipMatch = postalCode?.match(/^(\d{5})/);
+      const zip5 = zipMatch ? zipMatch[1] : null;
       const stageId = String(deal.dealstage || "");
       const stageLabel = allStageMaps[stageId] || stageId;
 
@@ -270,10 +203,9 @@ export async function GET() {
           batteryBrand.toLowerCase().includes(b.toLowerCase()),
         );
 
-      // Energy Community
-      const ecResult = zip5 ? ecResults.get(zip5) : undefined;
-      const energyCommunity = ecResult?.ec ?? false;
-      const ecLookupFailed = ecResult?.failed ?? false;
+      // Energy Community — static lookup, no network calls
+      const energyCommunity = zip5 ? EC_QUALIFYING_ZIPS.has(zip5) : false;
+      const ecLookupFailed = false;
 
       // Lease factor
       const adjustment = calcLeaseFactorAdjustment(systemType, solarDC, batteryDC, energyCommunity);
