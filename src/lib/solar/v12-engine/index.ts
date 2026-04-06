@@ -41,6 +41,10 @@ export { parseShadeCSV } from './csv-shade-parser';
 // Shade association
 export { associateShadePoints } from './shade-association';
 
+// String validation
+export { validateString } from './string-validation';
+export type { StringValidationResult } from './string-validation';
+
 // Stringing
 export { autoString } from './stringing';
 
