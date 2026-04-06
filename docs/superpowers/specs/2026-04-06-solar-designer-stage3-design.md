@@ -33,8 +33,9 @@ Stage 3 adds the two interactive tabs that make the Solar Designer usable: a pan
 
 | File | Change |
 |------|--------|
-| `src/components/solar-designer/types.ts` | New UI string type (`UIStringConfig`), 9 new action types, new state fields (`panelShadeMap`, address/geocoding, map alignment, stringing UI state) |
-| `src/app/dashboards/solar-designer/page.tsx` | New state fields in `INITIAL_STATE`, new reducer cases, Visualizer + Stringing tabs render real components instead of placeholders |
+| `src/components/solar-designer/types.ts` | New UI string type (`UIStringConfig`), 9 new action types, new state fields (`radiancePoints`, `panelShadeMap`, address/geocoding, map alignment, stringing UI state). `UPLOAD_SUCCESS` action gains `radiancePoints: RadiancePoint[]`. |
+| `src/app/dashboards/solar-designer/page.tsx` | New state fields in `INITIAL_STATE` (including `radiancePoints: []`), new reducer cases, `UPLOAD_SUCCESS` stores `radiancePoints`. Visualizer + Stringing tabs render real components instead of placeholders. |
+| `src/app/api/solar-designer/upload/route.ts` | Return full `radiancePoints: RadiancePoint[]` array (not just count) in the upload response. The `allRadiancePoints` accumulator replaces `radiancePointCount`. |
 | `src/lib/solar/v12-engine/index.ts` | Add `RadiancePoint` to barrel exports (currently not exported) |
 
 ## Component Design
@@ -84,7 +85,7 @@ Composes `PanelCanvas` in `strings` mode with `StringList` sidebar.
 
 - `onPanelClick` dispatches `ASSIGN_PANEL` (if panel is unassigned or belongs to a different string) or `UNASSIGN_PANEL` (if panel belongs to the active string)
 - Satellite background carries over from Visualizer (same `siteLatLng` and `mapAlignment` state)
-- Auto-string button calls `autoString()` from v12-engine, dispatches `AUTO_STRING`
+- Auto-string button calls `autoString()` from v12-engine, dispatches `AUTO_STRING`. The engine targets valid string lengths but may produce strings that violate voltage limits (e.g., edge cases with few remaining panels). Violations are surfaced via `string-validation.ts` in StringList, not silently prevented.
 - Auto-string button disabled when no equipment is selected (panel + inverter both required)
 
 ### ShadeSlider
@@ -118,6 +119,7 @@ Sidebar rendered inside StringingTab:
 
 | Field | Type | Default | Purpose |
 |-------|------|---------|---------|
+| `radiancePoints` | `RadiancePoint[]` | `[]` | Full radiance point geometry from DXF upload. Needed by `shade-association.ts` to run the spatial lookup. Stored in state so association can re-run if panels change. |
 | `panelShadeMap` | `Record<string, string[]>` | `{}` | Derived enrichment: panel ID → associated shade point IDs. Separate from `panels[]`. |
 | `siteAddress` | `string \| null` | `null` | Raw input address |
 | `siteFormattedAddress` | `string \| null` | `null` | Google-formatted address |
@@ -181,8 +183,9 @@ interface StringConfig {
 1. Collect the set of panel IDs already assigned to manual strings.
 2. For each engine `StringConfig`, map `panels: number[]` to `panelIds: string[]` using the `panels[index].id` lookup from state.
 3. Filter out any panel IDs that are already manually assigned (preserves manual strings).
-4. Assign a new stable `id` from `nextStringId` to each new string, increment counter.
-5. Append the new `UIStringConfig[]` entries to the existing `strings[]` array.
+4. **Drop any strings that are now empty** after filtering (i.e., all their panels were already manually assigned). Do not assign IDs to empty strings.
+5. Assign a new stable `id` from `nextStringId` to each remaining non-empty string, increment counter.
+6. Append the new `UIStringConfig[]` entries to the existing `strings[]` array.
 
 **Stage 4 reverse bridge:** When running the full analysis engine, `UIStringConfig[]` must be converted back to engine `StringConfig[]`. This is a simple map: `uiStrings.map(s => ({ panels: s.panelIds.map(id => panels.findIndex(p => p.id === id)) }))`. Defined in Stage 4 when the engine integration happens.
 
@@ -219,7 +222,32 @@ Two shade-point references exist. Their roles are distinct:
 
 ### Existing State Reset Behavior
 
-`UPLOAD_SUCCESS` (from Stage 2) already resets `strings`, `inverters`, and `result`. Stage 3 extends this to also reset: `panelShadeMap`, `activeStringId`, `mapAlignment`, `nextStringId` (back to 1 so new strings start at "String 1"). Address/geocoding state is NOT reset on new upload (same site, different layout revision is a common flow).
+### Upload Contract Change (Stage 2 → Stage 3)
+
+Stage 2's upload route returns `radiancePointCount: number` — just a count. Stage 3 changes this to return the full `radiancePoints: RadiancePoint[]` array, because the client needs the actual point geometry (x, y, TSRF) to run spatial association.
+
+**Upload route response (updated):**
+```typescript
+interface UploadResult {
+  panels: PanelGeometry[];
+  shadeData: ShadeTimeseries;
+  shadeFidelity: ShadeFidelity;
+  shadeSource: ShadeSource;
+  radiancePoints: RadiancePoint[];  // was: radiancePointCount: number
+  fileCount: number;
+  errors: string[];
+}
+```
+
+**`UPLOAD_SUCCESS` action (updated):** Gains `radiancePoints: RadiancePoint[]` field. The reducer stores this in state. `radiancePointCount` is derived as `state.radiancePoints.length` — no longer a separate field.
+
+**`FileUploadPanel` (updated):** Reads `radiancePoints.length` instead of `radiancePointCount` for the DXF feedback message.
+
+**Shade association trigger:** After `UPLOAD_SUCCESS` dispatches and both `panels[]` and `radiancePoints[]` are in state, the page component (or a `useEffect`) calls `associateShadePoints(panels, radiancePoints)` and dispatches `SET_SHADE_POINT_IDS` with the result. This runs once per upload, not on every render.
+
+### Existing State Reset Behavior
+
+`UPLOAD_SUCCESS` (from Stage 2) already resets `strings`, `inverters`, and `result`. Stage 3 extends this to also reset: `radiancePoints` (replaced by new upload), `panelShadeMap`, `activeStringId`, `mapAlignment`, `nextStringId` (back to 1 so new strings start at "String 1"). Address/geocoding state is NOT reset on new upload (same site, different layout revision is a common flow).
 
 The existing `SET_STRINGS` action from Stage 2 is **retained** for Stage 4 engine integration (bulk-setting strings from analysis results). Stage 3's granular actions (`CREATE_STRING`, `ASSIGN_PANEL`, etc.) handle interactive editing; `SET_STRINGS` handles programmatic bulk updates.
 
@@ -342,7 +370,7 @@ Displayed on panel hover in all modes:
 5. TSRF heatmap mode shows per-panel TSRF values as a color gradient
 6. Panels with no associated shade points render with dashed outline and "no data" state
 7. Click-to-assign string builder: create string, click panels to add, click again to remove from active string
-8. Auto-string assigns only unassigned panels into valid strings within inverter voltage limits; preserves all existing manual assignments
+8. Auto-string assigns only unassigned panels into strings targeting inverter voltage limits; surfaces warnings for any resulting strings that violate limits (the engine attempts valid groupings but does not guarantee all strings are within bounds — violations are displayed via per-string validation, not silently hidden). Preserves all existing manual assignments.
 9. Per-string voltage validation displays specific violation messages (Voc cold > MPPT max, Vmp hot < MPPT min)
 10. `DELETE_STRING` removes the string and leaves its panels unassigned
 11. Shade association uses point-in-rotated-rect (not just AABB) for accurate mapping with rotated or tightly packed panels
