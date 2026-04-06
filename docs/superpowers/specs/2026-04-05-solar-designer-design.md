@@ -53,9 +53,12 @@ Replace the standalone Solar Surveyor V12 HTML tool and the partially-built nati
 
 ### Engine Interface Contracts
 
-Top-level orchestrator (replaces `runner.ts`):
+Contracts are split into **Core** (Stages 1-4) and **Extended** (Stage 5+) to keep early implementation clean.
+
+**Core contracts (Stages 1-4):**
 ```typescript
-interface SolarDesignerInput {
+// Core input — everything needed for upload → string → analyze
+interface CoreSolarDesignerInput {
   panels: PanelGeometry[];        // from DXF/JSON/EagleView
   shadeData: ShadeTimeseries;     // per-point, 30-min intervals, 365 days
   strings: StringConfig[];        // panel assignments per string
@@ -63,29 +66,40 @@ interface SolarDesignerInput {
   equipment: EquipmentSelection;  // panel, inverter, ESS, optimizer keys
   siteConditions: SiteConditions; // temps, albedo, clipping threshold, export limit
   consumption?: ConsumptionConfig;
-  batteryConfig?: BatteryConfig;
   lossProfile: LossProfile;
 }
 
-interface SolarDesignerResult {
-  // Per-panel
-  panelStats: PanelStat[];        // irradiance, TSRF, independent kWh, EV SAV
-  // System totals
+// Core result — production analysis without battery/AI
+interface CoreSolarDesignerResult {
+  panelStats: PanelStat[];
   production: { independentAnnual: number; stringLevelAnnual: number; eagleViewAnnual: number; };
   mismatchLossPct: number;
   clippingLossPct: number;
   clippingEvents: ClippingEvent[];
-  // Timeseries (30-min intervals)
-  independentTimeseries: Float64Array[];  // per-string
-  stringTimeseries: Float64Array[];       // per-string
-  // Energy balance
-  energyBalance: EnergyBalance;
-  // AI
-  designScore: number;            // 0-100
-  issues: DesignIssue[];
-  recommendations: string[];
+  independentTimeseries: Float64Array[];
+  stringTimeseries: Float64Array[];
+  shadeFidelity: 'full' | 'approximate';
+  shadeSource: 'manual' | 'eagleview' | 'google-solar';
 }
 ```
+
+**Extended contracts (Stage 5+ — extends Core):**
+```typescript
+// Extended input adds battery config
+interface SolarDesignerInput extends CoreSolarDesignerInput {
+  batteryConfig?: BatteryConfig;
+}
+
+// Extended result adds battery, AI, and scenario fields
+interface SolarDesignerResult extends CoreSolarDesignerResult {
+  energyBalance?: EnergyBalance;          // populated when batteryConfig present
+  designScore?: number;                   // 0-100, populated by AI analysis module
+  issues?: DesignIssue[];                 // populated by AI analysis module
+  recommendations?: string[];             // populated by AI analysis module
+}
+```
+
+Stage 5 widens the contracts. Stages 1-4 only implement and consume `Core*` — no placeholder nulls, no unused fields.
 
 ### Core Input Types
 
@@ -257,7 +271,9 @@ Migration runs with `prisma migrate deploy` in the stage that introduces the cha
 ## Build Stages
 
 ### Stage 1: Core Engine Extraction
-Extract V12's core analysis math into `src/lib/solar/v12-engine/` as typed TS modules. Only the modules needed to support the first service-usable path: upload layout → pick equipment → build strings → run production analysis → see clipping. Battery dispatch, AI analysis, and scenario comparison are deferred to Stage 5 where their UI appears.
+Extract V12's core analysis math into `src/lib/solar/v12-engine/` as typed TS modules. Only the modules needed to support the first analysis-ready path: upload layout → pick equipment → build strings → run production analysis → see clipping. Battery dispatch, AI analysis, and scenario comparison are deferred to Stage 5 where their UI appears. Production guarantee comparison requires HubSpot integration and arrives in Stage 6.
+
+**Early slice (Stages 1-4):** `upload → pick equipment → build strings → run analysis`. This is useful standalone — service can see production numbers, mismatch, and clipping without needing HubSpot. Guarantee comparison (Stage 6) and auto-fetched data (Stage 7) layer on top.
 
 **Deliverable:** Core V12 calculation functions (layout parsing, physics, production, stringing, mismatch, clipping, timeseries, equipment, consumption) ported and tested.
 
@@ -269,7 +285,7 @@ Extract V12's core analysis math into `src/lib/solar/v12-engine/` as typed TS mo
 5. Engine runs in a Web Worker without blocking the main thread
 
 ### Stage 2: Core UI Shell
-New page at `/dashboards/solar-designer`. Tab layout matching V12's 8 tabs, equipment selection panel, site conditions panel, manual file upload (DXF/JSON/CSV). Uses suite theme tokens and `DashboardShell`. **No persistence yet** — all state is in-memory. Project CRUD, revisions, and the project browser are deferred to Stage 5 so the early path stays focused on the analysis workflow: upload → pick equipment → string → analyze.
+New page at `/dashboards/solar-designer`. Tab layout matching V12's 8 tabs, equipment selection panel, site conditions panel, manual file upload (DXF/JSON/CSV). Uses suite theme tokens and `DashboardShell`. **No persistence yet** — all state is in-memory. Project CRUD, revisions, and the project browser are deferred to Stage 5 so the early path stays focused on the analysis-only workflow: upload → pick equipment → string → analyze.
 
 **Deliverable:** Working shell with file upload → panel count displayed, equipment selectable, site conditions editable.
 
