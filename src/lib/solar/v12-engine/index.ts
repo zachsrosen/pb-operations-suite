@@ -38,6 +38,9 @@ export { parseJSON, parseDXF } from './layout-parser';
 export type { RadiancePoint } from './layout-parser';
 export { parseShadeCSV } from './csv-shade-parser';
 
+// Shade association
+export { associateShadePoints } from './shade-association';
+
 // Stringing
 export { autoString } from './stringing';
 
