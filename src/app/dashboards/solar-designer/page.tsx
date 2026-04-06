@@ -7,6 +7,7 @@ import PlaceholderTab from '@/components/solar-designer/PlaceholderTab';
 import EquipmentPanel from '@/components/solar-designer/EquipmentPanel';
 import SiteConditionsPanel from '@/components/solar-designer/SiteConditionsPanel';
 import FileUploadPanel from '@/components/solar-designer/FileUploadPanel';
+import SystemSummaryBar from '@/components/solar-designer/SystemSummaryBar';
 import { DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE } from '@/lib/solar/v12-engine';
 import type { SolarDesignerState, SolarDesignerAction, SolarDesignerTab } from '@/components/solar-designer/types';
 
@@ -98,7 +99,8 @@ export default function SolarDesignerPage() {
 
           <SiteConditionsPanel siteConditions={state.siteConditions} lossProfile={state.lossProfile} dispatch={dispatch} />
 
-          {/* SystemSummaryBar — Task 8 */}
+          <SystemSummaryBar panelCount={state.panels.length} selectedPanel={state.selectedPanel}
+            selectedInverter={state.selectedInverter} stringCount={state.strings.length} />
         </aside>
 
         {/* Main content: Tabs */}
