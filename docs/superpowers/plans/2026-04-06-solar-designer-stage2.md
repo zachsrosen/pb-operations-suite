@@ -14,13 +14,15 @@
 
 ---
 
-## Acceptance Criteria (from spec)
+## Acceptance Criteria (from spec, narrowed for Stage 1 parser reality)
 
 1. Page loads at `/dashboards/solar-designer` wrapped in `DashboardShell`
-2. DXF, JSON, and CSV file upload parses and displays panel count
+2. JSON file upload parses layout and displays panel count; CSV file upload is accepted and shade data stored (no panels — shade-only); DXF file upload stores radiance points with count feedback (panel positions require Stage 3 visualizer)
 3. Equipment selection panel shows panels and inverters from catalog
 4. Site conditions panel (temps, albedo, losses) renders with editable defaults
 5. Tab bar shows all 8 tabs (content placeholder for unbuilt tabs)
+
+> **DXF limitation:** The Stage 1 `parseDXF()` returns `radiancePoints[]` (measurement locations with TSRF/irradiance) but always returns `panels: []`. V12 derives panel positions from radiance point clustering in the visualizer — that logic belongs in Stage 3. For now, DXF uploads store radiance points and show a message explaining that panel positions will be derived when the visualizer is built.
 
 ---
 
@@ -48,8 +50,8 @@
 
 | File | Change |
 |------|--------|
-| `src/lib/role-permissions.ts` | Add `/dashboards/solar-designer` to ADMIN, OWNER, PROJECT_MANAGER, OPERATIONS_MANAGER, OPERATIONS, TECH_OPS roles |
-| `src/lib/page-directory.ts` | Add `/dashboards/solar-designer` and `/api/solar-designer/upload` to `APP_PAGE_ROUTES` |
+| `src/lib/role-permissions.ts` | Add `/dashboards/solar-designer` and `/api/solar-designer/upload` to ADMIN, OWNER, PROJECT_MANAGER, OPERATIONS_MANAGER, OPERATIONS, TECH_OPS roles |
+| `src/lib/page-directory.ts` | Add `/dashboards/solar-designer` to `APP_PAGE_ROUTES` (API route not listed here — access controlled via role-permissions) |
 | `src/components/DashboardShell.tsx` | Add `/dashboards/solar-designer` to `SUITE_MAP` (maps to both Service and D&E suites) |
 | `src/app/suites/design-engineering/page.tsx` | Add Solar Designer card to LINKS array |
 | `src/app/suites/service/page.tsx` | Add Solar Designer card to LINKS array |
@@ -64,7 +66,8 @@
 - Modify: `src/lib/role-permissions.ts`
 - Modify: `src/lib/page-directory.ts`
 - Modify: `src/components/DashboardShell.tsx`
-- Modify: `src/lib/suite-nav.ts`
+- Modify: `src/app/suites/design-engineering/page.tsx`
+- Modify: `src/app/suites/service/page.tsx`
 
 - [ ] **Step 1: Add route to role-permissions.ts**
 
@@ -117,7 +120,7 @@ Add a Solar Designer card to both:
   title: "Solar Designer",
   description: "Solar design analysis and production modeling.",
   tag: "TOOL",
-  icon: "Sun",
+  icon: "☀️",
   section: "Tools",
 },
 ```
@@ -197,6 +200,7 @@ export interface SolarDesignerState {
   shadeData: ShadeTimeseries;
   shadeFidelity: ShadeFidelity;
   shadeSource: ShadeSource;
+  radiancePointCount: number;  // DXF radiance points (panels derived in Stage 3)
   uploadedFiles: UploadedFile[];
 
   // Equipment selection
@@ -229,7 +233,7 @@ export interface SolarDesignerState {
 export type SolarDesignerAction =
   | { type: 'SET_TAB'; tab: SolarDesignerTab }
   | { type: 'UPLOAD_START' }
-  | { type: 'UPLOAD_SUCCESS'; panels: PanelGeometry[]; shadeData: ShadeTimeseries; files: UploadedFile[]; shadeFidelity: ShadeFidelity; shadeSource: ShadeSource }
+  | { type: 'UPLOAD_SUCCESS'; panels: PanelGeometry[]; shadeData: ShadeTimeseries; files: UploadedFile[]; shadeFidelity: ShadeFidelity; shadeSource: ShadeSource; radiancePointCount: number }
   | { type: 'UPLOAD_ERROR'; error: string }
   | { type: 'SET_PANEL'; key: string; panel: ResolvedPanel }
   | { type: 'SET_INVERTER'; key: string; inverter: ResolvedInverter }
@@ -345,6 +349,7 @@ const INITIAL_STATE: SolarDesignerState = {
   shadeData: {},
   shadeFidelity: 'full',
   shadeSource: 'manual',
+  radiancePointCount: 0,
   uploadedFiles: [],
   panelKey: '',
   inverterKey: '',
@@ -374,6 +379,7 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
         shadeData: action.shadeData,
         shadeFidelity: action.shadeFidelity,
         shadeSource: action.shadeSource,
+        radiancePointCount: action.radiancePointCount,
         uploadedFiles: action.files,
         uploadError: null,
         // Reset downstream state on new upload
@@ -912,13 +918,20 @@ git commit -m "feat(solar-designer): site conditions panel with temp, albedo, an
 - Create: `src/app/api/solar-designer/upload/route.ts`
 - Create: `src/__tests__/api/solar-designer-upload.test.ts`
 
-- [ ] **Step 1: Write failing test for upload API**
+- [ ] **Step 1: Write parser smoke tests + route-level test**
+
+The test file has two describe blocks:
+1. Parser smoke tests — verify the v12-engine functions the route depends on
+2. Route-level test — exercise the actual POST handler with FormData
 
 ```typescript
 import { parseJSON, parseDXF, parseShadeCSV } from '@/lib/solar/v12-engine';
+import { POST } from '@/app/api/solar-designer/upload/route';
+import { NextRequest } from 'next/server';
 
-// Test the parsing logic directly (same functions the API route will use)
-describe('Solar Designer upload parsing', () => {
+// ── Parser smoke tests (verify underlying v12-engine functions) ──
+
+describe('Solar Designer parser smoke tests', () => {
   it('parses JSON layout and returns panels', () => {
     const json = JSON.stringify({
       panels: [
@@ -936,18 +949,105 @@ describe('Solar Designer upload parsing', () => {
     expect(result.errors.length).toBeGreaterThan(0);
   });
 
-  it('parses shade CSV', () => {
-    const csv = 'point_id,h0,h1,h2\npt_1,0,1,0\npt_2,1,1,1\n';
+  it('parses shade CSV (column-oriented: first col = timestep, remaining = point IDs)', () => {
+    // parseShadeCSV expects: header = timestep,<pointId1>,<pointId2>,...
+    // Data rows = <stepIndex>,<0|1>,<0|1>,...  where 0=sun, 1=shade
+    const csv = 'timestep,pt_1,pt_2\n0,0,1\n1,1,1\n2,0,1\n';
     const result = parseShadeCSV(csv);
     expect(Object.keys(result.data)).toHaveLength(2);
     expect(result.data['pt_1']).toBeDefined();
+    expect(result.data['pt_2']).toBeDefined();
+    // pt_1 shade string starts with '010' (sun, shade, sun)
+    expect(result.data['pt_1'].substring(0, 3)).toBe('010');
+  });
+});
+
+// ── Route-level tests (exercise POST handler with FormData) ──
+
+function makeRequest(files: { name: string; content: string }[]): NextRequest {
+  const formData = new FormData();
+  for (const f of files) {
+    formData.append('files', new Blob([f.content], { type: 'application/octet-stream' }), f.name);
+  }
+  return new NextRequest('http://localhost/api/solar-designer/upload', {
+    method: 'POST',
+    body: formData,
+  });
+}
+
+describe('POST /api/solar-designer/upload', () => {
+  it('returns 400 when no files provided', async () => {
+    const req = new NextRequest('http://localhost/api/solar-designer/upload', {
+      method: 'POST',
+      body: new FormData(),
+    });
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/no files/i);
+  });
+
+  it('parses JSON file and returns panels with fileCount', async () => {
+    const json = JSON.stringify({
+      panels: [
+        { data: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1.8 }, { x: 0, y: 1.8 }] },
+      ],
+    });
+    const req = makeRequest([{ name: 'layout.json', content: json }]);
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.panels).toHaveLength(1);
+    expect(body.fileCount).toBe(1);
+    expect(body.radiancePointCount).toBe(0);
+    expect(body.shadeFidelity).toBe('full');
+    expect(body.shadeSource).toBe('manual');
+  });
+
+  it('parses CSV file and returns shade data (no panels)', async () => {
+    const csv = 'timestep,pt_1,pt_2\n0,0,1\n1,1,0\n';
+    const req = makeRequest([{ name: 'shade.csv', content: csv }]);
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.panels).toHaveLength(0);
+    expect(Object.keys(body.shadeData)).toHaveLength(2);
+    expect(body.radiancePointCount).toBe(0);
+  });
+
+  it('returns errors for unsupported file types', async () => {
+    const req = makeRequest([{ name: 'readme.txt', content: 'hello' }]);
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.errors.length).toBeGreaterThan(0);
+    expect(body.errors[0]).toMatch(/unsupported file type/i);
+  });
+
+  it('handles mixed file upload (JSON + CSV)', async () => {
+    const json = JSON.stringify({
+      panels: [
+        { data: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1.8 }, { x: 0, y: 1.8 }] },
+      ],
+    });
+    const csv = 'timestep,pt_1\n0,1\n1,0\n';
+    const req = makeRequest([
+      { name: 'layout.json', content: json },
+      { name: 'shade.csv', content: csv },
+    ]);
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.panels).toHaveLength(1);
+    expect(Object.keys(body.shadeData)).toHaveLength(1);
+    expect(body.fileCount).toBe(2);
   });
 });
 ```
 
-- [ ] **Step 2: Run test to verify it passes (these are smoke tests on existing engine)**
+- [ ] **Step 2: Run parser smoke tests first (route tests will fail until Step 3)**
 
-Run: `npx jest --testPathPatterns='solar-designer-upload' --no-coverage`
+Run: `npx jest --testPathPatterns='solar-designer-upload' --no-coverage -t 'parser smoke'`
 Expected: PASS (testing existing library functions)
 
 - [ ] **Step 3: Implement upload API route**
@@ -964,6 +1064,7 @@ interface UploadResult {
   shadeData: ShadeTimeseries;
   shadeFidelity: ShadeFidelity;
   shadeSource: ShadeSource;
+  radiancePointCount: number;  // DXF radiance points (panels derived in Stage 3)
   fileCount: number;
   errors: string[];
 }
@@ -980,6 +1081,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<UploadResult 
     const allPanels: PanelGeometry[] = [];
     const allShadeData: ShadeTimeseries = {};
     const allErrors: string[] = [];
+    let radiancePointCount = 0;
 
     for (const file of files) {
       const text = await file.text();
@@ -997,10 +1099,11 @@ export async function POST(req: NextRequest): Promise<NextResponse<UploadResult 
         if (result.errors.length > 0) {
           allErrors.push(...result.errors.map(e => `${file.name}: ${e}`));
         }
-        // parseDXF returns panels[] (may be empty) and radiancePoints[]
-        // Panels are used directly; radiance points are measurement data
-        // that will be consumed by shade mapping in Stage 3
+        // parseDXF returns panels[] (always empty in Stage 1) and radiancePoints[]
+        // Radiance points are measurement locations — panels are derived from them
+        // in Stage 3's visualizer via clustering. Track count for UI feedback.
         allPanels.push(...result.panels);
+        radiancePointCount += result.radiancePoints.length;
       } else if (ext === 'csv') {
         const result = parseShadeCSV(text);
         if (result.errors.length > 0) {
@@ -1017,6 +1120,7 @@ export async function POST(req: NextRequest): Promise<NextResponse<UploadResult 
       shadeData: allShadeData,
       shadeFidelity: 'full',  // Manual uploads are always full fidelity
       shadeSource: 'manual',
+      radiancePointCount,
       fileCount: files.length,
       errors: allErrors,
     });
@@ -1027,12 +1131,17 @@ export async function POST(req: NextRequest): Promise<NextResponse<UploadResult 
 }
 ```
 
-- [ ] **Step 4: Verify tsc**
+- [ ] **Step 4: Run full test suite (parser + route tests)**
+
+Run: `npx jest --testPathPatterns='solar-designer-upload' --no-coverage`
+Expected: PASS — all parser smoke tests and route-level tests green
+
+- [ ] **Step 5: Verify tsc**
 
 Run: `npx tsc --noEmit 2>&1 | grep solar-designer`
 Expected: No type errors
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/app/api/solar-designer/upload/route.ts src/__tests__/api/solar-designer-upload.test.ts
@@ -1061,6 +1170,7 @@ describe('FileUploadPanel', () => {
       <FileUploadPanel
         uploadedFiles={[]}
         panelCount={0}
+        radiancePointCount={0}
         isUploading={false}
         uploadError={null}
         dispatch={mockDispatch}
@@ -1074,6 +1184,7 @@ describe('FileUploadPanel', () => {
       <FileUploadPanel
         uploadedFiles={[{ name: 'layout.json', type: 'json', size: 1024 }]}
         panelCount={24}
+        radiancePointCount={0}
         isUploading={false}
         uploadError={null}
         dispatch={mockDispatch}
@@ -1082,11 +1193,27 @@ describe('FileUploadPanel', () => {
     expect(screen.getByText(/24 panels/i)).toBeInTheDocument();
   });
 
+  it('shows radiance point message for DXF with no panels', () => {
+    render(
+      <FileUploadPanel
+        uploadedFiles={[{ name: 'site.dxf', type: 'dxf', size: 2048 }]}
+        panelCount={0}
+        radiancePointCount={42}
+        isUploading={false}
+        uploadError={null}
+        dispatch={mockDispatch}
+      />
+    );
+    expect(screen.getByText(/42 radiance points/i)).toBeInTheDocument();
+    expect(screen.getByText(/stage 3/i)).toBeInTheDocument();
+  });
+
   it('shows loading state during upload', () => {
     render(
       <FileUploadPanel
         uploadedFiles={[]}
         panelCount={0}
+        radiancePointCount={0}
         isUploading={true}
         uploadError={null}
         dispatch={mockDispatch}
@@ -1100,6 +1227,7 @@ describe('FileUploadPanel', () => {
       <FileUploadPanel
         uploadedFiles={[]}
         panelCount={0}
+        radiancePointCount={0}
         isUploading={false}
         uploadError="Invalid DXF format"
         dispatch={mockDispatch}
@@ -1121,6 +1249,7 @@ import type { SolarDesignerAction, UploadedFile } from './types';
 interface FileUploadPanelProps {
   uploadedFiles: UploadedFile[];
   panelCount: number;
+  radiancePointCount: number;
   isUploading: boolean;
   uploadError: string | null;
   dispatch: (action: SolarDesignerAction) => void;
@@ -1131,6 +1260,7 @@ const ACCEPTED_EXTENSIONS = ['.dxf', '.json', '.csv'];
 export default function FileUploadPanel({
   uploadedFiles,
   panelCount,
+  radiancePointCount,
   isUploading,
   uploadError,
   dispatch,
@@ -1176,6 +1306,7 @@ export default function FileUploadPanel({
         shadeData: data.shadeData,
         shadeFidelity: data.shadeFidelity,
         shadeSource: data.shadeSource,
+        radiancePointCount: data.radiancePointCount ?? 0,
         files: files.map((f) => ({
           name: f.name,
           type: f.name.split('.').pop()?.toLowerCase() as 'dxf' | 'json' | 'csv',
@@ -1241,10 +1372,16 @@ export default function FileUploadPanel({
               <span className="text-muted uppercase">{f.type}</span>
             </div>
           ))}
-          <div className="pt-1 border-t border-t-border">
+          <div className="pt-1 border-t border-t-border space-y-1">
             <span className="text-sm font-semibold text-orange-500">
               {panelCount} panels loaded
             </span>
+            {panelCount === 0 && radiancePointCount > 0 && (
+              <p className="text-xs text-muted">
+                {radiancePointCount} radiance points from DXF — panel positions will be
+                derived when the visualizer is built (Stage 3).
+              </p>
+            )}
           </div>
         </div>
       )}
@@ -1269,6 +1406,7 @@ import FileUploadPanel from '@/components/solar-designer/FileUploadPanel';
 <FileUploadPanel
   uploadedFiles={state.uploadedFiles}
   panelCount={state.panels.length}
+  radiancePointCount={state.radiancePointCount}
   isUploading={state.isUploading}
   uploadError={state.uploadError}
   dispatch={dispatch}
