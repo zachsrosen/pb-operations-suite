@@ -76,8 +76,8 @@ interface CoreSolarDesignerResult {
   mismatchLossPct: number;
   clippingLossPct: number;
   clippingEvents: ClippingEvent[];
-  independentTimeseries: Float64Array[];
-  stringTimeseries: Float64Array[];
+  independentTimeseries: Float32Array[];
+  stringTimeseries: Float32Array[];
   shadeFidelity: 'full' | 'approximate';
   shadeSource: 'manual' | 'eagleview' | 'google-solar';
 }
@@ -427,6 +427,22 @@ Help/glossary panel. Production guarantee threshold guidance for service team. T
 - Scanify integration — Jacob is still evaluating; defer until they commit
 - Microinverter vs string comparison feature — Jacob said this would be valuable but isn't built yet in V12
 - Inverter conversion/upgrade modeling — Ted Barnett wants this for service, but V12 doesn't support it yet
+
+## Known Limitations & Follow-ups (post-Stage 1)
+
+These are inherited behaviors from V12 / the existing engine that are documented as explicit tech debt, not Stage 1 regressions. The Stage 1 engine is parity-accurate to V12 — these items represent improvements beyond V12 fidelity.
+
+### Bifacial gain uses fixed 30° tilt (Target: Stage 4)
+
+Both `engine/runner.ts` and `v12-engine/runner.ts` compute bifacial gain once with a hardcoded `Math.PI / 6` (30°) tilt and `gcr: 0.4`, then apply it uniformly to all panels. Panels at different tilts get the wrong gain multiplier. Fix both runners together when the UI surfaces per-segment tilt data (Stage 4 production table). Until then, Stage 2/3 should treat bifacial output as **parity-accurate to current V12**, not physically fully correct.
+
+### System stats assume single primary inverter (Target: Stage 5)
+
+`CoreSolarDesignerInput.inverters[]` exists for string-to-inverter assignment (Model B uses it for per-string simulation), but system-level stats (derate factor, architecture type) resolve only `equipment.inverterKey`. Multi-inverter commercial layouts would get summary stats computed from just one inverter type. This matches the existing engine's behavior. Stage 2 should **not market multi-inverter support** beyond current engine semantics. Fix when multi-inverter commercial support is actually needed.
+
+### Timeseries precision: `Float32Array` (not `Float64Array`)
+
+The spec originally said `Float64Array[]` for timeseries fields. Updated to `Float32Array[]` to match both the existing engine and v12-engine. `Float32Array` is sufficient for watt-level production data (~7 digits of precision, max representable integer ~16.7M) and halves memory for 17,520-element arrays in worker context.
 
 ## Open Questions
 
