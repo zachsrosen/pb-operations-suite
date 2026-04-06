@@ -24,7 +24,6 @@
 | `src/lib/solar/v12-engine/layout-parser.ts` | DXF + JSON file parsing → `PanelGeometry[]` |
 | `src/lib/solar/v12-engine/csv-shade-parser.ts` | Shade CSV → `ShadeTimeseries` |
 | `src/lib/solar/v12-engine/physics.ts` | Re-export existing `engine/physics.ts` (already V12-faithful) |
-| `src/lib/solar/v12-engine/weather.ts` | Re-export existing `engine/weather.ts` (already V12-faithful) |
 | `src/lib/solar/v12-engine/consumption.ts` | Re-export existing `engine/consumption.ts` (already V12-faithful) |
 | `src/lib/solar/v12-engine/production.ts` | Re-export existing `engine/model-a.ts` (already V12-faithful) |
 | `src/lib/solar/v12-engine/stringing.ts` | Auto-string algorithm + voltage validation (new — V12 line 2357) |
@@ -41,7 +40,6 @@
 | `src/__tests__/lib/solar-v12-engine/layout-parser.test.ts` | DXF/JSON parser tests |
 | `src/__tests__/lib/solar-v12-engine/csv-shade-parser.test.ts` | CSV shade parser tests |
 | `src/__tests__/lib/solar-v12-engine/physics.test.ts` | Physics module validation (re-exports match) |
-| `src/__tests__/lib/solar-v12-engine/weather.test.ts` | Weather module validation (re-exports match) |
 | `src/__tests__/lib/solar-v12-engine/production.test.ts` | Production module validation (re-exports match) |
 | `src/__tests__/lib/solar-v12-engine/mismatch.test.ts` | Mismatch re-export smoke tests |
 | `src/__tests__/lib/solar-v12-engine/stringing.test.ts` | Auto-string + voltage validation tests |
@@ -49,7 +47,6 @@
 | `src/__tests__/lib/solar-v12-engine/timeseries.test.ts` | Timeseries aggregation tests |
 | `src/__tests__/lib/solar-v12-engine/runner.test.ts` | Core runner integration test |
 | `src/__tests__/lib/solar-v12-engine/parity.test.ts` | V12 parity: CoreRunner vs existing Runner for same inputs |
-| `src/lib/solar/v12-engine/worker.ts` | Web Worker entry point wiring CoreRunner to worker protocol |
 | `src/__tests__/lib/solar-v12-engine/worker.test.ts` | Worker entry point: no DOM deps, message routing |
 
 ### Existing files to reference (read-only in this stage)
@@ -59,7 +56,7 @@
 | `src/lib/solar/engine/engine-types.ts` | Existing type definitions to extend/bridge |
 | `src/lib/solar/engine/constants.ts` | Shared constants (TIMESTEPS, HALF_HOUR_FACTOR, etc.) |
 | `src/lib/solar/engine/physics.ts` | Already V12-faithful — re-export |
-| `src/lib/solar/engine/weather.ts` | Already V12-faithful — re-export |
+| `src/lib/solar/engine/weather.ts` | V12-faithful — used internally by runner, not re-exported in Stage 1 |
 | `src/lib/solar/engine/consumption.ts` | Already V12-faithful — re-export |
 | `src/lib/solar/engine/model-a.ts` | Already V12-faithful — re-export as `production.ts` |
 | `src/lib/solar/engine/model-b.ts` | Already V12-faithful — re-export via `mismatch.ts` |
@@ -91,30 +88,26 @@
  * Spec: docs/superpowers/specs/2026-04-05-solar-designer-design.md
  */
 
-// Re-export existing types that are unchanged
+// Re-export existing types needed for Stages 1-4 (Core).
+// BatteryConfig, EnergyBalance, DispatchResult are Stage 5 — not exported here.
 export type {
   LossProfile,
   StringConfig,
   InverterConfig,
-  BatteryConfig,
   HomeConsumptionConfig as ConsumptionConfig,
   ResolvedPanel,
   ResolvedInverter,
-  ResolvedOptimizer,
-  ResolvedEss,
   TmyData,
   TmyLookup,
-  EnergyBalance,
   ModelAResult,
   ModelBResult,
-  DispatchResult,
   PanelStat,
 } from '../engine/engine-types';
 
 // ── Shade Timeseries (explicit definition — not aliased from ShadeData) ──
 // Per-point shade data: keys are shade point IDs, values are binary shade strings.
-// Each string is 17,520 chars (365 days × 48 half-hour intervals), '0' = shade, '1' = sun.
-// This matches V12's shade encoding. All adapters (DXF, CSV, EagleView, Google Solar) normalize to this.
+// Each string is 17,520 chars (365 days × 48 half-hour intervals), '0' = sun, '1' = shade.
+// This matches the spec encoding. All adapters (DXF, CSV, EagleView, Google Solar) normalize to this.
 export type ShadeTimeseries = Record<string, string>;
 
 // ── Panel Geometry (universal input from all data sources) ────
@@ -515,11 +508,11 @@ describe('CoreSolarDesignerResult', () => {
 describe('ShadeTimeseries', () => {
   it('is a Record<string, string> matching V12 binary shade format', () => {
     const shade: ShadeTimeseries = {
-      'pt_001': '1'.repeat(17520), // fully unshaded
-      'pt_002': '0'.repeat(17520), // fully shaded
+      'pt_001': '0'.repeat(17520), // fully unshaded ('0' = sun)
+      'pt_002': '1'.repeat(17520), // fully shaded  ('1' = shade)
     };
     expect(shade['pt_001']).toHaveLength(17520);
-    expect(shade['pt_002']![0]).toBe('0');
+    expect(shade['pt_002']![0]).toBe('1'); // '1' = shade
   });
 });
 
@@ -686,7 +679,6 @@ git commit -m "feat(solar-designer): V12 built-in equipment catalog with 8 panel
 
 **Files:**
 - Create: `src/lib/solar/v12-engine/physics.ts`
-- Create: `src/lib/solar/v12-engine/weather.ts`
 - Create: `src/lib/solar/v12-engine/consumption.ts`
 - Create: `src/lib/solar/v12-engine/production.ts`
 - Create: `src/__tests__/lib/solar-v12-engine/physics.test.ts`
@@ -715,18 +707,6 @@ export type {
   StringElectricalInput,
   StringElectricalResult,
 } from '../engine/physics';
-```
-
-`src/lib/solar/v12-engine/weather.ts`:
-```typescript
-/**
- * Re-exports from existing engine/weather.ts (Ported from V12 weather.js).
- */
-export {
-  prepareTmyLookup,
-  getTmyIrradiance,
-  getTemperatureDerate,
-} from '../engine/weather';
 ```
 
 `src/lib/solar/v12-engine/consumption.ts`:
@@ -777,26 +757,6 @@ describe('v12-engine/physics re-exports', () => {
 });
 ```
 
-`src/__tests__/lib/solar-v12-engine/weather.test.ts`:
-```typescript
-/**
- * Verify weather re-exports work identically to direct imports.
- */
-import { prepareTmyLookup } from '@/lib/solar/v12-engine/weather';
-import { prepareTmyLookup as originalPrepareTmyLookup } from '@/lib/solar/engine/weather';
-
-describe('v12-engine/weather re-exports', () => {
-  it('prepareTmyLookup is the same function', () => {
-    expect(prepareTmyLookup).toBe(originalPrepareTmyLookup);
-  });
-
-  it('returns a lookup function for null input (synthetic path)', () => {
-    const lookup = prepareTmyLookup(null as any);
-    expect(typeof lookup).toBe('function');
-  });
-});
-```
-
 `src/__tests__/lib/solar-v12-engine/production.test.ts`:
 ```typescript
 /**
@@ -814,18 +774,17 @@ describe('v12-engine/production re-exports', () => {
 
 - [ ] **Step 3: Run all re-export tests**
 
-Run: `npx jest src/__tests__/lib/solar-v12-engine/physics.test.ts src/__tests__/lib/solar-v12-engine/weather.test.ts src/__tests__/lib/solar-v12-engine/production.test.ts --verbose`
+Run: `npx jest src/__tests__/lib/solar-v12-engine/physics.test.ts src/__tests__/lib/solar-v12-engine/production.test.ts --verbose`
 Expected: All PASS
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/lib/solar/v12-engine/physics.ts src/lib/solar/v12-engine/weather.ts \
+git add src/lib/solar/v12-engine/physics.ts \
   src/lib/solar/v12-engine/consumption.ts src/lib/solar/v12-engine/production.ts \
   src/__tests__/lib/solar-v12-engine/physics.test.ts \
-  src/__tests__/lib/solar-v12-engine/weather.test.ts \
   src/__tests__/lib/solar-v12-engine/production.test.ts
-git commit -m "feat(solar-designer): re-export V12-faithful physics, weather, consumption, production"
+git commit -m "feat(solar-designer): re-export V12-faithful physics, consumption, production"
 ```
 
 ---
@@ -1071,13 +1030,13 @@ describe('parseShadeCSV', () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it('pads short sequences to TIMESTEPS with 1 (unshaded)', () => {
+  it('pads short sequences to TIMESTEPS with 0 (unshaded)', () => {
     const csv = 'timestep,PT001\n0,1\n1,0';
     const result = parseShadeCSV(csv);
     expect(result.data['PT001']).toHaveLength(TIMESTEPS);
-    expect(result.data['PT001']![0]).toBe('1');
-    expect(result.data['PT001']![1]).toBe('0');
-    expect(result.data['PT001']![2]).toBe('1'); // padded
+    expect(result.data['PT001']![0]).toBe('1'); // '1' = shade (from CSV)
+    expect(result.data['PT001']![1]).toBe('0'); // '0' = sun (from CSV)
+    expect(result.data['PT001']![2]).toBe('0'); // padded with '0' = sun
   });
 
   it('returns error for empty CSV', () => {
@@ -1149,10 +1108,10 @@ export function parseShadeCSV(raw: string): ShadeParseResult {
     }
   }
 
-  // Build strings, pad to TIMESTEPS with '1' (unshaded)
+  // Build strings, pad to TIMESTEPS with '0' (unshaded — '0' = sun per spec)
   for (const id of pointIds) {
     const seq = builders[id].join('');
-    data[id] = seq.padEnd(TIMESTEPS, '1');
+    data[id] = seq.padEnd(TIMESTEPS, '0');
   }
 
   return { data, fidelity: 'full', source: 'manual', errors };
@@ -1674,6 +1633,41 @@ export function runCoreAnalysis(
   input: CoreSolarDesignerInput,
   reportProgress: (msg: WorkerProgressMessage) => void
 ): CoreSolarDesignerResult { /* ... */ }
+
+/**
+ * Canonical adapter: legacy RunnerInput → CoreSolarDesignerInput.
+ * Used by the parity test to ensure both runners see identical data.
+ * Also useful for migrating existing SolarProject data to the new contract.
+ */
+export function legacyFixtureToCoreInput(legacy: RunnerInput): CoreSolarDesignerInput {
+  return {
+    panels: legacy.panels.map((p, i) => ({
+      id: String(p.id ?? i),
+      x: 0,               // positional data not used by production calc
+      y: 0,
+      width: 1.02,        // standard panel dimensions (not used by calc)
+      height: 1.82,
+      azimuth: 180,
+      tilt: 30,
+      shadePointIds: p.points || [],
+    })),
+    shadeData: legacy.shadeData,
+    strings: legacy.strings,
+    inverters: legacy.inverters,
+    equipment: {
+      panelKey: legacy.panels[0]?.panelKey || '',
+      inverterKey: Object.keys(legacy.resolvedInverters)[0] || '',
+    },
+    siteConditions: {
+      tempMin: -10,
+      tempMax: 45,
+      groundAlbedo: legacy.groundAlbedo || 0.2,
+      clippingThreshold: legacy.clippingThreshold || 1.0,
+      exportLimitW: 0,
+    },
+    lossProfile: legacy.lossProfile,
+  };
+}
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -1729,7 +1723,7 @@ export type {
 } from './types';
 
 // Runner
-export { runCoreAnalysis, CORE_SCHEMA_VERSION } from './runner';
+export { runCoreAnalysis, CORE_SCHEMA_VERSION, legacyFixtureToCoreInput } from './runner';
 
 // Equipment
 export { getBuiltInPanels, getBuiltInInverters, getBuiltInEss, resolvePanel, resolveInverter, resolveEss } from './equipment';
@@ -1759,19 +1753,33 @@ export { handleWorkerMessage } from './worker';
 
 - [ ] **Step 2: Write parity test — Core runner vs existing runner**
 
-This is the critical V12 validation test. Feed the same 10-panel fixture through both the existing `runAnalysis` and the new `runCoreAnalysis`, and verify they produce the same output within 0.1%.
+This is the critical V12 validation test. Both runners consume the same fixture.
+The `CoreRunner` must include a canonical adapter `legacyFixtureToCoreInput()` that
+deterministically maps the `RunnerInput`-shaped fixture to `CoreSolarDesignerInput` —
+the same adapter the CoreRunner uses internally, so both paths see identical data.
+
+> **Why not fabricate PanelGeometry ad-hoc?** The previous version of this test
+> invented positions (`x: i * 1.1`), dimensions, and IDs not present in the fixture.
+> That made the test a loose smoke test, not a true equivalence check. Instead, the
+> adapter is the single source of truth for the fixture → core mapping. If it drifts,
+> the parity test catches it.
 
 ```typescript
 /**
  * V12 Parity Test
  *
  * Validates that the new CoreRunner produces results matching
- * the existing runner (which is already V12-faithful) within 0.1%.
+ * the existing runner within 0.1% for identical inputs.
+ *
+ * Note: The existing runner is our best available proxy for V12 output
+ * (same math, same constants). When Jacob's V12 test data arrives,
+ * add a second parity test that validates against the actual V12 HTML
+ * output for the same project. Until then, this catches regressions
+ * introduced by the CoreRunner's type bridging layer.
  */
 import { runAnalysis } from '@/lib/solar/engine/runner';
-import { runCoreAnalysis } from '@/lib/solar/v12-engine/runner';
+import { runCoreAnalysis, legacyFixtureToCoreInput } from '@/lib/solar/v12-engine/runner';
 import type { RunnerInput } from '@/lib/solar/engine/engine-types';
-import type { CoreSolarDesignerInput } from '@/lib/solar/v12-engine/types';
 import type { WorkerProgressMessage } from '@/lib/solar/types';
 import fixture from './fixtures/synthetic-10-panel.json';
 import { expectClose } from './test-helpers';
@@ -1779,38 +1787,11 @@ import { expectClose } from './test-helpers';
 const noopProgress = (_msg: WorkerProgressMessage) => {};
 
 describe('V12 Parity: CoreRunner vs existing Runner', () => {
-  // Run existing runner once
-  const existingResult = runAnalysis(fixture as unknown as RunnerInput, noopProgress);
+  // Both runners consume the same fixture — adapter is canonical
+  const legacyInput = fixture as unknown as RunnerInput;
+  const existingResult = runAnalysis(legacyInput, noopProgress);
 
-  // Build CoreSolarDesignerInput from the same fixture
-  const coreInput: CoreSolarDesignerInput = {
-    panels: (fixture as any).panels.map((p: any, i: number) => ({
-      id: `panel_${i}`,
-      x: i * 1.1,
-      y: 0,
-      width: 1.02,
-      height: 1.82,
-      azimuth: 180,
-      tilt: 30,
-      shadePointIds: p.points || [],
-    })),
-    shadeData: fixture.shadeData as any,
-    strings: fixture.strings as any,
-    inverters: fixture.inverters as any,
-    equipment: {
-      panelKey: 'rec_alpha_440',
-      inverterKey: 'tesla_pw3',
-    },
-    siteConditions: {
-      tempMin: -10,
-      tempMax: 45,
-      groundAlbedo: fixture.groundAlbedo,
-      clippingThreshold: fixture.clippingThreshold,
-      exportLimitW: 0,
-    },
-    lossProfile: fixture.lossProfile as any,
-  };
-
+  const coreInput = legacyFixtureToCoreInput(legacyInput);
   const coreResult = runCoreAnalysis(coreInput, noopProgress);
 
   it('Model A annual kWh within 0.1%', () => {
@@ -1875,11 +1856,11 @@ Expected: No new type errors introduced
 git add src/lib/solar/v12-engine/index.ts src/__tests__/lib/solar-v12-engine/parity.test.ts
 git commit -m "feat(solar-designer): barrel export + V12 parity test (Stage 1 complete)
 
-Core engine extraction complete: 14 modules extracted/re-exported from V12,
+Core engine extraction complete: 13 modules extracted/re-exported from V12,
 all validated to match existing engine output within 0.1%.
 
 Modules: types, constants, equipment, layout-parser, csv-shade-parser,
-physics, weather, consumption, production, stringing, mismatch,
+physics, consumption, production, stringing, mismatch,
 clipping, timeseries, runner, worker.
 
 Spec: docs/superpowers/specs/2026-04-05-solar-designer-design.md Stage 1"
@@ -2056,15 +2037,15 @@ Expected: Build succeeds — v12-engine modules are tree-shakeable and don't bre
 ## Summary
 
 **Total tasks:** 15
-**Total files created:** ~31 (14 source + 17 test/fixture)
+**Total files created:** ~28 (13 source + 15 test/fixture)
 **Existing files modified:** 0
 **Estimated time:** 3-5 hours for experienced developer
 
 **What Stage 1 delivers:**
-- `src/lib/solar/v12-engine/` — 14 typed TypeScript modules (including worker entry point)
+- `src/lib/solar/v12-engine/` — 13 typed TypeScript modules (including worker entry point)
 - Core contracts: `CoreSolarDesignerInput` → `CoreSolarDesignerResult`
 - DXF/JSON layout parser, CSV shade parser
-- V12-faithful physics, weather, consumption, production via re-export
+- V12-faithful physics, consumption, production via re-export
 - New: auto-string algorithm, clipping event detection, timeseries aggregation
 - Built-in equipment catalog (8 panels, 9 inverters, 6 ESS)
 - Web Worker entry point: engine runs off main thread [AC 5]
