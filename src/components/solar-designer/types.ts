@@ -15,6 +15,7 @@ import type {
   StringConfig,
   InverterConfig,
   CoreSolarDesignerResult,
+  RadiancePoint,
 } from '@/lib/solar/v12-engine';
 
 // ── Tab Navigation ──────────────────────────────────────────
@@ -48,14 +49,44 @@ export interface UploadedFile {
   size: number;
 }
 
+export interface UIStringConfig {
+  id: number;
+  panelIds: string[];
+}
+
+export interface MapAlignment {
+  offsetX: number;
+  offsetY: number;
+  rotation: number;
+  scale: number;
+}
+
+export const DEFAULT_MAP_ALIGNMENT: MapAlignment = {
+  offsetX: 0,
+  offsetY: 0,
+  rotation: 0,
+  scale: 1,
+};
+
 export interface SolarDesignerState {
   // Layout data (from file upload)
   panels: PanelGeometry[];
   shadeData: ShadeTimeseries;
   shadeFidelity: ShadeFidelity;
   shadeSource: ShadeSource;
-  radiancePointCount: number;  // DXF radiance points (panels derived in Stage 3)
+  radiancePoints: RadiancePoint[];
   uploadedFiles: UploadedFile[];
+
+  // Shade association (derived from radiancePoints + panels)
+  panelShadeMap: Record<string, string[]>;
+
+  // Site address + geocoding
+  siteAddress: string | null;
+  siteFormattedAddress: string | null;
+  siteLatLng: { lat: number; lng: number } | null;
+
+  // Map alignment (satellite image positioning)
+  mapAlignment: MapAlignment;
 
   // Equipment selection
   panelKey: string;
@@ -69,11 +100,15 @@ export interface SolarDesignerState {
   // Loss profile
   lossProfile: LossProfile;
 
-  // Stringing (Stage 3 will populate)
-  strings: StringConfig[];
+  // Stringing (Stage 3 interactive)
+  strings: UIStringConfig[];
+  activeStringId: number | null;
+  nextStringId: number;
+
+  // Inverter configs (Stage 4)
   inverters: InverterConfig[];
 
-  // Analysis result (Stage 4 will populate)
+  // Analysis result (Stage 4)
   result: CoreSolarDesignerResult | null;
 
   // UI state
@@ -87,7 +122,7 @@ export interface SolarDesignerState {
 export type SolarDesignerAction =
   | { type: 'SET_TAB'; tab: SolarDesignerTab }
   | { type: 'UPLOAD_START' }
-  | { type: 'UPLOAD_SUCCESS'; panels: PanelGeometry[]; shadeData: ShadeTimeseries; files: UploadedFile[]; shadeFidelity: ShadeFidelity; shadeSource: ShadeSource; radiancePointCount: number }
+  | { type: 'UPLOAD_SUCCESS'; panels: PanelGeometry[]; shadeData: ShadeTimeseries; files: UploadedFile[]; shadeFidelity: ShadeFidelity; shadeSource: ShadeSource; radiancePoints: RadiancePoint[] }
   | { type: 'UPLOAD_ERROR'; error: string }
   | { type: 'SET_PANEL'; key: string; panel: ResolvedPanel }
   | { type: 'SET_INVERTER'; key: string; inverter: ResolvedInverter }
@@ -95,4 +130,14 @@ export type SolarDesignerAction =
   | { type: 'SET_LOSS_PROFILE'; profile: Partial<LossProfile> }
   | { type: 'SET_STRINGS'; strings: StringConfig[]; inverters: InverterConfig[] }
   | { type: 'SET_RESULT'; result: CoreSolarDesignerResult }
-  | { type: 'RESET' };
+  | { type: 'RESET' }
+  // Stage 3 additions
+  | { type: 'SET_SHADE_POINT_IDS'; panelShadeMap: Record<string, string[]> }
+  | { type: 'SET_ADDRESS'; address: string; formattedAddress: string; lat: number; lng: number }
+  | { type: 'SET_MAP_ALIGNMENT'; alignment: Partial<MapAlignment> }
+  | { type: 'SET_ACTIVE_STRING'; stringId: number | null }
+  | { type: 'ASSIGN_PANEL'; panelId: string }
+  | { type: 'UNASSIGN_PANEL'; panelId: string }
+  | { type: 'CREATE_STRING' }
+  | { type: 'DELETE_STRING'; stringId: number }
+  | { type: 'AUTO_STRING'; strings: StringConfig[]; panels: PanelGeometry[] };

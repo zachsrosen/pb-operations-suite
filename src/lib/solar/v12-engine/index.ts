@@ -35,6 +35,7 @@ export { getBuiltInPanels, getBuiltInInverters, getBuiltInEss, resolvePanel, res
 
 // Layout parsing
 export { parseJSON, parseDXF } from './layout-parser';
+export type { RadiancePoint } from './layout-parser';
 export { parseShadeCSV } from './csv-shade-parser';
 
 // Stringing
