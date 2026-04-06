@@ -176,6 +176,8 @@ Grouped by the stage that introduces them:
 | 6 | `POST /api/solar-designer/projects/[id]/link-deal` | Link project to HubSpot deal |
 | 7 | `POST /api/solar-designer/eagleview/fetch` | Fetch roof geometry + shade data by address |
 | 7 | `GET /api/solar-designer/eagleview/cache/[addressKey]` | Check cache for existing EagleView data |
+| 8 | `POST /api/solar-designer/projects/[id]/notes` | Create cross-team note |
+| 8 | `GET /api/solar-designer/projects/[id]/notes` | List notes for project |
 
 Existing routes reused as-is: `/api/solar/weather` (NREL TMY), `/api/solar/shade` (Google Solar API fallback), `/api/solar/equipment` (custom equipment CRUD).
 
@@ -208,7 +210,7 @@ model SolarProjectNote {
   createdAt DateTime @default(now())
 }
 ```
-Notes are flat (not threaded). Any user with Solar Designer access can post. No notifications in V1 — revisit if cross-team handoff volume warrants it.
+Notes are flat (not threaded). Any user with Solar Designer access can post. No notifications in V1 — revisit if cross-team handoff volume warrants it. Stage 8 migration must also add `solarProjectNotes SolarProjectNote[]` relation to the `User` model and `notes SolarProjectNote[]` to `SolarProject`.
 
 Migration runs with `prisma migrate deploy` in the stage that introduces the change. The `linkedHubspotDealId` field is nullable and non-breaking, so Stage 2 migration is safe to run against production with zero downtime.
 
@@ -245,7 +247,7 @@ Extract V12's core math into `src/lib/solar/v12-engine/` as typed TS modules. Un
 5. Engine runs in a Web Worker without blocking the main thread
 
 ### Stage 2: Core UI Shell
-New page at `/dashboards/solar-designer`. Search bar, project browser, tab layout matching V12's 8 tabs, equipment selection panel, site conditions panel, manual file upload (DXF/JSON/CSV). Uses suite theme tokens and `DashboardShell`. Prisma migration adds `hubspotDealId` to `SolarProject`.
+New page at `/dashboards/solar-designer`. Search bar, project browser, tab layout matching V12's 8 tabs, equipment selection panel, site conditions panel, manual file upload (DXF/JSON/CSV). Uses suite theme tokens and `DashboardShell`. Prisma migration adds `linkedHubspotDealId` to `SolarProject`.
 
 **Deliverable:** Working shell with file upload → panel count displayed.
 
