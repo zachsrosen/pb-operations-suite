@@ -1,0 +1,74 @@
+{
+  "panels": [
+    { "id": 0, "tsrf": 0.95, "points": [], "panelKey": "rec_alpha_440", "bifacialGain": 1.0 },
+    { "id": 1, "tsrf": 0.93, "points": [], "panelKey": "rec_alpha_440", "bifacialGain": 1.0 },
+    { "id": 2, "tsrf": 0.90, "points": [], "panelKey": "rec_alpha_440", "bifacialGain": 1.0 },
+    { "id": 3, "tsrf": 0.88, "points": [], "panelKey": "rec_alpha_440", "bifacialGain": 1.0 },
+    { "id": 4, "tsrf": 0.85, "points": [], "panelKey": "rec_alpha_440", "bifacialGain": 1.0 },
+    { "id": 5, "tsrf": 0.83, "points": [], "panelKey": "rec_alpha_440", "bifacialGain": 1.0 },
+    { "id": 6, "tsrf": 0.80, "points": [], "panelKey": "rec_alpha_440", "bifacialGain": 1.0 },
+    { "id": 7, "tsrf": 0.78, "points": [], "panelKey": "rec_alpha_440", "bifacialGain": 1.0 },
+    { "id": 8, "tsrf": 0.76, "points": [], "panelKey": "rec_alpha_440", "bifacialGain": 1.0 },
+    { "id": 9, "tsrf": 0.75, "points": [], "panelKey": "rec_alpha_440", "bifacialGain": 1.0 }
+  ],
+  "shadeData": {},
+  "strings": [
+    { "panels": [0, 1, 2, 3, 4] },
+    { "panels": [5, 6, 7, 8, 9] }
+  ],
+  "inverters": [
+    { "inverterKey": "tesla_pw3", "stringIndices": [0, 1] }
+  ],
+  "resolvedPanels": {
+    "rec_alpha_440": {
+      "key": "rec_alpha_440",
+      "name": "REC Alpha 440",
+      "watts": 440,
+      "voc": 48.4,
+      "vmp": 40.8,
+      "isc": 11.5,
+      "imp": 10.79,
+      "tempCoVoc": -0.0024,
+      "tempCoIsc": 0.0004,
+      "tempCoPmax": -0.0026,
+      "cells": 132,
+      "bypassDiodes": 3,
+      "cellsPerSubstring": 44,
+      "isBifacial": false,
+      "bifacialityFactor": 0
+    }
+  },
+  "resolvedInverters": {
+    "tesla_pw3": {
+      "key": "tesla_pw3",
+      "name": "Tesla Powerwall 3 (11.5kW)",
+      "acPower": 11500,
+      "dcMax": 15000,
+      "mpptMin": 60,
+      "mpptMax": 500,
+      "channels": 6,
+      "maxIsc": 25,
+      "efficiency": 0.975,
+      "architectureType": "string",
+      "isMicro": false,
+      "isIntegrated": true
+    }
+  },
+  "resolvedOptimizer": null,
+  "resolvedEss": null,
+  "architectureType": "string",
+  "lossProfile": {
+    "soiling": 2.0,
+    "mismatch": 2.0,
+    "dcWiring": 2.0,
+    "acWiring": 1.0,
+    "availability": 3.0,
+    "lid": 1.5,
+    "snow": 0.0,
+    "nameplate": 1.0
+  },
+  "tmyData": null,
+  "homeConsumption": null,
+  "groundAlbedo": 0.2,
+  "clippingThreshold": 1.0
+}
