@@ -6,6 +6,7 @@ import TabBar from '@/components/solar-designer/TabBar';
 import PlaceholderTab from '@/components/solar-designer/PlaceholderTab';
 import EquipmentPanel from '@/components/solar-designer/EquipmentPanel';
 import SiteConditionsPanel from '@/components/solar-designer/SiteConditionsPanel';
+import FileUploadPanel from '@/components/solar-designer/FileUploadPanel';
 import { DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE } from '@/lib/solar/v12-engine';
 import type { SolarDesignerState, SolarDesignerAction, SolarDesignerTab } from '@/components/solar-designer/types';
 
@@ -88,11 +89,9 @@ export default function SolarDesignerPage() {
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Left sidebar: Upload + Equipment + Site Conditions */}
         <aside className="w-full lg:w-80 lg:shrink-0 space-y-4">
-          {/* FileUploadPanel — Task 7 */}
-          <div className="rounded-xl bg-surface p-4 shadow-card">
-            <h3 className="text-sm font-semibold text-foreground mb-3">Layout Files</h3>
-            <p className="text-xs text-muted">File upload panel — coming in Task 7</p>
-          </div>
+          <FileUploadPanel uploadedFiles={state.uploadedFiles} panelCount={state.panels.length}
+            radiancePointCount={state.radiancePointCount} isUploading={state.isUploading}
+            uploadError={state.uploadError} dispatch={dispatch} />
 
           <EquipmentPanel panelKey={state.panelKey} inverterKey={state.inverterKey}
             selectedPanel={state.selectedPanel} selectedInverter={state.selectedInverter} dispatch={dispatch} />
