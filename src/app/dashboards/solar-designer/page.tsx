@@ -5,6 +5,7 @@ import DashboardShell from '@/components/DashboardShell';
 import TabBar from '@/components/solar-designer/TabBar';
 import PlaceholderTab from '@/components/solar-designer/PlaceholderTab';
 import EquipmentPanel from '@/components/solar-designer/EquipmentPanel';
+import SiteConditionsPanel from '@/components/solar-designer/SiteConditionsPanel';
 import { DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE } from '@/lib/solar/v12-engine';
 import type { SolarDesignerState, SolarDesignerAction, SolarDesignerTab } from '@/components/solar-designer/types';
 
@@ -96,11 +97,7 @@ export default function SolarDesignerPage() {
           <EquipmentPanel panelKey={state.panelKey} inverterKey={state.inverterKey}
             selectedPanel={state.selectedPanel} selectedInverter={state.selectedInverter} dispatch={dispatch} />
 
-          {/* SiteConditionsPanel — Task 6 */}
-          <div className="rounded-xl bg-surface p-4 shadow-card">
-            <h3 className="text-sm font-semibold text-foreground mb-3">Site Conditions</h3>
-            <p className="text-xs text-muted">Site conditions — coming in Task 6</p>
-          </div>
+          <SiteConditionsPanel siteConditions={state.siteConditions} lossProfile={state.lossProfile} dispatch={dispatch} />
 
           {/* SystemSummaryBar — Task 8 */}
         </aside>
