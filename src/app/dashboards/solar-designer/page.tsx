@@ -4,6 +4,7 @@ import { useReducer } from 'react';
 import DashboardShell from '@/components/DashboardShell';
 import TabBar from '@/components/solar-designer/TabBar';
 import PlaceholderTab from '@/components/solar-designer/PlaceholderTab';
+import EquipmentPanel from '@/components/solar-designer/EquipmentPanel';
 import { DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE } from '@/lib/solar/v12-engine';
 import type { SolarDesignerState, SolarDesignerAction, SolarDesignerTab } from '@/components/solar-designer/types';
 
@@ -92,11 +93,8 @@ export default function SolarDesignerPage() {
             <p className="text-xs text-muted">File upload panel — coming in Task 7</p>
           </div>
 
-          {/* EquipmentPanel — Task 5 */}
-          <div className="rounded-xl bg-surface p-4 shadow-card">
-            <h3 className="text-sm font-semibold text-foreground mb-3">Equipment</h3>
-            <p className="text-xs text-muted">Equipment selection — coming in Task 5</p>
-          </div>
+          <EquipmentPanel panelKey={state.panelKey} inverterKey={state.inverterKey}
+            selectedPanel={state.selectedPanel} selectedInverter={state.selectedInverter} dispatch={dispatch} />
 
           {/* SiteConditionsPanel — Task 6 */}
           <div className="rounded-xl bg-surface p-4 shadow-card">

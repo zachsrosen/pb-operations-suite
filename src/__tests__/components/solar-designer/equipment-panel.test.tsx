@@ -34,7 +34,8 @@ describe('EquipmentPanel', () => {
     const panels = getBuiltInPanels();
     const rec = panels.find(p => p.key === 'rec_alpha_440')!;
     render(<EquipmentPanel panelKey="rec_alpha_440" inverterKey="" selectedPanel={rec} selectedInverter={null} dispatch={mockDispatch} />);
-    expect(screen.getByText(/440/)).toBeInTheDocument();
+    // Multiple elements may contain "440" (options + spec display) — assert at least one is present
+    expect(screen.getAllByText(/440/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Voc/i)).toBeInTheDocument();
   });
 });
