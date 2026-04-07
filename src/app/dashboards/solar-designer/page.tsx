@@ -58,33 +58,57 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
       return { ...state, activeTab: action.tab };
     case 'UPLOAD_START':
       return { ...state, isUploading: true, uploadError: null };
-    case 'UPLOAD_SUCCESS':
+    case 'UPLOAD_SUCCESS': {
+      // If the upload produced new panels (JSON/DXF), this is a layout
+      // change — reset downstream state (strings, analysis, equipment).
+      // If only shade data was uploaded (CSV-only), merge into existing
+      // state without clearing panels or strings.
+      const hasNewPanels = action.panels.length > 0;
+      const mergedFiles = hasNewPanels
+        ? action.files
+        : [...state.uploadedFiles.filter(f => !action.files.some(nf => nf.name === f.name)), ...action.files];
+
+      if (hasNewPanels) {
+        return {
+          ...state,
+          isUploading: false,
+          panels: action.panels,
+          shadeData: { ...state.shadeData, ...action.shadeData },
+          shadeFidelity: action.shadeFidelity,
+          shadeSource: action.shadeSource,
+          radiancePoints: action.radiancePoints.length > 0 ? action.radiancePoints : state.radiancePoints,
+          uploadedFiles: mergedFiles,
+          uploadError: null,
+          panelShadeMap: {},
+          panelKey: '',
+          inverterKey: '',
+          selectedPanel: null,
+          selectedInverter: null,
+          strings: [],
+          activeStringId: null,
+          nextStringId: 1,
+          mapAlignment: DEFAULT_MAP_ALIGNMENT,
+          inverters: [],
+          result: null,
+          isAnalyzing: false,
+          analysisProgress: null,
+          analysisError: null,
+          resultStale: false,
+        };
+      }
+      // CSV-only upload — merge shade data, keep everything else intact
       return {
         ...state,
         isUploading: false,
-        panels: action.panels,
-        shadeData: action.shadeData,
+        shadeData: { ...state.shadeData, ...action.shadeData },
         shadeFidelity: action.shadeFidelity,
         shadeSource: action.shadeSource,
-        radiancePoints: action.radiancePoints,
-        uploadedFiles: action.files,
+        uploadedFiles: mergedFiles,
         uploadError: null,
         panelShadeMap: {},
-        panelKey: '',
-        inverterKey: '',
-        selectedPanel: null,
-        selectedInverter: null,
-        strings: [],
-        activeStringId: null,
-        nextStringId: 1,
-        mapAlignment: DEFAULT_MAP_ALIGNMENT,
-        inverters: [],
-        result: null,
-        isAnalyzing: false,
-        analysisProgress: null,
-        analysisError: null,
-        resultStale: false,
+        ...(state.result ? { resultStale: true } : {}),
       };
+    }
     case 'UPLOAD_ERROR':
       return { ...state, isUploading: false, uploadError: action.error };
     case 'SET_PANEL':
