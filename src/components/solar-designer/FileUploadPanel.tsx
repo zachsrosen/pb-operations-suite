@@ -115,7 +115,10 @@ export default function FileUploadPanel({
           allPanels.push(...result.panels);
           allRadiancePoints.push(...result.radiancePoints);
         } else if (ext === 'csv') {
-          const result = parseShadeCSV(text);
+          // Extract point ID from per-panel filenames like "shading_A_IP2577.csv"
+          const idMatch = f.name.match(/IP(\d+)/i);
+          const pointId = idMatch ? `IP${idMatch[1]}` : undefined;
+          const result = parseShadeCSV(text, pointId);
           if (result.errors.length > 0) allErrors.push(...result.errors.map(e => `${f.name}: ${e}`));
           Object.assign(allShadeData, result.data);
           shadeFidelity = result.fidelity;
