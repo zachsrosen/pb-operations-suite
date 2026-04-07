@@ -60,7 +60,7 @@ const LINKS: SuitePageCard[] = [
     section: "Service",
   },
   {
-    href: "/dashboards/solar-designer",
+    href: "/dashboards/solar-designer?suite=service",
     title: "Solar Designer",
     description: "Solar design analysis and production modeling.",
     tag: "TOOL",

@@ -1,6 +1,7 @@
 'use client';
 
-import { useReducer, useEffect } from 'react';
+import { useReducer, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import DashboardShell from '@/components/DashboardShell';
 import TabBar from '@/components/solar-designer/TabBar';
 import PlaceholderTab from '@/components/solar-designer/PlaceholderTab';
@@ -170,8 +171,21 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
 
 const ENABLED_TABS: SolarDesignerTab[] = ['visualizer', 'stringing'];
 
+const SUITE_BREADCRUMBS: Record<string, { label: string; href: string }> = {
+  de: { label: 'D&E', href: '/suites/design-engineering' },
+  service: { label: 'Service', href: '/suites/service' },
+};
+
 export default function SolarDesignerPage() {
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
+  const searchParams = useSearchParams();
+
+  // Breadcrumb points back to whichever suite the user came from
+  const breadcrumbs = useMemo(() => {
+    const from = searchParams.get('suite');
+    const parent = from ? SUITE_BREADCRUMBS[from] : null;
+    return parent ? [parent] : undefined;
+  }, [searchParams]);
 
   // Run shade association after panels + radiance points are loaded
   useEffect(() => {
@@ -186,7 +200,7 @@ export default function SolarDesignerPage() {
   };
 
   return (
-    <DashboardShell title="Solar Designer" accentColor="orange" fullWidth>
+    <DashboardShell title="Solar Designer" accentColor="orange" fullWidth breadcrumbs={breadcrumbs}>
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Left sidebar: Upload + Equipment + Site Conditions */}
         <aside className="w-full lg:w-80 lg:shrink-0 space-y-4">
