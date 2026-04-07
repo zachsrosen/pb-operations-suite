@@ -12,6 +12,7 @@ import SystemSummaryBar from '@/components/solar-designer/SystemSummaryBar';
 import VisualizerTab from '@/components/solar-designer/VisualizerTab';
 import StringingTab from '@/components/solar-designer/StringingTab';
 import ProductionTab from '@/components/solar-designer/ProductionTab';
+import TimeseriesTab from '@/components/solar-designer/TimeseriesTab';
 import AddressInput from '@/components/solar-designer/AddressInput';
 import RunAnalysisButton from '@/components/solar-designer/RunAnalysisButton';
 import { DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE, associateShadePoints } from '@/lib/solar/v12-engine';
@@ -305,7 +306,9 @@ function SolarDesignerInner() {
             {state.activeTab === 'production' && (
               <ProductionTab result={state.result} panels={state.panels} strings={state.strings} />
             )}
-            {state.activeTab === 'timeseries' && <PlaceholderTab tabName="30-Min Series" targetStage={4} />}
+            {state.activeTab === 'timeseries' && (
+              <TimeseriesTab result={state.result} strings={state.strings} />
+            )}
             {state.activeTab === 'inverters' && <PlaceholderTab tabName="Inverters" targetStage={4} />}
             {state.activeTab === 'battery' && <PlaceholderTab tabName="Battery" targetStage={5} />}
             {state.activeTab === 'ai' && <PlaceholderTab tabName="AI Analysis" targetStage={5} />}
