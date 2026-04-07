@@ -17,10 +17,29 @@ interface FileUploadPanelProps {
 
 const ACCEPTED_EXTENSIONS = ['.dxf', '.json', '.csv'];
 
+/** Recursively collect files from a dropped directory entry. */
+async function collectFilesFromEntry(entry: FileSystemEntry): Promise<File[]> {
+  if (entry.isFile) {
+    return new Promise((resolve) => {
+      (entry as FileSystemFileEntry).file((f) => resolve([f]), () => resolve([]));
+    });
+  }
+  if (entry.isDirectory) {
+    const reader = (entry as FileSystemDirectoryEntry).createReader();
+    const entries = await new Promise<FileSystemEntry[]>((resolve) => {
+      reader.readEntries((e) => resolve(e), () => resolve([]));
+    });
+    const nested = await Promise.all(entries.map(collectFilesFromEntry));
+    return nested.flat();
+  }
+  return [];
+}
+
 export default function FileUploadPanel({
   uploadedFiles, panelCount, radiancePointCount, isUploading, uploadError, dispatch,
 }: FileUploadPanelProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = useCallback(async (fileList: FileList | File[]) => {
     const files = Array.from(fileList).filter((f) => {
@@ -95,8 +114,27 @@ export default function FileUploadPanel({
     }
   }, [dispatch]);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault();
+    // Check for directory entries (drag-and-drop folders)
+    const items = e.dataTransfer.items;
+    if (items?.length) {
+      const allFiles: File[] = [];
+      const entries = Array.from(items)
+        .map(item => item.webkitGetAsEntry?.())
+        .filter((e): e is FileSystemEntry => e != null);
+
+      if (entries.some(entry => entry.isDirectory)) {
+        // At least one folder was dropped — recursively collect files
+        for (const entry of entries) {
+          const files = await collectFilesFromEntry(entry);
+          allFiles.push(...files);
+        }
+        handleFiles(allFiles);
+        return;
+      }
+    }
+    // Regular file drop
     handleFiles(e.dataTransfer.files);
   }, [handleFiles]);
 
@@ -114,14 +152,29 @@ export default function FileUploadPanel({
         ) : (
           <>
             <span className="text-lg opacity-40">📐</span>
-            <span className="text-xs text-muted">Drop DXF, JSON, or CSV files here</span>
+            <span className="text-xs text-muted">Drop files or a folder here</span>
           </>
         )}
+      </div>
+      <div className="flex gap-2">
+        <button type="button" onClick={() => fileInputRef.current?.click()}
+          className="flex-1 text-xs text-muted hover:text-foreground transition-colors py-1 rounded border border-border hover:border-orange-500/50">
+          Select files
+        </button>
+        <button type="button" onClick={() => folderInputRef.current?.click()}
+          className="flex-1 text-xs text-muted hover:text-foreground transition-colors py-1 rounded border border-border hover:border-orange-500/50">
+          Select folder
+        </button>
       </div>
       <input ref={fileInputRef} type="file" accept=".dxf,.json,.csv" multiple className="hidden"
         onChange={(e) => {
           if (e.target.files) handleFiles(e.target.files);
-          // Reset so re-selecting the same file triggers onChange
+          e.target.value = '';
+        }} />
+      {/* @ts-expect-error — webkitdirectory is non-standard but widely supported */}
+      <input ref={folderInputRef} type="file" webkitdirectory="" multiple className="hidden"
+        onChange={(e) => {
+          if (e.target.files) handleFiles(e.target.files);
           e.target.value = '';
         }} />
       {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
