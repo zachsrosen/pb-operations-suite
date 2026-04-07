@@ -280,7 +280,7 @@ The API endpoint aggregates from multiple sources:
 4. **Scheduling** (`CrewAvailability` queries) → capacity utilization
 5. **Office Goals** (new `OfficeGoal` model) → monthly targets
 
-Cache the response with a 2-minute TTL. Invalidate via SSE on upstream data changes (project updates, job completions).
+Cache the response using the shared `appCache` (5-minute fresh TTL, 10-minute stale window — matching the existing cache infrastructure). Client-side React Query polls every 2 minutes as a fallback for Zuper updates that don't emit SSE events. SSE triggers immediate refresh on upstream project cache key changes.
 
 ### Real-time Updates
 

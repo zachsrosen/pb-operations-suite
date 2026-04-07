@@ -379,18 +379,24 @@ function normalizeStage(raw: string): string {
 
 // ---------- Pipeline Aggregation ----------
 
+// Matches the real RawProject shape from src/lib/types.ts and Project from src/lib/hubspot.ts
 interface ProjectForMetrics {
   pbLocation?: string | null;
   stage?: string;
   amount?: number;
-  ptoDate?: string | null;
+  ptoGrantedDate?: string | null;        // NOT "ptoDate" — real field name
   forecastedInstallDate?: string | null;
   forecastedInspectionDate?: string | null;
   forecastedPtoDate?: string | null;
   constructionCompleteDate?: string | null;
+  constructionScheduleDate?: string | null;
   inspectionPassDate?: string | null;
-  daysInCurrentStage?: number | null;
+  daysSinceStageMovement?: number;        // NOT "daysInCurrentStage" — real field name
   closeDate?: string | null;
+  siteSurveyTurnaroundTime?: number | null;  // From Project (hubspot.ts)
+  constructionTurnaroundTime?: number | null;
+  timeCcToPto?: number | null;
+  isFirstTimeInspectionPass?: boolean;
 }
 
 export function buildPipelineData(
@@ -429,22 +435,22 @@ export function buildPipelineData(
     }
 
     // Days in current stage
-    if (p.daysInCurrentStage != null) {
-      totalDaysInStage += p.daysInCurrentStage;
+    if (p.daysSinceStageMovement != null) {
+      totalDaysInStage += p.daysSinceStageMovement;
       daysInStageCount++;
     }
   }
 
   // Completed MTD = projects with PTO date in current month
   const completedMtd = projects.filter((p) => {
-    const ptoDate = p.ptoDate ? new Date(p.ptoDate) : null;
+    const ptoDate = p.ptoGrantedDate ? new Date(p.ptoGrantedDate) : null;
     return ptoDate && ptoDate >= mtdStart && ptoDate <= now;
   }).length;
 
   // Recent wins
   const recentWins: string[] = [];
   const ptosThisWeek = projects.filter((p) => {
-    const ptoDate = p.ptoDate ? new Date(p.ptoDate) : null;
+    const ptoDate = p.ptoGrantedDate ? new Date(p.ptoGrantedDate) : null;
     return ptoDate && ptoDate >= weekAgo && ptoDate <= now;
   }).length;
   if (ptosThisWeek > 0) {
@@ -694,12 +700,17 @@ export async function buildInstallData(
     }
   }
 
-  // Capacity utilization — count distinct crew members with construction availability
+  // Capacity utilization — count distinct crew members with construction availability.
+  // CrewAvailability.location stores non-canonical aliases like "DTC" and "SLO",
+  // so we query ALL construction availability and filter by normalizing each record's location.
   let capacityUtilization = -1; // -1 means N/A
-  const availability = await (prisma?.crewAvailability.findMany({
-    where: { location, jobType: "construction", isActive: true },
-    select: { crewMemberId: true, dayOfWeek: true },
+  const allConstructionAvail = await (prisma?.crewAvailability.findMany({
+    where: { jobType: "construction", isActive: true },
+    select: { crewMemberId: true, dayOfWeek: true, location: true },
   }) ?? []);
+  const availability = allConstructionAvail.filter(
+    (slot) => normalizeLocation(slot.location) === location
+  );
 
   if (availability.length > 0) {
     // Count distinct crew members and their available days per week
@@ -829,20 +840,41 @@ async function enrichWithQcMetrics(
       return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
     }
 
-    // Note: actual field names depend on the project transform.
-    // These are approximate — adjust to match the real RawProject field names.
-    // The key metrics are: siteSurveyTurnaroundTime, constructionTurnaroundTime, timeCcToPto
-
-    // For now, populate what we can from daysInCurrentStage and date diffs
-    // This will be refined during implementation to use the exact QC metric fields.
+    // Use the real Project field names (from hubspot.ts):
+    //   siteSurveyTurnaroundTime — days from survey schedule to DA ready
+    //   constructionTurnaroundTime — days from construction start to complete
+    //   timeCcToPto — days from construction complete to PTO
+    //   isFirstTimeInspectionPass — boolean, true if inspection passed first try
 
     // Surveys: turnaround
-    // Installs: construction turnaround
-    // Inspections: first pass rate, construction time, CC→PTO
+    surveys.avgTurnaroundDays = avg(recentProjects, "siteSurveyTurnaroundTime");
+    surveys.avgTurnaroundPrior = avg(priorProjects, "siteSurveyTurnaroundTime");
 
-    // Placeholder enrichment — implementer should wire to actual QC fields
-    inspections.avgConstructionDays = avg(recentProjects, "daysInCurrentStage");
-    inspections.avgConstructionDaysPrior = avg(priorProjects, "daysInCurrentStage");
+    // Installs: construction turnaround
+    installs.avgDaysPerInstall = avg(recentProjects, "constructionTurnaroundTime");
+    installs.avgDaysPerInstallPrior = avg(priorProjects, "constructionTurnaroundTime");
+
+    // Inspections: construction time, CC→PTO, first-pass rate
+    inspections.avgConstructionDays = avg(recentProjects, "constructionTurnaroundTime");
+    inspections.avgConstructionDaysPrior = avg(priorProjects, "constructionTurnaroundTime");
+    inspections.avgCcToPtoDays = avg(recentProjects, "timeCcToPto");
+    inspections.avgCcToPtoDaysPrior = avg(priorProjects, "timeCcToPto");
+
+    // First-pass inspection rate
+    const withInspection = recentProjects.filter(
+      (p: ProjectForMetrics) => p.inspectionPassDate
+    );
+    if (withInspection.length > 0) {
+      const firstTimePasses = withInspection.filter(
+        (p: ProjectForMetrics) => p.isFirstTimeInspectionPass
+      ).length;
+      inspections.firstPassRate = Math.round(
+        (firstTimePasses / withInspection.length) * 100
+      );
+    }
+
+    // Pipeline: avg days in stage prior period
+    pipeline.avgDaysInStagePrior = avg(priorProjects, "daysSinceStageMovement");
   } catch (err) {
     console.error("[office-performance] QC metrics enrichment failed:", err);
     // Non-fatal — sections will show 0/"--" for turnaround metrics
@@ -1865,13 +1897,19 @@ export default function OfficePerformancePage({ params }: PageProps) {
     if (data) previousDataRef.current = data;
   }, [data]);
 
-  // SSE real-time updates — listen for upstream project and zuper changes
-  // The useSSE hook matches cache keys by prefix, so "projects" catches
-  // "projects:all", "projects:active", etc. We also poll every 2min as fallback
-  // for Zuper job updates that may not emit SSE events.
+  // Dual refresh strategy:
+  // 1. SSE — useSSE listens for "projects" cache key changes (prefix match).
+  //    When HubSpot deal/project data updates, the SSE server emits "projects:*"
+  //    events, which match our filter and trigger refetch().
+  // 2. React Query polling — refetchInterval: 120_000 (2 minutes) catches
+  //    Zuper job completions and other changes that don't emit SSE events.
+  //
+  // The server-side appCache has a 5-min TTL. The 2-min client poll ensures
+  // reasonably fresh data even without SSE triggers. SSE gives instant
+  // updates for the project/pipeline data which changes most often.
   const { connected, reconnecting } = useSSE(() => refetch(), {
     url: "/api/stream",
-    cacheKeyFilter: "projects", // Primary trigger; 2-min polling covers Zuper
+    cacheKeyFilter: "projects",
   });
 
   // Unknown location
@@ -2024,21 +2062,55 @@ git commit -m "feat: add office performance links to executive suite landing pag
 ### Task 12: Add Route Access for Office Performance Dashboards
 
 **Files:**
-- Modify: `src/lib/role-permissions.ts` (or wherever route access is configured)
+- Modify: `src/lib/role-permissions.ts`
 
-- [ ] **Step 1: Read the role permissions file**
+The middleware enforces route access via `canAccessRoute()` in `src/lib/role-permissions.ts`. Routes must be explicitly added to each role's `allowedRoutes` array. ADMIN and EXECUTIVE/OWNER roles use `"*"` (wildcard), so they already have access. We need to add the route to **PROJECT_MANAGER** and **OPERATIONS_MANAGER** (and their legacy aliases MANAGER).
 
-Read the file to understand the existing route access pattern.
+- [ ] **Step 1: Add route to PROJECT_MANAGER allowedRoutes**
 
-- [ ] **Step 2: Add `/dashboards/office-performance` to the accessible routes**
+In `src/lib/role-permissions.ts`, find the `PROJECT_MANAGER` role's `allowedRoutes` array (around line 400). Add the following entry in the "Executive dashboards (read-only visibility)" section, after `/dashboards/command-center`:
 
-Add the `/dashboards/office-performance` path to the routes accessible by ADMIN, OWNER, PROJECT_MANAGER, and OPERATIONS_MANAGER roles — matching the Executive suite access pattern.
+```typescript
+"/dashboards/office-performance",
+```
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 2: Add route to OPERATIONS_MANAGER allowedRoutes**
+
+Find the `OPERATIONS_MANAGER` role's `allowedRoutes` array (around line 288). Add the same entry in the "Executive dashboards (read-only visibility)" section, after `/dashboards/command-center`:
+
+```typescript
+"/dashboards/office-performance",
+```
+
+- [ ] **Step 3: Add route to MANAGER allowedRoutes (legacy alias)**
+
+Find the `MANAGER` role's `allowedRoutes` array (around line 84). Add:
+
+```typescript
+"/dashboards/office-performance",
+```
+
+Note: The MANAGER role normalizes to PROJECT_MANAGER at runtime, but the MANAGER object still has its own explicit allowedRoutes for defense-in-depth.
+
+- [ ] **Step 4: Add API route access**
+
+Also add the API route to the same three roles so the dashboard can fetch data:
+
+```typescript
+"/api/office-performance",
+```
+
+Add this to PROJECT_MANAGER, OPERATIONS_MANAGER, and MANAGER allowedRoutes arrays.
+
+- [ ] **Step 5: Verify with canAccessRoute check**
+
+Run `npx tsc --noEmit` to make sure no syntax errors in the modified file.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add src/lib/role-permissions.ts
-git commit -m "feat: add role access for office performance dashboard routes"
+git commit -m "feat: add /dashboards/office-performance route access for PM and Ops Mgr roles"
 ```
 
 ---
@@ -2125,10 +2197,10 @@ describe("buildPipelineData", () => {
     expect(result.activeProjects).toBe(3);
   });
 
-  it("counts MTD completions from ptoDate", () => {
+  it("counts MTD completions from ptoGrantedDate", () => {
     const projects = [
-      { stage: "PTO", ptoDate: "2026-04-03" },
-      { stage: "PTO", ptoDate: "2026-03-28" }, // Last month — not MTD
+      { stage: "PTO", ptoGrantedDate: "2026-04-03" },
+      { stage: "PTO", ptoGrantedDate: "2026-03-28" }, // Last month — not MTD
       { stage: "Design" },
     ];
     const result = buildPipelineData(projects, DEFAULT_GOALS, now);
@@ -2164,8 +2236,8 @@ describe("buildPipelineData", () => {
 
   it("includes recent wins for PTOs this week", () => {
     const projects = [
-      { stage: "PTO", ptoDate: "2026-04-05" },
-      { stage: "PTO", ptoDate: "2026-04-06" },
+      { stage: "PTO", ptoGrantedDate: "2026-04-05" },
+      { stage: "PTO", ptoGrantedDate: "2026-04-06" },
     ];
     const result = buildPipelineData(projects, DEFAULT_GOALS, now);
     expect(result.recentWins).toContainEqual(expect.stringContaining("2 PTOs granted this week"));
@@ -2250,26 +2322,37 @@ git commit -m "test: add leaderboard sorting tests"
 
 ---
 
+## Deferred to Phase 2
+
+These features are in the spec but explicitly deferred. The plan delivers a fully functional dashboard without them.
+
+- **Monthly leader streaks:** Requires querying 12 months of historical job data per user per location. The `buildLeaderboard()` function accepts a `monthlyHistory` parameter but it is not populated in phase 1. Leaderboards will show counts only, no streak badges.
+- **Quality streaks** (consecutive installs without punch list, consecutive inspection passes): Requires cross-referencing Zuper job data with HubSpot inspection failure fields per installer. Deferred until the data join is proven reliable.
+- **Per-person inspection pass rate:** The inspection leaderboard shows job counts but pass rate is hardcoded to 0. Enriching this requires joining each inspection tech's Zuper jobs to HubSpot `isFirstTimeInspectionPass` per deal, which is feasible but adds complexity.
+- **Admin UI for goal management:** Goals are seeded via script or direct DB insert. A settings page in the Admin suite can be added later.
+- **Scrolling "Recent Wins" ticker:** Phase 1 shows wins as static text. CSS marquee/animation can be added later.
+- **Overdue yellow/red threshold split:** Phase 1 counts total overdue. Splitting into 1-7 day (yellow) and 7+ day (red) tiers can be added by computing days past forecast.
+
 ## Summary
 
 **Total tasks:** 15
 **Total files created:** 11
-**Total files modified:** 5
+**Total files modified:** 6
 
 | Task | What It Builds |
 |------|----------------|
 | 1 | OfficeGoal Prisma model + migration |
 | 2 | Types, slug mapping, query keys, cache keys |
 | 3 | Location slug mapping tests |
-| 4 | Data aggregation module (pipeline, surveys, installs, inspections) |
+| 4 | Data aggregation module (pipeline, surveys, installs, inspections, QC enrichment) |
 | 5 | API route handler with caching |
 | 6 | CarouselHeader component |
 | 7 | Leaderboard + GoalProgress reusable components |
 | 8 | 4 section components (Pipeline, Surveys, Installs, Inspections) |
 | 9 | OfficeCarousel container (rotation, pinning, keyboard nav) |
-| 10 | Dashboard page (data fetching, SSE, error states) |
+| 10 | Dashboard page (data fetching, SSE + polling, error states) |
 | 11 | Executive suite landing page cards |
-| 12 | Role-based route access |
+| 12 | Role-based route access (PM, Ops Mgr, Manager allowedRoutes) |
 | 13 | End-to-end dev verification |
 | 14 | Pipeline data aggregation tests |
 | 15 | Leaderboard sorting tests |
