@@ -16,33 +16,64 @@ A "Run Analysis" button triggers `runCoreAnalysis()` via Web Worker. Results pop
 
 A `RunAnalysisButton` component in the sidebar, below `SystemSummaryBar`. Three visual states:
 
-- **Disabled**: panels, equipment, or strings missing. Grayed out with helper text.
+- **Disabled**: panels, equipment, or strings missing. Grayed out with tooltip: "Add panels, select equipment, and create strings to run analysis."
 - **Ready**: all prerequisites met. Orange primary button.
 - **Running**: progress bar with percent + stage label. Button disabled.
+
+When `state.resultStale` is true, the button shows a pulsing orange dot indicator.
 
 ### Prerequisites
 
 The button is enabled when all three conditions are met:
 - `state.panels.length > 0`
 - `state.selectedPanel !== null && state.selectedInverter !== null`
-- `state.strings.length > 0`
+- `state.strings.length > 0 && state.strings.some(s => s.panelIds.length > 0)`
 
 ### Worker Flow
 
 1. User clicks Run → dispatch `RUN_ANALYSIS_START`
 2. Component builds `CoreSolarDesignerInput`:
-   - Bridge `UIStringConfig[]` → `StringConfig[]` (panel IDs → panel indices)
-   - Auto-assign `InverterConfig[]` (see below)
+   - Bridge `UIStringConfig[]` → `StringConfig[]` (panel IDs → panel indices via `panels.findIndex(p => p.id === panelId)`)
+   - Auto-assign `UIInverterConfig[]` (see below), then flatten to engine `InverterConfig[]` via `flattenInverterConfigs()`
    - Copy equipment keys, site conditions, loss profile, shade data
 3. Create Web Worker from `v12-engine/worker.ts`, post `{type: 'RUN_SIMULATION', payload: input}`
 4. Worker posts `SIMULATION_PROGRESS` → dispatch `SET_ANALYSIS_PROGRESS`
-5. Worker posts `SIMULATION_RESULT` → dispatch `SET_RESULT`
+5. Worker posts `SIMULATION_RESULT` → dispatch `SET_ANALYSIS_RESULT` (stores result + UIInverterConfig[])
 6. Worker posts `SIMULATION_ERROR` → dispatch `SET_ANALYSIS_ERROR`
 7. Terminate worker after result or error
 
+If analysis is already running (`state.isAnalyzing === true`), terminate the existing worker before starting a new one.
+
+### UIInverterConfig — Channel-Level Abstraction
+
+The engine's `InverterConfig` type is flat: `{ inverterKey: string; stringIndices: number[] }`. It has no concept of per-channel assignment. The UI needs per-channel granularity for the Inverters tab's MPPT display and reassignment. A bridge type mediates:
+
+```typescript
+// Add to types.ts
+export interface UIInverterConfig {
+  inverterId: number;       // 0-based index
+  inverterKey: string;      // references selectedInverter.key
+  channels: { stringIndices: number[] }[];  // one entry per MPPT channel
+}
+```
+
+**Bridge function** (pure, in a new `lib/solar/inverter-bridge.ts` or inline utility):
+
+```typescript
+/** Flatten UIInverterConfig[] → engine InverterConfig[] */
+export function flattenInverterConfigs(
+  uiConfigs: UIInverterConfig[]
+): InverterConfig[] {
+  return uiConfigs.map(ui => ({
+    inverterKey: ui.inverterKey,
+    stringIndices: ui.channels.flatMap(ch => ch.stringIndices),
+  }));
+}
+```
+
 ### Auto-Assign Inverter Config
 
-Before sending to the worker, distribute strings across MPPT channels:
+Before sending to the worker, distribute strings across MPPT channels. This produces `UIInverterConfig[]` for UI state, which is then flattened to `InverterConfig[]` for the engine.
 
 ```
 channelsPerInverter = selectedInverter.channels
@@ -53,17 +84,17 @@ For each inverter i (0..inverterCount-1):
   For each channel j (0..channelsPerInverter-1):
     stringIndex = i * channelsPerInverter + j
     if stringIndex < strings.length:
-      channels.push({ strings: [stringIndex] })
+      channels.push({ stringIndices: [stringIndex] })
     else:
-      channels.push({ strings: [] })
-  inverters.push({ inverterKey, channels })
+      channels.push({ stringIndices: [] })
+  uiInverters.push({ inverterId: i, inverterKey, channels })
 ```
 
-The generated `InverterConfig[]` is stored in `state.inverters` alongside the result so the Inverters tab can display and modify it.
+The generated `UIInverterConfig[]` is stored in `state.inverters` alongside the result so the Inverters tab can display and modify it. When sending to the worker, call `flattenInverterConfigs(uiInverters)` to produce the engine-compatible `InverterConfig[]`.
 
 ### Tab Unlock
 
-`ENABLED_TABS` becomes dynamic:
+`ENABLED_TABS` becomes a `useMemo` derived from `state.result`:
 - Always enabled: `['visualizer', 'stringing']`
 - Enabled when `state.result !== null`: `['production', 'timeseries', 'inverters']`
 
@@ -86,8 +117,8 @@ Four `MetricCard` components in a row:
 
 Native SVG paired bar chart. 12 month groups, each with two bars:
 
-- **Model A** (orange): independent panel production. Derived from `aggregateTimeseries(sumTimeseries(result.independentTimeseries), 'year')`.
-- **Model B** (cyan): string-level production. Derived from `aggregateTimeseries(sumTimeseries(result.stringTimeseries), 'year')`.
+- **Model A** (orange): independent panel production. Derived from `aggregateTimeseries(sumTimeseries(result.independentTimeseries), 'year', 0)`.
+- **Model B** (cyan): string-level production. Derived from `aggregateTimeseries(sumTimeseries(result.stringTimeseries), 'year', 0)`.
 
 Y-axis: kWh. Hover tooltip showing month name + both values + delta.
 
@@ -101,9 +132,11 @@ Scrollable table below the chart. Columns:
 |--------|--------|-------|
 | Panel | panel ID from `state.panels[i].id` | |
 | TSRF | `result.panelStats[i].tsrf` | |
-| Independent (kWh) | sum of `result.independentTimeseries[i]` | Model A |
-| String (kWh) | panel's share of string output | Derived from string timeseries |
+| Independent (kWh) | `sum(result.independentTimeseries[i]) / 1000` | Model A — sum half-hourly W × 0.5h, convert to kWh |
+| String (kWh) | `sum(result.stringTimeseries[s]) / panelsInString / 1000` | Model B — even share: string total ÷ panel count in that string |
 | Δ Loss (%) | `(independent - string) / independent * 100` | Red if > 2%, yellow if > 1% |
+
+**String kWh derivation**: Find which string contains panel `i` (from `state.strings`). The string's total production is `sum(result.stringTimeseries[stringIndex])`. Divide evenly by the number of panels in that string. This is an approximation — individual panel contributions within a string aren't tracked by Model B.
 
 Default sort: Δ Loss descending (worst-performing panels first). Clickable column headers for re-sorting.
 
@@ -129,11 +162,11 @@ Maps directly to `aggregateTimeseries()` periods:
 
 For Day, Week, and Month views: `← [date label] →` buttons to scrub through the year.
 
-- Day view: shows day of year (e.g., "June 21"), range 1-365
-- Week view: shows week number (e.g., "Week 25"), range 1-52
-- Month view: shows month name (e.g., "June"), range 1-12
+- Day view: shows day of year (e.g., "June 21"), range 0-364 (0-indexed, maps directly to `startDay`)
+- Week view: shows week number (e.g., "Week 25"), `startDay = weekIndex * 7`, range 0-51
+- Month view: shows month name (e.g., "June"), `startDay = firstDayOfMonth[monthIndex]`, range 0-11
 
-The `startDay` parameter of `aggregateTimeseries()` controls which slice is shown.
+The `startDay` parameter of `aggregateTimeseries(series, period, startDay)` controls which slice is shown. All three parameters are required.
 
 ### Chart
 
@@ -165,26 +198,31 @@ Layout: per-inverter cards → MPPT reassignment → clipping summary + event lo
 
 ### Inverter Cards
 
-One card per inverter in `state.inverters`. Each card shows:
+One card per inverter in `state.inverters` (type: `UIInverterConfig[]`). Each card shows:
 
 **Header row:**
 - Inverter name + model from `state.selectedInverter`
 - DC/AC ratio badge: green (< 1.2), yellow (1.2–1.5), red (> 1.5)
-- MPPT channel count
+- MPPT channel count: `state.selectedInverter.channels`
 
-**MPPT channel list:**
+**MPPT channel list** (iterates `uiInverter.channels`):
 - Each channel shows its assigned strings as colored chips (same color palette as StringList/PanelCanvas)
-- Empty channels show "— empty —" in muted italic
-- Panel count per string shown on the chip
+- Empty channels (`channel.stringIndices.length === 0`) show "— empty —" in muted italic
+- Panel count per string shown on the chip (from `state.strings[stringIndex].panelIds.length`)
 
 **DC input summary:**
 - Total DC input power: sum of (panels × Vmp × Imp) across all assigned strings
-- AC rated power from inverter spec
+- AC rated power from inverter spec: `state.selectedInverter.acPower`
 - DC/AC ratio = DC input / AC rated
+- Note: DC/AC ratios above 1.0 are normal and expected in solar design (typical range 1.1–1.3)
 
 ### Manual MPPT Reassignment
 
-Click a string chip to select it, then click a different MPPT channel (on the same inverter) to move it there. Dispatches `REASSIGN_STRING_TO_CHANNEL` action with `{ inverterId, stringIndex, fromChannel, toChannel }`.
+Click a string chip to select it, then click a different MPPT channel (on the same or different inverter) to move it there. Dispatches `REASSIGN_STRING_TO_CHANNEL` action with `{ inverterId: number; stringIndex: number; fromChannel: number; toChannel: number }`.
+
+The reducer updates `state.inverters` (a `UIInverterConfig[]`):
+1. Remove `stringIndex` from `inverters[inverterId].channels[fromChannel].stringIndices`
+2. Add `stringIndex` to `inverters[inverterId].channels[toChannel].stringIndices`
 
 Reassignment sets `state.resultStale = true` and shows a yellow banner: "Inverter config changed — re-run analysis to update results." The Run button in the sidebar shows a pulsing indicator.
 
@@ -201,9 +239,16 @@ Below the MPPT channels on each card:
 
 Expandable table below the inverter cards. Only shown when `result.clippingEvents.length > 0`.
 
-Columns: Date, Start Time, End Time, Duration, Peak Clipped (W), Total Clipped (Wh).
+Columns map directly to `ClippingEvent` fields:
 
-All values directly from `ClippingEvent` fields.
+| Column | Source Field |
+|--------|-------------|
+| Date | `event.date` (string, "MMM D") |
+| Start Time | `event.startTime` (string, "H:MM") |
+| End Time | `event.endTime` (string, "H:MM") |
+| Duration | `event.durationMin` (number, minutes) |
+| Peak Clipped (W) | `event.peakClipW` |
+| Total Clipped (Wh) | `event.totalClipWh` |
 
 ### Stale Result Indicator
 
@@ -224,28 +269,47 @@ analysisError: string | null;
 resultStale: boolean;
 ```
 
+**INITIAL_STATE additions:**
+```typescript
+isAnalyzing: false,
+analysisProgress: null,
+analysisError: null,
+resultStale: false,
+```
+
+### Type Changes
+
+Change `state.inverters` type from `InverterConfig[]` to `UIInverterConfig[]`:
+```typescript
+// In SolarDesignerState, change:
+inverters: UIInverterConfig[];  // was InverterConfig[]
+```
+
 ### New Actions
 
 ```typescript
-// Add to SolarDesignerAction
+// Add to SolarDesignerAction (note: SET_ANALYSIS_RESULT is NEW, distinct from existing SET_RESULT)
 | { type: 'RUN_ANALYSIS_START' }
 | { type: 'SET_ANALYSIS_PROGRESS'; percent: number; stage: string }
-| { type: 'SET_RESULT'; result: CoreSolarDesignerResult; inverters: InverterConfig[] }
+| { type: 'SET_ANALYSIS_RESULT'; result: CoreSolarDesignerResult; inverters: UIInverterConfig[] }
 | { type: 'SET_ANALYSIS_ERROR'; error: string }
 | { type: 'REASSIGN_STRING_TO_CHANNEL'; inverterId: number; stringIndex: number; fromChannel: number; toChannel: number }
 ```
 
+**Why `SET_ANALYSIS_RESULT` instead of reusing `SET_RESULT`?** The existing `SET_RESULT` action (`{ type: 'SET_RESULT'; result: CoreSolarDesignerResult }`) stores only the result. The analysis flow needs to atomically store both the result AND the auto-assigned `UIInverterConfig[]`. Using a distinct action name avoids a breaking signature change on the existing action.
+
 ### Reducer Cases
 
-- `RUN_ANALYSIS_START`: sets `isAnalyzing: true`, clears `analysisError`, `analysisProgress`
+- `RUN_ANALYSIS_START`: sets `isAnalyzing: true`, clears `analysisError`, sets `analysisProgress: null`
 - `SET_ANALYSIS_PROGRESS`: updates `analysisProgress`
-- `SET_RESULT`: stores `result` and `inverters`, sets `isAnalyzing: false`, `resultStale: false`
+- `SET_ANALYSIS_RESULT`: stores `result` and `inverters`, sets `isAnalyzing: false`, `resultStale: false`, clears `analysisError`
 - `SET_ANALYSIS_ERROR`: stores `analysisError`, sets `isAnalyzing: false`
-- `REASSIGN_STRING_TO_CHANNEL`: updates `state.inverters` channel assignment, sets `resultStale: true`
+- `REASSIGN_STRING_TO_CHANNEL`: removes `stringIndex` from `channels[fromChannel].stringIndices`, adds to `channels[toChannel].stringIndices` in `state.inverters[inverterId]`, sets `resultStale: true`
 
 ### Existing Action Modifications
 
 - `SET_STRINGS`, `AUTO_STRING`, `ASSIGN_PANEL`, `UNASSIGN_PANEL`, `CREATE_STRING`, `DELETE_STRING`: should set `resultStale: true` if `state.result !== null` (string config changed → results are stale)
+- `SET_PANEL`, `SET_INVERTER`: should also set `resultStale: true` if `state.result !== null` (equipment changed)
 
 ## 6. New Components
 
