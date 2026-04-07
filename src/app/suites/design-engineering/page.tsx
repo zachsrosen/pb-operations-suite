@@ -92,6 +92,14 @@ const LINKS: SuitePageCard[] = [
     section: "Tools",
   },
   {
+    href: "/dashboards/solar-designer?suite=de",
+    title: "Solar Designer",
+    description: "Solar design analysis and production modeling.",
+    tag: "TOOL",
+    icon: "☀️",
+    section: "Tools",
+  },
+  {
     href: "/dashboards/idr-meeting",
     title: "Design & Ops Meeting Hub",
     description: "Design/ops meeting review queue with auto-populated projects, inline editing, and HubSpot sync",

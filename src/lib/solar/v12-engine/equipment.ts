@@ -1,0 +1,365 @@
+/**
+ * Solar Designer V12 Engine — Built-in Equipment Catalog
+ *
+ * Contains the canonical set of panels, inverters, and ESS units
+ * used by the V12 engine. Data ported from V12 equipment definitions.
+ */
+
+import type { ResolvedPanel, ResolvedInverter, ResolvedEss } from '../engine/engine-types';
+
+// ── Panels ───────────────────────────────────────────────────
+
+const PANELS: ResolvedPanel[] = [
+  {
+    key: 'rec_alpha_440',
+    name: 'REC Alpha Pure 440',
+    watts: 440,
+    voc: 48.4,
+    vmp: 40.8,
+    isc: 11.5,
+    imp: 10.79,
+    tempCoVoc: -0.0024,
+    tempCoIsc: 0.0004,
+    tempCoPmax: -0.0026,
+    cells: 132,
+    bypassDiodes: 3,
+    cellsPerSubstring: 44,
+    isBifacial: false,
+    bifacialityFactor: 0,
+  },
+  {
+    key: 'rec_alpha_rx_460',
+    name: 'REC Alpha Pure RX 460',
+    watts: 460,
+    voc: 50.1,
+    vmp: 42.2,
+    isc: 11.6,
+    imp: 10.9,
+    tempCoVoc: -0.0024,
+    tempCoIsc: 0.0004,
+    tempCoPmax: -0.0026,
+    cells: 132,
+    bypassDiodes: 3,
+    cellsPerSubstring: 44,
+    isBifacial: false,
+    bifacialityFactor: 0,
+  },
+  {
+    key: 'seg_430_btd',
+    name: 'SEG 430 BTD BG',
+    watts: 430,
+    voc: 45.2,
+    vmp: 37.8,
+    isc: 11.85,
+    imp: 11.38,
+    tempCoVoc: -0.0026,
+    tempCoIsc: 0.0005,
+    tempCoPmax: -0.0034,
+    cells: 108,
+    bypassDiodes: 3,
+    cellsPerSubstring: 36,
+    isBifacial: true,
+    bifacialityFactor: 0.7,
+  },
+  {
+    key: 'hyundai_440',
+    name: 'Hyundai HIN-T440NF',
+    watts: 440,
+    voc: 46.1,
+    vmp: 38.5,
+    isc: 11.78,
+    imp: 11.43,
+    tempCoVoc: -0.0026,
+    tempCoIsc: 0.0005,
+    tempCoPmax: -0.0029,
+    cells: 120,
+    bypassDiodes: 3,
+    cellsPerSubstring: 40,
+    isBifacial: false,
+    bifacialityFactor: 0,
+  },
+  {
+    key: 'qcells_420',
+    name: 'QCells Q.Peak 420',
+    watts: 420,
+    voc: 44.8,
+    vmp: 37.5,
+    isc: 11.95,
+    imp: 11.2,
+    tempCoVoc: -0.0027,
+    tempCoIsc: 0.0005,
+    tempCoPmax: -0.0034,
+    cells: 120,
+    bypassDiodes: 3,
+    cellsPerSubstring: 40,
+    isBifacial: false,
+    bifacialityFactor: 0,
+  },
+  {
+    key: 'canadian_445',
+    name: 'Canadian HiHero 445',
+    watts: 445,
+    voc: 49.2,
+    vmp: 41.3,
+    isc: 11.42,
+    imp: 10.78,
+    tempCoVoc: -0.0025,
+    tempCoIsc: 0.0004,
+    tempCoPmax: -0.0029,
+    cells: 132,
+    bypassDiodes: 3,
+    cellsPerSubstring: 44,
+    isBifacial: false,
+    bifacialityFactor: 0,
+  },
+  {
+    key: 'trina_435',
+    name: 'Trina Vertex S 435',
+    watts: 435,
+    voc: 47.6,
+    vmp: 40.1,
+    isc: 11.52,
+    imp: 10.85,
+    tempCoVoc: -0.0024,
+    tempCoIsc: 0.0005,
+    tempCoPmax: -0.003,
+    cells: 144,
+    bypassDiodes: 3,
+    cellsPerSubstring: 48,
+    isBifacial: false,
+    bifacialityFactor: 0,
+  },
+  {
+    key: 'jinko_445',
+    name: 'Jinko Tiger Neo 445',
+    watts: 445,
+    voc: 48.9,
+    vmp: 41.0,
+    isc: 11.48,
+    imp: 10.85,
+    tempCoVoc: -0.0025,
+    tempCoIsc: 0.0004,
+    tempCoPmax: -0.0029,
+    cells: 144,
+    bypassDiodes: 3,
+    cellsPerSubstring: 48,
+    isBifacial: false,
+    bifacialityFactor: 0,
+  },
+];
+
+// ── Inverters ────────────────────────────────────────────────
+
+const INVERTERS: ResolvedInverter[] = [
+  {
+    key: 'tesla_pw3',
+    name: 'Tesla PW3 Inverter (11.5kW)',
+    acPower: 11500,
+    dcMax: 15000,
+    mpptMin: 60,
+    mpptMax: 500,
+    channels: 6,
+    maxIsc: 25,
+    efficiency: 0.975,
+    architectureType: 'string',
+    isMicro: false,
+    isIntegrated: true,
+  },
+  {
+    key: 'tesla_3_8',
+    name: 'Tesla Inverter 3.8kW',
+    acPower: 3800,
+    dcMax: 7600,
+    mpptMin: 80,
+    mpptMax: 500,
+    channels: 2,
+    maxIsc: 18,
+    efficiency: 0.97,
+    architectureType: 'string',
+    isMicro: false,
+    isIntegrated: false,
+  },
+  {
+    key: 'tesla_5_0',
+    name: 'Tesla Inverter 5.0kW',
+    acPower: 5000,
+    dcMax: 10000,
+    mpptMin: 90,
+    mpptMax: 500,
+    channels: 2,
+    maxIsc: 18,
+    efficiency: 0.971,
+    architectureType: 'string',
+    isMicro: false,
+    isIntegrated: false,
+  },
+  {
+    key: 'tesla_7_6',
+    name: 'Tesla Inverter 7.6kW',
+    acPower: 7600,
+    dcMax: 11400,
+    mpptMin: 100,
+    mpptMax: 500,
+    channels: 4,
+    maxIsc: 20,
+    efficiency: 0.975,
+    architectureType: 'string',
+    isMicro: false,
+    isIntegrated: false,
+  },
+  {
+    key: 'enphase_iq8a',
+    name: 'Enphase IQ8A',
+    acPower: 366,
+    dcMax: 440,
+    mpptMin: 27,
+    mpptMax: 54,
+    channels: 1,
+    maxIsc: 12,
+    efficiency: 0.97,
+    architectureType: 'micro',
+    isMicro: true,
+    isIntegrated: false,
+  },
+  {
+    key: 'enphase_iq8m',
+    name: 'Enphase IQ8M',
+    acPower: 330,
+    dcMax: 400,
+    mpptMin: 24,
+    mpptMax: 54,
+    channels: 1,
+    maxIsc: 12,
+    efficiency: 0.968,
+    architectureType: 'micro',
+    isMicro: true,
+    isIntegrated: false,
+  },
+  {
+    key: 'enphase_iq8p',
+    name: 'Enphase IQ8P',
+    acPower: 400,
+    dcMax: 480,
+    mpptMin: 30,
+    mpptMax: 58,
+    channels: 1,
+    maxIsc: 12,
+    efficiency: 0.972,
+    architectureType: 'micro',
+    isMicro: true,
+    isIntegrated: false,
+  },
+  {
+    key: 'solaredge_7600',
+    name: 'SolarEdge SE7600H',
+    acPower: 7600,
+    dcMax: 11400,
+    mpptMin: 150,
+    mpptMax: 500,
+    channels: 1,
+    maxIsc: 22,
+    efficiency: 0.992,
+    architectureType: 'optimizer',
+    isMicro: false,
+    isIntegrated: false,
+  },
+  {
+    key: 'generac_pwrcell',
+    name: 'Generac PWRcell',
+    acPower: 7600,
+    dcMax: 11000,
+    mpptMin: 120,
+    mpptMax: 500,
+    channels: 3,
+    maxIsc: 18,
+    efficiency: 0.97,
+    architectureType: 'string',
+    isMicro: false,
+    isIntegrated: false,
+  },
+];
+
+// ── ESS ──────────────────────────────────────────────────────
+
+const ESS: ResolvedEss[] = [
+  {
+    key: 'none',
+    name: 'No Battery',
+    capacity: 0,
+    power: 0,
+    roundTrip: 0,
+    dcChargeRate: 0,
+    type: 'none',
+  },
+  {
+    key: 'tesla_pw2_ess',
+    name: 'Tesla Powerwall 2',
+    capacity: 13.5,
+    power: 5,
+    roundTrip: 0.9,
+    dcChargeRate: 0,
+    type: 'ac_coupled',
+  },
+  {
+    key: 'tesla_pw3_ess',
+    name: 'Tesla Powerwall 3',
+    capacity: 13.5,
+    power: 11.5,
+    roundTrip: 0.92,
+    dcChargeRate: 5000,
+    type: 'dc_coupled',
+  },
+  {
+    key: 'enphase_5p_ess',
+    name: 'Enphase IQ Battery 5P',
+    capacity: 5,
+    power: 3.84,
+    roundTrip: 0.89,
+    dcChargeRate: 0,
+    type: 'ac_coupled',
+  },
+  {
+    key: 'enphase_10t_ess',
+    name: 'Enphase IQ Battery 10T',
+    capacity: 10.5,
+    power: 5.76,
+    roundTrip: 0.9,
+    dcChargeRate: 0,
+    type: 'ac_coupled',
+  },
+  {
+    key: 'generac_m4_ess',
+    name: 'Generac PWRcell M4',
+    capacity: 9,
+    power: 4.5,
+    roundTrip: 0.87,
+    dcChargeRate: 0,
+    type: 'ac_coupled',
+  },
+];
+
+// ── Accessors ────────────────────────────────────────────────
+
+export function getBuiltInPanels(): ResolvedPanel[] {
+  return [...PANELS];
+}
+
+export function getBuiltInInverters(): ResolvedInverter[] {
+  return [...INVERTERS];
+}
+
+export function getBuiltInEss(): ResolvedEss[] {
+  return [...ESS];
+}
+
+export function resolvePanel(key: string): ResolvedPanel | null {
+  return PANELS.find(p => p.key === key) ?? null;
+}
+
+export function resolveInverter(key: string): ResolvedInverter | null {
+  return INVERTERS.find(i => i.key === key) ?? null;
+}
+
+export function resolveEss(key: string): ResolvedEss | null {
+  return ESS.find(e => e.key === key) ?? null;
+}

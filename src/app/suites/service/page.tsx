@@ -59,6 +59,14 @@ const LINKS: SuitePageCard[] = [
     icon: "🛒",
     section: "Service",
   },
+  {
+    href: "/dashboards/solar-designer?suite=service",
+    title: "Solar Designer",
+    description: "Solar design analysis and production modeling.",
+    tag: "TOOL",
+    icon: "☀️",
+    section: "Tools",
+  },
 ];
 
 export default async function ServiceDRSuitePage() {
