@@ -141,6 +141,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/project-management",
       "/dashboards/design-engineering",
       "/dashboards/permitting-interconnection",
+      "/dashboards/office-performance",
+      "/api/office-performance",
       // D&E Suite dashboards
       "/dashboards/de-overview",
       "/dashboards/plan-review",
@@ -352,6 +354,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/territory-map",
       "/api/territory-map",
       "/api/forecasting",
+      "/dashboards/office-performance",
+      "/api/office-performance",
       // Equipment catalog
       "/dashboards/catalog",
       "/dashboards/product-catalog",
@@ -468,6 +472,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/territory-map",
       "/api/territory-map",
       "/api/forecasting",
+      "/dashboards/office-performance",
+      "/api/office-performance",
       // D&E Suite dashboards
       "/dashboards/de-overview",
       "/dashboards/plan-review",
