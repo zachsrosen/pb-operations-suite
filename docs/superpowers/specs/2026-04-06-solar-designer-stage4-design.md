@@ -24,10 +24,13 @@ When `state.resultStale` is true, the button shows a pulsing orange dot indicato
 
 ### Prerequisites
 
-The button is enabled when all three conditions are met:
+The button is enabled when all four conditions are met:
 - `state.panels.length > 0`
 - `state.selectedPanel !== null && state.selectedInverter !== null`
-- `state.strings.length > 0 && state.strings.some(s => s.panelIds.length > 0)`
+- `state.strings.length > 0`
+- All panels are assigned to strings: `new Set(state.strings.flatMap(s => s.panelIds)).size === state.panels.length`
+
+**Why require all panels?** Model B only computes production for panels in strings (`model-b.ts:71`). Unassigned panels would silently disappear from string-level output, making mismatch loss and production numbers misleading. The disabled tooltip shows how many panels remain unassigned.
 
 ### Worker Flow
 
@@ -313,6 +316,7 @@ inverters: UIInverterConfig[];  // was InverterConfig[]
 
 - `SET_STRINGS`, `AUTO_STRING`, `ASSIGN_PANEL`, `UNASSIGN_PANEL`, `CREATE_STRING`, `DELETE_STRING`: should set `resultStale: true` if `state.result !== null` (string config changed → results are stale)
 - `SET_PANEL`, `SET_INVERTER`: should also set `resultStale: true` if `state.result !== null` (equipment changed)
+- `SET_SITE_CONDITIONS`, `SET_LOSS_PROFILE`: should also set `resultStale: true` if `state.result !== null` (analysis parameters changed — the engine reads both directly)
 
 ## 6. New Components
 

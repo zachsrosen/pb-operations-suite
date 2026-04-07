@@ -408,7 +408,13 @@ In the `reducer` function in `page.tsx`, add these cases before the `case 'RESET
 
 - [ ] **Step 5: Add stale-tracking to existing mutation actions**
 
-In the same reducer, update these existing cases to set `resultStale: true` when `state.result !== null`. For each of `ASSIGN_PANEL`, `UNASSIGN_PANEL`, `CREATE_STRING`, `DELETE_STRING`, `AUTO_STRING`, `SET_PANEL`, `SET_INVERTER`, add the stale flag to the returned object:
+In the same reducer, update these existing cases to set `resultStale: true` when `state.result !== null`. All of these actions change inputs to `runCoreAnalysis()`, so results become stale:
+
+**String mutations:** `ASSIGN_PANEL`, `UNASSIGN_PANEL`, `CREATE_STRING`, `DELETE_STRING`, `AUTO_STRING`
+**Equipment changes:** `SET_PANEL`, `SET_INVERTER`
+**Analysis parameters:** `SET_SITE_CONDITIONS`, `SET_LOSS_PROFILE`
+
+Add this spread to each case's return object:
 
 ```typescript
 ...(state.result ? { resultStale: true } : {}),
@@ -426,6 +432,28 @@ return {
   ),
   ...(state.result ? { resultStale: true } : {}),
 };
+```
+
+And `SET_SITE_CONDITIONS` becomes:
+
+```typescript
+case 'SET_SITE_CONDITIONS':
+  return {
+    ...state,
+    siteConditions: { ...state.siteConditions, ...action.conditions },
+    ...(state.result ? { resultStale: true } : {}),
+  };
+```
+
+And `SET_LOSS_PROFILE` becomes:
+
+```typescript
+case 'SET_LOSS_PROFILE':
+  return {
+    ...state,
+    lossProfile: { ...state.lossProfile, ...action.profile },
+    ...(state.result ? { resultStale: true } : {}),
+  };
 ```
 
 Apply the same pattern to the other 6 cases listed above.
@@ -548,7 +576,23 @@ describe('RunAnalysisButton', () => {
     expect(screen.getByRole('button')).toBeDisabled();
   });
 
-  it('renders enabled when prerequisites met', () => {
+  it('renders disabled when some panels are unassigned', () => {
+    render(<RunAnalysisButton state={makeState({
+      panels: [
+        { id: 'p1', x: 0, y: 0, width: 1, height: 1.7, azimuth: 0, tilt: 20, shadePointIds: [] },
+        { id: 'p2', x: 2, y: 0, width: 1, height: 1.7, azimuth: 0, tilt: 20, shadePointIds: [] },
+      ],
+      strings: [{ id: 1, panelIds: ['p1'] }], // p2 unassigned
+      selectedPanel: mockPanel,
+      selectedInverter: mockInverter,
+      panelKey: 'rec_440',
+      inverterKey: 'sol_ark',
+    })} dispatch={mockDispatch} />);
+    expect(screen.getByRole('button')).toBeDisabled();
+    expect(screen.getByRole('button').title).toMatch(/unassigned/);
+  });
+
+  it('renders enabled when all panels assigned', () => {
     render(<RunAnalysisButton state={makeState({
       panels: [{ id: 'p1', x: 0, y: 0, width: 1, height: 1.7, azimuth: 0, tilt: 20, shadePointIds: [] }],
       strings: [{ id: 1, panelIds: ['p1'] }],
@@ -627,12 +671,26 @@ export default function RunAnalysisButton({ state, dispatch }: RunAnalysisButton
     return () => { workerRef.current?.terminate(); };
   }, []);
 
+  const assignedPanelCount = new Set(state.strings.flatMap(s => s.panelIds)).size;
+  const allPanelsAssigned = assignedPanelCount === state.panels.length;
+
   const canRun =
     state.panels.length > 0 &&
     state.selectedPanel !== null &&
     state.selectedInverter !== null &&
     state.strings.length > 0 &&
-    state.strings.some(s => s.panelIds.length > 0);
+    allPanelsAssigned;
+
+  // Partial assignment message for tooltip
+  const disabledReason = !state.panels.length
+    ? 'Upload a layout to get started.'
+    : !state.selectedPanel || !state.selectedInverter
+      ? 'Select panel and inverter equipment.'
+      : !state.strings.length
+        ? 'Create at least one string.'
+        : !allPanelsAssigned
+          ? `${state.panels.length - assignedPanelCount} of ${state.panels.length} panels are unassigned. Assign all panels to strings before running analysis.`
+          : undefined;
 
   const handleRun = useCallback(() => {
     if (!canRun || !state.selectedPanel || !state.selectedInverter) return;
@@ -742,7 +800,7 @@ export default function RunAnalysisButton({ state, dispatch }: RunAnalysisButton
               ? 'bg-orange-500/20 text-orange-300 cursor-wait'
               : 'bg-orange-500 text-white hover:bg-orange-600 shadow-md hover:shadow-lg'
         }`}
-        title={!canRun ? 'Add panels, select equipment, and create strings to run analysis.' : undefined}
+        title={disabledReason}
       >
         {isRunning ? (
           <span className="flex items-center justify-center gap-2">
