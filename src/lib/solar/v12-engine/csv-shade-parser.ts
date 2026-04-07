@@ -64,9 +64,9 @@ export function parseShadeCSV(raw: string, pointId?: string): ShadeParseResult {
           // Treat any non-zero numeric value as shaded (1)
           allVals.push(v === '0' || v === '0.0' || v === '0.00' ? '0' : '1');
         }
-      } else if (/^[01]+$/.test(trimmed) && trimmed.length > 1) {
-        // Continuous binary string on this line
-        allVals.push(...trimmed.split(''));
+      } else if (/^[01\-]+$/.test(trimmed) && trimmed.length > 1) {
+        // Continuous binary string on this line ('-' = nighttime/no-sun → treat as 0)
+        allVals.push(...trimmed.split('').map(c => c === '1' ? '1' : '0'));
       } else {
         // Single value per row (could be 0, 1, decimal shade factor, etc.)
         const num = parseFloat(trimmed);
