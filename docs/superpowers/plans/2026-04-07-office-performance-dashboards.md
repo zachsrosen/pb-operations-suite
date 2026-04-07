@@ -1867,6 +1867,13 @@ import { LOCATION_SLUG_TO_CANONICAL } from "@/lib/locations";
 import type { OfficePerformanceData } from "@/lib/office-performance-types";
 import OfficeCarousel from "./OfficeCarousel";
 
+/** The API route returns OfficePerformanceData + cache metadata */
+interface OfficePerformanceApiResponse extends OfficePerformanceData {
+  cached: boolean;
+  stale: boolean;
+  lastUpdated: string;
+}
+
 interface PageProps {
   params: Promise<{ location: string }>;
 }
@@ -1883,8 +1890,11 @@ export default function OfficePerformancePage({ params }: PageProps) {
     refetch,
   } = useQuery({
     queryKey: queryKeys.officePerformance.location(slug),
-    queryFn: async (): Promise<OfficePerformanceData> => {
-      const res = await fetch(`/api/office-performance/${slug}`);
+    queryFn: async (): Promise<OfficePerformanceApiResponse> => {
+      // Always pass refresh=true so polling bypasses the server's 5-min appCache.
+      // Without this, the 2-min poll would return stale cached data for up to 5 min,
+      // defeating the purpose of catching Zuper-only updates that don't emit SSE.
+      const res = await fetch(`/api/office-performance/${slug}?refresh=true`);
       if (!res.ok) throw new Error("Failed to fetch office performance data");
       return res.json();
     },
@@ -1945,9 +1955,11 @@ export default function OfficePerformancePage({ params }: PageProps) {
     );
   }
 
-  // Use current data, or fall back to previous data on error
+  // Use current data, or fall back to previous data on error.
+  // isStale is true if: (1) the server says the cache entry is stale (stale-while-revalidate),
+  // OR (2) we have no fresh data and are using the previous ref as a fallback.
   const displayData = data || previousDataRef.current;
-  const isStale = !data && !!previousDataRef.current;
+  const isStale = (data?.stale === true) || (!data && !!previousDataRef.current);
 
   if (!displayData) {
     return (

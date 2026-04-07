@@ -284,16 +284,20 @@ Cache the response using the shared `appCache` (5-minute fresh TTL, 10-minute st
 
 ### Real-time Updates
 
-Use existing SSE infrastructure (`useSSE` hook):
+Dual refresh strategy using existing infrastructure:
+
+1. **SSE** — listens for `"projects"` cache key changes via `useSSE`. When HubSpot deal/project data updates, the SSE server emits `"projects:*"` events which trigger an immediate refetch.
+
+2. **React Query polling** — `refetchInterval: 120_000` (2 minutes) catches Zuper-only updates that don't emit SSE events. Polling requests pass `?refresh=true` to bypass the server's 5-min `appCache` and get fresh data.
 
 ```typescript
-const { connected } = useSSE(() => refetchData(), {
+const { connected, reconnecting } = useSSE(() => refetch(), {
   url: "/api/stream",
-  cacheKeyFilter: "office-performance",
+  cacheKeyFilter: "projects",
 });
 ```
 
-The client listens for upstream cache key changes (`projects`, `zuper-jobs`, `service-tickets`) using a cascade pattern similar to the service priority queue: upstream mutations emit their own keys, and the office-performance client invalidates with a 500ms debounce to prevent thundering herd. This avoids modifying upstream mutation endpoints.
+The API response includes `stale` and `lastUpdated` from the server cache, which the client uses to show a "data may be stale" indicator during stale-while-revalidate windows or SSE disconnects.
 
 ## Streak Tracking
 
