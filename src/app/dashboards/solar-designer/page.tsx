@@ -90,7 +90,7 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
     case 'SET_PANEL':
       return { ...state, panelKey: action.key, selectedPanel: action.panel, ...(state.result ? { resultStale: true } : {}) };
     case 'SET_INVERTER':
-      return { ...state, inverterKey: action.key, selectedInverter: action.inverter, ...(state.result ? { resultStale: true } : {}) };
+      return { ...state, inverterKey: action.key, selectedInverter: action.inverter, inverters: [], ...(state.result ? { resultStale: true } : {}) };
     case 'SET_SITE_CONDITIONS':
       return {
         ...state,
@@ -162,6 +162,7 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
         strings: [...state.strings, newString],
         activeStringId: state.nextStringId,
         nextStringId: state.nextStringId + 1,
+        inverters: [],
         ...(state.result ? { resultStale: true } : {}),
       };
     }
@@ -170,6 +171,7 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
         ...state,
         strings: state.strings.filter(s => s.id !== action.stringId),
         activeStringId: state.activeStringId === action.stringId ? null : state.activeStringId,
+        inverters: [],
         ...(state.result ? { resultStale: true } : {}),
       };
     case 'AUTO_STRING': {
@@ -185,6 +187,7 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
         ...state,
         strings: [...state.strings, ...newStrings],
         nextStringId: currentId,
+        inverters: [],
         ...(state.result ? { resultStale: true } : {}),
       };
     }
