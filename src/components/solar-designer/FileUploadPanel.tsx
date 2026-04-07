@@ -29,7 +29,7 @@ async function extractFilesFromZip(zipFile: File): Promise<File[]> {
     const name = path.split('/').pop() ?? path;
     const ext = '.' + name.split('.').pop()?.toLowerCase();
     if (!ACCEPTED_EXTENSIONS.includes(ext)) continue;
-    files.push(new File([data], name));
+    files.push(new File([data.buffer as ArrayBuffer], name));
   }
   return files;
 }
