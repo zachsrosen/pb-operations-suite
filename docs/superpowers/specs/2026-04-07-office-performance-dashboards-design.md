@@ -37,7 +37,7 @@ Each page is a Next.js dynamic route at `src/app/dashboards/office-performance/[
 
 ### Suite Navigation
 
-Add all 5 office links to the Executive suite in `src/lib/suite-nav.ts` as a grouped section. Each links directly to its location's dashboard URL.
+Add all 5 office links to the Executive suite landing page (`/suites/executive/page.tsx`) as a grouped card section titled "Office Performance." Each card links directly to its location's dashboard URL. No changes to `suite-nav.ts` needed — the suite entry already exists.
 
 ### Access Control
 
@@ -62,7 +62,7 @@ High-level office health snapshot.
 **Metrics (goal-based):**
 - Active projects (count of projects in pipeline for this location)
 - Completed MTD vs. monthly goal (progress bar)
-- Overdue projects (count, yellow/red threshold)
+- Overdue projects (count; "overdue" = forecasted install/inspection/PTO date has passed without completion. Yellow: 1-7 days overdue, red: 7+ days)
 - Avg days in current stage (rolling, with trend arrow vs. prior month)
 
 **Visualization:**
@@ -87,7 +87,7 @@ Surveyor performance for this office.
 - Avg turnaround time
 - Streak badge if applicable (e.g., "🔥 5-mo streak leading")
 
-**Data source:** Zuper jobs with category "Site Survey", status "COMPLETED", filtered by location + date range. Assigned user extracted from `assigned_to[].user_uid`. Survey turnaround from QC metrics API `byLocation[location].avg_surveyTurnaroundTime`.
+**Data source:** Zuper jobs with category "Site Survey", status "COMPLETED", assigned user extracted from `assigned_to[].user_uid`. Location is derived by joining Zuper jobs → `ZuperJobCache.hubspotDealId` → HubSpot deal `pb_location`. Survey turnaround from QC metrics API `byLocation[location].avg_siteSurveyTurnaroundTime`.
 
 #### 3. Installs
 
@@ -105,7 +105,7 @@ Installer and electrician performance for this office.
 
 Each row: rank, name, count. Bottom streak bar for notable achievements (e.g., "6 installs with zero punch list").
 
-**Data source:** Zuper jobs with category "Construction", status "COMPLETED", filtered by location + date range. Capacity from `CrewAvailability` model filtered by location + jobType "construction". Installer vs. electrician distinguished by CrewMember role field.
+**Data source:** Zuper jobs with category "Construction", status "COMPLETED". Location derived via `ZuperJobCache.hubspotDealId` → HubSpot deal `pb_location` (same join pattern as Surveys). Capacity from `CrewAvailability` model filtered by location + jobType "construction". Installer vs. electrician distinguished by CrewMember role field. If `CrewAvailability` records are incomplete, capacity utilization shows "N/A".
 
 #### 4. Inspections & Quality
 
@@ -121,7 +121,7 @@ Inspection tech performance and overall quality health.
 - Rank, name, inspection count, individual pass rate
 - Streak badge for consecutive passes
 
-**Data source:** Zuper jobs with category "Inspection", filtered by location. Pass/fail derived from HubSpot inspection status fields. QC turnaround metrics from `/api/hubspot/qc-metrics?days=60` → `byLocation[location]`.
+**Data source:** Zuper jobs with category "Inspection". Location derived via `ZuperJobCache.hubspotDealId` → HubSpot deal `pb_location`. Pass/fail derived from HubSpot inspection status fields. QC turnaround metrics from `/api/hubspot/qc-metrics?days=60` → `byLocation[location]`.
 
 ### Gamification Elements
 
@@ -247,12 +247,12 @@ interface OfficePerformanceData {
 
   inspections: {
     completedMtd: number;
+    completedGoal: number;
     firstPassRate: number; // 0-100
     avgConstructionDays: number;
     avgConstructionDaysPrior: number;
     avgCcToPtoDays: number;
     avgCcToPtoDaysPrior: number;
-    surveyTurnaroundDays: number;
     leaderboard: InspectionPersonStat[];
   };
 }
@@ -276,7 +276,7 @@ The API endpoint aggregates from multiple sources:
 
 1. **Projects API** (`fetchAllProjects`) → filter by `pbLocation`, calculate pipeline and completion metrics
 2. **QC Metrics** (reuse `qc-metrics` logic) → turnaround times by location
-3. **Zuper Jobs** (`searchJobs` with location + date filters) → job completions by assigned user, grouped by category
+3. **Zuper Jobs** (`searchJobs` by category + date range, then join via `ZuperJobCache.hubspotDealId` → deal `pb_location` for location filtering) → job completions by assigned user, grouped by category
 4. **Scheduling** (`CrewAvailability` queries) → capacity utilization
 5. **Office Goals** (new `OfficeGoal` model) → monthly targets
 
@@ -293,13 +293,13 @@ const { connected } = useSSE(() => refetchData(), {
 });
 ```
 
-The API endpoint emits `office-performance:{location}` cache keys on data changes. Client reconnects with exponential backoff per existing pattern.
+The client listens for upstream cache key changes (`projects`, `zuper-jobs`, `service-tickets`) using a cascade pattern similar to the service priority queue: upstream mutations emit their own keys, and the office-performance client invalidates with a 500ms debounce to prevent thundering herd. This avoids modifying upstream mutation endpoints.
 
 ## Streak Tracking
 
 Streaks require historical state. Two approaches:
 
-**Approach chosen: Computed on read.** Query historical job data to calculate streaks at API response time. For "consecutive months leading," query last N months of job data grouped by user. For "consecutive jobs without punch list," query recent jobs for each installer. This avoids new database models but adds query cost — acceptable given the 2-minute cache TTL.
+**Approach chosen: Computed on read.** Query historical job data to calculate streaks at API response time. For "consecutive months leading," query up to 12 months of job data grouped by user. For "consecutive jobs without punch list," query up to 50 recent jobs per installer. This avoids new database models but adds query cost — acceptable given the 2-minute cache TTL.
 
 Streak types:
 - **Monthly leader streak:** Consecutive months a person had the highest count in their category at this location
@@ -339,6 +339,7 @@ prisma/schema.prisma      # Add OfficeGoal model
 - **Goal not set for a month:** Fall back to prior month's goal, or show count without progress bar.
 - **SSE disconnect:** Show a yellow "reconnecting" indicator replacing the green live dot. Data stays visible (stale but still useful for ambient display).
 - **Browser tab hidden:** Pause carousel rotation via Page Visibility API. Resume on tab focus.
+- **API failure:** Show last cached data with a muted "data may be stale" indicator in the header. Don't show a full-page error — the TV should always show something useful.
 
 ## Out of Scope
 
