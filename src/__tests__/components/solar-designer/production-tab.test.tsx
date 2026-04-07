@@ -1,7 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import ProductionTab from '@/components/solar-designer/ProductionTab';
-import type { CoreSolarDesignerResult, PanelStat } from '@/lib/solar/v12-engine';
-import type { SolarDesignerState } from '@/components/solar-designer/types';
+import type { CoreSolarDesignerResult } from '@/lib/solar/v12-engine';
 
 function makeEmptyTimeseries(): Float32Array {
   return new Float32Array(17520);

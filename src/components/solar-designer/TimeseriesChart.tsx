@@ -15,7 +15,7 @@ const INNER_W = W - PAD.left - PAD.right;
 const INNER_H = H;
 
 export default function TimeseriesChart({ modelA, modelB }: TimeseriesChartProps) {
-  const [hovered, setHovered] = useState<number | null>(null);
+  const [_hovered, setHovered] = useState<number | null>(null);
   const isYear = modelA.period === 'year';
 
   const maxVal = useMemo(() => {
