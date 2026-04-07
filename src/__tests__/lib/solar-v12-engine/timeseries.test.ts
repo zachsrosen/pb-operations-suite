@@ -1,4 +1,4 @@
-import { aggregateTimeseries, sumTimeseries } from '@/lib/solar/v12-engine/timeseries';
+import { aggregateTimeseries, sumTimeseries, viewToKwh } from '@/lib/solar/v12-engine/timeseries';
 
 describe('aggregateTimeseries', () => {
   it('aggregates a full-year timeseries to daily view for day 0', () => {
@@ -20,6 +20,28 @@ describe('aggregateTimeseries', () => {
     const ts = new Float32Array(17520).fill(50);
     const view = aggregateTimeseries(ts, 'week', 0);
     expect(view.values).toHaveLength(7);
+  });
+});
+
+describe('viewToKwh', () => {
+  it('converts raw watt-half-hour values to kWh', () => {
+    const raw = aggregateTimeseries(new Float32Array(17520).fill(1000), 'year', 0);
+    const kwh = viewToKwh(raw);
+    // Each monthly value = sum of 1000W × slots in month
+    // Jan has 31 days × 48 slots = 1488 slots → raw = 1,488,000
+    // kWh = 1,488,000 / 2000 = 744
+    expect(kwh.values[0]).toBe(raw.values[0] / 2000);
+    expect(kwh.period).toBe('year');
+    expect(kwh.labels).toEqual(raw.labels);
+  });
+
+  it('converts day view (single timestep values) to kWh', () => {
+    const ts = new Float32Array(17520);
+    for (let t = 0; t < 48; t++) ts[t] = 2000; // 2000W per half-hour
+    const raw = aggregateTimeseries(ts, 'day', 0);
+    const kwh = viewToKwh(raw);
+    // 2000 / 2000 = 1 kWh per half-hour slot
+    expect(kwh.values[0]).toBe(1);
   });
 });
 

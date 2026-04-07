@@ -54,6 +54,12 @@ export interface UIStringConfig {
   panelIds: string[];
 }
 
+export interface UIInverterConfig {
+  inverterId: number;       // 0-based index
+  inverterKey: string;      // references selectedInverter.key
+  channels: { stringIndices: number[] }[];  // one entry per MPPT channel
+}
+
 export interface MapAlignment {
   offsetX: number;
   offsetY: number;
@@ -106,10 +112,16 @@ export interface SolarDesignerState {
   nextStringId: number;
 
   // Inverter configs (Stage 4)
-  inverters: InverterConfig[];
+  inverters: UIInverterConfig[];
 
   // Analysis result (Stage 4)
   result: CoreSolarDesignerResult | null;
+
+  // Analysis lifecycle (Stage 4)
+  isAnalyzing: boolean;
+  analysisProgress: { percent: number; stage: string } | null;
+  analysisError: string | null;
+  resultStale: boolean;
 
   // UI state
   activeTab: SolarDesignerTab;
@@ -140,4 +152,10 @@ export type SolarDesignerAction =
   | { type: 'UNASSIGN_PANEL'; panelId: string }
   | { type: 'CREATE_STRING' }
   | { type: 'DELETE_STRING'; stringId: number }
-  | { type: 'AUTO_STRING'; strings: StringConfig[]; panels: PanelGeometry[] };
+  | { type: 'AUTO_STRING'; strings: StringConfig[]; panels: PanelGeometry[] }
+  // Stage 4 additions
+  | { type: 'RUN_ANALYSIS_START' }
+  | { type: 'SET_ANALYSIS_PROGRESS'; percent: number; stage: string }
+  | { type: 'SET_ANALYSIS_RESULT'; result: CoreSolarDesignerResult; inverters: UIInverterConfig[] }
+  | { type: 'SET_ANALYSIS_ERROR'; error: string }
+  | { type: 'REASSIGN_STRING_TO_CHANNEL'; stringIndex: number; fromInverterId: number; fromChannel: number; toInverterId: number; toChannel: number };

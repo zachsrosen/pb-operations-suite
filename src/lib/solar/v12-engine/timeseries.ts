@@ -5,7 +5,7 @@
  * into day/week/month/year views. Also provides element-wise sum for multi-
  * inverter or multi-panel timeseries combination.
  */
-import { TIMESTEPS, SLOTS_PER_DAY, MONTH_START_DAY, MONTH_END_DAY } from './constants';
+import { TIMESTEPS, SLOTS_PER_DAY, MONTH_START_DAY, MONTH_END_DAY, HALF_HOUR_FACTOR } from './constants';
 
 export type AggregationPeriod = 'day' | 'week' | 'month' | 'year';
 
@@ -90,6 +90,19 @@ export function aggregateTimeseries(
       return { values, labels: [...MONTH_NAMES], period };
     }
   }
+}
+
+/**
+ * Convert a TimeseriesView's values from raw watt-half-hours to kWh.
+ * For 'day' period: each value is a single timestep (watts × 0.5h / 1000).
+ * For week/month: each value is a daily sum of timesteps → same conversion.
+ * For year: each value is a monthly sum of timesteps → same conversion.
+ */
+export function viewToKwh(view: TimeseriesView): TimeseriesView {
+  return {
+    ...view,
+    values: view.values.map(v => v / HALF_HOUR_FACTOR),
+  };
 }
 
 export function sumTimeseries(seriesArray: Float32Array[]): Float32Array {
