@@ -54,7 +54,7 @@ export default function Leaderboard({
             <span className="text-xs text-slate-400 w-16">
               {entry.count === 1 ? "job" : "jobs"}
             </span>
-            {showPassRate && "passRate" in entry && (
+            {showPassRate && "passRate" in entry && entry.passRate >= 0 && (
               <span
                 className="text-xs font-medium"
                 style={{

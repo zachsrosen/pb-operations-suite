@@ -121,14 +121,17 @@ export function buildPipelineData(
     const stage = normalizeStage(p.stage || "Unknown");
     stageCounts[stage] = (stageCounts[stage] || 0) + 1;
 
-    // Overdue check
-    const forecastDates = [
-      p.forecastedInstallDate,
-      p.forecastedInspectionDate,
-      p.forecastedPtoDate,
-    ].filter(Boolean);
-    for (const d of forecastDates) {
-      if (d && new Date(d) < now) {
+    // Overdue check — only count a forecast date as overdue if the
+    // corresponding milestone has NOT been completed yet. Without this
+    // guard, projects in inspection/PTO would be forever "overdue"
+    // because their old install forecast is in the past.
+    const overdueChecks: Array<{ forecast?: string | null; completed?: string | null }> = [
+      { forecast: p.forecastedInstallDate, completed: p.constructionCompleteDate },
+      { forecast: p.forecastedInspectionDate, completed: p.inspectionPassDate },
+      { forecast: p.forecastedPtoDate, completed: p.ptoGrantedDate },
+    ];
+    for (const { forecast, completed } of overdueChecks) {
+      if (forecast && !completed && new Date(forecast) < now) {
         overdueCount++;
         break;
       }
@@ -369,9 +372,18 @@ export async function buildInstallData(
   const installerCounts = new Map<string, UserJobCount>();
   const electricianCounts = new Map<string, UserJobCount>();
 
-  // Fetch crew members to determine roles
+  // Fetch crew members to determine roles.
+  // An empty locations array means "all locations" (shared crew), so we
+  // query members that either explicitly list this location OR have an
+  // empty array (serve all offices).
   const crewMembers = await (prisma?.crewMember.findMany({
-    where: { isActive: true, locations: { hasSome: [location] } },
+    where: {
+      isActive: true,
+      OR: [
+        { locations: { hasSome: [location] } },
+        { locations: { isEmpty: true } },
+      ],
+    },
     select: { zuperUserUid: true, role: true, name: true },
   }) ?? []);
 
@@ -414,11 +426,14 @@ export async function buildInstallData(
         (crewDaysPerWeek.get(slot.crewMemberId) || 0) + 1
       );
     }
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const weeksInMonth = daysInMonth / 7;
+    // Use elapsed days in the month (not total month days) so the
+    // denominator matches the MTD numerator. Otherwise capacity reads
+    // artificially low for most of the month.
+    const dayOfMonth = now.getDate();
+    const elapsedWeeks = dayOfMonth / 7;
     let totalAvailableDays = 0;
     for (const daysPerWeek of crewDaysPerWeek.values()) {
-      totalAvailableDays += daysPerWeek * weeksInMonth;
+      totalAvailableDays += daysPerWeek * elapsedWeeks;
     }
     if (totalAvailableDays > 0) {
       capacityUtilization = Math.round((mtdJobs.length / totalAvailableDays) * 100);
@@ -463,13 +478,14 @@ export async function buildInspectionData(
     }
   }
 
-  // Build leaderboard with pass rate (placeholder — will be enriched with HubSpot data)
+  // Build leaderboard — passRate is -1 (unknown) until per-tech data is
+  // available (phase 2). The UI hides the badge when passRate < 0.
   const leaderboard: InspectionPersonStat[] = [...userCounts.values()]
     .sort((a, b) => b.count - a.count)
     .map((u) => ({
       name: u.name,
       count: u.count,
-      passRate: 0, // TODO: Enrich from HubSpot inspection status
+      passRate: -1, // -1 = unknown; UI hides badge. Phase 2 enriches from HubSpot.
     }));
 
   return {

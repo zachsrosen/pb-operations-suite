@@ -50,11 +50,24 @@ describe("buildPipelineData", () => {
 
   it("counts overdue projects based on forecasted dates", () => {
     const projects = [
-      { stage: "Install", forecastedInstallDate: "2026-04-01" }, // Past = overdue
+      { stage: "Install", forecastedInstallDate: "2026-04-01" }, // Past + no completion = overdue
       { stage: "Inspect", forecastedInspectionDate: "2026-04-10" }, // Future = not overdue
     ];
     const result = buildPipelineData(projects, DEFAULT_GOALS, now);
     expect(result.overdueCount).toBe(1);
+  });
+
+  it("does not count completed milestones as overdue", () => {
+    const projects = [
+      // Install forecast is past, but construction is complete — not overdue
+      { stage: "Inspect", forecastedInstallDate: "2026-04-01", constructionCompleteDate: "2026-04-02" },
+      // Inspection forecast is past, but inspection passed — not overdue
+      { stage: "PTO", forecastedInspectionDate: "2026-04-03", inspectionPassDate: "2026-04-04" },
+      // PTO forecast is past, but PTO granted — not overdue
+      { stage: "PTO", forecastedPtoDate: "2026-04-01", ptoGrantedDate: "2026-04-05" },
+    ];
+    const result = buildPipelineData(projects, DEFAULT_GOALS, now);
+    expect(result.overdueCount).toBe(0);
   });
 
   it("sets completedGoal from goals", () => {
