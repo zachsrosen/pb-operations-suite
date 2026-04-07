@@ -59,15 +59,18 @@ export default function FileUploadPanel({
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = useCallback(async (fileList: FileList | File[]) => {
-    // Expand zip archives, then filter to accepted extensions
+    // Expand zip archives, then filter to accepted extensions.
+    // Track original source names for display (zip filename, folder, etc.)
     const raw = Array.from(fileList);
     const expanded: File[] = [];
+    const sourceNames: string[] = []; // original zip/folder names for UI summary
     for (const f of raw) {
       const ext = f.name.split('.').pop()?.toLowerCase();
       if (ext === 'zip') {
         try {
           const extracted = await extractFilesFromZip(f);
           expanded.push(...extracted);
+          sourceNames.push(f.name);
         } catch (err) {
           const msg = err instanceof Error ? err.message : 'Failed to unzip';
           dispatch({ type: 'UPLOAD_ERROR', error: `${f.name}: ${msg}` });
@@ -137,6 +140,33 @@ export default function FileUploadPanel({
         throw new Error(allErrors.join('; '));
       }
 
+      // Build a concise file list for the UI: show individual DXF/JSON files
+      // but collapse bulk CSVs (e.g. 7,800 shade files) into one summary line.
+      const displayFiles: { name: string; type: 'dxf' | 'json' | 'csv'; size: number }[] = [];
+      let csvCount = 0;
+      let csvTotalSize = 0;
+      for (const f of files) {
+        const ext = f.name.split('.').pop()?.toLowerCase();
+        if (ext === 'csv') {
+          csvCount++;
+          csvTotalSize += f.size;
+        } else {
+          displayFiles.push({
+            name: f.name,
+            type: ext as 'dxf' | 'json',
+            size: f.size,
+          });
+        }
+      }
+      if (csvCount > 0) {
+        const label = csvCount === 1
+          ? files.find(f => f.name.endsWith('.csv'))!.name
+          : sourceNames.length > 0
+            ? `${sourceNames.join(', ')} (${csvCount.toLocaleString()} shade files)`
+            : `${csvCount.toLocaleString()} shade CSV files`;
+        displayFiles.push({ name: label, type: 'csv', size: csvTotalSize });
+      }
+
       dispatch({
         type: 'UPLOAD_SUCCESS',
         panels: allPanels,
@@ -144,11 +174,7 @@ export default function FileUploadPanel({
         shadeFidelity,
         shadeSource,
         radiancePoints: allRadiancePoints,
-        files: files.map((f) => ({
-          name: f.name,
-          type: f.name.split('.').pop()?.toLowerCase() as 'dxf' | 'json' | 'csv',
-          size: f.size,
-        })),
+        files: displayFiles,
       });
     } catch (err) {
       dispatch({
