@@ -35,9 +35,9 @@ const AHJ_DISPLAY_FIELDS: { key: string; label: string }[] = [
 
 // Key Utility fields to display
 const UTILITY_DISPLAY_FIELDS: { key: string; label: string }[] = [
-  { key: "ac_disconnect_required_", label: "AC Disco" },
+  { key: "ac_disconnect_required_", label: "AC Disconnect Req?" },
+  { key: "is_production_meter_required_", label: "Production Meter Req?" },
   { key: "backup_switch_allowed_", label: "Backup SW" },
-  { key: "is_production_meter_required_", label: "Prod Meter" },
   { key: "system_size_rule", label: "Size Rule" },
   { key: "interconnection_required", label: "IC Req" },
   { key: "submission_type", label: "Submission" },
