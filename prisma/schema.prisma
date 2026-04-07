@@ -1804,6 +1804,20 @@ model RevenueGoal {
   @@index([year])
 }
 
+model OfficeGoal {
+  id        String   @id @default(cuid())
+  location  String
+  metric    String   // "surveys_completed", "installs_completed", "inspections_completed", "projects_completed"
+  target    Int
+  month     Int      // 1-12
+  year      Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([location, metric, month, year])
+  @@index([location, year])
+}
+
 // ---------------------------------------------------------------------------
 // IDR Meeting Hub
 // ---------------------------------------------------------------------------
