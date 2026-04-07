@@ -1,17 +1,22 @@
 'use client';
 
-import { useCallback, useRef, useEffect } from 'react';
+import { useCallback, useRef, useEffect, forwardRef, useImperativeHandle } from 'react';
 import type { SolarDesignerState, SolarDesignerAction } from './types';
 import type { CoreSolarDesignerInput, EquipmentSelection } from '@/lib/solar/v12-engine';
 import { autoAssignInverters, flattenInverterConfigs } from './inverter-bridge';
 import { createAnalysisWorker } from './worker-factory';
+
+export interface RunAnalysisHandle {
+  run: () => void;
+}
 
 interface RunAnalysisButtonProps {
   state: SolarDesignerState;
   dispatch: (action: SolarDesignerAction) => void;
 }
 
-export default function RunAnalysisButton({ state, dispatch }: RunAnalysisButtonProps) {
+const RunAnalysisButton = forwardRef<RunAnalysisHandle, RunAnalysisButtonProps>(
+  function RunAnalysisButton({ state, dispatch }, ref) {
   const workerRef = useRef<Worker | null>(null);
 
   // Clean up worker on unmount to prevent background leaks
@@ -131,6 +136,8 @@ export default function RunAnalysisButton({ state, dispatch }: RunAnalysisButton
     worker.postMessage({ type: 'RUN_SIMULATION', payload: input });
   }, [state, canRun, dispatch]);
 
+  useImperativeHandle(ref, () => ({ run: handleRun }), [handleRun]);
+
   const isRunning = state.isAnalyzing;
 
   return (
@@ -186,4 +193,6 @@ export default function RunAnalysisButton({ state, dispatch }: RunAnalysisButton
       )}
     </div>
   );
-}
+});
+
+export default RunAnalysisButton;

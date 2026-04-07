@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, useReducer, useEffect, useMemo } from 'react';
+import { Suspense, useReducer, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
 import DashboardShell from '@/components/DashboardShell';
 import TabBar from '@/components/solar-designer/TabBar';
@@ -15,6 +15,7 @@ import ProductionTab from '@/components/solar-designer/ProductionTab';
 import TimeseriesTab from '@/components/solar-designer/TimeseriesTab';
 import AddressInput from '@/components/solar-designer/AddressInput';
 import RunAnalysisButton from '@/components/solar-designer/RunAnalysisButton';
+import InvertersTab from '@/components/solar-designer/InvertersTab';
 import { DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE, associateShadePoints } from '@/lib/solar/v12-engine';
 import type { SolarDesignerState, SolarDesignerAction, SolarDesignerTab, UIStringConfig, UIInverterConfig } from '@/components/solar-designer/types';
 import { DEFAULT_MAP_ALIGNMENT } from '@/components/solar-designer/types';
@@ -242,6 +243,7 @@ export default function SolarDesignerPage() {
 
 function SolarDesignerInner() {
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
+  const runAnalysisRef = useRef<import('@/components/solar-designer/RunAnalysisButton').RunAnalysisHandle>(null);
   const searchParams = useSearchParams();
 
   // Breadcrumb points back to whichever suite the user came from
@@ -290,7 +292,7 @@ function SolarDesignerInner() {
           <SystemSummaryBar panelCount={state.panels.length} selectedPanel={state.selectedPanel}
             selectedInverter={state.selectedInverter} stringCount={state.strings.length} />
 
-          <RunAnalysisButton state={state} dispatch={dispatch} />
+          <RunAnalysisButton ref={runAnalysisRef} state={state} dispatch={dispatch} />
         </aside>
 
         {/* Main content: Tabs */}
@@ -309,7 +311,18 @@ function SolarDesignerInner() {
             {state.activeTab === 'timeseries' && (
               <TimeseriesTab result={state.result} strings={state.strings} />
             )}
-            {state.activeTab === 'inverters' && <PlaceholderTab tabName="Inverters" targetStage={4} />}
+            {state.activeTab === 'inverters' && (
+              <InvertersTab
+                result={state.result}
+                inverters={state.inverters}
+                strings={state.strings}
+                selectedInverter={state.selectedInverter}
+                selectedPanel={state.selectedPanel}
+                resultStale={state.resultStale}
+                dispatch={dispatch}
+                onRerun={() => runAnalysisRef.current?.run()}
+              />
+            )}
             {state.activeTab === 'battery' && <PlaceholderTab tabName="Battery" targetStage={5} />}
             {state.activeTab === 'ai' && <PlaceholderTab tabName="AI Analysis" targetStage={5} />}
             {state.activeTab === 'scenarios' && <PlaceholderTab tabName="Scenarios" targetStage={5} />}
