@@ -189,6 +189,11 @@ const RunAnalysisButton = forwardRef<RunAnalysisHandle, RunAnalysisButtonProps>(
         </div>
       )}
 
+      {/* Disabled reason — shown as text so users don't miss it */}
+      {!canRun && !isRunning && disabledReason && (
+        <p className="text-xs text-muted text-center">{disabledReason}</p>
+      )}
+
       {/* Error display */}
       {state.analysisError && (
         <p className="text-xs text-red-400 text-center">{state.analysisError}</p>

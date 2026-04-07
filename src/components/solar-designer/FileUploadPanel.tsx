@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useCallback } from 'react';
+import { unzipSync, strFromU8 } from 'fflate';
 import { parseJSON, parseDXF, parseShadeCSV } from '@/lib/solar/v12-engine';
 import type { PanelGeometry, ShadeTimeseries, ShadeFidelity, ShadeSource } from '@/lib/solar/v12-engine';
 import type { RadiancePoint } from '@/lib/solar/v12-engine/layout-parser';
@@ -16,6 +17,22 @@ interface FileUploadPanelProps {
 }
 
 const ACCEPTED_EXTENSIONS = ['.dxf', '.json', '.csv'];
+
+/** Extract .dxf/.json/.csv files from a zip archive into File objects. */
+async function extractFilesFromZip(zipFile: File): Promise<File[]> {
+  const buf = await zipFile.arrayBuffer();
+  const entries = unzipSync(new Uint8Array(buf));
+  const files: File[] = [];
+  for (const [path, data] of Object.entries(entries)) {
+    // Skip directories and __MACOSX junk
+    if (path.endsWith('/') || path.startsWith('__MACOSX')) continue;
+    const name = path.split('/').pop() ?? path;
+    const ext = '.' + name.split('.').pop()?.toLowerCase();
+    if (!ACCEPTED_EXTENSIONS.includes(ext)) continue;
+    files.push(new File([data], name));
+  }
+  return files;
+}
 
 /** Recursively collect files from a dropped directory entry. */
 async function collectFilesFromEntry(entry: FileSystemEntry): Promise<File[]> {
@@ -42,13 +59,32 @@ export default function FileUploadPanel({
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   const handleFiles = useCallback(async (fileList: FileList | File[]) => {
-    const files = Array.from(fileList).filter((f) => {
-      const ext = '.' + f.name.split('.').pop()?.toLowerCase();
-      return ACCEPTED_EXTENSIONS.includes(ext);
+    // Expand zip archives, then filter to accepted extensions
+    const raw = Array.from(fileList);
+    const expanded: File[] = [];
+    for (const f of raw) {
+      const ext = f.name.split('.').pop()?.toLowerCase();
+      if (ext === 'zip') {
+        try {
+          const extracted = await extractFilesFromZip(f);
+          expanded.push(...extracted);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : 'Failed to unzip';
+          dispatch({ type: 'UPLOAD_ERROR', error: `${f.name}: ${msg}` });
+          return;
+        }
+      } else {
+        expanded.push(f);
+      }
+    }
+
+    const files = expanded.filter((f) => {
+      const ext2 = '.' + f.name.split('.').pop()?.toLowerCase();
+      return ACCEPTED_EXTENSIONS.includes(ext2);
     });
 
     if (files.length === 0) {
-      dispatch({ type: 'UPLOAD_ERROR', error: 'No valid files. Expected .dxf, .json, or .csv' });
+      dispatch({ type: 'UPLOAD_ERROR', error: 'No valid files found. Expected .dxf, .json, or .csv (or a .zip containing them).' });
       return;
     }
 
@@ -152,7 +188,7 @@ export default function FileUploadPanel({
         ) : (
           <>
             <span className="text-lg opacity-40">📐</span>
-            <span className="text-xs text-muted">Drop files or a folder here</span>
+            <span className="text-xs text-muted">Drop files, folder, or zip here</span>
           </>
         )}
       </div>
@@ -166,7 +202,7 @@ export default function FileUploadPanel({
           Select folder
         </button>
       </div>
-      <input ref={fileInputRef} type="file" accept=".dxf,.json,.csv" multiple className="hidden"
+      <input ref={fileInputRef} type="file" accept=".dxf,.json,.csv,.zip" multiple className="hidden"
         onChange={(e) => {
           if (e.target.files) handleFiles(e.target.files);
           e.target.value = '';
