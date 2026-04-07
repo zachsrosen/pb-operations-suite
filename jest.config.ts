@@ -13,6 +13,8 @@ const config: Config.InitialOptions = {
   },
   moduleNameMapper: {
     "^@/(.*)$": "<rootDir>/src/$1",
+    // Map worker-factory to its manual mock to avoid import.meta.url parse error in Jest (CJS)
+    "^.*/worker-factory$": "<rootDir>/src/components/solar-designer/__mocks__/worker-factory.ts",
   },
   setupFiles: ["<rootDir>/jest.polyfills.ts"],
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],

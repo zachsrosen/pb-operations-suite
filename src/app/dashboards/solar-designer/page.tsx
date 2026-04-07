@@ -12,6 +12,7 @@ import SystemSummaryBar from '@/components/solar-designer/SystemSummaryBar';
 import VisualizerTab from '@/components/solar-designer/VisualizerTab';
 import StringingTab from '@/components/solar-designer/StringingTab';
 import AddressInput from '@/components/solar-designer/AddressInput';
+import RunAnalysisButton from '@/components/solar-designer/RunAnalysisButton';
 import { DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE, associateShadePoints } from '@/lib/solar/v12-engine';
 import type { SolarDesignerState, SolarDesignerAction, SolarDesignerTab, UIStringConfig, UIInverterConfig } from '@/components/solar-designer/types';
 import { DEFAULT_MAP_ALIGNMENT } from '@/components/solar-designer/types';
@@ -286,6 +287,8 @@ function SolarDesignerInner() {
 
           <SystemSummaryBar panelCount={state.panels.length} selectedPanel={state.selectedPanel}
             selectedInverter={state.selectedInverter} stringCount={state.strings.length} />
+
+          <RunAnalysisButton state={state} dispatch={dispatch} />
         </aside>
 
         {/* Main content: Tabs */}
