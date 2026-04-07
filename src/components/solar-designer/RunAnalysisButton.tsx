@@ -71,12 +71,14 @@ const RunAnalysisButton = forwardRef<RunAnalysisHandle, RunAnalysisButtonProps>(
           .filter(idx => idx >= 0),
       }));
 
-    // 3. Auto-assign inverters
-    const uiInverters = autoAssignInverters(
-      strings.length,
-      state.selectedInverter.channels,
-      state.selectedInverter.key,
-    );
+    // 3. Reuse existing inverter layout (preserves manual MPPT edits) or auto-assign on first run
+    const uiInverters = state.inverters.length > 0
+      ? state.inverters
+      : autoAssignInverters(
+          strings.length,
+          state.selectedInverter.channels,
+          state.selectedInverter.key,
+        );
     const engineInverters = flattenInverterConfigs(uiInverters);
 
     // 4. Build engine input
