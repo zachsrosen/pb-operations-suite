@@ -1,7 +1,9 @@
 'use client';
 
 import { useRef, useCallback } from 'react';
-import { upload } from '@vercel/blob/client';
+import { parseJSON, parseDXF, parseShadeCSV } from '@/lib/solar/v12-engine';
+import type { PanelGeometry, ShadeTimeseries, ShadeFidelity, ShadeSource } from '@/lib/solar/v12-engine';
+import type { RadiancePoint } from '@/lib/solar/v12-engine/layout-parser';
 import type { SolarDesignerAction, UploadedFile } from './types';
 
 interface FileUploadPanelProps {
@@ -34,53 +36,51 @@ export default function FileUploadPanel({
     dispatch({ type: 'UPLOAD_START' });
 
     try {
-      // Upload files to Vercel Blob (client-side direct upload).
-      // This bypasses the 4.5 MB serverless body-size limit — the
-      // browser sends the file straight to Blob storage, then we pass
-      // the resulting URLs to the /parse endpoint for server-side parsing.
-      const blobFiles: { url: string; name: string }[] = [];
+      // Parse files entirely client-side.  The parsers are pure functions
+      // with zero Node.js dependencies, so they run fine in the browser.
+      // This avoids any server round-trip and the Vercel 4.5 MB body limit.
+      const allPanels: PanelGeometry[] = [];
+      const allShadeData: ShadeTimeseries = {};
+      const allErrors: string[] = [];
+      const allRadiancePoints: RadiancePoint[] = [];
+      let shadeFidelity: ShadeFidelity = 'full';
+      let shadeSource: ShadeSource = 'manual';
 
       for (const f of files) {
-        const ts = Date.now();
-        const pathname = `solar-designer/${ts}-${f.name}`;
-        const blob = await upload(pathname, f, {
-          access: 'public',
-          handleUploadUrl: '/api/solar-designer/upload-token',
-        });
-        blobFiles.push({ url: blob.url, name: f.name });
-      }
+        const text = await f.text();
+        const ext = f.name.split('.').pop()?.toLowerCase();
 
-      // Parse uploaded blobs server-side
-      const res = await fetch('/api/solar-designer/parse', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ files: blobFiles }),
-      });
-
-      if (!res.ok) {
-        let errorMsg = `Upload failed (${res.status})`;
-        try {
-          const err = await res.json();
-          if (err.error) errorMsg = err.error;
-        } catch {
-          // Response body not JSON (e.g. Vercel error page) — use status-based message
+        if (ext === 'json') {
+          const result = parseJSON(text);
+          if (result.errors.length > 0) allErrors.push(...result.errors.map(e => `${f.name}: ${e}`));
+          allPanels.push(...result.panels);
+        } else if (ext === 'dxf') {
+          const result = parseDXF(text);
+          if (result.errors.length > 0) allErrors.push(...result.errors.map(e => `${f.name}: ${e}`));
+          allPanels.push(...result.panels);
+          allRadiancePoints.push(...result.radiancePoints);
+        } else if (ext === 'csv') {
+          const result = parseShadeCSV(text);
+          if (result.errors.length > 0) allErrors.push(...result.errors.map(e => `${f.name}: ${e}`));
+          Object.assign(allShadeData, result.data);
+          shadeFidelity = result.fidelity;
+          shadeSource = result.source;
+        } else {
+          allErrors.push(`${f.name}: Unsupported file type .${ext}`);
         }
-        throw new Error(errorMsg);
       }
 
-      const data = await res.json();
-
-      if (data.errors?.length > 0 && data.panels.length === 0) {
-        throw new Error(data.errors.join('; '));
+      if (allErrors.length > 0 && allPanels.length === 0) {
+        throw new Error(allErrors.join('; '));
       }
 
       dispatch({
         type: 'UPLOAD_SUCCESS',
-        panels: data.panels,
-        shadeData: data.shadeData,
-        shadeFidelity: data.shadeFidelity,
-        shadeSource: data.shadeSource,
-        radiancePoints: data.radiancePoints ?? [],
+        panels: allPanels,
+        shadeData: allShadeData,
+        shadeFidelity,
+        shadeSource,
+        radiancePoints: allRadiancePoints,
         files: files.map((f) => ({
           name: f.name,
           type: f.name.split('.').pop()?.toLowerCase() as 'dxf' | 'json' | 'csv',
