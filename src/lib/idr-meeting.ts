@@ -37,6 +37,10 @@ export const SNAPSHOT_PROPERTIES = [
   "hubspot_owner_id", "site_surveyor", "design", "operations_manager", "project_manager",
   "disco__reco", "interior_access", "notes_for_install",
   "link_to_opensolar", "os_project_link",
+  "tags",
+  // Read-only notes from sales/design
+  "os_notes", "sales_change_order_notes", "sales_change_order_needed",
+  "notes_for_design_", "specific_notes_for_design",
 ];
 
 // ---------------------------------------------------------------------------
@@ -50,6 +54,12 @@ export function isIdrAllowedRole(role: string): boolean {
 // ---------------------------------------------------------------------------
 // Snapshot helpers
 // ---------------------------------------------------------------------------
+
+/** Parse deal tags from HubSpot comma-separated field. */
+function parseDealTags(tagsRaw: string | null | undefined): string[] {
+  if (!tagsRaw) return [];
+  return tagsRaw.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
+}
 
 /** Build an equipment one-liner from deal properties. */
 function buildEquipmentSummary(p: Record<string, string | null>): string {
@@ -98,6 +108,13 @@ export type SnapshotFields = {
   utilityCompany: string | null;
   openSolarUrl: string | null;
   surveyCompleted: boolean;
+  tags: string[];
+  // Read-only HubSpot notes
+  salesNotes: string | null;
+  salesChangeOrderNotes: string | null;
+  salesChangeOrderNeeded: boolean;
+  notesForDesign: string | null;
+  specificNotesForDesign: string | null;
 };
 
 /** Map raw HubSpot deal properties to the IdrMeetingItem snapshot fields. */
@@ -145,6 +162,13 @@ export function snapshotDealProperties(
     // link_to_opensolar is a "Yes"/"No" flag, not a URL — use os_project_link for the actual URL
     openSolarUrl: p.os_project_link ?? null,
     surveyCompleted,
+    tags: parseDealTags(p.tags),
+    // Read-only HubSpot notes
+    salesNotes: p.os_notes ?? null,
+    salesChangeOrderNotes: p.sales_change_order_notes ?? null,
+    salesChangeOrderNeeded: p.sales_change_order_needed === "true" || p.sales_change_order_needed === "Yes",
+    notesForDesign: p.notes_for_design_ ?? null,
+    specificNotesForDesign: p.specific_notes_for_design ?? null,
   };
 }
 
@@ -237,8 +261,8 @@ export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string): strin
   if (fields.electricianCount != null || fields.electricianDays != null) {
     lines.push(`<strong>Electricians:</strong> ${fields.electricianCount ?? "?"} count / ${fields.electricianDays ?? "?"} day${(fields.electricianDays ?? 0) !== 1 ? "s" : ""}`);
   }
-  if (fields.discoReco != null) lines.push(`<strong>Disco/Reco:</strong> ${fields.discoReco ? "Yes" : "No"}`);
-  if (fields.interiorAccess != null) lines.push(`<strong>Interior Access:</strong> ${fields.interiorAccess ? "Yes" : "No"}`);
+  lines.push(`<strong>Disco/Reco:</strong> ${fields.discoReco ? "Yes" : "No"}`);
+  lines.push(`<strong>Interior Access:</strong> ${fields.interiorAccess ? "Yes" : "No"}`);
   if (fields.salesChangeRequested) lines.push(`<strong>Sales Change Requested:</strong> Yes`);
   if (fields.salesChangeNotes) lines.push(`<strong>Sales Communication Reason:</strong> ${esc(fields.salesChangeNotes)}`);
   if (fields.needsSurveyInfo) lines.push(`<strong>Needs Survey Info:</strong> Yes`);
@@ -285,8 +309,9 @@ export function buildHubSpotPropertyUpdates(
   if (fields.installerDays != null) updates.days_for_installers = String(fields.installerDays);
   if (fields.electricianCount != null) updates.expected_electrician_count = String(fields.electricianCount);
   if (fields.electricianDays != null) updates.days_for_electricians = String(fields.electricianDays);
-  if (fields.discoReco != null) updates.disco__reco = fields.discoReco ? "true" : "false";
-  if (fields.interiorAccess != null) updates.interior_access = fields.interiorAccess ? "true" : "false";
+  // Disco/Reco and Interior Access: always send a value — default to "false" when null/untouched
+  updates.disco__reco = fields.discoReco ? "true" : "false";
+  updates.interior_access = fields.interiorAccess ? "true" : "false";
   if (fields.operationsNotes != null) updates.notes_for_install = fields.operationsNotes;
 
   // DA status flags — priority: resurvey > survey info > sales change

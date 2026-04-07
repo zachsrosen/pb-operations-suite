@@ -54,6 +54,12 @@ export interface IdrItem {
   utilityCompany: string | null;
   openSolarUrl: string | null;
   surveyCompleted: boolean;
+  tags: string[];
+  salesNotes: string | null;
+  salesChangeOrderNotes: string | null;
+  salesChangeOrderNeeded: boolean;
+  notesForDesign: string | null;
+  specificNotesForDesign: string | null;
   snapshotUpdatedAt: string;
   difficulty: number | null;
   installerCount: number | null;
@@ -368,33 +374,43 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
         updates: { ...(existing?.updates ?? {}), ...updates },
       };
 
-      // Optimistic update
-      if (isPreview) {
-        queryClient.setQueryData(
-          [...queryKeys.idrMeeting.root, "preview"],
-          (old: { items: IdrItem[] } | undefined) => {
-            if (!old) return old;
-            return {
-              ...old,
-              items: old.items.map((i) =>
-                i.id === itemId ? { ...i, ...updates } : i,
-              ),
-            };
-          },
-        );
-      } else if (sessionId) {
-        queryClient.setQueryData(
-          queryKeys.idrMeeting.session(sessionId),
-          (old: IdrSession | undefined) => {
-            if (!old) return old;
-            return {
-              ...old,
-              items: old.items.map((i) =>
-                i.id === itemId ? { ...i, ...updates } : i,
-              ),
-            };
-          },
-        );
+      // Optimistic cache update — only for non-text fields (selects, toggles).
+      // Text fields use local state in their textarea components, so cache
+      // updates on every keystroke just cause unnecessary re-renders.
+      const textFields = new Set([
+        "customerNotes", "operationsNotes", "designNotes", "conclusion",
+        "salesChangeNotes", "opsChangeNotes", "shitShowReason", "escalationReason",
+      ]);
+      const isTextOnly = Object.keys(updates).every((k) => textFields.has(k));
+
+      if (!isTextOnly) {
+        if (isPreview) {
+          queryClient.setQueryData(
+            [...queryKeys.idrMeeting.root, "preview"],
+            (old: { items: IdrItem[] } | undefined) => {
+              if (!old) return old;
+              return {
+                ...old,
+                items: old.items.map((i) =>
+                  i.id === itemId ? { ...i, ...updates } : i,
+                ),
+              };
+            },
+          );
+        } else if (sessionId) {
+          queryClient.setQueryData(
+            queryKeys.idrMeeting.session(sessionId),
+            (old: IdrSession | undefined) => {
+              if (!old) return old;
+              return {
+                ...old,
+                items: old.items.map((i) =>
+                  i.id === itemId ? { ...i, ...updates } : i,
+                ),
+              };
+            },
+          );
+        }
       }
 
       if (timerRef.current) clearTimeout(timerRef.current);

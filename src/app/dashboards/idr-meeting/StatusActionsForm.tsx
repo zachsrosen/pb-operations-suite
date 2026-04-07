@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { IdrItem } from "./IdrMeetingClient";
 
 interface Props {
@@ -191,20 +191,35 @@ function CompactTextarea({
   placeholder: string;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [local, setLocal] = useState(value);
+  const focusedRef = useRef(false);
+
+  // Sync external value when not focused
+  useEffect(() => {
+    if (!focusedRef.current) setLocal(value);
+  }, [value]);
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
-  }, [value]);
+  }, [local]);
+
+  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const v = e.target.value;
+    setLocal(v);
+    onChange(v);
+  };
 
   return (
     <textarea
       ref={ref}
       rows={1}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
+      value={local}
+      onChange={handleInput}
+      onFocus={() => { focusedRef.current = true; }}
+      onBlur={() => { focusedRef.current = false; }}
       disabled={readOnly}
       className="w-full mt-1 rounded border border-t-border bg-surface-2 px-2 py-1 text-xs text-foreground resize-none disabled:opacity-50 placeholder:text-muted"
       placeholder={readOnly ? "" : placeholder}

@@ -8,6 +8,7 @@ import type { IdrItem } from "./IdrMeetingClient";
 import { InstallPlanningForm } from "./InstallPlanningForm";
 import { StatusActionsForm } from "./StatusActionsForm";
 import { MeetingNotesForm } from "./MeetingNotesForm";
+import { AhjUtilityInfo } from "./AhjUtilityInfo";
 
 const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "7086286";
 
@@ -142,6 +143,19 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
               {item.address && <span className="text-xs text-muted truncate">{item.address}</span>}
               {item.projectType && <span className="text-xs text-muted">{item.projectType}</span>}
             </div>
+            {/* Deal tags */}
+            {item.tags && item.tags.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1">
+                {item.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${getTagStyle(tag)}`}
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            )}
             {item.escalationReason && (
               <p className="text-xs text-orange-500 mt-1">
                 <span className="font-medium">Reason:</span> {item.escalationReason}
@@ -255,6 +269,18 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
                 </div>
               </Section>
             )}
+
+            {/* AHJ & Utility Codes */}
+            <Section title="AHJ & Utility Codes">
+              <AhjUtilityInfo
+                dealId={item.dealId}
+                ahjName={item.ahj}
+                utilityName={item.utilityCompany}
+              />
+            </Section>
+
+            {/* HubSpot Notes (read-only) */}
+            <HubSpotNotes item={item} />
           </div>
 
           {/* RIGHT: Planning + actions + notes */}
@@ -275,6 +301,55 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
       </div>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// HubSpot read-only notes
+// ---------------------------------------------------------------------------
+
+function HubSpotNotes({ item }: { item: IdrItem }) {
+  const notes: { label: string; value: string }[] = [];
+  if (item.salesNotes) notes.push({ label: "Sales Notes", value: item.salesNotes });
+  if (item.salesChangeOrderNeeded || item.salesChangeOrderNotes) {
+    notes.push({
+      label: "Sales Change Order",
+      value: item.salesChangeOrderNotes || (item.salesChangeOrderNeeded ? "Needed" : ""),
+    });
+  }
+  if (item.notesForDesign) notes.push({ label: "Notes for Design", value: item.notesForDesign });
+  if (item.specificNotesForDesign) notes.push({ label: "Specific Design Notes", value: item.specificNotesForDesign });
+
+  if (notes.length === 0) return null;
+
+  return (
+    <Section title="HubSpot Notes">
+      <div className="space-y-1.5">
+        {notes.map(({ label, value }) => (
+          <div key={label}>
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-muted">{label}</p>
+            <p className="text-xs text-foreground whitespace-pre-wrap">{value}</p>
+          </div>
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tag styling
+// ---------------------------------------------------------------------------
+
+function getTagStyle(tag: string): string {
+  const lower = tag.toLowerCase();
+  if (lower.includes("participate") || lower.includes("esa") || lower.includes("ppa"))
+    return "bg-purple-500/20 text-purple-400 border border-purple-500/30";
+  if (lower.includes("new construction"))
+    return "bg-blue-500/20 text-blue-400 border border-blue-500/30";
+  if (lower.includes("battery") || lower.includes("storage"))
+    return "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30";
+  if (lower.includes("ev"))
+    return "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+  return "bg-surface-2 text-muted border border-t-border";
 }
 
 // ---------------------------------------------------------------------------

@@ -122,7 +122,7 @@ describe("buildHubSpotNoteBody", () => {
     expect(body).not.toContain("undefined");
   });
 
-  it("omits empty fields", () => {
+  it("omits empty fields but always includes disco/reco and interior access", () => {
     const item = {
       difficulty: null,
       installerCount: null,
@@ -140,6 +140,9 @@ describe("buildHubSpotNoteBody", () => {
     expect(body).toContain("<strong>Operation Notes:</strong> Just ops notes");
     expect(body).not.toContain("Customer Notes");
     expect(body).not.toContain("Difficulty");
+    // Disco/Reco and Interior Access always appear, defaulting to No
+    expect(body).toContain("<strong>Disco/Reco:</strong> No");
+    expect(body).toContain("<strong>Interior Access:</strong> No");
   });
 });
 
@@ -170,7 +173,7 @@ describe("buildHubSpotPropertyUpdates", () => {
     expect(updates.notes_for_install).toBe("Standard install");
   });
 
-  it("skips null fields", () => {
+  it("skips null fields except disco/reco and interior access", () => {
     const updates = buildHubSpotPropertyUpdates({
       difficulty: 3,
       installerCount: null,
@@ -189,5 +192,8 @@ describe("buildHubSpotPropertyUpdates", () => {
     expect(updates.install_difficulty).toBe("3");
     expect(updates).not.toHaveProperty("expected_installer_cont");
     expect(updates).not.toHaveProperty("notes_for_install");
+    // Disco/Reco and Interior Access always sent, defaulting to "false"
+    expect(updates.disco__reco).toBe("false");
+    expect(updates.interior_access).toBe("false");
   });
 });

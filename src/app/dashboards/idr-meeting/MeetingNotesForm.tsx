@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { IdrItem } from "./IdrMeetingClient";
 
 interface Props {
@@ -38,10 +38,10 @@ export function MeetingNotesForm({ item, onChange, readOnly }: Props) {
 
       <div className="grid grid-cols-2 gap-2">
         {NOTE_FIELDS.map(({ key, label }) => (
-          <AutoResizeTextarea
-            key={key}
+          <LocalTextarea
+            key={`${item.id}-${key}`}
             label={label}
-            value={(item[key] as string | null) ?? ""}
+            externalValue={(item[key] as string | null) ?? ""}
             onChange={(val) => handleChange(key, val)}
             readOnly={readOnly}
           />
@@ -52,28 +52,44 @@ export function MeetingNotesForm({ item, onChange, readOnly }: Props) {
 }
 
 // ---------------------------------------------------------------------------
-// Auto-resize textarea
+// Local-state textarea — keeps its own value to avoid per-keystroke
+// React Query cache updates. Syncs back to parent on change (debounced
+// upstream) and accepts external value updates when not focused.
 // ---------------------------------------------------------------------------
 
-function AutoResizeTextarea({
+function LocalTextarea({
   label,
-  value,
+  externalValue,
   onChange,
   readOnly,
 }: {
   label: string;
-  value: string;
+  externalValue: string;
   onChange: (v: string) => void;
   readOnly: boolean;
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
+  const [local, setLocal] = useState(externalValue);
+  const focusedRef = useRef(false);
 
+  // Sync external value in when not focused (e.g. SSE update, item switch)
+  useEffect(() => {
+    if (!focusedRef.current) setLocal(externalValue);
+  }, [externalValue]);
+
+  // Auto-resize — only on local state change
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${el.scrollHeight}px`;
-  }, [value]);
+  }, [local]);
+
+  const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const v = e.target.value;
+    setLocal(v);
+    onChange(v);
+  };
 
   return (
     <div>
@@ -83,8 +99,10 @@ function AutoResizeTextarea({
       <textarea
         ref={ref}
         rows={1}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+        value={local}
+        onChange={handleInput}
+        onFocus={() => { focusedRef.current = true; }}
+        onBlur={() => { focusedRef.current = false; }}
         disabled={readOnly}
         className="w-full rounded border border-t-border bg-surface-2 px-2 py-1 text-xs text-foreground resize-none disabled:opacity-50 placeholder:text-muted"
         placeholder={readOnly ? "" : `${label.toLowerCase()}...`}

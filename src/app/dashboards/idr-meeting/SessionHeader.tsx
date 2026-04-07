@@ -56,13 +56,21 @@ export function SessionHeader({
       if (!res.ok) throw new Error("Failed to update status");
       return res.json();
     },
-    onSuccess: (_, newStatus) => {
+    onSuccess: (data, newStatus) => {
       if (session) {
         queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(session.id) });
         queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.sessions() });
       }
       if (newStatus === "COMPLETED") {
-        addToast({ type: "success", title: "Meeting ended" });
+        const sr = data?.syncResults;
+        const msg = sr
+          ? `${sr.synced} synced to HubSpot${sr.failed ? `, ${sr.failed} failed` : ""}`
+          : undefined;
+        addToast({
+          type: sr?.failed ? "warning" : "success",
+          title: "Meeting ended — all items synced",
+          message: msg,
+        });
         onSessionEnded();
       }
     },
@@ -203,7 +211,7 @@ export function SessionHeader({
                     <div className="flex items-center gap-1.5">
                       {unsyncedCount > 0 && (
                         <span className="text-[10px] text-orange-500">
-                          {unsyncedCount} unsynced
+                          {unsyncedCount} will auto-sync
                         </span>
                       )}
                       <button
@@ -214,7 +222,7 @@ export function SessionHeader({
                         }}
                         disabled={updateStatus.isPending}
                       >
-                        Confirm End
+                        {updateStatus.isPending ? "Syncing & ending..." : "End & Sync All"}
                       </button>
                       <button
                         className="text-xs text-muted hover:text-foreground"

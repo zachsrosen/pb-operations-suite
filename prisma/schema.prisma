@@ -1877,6 +1877,13 @@ model IdrMeetingItem {
   utilityCompany   String?
   openSolarUrl     String?
   surveyCompleted  Boolean  @default(false)
+  tags             String[] @default([])
+  // Read-only HubSpot notes (snapshot)
+  salesNotes              String?
+  salesChangeOrderNotes   String?
+  salesChangeOrderNeeded  Boolean  @default(false)
+  notesForDesign          String?
+  specificNotesForDesign  String?
   snapshotUpdatedAt DateTime @default(now())
 
   // Editable fields

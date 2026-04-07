@@ -72,26 +72,63 @@ export async function DELETE(
 
   const { id } = await params;
 
-  // Guard: reject mutations on completed sessions
-  const target = await prisma.idrMeetingItem.findUnique({
+  // Fetch full item so we can re-queue escalations
+  const item = await prisma.idrMeetingItem.findUnique({
     where: { id },
-    select: { session: { select: { status: true } } },
+    include: { session: { select: { status: true } } },
   });
-  if (!target) {
+  if (!item) {
     return NextResponse.json({ error: "Item not found" }, { status: 404 });
   }
-  if (target.session.status === "COMPLETED") {
+  if (item.session.status === "COMPLETED") {
     return NextResponse.json({ error: "Cannot modify a completed session" }, { status: 400 });
   }
 
-  const deleted = await prisma.idrMeetingItem.findUnique({
-    where: { id },
-    select: { sessionId: true },
-  });
+  // Re-queue escalation items so they appear in the next session
+  if (item.type === "ESCALATION") {
+    // Check if there's already a QUEUED entry for this deal
+    const existingQueued = await prisma.idrEscalationQueue.findFirst({
+      where: { dealId: item.dealId, status: "QUEUED" },
+    });
+    if (!existingQueued) {
+      await prisma.idrEscalationQueue.create({
+        data: {
+          dealId: item.dealId,
+          dealName: item.dealName,
+          region: item.region,
+          queueType: "ESCALATION",
+          reason: item.escalationReason ?? "Re-queued from skipped session item",
+          requestedBy: auth.email,
+          // Carry over any prep data that was entered
+          difficulty: item.difficulty,
+          installerCount: item.installerCount,
+          installerDays: item.installerDays,
+          electricianCount: item.electricianCount,
+          electricianDays: item.electricianDays,
+          discoReco: item.discoReco,
+          interiorAccess: item.interiorAccess,
+          needsSurveyInfo: item.needsSurveyInfo,
+          needsResurvey: item.needsResurvey,
+          salesChangeRequested: item.salesChangeRequested,
+          salesChangeNotes: item.salesChangeNotes,
+          opsChangeNotes: item.opsChangeNotes,
+          customerNotes: item.customerNotes,
+          operationsNotes: item.operationsNotes,
+          designNotes: item.designNotes,
+          conclusion: item.conclusion,
+        },
+      });
+    }
+  }
+
   await prisma.idrMeetingItem.delete({ where: { id } });
 
   // Broadcast deletion so other clients update
-  if (deleted) appCache.invalidate(`idr-meeting:session:${deleted.sessionId}`);
+  appCache.invalidate(`idr-meeting:session:${item.sessionId}`);
+  // Also invalidate preview so re-queued escalation shows up
+  if (item.type === "ESCALATION") {
+    appCache.invalidate("idr-meeting:preview");
+  }
 
   return NextResponse.json({ ok: true });
 }
