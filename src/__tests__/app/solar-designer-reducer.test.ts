@@ -73,14 +73,14 @@ describe('Stage 4 reducer logic', () => {
 
       // Simulate reducer logic: move string 1 from channel 0 to channel 2
       const fromInverterId = 0, fromChannel = 0, toInverterId = 0, toChannel = 2, stringIndex = 1;
-      const updated = inverters.map((inv, idx) => {
+      const updated = inverters.map((inv) => {
         let channels = inv.channels.map(ch => ({ ...ch, stringIndices: [...ch.stringIndices] }));
-        if (idx === fromInverterId) {
+        if (inv.inverterId === fromInverterId) {
           channels[fromChannel] = {
             stringIndices: channels[fromChannel].stringIndices.filter(s => s !== stringIndex),
           };
         }
-        if (idx === toInverterId) {
+        if (inv.inverterId === toInverterId) {
           channels[toChannel] = {
             stringIndices: [...channels[toChannel].stringIndices, stringIndex],
           };
@@ -100,14 +100,14 @@ describe('Stage 4 reducer logic', () => {
 
       // Move string 0 from inverter 0, channel 0 → inverter 1, channel 0
       const fromInverterId = 0, fromChannel = 0, toInverterId = 1, toChannel = 0, stringIndex = 0;
-      const updated = inverters.map((inv, idx) => {
+      const updated = inverters.map((inv) => {
         let channels = inv.channels.map(ch => ({ ...ch, stringIndices: [...ch.stringIndices] }));
-        if (idx === fromInverterId) {
+        if (inv.inverterId === fromInverterId) {
           channels[fromChannel] = {
             stringIndices: channels[fromChannel].stringIndices.filter(s => s !== stringIndex),
           };
         }
-        if (idx === toInverterId) {
+        if (inv.inverterId === toInverterId) {
           channels[toChannel] = {
             stringIndices: [...channels[toChannel].stringIndices, stringIndex],
           };

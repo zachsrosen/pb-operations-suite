@@ -201,18 +201,18 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
     case 'SET_ANALYSIS_ERROR':
       return { ...state, analysisError: action.error, isAnalyzing: false, analysisProgress: null };
     case 'REASSIGN_STRING_TO_CHANNEL': {
-      const newInverters = state.inverters.map((inv, idx) => {
+      const newInverters = state.inverters.map((inv) => {
         const channels = inv.channels.map(ch => ({
           stringIndices: [...ch.stringIndices],
         }));
-        if (idx === action.fromInverterId) {
+        if (inv.inverterId === action.fromInverterId) {
           channels[action.fromChannel] = {
             stringIndices: channels[action.fromChannel].stringIndices.filter(
               s => s !== action.stringIndex
             ),
           };
         }
-        if (idx === action.toInverterId) {
+        if (inv.inverterId === action.toInverterId) {
           channels[action.toChannel] = {
             stringIndices: [...channels[action.toChannel].stringIndices, action.stringIndex],
           };

@@ -39,6 +39,11 @@ export default function InvertersTab({
 
   const handleChannelClick = (inverterId: number, channelIdx: number) => {
     if (!selectedChip) return;
+    // No-op if clicking the same channel the chip is already in
+    if (inverterId === selectedChip.inverterId && channelIdx === selectedChip.channel) {
+      setSelectedChip(null);
+      return;
+    }
     dispatch({
       type: 'REASSIGN_STRING_TO_CHANNEL',
       stringIndex: selectedChip.stringIndex,
