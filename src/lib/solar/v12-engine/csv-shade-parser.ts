@@ -43,38 +43,46 @@ export function parseShadeCSV(raw: string, pointId?: string): ShadeParseResult {
 
   const lines = raw.trim().split(/\r?\n/);
 
-  // ── Per-panel format (1 line = binary shade string) ────────
-  if (lines.length === 1) {
-    const line = lines[0].trim();
-    // Single line of 0/1 chars — the shade binary string itself
-    if (/^[01]+$/.test(line) && pointId) {
-      data[pointId] = line.padEnd(TIMESTEPS, '0');
-      return { data, fidelity: 'full', source: 'manual', errors };
-    }
-    // Single row of comma-separated 0/1 values
-    if (line.includes(',') && pointId) {
-      const vals = line.split(',').map(v => v.trim() === '0' ? '0' : '1');
-      data[pointId] = vals.join('').padEnd(TIMESTEPS, '0');
-      return { data, fidelity: 'full', source: 'manual', errors };
-    }
-    if (!pointId) {
-      errors.push('Single-line CSV needs a filename-derived point ID');
-    } else {
-      errors.push('Unrecognized single-line CSV format');
-    }
-    return { data, fidelity: 'full', source: 'manual', errors };
-  }
+  // ── Per-panel format ────────────────────────────────────────
+  // Handles single-line shade strings AND multi-line single-column
+  // CSVs where lines.length <= TIMESTEPS and there's a pointId.
+  if (pointId) {
+    // Strip any BOM and whitespace, collapse all lines into shade values
+    const cleaned = raw.replace(/^\uFEFF/, '');
+    const allVals: string[] = [];
 
-  // ── Per-panel format (multi-line, one value per row) ───────
-  // Detect: first line is NOT a header (it's numeric / 0/1)
-  const firstLineIsData = /^[01,\s]+$/.test(lines[0]) && !lines[0].includes('IP') && !lines[0].includes('id');
-  if (firstLineIsData && pointId) {
-    const vals: string[] = [];
-    for (const line of lines) {
-      const v = line.split(',')[0]?.trim();
-      if (v === '0' || v === '1') vals.push(v);
+    for (const line of cleaned.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      // Row could be a single 0/1 char, a comma-separated list, or a
+      // continuous binary string — handle all three.
+      if (trimmed.includes(',')) {
+        for (const cell of trimmed.split(',')) {
+          const v = cell.trim();
+          if (v === '') continue;
+          // Treat any non-zero numeric value as shaded (1)
+          allVals.push(v === '0' || v === '0.0' || v === '0.00' ? '0' : '1');
+        }
+      } else if (/^[01]+$/.test(trimmed) && trimmed.length > 1) {
+        // Continuous binary string on this line
+        allVals.push(...trimmed.split(''));
+      } else {
+        // Single value per row (could be 0, 1, decimal shade factor, etc.)
+        const num = parseFloat(trimmed);
+        if (!isNaN(num)) {
+          allVals.push(num === 0 ? '0' : '1');
+        }
+        // Skip non-numeric rows (headers, labels)
+      }
     }
-    data[pointId] = vals.join('').padEnd(TIMESTEPS, '0');
+
+    if (allVals.length > 0) {
+      data[pointId] = allVals.join('').padEnd(TIMESTEPS, '0');
+      return { data, fidelity: 'full', source: 'manual', errors };
+    }
+
+    errors.push(`Could not parse shade data (${lines.length} lines, first 80 chars: ${raw.slice(0, 80).replace(/\n/g, '\\n')})`);
     return { data, fidelity: 'full', source: 'manual', errors };
   }
 
