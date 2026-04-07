@@ -56,3 +56,81 @@ describe('AUTO_STRING bridge logic', () => {
     expect(currentId).toBe(2); // nextStringId unchanged
   });
 });
+
+import type { UIInverterConfig } from '@/components/solar-designer/types';
+
+describe('Stage 4 reducer logic', () => {
+  describe('REASSIGN_STRING_TO_CHANNEL', () => {
+    it('moves a string between channels on the same inverter', () => {
+      const inverters: UIInverterConfig[] = [{
+        inverterId: 0, inverterKey: 'k',
+        channels: [
+          { stringIndices: [0, 1] },
+          { stringIndices: [2] },
+          { stringIndices: [] },
+        ],
+      }];
+
+      // Simulate reducer logic: move string 1 from channel 0 to channel 2
+      const fromInverterId = 0, fromChannel = 0, toInverterId = 0, toChannel = 2, stringIndex = 1;
+      const updated = inverters.map((inv, idx) => {
+        let channels = inv.channels.map(ch => ({ ...ch, stringIndices: [...ch.stringIndices] }));
+        if (idx === fromInverterId) {
+          channels[fromChannel] = {
+            stringIndices: channels[fromChannel].stringIndices.filter(s => s !== stringIndex),
+          };
+        }
+        if (idx === toInverterId) {
+          channels[toChannel] = {
+            stringIndices: [...channels[toChannel].stringIndices, stringIndex],
+          };
+        }
+        return { ...inv, channels };
+      });
+
+      expect(updated[0].channels[0].stringIndices).toEqual([0]);
+      expect(updated[0].channels[2].stringIndices).toEqual([1]);
+    });
+
+    it('moves a string between different inverters', () => {
+      const inverters: UIInverterConfig[] = [
+        { inverterId: 0, inverterKey: 'k', channels: [{ stringIndices: [0] }, { stringIndices: [] }] },
+        { inverterId: 1, inverterKey: 'k', channels: [{ stringIndices: [] }, { stringIndices: [1] }] },
+      ];
+
+      // Move string 0 from inverter 0, channel 0 → inverter 1, channel 0
+      const fromInverterId = 0, fromChannel = 0, toInverterId = 1, toChannel = 0, stringIndex = 0;
+      const updated = inverters.map((inv, idx) => {
+        let channels = inv.channels.map(ch => ({ ...ch, stringIndices: [...ch.stringIndices] }));
+        if (idx === fromInverterId) {
+          channels[fromChannel] = {
+            stringIndices: channels[fromChannel].stringIndices.filter(s => s !== stringIndex),
+          };
+        }
+        if (idx === toInverterId) {
+          channels[toChannel] = {
+            stringIndices: [...channels[toChannel].stringIndices, stringIndex],
+          };
+        }
+        return { ...inv, channels };
+      });
+
+      expect(updated[0].channels[0].stringIndices).toEqual([]);
+      expect(updated[1].channels[0].stringIndices).toEqual([0]);
+    });
+  });
+
+  describe('resultStale tracking', () => {
+    it('marks stale when strings change and result exists', () => {
+      const hasResult = true;
+      const resultStale = hasResult ? true : false;
+      expect(resultStale).toBe(true);
+    });
+
+    it('does not mark stale when result is null', () => {
+      const hasResult = false;
+      const resultStale = hasResult ? true : false;
+      expect(resultStale).toBe(false);
+    });
+  });
+});

@@ -13,7 +13,7 @@ import VisualizerTab from '@/components/solar-designer/VisualizerTab';
 import StringingTab from '@/components/solar-designer/StringingTab';
 import AddressInput from '@/components/solar-designer/AddressInput';
 import { DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE, associateShadePoints } from '@/lib/solar/v12-engine';
-import type { SolarDesignerState, SolarDesignerAction, SolarDesignerTab, UIStringConfig } from '@/components/solar-designer/types';
+import type { SolarDesignerState, SolarDesignerAction, SolarDesignerTab, UIStringConfig, UIInverterConfig } from '@/components/solar-designer/types';
 import { DEFAULT_MAP_ALIGNMENT } from '@/components/solar-designer/types';
 
 const INITIAL_STATE: SolarDesignerState = {
@@ -39,6 +39,10 @@ const INITIAL_STATE: SolarDesignerState = {
   nextStringId: 1,
   inverters: [],
   result: null,
+  isAnalyzing: false,
+  analysisProgress: null,
+  analysisError: null,
+  resultStale: false,
   activeTab: 'visualizer',
   isUploading: false,
   uploadError: null,
@@ -76,13 +80,21 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
     case 'UPLOAD_ERROR':
       return { ...state, isUploading: false, uploadError: action.error };
     case 'SET_PANEL':
-      return { ...state, panelKey: action.key, selectedPanel: action.panel };
+      return { ...state, panelKey: action.key, selectedPanel: action.panel, ...(state.result ? { resultStale: true } : {}) };
     case 'SET_INVERTER':
-      return { ...state, inverterKey: action.key, selectedInverter: action.inverter };
+      return { ...state, inverterKey: action.key, selectedInverter: action.inverter, ...(state.result ? { resultStale: true } : {}) };
     case 'SET_SITE_CONDITIONS':
-      return { ...state, siteConditions: { ...state.siteConditions, ...action.conditions } };
+      return {
+        ...state,
+        siteConditions: { ...state.siteConditions, ...action.conditions },
+        ...(state.result ? { resultStale: true } : {}),
+      };
     case 'SET_LOSS_PROFILE':
-      return { ...state, lossProfile: { ...state.lossProfile, ...action.profile } };
+      return {
+        ...state,
+        lossProfile: { ...state.lossProfile, ...action.profile },
+        ...(state.result ? { resultStale: true } : {}),
+      };
     case 'SET_STRINGS':
       // TODO(Stage 4): Add proper StringConfig[] → UIStringConfig[] bridge
       // This action is only dispatched by the full engine in Stage 4.
@@ -90,7 +102,8 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
       return {
         ...state,
         strings: action.strings as unknown as UIStringConfig[],
-        inverters: action.inverters,
+        inverters: action.inverters as unknown as UIInverterConfig[],
+        ...(state.result ? { resultStale: true } : {}),
       };
     case 'SET_RESULT':
       return { ...state, result: action.result };
@@ -122,6 +135,7 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
             ? { ...s, panelIds: [...s.panelIds, action.panelId] }
             : s
         ),
+        ...(state.result ? { resultStale: true } : {}),
       };
     }
     case 'UNASSIGN_PANEL':
@@ -131,6 +145,7 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
           ...s,
           panelIds: s.panelIds.filter(id => id !== action.panelId),
         })),
+        ...(state.result ? { resultStale: true } : {}),
       };
     case 'CREATE_STRING': {
       const newString = { id: state.nextStringId, panelIds: [] as string[] };
@@ -139,6 +154,7 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
         strings: [...state.strings, newString],
         activeStringId: state.nextStringId,
         nextStringId: state.nextStringId + 1,
+        ...(state.result ? { resultStale: true } : {}),
       };
     }
     case 'DELETE_STRING':
@@ -146,6 +162,7 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
         ...state,
         strings: state.strings.filter(s => s.id !== action.stringId),
         activeStringId: state.activeStringId === action.stringId ? null : state.activeStringId,
+        ...(state.result ? { resultStale: true } : {}),
       };
     case 'AUTO_STRING': {
       const manualPanelIds = new Set(state.strings.flatMap(s => s.panelIds));
@@ -160,7 +177,45 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
         ...state,
         strings: [...state.strings, ...newStrings],
         nextStringId: currentId,
+        ...(state.result ? { resultStale: true } : {}),
       };
+    }
+    case 'RUN_ANALYSIS_START':
+      return { ...state, isAnalyzing: true, analysisError: null, analysisProgress: null };
+    case 'SET_ANALYSIS_PROGRESS':
+      return { ...state, analysisProgress: { percent: action.percent, stage: action.stage } };
+    case 'SET_ANALYSIS_RESULT':
+      return {
+        ...state,
+        result: action.result,
+        inverters: action.inverters,
+        isAnalyzing: false,
+        resultStale: false,
+        analysisError: null,
+        analysisProgress: null,
+      };
+    case 'SET_ANALYSIS_ERROR':
+      return { ...state, analysisError: action.error, isAnalyzing: false, analysisProgress: null };
+    case 'REASSIGN_STRING_TO_CHANNEL': {
+      const newInverters = state.inverters.map((inv, idx) => {
+        const channels = inv.channels.map(ch => ({
+          stringIndices: [...ch.stringIndices],
+        }));
+        if (idx === action.fromInverterId) {
+          channels[action.fromChannel] = {
+            stringIndices: channels[action.fromChannel].stringIndices.filter(
+              s => s !== action.stringIndex
+            ),
+          };
+        }
+        if (idx === action.toInverterId) {
+          channels[action.toChannel] = {
+            stringIndices: [...channels[action.toChannel].stringIndices, action.stringIndex],
+          };
+        }
+        return { ...inv, channels };
+      });
+      return { ...state, inverters: newInverters, resultStale: true };
     }
     case 'RESET':
       return INITIAL_STATE;
@@ -168,8 +223,6 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
       return state;
   }
 }
-
-const ENABLED_TABS: SolarDesignerTab[] = ['visualizer', 'stringing'];
 
 const SUITE_BREADCRUMBS: Record<string, { label: string; href: string }> = {
   de: { label: 'D&E', href: '/suites/design-engineering' },
@@ -194,6 +247,14 @@ function SolarDesignerInner() {
     const parent = from ? SUITE_BREADCRUMBS[from] : null;
     return parent ? [parent] : undefined;
   }, [searchParams]);
+
+  const enabledTabs = useMemo<SolarDesignerTab[]>(() => {
+    const base: SolarDesignerTab[] = ['visualizer', 'stringing'];
+    if (state.result) {
+      return [...base, 'production', 'timeseries', 'inverters'];
+    }
+    return base;
+  }, [state.result]);
 
   // Run shade association after panels + radiance points are loaded
   useEffect(() => {
@@ -232,7 +293,7 @@ function SolarDesignerInner() {
           <TabBar
             activeTab={state.activeTab}
             onTabChange={handleTabChange}
-            enabledTabs={ENABLED_TABS}
+            enabledTabs={enabledTabs}
           />
           <div className="mt-4">
             {state.activeTab === 'visualizer' && <VisualizerTab state={state} dispatch={dispatch} />}
