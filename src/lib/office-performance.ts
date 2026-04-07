@@ -21,36 +21,65 @@ const DEFAULT_GOALS: Record<OfficeMetricName, number> = {
   inspections_completed: 10,
 };
 
+type OfficeGoalRow = {
+  metric: string;
+  target: number;
+};
+
+type OfficeGoalDelegate = {
+  findMany(args: {
+    where: {
+      location: string;
+      month: number;
+      year: number;
+    };
+  }): Promise<OfficeGoalRow[]>;
+};
+
+function getOfficeGoalDelegate(): OfficeGoalDelegate | null {
+  if (!prisma) return null;
+  const client = prisma as typeof prisma & { officeGoal?: OfficeGoalDelegate };
+  return client.officeGoal ?? null;
+}
+
 export async function getGoalsForLocation(
   location: string,
   month: number,
   year: number
 ): Promise<Record<OfficeMetricName, number>> {
   const goals = { ...DEFAULT_GOALS };
-  if (!prisma) return goals;
+  const officeGoal = getOfficeGoalDelegate();
+  if (!officeGoal) return goals;
 
-  const rows = await prisma.officeGoal.findMany({
-    where: { location, month, year },
-  });
-
-  for (const row of rows) {
-    if (row.metric in goals) {
-      goals[row.metric as OfficeMetricName] = row.target;
-    }
-  }
-
-  // Fallback: if no goals for this month, try prior month
-  if (rows.length === 0) {
-    const prevMonth = month === 1 ? 12 : month - 1;
-    const prevYear = month === 1 ? year - 1 : year;
-    const fallback = await prisma.officeGoal.findMany({
-      where: { location, month: prevMonth, year: prevYear },
+  try {
+    const rows = await officeGoal.findMany({
+      where: { location, month, year },
     });
-    for (const row of fallback) {
+
+    for (const row of rows) {
       if (row.metric in goals) {
         goals[row.metric as OfficeMetricName] = row.target;
       }
     }
+
+    // Fallback: if no goals for this month, try prior month
+    if (rows.length === 0) {
+      const prevMonth = month === 1 ? 12 : month - 1;
+      const prevYear = month === 1 ? year - 1 : year;
+      const fallback = await officeGoal.findMany({
+        where: { location, month: prevMonth, year: prevYear },
+      });
+      for (const row of fallback) {
+        if (row.metric in goals) {
+          goals[row.metric as OfficeMetricName] = row.target;
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(
+      `[office-performance] Failed to load OfficeGoal rows for ${location}; using defaults.`,
+      error
+    );
   }
 
   return goals;
