@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { CoreSolarDesignerResult } from '@/lib/solar/v12-engine';
-import { aggregateTimeseries, sumTimeseries } from '@/lib/solar/v12-engine';
+import { aggregateTimeseries, sumTimeseries, viewToKwh } from '@/lib/solar/v12-engine';
 import type { AggregationPeriod } from '@/lib/solar/v12-engine/timeseries';
 import type { UIStringConfig } from './types';
 import TimeseriesChart from './TimeseriesChart';
@@ -50,8 +50,8 @@ export default function TimeseriesTab({ result, strings }: TimeseriesTabProps) {
     if (!indSeries && !strSeries) return null;
 
     const sd = period === 'year' ? 0 : startDay;
-    const modelA = indSeries ? aggregateTimeseries(indSeries, period, sd) : null;
-    const modelB = strSeries ? aggregateTimeseries(strSeries, period, sd) : null;
+    const modelA = indSeries ? viewToKwh(aggregateTimeseries(indSeries, period, sd)) : null;
+    const modelB = strSeries ? viewToKwh(aggregateTimeseries(strSeries, period, sd)) : null;
 
     return { modelA, modelB };
   }, [result, period, startDay, selectedString]);

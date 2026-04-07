@@ -52,7 +52,7 @@ export { autoString } from './stringing';
 export { solarFactor, seasonFactor, getSeasonalTSRF, calculateStringElectrical } from './physics';
 
 // Timeseries
-export { aggregateTimeseries, sumTimeseries } from './timeseries';
+export { aggregateTimeseries, sumTimeseries, viewToKwh } from './timeseries';
 
 // Clipping
 export { detectClippingEvents } from './clipping';

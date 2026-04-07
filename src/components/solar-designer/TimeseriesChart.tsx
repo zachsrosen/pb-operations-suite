@@ -30,7 +30,7 @@ export default function TimeseriesChart({ modelA, modelB }: TimeseriesChartProps
     return ticks;
   }, [maxVal]);
 
-  const unit = modelA.period === 'day' ? 'Wh' : 'kWh';
+  const unit = 'kWh';
 
   // Area chart path builder
   const buildPath = (values: number[], close: boolean) => {

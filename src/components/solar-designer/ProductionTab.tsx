@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { CoreSolarDesignerResult, PanelGeometry } from '@/lib/solar/v12-engine';
-import { aggregateTimeseries, sumTimeseries, HALF_HOUR_FACTOR } from '@/lib/solar/v12-engine';
+import { aggregateTimeseries, sumTimeseries, viewToKwh, HALF_HOUR_FACTOR } from '@/lib/solar/v12-engine';
 import type { UIStringConfig } from './types';
 import ProductionChart from './ProductionChart';
 
@@ -28,8 +28,8 @@ export default function ProductionTab({ result, panels, strings }: ProductionTab
   // Aggregate timeseries for chart
   const chartData = useMemo(() => {
     if (!result) return null;
-    const modelA = aggregateTimeseries(sumTimeseries(result.independentTimeseries), 'year', 0);
-    const modelB = aggregateTimeseries(sumTimeseries(result.stringTimeseries), 'year', 0);
+    const modelA = viewToKwh(aggregateTimeseries(sumTimeseries(result.independentTimeseries), 'year', 0));
+    const modelB = viewToKwh(aggregateTimeseries(sumTimeseries(result.stringTimeseries), 'year', 0));
     return { modelA, modelB };
   }, [result]);
 
