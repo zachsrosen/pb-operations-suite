@@ -86,6 +86,11 @@ export const queryKeys = {
     root: ["territory-map"] as const,
     all: () => ["territory-map", "all"] as const,
   },
+  officePerformance: {
+    root: ["office-performance"] as const,
+    location: (slug: string) =>
+      [...queryKeys.officePerformance.root, slug] as const,
+  },
   idrMeeting: {
     root: ["idr-meeting"] as const,
     sessions: () => [...queryKeys.idrMeeting.root, "sessions"] as const,
@@ -122,6 +127,7 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("revenue-goals")) return [queryKeys.revenueGoals.root];
   if (serverKey.startsWith("funnel")) return [queryKeys.funnel.root];
   if (serverKey.startsWith("territory-map")) return [queryKeys.territoryMap.root];
+  if (serverKey.startsWith("office-performance")) return [queryKeys.officePerformance.root];
   if (serverKey.startsWith("idr-meeting")) return [queryKeys.idrMeeting.root];
   return [];
 }

@@ -39,3 +39,20 @@ export function normalizeLocation(location?: string | null): CanonicalLocation |
 export function normalizeLocationOrUnknown(location?: string | null): string {
   return normalizeLocation(location) || "Unknown";
 }
+
+/** URL-friendly slug ↔ canonical location mapping for office-performance routes */
+export const LOCATION_SLUG_TO_CANONICAL: Record<string, CanonicalLocation> = {
+  "westminster": "Westminster",
+  "centennial": "Centennial",
+  "colorado-springs": "Colorado Springs",
+  "san-luis-obispo": "San Luis Obispo",
+  "camarillo": "Camarillo",
+};
+
+export const CANONICAL_TO_LOCATION_SLUG: Record<CanonicalLocation, string> = {
+  "Westminster": "westminster",
+  "Centennial": "centennial",
+  "Colorado Springs": "colorado-springs",
+  "San Luis Obispo": "san-luis-obispo",
+  "Camarillo": "camarillo",
+};
