@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useCallback } from 'react';
-import { unzipSync, strFromU8 } from 'fflate';
+import { unzipSync } from 'fflate';
 import { parseJSON, parseDXF, parseShadeCSV } from '@/lib/solar/v12-engine';
 import type { PanelGeometry, ShadeTimeseries, ShadeFidelity, ShadeSource } from '@/lib/solar/v12-engine';
 import type { RadiancePoint } from '@/lib/solar/v12-engine/layout-parser';
