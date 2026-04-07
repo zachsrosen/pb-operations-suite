@@ -33,6 +33,7 @@ The button is enabled when all three conditions are met:
 
 1. User clicks Run → dispatch `RUN_ANALYSIS_START`
 2. Component builds `CoreSolarDesignerInput`:
+   - **Shade enrichment**: The engine reads shade points from `PanelGeometry.shadePointIds` (`runner.ts:74`), but Stage 3 stores the canonical shade associations in `state.panelShadeMap` (a `Record<string, string[]>` keyed by panel ID). Before passing panels to the worker, enrich each panel: `panels.map(pg => ({ ...pg, shadePointIds: panelShadeMap[pg.id] ?? [] }))`. Without this, the analysis runs as if no panels have shade data.
    - Bridge `UIStringConfig[]` → `StringConfig[]` (panel IDs → panel indices via `panels.findIndex(p => p.id === panelId)`)
    - Auto-assign `UIInverterConfig[]` (see below), then flatten to engine `InverterConfig[]` via `flattenInverterConfigs()`
    - Copy equipment keys, site conditions, loss profile, shade data
@@ -218,11 +219,13 @@ One card per inverter in `state.inverters` (type: `UIInverterConfig[]`). Each ca
 
 ### Manual MPPT Reassignment
 
-Click a string chip to select it, then click a different MPPT channel (on the same or different inverter) to move it there. Dispatches `REASSIGN_STRING_TO_CHANNEL` action with `{ inverterId: number; stringIndex: number; fromChannel: number; toChannel: number }`.
+Click a string chip to select it, then click a different MPPT channel (on the same or different inverter) to move it there. Dispatches `REASSIGN_STRING_TO_CHANNEL` action with `{ stringIndex: number; fromInverterId: number; fromChannel: number; toInverterId: number; toChannel: number }`.
 
 The reducer updates `state.inverters` (a `UIInverterConfig[]`):
-1. Remove `stringIndex` from `inverters[inverterId].channels[fromChannel].stringIndices`
-2. Add `stringIndex` to `inverters[inverterId].channels[toChannel].stringIndices`
+1. Remove `stringIndex` from `inverters[fromInverterId].channels[fromChannel].stringIndices`
+2. Add `stringIndex` to `inverters[toInverterId].channels[toChannel].stringIndices`
+
+This supports both same-inverter moves (`fromInverterId === toInverterId`) and cross-inverter moves.
 
 Reassignment sets `state.resultStale = true` and shows a yellow banner: "Inverter config changed — re-run analysis to update results." The Run button in the sidebar shows a pulsing indicator.
 
@@ -293,7 +296,7 @@ inverters: UIInverterConfig[];  // was InverterConfig[]
 | { type: 'SET_ANALYSIS_PROGRESS'; percent: number; stage: string }
 | { type: 'SET_ANALYSIS_RESULT'; result: CoreSolarDesignerResult; inverters: UIInverterConfig[] }
 | { type: 'SET_ANALYSIS_ERROR'; error: string }
-| { type: 'REASSIGN_STRING_TO_CHANNEL'; inverterId: number; stringIndex: number; fromChannel: number; toChannel: number }
+| { type: 'REASSIGN_STRING_TO_CHANNEL'; stringIndex: number; fromInverterId: number; fromChannel: number; toInverterId: number; toChannel: number }
 ```
 
 **Why `SET_ANALYSIS_RESULT` instead of reusing `SET_RESULT`?** The existing `SET_RESULT` action (`{ type: 'SET_RESULT'; result: CoreSolarDesignerResult }`) stores only the result. The analysis flow needs to atomically store both the result AND the auto-assigned `UIInverterConfig[]`. Using a distinct action name avoids a breaking signature change on the existing action.
@@ -304,7 +307,7 @@ inverters: UIInverterConfig[];  // was InverterConfig[]
 - `SET_ANALYSIS_PROGRESS`: updates `analysisProgress`
 - `SET_ANALYSIS_RESULT`: stores `result` and `inverters`, sets `isAnalyzing: false`, `resultStale: false`, clears `analysisError`
 - `SET_ANALYSIS_ERROR`: stores `analysisError`, sets `isAnalyzing: false`
-- `REASSIGN_STRING_TO_CHANNEL`: removes `stringIndex` from `channels[fromChannel].stringIndices`, adds to `channels[toChannel].stringIndices` in `state.inverters[inverterId]`, sets `resultStale: true`
+- `REASSIGN_STRING_TO_CHANNEL`: removes `stringIndex` from `state.inverters[fromInverterId].channels[fromChannel].stringIndices`, adds to `state.inverters[toInverterId].channels[toChannel].stringIndices`, sets `resultStale: true`
 
 ### Existing Action Modifications
 
