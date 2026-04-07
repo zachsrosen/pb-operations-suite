@@ -11,6 +11,7 @@ import FileUploadPanel from '@/components/solar-designer/FileUploadPanel';
 import SystemSummaryBar from '@/components/solar-designer/SystemSummaryBar';
 import VisualizerTab from '@/components/solar-designer/VisualizerTab';
 import StringingTab from '@/components/solar-designer/StringingTab';
+import ProductionTab from '@/components/solar-designer/ProductionTab';
 import AddressInput from '@/components/solar-designer/AddressInput';
 import RunAnalysisButton from '@/components/solar-designer/RunAnalysisButton';
 import { DEFAULT_SITE_CONDITIONS, DEFAULT_LOSS_PROFILE, associateShadePoints } from '@/lib/solar/v12-engine';
@@ -301,7 +302,9 @@ function SolarDesignerInner() {
           <div className="mt-4">
             {state.activeTab === 'visualizer' && <VisualizerTab state={state} dispatch={dispatch} />}
             {state.activeTab === 'stringing' && <StringingTab state={state} dispatch={dispatch} />}
-            {state.activeTab === 'production' && <PlaceholderTab tabName="Production" targetStage={4} />}
+            {state.activeTab === 'production' && (
+              <ProductionTab result={state.result} panels={state.panels} strings={state.strings} />
+            )}
             {state.activeTab === 'timeseries' && <PlaceholderTab tabName="30-Min Series" targetStage={4} />}
             {state.activeTab === 'inverters' && <PlaceholderTab tabName="Inverters" targetStage={4} />}
             {state.activeTab === 'battery' && <PlaceholderTab tabName="Battery" targetStage={5} />}
