@@ -1,6 +1,6 @@
 'use client';
 
-import { useReducer, useEffect, useMemo } from 'react';
+import { Suspense, useReducer, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'next/navigation';
 import DashboardShell from '@/components/DashboardShell';
 import TabBar from '@/components/solar-designer/TabBar';
@@ -177,6 +177,14 @@ const SUITE_BREADCRUMBS: Record<string, { label: string; href: string }> = {
 };
 
 export default function SolarDesignerPage() {
+  return (
+    <Suspense>
+      <SolarDesignerInner />
+    </Suspense>
+  );
+}
+
+function SolarDesignerInner() {
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
   const searchParams = useSearchParams();
 
