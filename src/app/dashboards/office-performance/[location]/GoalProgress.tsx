@@ -23,9 +23,13 @@ export default function GoalProgress({
   useEffect(() => {
     if (isGoalHit && !hasCelebrated.current) {
       hasCelebrated.current = true;
-      setShowCelebration(true);
+      // Use rAF to avoid synchronous setState in effect body
+      const raf = requestAnimationFrame(() => setShowCelebration(true));
       const timer = setTimeout(() => setShowCelebration(false), 2000);
-      return () => clearTimeout(timer);
+      return () => {
+        cancelAnimationFrame(raf);
+        clearTimeout(timer);
+      };
     }
   }, [isGoalHit]);
 

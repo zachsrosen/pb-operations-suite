@@ -115,7 +115,7 @@ export function buildPipelineData(
   let totalDaysInStage = 0;
   let daysInStageCount = 0;
   // Prior period avg will be enriched from QC metrics in the orchestrator
-  let avgDaysInStagePrior = 0;
+  const avgDaysInStagePrior = 0;
 
   for (const p of projects) {
     const stage = normalizeStage(p.stage || "Unknown");
