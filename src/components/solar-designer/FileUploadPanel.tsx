@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useCallback } from 'react';
+import { upload } from '@vercel/blob/client';
 import type { SolarDesignerAction, UploadedFile } from './types';
 
 interface FileUploadPanelProps {
@@ -33,12 +34,27 @@ export default function FileUploadPanel({
     dispatch({ type: 'UPLOAD_START' });
 
     try {
-      const formData = new FormData();
-      files.forEach((f) => formData.append('files', f));
+      // Upload files to Vercel Blob (client-side direct upload).
+      // This bypasses the 4.5 MB serverless body-size limit — the
+      // browser sends the file straight to Blob storage, then we pass
+      // the resulting URLs to the /parse endpoint for server-side parsing.
+      const blobFiles: { url: string; name: string }[] = [];
 
-      const res = await fetch('/api/solar-designer/upload', {
+      for (const f of files) {
+        const ts = Date.now();
+        const pathname = `solar-designer/${ts}-${f.name}`;
+        const blob = await upload(pathname, f, {
+          access: 'public',
+          handleUploadUrl: '/api/solar-designer/upload-token',
+        });
+        blobFiles.push({ url: blob.url, name: f.name });
+      }
+
+      // Parse uploaded blobs server-side
+      const res = await fetch('/api/solar-designer/parse', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ files: blobFiles }),
       });
 
       if (!res.ok) {
