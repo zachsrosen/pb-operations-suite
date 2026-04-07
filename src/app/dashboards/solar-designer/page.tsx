@@ -80,6 +80,10 @@ function reducer(state: SolarDesignerState, action: SolarDesignerAction): SolarD
         mapAlignment: DEFAULT_MAP_ALIGNMENT,
         inverters: [],
         result: null,
+        isAnalyzing: false,
+        analysisProgress: null,
+        analysisError: null,
+        resultStale: false,
       };
     case 'UPLOAD_ERROR':
       return { ...state, isUploading: false, uploadError: action.error };
