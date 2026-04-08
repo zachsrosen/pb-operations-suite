@@ -4,6 +4,8 @@ import type { InspectionData } from "@/lib/office-performance-types";
 import GoalProgress from "./GoalProgress";
 import CountUp from "./CountUp";
 import Leaderboard from "./Leaderboard";
+import DealList from "./DealList";
+import ComplianceBlock from "./ComplianceBlock";
 
 interface InspectionsSectionProps {
   data: InspectionData;
@@ -81,6 +83,12 @@ export default function InspectionsSection({ data }: InspectionsSectionProps) {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Deal list + compliance */}
+      <div className="flex flex-col gap-3 mb-4">
+        <DealList deals={data.deals} totalCount={data.totalCount} />
+        <ComplianceBlock compliance={data.compliance} />
       </div>
 
       {/* Leaderboard with pass rates */}
