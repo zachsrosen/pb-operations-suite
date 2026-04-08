@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useCallback, useEffect, lazy, Suspense } from "react";
+import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
+import EagleViewButton from "@/components/EagleViewButton";
 import ProjectBrowser from "./ProjectBrowser";
 import ClassicWorkspace from "./ClassicWorkspace";
 import SetupWizard from "./SetupWizard";
@@ -58,6 +60,18 @@ export default function SolarSurveyorShell({
   const [wizardDraftId, setWizardDraftId] = useState<string | undefined>();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const { trackFeature } = useActivityTracking();
+
+  const { data: selectedProject } = useQuery({
+    queryKey: ["solar-project", selectedProjectId],
+    queryFn: async () => {
+      const res = await fetch(`/api/solar/projects/${selectedProjectId}`);
+      if (!res.ok) return null;
+      const json = await res.json();
+      return json.data as { dealId?: string } | null;
+    },
+    enabled: !!selectedProjectId,
+    staleTime: 5 * 60 * 1000,
+  });
 
   // CSRF bootstrap — call /api/solar/session to set csrf_token cookie
   useEffect(() => {
@@ -126,36 +140,41 @@ export default function SolarSurveyorShell({
   // Toggle button — hidden when force-classic is locked
   const headerRight =
     !forceClassicLocked ? (
-      activeView === "native" ? (
-        <button
-          onClick={() => handleOpenInClassic()}
-          className="text-xs px-2 sm:px-3 py-1.5 rounded border border-t-border text-muted hover:text-orange-400 hover:border-orange-500/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/50"
-        >
-          <span className="hidden sm:inline">Use </span>Classic<span className="hidden sm:inline"> (V12)</span>
-        </button>
-      ) : activeView === "classic" ? (
-        <button
-          onClick={() => switchView("native")}
-          className="text-xs px-2 sm:px-3 py-1.5 rounded border border-t-border text-muted hover:text-blue-400 hover:border-blue-500/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50"
-        >
-          <span className="hidden sm:inline">Try </span>Project Browser
-        </button>
-      ) : activeView === "analysis" ? (
-        <button
-          onClick={handleBackFromAnalysis}
-          className="text-xs px-2 sm:px-3 py-1.5 rounded border border-t-border text-muted hover:text-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
-        >
-          &larr; Back<span className="hidden sm:inline"> to Projects</span>
-        </button>
-      ) : (
-        // wizard — show cancel-to-browser link
-        <button
-          onClick={handleWizardCancel}
-          className="text-xs px-2 sm:px-3 py-1.5 rounded border border-t-border text-muted hover:text-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
-        >
-          Back<span className="hidden sm:inline"> to Projects</span>
-        </button>
-      )
+      <div className="flex items-center gap-2">
+        {selectedProject?.dealId && (activeView === "classic" || activeView === "native") && (
+          <EagleViewButton dealId={selectedProject.dealId} />
+        )}
+        {activeView === "native" ? (
+          <button
+            onClick={() => handleOpenInClassic()}
+            className="text-xs px-2 sm:px-3 py-1.5 rounded border border-t-border text-muted hover:text-orange-400 hover:border-orange-500/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-orange-400/50"
+          >
+            <span className="hidden sm:inline">Use </span>Classic<span className="hidden sm:inline"> (V12)</span>
+          </button>
+        ) : activeView === "classic" ? (
+          <button
+            onClick={() => switchView("native")}
+            className="text-xs px-2 sm:px-3 py-1.5 rounded border border-t-border text-muted hover:text-blue-400 hover:border-blue-500/50 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50"
+          >
+            <span className="hidden sm:inline">Try </span>Project Browser
+          </button>
+        ) : activeView === "analysis" ? (
+          <button
+            onClick={handleBackFromAnalysis}
+            className="text-xs px-2 sm:px-3 py-1.5 rounded border border-t-border text-muted hover:text-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
+          >
+            &larr; Back<span className="hidden sm:inline"> to Projects</span>
+          </button>
+        ) : (
+          // wizard — show cancel-to-browser link
+          <button
+            onClick={handleWizardCancel}
+            className="text-xs px-2 sm:px-3 py-1.5 rounded border border-t-border text-muted hover:text-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400/50"
+          >
+            Back<span className="hidden sm:inline"> to Projects</span>
+          </button>
+        )}
+      </div>
     ) : undefined;
 
   const subtitle =

@@ -16,11 +16,13 @@
  */
 
 import { getAnthropicClient, CLAUDE_MODELS } from "@/lib/anthropic";
+import { prisma } from "@/lib/db";
 import {
   extractFolderId,
   listPlansetPdfs,
   pickBestPlanset,
   downloadDrivePdf,
+  getDriveToken,
 } from "@/lib/drive-plansets";
 import { fetchAHJsForDeal, fetchUtilitiesForDeal } from "@/lib/hubspot-custom-objects";
 import type { ReviewResult, Finding, Severity } from "./types";
@@ -282,6 +284,7 @@ export async function runDesignReview(
 
     // ── Step 3: Upload PDF to Anthropic Files API ──
     let anthropicFileId: string | undefined;
+    let aerialImageFileId: string | undefined;
     try {
       const uploadedFile = await client.beta.files.upload({
         file: new File([new Uint8Array(buffer)], filename, { type: "application/pdf" }),
@@ -294,8 +297,34 @@ export async function runDesignReview(
         `Failed to upload planset PDF for AI review: ${msg}`);
     }
 
+    // ── Step 3b: Check for EagleView aerial imagery ──
+    try {
+      const evRecord = await prisma.eagleViewImagery.findUnique({ where: { dealId } });
+      if (evRecord?.driveFileId) {
+        const driveToken = await getDriveToken();
+        const aerialRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${evRecord.driveFileId}?alt=media&supportsAllDrives=true`,
+          { headers: { Authorization: `Bearer ${driveToken}` }, cache: "no-store" },
+        );
+        if (aerialRes.ok) {
+          const aerialBuffer = await aerialRes.arrayBuffer();
+          const aerialFile = await client.beta.files.upload({
+            file: new File([new Uint8Array(aerialBuffer)], `aerial_${dealId}.png`, { type: "image/png" }),
+          });
+          aerialImageFileId = aerialFile.id;
+        } else {
+          console.warn(`[design-review-ai] Failed to download EagleView image from Drive: ${aerialRes.status}`);
+        }
+      }
+    } catch (err) {
+      // Non-fatal: proceed without aerial image
+      console.warn("[design-review-ai] EagleView imagery lookup failed:", err);
+    }
+
+    await heartbeat(); // milestone: aerial imagery checked
+
     // ── Step 4: Call Claude with structured output (Files API reference) ──
-    const userMessage = buildUserMessage(dealContext, ahjContext, utilityContext, filename);
+    const userMessage = buildUserMessage(dealContext, ahjContext, utilityContext, filename, !!aerialImageFileId);
 
     const claudeParams = {
       model: CLAUDE_MODELS.sonnet,
@@ -317,6 +346,13 @@ export async function runDesignReview(
                 type: "document",
                 source: { type: "file", file_id: anthropicFileId },
               },
+              // Include aerial imagery if available
+              ...(aerialImageFileId
+                ? [{
+                    type: "image" as const,
+                    source: { type: "file" as const, file_id: aerialImageFileId },
+                  }]
+                : []),
               {
                 type: "text",
                 text: userMessage,
@@ -330,10 +366,14 @@ export async function runDesignReview(
       const msg = e instanceof Error ? e.message : "Claude API call failed";
       console.error("[design-review-ai] Claude API error:", msg);
 
-      // Clean up uploaded file before fallback/error
+      // Clean up uploaded files before fallback/error
       if (anthropicFileId) {
         await client.beta.files.delete(anthropicFileId).catch(() => {});
         anthropicFileId = undefined;
+      }
+      if (aerialImageFileId) {
+        await client.beta.files.delete(aerialImageFileId).catch(() => {});
+        aerialImageFileId = undefined;
       }
 
       // Fallback: retry with base64 inline if it's a PDF processing error and file is small enough
@@ -378,10 +418,15 @@ export async function runDesignReview(
       }
     }
 
-    // Clean up uploaded file (best-effort)
+    // Clean up uploaded files (best-effort)
     if (anthropicFileId) {
       await client.beta.files.delete(anthropicFileId).catch((e) => {
         console.warn("[design-review-ai] Failed to delete uploaded file:", anthropicFileId, e);
+      });
+    }
+    if (aerialImageFileId) {
+      await client.beta.files.delete(aerialImageFileId).catch((e) => {
+        console.warn("[design-review-ai] Failed to delete aerial image file:", aerialImageFileId, e);
       });
     }
 
@@ -443,6 +488,7 @@ function buildUserMessage(
   ahjContext: Record<string, string>[],
   utilityContext: Record<string, string>[],
   plansetFilename: string,
+  hasAerialImage = false,
 ): string {
   const parts: string[] = [
     `Review the attached planset PDF (${plansetFilename}) for this solar project.`,
@@ -469,6 +515,15 @@ function buildUserMessage(
     }
   } else {
     parts.push("", "## Utility Requirements", "No utility records found for this deal. Skip utility compliance checks.");
+  }
+
+  if (hasAerialImage) {
+    parts.push("");
+    parts.push("**Aerial Imagery:** An aerial orthographic image of the property is included. " +
+      "Use it to visually verify: fire setbacks (ridge, hip, valley, eave, rake, pathway distances), " +
+      "panel placement relative to roof edges, equipment placement clearances relative to property " +
+      "boundaries, access path visibility, and roof shape/area consistency between the planset and " +
+      "the actual property.");
   }
 
   parts.push(

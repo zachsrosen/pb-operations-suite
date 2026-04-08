@@ -31,6 +31,7 @@ const UpdateProjectSchema = z.object({
   revisionNote: z.string().max(500).optional(),
   name: z.string().min(1).max(200).optional(),
   address: z.string().max(500).optional(),
+  dealId: z.string().max(20).optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
   status: z.enum(["DRAFT", "ACTIVE"]).optional(),
@@ -208,6 +209,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   const updateData: any = { version: newVersion, updatedById: user.id };
   if (data.name !== undefined) updateData.name = data.name;
   if (data.address !== undefined) updateData.address = data.address;
+  if (data.dealId !== undefined) updateData.dealId = data.dealId;
   if (data.lat !== undefined) updateData.lat = data.lat;
   if (data.lng !== undefined) updateData.lng = data.lng;
   if (data.status !== undefined) updateData.status = data.status;

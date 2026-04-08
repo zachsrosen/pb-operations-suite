@@ -49,6 +49,7 @@ export default function SetupWizard({
   // Form data
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
+  const [dealId, setDealId] = useState("");
   const [equipment, setEquipment] = useState<EquipmentSelections>({
     panelKey: null,
     inverterKey: null,
@@ -180,12 +181,13 @@ export default function SetupWizard({
 
   // ── Step 1: Basics → POST project ────────────────────────
   const handleBasicsNext = useCallback(
-    async (data: { name: string; address: string }) => {
+    async (data: { name: string; address: string; dealId: string }) => {
       setError(null);
       setConflict(null);
       setSaving(true);
       setName(data.name);
       setAddress(data.address);
+      setDealId(data.dealId);
 
       try {
         if (projectId) {
@@ -193,6 +195,7 @@ export default function SetupWizard({
             version: projectVersion,
             name: data.name,
             address: data.address || undefined,
+            dealId: data.dealId || undefined,
           };
 
           await saveProjectUpdate({
@@ -225,6 +228,7 @@ export default function SetupWizard({
           body: JSON.stringify({
             name: data.name,
             address: data.address || undefined,
+            dealId: data.dealId || undefined,
             visibility: "PRIVATE",
           }),
         });
@@ -627,6 +631,7 @@ export default function SetupWizard({
         <StepBasics
           initialName={name}
           initialAddress={address}
+          initialDealId={dealId}
           onNext={handleBasicsNext}
           onCancel={handleCancel}
           saving={saving}
