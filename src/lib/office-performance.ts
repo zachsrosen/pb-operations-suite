@@ -167,48 +167,6 @@ interface ProjectForMetrics {
   designLead?: string | null;
 }
 
-function buildPipelinePersonLeaderboard(
-  projects: ProjectForMetrics[],
-  field: keyof ProjectForMetrics,
-  now: Date
-): PipelinePersonStat[] {
-  const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const personMap = new Map<string, { active: number; completed: number; totalDays: number; daysCount: number }>();
-
-  for (const p of projects) {
-    const name = p[field] as string | null | undefined;
-    if (!name || name.trim() === "") continue;
-
-    const trimmed = name.trim();
-    const existing = personMap.get(trimmed) || { active: 0, completed: 0, totalDays: 0, daysCount: 0 };
-    existing.active++;
-
-    const ptoDate = p.ptoGrantedDate ? new Date(p.ptoGrantedDate) : null;
-    if (ptoDate && ptoDate >= mtdStart && ptoDate <= now) {
-      existing.completed++;
-    }
-
-    if (p.daysSinceStageMovement != null) {
-      existing.totalDays += p.daysSinceStageMovement;
-      existing.daysCount++;
-    }
-
-    personMap.set(trimmed, existing);
-  }
-
-  return [...personMap.entries()]
-    .map(([name, stats]) => ({
-      name,
-      activeCount: stats.active,
-      completedMtd: stats.completed,
-      avgDaysInStage: stats.daysCount > 0
-        ? Math.round((stats.totalDays / stats.daysCount) * 10) / 10
-        : undefined,
-    }))
-    .sort((a, b) => b.activeCount - a.activeCount)
-    .slice(0, 8);
-}
-
 // ---------- Deal Drill-Down ----------
 
 const DEAL_LIST_CAP = 12;
@@ -429,16 +387,7 @@ export function buildPipelineData(
   const stageDistribution = ["Survey", "Design", "Permit", "RTB", "Install", "Inspect"]
     .map((stage) => ({ stage, count: stageCounts[stage] || 0 }));
 
-  const pmLeaderboard = buildPipelinePersonLeaderboard(projects, "projectManager", now);
-  const designerLeaderboard = buildPipelinePersonLeaderboard(projects, "designLead", now);
-  const ownerLeaderboard = buildPipelinePersonLeaderboard(projects, "dealOwner", now);
-
-  // Individual achievements from PM leaderboard
-  for (const pm of pmLeaderboard) {
-    if (pm.completedMtd >= 5) {
-      recentWins.push(`🌟 ${pm.name.split(" ")[0]} completed ${pm.completedMtd} projects this month!`);
-    }
-  }
+  const { deals, totalCount } = buildDealRows(projects, now);
 
   return {
     activeProjects: projects.length,
@@ -449,9 +398,8 @@ export function buildPipelineData(
     avgDaysInStagePrior, // Enriched from QC metrics in orchestrator
     stageDistribution,
     recentWins,
-    pmLeaderboard,
-    designerLeaderboard,
-    ownerLeaderboard,
+    deals,
+    totalCount,
   };
 }
 
