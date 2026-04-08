@@ -139,6 +139,10 @@ function normalizeStage(raw: string): string {
   return STAGE_MAP[lower] || raw;
 }
 
+const SURVEY_STAGES = new Set(["Survey"]);
+const INSTALL_STAGES = new Set(["RTB", "Install"]);
+const INSPECTION_STAGES = new Set(["Inspect", "PTO"]);
+
 // ---------- Pipeline Aggregation ----------
 
 // Matches the real RawProject shape from src/lib/types.ts and Project from src/lib/hubspot.ts
@@ -708,7 +712,9 @@ async function getMonthlyJobHistory(
 export async function buildSurveyData(
   location: string,
   goals: Record<OfficeMetricName, number>,
-  now: Date
+  now: Date,
+  locationProjects?: ProjectForMetrics[],
+  assignedUserMap?: Map<string, Map<string, string>>
 ): Promise<SurveyData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -734,6 +740,16 @@ export async function buildSurveyData(
 
   const surveyHistory = await getMonthlyJobHistory(location, "Site Survey", now, 3);
 
+  // Deal rows filtered to survey stages
+  const surveyProjects = (locationProjects || []).filter(
+    (p) => SURVEY_STAGES.has(normalizeStage(p.stage || ""))
+  );
+  const { deals, totalCount } = buildDealRows(surveyProjects, now);
+
+  // Compliance from Zuper "Site Survey" category
+  const complianceJobs = await getZuperJobsForCompliance(location, "Site Survey");
+  const compliance = buildComplianceData(complianceJobs, now) ?? undefined;
+
   return {
     completedMtd: mtdJobs.length,
     completedGoal: goals.surveys_completed,
@@ -741,6 +757,9 @@ export async function buildSurveyData(
     avgTurnaroundPrior: 0,
     scheduledThisWeek,
     leaderboard: buildLeaderboard([...userCounts.values()], surveyHistory) as EnrichedPersonStat[],
+    deals,
+    totalCount,
+    compliance,
   };
 }
 
@@ -749,7 +768,9 @@ export async function buildSurveyData(
 export async function buildInstallData(
   location: string,
   goals: Record<OfficeMetricName, number>,
-  now: Date
+  now: Date,
+  locationProjects?: ProjectForMetrics[],
+  assignedUserMap?: Map<string, Map<string, string>>
 ): Promise<InstallData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -859,6 +880,16 @@ export async function buildInstallData(
   const installerHistory = filterHistoryByUids(constructionHistory, installerUids);
   const electricianHistory = filterHistoryByUids(constructionHistory, electricianUids);
 
+  // Deal rows filtered to install stages
+  const installProjects = (locationProjects || []).filter(
+    (p) => INSTALL_STAGES.has(normalizeStage(p.stage || ""))
+  );
+  const { deals, totalCount } = buildDealRows(installProjects, now);
+
+  // Compliance from Zuper "Construction" category
+  const complianceJobs = await getZuperJobsForCompliance(location, "Construction");
+  const compliance = buildComplianceData(complianceJobs, now) ?? undefined;
+
   return {
     completedMtd: mtdJobs.length,
     completedGoal: goals.installs_completed,
@@ -868,6 +899,9 @@ export async function buildInstallData(
     scheduledThisWeek,
     installerLeaderboard: buildLeaderboard([...installerCounts.values()], installerHistory) as EnrichedPersonStat[],
     electricianLeaderboard: buildLeaderboard([...electricianCounts.values()], electricianHistory) as EnrichedPersonStat[],
+    deals,
+    totalCount,
+    compliance,
   };
 }
 
@@ -876,7 +910,9 @@ export async function buildInstallData(
 export async function buildInspectionData(
   location: string,
   goals: Record<OfficeMetricName, number>,
-  now: Date
+  now: Date,
+  locationProjects?: ProjectForMetrics[],
+  assignedUserMap?: Map<string, Map<string, string>>
 ): Promise<InspectionData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -902,6 +938,16 @@ export async function buildInspectionData(
     passRate: -1,
   }));
 
+  // Deal rows filtered to inspection stages
+  const inspectionProjects = (locationProjects || []).filter(
+    (p) => INSPECTION_STAGES.has(normalizeStage(p.stage || ""))
+  );
+  const { deals, totalCount } = buildDealRows(inspectionProjects, now);
+
+  // Compliance from Zuper "Inspection" category
+  const complianceJobs = await getZuperJobsForCompliance(location, "Inspection");
+  const compliance = buildComplianceData(complianceJobs, now) ?? undefined;
+
   return {
     completedMtd: mtdJobs.length,
     completedGoal: goals.inspections_completed,
@@ -911,6 +957,9 @@ export async function buildInspectionData(
     avgCcToPtoDays: 0,
     avgCcToPtoDaysPrior: 0,
     leaderboard,
+    deals,
+    totalCount,
+    compliance,
   };
 }
 

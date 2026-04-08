@@ -21,9 +21,9 @@ describe("buildPipelineData — deals and no leaderboards", () => {
       { id: 2, name: "Jones Residential", stage: "Survey", daysSinceStageMovement: 9 },
     ];
     const result = buildPipelineData(projects, DEFAULT_GOALS, now);
-    expect((result as Record<string, unknown>).pmLeaderboard).toBeUndefined();
-    expect((result as Record<string, unknown>).designerLeaderboard).toBeUndefined();
-    expect((result as Record<string, unknown>).ownerLeaderboard).toBeUndefined();
+    expect((result as unknown as Record<string, unknown>).pmLeaderboard).toBeUndefined();
+    expect((result as unknown as Record<string, unknown>).designerLeaderboard).toBeUndefined();
+    expect((result as unknown as Record<string, unknown>).ownerLeaderboard).toBeUndefined();
     expect(result.deals).toHaveLength(2);
     expect(result.totalCount).toBe(2);
     expect(result.deals[0].name).toBe("Smith 10.2kW");
