@@ -1249,30 +1249,28 @@ export async function getOfficePerformanceData(
   // Fetch goals
   const goals = await getGoalsForLocation(location, month, year);
 
-  // Fetch projects for this location — active for display, all for Zuper joins.
-  // The locationDealIds set must include inactive/closed deals so that compliance
-  // can count recently completed Zuper jobs whose HubSpot deals have since closed.
-  const allProjects = await fetchAllProjects({ activeOnly: false });
-  const allLocationProjects = (allProjects || []).filter(
+  // Fetch active projects for this location.
+  // Uses activeOnly: true to avoid fetching all historical deals (which causes
+  // HubSpot rate limits and Vercel timeouts). The small coverage gap for
+  // recently-closed deals is acceptable — compliance mostly cares about
+  // active jobs on active deals.
+  const allProjects = await fetchAllProjects({ activeOnly: true });
+  const locationProjects = (allProjects || []).filter(
     (p: ProjectForMetrics) => normalizeLocation(p.pbLocation) === location
   );
-  const locationProjects = allLocationProjects.filter(
-    (p: ProjectForMetrics) => p.stage && !["closed lost", "closed won"].includes(p.stage.toLowerCase())
-  );
 
-  // Build dealId sets and maps from ALL location projects (active + closed).
+  // Build dealId sets and maps from active location projects.
   // This avoids joining against HubSpotProjectCache (which may be empty).
-  const allDealIds = allLocationProjects.filter((p: ProjectForMetrics) => p.id).map((p: ProjectForMetrics) => String(p.id));
-  const locationDealIds = new Set(allDealIds);
+  const dealIds = locationProjects.filter((p: ProjectForMetrics) => p.id).map((p: ProjectForMetrics) => String(p.id));
+  const locationDealIds = new Set(dealIds);
   const dealNameMap = new Map(
-    allLocationProjects
+    locationProjects
       .filter((p: ProjectForMetrics) => p.id && p.name)
       .map((p: ProjectForMetrics) => [String(p.id), p.name!])
   );
 
-  // Batch-fetch Zuper assigned users for deal rows (active deals only)
-  const activeDealIds = locationProjects.filter((p: ProjectForMetrics) => p.id).map((p: ProjectForMetrics) => String(p.id));
-  const assignedUserMap = await batchZuperAssignedUsers(activeDealIds);
+  // Batch-fetch Zuper assigned users for deal rows
+  const assignedUserMap = await batchZuperAssignedUsers(dealIds);
 
   // Build pipeline data
   const pipeline = buildPipelineData(locationProjects, goals, now);
