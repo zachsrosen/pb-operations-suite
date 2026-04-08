@@ -196,6 +196,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // SOP Guide (read-only; writes gated by /api/admin/sop)
       "/sop",
       "/api/sop",
+      // IDR Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: true,
@@ -710,6 +713,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // SOP Guide
       "/sop",
       "/api/sop",
+      // IDR Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -774,6 +780,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // SOP Guide
       "/sop",
       "/api/sop",
+      // IDR Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -799,6 +808,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // SOP Guide
       "/sop",
       "/api/sop",
+      // IDR Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -863,6 +875,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // SOP Guide
       "/sop",
       "/api/sop",
+      // IDR Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: false,
@@ -891,6 +906,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // SOP Guide
       "/sop",
       "/api/sop",
+      // IDR Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: false,
