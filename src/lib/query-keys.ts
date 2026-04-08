@@ -100,6 +100,10 @@ export const queryKeys = {
     dealSearch: (q: string) => [...queryKeys.idrMeeting.root, "deal-search", q] as const,
     escalationQueue: () => [...queryKeys.idrMeeting.root, "escalation-queue"] as const,
   },
+  eagleview: {
+    root: ["eagleview"] as const,
+    imagery: (dealId: string) => [...queryKeys.eagleview.root, "imagery", dealId] as const,
+  },
 } as const;
 
 /**
