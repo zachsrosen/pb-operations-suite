@@ -9,8 +9,37 @@ import type {
   InspectionData,
   PersonStat,
   InspectionPersonStat,
+  EnrichedPersonStat,
   OfficeMetricName,
+  PipelinePersonStat,
 } from "@/lib/office-performance-types";
+
+// ---------- Name Matching ----------
+
+export function nameMatchesLoosely(a: string, b: string): boolean {
+  const normalize = (s: string) => s.toLowerCase().trim().replace(/[^a-z ]/g, "");
+  const na = normalize(a);
+  const nb = normalize(b);
+  if (na === nb) return true;
+  // startsWith is for abbreviations like "Mike S" → "Mike Smith", NOT for
+  // single first names matching full names. Only allow when both have spaces
+  // (multi-part names) to avoid "Mike" matching "Mike Smith".
+  const bothMultiPart = na.includes(" ") && nb.includes(" ");
+  if (bothMultiPart && (na.startsWith(nb) || nb.startsWith(na))) return true;
+  const partsA = a.trim().split(/\s+/);
+  const partsB = b.trim().split(/\s+/);
+  const firstA = partsA[0]?.toLowerCase();
+  const firstB = partsB[0]?.toLowerCase();
+  if (firstA !== firstB || !firstA || firstA.length <= 2) return false;
+  const lastA = partsA[partsA.length - 1]?.toLowerCase();
+  const lastB = partsB[partsB.length - 1]?.toLowerCase();
+  if (lastA && lastB && lastA[0] === lastB[0]) return true;
+  // When one side is a single name (no surname), do NOT assume a match.
+  // First-name-only comparisons are too ambiguous ("Mike" would match
+  // both "Mike Smith" and "Mike Rodriguez"). Require at least a
+  // last-initial match above for multi-part vs single-part names.
+  return false;
+}
 
 // ---------- Goals ----------
 
@@ -112,9 +141,11 @@ function normalizeStage(raw: string): string {
 
 // Matches the real RawProject shape from src/lib/types.ts and Project from src/lib/hubspot.ts
 interface ProjectForMetrics {
+  id?: number;  // HubSpot deal ID
   pbLocation?: string | null;
   stage?: string;
   amount?: number;
+  siteSurveyor?: string | null;
   ptoGrantedDate?: string | null;        // NOT "ptoDate" — real field name
   forecastedInstallDate?: string | null;
   forecastedInspectionDate?: string | null;
@@ -128,6 +159,51 @@ interface ProjectForMetrics {
   constructionTurnaroundTime?: number | null;
   timeCcToPto?: number | null;
   isFirstTimeInspectionPass?: boolean;
+  projectManager?: string | null;
+  dealOwner?: string | null;
+  designLead?: string | null;
+}
+
+function buildPipelinePersonLeaderboard(
+  projects: ProjectForMetrics[],
+  field: keyof ProjectForMetrics,
+  now: Date
+): PipelinePersonStat[] {
+  const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const personMap = new Map<string, { active: number; completed: number; totalDays: number; daysCount: number }>();
+
+  for (const p of projects) {
+    const name = p[field] as string | null | undefined;
+    if (!name || name.trim() === "") continue;
+
+    const trimmed = name.trim();
+    const existing = personMap.get(trimmed) || { active: 0, completed: 0, totalDays: 0, daysCount: 0 };
+    existing.active++;
+
+    const ptoDate = p.ptoGrantedDate ? new Date(p.ptoGrantedDate) : null;
+    if (ptoDate && ptoDate >= mtdStart && ptoDate <= now) {
+      existing.completed++;
+    }
+
+    if (p.daysSinceStageMovement != null) {
+      existing.totalDays += p.daysSinceStageMovement;
+      existing.daysCount++;
+    }
+
+    personMap.set(trimmed, existing);
+  }
+
+  return [...personMap.entries()]
+    .map(([name, stats]) => ({
+      name,
+      activeCount: stats.active,
+      completedMtd: stats.completed,
+      avgDaysInStage: stats.daysCount > 0
+        ? Math.round((stats.totalDays / stats.daysCount) * 10) / 10
+        : undefined,
+    }))
+    .sort((a, b) => b.activeCount - a.activeCount)
+    .slice(0, 8);
 }
 
 export function buildPipelineData(
@@ -192,6 +268,17 @@ export function buildPipelineData(
   const stageDistribution = ["Survey", "Design", "Permit", "RTB", "Install", "Inspect"]
     .map((stage) => ({ stage, count: stageCounts[stage] || 0 }));
 
+  const pmLeaderboard = buildPipelinePersonLeaderboard(projects, "projectManager", now);
+  const designerLeaderboard = buildPipelinePersonLeaderboard(projects, "designLead", now);
+  const ownerLeaderboard = buildPipelinePersonLeaderboard(projects, "dealOwner", now);
+
+  // Individual achievements from PM leaderboard
+  for (const pm of pmLeaderboard) {
+    if (pm.completedMtd >= 5) {
+      recentWins.push(`🌟 ${pm.name.split(" ")[0]} completed ${pm.completedMtd} projects this month!`);
+    }
+  }
+
   return {
     activeProjects: projects.length,
     completedMtd,
@@ -201,6 +288,9 @@ export function buildPipelineData(
     avgDaysInStagePrior, // Enriched from QC metrics in orchestrator
     stageDistribution,
     recentWins,
+    pmLeaderboard,
+    designerLeaderboard,
+    ownerLeaderboard,
   };
 }
 
@@ -239,10 +329,14 @@ export function buildLeaderboard(
     .map((u) => {
       const stat: PersonStat = { name: u.name, count: u.count };
 
-      // Compute monthly leader streak
+      // Compute monthly leader streak — sort keys explicitly (oldest→newest)
+      // so streak evaluation is deterministic regardless of Map insertion order.
       if (monthlyHistory) {
         let streak = 0;
-        for (const [, monthUsers] of [...monthlyHistory].reverse()) {
+        const sortedMonths = [...monthlyHistory.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .reverse(); // newest first for streak counting
+        for (const [, monthUsers] of sortedMonths) {
           const leader = monthUsers.sort((a, b) => b.count - a.count)[0];
           if (leader?.userUid === u.userUid) {
             streak++;
@@ -347,6 +441,46 @@ export async function getScheduledJobsThisWeek(
   return matching.length;
 }
 
+// ---------- Monthly Job History (for streak detection) ----------
+
+async function getMonthlyJobHistory(
+  location: string,
+  category: string,
+  now: Date,
+  monthsBack: number = 3
+): Promise<Map<string, UserJobCount[]>> {
+  const history = new Map<string, UserJobCount[]>();
+  if (!prisma) return history;
+
+  const oldestStart = new Date(now.getFullYear(), now.getMonth() - monthsBack, 1);
+  const latestEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
+
+  try {
+    const allJobs = await getZuperJobsByLocation(location, category, oldestStart, latestEnd);
+
+    for (const job of allJobs) {
+      if (!job.completedDate) continue;
+      const d = new Date(job.completedDate);
+      const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
+      for (const user of extractAssignedUsers(job.assignedUsers)) {
+        if (!history.has(monthKey)) history.set(monthKey, []);
+        const monthUsers = history.get(monthKey)!;
+        const existing = monthUsers.find((u) => u.userUid === user.user_uid);
+        if (existing) {
+          existing.count++;
+        } else {
+          monthUsers.push({ name: user.user_name, userUid: user.user_uid, count: 1 });
+        }
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  return history;
+}
+
 // ---------- Survey Section ----------
 
 export async function buildSurveyData(
@@ -376,13 +510,15 @@ export async function buildSurveyData(
   // Scheduled this week
   const scheduledThisWeek = await getScheduledJobsThisWeek(location, "Site Survey", now);
 
+  const surveyHistory = await getMonthlyJobHistory(location, "Site Survey", now, 3);
+
   return {
     completedMtd: mtdJobs.length,
     completedGoal: goals.surveys_completed,
     avgTurnaroundDays: 0, // Populated from QC metrics in the orchestrator
     avgTurnaroundPrior: 0,
     scheduledThisWeek,
-    leaderboard: buildLeaderboard([...userCounts.values()]),
+    leaderboard: buildLeaderboard([...userCounts.values()], surveyHistory) as EnrichedPersonStat[],
   };
 }
 
@@ -471,6 +607,36 @@ export async function buildInstallData(
 
   const scheduledThisWeek = await getScheduledJobsThisWeek(location, "Construction", now);
 
+  const constructionHistory = await getMonthlyJobHistory(location, "Construction", now, 3);
+
+  // Split monthly history by role so streaks are evaluated within each
+  // population (installers vs electricians) rather than the combined pool.
+  function filterHistoryByUids(
+    history: Map<string, UserJobCount[]>,
+    uidSet: Set<string>
+  ): Map<string, UserJobCount[]> {
+    const filtered = new Map<string, UserJobCount[]>();
+    for (const [month, users] of history) {
+      const matching = users.filter((u) => uidSet.has(u.userUid));
+      if (matching.length > 0) filtered.set(month, matching);
+    }
+    return filtered;
+  }
+
+  const installerUids = new Set([...installerCounts.keys()]);
+  const electricianUids = new Set([...electricianCounts.keys()]);
+  // Include UIDs from historical months too (someone may not have current-month jobs)
+  for (const [, monthUsers] of constructionHistory) {
+    for (const u of monthUsers) {
+      const role = crewRoleMap.get(u.userUid);
+      if (role === "electrician") electricianUids.add(u.userUid);
+      else installerUids.add(u.userUid);
+    }
+  }
+
+  const installerHistory = filterHistoryByUids(constructionHistory, installerUids);
+  const electricianHistory = filterHistoryByUids(constructionHistory, electricianUids);
+
   return {
     completedMtd: mtdJobs.length,
     completedGoal: goals.installs_completed,
@@ -478,8 +644,8 @@ export async function buildInstallData(
     avgDaysPerInstallPrior: 0,
     capacityUtilization,
     scheduledThisWeek,
-    installerLeaderboard: buildLeaderboard([...installerCounts.values()]),
-    electricianLeaderboard: buildLeaderboard([...electricianCounts.values()]),
+    installerLeaderboard: buildLeaderboard([...installerCounts.values()], installerHistory) as EnrichedPersonStat[],
+    electricianLeaderboard: buildLeaderboard([...electricianCounts.values()], electricianHistory) as EnrichedPersonStat[],
   };
 }
 
@@ -507,15 +673,12 @@ export async function buildInspectionData(
     }
   }
 
-  // Build leaderboard — passRate is -1 (unknown) until per-tech data is
-  // available (phase 2). The UI hides the badge when passRate < 0.
-  const leaderboard: InspectionPersonStat[] = [...userCounts.values()]
-    .sort((a, b) => b.count - a.count)
-    .map((u) => ({
-      name: u.name,
-      count: u.count,
-      passRate: -1, // -1 = unknown; UI hides badge. Phase 2 enriches from HubSpot.
-    }));
+  const inspectionHistory = await getMonthlyJobHistory(location, "Inspection", now, 3);
+  const baseLeaderboard = buildLeaderboard([...userCounts.values()], inspectionHistory);
+  const leaderboard: InspectionPersonStat[] = baseLeaderboard.map((entry) => ({
+    ...entry,
+    passRate: -1,
+  }));
 
   return {
     completedMtd: mtdJobs.length,
@@ -588,6 +751,23 @@ async function enrichWithQcMetrics(
     surveys.avgTurnaroundDays = avg(recentProjects, "siteSurveyTurnaroundTime");
     surveys.avgTurnaroundPrior = avg(priorProjects, "siteSurveyTurnaroundTime");
 
+    // Per-surveyor turnaround enrichment
+    for (const entry of surveys.leaderboard) {
+      const surveyorProjects = recentProjects.filter(
+        (p: ProjectForMetrics) =>
+          p.siteSurveyor && nameMatchesLoosely(p.siteSurveyor, entry.name) &&
+          typeof p.siteSurveyTurnaroundTime === "number" &&
+          p.siteSurveyTurnaroundTime > 0
+      );
+      if (surveyorProjects.length > 0) {
+        const total = surveyorProjects.reduce(
+          (sum, p) => sum + (p.siteSurveyTurnaroundTime || 0),
+          0
+        );
+        (entry as EnrichedPersonStat).avgTurnaround = Math.round((total / surveyorProjects.length) * 10) / 10;
+      }
+    }
+
     // Installs: construction turnaround
     installs.avgDaysPerInstall = avg(recentProjects, "constructionTurnaroundTime");
     installs.avgDaysPerInstallPrior = avg(priorProjects, "constructionTurnaroundTime");
@@ -609,6 +789,88 @@ async function enrichWithQcMetrics(
       inspections.firstPassRate = Math.round(
         (firstTimePasses / withInspection.length) * 100
       );
+    }
+
+    // Per-inspector pass rate + consecutive pass streak enrichment
+    if (prisma) {
+      try {
+        // Single consolidated query for 120-day window (reused for both pass rate and streaks)
+        const allInspectionJobs = await prisma.zuperJobCache.findMany({
+          where: {
+            jobCategory: "Inspection",
+            completedDate: { gte: oneTwentyDaysAgo, lte: now },
+            hubspotDealId: { not: null },
+          },
+          select: {
+            assignedUsers: true,
+            hubspotDealId: true,
+            completedDate: true,
+          },
+          orderBy: { completedDate: "desc" },
+        });
+
+        // Build dealId → isFirstTimePass map
+        const passMap = new Map<string, boolean>();
+        for (const p of locProjects) {
+          if (p.id && p.inspectionPassDate) {
+            passMap.set(String(p.id), p.isFirstTimeInspectionPass === true);
+          }
+        }
+
+        // Per-inspector pass rate (60-day window)
+        const sixtyDayJobs = allInspectionJobs.filter(
+          (j: { completedDate: Date | null; hubspotDealId: string | null; assignedUsers: unknown }) => j.completedDate && j.completedDate >= sixtyDaysAgo
+        );
+        const inspectorStats = new Map<string, { passes: number; total: number }>();
+
+        for (const job of sixtyDayJobs) {
+          const dealId = job.hubspotDealId;
+          if (!dealId || !passMap.has(dealId)) continue;
+
+          const passed = passMap.get(dealId)!;
+          for (const user of extractAssignedUsers(job.assignedUsers)) {
+            const stats = inspectorStats.get(user.user_name) || { passes: 0, total: 0 };
+            stats.total++;
+            if (passed) stats.passes++;
+            inspectorStats.set(user.user_name, stats);
+          }
+        }
+
+        for (const entry of inspections.leaderboard) {
+          const stats = inspectorStats.get(entry.name);
+          if (stats && stats.total > 0) {
+            entry.passRate = Math.round((stats.passes / stats.total) * 100);
+          }
+        }
+
+        // Consecutive pass streak (120-day window, ordered desc)
+        const streakMap = new Map<string, number>();
+        const streakBroken = new Set<string>();
+
+        for (const job of allInspectionJobs) {
+          const dealId = job.hubspotDealId;
+          if (!dealId || !passMap.has(dealId)) continue;
+
+          const passed = passMap.get(dealId)!;
+          for (const user of extractAssignedUsers(job.assignedUsers)) {
+            if (streakBroken.has(user.user_name)) continue;
+            if (passed) {
+              streakMap.set(user.user_name, (streakMap.get(user.user_name) || 0) + 1);
+            } else {
+              streakBroken.add(user.user_name);
+            }
+          }
+        }
+
+        for (const entry of inspections.leaderboard) {
+          const streak = streakMap.get(entry.name);
+          if (streak && streak >= 3) {
+            entry.consecutivePasses = streak;
+          }
+        }
+      } catch (err) {
+        console.warn("[office-performance] Per-inspector enrichment failed:", err);
+      }
     }
 
     // Pipeline: avg days in stage prior period
@@ -649,6 +911,32 @@ export async function getOfficePerformanceData(
 
   // Enrich with QC metrics turnaround times
   await enrichWithQcMetrics(location, pipeline, surveys, installs, inspections);
+
+  // Individual achievements across sections
+  const achievements: string[] = [];
+
+  for (const entry of surveys.leaderboard) {
+    if (entry.count >= 10) {
+      achievements.push(`📍 ${entry.name.split(" ")[0]} hit ${entry.count} surveys this month!`);
+    }
+  }
+
+  for (const entry of installs.installerLeaderboard) {
+    if (entry.count >= 8) {
+      achievements.push(`⚡ ${entry.name.split(" ")[0]} completed ${entry.count} installs!`);
+    }
+  }
+
+  for (const entry of inspections.leaderboard) {
+    if (entry.passRate >= 95 && entry.count >= 3) {
+      achievements.push(`✅ ${entry.name.split(" ")[0]} — ${entry.passRate}% first-pass rate!`);
+    }
+    if (entry.consecutivePasses && entry.consecutivePasses >= 5) {
+      achievements.push(`🔥 ${entry.name.split(" ")[0]} — ${entry.consecutivePasses} inspections passed in a row!`);
+    }
+  }
+
+  pipeline.recentWins = [...pipeline.recentWins, ...achievements].slice(0, 4);
 
   return {
     location,

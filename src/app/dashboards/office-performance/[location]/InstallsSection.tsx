@@ -2,6 +2,7 @@
 
 import type { InstallData } from "@/lib/office-performance-types";
 import GoalProgress from "./GoalProgress";
+import CountUp from "./CountUp";
 import Leaderboard from "./Leaderboard";
 
 interface InstallsSectionProps {
@@ -15,13 +16,10 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
   const trendImproving = daysTrend < 0;
 
   return (
-    <div className="flex flex-col h-full px-6 py-4">
-      <div className="text-sm font-semibold text-green-500 tracking-widest mb-4">
-        INSTALLS
-      </div>
-
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="bg-white/5 rounded-xl p-4">
+    <div className="flex flex-col h-full px-8 py-5">
+      {/* Top metrics */}
+      <div className="grid grid-cols-4 gap-5 mb-6">
+        <div className="bg-white/[0.04] rounded-2xl p-5 flex items-center justify-center border border-white/5">
           <GoalProgress
             current={data.completedMtd}
             goal={data.completedGoal}
@@ -30,45 +28,56 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
           />
         </div>
 
-        <div className="bg-white/5 rounded-xl p-4 text-center">
-          <div className="text-[42px] font-extrabold text-blue-500">
-            {data.avgDaysPerInstall > 0 ? data.avgDaysPerInstall.toFixed(1) : "--"}
-            {data.avgDaysPerInstall > 0 && <span className="text-xl">d</span>}
-          </div>
-          <div className="text-xs text-slate-400 mt-1">Avg Days/Install</div>
+        <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
+          <CountUp
+            value={data.avgDaysPerInstall}
+            decimals={1}
+            suffix="d"
+            className="text-[64px] font-extrabold text-blue-400 leading-none"
+          />
+          <div className="text-sm text-slate-400 mt-2">Avg Days/Install</div>
           {daysTrend !== 0 && (
-            <div className={`text-xs mt-1 ${trendImproving ? "text-green-500" : "text-red-500"}`}>
-              {trendImproving ? "▼" : "▲"} {Math.abs(daysTrend).toFixed(1)}d vs last month
+            <div className={`text-xs mt-1.5 ${trendImproving ? "text-green-400" : "text-red-400"}`}>
+              {trendImproving ? "▼" : "▲"} {Math.abs(daysTrend).toFixed(1)}d vs prior
             </div>
           )}
         </div>
 
-        <div className="bg-white/5 rounded-xl p-4 text-center">
-          <div className="text-[42px] font-extrabold text-orange-500">
-            {data.capacityUtilization >= 0 ? `${data.capacityUtilization}` : "--"}
-            {data.capacityUtilization >= 0 && <span className="text-xl">%</span>}
+        <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
+          <CountUp
+            value={data.capacityUtilization >= 0 ? data.capacityUtilization : 0}
+            suffix={data.capacityUtilization >= 0 ? "%" : ""}
+            className="text-[64px] font-extrabold text-orange-400 leading-none"
+          />
+          <div className="text-sm text-slate-400 mt-2">
+            {data.capacityUtilization >= 0 ? "Capacity Used" : "Capacity N/A"}
           </div>
-          <div className="text-xs text-slate-400 mt-1">Capacity Used</div>
         </div>
 
-        <div className="bg-white/5 rounded-xl p-4 text-center">
-          <div className="text-[42px] font-extrabold text-cyan-400">{data.scheduledThisWeek}</div>
-          <div className="text-xs text-slate-400 mt-1">Scheduled This Week</div>
+        <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
+          <CountUp
+            value={data.scheduledThisWeek}
+            className="text-[64px] font-extrabold text-cyan-400 leading-none"
+          />
+          <div className="text-sm text-slate-400 mt-2">Scheduled This Week</div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      {/* Dual leaderboards */}
+      <div className="grid grid-cols-2 gap-5 flex-1 min-h-0">
         <Leaderboard
           title="INSTALLERS — THIS MONTH"
           icon="⚡"
           entries={data.installerLeaderboard}
           accentColor="#22c55e"
+          metricLabel="installs"
         />
         <Leaderboard
           title="ELECTRICIANS — THIS MONTH"
           icon="🔌"
           entries={data.electricianLeaderboard}
           accentColor="#22c55e"
+          metricLabel="jobs"
         />
       </div>
     </div>

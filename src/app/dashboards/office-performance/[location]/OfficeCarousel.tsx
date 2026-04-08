@@ -3,16 +3,18 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   CAROUSEL_SECTIONS,
+  SECTION_COLORS,
   type CarouselSection,
   type OfficePerformanceData,
 } from "@/lib/office-performance-types";
+import AmbientBackground from "./AmbientBackground";
 import CarouselHeader from "./CarouselHeader";
 import PipelineSection from "./PipelineSection";
 import SurveysSection from "./SurveysSection";
 import InstallsSection from "./InstallsSection";
 import InspectionsSection from "./InspectionsSection";
 
-const ROTATION_INTERVAL = 45_000; // 45 seconds
+const ROTATION_INTERVAL = 45_000;
 
 interface OfficeCarouselProps {
   data: OfficePerformanceData;
@@ -21,6 +23,9 @@ interface OfficeCarouselProps {
   stale: boolean;
 }
 
+type TransitionState = "idle" | "exit" | "enter";
+type Direction = "forward" | "backward";
+
 export default function OfficeCarousel({
   data,
   connected,
@@ -28,12 +33,28 @@ export default function OfficeCarousel({
   stale,
 }: OfficeCarouselProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [displayIndex, setDisplayIndex] = useState(0);
   const [isPinned, setIsPinned] = useState(false);
   const [isVisible, setIsVisible] = useState(true);
-  const [fadeIn, setFadeIn] = useState(true);
+  const [transition, setTransition] = useState<TransitionState>("idle");
+  const [direction, setDirection] = useState<Direction>("forward");
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const currentSection = CAROUSEL_SECTIONS[currentIndex];
+  const currentSection = CAROUSEL_SECTIONS[displayIndex];
+  const sectionColor = SECTION_COLORS[currentSection];
+
+  // Transition orchestration — guard against overlapping transitions (P2-3)
+  const transitionTo = useCallback((newIndex: number, dir: Direction) => {
+    if (newIndex === displayIndex || transition !== "idle") return;
+    setDirection(dir);
+    setTransition("exit");
+    setTimeout(() => {
+      setDisplayIndex(newIndex);
+      setCurrentIndex(newIndex);
+      setTransition("enter");
+      setTimeout(() => setTransition("idle"), 400);
+    }, 300);
+  }, [displayIndex, transition]);
 
   // Page Visibility API
   useEffect(() => {
@@ -51,34 +72,28 @@ export default function OfficeCarousel({
     }
 
     intervalRef.current = setInterval(() => {
-      setFadeIn(false);
-      setTimeout(() => {
-        setCurrentIndex((prev) => (prev + 1) % CAROUSEL_SECTIONS.length);
-        setFadeIn(true);
-      }, 300);
+      const nextIndex = (currentIndex + 1) % CAROUSEL_SECTIONS.length;
+      transitionTo(nextIndex, "forward");
     }, ROTATION_INTERVAL);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [isPinned, isVisible]);
+  }, [isPinned, isVisible, currentIndex, transitionTo]);
 
-  // Navigate to section
+  // Navigate to section via dots
   const goToSection = useCallback(
     (section: CarouselSection) => {
       const index = CAROUSEL_SECTIONS.indexOf(section);
-      if (index === currentIndex) {
+      if (index === displayIndex) {
         setIsPinned((prev) => !prev);
       } else {
-        setFadeIn(false);
-        setTimeout(() => {
-          setCurrentIndex(index);
-          setIsPinned(true);
-          setFadeIn(true);
-        }, 300);
+        const dir = index > displayIndex ? "forward" : "backward";
+        transitionTo(index, dir);
+        setIsPinned(true);
       }
     },
-    [currentIndex]
+    [displayIndex, transitionTo]
   );
 
   // Keyboard navigation
@@ -86,30 +101,20 @@ export default function OfficeCarousel({
     const handler = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight" || e.key === "ArrowDown") {
         e.preventDefault();
-        setFadeIn(false);
-        setTimeout(() => {
-          setCurrentIndex((prev) => (prev + 1) % CAROUSEL_SECTIONS.length);
-          setFadeIn(true);
-        }, 300);
+        const next = (currentIndex + 1) % CAROUSEL_SECTIONS.length;
+        transitionTo(next, "forward");
       } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
         e.preventDefault();
-        setFadeIn(false);
-        setTimeout(() => {
-          setCurrentIndex(
-            (prev) =>
-              (prev - 1 + CAROUSEL_SECTIONS.length) % CAROUSEL_SECTIONS.length
-          );
-          setFadeIn(true);
-        }, 300);
+        const prev = (currentIndex - 1 + CAROUSEL_SECTIONS.length) % CAROUSEL_SECTIONS.length;
+        transitionTo(prev, "backward");
       } else if (e.key === " ") {
         e.preventDefault();
         setIsPinned((prev) => !prev);
       }
     };
-
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, []);
+  }, [currentIndex, transitionTo]);
 
   const renderSection = () => {
     switch (currentSection) {
@@ -124,27 +129,47 @@ export default function OfficeCarousel({
     }
   };
 
+  // Transition styles
+  const getTransformStyle = (): React.CSSProperties => {
+    const offset = direction === "forward" ? 60 : -60;
+    if (transition === "exit") {
+      return {
+        opacity: 0,
+        transform: `translateX(${-offset}px)`,
+        transition: "opacity 300ms ease, transform 300ms ease",
+      };
+    }
+    if (transition === "enter") {
+      return {
+        opacity: 1,
+        transform: "translateX(0)",
+        transition: "opacity 400ms ease, transform 400ms ease",
+      };
+    }
+    return { opacity: 1, transform: "translateX(0)" };
+  };
+
   return (
-    <div className="h-screen w-screen flex flex-col" style={{
-      background: "linear-gradient(135deg, #1e293b, #0f172a)",
+    <div className="h-screen w-screen flex flex-col relative" style={{
       fontFamily: "system-ui, sans-serif",
       color: "#e2e8f0",
     }}>
-      <CarouselHeader
-        location={data.location}
-        currentSection={currentSection}
-        isPinned={isPinned}
-        connected={connected}
-        reconnecting={reconnecting}
-        stale={stale}
-        onDotClick={goToSection}
-      />
+      <AmbientBackground sectionColor={sectionColor} />
 
-      <div
-        className="flex-1 min-h-0 overflow-hidden transition-opacity duration-300"
-        style={{ opacity: fadeIn ? 1 : 0 }}
-      >
-        {renderSection()}
+      <div className="relative z-10 flex flex-col h-full">
+        <CarouselHeader
+          location={data.location}
+          currentSection={currentSection}
+          isPinned={isPinned}
+          connected={connected}
+          reconnecting={reconnecting}
+          stale={stale}
+          onDotClick={goToSection}
+        />
+
+        <div className="flex-1 min-h-0 overflow-hidden" style={getTransformStyle()}>
+          {renderSection()}
+        </div>
       </div>
     </div>
   );

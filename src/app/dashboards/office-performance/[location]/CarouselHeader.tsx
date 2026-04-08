@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CAROUSEL_SECTIONS, SECTION_COLORS, type CarouselSection } from "@/lib/office-performance-types";
+import { CAROUSEL_SECTIONS, SECTION_COLORS, SECTION_LABELS, type CarouselSection } from "@/lib/office-performance-types";
 
 interface CarouselHeaderProps {
   location: string;
@@ -23,6 +23,7 @@ export default function CarouselHeader({
   onDotClick,
 }: CarouselHeaderProps) {
   const [time, setTime] = useState(new Date());
+  const sectionColor = SECTION_COLORS[currentSection];
 
   useEffect(() => {
     const interval = setInterval(() => setTime(new Date()), 1000);
@@ -42,54 +43,80 @@ export default function CarouselHeader({
       : "";
 
   return (
-    <div className="flex items-center justify-between px-6 py-3 border-b border-white/10">
-      <div className="flex items-center gap-3">
-        <div
-          className="w-2.5 h-2.5 rounded-full animate-pulse"
-          style={{ backgroundColor: statusColor }}
-        />
-        <span className="text-lg font-bold tracking-wider text-slate-200 uppercase">
-          {location}
-        </span>
-        {statusLabel && (
-          <span className="text-xs text-yellow-500 ml-2">{statusLabel}</span>
-        )}
-      </div>
-
-      <div className="flex items-center gap-4">
-        <div className="flex items-center gap-1.5">
-          {CAROUSEL_SECTIONS.map((section) => (
-            <button
-              key={section}
-              onClick={() => onDotClick(section)}
-              className="w-2 h-2 rounded-full transition-all duration-200 hover:scale-150"
-              style={{
-                backgroundColor:
-                  section === currentSection
-                    ? SECTION_COLORS[section]
-                    : "rgba(255,255,255,0.2)",
-              }}
-              aria-label={`Go to ${section} section${isPinned && section === currentSection ? " (pinned)" : ""}`}
-            />
-          ))}
-          {isPinned && (
-            <span className="text-xs text-slate-500 ml-1">📌</span>
+    <div>
+      <div className="flex items-center justify-between px-8 py-4">
+        {/* Left: Location + status */}
+        <div className="flex items-center gap-4">
+          <div
+            className="w-3 h-3 rounded-full"
+            style={{
+              backgroundColor: statusColor,
+              boxShadow: `0 0 8px ${statusColor}`,
+              animation: connected ? "pulse 2s ease-in-out infinite" : "none",
+            }}
+          />
+          <span className="text-2xl font-bold tracking-wider text-white uppercase">
+            {location}
+          </span>
+          <span
+            className="text-sm font-semibold tracking-widest uppercase transition-colors duration-1000"
+            style={{ color: sectionColor }}
+          >
+            {SECTION_LABELS[currentSection]}
+          </span>
+          {statusLabel && (
+            <span className="text-xs text-yellow-500/80 ml-2">{statusLabel}</span>
           )}
         </div>
 
-        <span className="text-sm text-slate-400">
-          {time.toLocaleDateString("en-US", {
-            month: "short",
-            day: "numeric",
-            year: "numeric",
-          })}{" "}
-          · {time.toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-            hour12: true,
-          })}
-        </span>
+        {/* Right: Nav dots + clock */}
+        <div className="flex items-center gap-6">
+          <div className="flex items-center gap-2">
+            {CAROUSEL_SECTIONS.map((section) => (
+              <button
+                key={section}
+                onClick={() => onDotClick(section)}
+                className="transition-all duration-300"
+                style={{
+                  width: section === currentSection ? 24 : 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor:
+                    section === currentSection
+                      ? SECTION_COLORS[section]
+                      : "rgba(255,255,255,0.15)",
+                  boxShadow: section === currentSection ? `0 0 8px ${SECTION_COLORS[section]}40` : "none",
+                }}
+                aria-label={`Go to ${section} section${isPinned && section === currentSection ? " (pinned)" : ""}`}
+              />
+            ))}
+            {isPinned && (
+              <span className="text-xs text-slate-500 ml-1.5">📌</span>
+            )}
+          </div>
+
+          <span className="text-base text-slate-300 font-medium tabular-nums">
+            {time.toLocaleDateString("en-US", {
+              weekday: "short",
+              month: "short",
+              day: "numeric",
+            })}{" "}
+            <span className="text-slate-500">·</span>{" "}
+            {time.toLocaleTimeString("en-US", {
+              hour: "numeric",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: true,
+            })}
+          </span>
+        </div>
       </div>
+
+      {/* Section color accent bar */}
+      <div
+        className="h-0.5 transition-colors duration-1000"
+        style={{ backgroundColor: sectionColor }}
+      />
     </div>
   );
 }
