@@ -142,12 +142,12 @@ async function getZuperJobsForCompliance(
 ): Promise<CachedJob[]>
 ```
 
-**Scope: all location jobs, not section-filtered dealIds.** Compliance must reflect the full picture for that job category at that location. A survey job completed this month may have already moved to Design stage in HubSpot — filtering to only currently-displayed Survey-stage deals would miss it, making on-time % and stuck counts systematically too small. Instead, query all `ZuperJobCache` records for the category, then filter to the location via the `HubSpotProjectCache` join (same pattern as `getZuperJobsByLocation()`). No date filter on the query itself — filter in memory by status type:
+**Scope: all location jobs, not section-filtered dealIds.** Compliance must reflect the full picture for that job category at that location. A survey job completed this month may have already moved to Design stage in HubSpot — filtering to only currently-displayed Survey-stage deals would miss it, making on-time % and stuck counts systematically too small. Instead, query all `ZuperJobCache` records for the category, then filter to the location via the `HubSpotProjectCache` join (same pattern as `getZuperJobsByLocation()`). **Jobs without a `hubspotDealId` are excluded** — they can't be attributed to a location. This is an acceptable trade-off: unlinked jobs are a data quality issue surfaced elsewhere (Zuper status comparison dashboard), and including them here would require falling back to `customerAddress` parsing which is unreliable. No date filter on the query itself — filter in memory by status type:
 
 - On-time: completed jobs where `completedDate` is in the current month
 - Stuck/never-started: active jobs regardless of date
 
-**On-time %:** Of completed jobs (lowercase status in `COMPLETED_STATUSES`) with `completedDate` in the current month, percentage where `completedDate <= scheduledEnd + 1 day` (grace period constant: `GRACE_MS = 86_400_000`). If no completed jobs this month, omit the percentage (don't show 0%).
+**On-time %:** Of completed jobs (lowercase status in `COMPLETED_STATUSES`) with `completedDate` in the current month, percentage where `completedDate <= scheduledEnd + 1 day` (grace period constant: `GRACE_MS = 86_400_000`). Jobs with null `scheduledEnd` are excluded from both numerator and denominator — they are non-measurable (no deadline to compare against). If no measurable completed jobs this month, omit the percentage (don't show 0%).
 
 **Stuck jobs:** Active jobs with lowercase status in `STUCK_STATUSES`. Include job name (or linked deal name via `hubspotDealId` → `HubSpotProjectCache.dealName`), assigned user, and days since `scheduledStart`.
 
