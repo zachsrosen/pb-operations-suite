@@ -2002,3 +2002,24 @@ enum IdrEscalationStatus {
   CONSUMED
   DISMISSED
 }
+
+// ===========================================
+// EAGLEVIEW IMAGERY
+// ===========================================
+
+/// Tracks EagleView aerial imagery fetched per deal.
+/// One record per deal (upsert on re-fetch). Drive persistence is required.
+model EagleViewImagery {
+  id            String    @id @default(cuid())
+  dealId        String    @unique  // HubSpot deal ID string (e.g., "12345678")
+  imageUrn      String
+  captureDate   DateTime?
+  gsd           Float?            // ground sample distance (cm/px)
+  driveFileId   String
+  driveFolderId String?
+  thumbnailUrl  String?           // base64 data URL (~50-100KB); Postgres String maps to text by default
+  fetchedAt     DateTime
+  fetchedBy     String            // user email
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
