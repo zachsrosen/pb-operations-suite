@@ -193,6 +193,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/install-review",
       // Solar Surveyor
       "/api/solar",
+      // Design & Ops Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
       // SOP Guide (read-only; writes gated by /api/admin/sop)
       "/sop",
       "/api/sop",
@@ -707,6 +710,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/reviews",
       // Solar Surveyor
       "/api/solar",
+      // Design & Ops Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
       // SOP Guide
       "/sop",
       "/api/sop",
@@ -771,6 +777,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/deals",
       // Solar Surveyor
       "/api/solar",
+      // Design & Ops Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
       // SOP Guide
       "/sop",
       "/api/sop",
@@ -796,6 +805,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/activity/log",
       "/api/user/me",
       "/api/solar",
+      // Design & Ops Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
       // SOP Guide
       "/sop",
       "/api/sop",
@@ -860,6 +872,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/zuper/jobs/schedule",
       "/api/activity/log",
       "/api/bugs",
+      // Design & Ops Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
       // SOP Guide
       "/sop",
       "/api/sop",
@@ -888,6 +903,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/zuper/jobs/schedule",
       "/api/zuper/my-availability",
       "/api/bugs",
+      // Design & Ops Meeting Hub
+      "/dashboards/idr-meeting",
+      "/api/idr-meeting",
       // SOP Guide
       "/sop",
       "/api/sop",
