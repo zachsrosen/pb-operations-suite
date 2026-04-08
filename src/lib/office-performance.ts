@@ -631,6 +631,54 @@ export async function getZuperJobsForCompliance(
     }));
 }
 
+/**
+ * Batch-fetch the primary assigned user per (dealId, category) from ZuperJobCache.
+ * Returns Map<dealId, Map<category, userName>>.
+ * Picks the most relevant job per group: active (no completedDate) over completed,
+ * latest scheduledStart first, latest completedDate as tiebreak.
+ */
+export async function batchZuperAssignedUsers(
+  dealIds: string[]
+): Promise<Map<string, Map<string, string>>> {
+  const result = new Map<string, Map<string, string>>();
+  if (!prisma || dealIds.length === 0) return result;
+
+  const jobs = await prisma.zuperJobCache.findMany({
+    where: { hubspotDealId: { in: dealIds } },
+    select: {
+      hubspotDealId: true,
+      jobCategory: true,
+      assignedUsers: true,
+      scheduledStart: true,
+      completedDate: true,
+    },
+    orderBy: [
+      { scheduledStart: { sort: "desc", nulls: "last" } },
+      { completedDate: { sort: "desc", nulls: "first" } },
+    ],
+  });
+
+  // Group by (dealId, category) — pick first (best) job per group
+  const seen = new Set<string>();
+
+  for (const job of jobs) {
+    if (!job.hubspotDealId) continue;
+    const key = `${job.hubspotDealId}::${job.jobCategory}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const users = extractAssignedUsers(job.assignedUsers);
+    if (users.length === 0) continue;
+
+    if (!result.has(job.hubspotDealId)) {
+      result.set(job.hubspotDealId, new Map());
+    }
+    result.get(job.hubspotDealId)!.set(job.jobCategory, users[0].user_name);
+  }
+
+  return result;
+}
+
 export async function getScheduledJobsThisWeek(
   location: string,
   category: string,
