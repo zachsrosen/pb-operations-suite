@@ -203,8 +203,9 @@ export function buildComplianceData(
 ): SectionCompliance | null {
   if (jobs.length === 0) return null;
 
-  // On-time calculation: completed jobs where completedDate <= scheduledEnd + GRACE_MS
+  // On-time calculation: completed jobs THIS MONTH where completedDate <= scheduledEnd + GRACE_MS
   // Exclude null scheduledEnd from both numerator and denominator
+  const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
   let onTimeCount = 0;
   let measurableCount = 0;
 
@@ -213,8 +214,12 @@ export function buildComplianceData(
     if (!COMPLETED_STATUSES.includes(status)) continue;
     if (!job.completedDate || !job.scheduledEnd) continue;
 
+    // Only count jobs completed in the current month
+    const completed = new Date(job.completedDate);
+    if (completed < mtdStart || completed > now) continue;
+
     measurableCount++;
-    const completedTime = new Date(job.completedDate).getTime();
+    const completedTime = completed.getTime();
     const deadlineTime = new Date(job.scheduledEnd).getTime() + GRACE_MS;
     if (completedTime <= deadlineTime) {
       onTimeCount++;

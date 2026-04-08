@@ -289,6 +289,28 @@ describe("buildComplianceData", () => {
     expect(result!.stuckJobs).toHaveLength(1);
   });
 
+  it("excludes jobs completed before the current month from on-time calculation", () => {
+    const jobs = [
+      // Completed in March (prior month) — should be excluded from on-time
+      makeJob({
+        jobUid: "j-old",
+        jobStatus: "completed",
+        completedDate: new Date("2026-03-15"),
+        scheduledEnd: new Date("2026-03-10"), // late, but irrelevant
+      }),
+      // Completed in April (current month) — on-time
+      makeJob({
+        jobUid: "j-current",
+        jobStatus: "completed",
+        completedDate: new Date("2026-04-03"),
+        scheduledEnd: new Date("2026-04-03"),
+      }),
+    ];
+    const result = buildComplianceData(jobs, now);
+    // Only the April job counts: 1/1 = 100%
+    expect(result!.onTimePercent).toBe(100);
+  });
+
   it("respects stuck threshold — jobs stuck less than 1 day are not flagged", () => {
     const jobs = [
       makeJob({
