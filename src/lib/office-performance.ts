@@ -519,17 +519,25 @@ export async function getZuperJobsByLocation(
   location: string,
   category: string,
   fromDate: Date,
-  toDate: Date
+  toDate: Date,
+  locationDealIds?: Set<string>
 ): Promise<CachedJob[]> {
   if (!prisma) return [];
 
-  // Query ZuperJobCache, join with HubSpotProjectCache for location
+  // When locationDealIds is provided, filter directly by dealId set
+  // instead of joining against HubSpotProjectCache (which may be empty).
+  const whereClause: Record<string, unknown> = {
+    jobCategory: category,
+    completedDate: { gte: fromDate, lte: toDate },
+    hubspotDealId: { not: null },
+  };
+
+  if (locationDealIds && locationDealIds.size > 0) {
+    whereClause.hubspotDealId = { in: [...locationDealIds] };
+  }
+
   const jobs = await prisma.zuperJobCache.findMany({
-    where: {
-      jobCategory: category,
-      completedDate: { gte: fromDate, lte: toDate },
-      hubspotDealId: { not: null },
-    },
+    where: whereClause,
     select: {
       jobUid: true,
       jobCategory: true,
@@ -541,26 +549,22 @@ export async function getZuperJobsByLocation(
     },
   });
 
-  // Filter by location via HubSpotProjectCache
-  if (jobs.length === 0) return [];
+  // If no locationDealIds provided, fall back to HubSpotProjectCache join
+  if (!locationDealIds) {
+    if (jobs.length === 0) return [];
+    const dealIds = jobs.map((j) => j.hubspotDealId).filter((id): id is string => id !== null);
+    const projectCache = await prisma.hubSpotProjectCache.findMany({
+      where: { dealId: { in: dealIds } },
+      select: { dealId: true, pbLocation: true },
+    });
+    const dealLocationMap = new Map(projectCache.map((p) => [p.dealId, p.pbLocation]));
+    return jobs.filter((j) => {
+      const loc = j.hubspotDealId ? dealLocationMap.get(j.hubspotDealId) : null;
+      return normalizeLocation(loc) === location;
+    });
+  }
 
-  const dealIds = jobs
-    .map((j) => j.hubspotDealId)
-    .filter((id): id is string => id !== null);
-
-  const projectCache = await prisma.hubSpotProjectCache.findMany({
-    where: { dealId: { in: dealIds } },
-    select: { dealId: true, pbLocation: true },
-  });
-
-  const dealLocationMap = new Map(
-    projectCache.map((p) => [p.dealId, p.pbLocation])
-  );
-
-  return jobs.filter((j) => {
-    const loc = j.hubspotDealId ? dealLocationMap.get(j.hubspotDealId) : null;
-    return normalizeLocation(loc) === location;
-  });
+  return jobs;
 }
 
 /**
@@ -569,15 +573,28 @@ export async function getZuperJobsByLocation(
  */
 export async function getZuperJobsForCompliance(
   location: string,
-  category: string
+  category: string,
+  locationDealIds?: Set<string>,
+  dealNameMap?: Map<string, string>
 ): Promise<ComplianceCachedJob[]> {
   if (!prisma) return [];
 
+  // Compliance needs ALL jobs for this category at this location (not just completed).
+  // Use locationDealIds to filter by location when available — avoids empty HubSpotProjectCache.
+  // Note: compliance scope is all location jobs, not just the section's deal list.
+  // Some completed jobs may have moved to a different HubSpot stage, so we query broadly
+  // by category + deal set, not by stage.
+  const whereClause: Record<string, unknown> = {
+    jobCategory: category,
+    hubspotDealId: { not: null },
+  };
+
+  if (locationDealIds && locationDealIds.size > 0) {
+    whereClause.hubspotDealId = { in: [...locationDealIds] };
+  }
+
   const jobs = await prisma.zuperJobCache.findMany({
-    where: {
-      jobCategory: category,
-      hubspotDealId: { not: null },
-    },
+    where: whereClause,
     select: {
       jobUid: true,
       jobCategory: true,
@@ -593,39 +610,38 @@ export async function getZuperJobsForCompliance(
 
   if (jobs.length === 0) return [];
 
-  const dealIds = jobs
-    .map((j) => j.hubspotDealId)
-    .filter((id): id is string => id !== null);
+  // If no locationDealIds provided, fall back to HubSpotProjectCache join
+  let filteredJobs = jobs;
+  let resolvedDealNameMap = dealNameMap;
 
-  const projectCache = await prisma.hubSpotProjectCache.findMany({
-    where: { dealId: { in: dealIds } },
-    select: { dealId: true, pbLocation: true, dealName: true },
-  });
-
-  const dealLocationMap = new Map(
-    projectCache.map((p) => [p.dealId, p.pbLocation])
-  );
-  const dealNameMap = new Map(
-    projectCache.map((p) => [p.dealId, p.dealName])
-  );
-
-  return jobs
-    .filter((j) => {
+  if (!locationDealIds) {
+    const jobDealIds = jobs.map((j) => j.hubspotDealId).filter((id): id is string => id !== null);
+    const projectCache = await prisma.hubSpotProjectCache.findMany({
+      where: { dealId: { in: jobDealIds } },
+      select: { dealId: true, pbLocation: true, dealName: true },
+    });
+    const dealLocationMap = new Map(projectCache.map((p) => [p.dealId, p.pbLocation]));
+    if (!resolvedDealNameMap) {
+      resolvedDealNameMap = new Map(projectCache.map((p) => [p.dealId, p.dealName]));
+    }
+    filteredJobs = jobs.filter((j) => {
       const loc = j.hubspotDealId ? dealLocationMap.get(j.hubspotDealId) : null;
       return normalizeLocation(loc) === location;
-    })
-    .map((j) => ({
-      jobUid: j.jobUid,
-      jobCategory: j.jobCategory,
-      jobStatus: j.jobStatus,
-      completedDate: j.completedDate,
-      scheduledStart: j.scheduledStart,
-      scheduledEnd: j.scheduledEnd ?? null,
-      assignedUsers: j.assignedUsers,
-      hubspotDealId: j.hubspotDealId,
-      jobTitle: j.jobTitle ?? null,
-      projectName: j.hubspotDealId ? dealNameMap.get(j.hubspotDealId) ?? null : null,
-    }));
+    });
+  }
+
+  return filteredJobs.map((j) => ({
+    jobUid: j.jobUid,
+    jobCategory: j.jobCategory,
+    jobStatus: j.jobStatus,
+    completedDate: j.completedDate,
+    scheduledStart: j.scheduledStart,
+    scheduledEnd: j.scheduledEnd ?? null,
+    assignedUsers: j.assignedUsers,
+    hubspotDealId: j.hubspotDealId,
+    jobTitle: j.jobTitle ?? null,
+    projectName: j.hubspotDealId && resolvedDealNameMap ? resolvedDealNameMap.get(j.hubspotDealId) ?? null : null,
+  }));
 }
 
 /**
@@ -679,7 +695,8 @@ export async function batchZuperAssignedUsers(
 export async function getScheduledJobsThisWeek(
   location: string,
   category: string,
-  now: Date
+  now: Date,
+  locationDealIds?: Set<string>
 ): Promise<number> {
   if (!prisma) return 0;
 
@@ -687,16 +704,18 @@ export async function getScheduledJobsThisWeek(
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const weekEnd = new Date(startOfToday.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-  // Include any non-completed job with a scheduledStart this week.
-  // Previous filter only matched SCHEDULED/UNSCHEDULED and missed jobs
-  // already in progress (STARTED, ON OUR WAY, etc.)
-  // Status casing in DB is inconsistent — query broadly, filter in memory.
+  const whereClause: Record<string, unknown> = {
+    jobCategory: category,
+    scheduledStart: { gte: startOfToday, lte: weekEnd },
+    hubspotDealId: { not: null },
+  };
+
+  if (locationDealIds && locationDealIds.size > 0) {
+    whereClause.hubspotDealId = { in: [...locationDealIds] };
+  }
+
   const jobs = await prisma.zuperJobCache.findMany({
-    where: {
-      jobCategory: category,
-      scheduledStart: { gte: startOfToday, lte: weekEnd },
-      hubspotDealId: { not: null },
-    },
+    where: whereClause,
     select: { hubspotDealId: true, jobStatus: true },
   });
 
@@ -705,6 +724,9 @@ export async function getScheduledJobsThisWeek(
     (j) => !COMPLETED_STATUSES.includes(j.jobStatus.toLowerCase().trim())
   );
 
+  if (locationDealIds) return activeJobs.length;
+
+  // Fallback to HubSpotProjectCache join
   const dealIds = activeJobs
     .map((j) => j.hubspotDealId)
     .filter((id): id is string => id !== null);
@@ -728,7 +750,8 @@ async function getMonthlyJobHistory(
   location: string,
   category: string,
   now: Date,
-  monthsBack: number = 3
+  monthsBack: number = 3,
+  locationDealIds?: Set<string>
 ): Promise<Map<string, UserJobCount[]>> {
   const history = new Map<string, UserJobCount[]>();
   if (!prisma) return history;
@@ -737,7 +760,7 @@ async function getMonthlyJobHistory(
   const latestEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59);
 
   try {
-    const allJobs = await getZuperJobsByLocation(location, category, oldestStart, latestEnd);
+    const allJobs = await getZuperJobsByLocation(location, category, oldestStart, latestEnd, locationDealIds);
 
     for (const job of allJobs) {
       if (!job.completedDate) continue;
@@ -769,12 +792,14 @@ export async function buildSurveyData(
   goals: Record<OfficeMetricName, number>,
   now: Date,
   locationProjects?: ProjectForMetrics[],
-  assignedUserMap?: Map<string, Map<string, string>>
+  assignedUserMap?: Map<string, Map<string, string>>,
+  locationDealIds?: Set<string>,
+  dealNameMap?: Map<string, string>
 ): Promise<SurveyData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   // MTD completed surveys
-  const mtdJobs = await getZuperJobsByLocation(location, "Site Survey", mtdStart, now);
+  const mtdJobs = await getZuperJobsByLocation(location, "Site Survey", mtdStart, now, locationDealIds);
 
   // User counts for leaderboard
   const userCounts = new Map<string, UserJobCount>();
@@ -791,9 +816,9 @@ export async function buildSurveyData(
   }
 
   // Scheduled this week
-  const scheduledThisWeek = await getScheduledJobsThisWeek(location, "Site Survey", now);
+  const scheduledThisWeek = await getScheduledJobsThisWeek(location, "Site Survey", now, locationDealIds);
 
-  const surveyHistory = await getMonthlyJobHistory(location, "Site Survey", now, 3);
+  const surveyHistory = await getMonthlyJobHistory(location, "Site Survey", now, 3, locationDealIds);
 
   // Deal rows filtered to survey stages
   const surveyProjects = (locationProjects || []).filter(
@@ -802,7 +827,7 @@ export async function buildSurveyData(
   const { deals, totalCount } = buildDealRows(surveyProjects, now, assignedUserMap, "Site Survey");
 
   // Compliance from Zuper "Site Survey" category
-  const complianceJobs = await getZuperJobsForCompliance(location, "Site Survey");
+  const complianceJobs = await getZuperJobsForCompliance(location, "Site Survey", locationDealIds, dealNameMap);
   const compliance = buildComplianceData(complianceJobs, now) ?? undefined;
 
   return {
@@ -825,11 +850,13 @@ export async function buildInstallData(
   goals: Record<OfficeMetricName, number>,
   now: Date,
   locationProjects?: ProjectForMetrics[],
-  assignedUserMap?: Map<string, Map<string, string>>
+  assignedUserMap?: Map<string, Map<string, string>>,
+  locationDealIds?: Set<string>,
+  dealNameMap?: Map<string, string>
 ): Promise<InstallData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const mtdJobs = await getZuperJobsByLocation(location, "Construction", mtdStart, now);
+  const mtdJobs = await getZuperJobsByLocation(location, "Construction", mtdStart, now, locationDealIds);
 
   // Split by role (installer vs electrician) using CrewMember lookup
   const installerCounts = new Map<string, UserJobCount>();
@@ -903,9 +930,9 @@ export async function buildInstallData(
     }
   }
 
-  const scheduledThisWeek = await getScheduledJobsThisWeek(location, "Construction", now);
+  const scheduledThisWeek = await getScheduledJobsThisWeek(location, "Construction", now, locationDealIds);
 
-  const constructionHistory = await getMonthlyJobHistory(location, "Construction", now, 3);
+  const constructionHistory = await getMonthlyJobHistory(location, "Construction", now, 3, locationDealIds);
 
   // Split monthly history by role so streaks are evaluated within each
   // population (installers vs electricians) rather than the combined pool.
@@ -942,7 +969,7 @@ export async function buildInstallData(
   const { deals, totalCount } = buildDealRows(installProjects, now, assignedUserMap, "Construction");
 
   // Compliance from Zuper "Construction" category
-  const complianceJobs = await getZuperJobsForCompliance(location, "Construction");
+  const complianceJobs = await getZuperJobsForCompliance(location, "Construction", locationDealIds, dealNameMap);
   const compliance = buildComplianceData(complianceJobs, now) ?? undefined;
 
   return {
@@ -967,11 +994,13 @@ export async function buildInspectionData(
   goals: Record<OfficeMetricName, number>,
   now: Date,
   locationProjects?: ProjectForMetrics[],
-  assignedUserMap?: Map<string, Map<string, string>>
+  assignedUserMap?: Map<string, Map<string, string>>,
+  locationDealIds?: Set<string>,
+  dealNameMap?: Map<string, string>
 ): Promise<InspectionData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const mtdJobs = await getZuperJobsByLocation(location, "Inspection", mtdStart, now);
+  const mtdJobs = await getZuperJobsByLocation(location, "Inspection", mtdStart, now, locationDealIds);
 
   const userCounts = new Map<string, UserJobCount>();
   for (const job of mtdJobs) {
@@ -986,7 +1015,7 @@ export async function buildInspectionData(
     }
   }
 
-  const inspectionHistory = await getMonthlyJobHistory(location, "Inspection", now, 3);
+  const inspectionHistory = await getMonthlyJobHistory(location, "Inspection", now, 3, locationDealIds);
   const baseLeaderboard = buildLeaderboard([...userCounts.values()], inspectionHistory);
   const leaderboard: InspectionPersonStat[] = baseLeaderboard.map((entry) => ({
     ...entry,
@@ -1000,7 +1029,7 @@ export async function buildInspectionData(
   const { deals, totalCount } = buildDealRows(inspectionProjects, now, assignedUserMap, "Inspection");
 
   // Compliance from Zuper "Inspection" category
-  const complianceJobs = await getZuperJobsForCompliance(location, "Inspection");
+  const complianceJobs = await getZuperJobsForCompliance(location, "Inspection", locationDealIds, dealNameMap);
   const compliance = buildComplianceData(complianceJobs, now) ?? undefined;
 
   return {
@@ -1220,24 +1249,39 @@ export async function getOfficePerformanceData(
   // Fetch goals
   const goals = await getGoalsForLocation(location, month, year);
 
-  // Fetch projects for this location
-  const allProjects = await fetchAllProjects({ activeOnly: true });
-  const locationProjects = (allProjects || []).filter(
+  // Fetch projects for this location — active for display, all for Zuper joins.
+  // The locationDealIds set must include inactive/closed deals so that compliance
+  // can count recently completed Zuper jobs whose HubSpot deals have since closed.
+  const allProjects = await fetchAllProjects({ activeOnly: false });
+  const allLocationProjects = (allProjects || []).filter(
     (p: ProjectForMetrics) => normalizeLocation(p.pbLocation) === location
   );
+  const locationProjects = allLocationProjects.filter(
+    (p: ProjectForMetrics) => p.stage && !["closed lost", "closed won"].includes(p.stage.toLowerCase())
+  );
 
-  // Batch-fetch Zuper assigned users for deal rows
-  const dealIds = locationProjects.filter((p: ProjectForMetrics) => p.id).map((p: ProjectForMetrics) => String(p.id));
-  const assignedUserMap = await batchZuperAssignedUsers(dealIds);
+  // Build dealId sets and maps from ALL location projects (active + closed).
+  // This avoids joining against HubSpotProjectCache (which may be empty).
+  const allDealIds = allLocationProjects.filter((p: ProjectForMetrics) => p.id).map((p: ProjectForMetrics) => String(p.id));
+  const locationDealIds = new Set(allDealIds);
+  const dealNameMap = new Map(
+    allLocationProjects
+      .filter((p: ProjectForMetrics) => p.id && p.name)
+      .map((p: ProjectForMetrics) => [String(p.id), p.name!])
+  );
+
+  // Batch-fetch Zuper assigned users for deal rows (active deals only)
+  const activeDealIds = locationProjects.filter((p: ProjectForMetrics) => p.id).map((p: ProjectForMetrics) => String(p.id));
+  const assignedUserMap = await batchZuperAssignedUsers(activeDealIds);
 
   // Build pipeline data
   const pipeline = buildPipelineData(locationProjects, goals, now);
 
   // Build section data in parallel
   const [surveys, installs, inspections] = await Promise.all([
-    buildSurveyData(location, goals, now, locationProjects, assignedUserMap),
-    buildInstallData(location, goals, now, locationProjects, assignedUserMap),
-    buildInspectionData(location, goals, now, locationProjects, assignedUserMap),
+    buildSurveyData(location, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
+    buildInstallData(location, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
+    buildInspectionData(location, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
   ]);
 
   // Enrich with QC metrics turnaround times
