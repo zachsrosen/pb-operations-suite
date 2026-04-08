@@ -26,9 +26,11 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
   if (!compliance) return null;
 
   const showOnTime = compliance.onTimePercent >= 0;
+  const hasEmployees = compliance.byEmployee.length > 0;
 
   return (
     <div className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3">
+      {/* Aggregate summary row */}
       <div className="flex items-center gap-6 text-sm">
         {showOnTime && (
           <div className="flex items-center gap-1.5">
@@ -54,8 +56,42 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
           <span className="text-slate-400">never started</span>
         </div>
       </div>
+
+      {/* Per-employee breakdown */}
+      {hasEmployees && (
+        <div className="mt-3 border-t border-white/5 pt-2">
+          <div className="text-[10px] font-semibold text-slate-500 tracking-wider mb-1.5">
+            BY EMPLOYEE
+          </div>
+          <div className="grid gap-1">
+            {compliance.byEmployee.map((emp) => (
+              <div key={emp.name} className="flex items-center gap-3 text-xs">
+                <span className="text-slate-300 font-medium w-28 truncate">{emp.name}</span>
+                {emp.onTimePercent >= 0 ? (
+                  <span className="font-semibold w-12 text-right" style={{ color: onTimeColor(emp.onTimePercent) }}>
+                    {emp.onTimePercent}%
+                  </span>
+                ) : (
+                  <span className="w-12 text-right text-slate-600">—</span>
+                )}
+                {emp.stuckCount > 0 && (
+                  <span className="text-yellow-500">{emp.stuckCount} stuck</span>
+                )}
+                {emp.neverStartedCount > 0 && (
+                  <span className="text-yellow-400">{emp.neverStartedCount} not started</span>
+                )}
+                {emp.stuckCount === 0 && emp.neverStartedCount === 0 && emp.onTimePercent >= 90 && (
+                  <span className="text-green-500/60">clean</span>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Stuck job details */}
       {compliance.stuckJobs.length > 0 && (
-        <div className="text-xs text-slate-400 mt-2 flex flex-wrap gap-x-3 gap-y-1">
+        <div className="text-xs text-slate-400 mt-2 pt-2 border-t border-white/5 flex flex-wrap gap-x-3 gap-y-1">
           <span className="text-slate-500 font-medium">Stuck:</span>
           {compliance.stuckJobs.map((job, i) => (
             <span key={i} className="text-slate-300">

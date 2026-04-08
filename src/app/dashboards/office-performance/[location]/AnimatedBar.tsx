@@ -19,7 +19,7 @@ export default function AnimatedBar({
   delay = 0,
 }: AnimatedBarProps) {
   const [width, setWidth] = useState(0);
-  const targetWidth = maxCount > 0 ? Math.max((count / maxCount) * 100, 8) : 8;
+  const targetWidth = count === 0 ? 0 : maxCount > 0 ? Math.max((count / maxCount) * 100, 8) : 8;
 
   useEffect(() => {
     const timer = setTimeout(() => setWidth(targetWidth), delay + 50);

@@ -323,4 +323,62 @@ describe("buildComplianceData", () => {
     const result = buildComplianceData(jobs, now);
     expect(result!.stuckJobs).toHaveLength(0);
   });
+
+  it("produces per-employee breakdown with on-time and stuck counts", () => {
+    const jobs = [
+      makeJob({
+        jobUid: "j1",
+        completedDate: new Date("2026-04-03"),
+        scheduledEnd: new Date("2026-04-04"),
+        assignedUsers: [{ user_uid: "u1", user_name: "Mike Torres" }],
+      }),
+      makeJob({
+        jobUid: "j2",
+        completedDate: new Date("2026-04-06"),
+        scheduledEnd: new Date("2026-04-04"), // late
+        assignedUsers: [{ user_uid: "u1", user_name: "Mike Torres" }],
+      }),
+      makeJob({
+        jobUid: "j3",
+        completedDate: new Date("2026-04-02"),
+        scheduledEnd: new Date("2026-04-03"),
+        assignedUsers: [{ user_uid: "u2", user_name: "Sarah Chen" }],
+      }),
+      makeJob({
+        jobUid: "j4",
+        jobStatus: "started",
+        completedDate: null,
+        scheduledStart: new Date("2026-04-01"),
+        assignedUsers: [{ user_uid: "u1", user_name: "Mike Torres" }],
+      }),
+    ];
+    const result = buildComplianceData(jobs, now);
+    expect(result!.byEmployee).toHaveLength(2);
+
+    const mike = result!.byEmployee.find((e) => e.name === "Mike Torres")!;
+    expect(mike.onTimePercent).toBe(50); // 1 of 2
+    expect(mike.stuckCount).toBe(1);
+
+    const sarah = result!.byEmployee.find((e) => e.name === "Sarah Chen")!;
+    expect(sarah.onTimePercent).toBe(100); // 1 of 1
+    expect(sarah.stuckCount).toBe(0);
+  });
+
+  it("sorts employees by worst on-time first", () => {
+    const jobs = [
+      makeJob({ jobUid: "j1", completedDate: new Date("2026-04-03"), scheduledEnd: new Date("2026-04-04"), assignedUsers: [{ user_uid: "u1", user_name: "Good Guy" }] }),
+      makeJob({ jobUid: "j2", completedDate: new Date("2026-04-06"), scheduledEnd: new Date("2026-04-02"), assignedUsers: [{ user_uid: "u2", user_name: "Late Larry" }] }),
+    ];
+    const result = buildComplianceData(jobs, now);
+    expect(result!.byEmployee[0].name).toBe("Late Larry");
+    expect(result!.byEmployee[1].name).toBe("Good Guy");
+  });
+
+  it("excludes 'Unassigned' from per-employee breakdown", () => {
+    const jobs = [
+      makeJob({ jobUid: "j1", completedDate: new Date("2026-04-03"), scheduledEnd: new Date("2026-04-04"), assignedUsers: [] }),
+    ];
+    const result = buildComplianceData(jobs, now);
+    expect(result!.byEmployee).toHaveLength(0);
+  });
 });

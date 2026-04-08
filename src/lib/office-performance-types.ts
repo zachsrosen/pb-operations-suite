@@ -26,11 +26,21 @@ export interface DealRow {
   assignedUser?: string;
 }
 
+/** Per-employee compliance stats */
+export interface EmployeeCompliance {
+  name: string;
+  onTimePercent: number;    // -1 if no measurable jobs
+  measurableCount: number;  // completed jobs with scheduledEnd this month
+  stuckCount: number;
+  neverStartedCount: number;
+}
+
 /** Zuper compliance summary for a job category at a location */
 export interface SectionCompliance {
   onTimePercent: number;
   stuckJobs: ComplianceJob[];
   neverStartedCount: number;
+  byEmployee: EmployeeCompliance[];
 }
 
 /** A single stuck/problem job in compliance data */

@@ -14,6 +14,7 @@ import type {
   DealRow,
   SectionCompliance,
   ComplianceJob,
+  EmployeeCompliance,
 } from "@/lib/office-performance-types";
 
 // ---------- Name Matching ----------
@@ -166,6 +167,8 @@ interface ProjectForMetrics {
   constructionTurnaroundTime?: number | null;
   timeCcToPto?: number | null;
   isFirstTimeInspectionPass?: boolean;
+  hasInspectionFailed?: boolean;
+  inspectionScheduleDate?: string | null;
   projectManager?: string | null;
   dealOwner?: string | null;
   designLead?: string | null;
@@ -203,26 +206,63 @@ export function buildComplianceData(
 ): SectionCompliance | null {
   if (jobs.length === 0) return null;
 
-  // On-time calculation: completed jobs THIS MONTH where completedDate <= scheduledEnd + GRACE_MS
-  // Exclude null scheduledEnd from both numerator and denominator
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  // Per-employee tracking
+  const empOnTime = new Map<string, number>();
+  const empMeasurable = new Map<string, number>();
+  const empStuck = new Map<string, number>();
+  const empNeverStarted = new Map<string, number>();
+
+  // Aggregate counters
   let onTimeCount = 0;
   let measurableCount = 0;
+  const stuckJobs: ComplianceJob[] = [];
+  let neverStartedCount = 0;
 
   for (const job of jobs) {
     const status = job.jobStatus.toLowerCase().trim();
-    if (!COMPLETED_STATUSES.includes(status)) continue;
-    if (!job.completedDate || !job.scheduledEnd) continue;
+    const users = extractAssignedUsers(job.assignedUsers);
+    const userName = users[0]?.user_name || "Unassigned";
 
-    // Only count jobs completed in the current month
-    const completed = new Date(job.completedDate);
-    if (completed < mtdStart || completed > now) continue;
+    // On-time calculation: completed jobs THIS MONTH where completedDate <= scheduledEnd + GRACE_MS
+    if (COMPLETED_STATUSES.includes(status) && job.completedDate && job.scheduledEnd) {
+      const completed = new Date(job.completedDate);
+      if (completed >= mtdStart && completed <= now) {
+        measurableCount++;
+        empMeasurable.set(userName, (empMeasurable.get(userName) || 0) + 1);
 
-    measurableCount++;
-    const completedTime = completed.getTime();
-    const deadlineTime = new Date(job.scheduledEnd).getTime() + GRACE_MS;
-    if (completedTime <= deadlineTime) {
-      onTimeCount++;
+        const completedTime = completed.getTime();
+        const deadlineTime = new Date(job.scheduledEnd).getTime() + GRACE_MS;
+        if (completedTime <= deadlineTime) {
+          onTimeCount++;
+          empOnTime.set(userName, (empOnTime.get(userName) || 0) + 1);
+        }
+      }
+    }
+
+    // Stuck jobs: in STUCK_STATUSES and stuck >= STUCK_THRESHOLD_MS (or no scheduledStart)
+    if (STUCK_STATUSES.includes(status) && !job.completedDate) {
+      if (job.scheduledStart) {
+        const elapsed = now.getTime() - new Date(job.scheduledStart).getTime();
+        if (elapsed < STUCK_THRESHOLD_MS) continue;
+        const daysSinceScheduled = Math.floor(elapsed / (24 * 60 * 60 * 1000));
+        const name = job.projectName || (dealNameMap && job.hubspotDealId ? dealNameMap.get(job.hubspotDealId) : null) || job.jobTitle || "Unknown";
+        stuckJobs.push({ name, assignedUser: users[0]?.user_name, daysSinceScheduled });
+        empStuck.set(userName, (empStuck.get(userName) || 0) + 1);
+      } else {
+        const name = job.projectName || (dealNameMap && job.hubspotDealId ? dealNameMap.get(job.hubspotDealId) : null) || job.jobTitle || "Unknown";
+        stuckJobs.push({ name, assignedUser: users[0]?.user_name });
+        empStuck.set(userName, (empStuck.get(userName) || 0) + 1);
+      }
+    }
+
+    // Never-started: past scheduled start, still in pre-start status
+    if (NEVER_STARTED_STATUSES.includes(status) && !job.completedDate && job.scheduledStart) {
+      if (new Date(job.scheduledStart).getTime() < now.getTime()) {
+        neverStartedCount++;
+        empNeverStarted.set(userName, (empNeverStarted.get(userName) || 0) + 1);
+      }
     }
   }
 
@@ -230,48 +270,39 @@ export function buildComplianceData(
     ? Math.round((onTimeCount / measurableCount) * 100)
     : -1;
 
-  // Stuck jobs: in STUCK_STATUSES and stuck >= STUCK_THRESHOLD_MS (or no scheduledStart)
-  const stuckJobs: ComplianceJob[] = [];
-  let neverStartedCount = 0;
+  // Build per-employee breakdown — collect all employee names across all maps
+  const allEmployees = new Set<string>();
+  for (const name of empMeasurable.keys()) allEmployees.add(name);
+  for (const name of empStuck.keys()) allEmployees.add(name);
+  for (const name of empNeverStarted.keys()) allEmployees.add(name);
 
-  for (const job of jobs) {
-    const status = job.jobStatus.toLowerCase().trim();
-
-    if (STUCK_STATUSES.includes(status) && !job.completedDate) {
-      // Check if stuck long enough
-      if (job.scheduledStart) {
-        const elapsed = now.getTime() - new Date(job.scheduledStart).getTime();
-        if (elapsed < STUCK_THRESHOLD_MS) continue;
-        const daysSinceScheduled = Math.floor(elapsed / (24 * 60 * 60 * 1000));
-        const name = job.projectName || (dealNameMap && job.hubspotDealId ? dealNameMap.get(job.hubspotDealId) : null) || job.jobTitle || "Unknown";
-        const users = extractAssignedUsers(job.assignedUsers);
-        stuckJobs.push({
-          name,
-          assignedUser: users[0]?.user_name,
-          daysSinceScheduled,
-        });
-      } else {
-        // No scheduledStart — always stuck
-        const name = job.projectName || (dealNameMap && job.hubspotDealId ? dealNameMap.get(job.hubspotDealId) : null) || job.jobTitle || "Unknown";
-        const users = extractAssignedUsers(job.assignedUsers);
-        stuckJobs.push({
-          name,
-          assignedUser: users[0]?.user_name,
-        });
-      }
-    }
-
-    if (NEVER_STARTED_STATUSES.includes(status) && !job.completedDate && job.scheduledStart) {
-      if (new Date(job.scheduledStart).getTime() < now.getTime()) {
-        neverStartedCount++;
-      }
-    }
-  }
+  const byEmployee: EmployeeCompliance[] = [...allEmployees]
+    .filter((name) => name !== "Unassigned")
+    .map((name) => {
+      const m = empMeasurable.get(name) || 0;
+      const ot = empOnTime.get(name) || 0;
+      return {
+        name,
+        onTimePercent: m > 0 ? Math.round((ot / m) * 100) : -1,
+        measurableCount: m,
+        stuckCount: empStuck.get(name) || 0,
+        neverStartedCount: empNeverStarted.get(name) || 0,
+      };
+    })
+    // Sort: worst on-time first, then most stuck, then most never-started
+    .sort((a, b) => {
+      const aOt = a.onTimePercent >= 0 ? a.onTimePercent : 101;
+      const bOt = b.onTimePercent >= 0 ? b.onTimePercent : 101;
+      if (aOt !== bOt) return aOt - bOt;
+      if (a.stuckCount !== b.stuckCount) return b.stuckCount - a.stuckCount;
+      return b.neverStartedCount - a.neverStartedCount;
+    });
 
   return {
     onTimePercent,
     stuckJobs,
     neverStartedCount,
+    byEmployee,
   };
 }
 
@@ -652,19 +683,29 @@ export async function getScheduledJobsThisWeek(
 ): Promise<number> {
   if (!prisma) return 0;
 
-  const weekEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  // Use start of today so we don't miss jobs scheduled earlier today
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekEnd = new Date(startOfToday.getTime() + 7 * 24 * 60 * 60 * 1000);
 
+  // Include any non-completed job with a scheduledStart this week.
+  // Previous filter only matched SCHEDULED/UNSCHEDULED and missed jobs
+  // already in progress (STARTED, ON OUR WAY, etc.)
+  // Status casing in DB is inconsistent — query broadly, filter in memory.
   const jobs = await prisma.zuperJobCache.findMany({
     where: {
       jobCategory: category,
-      jobStatus: { in: ["SCHEDULED", "UNSCHEDULED"] },
-      scheduledStart: { gte: now, lte: weekEnd },
+      scheduledStart: { gte: startOfToday, lte: weekEnd },
       hubspotDealId: { not: null },
     },
-    select: { hubspotDealId: true },
+    select: { hubspotDealId: true, jobStatus: true },
   });
 
-  const dealIds = jobs
+  // Exclude completed jobs (case-insensitive)
+  const activeJobs = jobs.filter(
+    (j) => !COMPLETED_STATUSES.includes(j.jobStatus.toLowerCase().trim())
+  );
+
+  const dealIds = activeJobs
     .map((j) => j.hubspotDealId)
     .filter((id): id is string => id !== null);
 
@@ -1063,9 +1104,10 @@ async function enrichWithQcMetrics(
     inspections.avgCcToPtoDays = avg(recentProjects, "timeCcToPto");
     inspections.avgCcToPtoDaysPrior = avg(priorProjects, "timeCcToPto");
 
-    // First-pass inspection rate
+    // First-pass inspection rate — denominator includes ALL inspected projects
+    // (passed OR failed), not just passed, to avoid inflating the rate.
     const withInspection = recentProjects.filter(
-      (p: ProjectForMetrics) => p.inspectionPassDate
+      (p: ProjectForMetrics) => p.inspectionPassDate || p.hasInspectionFailed
     );
     if (withInspection.length > 0) {
       const firstTimePasses = withInspection.filter(
