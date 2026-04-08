@@ -1170,14 +1170,18 @@ export async function getOfficePerformanceData(
     (p: ProjectForMetrics) => normalizeLocation(p.pbLocation) === location
   );
 
+  // Batch-fetch Zuper assigned users for deal rows
+  const dealIds = locationProjects.filter((p: ProjectForMetrics) => p.id).map((p: ProjectForMetrics) => String(p.id));
+  const assignedUserMap = await batchZuperAssignedUsers(dealIds);
+
   // Build pipeline data
   const pipeline = buildPipelineData(locationProjects, goals, now);
 
   // Build section data in parallel
   const [surveys, installs, inspections] = await Promise.all([
-    buildSurveyData(location, goals, now),
-    buildInstallData(location, goals, now),
-    buildInspectionData(location, goals, now),
+    buildSurveyData(location, goals, now, locationProjects, assignedUserMap),
+    buildInstallData(location, goals, now, locationProjects, assignedUserMap),
+    buildInspectionData(location, goals, now, locationProjects, assignedUserMap),
   ]);
 
   // Enrich with QC metrics turnaround times
