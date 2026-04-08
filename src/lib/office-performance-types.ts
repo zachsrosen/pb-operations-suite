@@ -16,12 +16,28 @@ export interface EnrichedPersonStat extends PersonStat {
   personalBest?: string;
 }
 
-/** Pipeline-specific person stat (PM, designer, deal owner) */
-export interface PipelinePersonStat {
+/** A single project row in the deal drill-down list */
+export interface DealRow {
   name: string;
-  activeCount: number;
-  completedMtd: number;
-  avgDaysInStage?: number;
+  stage: string;
+  daysInStage: number;
+  overdue: boolean;
+  daysOverdue: number;
+  assignedUser?: string;
+}
+
+/** Zuper compliance summary for a job category at a location */
+export interface SectionCompliance {
+  onTimePercent: number;
+  stuckJobs: ComplianceJob[];
+  neverStartedCount: number;
+}
+
+/** A single stuck/problem job in compliance data */
+export interface ComplianceJob {
+  name: string;
+  assignedUser?: string;
+  daysSinceScheduled?: number;
 }
 
 export interface StageCount {
@@ -38,9 +54,8 @@ export interface PipelineData {
   avgDaysInStagePrior: number;
   stageDistribution: StageCount[];
   recentWins: string[];
-  pmLeaderboard?: PipelinePersonStat[];
-  designerLeaderboard?: PipelinePersonStat[];
-  ownerLeaderboard?: PipelinePersonStat[];
+  deals: DealRow[];
+  totalCount: number;
 }
 
 export interface SurveyData {
@@ -50,6 +65,9 @@ export interface SurveyData {
   avgTurnaroundPrior: number;
   scheduledThisWeek: number;
   leaderboard: EnrichedPersonStat[];
+  deals: DealRow[];
+  totalCount: number;
+  compliance?: SectionCompliance;
 }
 
 export interface InstallData {
@@ -61,6 +79,9 @@ export interface InstallData {
   scheduledThisWeek: number;
   installerLeaderboard: EnrichedPersonStat[];
   electricianLeaderboard: EnrichedPersonStat[];
+  deals: DealRow[];
+  totalCount: number;
+  compliance?: SectionCompliance;
 }
 
 export interface InspectionData {
@@ -72,6 +93,9 @@ export interface InspectionData {
   avgCcToPtoDays: number;
   avgCcToPtoDaysPrior: number;
   leaderboard: InspectionPersonStat[];
+  deals: DealRow[];
+  totalCount: number;
+  compliance?: SectionCompliance;
 }
 
 export interface OfficePerformanceData {

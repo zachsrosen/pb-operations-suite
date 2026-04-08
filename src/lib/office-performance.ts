@@ -11,7 +11,9 @@ import type {
   InspectionPersonStat,
   EnrichedPersonStat,
   OfficeMetricName,
-  PipelinePersonStat,
+  DealRow,
+  SectionCompliance,
+  ComplianceJob,
 } from "@/lib/office-performance-types";
 
 // ---------- Name Matching ----------
@@ -137,11 +139,16 @@ function normalizeStage(raw: string): string {
   return STAGE_MAP[lower] || raw;
 }
 
+const SURVEY_STAGES = new Set(["Survey"]);
+const INSTALL_STAGES = new Set(["RTB", "Install"]);
+const INSPECTION_STAGES = new Set(["Inspect", "PTO"]);
+
 // ---------- Pipeline Aggregation ----------
 
 // Matches the real RawProject shape from src/lib/types.ts and Project from src/lib/hubspot.ts
 interface ProjectForMetrics {
   id?: number;  // HubSpot deal ID
+  name?: string;
   pbLocation?: string | null;
   stage?: string;
   amount?: number;
@@ -164,46 +171,176 @@ interface ProjectForMetrics {
   designLead?: string | null;
 }
 
-function buildPipelinePersonLeaderboard(
-  projects: ProjectForMetrics[],
-  field: keyof ProjectForMetrics,
-  now: Date
-): PipelinePersonStat[] {
+// ---------- Deal Drill-Down ----------
+
+const DEAL_LIST_CAP = 12;
+
+// ---------- Compliance Constants ----------
+
+const STUCK_STATUSES = ["on our way", "started", "in progress"];
+const NEVER_STARTED_STATUSES = ["new", "scheduled", "unassigned", "ready to schedule", "ready to build", "ready for inspection"];
+const COMPLETED_STATUSES = ["completed", "construction complete", "passed", "partial pass", "failed"];
+const GRACE_MS = 86_400_000; // 1 day grace for on-time
+const STUCK_THRESHOLD_MS = 86_400_000; // 1 day minimum before showing as stuck
+
+export interface ComplianceCachedJob {
+  jobUid: string;
+  jobCategory: string;
+  jobStatus: string;
+  completedDate: Date | null;
+  scheduledStart: Date | null;
+  scheduledEnd: Date | null;
+  assignedUsers: unknown;
+  hubspotDealId: string | null;
+  jobTitle: string | null;
+  projectName: string | null;
+}
+
+export function buildComplianceData(
+  jobs: ComplianceCachedJob[],
+  now: Date,
+  dealNameMap?: Map<string, string>
+): SectionCompliance | null {
+  if (jobs.length === 0) return null;
+
+  // On-time calculation: completed jobs THIS MONTH where completedDate <= scheduledEnd + GRACE_MS
+  // Exclude null scheduledEnd from both numerator and denominator
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
-  const personMap = new Map<string, { active: number; completed: number; totalDays: number; daysCount: number }>();
+  let onTimeCount = 0;
+  let measurableCount = 0;
 
-  for (const p of projects) {
-    const name = p[field] as string | null | undefined;
-    if (!name || name.trim() === "") continue;
+  for (const job of jobs) {
+    const status = job.jobStatus.toLowerCase().trim();
+    if (!COMPLETED_STATUSES.includes(status)) continue;
+    if (!job.completedDate || !job.scheduledEnd) continue;
 
-    const trimmed = name.trim();
-    const existing = personMap.get(trimmed) || { active: 0, completed: 0, totalDays: 0, daysCount: 0 };
-    existing.active++;
+    // Only count jobs completed in the current month
+    const completed = new Date(job.completedDate);
+    if (completed < mtdStart || completed > now) continue;
 
-    const ptoDate = p.ptoGrantedDate ? new Date(p.ptoGrantedDate) : null;
-    if (ptoDate && ptoDate >= mtdStart && ptoDate <= now) {
-      existing.completed++;
+    measurableCount++;
+    const completedTime = completed.getTime();
+    const deadlineTime = new Date(job.scheduledEnd).getTime() + GRACE_MS;
+    if (completedTime <= deadlineTime) {
+      onTimeCount++;
     }
-
-    if (p.daysSinceStageMovement != null) {
-      existing.totalDays += p.daysSinceStageMovement;
-      existing.daysCount++;
-    }
-
-    personMap.set(trimmed, existing);
   }
 
-  return [...personMap.entries()]
-    .map(([name, stats]) => ({
-      name,
-      activeCount: stats.active,
-      completedMtd: stats.completed,
-      avgDaysInStage: stats.daysCount > 0
-        ? Math.round((stats.totalDays / stats.daysCount) * 10) / 10
-        : undefined,
-    }))
-    .sort((a, b) => b.activeCount - a.activeCount)
-    .slice(0, 8);
+  const onTimePercent = measurableCount > 0
+    ? Math.round((onTimeCount / measurableCount) * 100)
+    : -1;
+
+  // Stuck jobs: in STUCK_STATUSES and stuck >= STUCK_THRESHOLD_MS (or no scheduledStart)
+  const stuckJobs: ComplianceJob[] = [];
+  let neverStartedCount = 0;
+
+  for (const job of jobs) {
+    const status = job.jobStatus.toLowerCase().trim();
+
+    if (STUCK_STATUSES.includes(status) && !job.completedDate) {
+      // Check if stuck long enough
+      if (job.scheduledStart) {
+        const elapsed = now.getTime() - new Date(job.scheduledStart).getTime();
+        if (elapsed < STUCK_THRESHOLD_MS) continue;
+        const daysSinceScheduled = Math.floor(elapsed / (24 * 60 * 60 * 1000));
+        const name = job.projectName || (dealNameMap && job.hubspotDealId ? dealNameMap.get(job.hubspotDealId) : null) || job.jobTitle || "Unknown";
+        const users = extractAssignedUsers(job.assignedUsers);
+        stuckJobs.push({
+          name,
+          assignedUser: users[0]?.user_name,
+          daysSinceScheduled,
+        });
+      } else {
+        // No scheduledStart — always stuck
+        const name = job.projectName || (dealNameMap && job.hubspotDealId ? dealNameMap.get(job.hubspotDealId) : null) || job.jobTitle || "Unknown";
+        const users = extractAssignedUsers(job.assignedUsers);
+        stuckJobs.push({
+          name,
+          assignedUser: users[0]?.user_name,
+        });
+      }
+    }
+
+    if (NEVER_STARTED_STATUSES.includes(status) && !job.completedDate && job.scheduledStart) {
+      if (new Date(job.scheduledStart).getTime() < now.getTime()) {
+        neverStartedCount++;
+      }
+    }
+  }
+
+  return {
+    onTimePercent,
+    stuckJobs,
+    neverStartedCount,
+  };
+}
+
+export function buildDealRows(
+  projects: ProjectForMetrics[],
+  now: Date,
+  assignedUserMap?: Map<string, Map<string, string>>,
+  category?: string
+): { deals: DealRow[]; totalCount: number } {
+  const rows: DealRow[] = projects.map((p) => {
+    const daysInStage = p.daysSinceStageMovement ?? 0;
+    const stage = normalizeStage(p.stage || "Unknown");
+
+    // Overdue: check each forecasted date against its completion counterpart
+    const overdueChecks: Array<{ forecast?: string | null; completed?: string | null }> = [
+      { forecast: p.forecastedInstallDate, completed: p.constructionCompleteDate },
+      { forecast: p.forecastedInspectionDate, completed: p.inspectionPassDate },
+      { forecast: p.forecastedPtoDate, completed: p.ptoGrantedDate },
+    ];
+
+    let overdue = false;
+    let daysOverdue = 0;
+
+    // Find earliest unmet forecasted date that is in the past
+    let earliestOverdueDate: Date | null = null;
+    for (const { forecast, completed } of overdueChecks) {
+      if (forecast && !completed) {
+        const forecastDate = new Date(forecast);
+        if (forecastDate < now) {
+          if (!earliestOverdueDate || forecastDate < earliestOverdueDate) {
+            earliestOverdueDate = forecastDate;
+          }
+        }
+      }
+    }
+
+    if (earliestOverdueDate) {
+      overdue = true;
+      daysOverdue = Math.floor((now.getTime() - earliestOverdueDate.getTime()) / (24 * 60 * 60 * 1000));
+    }
+
+    // Assigned user from pre-built map (dealId → category → userName)
+    let assignedUser: string | undefined;
+    if (assignedUserMap && category && p.id) {
+      assignedUser = assignedUserMap.get(String(p.id))?.get(category);
+    }
+
+    return {
+      name: p.name || `Deal ${p.id ?? "?"}`,
+      stage,
+      daysInStage,
+      overdue,
+      daysOverdue,
+      assignedUser,
+    };
+  });
+
+  // Sort: overdue first by daysOverdue desc, then non-overdue by daysInStage desc
+  rows.sort((a, b) => {
+    if (a.overdue && !b.overdue) return -1;
+    if (!a.overdue && b.overdue) return 1;
+    if (a.overdue && b.overdue) return b.daysOverdue - a.daysOverdue;
+    return b.daysInStage - a.daysInStage;
+  });
+
+  return {
+    deals: rows.slice(0, DEAL_LIST_CAP),
+    totalCount: rows.length,
+  };
 }
 
 export function buildPipelineData(
@@ -268,16 +405,7 @@ export function buildPipelineData(
   const stageDistribution = ["Survey", "Design", "Permit", "RTB", "Install", "Inspect"]
     .map((stage) => ({ stage, count: stageCounts[stage] || 0 }));
 
-  const pmLeaderboard = buildPipelinePersonLeaderboard(projects, "projectManager", now);
-  const designerLeaderboard = buildPipelinePersonLeaderboard(projects, "designLead", now);
-  const ownerLeaderboard = buildPipelinePersonLeaderboard(projects, "dealOwner", now);
-
-  // Individual achievements from PM leaderboard
-  for (const pm of pmLeaderboard) {
-    if (pm.completedMtd >= 5) {
-      recentWins.push(`🌟 ${pm.name.split(" ")[0]} completed ${pm.completedMtd} projects this month!`);
-    }
-  }
+  const { deals, totalCount } = buildDealRows(projects, now);
 
   return {
     activeProjects: projects.length,
@@ -288,9 +416,8 @@ export function buildPipelineData(
     avgDaysInStagePrior, // Enriched from QC metrics in orchestrator
     stageDistribution,
     recentWins,
-    pmLeaderboard,
-    designerLeaderboard,
-    ownerLeaderboard,
+    deals,
+    totalCount,
   };
 }
 
@@ -405,6 +532,119 @@ export async function getZuperJobsByLocation(
   });
 }
 
+/**
+ * Fetch all Zuper jobs for a category at a location — no date filter.
+ * Compliance needs stuck/never-started jobs that may have no completedDate.
+ */
+export async function getZuperJobsForCompliance(
+  location: string,
+  category: string
+): Promise<ComplianceCachedJob[]> {
+  if (!prisma) return [];
+
+  const jobs = await prisma.zuperJobCache.findMany({
+    where: {
+      jobCategory: category,
+      hubspotDealId: { not: null },
+    },
+    select: {
+      jobUid: true,
+      jobCategory: true,
+      jobStatus: true,
+      completedDate: true,
+      scheduledStart: true,
+      scheduledEnd: true,
+      assignedUsers: true,
+      hubspotDealId: true,
+      jobTitle: true,
+    },
+  });
+
+  if (jobs.length === 0) return [];
+
+  const dealIds = jobs
+    .map((j) => j.hubspotDealId)
+    .filter((id): id is string => id !== null);
+
+  const projectCache = await prisma.hubSpotProjectCache.findMany({
+    where: { dealId: { in: dealIds } },
+    select: { dealId: true, pbLocation: true, dealName: true },
+  });
+
+  const dealLocationMap = new Map(
+    projectCache.map((p) => [p.dealId, p.pbLocation])
+  );
+  const dealNameMap = new Map(
+    projectCache.map((p) => [p.dealId, p.dealName])
+  );
+
+  return jobs
+    .filter((j) => {
+      const loc = j.hubspotDealId ? dealLocationMap.get(j.hubspotDealId) : null;
+      return normalizeLocation(loc) === location;
+    })
+    .map((j) => ({
+      jobUid: j.jobUid,
+      jobCategory: j.jobCategory,
+      jobStatus: j.jobStatus,
+      completedDate: j.completedDate,
+      scheduledStart: j.scheduledStart,
+      scheduledEnd: j.scheduledEnd ?? null,
+      assignedUsers: j.assignedUsers,
+      hubspotDealId: j.hubspotDealId,
+      jobTitle: j.jobTitle ?? null,
+      projectName: j.hubspotDealId ? dealNameMap.get(j.hubspotDealId) ?? null : null,
+    }));
+}
+
+/**
+ * Batch-fetch the primary assigned user per (dealId, category) from ZuperJobCache.
+ * Returns Map<dealId, Map<category, userName>>.
+ * Picks the most relevant job per group: active (no completedDate) over completed,
+ * latest scheduledStart first, latest completedDate as tiebreak.
+ */
+export async function batchZuperAssignedUsers(
+  dealIds: string[]
+): Promise<Map<string, Map<string, string>>> {
+  const result = new Map<string, Map<string, string>>();
+  if (!prisma || dealIds.length === 0) return result;
+
+  const jobs = await prisma.zuperJobCache.findMany({
+    where: { hubspotDealId: { in: dealIds } },
+    select: {
+      hubspotDealId: true,
+      jobCategory: true,
+      assignedUsers: true,
+      scheduledStart: true,
+      completedDate: true,
+    },
+    orderBy: [
+      { scheduledStart: { sort: "desc", nulls: "last" } },
+      { completedDate: { sort: "desc", nulls: "first" } },
+    ],
+  });
+
+  // Group by (dealId, category) — pick first (best) job per group
+  const seen = new Set<string>();
+
+  for (const job of jobs) {
+    if (!job.hubspotDealId) continue;
+    const key = `${job.hubspotDealId}::${job.jobCategory}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    const users = extractAssignedUsers(job.assignedUsers);
+    if (users.length === 0) continue;
+
+    if (!result.has(job.hubspotDealId)) {
+      result.set(job.hubspotDealId, new Map());
+    }
+    result.get(job.hubspotDealId)!.set(job.jobCategory, users[0].user_name);
+  }
+
+  return result;
+}
+
 export async function getScheduledJobsThisWeek(
   location: string,
   category: string,
@@ -486,7 +726,9 @@ async function getMonthlyJobHistory(
 export async function buildSurveyData(
   location: string,
   goals: Record<OfficeMetricName, number>,
-  now: Date
+  now: Date,
+  locationProjects?: ProjectForMetrics[],
+  assignedUserMap?: Map<string, Map<string, string>>
 ): Promise<SurveyData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -512,6 +754,16 @@ export async function buildSurveyData(
 
   const surveyHistory = await getMonthlyJobHistory(location, "Site Survey", now, 3);
 
+  // Deal rows filtered to survey stages
+  const surveyProjects = (locationProjects || []).filter(
+    (p) => SURVEY_STAGES.has(normalizeStage(p.stage || ""))
+  );
+  const { deals, totalCount } = buildDealRows(surveyProjects, now, assignedUserMap, "Site Survey");
+
+  // Compliance from Zuper "Site Survey" category
+  const complianceJobs = await getZuperJobsForCompliance(location, "Site Survey");
+  const compliance = buildComplianceData(complianceJobs, now) ?? undefined;
+
   return {
     completedMtd: mtdJobs.length,
     completedGoal: goals.surveys_completed,
@@ -519,6 +771,9 @@ export async function buildSurveyData(
     avgTurnaroundPrior: 0,
     scheduledThisWeek,
     leaderboard: buildLeaderboard([...userCounts.values()], surveyHistory) as EnrichedPersonStat[],
+    deals,
+    totalCount,
+    compliance,
   };
 }
 
@@ -527,7 +782,9 @@ export async function buildSurveyData(
 export async function buildInstallData(
   location: string,
   goals: Record<OfficeMetricName, number>,
-  now: Date
+  now: Date,
+  locationProjects?: ProjectForMetrics[],
+  assignedUserMap?: Map<string, Map<string, string>>
 ): Promise<InstallData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -637,6 +894,16 @@ export async function buildInstallData(
   const installerHistory = filterHistoryByUids(constructionHistory, installerUids);
   const electricianHistory = filterHistoryByUids(constructionHistory, electricianUids);
 
+  // Deal rows filtered to install stages
+  const installProjects = (locationProjects || []).filter(
+    (p) => INSTALL_STAGES.has(normalizeStage(p.stage || ""))
+  );
+  const { deals, totalCount } = buildDealRows(installProjects, now, assignedUserMap, "Construction");
+
+  // Compliance from Zuper "Construction" category
+  const complianceJobs = await getZuperJobsForCompliance(location, "Construction");
+  const compliance = buildComplianceData(complianceJobs, now) ?? undefined;
+
   return {
     completedMtd: mtdJobs.length,
     completedGoal: goals.installs_completed,
@@ -646,6 +913,9 @@ export async function buildInstallData(
     scheduledThisWeek,
     installerLeaderboard: buildLeaderboard([...installerCounts.values()], installerHistory) as EnrichedPersonStat[],
     electricianLeaderboard: buildLeaderboard([...electricianCounts.values()], electricianHistory) as EnrichedPersonStat[],
+    deals,
+    totalCount,
+    compliance,
   };
 }
 
@@ -654,7 +924,9 @@ export async function buildInstallData(
 export async function buildInspectionData(
   location: string,
   goals: Record<OfficeMetricName, number>,
-  now: Date
+  now: Date,
+  locationProjects?: ProjectForMetrics[],
+  assignedUserMap?: Map<string, Map<string, string>>
 ): Promise<InspectionData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
@@ -680,6 +952,16 @@ export async function buildInspectionData(
     passRate: -1,
   }));
 
+  // Deal rows filtered to inspection stages
+  const inspectionProjects = (locationProjects || []).filter(
+    (p) => INSPECTION_STAGES.has(normalizeStage(p.stage || ""))
+  );
+  const { deals, totalCount } = buildDealRows(inspectionProjects, now, assignedUserMap, "Inspection");
+
+  // Compliance from Zuper "Inspection" category
+  const complianceJobs = await getZuperJobsForCompliance(location, "Inspection");
+  const compliance = buildComplianceData(complianceJobs, now) ?? undefined;
+
   return {
     completedMtd: mtdJobs.length,
     completedGoal: goals.inspections_completed,
@@ -689,6 +971,9 @@ export async function buildInspectionData(
     avgCcToPtoDays: 0,
     avgCcToPtoDaysPrior: 0,
     leaderboard,
+    deals,
+    totalCount,
+    compliance,
   };
 }
 
@@ -899,14 +1184,18 @@ export async function getOfficePerformanceData(
     (p: ProjectForMetrics) => normalizeLocation(p.pbLocation) === location
   );
 
+  // Batch-fetch Zuper assigned users for deal rows
+  const dealIds = locationProjects.filter((p: ProjectForMetrics) => p.id).map((p: ProjectForMetrics) => String(p.id));
+  const assignedUserMap = await batchZuperAssignedUsers(dealIds);
+
   // Build pipeline data
   const pipeline = buildPipelineData(locationProjects, goals, now);
 
   // Build section data in parallel
   const [surveys, installs, inspections] = await Promise.all([
-    buildSurveyData(location, goals, now),
-    buildInstallData(location, goals, now),
-    buildInspectionData(location, goals, now),
+    buildSurveyData(location, goals, now, locationProjects, assignedUserMap),
+    buildInstallData(location, goals, now, locationProjects, assignedUserMap),
+    buildInspectionData(location, goals, now, locationProjects, assignedUserMap),
   ]);
 
   // Enrich with QC metrics turnaround times
