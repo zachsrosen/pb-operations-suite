@@ -18,6 +18,7 @@ export interface DealRow {
   stage: string;          // Current pipeline stage
   daysInStage: number;    // Days since last stage movement
   overdue: boolean;       // Forecasted date passed without completion
+  daysOverdue: number;    // Days past forecasted date (0 if not overdue). Used for sort order.
   assignedUser?: string;  // Zuper assigned user name (from ZuperJobCache)
 }
 ```
@@ -97,15 +98,17 @@ In `getOfficePerformanceData()`, the `locationProjects` array (from `fetchAllPro
 - `overdue` → reuse the same overdue logic from `buildPipelineData()` (forecast vs completion date checks)
 - `assignedUser` → join to `ZuperJobCache` via `hubspotDealId` matching `String(project.id)`
 
-**Zuper user join:** For each deal, query `ZuperJobCache` for the relevant job category:
-- Pipeline: most recent job of any category linked to that deal
+**Zuper user join:** For each deal, look up the assigned user from `ZuperJobCache` by category:
+- Pipeline: omits assigned user column entirely (see PipelineSection Changes)
 - Surveys: "Site Survey" jobs
 - Installs: "Construction" jobs
 - Inspections: "Inspection" jobs
 
-Use the existing `assignedUsers` JSON field on `ZuperJobCache`. Take the first assigned user's name.
+**Multi-job selection rule:** A deal may have multiple Zuper jobs in the same category (e.g. rescheduled surveys, re-inspections). Select deterministically: pick the job with the latest `scheduledStart` date. If tied, pick the one with the latest `completedDate` (or null `completedDate` wins — an active job is more relevant than a completed one). Use the first entry from `assignedUsers` JSON array on the selected job.
 
-**Sorting:** Overdue projects first (sorted by days overdue desc), then non-overdue sorted by days-in-stage desc.
+**Overdue calculation:** For each overdue project, compute `daysOverdue` as the number of days between the earliest unmet forecasted date and `now`. This uses the same overdue checks from `buildPipelineData()` (forecastedInstallDate, forecastedInspectionDate, forecastedPtoDate vs their completion counterparts). Non-overdue projects get `daysOverdue: 0`.
+
+**Sorting:** Overdue projects first (sorted by `daysOverdue` desc), then non-overdue sorted by `daysInStage` desc.
 
 **Cap:** 12 rows max. Include a `totalCount` field so the UI can show "+N more".
 
@@ -135,16 +138,18 @@ Build compliance from `ZuperJobCache` data (not the live Zuper API — avoids ra
 ```typescript
 async function getZuperJobsForCompliance(
   location: string,
-  category: string,
-  dealIds: string[]
+  category: string
 ): Promise<CachedJob[]>
 ```
 
-This queries by `jobCategory` + `hubspotDealId IN dealIds`, returns all jobs regardless of completion status. Filter to location via the same `HubSpotProjectCache` join pattern used in `getZuperJobsByLocation()` — or more efficiently, accept pre-filtered `dealIds` that are already known to be in the target location.
+**Scope: all location jobs, not section-filtered dealIds.** Compliance must reflect the full picture for that job category at that location. A survey job completed this month may have already moved to Design stage in HubSpot — filtering to only currently-displayed Survey-stage deals would miss it, making on-time % and stuck counts systematically too small. Instead, query all `ZuperJobCache` records for the category, then filter to the location via the `HubSpotProjectCache` join (same pattern as `getZuperJobsByLocation()`). No date filter on the query itself — filter in memory by status type:
 
-**On-time %:** Of completed jobs (status in `COMPLETED_STATUSES`) in the current month, percentage where `completedDate <= scheduledEnd + 1 day` (grace period constant: `GRACE_MS = 86_400_000`).
+- On-time: completed jobs where `completedDate` is in the current month
+- Stuck/never-started: active jobs regardless of date
 
-**Stuck jobs:** Active jobs with lowercase status in `STUCK_STATUSES`. Include job name (or linked deal name), assigned user, and days since scheduled start.
+**On-time %:** Of completed jobs (lowercase status in `COMPLETED_STATUSES`) with `completedDate` in the current month, percentage where `completedDate <= scheduledEnd + 1 day` (grace period constant: `GRACE_MS = 86_400_000`). If no completed jobs this month, omit the percentage (don't show 0%).
+
+**Stuck jobs:** Active jobs with lowercase status in `STUCK_STATUSES`. Include job name (or linked deal name via `hubspotDealId` → `HubSpotProjectCache.dealName`), assigned user, and days since `scheduledStart`.
 
 **Never-started count:** Active jobs with lowercase status in `NEVER_STARTED_STATUSES` that are past their `scheduledStart` date.
 
@@ -152,10 +157,12 @@ This queries by `jobCategory` + `hubspotDealId IN dealIds`, returns all jobs reg
 
 To populate `assignedUser` on deal rows without N+1 queries:
 
-1. Collect all `project.id` values for the location
+1. Collect all `project.id` values (as strings) for the location
 2. Single query: `ZuperJobCache.findMany({ where: { hubspotDealId: { in: dealIds } } })`
-3. Build a `Map<dealId, { category, assignedUser }>` for O(1) lookups
-4. This same query result feeds both deal row population and compliance calculation
+3. Group results by `(dealId, jobCategory)`. Within each group, select the job with the latest `scheduledStart` (null `completedDate` wins ties — active jobs are more relevant).
+4. Build a `Map<string, Map<string, string>>` keyed by `dealId → category → assignedUserName` for O(1) lookups per section.
+
+Compliance uses a separate wider query via `getZuperJobsForCompliance()` (all location jobs in that category, not just the displayed deals) — see Compliance Population above.
 
 ### PipelinePersonStat Removal
 
@@ -230,8 +237,9 @@ Stuck: "Martinez 8.5kW" (Mike T, 3d) · "Chen Solar" (unassigned, 7d)
 
 ## Performance Considerations
 
-- The Zuper job batch query adds 1 additional DB query per `getOfficePerformanceData()` call (cached with appCache at 5-min TTL)
-- Compliance queries reuse the same batch result — no additional DB calls
+- The Zuper user batch query adds 1 DB query for deal-row assigned users
+- Compliance adds up to 3 additional DB queries (one per category: Site Survey, Construction, Inspection) — each filtered by category, then joined to location via HubSpotProjectCache
+- All queries are within the `getOfficePerformanceData()` call which is cached by appCache at 5-min TTL
 - Deal lists are pre-sorted and pre-capped server-side to keep payload small
 - No new external API calls (all data comes from ZuperJobCache and existing HubSpot fetch)
 
