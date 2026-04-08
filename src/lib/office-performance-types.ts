@@ -10,6 +10,20 @@ export interface InspectionPersonStat extends PersonStat {
   consecutivePasses?: number;
 }
 
+/** Person stat with per-person average metric (turnaround days, etc.) */
+export interface EnrichedPersonStat extends PersonStat {
+  avgTurnaround?: number;
+  personalBest?: string;
+}
+
+/** Pipeline-specific person stat (PM, designer, deal owner) */
+export interface PipelinePersonStat {
+  name: string;
+  activeCount: number;
+  completedMtd: number;
+  avgDaysInStage?: number;
+}
+
 export interface StageCount {
   stage: string;
   count: number;
@@ -24,6 +38,9 @@ export interface PipelineData {
   avgDaysInStagePrior: number;
   stageDistribution: StageCount[];
   recentWins: string[];
+  pmLeaderboard?: PipelinePersonStat[];
+  designerLeaderboard?: PipelinePersonStat[];
+  ownerLeaderboard?: PipelinePersonStat[];
 }
 
 export interface SurveyData {
@@ -32,7 +49,7 @@ export interface SurveyData {
   avgTurnaroundDays: number;
   avgTurnaroundPrior: number;
   scheduledThisWeek: number;
-  leaderboard: PersonStat[];
+  leaderboard: EnrichedPersonStat[];
 }
 
 export interface InstallData {
@@ -42,8 +59,8 @@ export interface InstallData {
   avgDaysPerInstallPrior: number;
   capacityUtilization: number;
   scheduledThisWeek: number;
-  installerLeaderboard: PersonStat[];
-  electricianLeaderboard: PersonStat[];
+  installerLeaderboard: EnrichedPersonStat[];
+  electricianLeaderboard: EnrichedPersonStat[];
 }
 
 export interface InspectionData {
