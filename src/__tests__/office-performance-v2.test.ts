@@ -1,7 +1,8 @@
 jest.mock("@/lib/db", () => ({ prisma: null }));
 jest.mock("@/lib/hubspot", () => ({ fetchAllProjects: jest.fn() }));
 
-import { buildPipelineData, buildDealRows } from "@/lib/office-performance";
+import { buildPipelineData, buildDealRows, buildComplianceData } from "@/lib/office-performance";
+import type { ComplianceCachedJob } from "@/lib/office-performance";
 import type { OfficeMetricName } from "@/lib/office-performance-types";
 
 const DEFAULT_GOALS: Record<OfficeMetricName, number> = {
@@ -252,5 +253,106 @@ describe("buildDealRows", () => {
     const result = buildDealRows(projects, now);
     expect(result.deals[0].overdue).toBe(true);
     expect(result.deals[0].daysOverdue).toBe(18);
+  });
+});
+
+describe("buildComplianceData", () => {
+  const now = new Date("2026-04-07T12:00:00Z");
+
+  function makeJob(overrides: Partial<ComplianceCachedJob>): ComplianceCachedJob {
+    return {
+      jobUid: "j1",
+      jobCategory: "Construction",
+      jobStatus: "completed",
+      completedDate: new Date("2026-04-05"),
+      scheduledStart: new Date("2026-04-01"),
+      scheduledEnd: new Date("2026-04-04"),
+      assignedUsers: [],
+      hubspotDealId: "100",
+      jobTitle: "Job 1",
+      projectName: "Project Alpha",
+      ...overrides,
+    };
+  }
+
+  it("calculates on-time percentage correctly", () => {
+    const jobs = [
+      makeJob({ jobUid: "j1", completedDate: new Date("2026-04-03"), scheduledEnd: new Date("2026-04-04") }), // on-time
+      makeJob({ jobUid: "j2", completedDate: new Date("2026-04-06"), scheduledEnd: new Date("2026-04-04") }), // late
+      makeJob({ jobUid: "j3", completedDate: new Date("2026-04-05"), scheduledEnd: new Date("2026-04-04") }), // within 1-day grace
+    ];
+    const result = buildComplianceData(jobs, now);
+    expect(result).not.toBeNull();
+    expect(result!.onTimePercent).toBe(67); // 2 of 3
+  });
+
+  it("returns -1 onTimePercent when no measurable completed jobs", () => {
+    const jobs = [
+      makeJob({ jobUid: "j1", jobStatus: "started", completedDate: null, scheduledEnd: null }),
+    ];
+    const result = buildComplianceData(jobs, now);
+    expect(result).not.toBeNull();
+    expect(result!.onTimePercent).toBe(-1);
+  });
+
+  it("detects stuck jobs", () => {
+    const jobs = [
+      makeJob({
+        jobUid: "j1",
+        jobStatus: "started",
+        completedDate: null,
+        scheduledStart: new Date("2026-04-04"),
+        scheduledEnd: new Date("2026-04-05"),
+      }),
+    ];
+    const result = buildComplianceData(jobs, now);
+    expect(result).not.toBeNull();
+    expect(result!.stuckJobs).toHaveLength(1);
+    expect(result!.stuckJobs[0].name).toBe("Project Alpha");
+  });
+
+  it("counts never-started jobs past their scheduledStart", () => {
+    const jobs = [
+      makeJob({
+        jobUid: "j1",
+        jobStatus: "scheduled",
+        completedDate: null,
+        scheduledStart: new Date("2026-04-01"),
+      }),
+    ];
+    const result = buildComplianceData(jobs, now);
+    expect(result).not.toBeNull();
+    expect(result!.neverStartedCount).toBe(1);
+  });
+
+  it("returns null for empty jobs array", () => {
+    const result = buildComplianceData([], now);
+    expect(result).toBeNull();
+  });
+
+  it("normalizes job status case for matching", () => {
+    const jobs = [
+      makeJob({
+        jobUid: "j1",
+        jobStatus: "Started",
+        completedDate: null,
+        scheduledStart: new Date("2026-04-04"),
+      }),
+    ];
+    const result = buildComplianceData(jobs, now);
+    expect(result!.stuckJobs).toHaveLength(1);
+  });
+
+  it("respects stuck threshold — jobs stuck less than 1 day are not flagged", () => {
+    const jobs = [
+      makeJob({
+        jobUid: "j1",
+        jobStatus: "started",
+        completedDate: null,
+        scheduledStart: new Date("2026-04-07T06:00:00Z"), // only 6 hours ago
+      }),
+    ];
+    const result = buildComplianceData(jobs, now);
+    expect(result!.stuckJobs).toHaveLength(0);
   });
 });

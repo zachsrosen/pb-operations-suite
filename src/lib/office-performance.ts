@@ -213,6 +213,101 @@ function buildPipelinePersonLeaderboard(
 
 const DEAL_LIST_CAP = 12;
 
+// ---------- Compliance Constants ----------
+
+const STUCK_STATUSES = ["on our way", "started", "in progress"];
+const NEVER_STARTED_STATUSES = ["new", "scheduled", "unassigned", "ready to schedule", "ready to build", "ready for inspection"];
+const COMPLETED_STATUSES = ["completed", "construction complete", "passed", "partial pass", "failed"];
+const GRACE_MS = 86_400_000; // 1 day grace for on-time
+const STUCK_THRESHOLD_MS = 86_400_000; // 1 day minimum before showing as stuck
+
+export interface ComplianceCachedJob {
+  jobUid: string;
+  jobCategory: string;
+  jobStatus: string;
+  completedDate: Date | null;
+  scheduledStart: Date | null;
+  scheduledEnd: Date | null;
+  assignedUsers: unknown;
+  hubspotDealId: string | null;
+  jobTitle: string | null;
+  projectName: string | null;
+}
+
+export function buildComplianceData(
+  jobs: ComplianceCachedJob[],
+  now: Date,
+  dealNameMap?: Map<string, string>
+): SectionCompliance | null {
+  if (jobs.length === 0) return null;
+
+  // On-time calculation: completed jobs where completedDate <= scheduledEnd + GRACE_MS
+  // Exclude null scheduledEnd from both numerator and denominator
+  let onTimeCount = 0;
+  let measurableCount = 0;
+
+  for (const job of jobs) {
+    const status = job.jobStatus.toLowerCase().trim();
+    if (!COMPLETED_STATUSES.includes(status)) continue;
+    if (!job.completedDate || !job.scheduledEnd) continue;
+
+    measurableCount++;
+    const completedTime = new Date(job.completedDate).getTime();
+    const deadlineTime = new Date(job.scheduledEnd).getTime() + GRACE_MS;
+    if (completedTime <= deadlineTime) {
+      onTimeCount++;
+    }
+  }
+
+  const onTimePercent = measurableCount > 0
+    ? Math.round((onTimeCount / measurableCount) * 100)
+    : -1;
+
+  // Stuck jobs: in STUCK_STATUSES and stuck >= STUCK_THRESHOLD_MS (or no scheduledStart)
+  const stuckJobs: ComplianceJob[] = [];
+  let neverStartedCount = 0;
+
+  for (const job of jobs) {
+    const status = job.jobStatus.toLowerCase().trim();
+
+    if (STUCK_STATUSES.includes(status) && !job.completedDate) {
+      // Check if stuck long enough
+      if (job.scheduledStart) {
+        const elapsed = now.getTime() - new Date(job.scheduledStart).getTime();
+        if (elapsed < STUCK_THRESHOLD_MS) continue;
+        const daysSinceScheduled = Math.floor(elapsed / (24 * 60 * 60 * 1000));
+        const name = job.projectName || (dealNameMap && job.hubspotDealId ? dealNameMap.get(job.hubspotDealId) : null) || job.jobTitle || "Unknown";
+        const users = extractAssignedUsers(job.assignedUsers);
+        stuckJobs.push({
+          name,
+          assignedUser: users[0]?.user_name,
+          daysSinceScheduled,
+        });
+      } else {
+        // No scheduledStart — always stuck
+        const name = job.projectName || (dealNameMap && job.hubspotDealId ? dealNameMap.get(job.hubspotDealId) : null) || job.jobTitle || "Unknown";
+        const users = extractAssignedUsers(job.assignedUsers);
+        stuckJobs.push({
+          name,
+          assignedUser: users[0]?.user_name,
+        });
+      }
+    }
+
+    if (NEVER_STARTED_STATUSES.includes(status) && !job.completedDate && job.scheduledStart) {
+      if (new Date(job.scheduledStart).getTime() < now.getTime()) {
+        neverStartedCount++;
+      }
+    }
+  }
+
+  return {
+    onTimePercent,
+    stuckJobs,
+    neverStartedCount,
+  };
+}
+
 export function buildDealRows(
   projects: ProjectForMetrics[],
   now: Date
