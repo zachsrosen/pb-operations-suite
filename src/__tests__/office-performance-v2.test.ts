@@ -80,3 +80,109 @@ describe("buildPipelineData — employee breakdowns", () => {
     expect(result.pmLeaderboard![0].avgDaysInStage).toBe(7);
   });
 });
+
+import { nameMatchesLoosely } from "@/lib/office-performance";
+
+describe("nameMatchesLoosely", () => {
+  it("matches exact names", () => {
+    expect(nameMatchesLoosely("Mike Smith", "Mike Smith")).toBe(true);
+  });
+
+  it("matches normalized names (case, punctuation)", () => {
+    expect(nameMatchesLoosely("mike smith", "Mike Smith")).toBe(true);
+    expect(nameMatchesLoosely("Mike S.", "Mike S")).toBe(true);
+  });
+
+  it("matches first name + last initial to full name", () => {
+    expect(nameMatchesLoosely("Mike S", "Mike Smith")).toBe(true);
+    expect(nameMatchesLoosely("Mike Smith", "Mike S")).toBe(true);
+  });
+
+  it("rejects different last initials", () => {
+    expect(nameMatchesLoosely("Mike S", "Mike Rodriguez")).toBe(false);
+  });
+
+  it("rejects completely different names", () => {
+    expect(nameMatchesLoosely("Alice Johnson", "Bob Smith")).toBe(false);
+  });
+
+  it("rejects short first-name-only matches (≤2 chars)", () => {
+    expect(nameMatchesLoosely("Al", "Al")).toBe(true);
+    expect(nameMatchesLoosely("Al Smith", "Al Jones")).toBe(false);
+  });
+
+  it("accepts first-name-only when one side has no last name", () => {
+    expect(nameMatchesLoosely("Mike", "Mike Smith")).toBe(true);
+  });
+});
+
+describe("EnrichedPersonStat type", () => {
+  it("extends PersonStat with avgTurnaround", () => {
+    const stat: import("@/lib/office-performance-types").EnrichedPersonStat = {
+      name: "Mike",
+      count: 5,
+      avgTurnaround: 3.2,
+    };
+    expect(stat.avgTurnaround).toBe(3.2);
+  });
+});
+
+describe("InspectionPersonStat enrichment", () => {
+  it("InspectionPersonStat supports passRate and consecutivePasses", () => {
+    const stat: import("@/lib/office-performance-types").InspectionPersonStat = {
+      name: "Jake",
+      count: 8,
+      passRate: 87.5,
+      consecutivePasses: 5,
+    };
+    expect(stat.passRate).toBe(87.5);
+    expect(stat.consecutivePasses).toBe(5);
+  });
+});
+
+describe("buildLeaderboard with monthlyHistory", () => {
+  it("detects a 3-month leader streak", () => {
+    const { buildLeaderboard } = require("@/lib/office-performance");
+    const users = [
+      { name: "Alice", userUid: "a", count: 10 },
+      { name: "Bob", userUid: "b", count: 5 },
+    ];
+    const history = new Map([
+      ["2026-01", [{ name: "Alice", userUid: "a", count: 8 }, { name: "Bob", userUid: "b", count: 3 }]],
+      ["2026-02", [{ name: "Alice", userUid: "a", count: 12 }, { name: "Bob", userUid: "b", count: 4 }]],
+      ["2026-03", [{ name: "Alice", userUid: "a", count: 9 }, { name: "Bob", userUid: "b", count: 6 }]],
+    ]);
+    const result = buildLeaderboard(users, history);
+    expect(result[0].name).toBe("Alice");
+    expect(result[0].streak).toBeDefined();
+    expect(result[0].streak?.value).toBe(3);
+  });
+
+  it("does not assign streak when leader changed", () => {
+    const { buildLeaderboard } = require("@/lib/office-performance");
+    const users = [
+      { name: "Alice", userUid: "a", count: 10 },
+      { name: "Bob", userUid: "b", count: 5 },
+    ];
+    const history = new Map([
+      ["2026-01", [{ name: "Bob", userUid: "b", count: 8 }, { name: "Alice", userUid: "a", count: 3 }]],
+      ["2026-02", [{ name: "Alice", userUid: "a", count: 12 }, { name: "Bob", userUid: "b", count: 4 }]],
+      ["2026-03", [{ name: "Alice", userUid: "a", count: 9 }, { name: "Bob", userUid: "b", count: 6 }]],
+    ]);
+    const result = buildLeaderboard(users, history);
+    expect(result[0].streak?.value).toBe(2);
+  });
+});
+
+describe("individual achievements", () => {
+  it("adds PM milestone to recent wins", () => {
+    const projects = Array.from({ length: 5 }, (_, i) => ({
+      stage: "PTO",
+      projectManager: "Sarah",
+      ptoGrantedDate: `2026-04-0${i + 2}`,
+    }));
+    const result = buildPipelineData(projects, DEFAULT_GOALS, new Date("2026-04-07T12:00:00Z"));
+    const hasAchievement = result.recentWins.some((w: string) => w.includes("Sarah"));
+    expect(hasAchievement).toBe(true);
+  });
+});
