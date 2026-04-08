@@ -51,10 +51,11 @@ export default function Leaderboard({
 }: LeaderboardProps) {
   const [visibleCount, setVisibleCount] = useState(0);
 
-  // Staggered entrance
+  // Staggered entrance — reset and reveal via timeouts (all in callbacks, not synchronous)
   useEffect(() => {
-    setVisibleCount(0);
     const timers: ReturnType<typeof setTimeout>[] = [];
+    // Reset to 0 asynchronously via timeout, then stagger entries in
+    timers.push(setTimeout(() => setVisibleCount(0), 0));
     entries.forEach((_, i) => {
       timers.push(setTimeout(() => setVisibleCount(i + 1), 80 * (i + 1)));
     });
