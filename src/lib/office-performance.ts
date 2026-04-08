@@ -11,7 +11,9 @@ import type {
   InspectionPersonStat,
   EnrichedPersonStat,
   OfficeMetricName,
-  PipelinePersonStat,
+  DealRow,
+  SectionCompliance,
+  ComplianceJob,
 } from "@/lib/office-performance-types";
 
 // ---------- Name Matching ----------
