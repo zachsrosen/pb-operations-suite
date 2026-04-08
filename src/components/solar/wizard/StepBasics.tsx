@@ -5,7 +5,8 @@ import { useState } from "react";
 interface StepBasicsProps {
   initialName: string;
   initialAddress: string;
-  onNext: (data: { name: string; address: string }) => void;
+  initialDealId?: string;
+  onNext: (data: { name: string; address: string; dealId: string }) => void;
   onCancel: () => void;
   saving: boolean;
 }
@@ -13,12 +14,14 @@ interface StepBasicsProps {
 export default function StepBasics({
   initialName,
   initialAddress,
+  initialDealId,
   onNext,
   onCancel,
   saving,
 }: StepBasicsProps) {
   const [name, setName] = useState(initialName);
   const [address, setAddress] = useState(initialAddress);
+  const [dealId, setDealId] = useState(initialDealId ?? "");
 
   const canProceed = name.trim().length > 0 && name.trim().length <= 200;
 
@@ -77,6 +80,28 @@ export default function StepBasics({
             Coordinates will be set later in the Map Design step.
           </p>
         </div>
+
+        <div>
+          <label
+            htmlFor="deal-id"
+            className="block text-sm font-medium text-foreground mb-1"
+          >
+            HubSpot Deal ID{" "}
+            <span className="text-muted/50 font-normal">(optional — links to CRM for aerial imagery)</span>
+          </label>
+          <input
+            id="deal-id"
+            type="text"
+            value={dealId}
+            onChange={(e) => setDealId(e.target.value.replace(/\D/g, ""))}
+            maxLength={20}
+            placeholder="e.g. 12345678"
+            className="w-48 px-3 py-2 rounded-lg bg-zinc-900 border border-t-border text-foreground placeholder:text-muted/40 focus:outline-none focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/30 text-sm"
+          />
+          <p className="text-[11px] text-muted/50 mt-1">
+            Find this in the HubSpot deal URL after /deal/
+          </p>
+        </div>
       </div>
 
       <div className="flex items-center justify-between pt-4 border-t border-t-border">
@@ -89,7 +114,7 @@ export default function StepBasics({
         </button>
         <button
           type="button"
-          onClick={() => onNext({ name: name.trim(), address: address.trim() })}
+          onClick={() => onNext({ name: name.trim(), address: address.trim(), dealId: dealId.trim() })}
           disabled={!canProceed || saving}
           className="px-4 py-2 rounded-lg bg-orange-500 text-white hover:bg-orange-600 disabled:opacity-40 disabled:cursor-not-allowed transition-colors text-sm font-medium"
         >
