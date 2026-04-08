@@ -112,7 +112,7 @@ Fetch new imagery from EagleView and persist.
 
 **Flow:**
 1. Check DB for existing record. If exists and `force !== true`, return cached data with `cached: true`.
-2. Fetch deal address from HubSpot (`address`, `city`, `state`).
+2. Fetch deal address from HubSpot (`address_line_1`, `city`, `state`, `postal_code`). Assemble full address as `"${address_line_1}, ${city}, ${state} ${postal_code}"` for geocoding (consistent with existing address assembly in `hubspot.ts`).
 3. Geocode address by calling the Google Maps Geocoding API directly (same approach as `/api/solar/geocode` — do NOT make an internal HTTP call to that route).
 4. Call `getBestOrthoForLocation(lat, lng)` to discover best ortho image.
 5. Call `getImageAtLocation(imageUrn, lat, lng)` to download full image.
@@ -127,7 +127,7 @@ Fetch new imagery from EagleView and persist.
 - Geocode fails → 400 with message
 - No imagery available at location → 404 with `{ error: "no_imagery", message: "No EagleView imagery available for this location" }`
 - EagleView API error → 502 with upstream error details (log to Sentry)
-- Drive save fails → Still return imagery metadata, but `driveFileId` will be null with a warning
+- Drive save fails → Retry once. If still fails, treat the entire fetch as failed (return 502). Drive persistence is required for a successful result because the full-res proxy route and AI review both depend on `driveFileId`. A record is only upserted to the DB when Drive save succeeds.
 
 #### `GET /api/eagleview/imagery/[dealId]/image`
 
