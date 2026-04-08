@@ -21,7 +21,11 @@ export function nameMatchesLoosely(a: string, b: string): boolean {
   const na = normalize(a);
   const nb = normalize(b);
   if (na === nb) return true;
-  if (na.startsWith(nb) || nb.startsWith(na)) return true;
+  // startsWith is for abbreviations like "Mike S" → "Mike Smith", NOT for
+  // single first names matching full names. Only allow when both have spaces
+  // (multi-part names) to avoid "Mike" matching "Mike Smith".
+  const bothMultiPart = na.includes(" ") && nb.includes(" ");
+  if (bothMultiPart && (na.startsWith(nb) || nb.startsWith(na))) return true;
   const partsA = a.trim().split(/\s+/);
   const partsB = b.trim().split(/\s+/);
   const firstA = partsA[0]?.toLowerCase();
@@ -30,7 +34,10 @@ export function nameMatchesLoosely(a: string, b: string): boolean {
   const lastA = partsA[partsA.length - 1]?.toLowerCase();
   const lastB = partsB[partsB.length - 1]?.toLowerCase();
   if (lastA && lastB && lastA[0] === lastB[0]) return true;
-  if (partsA.length === 1 || partsB.length === 1) return true;
+  // When one side is a single name (no surname), do NOT assume a match.
+  // First-name-only comparisons are too ambiguous ("Mike" would match
+  // both "Mike Smith" and "Mike Rodriguez"). Require at least a
+  // last-initial match above for multi-part vs single-part names.
   return false;
 }
 
@@ -322,10 +329,14 @@ export function buildLeaderboard(
     .map((u) => {
       const stat: PersonStat = { name: u.name, count: u.count };
 
-      // Compute monthly leader streak
+      // Compute monthly leader streak — sort keys explicitly (oldest→newest)
+      // so streak evaluation is deterministic regardless of Map insertion order.
       if (monthlyHistory) {
         let streak = 0;
-        for (const [, monthUsers] of [...monthlyHistory].reverse()) {
+        const sortedMonths = [...monthlyHistory.entries()]
+          .sort(([a], [b]) => a.localeCompare(b))
+          .reverse(); // newest first for streak counting
+        for (const [, monthUsers] of sortedMonths) {
           const leader = monthUsers.sort((a, b) => b.count - a.count)[0];
           if (leader?.userUid === u.userUid) {
             streak++;
@@ -598,6 +609,34 @@ export async function buildInstallData(
 
   const constructionHistory = await getMonthlyJobHistory(location, "Construction", now, 3);
 
+  // Split monthly history by role so streaks are evaluated within each
+  // population (installers vs electricians) rather than the combined pool.
+  function filterHistoryByUids(
+    history: Map<string, UserJobCount[]>,
+    uidSet: Set<string>
+  ): Map<string, UserJobCount[]> {
+    const filtered = new Map<string, UserJobCount[]>();
+    for (const [month, users] of history) {
+      const matching = users.filter((u) => uidSet.has(u.userUid));
+      if (matching.length > 0) filtered.set(month, matching);
+    }
+    return filtered;
+  }
+
+  const installerUids = new Set([...installerCounts.keys()]);
+  const electricianUids = new Set([...electricianCounts.keys()]);
+  // Include UIDs from historical months too (someone may not have current-month jobs)
+  for (const [, monthUsers] of constructionHistory) {
+    for (const u of monthUsers) {
+      const role = crewRoleMap.get(u.userUid);
+      if (role === "electrician") electricianUids.add(u.userUid);
+      else installerUids.add(u.userUid);
+    }
+  }
+
+  const installerHistory = filterHistoryByUids(constructionHistory, installerUids);
+  const electricianHistory = filterHistoryByUids(constructionHistory, electricianUids);
+
   return {
     completedMtd: mtdJobs.length,
     completedGoal: goals.installs_completed,
@@ -605,8 +644,8 @@ export async function buildInstallData(
     avgDaysPerInstallPrior: 0,
     capacityUtilization,
     scheduledThisWeek,
-    installerLeaderboard: buildLeaderboard([...installerCounts.values()], constructionHistory) as EnrichedPersonStat[],
-    electricianLeaderboard: buildLeaderboard([...electricianCounts.values()], constructionHistory) as EnrichedPersonStat[],
+    installerLeaderboard: buildLeaderboard([...installerCounts.values()], installerHistory) as EnrichedPersonStat[],
+    electricianLeaderboard: buildLeaderboard([...electricianCounts.values()], electricianHistory) as EnrichedPersonStat[],
   };
 }
 

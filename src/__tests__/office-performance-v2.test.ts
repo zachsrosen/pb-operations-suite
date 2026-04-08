@@ -111,8 +111,10 @@ describe("nameMatchesLoosely", () => {
     expect(nameMatchesLoosely("Al Smith", "Al Jones")).toBe(false);
   });
 
-  it("accepts first-name-only when one side has no last name", () => {
-    expect(nameMatchesLoosely("Mike", "Mike Smith")).toBe(true);
+  it("rejects first-name-only when one side has no last name (ambiguous)", () => {
+    // "Mike" alone is too ambiguous — could match Mike Smith or Mike Rodriguez
+    expect(nameMatchesLoosely("Mike", "Mike Smith")).toBe(false);
+    expect(nameMatchesLoosely("Mike", "Mike Rodriguez")).toBe(false);
   });
 });
 
@@ -155,6 +157,23 @@ describe("buildLeaderboard with monthlyHistory", () => {
     const result = buildLeaderboard(users, history);
     expect(result[0].name).toBe("Alice");
     expect(result[0].streak).toBeDefined();
+    expect(result[0].streak?.value).toBe(3);
+  });
+
+  it("handles out-of-order month keys correctly", () => {
+    const { buildLeaderboard } = require("@/lib/office-performance");
+    const users = [
+      { name: "Alice", userUid: "a", count: 10 },
+      { name: "Bob", userUid: "b", count: 5 },
+    ];
+    // Insert months in non-chronological order to verify explicit sorting
+    const history = new Map([
+      ["2026-03", [{ name: "Alice", userUid: "a", count: 9 }, { name: "Bob", userUid: "b", count: 6 }]],
+      ["2026-01", [{ name: "Alice", userUid: "a", count: 8 }, { name: "Bob", userUid: "b", count: 3 }]],
+      ["2026-02", [{ name: "Alice", userUid: "a", count: 12 }, { name: "Bob", userUid: "b", count: 4 }]],
+    ]);
+    const result = buildLeaderboard(users, history);
+    expect(result[0].name).toBe("Alice");
     expect(result[0].streak?.value).toBe(3);
   });
 
