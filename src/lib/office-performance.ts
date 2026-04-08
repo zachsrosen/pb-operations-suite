@@ -144,6 +144,7 @@ function normalizeStage(raw: string): string {
 // Matches the real RawProject shape from src/lib/types.ts and Project from src/lib/hubspot.ts
 interface ProjectForMetrics {
   id?: number;  // HubSpot deal ID
+  name?: string;
   pbLocation?: string | null;
   stage?: string;
   amount?: number;
@@ -206,6 +207,69 @@ function buildPipelinePersonLeaderboard(
     }))
     .sort((a, b) => b.activeCount - a.activeCount)
     .slice(0, 8);
+}
+
+// ---------- Deal Drill-Down ----------
+
+const DEAL_LIST_CAP = 12;
+
+export function buildDealRows(
+  projects: ProjectForMetrics[],
+  now: Date
+): { deals: DealRow[]; totalCount: number } {
+  const rows: DealRow[] = projects.map((p) => {
+    const daysInStage = p.daysSinceStageMovement ?? 0;
+    const stage = normalizeStage(p.stage || "Unknown");
+
+    // Overdue: check each forecasted date against its completion counterpart
+    const overdueChecks: Array<{ forecast?: string | null; completed?: string | null }> = [
+      { forecast: p.forecastedInstallDate, completed: p.constructionCompleteDate },
+      { forecast: p.forecastedInspectionDate, completed: p.inspectionPassDate },
+      { forecast: p.forecastedPtoDate, completed: p.ptoGrantedDate },
+    ];
+
+    let overdue = false;
+    let daysOverdue = 0;
+
+    // Find earliest unmet forecasted date that is in the past
+    let earliestOverdueDate: Date | null = null;
+    for (const { forecast, completed } of overdueChecks) {
+      if (forecast && !completed) {
+        const forecastDate = new Date(forecast);
+        if (forecastDate < now) {
+          if (!earliestOverdueDate || forecastDate < earliestOverdueDate) {
+            earliestOverdueDate = forecastDate;
+          }
+        }
+      }
+    }
+
+    if (earliestOverdueDate) {
+      overdue = true;
+      daysOverdue = Math.floor((now.getTime() - earliestOverdueDate.getTime()) / (24 * 60 * 60 * 1000));
+    }
+
+    return {
+      name: p.name || `Deal ${p.id ?? "?"}`,
+      stage,
+      daysInStage,
+      overdue,
+      daysOverdue,
+    };
+  });
+
+  // Sort: overdue first by daysOverdue desc, then non-overdue by daysInStage desc
+  rows.sort((a, b) => {
+    if (a.overdue && !b.overdue) return -1;
+    if (!a.overdue && b.overdue) return 1;
+    if (a.overdue && b.overdue) return b.daysOverdue - a.daysOverdue;
+    return b.daysInStage - a.daysInStage;
+  });
+
+  return {
+    deals: rows.slice(0, DEAL_LIST_CAP),
+    totalCount: rows.length,
+  };
 }
 
 export function buildPipelineData(

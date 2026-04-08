@@ -1,7 +1,7 @@
 jest.mock("@/lib/db", () => ({ prisma: null }));
 jest.mock("@/lib/hubspot", () => ({ fetchAllProjects: jest.fn() }));
 
-import { buildPipelineData } from "@/lib/office-performance";
+import { buildPipelineData, buildDealRows } from "@/lib/office-performance";
 import type { OfficeMetricName } from "@/lib/office-performance-types";
 
 const DEFAULT_GOALS: Record<OfficeMetricName, number> = {
@@ -203,5 +203,54 @@ describe("individual achievements", () => {
     const result = buildPipelineData(projects, DEFAULT_GOALS, new Date("2026-04-07T12:00:00Z"));
     const hasAchievement = result.recentWins.some((w: string) => w.includes("Sarah"));
     expect(hasAchievement).toBe(true);
+  });
+});
+
+describe("buildDealRows", () => {
+  const now = new Date("2026-04-07T12:00:00Z");
+
+  it("sorts overdue projects first by daysOverdue desc, then non-overdue by daysInStage desc", () => {
+    const projects = [
+      { id: 1, name: "Alpha", stage: "Install", daysSinceStageMovement: 20, forecastedInstallDate: "2026-04-10" },
+      { id: 2, name: "Beta", stage: "Inspect", daysSinceStageMovement: 5, forecastedInstallDate: "2026-03-30", constructionCompleteDate: "2026-03-28", forecastedInspectionDate: "2026-03-30" },
+      { id: 3, name: "Gamma", stage: "Install", daysSinceStageMovement: 3, forecastedInstallDate: "2026-03-25" },
+      { id: 4, name: "Delta", stage: "Survey", daysSinceStageMovement: 10 },
+    ];
+    const result = buildDealRows(projects, now);
+    expect(result.deals.map((d) => d.name)).toEqual(["Gamma", "Beta", "Alpha", "Delta"]);
+    expect(result.deals[0].overdue).toBe(true);
+    expect(result.deals[0].daysOverdue).toBe(13);
+    expect(result.deals[1].overdue).toBe(true);
+    expect(result.deals[1].daysOverdue).toBe(8);
+    expect(result.deals[2].overdue).toBe(false);
+    expect(result.deals[3].overdue).toBe(false);
+    expect(result.totalCount).toBe(4);
+  });
+
+  it("caps at 12 rows and includes totalCount", () => {
+    const projects = Array.from({ length: 20 }, (_, i) => ({ id: i + 1, name: `Project ${i + 1}`, stage: "Design", daysSinceStageMovement: 20 - i }));
+    const result = buildDealRows(projects, now);
+    expect(result.deals).toHaveLength(12);
+    expect(result.totalCount).toBe(20);
+  });
+
+  it("handles missing daysSinceStageMovement as 0", () => {
+    const projects = [{ id: 1, name: "NoDays", stage: "Survey" }];
+    const result = buildDealRows(projects, now);
+    expect(result.deals[0].daysInStage).toBe(0);
+    expect(result.deals[0].daysOverdue).toBe(0);
+  });
+
+  it("skips completed forecasts when calculating overdue", () => {
+    const projects = [{ id: 1, name: "CompletedInstall", stage: "Inspect", daysSinceStageMovement: 5, forecastedInstallDate: "2026-03-01", constructionCompleteDate: "2026-03-05" }];
+    const result = buildDealRows(projects, now);
+    expect(result.deals[0].overdue).toBe(false);
+  });
+
+  it("uses earliest unmet forecasted date for daysOverdue", () => {
+    const projects = [{ id: 1, name: "MultiOverdue", stage: "Install", daysSinceStageMovement: 5, forecastedInstallDate: "2026-03-20", forecastedInspectionDate: "2026-04-01" }];
+    const result = buildDealRows(projects, now);
+    expect(result.deals[0].overdue).toBe(true);
+    expect(result.deals[0].daysOverdue).toBe(18);
   });
 });
