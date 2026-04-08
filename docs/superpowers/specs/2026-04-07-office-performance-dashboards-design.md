@@ -354,3 +354,22 @@ prisma/schema.prisma      # Add OfficeGoal model
 - Crew team names (Godzilla, Mothman, etc.)
 - Admin UI for managing goals (phase 2 — initially seed via script or direct DB)
 - Mobile-optimized layout (these are TV displays)
+
+## v2 Upgrades (2026-04-07)
+
+### Visual Overhaul
+- Animated number counters (CountUp component with ease-out cubic, 800ms)
+- Directional slide+fade carousel transitions (300ms exit, 400ms enter)
+- Horizontal animated bar chart for stage distribution
+- SVG circular progress rings (Apple Watch style) replacing thin progress bars
+- Staggered leaderboard entrance animation with metallic gradient podium styling
+- Ambient floating gradient orbs with section color tinting
+- TV-scale typography (64px hero metrics, 2x label sizes)
+- Section color accent bar in header with pill-style navigation dots
+
+### Data Depth
+- Pipeline section: PM, designer, and deal owner leaderboards with active count + MTD completions
+- Survey section: Per-surveyor average turnaround time displayed in leaderboard
+- Inspection section: Individual pass rates from HubSpot isFirstTimeInspectionPass, consecutive pass streaks (fire badge)
+- Monthly leader streaks across all section leaderboards (3-month lookback)
+- Individual achievement callouts in recent wins
