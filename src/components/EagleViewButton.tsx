@@ -36,7 +36,7 @@ export default function EagleViewButton({ dealId }: EagleViewButtonProps) {
 
   // Fetch new imagery
   const fetchMutation = useMutation({
-    mutationFn: async (force = false): Promise<EagleViewImageryData> => {
+    mutationFn: async (force: boolean = false): Promise<EagleViewImageryData> => {
       const res = await fetch("/api/eagleview/imagery", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
