@@ -272,7 +272,9 @@ export function buildComplianceData(
 
 export function buildDealRows(
   projects: ProjectForMetrics[],
-  now: Date
+  now: Date,
+  assignedUserMap?: Map<string, Map<string, string>>,
+  category?: string
 ): { deals: DealRow[]; totalCount: number } {
   const rows: DealRow[] = projects.map((p) => {
     const daysInStage = p.daysSinceStageMovement ?? 0;
@@ -306,12 +308,19 @@ export function buildDealRows(
       daysOverdue = Math.floor((now.getTime() - earliestOverdueDate.getTime()) / (24 * 60 * 60 * 1000));
     }
 
+    // Assigned user from pre-built map (dealId → category → userName)
+    let assignedUser: string | undefined;
+    if (assignedUserMap && category && p.id) {
+      assignedUser = assignedUserMap.get(String(p.id))?.get(category);
+    }
+
     return {
       name: p.name || `Deal ${p.id ?? "?"}`,
       stage,
       daysInStage,
       overdue,
       daysOverdue,
+      assignedUser,
     };
   });
 
