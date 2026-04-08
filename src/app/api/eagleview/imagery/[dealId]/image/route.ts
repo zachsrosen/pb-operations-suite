@@ -39,7 +39,7 @@ export async function GET(
     status: 200,
     headers: {
       "Content-Type": contentType,
-      "Cache-Control": "public, max-age=86400",
+      "Cache-Control": "private, max-age=86400",
     },
   });
 }
