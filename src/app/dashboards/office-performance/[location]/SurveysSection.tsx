@@ -4,6 +4,8 @@ import type { SurveyData } from "@/lib/office-performance-types";
 import GoalProgress from "./GoalProgress";
 import CountUp from "./CountUp";
 import Leaderboard from "./Leaderboard";
+import DealList from "./DealList";
+import ComplianceBlock from "./ComplianceBlock";
 
 interface SurveysSectionProps {
   data: SurveyData;
@@ -50,6 +52,12 @@ export default function SurveysSection({ data }: SurveysSectionProps) {
           />
           <div className="text-sm text-slate-400 mt-2">Scheduled This Week</div>
         </div>
+      </div>
+
+      {/* Deal list + compliance */}
+      <div className="flex flex-col gap-3 mb-4">
+        <DealList deals={data.deals} totalCount={data.totalCount} />
+        <ComplianceBlock compliance={data.compliance} />
       </div>
 
       {/* Leaderboard with turnaround */}
