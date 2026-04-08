@@ -2,6 +2,7 @@
 
 import type { InspectionData } from "@/lib/office-performance-types";
 import GoalProgress from "./GoalProgress";
+import CountUp from "./CountUp";
 import Leaderboard from "./Leaderboard";
 
 interface InspectionsSectionProps {
@@ -16,14 +17,6 @@ export default function InspectionsSection({ data }: InspectionsSectionProps) {
     ? data.avgCcToPtoDays - data.avgCcToPtoDaysPrior
     : 0;
 
-  function trendColor(trend: number): string {
-    return trend < 0 ? "text-green-500" : trend > 0 ? "text-red-500" : "text-slate-400";
-  }
-
-  function trendArrow(trend: number): string {
-    return trend < 0 ? "▼" : trend > 0 ? "▲" : "";
-  }
-
   function passRateColor(rate: number): string {
     if (rate >= 90) return "#22c55e";
     if (rate >= 75) return "#eab308";
@@ -31,13 +24,10 @@ export default function InspectionsSection({ data }: InspectionsSectionProps) {
   }
 
   return (
-    <div className="flex flex-col h-full px-6 py-4">
-      <div className="text-sm font-semibold text-cyan-400 tracking-widest mb-4">
-        INSPECTIONS & QUALITY
-      </div>
-
-      <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="bg-white/5 rounded-xl p-4">
+    <div className="flex flex-col h-full px-8 py-5">
+      {/* Top metrics */}
+      <div className="grid grid-cols-4 gap-5 mb-6">
+        <div className="bg-white/[0.04] rounded-2xl p-5 flex items-center justify-center border border-white/5">
           <GoalProgress
             current={data.completedMtd}
             goal={data.completedGoal}
@@ -46,51 +36,61 @@ export default function InspectionsSection({ data }: InspectionsSectionProps) {
           />
         </div>
 
-        <div className="bg-white/5 rounded-xl p-4 text-center">
-          <div className="text-[42px] font-extrabold" style={{ color: passRateColor(data.firstPassRate) }}>
-            {data.firstPassRate > 0 ? data.firstPassRate : "--"}
-            {data.firstPassRate > 0 && <span className="text-xl">%</span>}
+        <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
+          <CountUp
+            value={data.firstPassRate > 0 ? data.firstPassRate : 0}
+            suffix={data.firstPassRate > 0 ? "%" : ""}
+            className="text-[64px] font-extrabold leading-none"
+            style={{ color: data.firstPassRate > 0 ? passRateColor(data.firstPassRate) : "#64748b" }}
+          />
+          <div className="text-sm text-slate-400 mt-2">
+            {data.firstPassRate > 0 ? "First-Pass Rate" : "Pass Rate N/A"}
           </div>
-          <div className="text-xs text-slate-400 mt-1">First-Pass Rate</div>
-          <div className="text-xs text-slate-500 mt-0.5">60-day rolling</div>
+          {data.firstPassRate > 0 && (
+            <div className="text-xs text-slate-500 mt-0.5">60-day rolling</div>
+          )}
         </div>
 
-        <div className="bg-white/5 rounded-xl p-4 text-center">
-          <div className="text-[42px] font-extrabold text-green-500">
-            {data.avgConstructionDays > 0 ? data.avgConstructionDays.toFixed(1) : "--"}
-            {data.avgConstructionDays > 0 && <span className="text-xl">d</span>}
-          </div>
-          <div className="text-xs text-slate-400 mt-1">Avg Construction Time</div>
+        <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
+          <CountUp
+            value={data.avgConstructionDays}
+            decimals={1}
+            suffix="d"
+            className="text-[64px] font-extrabold text-green-400 leading-none"
+          />
+          <div className="text-sm text-slate-400 mt-2">Avg Construction</div>
           {constructionTrend !== 0 && (
-            <div className={`text-xs mt-1 ${trendColor(constructionTrend)}`}>
-              {trendArrow(constructionTrend)} {Math.abs(constructionTrend).toFixed(1)}d vs last month
+            <div className={`text-xs mt-1.5 ${constructionTrend < 0 ? "text-green-400" : "text-red-400"}`}>
+              {constructionTrend < 0 ? "▼" : "▲"} {Math.abs(constructionTrend).toFixed(1)}d vs prior
             </div>
           )}
         </div>
 
-        <div className="bg-white/5 rounded-xl p-4 text-center">
-          <div
-            className="text-[42px] font-extrabold"
+        <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
+          <CountUp
+            value={data.avgCcToPtoDays}
+            decimals={1}
+            suffix="d"
+            className="text-[64px] font-extrabold leading-none"
             style={{ color: data.avgCcToPtoDays > 15 ? "#ef4444" : data.avgCcToPtoDays > 10 ? "#eab308" : "#22c55e" }}
-          >
-            {data.avgCcToPtoDays > 0 ? data.avgCcToPtoDays.toFixed(1) : "--"}
-            {data.avgCcToPtoDays > 0 && <span className="text-xl">d</span>}
-          </div>
-          <div className="text-xs text-slate-400 mt-1">CC → PTO</div>
+          />
+          <div className="text-sm text-slate-400 mt-2">CC → PTO</div>
           {ccPtoTrend !== 0 && (
-            <div className={`text-xs mt-1 ${trendColor(ccPtoTrend)}`}>
-              {trendArrow(ccPtoTrend)} {Math.abs(ccPtoTrend).toFixed(1)}d vs last month
+            <div className={`text-xs mt-1.5 ${ccPtoTrend < 0 ? "text-green-400" : "text-red-400"}`}>
+              {ccPtoTrend < 0 ? "▼" : "▲"} {Math.abs(ccPtoTrend).toFixed(1)}d vs prior
             </div>
           )}
         </div>
       </div>
 
+      {/* Leaderboard with pass rates */}
       <Leaderboard
         title="INSPECTION TECHS — THIS MONTH"
         icon="🏆"
         entries={data.leaderboard}
         accentColor="#06b6d4"
         showPassRate
+        metricLabel="inspections"
       />
     </div>
   );
