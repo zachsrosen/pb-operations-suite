@@ -155,9 +155,11 @@ Reusable component, placed only in Solar Surveyor for Phase A. Designed to be dr
 
 **Data fetching:** React Query with key from `queryKeys.eagleview(dealId)` (add `eagleview` entry to `lib/query-keys.ts`).
 
+**Deal linkage:** Solar Surveyor projects gain an optional `dealId` field on the `SolarProject` model, set during wizard Step 1 (alongside name and address). This provides the HubSpot deal context needed for EagleView imagery lookup. The field is optional — projects without a linked deal simply don't show the button.
+
 **Placement in Solar Surveyor:**
-- **Classic Mode** — In the workspace toolbar/sidebar alongside existing project info
-- **Wizard Step 1** — After address entry and geocode, show the button so users can pull aerial imagery before proceeding to equipment selection
+- **Shell header** — When a project with a linked `dealId` is selected (Classic or Native mode), the `EagleViewButton` appears in the header toolbar alongside the mode toggle buttons
+- **Wizard Step 1** — After address entry, an optional "HubSpot Deal ID" field lets users link the project to a CRM deal at creation time
 
 #### Full-res Modal
 
@@ -209,7 +211,12 @@ Not in scope for this spec, but the architecture supports it:
 | `src/app/api/eagleview/imagery/route.ts` | Create | GET (check) + POST (fetch) |
 | `src/app/api/eagleview/imagery/[dealId]/image/route.ts` | Create | Image proxy |
 | `src/components/EagleViewButton.tsx` | Create | Shared UI component |
-| `src/app/dashboards/solar-surveyor/page.tsx` | Modify | Add EagleViewButton |
+| `prisma/schema.prisma` | Modify | Add `dealId` to `SolarProject` model |
+| `src/app/api/solar/projects/route.ts` | Modify | Accept `dealId` in create schema |
+| `src/app/api/solar/projects/[id]/route.ts` | Modify | Accept `dealId` in update schema |
+| `src/components/solar/wizard/StepBasics.tsx` | Modify | Add deal ID field to wizard |
+| `src/components/solar/SetupWizard.tsx` | Modify | Pass deal ID through wizard flow |
+| `src/components/solar/SolarSurveyorShell.tsx` | Modify | Render EagleViewButton in header when deal linked |
 | `src/lib/checks/design-review-ai.ts` | Modify | Include aerial image in Claude prompt |
 | `src/lib/query-keys.ts` | Modify | Add `eagleview` query key entry |
 | `.env.example` | Modify | Add EAGLEVIEW_API_KEY, EAGLEVIEW_SANDBOX |

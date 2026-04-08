@@ -21,9 +21,11 @@
 | `src/app/api/eagleview/imagery/route.ts` | Create | GET (check DB) + POST (fetch → geocode → EagleView → Drive → DB) |
 | `src/app/api/eagleview/imagery/[dealId]/image/route.ts` | Create | Stream full-res image from Drive |
 | `src/components/EagleViewButton.tsx` | Create | Reusable button + thumbnail + full-res modal |
-| `src/app/dashboards/solar-surveyor/page.tsx` | Modify | Wire EagleViewButton into Solar Surveyor |
-| `src/components/solar/wizard/StepBasics.tsx` | Modify | Add EagleViewButton after wizard address entry |
-| `src/components/solar/SolarSurveyorShell.tsx` | Modify | Add EagleViewButton to Classic Mode shell (outside iframe) |
+| `src/components/solar/wizard/StepBasics.tsx` | Modify | Add deal ID field to wizard basics step |
+| `src/components/solar/SetupWizard.tsx` | Modify | Pass deal ID through wizard create/update flow |
+| `src/components/solar/SolarSurveyorShell.tsx` | Modify | Fetch project's dealId, render EagleViewButton in shell header |
+| `src/app/api/solar/projects/route.ts` | Modify | Accept `dealId` in create schema |
+| `src/app/api/solar/projects/[id]/route.ts` | Modify | Accept `dealId` in update schema |
 | `src/lib/checks/design-review-ai.ts` | Modify | Include aerial image in Claude prompt when available |
 | `src/lib/query-keys.ts` | Modify | Add `eagleview` query key entry |
 | `.env.example` | Modify | Add `EAGLEVIEW_API_KEY`, `EAGLEVIEW_SANDBOX` |
@@ -1168,79 +1170,171 @@ git commit -m "feat(eagleview): add EagleViewButton component with thumbnail + m
 
 ---
 
-### Task 8: Wire EagleViewButton into Solar Surveyor
+### Task 8: Add `dealId` to SolarProject model and API
+
+Solar Surveyor projects don't currently link to HubSpot deals. We need this linkage so the `EagleViewButton` can look up imagery by deal. This task adds an optional `dealId` field to `SolarProject` and wires it through the create/update API.
 
 **Files:**
-- Modify: `src/components/solar/SolarSurveyorShell.tsx`
+- Modify: `prisma/schema.prisma`
+- Modify: `src/app/api/solar/projects/route.ts`
+- Modify: `src/app/api/solar/projects/[id]/route.ts`
+
+- [ ] **Step 1: Add `dealId` to the SolarProject model**
+
+In `prisma/schema.prisma`, add `dealId` to the `SolarProject` model after the `address` field:
+
+```prisma
+  address         String?
+  dealId          String?           // Optional HubSpot deal ID for CRM linkage
+  lat             Float?
+```
+
+- [ ] **Step 2: Run migration**
+
+Run:
+```bash
+npx prisma migrate dev --name add-solar-project-deal-id
+```
+
+Expected: Migration created, client regenerated.
+
+- [ ] **Step 3: Add `dealId` to the Create and Update schemas**
+
+In `src/app/api/solar/projects/route.ts`, add to `CreateProjectSchema`:
+
+```typescript
+  dealId: z.string().max(20).optional(),
+```
+
+And in the `prisma.solarProject.create` call, add:
+
+```typescript
+  dealId: data.dealId,
+```
+
+In `src/app/api/solar/projects/[id]/route.ts`, add to `UpdateProjectSchema`:
+
+```typescript
+  dealId: z.string().max(20).optional(),
+```
+
+And in the Prisma update data, add:
+
+```typescript
+  dealId: data.dealId,
+```
+
+- [ ] **Step 4: Verify compilation**
+
+Run: `npx tsc --noEmit`
+Expected: No type errors.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add prisma/schema.prisma prisma/migrations/ src/app/api/solar/projects/route.ts src/app/api/solar/projects/[id]/route.ts
+git commit -m "feat(solar): add dealId field to SolarProject for CRM linkage"
+```
+
+---
+
+### Task 9: Wire EagleViewButton into Solar Surveyor
+
+**Files:**
+- Modify: `src/components/solar/wizard/StepBasics.tsx`
 - Modify: `src/components/solar/SetupWizard.tsx`
+- Modify: `src/components/solar/SolarSurveyorShell.tsx`
 
-**Important context:** Classic Mode is a sandboxed iframe (`ClassicWorkspace.tsx`). The `EagleViewButton` cannot go inside the iframe. It goes in the React shell around it. The shell has `selectedProjectId` — we'll need to fetch the project to get its associated deal ID.
+**Context:** Classic Mode is a sandboxed iframe (`ClassicWorkspace.tsx`). The `EagleViewButton` lives in the React shell outside the iframe. The shell tracks `selectedProjectId` — we fetch the project's `dealId` from the API to power the button.
 
-**Design note:** Solar Surveyor projects don't currently store a `dealId`. The EagleViewButton needs a deal ID to work. For Phase A, we'll add the button to the shell with a deal ID input/lookup. This keeps the scope minimal. A future enhancement could link Solar projects to deals automatically.
+#### Sub-task 9a: Add deal ID to wizard StepBasics
 
-- [ ] **Step 1: Add EagleViewButton to SolarSurveyorShell**
+The wizard's StepBasics collects project name and address. Add an optional deal ID field that gets passed through the `onNext` callback and stored on the project.
 
-Read `src/components/solar/SolarSurveyorShell.tsx` to find the exact toolbar/header area where buttons are rendered (near the mode toggle buttons). Add the `EagleViewButton` in the header toolbar, visible when in Classic or Native mode with a selected project. Include a small text input for deal ID since projects don't currently store one:
+- [ ] **Step 1: Update StepBasics to accept and emit dealId**
 
-```tsx
-import EagleViewButton from "@/components/EagleViewButton";
-```
+Modify `src/components/solar/wizard/StepBasics.tsx`:
 
-Add state for the deal ID:
-```tsx
-const [eagleviewDealId, setEagleviewDealId] = useState("");
-```
-
-Add in the header toolbar area (near mode toggle buttons), wrapped in a conditional:
-```tsx
-{(activeView === "classic" || activeView === "native") && (
-  <div className="flex items-center gap-2">
-    <input
-      type="text"
-      placeholder="Deal ID"
-      value={eagleviewDealId}
-      onChange={(e) => setEagleviewDealId(e.target.value)}
-      className="w-24 rounded border border-border bg-surface px-2 py-1 text-xs text-foreground placeholder:text-muted"
-    />
-    {eagleviewDealId && <EagleViewButton dealId={eagleviewDealId} />}
-  </div>
-)}
-```
-
-- [ ] **Step 2: Add EagleViewButton to SetupWizard Step 1**
-
-Read `src/components/solar/wizard/StepBasics.tsx` and `src/components/solar/SetupWizard.tsx` to find where the basics step renders. After the address input in StepBasics, add an optional deal ID field and the EagleView button.
-
-In `StepBasics.tsx`, add a deal ID input below the address field:
+Update the props interface and `onNext` callback to include `dealId`:
 
 ```tsx
-import EagleViewButton from "@/components/EagleViewButton";
+interface StepBasicsProps {
+  initialName: string;
+  initialAddress: string;
+  initialDealId?: string;
+  onNext: (data: { name: string; address: string; dealId: string }) => void;
+  onCancel: () => void;
+  saving: boolean;
+}
 ```
+
+Add state:
+```tsx
+const [dealId, setDealId] = useState(initialDealId ?? "");
+```
+
+Add a deal ID input after the address field (before the button bar `<div className="flex items-center justify-between pt-4 ...`):
+
+```tsx
+<div>
+  <label
+    htmlFor="deal-id"
+    className="block text-sm font-medium text-foreground mb-1"
+  >
+    HubSpot Deal ID{" "}
+    <span className="text-muted/50 font-normal">(optional — links to CRM for aerial imagery)</span>
+  </label>
+  <input
+    id="deal-id"
+    type="text"
+    value={dealId}
+    onChange={(e) => setDealId(e.target.value.replace(/\D/g, ""))}
+    maxLength={20}
+    placeholder="e.g. 12345678"
+    className="w-48 px-3 py-2 rounded-lg bg-zinc-900 border border-t-border text-foreground placeholder:text-muted/40 focus:outline-none focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/30 text-sm"
+  />
+  <p className="text-[11px] text-muted/50 mt-1">
+    Find this in the HubSpot deal URL after /deal/
+  </p>
+</div>
+```
+
+Update the Next button's `onClick` to pass `dealId`:
+```tsx
+onClick={() => onNext({ name: name.trim(), address: address.trim(), dealId: dealId.trim() })}
+```
+
+- [ ] **Step 2: Update SetupWizard to pass dealId through**
+
+In `src/components/solar/SetupWizard.tsx`:
 
 Add state:
 ```tsx
 const [dealId, setDealId] = useState("");
 ```
 
-Add after the address input field:
+In `handleBasicsNext`, update the callback signature to accept `dealId`:
 ```tsx
-<div className="space-y-1">
-  <label htmlFor="deal-id" className="text-sm font-medium text-foreground">
-    HubSpot Deal ID <span className="text-muted">(optional — for aerial imagery)</span>
-  </label>
-  <div className="flex items-center gap-2">
-    <input
-      id="deal-id"
-      type="text"
-      value={dealId}
-      onChange={(e) => setDealId(e.target.value.trim())}
-      placeholder="e.g. 12345678"
-      maxLength={20}
-      className="w-40 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-foreground placeholder:text-muted"
-    />
-    {dealId && <EagleViewButton dealId={dealId} />}
-  </div>
-</div>
+async (data: { name: string; address: string; dealId: string }) => {
+```
+
+Add `setDealId(data.dealId);` alongside the existing `setName(data.name)` / `setAddress(data.address)`.
+
+In the POST body (new project creation) and PUT body (update), include:
+```typescript
+dealId: data.dealId || undefined,
+```
+
+Pass `initialDealId={dealId}` to the `<StepBasics>` render:
+```tsx
+<StepBasics
+  initialName={name}
+  initialAddress={address}
+  initialDealId={dealId}
+  onNext={handleBasicsNext}
+  onCancel={handleCancel}
+  saving={saving}
+/>
 ```
 
 - [ ] **Step 3: Verify compilation**
@@ -1251,15 +1345,78 @@ Expected: No type errors.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add src/components/solar/SolarSurveyorShell.tsx src/components/solar/wizard/StepBasics.tsx
-git commit -m "feat(eagleview): wire EagleViewButton into Solar Surveyor shell + wizard"
+git add src/components/solar/wizard/StepBasics.tsx src/components/solar/SetupWizard.tsx
+git commit -m "feat(solar): add deal ID field to wizard basics step"
+```
+
+#### Sub-task 9b: Add EagleViewButton to shell header
+
+The shell needs to fetch the selected project's `dealId` and render the button when a deal is linked.
+
+- [ ] **Step 5: Add EagleViewButton to SolarSurveyorShell**
+
+In `src/components/solar/SolarSurveyorShell.tsx`:
+
+Add imports:
+```tsx
+import { useQuery } from "@tanstack/react-query";
+import EagleViewButton from "@/components/EagleViewButton";
+```
+
+Add a query to fetch the selected project's deal ID (inside the component, after the existing state declarations):
+```tsx
+const { data: selectedProject } = useQuery({
+  queryKey: ["solar-project", selectedProjectId],
+  queryFn: async () => {
+    const res = await fetch(`/api/solar/projects/${selectedProjectId}`);
+    if (!res.ok) return null;
+    const json = await res.json();
+    return json.data as { dealId?: string } | null;
+  },
+  enabled: !!selectedProjectId,
+  staleTime: 5 * 60 * 1000,
+});
+```
+
+In the `headerRight` JSX, add the `EagleViewButton` before the existing mode toggle button. Wrap both in a flex container. The button only appears when a project with a linked deal is selected:
+
+```tsx
+const headerRight =
+  !forceClassicLocked ? (
+    <div className="flex items-center gap-2">
+      {selectedProject?.dealId && (activeView === "classic" || activeView === "native") && (
+        <EagleViewButton dealId={selectedProject.dealId} />
+      )}
+      {activeView === "native" ? (
+        <button onClick={() => handleOpenInClassic()} className="...">
+          {/* existing button content */}
+        </button>
+      ) : activeView === "classic" ? (
+        /* ... existing classic button ... */
+      ) : /* ... rest of existing conditions ... */}
+    </div>
+  ) : undefined;
+```
+
+The key change: wrap the existing ternary chain in a `<div className="flex items-center gap-2">` and prepend the `EagleViewButton` conditional.
+
+- [ ] **Step 6: Verify compilation**
+
+Run: `npx tsc --noEmit`
+Expected: No type errors.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/components/solar/SolarSurveyorShell.tsx
+git commit -m "feat(eagleview): add EagleViewButton to Solar Surveyor shell header"
 ```
 
 ---
 
 ## Chunk 4: AI Design Review Integration
 
-### Task 9: Include aerial image in AI design review
+### Task 10: Include aerial image in AI design review
 
 **Files:**
 - Modify: `src/lib/checks/design-review-ai.ts`
@@ -1416,7 +1573,7 @@ git commit -m "feat(eagleview): include aerial image in AI design review when av
 
 ---
 
-### Task 10: Final verification
+### Task 11: Final verification
 
 - [ ] **Step 1: Run full type check**
 
