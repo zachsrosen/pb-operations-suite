@@ -17,8 +17,9 @@ import {
 // ---------------------------------------------------------------------------
 
 const IDR_ALLOWED_ROLES = [
-  "ADMIN", "OWNER", "PROJECT_MANAGER", "TECH_OPS",
-  "OPERATIONS_MANAGER", "OPERATIONS",
+  "ADMIN", "OWNER", "EXECUTIVE", "PROJECT_MANAGER", "TECH_OPS",
+  "OPERATIONS_MANAGER", "OPERATIONS", "SALES", "SALES_MANAGER",
+  "VIEWER", "MANAGER", "DESIGNER", "PERMITTING",
 ] as const;
 
 const PROJECT_PIPELINE_ID = process.env.HUBSPOT_PIPELINE_PROJECT || "6900017";
