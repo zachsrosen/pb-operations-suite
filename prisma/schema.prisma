@@ -1528,6 +1528,7 @@ model SolarProject {
   id              String                  @id @default(cuid())
   name            String
   address         String?
+  dealId          String?           // Optional HubSpot deal ID for CRM linkage
   lat             Float?
   lng             Float?
   createdById     String

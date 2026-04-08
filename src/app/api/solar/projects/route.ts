@@ -15,6 +15,7 @@ import { z } from "zod";
 const CreateProjectSchema = z.object({
   name: z.string().min(1).max(200),
   address: z.string().max(500).optional(),
+  dealId: z.string().max(20).optional(),
   visibility: z.enum(["PRIVATE", "TEAM"]).optional(),
   lat: z.number().min(-90).max(90).optional(),
   lng: z.number().min(-180).max(180).optional(),
@@ -71,6 +72,7 @@ export async function POST(req: NextRequest) {
     data: {
       name: data.name,
       address: data.address,
+      dealId: data.dealId,
       lat: data.lat,
       lng: data.lng,
       visibility: data.visibility ?? undefined,
