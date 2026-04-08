@@ -566,6 +566,71 @@ export async function getZuperJobsByLocation(
   });
 }
 
+/**
+ * Fetch all Zuper jobs for a category at a location — no date filter.
+ * Compliance needs stuck/never-started jobs that may have no completedDate.
+ */
+export async function getZuperJobsForCompliance(
+  location: string,
+  category: string
+): Promise<ComplianceCachedJob[]> {
+  if (!prisma) return [];
+
+  const jobs = await prisma.zuperJobCache.findMany({
+    where: {
+      jobCategory: category,
+      hubspotDealId: { not: null },
+    },
+    select: {
+      jobUid: true,
+      jobCategory: true,
+      jobStatus: true,
+      completedDate: true,
+      scheduledStart: true,
+      scheduledEnd: true,
+      assignedUsers: true,
+      hubspotDealId: true,
+      jobTitle: true,
+    },
+  });
+
+  if (jobs.length === 0) return [];
+
+  const dealIds = jobs
+    .map((j) => j.hubspotDealId)
+    .filter((id): id is string => id !== null);
+
+  const projectCache = await prisma.hubSpotProjectCache.findMany({
+    where: { dealId: { in: dealIds } },
+    select: { dealId: true, pbLocation: true, dealName: true },
+  });
+
+  const dealLocationMap = new Map(
+    projectCache.map((p) => [p.dealId, p.pbLocation])
+  );
+  const dealNameMap = new Map(
+    projectCache.map((p) => [p.dealId, p.dealName])
+  );
+
+  return jobs
+    .filter((j) => {
+      const loc = j.hubspotDealId ? dealLocationMap.get(j.hubspotDealId) : null;
+      return normalizeLocation(loc) === location;
+    })
+    .map((j) => ({
+      jobUid: j.jobUid,
+      jobCategory: j.jobCategory,
+      jobStatus: j.jobStatus,
+      completedDate: j.completedDate,
+      scheduledStart: j.scheduledStart,
+      scheduledEnd: j.scheduledEnd ?? null,
+      assignedUsers: j.assignedUsers,
+      hubspotDealId: j.hubspotDealId,
+      jobTitle: j.jobTitle ?? null,
+      projectName: j.hubspotDealId ? dealNameMap.get(j.hubspotDealId) ?? null : null,
+    }));
+}
+
 export async function getScheduledJobsThisWeek(
   location: string,
   category: string,
