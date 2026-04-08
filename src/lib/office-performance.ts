@@ -744,7 +744,7 @@ export async function buildSurveyData(
   const surveyProjects = (locationProjects || []).filter(
     (p) => SURVEY_STAGES.has(normalizeStage(p.stage || ""))
   );
-  const { deals, totalCount } = buildDealRows(surveyProjects, now);
+  const { deals, totalCount } = buildDealRows(surveyProjects, now, assignedUserMap, "Site Survey");
 
   // Compliance from Zuper "Site Survey" category
   const complianceJobs = await getZuperJobsForCompliance(location, "Site Survey");
@@ -884,7 +884,7 @@ export async function buildInstallData(
   const installProjects = (locationProjects || []).filter(
     (p) => INSTALL_STAGES.has(normalizeStage(p.stage || ""))
   );
-  const { deals, totalCount } = buildDealRows(installProjects, now);
+  const { deals, totalCount } = buildDealRows(installProjects, now, assignedUserMap, "Construction");
 
   // Compliance from Zuper "Construction" category
   const complianceJobs = await getZuperJobsForCompliance(location, "Construction");
@@ -942,7 +942,7 @@ export async function buildInspectionData(
   const inspectionProjects = (locationProjects || []).filter(
     (p) => INSPECTION_STAGES.has(normalizeStage(p.stage || ""))
   );
-  const { deals, totalCount } = buildDealRows(inspectionProjects, now);
+  const { deals, totalCount } = buildDealRows(inspectionProjects, now, assignedUserMap, "Inspection");
 
   // Compliance from Zuper "Inspection" category
   const complianceJobs = await getZuperJobsForCompliance(location, "Inspection");
