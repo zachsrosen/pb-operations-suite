@@ -4,6 +4,7 @@ import type { PipelineData } from "@/lib/office-performance-types";
 import GoalProgress from "./GoalProgress";
 import CountUp from "./CountUp";
 import AnimatedBar from "./AnimatedBar";
+import DealList from "./DealList";
 
 interface PipelineSectionProps {
   data: PipelineData;
@@ -92,71 +93,12 @@ export default function PipelineSection({ data }: PipelineSectionProps) {
           </div>
         </div>
 
-        {/* Person breakdowns — 2 cols */}
-        <div className="col-span-2 flex flex-col gap-4 overflow-auto">
-          {/* PM breakdown */}
-          {(data.pmLeaderboard?.length ?? 0) > 0 && (
-            <div className="bg-white/[0.02] rounded-xl p-4 border border-white/5">
-              <div className="text-xs font-semibold text-slate-400 tracking-wider mb-2.5">
-                👤 PROJECT MANAGERS
-              </div>
-              {(data.pmLeaderboard ?? []).slice(0, 4).map((pm, i) => (
-                <div key={pm.name} className="flex items-center gap-2 py-1.5">
-                  <span className="text-sm font-semibold text-slate-200 flex-1 truncate">
-                    {i === 0 ? "👑 " : ""}{pm.name}
-                  </span>
-                  <span className="text-sm font-bold text-orange-400">{pm.activeCount}</span>
-                  <span className="text-[10px] text-slate-500">active</span>
-                  {pm.completedMtd > 0 && (
-                    <span className="text-[10px] text-green-400 bg-green-500/10 px-1.5 py-0.5 rounded">
-                      +{pm.completedMtd} MTD
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Designer breakdown */}
-          {(data.designerLeaderboard?.length ?? 0) > 0 && (
-            <div className="bg-white/[0.02] rounded-xl p-4 border border-white/5">
-              <div className="text-xs font-semibold text-slate-400 tracking-wider mb-2.5">
-                🎨 DESIGNERS
-              </div>
-              {(data.designerLeaderboard ?? []).slice(0, 4).map((d, i) => (
-                <div key={d.name} className="flex items-center gap-2 py-1.5">
-                  <span className="text-sm font-semibold text-slate-200 flex-1 truncate">
-                    {i === 0 ? "👑 " : ""}{d.name}
-                  </span>
-                  <span className="text-sm font-bold text-purple-400">{d.activeCount}</span>
-                  <span className="text-[10px] text-slate-500">active</span>
-                  {d.avgDaysInStage != null && (
-                    <span className="text-[10px] text-slate-400 bg-white/5 px-1.5 py-0.5 rounded">
-                      {d.avgDaysInStage}d avg
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Deal owner breakdown */}
-          {(data.ownerLeaderboard?.length ?? 0) > 0 && (
-            <div className="bg-white/[0.02] rounded-xl p-4 border border-white/5">
-              <div className="text-xs font-semibold text-slate-400 tracking-wider mb-2.5">
-                💼 DEAL OWNERS
-              </div>
-              {(data.ownerLeaderboard ?? []).slice(0, 4).map((o, i) => (
-                <div key={o.name} className="flex items-center gap-2 py-1.5">
-                  <span className="text-sm font-semibold text-slate-200 flex-1 truncate">
-                    {i === 0 ? "👑 " : ""}{o.name}
-                  </span>
-                  <span className="text-sm font-bold text-blue-400">{o.activeCount}</span>
-                  <span className="text-[10px] text-slate-500">active</span>
-                </div>
-              ))}
-            </div>
-          )}
+        {/* Deal list — 2 cols */}
+        <div className="col-span-2 flex flex-col">
+          <div className="text-xs font-semibold text-slate-400 tracking-wider mb-2">
+            ALL ACTIVE PROJECTS
+          </div>
+          <DealList deals={data.deals} totalCount={data.totalCount} showAssigned={false} />
         </div>
       </div>
 
