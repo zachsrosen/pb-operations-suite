@@ -6,6 +6,16 @@ interface ComplianceBlockProps {
   compliance?: SectionCompliance;
 }
 
+function gradeColor(grade: string): string {
+  switch (grade) {
+    case "A": return "#22c55e";
+    case "B": return "#3b82f6";
+    case "C": return "#eab308";
+    case "D": return "#f97316";
+    default: return "#ef4444";
+  }
+}
+
 function onTimeColor(pct: number): string {
   if (pct >= 90) return "#22c55e";
   if (pct >= 75) return "#eab308";
@@ -18,43 +28,75 @@ function stuckColor(count: number): string {
   return "#ef4444";
 }
 
-function neverStartedColor(count: number): string {
-  return count === 0 ? "#22c55e" : "#eab308";
+function oowColor(pct: number): string {
+  if (pct >= 80) return "#22c55e";
+  if (pct >= 60) return "#eab308";
+  return "#ef4444";
 }
 
 export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
   if (!compliance) return null;
 
   const showOnTime = compliance.onTimePercent >= 0;
+  const showOow = compliance.oowOnTimePercent >= 0;
   const hasEmployees = compliance.byEmployee.length > 0;
 
   return (
     <div className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-3">
       {/* Aggregate summary row */}
-      <div className="flex items-center gap-6 text-sm">
+      <div className="flex items-center gap-4 text-sm flex-wrap">
+        <div className="flex items-center gap-1">
+          <span className="text-slate-500 text-xs">Jobs:</span>
+          <span className="font-semibold text-slate-200">
+            {compliance.completedJobs}/{compliance.totalJobs}
+          </span>
+        </div>
         {showOnTime && (
-          <div className="flex items-center gap-1.5">
-            <span style={{ color: onTimeColor(compliance.onTimePercent) }}>✅</span>
+          <div className="flex items-center gap-1">
+            <span className="text-slate-500 text-xs">On-time:</span>
             <span className="font-semibold" style={{ color: onTimeColor(compliance.onTimePercent) }}>
               {compliance.onTimePercent}%
             </span>
-            <span className="text-slate-400">on-time</span>
           </div>
         )}
-        <div className="flex items-center gap-1.5">
-          <span style={{ color: stuckColor(compliance.stuckJobs.length) }}>⚠️</span>
+        {showOow && (
+          <div className="flex items-center gap-1">
+            <span className="text-slate-500 text-xs">OOW:</span>
+            <span className="font-semibold" style={{ color: oowColor(compliance.oowOnTimePercent) }}>
+              {compliance.oowOnTimePercent}%
+            </span>
+          </div>
+        )}
+        <div className="flex items-center gap-1">
+          <span className="text-slate-500 text-xs">Stuck:</span>
           <span className="font-semibold" style={{ color: stuckColor(compliance.stuckJobs.length) }}>
             {compliance.stuckJobs.length}
           </span>
-          <span className="text-slate-400">stuck</span>
         </div>
-        <div className="flex items-center gap-1.5">
-          <span style={{ color: neverStartedColor(compliance.neverStartedCount) }}>🔴</span>
-          <span className="font-semibold" style={{ color: neverStartedColor(compliance.neverStartedCount) }}>
-            {compliance.neverStartedCount}
-          </span>
-          <span className="text-slate-400">never started</span>
-        </div>
+        {compliance.neverStartedCount > 0 && (
+          <div className="flex items-center gap-1">
+            <span className="text-slate-500 text-xs">Not started:</span>
+            <span className="font-semibold text-yellow-400">
+              {compliance.neverStartedCount}
+            </span>
+          </div>
+        )}
+        {compliance.avgDaysToComplete > 0 && (
+          <div className="flex items-center gap-1">
+            <span className="text-slate-500 text-xs">Avg days:</span>
+            <span className="font-semibold text-slate-300">
+              {compliance.avgDaysToComplete}
+            </span>
+          </div>
+        )}
+        {compliance.avgDaysLate > 0 && (
+          <div className="flex items-center gap-1">
+            <span className="text-slate-500 text-xs">Avg late:</span>
+            <span className="font-semibold text-orange-400">
+              {compliance.avgDaysLate}d
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Per-employee breakdown */}
@@ -63,26 +105,74 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
           <div className="text-[10px] font-semibold text-slate-500 tracking-wider mb-1.5">
             BY EMPLOYEE
           </div>
-          <div className="grid gap-1">
+          {/* Column headers */}
+          <div className="grid grid-cols-[1fr_40px_48px_48px_48px_48px_48px] gap-1 text-[9px] text-slate-600 font-medium mb-0.5 px-0.5">
+            <span>Name</span>
+            <span className="text-center">Grade</span>
+            <span className="text-right">On-time</span>
+            <span className="text-right">OOW</span>
+            <span className="text-right">Jobs</span>
+            <span className="text-right">Stuck</span>
+            <span className="text-right">Avg d</span>
+          </div>
+          <div className="grid gap-0.5">
             {compliance.byEmployee.map((emp) => (
-              <div key={emp.name} className="flex items-center gap-3 text-xs">
-                <span className="text-slate-300 font-medium w-28 truncate">{emp.name}</span>
+              <div
+                key={emp.name}
+                className="grid grid-cols-[1fr_40px_48px_48px_48px_48px_48px] gap-1 text-xs items-center px-0.5 py-0.5 rounded hover:bg-white/[0.02]"
+              >
+                {/* Name */}
+                <span className="text-slate-300 font-medium truncate">
+                  {emp.name}
+                </span>
+                {/* Grade */}
+                <span
+                  className="text-center font-bold text-sm"
+                  style={{ color: gradeColor(emp.grade) }}
+                >
+                  {emp.grade}
+                </span>
+                {/* On-time % */}
                 {emp.onTimePercent >= 0 ? (
-                  <span className="font-semibold w-12 text-right" style={{ color: onTimeColor(emp.onTimePercent) }}>
+                  <span
+                    className="text-right font-semibold"
+                    style={{ color: onTimeColor(emp.onTimePercent) }}
+                  >
                     {emp.onTimePercent}%
                   </span>
                 ) : (
-                  <span className="w-12 text-right text-slate-600">—</span>
+                  <span className="text-right text-slate-600">—</span>
                 )}
-                {emp.stuckCount > 0 && (
-                  <span className="text-yellow-500">{emp.stuckCount} stuck</span>
+                {/* OOW % */}
+                {emp.oowOnTimePercent >= 0 ? (
+                  <span
+                    className="text-right font-semibold"
+                    style={{ color: oowColor(emp.oowOnTimePercent) }}
+                  >
+                    {emp.oowOnTimePercent}%
+                  </span>
+                ) : (
+                  <span className="text-right text-slate-600">—</span>
                 )}
-                {emp.neverStartedCount > 0 && (
-                  <span className="text-yellow-400">{emp.neverStartedCount} not started</span>
+                {/* Jobs completed/total */}
+                <span className="text-right text-slate-400">
+                  {emp.completedJobs}/{emp.totalJobs}
+                </span>
+                {/* Stuck */}
+                {emp.stuckCount > 0 ? (
+                  <span
+                    className="text-right font-semibold"
+                    style={{ color: stuckColor(emp.stuckCount) }}
+                  >
+                    {emp.stuckCount}
+                  </span>
+                ) : (
+                  <span className="text-right text-green-500/50">0</span>
                 )}
-                {emp.stuckCount === 0 && emp.neverStartedCount === 0 && emp.onTimePercent >= 90 && (
-                  <span className="text-green-500/60">clean</span>
-                )}
+                {/* Avg days to complete */}
+                <span className="text-right text-slate-400">
+                  {emp.avgDaysToComplete > 0 ? emp.avgDaysToComplete : "—"}
+                </span>
               </div>
             ))}
           </div>

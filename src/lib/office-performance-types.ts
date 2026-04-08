@@ -26,20 +26,34 @@ export interface DealRow {
   assignedUser?: string;
 }
 
-/** Per-employee compliance stats */
+/** Per-employee compliance stats (full metrics from live Zuper API) */
 export interface EmployeeCompliance {
   name: string;
+  totalJobs: number;
+  completedJobs: number;
   onTimePercent: number;    // -1 if no measurable jobs
-  measurableCount: number;  // completed jobs with scheduledEnd this month
+  measurableCount: number;
+  lateCount: number;
   stuckCount: number;
   neverStartedCount: number;
+  avgDaysToComplete: number;
+  avgDaysLate: number;
+  oowOnTimePercent: number; // On Our Way on-time %, -1 if no data
+  statusUsagePercent: number;
+  complianceScore: number;
+  grade: string;            // A-F
 }
 
 /** Zuper compliance summary for a job category at a location */
 export interface SectionCompliance {
+  totalJobs: number;
+  completedJobs: number;
   onTimePercent: number;
   stuckJobs: ComplianceJob[];
   neverStartedCount: number;
+  avgDaysToComplete: number;
+  avgDaysLate: number;
+  oowOnTimePercent: number; // -1 if no data
   byEmployee: EmployeeCompliance[];
 }
 

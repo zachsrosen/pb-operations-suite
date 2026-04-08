@@ -12,10 +12,8 @@ import type {
   EnrichedPersonStat,
   OfficeMetricName,
   DealRow,
-  SectionCompliance,
-  ComplianceJob,
-  EmployeeCompliance,
 } from "@/lib/office-performance-types";
+import { computeLocationCompliance } from "@/lib/compliance-compute";
 
 // ---------- Name Matching ----------
 
@@ -180,131 +178,10 @@ const DEAL_LIST_CAP = 12;
 
 // ---------- Compliance Constants ----------
 
-const STUCK_STATUSES = ["on our way", "started", "in progress"];
-const NEVER_STARTED_STATUSES = ["new", "scheduled", "unassigned", "ready to schedule", "ready to build", "ready for inspection"];
-const COMPLETED_STATUSES = ["completed", "construction complete", "passed", "partial pass", "failed"];
-const GRACE_MS = 86_400_000; // 1 day grace for on-time
-const STUCK_THRESHOLD_MS = 86_400_000; // 1 day minimum before showing as stuck
-
-export interface ComplianceCachedJob {
-  jobUid: string;
-  jobCategory: string;
-  jobStatus: string;
-  completedDate: Date | null;
-  scheduledStart: Date | null;
-  scheduledEnd: Date | null;
-  assignedUsers: unknown;
-  hubspotDealId: string | null;
-  jobTitle: string | null;
-  projectName: string | null;
-}
-
-export function buildComplianceData(
-  jobs: ComplianceCachedJob[],
-  now: Date,
-  dealNameMap?: Map<string, string>
-): SectionCompliance | null {
-  if (jobs.length === 0) return null;
-
-  const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  // Per-employee tracking
-  const empOnTime = new Map<string, number>();
-  const empMeasurable = new Map<string, number>();
-  const empStuck = new Map<string, number>();
-  const empNeverStarted = new Map<string, number>();
-
-  // Aggregate counters
-  let onTimeCount = 0;
-  let measurableCount = 0;
-  const stuckJobs: ComplianceJob[] = [];
-  let neverStartedCount = 0;
-
-  for (const job of jobs) {
-    const status = job.jobStatus.toLowerCase().trim();
-    const users = extractAssignedUsers(job.assignedUsers);
-    const userName = users[0]?.user_name || "Unassigned";
-
-    // On-time calculation: completed jobs THIS MONTH where completedDate <= scheduledEnd + GRACE_MS
-    if (COMPLETED_STATUSES.includes(status) && job.completedDate && job.scheduledEnd) {
-      const completed = new Date(job.completedDate);
-      if (completed >= mtdStart && completed <= now) {
-        measurableCount++;
-        empMeasurable.set(userName, (empMeasurable.get(userName) || 0) + 1);
-
-        const completedTime = completed.getTime();
-        const deadlineTime = new Date(job.scheduledEnd).getTime() + GRACE_MS;
-        if (completedTime <= deadlineTime) {
-          onTimeCount++;
-          empOnTime.set(userName, (empOnTime.get(userName) || 0) + 1);
-        }
-      }
-    }
-
-    // Stuck jobs: in STUCK_STATUSES and stuck >= STUCK_THRESHOLD_MS (or no scheduledStart)
-    if (STUCK_STATUSES.includes(status) && !job.completedDate) {
-      if (job.scheduledStart) {
-        const elapsed = now.getTime() - new Date(job.scheduledStart).getTime();
-        if (elapsed < STUCK_THRESHOLD_MS) continue;
-        const daysSinceScheduled = Math.floor(elapsed / (24 * 60 * 60 * 1000));
-        const name = job.projectName || (dealNameMap && job.hubspotDealId ? dealNameMap.get(job.hubspotDealId) : null) || job.jobTitle || "Unknown";
-        stuckJobs.push({ name, assignedUser: users[0]?.user_name, daysSinceScheduled });
-        empStuck.set(userName, (empStuck.get(userName) || 0) + 1);
-      } else {
-        const name = job.projectName || (dealNameMap && job.hubspotDealId ? dealNameMap.get(job.hubspotDealId) : null) || job.jobTitle || "Unknown";
-        stuckJobs.push({ name, assignedUser: users[0]?.user_name });
-        empStuck.set(userName, (empStuck.get(userName) || 0) + 1);
-      }
-    }
-
-    // Never-started: past scheduled start, still in pre-start status
-    if (NEVER_STARTED_STATUSES.includes(status) && !job.completedDate && job.scheduledStart) {
-      if (new Date(job.scheduledStart).getTime() < now.getTime()) {
-        neverStartedCount++;
-        empNeverStarted.set(userName, (empNeverStarted.get(userName) || 0) + 1);
-      }
-    }
-  }
-
-  const onTimePercent = measurableCount > 0
-    ? Math.round((onTimeCount / measurableCount) * 100)
-    : -1;
-
-  // Build per-employee breakdown — collect all employee names across all maps
-  const allEmployees = new Set<string>();
-  for (const name of empMeasurable.keys()) allEmployees.add(name);
-  for (const name of empStuck.keys()) allEmployees.add(name);
-  for (const name of empNeverStarted.keys()) allEmployees.add(name);
-
-  const byEmployee: EmployeeCompliance[] = [...allEmployees]
-    .filter((name) => name !== "Unassigned")
-    .map((name) => {
-      const m = empMeasurable.get(name) || 0;
-      const ot = empOnTime.get(name) || 0;
-      return {
-        name,
-        onTimePercent: m > 0 ? Math.round((ot / m) * 100) : -1,
-        measurableCount: m,
-        stuckCount: empStuck.get(name) || 0,
-        neverStartedCount: empNeverStarted.get(name) || 0,
-      };
-    })
-    // Sort: worst on-time first, then most stuck, then most never-started
-    .sort((a, b) => {
-      const aOt = a.onTimePercent >= 0 ? a.onTimePercent : 101;
-      const bOt = b.onTimePercent >= 0 ? b.onTimePercent : 101;
-      if (aOt !== bOt) return aOt - bOt;
-      if (a.stuckCount !== b.stuckCount) return b.stuckCount - a.stuckCount;
-      return b.neverStartedCount - a.neverStartedCount;
-    });
-
-  return {
-    onTimePercent,
-    stuckJobs,
-    neverStartedCount,
-    byEmployee,
-  };
-}
+// Completed statuses used for scheduled-this-week filtering
+const COMPLETED_STATUSES_LIST = [
+  "completed", "construction complete", "passed", "partial pass", "failed",
+];
 
 export function buildDealRows(
   projects: ProjectForMetrics[],
@@ -568,83 +445,6 @@ export async function getZuperJobsByLocation(
 }
 
 /**
- * Fetch all Zuper jobs for a category at a location — no date filter.
- * Compliance needs stuck/never-started jobs that may have no completedDate.
- */
-export async function getZuperJobsForCompliance(
-  location: string,
-  category: string,
-  locationDealIds?: Set<string>,
-  dealNameMap?: Map<string, string>
-): Promise<ComplianceCachedJob[]> {
-  if (!prisma) return [];
-
-  // Compliance needs ALL jobs for this category at this location (not just completed).
-  // Use locationDealIds to filter by location when available — avoids empty HubSpotProjectCache.
-  // Note: compliance scope is all location jobs, not just the section's deal list.
-  // Some completed jobs may have moved to a different HubSpot stage, so we query broadly
-  // by category + deal set, not by stage.
-  const whereClause: Record<string, unknown> = {
-    jobCategory: category,
-    hubspotDealId: { not: null },
-  };
-
-  if (locationDealIds && locationDealIds.size > 0) {
-    whereClause.hubspotDealId = { in: [...locationDealIds] };
-  }
-
-  const jobs = await prisma.zuperJobCache.findMany({
-    where: whereClause,
-    select: {
-      jobUid: true,
-      jobCategory: true,
-      jobStatus: true,
-      completedDate: true,
-      scheduledStart: true,
-      scheduledEnd: true,
-      assignedUsers: true,
-      hubspotDealId: true,
-      jobTitle: true,
-    },
-  });
-
-  if (jobs.length === 0) return [];
-
-  // If no locationDealIds provided, fall back to HubSpotProjectCache join
-  let filteredJobs = jobs;
-  let resolvedDealNameMap = dealNameMap;
-
-  if (!locationDealIds) {
-    const jobDealIds = jobs.map((j) => j.hubspotDealId).filter((id): id is string => id !== null);
-    const projectCache = await prisma.hubSpotProjectCache.findMany({
-      where: { dealId: { in: jobDealIds } },
-      select: { dealId: true, pbLocation: true, dealName: true },
-    });
-    const dealLocationMap = new Map(projectCache.map((p) => [p.dealId, p.pbLocation]));
-    if (!resolvedDealNameMap) {
-      resolvedDealNameMap = new Map(projectCache.map((p) => [p.dealId, p.dealName]));
-    }
-    filteredJobs = jobs.filter((j) => {
-      const loc = j.hubspotDealId ? dealLocationMap.get(j.hubspotDealId) : null;
-      return normalizeLocation(loc) === location;
-    });
-  }
-
-  return filteredJobs.map((j) => ({
-    jobUid: j.jobUid,
-    jobCategory: j.jobCategory,
-    jobStatus: j.jobStatus,
-    completedDate: j.completedDate,
-    scheduledStart: j.scheduledStart,
-    scheduledEnd: j.scheduledEnd ?? null,
-    assignedUsers: j.assignedUsers,
-    hubspotDealId: j.hubspotDealId,
-    jobTitle: j.jobTitle ?? null,
-    projectName: j.hubspotDealId && resolvedDealNameMap ? resolvedDealNameMap.get(j.hubspotDealId) ?? null : null,
-  }));
-}
-
-/**
  * Batch-fetch the primary assigned user per (dealId, category) from ZuperJobCache.
  * Returns Map<dealId, Map<category, userName>>.
  * Picks the most relevant job per group: active (no completedDate) over completed,
@@ -721,7 +521,7 @@ export async function getScheduledJobsThisWeek(
 
   // Exclude completed jobs (case-insensitive)
   const activeJobs = jobs.filter(
-    (j) => !COMPLETED_STATUSES.includes(j.jobStatus.toLowerCase().trim())
+    (j) => !COMPLETED_STATUSES_LIST.includes(j.jobStatus.toLowerCase().trim())
   );
 
   if (locationDealIds) return activeJobs.length;
@@ -827,8 +627,8 @@ export async function buildSurveyData(
   const { deals, totalCount } = buildDealRows(surveyProjects, now, assignedUserMap, "Site Survey");
 
   // Compliance from Zuper "Site Survey" category
-  const complianceJobs = await getZuperJobsForCompliance(location, "Site Survey", locationDealIds, dealNameMap);
-  const compliance = buildComplianceData(complianceJobs, now) ?? undefined;
+  // Compliance is populated by the orchestrator via computeLocationCompliance
+  const compliance = undefined;
 
   return {
     completedMtd: mtdJobs.length,
@@ -969,8 +769,8 @@ export async function buildInstallData(
   const { deals, totalCount } = buildDealRows(installProjects, now, assignedUserMap, "Construction");
 
   // Compliance from Zuper "Construction" category
-  const complianceJobs = await getZuperJobsForCompliance(location, "Construction", locationDealIds, dealNameMap);
-  const compliance = buildComplianceData(complianceJobs, now) ?? undefined;
+  // Compliance is populated by the orchestrator via computeLocationCompliance
+  const compliance = undefined;
 
   return {
     completedMtd: mtdJobs.length,
@@ -1029,8 +829,8 @@ export async function buildInspectionData(
   const { deals, totalCount } = buildDealRows(inspectionProjects, now, assignedUserMap, "Inspection");
 
   // Compliance from Zuper "Inspection" category
-  const complianceJobs = await getZuperJobsForCompliance(location, "Inspection", locationDealIds, dealNameMap);
-  const compliance = buildComplianceData(complianceJobs, now) ?? undefined;
+  // Compliance is populated by the orchestrator via computeLocationCompliance
+  const compliance = undefined;
 
   return {
     completedMtd: mtdJobs.length,
@@ -1282,8 +1082,63 @@ export async function getOfficePerformanceData(
     buildInspectionData(location, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
   ]);
 
-  // Enrich with QC metrics turnaround times
-  await enrichWithQcMetrics(location, pipeline, surveys, installs, inspections);
+  // Enrich with QC metrics and live Zuper compliance in parallel
+  const [, surveyCompliance, installCompliance, inspectionCompliance] = await Promise.all([
+    enrichWithQcMetrics(location, pipeline, surveys, installs, inspections),
+    computeLocationCompliance("Site Survey", location).catch((err) => {
+      console.warn("[office-performance] Survey compliance fetch failed:", err);
+      return null;
+    }),
+    computeLocationCompliance("Construction", location).catch((err) => {
+      console.warn("[office-performance] Install compliance fetch failed:", err);
+      return null;
+    }),
+    computeLocationCompliance("Inspection", location).catch((err) => {
+      console.warn("[office-performance] Inspection compliance fetch failed:", err);
+      return null;
+    }),
+  ]);
+
+  // Patch compliance data into section objects
+  if (surveyCompliance) {
+    surveys.compliance = {
+      totalJobs: surveyCompliance.summary.totalJobs,
+      completedJobs: surveyCompliance.summary.completedJobs,
+      onTimePercent: surveyCompliance.summary.onTimePercent,
+      stuckJobs: surveyCompliance.stuckJobs,
+      neverStartedCount: surveyCompliance.summary.neverStartedCount,
+      avgDaysToComplete: surveyCompliance.summary.avgDaysToComplete,
+      avgDaysLate: surveyCompliance.summary.avgDaysLate,
+      oowOnTimePercent: surveyCompliance.summary.oowOnTimePercent,
+      byEmployee: surveyCompliance.byEmployee,
+    };
+  }
+  if (installCompliance) {
+    installs.compliance = {
+      totalJobs: installCompliance.summary.totalJobs,
+      completedJobs: installCompliance.summary.completedJobs,
+      onTimePercent: installCompliance.summary.onTimePercent,
+      stuckJobs: installCompliance.stuckJobs,
+      neverStartedCount: installCompliance.summary.neverStartedCount,
+      avgDaysToComplete: installCompliance.summary.avgDaysToComplete,
+      avgDaysLate: installCompliance.summary.avgDaysLate,
+      oowOnTimePercent: installCompliance.summary.oowOnTimePercent,
+      byEmployee: installCompliance.byEmployee,
+    };
+  }
+  if (inspectionCompliance) {
+    inspections.compliance = {
+      totalJobs: inspectionCompliance.summary.totalJobs,
+      completedJobs: inspectionCompliance.summary.completedJobs,
+      onTimePercent: inspectionCompliance.summary.onTimePercent,
+      stuckJobs: inspectionCompliance.stuckJobs,
+      neverStartedCount: inspectionCompliance.summary.neverStartedCount,
+      avgDaysToComplete: inspectionCompliance.summary.avgDaysToComplete,
+      avgDaysLate: inspectionCompliance.summary.avgDaysLate,
+      oowOnTimePercent: inspectionCompliance.summary.oowOnTimePercent,
+      byEmployee: inspectionCompliance.byEmployee,
+    };
+  }
 
   // Individual achievements across sections
   const achievements: string[] = [];
