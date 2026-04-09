@@ -454,6 +454,12 @@ async function buildTeamResultsData(
   // Crew breakdown — use HubSpot date properties to determine what was completed
   // this year, then look up Zuper jobs by deal ID to find who was assigned.
   const crewMap = new Map<string, CrewMemberStats>();
+  const unattributed: CrewMemberStats = {
+    name: "Unattributed",
+    surveys: 0, installs: 0, inspections: 0,
+    kwInstalled: 0, batteriesInstalled: 0,
+    isUnattributed: true,
+  };
 
   // Categorize deals by which HubSpot dates fall in this year
   const surveyedYtd = locationProjects.filter((p) => {
@@ -496,11 +502,13 @@ async function buildTeamResultsData(
       jobsByDealCategory.get(key)!.push(job);
     }
 
-    // Helper to attribute a deal's work to crew members
+    // Helper to attribute a deal's work to crew members. Deals with no matching
+    // Zuper crew fall through to the `unattributedFn` so totals still reconcile.
     const attributeWork = (
       deals: ProjectForMetrics[],
       category: "Site Survey" | "Construction" | "Inspection",
-      updateFn: (stats: CrewMemberStats, userCount: number, deal: ProjectForMetrics) => void
+      updateFn: (stats: CrewMemberStats, userCount: number, deal: ProjectForMetrics) => void,
+      unattributedFn: (stats: CrewMemberStats, deal: ProjectForMetrics) => void
     ) => {
       for (const deal of deals) {
         if (!deal.id) continue;
@@ -517,7 +525,11 @@ async function buildTeamResultsData(
             }
           }
         }
-        const userCount = allUsers.length || 1;
+        if (allUsers.length === 0) {
+          unattributedFn(unattributed, deal);
+          continue;
+        }
+        const userCount = allUsers.length;
         for (const user of allUsers) {
           if (!crewMap.has(user.user_uid)) {
             crewMap.set(user.user_uid, {
@@ -531,26 +543,50 @@ async function buildTeamResultsData(
       }
     };
 
-    // Surveys: count per person
-    attributeWork(surveyedYtd, "Site Survey", (stats) => {
-      stats.surveys++;
-    });
+    // Surveys: count per person (multi-tech jobs inflate the column sum — noted in UI footnote)
+    attributeWork(
+      surveyedYtd,
+      "Site Survey",
+      (stats) => { stats.surveys++; },
+      (stats) => { stats.surveys++; }
+    );
 
-    // Installs: count + kW/batteries split among crew
-    attributeWork(installedYtd, "Construction", (stats, userCount, deal) => {
-      stats.installs++;
-      stats.kwInstalled += (deal.systemSizeKwdc || 0) / userCount;
-      stats.batteriesInstalled += (deal.batteryCount || 0) / userCount;
-    });
+    // Installs: count + kW/batteries split among crew (kW/batteries reconcile; install count does not)
+    attributeWork(
+      installedYtd,
+      "Construction",
+      (stats, userCount, deal) => {
+        stats.installs++;
+        stats.kwInstalled += (deal.systemSizeKwdc || 0) / userCount;
+        stats.batteriesInstalled += (deal.batteryCount || 0) / userCount;
+      },
+      (stats, deal) => {
+        stats.installs++;
+        stats.kwInstalled += (deal.systemSizeKwdc || 0);
+        stats.batteriesInstalled += (deal.batteryCount || 0);
+      }
+    );
 
     // Inspections: count per person
-    attributeWork(inspectedYtd, "Inspection", (stats) => {
-      stats.inspections++;
-    });
+    attributeWork(
+      inspectedYtd,
+      "Inspection",
+      (stats) => { stats.inspections++; },
+      (stats) => { stats.inspections++; }
+    );
+  } else {
+    // No prisma (should be rare) — everything is unattributed
+    unattributed.surveys += surveyedYtd.length;
+    unattributed.inspections += inspectedYtd.length;
+    for (const deal of installedYtd) {
+      unattributed.installs++;
+      unattributed.kwInstalled += deal.systemSizeKwdc || 0;
+      unattributed.batteriesInstalled += deal.batteryCount || 0;
+    }
   }
 
-  // Sort by total activity, cap at 8
-  const crewBreakdown = [...crewMap.values()]
+  // Sort by total activity (no cap) and append the Unattributed row at the bottom
+  const attributedCrew = [...crewMap.values()]
     .map((s) => ({
       ...s,
       kwInstalled: Math.round(s.kwInstalled * 10) / 10,
@@ -559,8 +595,25 @@ async function buildTeamResultsData(
     .sort((a, b) =>
       (b.surveys + b.installs + b.inspections) -
       (a.surveys + a.installs + a.inspections)
-    )
-    .slice(0, 8);
+    );
+
+  const hasUnattributedWork =
+    unattributed.surveys > 0 ||
+    unattributed.installs > 0 ||
+    unattributed.inspections > 0 ||
+    unattributed.kwInstalled > 0 ||
+    unattributed.batteriesInstalled > 0;
+
+  const crewBreakdown: CrewMemberStats[] = hasUnattributedWork
+    ? [
+        ...attributedCrew,
+        {
+          ...unattributed,
+          kwInstalled: Math.round(unattributed.kwInstalled * 10) / 10,
+          batteriesInstalled: Math.round(unattributed.batteriesInstalled),
+        },
+      ]
+    : attributedCrew;
 
   return {
     homesPowered,

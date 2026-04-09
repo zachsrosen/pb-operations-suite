@@ -133,6 +133,8 @@ export interface CrewMemberStats {
   inspections: number;
   kwInstalled: number;
   batteriesInstalled: number;
+  /** True for the synthetic "Unattributed" row (deals with no matching Zuper crew). */
+  isUnattributed?: boolean;
 }
 
 /** Recent completed project for the wins ticker */

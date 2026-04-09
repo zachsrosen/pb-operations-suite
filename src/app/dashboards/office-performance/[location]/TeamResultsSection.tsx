@@ -93,37 +93,51 @@ export default function TeamResultsSection({ data }: TeamResultsSectionProps) {
               </tr>
             </thead>
             <tbody>
-              {data.crewBreakdown.map((member, i) => (
-                <tr
-                  key={member.name}
-                  className="border-t border-white/[0.04]"
-                  style={{
-                    animation: `fadeInLeft 300ms ${i * 60}ms both`,
-                  }}
-                >
-                  <td className="py-1.5 text-slate-200 font-semibold">
-                    {member.name}
-                  </td>
-                  {CREW_COLUMNS.map((col) => {
-                    const val = member[col.key];
-                    const display =
-                      col.key === "kwInstalled"
-                        ? val > 0 ? val.toFixed(1) : "—"
-                        : val > 0 ? String(val) : "—";
-                    return (
-                      <td
-                        key={col.key}
-                        className="py-1.5 text-center font-bold"
-                        style={{ color: val > 0 ? col.color : "#475569" }}
-                      >
-                        {display}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {data.crewBreakdown.map((member, i) => {
+                const isUnattributed = member.isUnattributed === true;
+                return (
+                  <tr
+                    key={member.name}
+                    className={`border-t border-white/[0.04] ${isUnattributed ? "italic" : ""}`}
+                    style={{
+                      animation: `fadeInLeft 300ms ${i * 60}ms both`,
+                    }}
+                  >
+                    <td
+                      className={`py-1.5 font-semibold ${isUnattributed ? "text-slate-500" : "text-slate-200"}`}
+                    >
+                      {isUnattributed ? "Unattributed*" : member.name}
+                    </td>
+                    {CREW_COLUMNS.map((col) => {
+                      const val = member[col.key];
+                      const display =
+                        col.key === "kwInstalled"
+                          ? val > 0 ? val.toFixed(1) : "—"
+                          : val > 0 ? String(val) : "—";
+                      return (
+                        <td
+                          key={col.key}
+                          className="py-1.5 text-center font-bold"
+                          style={{
+                            color: val > 0
+                              ? (isUnattributed ? "#64748b" : col.color)
+                              : "#475569",
+                          }}
+                        >
+                          {display}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+          <div className="text-[10px] text-slate-500 mt-3 leading-relaxed">
+            * Deals completed per HubSpot dates but without a matching Zuper crew (stale cache or missing assignment).
+            <br />
+            Survey / Install / Inspection counts credit each tech on a multi-tech job (column totals may exceed top-line counts). kW and Batteries are split proportionally across crew.
+          </div>
         </div>
       )}
 
