@@ -27,15 +27,15 @@ export default function DealList({ deals, totalCount, showAssigned = true }: Dea
 
   return (
     <div className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-2">
-      <table className="w-full text-sm">
+      <table className="w-full text-sm table-auto">
         <thead>
           <tr className="text-xs text-slate-500 tracking-wider">
-            <th className="text-left pb-1 font-semibold">DEAL</th>
-            <th className="text-left pb-1 font-semibold w-20">STAGE</th>
-            <th className="text-right pb-1 font-semibold w-14">DAYS</th>
+            <th className="text-left pb-1 font-semibold whitespace-nowrap">DEAL</th>
+            <th className="text-left pb-1 font-semibold w-20 whitespace-nowrap">STAGE</th>
+            <th className="text-right pb-1 font-semibold w-14 whitespace-nowrap">DAYS</th>
             <th className="text-center pb-1 font-semibold w-6"></th>
             {showAssigned && (
-              <th className="text-left pb-1 font-semibold w-36">ASSIGNED</th>
+              <th className="text-left pb-1 font-semibold whitespace-nowrap">ASSIGNED</th>
             )}
           </tr>
         </thead>
@@ -72,7 +72,7 @@ export default function DealList({ deals, totalCount, showAssigned = true }: Dea
                   )}
                 </td>
                 {showAssigned && (
-                  <td className="py-0.5 text-slate-400">
+                  <td className="py-0.5 pl-4 text-slate-400 whitespace-nowrap">
                     {deal.assignedUsers && deal.assignedUsers.length > 0
                       ? deal.assignedUsers.join(", ")
                       : "—"}

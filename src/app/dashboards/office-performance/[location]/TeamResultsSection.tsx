@@ -36,9 +36,9 @@ export default function TeamResultsSection({ data }: TeamResultsSectionProps) {
   const year = new Date().getFullYear();
 
   return (
-    <div className="flex flex-col h-full px-8 py-5">
+    <div className="flex flex-col h-full px-8 py-5 overflow-hidden">
       {/* Impact cards */}
-      <div className="grid grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-4 gap-3 mb-4 flex-shrink-0">
         {IMPACT_CARDS.map((card) => (
           <div
             key={card.key}
@@ -77,10 +77,11 @@ export default function TeamResultsSection({ data }: TeamResultsSectionProps) {
 
       {/* Crew breakdown table */}
       {data.crewBreakdown.length > 0 && (
-        <div className="flex-1 min-h-0 bg-white/[0.02] rounded-xl p-4 border border-white/5 mb-3">
-          <div className="text-xs font-semibold text-slate-400 tracking-wider mb-3">
+        <div className="flex-1 min-h-0 bg-white/[0.02] rounded-xl p-4 border border-white/5 mb-3 flex flex-col overflow-hidden">
+          <div className="text-xs font-semibold text-slate-400 tracking-wider mb-3 flex-shrink-0">
             ⚡ CREW BREAKDOWN — {year}
           </div>
+          <div className="flex-1 min-h-0 overflow-y-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-slate-500 tracking-wider">
@@ -133,7 +134,8 @@ export default function TeamResultsSection({ data }: TeamResultsSectionProps) {
               })}
             </tbody>
           </table>
-          <div className="text-[10px] text-slate-500 mt-3 leading-relaxed">
+          </div>
+          <div className="text-[10px] text-slate-500 mt-3 leading-relaxed flex-shrink-0">
             * Deals completed per HubSpot dates but without a matching Zuper crew (stale cache or missing assignment).
             <br />
             Survey / Install / Inspection counts credit each tech on a multi-tech job (column totals may exceed top-line counts). kW and Batteries are split proportionally across crew.
@@ -143,7 +145,7 @@ export default function TeamResultsSection({ data }: TeamResultsSectionProps) {
 
       {/* Recent wins ticker */}
       {data.recentWins.length > 0 && (
-        <div className="rounded-xl border border-white/5 bg-white/[0.02] px-5 py-3 flex items-center gap-4 overflow-hidden">
+        <div className="rounded-xl border border-white/5 bg-white/[0.02] px-5 py-3 flex items-center gap-4 overflow-hidden flex-shrink-0">
           <span className="text-xs font-semibold text-slate-500 tracking-wider shrink-0">
             🎉 RECENT
           </span>

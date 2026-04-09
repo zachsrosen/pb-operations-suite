@@ -22,9 +22,9 @@ export default function InspectionsSection({ data }: InspectionsSectionProps) {
   }
 
   return (
-    <div className="flex flex-col h-full px-8 py-5">
+    <div className="flex flex-col h-full px-8 py-5 overflow-hidden">
       {/* Top metrics */}
-      <div className="grid grid-cols-4 gap-4 mb-4">
+      <div className="grid grid-cols-4 gap-4 mb-4 flex-shrink-0">
         <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
           <CountUp
             value={data.completedMtd}
@@ -74,20 +74,22 @@ export default function InspectionsSection({ data }: InspectionsSectionProps) {
       </div>
 
       {/* Deal list + compliance */}
-      <div className="flex flex-col gap-2 mb-3">
+      <div className="flex flex-col gap-2 mb-3 flex-shrink-0 overflow-hidden">
         <DealList deals={data.deals} totalCount={data.totalCount} />
         <ComplianceBlock compliance={data.compliance} />
       </div>
 
       {/* Leaderboard with pass rates */}
-      <Leaderboard
-        title="INSPECTION TECHS — THIS MONTH"
-        icon="🏆"
-        entries={data.leaderboard}
-        accentColor="#06b6d4"
-        showPassRate
-        metricLabel="inspections"
-      />
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <Leaderboard
+          title="INSPECTION TECHS — THIS MONTH"
+          icon="🏆"
+          entries={data.leaderboard}
+          accentColor="#06b6d4"
+          showPassRate
+          metricLabel="inspections"
+        />
+      </div>
     </div>
   );
 }

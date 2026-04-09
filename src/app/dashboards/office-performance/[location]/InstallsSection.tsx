@@ -17,9 +17,9 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
   const trendImproving = daysTrend < 0;
 
   return (
-    <div className="flex flex-col h-full px-8 py-5">
+    <div className="flex flex-col h-full px-8 py-5 overflow-hidden">
       {/* Top metrics */}
-      <div className="grid grid-cols-4 gap-4 mb-4">
+      <div className="grid grid-cols-4 gap-4 mb-4 flex-shrink-0">
         <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
           <CountUp
             value={data.completedMtd}
@@ -63,13 +63,13 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
       </div>
 
       {/* Deal list + compliance */}
-      <div className="flex flex-col gap-2 mb-3">
+      <div className="flex flex-col gap-2 mb-3 flex-shrink-0 overflow-hidden">
         <DealList deals={data.deals} totalCount={data.totalCount} />
         <ComplianceBlock compliance={data.compliance} />
       </div>
 
       {/* Dual leaderboards */}
-      <div className="grid grid-cols-2 gap-5 flex-1 min-h-0">
+      <div className="grid grid-cols-2 gap-5 flex-1 min-h-0 overflow-hidden">
         <Leaderboard
           title="INSTALLERS — THIS MONTH"
           icon="⚡"
