@@ -15,6 +15,31 @@ import { cacheZuperJob } from "@/lib/db";
 // ---------------------------------------------------------------------------
 
 /**
+ * Normalise whatever is stored in Zuper's "HubSpot Deal ID" custom field
+ * into a raw numeric deal ID. About 15% of historical rows hold the full
+ * HubSpot record URL (`https://app.hubspot.com/contacts/.../record/0-3/12345`)
+ * instead of just the ID, which breaks joins against HubSpot deal data.
+ * Accepts either shape and returns just the numeric ID.
+ */
+function normalizeHubspotDealIdValue(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+
+  // Already a raw numeric ID — use as-is.
+  if (/^\d+$/.test(trimmed)) return trimmed;
+
+  // Full HubSpot record URL — pull the numeric ID out of `/record/<type>/<id>`.
+  const urlMatch = trimmed.match(/\/record\/[^/]+\/(\d+)/);
+  if (urlMatch) return urlMatch[1];
+
+  // Anything else with a trailing numeric segment — last resort.
+  const tailMatch = trimmed.match(/(\d{5,})(?!.*\d)/);
+  if (tailMatch) return tailMatch[1];
+
+  return undefined;
+}
+
+/**
  * Extract the HubSpot deal ID from a Zuper job's custom fields or tags.
  *
  * Custom fields come back from Zuper GET as an array of objects:
@@ -29,7 +54,10 @@ function extractHubspotDealId(job: ZuperJob): string | undefined {
       const label = (field.label ?? field.field_label ?? "").toLowerCase();
       if (label.includes("hubspot") || label.includes("deal_id") || label.includes("deal id")) {
         const val = field.value ?? field.field_value;
-        if (val && String(val).trim()) return String(val).trim();
+        if (val !== undefined && val !== null) {
+          const normalized = normalizeHubspotDealIdValue(String(val));
+          if (normalized) return normalized;
+        }
       }
     }
   }

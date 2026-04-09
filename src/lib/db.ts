@@ -549,6 +549,15 @@ export async function cacheZuperJob(job: {
   if (!prisma) return null;
 
   try {
+    // Only write `assignedUsers` when the caller explicitly provides it.
+    // Leaving it undefined lets the existing cached value (populated by
+    // syncZuperServiceJobs) survive upserts from scheduling routes that
+    // don't know the current crew list.
+    const assignedUsersUpdate =
+      job.assignedUsers !== undefined
+        ? { assignedUsers: JSON.parse(JSON.stringify(job.assignedUsers)) }
+        : {};
+
     return await prisma.zuperJobCache.upsert({
       where: { jobUid: job.jobUid },
       update: {
@@ -559,7 +568,7 @@ export async function cacheZuperJob(job: {
         scheduledStart: job.scheduledStart,
         scheduledEnd: job.scheduledEnd,
         completedDate: job.completedDate,
-        assignedUsers: job.assignedUsers ? JSON.parse(JSON.stringify(job.assignedUsers)) : null,
+        ...assignedUsersUpdate,
         assignedTeam: job.assignedTeam,
         customerAddress: job.customerAddress ? JSON.parse(JSON.stringify(job.customerAddress)) : null,
         hubspotDealId: job.hubspotDealId,

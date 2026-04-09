@@ -77,11 +77,11 @@ export default function TeamResultsSection({ data }: TeamResultsSectionProps) {
 
       {/* Crew breakdown table */}
       {data.crewBreakdown.length > 0 && (
-        <div className="flex-1 min-h-0 bg-white/[0.02] rounded-xl p-4 border border-white/5 mb-3 flex flex-col overflow-hidden">
+        <div className="flex-1 min-h-0 bg-white/[0.02] rounded-xl p-4 border border-white/5 mb-3 flex flex-col">
           <div className="text-xs font-semibold text-slate-400 tracking-wider mb-3 flex-shrink-0">
             ⚡ CREW BREAKDOWN — {year}
           </div>
-          <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="flex-1 min-h-0">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-slate-500 tracking-wider">
