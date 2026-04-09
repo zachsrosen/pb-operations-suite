@@ -85,6 +85,7 @@ export interface PipelineData {
 export interface SurveyData {
   completedMtd: number;
   completedGoal: number;
+  scheduledMtd: number;
   avgTurnaroundDays: number;
   avgTurnaroundPrior: number;
   scheduledThisWeek: number;
@@ -97,6 +98,7 @@ export interface SurveyData {
 export interface InstallData {
   completedMtd: number;
   completedGoal: number;
+  kwInstalledMtd: number;
   avgDaysPerInstall: number;
   avgDaysPerInstallPrior: number;
   capacityUtilization: number;
@@ -116,6 +118,7 @@ export interface InspectionData {
   avgConstructionDaysPrior: number;
   avgCcToPtoDays: number;
   avgCcToPtoDaysPrior: number;
+  scheduledThisWeek: number;
   leaderboard: InspectionPersonStat[];
   deals: DealRow[];
   totalCount: number;

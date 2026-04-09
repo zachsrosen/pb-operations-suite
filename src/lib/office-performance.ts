@@ -1001,6 +1001,12 @@ export async function buildSurveyData(
     }
   }
 
+  // Scheduled this month — surveys with schedule date in current month (completed or not)
+  const scheduledMtd = (locationProjects || []).filter((p) => {
+    const d = p.siteSurveyScheduleDate ? new Date(p.siteSurveyScheduleDate) : null;
+    return d && d >= mtdStart && d <= now;
+  }).length;
+
   // Scheduled this week — from HubSpot schedule date (source of truth)
   const scheduledThisWeek = countScheduledThisWeek(locationProjects || [], "Site Survey", now);
 
@@ -1019,6 +1025,7 @@ export async function buildSurveyData(
   return {
     completedMtd,
     completedGoal: goals.surveys_completed,
+    scheduledMtd,
     avgTurnaroundDays: 0, // Populated from QC metrics in the orchestrator
     avgTurnaroundPrior: 0,
     scheduledThisWeek,
@@ -1043,10 +1050,16 @@ export async function buildInstallData(
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   // MTD completed installs — count from HubSpot property (source of truth)
-  const completedMtd = (locationProjects || []).filter((p) => {
+  const installsCompletedMtd = (locationProjects || []).filter((p) => {
     const d = p.constructionCompleteDate ? new Date(p.constructionCompleteDate) : null;
     return d && d >= mtdStart && d <= now;
-  }).length;
+  });
+  const completedMtd = installsCompletedMtd.length;
+
+  // kW installed this month — sum system size for MTD completed installs
+  const kwInstalledMtd = Math.round(
+    installsCompletedMtd.reduce((sum, p) => sum + (p.systemSizeKwdc || 0), 0) * 10
+  ) / 10;
 
   // Zuper jobs for leaderboard and capacity calculations
   const mtdJobs = await getZuperJobsByLocation(location, "Construction", mtdStart, now, locationDealIds);
@@ -1169,6 +1182,7 @@ export async function buildInstallData(
   return {
     completedMtd,
     completedGoal: goals.installs_completed,
+    kwInstalledMtd,
     avgDaysPerInstall: 0, // Populated from QC metrics in orchestrator
     avgDaysPerInstallPrior: 0,
     capacityUtilization,
@@ -1223,6 +1237,9 @@ export async function buildInspectionData(
     passRate: -1,
   }));
 
+  // Scheduled this week — from HubSpot inspection_schedule_date (source of truth)
+  const scheduledThisWeek = countScheduledThisWeek(locationProjects || [], "Inspection", now);
+
   // Deal rows filtered to inspection stages
   const inspectionProjects = (locationProjects || []).filter(
     (p) => INSPECTION_STAGES.has(normalizeStage(p.stage || ""))
@@ -1241,6 +1258,7 @@ export async function buildInspectionData(
     avgConstructionDaysPrior: 0,
     avgCcToPtoDays: 0,
     avgCcToPtoDaysPrior: 0,
+    scheduledThisWeek,
     leaderboard,
     deals,
     totalCount,
