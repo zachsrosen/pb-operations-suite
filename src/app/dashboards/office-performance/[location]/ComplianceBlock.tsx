@@ -34,11 +34,38 @@ function oowColor(pct: number): string {
   return "#ef4444";
 }
 
+/** Render the dual "usage / punctuality" OOW display. */
+function OowDualDisplay({
+  usage,
+  punctuality,
+  textSize,
+}: {
+  usage: number;
+  punctuality: number;
+  textSize: "xs" | "sm";
+}) {
+  const sizeClass = textSize === "sm" ? "text-sm" : "text-xs";
+  const usageColor = usage >= 0 ? oowColor(usage) : "#475569";
+  const punctColor = punctuality >= 0 ? oowColor(punctuality) : "#475569";
+  return (
+    <span className={`font-semibold ${sizeClass}`}>
+      <span style={{ color: usageColor }}>
+        {usage >= 0 ? `${usage}%` : "—"}
+      </span>
+      <span className="text-slate-600 mx-0.5">/</span>
+      <span style={{ color: punctColor }}>
+        {punctuality >= 0 ? `${punctuality}%` : "—"}
+      </span>
+    </span>
+  );
+}
+
 export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
   if (!compliance) return null;
 
   const showOnTime = compliance.onTimePercent >= 0;
-  const showOow = compliance.oowOnTimePercent >= 0;
+  const showOow =
+    compliance.oowUsagePercent >= 0 || compliance.oowOnTimePercent >= 0;
   const hasEmployees = compliance.byEmployee.length > 0;
 
   return (
@@ -61,10 +88,17 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
         )}
         {showOow && (
           <div className="flex items-center gap-1">
-            <span className="text-slate-500 text-xs">OOW Used:</span>
-            <span className="font-semibold" style={{ color: oowColor(compliance.oowOnTimePercent) }}>
-              {compliance.oowOnTimePercent}%
+            <span
+              className="text-slate-500 text-xs"
+              title="Used / On-time: how often OOW status was hit, and — of those — how often before scheduled start"
+            >
+              OOW (use/punct):
             </span>
+            <OowDualDisplay
+              usage={compliance.oowUsagePercent}
+              punctuality={compliance.oowOnTimePercent}
+              textSize="sm"
+            />
           </div>
         )}
         <div className="flex items-center gap-1">
@@ -106,11 +140,16 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
             CREW PERFORMANCE
           </div>
           {/* Column headers */}
-          <div className="grid grid-cols-[1fr_40px_48px_48px_48px_48px_48px] gap-1 text-[9px] text-slate-600 font-medium mb-0.5 px-0.5">
+          <div className="grid grid-cols-[1fr_40px_48px_72px_48px_48px_48px] gap-1 text-[9px] text-slate-600 font-medium mb-0.5 px-0.5">
             <span>Name</span>
             <span className="text-center">Grade</span>
             <span className="text-right">On-time</span>
-            <span className="text-right">OOW</span>
+            <span
+              className="text-right"
+              title="OOW usage % / punctuality %"
+            >
+              OOW u/p
+            </span>
             <span className="text-right">Jobs</span>
             <span className="text-right">Stuck</span>
             <span className="text-right">Avg d</span>
@@ -119,7 +158,7 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
             {compliance.byEmployee.map((emp) => (
               <div
                 key={emp.name}
-                className="grid grid-cols-[1fr_40px_48px_48px_48px_48px_48px] gap-1 text-xs items-center px-0.5 py-0.5 rounded hover:bg-white/[0.02]"
+                className="grid grid-cols-[1fr_40px_48px_72px_48px_48px_48px] gap-1 text-xs items-center px-0.5 py-0.5 rounded hover:bg-white/[0.02]"
               >
                 {/* Name */}
                 <span className="text-slate-300 font-medium truncate">
@@ -143,13 +182,14 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
                 ) : (
                   <span className="text-right text-slate-600">—</span>
                 )}
-                {/* OOW % */}
-                {emp.oowOnTimePercent >= 0 ? (
-                  <span
-                    className="text-right font-semibold"
-                    style={{ color: oowColor(emp.oowOnTimePercent) }}
-                  >
-                    {emp.oowOnTimePercent}%
+                {/* OOW usage / punctuality */}
+                {emp.oowUsagePercent >= 0 || emp.oowOnTimePercent >= 0 ? (
+                  <span className="text-right">
+                    <OowDualDisplay
+                      usage={emp.oowUsagePercent}
+                      punctuality={emp.oowOnTimePercent}
+                      textSize="xs"
+                    />
                   </span>
                 ) : (
                   <span className="text-right text-slate-600">—</span>

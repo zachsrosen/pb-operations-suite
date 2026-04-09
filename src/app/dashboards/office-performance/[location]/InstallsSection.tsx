@@ -63,8 +63,8 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
       </div>
 
       {/* Deal list + compliance */}
-      <div className="flex flex-col gap-2 mb-3 flex-shrink-0 overflow-hidden">
-        <DealList deals={data.deals} totalCount={data.totalCount} />
+      <div className="grid grid-cols-2 gap-3 mb-3 flex-shrink-0 overflow-hidden items-start">
+        <DealList deals={data.deals} />
         <ComplianceBlock compliance={data.compliance} />
       </div>
 

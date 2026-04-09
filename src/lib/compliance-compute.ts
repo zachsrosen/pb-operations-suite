@@ -40,7 +40,10 @@ export interface EmployeeComplianceFull {
   neverStartedCount: number;
   avgDaysToComplete: number;
   avgDaysLate: number;
-  oowOnTimePercent: number; // On Our Way on-time %, -1 if no data
+  /** % of completed jobs where the tech used the On Our Way status at all (customer notification). -1 if no completed jobs. */
+  oowUsagePercent: number;
+  /** % of OOW-used jobs where the OOW timestamp was before scheduledStart (punctuality). -1 if never used. */
+  oowOnTimePercent: number;
   statusUsagePercent: number;
   complianceScore: number;
   grade: string;
@@ -54,6 +57,9 @@ export interface ComplianceSummaryFull {
   neverStartedCount: number;
   avgDaysToComplete: number;
   avgDaysLate: number;
+  /** % of completed jobs where OOW status was used (customer notification). -1 if no completed jobs. */
+  oowUsagePercent: number;
+  /** % of OOW-used jobs where the tech left on-time. -1 if never used. */
   oowOnTimePercent: number;
 }
 
@@ -163,6 +169,7 @@ export async function computeLocationCompliance(
     daysLatePastEnd: [] as number[],
     oowOnTime: 0,
     oowLate: 0,
+    oowUsed: 0,
   };
 
   for (const job of jobs) {
@@ -225,6 +232,7 @@ export async function computeLocationCompliance(
           aggAcc.oowOnTime++;
         }
       }
+      if (onOurWayTime) aggAcc.oowUsed++;
     }
     if (isStuck) aggAcc.stuckJobs++;
     if (isNeverStarted) aggAcc.neverStartedJobs++;
@@ -331,6 +339,10 @@ export async function computeLocationCompliance(
     const oowTotal = acc.oowOnTime + acc.oowLate;
     const oowOnTimePercent =
       oowTotal > 0 ? Math.round((acc.oowOnTime / oowTotal) * 100) : -1;
+    const oowUsagePercent =
+      acc.completedJobs > 0
+        ? Math.round((acc.oowUsed / acc.completedJobs) * 100)
+        : -1;
 
     const statusUsagePercent =
       acc.completedJobs > 0
@@ -361,6 +373,7 @@ export async function computeLocationCompliance(
       neverStartedCount: acc.neverStartedJobs,
       avgDaysToComplete,
       avgDaysLate,
+      oowUsagePercent,
       oowOnTimePercent,
       statusUsagePercent,
       complianceScore,
@@ -417,6 +430,10 @@ export async function computeLocationCompliance(
               10
           ) / 10
         : 0,
+    oowUsagePercent:
+      aggAcc.completedJobs > 0
+        ? Math.round((aggAcc.oowUsed / aggAcc.completedJobs) * 100)
+        : -1,
     oowOnTimePercent:
       oowTotal > 0
         ? Math.round((aggAcc.oowOnTime / oowTotal) * 100)

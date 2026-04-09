@@ -5,11 +5,10 @@ import type { DealRow } from "@/lib/office-performance-types";
 
 interface DealListProps {
   deals: DealRow[];
-  totalCount: number;
   showAssigned?: boolean;
 }
 
-export default function DealList({ deals, totalCount, showAssigned = true }: DealListProps) {
+export default function DealList({ deals, showAssigned = true }: DealListProps) {
   const [visibleCount, setVisibleCount] = useState(0);
 
   useEffect(() => {
@@ -22,8 +21,6 @@ export default function DealList({ deals, totalCount, showAssigned = true }: Dea
   }, [deals]);
 
   if (deals.length === 0) return null;
-
-  const remaining = totalCount - deals.length;
 
   return (
     <div className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-2">
@@ -83,11 +80,6 @@ export default function DealList({ deals, totalCount, showAssigned = true }: Dea
           })}
         </tbody>
       </table>
-      {remaining > 0 && (
-        <div className="text-xs text-slate-500 mt-1 pl-3">
-          +{remaining} more project{remaining !== 1 ? "s" : ""}
-        </div>
-      )}
     </div>
   );
 }

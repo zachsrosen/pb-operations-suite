@@ -1628,6 +1628,7 @@ export async function getOfficePerformanceData(
       neverStartedCount: surveyCompliance.summary.neverStartedCount,
       avgDaysToComplete: surveyCompliance.summary.avgDaysToComplete,
       avgDaysLate: surveyCompliance.summary.avgDaysLate,
+      oowUsagePercent: surveyCompliance.summary.oowUsagePercent,
       oowOnTimePercent: surveyCompliance.summary.oowOnTimePercent,
       byEmployee: surveyCompliance.byEmployee,
     };
@@ -1641,6 +1642,7 @@ export async function getOfficePerformanceData(
       neverStartedCount: installCompliance.summary.neverStartedCount,
       avgDaysToComplete: installCompliance.summary.avgDaysToComplete,
       avgDaysLate: installCompliance.summary.avgDaysLate,
+      oowUsagePercent: installCompliance.summary.oowUsagePercent,
       oowOnTimePercent: installCompliance.summary.oowOnTimePercent,
       byEmployee: installCompliance.byEmployee,
     };
@@ -1654,6 +1656,7 @@ export async function getOfficePerformanceData(
       neverStartedCount: inspectionCompliance.summary.neverStartedCount,
       avgDaysToComplete: inspectionCompliance.summary.avgDaysToComplete,
       avgDaysLate: inspectionCompliance.summary.avgDaysLate,
+      oowUsagePercent: inspectionCompliance.summary.oowUsagePercent,
       oowOnTimePercent: inspectionCompliance.summary.oowOnTimePercent,
       byEmployee: inspectionCompliance.byEmployee,
     };

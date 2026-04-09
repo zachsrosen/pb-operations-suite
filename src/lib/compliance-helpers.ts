@@ -321,12 +321,22 @@ export function filterAssignedUsersByTeam(
 
 /**
  * Compute a letter grade from a compliance score.
+ *
+ * Score formula (see compliance-compute.ts):
+ *   0.5 * onTime% + 0.3 * (1 - stuckRate) * 100 + 0.2 * (1 - neverStartedRate) * 100
+ *
+ * Thresholds:
+ *   A  ≥ 90
+ *   B  80 – 89.99
+ *   C  70 – 79.99
+ *   D  60 – 69.99
+ *   F  < 60
  */
 export function computeGrade(score: number): string {
   if (score >= 90) return "A";
-  if (score >= 75) return "B";
-  if (score >= 60) return "C";
-  if (score >= 45) return "D";
+  if (score >= 80) return "B";
+  if (score >= 70) return "C";
+  if (score >= 60) return "D";
   return "F";
 }
 

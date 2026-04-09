@@ -96,7 +96,7 @@ export default function PipelineSection({ data }: PipelineSectionProps) {
           <div className="text-xs font-semibold text-slate-400 tracking-wider mb-2">
             ACTIVE PROJECTS
           </div>
-          <DealList deals={data.deals} totalCount={data.totalCount} showAssigned={false} />
+          <DealList deals={data.deals} showAssigned={false} />
         </div>
       </div>
 

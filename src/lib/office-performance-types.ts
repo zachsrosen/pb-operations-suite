@@ -38,7 +38,10 @@ export interface EmployeeCompliance {
   neverStartedCount: number;
   avgDaysToComplete: number;
   avgDaysLate: number;
-  oowOnTimePercent: number; // On Our Way on-time %, -1 if no data
+  /** % of completed jobs where the tech used the On Our Way status (customer notification). -1 if no completed jobs. */
+  oowUsagePercent: number;
+  /** Of the jobs where OOW was used, % that were on-time relative to scheduled start. -1 if never used. */
+  oowOnTimePercent: number;
   statusUsagePercent: number;
   complianceScore: number;
   grade: string;            // A-F
@@ -53,7 +56,10 @@ export interface SectionCompliance {
   neverStartedCount: number;
   avgDaysToComplete: number;
   avgDaysLate: number;
-  oowOnTimePercent: number; // -1 if no data
+  /** % of completed jobs where OOW status was used (customer notification). -1 if no completed jobs. */
+  oowUsagePercent: number;
+  /** Of the jobs where OOW was used, % that were on-time relative to scheduled start. -1 if never used. */
+  oowOnTimePercent: number;
   byEmployee: EmployeeCompliance[];
 }
 
