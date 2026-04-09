@@ -451,62 +451,102 @@ async function buildTeamResultsData(
     .sort((a, b) => b.amount - a.amount)
     .slice(0, 5);
 
-  // Build deal property map for crew attribution
-  const dealEquipmentMap = new Map<string, { kw: number; batteries: number }>();
-  for (const p of completedYtd) {
-    if (p.id) {
-      dealEquipmentMap.set(String(p.id), {
-        kw: p.systemSizeKwdc || 0,
-        batteries: p.batteryCount || 0,
-      });
-    }
-  }
-
-  // Crew breakdown from ZuperJobCache — YTD completed jobs
+  // Crew breakdown — use HubSpot date properties to determine what was completed
+  // this year, then look up Zuper jobs by deal ID to find who was assigned.
   const crewMap = new Map<string, CrewMemberStats>();
 
-  if (prisma) {
-    const categories = ["Site Survey", "Construction", "Inspection"];
-    for (const category of categories) {
-      const jobs = await getZuperJobsByLocation(
-        location, category, yearStart, now, locationDealIds
-      );
+  // Categorize deals by which HubSpot dates fall in this year
+  const surveyedYtd = locationProjects.filter((p) => {
+    const d = p.siteSurveyCompletionDate ? new Date(p.siteSurveyCompletionDate) : null;
+    return d && d >= yearStart && d <= now;
+  });
+  const installedYtd = completedYtd; // already filtered by constructionCompleteDate
+  const inspectedYtd = locationProjects.filter((p) => {
+    const d = p.inspectionPassDate ? new Date(p.inspectionPassDate) : null;
+    return d && d >= yearStart && d <= now;
+  });
 
-      for (const job of jobs) {
-        const users = extractAssignedUsers(job.assignedUsers);
-        for (const user of users) {
+  if (prisma) {
+    // Collect all deal IDs that had any activity this year
+    const ytdDealIds = new Set<string>();
+    for (const p of [...surveyedYtd, ...installedYtd, ...inspectedYtd]) {
+      if (p.id) ytdDealIds.add(String(p.id));
+    }
+
+    // Batch-fetch all Zuper jobs for these deals (any category, no date filter)
+    const allJobs = ytdDealIds.size > 0
+      ? await prisma.zuperJobCache.findMany({
+          where: {
+            hubspotDealId: { in: [...ytdDealIds] },
+            jobCategory: { in: ["Site Survey", "Construction", "Inspection"] },
+          },
+          select: {
+            jobCategory: true,
+            assignedUsers: true,
+            hubspotDealId: true,
+          },
+        })
+      : [];
+
+    // Index jobs by dealId + category for fast lookup
+    const jobsByDealCategory = new Map<string, Array<{ assignedUsers: unknown }>>();
+    for (const job of allJobs) {
+      const key = `${job.hubspotDealId}:${job.jobCategory}`;
+      if (!jobsByDealCategory.has(key)) jobsByDealCategory.set(key, []);
+      jobsByDealCategory.get(key)!.push(job);
+    }
+
+    // Helper to attribute a deal's work to crew members
+    const attributeWork = (
+      deals: ProjectForMetrics[],
+      category: "Site Survey" | "Construction" | "Inspection",
+      updateFn: (stats: CrewMemberStats, userCount: number, deal: ProjectForMetrics) => void
+    ) => {
+      for (const deal of deals) {
+        if (!deal.id) continue;
+        const key = `${deal.id}:${category}`;
+        const jobs = jobsByDealCategory.get(key) || [];
+        // Collect all unique users across jobs for this deal+category
+        const seenUids = new Set<string>();
+        const allUsers: Array<{ user_uid: string; user_name: string }> = [];
+        for (const job of jobs) {
+          for (const u of extractAssignedUsers(job.assignedUsers)) {
+            if (!seenUids.has(u.user_uid)) {
+              seenUids.add(u.user_uid);
+              allUsers.push(u);
+            }
+          }
+        }
+        const userCount = allUsers.length || 1;
+        for (const user of allUsers) {
           if (!crewMap.has(user.user_uid)) {
             crewMap.set(user.user_uid, {
               name: user.user_name,
-              surveys: 0,
-              installs: 0,
-              inspections: 0,
-              kwInstalled: 0,
-              batteriesInstalled: 0,
+              surveys: 0, installs: 0, inspections: 0,
+              kwInstalled: 0, batteriesInstalled: 0,
             });
           }
-          const stats = crewMap.get(user.user_uid)!;
-
-          if (category === "Site Survey") {
-            stats.surveys++;
-          } else if (category === "Construction") {
-            stats.installs++;
-            // Attribute deal's kW and batteries to this installer
-            if (job.hubspotDealId) {
-              const equip = dealEquipmentMap.get(job.hubspotDealId);
-              if (equip) {
-                // Split evenly among assigned users
-                const userCount = users.length || 1;
-                stats.kwInstalled += equip.kw / userCount;
-                stats.batteriesInstalled += equip.batteries / userCount;
-              }
-            }
-          } else if (category === "Inspection") {
-            stats.inspections++;
-          }
+          updateFn(crewMap.get(user.user_uid)!, userCount, deal);
         }
       }
-    }
+    };
+
+    // Surveys: count per person
+    attributeWork(surveyedYtd, "Site Survey", (stats) => {
+      stats.surveys++;
+    });
+
+    // Installs: count + kW/batteries split among crew
+    attributeWork(installedYtd, "Construction", (stats, userCount, deal) => {
+      stats.installs++;
+      stats.kwInstalled += (deal.systemSizeKwdc || 0) / userCount;
+      stats.batteriesInstalled += (deal.batteryCount || 0) / userCount;
+    });
+
+    // Inspections: count per person
+    attributeWork(inspectedYtd, "Inspection", (stats) => {
+      stats.inspections++;
+    });
   }
 
   // Sort by total activity, cap at 8
@@ -691,20 +731,33 @@ export async function getZuperJobsByLocation(
 ): Promise<CachedJob[]> {
   if (!prisma) return [];
 
+  // Terminal statuses that indicate a job is done, even if completedDate wasn't
+  // set by older sync runs (before the fix to recognize Passed/Failed).
+  const TERMINAL_STATUSES = [
+    "Completed", "Construction Complete", "Passed", "Partial Pass", "Failed",
+  ];
+
   // When locationDealIds is provided, filter directly by dealId set
   // instead of joining against HubSpotProjectCache (which may be empty).
-  const whereClause: Record<string, unknown> = {
-    jobCategory: category,
-    completedDate: { gte: fromDate, lte: toDate },
-    hubspotDealId: { not: null },
-  };
+  const dealFilter = locationDealIds && locationDealIds.size > 0
+    ? { in: [...locationDealIds] }
+    : { not: null as unknown as string };
 
-  if (locationDealIds && locationDealIds.size > 0) {
-    whereClause.hubspotDealId = { in: [...locationDealIds] };
-  }
-
+  // Match jobs with completedDate in range OR terminal-status jobs with
+  // scheduledStart in range (fallback for cached jobs missing completedDate).
   const jobs = await prisma.zuperJobCache.findMany({
-    where: whereClause,
+    where: {
+      jobCategory: category,
+      hubspotDealId: dealFilter,
+      OR: [
+        { completedDate: { gte: fromDate, lte: toDate } },
+        {
+          jobStatus: { in: TERMINAL_STATUSES },
+          completedDate: null,
+          scheduledStart: { gte: fromDate, lte: toDate },
+        },
+      ],
+    },
     select: {
       jobUid: true,
       jobCategory: true,

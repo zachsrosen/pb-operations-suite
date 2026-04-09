@@ -138,7 +138,13 @@ export async function syncZuperServiceJobs(): Promise<{ synced: number; errors: 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const jobAny = job as any;
         let completedDate: Date | undefined;
-        if (status.toUpperCase().includes("COMPLETED")) {
+        const statusUpper = status.toUpperCase();
+        const isTerminal = statusUpper.includes("COMPLETED") ||
+          statusUpper.includes("COMPLETE") ||
+          statusUpper === "PASSED" ||
+          statusUpper === "PARTIAL PASS" ||
+          statusUpper === "FAILED";
+        if (isTerminal) {
           const rawCompleted =
             jobAny.completed_time ??
             jobAny.completed_at ??

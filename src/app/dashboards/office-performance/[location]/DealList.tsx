@@ -53,7 +53,7 @@ export default function DealList({ deals, totalCount, showAssigned = true }: Dea
               >
                 <td className="py-0.5 pr-2">
                   <div
-                    className="truncate max-w-[280px] text-slate-200 font-medium"
+                    className="text-slate-200 font-medium"
                     style={{
                       borderLeft: deal.overdue ? "3px solid rgba(239,68,68,0.6)" : "3px solid transparent",
                       paddingLeft: "8px",
@@ -72,7 +72,7 @@ export default function DealList({ deals, totalCount, showAssigned = true }: Dea
                   )}
                 </td>
                 {showAssigned && (
-                  <td className="py-0.5 text-slate-400 truncate max-w-[200px]">
+                  <td className="py-0.5 text-slate-400">
                     {deal.assignedUsers && deal.assignedUsers.length > 0
                       ? deal.assignedUsers.join(", ")
                       : "—"}
