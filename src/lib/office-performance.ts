@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { fetchAllProjects } from "@/lib/hubspot";
 import { normalizeLocation } from "@/lib/locations";
+import { handleLookup } from "@/app/api/zuper/jobs/lookup/route";
 import type {
   OfficePerformanceData,
   PipelineData,
@@ -228,14 +229,9 @@ export function buildDealRows(
       daysOverdue = Math.floor((now.getTime() - earliestOverdueDate.getTime()) / (24 * 60 * 60 * 1000));
     }
 
-    // Assigned user: prefer HubSpot properties (always available),
-    // fall back to Zuper cache (requires deal linkage which may be missing).
+    // Assigned user: resolved via Zuper 4-pass lookup (same as schedulers)
     let assignedUser: string | undefined;
-    if (category === "Site Survey" && p.siteSurveyor && p.siteSurveyor !== "Unassigned") {
-      assignedUser = p.siteSurveyor;
-    } else if (category === "Construction" && p.installCrew && p.installCrew !== "Unassigned") {
-      assignedUser = p.installCrew;
-    } else if (assignedUserMap && category && p.id) {
+    if (assignedUserMap && category && p.id) {
       assignedUser = assignedUserMap.get(String(p.id))?.get(category);
     }
 
@@ -462,48 +458,51 @@ export async function getZuperJobsByLocation(
 }
 
 /**
- * Batch-fetch the primary assigned user per (dealId, category) from ZuperJobCache.
+ * Resolve assigned users via the same 4-pass Zuper lookup the schedulers use:
+ * DB cache → custom field deal ID → tags → fuzzy name match.
  * Returns Map<dealId, Map<category, userName>>.
- * Picks the most relevant job per group: active (no completedDate) over completed,
- * latest scheduledStart first, latest completedDate as tiebreak.
  */
-export async function batchZuperAssignedUsers(
-  dealIds: string[]
+export async function resolveZuperAssignedUsers(
+  dealIds: string[],
+  dealNameMap: Map<string, string>
 ): Promise<Map<string, Map<string, string>>> {
   const result = new Map<string, Map<string, string>>();
-  if (!prisma || dealIds.length === 0) return result;
+  if (dealIds.length === 0) return result;
 
-  const jobs = await prisma.zuperJobCache.findMany({
-    where: { hubspotDealId: { in: dealIds } },
-    select: {
-      hubspotDealId: true,
-      jobCategory: true,
-      assignedUsers: true,
-      scheduledStart: true,
-      completedDate: true,
-    },
-    orderBy: [
-      { scheduledStart: { sort: "desc", nulls: "last" } },
-      { completedDate: { sort: "desc", nulls: "first" } },
-    ],
-  });
+  const projectNames = dealIds.map((id) => dealNameMap.get(id) || "");
 
-  // Group by (dealId, category) — pick first (best) job per group
-  const seen = new Set<string>();
+  // Look up all three categories in parallel using the scheduler's handleLookup
+  const categories = ["site-survey", "construction", "inspection"] as const;
+  const displayNames = ["Site Survey", "Construction", "Inspection"] as const;
 
-  for (const job of jobs) {
-    if (!job.hubspotDealId) continue;
-    const key = `${job.hubspotDealId}::${job.jobCategory}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
+  const responses = await Promise.all(
+    categories.map((cat) =>
+      handleLookup(dealIds, projectNames, cat).catch((err) => {
+        console.warn(`[office-performance] Zuper lookup for ${cat} failed:`, err);
+        return null;
+      })
+    )
+  );
 
-    const users = extractAssignedUsers(job.assignedUsers);
-    if (users.length === 0) continue;
+  for (let i = 0; i < categories.length; i++) {
+    const resp = responses[i];
+    if (!resp) continue;
 
-    if (!result.has(job.hubspotDealId)) {
-      result.set(job.hubspotDealId, new Map());
+    let data: { jobs?: Record<string, { assignedTo?: string[] }> };
+    try {
+      data = await resp.json();
+    } catch {
+      continue;
     }
-    result.get(job.hubspotDealId)!.set(job.jobCategory, users[0].user_name);
+    if (!data?.jobs) continue;
+
+    const displayName = displayNames[i];
+    for (const [dealId, jobInfo] of Object.entries(data.jobs)) {
+      if (jobInfo.assignedTo && jobInfo.assignedTo.length > 0) {
+        if (!result.has(dealId)) result.set(dealId, new Map());
+        result.get(dealId)!.set(displayName, jobInfo.assignedTo[0]);
+      }
+    }
   }
 
   return result;
@@ -1164,8 +1163,8 @@ export async function getOfficePerformanceData(
       .map((p: ProjectForMetrics) => [String(p.id), p.name!])
   );
 
-  // Batch-fetch Zuper assigned users for deal rows
-  const assignedUserMap = await batchZuperAssignedUsers(dealIds);
+  // Resolve assigned users via Zuper 4-pass lookup (same as schedulers)
+  const assignedUserMap = await resolveZuperAssignedUsers(dealIds, dealNameMap);
 
   // Build pipeline data
   const pipeline = buildPipelineData(locationProjects, goals, now);
