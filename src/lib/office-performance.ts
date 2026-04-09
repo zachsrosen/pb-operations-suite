@@ -171,9 +171,12 @@ interface ProjectForMetrics {
   isFirstTimeInspectionPass?: boolean;
   hasInspectionFailed?: boolean;
   inspectionScheduleDate?: string | null;
+  siteSurveyScheduleDate?: string | null;
   projectManager?: string | null;
   dealOwner?: string | null;
   designLead?: string | null;
+  installCrew?: string | null;
+  hasInspectionFailedNotRejected?: boolean;
 }
 
 // ---------- Deal Drill-Down ----------
@@ -225,9 +228,14 @@ export function buildDealRows(
       daysOverdue = Math.floor((now.getTime() - earliestOverdueDate.getTime()) / (24 * 60 * 60 * 1000));
     }
 
-    // Assigned user from pre-built map (dealId → category → userName)
+    // Assigned user: prefer HubSpot properties (always available),
+    // fall back to Zuper cache (requires deal linkage which may be missing).
     let assignedUser: string | undefined;
-    if (assignedUserMap && category && p.id) {
+    if (category === "Site Survey" && p.siteSurveyor && p.siteSurveyor !== "Unassigned") {
+      assignedUser = p.siteSurveyor;
+    } else if (category === "Construction" && p.installCrew && p.installCrew !== "Unassigned") {
+      assignedUser = p.installCrew;
+    } else if (assignedUserMap && category && p.id) {
       assignedUser = assignedUserMap.get(String(p.id))?.get(category);
     }
 
@@ -594,6 +602,40 @@ async function getMonthlyJobHistory(
   return history;
 }
 
+// ---------- Scheduled This Week (HubSpot properties) ----------
+
+/**
+ * Count projects scheduled this week using HubSpot date properties.
+ * More reliable than ZuperJobCache which requires deal linkage.
+ */
+function countScheduledThisWeek(
+  projects: ProjectForMetrics[],
+  category: string,
+  now: Date
+): number {
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekEnd = new Date(startOfToday.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+  return projects.filter((p) => {
+    let scheduleDate: string | null | undefined;
+    if (category === "Site Survey") scheduleDate = p.siteSurveyScheduleDate;
+    else if (category === "Construction") scheduleDate = p.constructionScheduleDate;
+    else if (category === "Inspection") scheduleDate = p.inspectionScheduleDate;
+    if (!scheduleDate) return false;
+
+    const d = new Date(scheduleDate);
+    // Scheduled in this week AND not already completed for this category
+    if (d < startOfToday || d > weekEnd) return false;
+
+    // Exclude if the milestone is already done
+    if (category === "Site Survey" && p.siteSurveyCompletionDate) return false;
+    if (category === "Construction" && p.constructionCompleteDate) return false;
+    if (category === "Inspection" && p.inspectionPassDate) return false;
+
+    return true;
+  }).length;
+}
+
 // ---------- Survey Section ----------
 
 export async function buildSurveyData(
@@ -630,8 +672,8 @@ export async function buildSurveyData(
     }
   }
 
-  // Scheduled this week
-  const scheduledThisWeek = await getScheduledJobsThisWeek(location, "Site Survey", now, locationDealIds);
+  // Scheduled this week — from HubSpot schedule date (source of truth)
+  const scheduledThisWeek = countScheduledThisWeek(locationProjects || [], "Site Survey", now);
 
   const surveyHistory = await getMonthlyJobHistory(location, "Site Survey", now, 3, locationDealIds);
 
@@ -752,7 +794,8 @@ export async function buildInstallData(
     }
   }
 
-  const scheduledThisWeek = await getScheduledJobsThisWeek(location, "Construction", now, locationDealIds);
+  // Scheduled this week — from HubSpot construction_schedule_date (source of truth)
+  const scheduledThisWeek = countScheduledThisWeek(locationProjects || [], "Construction", now);
 
   const constructionHistory = await getMonthlyJobHistory(location, "Construction", now, 3, locationDealIds);
 
@@ -976,11 +1019,20 @@ async function enrichWithQcMetrics(
     inspections.avgCcToPtoDays = avgCcToInspection(recentProjects);
     inspections.avgCcToPtoDaysPrior = avgCcToInspection(priorProjects);
 
-    // First-pass inspection rate — denominator includes ALL inspected projects
-    // (passed OR failed), not just passed, to avoid inflating the rate.
-    const withInspection = recentProjects.filter(
-      (p: ProjectForMetrics) => p.inspectionPassDate || p.hasInspectionFailed
-    );
+    // First-pass inspection rate — uses ALL location projects (not just
+    // recentProjects which filters by constructionCompleteDate). This ensures
+    // projects that failed inspection and haven't re-passed are included in
+    // the denominator even if their construction completed long ago.
+    const withInspection = locProjects.filter((p: ProjectForMetrics) => {
+      // Include if inspection passed OR failed within the 60-day window
+      const passDate = p.inspectionPassDate ? new Date(p.inspectionPassDate) : null;
+      const schedDate = p.inspectionScheduleDate ? new Date(p.inspectionScheduleDate) : null;
+      const relevantDate = passDate || schedDate;
+      if (relevantDate && relevantDate >= sixtyDaysAgo) return true;
+      // Also include projects currently stuck with a failed inspection (no pass date)
+      if (p.hasInspectionFailed && !p.inspectionPassDate) return true;
+      return false;
+    });
     if (withInspection.length > 0) {
       const firstTimePasses = withInspection.filter(
         (p: ProjectForMetrics) => p.isFirstTimeInspectionPass

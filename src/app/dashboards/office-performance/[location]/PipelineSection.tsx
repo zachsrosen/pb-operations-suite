@@ -1,7 +1,6 @@
 "use client";
 
 import type { PipelineData } from "@/lib/office-performance-types";
-import GoalProgress from "./GoalProgress";
 import CountUp from "./CountUp";
 import AnimatedBar from "./AnimatedBar";
 import DealList from "./DealList";
@@ -38,13 +37,12 @@ export default function PipelineSection({ data }: PipelineSectionProps) {
           <div className="text-sm text-slate-400 mt-2">Active Projects</div>
         </div>
 
-        <div className="bg-white/[0.04] rounded-2xl p-5 flex items-center justify-center border border-white/5">
-          <GoalProgress
-            current={data.completedMtd}
-            goal={data.completedGoal}
-            label="Done This Month"
-            accentColor="#22c55e"
+        <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
+          <CountUp
+            value={data.completedMtd}
+            className="text-[64px] font-extrabold text-green-400 leading-none"
           />
+          <div className="text-sm text-slate-400 mt-2">Done This Month</div>
         </div>
 
         <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
@@ -66,7 +64,7 @@ export default function PipelineSection({ data }: PipelineSectionProps) {
           <div className="text-sm text-slate-400 mt-2">Avg Days in Stage</div>
           {avgTrend !== 0 && (
             <div className={`text-xs mt-1.5 ${trendImproving ? "text-green-400" : "text-red-400"}`}>
-              {trendImproving ? "▼" : "▲"} {Math.abs(avgTrend).toFixed(1)}d vs prior
+              {trendImproving ? "▼" : "▲"} {Math.abs(avgTrend).toFixed(1)}d vs prior 60d
             </div>
           )}
         </div>

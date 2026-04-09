@@ -1,7 +1,6 @@
 "use client";
 
 import type { InstallData } from "@/lib/office-performance-types";
-import GoalProgress from "./GoalProgress";
 import CountUp from "./CountUp";
 import Leaderboard from "./Leaderboard";
 import DealList from "./DealList";
@@ -21,13 +20,12 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
     <div className="flex flex-col h-full px-8 py-5">
       {/* Top metrics */}
       <div className="grid grid-cols-4 gap-5 mb-6">
-        <div className="bg-white/[0.04] rounded-2xl p-5 flex items-center justify-center border border-white/5">
-          <GoalProgress
-            current={data.completedMtd}
-            goal={data.completedGoal}
-            label="Done This Month"
-            accentColor="#22c55e"
+        <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
+          <CountUp
+            value={data.completedMtd}
+            className="text-[64px] font-extrabold text-green-400 leading-none"
           />
+          <div className="text-sm text-slate-400 mt-2">Done This Month</div>
         </div>
 
         <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
@@ -40,7 +38,7 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
           <div className="text-sm text-slate-400 mt-2">Avg Days per Install</div>
           {daysTrend !== 0 && (
             <div className={`text-xs mt-1.5 ${trendImproving ? "text-green-400" : "text-red-400"}`}>
-              {trendImproving ? "▼" : "▲"} {Math.abs(daysTrend).toFixed(1)}d vs prior
+              {trendImproving ? "▼" : "▲"} {Math.abs(daysTrend).toFixed(1)}d vs prior 60d
             </div>
           )}
         </div>
