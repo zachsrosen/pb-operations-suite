@@ -9,7 +9,7 @@ import {
 } from "@/lib/office-performance-types";
 import AmbientBackground from "./AmbientBackground";
 import CarouselHeader from "./CarouselHeader";
-import PipelineSection from "./PipelineSection";
+import TeamResultsSection from "./TeamResultsSection";
 import SurveysSection from "./SurveysSection";
 import InstallsSection from "./InstallsSection";
 import InspectionsSection from "./InspectionsSection";
@@ -118,8 +118,8 @@ export default function OfficeCarousel({
 
   const renderSection = () => {
     switch (currentSection) {
-      case "pipeline":
-        return <PipelineSection data={data.pipeline} />;
+      case "teamResults":
+        return <TeamResultsSection data={data.teamResults} />;
       case "surveys":
         return <SurveysSection data={data.surveys} />;
       case "installs":

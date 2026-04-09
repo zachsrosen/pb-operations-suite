@@ -122,10 +122,36 @@ export interface InspectionData {
   compliance?: SectionCompliance;
 }
 
+/** Per-crew-member YTD stats for Team Results slide */
+export interface CrewMemberStats {
+  name: string;
+  surveys: number;
+  installs: number;
+  inspections: number;
+  kwInstalled: number;
+  batteriesInstalled: number;
+}
+
+/** Recent completed project for the wins ticker */
+export interface RecentWin {
+  customerName: string;
+  amount: number;
+}
+
+/** Data for the Team Results carousel slide */
+export interface TeamResultsData {
+  homesPowered: number;
+  kwInstalled: number;
+  batteriesInstalled: number;
+  revenueEarned: number;
+  crewBreakdown: CrewMemberStats[];
+  recentWins: RecentWin[];
+}
+
 export interface OfficePerformanceData {
   location: string;
   lastUpdated: string;
-  pipeline: PipelineData;
+  teamResults: TeamResultsData;
   surveys: SurveyData;
   installs: InstallData;
   inspections: InspectionData;
@@ -138,24 +164,24 @@ export type OfficeMetricName =
   | "projects_completed";
 
 /** Carousel section identifiers */
-export type CarouselSection = "pipeline" | "surveys" | "installs" | "inspections";
+export type CarouselSection = "teamResults" | "surveys" | "installs" | "inspections";
 
 export const CAROUSEL_SECTIONS: CarouselSection[] = [
-  "pipeline",
+  "teamResults",
   "surveys",
   "installs",
   "inspections",
 ];
 
 export const SECTION_COLORS: Record<CarouselSection, string> = {
-  pipeline: "#f97316",   // orange
-  surveys: "#3b82f6",    // blue
-  installs: "#22c55e",   // green
+  teamResults: "#f97316", // orange
+  surveys: "#3b82f6",     // blue
+  installs: "#22c55e",    // green
   inspections: "#06b6d4", // cyan
 };
 
 export const SECTION_LABELS: Record<CarouselSection, string> = {
-  pipeline: "PIPELINE OVERVIEW",
+  teamResults: "TEAM RESULTS",
   surveys: "SURVEYS",
   installs: "INSTALLS",
   inspections: "INSPECTIONS & QUALITY",

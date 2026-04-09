@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
-import { fetchAllProjects } from "@/lib/hubspot";
+import { fetchAllProjects, searchWithRetry } from "@/lib/hubspot";
+import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { normalizeLocation } from "@/lib/locations";
 import { handleLookup } from "@/app/api/zuper/jobs/lookup/route";
 import type {
@@ -13,6 +14,9 @@ import type {
   EnrichedPersonStat,
   OfficeMetricName,
   DealRow,
+  TeamResultsData,
+  CrewMemberStats,
+  RecentWin,
 } from "@/lib/office-performance-types";
 import { computeLocationCompliance } from "@/lib/compliance-compute";
 
@@ -178,6 +182,8 @@ interface ProjectForMetrics {
   designLead?: string | null;
   installCrew?: string | null;
   hasInspectionFailedNotRejected?: boolean;
+  systemSizeKwdc?: number;
+  batteryCount?: number;  // battery.count + battery.expansionCount
 }
 
 // ---------- Deal Drill-Down ----------
@@ -256,6 +262,267 @@ export function buildDealRows(
   return {
     deals: rows.slice(0, DEAL_LIST_CAP),
     totalCount: rows.length,
+  };
+}
+
+// ---------- Completed Projects Fetch ----------
+
+// Properties needed for ProjectForMetrics from completed deals
+const COMPLETED_DEAL_PROPERTIES = [
+  "hs_object_id",
+  "dealname",
+  "amount",
+  "dealstage",
+  "pb_location",
+  "construction_complete_date",
+  "site_survey_date",
+  "inspections_completion_date",
+  "site_survey_schedule_date",
+  "install_schedule_date",
+  "inspections_schedule_date",
+  "pto_completion_date",
+  "closedate",
+  "forecasted_installation_date",
+  "forecasted_inspection_date",
+  "forecasted_pto_date",
+  "hs_v2_date_entered_current_stage",
+  "site_survey_turnaround_time",
+  "construction_turnaround_time",
+  "time_between_cc___pto",
+  "first_time_inspection_pass_",
+  "has_inspection_failed_",
+  "has_inspection_failed__not_rejected__",
+  "calculated_system_size__kwdc_",
+  "battery_count",
+  "battery_expansion_count",
+  "site_surveyor",
+  "project_manager",
+  "hubspot_owner_id",
+  "design",
+  "install_crew",
+];
+
+const PROJECT_COMPLETE_STAGE_ID = "20440343";
+const PROJECT_PIPELINE_ID = "6900017";
+
+/**
+ * Fetch Project Complete deals with construction_complete_date in the given year.
+ * Returns lightweight ProjectForMetrics objects, not full Project objects.
+ * This supplements the activeOnly fetch for sections that need completed-deal data.
+ */
+async function fetchCompletedProjects(year: number): Promise<ProjectForMetrics[]> {
+  const yearStartMs = String(new Date(`${year}-01-01T00:00:00Z`).getTime());
+
+  const allDeals: Record<string, unknown>[] = [];
+  const seenIds = new Set<string>();
+  let after: string | undefined;
+  let hasMore = true;
+
+  while (hasMore) {
+    const response = await searchWithRetry({
+      filterGroups: [
+        {
+          filters: [
+            { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: PROJECT_PIPELINE_ID },
+            { propertyName: "dealstage", operator: FilterOperatorEnum.Eq, value: PROJECT_COMPLETE_STAGE_ID },
+            { propertyName: "construction_complete_date", operator: FilterOperatorEnum.Gte, value: yearStartMs },
+          ],
+        },
+      ],
+      properties: COMPLETED_DEAL_PROPERTIES,
+      limit: 100,
+      ...(after ? { after } : {}),
+    });
+
+    const results = response.results ?? [];
+    for (const result of results) {
+      const id = String(result.properties.hs_object_id || "");
+      if (id && !seenIds.has(id)) {
+        seenIds.add(id);
+        allDeals.push(result.properties as Record<string, unknown>);
+      }
+    }
+
+    const nextAfter = response.paging?.next?.after;
+    if (nextAfter && results.length > 0) {
+      after = nextAfter;
+    } else {
+      hasMore = false;
+    }
+  }
+
+  console.log(`[office-performance] Fetched ${allDeals.length} Project Complete deals for ${year}`);
+
+  // Map raw HubSpot properties to ProjectForMetrics
+  return allDeals.map((d) => {
+    const num = (v: unknown) => (v ? Number(v) : undefined);
+    const str = (v: unknown) => (v ? String(v) : null);
+    const days = (v: unknown) => {
+      if (!v) return undefined;
+      const n = Number(v);
+      return isNaN(n) ? undefined : Math.round(n / 86400000); // ms to days
+    };
+    const batteryCount = (num(d.battery_count) || 0) + (num(d.battery_expansion_count) || 0);
+
+    return {
+      id: num(d.hs_object_id),
+      name: str(d.dealname) || undefined,
+      pbLocation: str(d.pb_location),
+      stage: "Project Complete",
+      amount: num(d.amount),
+      constructionCompleteDate: str(d.construction_complete_date),
+      siteSurveyCompletionDate: str(d.site_survey_date),
+      inspectionPassDate: str(d.inspections_completion_date),
+      siteSurveyScheduleDate: str(d.site_survey_schedule_date),
+      constructionScheduleDate: str(d.install_schedule_date),
+      inspectionScheduleDate: str(d.inspections_schedule_date),
+      ptoGrantedDate: str(d.pto_completion_date),
+      closeDate: str(d.closedate),
+      forecastedInstallDate: str(d.forecasted_installation_date),
+      forecastedInspectionDate: str(d.forecasted_inspection_date),
+      forecastedPtoDate: str(d.forecasted_pto_date),
+      daysSinceStageMovement: days(d.hs_v2_date_entered_current_stage),
+      siteSurveyTurnaroundTime: num(d.site_survey_turnaround_time),
+      constructionTurnaroundTime: num(d.construction_turnaround_time),
+      timeCcToPto: num(d.time_between_cc___pto),
+      isFirstTimeInspectionPass: d.first_time_inspection_pass_ === "true" || d.first_time_inspection_pass_ === true,
+      hasInspectionFailed: d.has_inspection_failed_ === "true" || d.has_inspection_failed_ === true,
+      hasInspectionFailedNotRejected: d.has_inspection_failed__not_rejected__ === "true" || d.has_inspection_failed__not_rejected__ === true,
+      systemSizeKwdc: num(d.calculated_system_size__kwdc_) || 0,
+      batteryCount: batteryCount || 0,
+      siteSurveyor: str(d.site_surveyor),
+      projectManager: str(d.project_manager),
+      dealOwner: str(d.hubspot_owner_id),
+      designLead: str(d.design),
+      installCrew: str(d.install_crew),
+    } as ProjectForMetrics;
+  });
+}
+
+// ---------- Team Results Section ----------
+
+async function buildTeamResultsData(
+  location: string,
+  now: Date,
+  locationProjects: ProjectForMetrics[],
+  locationDealIds: Set<string>
+): Promise<TeamResultsData> {
+  const yearStart = new Date(now.getFullYear(), 0, 1);
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  // YTD impact: deals with construction_complete_date in current year
+  const completedYtd = locationProjects.filter((p) => {
+    const d = p.constructionCompleteDate ? new Date(p.constructionCompleteDate) : null;
+    return d && d >= yearStart && d <= now;
+  });
+
+  const homesPowered = completedYtd.length;
+  const kwInstalled = Math.round(
+    completedYtd.reduce((sum, p) => sum + (p.systemSizeKwdc || 0), 0) * 10
+  ) / 10;
+  const batteriesInstalled = completedYtd.reduce(
+    (sum, p) => sum + (p.batteryCount || 0), 0
+  );
+
+  // Revenue: sum of deal amount for construction-completed deals this year
+  const revenueEarned = completedYtd.reduce(
+    (sum, p) => sum + (p.amount || 0), 0
+  );
+
+  // Recent wins: construction completed in last 7 days
+  const recentWins: RecentWin[] = completedYtd
+    .filter((p) => {
+      const d = new Date(p.constructionCompleteDate!);
+      return d >= weekAgo;
+    })
+    .map((p) => {
+      // Extract customer last name from deal name: "PROJ-XXXX | LastName, FirstName | Address"
+      const parts = (p.name || "").split("|").map((s) => s.trim());
+      const namePart = parts[1] || parts[0] || "Unknown";
+      const lastName = namePart.split(",")[0].trim();
+      return { customerName: lastName, amount: p.amount || 0 };
+    })
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, 5);
+
+  // Build deal property map for crew attribution
+  const dealEquipmentMap = new Map<string, { kw: number; batteries: number }>();
+  for (const p of completedYtd) {
+    if (p.id) {
+      dealEquipmentMap.set(String(p.id), {
+        kw: p.systemSizeKwdc || 0,
+        batteries: p.batteryCount || 0,
+      });
+    }
+  }
+
+  // Crew breakdown from ZuperJobCache — YTD completed jobs
+  const crewMap = new Map<string, CrewMemberStats>();
+
+  if (prisma) {
+    const categories = ["Site Survey", "Construction", "Inspection"];
+    for (const category of categories) {
+      const jobs = await getZuperJobsByLocation(
+        location, category, yearStart, now, locationDealIds
+      );
+
+      for (const job of jobs) {
+        const users = extractAssignedUsers(job.assignedUsers);
+        for (const user of users) {
+          if (!crewMap.has(user.user_uid)) {
+            crewMap.set(user.user_uid, {
+              name: user.user_name,
+              surveys: 0,
+              installs: 0,
+              inspections: 0,
+              kwInstalled: 0,
+              batteriesInstalled: 0,
+            });
+          }
+          const stats = crewMap.get(user.user_uid)!;
+
+          if (category === "Site Survey") {
+            stats.surveys++;
+          } else if (category === "Construction") {
+            stats.installs++;
+            // Attribute deal's kW and batteries to this installer
+            if (job.hubspotDealId) {
+              const equip = dealEquipmentMap.get(job.hubspotDealId);
+              if (equip) {
+                // Split evenly among assigned users
+                const userCount = users.length || 1;
+                stats.kwInstalled += equip.kw / userCount;
+                stats.batteriesInstalled += equip.batteries / userCount;
+              }
+            }
+          } else if (category === "Inspection") {
+            stats.inspections++;
+          }
+        }
+      }
+    }
+  }
+
+  // Sort by total activity, cap at 8
+  const crewBreakdown = [...crewMap.values()]
+    .map((s) => ({
+      ...s,
+      kwInstalled: Math.round(s.kwInstalled * 10) / 10,
+      batteriesInstalled: Math.round(s.batteriesInstalled),
+    }))
+    .sort((a, b) =>
+      (b.surveys + b.installs + b.inspections) -
+      (a.surveys + a.installs + a.inspections)
+    )
+    .slice(0, 8);
+
+  return {
+    homesPowered,
+    kwInstalled,
+    batteriesInstalled,
+    revenueEarned,
+    crewBreakdown,
+    recentWins,
   };
 }
 
@@ -930,7 +1197,7 @@ export async function buildInspectionData(
  */
 async function enrichWithQcMetrics(
   location: string,
-  pipeline: PipelineData,
+  pipeline: PipelineData | null,
   surveys: SurveyData,
   installs: InstallData,
   inspections: InspectionData
@@ -1128,7 +1395,7 @@ async function enrichWithQcMetrics(
     }
 
     // Pipeline: avg days in stage prior period
-    pipeline.avgDaysInStagePrior = avg(priorProjects, "daysSinceStageMovement");
+    if (pipeline) pipeline.avgDaysInStagePrior = avg(priorProjects, "daysSinceStageMovement");
   } catch (err) {
     console.error("[office-performance] QC metrics enrichment failed:", err);
     // Non-fatal — sections will show 0/"--" for turnaround metrics
@@ -1147,17 +1414,43 @@ export async function getOfficePerformanceData(
   // Fetch goals
   const goals = await getGoalsForLocation(location, month, year);
 
-  // Fetch active projects for this location.
-  // Uses activeOnly: true to avoid fetching all historical deals (which causes
-  // HubSpot rate limits and Vercel timeouts). The small coverage gap for
-  // recently-closed deals is acceptable — compliance mostly cares about
-  // active jobs on active deals.
-  const allProjects = await fetchAllProjects({ activeOnly: true });
-  const locationProjects = (allProjects || []).filter(
+  // Fetch active projects + completed projects for this location.
+  // Active-only fetch avoids HubSpot rate limits / Vercel timeouts (~700 vs ~6,500 deals).
+  // Supplementary fetch adds Project Complete deals with construction_complete_date this
+  // year so all sections correctly count completed work (surveys, installs, inspections,
+  // team results) even after a deal reaches Project Complete stage.
+  const [activeProjects, completedProjects] = await Promise.all([
+    fetchAllProjects({ activeOnly: true }),
+    fetchCompletedProjects(year),
+  ]);
+
+  // Merge active + completed, deduplicate by ID
+  const seenDealIds = new Set<number>();
+  const allProjects: ProjectForMetrics[] = [];
+  for (const p of (activeProjects || []) as ProjectForMetrics[]) {
+    if (p.id && !seenDealIds.has(p.id)) {
+      seenDealIds.add(p.id);
+      // Enrich with equipment data for team results
+      const proj = p as ProjectForMetrics & { equipment?: { systemSizeKwdc?: number; battery?: { count?: number; expansionCount?: number } } };
+      if (proj.equipment) {
+        p.systemSizeKwdc = proj.equipment.systemSizeKwdc || 0;
+        p.batteryCount = (proj.equipment.battery?.count || 0) + (proj.equipment.battery?.expansionCount || 0);
+      }
+      allProjects.push(p);
+    }
+  }
+  for (const p of completedProjects) {
+    if (p.id && !seenDealIds.has(p.id)) {
+      seenDealIds.add(p.id);
+      allProjects.push(p);
+    }
+  }
+
+  const locationProjects = allProjects.filter(
     (p: ProjectForMetrics) => normalizeLocation(p.pbLocation) === location
   );
 
-  // Build dealId sets and maps from active location projects.
+  // Build dealId sets and maps from all location projects.
   // This avoids joining against HubSpotProjectCache (which may be empty).
   const dealIds = locationProjects.filter((p: ProjectForMetrics) => p.id).map((p: ProjectForMetrics) => String(p.id));
   const locationDealIds = new Set(dealIds);
@@ -1170,11 +1463,9 @@ export async function getOfficePerformanceData(
   // Resolve assigned users via Zuper 4-pass lookup (same as schedulers)
   const assignedUserMap = await resolveZuperAssignedUsers(dealIds, dealNameMap);
 
-  // Build pipeline data
-  const pipeline = buildPipelineData(locationProjects, goals, now);
-
-  // Build section data in parallel
-  const [surveys, installs, inspections] = await Promise.all([
+  // Build all section data in parallel (team results replaces pipeline)
+  const [teamResults, surveys, installs, inspections] = await Promise.all([
+    buildTeamResultsData(location, now, locationProjects, locationDealIds),
     buildSurveyData(location, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
     buildInstallData(location, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
     buildInspectionData(location, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
@@ -1182,7 +1473,7 @@ export async function getOfficePerformanceData(
 
   // Enrich with QC metrics and live Zuper compliance in parallel
   const [, surveyCompliance, installCompliance, inspectionCompliance] = await Promise.all([
-    enrichWithQcMetrics(location, pipeline, surveys, installs, inspections),
+    enrichWithQcMetrics(location, null, surveys, installs, inspections),
     computeLocationCompliance("Site Survey", location).catch((err) => {
       console.warn("[office-performance] Survey compliance fetch failed:", err);
       return null;
@@ -1238,36 +1529,10 @@ export async function getOfficePerformanceData(
     };
   }
 
-  // Individual achievements across sections
-  const achievements: string[] = [];
-
-  for (const entry of surveys.leaderboard) {
-    if (entry.count >= 10) {
-      achievements.push(`📍 ${entry.name.split(" ")[0]} hit ${entry.count} surveys this month!`);
-    }
-  }
-
-  for (const entry of installs.installerLeaderboard) {
-    if (entry.count >= 8) {
-      achievements.push(`⚡ ${entry.name.split(" ")[0]} completed ${entry.count} installs!`);
-    }
-  }
-
-  for (const entry of inspections.leaderboard) {
-    if (entry.passRate >= 95 && entry.count >= 3) {
-      achievements.push(`✅ ${entry.name.split(" ")[0]} — ${entry.passRate}% first-pass rate!`);
-    }
-    if (entry.consecutivePasses && entry.consecutivePasses >= 5) {
-      achievements.push(`🔥 ${entry.name.split(" ")[0]} — ${entry.consecutivePasses} inspections passed in a row!`);
-    }
-  }
-
-  pipeline.recentWins = [...pipeline.recentWins, ...achievements].slice(0, 4);
-
   return {
     location,
     lastUpdated: now.toISOString(),
-    pipeline,
+    teamResults,
     surveys,
     installs,
     inspections,
