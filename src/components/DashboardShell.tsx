@@ -7,6 +7,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { SUITE_ACCENT_COLORS, DEFAULT_SUITE_ACCENT } from "@/lib/suite-accents";
+import LiveClock from "./LiveClock";
 
 
 // Maps dashboard paths to their parent suite
@@ -149,7 +150,6 @@ export default function DashboardShell({
   title,
   subtitle,
   accentColor = "orange",
-  lastUpdated,
   dealId,
   headerRight,
   children,
@@ -258,11 +258,7 @@ export default function DashboardShell({
               </div>
             </div>
             <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
-              {lastUpdated && (
-                <span className="text-xs text-muted hidden sm:inline">
-                  Updated {lastUpdated}
-                </span>
-              )}
+              <LiveClock className="text-xs text-muted hidden sm:inline tabular-nums" />
               {exportData && (
                 <button
                   onClick={handleExport}
