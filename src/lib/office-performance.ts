@@ -306,12 +306,21 @@ const PROJECT_COMPLETE_STAGE_ID = "20440343";
 const PROJECT_PIPELINE_ID = "6900017";
 
 /**
- * Fetch Project Complete deals with construction_complete_date in the given year.
+ * Fetch Project Complete deals with any relevant activity date in the given year.
+ * Uses OR filter groups to catch deals where:
+ *   - construction_complete_date is this year (installs, team results)
+ *   - inspections_completion_date is this year (inspections — construction may be last year)
+ *   - site_survey_date is this year (surveys — deal may have moved fast to Project Complete)
  * Returns lightweight ProjectForMetrics objects, not full Project objects.
- * This supplements the activeOnly fetch for sections that need completed-deal data.
  */
 async function fetchCompletedProjects(year: number): Promise<ProjectForMetrics[]> {
   const yearStartMs = String(new Date(`${year}-01-01T00:00:00Z`).getTime());
+
+  // Base filters shared by all groups: project pipeline + Project Complete stage
+  const baseFilters = [
+    { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: PROJECT_PIPELINE_ID },
+    { propertyName: "dealstage", operator: FilterOperatorEnum.Eq, value: PROJECT_COMPLETE_STAGE_ID },
+  ];
 
   const allDeals: Record<string, unknown>[] = [];
   const seenIds = new Set<string>();
@@ -320,14 +329,11 @@ async function fetchCompletedProjects(year: number): Promise<ProjectForMetrics[]
 
   while (hasMore) {
     const response = await searchWithRetry({
+      // OR groups: any deal in Project Complete with a relevant date this year
       filterGroups: [
-        {
-          filters: [
-            { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: PROJECT_PIPELINE_ID },
-            { propertyName: "dealstage", operator: FilterOperatorEnum.Eq, value: PROJECT_COMPLETE_STAGE_ID },
-            { propertyName: "construction_complete_date", operator: FilterOperatorEnum.Gte, value: yearStartMs },
-          ],
-        },
+        { filters: [...baseFilters, { propertyName: "construction_complete_date", operator: FilterOperatorEnum.Gte, value: yearStartMs }] },
+        { filters: [...baseFilters, { propertyName: "inspections_completion_date", operator: FilterOperatorEnum.Gte, value: yearStartMs }] },
+        { filters: [...baseFilters, { propertyName: "site_survey_date", operator: FilterOperatorEnum.Gte, value: yearStartMs }] },
       ],
       properties: COMPLETED_DEAL_PROPERTIES,
       limit: 100,
