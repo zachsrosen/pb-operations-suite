@@ -140,11 +140,11 @@ function normalizeStage(raw: string): string {
 }
 
 const SURVEY_STAGES = new Set(["Survey"]);
-const INSTALL_STAGES = new Set(["RTB", "Install"]);
+const INSTALL_STAGES = new Set(["Install"]);
 const INSPECTION_STAGES = new Set(["Inspect", "PTO"]);
 
 /** Stages the ops team considers "active" — excludes Design, Permitting, Close Out, PTO, On Hold */
-const OPS_ACTIVE_STAGES = new Set(["Survey", "RTB", "Install", "Inspect"]);
+const OPS_ACTIVE_STAGES = new Set(["Survey", "Install", "Inspect"]);
 
 // ---------- Pipeline Aggregation ----------
 
@@ -194,7 +194,7 @@ const COMPLETED_STATUSES_LIST = [
 export function buildDealRows(
   projects: ProjectForMetrics[],
   now: Date,
-  assignedUserMap?: Map<string, Map<string, string>>,
+  assignedUserMap?: Map<string, Map<string, string[]>>,
   category?: string
 ): { deals: DealRow[]; totalCount: number } {
   const rows: DealRow[] = projects.map((p) => {
@@ -229,10 +229,10 @@ export function buildDealRows(
       daysOverdue = Math.floor((now.getTime() - earliestOverdueDate.getTime()) / (24 * 60 * 60 * 1000));
     }
 
-    // Assigned user: resolved via Zuper 4-pass lookup (same as schedulers)
-    let assignedUser: string | undefined;
+    // Assigned users: resolved via Zuper 4-pass lookup (same as schedulers)
+    let assignedUsers: string[] | undefined;
     if (assignedUserMap && category && p.id) {
-      assignedUser = assignedUserMap.get(String(p.id))?.get(category);
+      assignedUsers = assignedUserMap.get(String(p.id))?.get(category);
     }
 
     return {
@@ -241,7 +241,7 @@ export function buildDealRows(
       daysInStage,
       overdue,
       daysOverdue,
-      assignedUser,
+      assignedUsers,
     };
   });
 
@@ -318,10 +318,14 @@ export function buildPipelineData(
     recentWins.push(`🎉 ${ptosThisWeek} PTO${ptosThisWeek > 1 ? "s" : ""} granted this week`);
   }
 
-  const stageDistribution = ["Survey", "RTB", "Install", "Inspect"]
+  const stageDistribution = ["Survey", "Install", "Inspect"]
     .map((stage) => ({ stage, count: stageCounts[stage] || 0 }));
 
-  const { deals, totalCount } = buildDealRows(projects, now);
+  // Pipeline deals: only show ops-active stages (Survey, RTB/Install, Inspect)
+  const opsProjects = projects.filter(
+    (p) => OPS_ACTIVE_STAGES.has(normalizeStage(p.stage || ""))
+  );
+  const { deals, totalCount } = buildDealRows(opsProjects, now);
 
   // Count only ops-relevant stages (Survey, RTB/Install, Inspect)
   const opsActiveCount = projects.filter(
@@ -465,8 +469,8 @@ export async function getZuperJobsByLocation(
 export async function resolveZuperAssignedUsers(
   dealIds: string[],
   dealNameMap: Map<string, string>
-): Promise<Map<string, Map<string, string>>> {
-  const result = new Map<string, Map<string, string>>();
+): Promise<Map<string, Map<string, string[]>>> {
+  const result = new Map<string, Map<string, string[]>>();
   if (dealIds.length === 0) return result;
 
   const projectNames = dealIds.map((id) => dealNameMap.get(id) || "");
@@ -500,7 +504,7 @@ export async function resolveZuperAssignedUsers(
     for (const [dealId, jobInfo] of Object.entries(data.jobs)) {
       if (jobInfo.assignedTo && jobInfo.assignedTo.length > 0) {
         if (!result.has(dealId)) result.set(dealId, new Map());
-        result.get(dealId)!.set(displayName, jobInfo.assignedTo[0]);
+        result.get(dealId)!.set(displayName, jobInfo.assignedTo);
       }
     }
   }
@@ -642,7 +646,7 @@ export async function buildSurveyData(
   goals: Record<OfficeMetricName, number>,
   now: Date,
   locationProjects?: ProjectForMetrics[],
-  assignedUserMap?: Map<string, Map<string, string>>,
+  assignedUserMap?: Map<string, Map<string, string[]>>,
   locationDealIds?: Set<string>,
   dealNameMap?: Map<string, string>
 ): Promise<SurveyData> {
@@ -706,7 +710,7 @@ export async function buildInstallData(
   goals: Record<OfficeMetricName, number>,
   now: Date,
   locationProjects?: ProjectForMetrics[],
-  assignedUserMap?: Map<string, Map<string, string>>,
+  assignedUserMap?: Map<string, Map<string, string[]>>,
   locationDealIds?: Set<string>,
   dealNameMap?: Map<string, string>
 ): Promise<InstallData> {
@@ -858,7 +862,7 @@ export async function buildInspectionData(
   goals: Record<OfficeMetricName, number>,
   now: Date,
   locationProjects?: ProjectForMetrics[],
-  assignedUserMap?: Map<string, Map<string, string>>,
+  assignedUserMap?: Map<string, Map<string, string[]>>,
   locationDealIds?: Set<string>,
   dealNameMap?: Map<string, string>
 ): Promise<InspectionData> {

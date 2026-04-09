@@ -26,16 +26,16 @@ export default function DealList({ deals, totalCount, showAssigned = true }: Dea
   const remaining = totalCount - deals.length;
 
   return (
-    <div className="rounded-xl border border-white/5 bg-white/[0.02] p-4">
+    <div className="rounded-xl border border-white/5 bg-white/[0.02] px-4 py-2">
       <table className="w-full text-sm">
         <thead>
           <tr className="text-xs text-slate-500 tracking-wider">
-            <th className="text-left pb-2 font-semibold">DEAL</th>
-            <th className="text-left pb-2 font-semibold w-20">STAGE</th>
-            <th className="text-right pb-2 font-semibold w-14">DAYS</th>
-            <th className="text-center pb-2 font-semibold w-8"></th>
+            <th className="text-left pb-1 font-semibold">DEAL</th>
+            <th className="text-left pb-1 font-semibold w-20">STAGE</th>
+            <th className="text-right pb-1 font-semibold w-14">DAYS</th>
+            <th className="text-center pb-1 font-semibold w-6"></th>
             {showAssigned && (
-              <th className="text-left pb-2 font-semibold w-28">ASSIGNED</th>
+              <th className="text-left pb-1 font-semibold w-36">ASSIGNED</th>
             )}
           </tr>
         </thead>
@@ -51,9 +51,9 @@ export default function DealList({ deals, totalCount, showAssigned = true }: Dea
                   transform: isVisible ? "translateX(0)" : "translateX(-12px)",
                 }}
               >
-                <td className="py-1.5 pr-2">
+                <td className="py-0.5 pr-2">
                   <div
-                    className="truncate max-w-[240px] text-slate-200 font-medium"
+                    className="truncate max-w-[280px] text-slate-200 font-medium"
                     style={{
                       borderLeft: deal.overdue ? "3px solid rgba(239,68,68,0.6)" : "3px solid transparent",
                       paddingLeft: "8px",
@@ -62,18 +62,20 @@ export default function DealList({ deals, totalCount, showAssigned = true }: Dea
                     {deal.name}
                   </div>
                 </td>
-                <td className="py-1.5 text-slate-400">{deal.stage}</td>
-                <td className="py-1.5 text-right text-slate-300 font-mono">
+                <td className="py-0.5 text-slate-400">{deal.stage}</td>
+                <td className="py-0.5 text-right text-slate-300 font-mono">
                   {deal.daysInStage}d
                 </td>
-                <td className="py-1.5 text-center">
+                <td className="py-0.5 text-center">
                   {deal.overdue && (
                     <span title={`${deal.daysOverdue}d overdue`}>⚠️</span>
                   )}
                 </td>
                 {showAssigned && (
-                  <td className="py-1.5 text-slate-400 truncate max-w-[120px]">
-                    {deal.assignedUser || "—"}
+                  <td className="py-0.5 text-slate-400 truncate max-w-[200px]">
+                    {deal.assignedUsers && deal.assignedUsers.length > 0
+                      ? deal.assignedUsers.join(", ")
+                      : "—"}
                   </td>
                 )}
               </tr>
@@ -82,7 +84,7 @@ export default function DealList({ deals, totalCount, showAssigned = true }: Dea
         </tbody>
       </table>
       {remaining > 0 && (
-        <div className="text-xs text-slate-500 mt-2 pl-3">
+        <div className="text-xs text-slate-500 mt-1 pl-3">
           +{remaining} more project{remaining !== 1 ? "s" : ""}
         </div>
       )}

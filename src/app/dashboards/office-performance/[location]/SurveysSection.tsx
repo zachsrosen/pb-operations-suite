@@ -19,13 +19,13 @@ export default function SurveysSection({ data }: SurveysSectionProps) {
   return (
     <div className="flex flex-col h-full px-8 py-5">
       {/* Top metrics */}
-      <div className="grid grid-cols-3 gap-5 mb-6">
+      <div className="grid grid-cols-3 gap-4 mb-4">
         <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
           <CountUp
             value={data.completedMtd}
             className="text-[64px] font-extrabold text-blue-400 leading-none"
           />
-          <div className="text-sm text-slate-400 mt-2">Done This Month</div>
+          <div className="text-sm text-slate-400 mt-2">Surveys Completed This Month</div>
         </div>
 
         <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
@@ -53,7 +53,7 @@ export default function SurveysSection({ data }: SurveysSectionProps) {
       </div>
 
       {/* Deal list + compliance */}
-      <div className="flex flex-col gap-3 mb-4">
+      <div className="flex flex-col gap-2 mb-3">
         <DealList deals={data.deals} totalCount={data.totalCount} />
         <ComplianceBlock compliance={data.compliance} />
       </div>

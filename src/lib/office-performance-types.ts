@@ -23,7 +23,7 @@ export interface DealRow {
   daysInStage: number;
   overdue: boolean;
   daysOverdue: number;
-  assignedUser?: string;
+  assignedUsers?: string[];
 }
 
 /** Per-employee compliance stats (full metrics from live Zuper API) */
