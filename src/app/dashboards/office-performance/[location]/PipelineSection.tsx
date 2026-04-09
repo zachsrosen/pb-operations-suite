@@ -42,7 +42,7 @@ export default function PipelineSection({ data }: PipelineSectionProps) {
           <GoalProgress
             current={data.completedMtd}
             goal={data.completedGoal}
-            label="Completed MTD"
+            label="Done This Month"
             accentColor="#22c55e"
           />
         </div>
@@ -96,7 +96,7 @@ export default function PipelineSection({ data }: PipelineSectionProps) {
         {/* Deal list — 2 cols */}
         <div className="col-span-2 flex flex-col">
           <div className="text-xs font-semibold text-slate-400 tracking-wider mb-2">
-            ALL ACTIVE PROJECTS
+            ACTIVE PROJECTS
           </div>
           <DealList deals={data.deals} totalCount={data.totalCount} showAssigned={false} />
         </div>

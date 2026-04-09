@@ -13,7 +13,7 @@ interface ChatWidgetProps {
   projectId?: string;
 }
 
-const HIDDEN_PATHS = ["/dashboards/scheduler", "/dashboards/construction-scheduler", "/dashboards/site-survey-scheduler", "/dashboards/inspection-scheduler"];
+const HIDDEN_PATHS = ["/dashboards/scheduler", "/dashboards/construction-scheduler", "/dashboards/site-survey-scheduler", "/dashboards/inspection-scheduler", "/dashboards/office-performance"];
 
 export default function ChatWidget({ dealId, projectId }: ChatWidgetProps) {
   const pathname = usePathname();

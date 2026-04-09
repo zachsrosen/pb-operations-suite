@@ -25,7 +25,7 @@ export default function SurveysSection({ data }: SurveysSectionProps) {
           <GoalProgress
             current={data.completedMtd}
             goal={data.completedGoal}
-            label="Completed MTD"
+            label="Done This Month"
             accentColor="#3b82f6"
           />
         </div>
@@ -37,7 +37,7 @@ export default function SurveysSection({ data }: SurveysSectionProps) {
             suffix="d"
             className="text-[64px] font-extrabold text-green-400 leading-none"
           />
-          <div className="text-sm text-slate-400 mt-2">Avg Turnaround</div>
+          <div className="text-sm text-slate-400 mt-2">Avg Days to Complete</div>
           {turnaroundTrend !== 0 && (
             <div className={`text-xs mt-1.5 ${trendImproving ? "text-green-400" : "text-red-400"}`}>
               {trendImproving ? "▼" : "▲"} {Math.abs(turnaroundTrend).toFixed(1)}d vs prior

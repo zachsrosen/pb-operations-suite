@@ -142,6 +142,9 @@ const SURVEY_STAGES = new Set(["Survey"]);
 const INSTALL_STAGES = new Set(["RTB", "Install"]);
 const INSPECTION_STAGES = new Set(["Inspect", "PTO"]);
 
+/** Stages the ops team considers "active" — excludes Design, Permitting, Close Out, PTO, On Hold */
+const OPS_ACTIVE_STAGES = new Set(["Survey", "RTB", "Install", "Inspect"]);
+
 // ---------- Pipeline Aggregation ----------
 
 // Matches the real RawProject shape from src/lib/types.ts and Project from src/lib/hubspot.ts
@@ -159,6 +162,7 @@ interface ProjectForMetrics {
   constructionCompleteDate?: string | null;
   constructionScheduleDate?: string | null;
   inspectionPassDate?: string | null;
+  siteSurveyCompletionDate?: string | null;
   daysSinceStageMovement?: number;        // NOT "daysInCurrentStage" — real field name
   closeDate?: string | null;
   siteSurveyTurnaroundTime?: number | null;  // From Project (hubspot.ts)
@@ -310,13 +314,18 @@ export function buildPipelineData(
     recentWins.push(`🎉 ${ptosThisWeek} PTO${ptosThisWeek > 1 ? "s" : ""} granted this week`);
   }
 
-  const stageDistribution = ["Survey", "Design", "Permit", "RTB", "Install", "Inspect"]
+  const stageDistribution = ["Survey", "RTB", "Install", "Inspect"]
     .map((stage) => ({ stage, count: stageCounts[stage] || 0 }));
 
   const { deals, totalCount } = buildDealRows(projects, now);
 
+  // Count only ops-relevant stages (Survey, RTB/Install, Inspect)
+  const opsActiveCount = projects.filter(
+    (p) => OPS_ACTIVE_STAGES.has(normalizeStage(p.stage || ""))
+  ).length;
+
   return {
-    activeProjects: projects.length,
+    activeProjects: opsActiveCount,
     completedMtd,
     completedGoal: goals.projects_completed,
     overdueCount,
@@ -598,7 +607,13 @@ export async function buildSurveyData(
 ): Promise<SurveyData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  // MTD completed surveys
+  // MTD completed surveys — count from HubSpot property (source of truth)
+  const completedMtd = (locationProjects || []).filter((p) => {
+    const d = p.siteSurveyCompletionDate ? new Date(p.siteSurveyCompletionDate) : null;
+    return d && d >= mtdStart && d <= now;
+  }).length;
+
+  // Zuper jobs for leaderboard user counts
   const mtdJobs = await getZuperJobsByLocation(location, "Site Survey", mtdStart, now, locationDealIds);
 
   // User counts for leaderboard
@@ -631,7 +646,7 @@ export async function buildSurveyData(
   const compliance = undefined;
 
   return {
-    completedMtd: mtdJobs.length,
+    completedMtd,
     completedGoal: goals.surveys_completed,
     avgTurnaroundDays: 0, // Populated from QC metrics in the orchestrator
     avgTurnaroundPrior: 0,
@@ -656,6 +671,13 @@ export async function buildInstallData(
 ): Promise<InstallData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
+  // MTD completed installs — count from HubSpot property (source of truth)
+  const completedMtd = (locationProjects || []).filter((p) => {
+    const d = p.constructionCompleteDate ? new Date(p.constructionCompleteDate) : null;
+    return d && d >= mtdStart && d <= now;
+  }).length;
+
+  // Zuper jobs for leaderboard and capacity calculations
   const mtdJobs = await getZuperJobsByLocation(location, "Construction", mtdStart, now, locationDealIds);
 
   // Split by role (installer vs electrician) using CrewMember lookup
@@ -773,7 +795,7 @@ export async function buildInstallData(
   const compliance = undefined;
 
   return {
-    completedMtd: mtdJobs.length,
+    completedMtd,
     completedGoal: goals.installs_completed,
     avgDaysPerInstall: 0, // Populated from QC metrics in orchestrator
     avgDaysPerInstallPrior: 0,
@@ -800,6 +822,13 @@ export async function buildInspectionData(
 ): Promise<InspectionData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
+  // MTD completed inspections — count from HubSpot property (source of truth)
+  const completedMtd = (locationProjects || []).filter((p) => {
+    const d = p.inspectionPassDate ? new Date(p.inspectionPassDate) : null;
+    return d && d >= mtdStart && d <= now;
+  }).length;
+
+  // Zuper jobs for leaderboard user counts
   const mtdJobs = await getZuperJobsByLocation(location, "Inspection", mtdStart, now, locationDealIds);
 
   const userCounts = new Map<string, UserJobCount>();
@@ -833,7 +862,7 @@ export async function buildInspectionData(
   const compliance = undefined;
 
   return {
-    completedMtd: mtdJobs.length,
+    completedMtd,
     completedGoal: goals.inspections_completed,
     firstPassRate: 0, // Populated from QC metrics
     avgConstructionDays: 0,
@@ -927,11 +956,25 @@ async function enrichWithQcMetrics(
     installs.avgDaysPerInstall = avg(recentProjects, "constructionTurnaroundTime");
     installs.avgDaysPerInstallPrior = avg(priorProjects, "constructionTurnaroundTime");
 
-    // Inspections: construction time, CC→PTO, first-pass rate
+    // Inspections: construction time, CC→Inspection pass, first-pass rate
     inspections.avgConstructionDays = avg(recentProjects, "constructionTurnaroundTime");
     inspections.avgConstructionDaysPrior = avg(priorProjects, "constructionTurnaroundTime");
-    inspections.avgCcToPtoDays = avg(recentProjects, "timeCcToPto");
-    inspections.avgCcToPtoDaysPrior = avg(priorProjects, "timeCcToPto");
+
+    // CC → Inspection: compute from constructionCompleteDate to inspectionPassDate
+    function avgCcToInspection(projects: ProjectForMetrics[]): number {
+      const vals = projects
+        .filter((p) => p.constructionCompleteDate && p.inspectionPassDate)
+        .map((p) => {
+          const cc = new Date(p.constructionCompleteDate!).getTime();
+          const insp = new Date(p.inspectionPassDate!).getTime();
+          return (insp - cc) / (1000 * 60 * 60 * 24);
+        })
+        .filter((d) => d > 0);
+      if (vals.length === 0) return 0;
+      return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
+    }
+    inspections.avgCcToPtoDays = avgCcToInspection(recentProjects);
+    inspections.avgCcToPtoDaysPrior = avgCcToInspection(priorProjects);
 
     // First-pass inspection rate — denominator includes ALL inspected projects
     // (passed OR failed), not just passed, to avoid inflating the rate.

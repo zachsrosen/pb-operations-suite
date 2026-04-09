@@ -33,7 +33,7 @@ export default function InspectionsSection({ data }: InspectionsSectionProps) {
           <GoalProgress
             current={data.completedMtd}
             goal={data.completedGoal}
-            label="Inspections MTD"
+            label="Done This Month"
             accentColor="#06b6d4"
           />
         </div>
@@ -60,7 +60,7 @@ export default function InspectionsSection({ data }: InspectionsSectionProps) {
             suffix="d"
             className="text-[64px] font-extrabold text-green-400 leading-none"
           />
-          <div className="text-sm text-slate-400 mt-2">Avg Construction</div>
+          <div className="text-sm text-slate-400 mt-2">Avg Build Time</div>
           {constructionTrend !== 0 && (
             <div className={`text-xs mt-1.5 ${constructionTrend < 0 ? "text-green-400" : "text-red-400"}`}>
               {constructionTrend < 0 ? "▼" : "▲"} {Math.abs(constructionTrend).toFixed(1)}d vs prior
@@ -76,7 +76,7 @@ export default function InspectionsSection({ data }: InspectionsSectionProps) {
             className="text-[64px] font-extrabold leading-none"
             style={{ color: data.avgCcToPtoDays > 15 ? "#ef4444" : data.avgCcToPtoDays > 10 ? "#eab308" : "#22c55e" }}
           />
-          <div className="text-sm text-slate-400 mt-2">CC → PTO</div>
+          <div className="text-sm text-slate-400 mt-2">Build Done → Inspect</div>
           {ccPtoTrend !== 0 && (
             <div className={`text-xs mt-1.5 ${ccPtoTrend < 0 ? "text-green-400" : "text-red-400"}`}>
               {ccPtoTrend < 0 ? "▼" : "▲"} {Math.abs(ccPtoTrend).toFixed(1)}d vs prior

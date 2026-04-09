@@ -25,7 +25,7 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
           <GoalProgress
             current={data.completedMtd}
             goal={data.completedGoal}
-            label="Completed MTD"
+            label="Done This Month"
             accentColor="#22c55e"
           />
         </div>
@@ -37,7 +37,7 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
             suffix="d"
             className="text-[64px] font-extrabold text-blue-400 leading-none"
           />
-          <div className="text-sm text-slate-400 mt-2">Avg Days/Install</div>
+          <div className="text-sm text-slate-400 mt-2">Avg Days per Install</div>
           {daysTrend !== 0 && (
             <div className={`text-xs mt-1.5 ${trendImproving ? "text-green-400" : "text-red-400"}`}>
               {trendImproving ? "▼" : "▲"} {Math.abs(daysTrend).toFixed(1)}d vs prior

@@ -61,7 +61,7 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
         )}
         {showOow && (
           <div className="flex items-center gap-1">
-            <span className="text-slate-500 text-xs">OOW:</span>
+            <span className="text-slate-500 text-xs">OOW Used:</span>
             <span className="font-semibold" style={{ color: oowColor(compliance.oowOnTimePercent) }}>
               {compliance.oowOnTimePercent}%
             </span>
@@ -83,7 +83,7 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
         )}
         {compliance.avgDaysToComplete > 0 && (
           <div className="flex items-center gap-1">
-            <span className="text-slate-500 text-xs">Avg days:</span>
+            <span className="text-slate-500 text-xs">Avg to Complete:</span>
             <span className="font-semibold text-slate-300">
               {compliance.avgDaysToComplete}
             </span>
@@ -91,7 +91,7 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
         )}
         {compliance.avgDaysLate > 0 && (
           <div className="flex items-center gap-1">
-            <span className="text-slate-500 text-xs">Avg late:</span>
+            <span className="text-slate-500 text-xs">Avg Days Late:</span>
             <span className="font-semibold text-orange-400">
               {compliance.avgDaysLate}d
             </span>
@@ -103,7 +103,7 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
       {hasEmployees && (
         <div className="mt-3 border-t border-white/5 pt-2">
           <div className="text-[10px] font-semibold text-slate-500 tracking-wider mb-1.5">
-            BY EMPLOYEE
+            CREW PERFORMANCE
           </div>
           {/* Column headers */}
           <div className="grid grid-cols-[1fr_40px_48px_48px_48px_48px_48px] gap-1 text-[9px] text-slate-600 font-medium mb-0.5 px-0.5">
