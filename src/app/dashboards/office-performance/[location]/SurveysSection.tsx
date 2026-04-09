@@ -16,10 +16,20 @@ export default function SurveysSection({ data }: SurveysSectionProps) {
     : 0;
   const trendImproving = turnaroundTrend < 0;
 
+  const completionRate = data.scheduledMtd > 0
+    ? Math.round((data.completedMtd / data.scheduledMtd) * 100)
+    : 0;
+
+  function completionRateColor(rate: number): string {
+    if (rate >= 90) return "#22c55e";
+    if (rate >= 75) return "#eab308";
+    return "#ef4444";
+  }
+
   return (
     <div className="flex flex-col h-full px-8 py-5">
       {/* Top metrics */}
-      <div className="grid grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-4 gap-4 mb-4">
         <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
           <CountUp
             value={data.completedMtd}
@@ -49,6 +59,23 @@ export default function SurveysSection({ data }: SurveysSectionProps) {
             className="text-[64px] font-extrabold text-orange-400 leading-none"
           />
           <div className="text-sm text-slate-400 mt-2">Scheduled This Week</div>
+        </div>
+
+        <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
+          <CountUp
+            value={completionRate}
+            suffix="%"
+            className="text-[64px] font-extrabold leading-none"
+            style={{ color: data.scheduledMtd > 0 ? completionRateColor(completionRate) : "#64748b" }}
+          />
+          <div className="text-sm text-slate-400 mt-2">
+            {data.scheduledMtd > 0 ? "Completion Rate" : "Completion Rate N/A"}
+          </div>
+          {data.scheduledMtd > 0 && (
+            <div className="text-xs text-slate-500 mt-0.5">
+              {data.completedMtd} of {data.scheduledMtd} scheduled
+            </div>
+          )}
         </div>
       </div>
 

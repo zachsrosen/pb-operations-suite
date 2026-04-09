@@ -19,7 +19,7 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
   return (
     <div className="flex flex-col h-full px-8 py-5">
       {/* Top metrics */}
-      <div className="grid grid-cols-3 gap-4 mb-4">
+      <div className="grid grid-cols-4 gap-4 mb-4">
         <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
           <CountUp
             value={data.completedMtd}
@@ -49,6 +49,16 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
             className="text-[64px] font-extrabold text-cyan-400 leading-none"
           />
           <div className="text-sm text-slate-400 mt-2">Scheduled This Week</div>
+        </div>
+
+        <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
+          <CountUp
+            value={data.kwInstalledMtd}
+            decimals={1}
+            suffix=" kW"
+            className="text-[64px] font-extrabold text-orange-400 leading-none"
+          />
+          <div className="text-sm text-slate-400 mt-2">kW Installed This Month</div>
         </div>
       </div>
 
