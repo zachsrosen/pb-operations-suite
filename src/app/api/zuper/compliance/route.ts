@@ -492,19 +492,17 @@ export async function GET(request: NextRequest) {
           ? Math.round((acc.onOurWayOnTime / acc.onOurWayTotal) * 100 * 10) / 10
           : 0;
 
-      // Compliance score:
-      // 50% on-time rate + 30% (1 - stuckRate) * 100 + 20% (1 - neverStartedRate) * 100
+      // Compliance score: onTime% − stuck% − neverStarted% (floor 0)
       const stuckRate = acc.totalJobs > 0 ? acc.stuckJobs / acc.totalJobs : 0;
       const neverStartedRate =
         acc.totalJobs > 0 ? acc.neverStartedJobs / acc.totalJobs : 0;
 
-      const complianceScore =
+      const complianceScore = Math.max(
+        0,
         Math.round(
-          (0.5 * onTimePercent +
-            0.3 * (1 - stuckRate) * 100 +
-            0.2 * (1 - neverStartedRate) * 100) *
-            10
-        ) / 10;
+          (onTimePercent - stuckRate * 100 - neverStartedRate * 100) * 10
+        ) / 10
+      );
 
       const grade = computeGrade(complianceScore);
 
@@ -546,19 +544,12 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Compute Bayesian adjusted scores
-    // adjustedScore = (userJobs * rawScore + C * globalAvg) / (userJobs + C)
-    // C = 10 (confidence weight — users need ~10 jobs to mostly reflect their own score)
-    const BAYESIAN_C = 10;
-    const globalAvgScore = users.length > 0
-      ? users.reduce((s, u) => s + u.complianceScore, 0) / users.length
-      : 50;
+    // No Bayesian adjustment — raw scores used directly.
+    // adjustedScore = complianceScore (kept for API compat)
+    const BAYESIAN_C = 0;
     for (const u of users) {
-      u.adjustedScore = Math.round(
-        ((u.totalJobs * u.complianceScore + BAYESIAN_C * globalAvgScore) /
-          (u.totalJobs + BAYESIAN_C)) * 10
-      ) / 10;
-      u.adjustedGrade = computeGrade(u.adjustedScore);
+      u.adjustedScore = u.complianceScore;
+      u.adjustedGrade = u.grade;
     }
 
     // Sort by adjustedScore descending (best first)
@@ -698,9 +689,13 @@ export async function GET(request: NextRequest) {
       const statusUsagePercent = acc.completedJobs > 0
         ? Math.round(((acc.oowUsed + acc.startedUsed) / (acc.completedJobs * 2)) * 100 * 10) / 10
         : 0;
-      const complianceScore = Math.round(
-        (0.5 * onTimePercent + 0.3 * (1 - stuckRate) * 100 + 0.2 * (1 - neverStartedRate) * 100) * 10
-      ) / 10;
+      // Score = onTime% − stuck% − neverStarted% (floor 0)
+      const complianceScore = Math.max(
+        0,
+        Math.round(
+          (onTimePercent - stuckRate * 100 - neverStartedRate * 100) * 10
+        ) / 10
+      );
       return {
         name,
         totalJobs: acc.totalJobs,
@@ -731,13 +726,10 @@ export async function GET(request: NextRequest) {
 
     function applyBayesianToGroups(groups: GroupComparison[]): void {
       if (groups.length === 0) return;
-      const groupAvg = groups.reduce((s, g) => s + g.complianceScore, 0) / groups.length;
+      // No Bayesian adjustment — use raw scores directly
       for (const g of groups) {
-        g.adjustedScore = Math.round(
-          ((g.totalJobs * g.complianceScore + BAYESIAN_C * groupAvg) /
-            (g.totalJobs + BAYESIAN_C)) * 10
-        ) / 10;
-        g.adjustedGrade = computeGrade(g.adjustedScore);
+        g.adjustedScore = g.complianceScore;
+        g.adjustedGrade = g.grade;
       }
     }
 
@@ -1064,7 +1056,7 @@ export async function GET(request: NextRequest) {
       scoring: {
         minJobs,
         bayesianC: BAYESIAN_C,
-        globalAvgScore: Math.round(globalAvgScore * 10) / 10,
+        formula: "onTime% - stuck% - neverStarted%",
       },
       dateRange: {
         from: fromDateStr,

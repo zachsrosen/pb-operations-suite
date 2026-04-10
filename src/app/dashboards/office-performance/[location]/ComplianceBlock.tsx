@@ -136,85 +136,127 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
       {/* Per-employee breakdown */}
       {hasEmployees && (
         <div className="mt-3 border-t border-white/5 pt-2">
-          <div className="text-[10px] font-semibold text-slate-500 tracking-wider mb-1.5">
+          <div className="text-[10px] font-semibold text-slate-500 tracking-wider mb-1">
             CREW PERFORMANCE
           </div>
+
+          {/* Legend: explain metrics and scoring */}
+          <div className="text-[9px] text-slate-600 leading-snug mb-2 space-y-0.5">
+            <div>
+              <span className="text-slate-500 font-medium">On-time</span> = finished within 24h of scheduled end
+              <span className="mx-1.5 text-slate-700">|</span>
+              <span className="text-slate-500 font-medium">OOW</span> = used On Our Way status (notified customer) / was on-time leaving
+              <span className="mx-1.5 text-slate-700">|</span>
+              <span className="text-slate-500 font-medium">Stuck</span> = past-due, not done
+            </div>
+            <div>
+              <span className="text-slate-500 font-medium">Score</span> = On-time%
+              <span className="text-red-400/70"> &minus; Stuck%</span>
+              <span className="text-red-400/70"> &minus; Not-started%</span>
+              <span className="mx-1.5 text-slate-700">|</span>
+              <span className="text-slate-500 font-medium">Grade</span>:
+              {" "}A &ge;90 &middot; B &ge;80 &middot; C &ge;70 &middot; D &ge;60 &middot; F &lt;60
+            </div>
+          </div>
+
           {/* Column headers */}
-          <div className="grid grid-cols-[1fr_40px_48px_72px_48px_48px_48px] gap-1 text-[9px] text-slate-600 font-medium mb-0.5 px-0.5">
+          <div className="grid grid-cols-[1fr_40px_48px_72px_48px_48px_48px_80px] gap-1 text-[9px] text-slate-600 font-medium mb-0.5 px-0.5">
             <span>Name</span>
             <span className="text-center">Grade</span>
             <span className="text-right">On-time</span>
-            <span
-              className="text-right"
-              title="OOW usage % / punctuality %"
-            >
-              OOW u/p
-            </span>
+            <span className="text-right">OOW u/p</span>
             <span className="text-right">Jobs</span>
             <span className="text-right">Stuck</span>
             <span className="text-right">Avg d</span>
+            <span className="text-right">Score</span>
           </div>
           <div className="grid gap-0.5">
-            {compliance.byEmployee.map((emp) => (
-              <div
-                key={emp.name}
-                className="grid grid-cols-[1fr_40px_48px_72px_48px_48px_48px] gap-1 text-xs items-center px-0.5 py-0.5 rounded hover:bg-white/[0.02]"
-              >
-                {/* Name */}
-                <span className="text-slate-300 font-medium truncate">
-                  {emp.name}
-                </span>
-                {/* Grade */}
-                <span
-                  className="text-center font-bold text-sm"
-                  style={{ color: gradeColor(emp.grade) }}
+            {compliance.byEmployee.map((emp) => {
+              const stuckPct = emp.totalJobs > 0
+                ? Math.round((emp.stuckCount / emp.totalJobs) * 100)
+                : 0;
+              const nsPct = emp.totalJobs > 0
+                ? Math.round((emp.neverStartedCount / emp.totalJobs) * 100)
+                : 0;
+
+              return (
+                <div
+                  key={emp.name}
+                  className="grid grid-cols-[1fr_40px_48px_72px_48px_48px_48px_80px] gap-1 text-xs items-center px-0.5 py-0.5 rounded hover:bg-white/[0.02]"
                 >
-                  {emp.grade}
-                </span>
-                {/* On-time % */}
-                {emp.onTimePercent >= 0 ? (
+                  {/* Name */}
+                  <span className="text-slate-300 font-medium truncate">
+                    {emp.name}
+                  </span>
+                  {/* Grade */}
                   <span
-                    className="text-right font-semibold"
-                    style={{ color: onTimeColor(emp.onTimePercent) }}
+                    className="text-center font-bold text-sm"
+                    style={{ color: gradeColor(emp.grade) }}
                   >
-                    {emp.onTimePercent}%
+                    {emp.grade}
                   </span>
-                ) : (
-                  <span className="text-right text-slate-600">—</span>
-                )}
-                {/* OOW usage / punctuality */}
-                {emp.oowUsagePercent >= 0 || emp.oowOnTimePercent >= 0 ? (
-                  <span className="text-right">
-                    <OowDualDisplay
-                      usage={emp.oowUsagePercent}
-                      punctuality={emp.oowOnTimePercent}
-                      textSize="xs"
-                    />
+                  {/* On-time % */}
+                  {emp.onTimePercent >= 0 ? (
+                    <span
+                      className="text-right font-semibold"
+                      style={{ color: onTimeColor(emp.onTimePercent) }}
+                    >
+                      {emp.onTimePercent}%
+                    </span>
+                  ) : (
+                    <span className="text-right text-slate-600">—</span>
+                  )}
+                  {/* OOW usage / punctuality */}
+                  {emp.oowUsagePercent >= 0 || emp.oowOnTimePercent >= 0 ? (
+                    <span className="text-right">
+                      <OowDualDisplay
+                        usage={emp.oowUsagePercent}
+                        punctuality={emp.oowOnTimePercent}
+                        textSize="xs"
+                      />
+                    </span>
+                  ) : (
+                    <span className="text-right text-slate-600">—</span>
+                  )}
+                  {/* Jobs completed/total */}
+                  <span className="text-right text-slate-400">
+                    {emp.completedJobs}/{emp.totalJobs}
                   </span>
-                ) : (
-                  <span className="text-right text-slate-600">—</span>
-                )}
-                {/* Jobs completed/total */}
-                <span className="text-right text-slate-400">
-                  {emp.completedJobs}/{emp.totalJobs}
-                </span>
-                {/* Stuck */}
-                {emp.stuckCount > 0 ? (
-                  <span
-                    className="text-right font-semibold"
-                    style={{ color: stuckColor(emp.stuckCount) }}
-                  >
-                    {emp.stuckCount}
+                  {/* Stuck */}
+                  {emp.stuckCount > 0 ? (
+                    <span
+                      className="text-right font-semibold"
+                      style={{ color: stuckColor(emp.stuckCount) }}
+                    >
+                      {emp.stuckCount}
+                    </span>
+                  ) : (
+                    <span className="text-right text-green-500/50">0</span>
+                  )}
+                  {/* Avg days to complete */}
+                  <span className="text-right text-slate-400">
+                    {emp.avgDaysToComplete > 0 ? emp.avgDaysToComplete : "—"}
                   </span>
-                ) : (
-                  <span className="text-right text-green-500/50">0</span>
-                )}
-                {/* Avg days to complete */}
-                <span className="text-right text-slate-400">
-                  {emp.avgDaysToComplete > 0 ? emp.avgDaysToComplete : "—"}
-                </span>
-              </div>
-            ))}
+                  {/* Score breakdown */}
+                  <span className="text-right text-[10px] text-slate-400 font-mono whitespace-nowrap">
+                    {emp.onTimePercent >= 0 ? emp.onTimePercent : 0}
+                    {stuckPct > 0 && (
+                      <span className="text-red-400">-{stuckPct}</span>
+                    )}
+                    {nsPct > 0 && (
+                      <span className="text-red-400">-{nsPct}</span>
+                    )}
+                    <span className="text-slate-600">=</span>
+                    <span
+                      className="font-semibold"
+                      style={{ color: gradeColor(emp.grade) }}
+                    >
+                      {emp.complianceScore}
+                    </span>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

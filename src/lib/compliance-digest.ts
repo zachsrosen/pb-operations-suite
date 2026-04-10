@@ -271,9 +271,11 @@ function summarizeAccumulator(acc: MetricsAccumulator): {
 
   const stuckRate = acc.totalJobs > 0 ? acc.stuckJobs / acc.totalJobs : 0;
   const neverStartedRate = acc.totalJobs > 0 ? acc.neverStartedJobs / acc.totalJobs : 0;
-  const score =
-    Math.round((0.5 * onTimePercent + 0.3 * (1 - stuckRate) * 100 + 0.2 * (1 - neverStartedRate) * 100) * 10) /
-    10;
+  // Score = onTime% − stuck% − neverStarted% (floor 0)
+  const score = Math.max(
+    0,
+    Math.round((onTimePercent - stuckRate * 100 - neverStartedRate * 100) * 10) / 10
+  );
 
   const oowTotal = acc.oowOnTime + acc.oowLate;
   const oowUsagePercent =

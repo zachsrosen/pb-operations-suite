@@ -315,7 +315,6 @@ export async function computeLocationCompliance(
 
   // Build per-employee results
   const byEmployee: EmployeeComplianceFull[] = [];
-  const allScores: number[] = [];
 
   for (const acc of userMap.values()) {
     const measurable = acc.onTimeCompletions + acc.lateCompletions;
@@ -349,18 +348,18 @@ export async function computeLocationCompliance(
         ? Math.round(((acc.oowUsed + acc.startedUsed) / (acc.completedJobs * 2)) * 100)
         : 0;
 
-    // Compliance score: 50% on-time + 30% (1-stuckRate) + 20% (1-neverStartedRate)
+    // Compliance score: on-time% baseline minus penalties for stuck/never-started.
+    // Score = onTime% − (stuckRate × 100) − (neverStartedRate × 100)
+    // Floor at 0 so scores can't go negative.
     const stuckRate = acc.totalJobs > 0 ? acc.stuckJobs / acc.totalJobs : 0;
     const neverStartedRate = acc.totalJobs > 0 ? acc.neverStartedJobs / acc.totalJobs : 0;
     const rawOnTime = onTimePercent >= 0 ? onTimePercent : 0;
-    const complianceScore =
+    const complianceScore = Math.max(
+      0,
       Math.round(
-        (0.5 * rawOnTime +
-          0.3 * (1 - stuckRate) * 100 +
-          0.2 * (1 - neverStartedRate) * 100) *
-          10
-      ) / 10;
-    allScores.push(complianceScore);
+        (rawOnTime - stuckRate * 100 - neverStartedRate * 100) * 10
+      ) / 10
+    );
 
     byEmployee.push({
       name: acc.userName,
@@ -381,24 +380,7 @@ export async function computeLocationCompliance(
     });
   }
 
-  // Bayesian adjustment
-  const BAYESIAN_C = 10;
-  const globalAvg =
-    allScores.length > 0
-      ? allScores.reduce((s, v) => s + v, 0) / allScores.length
-      : 50;
-  for (const emp of byEmployee) {
-    const adjusted =
-      Math.round(
-        ((emp.totalJobs * emp.complianceScore + BAYESIAN_C * globalAvg) /
-          (emp.totalJobs + BAYESIAN_C)) *
-          10
-      ) / 10;
-    emp.complianceScore = adjusted;
-    emp.grade = computeGrade(adjusted);
-  }
-
-  // Sort: worst adjusted score first (so the TV highlights problems)
+  // Sort: worst score first (so the TV highlights problems)
   byEmployee.sort((a, b) => a.complianceScore - b.complianceScore);
 
   // Aggregate summary
