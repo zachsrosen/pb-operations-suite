@@ -6,7 +6,7 @@
  * and the TV carousel use identical status lists, grace period, and scoring logic.
  */
 
-import { getActiveCrewMembers } from "@/lib/db";
+import { getActiveCrewMembers, prisma } from "@/lib/db";
 import {
   COMPLIANCE_EXCLUDED_USER_UIDS,
   COMPLIANCE_TEAM_OVERRIDES,
@@ -24,8 +24,11 @@ import {
   filterAssignedUsersByTeam,
   computeGrade,
   fetchJobsForCategory,
+  extractHubspotDealIdFromJob,
+  type AssignedUser,
 } from "@/lib/compliance-helpers";
 import { JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import { normalizeLocation } from "@/lib/locations";
 
 // ========== Types ==========
 
@@ -61,6 +64,10 @@ export interface ComplianceSummaryFull {
   oowUsagePercent: number;
   /** % of OOW-used jobs where the tech left on-time. -1 if never used. */
   oowOnTimePercent: number;
+  /** Aggregate compliance score: onTime% - stuck% - neverStarted% (floor 0) */
+  aggregateScore: number;
+  /** Letter grade from aggregateScore */
+  aggregateGrade: string;
 }
 
 export interface LocationComplianceResult {
@@ -115,6 +122,19 @@ export async function computeLocationCompliance(
   // Fetch jobs from live Zuper API
   const jobs = await fetchJobsForCategory(categoryUid, fromDateStr, toDateStr);
   if (jobs.length === 0) return null;
+
+  // Build deal ID → pbLocation lookup from HubSpotProjectCache.
+  // This lets us attribute jobs to the correct location by their linked
+  // HubSpot deal, rather than by the tech's team assignment.
+  const projectCacheRows = await prisma.hubSpotProjectCache.findMany({
+    select: { dealId: true, pbLocation: true },
+  });
+  const dealLocationMap = new Map<string, string>();
+  for (const row of projectCacheRows) {
+    if (row.pbLocation) {
+      dealLocationMap.set(row.dealId, row.pbLocation);
+    }
+  }
 
   // Build crew fallback map
   const crewTeamByUserUid = new Map<string, string>();
@@ -176,10 +196,25 @@ export async function computeLocationCompliance(
     const statusName = getStatusName(job);
     const statusLower = statusName.toLowerCase();
     const assignedUsers = extractAssignedUsers(job, assignmentOptions);
-    const filteredUsers = filterAssignedUsersByTeam(assignedUsers, teamFilter);
 
-    // Skip jobs with no users matching this location's team
-    if (filteredUsers.length === 0) continue;
+    // Attribute job by HubSpot deal location when possible, fall back to team.
+    let filteredUsers: AssignedUser[];
+    const dealId = extractHubspotDealIdFromJob(job as Record<string, unknown>);
+    const dealPbLocation = dealId ? dealLocationMap.get(dealId) : undefined;
+    const normalizedDealLocation = dealPbLocation
+      ? normalizeLocation(dealPbLocation)
+      : null;
+
+    if (normalizedDealLocation) {
+      // Deal has a known location — attribute to that location
+      if (normalizedDealLocation !== location) continue; // wrong location, skip
+      // All assigned users count toward this location regardless of team
+      filteredUsers = assignedUsers;
+    } else {
+      // No deal link or unknown location — fall back to team-based filtering
+      filteredUsers = filterAssignedUsersByTeam(assignedUsers, teamFilter);
+      if (filteredUsers.length === 0) continue;
+    }
 
     const scheduledStart = job.scheduled_start_time
       ? new Date(job.scheduled_start_time)
@@ -387,13 +422,22 @@ export async function computeLocationCompliance(
   const aggMeasurable = aggAcc.onTimeCompletions + aggAcc.lateCompletions;
   const oowTotal = aggAcc.oowOnTime + aggAcc.oowLate;
 
+  // Aggregate compliance score — same penalty formula as per-employee
+  const aggOnTimePercent = aggMeasurable > 0
+    ? Math.round((aggAcc.onTimeCompletions / aggMeasurable) * 100)
+    : -1;
+  const aggStuckRate = aggAcc.totalJobs > 0 ? aggAcc.stuckJobs / aggAcc.totalJobs : 0;
+  const aggNeverStartedRate = aggAcc.totalJobs > 0 ? aggAcc.neverStartedJobs / aggAcc.totalJobs : 0;
+  const aggRawOnTime = aggOnTimePercent >= 0 ? aggOnTimePercent : 0;
+  const aggregateScore = Math.max(
+    0,
+    Math.round((aggRawOnTime - aggStuckRate * 100 - aggNeverStartedRate * 100) * 10) / 10
+  );
+
   const summary: ComplianceSummaryFull = {
     totalJobs: aggAcc.totalJobs,
     completedJobs: aggAcc.completedJobs,
-    onTimePercent:
-      aggMeasurable > 0
-        ? Math.round((aggAcc.onTimeCompletions / aggMeasurable) * 100)
-        : -1,
+    onTimePercent: aggOnTimePercent,
     stuckCount: aggAcc.stuckJobs,
     neverStartedCount: aggAcc.neverStartedJobs,
     avgDaysToComplete:
@@ -420,6 +464,8 @@ export async function computeLocationCompliance(
       oowTotal > 0
         ? Math.round((aggAcc.oowOnTime / oowTotal) * 100)
         : -1,
+    aggregateScore,
+    aggregateGrade: computeGrade(aggregateScore),
   };
 
   return { summary, byEmployee, stuckJobs: stuckJobsList };

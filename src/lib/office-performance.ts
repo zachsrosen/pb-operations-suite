@@ -1630,6 +1630,8 @@ export async function getOfficePerformanceData(
       avgDaysLate: surveyCompliance.summary.avgDaysLate,
       oowUsagePercent: surveyCompliance.summary.oowUsagePercent,
       oowOnTimePercent: surveyCompliance.summary.oowOnTimePercent,
+      aggregateGrade: surveyCompliance.summary.aggregateGrade,
+      aggregateScore: surveyCompliance.summary.aggregateScore,
       byEmployee: surveyCompliance.byEmployee,
     };
   }
@@ -1644,6 +1646,8 @@ export async function getOfficePerformanceData(
       avgDaysLate: installCompliance.summary.avgDaysLate,
       oowUsagePercent: installCompliance.summary.oowUsagePercent,
       oowOnTimePercent: installCompliance.summary.oowOnTimePercent,
+      aggregateGrade: installCompliance.summary.aggregateGrade,
+      aggregateScore: installCompliance.summary.aggregateScore,
       byEmployee: installCompliance.byEmployee,
     };
   }
@@ -1658,6 +1662,8 @@ export async function getOfficePerformanceData(
       avgDaysLate: inspectionCompliance.summary.avgDaysLate,
       oowUsagePercent: inspectionCompliance.summary.oowUsagePercent,
       oowOnTimePercent: inspectionCompliance.summary.oowOnTimePercent,
+      aggregateGrade: inspectionCompliance.summary.aggregateGrade,
+      aggregateScore: inspectionCompliance.summary.aggregateScore,
       byEmployee: inspectionCompliance.byEmployee,
     };
   }

@@ -319,11 +319,63 @@ export function filterAssignedUsersByTeam(
   );
 }
 
+// ========== Deal-Location Attribution ==========
+
+/**
+ * Normalize a raw hubspot deal ID value — may be a plain numeric ID
+ * or a full HubSpot URL like https://app.hubspot.com/contacts/.../record/0-3/12345.
+ */
+function normalizeHubspotDealIdValue(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  if (/^\d+$/.test(trimmed)) return trimmed;
+  const urlMatch = trimmed.match(/\/record\/[^/]+\/(\d+)/);
+  if (urlMatch) return urlMatch[1];
+  const tailMatch = trimmed.match(/(\d{5,})(?!.*\d)/);
+  if (tailMatch) return tailMatch[1];
+  return undefined;
+}
+
+/**
+ * Extract the HubSpot deal ID from a Zuper job's custom_fields or tags.
+ * Returns the numeric deal ID as a string, or undefined if not found.
+ *
+ * Self-contained copy of the logic from zuper-sync.ts to avoid pulling in
+ * that module's dependencies.
+ */
+export function extractHubspotDealIdFromJob(
+  job: Record<string, unknown>
+): string | undefined {
+  // 1. Check custom_fields array
+  const customFields = job.custom_fields;
+  if (Array.isArray(customFields)) {
+    for (const field of customFields) {
+      const label = String(field?.label || "").toLowerCase();
+      if (label.includes("hubspot") || label.includes("deal_id") || label.includes("deal id")) {
+        const val = String(field?.value || "").trim();
+        const normalized = normalizeHubspotDealIdValue(val);
+        if (normalized) return normalized;
+      }
+    }
+  }
+
+  // 2. Check job_tags for patterns like hs:12345 or deal:12345
+  const tags = job.job_tags;
+  if (Array.isArray(tags)) {
+    for (const tag of tags) {
+      const match = String(tag).match(/^(?:hs|deal)[:\-](\d+)$/i);
+      if (match) return match[1];
+    }
+  }
+
+  return undefined;
+}
+
 /**
  * Compute a letter grade from a compliance score.
  *
  * Score formula (see compliance-compute.ts):
- *   0.5 * onTime% + 0.3 * (1 - stuckRate) * 100 + 0.2 * (1 - neverStartedRate) * 100
+ *   score = onTime% - stuck% - neverStarted% (floor 0)
  *
  * Thresholds:
  *   A  ≥ 90

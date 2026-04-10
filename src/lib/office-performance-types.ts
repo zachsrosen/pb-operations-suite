@@ -60,6 +60,10 @@ export interface SectionCompliance {
   oowUsagePercent: number;
   /** Of the jobs where OOW was used, % that were on-time relative to scheduled start. -1 if never used. */
   oowOnTimePercent: number;
+  /** Location-level aggregate compliance grade */
+  aggregateGrade: string;
+  /** Location-level aggregate compliance score */
+  aggregateScore: number;
   byEmployee: EmployeeCompliance[];
 }
 

@@ -3,7 +3,7 @@ import * as Sentry from "@sentry/nextjs";
 import { requireApiAuth } from "@/lib/api-auth";
 import { tagSentryRequest } from "@/lib/sentry-request";
 import { JOB_CATEGORIES, JOB_CATEGORY_UIDS, zuper } from "@/lib/zuper";
-import { getActiveCrewMembers } from "@/lib/db";
+import { getActiveCrewMembers, prisma } from "@/lib/db";
 import {
   COMPLIANCE_EXCLUDED_USER_UIDS,
   COMPLIANCE_TEAM_OVERRIDES,
@@ -22,10 +22,23 @@ import {
   filterAssignedUsersByTeam,
   computeGrade,
   fetchJobsForCategory,
+  extractHubspotDealIdFromJob,
 } from "@/lib/compliance-helpers";
+import { normalizeLocation } from "@/lib/locations";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
+
+// ========== Deal-location attribution ==========
+
+/** Map team filter strings to the canonical locations that team serves. */
+const TEAM_TO_CANONICAL_LOCATIONS: Record<string, string[]> = {
+  "westminster": ["Westminster"],
+  "centennial": ["Centennial"],
+  "colorado springs": ["Colorado Springs"],
+  "san luis obispo": ["San Luis Obispo", "Camarillo"],
+  "camarillo": ["Camarillo"],
+};
 
 // ========== Types ==========
 
@@ -212,6 +225,54 @@ export async function GET(request: NextRequest) {
       excludedUserUids: COMPLIANCE_EXCLUDED_USER_UIDS,
     };
 
+    // Build deal ID → pbLocation lookup from HubSpotProjectCache
+    const projectCacheRows = await prisma.hubSpotProjectCache.findMany({
+      select: { dealId: true, pbLocation: true },
+    });
+    const dealLocationMap = new Map<string, string>();
+    for (const row of projectCacheRows) {
+      if (row.pbLocation) {
+        dealLocationMap.set(row.dealId, row.pbLocation);
+      }
+    }
+
+    // Resolve which canonical locations are valid for the current team filter
+    const validLocationsForTeam = teamFilter
+      ? new Set(TEAM_TO_CANONICAL_LOCATIONS[teamFilter] || [])
+      : null; // null = no team filter, accept all
+
+    /** Apply deal-location attribution, falling back to team-based filtering. */
+    function applyDealLocationFilter(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      job: any,
+      assignedUsers: { userUid: string; userName: string; teamNames: string[] }[],
+    ): { users: typeof assignedUsers; skip: boolean } {
+      if (!teamFilter) {
+        // No team filter — accept all users (existing behavior)
+        return { users: assignedUsers, skip: false };
+      }
+
+      const dealId = extractHubspotDealIdFromJob(job as Record<string, unknown>);
+      const dealPbLocation = dealId ? dealLocationMap.get(dealId) : undefined;
+      const normalizedDealLocation = dealPbLocation
+        ? normalizeLocation(dealPbLocation)
+        : null;
+
+      if (normalizedDealLocation && validLocationsForTeam) {
+        if (validLocationsForTeam.has(normalizedDealLocation)) {
+          // Deal location matches this team's territory — include ALL techs on the job
+          return { users: assignedUsers, skip: false };
+        } else {
+          // Deal location is known but doesn't match this team — skip
+          return { users: [], skip: true };
+        }
+      }
+
+      // No deal location — fall back to team-based filtering
+      const filtered = filterAssignedUsersByTeam(assignedUsers, teamFilter);
+      return { users: filtered, skip: filtered.length === 0 };
+    }
+
     // Collect unique teams and categories for filter options
     const teamsSet = new Set<string>();
     const categoriesSet = new Set<string>();
@@ -253,7 +314,7 @@ export async function GET(request: NextRequest) {
       const statusName = getStatusName(job);
       const statusLower = statusName.toLowerCase();
       const assignedUsers = extractAssignedUsers(job, assignmentOptions);
-      const filteredAssignedUsers = filterAssignedUsersByTeam(assignedUsers, teamFilter);
+      const { users: filteredAssignedUsers } = applyDealLocationFilter(job, assignedUsers);
 
       // Track filter options
       categoriesSet.add(categoryName);
@@ -581,9 +642,9 @@ export async function GET(request: NextRequest) {
       const statusName = getStatusName(job);
       const statusLower = statusName.toLowerCase();
       const assignedUsers = extractAssignedUsers(job, assignmentOptions);
-      const filteredAssignedUsers = filterAssignedUsersByTeam(assignedUsers, teamFilter);
+      const { users: filteredAssignedUsers, skip: skipJob } = applyDealLocationFilter(job, assignedUsers);
 
-      if (filteredAssignedUsers.length === 0) continue;
+      if (skipJob || filteredAssignedUsers.length === 0) continue;
 
       // Determine which teams this job belongs to
       const jobTeams = new Set<string>();
@@ -764,9 +825,9 @@ export async function GET(request: NextRequest) {
       const statusName = getStatusName(job);
       const statusLower = statusName.toLowerCase();
       const assignedUsers = extractAssignedUsers(job, assignmentOptions);
-      const filteredAssignedUsers = filterAssignedUsersByTeam(assignedUsers, teamFilter);
+      const { users: filteredAssignedUsers, skip: skipJob2 } = applyDealLocationFilter(job, assignedUsers);
 
-      if (filteredAssignedUsers.length === 0) continue;
+      if (skipJob2 || filteredAssignedUsers.length === 0) continue;
 
       if (!catAccMap.has(categoryName)) {
         catAccMap.set(categoryName, {
@@ -850,10 +911,10 @@ export async function GET(request: NextRequest) {
       const statusName = getStatusName(job);
       const statusLower = statusName.toLowerCase();
       const assignedUsers = extractAssignedUsers(job, assignmentOptions);
-      const filteredAssignedUsers = filterAssignedUsersByTeam(assignedUsers, teamFilter);
+      const { users: filteredAssignedUsers, skip: skipJob3 } = applyDealLocationFilter(job, assignedUsers);
 
       // Only multi-person crews
-      if (filteredAssignedUsers.length < 2) continue;
+      if (skipJob3 || filteredAssignedUsers.length < 2) continue;
 
       // Create crew composition key from sorted user names
       const crewKey = filteredAssignedUsers
@@ -953,8 +1014,8 @@ export async function GET(request: NextRequest) {
     for (const { job } of allJobs) {
       const statusLower = getStatusName(job).toLowerCase();
       const assignedUsers = extractAssignedUsers(job, assignmentOptions);
-      const filteredAssignedUsers = filterAssignedUsersByTeam(assignedUsers, teamFilter);
-      if (filteredAssignedUsers.length === 0) continue;
+      const { users: filteredAssignedUsers, skip: skipJob4 } = applyDealLocationFilter(job, assignedUsers);
+      if (skipJob4 || filteredAssignedUsers.length === 0) continue;
 
       summaryAcc.totalJobs++;
 
