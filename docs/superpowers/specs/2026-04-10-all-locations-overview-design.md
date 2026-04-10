@@ -3,7 +3,7 @@
 **Date:** 2026-04-10
 **Status:** Approved
 
-Two changes that work together: a new carousel slide showing all 5 PB locations side-by-side, and a fix to how Zuper compliance attributes jobs to the correct location.
+Two changes that work together: a new standalone page at `/office-performance/all` showing all 5 PB locations side-by-side, and a fix to how Zuper compliance attributes jobs to the correct location.
 
 ---
 
@@ -57,11 +57,11 @@ Note: `ZuperJobCache` stores the `hubspotDealId` link but does NOT have `pbLocat
 
 ---
 
-## 2. All Locations Carousel Slide
+## 2. All Locations Overview Page
 
 ### Overview
 
-A new slide in the office-performance carousel that shows all 5 locations side-by-side. Displayed as the first slide before individual location slides cycle through.
+A standalone page at `/office-performance/all` showing all 5 locations side-by-side. TVs navigate directly to this URL; it does not rotate within a per-location carousel.
 
 ### Route
 
@@ -126,7 +126,7 @@ Five-column grid, one per location. Each column stacks three category blocks:
 
 `SectionCompliance` currently has no aggregate grade — only per-employee grades. The all-locations overview needs a single grade per category per location.
 
-**Derivation:** Apply `computeGrade()` to the aggregate compliance score, computed from the `SectionCompliance` summary fields using the same formula as per-employee scores:
+**Derivation:** Apply `computeGrade()` to the aggregate compliance score, computed from the `SectionCompliance` summary fields using the same penalty-based formula already in use for per-employee scores (changed from the old weighted formula to `onTime% − stuck% − neverStarted%` in commit `3f73fb40`):
 
 ```ts
 const stuckRate = compliance.totalJobs > 0
