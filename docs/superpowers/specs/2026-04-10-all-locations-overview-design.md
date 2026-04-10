@@ -21,19 +21,27 @@ Change `computeLocationCompliance()` to attribute jobs by deal location instead 
 
 **New flow for each Zuper job:**
 
-1. Extract `hubspot_deal_id` from the job's `custom_fields`
-2. Look up that deal's `pb_location` from `ZuperJobCache` (already populated by zuper-sync)
-3. If found: attribute the job to that deal's location. **All assigned techs** on the job count toward that location's compliance, regardless of their home team.
-4. If not found (no deal link, cache miss): fall back to current team-based attribution
+1. Extract `hubspot_deal_id` from the job's `custom_fields` (reuse `extractHubspotDealId` logic from zuper-sync, including URL-format normalization)
+2. Look up that deal's `pb_location` from **`HubSpotProjectCache`** (which has a `pbLocation` column indexed by `dealId`)
+3. Normalize the location via `normalizeLocation()` and compare to the target location
+4. If matched: attribute the job to that deal's location. **All assigned techs** on the job count toward that location's compliance, regardless of their home team.
+5. If not found (no deal link, cache miss, empty pbLocation): fall back to current team-based attribution
 
-**Batch optimization:** Before the job loop, run a single Prisma query to load all `ZuperJobCache` records with `hubspotDealId` into a `Map<dealId, pbLocation>`. No per-job database queries.
+**Batch optimization:** Before the job loop, run a single Prisma query to load `HubSpotProjectCache` records into a `Map<dealId, pbLocation>`:
+```ts
+const projectCache = await prisma.hubSpotProjectCache.findMany({
+  select: { dealId: true, pbLocation: true },
+});
+const dealLocationMap = new Map(projectCache.map(p => [p.dealId, p.pbLocation]));
+```
+Note: `ZuperJobCache` stores the `hubspotDealId` link but does NOT have `pbLocation`. The location must come from `HubSpotProjectCache`, which is the authoritative deal-to-location cache in this codebase.
 
 ### Files Changed
 
 - **`src/lib/compliance-compute.ts`** — Core change. Replace team-based filtering with deal-location filtering + team fallback.
   - Remove `LOCATION_TEAM_FILTERS` as primary filter (keep for fallback)
   - Add `hubspot_deal_id` extraction from job custom fields (reuse `extractHubspotDealId` from zuper-sync or inline)
-  - Add `ZuperJobCache` batch lookup at start of `computeLocationCompliance()`
+  - Add `HubSpotProjectCache` batch lookup at start of `computeLocationCompliance()` to build `dealId → pbLocation` map
   - Change job loop: match by deal location first, team second
 
 - **`src/app/api/zuper/compliance/route.ts`** — Has its own copy of the scoring loop. Same deal-location attribution change.
@@ -114,6 +122,26 @@ Five-column grid, one per location. Each column stacks three category blocks:
 | Stuck | `inspections.compliance.stuckJobs.length` |
 | Scheduled this week | `inspections.scheduledThisWeek` |
 
+### Aggregate Compliance Grade
+
+`SectionCompliance` currently has no aggregate grade — only per-employee grades. The all-locations overview needs a single grade per category per location.
+
+**Derivation:** Apply `computeGrade()` to the aggregate compliance score, computed from the `SectionCompliance` summary fields using the same formula as per-employee scores:
+
+```ts
+const stuckRate = compliance.totalJobs > 0
+  ? compliance.stuckJobs.length / compliance.totalJobs : 0;
+const neverStartedRate = compliance.totalJobs > 0
+  ? compliance.neverStartedCount / compliance.totalJobs : 0;
+const rawOnTime = compliance.onTimePercent >= 0 ? compliance.onTimePercent : 0;
+const aggregateScore = Math.max(0, rawOnTime - stuckRate * 100 - neverStartedRate * 100);
+const aggregateGrade = computeGrade(aggregateScore);
+```
+
+**Where to add it:** Add `aggregateGrade: string` and `aggregateScore: number` to `ComplianceSummaryFull` in `compliance-compute.ts`, computed at the end of `computeLocationCompliance()` alongside the existing summary fields. Then thread it through `SectionCompliance` in `office-performance-types.ts` and the office-performance patch code.
+
+This ensures the all-locations overview and any future aggregate display use the same grade derivation as per-employee rows — no invented rollup rule.
+
 ### Color Coding
 
 - Grades: `gradeColor()` — A=green, B=blue, C=yellow, D=orange, F=red
@@ -159,12 +187,16 @@ interface CategoryOverview {
 }
 ```
 
-### Carousel Integration
+### Page Integration
 
-- `"all"` added as a URL slug in the location mapping
-- Prepended to the carousel's location rotation list
-- `AllLocationsSection.tsx` renders when slug = `"all"`
-- No changes to existing per-location sections
+The current office-performance architecture has one page per location (`/office-performance/[location]`) with an `OfficeCarousel` that rotates **sections** within that location (teamResults → surveys → installs → inspections). There is no cross-location rotation mechanism.
+
+The all-locations overview is a **standalone page** at `/office-performance/all`:
+- `"all"` added as a recognized slug in the `[location]` dynamic route
+- When slug is `"all"`, the page renders `AllLocationsSection` instead of `OfficeCarousel`
+- No carousel rotation needed — the all-locations slide is a single static view (auto-refreshes data on the same interval as other pages)
+- TVs that want to show this page navigate directly to `/office-performance/all`
+- No changes to the existing per-location `OfficeCarousel` component
 
 ### Files Created/Changed
 
@@ -178,7 +210,8 @@ interface CategoryOverview {
 ## Implementation Order
 
 1. Compliance attribution fix (changes scoring for all consumers)
-2. All locations API route + types
-3. All locations carousel slide component
-4. Wire into carousel rotation
-5. Verify on TV
+2. Add aggregate grade to `ComplianceSummaryFull` + `SectionCompliance`
+3. All locations API route + types
+4. All locations page component (`AllLocationsSection.tsx`)
+5. Wire `"all"` slug into `[location]` page route
+6. Verify on TV
