@@ -201,3 +201,31 @@ export const SECTION_LABELS: Record<CarouselSection, string> = {
   installs: "INSTALLS",
   inspections: "INSPECTIONS & QUALITY",
 };
+
+// ========== All Locations Overview Types ==========
+
+/** Overview metrics for a single category at a single location */
+export interface CategoryOverview {
+  completedMtd: number;
+  avgDays: number;
+  scheduledThisWeek: number;
+  onTimePercent: number;
+  grade: string;
+  stuckCount: number;
+}
+
+/** Overview metrics for a single location across all categories */
+export interface LocationOverview {
+  location: string;
+  surveys: CategoryOverview;
+  installs: CategoryOverview & { kwInstalledMtd: number };
+  inspections: CategoryOverview & {
+    firstPassRate: number;
+  };
+}
+
+/** Response shape for /api/office-performance/all */
+export interface AllLocationsResponse {
+  locations: LocationOverview[];
+  lastUpdated: string;
+}
