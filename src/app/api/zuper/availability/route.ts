@@ -4,6 +4,7 @@ import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { getCrewSchedulesFromDB, getAvailabilityOverrides } from "@/lib/db";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { evaluateSlotsBatch, getConfig as getTravelConfig } from "@/lib/travel-time";
+import { applyOfficeDailyCap, OFFICE_DAILY_SURVEY_CAPS } from "@/lib/scheduling-policy";
 
 /**
  * GET /api/zuper/availability
@@ -160,24 +161,29 @@ const TEAM_LOCATION_NAMES: Record<string, string> = {
 
 const CREW_SCHEDULES: CrewSchedule[] = [
   // Site Surveyors — userUid and teamUid are resolved dynamically from Zuper API
-  // TEMPORARILY REMOVED — Drew sprained his ankle (2026-02-23)
-  // {
-  //   name: "Drew Perry",
-  //   location: "DTC",
-  //   reportLocation: "DTC",
-  //   schedule: [
-  //     { day: 2, startTime: "12:00", endTime: "15:00" }, // Tue
-  //     { day: 4, startTime: "12:00", endTime: "15:00" }, // Thu
-  //   ],
-  //   jobTypes: ["survey"],
-  // },
+  {
+    name: "Drew Perry",
+    location: "DTC",
+    reportLocation: "DTC",
+    schedule: [
+      { day: 1, startTime: "10:00", endTime: "16:00" }, // Mon 10am-4pm
+      { day: 2, startTime: "10:00", endTime: "16:00" }, // Tue 10am-4pm
+      { day: 3, startTime: "10:00", endTime: "16:00" }, // Wed 10am-4pm
+      { day: 4, startTime: "10:00", endTime: "16:00" }, // Thu 10am-4pm
+      { day: 5, startTime: "10:00", endTime: "16:00" }, // Fri 10am-4pm
+    ],
+    jobTypes: ["survey"],
+  },
   {
     name: "Joe Lynch",
     location: "Westminster",
     reportLocation: "Westminster",
     schedule: [
-      { day: 2, startTime: "11:00", endTime: "14:00" }, // Tue
-      { day: 4, startTime: "11:00", endTime: "14:00" }, // Thu
+      { day: 1, startTime: "10:00", endTime: "16:00" }, // Mon 10am-4pm
+      { day: 2, startTime: "10:00", endTime: "16:00" }, // Tue 10am-4pm
+      { day: 3, startTime: "10:00", endTime: "16:00" }, // Wed 10am-4pm
+      { day: 4, startTime: "10:00", endTime: "16:00" }, // Thu 10am-4pm
+      { day: 5, startTime: "10:00", endTime: "16:00" }, // Fri 10am-4pm
     ],
     jobTypes: ["survey"],
   },
@@ -997,6 +1003,17 @@ export async function GET(request: NextRequest) {
 
     // Recheck availability after filtering
     day.hasAvailability = day.availableSlots.length > 0;
+  }
+
+  // --- Per-office daily survey cap ---
+  // Resolve alias → cap office (e.g. "Centennial" → "DTC") so the cap
+  // applies regardless of which location name the scheduler uses.
+  if (type === "survey") {
+    const locationMatches = location ? getLocationMatches(location, "survey") : [];
+    const capOffice = locationMatches.find(loc => OFFICE_DAILY_SURVEY_CAPS[loc]) ?? location ?? undefined;
+    for (const dateStr in availabilityByDate) {
+      applyOfficeDailyCap(availabilityByDate[dateStr], capOffice);
+    }
   }
 
   // --- Travel-time annotation (survey only, when candidate address provided) ---
