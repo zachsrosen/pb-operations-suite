@@ -1,11 +1,14 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { queryKeys } from "@/lib/query-keys";
 import {
   CAROUSEL_SECTIONS,
   SECTION_COLORS,
   type CarouselSection,
   type OfficePerformanceData,
+  type AllLocationsResponse,
 } from "@/lib/office-performance-types";
 import AmbientBackground from "./AmbientBackground";
 import CarouselHeader from "./CarouselHeader";
@@ -13,6 +16,7 @@ import TeamResultsSection from "./TeamResultsSection";
 import SurveysSection from "./SurveysSection";
 import InstallsSection from "./InstallsSection";
 import InspectionsSection from "./InspectionsSection";
+import AllLocationsSection from "./AllLocationsSection";
 
 const ROTATION_INTERVAL = 45_000;
 
@@ -39,6 +43,18 @@ export default function OfficeCarousel({
   const [transition, setTransition] = useState<TransitionState>("idle");
   const [direction, setDirection] = useState<Direction>("forward");
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Fetch all-locations data for the "allLocations" carousel slide
+  const { data: allLocationsData } = useQuery({
+    queryKey: queryKeys.officePerformance.location("all"),
+    queryFn: async (): Promise<AllLocationsResponse> => {
+      const res = await fetch("/api/office-performance/all?refresh=true");
+      if (!res.ok) throw new Error("Failed to fetch all-locations data");
+      return res.json();
+    },
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+  });
 
   const currentSection = CAROUSEL_SECTIONS[displayIndex];
   const sectionColor = SECTION_COLORS[currentSection];
@@ -126,6 +142,18 @@ export default function OfficeCarousel({
         return <InstallsSection data={data.installs} />;
       case "inspections":
         return <InspectionsSection data={data.inspections} />;
+      case "allLocations":
+        if (!allLocationsData?.locations) {
+          return (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="w-8 h-8 border-2 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <div className="text-slate-400 text-sm">Loading all locations...</div>
+              </div>
+            </div>
+          );
+        }
+        return <AllLocationsSection locations={allLocationsData.locations} />;
     }
   };
 

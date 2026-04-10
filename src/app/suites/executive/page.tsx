@@ -109,6 +109,14 @@ const LINKS: SuitePageCard[] = [
     section: "Meta",
   },
   {
+    href: "/dashboards/office-performance/all",
+    title: "All Locations",
+    description: "Side-by-side overview — surveys, installs, inspections across all 5 locations.",
+    tag: "OFFICE",
+    icon: "🌐",
+    section: "Office Performance",
+  },
+  {
     href: "/dashboards/office-performance/westminster",
     title: "Westminster",
     description: "Ambient display — pipeline, surveys, installs, inspections for Westminster.",

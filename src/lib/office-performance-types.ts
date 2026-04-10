@@ -179,13 +179,14 @@ export type OfficeMetricName =
   | "projects_completed";
 
 /** Carousel section identifiers */
-export type CarouselSection = "teamResults" | "surveys" | "installs" | "inspections";
+export type CarouselSection = "teamResults" | "surveys" | "installs" | "inspections" | "allLocations";
 
 export const CAROUSEL_SECTIONS: CarouselSection[] = [
   "teamResults",
   "surveys",
   "installs",
   "inspections",
+  "allLocations",
 ];
 
 export const SECTION_COLORS: Record<CarouselSection, string> = {
@@ -193,6 +194,7 @@ export const SECTION_COLORS: Record<CarouselSection, string> = {
   surveys: "#3b82f6",     // blue
   installs: "#22c55e",    // green
   inspections: "#06b6d4", // cyan
+  allLocations: "#a855f7", // purple
 };
 
 export const SECTION_LABELS: Record<CarouselSection, string> = {
@@ -200,6 +202,7 @@ export const SECTION_LABELS: Record<CarouselSection, string> = {
   surveys: "SURVEYS",
   installs: "INSTALLS",
   inspections: "INSPECTIONS & QUALITY",
+  allLocations: "ALL LOCATIONS",
 };
 
 // ========== All Locations Overview Types ==========
