@@ -80,3 +80,53 @@ export function getSalesSurveyLeadTimeError({
 
   return null;
 }
+
+/**
+ * Per-office daily cap for scheduled site surveys.
+ * When a date reaches this count at the given office, additional unbooked
+ * slots are hidden from the site-survey-scheduler UI for that date.
+ *
+ * Keys must match the office display names used by the hardcoded crew list
+ * in `src/app/api/zuper/availability/route.ts` (e.g. "DTC", "Westminster").
+ * Offices missing from this map have no office-level cap — existing
+ * per-crew `maxDailyJobs` behavior still applies.
+ */
+export const OFFICE_DAILY_SURVEY_CAPS: Record<string, number> = {
+  DTC: 3,
+  Westminster: 3,
+};
+
+/** Structural type for the day object the availability route builds. */
+export interface DayForOfficeCap {
+  availableSlots: unknown[];
+  bookedSlots?: unknown[];
+  hasAvailability: boolean;
+  dayCapped?: boolean;
+  capLimit?: number;
+}
+
+/**
+ * Enforce per-office daily survey cap. Mutates `day` in place.
+ * - Configured office at/over cap: clears availableSlots, sets dayCapped=true, capLimit=N
+ * - Configured office under cap: sets dayCapped=false, capLimit=N
+ * - Unconfigured office or undefined: returns early, no fields set
+ */
+export function applyOfficeDailyCap(
+  day: DayForOfficeCap,
+  office: string | undefined,
+): void {
+  if (!office) return;
+  const cap = OFFICE_DAILY_SURVEY_CAPS[office];
+  if (cap === undefined) return;
+
+  day.capLimit = cap;
+  const bookedCount = day.bookedSlots?.length ?? 0;
+
+  if (bookedCount >= cap) {
+    day.availableSlots = [];
+    day.hasAvailability = false;
+    day.dayCapped = true;
+  } else {
+    day.dayCapped = false;
+  }
+}

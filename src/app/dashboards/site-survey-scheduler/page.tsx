@@ -141,6 +141,8 @@ interface DayAvailability {
   }>;
   hasAvailability: boolean;
   isFullyBooked: boolean;
+  dayCapped?: boolean;
+  capLimit?: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -2201,6 +2203,13 @@ export default function SiteSurveySchedulerPage() {
                                   <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
                                   <span className="text-[0.6rem] font-medium text-emerald-400">{slotCount}</span>
                                 </div>
+                              ) : dayAvailability?.dayCapped ? (
+                                <div
+                                  className="px-1.5 py-0.5 rounded-full bg-zinc-500/20 border border-zinc-500/40"
+                                  title={`Office daily cap reached (${dayAvailability.capLimit ?? 3} surveys)`}
+                                >
+                                  <span className="text-[0.6rem] font-medium text-zinc-300">Full</span>
+                                </div>
                               ) : isFullyBooked ? (
                                 <div className="px-1.5 py-0.5 rounded-full bg-red-500/20 border border-red-500/30" title="Fully booked">
                                   <span className="text-[0.6rem] font-medium text-red-400">Full</span>
@@ -2727,6 +2736,17 @@ export default function SiteSurveySchedulerPage() {
               ) : (
                 /* Time slot picker for new scheduling or rescheduling */
                 <div>
+                  {availabilityByDate[scheduleModal.date]?.dayCapped && (
+                    <div className="mb-2 px-3 py-2 rounded-lg bg-zinc-500/15 border border-zinc-500/40">
+                      <p className="text-xs font-medium text-zinc-200">
+                        {scheduleModal.project.location} has reached its daily limit of{" "}
+                        {availabilityByDate[scheduleModal.date]?.capLimit ?? 3} scheduled surveys for this date.
+                      </p>
+                      <p className="text-[0.65rem] text-muted mt-0.5">
+                        Pick another date, or contact ops if you need to override.
+                      </p>
+                    </div>
+                  )}
                   <span className="text-xs text-muted">
                     {scheduleModal.isRescheduling ? "Select New Time Slot" : "Select Time Slot"}
                   </span>
