@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { CANONICAL_LOCATIONS } from "@/lib/locations";
+import { CANONICAL_LOCATIONS, CANONICAL_TO_LOCATION_SLUG } from "@/lib/locations";
 import { getOfficePerformanceData } from "@/lib/office-performance";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import type {
@@ -44,30 +44,58 @@ function stripToOverview(data: OfficePerformanceData): LocationOverview {
   };
 }
 
+/**
+ * Try to read per-location data from the existing appCache.
+ * Each per-location TV page populates this cache via /api/office-performance/[location].
+ * Returns null if the cache is empty (location page hasn't been loaded yet).
+ */
+function getFromPerLocationCache(canonicalLocation: string): OfficePerformanceData | null {
+  const slug = CANONICAL_TO_LOCATION_SLUG[canonicalLocation as keyof typeof CANONICAL_TO_LOCATION_SLUG];
+  if (!slug) return null;
+  const cacheKey = CACHE_KEYS.OFFICE_PERFORMANCE(slug);
+  const cached = appCache.get<OfficePerformanceData>(cacheKey);
+  return cached.hit ? cached.data : null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const forceRefresh = request.nextUrl.searchParams.get("refresh") === "true";
-
-    // Use CACHE_KEYS.OFFICE_PERFORMANCE("all") — same pattern as per-location routes
     const cacheKey = CACHE_KEYS.OFFICE_PERFORMANCE("all");
 
     const { data, cached, stale, lastUpdated } =
       await appCache.getOrFetch<AllLocationsResponse>(
         cacheKey,
         async () => {
-          // Fetch all locations in parallel
-          const locationData = await Promise.all(
-            CANONICAL_LOCATIONS.map((loc) =>
-              getOfficePerformanceData(loc).catch((err) => {
-                console.error(`[office-perf/all] Failed to fetch ${loc}:`, err);
-                return null;
-              })
-            )
-          );
+          const locations: LocationOverview[] = [];
 
-          const locations: LocationOverview[] = locationData
-            .filter((d): d is OfficePerformanceData => d !== null)
-            .map(stripToOverview);
+          // Try per-location caches first (instant — no API calls)
+          const uncachedLocations: string[] = [];
+          for (const loc of CANONICAL_LOCATIONS) {
+            const cachedData = getFromPerLocationCache(loc);
+            if (cachedData) {
+              locations.push(stripToOverview(cachedData));
+            } else {
+              uncachedLocations.push(loc);
+            }
+          }
+
+          // Fetch uncached locations sequentially to avoid rate-limit storms.
+          // Parallel fetches for 5 locations = 5x HubSpot + 15x Zuper concurrent
+          // API calls, which triggers 429s and causes multi-minute hangs.
+          for (const loc of uncachedLocations) {
+            try {
+              const data = await getOfficePerformanceData(loc);
+              locations.push(stripToOverview(data));
+            } catch (err) {
+              console.error(`[office-perf/all] Failed to fetch ${loc}:`, err);
+            }
+          }
+
+          // Sort to match CANONICAL_LOCATIONS order
+          const orderMap = new Map(
+            (CANONICAL_LOCATIONS as readonly string[]).map((loc, i) => [loc, i])
+          );
+          locations.sort((a, b) => (orderMap.get(a.location) ?? 99) - (orderMap.get(b.location) ?? 99));
 
           return {
             locations,
