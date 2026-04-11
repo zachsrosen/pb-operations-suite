@@ -218,8 +218,12 @@ async function processItem(
     return;
   }
 
-  // 2. Missing critical fields
-  if (!fields.name && !fields.brand && !fields.model) {
+  // 2. Missing critical fields — need a usable name OR both brand and model.
+  // Without this, partially-identified products auto-create with "Unknown"
+  // brand/model, weakening dedup and polluting the catalog.
+  const hasName = !!fields.name.trim();
+  const hasBrandAndModel = !!fields.brand.trim() && !!fields.model.trim();
+  if (!hasName && !hasBrandAndModel) {
     await createPendingReview(fields, "incomplete_data", []);
     stats.flagged += 1;
     return;
