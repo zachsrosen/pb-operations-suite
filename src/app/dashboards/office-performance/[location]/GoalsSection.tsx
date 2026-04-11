@@ -52,15 +52,22 @@ function GoalRowDisplay({ row, config }: { row: GoalRow; config: DepartmentConfi
 
   // Format current value for CountUp: use raw number with prefix/suffix
   const isCurrency = config.format === "currency";
-  const displayValue = isCurrency
-    ? row.current >= 1_000_000
-      ? row.current / 1_000_000
-      : row.current / 1_000
-    : row.current;
-  const suffix = isCurrency
-    ? row.current >= 1_000_000 ? "M" : "k"
-    : "";
-  const decimals = isCurrency && row.current >= 1_000_000 ? 2 : 0;
+  let displayValue: number;
+  let suffix = "";
+  let decimals = 0;
+
+  if (!isCurrency) {
+    displayValue = row.current;
+  } else if (row.current >= 1_000_000) {
+    displayValue = row.current / 1_000_000;
+    suffix = "M";
+    decimals = 2;
+  } else if (row.current >= 1_000) {
+    displayValue = row.current / 1_000;
+    suffix = "k";
+  } else {
+    displayValue = row.current;
+  }
 
   return (
     <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl px-5 py-4">

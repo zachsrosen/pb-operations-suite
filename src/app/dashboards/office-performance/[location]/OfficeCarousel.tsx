@@ -71,7 +71,7 @@ export default function OfficeCarousel({
     queryKey: queryKeys.goalsPipeline.location(locationSlug),
     queryFn: async (): Promise<GoalsPipelineData> => {
       const res = await fetch(
-        `/api/office-performance/goals-pipeline/${locationSlug}`
+        `/api/office-performance/goals-pipeline/${locationSlug}?refresh=true`
       );
       if (!res.ok) throw new Error("Failed to fetch goals/pipeline data");
       return res.json();

@@ -274,13 +274,20 @@ export async function getGoalsPipelineData(
 
   const reviewCount = reviewLocationCounts[location] || 0;
 
-  // ------ Goal targets from DB ------
+  // ------ Goal targets from DB (falls back to defaults if DB unavailable) ------
 
-  const goalRecords = await prisma.officeGoal.findMany({
-    where: { location, month, year },
-  });
+  let targetMap = new Map<string, number>();
+  if (prisma) {
+    try {
+      const goalRecords = await prisma.officeGoal.findMany({
+        where: { location, month, year },
+      });
+      targetMap = new Map(goalRecords.map((g) => [g.metric, g.target]));
+    } catch (err) {
+      console.error("[goals-pipeline] Failed to fetch OfficeGoal records, using defaults:", err);
+    }
+  }
 
-  const targetMap = new Map(goalRecords.map((g) => [g.metric, g.target]));
   const defaults = DEFAULT_TARGETS[location] ?? DEFAULT_TARGETS["Westminster"];
 
   function getTarget(metric: GoalMetric): number {
