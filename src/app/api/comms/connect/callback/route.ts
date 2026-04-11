@@ -90,7 +90,12 @@ export async function GET(req: NextRequest) {
     },
     update: {
       gmailAccessToken: commsEncryptToken(data.access_token),
-      gmailRefreshToken: commsEncryptToken(data.refresh_token || ""),
+      // Only overwrite refresh token if Google actually returns a new one —
+      // reconnects often omit it, and blanking the stored token disconnects
+      // the user once the access token expires.
+      ...(data.refresh_token
+        ? { gmailRefreshToken: commsEncryptToken(data.refresh_token) }
+        : {}),
       gmailTokenExpiry: BigInt(Date.now() + expiresIn * 1000),
       chatEnabled: true,
       scopes: data.scope || "",

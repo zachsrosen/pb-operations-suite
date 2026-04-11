@@ -77,11 +77,11 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // --- Chat ---
+  // --- Chat (fetched independently of Gmail unchanged flag) ---
   let chatMessages: CommsChatMessage[] = [];
   let chatSpaceCount = 0;
 
-  if (includeChat && !unchanged) {
+  if (includeChat) {
     const chatResult = await fetchChatMessages(user.id, {
       chatLastSyncAt: state?.chatLastSyncAt,
     });
@@ -106,7 +106,7 @@ export async function GET(req: NextRequest) {
     // Chat errors are non-fatal — just skip Chat messages
   }
 
-  // If both Gmail unchanged and Chat returned empty (no-change fast path)
+  // Both sources report no changes — signal client to keep previous data
   if (unchanged && chatMessages.length === 0) {
     return NextResponse.json({ unchanged: true });
   }
