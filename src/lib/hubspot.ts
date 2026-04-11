@@ -2582,6 +2582,109 @@ export async function fetchHubSpotProductById(
   }
 }
 
+/** Properties needed by the product sync for field mapping. */
+const PRODUCT_SYNC_PROPERTIES = [
+  "name",
+  "hs_sku",
+  "price",
+  "description",
+  "manufacturer",
+  "product_category",
+  "hs_cost_of_goods_sold",
+];
+
+export interface HubSpotProductRecord {
+  id: string;
+  properties: Record<string, string | null>;
+}
+
+/**
+ * List HubSpot products created since a given date.
+ * Uses POST /crm/v3/objects/products/search with createdate filter.
+ * If `since` is undefined, lists all products (backfill mode).
+ */
+export async function listRecentHubSpotProducts(
+  since?: Date,
+): Promise<HubSpotProductRecord[]> {
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN is not configured");
+
+  const products: HubSpotProductRecord[] = [];
+  let after: string | undefined;
+  const limit = 100;
+  const maxRetries = 5;
+
+  const filters = since
+    ? [
+        {
+          propertyName: "createdate",
+          operator: "GTE",
+          value: since.getTime().toString(),
+        },
+      ]
+    : [];
+
+  while (true) {
+    const body: Record<string, unknown> = {
+      filterGroups: filters.length > 0 ? [{ filters }] : [],
+      properties: PRODUCT_SYNC_PROPERTIES,
+      limit,
+      ...(after ? { after } : {}),
+    };
+
+    let response: Response | undefined;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      response = await fetch(
+        "https://api.hubapi.com/crm/v3/objects/products/search",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        },
+      );
+
+      if (response.status === 429 && attempt < maxRetries - 1) {
+        const delay = Math.round(Math.pow(2, attempt) * 1100 + Math.random() * 400);
+        console.log(
+          `[hubspot] Product search rate limited (attempt ${attempt + 1}/${maxRetries}), retrying in ${delay}ms...`,
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      break;
+    }
+
+    if (!response || !response.ok) {
+      const text = await response?.text().catch(() => "unknown");
+      throw new Error(
+        `HubSpot product search failed: ${response?.status} ${text}`,
+      );
+    }
+
+    const json = (await response.json()) as {
+      results?: Array<{ id: string; properties: Record<string, string | null> }>;
+      paging?: { next?: { after?: string } };
+    };
+
+    const batch = json.results ?? [];
+    for (const item of batch) {
+      products.push({ id: item.id, properties: item.properties });
+    }
+
+    after = json.paging?.next?.after;
+    if (!after || batch.length === 0) break;
+
+    if (products.length > 50_000) {
+      throw new Error("HubSpot product pagination exceeded safety limit (50,000 products)");
+    }
+  }
+
+  return products;
+}
+
 export function calculateStats(projects: Project[]) {
   const activeProjects = projects.filter((p) => p.isActive);
   const totalValue = activeProjects.reduce((sum, p) => sum + p.amount, 0);
