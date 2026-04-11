@@ -31,8 +31,8 @@ export async function GET(request: NextRequest) {
   );
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
-  // Delete in order: anomaly events → session activities → orphaned activities → sessions
-  const [deletedEvents, deletedActivities, deletedOrphaned, deletedSessions] =
+  // Delete in order: anomaly events → session activities → orphaned activities → sessions → deal sync logs
+  const [deletedEvents, deletedActivities, deletedOrphaned, deletedSessions, deletedDealSyncLogs] =
     await prisma.$transaction([
       prisma.auditAnomalyEvent.deleteMany({
         where: { createdAt: { lt: cutoff } },
@@ -53,6 +53,11 @@ export async function GET(request: NextRequest) {
       prisma.auditSession.deleteMany({
         where: { startedAt: { lt: cutoff } },
       }),
+      prisma.dealSyncLog.deleteMany({
+        where: {
+          createdAt: { lt: new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) },
+        },
+      }),
     ]);
 
   return NextResponse.json({
@@ -63,6 +68,7 @@ export async function GET(request: NextRequest) {
       activities: deletedActivities.count,
       orphanedActivities: deletedOrphaned.count,
       sessions: deletedSessions.count,
+      dealSyncLogs: deletedDealSyncLogs.count,
     },
   });
 }

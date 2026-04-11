@@ -105,6 +105,17 @@ export const queryKeys = {
     dealSearch: (q: string) => [...queryKeys.idrMeeting.root, "deal-search", q] as const,
     escalationQueue: () => [...queryKeys.idrMeeting.root, "escalation-queue"] as const,
   },
+  comms: {
+    root: ["comms"] as const,
+    messages: (filters?: Record<string, string>) =>
+      [...queryKeys.comms.root, "messages", filters] as const,
+    chat: (filters?: Record<string, string>) =>
+      [...queryKeys.comms.root, "chat", filters] as const,
+    status: () => [...queryKeys.comms.root, "status"] as const,
+    drafts: () => [...queryKeys.comms.root, "drafts"] as const,
+    preferences: (key?: string) =>
+      [...queryKeys.comms.root, "preferences", key] as const,
+  },
 } as const;
 
 /**

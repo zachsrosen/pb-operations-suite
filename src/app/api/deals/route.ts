@@ -7,6 +7,10 @@ import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { requireApiAuth } from "@/lib/api-auth";
 import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES, DEAL_PROPERTIES, getStageMaps, getActiveStages, getStageOrder } from "@/lib/deals-pipeline";
 import { chunk } from "@/lib/utils";
+import { getDealSyncSource, formatStaleness, verifyShadow } from "@/lib/deal-sync";
+import { dealToDeal } from "@/lib/deal-reader";
+import { prisma } from "@/lib/db";
+import type { DealPipeline } from "@/generated/prisma/enums";
 
 const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
@@ -278,6 +282,15 @@ async function fetchDealsForPipeline(pipelineKey: string): Promise<Deal[]> {
   return transformedDeals;
 }
 
+/** Map lowercase pipeline query param → DealPipeline enum for Prisma queries */
+const PIPELINE_PARAM_TO_ENUM: Record<string, DealPipeline> = {
+  sales: "SALES",
+  project: "PROJECT",
+  dnr: "DNR",
+  service: "SERVICE",
+  roofing: "ROOFING",
+};
+
 export async function GET(request: NextRequest) {
   tagSentryRequest(request);
   try {
@@ -305,6 +318,124 @@ export async function GET(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // -----------------------------------------------------------------------
+    // Feature-flag: local-DB path (deal-mirror)
+    // -----------------------------------------------------------------------
+    const syncSource = await getDealSyncSource("deals");
+
+    if (syncSource === "local" || syncSource === "local-with-verify") {
+      const pipelineEnum = PIPELINE_PARAM_TO_ENUM[pipeline];
+      if (!pipelineEnum) {
+        return NextResponse.json(
+          { error: `Unknown pipeline enum for '${pipeline}'` },
+          { status: 400 }
+        );
+      }
+
+      if (syncSource === "local-with-verify") {
+        // Fire-and-forget background comparison — never blocks the response
+        verifyShadow("deals", pipelineEnum).catch(() => {});
+      }
+
+      const rawDeals = await prisma.deal.findMany({
+        where: { pipeline: pipelineEnum },
+      });
+
+      let deals = rawDeals.map(dealToDeal);
+
+      // Apply filters
+      if (activeOnly) {
+        deals = deals.filter((d) => d.isActive);
+      }
+      if (location) {
+        deals = deals.filter((d) => d.pbLocation === location);
+      }
+      if (stage) {
+        deals = deals.filter((d) => d.stage === stage);
+      }
+
+      // Text search
+      if (search) {
+        const q = search.toLowerCase();
+        deals = deals.filter(
+          (d) =>
+            d.name.toLowerCase().includes(q) ||
+            d.address.toLowerCase().includes(q) ||
+            d.city.toLowerCase().includes(q)
+        );
+      }
+
+      // Sort
+      type LocalDeal = (typeof deals)[number];
+      const sortKey = sortBy as keyof LocalDeal;
+      deals = deals.sort((a, b) => {
+        const aVal = a[sortKey];
+        const bVal = b[sortKey];
+        if (typeof aVal === "number" && typeof bVal === "number") {
+          return sortOrder === "desc" ? bVal - aVal : aVal - bVal;
+        }
+        const aStr = String(aVal ?? "");
+        const bStr = String(bVal ?? "");
+        return sortOrder === "desc" ? bStr.localeCompare(aStr) : aStr.localeCompare(bStr);
+      });
+
+      // Stats before pagination
+      const totalValue = deals.reduce((sum, d) => sum + d.amount, 0);
+      const stageCounts = deals.reduce((acc, d) => {
+        acc[d.stage] = (acc[d.stage] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      const locationCounts = deals.reduce((acc, d) => {
+        acc[d.pbLocation] = (acc[d.pbLocation] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>);
+      const totalCount = deals.length;
+
+      // Pagination
+      let paginationMeta = null;
+      if (limit > 0) {
+        const offset = (page - 1) * limit;
+        const totalPages = Math.ceil(totalCount / limit);
+        deals = deals.slice(offset, offset + limit);
+        paginationMeta = { page, limit, totalCount, totalPages, hasMore: page < totalPages };
+      }
+
+      // Stage order from DB pipeline config
+      const stageOrderMap = await getStageOrder();
+      const stageOrder = stageOrderMap[pipeline] || [];
+
+      // Sync metadata
+      const lastSyncLog = await prisma.dealSyncLog.findFirst({
+        where: { source: { startsWith: `batch:${pipelineEnum}` }, status: "SUCCESS" },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      });
+
+      const lastSyncedAt = lastSyncLog?.createdAt ?? new Date();
+
+      return NextResponse.json({
+        deals,
+        count: deals.length,
+        totalCount,
+        stats: { totalValue, stageCounts, locationCounts },
+        stageOrder,
+        pagination: paginationMeta,
+        pipeline,
+        cached: false,
+        stale: false,
+        lastUpdated: lastSyncedAt.toISOString(),
+        sync: {
+          source: syncSource,
+          lastSyncedAt: lastSyncedAt.toISOString(),
+          staleness: formatStaleness(lastSyncedAt),
+        },
+      });
+    }
+
+    // -----------------------------------------------------------------------
+    // Default path: HubSpot-sourced
+    // -----------------------------------------------------------------------
 
     // Use shared cache with stale-while-revalidate + request coalescing
     const { data: allDeals, cached, stale, lastUpdated } = await appCache.getOrFetch<Deal[]>(

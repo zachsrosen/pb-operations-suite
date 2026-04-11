@@ -36,6 +36,7 @@ const DASHBOARD_LINKS = [
   { name: "Equipment Backlog", path: "/dashboards/equipment-backlog", description: "Equipment forecasting by brand, model, and stage" },
   { name: "Service Equipment Backlog", path: "/dashboards/service-backlog", description: "Service pipeline equipment forecasting by brand, model, and stage" },
   { name: "Inventory Hub", path: "/dashboards/inventory", description: "Stock levels, receiving, and procurement gap analysis" },
+  { name: "Comms", path: "/dashboards/comms", description: "Gmail, Chat, and HubSpot unified inbox" },
   // Legacy Standalone Dashboards (now in D&E, P&I, and Intelligence suites)
   { name: "Design & Engineering", path: "/dashboards/design", description: "Track design progress and approvals" },
   { name: "Permitting & Inspections", path: "/dashboards/permitting", description: "Permit status and inspection tracking" },

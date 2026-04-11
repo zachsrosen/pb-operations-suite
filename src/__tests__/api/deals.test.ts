@@ -71,6 +71,24 @@ jest.mock("@/lib/api-auth", () => ({
   })),
 }));
 
+// Mock deal-mirror imports to avoid Prisma import.meta issue in Jest
+jest.mock("@/lib/deal-sync", () => ({
+  getDealSyncSource: jest.fn().mockResolvedValue("hubspot"),
+  formatStaleness: jest.fn().mockReturnValue("just now"),
+  verifyShadow: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock("@/lib/deal-reader", () => ({
+  dealToDeal: jest.fn(),
+}));
+
+jest.mock("@/lib/db", () => ({
+  prisma: {
+    deal: { findMany: jest.fn(), count: jest.fn() },
+    $disconnect: jest.fn(),
+  },
+}));
+
 import { GET } from "@/app/api/deals/route";
 import { NextRequest } from "next/server";
 
