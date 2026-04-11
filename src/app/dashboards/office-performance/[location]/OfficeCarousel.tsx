@@ -19,6 +19,7 @@ import InspectionsSection from "./InspectionsSection";
 import AllLocationsSection from "./AllLocationsSection";
 import GoalsSection from "./GoalsSection";
 import PipelineBarsSection from "./PipelineBarsSection";
+import CalendarSection from "./CalendarSection";
 import { CANONICAL_TO_LOCATION_SLUG } from "@/lib/locations";
 import type { CanonicalLocation } from "@/lib/locations";
 import type { GoalsPipelineData } from "@/lib/goals-pipeline-types";
@@ -198,6 +199,8 @@ export default function OfficeCarousel({
           );
         }
         return <PipelineBarsSection pipeline={goalsPipelineData.pipeline} />;
+      case "calendar":
+        return <CalendarSection location={data.location} />;
       case "allLocations":
         if (!allLocationsData?.locations) {
           return (
