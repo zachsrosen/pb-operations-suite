@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import SuitePageShell, { type SuitePageCard } from "@/components/SuitePageShell";
 import { getCurrentUser } from "@/lib/auth-utils";
+import SyncStatusCard from "./SyncStatusCard";
 
 const ADMIN_TOOLS: SuitePageCard[] = [
   {
@@ -180,6 +181,7 @@ export default async function AdminSuitePage() {
       cards={[...ADMIN_TOOLS, ...DOCUMENTATION, ...API_SHORTCUTS, ...PROTOTYPES]}
       role={user.role}
       columnsClassName="grid grid-cols-1 md:grid-cols-3 gap-4"
+      heroContent={<SyncStatusCard />}
     />
   );
 }
