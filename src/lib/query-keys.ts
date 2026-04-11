@@ -91,6 +91,11 @@ export const queryKeys = {
     location: (slug: string) =>
       [...queryKeys.officePerformance.root, slug] as const,
   },
+  goalsPipeline: {
+    root: ["goals-pipeline"] as const,
+    location: (slug: string) =>
+      [...queryKeys.goalsPipeline.root, slug] as const,
+  },
   idrMeeting: {
     root: ["idr-meeting"] as const,
     sessions: () => [...queryKeys.idrMeeting.root, "sessions"] as const,

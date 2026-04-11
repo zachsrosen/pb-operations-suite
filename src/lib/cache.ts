@@ -273,6 +273,8 @@ export const CACHE_KEYS = {
     `funnel:design-pipeline:${months}:${location}` as const,
   TERRITORY_MAP: "territory-map",
   OFFICE_PERFORMANCE: (location: string) => `office-performance:${location}`,
+  GOALS_PIPELINE: (location: string) => `goals-pipeline:${location}`,
+  FIVE_STAR_REVIEWS: (yearMonth: string) => `five-star-reviews:${yearMonth}`,
 } as const;
 
 // Revenue goals cache cascade: invalidate when deals change
