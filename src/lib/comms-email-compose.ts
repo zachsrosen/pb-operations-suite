@@ -34,23 +34,36 @@ function buildRawMimeMessage(opts: {
   return Buffer.from(raw).toString("base64url");
 }
 
+// Allowlisted Gmail API actions — URL is always built from constants
+type GmailAction =
+  | { action: "create" }
+  | { action: "update"; draftId: string }
+  | { action: "send" };
+
+function buildGmailUrl(act: GmailAction): string {
+  switch (act.action) {
+    case "create":
+      return `${GMAIL_BASE}/drafts`;
+    case "update":
+      // Sanitize draftId to alphanumeric + hyphens only
+      return `${GMAIL_BASE}/drafts/${act.draftId.replace(/[^\w-]/g, "")}`;
+    case "send":
+      return `${GMAIL_BASE}/drafts/send`;
+  }
+}
+
 async function gmailDraftFetch<T>(
   userId: string,
-  path: string,
+  act: GmailAction,
   method: string,
   body?: Record<string, unknown>
 ): Promise<DraftResult<T>> {
-  // Validate path to prevent SSRF — must be a simple Gmail API sub-path
-  const url = new URL(`${GMAIL_BASE}${path}`);
-  if (url.origin !== "https://gmail.googleapis.com") {
-    return { error: "Invalid Gmail API URL" };
-  }
-  const safeUrl = url.toString();
+  const url = buildGmailUrl(act);
 
   const tokenResult = await getValidCommsAccessToken(userId);
   if ("disconnected" in tokenResult) return { disconnected: true };
 
-  const resp = await fetch(safeUrl, {
+  const resp = await fetch(url, {
     method,
     headers: {
       Authorization: `Bearer ${tokenResult.accessToken}`,
@@ -63,7 +76,7 @@ async function gmailDraftFetch<T>(
     // Retry once with fresh token
     const retryToken = await getValidCommsAccessToken(userId);
     if ("disconnected" in retryToken) return { disconnected: true };
-    const retryResp = await fetch(safeUrl, {
+    const retryResp = await fetch(url, {
       method,
       headers: {
         Authorization: `Bearer ${retryToken.accessToken}`,
@@ -94,7 +107,7 @@ export async function createGmailDraft(
   const result = await gmailDraftFetch<{
     id: string;
     message: { id: string };
-  }>(userId, "/drafts", "POST", {
+  }>(userId, { action: "create" }, "POST", {
     message: { raw, ...(opts.threadId ? { threadId: opts.threadId } : {}) },
   });
 
@@ -114,7 +127,7 @@ export async function updateGmailDraft(
   const raw = buildRawMimeMessage(opts);
   const result = await gmailDraftFetch<{ id: string }>(
     userId,
-    `/drafts/${draftId}`,
+    { action: "update", draftId },
     "PUT",
     { message: { raw } }
   );
@@ -130,7 +143,7 @@ export async function sendGmailDraft(
   // Gmail send endpoint is POST /gmail/v1/users/me/drafts/send with { id: draftId }
   const result = await gmailDraftFetch<{ id: string; threadId: string }>(
     userId,
-    "/drafts/send",
+    { action: "send" },
     "POST",
     { id: draftId }
   );
