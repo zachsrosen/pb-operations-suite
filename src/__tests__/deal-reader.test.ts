@@ -17,6 +17,22 @@ jest.mock("@/lib/hubspot", () => ({
     "On Hold",
   ],
   computeDaysInStage: jest.fn().mockReturnValue(21),
+  SCHEDULABLE_STAGES: ["Site Survey", "Ready To Build", "RTB - Blocked", "Construction", "Inspection"],
+  STAGE_PRIORITY: {
+    "Project Rejected - Needs Review": 0,
+    "Site Survey": 1,
+    "Design & Engineering": 2,
+    "Permitting & Interconnection": 3,
+    "RTB - Blocked": 4,
+    "Ready To Build": 5,
+    "Construction": 6,
+    "Inspection": 7,
+    "Permission To Operate": 8,
+    "Close Out": 9,
+    "Project Complete": 10,
+    "On Hold": -1,
+    "Cancelled": -2,
+  },
 }));
 
 import { dealToProject, dealToTransformedProject, dealToDeal } from "@/lib/deal-reader";

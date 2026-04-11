@@ -8,7 +8,7 @@
 
 import type { Deal as PrismaDeal } from "@/generated/prisma/client";
 import type { Project, Equipment } from "@/lib/hubspot";
-import { ACTIVE_STAGES, computeDaysInStage } from "@/lib/hubspot";
+import { ACTIVE_STAGES, computeDaysInStage, STAGE_PRIORITY, SCHEDULABLE_STAGES } from "@/lib/hubspot";
 import type { TransformedProject, Deal as DealType } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
@@ -49,30 +49,6 @@ function parseTags(tagsValue: string | null | undefined): string[] {
   return tagsValue.split(";").map((t) => t.trim()).filter(Boolean);
 }
 
-// Stage state predicates
-const SCHEDULABLE_STAGES = [
-  "Site Survey",
-  "Ready To Build",
-  "RTB - Blocked",
-  "Construction",
-  "Inspection",
-];
-
-const STAGE_PRIORITY: Record<string, number> = {
-  "Project Rejected - Needs Review": 0,
-  "Site Survey": 1,
-  "Design & Engineering": 2,
-  "Permitting & Interconnection": 3,
-  "RTB - Blocked": 4,
-  "Ready To Build": 5,
-  Construction: 6,
-  Inspection: 7,
-  "Permission To Operate": 8,
-  "Close Out": 9,
-  "Project Complete": 10,
-  "On Hold": -1,
-  Cancelled: -2,
-};
 
 function calculatePriorityScore(
   stage: string,
@@ -88,9 +64,9 @@ function calculatePriorityScore(
     score += stagePriority * 50;
   }
   if (isPE) score += 200;
-  if (isRTB) score += 100;
+  if (isRTB) score += 150;
   if (isBlocked) score -= 100;
-  return Math.round(score);
+  return Math.round(score * 10) / 10;
 }
 
 // Parse departmentLeads JSON into named lead fields

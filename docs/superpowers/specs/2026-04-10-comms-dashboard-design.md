@@ -64,15 +64,17 @@ New route group at `src/app/api/comms/`:
 | `/api/comms/status` | GET | Connection status for current user |
 | `/api/comms/connect` | DELETE | Disconnect Gmail, revoke token |
 
-### Data Strategy — Full-Page Fetch With Delta Optimization
+### Data Strategy — Full-Page Fetch, No Server-Side Cache
 
-The original Express app used a long-running process with 60-second polling and an in-memory cache. Vercel serverless functions are ephemeral and don't share in-memory state across isolates, so cron-warms-cache won't work. Instead, every API request returns a **complete, current page of messages** — not a diff.
+The original Express app used a long-running process with 60-second polling and an in-memory cache. Vercel serverless functions are ephemeral and don't share in-memory state across isolates, so cron-warms-cache won't work. Instead, every API request fetches a **complete, current page of messages directly from the Gmail/Chat APIs** and returns it.
 
-**Core contract**: `GET /api/comms/messages` always returns a full paginated result set (e.g., 50 messages, page 1). The client replaces its React Query cache with the response. There is no client-side merging of deltas.
+**Core contract**: `GET /api/comms/messages` always returns a full paginated result set (e.g., 50 messages, page 1). The client replaces its React Query cache with the response. There is no client-side merging, no server-side message cache, and no delta protocol.
 
-**Delta optimization is internal**: The `historyId` (Gmail) and `chatLastSyncAt` (Chat) stored in `CommsUserState` are used server-side to speed up the API call — the route uses `history.list` to detect what changed since last call, then fetches only the affected message IDs via `messages.get`. But the response to the client is always a full page, not a delta payload.
+**How it works**: Every request does a fresh `messages.list` (Gmail) or `spaces.messages.list` (Chat) call to get current message IDs for the requested page, then batch-fetches message details via `messages.get`. There is no stored message snapshot to merge against, and no `history.list` optimization — that API tells you *what changed* but doesn't give you the unchanged messages you'd need to assemble a full page without storage.
 
-**historyId expiration**: Gmail returns 404 if the stored `historyId` is too old (typically >30 days). On 404, the route falls back to a full `messages.list` fetch and stores the new `historyId`. This is the same as a first-load — slightly slower but fully self-healing.
+**`historyId` role (limited)**: `CommsUserState.gmailHistoryId` is stored but only used for one purpose: detecting whether the inbox has changed since the last poll. If `history.list` returns zero changes, the API route can return a `304 Not Modified`-style response (or a `{ unchanged: true }` flag) so the client keeps its existing React Query cache without re-rendering. This is a bandwidth/rendering optimization, not a data-fetching shortcut — the server still makes one `history.list` call either way.
+
+**historyId expiration**: Gmail returns 404 if the stored `historyId` is too old (typically >30 days). On 404, the route clears the stored ID and does a normal full fetch. Self-healing.
 
 ```
 Client opens /dashboards/comms
@@ -80,14 +82,15 @@ Client opens /dashboards/comms
         ▼
   React Query → GET /api/comms/messages?page=1&source=all
         │
-        ├─ Resolve DB user via getCurrentUser() (email → Prisma User.id)
+        ├─ Resolve DB user via getActualCommsUser() (see Identity Resolution)
         ├─ Read CommsUserState (gmailHistoryId, chatLastSyncAt)
         ├─ Get valid access token via getValidCommsAccessToken()
         │    └─ Refresh if expired, retry once on 401, clear only on invalid_grant
-        ├─ Delta optimization: Gmail history.list since historyId
-        │    └─ On 404 (expired historyId): fall back to full messages.list
-        ├─ Fetch full current page of messages from Gmail API
-        ├─ Fetch Chat messages: spaces.list → spaces.messages.list per space
+        ├─ Check for changes: Gmail history.list since historyId
+        │    ├─ No changes → return { unchanged: true } (client keeps cache)
+        │    └─ Changes (or no historyId) → continue to full fetch below
+        ├─ Gmail: messages.list (page 1, 50 results) → batch messages.get for details
+        ├─ Chat: spaces.list → spaces.messages.list per space
         │    └─ Filter: createTime > chatLastSyncAt (per Google Chat API docs)
         ├─ Categorize all messages (HubSpot detection, @mentions, etc.)
         ├─ Compute focus analytics (unread count, follow-up queue, top senders)
@@ -104,11 +107,12 @@ Client opens /dashboards/comms
 
 ### Performance Characteristics
 
-- **First load**: Full Gmail `messages.list` + batch `messages.get` (~2-3s for 50 messages). Paginated — no blocking on large inboxes.
-- **Subsequent polls**: Delta optimization means the server checks `history.list` first. If nothing changed, it can return the same page with minimal API cost. If messages changed, it fetches only affected IDs then assembles the full page.
+- **Every request**: Gmail `messages.list` (1 page, ~50 IDs) + batch `messages.get` (~2-3s total). This is the steady-state cost — no shortcut around it without message storage.
+- **No-change fast path**: If `history.list` returns zero changes, the route skips the full fetch and returns `{ unchanged: true }` (~200ms). Client keeps its existing cache.
 - **Chat sync**: `spaces.list` to enumerate spaces, then `spaces.messages.list` per space with `filter="createTime > ..."` per [Google Chat API docs](https://developers.google.com/workspace/chat/api/reference/rest/v1/spaces.messages/list). Not `spaces.search` (requires admin scopes).
-- **Stale time**: React Query `staleTime: 30_000` (30s). Within 30s of a fetch, cached client-side data is served instantly.
-- **Vercel function timeout**: Default 60s (`maxDuration` in `vercel.json`). Delta-optimized calls complete well within this. Initial full fetch for very large inboxes stays under via pagination.
+- **Stale time**: React Query `staleTime: 30_000` (30s). Within 30s of a fetch, cached client-side data is served instantly with zero API calls.
+- **Vercel function timeout**: Default 60s (`maxDuration` in `vercel.json`). A 50-message page fetch completes well within this. Pagination keeps large inboxes bounded.
+- **Gmail API quota**: ~50 quota units per poll (1 `messages.list` + batch `messages.get`). At 1 poll/min per user, well under the 250 units/sec per-user quota.
 
 ## Data Model
 
@@ -160,7 +164,9 @@ Messages are never written to the database. This is intentional:
 - Reduces data exposure surface (no email content at rest)
 - Avoids syncing/dedup complexity
 - Gmail/Chat APIs are the source of truth
-- Cache provides fast reads for active sessions
+- Each API request fetches the current page directly from the APIs
+
+Trade-off: without stored messages, every poll that detects changes must do a full `messages.list` + `messages.get` round-trip (~2-3s). The `history.list` no-change fast path mitigates this for idle inboxes. If latency becomes a problem at scale, a future iteration could add a lightweight metadata cache (message ID, subject, sender, timestamp — no body content) to Postgres.
 
 ### Migration from SQLite
 
@@ -213,13 +219,21 @@ Messages are never written to the database. This is intentional:
 - Every Gmail/Chat API call uses the requesting user's own tokens — no cross-user access
 - User can only see their own messages, drafts, and preferences
 
-**User identity**: Every Comms API route must resolve the DB user via `getCurrentUser()` from `lib/auth-utils.ts` (which looks up the Prisma `User` by `session.user.email`). The resulting `User.id` (cuid string) is the FK for `CommsGmailToken`, `CommsUserState`, and `CommsAiMemory`. Do NOT use `auth().user.id` directly — that is the NextAuth/Google token subject, which is not the Prisma `User.id`.
+**User identity — impersonation hazard**: `getCurrentUser()` returns the *impersonated* user when an admin is impersonating someone. For Comms this is dangerous — it would route Gmail API calls through another user's `CommsGmailToken`, violating the "own tokens only" guarantee. Comms routes must use a dedicated `getActualCommsUser()` helper that:
+
+1. Calls `auth()` to get the session
+2. Looks up the Prisma `User` by `session.user.email` (the real authenticated user)
+3. Skips the impersonation resolution that `getCurrentUser()` performs
+4. Returns the `User.id` (cuid string) as the FK for `CommsGmailToken`, `CommsUserState`, and `CommsAiMemory`
+
+Alternatively, Comms routes can check for active impersonation and return a 403 ("Comms is not available while impersonating another user"). Either approach is acceptable; the implementation plan should pick one.
+
+Do NOT use `auth().user.id` directly — that is the NextAuth/Google token subject, not the Prisma `User.id`.
 
 ### Rate Limiting
 
-- Gmail API: 250 quota units/sec per user. On-demand delta sync is lightweight (single `history.list` call per request).
-- Client-side: React Query `staleTime: 30_000` + `refetchInterval: 60_000` prevents excessive API calls
-- Multiple browser tabs from same user: React Query deduplicates concurrent requests
+- Gmail API: 250 quota units/sec per user. Each poll triggers a `messages.list` call (1 page) plus batch `messages.get` calls for the page.
+- Client-side: React Query `staleTime: 30_000` + `refetchInterval: 60_000` prevents excessive API calls. Note: React Query deduplicates within a single tab/query client, not across multiple browser tabs.
 
 ### Token Lifecycle & Refresh
 

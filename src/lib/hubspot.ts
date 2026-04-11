@@ -183,7 +183,7 @@ export const DEAL_STAGE_MAP: Record<string, string> = {
 };
 
 // Stage priority mapping (higher = closer to completion)
-const STAGE_PRIORITY: Record<string, number> = {
+export const STAGE_PRIORITY: Record<string, number> = {
   "Project Rejected - Needs Review": 0,
   "Site Survey": 1,
   "Design & Engineering": 2,
@@ -200,7 +200,7 @@ const STAGE_PRIORITY: Record<string, number> = {
 };
 
 // Stages that are schedulable for construction
-const SCHEDULABLE_STAGES = ["Site Survey", "Ready To Build", "RTB - Blocked", "Construction", "Inspection"];
+export const SCHEDULABLE_STAGES = ["Site Survey", "Ready To Build", "RTB - Blocked", "Construction", "Inspection"];
 
 // Stages that are active (everything except completed and cancelled)
 export const ACTIVE_STAGES = [
