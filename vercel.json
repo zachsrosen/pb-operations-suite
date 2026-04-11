@@ -36,6 +36,12 @@
     },
     "src/app/api/webhooks/hubspot/deal-sync/route.ts": {
       "maxDuration": 60
+    },
+    "src/app/api/cron/product-sync/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/inventory/product-sync/route.ts": {
+      "maxDuration": 120
     }
   },
   "crons": [
@@ -78,6 +84,10 @@
     {
       "path": "/api/cron/deal-sync",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/cron/product-sync",
+      "schedule": "*/15 * * * *"
     }
   ],
   "redirects": [

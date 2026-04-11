@@ -2320,3 +2320,27 @@ model CommsUserState {
   lastRefreshedAt DateTime?
   updatedAt       DateTime @updatedAt
 }
+
+// ===========================================
+// PRODUCT SYNC
+// ===========================================
+
+model ProductSyncRun {
+  id             String    @id @default(cuid())
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+  trigger        String    // "cron" | "manual"
+  triggeredBy    String?   // user email for manual triggers
+  zohoScanned    Int       @default(0)
+  hubspotScanned Int       @default(0)
+  zuperScanned   Int       @default(0)
+  imported       Int       @default(0)
+  linked         Int       @default(0)
+  flagged        Int       @default(0)
+  skipped        Int       @default(0)
+  errors         String?   // JSON array of error messages
+  lockSentinel   String?   // "ACTIVE" while running, null when done
+
+  @@unique([lockSentinel], name: "uq_product_sync_active_run")
+  @@index([startedAt])
+}

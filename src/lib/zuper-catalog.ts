@@ -642,6 +642,115 @@ export async function getZuperPartById(
   return null;
 }
 
+export interface ZuperProductRecord {
+  id: string;
+  name?: string;
+  sku?: string;
+  brand?: string;
+  model?: string;
+  description?: string;
+  price?: number;
+  purchasePrice?: number;
+  categoryName?: string;
+  raw: Record<string, unknown>;
+}
+
+/**
+ * List Zuper products, optionally filtered to those created since a given date.
+ * If `since` is undefined, lists all products (backfill mode).
+ * Extracts common fields into a normalized shape while preserving the raw record.
+ */
+export async function listRecentZuperProducts(
+  since?: Date,
+): Promise<ZuperProductRecord[]> {
+  const products: ZuperProductRecord[] = [];
+  const endpoints = getCatalogEndpoints();
+  const perPage = 200;
+
+  for (const endpoint of endpoints) {
+    let page = 1;
+    let hasMore = true;
+
+    while (hasMore) {
+      try {
+        const params = new URLSearchParams({
+          count: String(perPage),
+          page: String(page),
+        });
+        const url = `${endpoint}?${params.toString()}`;
+        const response = await requestZuper(url);
+
+        if (!isRecord(response)) break;
+
+        // Zuper wraps results in various shapes
+        const dataKey = ["data", "items", "products", "parts"].find(
+          (k) => Array.isArray((response as Record<string, unknown>)[k]),
+        );
+        const batch = dataKey
+          ? ((response as Record<string, unknown>)[dataKey] as Record<string, unknown>[])
+          : [];
+
+        if (batch.length === 0) break;
+
+        for (const item of batch) {
+          if (!isRecord(item)) continue;
+
+          // Extract ID using the same key fallback as getZuperPartById
+          const id = ITEM_ID_KEYS.reduce<string | undefined>(
+            (found, key) => found || trimOrUndefined(item[key] as string),
+            undefined,
+          );
+          if (!id) continue;
+
+          // Filter by creation date if provided
+          const createdAt = item.created_at || item.createdAt;
+          if (since && createdAt) {
+            const created = new Date(String(createdAt));
+            if (!isNaN(created.getTime()) && created < since) continue;
+          }
+
+          products.push({
+            id,
+            name: trimOrUndefined(item.name as string),
+            sku: trimOrUndefined(item.sku as string) ||
+              trimOrUndefined(item.part_number as string),
+            brand: trimOrUndefined(item.brand as string),
+            model: trimOrUndefined(item.model as string) ||
+              trimOrUndefined(item.part_number as string),
+            description: trimOrUndefined(item.description as string),
+            price: typeof item.price === "number" ? item.price : undefined,
+            purchasePrice: typeof item.purchase_price === "number"
+              ? item.purchase_price
+              : undefined,
+            categoryName: trimOrUndefined(item.category_name as string) ||
+              trimOrUndefined(
+                (isRecord(item.category) ? (item.category as Record<string, unknown>).name : undefined) as string,
+              ),
+            raw: item,
+          });
+        }
+
+        // Check pagination
+        const total = typeof (response as Record<string, unknown>).total_count === "number"
+          ? (response as Record<string, unknown>).total_count as number
+          : undefined;
+        hasMore = total ? products.length < total : batch.length === perPage;
+        page += 1;
+
+        if (page > 500) break; // Safety limit
+      } catch {
+        // If this endpoint doesn't support listing, try next
+        break;
+      }
+    }
+
+    // If we got results from one endpoint, don't try others
+    if (products.length > 0) break;
+  }
+
+  return products;
+}
+
 export async function createOrUpdateZuperPart(
   input: UpsertZuperPartInput
 ): Promise<UpsertZuperPartResult> {
