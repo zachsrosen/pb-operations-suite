@@ -197,7 +197,8 @@ function sourceLabel(source: SyncSource): string {
 
 // ── Per-Item Processing ──────────────────────────────────────────────────────
 
-async function processItem(
+/** @internal — exported for testing only */
+export async function processItem(
   fields: ExternalProductFields,
   stats: SyncRunStats,
 ): Promise<void> {

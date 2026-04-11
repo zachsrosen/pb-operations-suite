@@ -2,17 +2,20 @@
 jest.mock("@/generated/prisma/client", () => ({
   Prisma: { PrismaClientKnownRequestError: class PrismaClientKnownRequestError extends Error { code: string; constructor(message: string, opts: { code: string }) { super(message); this.code = opts.code; } } },
 }));
-jest.mock("@/lib/db", () => ({ prisma: null }));
+const mockPrisma: Record<string, unknown> = {};
+jest.mock("@/lib/db", () => ({ prisma: mockPrisma }));
 jest.mock("@/lib/zoho-inventory", () => ({ zohoInventory: {} }));
 jest.mock("@/lib/hubspot", () => ({ listRecentHubSpotProducts: jest.fn() }));
 jest.mock("@/lib/zuper-catalog", () => ({ listRecentZuperProducts: jest.fn() }));
-jest.mock("@/lib/product-sync-outbound", () => ({ pushToMissingSystems: jest.fn() }));
+jest.mock("@/lib/product-sync-outbound", () => ({ pushToMissingSystems: jest.fn().mockResolvedValue(undefined) }));
 
 import {
   extractFieldsFromZohoItem,
   extractFieldsFromHubSpotProduct,
   extractFieldsFromZuperProduct,
+  processItem,
 } from "@/lib/product-sync";
+import type { ExternalProductFields } from "@/lib/product-sync";
 
 describe("product-sync field extraction", () => {
   describe("extractFieldsFromZohoItem", () => {
@@ -122,5 +125,98 @@ describe("product-sync field extraction", () => {
       expect(result.unitCost).toBe(7000);
       expect(result.sourceCategory).toBe("Battery");
     });
+  });
+});
+
+// ── processItem incomplete_data guard ───────────────────────────────────────
+
+describe("processItem incomplete_data guard", () => {
+  const mockCreate = jest.fn().mockResolvedValue({});
+
+  beforeAll(() => {
+    Object.assign(mockPrisma, {
+      pendingCatalogPush: { create: mockCreate },
+      internalProduct: { findFirst: jest.fn(), findMany: jest.fn(), create: jest.fn() },
+    });
+  });
+
+  beforeEach(() => mockCreate.mockClear());
+
+  function makeFields(overrides: Partial<ExternalProductFields>): ExternalProductFields {
+    return {
+      externalId: "test-123",
+      source: "zoho",
+      name: "",
+      brand: "",
+      model: "",
+      description: "",
+      sourceCategory: "Module",
+      rawMetadata: {},
+      ...overrides,
+    };
+  }
+
+  it("flags as incomplete_data when only brand is present (no name, no model)", async () => {
+    const stats = { zohoScanned: 0, hubspotScanned: 0, zuperScanned: 0, imported: 0, linked: 0, flagged: 0, skipped: 0, errors: [] };
+    await processItem(makeFields({ brand: "REC" }), stats);
+
+    expect(stats.flagged).toBe(1);
+    expect(stats.imported).toBe(0);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reviewReason: "incomplete_data" }),
+      }),
+    );
+  });
+
+  it("flags as incomplete_data when only model is present (no name, no brand)", async () => {
+    const stats = { zohoScanned: 0, hubspotScanned: 0, zuperScanned: 0, imported: 0, linked: 0, flagged: 0, skipped: 0, errors: [] };
+    await processItem(makeFields({ model: "IQ8A-72-M-US" }), stats);
+
+    expect(stats.flagged).toBe(1);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reviewReason: "incomplete_data" }),
+      }),
+    );
+  });
+
+  it("flags as incomplete_data when name, brand, and model are all blank/whitespace", async () => {
+    const stats = { zohoScanned: 0, hubspotScanned: 0, zuperScanned: 0, imported: 0, linked: 0, flagged: 0, skipped: 0, errors: [] };
+    await processItem(makeFields({ name: "  ", brand: "  ", model: "  " }), stats);
+
+    expect(stats.flagged).toBe(1);
+    expect(mockCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ reviewReason: "incomplete_data" }),
+      }),
+    );
+  });
+
+  it("does NOT flag when name is present (even without brand/model)", async () => {
+    // processItem will proceed past the incomplete guard into canonical key dedup
+    // which calls prisma.internalProduct.findFirst — mock it to return null (no match)
+    const ip = mockPrisma.internalProduct as { findFirst: jest.Mock; findMany: jest.Mock; create: jest.Mock };
+    ip.findFirst.mockResolvedValueOnce(null);
+    ip.findMany.mockResolvedValueOnce([]);
+    ip.create.mockResolvedValueOnce({ id: "new-1" });
+
+    const stats = { zohoScanned: 0, hubspotScanned: 0, zuperScanned: 0, imported: 0, linked: 0, flagged: 0, skipped: 0, errors: [] };
+    await processItem(makeFields({ name: "REC Alpha Pure Black 400" }), stats);
+
+    // Should NOT be flagged as incomplete
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  it("does NOT flag when both brand and model are present (even without name)", async () => {
+    const ip = mockPrisma.internalProduct as { findFirst: jest.Mock; findMany: jest.Mock; create: jest.Mock };
+    ip.findFirst.mockResolvedValueOnce(null);
+    ip.findMany.mockResolvedValueOnce([]);
+    ip.create.mockResolvedValueOnce({ id: "new-2" });
+
+    const stats = { zohoScanned: 0, hubspotScanned: 0, zuperScanned: 0, imported: 0, linked: 0, flagged: 0, skipped: 0, errors: [] };
+    await processItem(makeFields({ brand: "REC", model: "Alpha Pure Black 400" }), stats);
+
+    expect(mockCreate).not.toHaveBeenCalled();
   });
 });
