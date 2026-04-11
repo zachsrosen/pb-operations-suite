@@ -384,7 +384,7 @@ Runs every 10 minutes via `GET /api/cron/deal-sync` (Vercel cron). Route must ex
 4. **Upsert changed deals** — map HubSpot properties → Deal columns via property mapper. Write `DealSyncLog` with change diff.
 5. **Detect deletions** (full sync only, not incremental) — deals in DB but not in HubSpot response → soft-mark with `stage: "DELETED"`. Incremental syncs only contain recently modified deals, so deletion detection is skipped to avoid false positives.
 6. **Invalidate connected clients** — the current SSE stream is backed by in-process `appCache.subscribe()`, which means a cron or webhook invocation on one Vercel serverless instance cannot directly notify SSE clients connected to a different instance. Two-pronged approach:
-   - **Short-term (V1):** Rely on React Query's `staleTime` / `refetchInterval` for eventual UI refresh. SSE invalidation is best-effort for same-instance hits only. Since we're moving reads to the DB anyway, staleness is bounded by the query refetch interval (typically 30–60s), not by SSE.
+   - **Short-term (V1):** Rely on React Query's `staleTime` / `refetchInterval` for eventual UI refresh. SSE invalidation is best-effort for same-instance hits only. **Implementation requirement:** Before flipping any route to `local` mode, audit and standardize polling on every consumer of that route's data. Current state varies widely — `useProjectData` and `useProgressiveDeals` poll at 5 min, some pages at 15 min, and `/dashboards/deals` uses manual fetch + SSE with no polling fallback at all. Each migrated read path must have a `refetchInterval` (recommended: 60s for high-activity dashboards like deals/scheduler/executive, 5 min for lower-traffic pages). The realistic V1 freshness bound is **1–5 minutes depending on the page**, not 30–60s. The staleness indicator thresholds (Section: Staleness Indicator) already accommodate this.
    - **Future enhancement:** Add a shared broadcast channel (e.g., Neon `pg_notify`, Redis pub/sub, or Vercel KV polling) so the sync engine can reliably notify all SSE-connected instances. This is not blocking for V1 since the data is already fresh in Postgres.
    - Emit both legacy keys (`"projects:"`, `"deals:"`) and new keys (`"deals:sync:{pipeline}"`) during migration so existing `useSSE` hooks continue to work for same-instance invalidations.
 
@@ -530,13 +530,15 @@ Every API response includes sync metadata:
 }
 ```
 
-`DashboardShell` renders a staleness indicator:
+`DashboardShell` renders a staleness indicator based on **sync engine** freshness (how recently the DB was updated from HubSpot), not client polling latency:
 
 | Staleness | Display |
 |-----------|---------|
 | < 15 min | Green dot, no text |
 | 15–30 min | Yellow dot, "Synced 18m ago" |
 | > 30 min | Red dot, "Data may be stale — last synced 45m ago" |
+
+Note: total end-to-end latency = sync engine staleness + client polling interval. With a 10-min sync cycle and 1–5 min polling, worst case is ~15 min for a change in HubSpot to appear on-screen. The indicator only surfaces the sync engine side — if the cron is healthy (green dot), any remaining delay is the client's polling interval, which is an acceptable UX tradeoff for V1.
 
 ---
 
