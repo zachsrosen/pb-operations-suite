@@ -45,8 +45,7 @@ function buildGmailUrl(act: GmailAction): string {
     case "create":
       return `${GMAIL_BASE}/drafts`;
     case "update":
-      // Sanitize draftId to alphanumeric + hyphens only
-      return `${GMAIL_BASE}/drafts/${act.draftId.replace(/[^\w-]/g, "")}`;
+      return `${GMAIL_BASE}/drafts/${encodeURIComponent(act.draftId)}`;
     case "send":
       return `${GMAIL_BASE}/drafts/send`;
   }
