@@ -130,6 +130,12 @@ interface Breadcrumb {
   href?: string;
 }
 
+interface SyncMeta {
+  source: string;
+  lastSyncedAt: string;
+  staleness: string;
+}
+
 interface DashboardShellProps {
   title: string;
   subtitle?: string;
@@ -144,6 +150,34 @@ interface DashboardShellProps {
   fullWidth?: boolean;
   /** Data to enable CSV export button */
   exportData?: { data: Record<string, unknown>[]; filename: string };
+  /** Optional sync metadata — renders a staleness indicator when provided */
+  syncMeta?: SyncMeta;
+}
+
+function StalenessIndicator({ syncMeta }: { syncMeta: SyncMeta }) {
+  const minutesAgo = Math.floor(
+    (Date.now() - new Date(syncMeta.lastSyncedAt).getTime()) / 60000
+  );
+
+  let dotColor: string;
+  let label: string | null = null;
+
+  if (minutesAgo < 15) {
+    dotColor = "bg-green-400";
+  } else if (minutesAgo < 30) {
+    dotColor = "bg-yellow-400";
+    label = `Synced ${syncMeta.staleness}`;
+  } else {
+    dotColor = "bg-red-400";
+    label = `Data may be stale — last synced ${syncMeta.staleness}`;
+  }
+
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted" title={`Source: ${syncMeta.source}`}>
+      <span className={`inline-block w-2 h-2 rounded-full ${dotColor}`} />
+      {label && <span>{label}</span>}
+    </span>
+  );
 }
 
 export default function DashboardShell({
@@ -156,6 +190,7 @@ export default function DashboardShell({
   breadcrumbs,
   fullWidth = false,
   exportData,
+  syncMeta,
 }: DashboardShellProps) {
   const pathname = usePathname();
   const { trackExport } = useActivityTracking();
@@ -255,6 +290,7 @@ export default function DashboardShell({
                 {subtitle && (
                   <p className="text-xs text-muted truncate">{subtitle}</p>
                 )}
+                {syncMeta && <StalenessIndicator syncMeta={syncMeta} />}
               </div>
             </div>
             <div className="flex items-center gap-2 sm:gap-3 shrink-0 ml-auto">
