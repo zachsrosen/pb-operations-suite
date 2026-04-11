@@ -8,7 +8,7 @@ import {
   type Project,
 } from "@/lib/hubspot";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
-import { getDealSyncSource, formatStaleness } from "@/lib/deal-sync";
+import { getDealSyncSource, formatStaleness, verifyShadow } from "@/lib/deal-sync";
 import { dealToProject } from "@/lib/deal-reader";
 import { prisma } from "@/lib/db";
 
@@ -65,7 +65,8 @@ export async function GET(request: NextRequest) {
 
     if (syncSource === "local" || syncSource === "local-with-verify") {
       if (syncSource === "local-with-verify") {
-        console.log("[api/projects] local-with-verify mode — shadow verification deferred");
+        // Fire-and-forget background comparison — never blocks the response
+        verifyShadow("projects", "PROJECT").catch(() => {});
       }
 
       const searchParams = request.nextUrl.searchParams;

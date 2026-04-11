@@ -1324,3 +1324,66 @@ export function formatStaleness(lastSync: Date): string {
   const hours = Math.floor(minutes / 60);
   return `${hours}h ago`;
 }
+
+// ---------------------------------------------------------------------------
+// Shadow verification — local-with-verify mode
+// ---------------------------------------------------------------------------
+
+/**
+ * Fires a lightweight background comparison of local vs HubSpot deal counts.
+ * Logs DEAL_SYNC_DISCREPANCY if counts diverge.
+ * Called from API routes when syncSource === "local-with-verify".
+ */
+export async function verifyShadow(
+  route: string,
+  pipeline?: DealPipeline
+): Promise<void> {
+  try {
+    const localCount = await prisma.deal.count({
+      where: pipeline ? { pipeline } : undefined,
+    });
+
+    // Get HubSpot count via search API (limit 1, use total)
+    const pipelineId = pipeline
+      ? Object.entries(PIPELINE_ID_MAP).find(([, v]) => v === pipeline)?.[0]
+      : undefined;
+
+    const filterGroups = pipelineId && pipelineId !== "default"
+      ? [{ filters: [{ propertyName: "pipeline", operator: "EQ", value: pipelineId }] }]
+      : [];
+
+    const res = await fetchWithRetry(
+      "https://api.hubapi.com/crm/v3/objects/deals/search",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.HUBSPOT_ACCESS_TOKEN}`,
+        },
+        body: JSON.stringify({
+          filterGroups,
+          properties: ["hs_object_id"],
+          limit: 1,
+        }),
+      }
+    );
+    const data = await res.json();
+    const hubspotTotal: number = data.total ?? 0;
+
+    if (localCount !== hubspotTotal) {
+      const message = `[shadow-verify:${route}${pipeline ? `:${pipeline}` : ""}] count mismatch: local=${localCount} hubspot=${hubspotTotal}`;
+      console.warn(message);
+
+      await prisma.activityLog.create({
+        data: {
+          type: "DEAL_SYNC_DISCREPANCY",
+          description: message,
+          metadata: { route, pipeline: pipeline ?? "all", localCount, hubspotTotal },
+        },
+      });
+    }
+  } catch (err) {
+    // Shadow verification is best-effort — never fail the request
+    console.error("[shadow-verify] Error:", err);
+  }
+}

@@ -26,6 +26,8 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/pipeline-health",
   "/api/cron/daily-focus",
   "/api/cron/eod-summary",
+  "/api/cron/deal-sync", // Deal mirror batch sync — CRON_SECRET validated in route
+  "/api/webhooks/hubspot/deal-sync", // Deal mirror webhook — HubSpot signature validated in route
   "/api/portal/survey", // Customer portal — token-validated, no session needed
   "/api/solar/cron/cleanup-pending", // Solar cron — CRON_SECRET validated in route
 ];

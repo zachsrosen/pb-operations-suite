@@ -126,6 +126,12 @@ function DealsPageInner() {
     cacheKeyFilter: isProjectPipeline(filters.pipeline) ? "projects" : "deals",
   });
 
+  // Polling fallback — SSE is best-effort same-instance on Vercel
+  useEffect(() => {
+    const id = setInterval(fetchData, 5 * 60 * 1000);
+    return () => clearInterval(id);
+  }, [fetchData]);
+
   // Sync search input from URL on browser navigation (back/forward)
   useEffect(() => {
     setSearchInput(filters.search);

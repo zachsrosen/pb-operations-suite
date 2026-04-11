@@ -7,7 +7,7 @@ import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { requireApiAuth } from "@/lib/api-auth";
 import { PIPELINE_IDS, STAGE_MAPS, ACTIVE_STAGES, DEAL_PROPERTIES, getStageMaps, getActiveStages, getStageOrder } from "@/lib/deals-pipeline";
 import { chunk } from "@/lib/utils";
-import { getDealSyncSource, formatStaleness } from "@/lib/deal-sync";
+import { getDealSyncSource, formatStaleness, verifyShadow } from "@/lib/deal-sync";
 import { dealToDeal } from "@/lib/deal-reader";
 import { prisma } from "@/lib/db";
 import type { DealPipeline } from "@/generated/prisma/enums";
@@ -325,16 +325,17 @@ export async function GET(request: NextRequest) {
     const syncSource = await getDealSyncSource("deals");
 
     if (syncSource === "local" || syncSource === "local-with-verify") {
-      if (syncSource === "local-with-verify") {
-        console.log("[api/deals] local-with-verify mode — shadow verification deferred");
-      }
-
       const pipelineEnum = PIPELINE_PARAM_TO_ENUM[pipeline];
       if (!pipelineEnum) {
         return NextResponse.json(
           { error: `Unknown pipeline enum for '${pipeline}'` },
           { status: 400 }
         );
+      }
+
+      if (syncSource === "local-with-verify") {
+        // Fire-and-forget background comparison — never blocks the response
+        verifyShadow("deals", pipelineEnum).catch(() => {});
       }
 
       const rawDeals = await prisma.deal.findMany({

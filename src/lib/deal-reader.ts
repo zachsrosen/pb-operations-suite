@@ -9,11 +9,21 @@
 import type { Deal as PrismaDeal } from "@/generated/prisma/client";
 import type { Project, Equipment } from "@/lib/hubspot";
 import { ACTIVE_STAGES, computeDaysInStage, STAGE_PRIORITY, SCHEDULABLE_STAGES } from "@/lib/hubspot";
+import { ACTIVE_STAGES as PIPELINE_ACTIVE_STAGES } from "@/lib/deals-pipeline";
 import type { TransformedProject, Deal as DealType } from "@/lib/types";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/** Maps DealPipeline enum → deals-pipeline.ts key for active-stage lookups */
+const PIPELINE_KEY: Record<string, string> = {
+  SALES: "sales",
+  PROJECT: "project",
+  DNR: "dnr",
+  SERVICE: "service",
+  ROOFING: "roofing",
+};
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
 
@@ -441,7 +451,10 @@ export function dealToDeal(deal: PrismaDeal): DealType {
   const now = new Date();
 
   const stage = deal.stage;
-  const isActive = ACTIVE_STAGES.includes(stage);
+  const pipelineKey = PIPELINE_KEY[deal.pipeline] ?? "";
+  // Project pipeline active stages live in hubspot.ts; others in deals-pipeline.ts
+  const activeStages = PIPELINE_ACTIVE_STAGES[pipelineKey] ?? ACTIVE_STAGES;
+  const isActive = activeStages.includes(stage);
 
   const daysSinceCreate = deal.createDate
     ? Math.max(0, daysBetween(deal.createDate, now))
