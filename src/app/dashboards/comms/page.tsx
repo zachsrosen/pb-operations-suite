@@ -26,14 +26,22 @@ export default function CommsPage() {
     staleTime: 60_000,
   });
 
-  // Fetch messages
+  // Fetch messages — when the server reports "unchanged", preserve
+  // the previous cached data instead of blanking the inbox.
+  const messagesQueryKey = queryKeys.comms.messages({ source, q: searchQuery, page: gmailPage || "" });
   const { data, isLoading } = useQuery({
-    queryKey: queryKeys.comms.messages({ source, q: searchQuery, page: gmailPage || "" }),
-    queryFn: () => {
+    queryKey: messagesQueryKey,
+    queryFn: async () => {
       const params = new URLSearchParams({ source });
       if (searchQuery) params.set("q", searchQuery);
       if (gmailPage) params.set("page", gmailPage);
-      return fetch(`/api/comms/messages?${params}`).then((r) => r.json());
+      const json = await fetch(`/api/comms/messages?${params}`).then((r) => r.json());
+      if (json.unchanged) {
+        // Return whatever React Query already has cached so the UI stays populated
+        const prev = queryClient.getQueryData(messagesQueryKey);
+        return prev ?? json;
+      }
+      return json;
     },
     enabled: status?.connected === true,
     staleTime: 30_000,
@@ -142,9 +150,9 @@ export default function CommsPage() {
               </div>
             )}
 
-            {data?.unchanged && (
+            {!isLoading && (!data?.messages || data.messages.length === 0) && (
               <div className="py-8 text-center text-sm text-muted">
-                No new messages since last check.
+                No messages to display.
               </div>
             )}
 
