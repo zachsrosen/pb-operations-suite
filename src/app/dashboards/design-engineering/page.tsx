@@ -205,8 +205,10 @@ export default function DesignEngineeringDashboard() {
       }
     }
     load();
+    const interval = setInterval(load, 5 * 60 * 1000);
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
   }, []);
 

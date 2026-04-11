@@ -352,6 +352,7 @@ export default function EquipmentBacklogPage() {
       return res.json();
     },
     staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
   });
 
   useSSE(null, { cacheKeyFilter: "projects" });

@@ -48,6 +48,7 @@ export default function DesignPipelineFunnelPage() {
       if (!res.ok) throw new Error("Failed to fetch funnel data");
       return res.json();
     },
+    refetchInterval: 5 * 60 * 1000,
   });
 
   useSSE(() => refetch(), { cacheKeyFilter: "funnel" });
