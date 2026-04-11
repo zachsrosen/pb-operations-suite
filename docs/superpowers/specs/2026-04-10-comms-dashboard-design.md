@@ -38,7 +38,7 @@ Absorb the standalone "Zach's Comms" Express.js app into PB Operations Suite as 
 
 ### Navigation & Routing
 
-- New **Comms** entry in the suite switcher (`lib/suite-nav.ts`)
+- New **Comms** dashboard under Operations suite initially (promote to own suite when adoption grows)
 - Role gating: `ADMIN`, `EXECUTIVE` initially; expand as adoption grows
 - Dashboard pages:
   - `/dashboards/comms` — main inbox (Gmail + Chat + HubSpot unified view)
@@ -330,7 +330,7 @@ src/
 │   │   ├── feedback/route.ts       # Draft feedback
 │   │   ├── preferences/route.ts    # Sender/domain prefs
 │   │   ├── bulk/route.ts           # Batch actions
-│   │   ├── connect/route.ts        # OAuth initiate
+│   │   ├── connect/route.ts        # GET: OAuth initiate, DELETE: disconnect
 │   │   ├── connect/callback/route.ts # OAuth callback
 │   │   └── status/route.ts         # Connection status
 │   └── dashboards/comms/page.tsx        # Main Comms dashboard
