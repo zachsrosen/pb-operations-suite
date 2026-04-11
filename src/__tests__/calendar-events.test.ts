@@ -3,7 +3,9 @@ import {
   formatAssignee,
   isOverdue,
   toCalendarProject,
+  generateProjectEvents,
   type RawApiProject,
+  type CalendarProject,
 } from "@/lib/calendar-events";
 
 describe("getCustomerName", () => {
@@ -158,5 +160,108 @@ describe("toCalendarProject", () => {
     };
     const result = toCalendarProject(raw);
     expect(result.daysInstall).toBe(4);
+  });
+});
+
+describe("generateProjectEvents", () => {
+  const baseProject: CalendarProject = {
+    id: "deal-1",
+    name: "PB-001 | Smith Residence",
+    location: "Westminster",
+    amount: 45000,
+    stage: "construction",
+    crew: "DTC Alpha",
+    daysInstall: 3,
+    scheduleDate: null,
+    constructionScheduleDate: "2026-04-14",
+    inspectionScheduleDate: null,
+    surveyScheduleDate: "2026-04-07",
+    surveyCompleted: "2026-04-07",
+    constructionCompleted: null,
+    inspectionCompleted: null,
+    inspectionStatus: null,
+    zuperScheduledStart: null,
+    zuperScheduledEnd: null,
+    zuperJobCategory: null,
+  };
+
+  it("generates survey-complete + construction events", () => {
+    const events = generateProjectEvents([baseProject], "Westminster");
+    expect(events).toHaveLength(2);
+
+    const survey = events.find(e => e.eventType === "survey-complete");
+    expect(survey).toBeDefined();
+    expect(survey!.date).toBe("2026-04-07");
+    expect(survey!.days).toBe(1);
+    expect(survey!.isCompleted).toBe(true);
+    expect(survey!.name).toBe("Smith Residence");
+
+    const construction = events.find(e => e.eventType === "construction");
+    expect(construction).toBeDefined();
+    expect(construction!.date).toBe("2026-04-14");
+    expect(construction!.days).toBe(3);
+    expect(construction!.assignee).toBe("DTC Alpha");
+  });
+
+  it("filters by location — excludes non-matching projects", () => {
+    const events = generateProjectEvents([baseProject], "Centennial");
+    expect(events).toHaveLength(0);
+  });
+
+  it("prefers Zuper start date for construction when zuperJobCategory is construction", () => {
+    const withZuper: CalendarProject = {
+      ...baseProject,
+      zuperScheduledStart: "2026-04-15T07:00:00Z",
+      zuperJobCategory: "construction",
+    };
+    const events = generateProjectEvents([withZuper], "Westminster");
+    const construction = events.find(e => e.eventType === "construction");
+    expect(construction!.date).toBe("2026-04-15");
+  });
+
+  it("ignores Zuper date when zuperJobCategory is not construction", () => {
+    const withZuper: CalendarProject = {
+      ...baseProject,
+      zuperScheduledStart: "2026-04-15T07:00:00Z",
+      zuperJobCategory: "survey",
+    };
+    const events = generateProjectEvents([withZuper], "Westminster");
+    const construction = events.find(e => e.eventType === "construction");
+    expect(construction!.date).toBe("2026-04-14");
+  });
+
+  it("generates inspection-fail event", () => {
+    const proj: CalendarProject = {
+      ...baseProject,
+      inspectionScheduleDate: "2026-04-20",
+      inspectionCompleted: "2026-04-20",
+      inspectionStatus: "Fail",
+    };
+    const events = generateProjectEvents([proj], "Westminster");
+    const insp = events.find(e => e.eventType === "inspection-fail");
+    expect(insp).toBeDefined();
+    expect(insp!.isFailed).toBe(true);
+  });
+
+  it("generates rtb fallback when stage is rtb with scheduleDate but no constructionScheduleDate", () => {
+    const proj: CalendarProject = {
+      ...baseProject,
+      stage: "rtb",
+      constructionScheduleDate: null,
+      scheduleDate: "2026-04-21",
+    };
+    const events = generateProjectEvents([proj], "Westminster");
+    const rtb = events.find(e => e.eventType === "rtb");
+    expect(rtb).toBeDefined();
+    expect(rtb!.date).toBe("2026-04-21");
+  });
+
+  it("normalizes DTC location to Centennial", () => {
+    const proj: CalendarProject = {
+      ...baseProject,
+      location: "DTC",
+    };
+    const events = generateProjectEvents([proj], "Centennial");
+    expect(events.length).toBeGreaterThan(0);
   });
 });

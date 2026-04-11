@@ -249,7 +249,122 @@ export function generateProjectEvents(
   projects: CalendarProject[],
   location: CanonicalLocation
 ): CalendarEvent[] {
-  throw new Error("not implemented");
+  const events: CalendarEvent[] = [];
+  const seenKeys = new Set<string>();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  for (const p of projects) {
+    // Filter by location
+    const projLocation = normalizeLocation(p.location);
+    if (projLocation !== location) continue;
+
+    const customerName = getCustomerName(p.name);
+
+    // -- Construction --
+    const zuperIsConstruction = p.zuperJobCategory === "construction";
+    const zuperStartDate = zuperIsConstruction && p.zuperScheduledStart
+      ? p.zuperScheduledStart.slice(0, 10)
+      : null;
+    const constructionDate = zuperStartDate || p.constructionScheduleDate;
+    if (constructionDate) {
+      const done = !!p.constructionCompleted;
+      const days = p.daysInstall || 1;
+      const key = `${p.id}-construction`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        events.push({
+          id: key,
+          projectId: p.id,
+          name: customerName,
+          date: constructionDate,
+          days,
+          eventType: done ? "construction-complete" : "construction",
+          assignee: p.crew || "",
+          isCompleted: done,
+          isOverdue: isOverdue(constructionDate, days, done, true, today),
+          isFailed: false,
+          amount: p.amount,
+        });
+      }
+    }
+
+    // -- Inspection --
+    if (p.inspectionScheduleDate) {
+      const done = !!p.inspectionCompleted;
+      const failed = !!(p.inspectionStatus && p.inspectionStatus.toLowerCase().includes("fail"));
+      const key = `${p.id}-inspection`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        events.push({
+          id: key,
+          projectId: p.id,
+          name: customerName,
+          date: p.inspectionScheduleDate,
+          days: 1,
+          eventType: done ? (failed ? "inspection-fail" : "inspection-pass") : "inspection",
+          assignee: "",
+          isCompleted: done,
+          isOverdue: isOverdue(p.inspectionScheduleDate, 1, done, false, today),
+          isFailed: failed,
+          amount: p.amount,
+        });
+      }
+    }
+
+    // -- Survey --
+    if (p.surveyScheduleDate) {
+      const done = !!p.surveyCompleted;
+      const key = `${p.id}-survey`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        events.push({
+          id: key,
+          projectId: p.id,
+          name: customerName,
+          date: p.surveyScheduleDate,
+          days: 1,
+          eventType: done ? "survey-complete" : "survey",
+          assignee: "",
+          isCompleted: done,
+          isOverdue: isOverdue(p.surveyScheduleDate, 1, done, false, today),
+          isFailed: false,
+          amount: p.amount,
+        });
+      }
+    }
+
+    // -- RTB/Blocked fallback --
+    const normalizedStage = p.stage?.toLowerCase();
+    if (
+      p.scheduleDate &&
+      (normalizedStage === "rtb" || normalizedStage === "blocked" ||
+       normalizedStage === "ready to build" || normalizedStage === "rtb - blocked") &&
+      !seenKeys.has(`${p.id}-construction`)
+    ) {
+      const done = !!p.constructionCompleted;
+      const days = p.daysInstall || 1;
+      const key = `${p.id}-construction`;
+      seenKeys.add(key);
+      const stage = (normalizedStage === "blocked" || normalizedStage === "rtb - blocked")
+        ? "blocked" : "rtb";
+      events.push({
+        id: key,
+        projectId: p.id,
+        name: customerName,
+        date: p.scheduleDate,
+        days,
+        eventType: done ? "construction-complete" : stage,
+        assignee: p.crew || "",
+        isCompleted: done,
+        isOverdue: isOverdue(p.scheduleDate, days, done, true, today),
+        isFailed: false,
+        amount: p.amount,
+      });
+    }
+  }
+
+  return events;
 }
 
 export function generateZuperEvents(
