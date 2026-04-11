@@ -125,7 +125,7 @@ The primary local replica. Columns organized by domain rather than mirroring Hub
 | `firstTimeInspectionPass` | Boolean | `first_time_inspection_pass_` |
 | `hasInspectionFailedNotRejected` | Boolean | `has_inspection_failed__not_rejected__` |
 | `firstTimeInspectionPassNotRejected` | Boolean | `first_time_inspection_pass____not_rejected_` |
-| `readyForInspection` | Boolean | `ready_for_inspection_` |
+| `readyForInspection` | String? | `ready_for_inspection_` (stored as string — HubSpot enumeration, not a true boolean) |
 | `finalInspectionStatus` | String? | `final_inspection_status` |
 | `inspectionFailCount` | Int? | `inspection_fail_count` |
 | `inspectionFailureReason` | String? | `inspection_failure_reason` |
@@ -187,6 +187,7 @@ The primary local replica. Columns organized by domain rather than mirroring Hub
 | `rtbToCcDays` | `time_from_rtb_to_cc` |
 | `daToCcDays` | `da_to_cc` |
 | `daToPermitDays` | `da_to_permit` |
+| `inspectionTurnaroundDays` | `inspection_turnaround_time` |
 
 #### Revisions
 
@@ -245,7 +246,7 @@ The primary local replica. Columns organized by domain rather than mirroring Hub
 | `discoReco` | String? | `disco__reco` |
 | `interiorAccess` | String? | `interior_access` |
 | `siteSurveyDocuments` | String? | `site_survey_documents` |
-| `systemPerformanceReview` | String? | `system_performance_review` |
+| `systemPerformanceReview` | String? | `system_performance_review` (HubSpot sends string; `deal-reader.ts` must coerce to boolean for `Project.systemPerformanceReview`) |
 | `dateEnteredCurrentStage` | DateTime? | `hs_v2_date_entered_current_stage` |
 | `createDate` | DateTime? | `hs_createdate` |
 
@@ -262,7 +263,10 @@ Contact and company data resolved during sync via HubSpot v4 associations API.
 | `hubspotCompanyId` | String? | Primary company association |
 | `companyName` | String? | Resolved from associated company |
 
-**Sync behavior:** Contact/company associations are resolved during batch sync and webhook updates using the existing `fetchPrimaryContactId()` pattern. This adds one extra API call per changed deal during sync, but avoids any live HubSpot calls at read time.
+**Sync behavior:** Contact/company associations are resolved during sync, but the approach differs by sync type:
+- **Batch sync:** Collect all changed deal IDs, then use HubSpot batch association reads (`POST /crm/v4/associations/deals/contacts/batch/read` and `.../companies/...`) to resolve associations in bulk (100 per request). Then batch-read contact/company properties for the resolved IDs. This avoids per-deal API calls that would hit rate limits on initial backfill (~6,500 deals) or broad full syncs.
+- **Webhook sync:** Single-deal association read is acceptable (one deal = one call). Use existing `fetchPrimaryContactId()` pattern.
+- This avoids any live HubSpot calls at read time.
 
 #### Sync Metadata
 
@@ -374,14 +378,17 @@ Runs every 10 minutes via `GET /api/cron/deal-sync` (Vercel cron). Route must ex
 
 **Flow:**
 
-1. **Fetch deal IDs per pipeline** — uses HubSpot search API with minimal properties. Active deals every 10 min; all deals every 6 hours.
+1. **Fetch deal IDs per pipeline** — uses HubSpot search API with minimal properties. Active deals every 10 min; all deals every 6 hours. **Sales pipeline special case:** HubSpot search rejects `pipeline = default` as a filter value. The Sales pipeline must be queried by its stage IDs (batch search per stage), matching the existing pattern in `/api/deals/route.ts`.
 2. **Batch-read properties** — 100 deals per batch, 3 concurrent. Same two-phase pattern as existing `fetchAllProjects()`.
 3. **Diff against local DB** — compare `hubspotUpdatedAt` (hs_lastmodifieddate). Skip unchanged deals.
 4. **Upsert changed deals** — map HubSpot properties → Deal columns via property mapper. Write `DealSyncLog` with change diff.
 5. **Detect deletions** (full sync only, not incremental) — deals in DB but not in HubSpot response → soft-mark with `stage: "DELETED"`. Incremental syncs only contain recently modified deals, so deletion detection is skipped to avoid false positives.
-6. **Emit SSE invalidation** — notify connected clients via `/api/stream`. Emit both legacy keys (`"projects:"`, `"deals:"`) and new keys (`"deals:sync:{pipeline}"`) during migration so existing `useSSE` hooks continue to work.
+6. **Invalidate connected clients** — the current SSE stream is backed by in-process `appCache.subscribe()`, which means a cron or webhook invocation on one Vercel serverless instance cannot directly notify SSE clients connected to a different instance. Two-pronged approach:
+   - **Short-term (V1):** Rely on React Query's `staleTime` / `refetchInterval` for eventual UI refresh. SSE invalidation is best-effort for same-instance hits only. Since we're moving reads to the DB anyway, staleness is bounded by the query refetch interval (typically 30–60s), not by SSE.
+   - **Future enhancement:** Add a shared broadcast channel (e.g., Neon `pg_notify`, Redis pub/sub, or Vercel KV polling) so the sync engine can reliably notify all SSE-connected instances. This is not blocking for V1 since the data is already fresh in Postgres.
+   - Emit both legacy keys (`"projects:"`, `"deals:"`) and new keys (`"deals:sync:{pipeline}"`) during migration so existing `useSSE` hooks continue to work for same-instance invalidations.
 
-**Incremental optimization:** After first full sync, filter by `hs_lastmodifieddate > lastSyncedAt` to fetch only recently changed deals. Fall back to full sync every 6 hours as a consistency check.
+**Incremental optimization:** After first full sync, use a high-watermark cursor to fetch only recently changed deals. The watermark is the maximum `hs_lastmodifieddate` observed in the previous sync run (stored in `DealSyncLog` or a dedicated `SystemConfig` key per pipeline), **not** the local `lastSyncedAt` timestamp. Apply a 2-minute overlap window (`watermark - 2min`) to catch changes that landed during the previous sync but have an older HubSpot timestamp. Fall back to full sync every 6 hours as a consistency check.
 
 **Performance estimate:** ~3,500 active deals across 5 pipelines. At 100/batch with 3 concurrent, that's ~12 batch calls. With timestamp diff, most cycles only upsert a handful of changed deals.
 
@@ -403,11 +410,13 @@ Extends existing webhook infrastructure at `/api/webhooks/hubspot/`.
 **Handler flow:**
 
 1. Validate HubSpot signature (existing `validateHubSpotWebhook()`)
-2. Extract `objectId` + changed properties from payload
-3. Fetch full deal from HubSpot (single batch-read of 1 deal)
-4. Upsert `Deal` row + write `DealSyncLog` with `syncType: WEBHOOK`
-5. Emit SSE invalidation for connected dashboards
-6. Idempotency via HubSpot `eventId` + existing `IdempotencyKey` table
+2. Idempotency check via HubSpot `eventId` + existing `IdempotencyKey` table
+3. Extract `objectId` + event type from payload
+4. **Branch by event type:**
+   - **`deal.deletion`**: Mark local row `stage: "DELETED"` using `objectId` alone — do NOT fetch the deal (it may no longer exist). Write `DealSyncLog`.
+   - **`deal.merge`**: The payload includes `mergedObjectIds`. Mark merged deals as `stage: "MERGED"`, then fetch the surviving deal and upsert it.
+   - **`deal.creation` / `deal.propertyChange`**: Fetch full deal from HubSpot (single batch-read of 1 deal). Resolve associations (single-deal read is acceptable). Upsert `Deal` row + write `DealSyncLog` with change diff.
+5. Best-effort SSE invalidation for same-instance clients (see batch sync step 6)
 
 **Why not webhook-only?** HubSpot webhooks are eventually consistent and can miss events under load. Batch sync is the safety net that guarantees convergence.
 
@@ -415,8 +424,8 @@ Extends existing webhook infrastructure at `/api/webhooks/hubspot/`.
 
 Admin-triggered refresh via API:
 
-- `POST /api/admin/deal-sync` — trigger full or per-pipeline sync
-- `POST /api/admin/deal-sync/:dealId` — refresh single deal
+- `POST /api/admin/deal-sync` — trigger full or per-pipeline sync (pipeline in request body)
+- `POST /api/admin/deal-sync/[dealId]` — refresh single deal (`src/app/api/admin/deal-sync/[dealId]/route.ts`)
 - Writes `DealSyncLog` with `syncType: MANUAL`
 
 ### Property Mapper
