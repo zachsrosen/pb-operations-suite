@@ -302,7 +302,7 @@ Every 15 min (cron) or on-demand (manual trigger)
 ### Modified files
 - `prisma/schema.prisma` — add `ProductSyncRun` model
 - `vercel.json` — add cron schedule entry + function timeout overrides
-- `src/lib/zoho-inventory.ts` — add `category_name` and `category_id` to `ZohoInventoryItem` type (already returned by API, just not typed)
+- `src/lib/zoho-inventory.ts` — add `category_name` and `category_id` to `ZohoInventoryItem` type (already returned by API, just not typed); add `listItemsSince(since: Date)` method that passes `last_modified_time` query parameter to the `/items` endpoint for time-bounded polling
 - `src/lib/hubspot.ts` — add `listRecentHubSpotProducts(since: Date)` function using CRM v3 `GET /crm/v3/objects/products` with `createdate` filter + cursor pagination
 - `src/lib/zuper-catalog.ts` — add `listRecentZuperProducts(since: Date)` function with pagination
 - Catalog UI components — sync button, review badge, sync history (specific files TBD in implementation plan)
