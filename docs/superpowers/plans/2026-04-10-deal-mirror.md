@@ -250,7 +250,7 @@ model Deal {
   daysForInstallers         Int?
   daysForElectricians       Int?
   installCrew               String?
-  installDifficulty         String?
+  installDifficulty         Int?       // HubSpot sends string, convert to number (default 3 in reader)
   installNotes              String?
   expectedInstallerCount    Int?
   expectedElectricianCount  Int?
@@ -377,8 +377,10 @@ import {
 
 describe("deal-property-map", () => {
   describe("msToDays", () => {
-    it("converts milliseconds to days", () => {
+    it("converts milliseconds to days (1 decimal)", () => {
       expect(msToDays("86400000")).toBe(1);
+      expect(msToDays("172800000")).toBe(2);
+      expect(msToDays("129600000")).toBe(1.5); // 1.5 days
     });
     it("returns null for null input", () => {
       expect(msToDays(null)).toBeNull();
@@ -504,7 +506,7 @@ export function msToDays(value: string | null | undefined): number | null {
   if (!value) return null;
   const ms = parseFloat(value);
   if (isNaN(ms)) return null;
-  return Math.round((ms / 86_400_000) * 100) / 100; // 2 decimal places
+  return Math.round((ms / 86_400_000) * 10) / 10; // 1 decimal — matches existing hubspot.ts msToDays()
 }
 
 function toBool(value: string | null | undefined): boolean {
@@ -680,6 +682,8 @@ export const dealPropertyMap: Record<string, PropertyMapping> = {
   all_document_parent_folder_id: { column: "allDocumentFolderUrl", type: "string" },
   g_drive: { column: "driveUrl", type: "string" },
   link_to_opensolar: { column: "openSolarUrl", type: "string" },
+  // os_project_link is NOT in the map — it's a fallback consumed in mapHubSpotToDeal()
+  // and included in DEAL_SYNC_PROPERTIES directly
   os_project_id: { column: "openSolarId", type: "string" },
   zuper_site_survey_uid: { column: "zuperUid", type: "string" },
 
@@ -688,7 +692,7 @@ export const dealPropertyMap: Record<string, PropertyMapping> = {
   days_for_installers: { column: "daysForInstallers", type: "int" },
   days_for_electricians: { column: "daysForElectricians", type: "int" },
   install_crew: { column: "installCrew", type: "string" },
-  install_difficulty: { column: "installDifficulty", type: "string" },
+  install_difficulty: { column: "installDifficulty", type: "int" },
   notes_for_install: { column: "installNotes", type: "string" },
   expected_installer_cont: { column: "expectedInstallerCount", type: "int" },
   expected_electrician_count: { column: "expectedElectricianCount", type: "int" },
@@ -787,7 +791,7 @@ export function mapHubSpotToDeal(
   const dealId = properties.hs_object_id;
   const portalId = options?.portalId ?? process.env.HUBSPOT_PORTAL_ID;
   if (dealId && portalId) {
-    result.hubspotUrl = `https://app.hubspot.com/contacts/${portalId}/deal/${dealId}`;
+    result.hubspotUrl = `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`;
   }
 
   // Computed: openSolarUrl fallback

@@ -210,7 +210,7 @@ The primary local replica. Columns organized by domain rather than mirroring Hub
 | `openSolarUrl` | String? | `link_to_opensolar` or `os_project_link` |
 | `openSolarId` | String? | `os_project_id` |
 | `zuperUid` | String? | `zuper_site_survey_uid` |
-| `hubspotUrl` | String? | Computed: `https://app.hubspot.com/contacts/{portalId}/deal/{hubspotDealId}` |
+| `hubspotUrl` | String? | Computed: `https://app.hubspot.com/contacts/{portalId}/record/0-3/{hubspotDealId}` |
 
 #### Install Planning
 
@@ -220,7 +220,7 @@ The primary local replica. Columns organized by domain rather than mirroring Hub
 | `daysForInstallers` | Int? | `days_for_installers` |
 | `daysForElectricians` | Int? | `days_for_electricians` |
 | `installCrew` | String? | `install_crew` |
-| `installDifficulty` | String? | `install_difficulty` |
+| `installDifficulty` | Int? | `install_difficulty` (HubSpot sends string; convert to number, default 3 in reader) |
 | `installNotes` | String? | `notes_for_install` |
 | `expectedInstallerCount` | Int? | `expected_installer_cont` |
 | `expectedElectricianCount` | Int? | `expected_electrician_count` |
