@@ -6,6 +6,7 @@
 
 import { prisma } from "@/lib/db";
 import { Prisma } from "@/generated/prisma/client";
+import { EquipmentCategory } from "@/generated/prisma/enums";
 import { canonicalToken, buildCanonicalKey } from "@/lib/canonical";
 import {
   resolveZohoCategoryName,
@@ -55,7 +56,11 @@ interface SyncRunOptions {
   backfill?: boolean;
 }
 
-// ── Concurrency Lock (partial unique index on lockSentinel) ─────────────────
+// ── Concurrency Lock (unique index on lockSentinel) ─────────────────────────
+// Only one row with lockSentinel="ACTIVE" can exist (unique constraint).
+// PostgreSQL treats NULLs as distinct in unique indexes, so completed runs
+// (lockSentinel=null) coexist without conflict. Not a partial index — it works
+// because of Postgres NULL semantics.
 
 const STALE_RUN_MS = 5 * 60 * 1000; // 5 minutes
 
@@ -146,18 +151,30 @@ export function extractFieldsFromZuperProduct(
 
 // ── Category Resolution ──────────────────────────────────────────────────────
 
+const VALID_CATEGORIES = new Set(Object.values(EquipmentCategory));
+
 function resolveCategory(
   source: SyncSource,
   sourceCategory: string | undefined,
-): string | "skip" | null {
+): EquipmentCategory | "skip" | null {
+  let raw: string | null;
   switch (source) {
     case "zoho":
-      return resolveZohoCategoryName(sourceCategory);
+      raw = resolveZohoCategoryName(sourceCategory);
+      break;
     case "hubspot":
-      return resolveHubSpotCategory(sourceCategory);
+      raw = resolveHubSpotCategory(sourceCategory);
+      break;
     case "zuper":
-      return resolveZuperCategory(sourceCategory);
+      raw = resolveZuperCategory(sourceCategory);
+      break;
   }
+  if (raw === null) return null;
+  if (raw === "skip") return "skip";
+  if (VALID_CATEGORIES.has(raw as EquipmentCategory)) {
+    return raw as EquipmentCategory;
+  }
+  return null; // Invalid enum value — route to review
 }
 
 // ── External ID Field Helpers ────────────────────────────────────────────────
@@ -286,7 +303,7 @@ async function processItem(
   try {
     const newProduct = await prisma.internalProduct.create({
       data: {
-        category: category as never,
+        category,
         brand: fields.brand || "Unknown",
         model: fields.model || fields.name || "Unknown",
         name: fields.name || undefined,
@@ -439,8 +456,13 @@ export async function runProductSync(options: SyncRunOptions): Promise<{
         select: { startedAt: true },
       });
       // First run (no prior successful run): full scan per spec.
-      // Subsequent runs: time-bounded from last successful run.
-      since = lastSuccessful?.startedAt; // undefined = full scan
+      // Subsequent runs: time-bounded from last successful run, minus a 60s
+      // overlap buffer to account for clock skew between servers. The dedup
+      // logic in processItem handles re-encounters gracefully (skips already-linked).
+      if (lastSuccessful?.startedAt) {
+        since = new Date(lastSuccessful.startedAt.getTime() - 60_000);
+      }
+      // else since stays undefined = full scan
     }
     // backfill mode: since stays undefined = full scan
 
