@@ -5,7 +5,6 @@ import {
   fetchAllProjects,
   calculateStats,
   filterProjectsForContext,
-  ACTIVE_STAGES,
   type Project,
 } from "@/lib/hubspot";
 import { appCache, CACHE_KEYS } from "@/lib/cache";

@@ -10,7 +10,7 @@ import { chunk } from "@/lib/utils";
 import { getDealSyncSource, formatStaleness } from "@/lib/deal-sync";
 import { dealToDeal } from "@/lib/deal-reader";
 import { prisma } from "@/lib/db";
-import type { DealPipeline } from "@/generated/prisma";
+import type { DealPipeline } from "@/generated/prisma/enums";
 
 const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
@@ -341,7 +341,7 @@ export async function GET(request: NextRequest) {
         where: { pipeline: pipelineEnum },
       });
 
-      let deals: Deal[] = rawDeals.map(dealToDeal);
+      let deals = rawDeals.map(dealToDeal);
 
       // Apply filters
       if (activeOnly) {
@@ -366,7 +366,8 @@ export async function GET(request: NextRequest) {
       }
 
       // Sort
-      const sortKey = sortBy as keyof Deal;
+      type LocalDeal = (typeof deals)[number];
+      const sortKey = sortBy as keyof LocalDeal;
       deals = deals.sort((a, b) => {
         const aVal = a[sortKey];
         const bVal = b[sortKey];
