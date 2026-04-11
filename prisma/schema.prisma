@@ -74,6 +74,11 @@ model User {
   solarPendingStates    SolarPendingState[]    @relation("SolarPendingStates")
   solarCustomEquipment  SolarCustomEquipment[] @relation("SolarCustomEquipmentCreator")
 
+  // Comms
+  commsGmailToken   CommsGmailToken?  @relation("UserCommsGmailToken")
+  commsAiMemories   CommsAiMemory[]   @relation("UserCommsAiMemory")
+  commsUserState    CommsUserState?   @relation("UserCommsUserState")
+
   @@index([email])
   @@index([role])
   @@index([impersonatingUserId])
@@ -2274,4 +2279,44 @@ model DealPipelineConfig {
   stages            Json
   lastSyncedAt      DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
+}
+
+// ===========================================
+// COMMS DASHBOARD
+// ===========================================
+
+model CommsGmailToken {
+  id                Int      @id @default(autoincrement())
+  userId            String   @unique
+  user              User     @relation("UserCommsGmailToken", fields: [userId], references: [id])
+  gmailAccessToken  String
+  gmailRefreshToken String
+  gmailTokenExpiry  BigInt   @default(0)
+  chatEnabled       Boolean  @default(false)
+  scopes            String   @default("")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model CommsAiMemory {
+  id        Int      @id @default(autoincrement())
+  userId    String
+  user      User     @relation("UserCommsAiMemory", fields: [userId], references: [id])
+  kind      String
+  key       String   @default("")
+  data      Json
+  createdAt DateTime @default(now())
+
+  @@index([userId, kind])
+  @@index([userId, kind, key])
+}
+
+model CommsUserState {
+  id              Int      @id @default(autoincrement())
+  userId          String   @unique
+  user            User     @relation("UserCommsUserState", fields: [userId], references: [id])
+  gmailHistoryId  String   @default("")
+  chatLastSyncAt  DateTime?
+  lastRefreshedAt DateTime?
+  updatedAt       DateTime @updatedAt
 }
