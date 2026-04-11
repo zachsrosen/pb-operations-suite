@@ -1339,16 +1339,21 @@ export async function verifyShadow(
   pipeline?: DealPipeline
 ): Promise<void> {
   try {
+    // Resolve HubSpot pipeline ID — Sales is "default" which HubSpot's
+    // search API rejects as a filter, so skip verification for Sales.
+    const pipelineId = pipeline ? PIPELINE_ENUM_TO_ID[pipeline] : undefined;
+    if (pipelineId === "default") return; // Sales — skip until stage-based query is added
+
+    // Count local deals, excluding tombstoned rows (DELETED/MERGED)
     const localCount = await prisma.deal.count({
-      where: pipeline ? { pipeline } : undefined,
+      where: {
+        ...(pipeline ? { pipeline } : {}),
+        stage: { notIn: ["DELETED", "MERGED"] },
+      },
     });
 
     // Get HubSpot count via search API (limit 1, use total)
-    const pipelineId = pipeline
-      ? Object.entries(PIPELINE_ID_MAP).find(([, v]) => v === pipeline)?.[0]
-      : undefined;
-
-    const filterGroups = pipelineId && pipelineId !== "default"
+    const filterGroups = pipelineId
       ? [{ filters: [{ propertyName: "pipeline", operator: "EQ", value: pipelineId }] }]
       : [];
 
