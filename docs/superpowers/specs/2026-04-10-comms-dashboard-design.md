@@ -90,8 +90,8 @@ Client opens /dashboards/comms
         │    ├─ No changes → return { unchanged: true } (client keeps cache)
         │    └─ Changes (or no historyId) → continue to full fetch below
         ├─ Gmail: messages.list (page 1, 50 results) → batch messages.get for details
-        ├─ Chat: spaces.list → spaces.messages.list per space
-        │    └─ Filter: createTime > chatLastSyncAt (per Google Chat API docs)
+        ├─ Chat: spaces.list → spaces.messages.list per space (recent window, no delta filter)
+        │    └─ Fetches latest N messages per space (same full-page contract as Gmail)
         ├─ Categorize all messages (HubSpot detection, @mentions, etc.)
         ├─ Compute focus analytics (unread count, follow-up queue, top senders)
         ├─ Update CommsUserState (new historyId, chatLastSyncAt)
@@ -109,7 +109,7 @@ Client opens /dashboards/comms
 
 - **Every request**: Gmail `messages.list` (1 page, ~50 IDs) + batch `messages.get` (~2-3s total). This is the steady-state cost — no shortcut around it without message storage.
 - **No-change fast path**: If `history.list` returns zero changes, the route skips the full fetch and returns `{ unchanged: true }` (~200ms). Client keeps its existing cache.
-- **Chat sync**: `spaces.list` to enumerate spaces, then `spaces.messages.list` per space with `filter="createTime > ..."` per [Google Chat API docs](https://developers.google.com/workspace/chat/api/reference/rest/v1/spaces.messages/list). Not `spaces.search` (requires admin scopes).
+- **Chat sync**: `spaces.list` to enumerate user's spaces, then `spaces.messages.list` per space to fetch the latest N messages (no `createTime` delta filter — same full-page-every-time contract as Gmail). `chatLastSyncAt` in `CommsUserState` is retained only for a no-change fast path analogous to Gmail's `historyId`: if no space has new activity since `chatLastSyncAt`, skip the per-space message fetches. Chat API reference: [`spaces.messages.list`](https://developers.google.com/workspace/chat/api/reference/rest/v1/spaces.messages/list). Not `spaces.search` (requires admin scopes).
 - **Stale time**: React Query `staleTime: 30_000` (30s). Within 30s of a fetch, cached client-side data is served instantly with zero API calls.
 - **Vercel function timeout**: Default 60s (`maxDuration` in `vercel.json`). A 50-message page fetch completes well within this. Pagination keeps large inboxes bounded.
 - **Gmail API quota**: ~50 quota units per poll (1 `messages.list` + batch `messages.get`). At 1 poll/min per user, well under the 250 units/sec per-user quota.
