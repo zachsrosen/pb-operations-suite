@@ -88,6 +88,14 @@ let stageConfigCache: Map<DealPipeline, Map<string, string>> | null = null;
 let stageConfigCacheAt = 0;
 const STAGE_CONFIG_CACHE_TTL = 5 * 60 * 1000; // 5 min
 
+// Owner map cache with TTL
+let ownerMapCache: { map: Record<string, string>; fetchedAt: number } | null = null;
+const OWNER_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+// Circuit breaker: skip owner fetch for 20 min after 403
+let ownerCircuitBreakerUntil = 0;
+const OWNER_CIRCUIT_BREAKER_MS = 20 * 60 * 1000;
+
 /**
  * Look up human-readable stage name from the DealPipelineConfig table.
  * Falls back to the raw stageId if no config is found.
@@ -186,7 +194,7 @@ interface HubSpotPipeline {
 export async function syncPipelineConfigs(): Promise<number> {
   const accessToken = getAccessToken();
 
-  const response = await fetch("https://api.hubapi.com/crm/v3/pipelines/deals", {
+  const response = await fetchWithRetry("https://api.hubapi.com/crm/v3/pipelines/deals", {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       "Content-Type": "application/json",
@@ -252,11 +260,44 @@ export interface BatchSyncResult {
 }
 
 // ---------------------------------------------------------------------------
+// Retry helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Wraps fetch with exponential backoff retry on 429 rate limit responses.
+ */
+async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3): Promise<Response> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const res = await fetch(url, options);
+    if (res.status === 429 && attempt < maxRetries - 1) {
+      const delay = Math.pow(2, attempt) * 1100 + Math.random() * 400;
+      await new Promise(r => setTimeout(r, delay));
+      continue;
+    }
+    return res;
+  }
+  throw new Error(`Fetch failed after ${maxRetries} retries`);
+}
+
+// ---------------------------------------------------------------------------
 // Owner resolution
 // ---------------------------------------------------------------------------
 
-/** Fetch all HubSpot owners and return an ID → name map */
+/** Fetch all HubSpot owners and return an ID → name map (cached with TTL + 403 circuit breaker) */
 async function fetchOwnerMap(): Promise<Record<string, string>> {
+  const now = Date.now();
+
+  // Return cached map if within TTL
+  if (ownerMapCache && now - ownerMapCache.fetchedAt < OWNER_CACHE_TTL_MS) {
+    return ownerMapCache.map;
+  }
+
+  // Circuit breaker: skip fetch for 20 min after a 403
+  if (now < ownerCircuitBreakerUntil) {
+    console.warn("[DealSync] Owner fetch skipped — circuit breaker active until", new Date(ownerCircuitBreakerUntil).toISOString());
+    return ownerMapCache?.map ?? {};
+  }
+
   const map: Record<string, string> = {};
 
   try {
@@ -275,8 +316,21 @@ async function fetchOwnerMap(): Promise<Record<string, string>> {
       if (owner.id) map[String(owner.id)] = name;
       if (owner.userId != null) map[String(owner.userId)] = name;
     }
-  } catch (err) {
-    console.warn("[DealSync] Failed to fetch owners, owner names will be empty:", err);
+
+    // Update cache on success
+    ownerMapCache = { map, fetchedAt: now };
+  } catch (err: unknown) {
+    // Activate circuit breaker on 403
+    const statusCode =
+      err instanceof Error && "code" in err ? (err as { code?: number }).code :
+      err instanceof Error && "status" in err ? (err as { status?: number }).status :
+      undefined;
+    if (statusCode === 403) {
+      ownerCircuitBreakerUntil = now + OWNER_CIRCUIT_BREAKER_MS;
+      console.warn("[DealSync] Owner fetch 403 — circuit breaker activated for 20 minutes");
+    } else {
+      console.warn("[DealSync] Failed to fetch owners, owner names will be empty:", err);
+    }
   }
 
   return map;
@@ -996,7 +1050,7 @@ export async function syncSingleDeal(
 
   try {
     // Fetch deal properties
-    const dealResponse = await fetch(
+    const dealResponse = await fetchWithRetry(
       `https://api.hubapi.com/crm/v3/objects/deals/${encodeURIComponent(hubspotDealId)}?properties=${DEAL_SYNC_PROPERTIES.join(",")}`,
       {
         headers: {
@@ -1037,7 +1091,7 @@ export async function syncSingleDeal(
     let contactProps: { name: string; email: string; phone: string } | null = null;
 
     try {
-      const contactAssocResponse = await fetch(
+      const contactAssocResponse = await fetchWithRetry(
         `https://api.hubapi.com/crm/v4/objects/deals/${encodeURIComponent(hubspotDealId)}/associations/contacts`,
         {
           headers: {
@@ -1086,7 +1140,7 @@ export async function syncSingleDeal(
     let companyName: string | null = null;
 
     try {
-      const companyAssocResponse = await fetch(
+      const companyAssocResponse = await fetchWithRetry(
         `https://api.hubapi.com/crm/v4/objects/deals/${encodeURIComponent(hubspotDealId)}/associations/companies`,
         {
           headers: {

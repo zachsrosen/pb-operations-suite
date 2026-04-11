@@ -64,39 +64,51 @@ New route group at `src/app/api/comms/`:
 | `/api/comms/status` | GET | Connection status for current user |
 | `/api/comms/connect` | DELETE | Disconnect Gmail, revoke token |
 
-### Data Flow — On-Demand Delta Sync
+### Data Strategy — Full-Page Fetch With Delta Optimization
 
-The original Express app used a long-running process with 60-second polling. Vercel serverless functions are ephemeral and don't share in-memory state across isolates, so a cron-warms-cache approach won't work. Instead, the API routes themselves perform delta sync on demand.
+The original Express app used a long-running process with 60-second polling and an in-memory cache. Vercel serverless functions are ephemeral and don't share in-memory state across isolates, so cron-warms-cache won't work. Instead, every API request returns a **complete, current page of messages** — not a diff.
+
+**Core contract**: `GET /api/comms/messages` always returns a full paginated result set (e.g., 50 messages, page 1). The client replaces its React Query cache with the response. There is no client-side merging of deltas.
+
+**Delta optimization is internal**: The `historyId` (Gmail) and `chatLastSyncAt` (Chat) stored in `CommsUserState` are used server-side to speed up the API call — the route uses `history.list` to detect what changed since last call, then fetches only the affected message IDs via `messages.get`. But the response to the client is always a full page, not a delta payload.
+
+**historyId expiration**: Gmail returns 404 if the stored `historyId` is too old (typically >30 days). On 404, the route falls back to a full `messages.list` fetch and stores the new `historyId`. This is the same as a first-load — slightly slower but fully self-healing.
 
 ```
 Client opens /dashboards/comms
         │
         ▼
-  React Query → GET /api/comms/messages
+  React Query → GET /api/comms/messages?page=1&source=all
         │
-        ├─ Read CommsUserState for current user (gmailHistoryId, chatLastSyncAt)
-        ├─ Decrypt tokens from CommsGmailToken
-        ├─ Delta fetch Gmail (since last historyId) via raw fetch
-        ├─ Delta fetch Chat (since last sync timestamp) via raw fetch
-        ├─ Categorize messages (HubSpot deal detection, @mentions, etc.)
-        ├─ Update CommsUserState (new historyId, sync timestamp)
-        └─ Return messages to client
+        ├─ Resolve DB user via getCurrentUser() (email → Prisma User.id)
+        ├─ Read CommsUserState (gmailHistoryId, chatLastSyncAt)
+        ├─ Get valid access token via getValidCommsAccessToken()
+        │    └─ Refresh if expired, retry once on 401, clear only on invalid_grant
+        ├─ Delta optimization: Gmail history.list since historyId
+        │    └─ On 404 (expired historyId): fall back to full messages.list
+        ├─ Fetch full current page of messages from Gmail API
+        ├─ Fetch Chat messages: spaces.list → spaces.messages.list per space
+        │    └─ Filter: createTime > chatLastSyncAt (per Google Chat API docs)
+        ├─ Categorize all messages (HubSpot detection, @mentions, etc.)
+        ├─ Compute focus analytics (unread count, follow-up queue, top senders)
+        ├─ Update CommsUserState (new historyId, chatLastSyncAt)
+        └─ Return { messages[], analytics, pagination, lastUpdated }
                 │
                 ▼
         Client renders inbox, polls every 60s via React Query refetchInterval
 ```
 
-**Why no cron**: Vercel Pro's minimum cron interval is 10 minutes, and even with a cron, the cache it warms lives in one isolate and is invisible to the API route handling the next request. On-demand delta sync is both simpler and more reliable.
+**Why no cron**: Vercel Pro's minimum cron interval is 10 minutes, and even with a cron, the cache it warms lives in one isolate and is invisible to the API route handling the next request. On-demand full-page fetch is both simpler and more reliable.
 
 **Why no SSE**: SSE connections are held in one isolate; a mutation in another isolate can't push to them. Client-side polling (React Query `refetchInterval: 60_000`) provides near-real-time updates without cross-isolate coordination.
 
 ### Performance Characteristics
 
-- **First load**: Full Gmail/Chat fetch (~2-3s). Subsequent requests use delta sync (~200-500ms).
-- **Delta sync**: Gmail `history.list` API returns only changes since last `historyId`. Chat uses `orderBy=lastActiveTime` with timestamp filter. Both are lightweight.
-- **Pagination**: Gmail messages paginated (50 per page default). Large inboxes don't block on full fetch.
+- **First load**: Full Gmail `messages.list` + batch `messages.get` (~2-3s for 50 messages). Paginated — no blocking on large inboxes.
+- **Subsequent polls**: Delta optimization means the server checks `history.list` first. If nothing changed, it can return the same page with minimal API cost. If messages changed, it fetches only affected IDs then assembles the full page.
+- **Chat sync**: `spaces.list` to enumerate spaces, then `spaces.messages.list` per space with `filter="createTime > ..."` per [Google Chat API docs](https://developers.google.com/workspace/chat/api/reference/rest/v1/spaces.messages/list). Not `spaces.search` (requires admin scopes).
 - **Stale time**: React Query `staleTime: 30_000` (30s). Within 30s of a fetch, cached client-side data is served instantly.
-- **Vercel function timeout**: Default 60s (`maxDuration` in `vercel.json`). Delta syncs complete well within this. Initial full fetch for very large inboxes may need pagination to stay under.
+- **Vercel function timeout**: Default 60s (`maxDuration` in `vercel.json`). Delta-optimized calls complete well within this. Initial full fetch for very large inboxes stays under via pagination.
 
 ## Data Model
 
@@ -172,7 +184,7 @@ Messages are never written to the database. This is intentional:
 - Same algorithm as original `user-db.js` (IV + auth tag + ciphertext, base64 encoded)
 - Tokens encrypted before Prisma write, decrypted on read
 
-### OAuth Isolation
+### OAuth Isolation & CSRF Protection
 
 - Separate OAuth client (`COMMS_GOOGLE_CLIENT_ID` / `COMMS_GOOGLE_CLIENT_SECRET`) from the main NextAuth login client
 - Prevents scope creep: regular PB Ops login doesn't prompt for Gmail access
@@ -185,12 +197,23 @@ Messages are never written to the database. This is intentional:
   - `chat.users.readstate.readonly` — unread indicators
   - `contacts.readonly` — resolve sender names
 
-### Access Control
+**CSRF/token-substitution protection** (required):
+
+1. `GET /api/comms/connect` generates a signed `state` parameter containing: the current user's Prisma `User.id`, a random nonce, and an expiration timestamp (5 minutes). Signed with `COMMS_TOKEN_ENCRYPTION_KEY` via HMAC-SHA256.
+2. Google redirects back to `/api/comms/connect/callback?code=...&state=...`
+3. The callback route validates: (a) HMAC signature is valid, (b) state is not expired, (c) `User.id` in the state matches the current authenticated session's DB user
+4. Only after validation does it exchange the `code` for tokens and store them
+
+**Offline access**: The OAuth URL must include `access_type=offline` and `prompt=consent` to ensure Google issues a refresh token. Without `prompt=consent`, returning users may not receive a new refresh token.
+
+### Access Control & User Identity Resolution
 
 - Comms API routes require authenticated NextAuth session
 - Role-gated to `ADMIN` + `EXECUTIVE` initially (configurable in `role-permissions.ts`)
 - Every Gmail/Chat API call uses the requesting user's own tokens — no cross-user access
 - User can only see their own messages, drafts, and preferences
+
+**User identity**: Every Comms API route must resolve the DB user via `getCurrentUser()` from `lib/auth-utils.ts` (which looks up the Prisma `User` by `session.user.email`). The resulting `User.id` (cuid string) is the FK for `CommsGmailToken`, `CommsUserState`, and `CommsAiMemory`. Do NOT use `auth().user.id` directly — that is the NextAuth/Google token subject, which is not the Prisma `User.id`.
 
 ### Rate Limiting
 
@@ -198,11 +221,24 @@ Messages are never written to the database. This is intentional:
 - Client-side: React Query `staleTime: 30_000` + `refetchInterval: 60_000` prevents excessive API calls
 - Multiple browser tabs from same user: React Query deduplicates concurrent requests
 
-### Token Revocation & Disconnect
+### Token Lifecycle & Refresh
 
-- **Disconnect flow**: "Disconnect Gmail" button on Comms dashboard calls `DELETE /api/comms/connect`. Deletes `CommsGmailToken` and `CommsUserState` for the user. Revokes the token with Google's revocation endpoint.
-- **Token refresh failure**: If Gmail API returns 401 (token revoked/expired), the API route clears the stored tokens and returns a `{ disconnected: true }` response. The frontend shows the "Connect Gmail" banner again.
-- **Google revocation**: Google revokes refresh tokens after 6 months of non-use or if the user removes the app from their Google Account settings. The 401 detection handles this gracefully.
+All Gmail/Chat API calls go through a `getValidCommsAccessToken(userId)` helper in `lib/comms-gmail.ts`:
+
+1. Read `CommsGmailToken` for the user
+2. If `gmailTokenExpiry` is in the future (with 5-minute buffer): return cached access token
+3. If expired: use the refresh token to request a new access token from Google's token endpoint
+4. On success: encrypt and store the new access token + expiry in `CommsGmailToken`, return it
+5. On `invalid_grant` error (refresh token revoked/expired): clear both tokens, return `{ disconnected: true }`
+6. On transient 401 from a Gmail API call: retry once with a fresh token refresh. Only disconnect on `invalid_grant`.
+
+**Critical distinction**: A 401 from a Gmail API call is often a stale access token (recoverable via refresh). Only an `invalid_grant` from the token refresh endpoint means the refresh token itself is dead. The route must NOT clear tokens on a regular 401.
+
+### Disconnect Flow
+
+- **User-initiated**: "Disconnect Gmail" button calls `DELETE /api/comms/connect`. Deletes `CommsGmailToken` and `CommsUserState` for the user. Revokes the refresh token with Google's revocation endpoint (`https://oauth2.googleapis.com/revoke`).
+- **Auto-disconnect**: Only triggered by `invalid_grant` during token refresh (see above). Returns `{ disconnected: true }` to the client. Frontend shows the "Connect Gmail" banner.
+- **Google-side revocation**: Google revokes refresh tokens after 6 months of non-use, or if the user removes the app from their Google Account settings. Caught by the `invalid_grant` path.
 
 ## Frontend
 
@@ -288,11 +324,15 @@ Existing files that need changes to wire Comms into PB Ops Suite:
 | File | Change |
 |------|--------|
 | `prisma/schema.prisma` | Add `CommsGmailToken`, `CommsAiMemory`, `CommsUserState` models + relation fields on `User` |
-| `src/lib/suite-nav.ts` | Add Comms suite entry with `ADMIN`, `EXECUTIVE` role visibility |
-| `src/lib/role-permissions.ts` | Add `/dashboards/comms` and `/api/comms` to `ADMIN` + `EXECUTIVE` allowedRoutes |
-| `src/middleware.ts` | No changes needed — Comms routes are session-authenticated, not public |
+| `src/app/suites/operations/page.tsx` | Add Comms card to the Operations suite landing page |
+| `src/components/DashboardShell.tsx` | Add `comms` to `SUITE_MAP` for breadcrumb rendering |
+| `src/components/GlobalSearch.tsx` | Add Comms dashboard to search index (if searchable items are hardcoded) |
+| `src/lib/role-permissions.ts` | Add `/dashboards/comms` and `/api/comms` to `ADMIN` + `EXECUTIVE` allowedRoutes (future-proofing for when non-wildcard roles get access) |
 | `src/lib/query-keys.ts` | Add `comms` query key namespace |
+| `src/middleware.ts` | No changes needed — Comms routes are session-authenticated, not public |
 | `vercel.json` | No cron registration needed (on-demand sync, no cron) |
+
+Note: `ADMIN` and `EXECUTIVE` already have wildcard route access (`"*"`), so the `role-permissions.ts` change is mainly for documentation and for when non-wildcard roles (e.g., `PROJECT_MANAGER`) are granted Comms access later.
 
 ## HubSpot Message Source
 
