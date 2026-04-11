@@ -1,7 +1,7 @@
 # Cross-System Product Sync — Design Spec
 
 **Date:** 2026-04-10
-**Status:** Draft
+**Status:** Approved
 **Author:** Zach + Claude
 
 ## Problem
@@ -41,15 +41,24 @@ A scheduled poll (every 15 minutes) that scans all three external systems for un
 ### Auth
 
 - Cron: `CRON_SECRET` bearer token (same pattern as existing crons)
-- Manual: session-based, requires ADMIN / OWNER / PROJECT_MANAGER role
+- Manual: session-based, requires ADMIN / EXECUTIVE / PROJECT_MANAGER role (legacy `OWNER` normalizes to these)
 
-### Concurrency
+### Concurrency — Atomic Sync Lock
 
-Only one sync run at a time. Before starting, check for a `ProductSyncRun` with null `completedAt`. If one exists and is less than 5 minutes old, skip this run. If stale (>5 min), mark it as failed and proceed.
+Only one sync run at a time. Use a Postgres advisory lock (`pg_try_advisory_lock`) acquired at the start of each run:
+
+1. Attempt `pg_try_advisory_lock(hash('product-sync'))` via `prisma.$queryRaw`
+2. If lock not acquired → another run is in progress, exit immediately
+3. If acquired → proceed with sync; lock is released automatically when the DB connection/transaction ends
+4. As a safety net, also check for a `ProductSyncRun` with null `completedAt` older than 10 minutes and mark it as failed (handles cases where the process crashed without releasing the lock)
+
+This prevents race conditions between concurrent cron and manual triggers, or Vercel retries.
 
 ### Detection logic
 
-Polls all three systems in parallel. To limit API calls and avoid HubSpot's 10,000-result search cap, each system filters to **recently-created items** (since the last successful sync run's `startedAt`, or last 24 hours on first run):
+Polls all three systems in parallel. To limit API calls and avoid HubSpot's 10,000-result search cap, each system filters to **recently-created items** (since the last successful sync run's `startedAt`):
+
+**First run / backfill:** The first run (no prior `ProductSyncRun` exists) performs a **full scan** of all three systems with no time filter. This is the one-time backfill that catches all existing unlinked products. Subsequent runs use time-bounded queries. An admin can also trigger a full backfill via `POST /api/inventory/product-sync?mode=backfill` to re-scan everything — useful if the time-bounded window missed items due to outages or clock skew.
 
 1. **Zoho** — `listItems()` filtered by `last_modified_time` since last sync, then filter to items whose `item_id` is not in any InternalProduct's `zohoItemId` AND not in any PendingCatalogPush's `zohoItemId`
 2. **HubSpot** — new `listRecentHubSpotProducts(since)` function using CRM v3 search API with `createdate` filter + cursor pagination, then filter to IDs not in any `hubspotProductId` AND not in PendingCatalogPush's `hubspotProductId`
@@ -63,7 +72,7 @@ For each unlinked item:
 
 1. **Category resolution** — map source category to `EquipmentCategory` enum (see Category Mapping Table)
 2. **Canonical key dedup** — `buildCanonicalKey(category, brand, model)` checked against existing InternalProducts
-   - **Strong match** (exact canonical key) → auto-link the external ID to the existing InternalProduct
+   - **Strong match** (exact canonical key) → auto-link the external ID to the existing InternalProduct, **but only if** the target external ID field is empty. If the matching InternalProduct already has a different `zohoItemId`/`hubspotProductId`/`zuperItemId` for the source system, route to PendingCatalogPush with `reviewReason: "canonical_conflict"` (indicates a possible external duplicate or data integrity issue)
    - **Ambiguous match** (same `canonicalBrand` + `canonicalModel` but different `category`, or same `canonicalBrand` with model differing only by suffix) → PendingCatalogPush with `reviewReason: "ambiguous_match"`
    - **No match + resolved category** → create new InternalProduct + outbound sync to the other 2 systems
    - **No match + unresolved category** → PendingCatalogPush with `reviewReason: "unknown_category"`
@@ -153,7 +162,9 @@ When a new unlinked item passes category resolution and dedup checks, the Intern
 | `canonicalModel` | `canonicalToken(model)` | `canonicalToken(model)` | `canonicalToken(model)` |
 | `canonicalKey` | `buildCanonicalKey(...)` | `buildCanonicalKey(...)` | `buildCanonicalKey(...)` |
 
-After creation, the existing `catalog-sync.ts` engine runs an outbound sync to the **other two** systems (e.g., Zoho source → push to HubSpot + Zuper).
+After creation, an outbound sync pushes to the **other two** systems (e.g., Zoho source → push to HubSpot + Zuper).
+
+**Outbound sync for reverse-imported products:** The existing `catalog-sync.ts` create paths do not consistently pass all cross-link IDs and custom fields (e.g., `cf_internal_product_id` on Zoho, `internal_product_id` on Zuper). The implementation plan should include either a small `product-sync-outbound.ts` helper that wraps `catalog-sync.ts` with source-aware field population, or targeted enhancements to `catalog-sync.ts` itself to handle reverse-sync creates properly.
 
 No spec table data is populated on import — just core fields. Specs can be added later via the catalog UI.
 
@@ -167,6 +178,7 @@ Items that can't be auto-imported route to the existing `PendingCatalogPush` tab
 |---|---|---|---|
 | Unresolved category | `"ZOHO_SYNC"` / `"HUBSPOT_SYNC"` / `"ZUPER_SYNC"` | `"unknown_category"` | `PENDING` |
 | Ambiguous dedup match | Same | `"ambiguous_match"` | `PENDING` |
+| Canonical conflict (exact key match but external ID slot already occupied) | Same | `"canonical_conflict"` | `PENDING` |
 | Missing critical fields (no name, no brand+model) | Same | `"incomplete_data"` | `PENDING` |
 
 The review item stores:
@@ -303,12 +315,14 @@ Every 15 min (cron) or on-demand (manual trigger)
 - `prisma/schema.prisma` — add `ProductSyncRun` model
 - `vercel.json` — add cron schedule entry + function timeout overrides
 - `src/lib/zoho-inventory.ts` — add `category_name` and `category_id` to `ZohoInventoryItem` type (already returned by API, just not typed); add `listItemsSince(since: Date)` method that passes `last_modified_time` query parameter to the `/items` endpoint for time-bounded polling
-- `src/lib/hubspot.ts` — add `listRecentHubSpotProducts(since: Date)` function using CRM v3 `GET /crm/v3/objects/products` with `createdate` filter + cursor pagination
+- `src/lib/hubspot.ts` — add `listRecentHubSpotProducts(since: Date)` function using CRM v3 search API (`POST /crm/v3/objects/products/search`) with `createdate` filter + `after` cursor pagination. Properties to fetch: `name`, `hs_sku`, `price`, `description`, `manufacturer`, `product_category`, `hs_cost_of_goods_sold`
 - `src/lib/zuper-catalog.ts` — add `listRecentZuperProducts(since: Date)` function with pagination
 - Catalog UI components — sync button, review badge, sync history (specific files TBD in implementation plan)
 
+### Modified or extended
+- `src/lib/catalog-sync.ts` — may need targeted enhancements for source-aware creates (cross-link IDs, custom fields); alternatively, a thin `product-sync-outbound.ts` wrapper handles this
+
 ### Existing code reused (no changes needed)
-- `src/lib/catalog-sync.ts` — outbound sync engine
 - `src/lib/canonical.ts` — canonical key building
 - `src/lib/catalog-fields.ts` — category configs and mappings
 - PendingCatalogPush model and existing review UI
