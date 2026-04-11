@@ -163,6 +163,16 @@ const LINKS: SuitePageCard[] = [
     icon: "🔗",
     section: "Catalog & Inventory",
   },
+
+  // ── Communications ──
+  {
+    href: "/dashboards/comms",
+    title: "Comms",
+    description: "Gmail, Google Chat, and HubSpot messages with AI-assisted drafting.",
+    tag: "COMMS",
+    icon: "✉️",
+    section: "Communications",
+  },
 ];
 
 export default async function OperationsSuitePage() {

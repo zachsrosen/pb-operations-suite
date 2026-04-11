@@ -109,6 +109,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/reviews": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/zuper-compliance": { href: "/suites/executive", label: "Executive" },
   "/dashboards/product-comparison": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/comms": { href: "/suites/operations", label: "Operations" },
   "/dashboards/mobile": { href: "/suites/admin", label: "Admin" },
   "/dashboards/ai": { href: "/dashboards/ai", label: "AI Skills" },
 };
