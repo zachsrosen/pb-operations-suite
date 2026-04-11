@@ -403,12 +403,24 @@ export function generateZuperEvents(
         ? job.assignedUsers[0]
         : job.assignedUser || "";
 
+    // Derive inclusive calendar-day span from scheduledStart/End
+    let days = 1;
+    if (job.scheduledStart && job.scheduledEnd) {
+      const startYmd = job.scheduledStart.slice(0, 10);
+      const endYmd = job.scheduledEnd.slice(0, 10);
+      if (endYmd > startYmd) {
+        const s = new Date(startYmd + "T00:00:00");
+        const e = new Date(endYmd + "T00:00:00");
+        days = Math.round((e.getTime() - s.getTime()) / 86_400_000) + 1;
+      }
+    }
+
     events.push({
       id: `zuper-${job.jobUid}`,
       projectId: job.hubspotDealId || job.jobUid,
       name: job.customerName || job.title || "Untitled",
       date: dateStr,
-      days: 1,
+      days,
       eventType,
       assignee: formatAssignee(rawAssignee),
       isCompleted: false,

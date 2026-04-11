@@ -347,6 +347,27 @@ describe("generateZuperEvents", () => {
     const events = generateZuperEvents([baseJob], "dnr", "Westminster");
     expect(events[0].eventType).toBe("dnr");
   });
+
+  it("derives multi-day span from scheduledStart/End", () => {
+    const job: ZuperCategoryJob = {
+      ...baseJob,
+      scheduledStart: "2026-04-15T07:00:00Z",
+      scheduledEnd: "2026-04-17T16:00:00Z",
+    };
+    const events = generateZuperEvents([job], "service", "Westminster");
+    expect(events).toHaveLength(1);
+    expect(events[0].days).toBe(3); // Apr 15, 16, 17 inclusive
+  });
+
+  it("stays 1 day when scheduledStart and scheduledEnd are same day", () => {
+    const job: ZuperCategoryJob = {
+      ...baseJob,
+      scheduledStart: "2026-04-15T07:00:00Z",
+      scheduledEnd: "2026-04-15T16:00:00Z",
+    };
+    const events = generateZuperEvents([job], "service", "Westminster");
+    expect(events[0].days).toBe(1);
+  });
 });
 
 describe("expandToDayPills", () => {
