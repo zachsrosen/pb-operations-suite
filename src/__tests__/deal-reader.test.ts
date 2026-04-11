@@ -1,5 +1,28 @@
 // Mock modules that require runtime dependencies (Prisma client, HubSpot SDK, etc.)
 jest.mock("@/lib/db", () => ({ prisma: null }));
+jest.mock("@/lib/deals-pipeline", () => ({
+  ACTIVE_STAGES: {
+    sales: [
+      "Qualified to buy", "Proposal Submitted", "Proposal Accepted",
+      "Finalizing Deal", "Sales Follow Up", "Nurture",
+    ],
+    dnr: [
+      "Kickoff", "Site Survey", "Design", "Permit", "Ready for Detach",
+      "Detach", "Detach Complete - Roofing In Progress",
+      "Reset Blocked - Waiting on Payment", "Ready for Reset", "Reset",
+      "Inspection", "Closeout",
+    ],
+    service: [
+      "Project Preparation", "Site Visit Scheduling", "Work In Progress",
+      "Inspection", "Invoicing",
+    ],
+    roofing: [
+      "On Hold", "Color Selection", "Material & Labor Order", "Confirm Dates",
+      "Staged", "Production", "Post Production", "Invoice/Collections",
+      "Job Close Out Paperwork",
+    ],
+  },
+}));
 jest.mock("@/lib/hubspot", () => ({
   hubspotClient: {},
   searchWithRetry: jest.fn(),
@@ -469,6 +492,35 @@ describe("deal-reader", () => {
       const dealNoClose = { ...mockDeal, closeDate: null };
       const deal = dealToDeal(dealNoClose as any);
       expect(deal.closeDate).toBeNull();
+    });
+
+    it("isActive uses per-pipeline stages for Sales deals", () => {
+      const salesDeal = { ...mockDeal, pipeline: "SALES", stage: "Proposal Submitted" };
+      expect(dealToDeal(salesDeal as any).isActive).toBe(true);
+
+      const closedSalesDeal = { ...mockDeal, pipeline: "SALES", stage: "Closed won" };
+      expect(dealToDeal(closedSalesDeal as any).isActive).toBe(false);
+    });
+
+    it("isActive uses per-pipeline stages for Service deals", () => {
+      const serviceDeal = { ...mockDeal, pipeline: "SERVICE", stage: "Work In Progress" };
+      expect(dealToDeal(serviceDeal as any).isActive).toBe(true);
+
+      const completedServiceDeal = { ...mockDeal, pipeline: "SERVICE", stage: "Completed" };
+      expect(dealToDeal(completedServiceDeal as any).isActive).toBe(false);
+    });
+
+    it("isActive uses per-pipeline stages for D&R deals", () => {
+      const dnrDeal = { ...mockDeal, pipeline: "DNR", stage: "Design" };
+      expect(dealToDeal(dnrDeal as any).isActive).toBe(true);
+    });
+
+    it("isActive uses per-pipeline stages for Roofing deals", () => {
+      const roofingDeal = { ...mockDeal, pipeline: "ROOFING", stage: "Production" };
+      expect(dealToDeal(roofingDeal as any).isActive).toBe(true);
+
+      const completedRoofingDeal = { ...mockDeal, pipeline: "ROOFING", stage: "Job Completed" };
+      expect(dealToDeal(completedRoofingDeal as any).isActive).toBe(false);
     });
   });
 });

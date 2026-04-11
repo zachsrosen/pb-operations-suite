@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { waitUntil } from "@vercel/functions";
 import { prisma } from "@/lib/db";
 import { syncSingleDeal } from "@/lib/deal-sync";
+import { validateHubSpotWebhook } from "@/lib/hubspot-webhook-auth";
 
 export const maxDuration = 60;
 
@@ -15,8 +16,39 @@ interface HubSpotWebhookEvent {
 }
 
 export async function POST(request: NextRequest) {
-  // HubSpot sends an array of events
-  const events: HubSpotWebhookEvent[] = await request.json();
+  // ── 1. Read raw body (needed for signature validation) ──
+  const rawBody = await request.text();
+
+  // ── 2. Authenticate: HubSpot v3 signature OR bearer token ──
+  const bearerToken = request.headers.get("authorization")?.replace("Bearer ", "");
+  const pipelineSecret = process.env.PIPELINE_WEBHOOK_SECRET || process.env.API_SECRET_TOKEN;
+  const isBearerAuth = bearerToken && pipelineSecret && bearerToken === pipelineSecret;
+
+  if (!isBearerAuth) {
+    const signature = request.headers.get("x-hubspot-signature-v3") ?? "";
+    const timestamp = request.headers.get("x-hubspot-request-timestamp") ?? "";
+
+    const validation = validateHubSpotWebhook({
+      rawBody,
+      signature,
+      timestamp,
+      requestUrl: request.url,
+      method: "POST",
+    });
+
+    if (!validation.valid) {
+      console.warn(`[deal-sync-webhook] Auth failed: ${validation.error}`);
+      return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+    }
+  }
+
+  // ── 3. Parse payload ──
+  let events: HubSpotWebhookEvent[];
+  try {
+    events = JSON.parse(rawBody);
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
 
   // Return 200 immediately, process in background
   waitUntil(processEvents(events));

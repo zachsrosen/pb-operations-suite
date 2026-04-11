@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
 import { batchSyncPipeline, syncPipelineConfigs } from "@/lib/deal-sync";
-import type { DealPipeline } from "@/generated/prisma";
+import type { DealPipeline } from "@/generated/prisma/enums";
 
 export const maxDuration = 300;
 
@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   await syncPipelineConfigs();
   const results = [];
   for (const p of pipelines) {
-    const result = await batchSyncPipeline(p, { full: true });
+    const result = await batchSyncPipeline(p);
     results.push(result);
   }
 

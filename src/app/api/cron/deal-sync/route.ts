@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { batchSyncPipeline, syncPipelineConfigs } from "@/lib/deal-sync";
-import type { DealPipeline } from "@/generated/prisma";
+import type { DealPipeline } from "@/generated/prisma/enums";
 
 export const maxDuration = 300;
 
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 
   for (const pipeline of ALL_PIPELINES) {
     try {
-      const result = await batchSyncPipeline(pipeline, { full });
+      const result = await batchSyncPipeline(pipeline, { incremental: !full });
       results.push(result);
     } catch (err) {
       console.error(`[deal-sync] ${pipeline} sync failed:`, err);

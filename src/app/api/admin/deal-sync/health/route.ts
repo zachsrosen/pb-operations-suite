@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail, prisma } from "@/lib/db";
-import type { DealPipeline } from "@/generated/prisma";
+import type { DealPipeline } from "@/generated/prisma/enums";
 
 const ALL_PIPELINES: DealPipeline[] = ["PROJECT", "SALES", "DNR", "SERVICE", "ROOFING"];
 
