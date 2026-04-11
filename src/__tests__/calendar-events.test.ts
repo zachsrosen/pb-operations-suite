@@ -5,9 +5,12 @@ import {
   toCalendarProject,
   generateProjectEvents,
   generateZuperEvents,
+  expandToDayPills,
   type RawApiProject,
   type CalendarProject,
   type ZuperCategoryJob,
+  type CalendarEvent,
+  type DayPill,
 } from "@/lib/calendar-events";
 
 describe("getCustomerName", () => {
@@ -330,5 +333,84 @@ describe("generateZuperEvents", () => {
   it("generates dnr events with correct eventType", () => {
     const events = generateZuperEvents([baseJob], "dnr", "Westminster");
     expect(events[0].eventType).toBe("dnr");
+  });
+});
+
+describe("expandToDayPills", () => {
+  const makeEvent = (overrides: Partial<CalendarEvent> = {}): CalendarEvent => ({
+    id: "deal-1-construction",
+    projectId: "deal-1",
+    name: "Smith Residence",
+    date: "2026-04-14",
+    days: 3,
+    eventType: "construction",
+    assignee: "DTC Alpha",
+    isCompleted: false,
+    isOverdue: false,
+    isFailed: false,
+    amount: 45000,
+    ...overrides,
+  });
+
+  it("expands a 3-day event into 3 pills on consecutive days", () => {
+    const result = expandToDayPills([makeEvent()], 2026, 4);
+    const apr14 = result.get("2026-04-14") || [];
+    const apr15 = result.get("2026-04-15") || [];
+    const apr16 = result.get("2026-04-16") || [];
+
+    expect(apr14).toHaveLength(1);
+    expect(apr14[0].dayIndex).toBe(1);
+    expect(apr14[0].totalDays).toBe(3);
+    expect(apr14[0].isFirstDay).toBe(true);
+
+    expect(apr15).toHaveLength(1);
+    expect(apr15[0].dayIndex).toBe(2);
+    expect(apr15[0].isFirstDay).toBe(false);
+
+    expect(apr16).toHaveLength(1);
+    expect(apr16[0].dayIndex).toBe(3);
+    expect(apr16[0].isFirstDay).toBe(false);
+  });
+
+  it("clips pills that fall outside the visible month", () => {
+    const event = makeEvent({ date: "2026-04-29", days: 5 });
+    const result = expandToDayPills([event], 2026, 4);
+    expect(result.get("2026-04-29")).toHaveLength(1);
+    expect(result.get("2026-04-30")).toHaveLength(1);
+    expect(result.has("2026-05-01")).toBe(false);
+  });
+
+  it("includes continuation days from events starting in previous month", () => {
+    const event = makeEvent({ date: "2026-03-30", days: 4 });
+    const result = expandToDayPills([event], 2026, 4);
+    expect(result.has("2026-03-30")).toBe(false);
+    expect(result.has("2026-03-31")).toBe(false);
+    expect(result.get("2026-04-01")).toHaveLength(1);
+    expect(result.get("2026-04-01")![0].dayIndex).toBe(3);
+    expect(result.get("2026-04-02")).toHaveLength(1);
+    expect(result.get("2026-04-02")![0].dayIndex).toBe(4);
+  });
+
+  it("single-day event produces one pill with dayIndex=1, totalDays=1", () => {
+    const event = makeEvent({ days: 1 });
+    const result = expandToDayPills([event], 2026, 4);
+    const pills = result.get("2026-04-14") || [];
+    expect(pills).toHaveLength(1);
+    expect(pills[0].dayIndex).toBe(1);
+    expect(pills[0].totalDays).toBe(1);
+    expect(pills[0].isFirstDay).toBe(true);
+  });
+
+  it("multiple events on same day stack in the map", () => {
+    const event1 = makeEvent({ id: "a", date: "2026-04-14", days: 1 });
+    const event2 = makeEvent({
+      id: "b",
+      date: "2026-04-14",
+      days: 1,
+      eventType: "survey",
+      name: "Jones",
+    });
+    const result = expandToDayPills([event1, event2], 2026, 4);
+    expect(result.get("2026-04-14")).toHaveLength(2);
   });
 });

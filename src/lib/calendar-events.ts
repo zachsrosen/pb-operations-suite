@@ -206,6 +206,14 @@ export const DNR_CATEGORY_UIDS = [
 // Public API (stubs — implemented in subsequent tasks)
 // ---------------------------------------------------------------------------
 
+/** Add N calendar days to a YYYY-MM-DD string */
+function addCalendarDays(dateStr: string, n: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  date.setDate(date.getDate() + n);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export function getCustomerName(fullName: string): string {
   return fullName.split(" | ")[1] || fullName;
 }
@@ -418,5 +426,37 @@ export function expandToDayPills(
   year: number,
   month: number
 ): Map<string, DayPill[]> {
-  throw new Error("not implemented");
+  const map = new Map<string, DayPill[]>();
+
+  // Visible month boundaries (1-indexed month)
+  const firstOfMonth = `${year}-${String(month).padStart(2, "0")}-01`;
+  const lastDate = new Date(year, month, 0); // last day of month
+  const lastOfMonth = `${year}-${String(month).padStart(2, "0")}-${String(lastDate.getDate()).padStart(2, "0")}`;
+
+  for (const event of events) {
+    const totalDays = Math.max(event.days, 1);
+
+    for (let i = 0; i < totalDays; i++) {
+      const dayStr = addCalendarDays(event.date, i);
+
+      // Skip days outside the visible month
+      if (dayStr < firstOfMonth || dayStr > lastOfMonth) continue;
+
+      const pill: DayPill = {
+        ...event,
+        dayIndex: i + 1,
+        totalDays,
+        isFirstDay: i === 0,
+      };
+
+      const existing = map.get(dayStr);
+      if (existing) {
+        existing.push(pill);
+      } else {
+        map.set(dayStr, [pill]);
+      }
+    }
+  }
+
+  return map;
 }
