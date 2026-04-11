@@ -33,6 +33,9 @@
     },
     "src/app/api/cron/deal-sync/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/webhooks/hubspot/deal-sync/route.ts": {
+      "maxDuration": 60
     }
   },
   "crons": [
