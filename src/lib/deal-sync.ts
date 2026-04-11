@@ -1291,3 +1291,36 @@ export async function syncSingleDeal(
     return { success: false };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Feature-flag helpers for local-DB cutover
+// ---------------------------------------------------------------------------
+
+/**
+ * Read the data source flag for a given API route from SystemConfig.
+ * Values: "hubspot" (default), "local-with-verify", "local"
+ */
+export async function getDealSyncSource(
+  route: string
+): Promise<"hubspot" | "local-with-verify" | "local"> {
+  if (!prisma) return "hubspot";
+  try {
+    const config = await prisma.systemConfig.findUnique({
+      where: { key: `deal-sync:source:${route}` },
+    });
+    return (config?.value as "hubspot" | "local-with-verify" | "local") ?? "hubspot";
+  } catch {
+    return "hubspot";
+  }
+}
+
+/**
+ * Human-readable staleness description for a lastSync timestamp.
+ */
+export function formatStaleness(lastSync: Date): string {
+  const minutes = Math.floor((Date.now() - lastSync.getTime()) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+}
