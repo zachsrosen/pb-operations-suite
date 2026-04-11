@@ -804,14 +804,6 @@ export async function pushToMissingSystems(
   if (missingSystems.length === 0) return [];
 
   // Build SkuRecord shape expected by catalog-sync
-  const specTable = product.moduleSpec
-    || product.inverterSpec
-    || product.batterySpec
-    || product.evChargerSpec
-    || product.mountingHardwareSpec
-    || product.electricalHardwareSpec
-    || product.relayDeviceSpec;
-
   const sku = {
     id: product.id,
     category: product.category,
@@ -834,11 +826,16 @@ export async function pushToMissingSystems(
     zuperItemId: product.zuperItemId,
     zohoItemId: product.zohoItemId,
     zohoVendorId: product.zohoVendorId,
-    specData: specTable ? Object.fromEntries(
-      Object.entries(specTable).filter(
-        ([k]) => !["id", "internalProductId", "createdAt", "updatedAt"].includes(k),
-      ),
-    ) : {},
+    // Pass actual spec relation fields so catalog-sync's getSpecData() can
+    // read them via sku[CATEGORY_CONFIGS[category].specTable] (e.g. sku.moduleSpec).
+    // A generic "specData" property would be ignored by catalog-sync.
+    moduleSpec: product.moduleSpec,
+    inverterSpec: product.inverterSpec,
+    batterySpec: product.batterySpec,
+    evChargerSpec: product.evChargerSpec,
+    mountingHardwareSpec: product.mountingHardwareSpec,
+    electricalHardwareSpec: product.electricalHardwareSpec,
+    relayDeviceSpec: product.relayDeviceSpec,
   };
 
   try {
@@ -1478,8 +1475,9 @@ export async function runProductSync(options: SyncRunOptions): Promise<{
         orderBy: { startedAt: "desc" },
         select: { startedAt: true },
       });
-      // First run: default to last 24 hours (not a full scan — use backfill for that)
-      since = lastSuccessful?.startedAt ?? new Date(Date.now() - 24 * 60 * 60 * 1000);
+      // First run (no prior successful run): full scan per spec.
+      // Subsequent runs: time-bounded from last successful run.
+      since = lastSuccessful?.startedAt; // undefined = full scan
     }
     // backfill mode: since stays undefined = full scan
 
