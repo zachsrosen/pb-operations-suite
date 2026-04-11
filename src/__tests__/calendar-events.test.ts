@@ -4,8 +4,10 @@ import {
   isOverdue,
   toCalendarProject,
   generateProjectEvents,
+  generateZuperEvents,
   type RawApiProject,
   type CalendarProject,
+  type ZuperCategoryJob,
 } from "@/lib/calendar-events";
 
 describe("getCustomerName", () => {
@@ -263,5 +265,70 @@ describe("generateProjectEvents", () => {
     };
     const events = generateProjectEvents([proj], "Centennial");
     expect(events.length).toBeGreaterThan(0);
+  });
+});
+
+describe("generateZuperEvents", () => {
+  const baseJob: ZuperCategoryJob = {
+    jobUid: "zuper-1",
+    title: "Service Visit — Jones",
+    categoryName: "Service Visit",
+    categoryUid: "cff6f839-c043-46ee-a09f-8d0e9f363437",
+    statusName: "Started",
+    statusColor: "#00ff00",
+    dueDate: "2026-04-15",
+    scheduledStart: "2026-04-15T14:00:00Z",
+    scheduledEnd: "2026-04-15T16:00:00Z",
+    customerName: "Jones",
+    address: "123 Main St, Westminster, CO",
+    city: "Westminster",
+    state: "CO",
+    assignedUser: "Mike Thompson",
+    assignedUsers: ["Mike Thompson"],
+    teamName: "Westminster Team",
+    hubspotDealId: "12345",
+    jobTotal: 500,
+    createdAt: "2026-04-10T10:00:00Z",
+    workOrderNumber: "WO-001",
+  };
+
+  it("generates a service event from a Zuper job", () => {
+    const events = generateZuperEvents([baseJob], "service", "Westminster");
+    expect(events).toHaveLength(1);
+    expect(events[0].eventType).toBe("service");
+    expect(events[0].date).toBe("2026-04-15");
+    expect(events[0].name).toBe("Jones");
+    expect(events[0].assignee).toBe("Mike T.");
+  });
+
+  it("filters by location — uses teamName normalization", () => {
+    const events = generateZuperEvents([baseJob], "service", "Centennial");
+    expect(events).toHaveLength(0);
+  });
+
+  it("uses dueDate when scheduledStart is null", () => {
+    const job: ZuperCategoryJob = {
+      ...baseJob,
+      scheduledStart: null,
+      scheduledEnd: null,
+    };
+    const events = generateZuperEvents([job], "service", "Westminster");
+    expect(events[0].date).toBe("2026-04-15");
+  });
+
+  it("skips jobs with no date", () => {
+    const job: ZuperCategoryJob = {
+      ...baseJob,
+      scheduledStart: null,
+      scheduledEnd: null,
+      dueDate: "",
+    };
+    const events = generateZuperEvents([job], "service", "Westminster");
+    expect(events).toHaveLength(0);
+  });
+
+  it("generates dnr events with correct eventType", () => {
+    const events = generateZuperEvents([baseJob], "dnr", "Westminster");
+    expect(events[0].eventType).toBe("dnr");
   });
 });

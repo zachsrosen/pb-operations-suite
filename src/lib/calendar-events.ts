@@ -372,7 +372,45 @@ export function generateZuperEvents(
   eventType: "service" | "dnr",
   location: CanonicalLocation
 ): CalendarEvent[] {
-  throw new Error("not implemented");
+  const events: CalendarEvent[] = [];
+
+  for (const job of jobs) {
+    // Derive date: prefer scheduledStart, fall back to dueDate
+    const dateStr = job.scheduledStart
+      ? job.scheduledStart.slice(0, 10)
+      : job.dueDate
+        ? job.dueDate.slice(0, 10)
+        : null;
+    if (!dateStr) continue;
+
+    // Filter by location: check teamName then city
+    const jobLocation =
+      normalizeLocation(job.teamName) ||
+      normalizeLocation(job.city);
+    if (jobLocation !== location) continue;
+
+    // Resolve assignee
+    const rawAssignee =
+      (Array.isArray(job.assignedUsers) && job.assignedUsers.length > 0)
+        ? job.assignedUsers[0]
+        : job.assignedUser || "";
+
+    events.push({
+      id: `zuper-${job.jobUid}`,
+      projectId: job.hubspotDealId || job.jobUid,
+      name: job.customerName || job.title || "Untitled",
+      date: dateStr,
+      days: 1,
+      eventType,
+      assignee: formatAssignee(rawAssignee),
+      isCompleted: false,
+      isOverdue: false,
+      isFailed: false,
+      amount: job.jobTotal || 0,
+    });
+  }
+
+  return events;
 }
 
 export function expandToDayPills(
