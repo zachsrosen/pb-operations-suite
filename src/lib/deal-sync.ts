@@ -1271,7 +1271,7 @@ export async function syncSingleDeal(
 
     return { success: true, diff };
   } catch (err) {
-    console.error(`[DealSync] Error syncing single deal ${hubspotDealId}:`, err);
+    console.error("[DealSync] Error syncing single deal %s:", hubspotDealId, err);
 
     try {
       await prisma.dealSyncLog.create({

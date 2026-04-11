@@ -40,10 +40,17 @@ async function gmailDraftFetch<T>(
   method: string,
   body?: Record<string, unknown>
 ): Promise<DraftResult<T>> {
+  // Validate path to prevent SSRF — must be a simple Gmail API sub-path
+  const url = new URL(`${GMAIL_BASE}${path}`);
+  if (url.origin !== "https://gmail.googleapis.com") {
+    return { error: "Invalid Gmail API URL" };
+  }
+  const safeUrl = url.toString();
+
   const tokenResult = await getValidCommsAccessToken(userId);
   if ("disconnected" in tokenResult) return { disconnected: true };
 
-  const resp = await fetch(`${GMAIL_BASE}${path}`, {
+  const resp = await fetch(safeUrl, {
     method,
     headers: {
       Authorization: `Bearer ${tokenResult.accessToken}`,
@@ -56,7 +63,7 @@ async function gmailDraftFetch<T>(
     // Retry once with fresh token
     const retryToken = await getValidCommsAccessToken(userId);
     if ("disconnected" in retryToken) return { disconnected: true };
-    const retryResp = await fetch(`${GMAIL_BASE}${path}`, {
+    const retryResp = await fetch(safeUrl, {
       method,
       headers: {
         Authorization: `Bearer ${retryToken.accessToken}`,

@@ -102,7 +102,7 @@ async function processEvents(events: HubSpotWebhookEvent[]) {
         },
       });
     } catch (err) {
-      console.error(`[deal-sync-webhook] Error processing event ${event.eventId}:`, err);
+      console.error("[deal-sync-webhook] Error processing event %s:", event.eventId, err);
       await logSyncEvent(
         String(event.objectId),
         event.subscriptionType,
