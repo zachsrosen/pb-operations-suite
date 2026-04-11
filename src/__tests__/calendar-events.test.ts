@@ -10,7 +10,6 @@ import {
   type CalendarProject,
   type ZuperCategoryJob,
   type CalendarEvent,
-  type DayPill,
 } from "@/lib/calendar-events";
 
 describe("getCustomerName", () => {
