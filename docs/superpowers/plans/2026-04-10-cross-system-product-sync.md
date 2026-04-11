@@ -734,7 +734,7 @@ async function setCrossLinkFields(
           customFields.push({ api_name: "cf_hubspot_product_id", value: fresh.hubspotProductId });
         }
         if (fresh.zuperItemId) {
-          customFields.push({ api_name: "cf_zuper_item_id", value: fresh.zuperItemId });
+          customFields.push({ api_name: "cf_zuper_product_id", value: fresh.zuperItemId });
         }
         await updateZohoItem(outcome.externalId, { custom_fields: customFields });
 
@@ -1034,7 +1034,7 @@ Expected: FAIL — module not found.
 // InternalProduct, and pushes outward to the other systems.
 
 import { prisma } from "@/lib/db";
-import { Prisma } from "@/generated/prisma"; // for PrismaClientKnownRequestError
+import { Prisma } from "@/generated/prisma/client";
 import { canonicalToken, buildCanonicalKey } from "@/lib/canonical";
 import {
   resolveZohoCategoryName,
@@ -1672,7 +1672,7 @@ const ALLOWED_ROLES = new Set([
 ]);
 
 export async function POST(request: NextRequest) {
-  const authResult = await requireApiAuth(request);
+  const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
   if (!ALLOWED_ROLES.has(authResult.role)) {
