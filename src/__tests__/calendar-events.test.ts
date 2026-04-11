@@ -247,6 +247,20 @@ describe("generateProjectEvents", () => {
     expect(insp!.isFailed).toBe(true);
   });
 
+  it("generates inspection-pass event when completed without fail status", () => {
+    const proj: CalendarProject = {
+      ...baseProject,
+      inspectionScheduleDate: "2026-04-20",
+      inspectionCompleted: "2026-04-20",
+      inspectionStatus: "Pass",
+    };
+    const events = generateProjectEvents([proj], "Westminster");
+    const insp = events.find(e => e.eventType === "inspection-pass");
+    expect(insp).toBeDefined();
+    expect(insp!.isCompleted).toBe(true);
+    expect(insp!.isFailed).toBe(false);
+  });
+
   it("generates rtb fallback when stage is rtb with scheduleDate but no constructionScheduleDate", () => {
     const proj: CalendarProject = {
       ...baseProject,
