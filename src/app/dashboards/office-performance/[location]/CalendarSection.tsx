@@ -162,7 +162,7 @@ function EventPill({ pill }: { pill: DayPill }) {
 }
 
 function DayCell({
-  dateStr,
+  dateStr: _dateStr,
   dayNum,
   isToday,
   isWeekend,
