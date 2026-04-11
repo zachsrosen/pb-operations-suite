@@ -17,6 +17,11 @@ import SurveysSection from "./SurveysSection";
 import InstallsSection from "./InstallsSection";
 import InspectionsSection from "./InspectionsSection";
 import AllLocationsSection from "./AllLocationsSection";
+import GoalsSection from "./GoalsSection";
+import PipelineBarsSection from "./PipelineBarsSection";
+import { CANONICAL_TO_LOCATION_SLUG } from "@/lib/locations";
+import type { CanonicalLocation } from "@/lib/locations";
+import type { GoalsPipelineData } from "@/lib/goals-pipeline-types";
 
 const ROTATION_INTERVAL = 45_000;
 
@@ -50,6 +55,25 @@ export default function OfficeCarousel({
     queryFn: async (): Promise<AllLocationsResponse> => {
       const res = await fetch("/api/office-performance/all?refresh=true");
       if (!res.ok) throw new Error("Failed to fetch all-locations data");
+      return res.json();
+    },
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+  });
+
+  // Derive slug from canonical location using the existing mapping
+  const locationSlug =
+    CANONICAL_TO_LOCATION_SLUG[data.location as CanonicalLocation] ??
+    data.location.toLowerCase().replace(/\s+/g, "-");
+
+  // Fetch goals + pipeline data for the goals/pipeline carousel slides
+  const { data: goalsPipelineData } = useQuery({
+    queryKey: queryKeys.goalsPipeline.location(locationSlug),
+    queryFn: async (): Promise<GoalsPipelineData> => {
+      const res = await fetch(
+        `/api/office-performance/goals-pipeline/${locationSlug}`
+      );
+      if (!res.ok) throw new Error("Failed to fetch goals/pipeline data");
       return res.json();
     },
     refetchInterval: 120_000,
@@ -142,6 +166,38 @@ export default function OfficeCarousel({
         return <InstallsSection data={data.installs} />;
       case "inspections":
         return <InspectionsSection data={data.inspections} />;
+      case "goals":
+        if (!goalsPipelineData) {
+          return (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="w-8 h-8 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <div className="text-slate-400 text-sm">Loading goals...</div>
+              </div>
+            </div>
+          );
+        }
+        return (
+          <GoalsSection
+            goals={goalsPipelineData.goals}
+            month={goalsPipelineData.month}
+            year={goalsPipelineData.year}
+            dayOfMonth={goalsPipelineData.dayOfMonth}
+            daysInMonth={goalsPipelineData.daysInMonth}
+          />
+        );
+      case "pipeline":
+        if (!goalsPipelineData) {
+          return (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="w-8 h-8 border-2 border-pink-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <div className="text-slate-400 text-sm">Loading pipeline...</div>
+              </div>
+            </div>
+          );
+        }
+        return <PipelineBarsSection pipeline={goalsPipelineData.pipeline} />;
       case "allLocations":
         if (!allLocationsData?.locations) {
           return (
