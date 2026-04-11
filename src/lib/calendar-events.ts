@@ -207,13 +207,18 @@ export const DNR_CATEGORY_UIDS = [
 // ---------------------------------------------------------------------------
 
 export function getCustomerName(fullName: string): string {
-  throw new Error("not implemented");
+  return fullName.split(" | ")[1] || fullName;
 }
 
 export function formatAssignee(
   assigneeName: string | null | undefined
 ): string {
-  throw new Error("not implemented");
+  if (!assigneeName) return "";
+  const trimmed = assigneeName.trim();
+  if (!trimmed) return "";
+  const parts = trimmed.split(/\s+/);
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1][0]}.`;
 }
 
 export function isOverdue(
@@ -223,7 +228,21 @@ export function isOverdue(
   isConstruction: boolean,
   today?: Date
 ): boolean {
-  throw new Error("not implemented");
+  if (isCompleted) return false;
+  const todayMidnight = today ? new Date(today) : new Date();
+  todayMidnight.setHours(0, 0, 0, 0);
+
+  // Parse YYYY-MM-DD to local midnight
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const schedMidnight = new Date(y, m - 1, d);
+  schedMidnight.setHours(0, 0, 0, 0);
+
+  if (isConstruction) {
+    const endDate = new Date(schedMidnight);
+    endDate.setDate(schedMidnight.getDate() + Math.ceil(days));
+    return endDate < todayMidnight;
+  }
+  return schedMidnight < todayMidnight;
 }
 
 export function generateProjectEvents(
