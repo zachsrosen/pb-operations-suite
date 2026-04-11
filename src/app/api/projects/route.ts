@@ -5,9 +5,13 @@ import {
   fetchAllProjects,
   calculateStats,
   filterProjectsForContext,
+  ACTIVE_STAGES,
   type Project,
 } from "@/lib/hubspot";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
+import { getDealSyncSource, formatStaleness } from "@/lib/deal-sync";
+import { dealToProject } from "@/lib/deal-reader";
+import { prisma } from "@/lib/db";
 
 function getHubSpotAuthStatus(error: unknown): number | null {
   const candidate = error as {
@@ -54,6 +58,141 @@ export async function GET(request: NextRequest) {
     if (expectedToken && authHeader && authHeader !== `Bearer ${expectedToken}`) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    // -----------------------------------------------------------------------
+    // Feature-flag: local-DB path (deal-mirror)
+    // -----------------------------------------------------------------------
+    const syncSource = await getDealSyncSource("projects");
+
+    if (syncSource === "local" || syncSource === "local-with-verify") {
+      if (syncSource === "local-with-verify") {
+        console.log("[api/projects] local-with-verify mode — shadow verification deferred");
+      }
+
+      const searchParams = request.nextUrl.searchParams;
+      const location = searchParams.get("location");
+      const locations = searchParams.get("locations");
+      const stage = searchParams.get("stage");
+      const search = searchParams.get("search");
+      const context = searchParams.get("context") as
+        | "scheduling" | "equipment" | "pe" | "executive" | "at-risk" | "all" | null;
+      const activeOnly = searchParams.get("active") !== "false";
+      const includeStats = searchParams.get("stats") === "true";
+      const fieldsParam = searchParams.get("fields");
+      const page = Math.max(1, parseInt(searchParams.get("page") || "1") || 1);
+      const rawLimit = parseInt(searchParams.get("limit") || "0");
+      const limit = rawLimit > 0 ? Math.min(200, rawLimit) : 0;
+      const sortBy = searchParams.get("sort") || "priorityScore";
+      const sortOrder = searchParams.get("order") === "asc" ? "asc" : "desc";
+
+      // Query local Deal table (PROJECT pipeline only for /api/projects)
+      const deals = await prisma.deal.findMany({
+        where: { pipeline: "PROJECT" },
+      });
+
+      let projects: Project[] = deals.map(dealToProject);
+
+      // Apply context filter
+      if (context) {
+        projects = filterProjectsForContext(projects, context);
+      } else if (activeOnly) {
+        projects = projects.filter((p) => p.isActive);
+      }
+
+      // Location filters
+      if (locations) {
+        const locSet = new Set(locations.split(",").map((l) => l.trim()));
+        projects = projects.filter((p) => locSet.has(p.pbLocation));
+      } else if (location) {
+        projects = projects.filter((p) => p.pbLocation === location);
+      }
+      if (stage) {
+        projects = projects.filter((p) => p.stage === stage);
+      }
+
+      // Text search
+      if (search) {
+        const q = search.toLowerCase();
+        projects = projects.filter(
+          (p) =>
+            p.name.toLowerCase().includes(q) ||
+            p.projectNumber.toLowerCase().includes(q) ||
+            p.address.toLowerCase().includes(q) ||
+            p.city.toLowerCase().includes(q) ||
+            p.ahj.toLowerCase().includes(q) ||
+            p.installCrew.toLowerCase().includes(q) ||
+            p.projectManager.toLowerCase().includes(q)
+        );
+      }
+
+      // Sort
+      const sortKey = sortBy as keyof Project;
+      projects = projects.sort((a, b) => {
+        const aVal = a[sortKey];
+        const bVal = b[sortKey];
+        if (typeof aVal === "number" && typeof bVal === "number") {
+          return sortOrder === "desc" ? bVal - aVal : aVal - bVal;
+        }
+        const aStr = String(aVal ?? "");
+        const bStr = String(bVal ?? "");
+        return sortOrder === "desc" ? bStr.localeCompare(aStr) : aStr.localeCompare(bStr);
+      });
+
+      // Stats before pagination
+      const stats = includeStats ? calculateStats(projects) : undefined;
+      const totalCount = projects.length;
+
+      // Pagination
+      let paginationMeta = null;
+      if (limit > 0) {
+        const offset = (page - 1) * limit;
+        const totalPages = Math.ceil(totalCount / limit);
+        projects = projects.slice(offset, offset + limit);
+        paginationMeta = { page, limit, totalCount, totalPages, hasMore: page < totalPages };
+      }
+
+      // Field selection
+      let outputProjects: unknown[] = projects;
+      if (fieldsParam) {
+        const fields = fieldsParam.split(",").map((f) => f.trim());
+        outputProjects = projects.map((p) => {
+          const slim: Record<string, unknown> = {};
+          for (const f of fields) {
+            if (f in p) slim[f] = p[f as keyof Project];
+          }
+          return slim;
+        });
+      }
+
+      // Sync metadata
+      const lastSyncLog = await prisma.dealSyncLog.findFirst({
+        where: { source: { startsWith: "batch:PROJECT" }, status: "SUCCESS" },
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true },
+      });
+
+      const lastSyncedAt = lastSyncLog?.createdAt ?? new Date();
+
+      return NextResponse.json({
+        projects: outputProjects,
+        count: outputProjects.length,
+        totalCount,
+        stats,
+        pagination: paginationMeta,
+        cached: false,
+        stale: false,
+        lastUpdated: lastSyncedAt.toISOString(),
+        sync: {
+          source: syncSource,
+          lastSyncedAt: lastSyncedAt.toISOString(),
+          staleness: formatStaleness(lastSyncedAt),
+        },
+      });
+    }
+
+    // -----------------------------------------------------------------------
+    // Default path: HubSpot-sourced
+    // -----------------------------------------------------------------------
 
     // Fail fast for local/dev misconfiguration so we avoid noisy upstream 401s.
     if (!process.env.HUBSPOT_ACCESS_TOKEN?.trim()) {
