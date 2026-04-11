@@ -145,7 +145,7 @@ function EventPill({ pill }: { pill: DayPill }) {
         rounded-sm border-l-2 px-1.5 py-0.5 min-h-[28px]
         ${colors.border} ${colors.bg}
         ${isCompleted ? "opacity-30" : ""}
-        ${isOverdue ? "opacity-60 ring-1 ring-red-500" : ""}
+        ${isOverdue ? "opacity-60 ring-2 ring-red-500" : ""}
         ${isFailed ? "ring-1 ring-amber-500" : ""}
       `}
     >
