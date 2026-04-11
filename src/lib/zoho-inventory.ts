@@ -34,6 +34,8 @@ export interface ZohoInventoryItem {
   brand?: string;                   // manufacturer/brand name
   manufacturer?: string;            // alternate manufacturer field
   group_name?: string;              // Zoho category grouping
+  category_name?: string;           // Flat classification (e.g. "Module", "Wire")
+  category_id?: string;             // Zoho category ID
 }
 
 export interface UpsertZohoItemInput {
@@ -583,6 +585,46 @@ export class ZohoInventoryClient {
         page,
         per_page: perPage,
       });
+
+      const batch = Array.isArray(response.items) ? response.items : [];
+      items.push(...batch);
+
+      const hasMore = !!response.page_context?.has_more_page;
+      if (!hasMore || batch.length === 0) break;
+      page += 1;
+
+      if (page > 1000) {
+        throw new Error("Zoho item pagination exceeded safety limit (1000 pages)");
+      }
+    }
+
+    return items;
+  }
+
+  /**
+   * Fetch Zoho items modified since a given date. Used by the cross-system
+   * product sync to limit API calls to recently-changed items.
+   * If `since` is undefined, returns all items (full scan / backfill mode).
+   */
+  async listItemsSince(since?: Date): Promise<ZohoInventoryItem[]> {
+    if (!since) return this.listItems();
+
+    const items: ZohoInventoryItem[] = [];
+    let page = 1;
+    const perPage = 200;
+    const sinceStr = since.toISOString().replace("T", " ").slice(0, 19);
+
+    while (true) {
+      const response = await this.request<ZohoInventoryListItemsResponse>(
+        "/items",
+        {
+          page,
+          per_page: perPage,
+          last_modified_time: sinceStr,
+          sort_column: "last_modified_time",
+          sort_order: "D",
+        },
+      );
 
       const batch = Array.isArray(response.items) ? response.items : [];
       items.push(...batch);
