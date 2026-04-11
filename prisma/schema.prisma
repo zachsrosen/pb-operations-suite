@@ -175,6 +175,12 @@ enum ActivityType {
 
   // Revenue Goals
   REVENUE_GOAL_UPDATED
+
+  // Deal Mirror Sync
+  DEAL_SYNC_BATCH_COMPLETE
+  DEAL_SYNC_WEBHOOK_RECEIVED
+  DEAL_SYNC_ERROR
+  DEAL_SYNC_DISCREPANCY
 }
 
 enum ClientType {
@@ -183,6 +189,37 @@ enum ClientType {
   CODEX
   API_CLIENT
   UNKNOWN
+}
+
+// ===========================================
+// DEAL MIRROR — Local HubSpot Deal Replication
+// ===========================================
+
+enum DealPipeline {
+  SALES
+  PROJECT
+  DNR
+  SERVICE
+  ROOFING
+}
+
+enum DealSyncSource {
+  BATCH
+  WEBHOOK
+  MANUAL
+}
+
+enum DealSyncType {
+  BATCH_FULL
+  BATCH_INCREMENTAL
+  WEBHOOK
+  MANUAL
+}
+
+enum DealSyncStatus {
+  SUCCESS
+  FAILED
+  SKIPPED
 }
 
 enum Environment {
@@ -2001,4 +2038,240 @@ enum IdrEscalationStatus {
   QUEUED
   CONSUMED
   DISMISSED
+}
+
+// ===========================================
+// DEAL MIRROR — Deal, SyncLog, PipelineConfig
+// ===========================================
+
+model Deal {
+  id              String   @id @default(cuid())
+
+  // Identity
+  hubspotDealId   String   @unique
+  dealName        String
+  pipeline        DealPipeline
+  stage           String
+  stageId         String
+  amount          Decimal?
+
+  // Location
+  pbLocation      String?
+  address         String?
+  city            String?
+  state           String?
+  zipCode         String?
+  ahj             String?
+  utility         String?
+
+  // Team
+  hubspotOwnerId      String?
+  dealOwnerName        String?
+  projectManager       String?
+  operationsManager    String?
+  siteSurveyor         String?
+  departmentLeads      Json?
+
+  // Milestones
+  closeDate                    DateTime?
+  siteSurveyScheduleDate       DateTime?
+  siteSurveyScheduledDate      DateTime?
+  siteSurveyCompletionDate     DateTime?
+  dateReturnedFromDesigners    DateTime?
+  designStartDate              DateTime?
+  designDraftCompletionDate    DateTime?
+  designCompletionDate         DateTime?
+  designApprovalSentDate       DateTime?
+  layoutApprovalDate           DateTime?
+  permitSubmitDate             DateTime?
+  permitIssueDate              DateTime?
+  icSubmitDate                 DateTime?
+  icApprovalDate               DateTime?
+  rtbDate                      DateTime?
+  installScheduleDate          DateTime?
+  constructionCompleteDate     DateTime?
+  inspectionScheduleDate       DateTime?
+  inspectionPassDate           DateTime?
+  inspectionFailDate           DateTime?
+  inspectionBookedDate         DateTime?
+  ptoStartDate                 DateTime?
+  ptoCompletionDate            DateTime?
+  forecastedInstallDate        DateTime?
+  forecastedInspectionDate     DateTime?
+  forecastedPtoDate            DateTime?
+
+  // Status Flags
+  isSiteSurveyScheduled                Boolean  @default(false)
+  isSiteSurveyCompleted                Boolean  @default(false)
+  isDaSent                             Boolean  @default(false)
+  isLayoutApproved                     Boolean  @default(false)
+  isDesignDrafted                      Boolean  @default(false)
+  isDesignCompleted                    Boolean  @default(false)
+  isPermitSubmitted                    Boolean  @default(false)
+  isPermitIssued                       Boolean  @default(false)
+  isIcSubmitted                        Boolean  @default(false)
+  isIcApproved                         Boolean  @default(false)
+  isParticipateEnergy                  Boolean  @default(false)
+  isInspectionPassed                   Boolean  @default(false)
+  hasInspectionFailed                  Boolean  @default(false)
+  firstTimeInspectionPass              Boolean  @default(false)
+  hasInspectionFailedNotRejected       Boolean  @default(false)
+  firstTimeInspectionPassNotRejected   Boolean  @default(false)
+  readyForInspection                   String?
+  finalInspectionStatus                String?
+  inspectionFailCount                  Int?
+  inspectionFailureReason              String?
+  installStatus                        String?
+  designStatus                         String?
+  surveyStatus                         String?
+  permittingStatus                     String?
+  layoutStatus                         String?
+  icStatus                             String?
+  ptoStatus                            String?
+
+  // Equipment
+  systemSizeKwdc          Decimal?
+  systemSizeKwac          Decimal?
+  moduleBrand             String?
+  moduleModel             String?
+  moduleCount             Int?
+  moduleWattage           Int?
+  moduleName              String?
+  inverterBrand           String?
+  inverterModel           String?
+  inverterQty             Int?
+  inverterSizeKwac        Decimal?
+  inverterName            String?
+  batteryBrand            String?
+  batteryModel            String?
+  batteryCount            Int?
+  batterySizeKwh          Decimal?
+  batteryName             String?
+  batteryExpansionCount   Int?
+  batteryExpansionName    String?
+  batteryExpansionModel   String?
+  evCount                 Int?
+
+  // QC Metrics (days, converted from HubSpot ms)
+  siteSurveyTurnaroundDays   Decimal?
+  designTurnaroundDays       Decimal?
+  permitTurnaroundDays       Decimal?
+  icTurnaroundDays           Decimal?
+  constructionTurnaroundDays Decimal?
+  projectTurnaroundDays      Decimal?
+  inspectionTurnaroundDays   Decimal?
+  daReadyToSentDays          Decimal?
+  daSentToApprovedDays       Decimal?
+  timeToSubmitPermitDays     Decimal?
+  timeToSubmitIcDays         Decimal?
+  daToRtbDays                Decimal?
+  rtbToConstructionDays      Decimal?
+  ccToPtoDays                Decimal?
+  timeToCcDays               Decimal?
+  timeToDaDays               Decimal?
+  timeToPtoDays              Decimal?
+  timeToRtbDays              Decimal?
+  rtbToCcDays                Decimal?
+  daToCcDays                 Decimal?
+  daToPermitDays             Decimal?
+
+  // Revisions
+  daRevisionCount         Int?
+  asBuiltRevisionCount    Int?
+  permitRevisionCount     Int?
+  icRevisionCount         Int?
+  totalRevisionCount      Int?
+
+  // External Links
+  designDocumentsUrl      String?
+  designFolderUrl         String?
+  allDocumentFolderUrl    String?
+  driveUrl                String?
+  openSolarUrl            String?
+  openSolarId             String?
+  zuperUid                String?
+  hubspotUrl              String?
+
+  // Install Planning
+  expectedDaysForInstall    Int?
+  daysForInstallers         Int?
+  daysForElectricians       Int?
+  installCrew               String?
+  installDifficulty         Int?
+  installNotes              String?
+  expectedInstallerCount    Int?
+  expectedElectricianCount  Int?
+
+  // Incentive Programs
+  n3ceEvStatus              String?
+  n3ceBatteryStatus         String?
+  sgipStatus                String?
+  pbsrStatus                String?
+  cpaStatus                 String?
+  participateEnergyStatus   String?
+
+  // Misc
+  projectNumber             String?
+  projectType               String?
+  tags                      String?
+  discoReco                 String?
+  interiorAccess            String?
+  siteSurveyDocuments       String?
+  systemPerformanceReview   String?
+  dateEnteredCurrentStage   DateTime?
+  createDate                DateTime?
+
+  // Associations
+  hubspotContactId    String?
+  customerName        String?
+  customerEmail       String?
+  customerPhone       String?
+  hubspotCompanyId    String?
+  companyName         String?
+
+  // Sync Metadata
+  hubspotUpdatedAt    DateTime?
+  lastSyncedAt        DateTime  @default(now())
+  syncSource          DealSyncSource
+  rawProperties       Json?
+
+  // Standard
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  // Relations
+  syncLogs            DealSyncLog[]
+
+  @@index([pipeline, stage])
+  @@index([pbLocation])
+  @@index([lastSyncedAt])
+  @@index([hubspotOwnerId])
+}
+
+model DealSyncLog {
+  id              String          @id @default(cuid())
+  dealId          String?
+  deal            Deal?           @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  hubspotDealId   String?
+  syncType        DealSyncType
+  source          String
+  changesDetected Json?
+  dealCount       Int?
+  status          DealSyncStatus
+  errorMessage    String?
+  durationMs      Int?
+  createdAt       DateTime        @default(now())
+
+  @@index([dealId, createdAt])
+  @@index([syncType, createdAt])
+  @@index([status, createdAt])
+}
+
+model DealPipelineConfig {
+  id                String       @id @default(cuid())
+  pipeline          DealPipeline @unique
+  hubspotPipelineId String
+  stages            Json
+  lastSyncedAt      DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 }
