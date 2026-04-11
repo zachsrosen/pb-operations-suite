@@ -96,6 +96,15 @@ export const queryKeys = {
     location: (slug: string) =>
       [...queryKeys.goalsPipeline.root, slug] as const,
   },
+  officeCalendar: {
+    root: ["office-calendar"] as const,
+    projects: (location: string, month: number, year: number) =>
+      [...queryKeys.officeCalendar.root, "projects", location, year, month] as const,
+    serviceJobs: (location: string, from: string, to: string) =>
+      [...queryKeys.officeCalendar.root, "service-jobs", location, from, to] as const,
+    dnrJobs: (location: string, from: string, to: string) =>
+      [...queryKeys.officeCalendar.root, "dnr-jobs", location, from, to] as const,
+  },
   idrMeeting: {
     root: ["idr-meeting"] as const,
     sessions: () => [...queryKeys.idrMeeting.root, "sessions"] as const,

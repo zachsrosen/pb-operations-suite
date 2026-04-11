@@ -233,7 +233,7 @@ export function formatAssignee(project: Project, eventType: string): string;
 Add to `office-performance-types.ts`:
 - `"calendar"` added to `CarouselSection` type union
 - Entry in `CAROUSEL_SECTIONS` array (after "pipeline", before "surveys")
-- Entry in `SECTION_COLORS` — `"#f97316"` (orange, matching the calendar/scheduling accent)
+- Entry in `SECTION_COLORS` — `"#14b8a6"` (teal, distinct calendar accent)
 - Entry in `SECTION_LABELS` — `"CALENDAR"`
 
 Add to `OfficeCarousel.tsx`:
