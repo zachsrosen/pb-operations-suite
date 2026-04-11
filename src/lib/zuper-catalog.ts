@@ -715,7 +715,8 @@ export async function listRecentZuperProducts(
             sku: trimOrUndefined(item.sku as string) ||
               trimOrUndefined(item.part_number as string),
             brand: trimOrUndefined(item.brand as string),
-            model: trimOrUndefined(item.model as string),
+            model: trimOrUndefined(item.model as string) ||
+              trimOrUndefined(item.part_number as string),
             description: trimOrUndefined(item.description as string),
             price: typeof item.price === "number" ? item.price : undefined,
             purchasePrice: typeof item.purchase_price === "number"

@@ -139,7 +139,7 @@ export function extractFieldsFromZuperProduct(
     source: "zuper",
     name: product.name || "",
     brand: product.brand || "",
-    model: product.model || "",
+    model: product.model || (product.raw?.part_number as string) || "",
     description: product.description || "",
     sku: product.sku,
     unitCost: product.purchasePrice,
