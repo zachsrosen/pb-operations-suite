@@ -26,19 +26,21 @@ export default function CommsPage() {
     staleTime: 60_000,
   });
 
-  // Fetch messages — when the server reports "unchanged", preserve
-  // the previous cached data instead of blanking the inbox.
+  // Fetch messages — tell the server whether we have cached data so it can
+  // safely return { unchanged: true } on idle polls without blanking first loads.
   const messagesQueryKey = queryKeys.comms.messages({ source, q: searchQuery, page: gmailPage || "" });
   const { data, isLoading } = useQuery({
     queryKey: messagesQueryKey,
     queryFn: async () => {
+      const prev = queryClient.getQueryData(messagesQueryKey);
       const params = new URLSearchParams({ source });
       if (searchQuery) params.set("q", searchQuery);
       if (gmailPage) params.set("page", gmailPage);
+      // Signal to server that we have a local snapshot it can rely on
+      if (prev) params.set("hasCache", "1");
       const json = await fetch(`/api/comms/messages?${params}`).then((r) => r.json());
       if (json.unchanged) {
-        // Return whatever React Query already has cached so the UI stays populated
-        const prev = queryClient.getQueryData(messagesQueryKey);
+        // Server confirmed nothing changed — keep previous data
         return prev ?? json;
       }
       return json;

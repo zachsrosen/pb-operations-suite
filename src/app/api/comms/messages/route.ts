@@ -23,6 +23,9 @@ export async function GET(req: NextRequest) {
   const source = params.get("source") || "all"; // all | gmail | chat | hubspot
   const page = params.get("page") || undefined;
   const query = params.get("q") || undefined;
+  // Client signals it already has a cached snapshot — only then is it safe to
+  // return { unchanged: true } instead of a full payload.
+  const clientHasCache = params.get("hasCache") === "1";
 
   // Read user state for no-change fast path
   const state = await prisma.commsUserState.findUnique({
@@ -36,21 +39,21 @@ export async function GET(req: NextRequest) {
   // --- Gmail ---
   let gmailMessages: CategorizedMessage[] = [];
   let gmailNextPage: string | undefined;
-  let unchanged = false;
+  let gmailUnchanged = false;
 
   if (includeGmail) {
-    // No-change fast path
-    if (state?.gmailHistoryId && !page && !query) {
+    // No-change fast path — only when client has a snapshot to fall back on
+    if (clientHasCache && state?.gmailHistoryId && !page && !query) {
       const changes = await checkGmailChanges(user.id, state.gmailHistoryId);
       if ("disconnected" in changes && changes.disconnected) {
         return NextResponse.json({ disconnected: true });
       }
       if (!changes.changed) {
-        unchanged = true;
+        gmailUnchanged = true;
       }
     }
 
-    if (!unchanged) {
+    if (!gmailUnchanged) {
       const gmailResult = await fetchGmailPage(user.id, {
         pageToken: page,
         query: query ? `in:inbox ${query}` : "in:inbox",
@@ -106,8 +109,13 @@ export async function GET(req: NextRequest) {
     // Chat errors are non-fatal — just skip Chat messages
   }
 
-  // Both sources report no changes — signal client to keep previous data
-  if (unchanged && chatMessages.length === 0) {
+  // All active sources report no changes — signal client to keep previous data.
+  // Only safe because clientHasCache is required for gmailUnchanged to be true.
+  const chatUnchanged = includeChat && chatMessages.length === 0;
+  const allUnchanged = includeGmail
+    ? gmailUnchanged && (!includeChat || chatUnchanged)
+    : clientHasCache && chatUnchanged;
+  if (allUnchanged) {
     return NextResponse.json({ unchanged: true });
   }
 
