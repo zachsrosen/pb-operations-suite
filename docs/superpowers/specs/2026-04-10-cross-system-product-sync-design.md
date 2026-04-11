@@ -43,13 +43,19 @@ A scheduled poll (every 15 minutes) that scans all three external systems for un
 - Cron: `CRON_SECRET` bearer token (same pattern as existing crons)
 - Manual: session-based, requires ADMIN / OWNER / PROJECT_MANAGER role
 
+### Concurrency
+
+Only one sync run at a time. Before starting, check for a `ProductSyncRun` with null `completedAt`. If one exists and is less than 5 minutes old, skip this run. If stale (>5 min), mark it as failed and proceed.
+
 ### Detection logic
 
-Polls all three systems in parallel:
+Polls all three systems in parallel. To limit API calls and avoid HubSpot's 10,000-result search cap, each system filters to **recently-created items** (since the last successful sync run's `startedAt`, or last 24 hours on first run):
 
-1. **Zoho** — `listItems()`, filter to items whose `item_id` is not in any InternalProduct's `zohoItemId` AND not in any PendingCatalogPush
-2. **HubSpot** — search all Products, filter to IDs not in any `hubspotProductId` AND not in PendingCatalogPush
-3. **Zuper** — list parts/products, filter to IDs not in any `zuperItemId` AND not in PendingCatalogPush
+1. **Zoho** — `listItems()` filtered by `last_modified_time` since last sync, then filter to items whose `item_id` is not in any InternalProduct's `zohoItemId` AND not in any PendingCatalogPush's `zohoItemId`
+2. **HubSpot** — new `listRecentHubSpotProducts(since)` function using CRM v3 search API with `createdate` filter + cursor pagination, then filter to IDs not in any `hubspotProductId` AND not in PendingCatalogPush's `hubspotProductId`
+3. **Zuper** — new `listRecentZuperProducts(since)` function with pagination, then filter to IDs not in any `zuperItemId` AND not in PendingCatalogPush's `zuperItemId`
+
+**Note:** PendingCatalogPush external ID fields (`zohoItemId`, `hubspotProductId`, `zuperItemId`) must be populated at creation time (not just after approval) so they serve as a skip-list for both pending and rejected items.
 
 ### Per-item processing pipeline
 
@@ -58,7 +64,7 @@ For each unlinked item:
 1. **Category resolution** — map source category to `EquipmentCategory` enum (see Category Mapping Table)
 2. **Canonical key dedup** — `buildCanonicalKey(category, brand, model)` checked against existing InternalProducts
    - **Strong match** (exact canonical key) → auto-link the external ID to the existing InternalProduct
-   - **Ambiguous match** (close but not exact) → PendingCatalogPush with `reviewReason: "ambiguous_match"`
+   - **Ambiguous match** (same `canonicalBrand` + `canonicalModel` but different `category`, or same `canonicalBrand` with model differing only by suffix) → PendingCatalogPush with `reviewReason: "ambiguous_match"`
    - **No match + resolved category** → create new InternalProduct + outbound sync to the other 2 systems
    - **No match + unresolved category** → PendingCatalogPush with `reviewReason: "unknown_category"`
 
@@ -67,6 +73,8 @@ For each unlinked item:
 ## Section 2: Category Mapping
 
 ### Zoho `category_name` → Internal Category
+
+**Note:** Zoho has two classification fields: `group_name` (hierarchical item grouping, mostly empty in our data) and `category_name` (flat classification, well-populated). The reverse sync uses `category_name` for category inference. The outbound sync in `zoho-taxonomy.ts` uses `group_name` — these are independent mappings. The `category_name` field is already returned by the Zoho `/items` API but is not typed on `ZohoInventoryItem` — needs a type addition.
 
 | Zoho `category_name` | → Internal Category | Type |
 |---|---|---|
@@ -162,14 +170,16 @@ Items that can't be auto-imported route to the existing `PendingCatalogPush` tab
 | Missing critical fields (no name, no brand+model) | Same | `"incomplete_data"` | `PENDING` |
 
 The review item stores:
-- `brand`, `model`, `name`, `description`, `category` — snapshot from the source system
+- `brand`, `model`, `name`, `description` (empty string if source has none), `category` — snapshot from the source system
 - `metadata` — raw source fields as JSON for reviewer context
 - `candidateSkuIds` — potential InternalProduct matches (for ambiguous dedup)
 - `systems` — `["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"]`
+- `requestedBy` — `"product-sync@system"` for cron-created entries (distinguishes from user-submitted push requests in the review UI)
+- `zohoItemId` / `hubspotProductId` / `zuperItemId` — populated at creation time with the source system's external ID (serves as skip-list for future polls)
 
 **Approval flow:** Admin assigns correct category, confirms/rejects dedup match → existing approval pipeline creates InternalProduct + outbound sync.
 
-**Rejection flow:** Rejected items stay in PendingCatalogPush with `REJECTED` status. Their external IDs serve as a skip-list so the next poll doesn't re-flag them.
+**Rejection flow:** Rejected items stay in PendingCatalogPush with `REJECTED` status. Their external IDs (already populated at creation) serve as a skip-list so the next poll doesn't re-flag them.
 
 ---
 
@@ -192,6 +202,8 @@ model ProductSyncRun {
   flagged        Int       @default(0) // sent to review queue
   skipped        Int       @default(0) // already known
   errors         String?   // JSON array of error messages
+
+  @@index([startedAt])
 }
 ```
 
@@ -212,7 +224,12 @@ Each poll execution writes a row, giving a full history of sync activity.
 
 ### Function timeout
 
-Default 60s (standard for API routes). If the poll takes longer due to large item counts, increase to 120s.
+Set to 120s in `vercel.json` (three parallel API polls + per-item processing warrants extra headroom):
+
+```json
+"src/app/api/cron/product-sync/route.ts": { "maxDuration": 120 },
+"src/app/api/inventory/product-sync/route.ts": { "maxDuration": 120 }
+```
 
 ---
 
@@ -284,14 +301,14 @@ Every 15 min (cron) or on-demand (manual trigger)
 
 ### Modified files
 - `prisma/schema.prisma` — add `ProductSyncRun` model
-- `vercel.json` — add cron schedule entry
-- `src/lib/zoho-inventory.ts` — expose `category_name` on `ZohoInventoryItem` type (already returned by API, just not typed)
+- `vercel.json` — add cron schedule entry + function timeout overrides
+- `src/lib/zoho-inventory.ts` — add `category_name` and `category_id` to `ZohoInventoryItem` type (already returned by API, just not typed)
+- `src/lib/hubspot.ts` — add `listRecentHubSpotProducts(since: Date)` function using CRM v3 `GET /crm/v3/objects/products` with `createdate` filter + cursor pagination
+- `src/lib/zuper-catalog.ts` — add `listRecentZuperProducts(since: Date)` function with pagination
 - Catalog UI components — sync button, review badge, sync history (specific files TBD in implementation plan)
 
 ### Existing code reused (no changes needed)
 - `src/lib/catalog-sync.ts` — outbound sync engine
 - `src/lib/canonical.ts` — canonical key building
 - `src/lib/catalog-fields.ts` — category configs and mappings
-- `src/lib/zuper-catalog.ts` — Zuper product CRUD
-- `src/lib/hubspot.ts` — HubSpot product CRUD
 - PendingCatalogPush model and existing review UI
