@@ -1372,8 +1372,10 @@ export async function verifyShadow(
         }),
       }
     );
+    if (!res.ok) return; // HubSpot error — treat as inconclusive, don't log false mismatch
     const data = await res.json();
-    const hubspotTotal: number = data.total ?? 0;
+    if (typeof data.total !== "number") return; // Unexpected shape — inconclusive
+    const hubspotTotal: number = data.total;
 
     if (localCount !== hubspotTotal) {
       const message = `[shadow-verify:${route}${pipeline ? `:${pipeline}` : ""}] count mismatch: local=${localCount} hubspot=${hubspotTotal}`;
