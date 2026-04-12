@@ -174,7 +174,7 @@ export async function fetchGmailPage(
   resultSizeEstimate: number;
   historyId: string;
 }>> {
-  const maxResults = options.maxResults || 50;
+  const maxResults = options.maxResults || 200;
   const params: Record<string, string> = {
     maxResults: String(maxResults),
     q: options.query || "in:inbox",
@@ -209,8 +209,8 @@ export async function fetchGmailPage(
     };
   }
 
-  // Step 2: Batch-fetch message details
-  const batchSize = 20;
+  // Step 2: Batch-fetch message details (larger batches for speed)
+  const batchSize = 50;
   const messages: CommsMessage[] = [];
   for (let i = 0; i < ids.length; i += batchSize) {
     const batch = ids.slice(i, i + batchSize);

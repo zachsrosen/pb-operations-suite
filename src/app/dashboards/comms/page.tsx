@@ -11,6 +11,7 @@ import CommsIncomingFeed from "@/components/comms/CommsIncomingFeed";
 import CommsBulkBar from "@/components/comms/CommsBulkBar";
 import CommsMessageCard from "@/components/comms/CommsMessageCard";
 import CommsDraftDrawer from "@/components/comms/CommsDraftDrawer";
+import CommsProjectView from "@/components/comms/CommsProjectView";
 import { queryKeys } from "@/lib/query-keys";
 
 export default function CommsPage() {
@@ -26,6 +27,7 @@ export default function CommsPage() {
   const [readFilter, setReadFilter] = useState<"all" | "unread" | "read">("all");
   const [sortBy, setSortBy] = useState<"date" | "sender">("date");
   const [kpiFilter, setKpiFilter] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<"inbox" | "project">("inbox");
 
   // Pagination
   const [gmailPage, setGmailPage] = useState<string | undefined>();
@@ -235,9 +237,33 @@ export default function CommsPage() {
             topSenders={data?.analytics?.topSenders || []}
           />
 
-          {/* Header bar with counts + new draft */}
+          {/* Header bar with view toggle + counts + new draft */}
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-3">
+              {/* View toggle tabs */}
+              <div className="flex items-center gap-0.5 rounded-lg bg-surface-2/30 p-0.5">
+                <button
+                  onClick={() => setViewMode("inbox")}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
+                    viewMode === "inbox"
+                      ? "bg-cyan-500/15 text-cyan-400 shadow-sm"
+                      : "text-muted/50 hover:text-foreground/70"
+                  }`}
+                >
+                  Inbox
+                </button>
+                <button
+                  onClick={() => setViewMode("project")}
+                  className={`rounded-md px-3 py-1.5 text-xs font-semibold transition-all ${
+                    viewMode === "project"
+                      ? "bg-emerald-500/15 text-emerald-400 shadow-sm"
+                      : "text-muted/50 hover:text-foreground/70"
+                  }`}
+                >
+                  By Project
+                </button>
+              </div>
+
               <span className="text-sm text-muted/55">
                 {data?.analytics?.totalMessages ?? 0} messages
               </span>
@@ -260,20 +286,36 @@ export default function CommsPage() {
             </button>
           </div>
 
-          {/* Inline Filters */}
-          <CommsInlineFilters
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            sourcesEnabled={sourcesEnabled}
-            onSourceToggle={toggleSource}
-            readFilter={readFilter}
-            onReadFilterChange={setReadFilter}
-            sortBy={sortBy}
-            onSortChange={setSortBy}
-            activeKpiFilter={kpiFilter}
-            onClearKpiFilter={() => setKpiFilter(null)}
-          />
+          {/* Inline Filters (shown for inbox view) */}
+          {viewMode === "inbox" && (
+            <CommsInlineFilters
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              sourcesEnabled={sourcesEnabled}
+              onSourceToggle={toggleSource}
+              readFilter={readFilter}
+              onReadFilterChange={setReadFilter}
+              sortBy={sortBy}
+              onSortChange={setSortBy}
+              activeKpiFilter={kpiFilter}
+              onClearKpiFilter={() => setKpiFilter(null)}
+            />
+          )}
 
+          {/* Project view */}
+          {viewMode === "project" && (
+            <CommsProjectView
+              messages={data?.messages || []}
+              onFilterByProject={(projId) => {
+                setSearchQuery(projId);
+                setViewMode("inbox");
+              }}
+            />
+          )}
+
+          {/* Inbox view — bulk bar + message list */}
+          {viewMode === "inbox" && (
+            <>
           {/* Bulk action bar */}
           <CommsBulkBar
             selectedCount={selectedIds.size}
@@ -371,6 +413,8 @@ export default function CommsPage() {
               </div>
             )}
           </div>
+            </>
+          )}
         </>
       )}
 
