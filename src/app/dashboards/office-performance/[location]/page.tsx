@@ -9,6 +9,11 @@ import type { OfficePerformanceData, AllLocationsResponse } from "@/lib/office-p
 import OfficeCarousel from "./OfficeCarousel";
 import AllLocationsSection from "./AllLocationsSection";
 import AllLocationsGoalsSection from "./AllLocationsGoalsSection";
+import AllLocationsSurveysSection from "./AllLocationsSurveysSection";
+import AllLocationsInstallsSection from "./AllLocationsInstallsSection";
+import AllLocationsInspectionsSection from "./AllLocationsInspectionsSection";
+import AllLocationsCalendarSection from "./AllLocationsCalendarSection";
+import PipelineBarsSection from "./PipelineBarsSection";
 import AmbientBackground from "./AmbientBackground";
 import type { AllGoalsPipelineResponse } from "@/app/api/office-performance/goals-pipeline/all/route";
 
@@ -24,18 +29,28 @@ interface PageProps {
 }
 
 // ---------------------------------------------------------------------------
-// All-locations carousel: 2 slides (overview + goals)
+// All-locations carousel: 7 slides
 // ---------------------------------------------------------------------------
 
-type AllSlide = "overview" | "goals";
-const ALL_SLIDES: AllSlide[] = ["overview", "goals"];
+type AllSlide = "overview" | "goals" | "pipeline" | "calendar" | "surveys" | "installs" | "inspections";
+const ALL_SLIDES: AllSlide[] = ["overview", "goals", "pipeline", "calendar", "surveys", "installs", "inspections"];
 const ALL_SLIDE_COLORS: Record<AllSlide, string> = {
-  overview: "#a855f7",  // purple
-  goals: "#eab308",     // yellow
+  overview: "#a855f7",     // purple
+  goals: "#eab308",        // yellow
+  pipeline: "#ec4899",     // pink
+  calendar: "#14b8a6",     // teal
+  surveys: "#3b82f6",      // blue
+  installs: "#22c55e",     // green
+  inspections: "#06b6d4",  // cyan
 };
 const ALL_SLIDE_LABELS: Record<AllSlide, string> = {
   overview: "PERFORMANCE",
   goals: "COMPANY GOALS",
+  pipeline: "PIPELINE",
+  calendar: "CALENDAR",
+  surveys: "SURVEYS",
+  installs: "INSTALLS",
+  inspections: "INSPECTIONS",
 };
 const ALL_ROTATION_INTERVAL = 45_000;
 
@@ -193,6 +208,26 @@ function AllLocationsOverviewPage() {
             daysInMonth={goalsData.daysInMonth}
           />
         );
+      case "pipeline":
+        if (!goalsData) {
+          return (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-center">
+                <div className="w-8 h-8 border-2 border-pink-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+                <div className="text-slate-400 text-sm">Loading pipeline...</div>
+              </div>
+            </div>
+          );
+        }
+        return <PipelineBarsSection pipeline={goalsData.pipeline} />;
+      case "calendar":
+        return <AllLocationsCalendarSection />;
+      case "surveys":
+        return <AllLocationsSurveysSection locations={data.locations} />;
+      case "installs":
+        return <AllLocationsInstallsSection locations={data.locations} />;
+      case "inspections":
+        return <AllLocationsInspectionsSection locations={data.locations} />;
     }
   };
 
