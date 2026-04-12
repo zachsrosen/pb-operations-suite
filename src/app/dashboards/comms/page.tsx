@@ -131,15 +131,22 @@ export default function CommsPage() {
             analytics={data?.analytics}
           />
 
-          <div className="min-w-0 flex-1 space-y-2">
+          <div className="min-w-0 flex-1 space-y-1.5">
             {/* Header with new draft button */}
-            <div className="flex items-center justify-between">
-              <div className="text-sm text-muted">
-                {data?.analytics?.totalMessages ?? 0} messages
+            <div className="flex items-center justify-between pb-1">
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted/60">
+                  {data?.analytics?.totalMessages ?? 0} messages
+                </span>
+                {(data?.analytics?.unreadCount ?? 0) > 0 && (
+                  <span className="rounded-full bg-cyan-500/15 px-2 py-0.5 text-xs font-medium text-cyan-400 ring-1 ring-cyan-500/20">
+                    {data.analytics.unreadCount} unread
+                  </span>
+                )}
               </div>
               <button
                 onClick={handleNewDraft}
-                className="rounded-lg bg-cyan-600 px-3 py-1.5 text-sm text-white hover:bg-cyan-700"
+                className="rounded-lg bg-cyan-600/90 px-3.5 py-1.5 text-sm font-medium text-white hover:bg-cyan-600 transition-colors shadow-sm"
               >
                 + New Draft
               </button>
