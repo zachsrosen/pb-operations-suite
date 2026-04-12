@@ -46,7 +46,14 @@ async function gmailFetch<T>(opts: GmailApiOptions): Promise<GmailResult<T>> {
   const url = new URL(`${GMAIL_BASE}${opts.path}`);
   if (opts.params) {
     for (const [k, v] of Object.entries(opts.params)) {
-      url.searchParams.set(k, v);
+      // Gmail API expects metadataHeaders as repeated params, not comma-separated
+      if (k === "metadataHeaders" && v.includes(",")) {
+        for (const header of v.split(",")) {
+          url.searchParams.append(k, header.trim());
+        }
+      } else {
+        url.searchParams.set(k, v);
+      }
     }
   }
 
