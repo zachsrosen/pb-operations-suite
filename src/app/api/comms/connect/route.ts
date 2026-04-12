@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { getActualCommsUser } from "@/lib/comms-auth";
 import { prisma } from "@/lib/db";
 import { commsDecryptToken } from "@/lib/comms-crypto";
+import { commsRedirectUri } from "@/lib/comms-url";
 
 const SCOPES = [
   "https://www.googleapis.com/auth/gmail.modify",
@@ -19,7 +20,7 @@ function signState(payload: string): string {
 }
 
 /** GET: Initiate OAuth flow with CSRF-signed state */
-export async function GET() {
+export async function GET(req: NextRequest) {
   const { user, blocked } = await getActualCommsUser();
   if (blocked) {
     return NextResponse.json(
@@ -32,7 +33,7 @@ export async function GET() {
   }
 
   const clientId = process.env.COMMS_GOOGLE_CLIENT_ID || "";
-  const redirectUri = `${process.env.AUTH_URL || "http://localhost:3000"}/api/comms/connect/callback`;
+  const redirectUri = commsRedirectUri(req);
 
   // CSRF state: userId + nonce + expiry, HMAC-signed
   const nonce = crypto.randomBytes(16).toString("hex");
