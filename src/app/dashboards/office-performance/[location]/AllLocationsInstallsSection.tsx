@@ -18,11 +18,13 @@ function onTimeColor(pct: number): string {
 
 export default function AllLocationsInstallsSection({ locations }: Props) {
   const totalCompleted = locations.reduce((sum, l) => sum + l.installs.completedMtd, 0);
-  const avgDays = locations.length > 0
-    ? locations.reduce((sum, l) => sum + l.installs.avgDays, 0) / locations.length
-    : 0;
   const totalScheduled = locations.reduce((sum, l) => sum + l.installs.scheduledThisWeek, 0);
   const totalKw = locations.reduce((sum, l) => sum + (l.installs.kwInstalledMtd ?? 0), 0);
+
+  // Volume-weighted average: sum(avgDays * completed) / sum(completed)
+  const avgDays = totalCompleted > 0
+    ? locations.reduce((sum, l) => sum + l.installs.avgDays * l.installs.completedMtd, 0) / totalCompleted
+    : 0;
 
   return (
     <AllLocationsCategorySection

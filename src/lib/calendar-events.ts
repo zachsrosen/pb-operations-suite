@@ -38,6 +38,8 @@ export interface CalendarEvent {
   isOverdue: boolean;
   isFailed: boolean;
   amount: number;
+  /** Canonical location — populated when generating events for all-locations views */
+  location?: string;
 }
 
 /**
@@ -293,6 +295,7 @@ export function generateProjectEvents(
           isOverdue: isOverdue(constructionDate, days, done, true, today),
           isFailed: false,
           amount: p.amount,
+          location,
         });
       }
     }
@@ -316,6 +319,7 @@ export function generateProjectEvents(
           isOverdue: isOverdue(p.inspectionScheduleDate, 1, done, false, today),
           isFailed: failed,
           amount: p.amount,
+          location,
         });
       }
     }
@@ -338,6 +342,7 @@ export function generateProjectEvents(
           isOverdue: isOverdue(p.surveyScheduleDate, 1, done, false, today),
           isFailed: false,
           amount: p.amount,
+          location,
         });
       }
     }
@@ -368,6 +373,7 @@ export function generateProjectEvents(
         isOverdue: isOverdue(p.scheduleDate, days, done, true, today),
         isFailed: false,
         amount: p.amount,
+        location,
       });
     }
   }
@@ -427,6 +433,7 @@ export function generateZuperEvents(
       isOverdue: false,
       isFailed: false,
       amount: job.jobTotal || 0,
+      location,
     });
   }
 

@@ -28,6 +28,15 @@ import {
 import { CANONICAL_LOCATIONS } from "@/lib/locations";
 import type { CanonicalLocation } from "@/lib/locations";
 
+/** Short location abbreviations for pill labels */
+const LOC_ABBR: Record<string, string> = {
+  Westminster: "WM",
+  Centennial: "DTC",
+  "Colorado Springs": "COS",
+  "San Luis Obispo": "SLO",
+  Camarillo: "CAM",
+};
+
 const MONTH_NAMES = [
   "", "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -122,8 +131,9 @@ function EventPill({ pill }: { pill: DayPill }) {
   const colors = EVENT_COLORS[pill.eventType] || EVENT_COLORS[baseType] || EVENT_COLORS.survey;
   const isCompleted = pill.isCompleted;
   const isOverdue = pill.isOverdue;
+  const locAbbr = pill.location ? (LOC_ABBR[pill.location] || pill.location.slice(0, 3).toUpperCase()) : "";
 
-  // For all-locations view, use shorter labels to fit more
+  // Continuation pill for multi-day events (day 2+)
   if (!pill.isFirstDay) {
     return (
       <div
@@ -146,6 +156,7 @@ function EventPill({ pill }: { pill: DayPill }) {
       `}
     >
       <div className={`text-[9px] font-medium leading-tight truncate ${colors.text}`}>
+        {locAbbr && <span className="text-[8px] text-slate-500 mr-0.5">{locAbbr}</span>}
         {formatEventLabel(pill.eventType)}
       </div>
     </div>
