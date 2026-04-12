@@ -160,12 +160,19 @@ function parseGmailMessage(msg: Record<string, any>): CommsMessage {
   };
 }
 
-/** Fetch a full page of Gmail messages. */
+/**
+ * Fetch Gmail messages with auto-pagination.
+ *
+ * Collects ALL message IDs across multiple list pages (Gmail caps at 500/page),
+ * then batch-fetches metadata in parallel. Pass `maxTotal` to cap the total
+ * number of messages returned (default: unlimited / all inbox messages).
+ */
 export async function fetchGmailPage(
   userId: string,
   options: {
     pageToken?: string;
     maxResults?: number;
+    maxTotal?: number;
     query?: string;
   } = {}
 ): Promise<GmailResult<{
@@ -174,27 +181,47 @@ export async function fetchGmailPage(
   resultSizeEstimate: number;
   historyId: string;
 }>> {
-  const maxResults = options.maxResults || 200;
-  const params: Record<string, string> = {
-    maxResults: String(maxResults),
-    q: options.query || "in:inbox",
-  };
-  if (options.pageToken) params.pageToken = options.pageToken;
+  const perPage = Math.min(options.maxResults || 500, 500); // Gmail max is 500
+  const maxTotal = options.maxTotal || Infinity;
+  const query = options.query || "in:inbox";
 
-  // Step 1: Get message IDs
-  const listResult = await gmailFetch<{
-    messages?: Array<{ id: string; threadId: string }>;
-    nextPageToken?: string;
-    resultSizeEstimate?: number;
-  }>({ userId, path: "/messages", params });
+  // Step 1: Collect all message IDs via auto-pagination
+  const allIds: Array<{ id: string; threadId: string }> = [];
+  let pageToken: string | undefined = options.pageToken;
+  let resultSizeEstimate = 0;
+  let finalNextPageToken: string | undefined;
 
-  if ("disconnected" in listResult && listResult.disconnected) return { disconnected: true };
-  if ("error" in listResult && listResult.error) return { error: listResult.error };
+  while (allIds.length < maxTotal) {
+    const params: Record<string, string> = {
+      maxResults: String(Math.min(perPage, maxTotal - allIds.length)),
+      q: query,
+    };
+    if (pageToken) params.pageToken = pageToken;
 
-  const listData = listResult.data!;
-  const ids = listData.messages || [];
-  if (ids.length === 0) {
-    // Get current historyId from profile
+    const listResult = await gmailFetch<{
+      messages?: Array<{ id: string; threadId: string }>;
+      nextPageToken?: string;
+      resultSizeEstimate?: number;
+    }>({ userId, path: "/messages", params });
+
+    if ("disconnected" in listResult && listResult.disconnected) return { disconnected: true };
+    if ("error" in listResult && listResult.error) return { error: listResult.error };
+
+    const listData = listResult.data!;
+    if (listData.resultSizeEstimate) resultSizeEstimate = listData.resultSizeEstimate;
+
+    const ids = listData.messages || [];
+    if (ids.length === 0) break;
+
+    allIds.push(...ids);
+    pageToken = listData.nextPageToken;
+    finalNextPageToken = pageToken;
+
+    // No more pages
+    if (!pageToken) break;
+  }
+
+  if (allIds.length === 0) {
     const profile = await gmailFetch<{ historyId: string }>({
       userId,
       path: "/profile",
@@ -202,20 +229,21 @@ export async function fetchGmailPage(
     return {
       data: {
         messages: [],
-        nextPageToken: listData.nextPageToken,
+        nextPageToken: finalNextPageToken,
         resultSizeEstimate: 0,
         historyId: ("data" in profile && profile.data) ? profile.data.historyId : "",
       },
     };
   }
 
-  // Step 2: Batch-fetch message details (larger batches for speed)
+  // Step 2: Batch-fetch message metadata in parallel (50 concurrent)
   const batchSize = 50;
   const messages: CommsMessage[] = [];
-  for (let i = 0; i < ids.length; i += batchSize) {
-    const batch = ids.slice(i, i + batchSize);
+  for (let i = 0; i < allIds.length; i += batchSize) {
+    const batch = allIds.slice(i, i + batchSize);
     const batchResults = await Promise.all(
       batch.map((m) =>
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         gmailFetch<Record<string, any>>({
           userId,
           path: `/messages/${m.id}`,
@@ -237,8 +265,8 @@ export async function fetchGmailPage(
   return {
     data: {
       messages,
-      nextPageToken: listData.nextPageToken,
-      resultSizeEstimate: listData.resultSizeEstimate || messages.length,
+      nextPageToken: finalNextPageToken,
+      resultSizeEstimate: resultSizeEstimate || messages.length,
       historyId: ("data" in profile && profile.data) ? profile.data.historyId : "",
     },
   };

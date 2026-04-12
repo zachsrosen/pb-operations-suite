@@ -10,6 +10,9 @@
     "src/app/api/**/*.ts": {
       "maxDuration": 60
     },
+    "src/app/api/comms/messages/route.ts": {
+      "maxDuration": 120
+    },
     "src/app/api/bom/extract/route.ts": {
       "maxDuration": 120
     },

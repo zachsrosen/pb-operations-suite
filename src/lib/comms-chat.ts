@@ -9,8 +9,8 @@
 import { getValidCommsAccessToken } from "./comms-token";
 
 const CHAT_BASE = "https://chat.googleapis.com/v1";
-const MAX_SPACES = 30;
-const MESSAGES_PER_SPACE = 20;
+const MAX_SPACES = 50;
+const MESSAGES_PER_SPACE = 50;
 
 export type CommsChatMessage = {
   id: string;
@@ -133,8 +133,8 @@ export async function fetchChatMessages(
   const allMessages: CommsChatMessage[] = [];
   let latestTime: Date | null = null;
 
-  // Fetch in parallel batches of 5 to avoid rate limits
-  const batchSize = 5;
+  // Fetch in parallel batches of 10
+  const batchSize = 10;
   for (let i = 0; i < spaces.length; i += batchSize) {
     const batch = spaces.slice(i, i + batchSize);
     const results = await Promise.all(
