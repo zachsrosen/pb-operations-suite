@@ -826,6 +826,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // IDR Meeting Hub
       "/dashboards/idr-meeting",
       "/api/idr-meeting",
+      // Comms
+      "/dashboards/comms",
+      "/api/comms",
     ],
     canScheduleSurveys: false,
     canScheduleInstalls: false,
@@ -893,6 +896,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // IDR Meeting Hub
       "/dashboards/idr-meeting",
       "/api/idr-meeting",
+      // Comms
+      "/dashboards/comms",
+      "/api/comms",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: false,
@@ -924,6 +930,9 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       // IDR Meeting Hub
       "/dashboards/idr-meeting",
       "/api/idr-meeting",
+      // Comms
+      "/dashboards/comms",
+      "/api/comms",
     ],
     canScheduleSurveys: true,
     canScheduleInstalls: false,
