@@ -152,55 +152,67 @@ export default function CommsPage() {
               </button>
             </div>
 
-            {/* Messages */}
-            {isLoading && (
-              <div className="py-8 text-center text-muted">
-                Fetching messages...
+            {/* Message list container */}
+            <div className="rounded-xl border border-t-border/20 bg-surface/40 overflow-hidden shadow-card">
+              {/* Count bar */}
+              <div className="border-b border-t-border/15 px-4 py-2 text-right text-[11px] text-muted/40">
+                Showing {data?.messages?.length ?? 0} of {data?.analytics?.totalMessages ?? 0} messages
               </div>
-            )}
 
-            {!isLoading && (!data?.messages || data.messages.length === 0) && (
-              <div className="py-8 text-center text-sm text-muted">
-                No messages to display.
-              </div>
-            )}
+              {isLoading && (
+                <div className="flex items-center justify-center gap-2 py-16 text-muted/50">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-t-border/30 border-t-cyan-400" />
+                  <span className="text-sm">Fetching messages...</span>
+                </div>
+              )}
 
-            {data?.disconnected && <CommsConnectBanner />}
+              {!isLoading && (!data?.messages || data.messages.length === 0) && (
+                <div className="py-16 text-center">
+                  <p className="text-sm text-muted/50">No messages to display.</p>
+                  <p className="mt-1 text-xs text-muted/30">Try adjusting your filters or search query.</p>
+                </div>
+              )}
 
-            {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-            {data?.messages?.map((msg: any) => (
-              <CommsMessageCard
-                key={msg.id}
-                id={msg.id}
-                source={msg.source}
-                from={msg.from || msg.sender || ""}
-                subject={msg.subject}
-                text={msg.text}
-                snippet={msg.snippet}
-                date={msg.date}
-                isUnread={msg.isUnread}
-                isStarred={msg.isStarred}
-                hubspotDealUrl={msg.hubspotDealUrl}
-                category={msg.category}
-                spaceName={msg.spaceName}
-                onReply={msg.source !== "chat" ? handleReply : undefined}
-                onAiDraft={msg.source !== "chat" ? handleAiDraft : undefined}
-                onMarkRead={msg.source !== "chat" ? handleMarkRead : undefined}
-                onStar={msg.source !== "chat" ? handleStar : undefined}
-              />
-            ))}
+              {data?.disconnected && <CommsConnectBanner />}
 
-            {/* Load more */}
-            {data?.pagination?.gmailNextPage && (
-              <div className="py-4 text-center">
-                <button
-                  onClick={() => setGmailPage(data.pagination.gmailNextPage)}
-                  className="text-sm text-cyan-400 hover:text-cyan-300"
-                >
-                  Load more messages
-                </button>
-              </div>
-            )}
+              {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+              {data?.messages?.map((msg: any) => (
+                <CommsMessageCard
+                  key={msg.id}
+                  id={msg.id}
+                  source={msg.source}
+                  from={msg.from || msg.sender || ""}
+                  fromEmail={msg.fromEmail || msg.senderEmail}
+                  subject={msg.subject}
+                  text={msg.text}
+                  snippet={msg.snippet}
+                  date={msg.date}
+                  isUnread={msg.isUnread}
+                  isStarred={msg.isStarred}
+                  hubspotDealUrl={msg.hubspotDealUrl}
+                  category={msg.category}
+                  spaceName={msg.spaceName}
+                  threadId={msg.threadId}
+                  to={msg.to}
+                  onReply={msg.source !== "chat" ? handleReply : undefined}
+                  onAiDraft={msg.source !== "chat" ? handleAiDraft : undefined}
+                  onMarkRead={msg.source !== "chat" ? handleMarkRead : undefined}
+                  onStar={msg.source !== "chat" ? handleStar : undefined}
+                />
+              ))}
+
+              {/* Load more */}
+              {data?.pagination?.gmailNextPage && (
+                <div className="border-t border-t-border/15 py-3 text-center">
+                  <button
+                    onClick={() => setGmailPage(data.pagination.gmailNextPage)}
+                    className="text-sm text-cyan-400/80 hover:text-cyan-300 transition-colors"
+                  >
+                    Load more messages
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
