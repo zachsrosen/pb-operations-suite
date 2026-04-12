@@ -197,37 +197,38 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Batch-resolve project numbers from HubSpotProjectCache
-  // Deal names in HubSpot typically contain the project number (e.g. "PROJ-12345 - Smith Residence")
+  // Batch-resolve project numbers from Deal mirror table
   type ProjectInfo = { dealName: string; dealId: string; hubspotUrl: string; stage: string; amount: number | null };
   const projectMap: Record<string, ProjectInfo> = {};
   if (projNumbers.size > 0) {
     try {
       const projArray = [...projNumbers];
-      // Search dealName for each PROJ-XXXX pattern
-      const cached = await prisma.hubSpotProjectCache.findMany({
+      const deals = await prisma.deal.findMany({
         where: {
-          OR: projArray.map((n) => ({
-            dealName: { contains: `PROJ-${n}`, mode: "insensitive" as const },
-          })),
+          projectNumber: {
+            in: [
+              ...projArray.map((n) => `PROJ-${n}`),
+              ...projArray,
+            ],
+          },
         },
         select: {
-          dealId: true,
+          hubspotDealId: true,
           dealName: true,
+          projectNumber: true,
           stage: true,
           amount: true,
         },
       });
-      for (const c of cached) {
-        // Extract the PROJ-XXXX from the deal name
-        const match = c.dealName.match(/PROJ-(\d+)/i);
-        if (match) {
-          projectMap[`PROJ-${match[1]}`] = {
-            dealName: c.dealName || "",
-            dealId: c.dealId,
-            hubspotUrl: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${c.dealId}`,
-            stage: c.stage || "",
-            amount: c.amount ? Number(c.amount) : null,
+      for (const d of deals) {
+        const num = (d.projectNumber || "").replace(/^PROJ-/i, "");
+        if (num) {
+          projectMap[`PROJ-${num}`] = {
+            dealName: d.dealName || "",
+            dealId: d.hubspotDealId,
+            hubspotUrl: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${d.hubspotDealId}`,
+            stage: d.stage || "",
+            amount: d.amount ? Number(d.amount) : null,
           };
         }
       }
