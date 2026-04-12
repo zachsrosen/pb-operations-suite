@@ -132,25 +132,78 @@ export async function GET(req: NextRequest) {
     ...chatMessages.map((c) => ({ ...c, category: "general" as const })),
   ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-  // Compute focus analytics
-  const unreadCount = gmailMessages.filter((m) => m.isUnread).length;
+  // Compute rich analytics for KPI cards
+  const unreadGmail = gmailMessages.filter(
+    (m) => m.isUnread && m.source === "gmail"
+  ).length;
+  const unreadHubspot = gmailMessages.filter(
+    (m) => m.isUnread && m.source === "hubspot"
+  ).length;
+  // Chat messages don't have isUnread — treat all as unread for now
+  const unreadChat = chatMessages.length;
+  const unreadCount = unreadGmail + unreadHubspot + unreadChat;
+
+  // Category breakdowns (from HubSpot categorization)
+  const mentionCount = gmailMessages.filter(
+    (m) => m.isUnread && (m as CategorizedMessage).category === "mention"
+  ).length;
+  const taskCount = gmailMessages.filter(
+    (m) => m.isUnread && (m as CategorizedMessage).category === "task"
+  ).length;
+  const commentCount = gmailMessages.filter(
+    (m) => m.isUnread && (m as CategorizedMessage).category === "comment"
+  ).length;
+  const stageChangeCount = gmailMessages.filter(
+    (m) => m.isUnread && (m as CategorizedMessage).category === "stage_change"
+  ).length;
+  const starredCount = gmailMessages.filter((m) => m.isStarred).length;
+
+  // Top senders (unread only, like reference app)
   const senderCounts = new Map<string, number>();
   for (const m of gmailMessages) {
-    senderCounts.set(m.fromEmail, (senderCounts.get(m.fromEmail) || 0) + 1);
+    if (m.isUnread) {
+      senderCounts.set(m.fromEmail || "unknown", (senderCounts.get(m.fromEmail || "unknown") || 0) + 1);
+    }
+  }
+  for (const c of chatMessages) {
+    senderCounts.set(c.senderEmail || "unknown", (senderCounts.get(c.senderEmail || "unknown") || 0) + 1);
   }
   const topSenders = [...senderCounts.entries()]
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
+    .slice(0, 8)
     .map(([email, count]) => ({ email, count }));
+
+  // Source distribution (for chart data)
+  const sourceDistribution = {
+    gmail: gmailMessages.filter((m) => m.source === "gmail").length,
+    hubspot: gmailMessages.filter((m) => m.source === "hubspot").length,
+    chat: chatMessages.length,
+  };
+
+  // Recent incoming (last 15 minutes)
+  const fifteenMinAgo = Date.now() - 15 * 60 * 1000;
+  const recentMessages = unified
+    .filter((m) => new Date(m.date).getTime() > fifteenMinAgo)
+    .slice(0, 10);
 
   return NextResponse.json({
     messages: unified,
     analytics: {
       unreadCount,
+      unreadGmail,
+      unreadHubspot,
+      unreadChat,
+      mentionCount,
+      taskCount,
+      commentCount,
+      stageChangeCount,
+      starredCount,
       totalMessages: unified.length,
       topSenders,
       chatSpaceCount,
+      sourceDistribution,
     },
+    recentMessages,
     pagination: {
       gmailNextPage: gmailNextPage || null,
     },
