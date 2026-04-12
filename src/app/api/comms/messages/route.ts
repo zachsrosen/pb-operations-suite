@@ -186,8 +186,59 @@ export async function GET(req: NextRequest) {
     .filter((m) => new Date(m.date).getTime() > fifteenMinAgo)
     .slice(0, 10);
 
+  // --- Project enrichment ---
+  // Extract unique PROJ-XXXX numbers from all messages and resolve deal info
+  const projNumbers = new Set<string>();
+  for (const m of unified) {
+    const text = `${"subject" in m ? m.subject : ""} ${"snippet" in m ? m.snippet : ""} ${"text" in m ? m.text : ""}`;
+    const matches = text.matchAll(/PROJ-(\d+)/gi);
+    for (const match of matches) {
+      projNumbers.add(match[1]); // just the number part
+    }
+  }
+
+  // Batch-resolve project numbers from HubSpotProjectCache
+  // Deal names in HubSpot typically contain the project number (e.g. "PROJ-12345 - Smith Residence")
+  type ProjectInfo = { dealName: string; dealId: string; hubspotUrl: string; stage: string; amount: number | null };
+  const projectMap: Record<string, ProjectInfo> = {};
+  if (projNumbers.size > 0) {
+    try {
+      const projArray = [...projNumbers];
+      // Search dealName for each PROJ-XXXX pattern
+      const cached = await prisma.hubSpotProjectCache.findMany({
+        where: {
+          OR: projArray.map((n) => ({
+            dealName: { contains: `PROJ-${n}`, mode: "insensitive" as const },
+          })),
+        },
+        select: {
+          dealId: true,
+          dealName: true,
+          stage: true,
+          amount: true,
+        },
+      });
+      for (const c of cached) {
+        // Extract the PROJ-XXXX from the deal name
+        const match = c.dealName.match(/PROJ-(\d+)/i);
+        if (match) {
+          projectMap[`PROJ-${match[1]}`] = {
+            dealName: c.dealName || "",
+            dealId: c.dealId,
+            hubspotUrl: `https://app.hubspot.com/contacts/${portalId}/record/0-3/${c.dealId}`,
+            stage: c.stage || "",
+            amount: c.amount ? Number(c.amount) : null,
+          };
+        }
+      }
+    } catch {
+      // Non-fatal — project enrichment is best-effort
+    }
+  }
+
   return NextResponse.json({
     messages: unified,
+    projectMap,
     analytics: {
       unreadCount,
       unreadGmail,

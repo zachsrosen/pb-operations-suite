@@ -306,6 +306,7 @@ export default function CommsPage() {
           {viewMode === "project" && (
             <CommsProjectView
               messages={data?.messages || []}
+              projectMap={data?.projectMap}
               onFilterByProject={(projId) => {
                 setSearchQuery(projId);
                 setViewMode("inbox");
