@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { getActualCommsUser } from "@/lib/comms-auth";
 import { prisma } from "@/lib/db";
 import { commsEncryptToken } from "@/lib/comms-crypto";
+import { commsRedirectUri } from "@/lib/comms-url";
 
 function verifyState(state: string, expectedUserId: string): boolean {
   try {
@@ -54,7 +55,7 @@ export async function GET(req: NextRequest) {
   // Exchange code for tokens
   const clientId = process.env.COMMS_GOOGLE_CLIENT_ID || "";
   const clientSecret = process.env.COMMS_GOOGLE_CLIENT_SECRET || "";
-  const redirectUri = `${process.env.AUTH_URL || "http://localhost:3000"}/api/comms/connect/callback`;
+  const redirectUri = commsRedirectUri(req);
 
   const tokenResp = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
