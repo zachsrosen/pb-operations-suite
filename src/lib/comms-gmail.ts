@@ -182,7 +182,7 @@ export async function fetchGmailPage(
   historyId: string;
 }>> {
   const perPage = Math.min(options.maxResults || 500, 500); // Gmail max is 500
-  const maxTotal = options.maxTotal || Infinity;
+  const maxTotal = options.maxTotal || 500;
   const query = options.query || "in:inbox";
 
   // Step 1: Collect all message IDs via auto-pagination
