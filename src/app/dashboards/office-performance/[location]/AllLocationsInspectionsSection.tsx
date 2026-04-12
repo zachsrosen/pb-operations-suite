@@ -24,13 +24,18 @@ function passRateColor(rate: number): string {
 
 export default function AllLocationsInspectionsSection({ locations }: Props) {
   const totalCompleted = locations.reduce((sum, l) => sum + l.inspections.completedMtd, 0);
-  const avgDays = locations.length > 0
-    ? locations.reduce((sum, l) => sum + l.inspections.avgDays, 0) / locations.length
-    : 0;
   const totalScheduled = locations.reduce((sum, l) => sum + l.inspections.scheduledThisWeek, 0);
-  const validPassRates = locations.filter((l) => (l.inspections.firstPassRate ?? -1) >= 0);
-  const avgPassRate = validPassRates.length > 0
-    ? Math.round(validPassRates.reduce((sum, l) => sum + (l.inspections.firstPassRate ?? 0), 0) / validPassRates.length)
+
+  // Volume-weighted average: sum(avgDays * completed) / sum(completed)
+  const avgDays = totalCompleted > 0
+    ? locations.reduce((sum, l) => sum + l.inspections.avgDays * l.inspections.completedMtd, 0) / totalCompleted
+    : 0;
+
+  // Volume-weighted pass rate: sum(passRate * completed) / sum(completed)
+  const passRateLocs = locations.filter((l) => (l.inspections.firstPassRate ?? -1) >= 0 && l.inspections.completedMtd > 0);
+  const passRateVolume = passRateLocs.reduce((sum, l) => sum + l.inspections.completedMtd, 0);
+  const avgPassRate = passRateVolume > 0
+    ? Math.round(passRateLocs.reduce((sum, l) => sum + (l.inspections.firstPassRate ?? 0) * l.inspections.completedMtd, 0) / passRateVolume)
     : -1;
 
   return (

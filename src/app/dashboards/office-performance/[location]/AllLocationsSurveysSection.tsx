@@ -18,16 +18,18 @@ function onTimeColor(pct: number): string {
 
 export default function AllLocationsSurveysSection({ locations }: Props) {
   const totalCompleted = locations.reduce((sum, l) => sum + l.surveys.completedMtd, 0);
-  const avgDays = locations.length > 0
-    ? locations.reduce((sum, l) => sum + l.surveys.avgDays, 0) / locations.length
-    : 0;
   const totalScheduled = locations.reduce((sum, l) => sum + l.surveys.scheduledThisWeek, 0);
-  const avgOnTime = locations.filter((l) => l.surveys.onTimePercent >= 0).length > 0
-    ? Math.round(
-        locations.filter((l) => l.surveys.onTimePercent >= 0)
-          .reduce((sum, l) => sum + l.surveys.onTimePercent, 0) /
-        locations.filter((l) => l.surveys.onTimePercent >= 0).length
-      )
+
+  // Volume-weighted average: sum(avgDays * completed) / sum(completed)
+  const avgDays = totalCompleted > 0
+    ? locations.reduce((sum, l) => sum + l.surveys.avgDays * l.surveys.completedMtd, 0) / totalCompleted
+    : 0;
+
+  // Volume-weighted on-time: sum(onTime% * completed) / sum(completed) for locations with data
+  const onTimeLocs = locations.filter((l) => l.surveys.onTimePercent >= 0 && l.surveys.completedMtd > 0);
+  const onTimeVolume = onTimeLocs.reduce((sum, l) => sum + l.surveys.completedMtd, 0);
+  const avgOnTime = onTimeVolume > 0
+    ? Math.round(onTimeLocs.reduce((sum, l) => sum + l.surveys.onTimePercent * l.surveys.completedMtd, 0) / onTimeVolume)
     : -1;
 
   return (

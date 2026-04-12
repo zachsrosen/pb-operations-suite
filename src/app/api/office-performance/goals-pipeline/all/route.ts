@@ -100,13 +100,14 @@ export async function GET(request: NextRequest) {
         async () => {
           const perLocationData: GoalsPipelineData[] = [];
 
-          // Read from per-location caches first
+          // Read from per-location caches first; skip stale entries so
+          // the aggregate route honors the 2-minute TV polling cadence.
           const uncached: string[] = [];
           for (const loc of CANONICAL_LOCATIONS) {
             const slug = CANONICAL_TO_LOCATION_SLUG[loc];
             const locCacheKey = CACHE_KEYS.GOALS_PIPELINE(slug);
             const entry = appCache.get<GoalsPipelineData>(locCacheKey);
-            if (entry.hit && entry.data) {
+            if (entry.hit && entry.data && !entry.stale) {
               perLocationData.push(entry.data);
             } else {
               uncached.push(loc);
