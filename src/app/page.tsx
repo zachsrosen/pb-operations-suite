@@ -110,6 +110,14 @@ const SUITE_LINKS: SuiteLinkData[] = [
     visibility: "admin",
   },
   {
+    href: "/dashboards/comms",
+    title: "Comms",
+    description: "Unified inbox — Gmail, HubSpot, and Google Chat in one place.",
+    tag: "COMMS",
+    tagColor: "cyan",
+    visibility: "all",
+  },
+  {
     href: "/dashboards/ai",
     title: "AI Skills",
     description: "All AI-powered tools in one place.",
