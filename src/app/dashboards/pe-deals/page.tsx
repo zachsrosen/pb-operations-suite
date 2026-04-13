@@ -384,12 +384,14 @@ export default function PeDealsPage() {
   }, [deals, search, locationFilter, stageFilter, sortKey, sortDir]);
 
   // Split into priority sections
-  const m2Deals = useMemo(() => filtered.filter((d) => d.milestoneHighlight === "m2"), [filtered]);
-  const m1Deals = useMemo(() => filtered.filter((d) => d.milestoneHighlight === "m1"), [filtered]);
-  const completedDeals = useMemo(() => filtered.filter((d) => d.milestoneHighlight === "complete"), [filtered]);
-  const allDeals = useMemo(() => filtered.filter((d) => d.milestoneHighlight !== "complete"), [filtered]);
+  const paidDeals = useMemo(() => filtered.filter((d) => d.peM1Status === "Paid" && d.peM2Status === "Paid"), [filtered]);
+  const paidIds = useMemo(() => new Set(paidDeals.map((d) => d.dealId)), [paidDeals]);
+  const unpaid = useMemo(() => filtered.filter((d) => !paidIds.has(d.dealId)), [filtered, paidIds]);
+  const m2Deals = useMemo(() => unpaid.filter((d) => d.milestoneHighlight === "m2"), [unpaid]);
+  const m1Deals = useMemo(() => unpaid.filter((d) => d.milestoneHighlight === "m1"), [unpaid]);
+  const allDeals = unpaid;
 
-  // Summary stats (active deals only, exclude Project Complete)
+  // Summary stats (active deals only, exclude fully paid)
   const totalEPC = allDeals.reduce((s, d) => s + (d.epcPrice ?? 0), 0);
   const totalPEReceivable = allDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
   const totalRevenue = allDeals.reduce((s, d) => s + (d.totalPBRevenue ?? 0), 0);
@@ -530,9 +532,10 @@ export default function PeDealsPage() {
             savingDeals={savingDeals}
           />
           <DealSection
-            title="Project Complete — PE In Progress"
-            subtitle={`${completedDeals.length} deal${completedDeals.length !== 1 ? "s" : ""} with pending PE payments`}
-            deals={completedDeals}
+            title="Paid"
+            subtitle={`${paidDeals.length} deal${paidDeals.length !== 1 ? "s" : ""} — M1 & M2 paid`}
+            accent="emerald"
+            deals={paidDeals}
             sortKey={sortKey}
             sortDir={sortDir}
             sortArrow={sortArrow}
