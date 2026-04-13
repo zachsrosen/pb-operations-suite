@@ -109,7 +109,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/reviews": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/zuper-compliance": { href: "/suites/executive", label: "Executive" },
   "/dashboards/product-comparison": { href: "/suites/operations", label: "Operations" },
-  "/dashboards/comms": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/comms": { href: "/", label: "Home" },
   "/dashboards/mobile": { href: "/suites/admin", label: "Admin" },
   "/dashboards/ai": { href: "/dashboards/ai", label: "AI Skills" },
 };
@@ -197,8 +197,8 @@ export default function DashboardShell({
   const { trackExport } = useActivityTracking();
   const parentSuite = getParentSuiteForPath(pathname);
 
-  const isRealSuite = parentSuite?.href?.startsWith("/suites/") ?? false;
-  const effectiveParent = isRealSuite ? parentSuite : null;
+  const isValidParent = (parentSuite?.href?.startsWith("/suites/") || parentSuite?.href === "/") ?? false;
+  const effectiveParent = isValidParent ? parentSuite : null;
   const suiteAccent = effectiveParent
     ? (SUITE_ACCENT_COLORS[effectiveParent.href] || DEFAULT_SUITE_ACCENT)
     : DEFAULT_SUITE_ACCENT;
@@ -277,7 +277,7 @@ export default function DashboardShell({
               <PhotonBrothersBadge
                 href={effectiveParent?.href ?? "/"}
                 compact
-                label={effectiveParent ? `Back to ${effectiveParent.label} Suite` : "Back to Dashboard"}
+                label={effectiveParent ? (effectiveParent.href === "/" ? "Back to Home" : `Back to ${effectiveParent.label} Suite`) : "Back to Dashboard"}
               />
               <div
                 className="min-w-0 pl-3 border-l-[3px]"

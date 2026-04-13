@@ -54,7 +54,8 @@ function getFromPerLocationCache(canonicalLocation: string): OfficePerformanceDa
   if (!slug) return null;
   const cacheKey = CACHE_KEYS.OFFICE_PERFORMANCE(slug);
   const cached = appCache.get<OfficePerformanceData>(cacheKey);
-  return cached.hit ? cached.data : null;
+  // Skip stale entries so the aggregate route honours the 2-minute TV polling cadence
+  return (cached.hit && !cached.stale) ? cached.data : null;
 }
 
 export async function GET(request: NextRequest) {

@@ -166,6 +166,7 @@ const ROLE_LANDING_CARDS: Record<string, RoleLandingCard[]> = {
     { href: "/dashboards/inspection-scheduler", title: "Inspection Schedule", description: "Inspections with Zuper integration.", tag: "SCHEDULING", tagColor: "blue" },
     { href: "/dashboards/equipment-backlog", title: "Equipment Backlog", description: "Equipment forecasting by brand, model, and stage.", tag: "EQUIPMENT", tagColor: "blue" },
     { href: "/dashboards/timeline", title: "Timeline View", description: "Gantt-style project progression and milestones.", tag: "PLANNING", tagColor: "blue" },
+    { href: "/dashboards/comms", title: "Comms", description: "Unified inbox — Gmail, HubSpot, and Google Chat.", tag: "COMMS", tagColor: "cyan" },
   ],
   TECH_OPS: [
     { href: "/dashboards/site-survey", title: "Site Survey", description: "Site survey scheduling and status tracking.", tag: "SURVEY", tagColor: "green" },
@@ -176,6 +177,7 @@ const ROLE_LANDING_CARDS: Record<string, RoleLandingCard[]> = {
   SALES: [
     { href: "/dashboards/sales", title: "Sales Pipeline", description: "Active deals, funnel visualization, and proposal tracking.", tag: "SALES", tagColor: "cyan" },
     { href: "/dashboards/site-survey-scheduler", title: "Site Survey Schedule", description: "Schedule site surveys with Zuper integration.", tag: "SCHEDULING", tagColor: "blue" },
+    { href: "/dashboards/comms", title: "Comms", description: "Unified inbox — Gmail, HubSpot, and Google Chat.", tag: "COMMS", tagColor: "cyan" },
   ],
 };
 
@@ -313,7 +315,6 @@ export default function Home() {
   const redirectTarget = useMemo(() => {
     if (!userRole) return null;
     if (userRole === "VIEWER") return "/unassigned";
-    if (userRole === "OPERATIONS") return "/suites/operations";
     return null;
   }, [userRole]);
 
@@ -486,6 +487,7 @@ export default function Home() {
         "/suites/service",
         "/suites/dnr-roofing",
         "/dashboards/ai",
+        "/dashboards/comms",
       ]);
       return SUITE_LINKS.filter((suite) => allowedOpsManagerLinks.has(suite.href));
     }
@@ -495,6 +497,7 @@ export default function Home() {
         "/suites/design-engineering",
         "/suites/permitting-interconnection",
         "/dashboards/ai",
+        "/dashboards/comms",
       ]);
       return SUITE_LINKS.filter((suite) => allowedTechOpsSuites.has(suite.href));
     }
@@ -507,6 +510,7 @@ export default function Home() {
         "/suites/permitting-interconnection",
         "/suites/intelligence",
         "/dashboards/ai",
+        "/dashboards/comms",
       ]);
       return SUITE_LINKS.filter((suite) => allowedPmSuites.has(suite.href));
     }
