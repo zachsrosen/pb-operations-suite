@@ -345,15 +345,16 @@ jest.mock("@/lib/idr-meeting", () => ({
   isIdrAllowedRole: jest.fn().mockReturnValue(true),
 }));
 
+import { NextRequest } from "next/server";
 import { POST, GET } from "@/app/api/idr-meeting/presence/route";
 
-function makeReq(url: string, opts?: { method?: string; body?: unknown }) {
-  const req = new Request(url, {
+// Use NextRequest so the GET handler can read req.nextUrl.searchParams
+function makeReq(url: string, opts?: { method?: string; body?: unknown }): NextRequest {
+  return new NextRequest(new URL(url), {
     method: opts?.method ?? "GET",
     headers: { "Content-Type": "application/json" },
     ...(opts?.body ? { body: JSON.stringify(opts.body) } : {}),
   });
-  return req as any;
 }
 
 describe("presence search-mode exclusion", () => {
