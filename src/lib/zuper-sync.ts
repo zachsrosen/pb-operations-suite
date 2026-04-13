@@ -97,9 +97,15 @@ function resolveStatus(job: ZuperJob): string {
 /**
  * Build the assignedUsers array expected by cacheZuperJob from Zuper's
  * polymorphic assigned_to field.
+ *
+ * @param userNameCache — optional UID→name map pre-loaded from Zuper /users
+ *   API so POST-format entries (which lack first/last name) still get a
+ *   human-readable name. Without this, downstream extractAssignedUsers()
+ *   would either drop them or show a UID stub.
  */
 function resolveAssignedUsers(
-  assignedTo: ZuperJob["assigned_to"]
+  assignedTo: ZuperJob["assigned_to"],
+  userNameCache?: Map<string, string>
 ): { user_uid: string; user_name?: string }[] | undefined {
   if (!Array.isArray(assignedTo) || assignedTo.length === 0) return undefined;
 
@@ -108,14 +114,16 @@ function resolveAssignedUsers(
       // GET format: { user: { user_uid, first_name, last_name } }
       if ("user" in entry && entry.user) {
         const u = entry.user as { user_uid?: string; first_name?: string; last_name?: string };
+        const uid = u.user_uid || "";
         return {
-          user_uid: u.user_uid || "",
-          user_name: [u.first_name, u.last_name].filter(Boolean).join(" ") || undefined,
+          user_uid: uid,
+          user_name: [u.first_name, u.last_name].filter(Boolean).join(" ") || userNameCache?.get(uid),
         };
       }
       // POST/simple format: { user_uid, team_uid? }
       if ("user_uid" in entry) {
-        return { user_uid: (entry as { user_uid: string }).user_uid };
+        const uid = (entry as { user_uid: string }).user_uid;
+        return { user_uid: uid, user_name: userNameCache?.get(uid) };
       }
       return null;
     })
@@ -131,6 +139,24 @@ const PAGE_SIZE = 500;
 export async function syncZuperServiceJobs(): Promise<{ synced: number; errors: number }> {
   if (!zuper.isConfigured()) {
     return { synced: 0, errors: 0 };
+  }
+
+  // Pre-load Zuper user names so POST-format assigned_to entries get human names
+  let userNameCache: Map<string, string> | undefined;
+  try {
+    const usersResult = await zuper.getUsers();
+    if (usersResult.type === "success" && usersResult.data) {
+      userNameCache = new Map();
+      for (const u of usersResult.data) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const user = u as any;
+        const uid = user.user_uid;
+        const name = [user.first_name, user.last_name].filter(Boolean).join(" ");
+        if (uid && name) userNameCache.set(uid, name);
+      }
+    }
+  } catch {
+    // Non-fatal — sync continues without name enrichment
   }
 
   let synced = 0;
@@ -192,7 +218,7 @@ export async function syncZuperServiceJobs(): Promise<{ synced: number; errors: 
           scheduledStart: job.scheduled_start_time ? new Date(job.scheduled_start_time) : undefined,
           scheduledEnd: job.scheduled_end_time ? new Date(job.scheduled_end_time) : undefined,
           completedDate,
-          assignedUsers: resolveAssignedUsers(job.assigned_to),
+          assignedUsers: resolveAssignedUsers(job.assigned_to, userNameCache),
           customerAddress: job.customer_address ?? jobAny.job_location,
           hubspotDealId: extractHubspotDealId(job),
           projectName: job.job_title,
