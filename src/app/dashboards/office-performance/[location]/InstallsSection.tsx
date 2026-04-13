@@ -68,23 +68,35 @@ export default function InstallsSection({ data }: InstallsSectionProps) {
         <ComplianceBlock compliance={data.compliance} />
       </div>
 
-      {/* Dual leaderboards */}
-      <div className="grid grid-cols-2 gap-5 flex-1 min-h-0 overflow-hidden">
-        <Leaderboard
-          title="INSTALLERS — THIS MONTH"
-          icon="⚡"
-          entries={data.installerLeaderboard}
-          accentColor="#22c55e"
-          metricLabel="installs"
-        />
-        <Leaderboard
-          title="ELECTRICIANS — THIS MONTH"
-          icon="🔌"
-          entries={data.electricianLeaderboard}
-          accentColor="#22c55e"
-          metricLabel="jobs"
-        />
-      </div>
+      {/* Leaderboards — show electricians side-by-side only when populated */}
+      {data.electricianLeaderboard.length > 0 ? (
+        <div className="grid grid-cols-2 gap-5 flex-1 min-h-0 overflow-hidden">
+          <Leaderboard
+            title="INSTALLERS — THIS MONTH"
+            icon="⚡"
+            entries={data.installerLeaderboard}
+            accentColor="#22c55e"
+            metricLabel="installs"
+          />
+          <Leaderboard
+            title="ELECTRICIANS — THIS MONTH"
+            icon="🔌"
+            entries={data.electricianLeaderboard}
+            accentColor="#22c55e"
+            metricLabel="jobs"
+          />
+        </div>
+      ) : (
+        <div className="flex-1 min-h-0 overflow-hidden">
+          <Leaderboard
+            title="INSTALLER LEADERBOARD — THIS MONTH"
+            icon="⚡"
+            entries={data.installerLeaderboard}
+            accentColor="#22c55e"
+            metricLabel="installs"
+          />
+        </div>
+      )}
     </div>
   );
 }

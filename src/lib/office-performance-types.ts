@@ -1,6 +1,7 @@
 export interface PersonStat {
   name: string;
   count: number;
+  userUid?: string;
   avgMetric?: number;
   streak?: { type: string; value: number; label: string };
 }
