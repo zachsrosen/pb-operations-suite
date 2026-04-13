@@ -1455,17 +1455,17 @@ async function enrichWithQcMetrics(
     inspections.avgCcToPtoDays = avgCcToInspection(recentInspectionProjects);
     inspections.avgCcToPtoDaysPrior = avgCcToInspection(priorInspectionProjects);
 
-    // First-pass inspection rate — projects with inspection activity in the
-    // 60-day window. Failed inspections without a pass date are only included
-    // if their schedule/construction date falls within the window, preventing
-    // ancient failures from dragging down the metric indefinitely.
+    // First-pass inspection rate — only projects with a real inspection
+    // outcome (passed or failed) within the 60-day window. Projects that are
+    // merely scheduled but haven't been inspected yet are excluded so they
+    // don't drag down the rate as implicit failures.
     const withInspection = locProjects.filter((p: ProjectForMetrics) => {
+      // Passed inspection within the window
       const passDate = p.inspectionPassDate ? new Date(p.inspectionPassDate) : null;
-      const schedDate = p.inspectionScheduleDate ? new Date(p.inspectionScheduleDate) : null;
-      const relevantDate = passDate || schedDate;
-      if (relevantDate && relevantDate >= sixtyDaysAgo) return true;
-      // Include stuck failures only if they were scheduled/completed recently
+      if (passDate && passDate >= sixtyDaysAgo) return true;
+      // Failed but not yet re-passed — use schedule or construction date as proxy
       if (p.hasInspectionFailed && !p.inspectionPassDate) {
+        const schedDate = p.inspectionScheduleDate ? new Date(p.inspectionScheduleDate) : null;
         const fallbackDate = schedDate
           || (p.constructionCompleteDate ? new Date(p.constructionCompleteDate) : null);
         return fallbackDate !== null && fallbackDate >= sixtyDaysAgo;
@@ -1505,11 +1505,16 @@ async function enrichWithQcMetrics(
           orderBy: { completedDate: "desc" },
         });
 
-        // Build dealId → isFirstTimePass map
+        // Build dealId → isFirstTimePass map. Include active failures
+        // (hasInspectionFailed && !inspectionPassDate) as false so they count
+        // against per-inspector pass rates and break consecutive-pass streaks.
         const passMap = new Map<string, boolean>();
         for (const p of locProjects) {
-          if (p.id && p.inspectionPassDate) {
+          if (!p.id) continue;
+          if (p.inspectionPassDate) {
             passMap.set(String(p.id), p.isFirstTimeInspectionPass === true);
+          } else if (p.hasInspectionFailed) {
+            passMap.set(String(p.id), false);
           }
         }
 
