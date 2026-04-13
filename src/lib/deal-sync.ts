@@ -861,6 +861,15 @@ export async function batchSyncPipeline(
           siteSurveyor: mapped.siteSurveyor && ownerMap[String(mapped.siteSurveyor)]
             ? ownerMap[String(mapped.siteSurveyor)]
             : (mapped.siteSurveyor as string | null),
+          // Resolve department lead owner IDs to names
+          departmentLeads: (() => {
+            const raw = (mapped.departmentLeads ?? {}) as Record<string, string | null>;
+            const resolved: Record<string, string | null> = {};
+            for (const [k, v] of Object.entries(raw)) {
+              resolved[k] = v && /^\d+$/.test(v) && ownerMap[v] ? ownerMap[v] : v;
+            }
+            return resolved;
+          })(),
           hubspotContactId: primaryContactId,
           customerName: contactProps?.name ?? null,
           customerEmail: contactProps?.email ?? null,
@@ -1194,6 +1203,15 @@ export async function syncSingleDeal(
       siteSurveyor: mapped.siteSurveyor && ownerMap[String(mapped.siteSurveyor)]
         ? ownerMap[String(mapped.siteSurveyor)]
         : (mapped.siteSurveyor as string | null),
+      // Resolve department lead owner IDs to names
+      departmentLeads: (() => {
+        const raw = (mapped.departmentLeads ?? {}) as Record<string, string | null>;
+        const resolved: Record<string, string | null> = {};
+        for (const [k, v] of Object.entries(raw)) {
+          resolved[k] = v && /^\d+$/.test(v) && ownerMap[v] ? ownerMap[v] : v;
+        }
+        return resolved;
+      })(),
       hubspotContactId: primaryContactId,
       customerName: contactProps?.name ?? null,
       customerEmail: contactProps?.email ?? null,

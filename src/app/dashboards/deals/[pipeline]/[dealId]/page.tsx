@@ -79,10 +79,11 @@ export default async function DealDetailPage({
   // Resolve team fields that may still contain raw HubSpot owner IDs
   // (historic data before sync was patched to resolve names)
   const teamFields = ["projectManager", "operationsManager", "siteSurveyor"] as const;
-  const needsResolution = teamFields.some((f) => {
-    const val = deal[f];
-    return val && /^\d+$/.test(String(val));
-  });
+  const deptLeads = (deal.departmentLeads ?? {}) as Record<string, string | null>;
+  const deptValues = Object.values(deptLeads).filter(Boolean);
+  const needsResolution =
+    teamFields.some((f) => { const v = deal[f]; return v && /^\d+$/.test(String(v)); }) ||
+    deptValues.some((v) => /^\d+$/.test(String(v)));
   if (needsResolution) {
     try {
       const { fetchOwnerMap } = await import("@/lib/deal-sync");
@@ -92,6 +93,17 @@ export default async function DealDetailPage({
         if (val && /^\d+$/.test(String(val)) && ownerMap[String(val)]) {
           (deal as Record<string, unknown>)[field] = ownerMap[String(val)];
         }
+      }
+      // Resolve department leads
+      let deptChanged = false;
+      for (const [k, v] of Object.entries(deptLeads)) {
+        if (v && /^\d+$/.test(v) && ownerMap[v]) {
+          deptLeads[k] = ownerMap[v];
+          deptChanged = true;
+        }
+      }
+      if (deptChanged) {
+        (deal as Record<string, unknown>).departmentLeads = deptLeads;
       }
     } catch {
       // Non-fatal — display IDs if resolution fails
