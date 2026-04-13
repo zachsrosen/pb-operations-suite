@@ -1666,10 +1666,16 @@ export class ZuperClient {
 
       for (const formResult of formResults) {
         if (formResult.type !== "success" || !formResult.data) continue;
+        // Zuper wraps responses in { type: "success", data: <payload> }.
+        // Our request() returns { type, data: <raw_body> }, so:
+        //   formResult.data = { type: "success", data: { asset_form_submission_uid, data: [...fields] } }
+        // We need to unwrap through both `data` layers to reach the fields array.
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const formData = formResult.data as any;
-        const fields: ZuperFormField[] = formData?.data ?? [];
-        const createdAt = formData?.created_at;
+        const rawBody = formResult.data as any;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const formPayload: any = rawBody?.data ?? rawBody; // unwrap Zuper envelope
+        const fields: ZuperFormField[] = formPayload?.data ?? [];
+        const createdAt = formPayload?.created_at;
 
         for (const field of fields) {
           // Only extract IMAGE and MULTI_IMAGE fields (skip SIGNATURE)
