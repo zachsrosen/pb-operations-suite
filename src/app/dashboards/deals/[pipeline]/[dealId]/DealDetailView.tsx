@@ -159,7 +159,7 @@ export default function DealDetailView({
             <TeamCard deal={deal} />
             <EquipmentCard deal={deal} />
             <ZuperJobCard jobs={zuperJobs} />
-            <PhotoGalleryCard hubspotDealId={deal.hubspotDealId} />
+            <PhotoGalleryCard hubspotDealId={deal.hubspotDealId} zuperUid={deal.zuperUid} />
             <ContactCard deal={deal} />
             <RelatedDealsCard deals={relatedDeals} />
             <ChangeLogCard entries={changeLog} />

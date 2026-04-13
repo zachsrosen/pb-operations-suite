@@ -15,31 +15,51 @@ export async function GET(
   }
 
   const { dealId } = await params;
+  const zuperUidParam = request.nextUrl.searchParams.get("zuperUid");
 
   if (!zuper.isConfigured()) {
     return NextResponse.json({ photos: [] });
   }
 
-  // Find Zuper jobs linked to this deal
-  const jobs = await prisma.zuperJobCache.findMany({
-    where: { hubspotDealId: dealId },
-    select: { jobUid: true, jobCategory: true },
-  });
+  // Collect job UIDs from multiple sources
+  const jobUids = new Set<string>();
+  const jobCategories = new Map<string, string>();
 
-  if (jobs.length === 0) {
+  // Source 1: ZuperJobCache by hubspotDealId
+  try {
+    const cached = await prisma.zuperJobCache.findMany({
+      where: { hubspotDealId: dealId },
+      select: { jobUid: true, jobCategory: true },
+    });
+    for (const j of cached) {
+      jobUids.add(j.jobUid);
+      jobCategories.set(j.jobUid, j.jobCategory);
+    }
+  } catch {
+    // cache lookup failed — continue
+  }
+
+  // Source 2: direct zuperUid from the deal record
+  if (zuperUidParam && !jobUids.has(zuperUidParam)) {
+    jobUids.add(zuperUidParam);
+    jobCategories.set(zuperUidParam, "Linked Job");
+  }
+
+  if (jobUids.size === 0) {
     return NextResponse.json({ photos: [] });
   }
 
   // Fetch photos from all linked jobs in parallel
   const photoArrays = await Promise.all(
-    jobs.map(async (job) => {
+    [...jobUids].map(async (jobUid) => {
       try {
-        const photos = await zuper.getJobPhotos(job.jobUid);
+        const photos = await zuper.getJobPhotos(jobUid);
+        const category = jobCategories.get(jobUid) ?? "Job";
         return photos.map((p) => ({
           id: p.attachment_uid,
           fileName: p.file_name,
-          url: `/api/zuper/photos/${encodeURIComponent(job.jobUid)}/${encodeURIComponent(p.attachment_uid)}`,
-          jobCategory: job.jobCategory,
+          url: `/api/zuper/photos/${encodeURIComponent(jobUid)}/${encodeURIComponent(p.attachment_uid)}`,
+          jobCategory: category,
           createdAt: p.created_at ?? null,
         }));
       } catch {

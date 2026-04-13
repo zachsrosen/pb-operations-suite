@@ -12,9 +12,10 @@ interface Photo {
 
 interface PhotoGalleryCardProps {
   hubspotDealId: string;
+  zuperUid?: string | null;
 }
 
-export default function PhotoGalleryCard({ hubspotDealId }: PhotoGalleryCardProps) {
+export default function PhotoGalleryCard({ hubspotDealId, zuperUid }: PhotoGalleryCardProps) {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
@@ -23,7 +24,8 @@ export default function PhotoGalleryCard({ hubspotDealId }: PhotoGalleryCardProp
     let cancelled = false;
     async function fetchPhotos() {
       try {
-        const res = await fetch(`/api/deals/${hubspotDealId}/photos`);
+        const query = zuperUid ? `?zuperUid=${encodeURIComponent(zuperUid)}` : "";
+        const res = await fetch(`/api/deals/${hubspotDealId}/photos${query}`);
         if (res.ok) {
           const data = await res.json();
           if (!cancelled) setPhotos(data.photos ?? []);
@@ -36,7 +38,7 @@ export default function PhotoGalleryCard({ hubspotDealId }: PhotoGalleryCardProp
     }
     fetchPhotos();
     return () => { cancelled = true; };
-  }, [hubspotDealId]);
+  }, [hubspotDealId, zuperUid]);
 
   if (loading) {
     return (
