@@ -1490,17 +1490,28 @@ async function enrichWithQcMetrics(
     // Per-inspector pass rate + consecutive pass streak enrichment
     if (prisma) {
       try {
-        // Single consolidated query for 120-day window (reused for both pass rate and streaks)
+        // Single consolidated query for 120-day window (reused for both pass rate and streaks).
+        // Mirrors the terminal-status fallback from getZuperJobsByLocation so
+        // Failed jobs missing completedDate (from older sync runs) are included.
+        const INSPECTION_TERMINAL = ["Passed", "Partial Pass", "Failed", "Completed"];
         const allInspectionJobs = await prisma.zuperJobCache.findMany({
           where: {
             jobCategory: "Inspection",
-            completedDate: { gte: oneTwentyDaysAgo, lte: now },
             hubspotDealId: { not: null },
+            OR: [
+              { completedDate: { gte: oneTwentyDaysAgo, lte: now } },
+              {
+                jobStatus: { in: INSPECTION_TERMINAL },
+                completedDate: null,
+                scheduledStart: { gte: oneTwentyDaysAgo, lte: now },
+              },
+            ],
           },
           select: {
             assignedUsers: true,
             hubspotDealId: true,
             completedDate: true,
+            scheduledStart: true,
           },
           orderBy: { completedDate: "desc" },
         });
@@ -1520,8 +1531,12 @@ async function enrichWithQcMetrics(
 
         // Per-inspector pass rate (60-day window) — keyed on user_uid to
         // avoid name-collision issues between inspectors with similar names.
+        // Use scheduledStart as fallback date for jobs missing completedDate.
         const sixtyDayJobs = allInspectionJobs.filter(
-          (j: { completedDate: Date | null; hubspotDealId: string | null; assignedUsers: unknown }) => j.completedDate && j.completedDate >= sixtyDaysAgo
+          (j) => {
+            const jobDate = j.completedDate ?? j.scheduledStart;
+            return jobDate != null && jobDate >= sixtyDaysAgo;
+          }
         );
         const inspectorStats = new Map<string, { passes: number; total: number }>();
 
