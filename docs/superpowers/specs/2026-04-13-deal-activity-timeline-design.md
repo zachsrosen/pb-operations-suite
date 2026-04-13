@@ -59,7 +59,7 @@ The timeline is a read-time aggregation across existing tables. Communications a
   3. Check `ZuperJobCache` for linked jobs by `deal.hubspotDealId`. Set initial `zuperSyncStatus` to `"SKIPPED"` if none.
   4. Create `DealNote` with `hubspotSyncStatus: "PENDING"`, `zuperSyncStatus: "PENDING"` (or `"SKIPPED"`).
   5. Return created note immediately.
-  6. Fire-and-forget background sync (does not block response):
+  6. Background sync via `safeWaitUntil()` from `lib/safe-wait-until.ts` (uses `@vercel/functions` `waitUntil()` on Vercel, falls back to fire-and-forget locally). This keeps the serverless function alive after the response so sync completes reliably:
      - **HubSpot:** Call new `createDealNote()` in `lib/hubspot.ts` (see Note Sync Pipeline). Takes `hubspotDealId` and `noteBody`. On success update to `"SYNCED"`, on failure `"FAILED"`.
      - **Zuper:** For each linked job, call `zuper.appendJobNote(jobUid, noteText)` (existing method). On success `"SYNCED"`, on failure `"FAILED"`.
   7. Invalidate SSE cache key `deals:{hubspotDealId}` so other viewers see the new note.
@@ -73,15 +73,17 @@ The timeline is a read-time aggregation across existing tables. Communications a
   - `cursor=<timestamp>` — ISO timestamp cursor for pagination
 - **Behavior:** Look up Deal by cuid, then fan-out parallel queries across 5 sources:
 
-| Source | Table/API | Filter |
-|--------|-----------|--------|
-| Notes | `DealNote` | by `dealId` (cuid) |
-| Sync changes | `DealSyncLog` | by `dealId` (cuid), status != SKIPPED |
-| Zuper jobs | `ZuperJobCache` | by `deal.hubspotDealId` |
-| Photos | `zuper.getJobPhotos()` | via ZuperJobCache job UIDs, cached 5-min |
-| HubSpot engagements | HubSpot API (cached) | by `deal.hubspotDealId` associations |
+| Source | Table/API | Filter | Nature |
+|--------|-----------|--------|--------|
+| Notes | `DealNote` | by `dealId` (cuid) | Historical (append-only, has `createdAt`) |
+| Sync changes | `DealSyncLog` | by `dealId` (cuid), status != SKIPPED | Historical (append-only, has `createdAt`) |
+| Zuper jobs | `ZuperJobCache` | by `deal.hubspotDealId` | **Snapshot** — current state only (see below) |
+| Photos | `zuper.getJobPhotos()` | via ZuperJobCache job UIDs, cached 5-min | Snapshot — fetched from Zuper API |
+| HubSpot engagements | HubSpot API (cached) | by `deal.hubspotDealId` associations | Historical (HubSpot stores timestamps) |
 
-- **Pagination strategy:** All DB sources (DealNote, DealSyncLog, ZuperJobCache) are queried with a `createdAt < cursor` filter and combined with cached HubSpot engagements and photos. The merged list is sorted by timestamp desc and truncated to 50 items. The `nextCursor` is the timestamp of the 50th event. This avoids per-source cursor tracking.
+**Zuper jobs are snapshots, not historical events.** `ZuperJobCache` stores the current cached state of each linked job (title, status, scheduled dates) with a `lastSyncedAt` timestamp but no append-only history. The timeline renders each linked job as a single summary event using `scheduledStart` (or `lastSyncedAt` as fallback) for the timestamp — e.g. "Site Survey scheduled for Apr 15" or "Construction job — Started". These are not paginated with the `createdAt < cursor` filter; instead all linked jobs (typically 1–5) are fetched in full and merged into the sorted event list. Photos similarly have no DB-side pagination — they are fetched from the Zuper API, cached 5 minutes, and merged in full.
+
+- **Pagination strategy:** Historical DB sources (DealNote, DealSyncLog) are queried with a `createdAt < cursor` filter. HubSpot engagements are filtered client-side by timestamp from the cached response. Zuper job snapshots and photos are always included in full (small cardinality — typically 1–5 jobs, up to ~100 photos). The merged list is sorted by timestamp desc and truncated to 50 items. The `nextCursor` is the timestamp of the 50th event.
 
 - **Normalization:** All sources map to a common shape:
 
@@ -115,7 +117,11 @@ interface TimelineEvent {
 
 Each association lookup returns IDs, which are then batch-read for properties.
 
-- **Caching:** 5-minute in-memory TTL via `lib/cache.ts`. Key: `deal-engagements:{hubspotDealId}`. Add to `CACHE_KEYS` in cache.ts. Invalidated on manual deal sync.
+- **Caching:** 5-minute in-memory TTL via `lib/cache.ts`. Two cache keys to avoid cross-contamination between windowed and full-history requests:
+  - `deal-engagements:{hubspotDealId}:recent` — default 90-day window
+  - `deal-engagements:{hubspotDealId}:all` — full history
+  
+  Add both key variants to `CACHE_KEYS` in cache.ts. Both invalidated on manual deal sync.
 - **Returns:** `{ engagements: Engagement[] }` with type-specific shape per engagement.
 
 ## Note Sync Pipeline
@@ -141,7 +147,7 @@ User submits note
   ├─ Save DealNote to DB (hubspotSyncStatus: PENDING, zuperSyncStatus: PENDING|SKIPPED)
   ├─ Invalidate SSE cache key deals:{hubspotDealId}
   ├─ Return note to client immediately (optimistic)
-  └─ Background (fire-and-forget):
+  └─ Background via safeWaitUntil():
        ├─ HubSpot: createDealNote(hubspotDealId, noteBody)
        │    ├─ Success → update hubspotSyncStatus = "SYNCED"
        │    └─ Failure → update hubspotSyncStatus = "FAILED"
@@ -161,9 +167,9 @@ New function `getDealEngagements()` in `lib/hubspot.ts`:
 - Makes 4 parallel association lookups via HubSpot CRM v3: `GET /crm/v3/objects/deals/{hubspotDealId}/associations/emails`, `.../calls`, `.../notes`, `.../meetings`.
 - Batch-reads returned IDs to get engagement properties.
 - Extracts key fields per engagement type (subject, body, duration, attendees, etc.).
-- Cached 5-min TTL in `lib/cache.ts`, key: `deal-engagements:{hubspotDealId}`.
+- Cached 5-min TTL in `lib/cache.ts`, keyed by `deal-engagements:{hubspotDealId}:recent` or `:all` depending on the time window requested.
 
-## React Query Keys
+## React Query Keys & SSE Invalidation
 
 Add to `lib/query-keys.ts`:
 
@@ -177,6 +183,12 @@ dealCommunications: {
   list: (dealId: string) => ["dealCommunications", "list", dealId] as const,
 },
 ```
+
+**SSE wiring:** The deal detail page subscribes to SSE with `cacheKeyFilter: deals:{hubspotDealId}`. Today `cacheKeyToQueryKeys()` maps `deals:*` only to `queryKeys.deals.root`, which does not cover the new timeline/communications queries. Two changes needed:
+
+1. Update `cacheKeyToQueryKeys()` to also return `queryKeys.dealTimeline.root` and `queryKeys.dealCommunications.root` when the server key starts with `"deals"`. This ensures that when note creation invalidates `deals:{hubspotDealId}`, all viewers' timeline and communications queries refetch.
+
+2. The `DealActivityPanel` component does NOT need its own SSE subscription — it piggybacks on the existing `useSSE` in `DealDetailView` which already listens on `deals:{hubspotDealId}`. The `cacheKeyToQueryKeys` expansion handles the fan-out.
 
 ## UI Components
 
@@ -227,8 +239,8 @@ Full-width tabbed section at the bottom of the main pane in `DealDetailView`, be
 - `page.tsx` (deal detail server page): No changes needed — timeline data is fetched client-side via React Query.
 - `lib/hubspot.ts`: Add `createDealNote()` and `getDealEngagements()` functions.
 - `lib/zuper.ts`: Uses existing `appendJobNote()` — no new methods needed.
-- `lib/cache.ts`: Add `DEAL_ENGAGEMENTS` key function to `CACHE_KEYS`.
-- `lib/query-keys.ts`: Add `dealTimeline` and `dealCommunications` key factories.
+- `lib/cache.ts`: Add `DEAL_ENGAGEMENTS` key function (with `:recent`/`:all` variants) to `CACHE_KEYS`.
+- `lib/query-keys.ts`: Add `dealTimeline` and `dealCommunications` key factories. Update `cacheKeyToQueryKeys()` to include these roots when server key starts with `"deals"`.
 - `prisma/schema.prisma`: Add `DealNote` model, add `notes DealNote[]` relation on `Deal` model. Requires migration.
 
 ## Data Flow
@@ -237,15 +249,16 @@ Full-width tabbed section at the bottom of the main pane in `DealDetailView`, be
 Deal Detail Page loads
   → DealActivityPanel renders with deal.id (cuid) + deal.hubspotDealId
   → Activity tab (default):
-      → React Query fetches GET /api/deals/{cuid}/timeline
+      → React Query fetches GET /api/deals/{cuid}/timeline (key: dealTimeline.events)
         → Route resolves Deal, gets hubspotDealId
-        → API fans out: DealNote + DealSyncLog + ZuperJobCache + Photos + HubSpot Engagements
+        → API fans out: DealNote + DealSyncLog + ZuperJobCache snapshots + Photos + HubSpot Engagements
         → Merges, sorts by timestamp desc, returns TimelineEvent[] (page of 50)
       → NoteComposer shown at top
       → User submits note → POST /api/deals/{cuid}/notes
         → Optimistic insert into feed
-        → SSE invalidation notifies other viewers
-        → Background sync to HubSpot + Zuper
+        → SSE invalidation on deals:{hubspotDealId} → cacheKeyToQueryKeys fans out
+          to dealTimeline.root + dealCommunications.root → other viewers refetch
+        → Background sync to HubSpot + Zuper via safeWaitUntil()
   → Communications tab (on click):
       → React Query fetches GET /api/deals/{cuid}/communications
         → Route resolves Deal, gets hubspotDealId
