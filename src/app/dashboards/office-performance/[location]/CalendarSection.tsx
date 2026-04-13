@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import {
@@ -29,8 +29,7 @@ const MONTH_NAMES = [
 
 const DAY_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/** Max visible pills per day cell before showing "+N more" */
-const MAX_VISIBLE_PILLS = 3;
+/** Show all pills — TV displays have no scroll/hover, so truncating hides events */
 
 // ---------------------------------------------------------------------------
 // Data fetching hooks
@@ -111,7 +110,7 @@ function formatEventLabel(eventType: string): string {
   }
 }
 
-function EventPill({ pill }: { pill: DayPill }) {
+function EventPill({ pill, compact }: { pill: DayPill; compact?: boolean }) {
   const baseType = pill.eventType.replace(/-complete$/, "").replace(/-pass$/, "").replace(/-fail$/, "");
   const colors = EVENT_COLORS[pill.eventType] || EVENT_COLORS[baseType] || EVENT_COLORS.survey;
 
@@ -124,12 +123,12 @@ function EventPill({ pill }: { pill: DayPill }) {
     return (
       <div
         className={`
-          h-5 rounded-sm border-l-2 flex items-center px-1.5
+          ${compact ? "h-3.5" : "h-5"} rounded-sm border-l-2 flex items-center ${compact ? "px-0.5" : "px-1.5"}
           ${colors.border} ${colors.bg}
           ${isCompleted ? "opacity-30" : ""}
         `}
       >
-        <span className={`text-[10px] font-medium ${colors.text} ${isCompleted ? "opacity-70" : ""}`}>
+        <span className={`${compact ? "text-[8px]" : "text-[10px]"} font-medium ${colors.text} ${isCompleted ? "opacity-70" : ""}`}>
           D{pill.dayIndex}/{pill.totalDays}
         </span>
       </div>
@@ -139,10 +138,28 @@ function EventPill({ pill }: { pill: DayPill }) {
   // Day label for multi-day first day
   const dayLabel = pill.totalDays > 1 ? ` D1/${pill.totalDays}` : "";
 
+  if (compact) {
+    return (
+      <div
+        className={`
+          rounded-sm border-l-2 px-0.5
+          ${colors.border} ${colors.bg}
+          ${isCompleted ? "opacity-30" : ""}
+          ${isOverdue ? "ring-1 ring-red-500" : ""}
+          ${isFailed ? "ring-1 ring-amber-500" : ""}
+        `}
+      >
+        <div className={`text-[8px] font-medium leading-tight truncate ${colors.text} ${isCompleted ? "opacity-70" : ""} ${isFailed ? "line-through" : ""}`}>
+          {pill.name} — {formatEventLabel(pill.eventType)}{dayLabel}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`
-        rounded-sm border-l-2 px-1.5 py-0.5 min-h-[28px]
+        rounded-sm border-l-2 px-1.5 py-0.5
         ${colors.border} ${colors.bg}
         ${isCompleted ? "opacity-30" : ""}
         ${isOverdue ? "opacity-60 ring-2 ring-red-500" : ""}
@@ -161,6 +178,9 @@ function EventPill({ pill }: { pill: DayPill }) {
   );
 }
 
+/** Height thresholds: switch to compact pills when >N pills in a cell */
+const COMPACT_THRESHOLD = 3;
+
 function DayCell({
   dateStr: _dateStr,
   dayNum,
@@ -176,24 +196,65 @@ function DayCell({
   isOutsideMonth: boolean;
   pills: DayPill[];
 }) {
+  const cellRef = useRef<HTMLDivElement>(null);
+  const pillsRef = useRef<HTMLDivElement>(null);
+  const [visibleCount, setVisibleCount] = useState(pills.length);
+
+  // Use compact pills when there are many events
+  const compact = pills.length > COMPACT_THRESHOLD;
+
+  // Measure how many pills actually fit within the cell
+  // Measure how many pills fit within the cell via ResizeObserver
+  useEffect(() => {
+    const el = cellRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const cell = cellRef.current;
+      const container = pillsRef.current;
+      if (!cell || !container || pills.length === 0) {
+        setVisibleCount(pills.length);
+        return;
+      }
+      const children = container.children;
+      const cellBottom = cell.getBoundingClientRect().bottom - 4;
+      let count = 0;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i] as HTMLElement;
+        if (child.dataset.overflow) continue;
+        if (child.getBoundingClientRect().bottom <= cellBottom) {
+          count++;
+        } else {
+          break;
+        }
+      }
+      setVisibleCount(count || 1);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [pills.length, compact]);
+
   if (isOutsideMonth) {
-    return <div className="min-h-[80px] bg-white/[0.01] rounded" />;
+    return <div className="bg-white/[0.01] rounded h-full" />;
   }
 
-  const visible = pills.slice(0, MAX_VISIBLE_PILLS);
-  const overflow = pills.length - MAX_VISIBLE_PILLS;
+  const overflow = pills.length - visibleCount;
 
   return (
-    <div className={`min-h-[80px] p-1 rounded border border-white/5 overflow-hidden ${isToday ? "bg-orange-500/10 ring-1 ring-orange-500/50" : "bg-white/[0.02]"}`}>
+    <div
+      ref={cellRef}
+      className={`p-1 rounded border border-white/5 overflow-hidden h-full ${isToday ? "bg-orange-500/10 ring-1 ring-orange-500/50" : "bg-white/[0.02]"}`}
+    >
       <div className={`text-[10px] font-semibold mb-0.5 ${isToday ? "text-orange-400" : isWeekend ? "text-slate-600" : "text-slate-400"}`}>
         {dayNum}
       </div>
-      <div className="flex flex-col gap-0.5">
-        {visible.map((pill, i) => (
-          <EventPill key={`${pill.id}-${pill.dayIndex}-${i}`} pill={pill} />
+      <div ref={pillsRef} className={`flex flex-col ${compact ? "gap-px" : "gap-0.5"}`}>
+        {pills.slice(0, visibleCount).map((pill, i) => (
+          <EventPill key={`${pill.id}-${pill.dayIndex}-${i}`} pill={pill} compact={compact} />
         ))}
         {overflow > 0 && (
-          <div className="text-[9px] text-slate-500 pl-1">+{overflow} more</div>
+          <div data-overflow="true" className="text-[8px] text-slate-400 font-medium pl-1">
+            +{overflow} more
+          </div>
         )}
       </div>
     </div>
@@ -359,8 +420,11 @@ export default function CalendarSection({ location }: CalendarSectionProps) {
         ))}
       </div>
 
-      {/* Month grid */}
-      <div className="grid grid-cols-7 gap-1 flex-1">
+      {/* Month grid — equal row heights fill the viewport */}
+      <div
+        className="grid grid-cols-7 gap-1 flex-1 min-h-0"
+        style={{ gridTemplateRows: `repeat(${Math.ceil(grid.length / 7)}, 1fr)` }}
+      >
         {grid.map((cell, i) => (
           <DayCell
             key={cell.dateStr || `empty-${i}`}

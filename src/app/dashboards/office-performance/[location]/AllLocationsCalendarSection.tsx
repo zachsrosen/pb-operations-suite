@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import {
@@ -44,8 +44,7 @@ const MONTH_NAMES = [
 
 const DAY_HEADERS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
-/** Max visible pills per day cell before showing "+N more" */
-const MAX_VISIBLE_PILLS = 4;
+/** Show all pills — TV displays have no scroll/hover, so truncating hides events */
 
 // ---------------------------------------------------------------------------
 // Data fetching
@@ -126,7 +125,7 @@ function formatEventLabel(eventType: string): string {
   }
 }
 
-function EventPill({ pill }: { pill: DayPill }) {
+function EventPill({ pill, compact }: { pill: DayPill; compact?: boolean }) {
   const baseType = pill.eventType.replace(/-complete$/, "").replace(/-pass$/, "").replace(/-fail$/, "");
   const colors = EVENT_COLORS[pill.eventType] || EVENT_COLORS[baseType] || EVENT_COLORS.survey;
   const isCompleted = pill.isCompleted;
@@ -137,9 +136,9 @@ function EventPill({ pill }: { pill: DayPill }) {
   if (!pill.isFirstDay) {
     return (
       <div
-        className={`h-4 rounded-sm border-l-2 flex items-center px-1 ${colors.border} ${colors.bg} ${isCompleted ? "opacity-30" : ""}`}
+        className={`${compact ? "h-3" : "h-4"} rounded-sm border-l-2 flex items-center px-1 ${colors.border} ${colors.bg} ${isCompleted ? "opacity-30" : ""}`}
       >
-        <span className={`text-[8px] font-medium ${colors.text}`}>
+        <span className={`${compact ? "text-[7px]" : "text-[8px]"} font-medium ${colors.text}`}>
           D{pill.dayIndex}/{pill.totalDays}
         </span>
       </div>
@@ -149,19 +148,22 @@ function EventPill({ pill }: { pill: DayPill }) {
   return (
     <div
       className={`
-        rounded-sm border-l-2 px-1 py-px
+        rounded-sm border-l-2 px-1 ${compact ? "" : "py-px"}
         ${colors.border} ${colors.bg}
         ${isCompleted ? "opacity-30" : ""}
         ${isOverdue ? "ring-1 ring-red-500" : ""}
       `}
     >
-      <div className={`text-[9px] font-medium leading-tight truncate ${colors.text}`}>
-        {locAbbr && <span className="text-[8px] text-slate-500 mr-0.5">{locAbbr}</span>}
+      <div className={`${compact ? "text-[7px]" : "text-[9px]"} font-medium leading-tight truncate ${colors.text}`}>
+        {locAbbr && <span className={`${compact ? "text-[6px]" : "text-[8px]"} text-slate-500 mr-0.5`}>{locAbbr}</span>}
         {formatEventLabel(pill.eventType)}
       </div>
     </div>
   );
 }
+
+/** Switch to compact pills when >N pills in a cell */
+const COMPACT_THRESHOLD = 4;
 
 function DayCell({
   dayNum,
@@ -176,24 +178,63 @@ function DayCell({
   isOutsideMonth: boolean;
   pills: DayPill[];
 }) {
+  const cellRef = useRef<HTMLDivElement>(null);
+  const pillsRef = useRef<HTMLDivElement>(null);
+  const [visibleCount, setVisibleCount] = useState(pills.length);
+
+  const compact = pills.length > COMPACT_THRESHOLD;
+
+  // Measure how many pills fit within the cell via ResizeObserver
+  useEffect(() => {
+    const el = cellRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      const cell = cellRef.current;
+      const container = pillsRef.current;
+      if (!cell || !container || pills.length === 0) {
+        setVisibleCount(pills.length);
+        return;
+      }
+      const children = container.children;
+      const cellBottom = cell.getBoundingClientRect().bottom - 2;
+      let count = 0;
+      for (let i = 0; i < children.length; i++) {
+        const child = children[i] as HTMLElement;
+        if (child.dataset.overflow) continue;
+        if (child.getBoundingClientRect().bottom <= cellBottom) {
+          count++;
+        } else {
+          break;
+        }
+      }
+      setVisibleCount(count || 1);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [pills.length, compact]);
+
   if (isOutsideMonth) {
-    return <div className="min-h-[64px] bg-white/[0.01] rounded" />;
+    return <div className="bg-white/[0.01] rounded h-full" />;
   }
 
-  const visible = pills.slice(0, MAX_VISIBLE_PILLS);
-  const overflow = pills.length - MAX_VISIBLE_PILLS;
+  const overflow = pills.length - visibleCount;
 
   return (
-    <div className={`min-h-[64px] p-0.5 rounded border border-white/5 overflow-hidden ${isToday ? "bg-orange-500/10 ring-1 ring-orange-500/50" : "bg-white/[0.02]"}`}>
+    <div
+      ref={cellRef}
+      className={`p-0.5 rounded border border-white/5 overflow-hidden h-full ${isToday ? "bg-orange-500/10 ring-1 ring-orange-500/50" : "bg-white/[0.02]"}`}
+    >
       <div className={`text-[9px] font-semibold mb-0.5 ${isToday ? "text-orange-400" : isWeekend ? "text-slate-600" : "text-slate-400"}`}>
         {dayNum}
       </div>
-      <div className="flex flex-col gap-px">
-        {visible.map((pill, i) => (
-          <EventPill key={`${pill.id}-${pill.dayIndex}-${i}`} pill={pill} />
+      <div ref={pillsRef} className="flex flex-col gap-px">
+        {pills.slice(0, visibleCount).map((pill, i) => (
+          <EventPill key={`${pill.id}-${pill.dayIndex}-${i}`} pill={pill} compact={compact} />
         ))}
         {overflow > 0 && (
-          <div className="text-[8px] text-slate-500 pl-0.5">+{overflow}</div>
+          <div data-overflow="true" className="text-[7px] text-slate-400 font-medium pl-0.5">
+            +{overflow} more
+          </div>
         )}
       </div>
     </div>
@@ -348,8 +389,11 @@ export default function AllLocationsCalendarSection() {
         ))}
       </div>
 
-      {/* Month grid */}
-      <div className="grid grid-cols-7 gap-0.5 flex-1">
+      {/* Month grid — equal row heights fill the viewport */}
+      <div
+        className="grid grid-cols-7 gap-0.5 flex-1 min-h-0"
+        style={{ gridTemplateRows: `repeat(${Math.ceil(grid.length / 7)}, 1fr)` }}
+      >
         {grid.map((cell, i) => (
           <DayCell
             key={cell.dateStr || `empty-${i}`}
