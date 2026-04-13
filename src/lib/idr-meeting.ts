@@ -436,7 +436,27 @@ export async function createDealTimelineNote(
 // Archive search
 // ---------------------------------------------------------------------------
 
-/** Search meeting items by text across note fields. */
+/**
+ * Convert a YYYY-MM-DD date string to the start of that local day in
+ * America/Denver timezone, returned as a UTC Date.
+ */
+function localDayToUtc(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const noon = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Denver",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+  }).formatToParts(noon);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "0";
+  const localNoon = new Date(`${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}Z`);
+  const offsetMs = noon.getTime() - localNoon.getTime();
+  return new Date(Date.UTC(y, m - 1, d) + offsetMs);
+}
+
+/** Search meeting items by text across note fields and/or date range. */
 export async function searchMeetingItems(params: {
   query: string;
   dateFrom?: string;
@@ -446,38 +466,51 @@ export async function searchMeetingItems(params: {
 }) {
   const { query, dateFrom, dateTo, skip = 0, limit = 50 } = params;
 
-  const textFilter = {
-    OR: [
-      { dealName: { contains: query, mode: "insensitive" as const } },
-      { region: { contains: query, mode: "insensitive" as const } },
-      { customerNotes: { contains: query, mode: "insensitive" as const } },
-      { operationsNotes: { contains: query, mode: "insensitive" as const } },
-      { designNotes: { contains: query, mode: "insensitive" as const } },
-      { conclusion: { contains: query, mode: "insensitive" as const } },
-      { escalationReason: { contains: query, mode: "insensitive" as const } },
-    ],
-  };
+  const textFilter = query
+    ? {
+        OR: [
+          { dealName: { contains: query, mode: "insensitive" as const } },
+          { region: { contains: query, mode: "insensitive" as const } },
+          { customerNotes: { contains: query, mode: "insensitive" as const } },
+          { operationsNotes: { contains: query, mode: "insensitive" as const } },
+          { designNotes: { contains: query, mode: "insensitive" as const } },
+          { conclusion: { contains: query, mode: "insensitive" as const } },
+          { escalationReason: { contains: query, mode: "insensitive" as const } },
+        ],
+      }
+    : {};
 
   const dateFilter = (dateFrom || dateTo)
     ? {
         session: {
           date: {
-            ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
-            ...(dateTo ? { lte: new Date(dateTo) } : {}),
+            ...(dateFrom ? { gte: localDayToUtc(dateFrom) } : {}),
+            ...(dateTo
+              ? {
+                  lt: (() => {
+                    const [y, m, d] = dateTo.split("-").map(Number);
+                    const nextDay = new Date(Date.UTC(y, m - 1, d + 1));
+                    const nd = nextDay.toISOString().slice(0, 10);
+                    return localDayToUtc(nd);
+                  })(),
+                }
+              : {}),
           },
         },
       }
     : {};
 
+  const where = { ...textFilter, ...dateFilter };
+
   const [items, total] = await Promise.all([
     prisma.idrMeetingItem.findMany({
-      where: { ...textFilter, ...dateFilter },
+      where,
       include: { session: { select: { date: true, status: true } } },
       orderBy: { createdAt: "desc" },
       skip,
       take: limit,
     }),
-    prisma.idrMeetingItem.count({ where: { ...textFilter, ...dateFilter } }),
+    prisma.idrMeetingItem.count({ where }),
   ]);
 
   return {

@@ -41,6 +41,7 @@ import {
   computeReadinessBadge,
   buildHubSpotNoteBody,
   buildHubSpotPropertyUpdates,
+  searchMeetingItems,
 } from "@/lib/idr-meeting";
 
 describe("snapshotDealProperties", () => {
@@ -195,5 +196,62 @@ describe("buildHubSpotPropertyUpdates", () => {
     // Disco/Reco and Interior Access always sent, defaulting to "false"
     expect(updates.disco__reco).toBe("false");
     expect(updates.interior_access).toBe("false");
+  });
+});
+
+const mockPrisma = jest.requireMock("@/lib/db").prisma;
+
+describe("searchMeetingItems", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockPrisma.idrMeetingItem.findMany.mockResolvedValue([]);
+    mockPrisma.idrMeetingItem.count.mockResolvedValue(0);
+  });
+
+  it("omits text filter when query is empty and date range is provided", async () => {
+    await searchMeetingItems({ query: "", dateFrom: "2026-03-01", dateTo: "2026-03-31" });
+
+    const where = mockPrisma.idrMeetingItem.findMany.mock.calls[0][0].where;
+    expect(where).not.toHaveProperty("OR");
+    expect(where.session.date).toHaveProperty("gte");
+    expect(where.session.date).toHaveProperty("lt");
+  });
+
+  it("includes text filter when query is provided", async () => {
+    await searchMeetingItems({ query: "smith", dateFrom: "2026-03-01" });
+
+    const where = mockPrisma.idrMeetingItem.findMany.mock.calls[0][0].where;
+    expect(where).toHaveProperty("OR");
+    expect(where.session.date).toHaveProperty("gte");
+  });
+
+  it("uses lt-next-local-day for dateTo (inclusive local-day semantics)", async () => {
+    await searchMeetingItems({ query: "", dateTo: "2026-03-31" });
+
+    const where = mockPrisma.idrMeetingItem.findMany.mock.calls[0][0].where;
+    const ltDate = where.session.date.lt;
+    // Next local day in America/Denver: 2026-04-01T06:00:00.000Z (MDT = UTC-6)
+    expect(ltDate).toBeInstanceOf(Date);
+    expect(ltDate.toISOString()).toBe("2026-04-01T06:00:00.000Z");
+  });
+
+  it("uses gte-local-day-start for dateFrom", async () => {
+    await searchMeetingItems({ query: "", dateFrom: "2026-03-15" });
+
+    const where = mockPrisma.idrMeetingItem.findMany.mock.calls[0][0].where;
+    const gteDate = where.session.date.gte;
+    // 2026-03-15 local start in America/Denver: 2026-03-15T06:00:00.000Z (MDT)
+    expect(gteDate).toBeInstanceOf(Date);
+    expect(gteDate.toISOString()).toBe("2026-03-15T06:00:00.000Z");
+  });
+
+  it("uses correct UTC offset for a pre-DST date (MST = UTC-7)", async () => {
+    await searchMeetingItems({ query: "", dateFrom: "2026-01-15" });
+
+    const where = mockPrisma.idrMeetingItem.findMany.mock.calls[0][0].where;
+    const gteDate = where.session.date.gte;
+    // 2026-01-15 local start in America/Denver: 2026-01-15T07:00:00.000Z (MST = UTC-7)
+    expect(gteDate).toBeInstanceOf(Date);
+    expect(gteDate.toISOString()).toBe("2026-01-15T07:00:00.000Z");
   });
 });
