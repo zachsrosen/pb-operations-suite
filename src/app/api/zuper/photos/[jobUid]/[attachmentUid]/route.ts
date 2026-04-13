@@ -20,28 +20,25 @@ export async function GET(
   }
 
   try {
-    // Fetch attachment list to find the URL for this attachment
+    // Fetch all photos (attachments + notes) for this job
     const photos = await zuper.getJobPhotos(jobUid);
     const photo = photos.find((p) => p.attachment_uid === attachmentUid);
 
     if (!photo) {
+      console.warn(
+        `[zuper-photos] Photo ${attachmentUid} not found among ${photos.length} photos for job ${jobUid}`
+      );
       return new NextResponse("Photo not found", { status: 404 });
     }
 
     // Download the image through Zuper's authenticated API
     const buffer = await zuper.downloadFile(photo.url);
 
-    // Determine content type from file extension
-    const ext = photo.file_name?.split(".").pop()?.toLowerCase() || "jpg";
-    const mimeTypes: Record<string, string> = {
-      jpg: "image/jpeg",
-      jpeg: "image/jpeg",
-      png: "image/png",
-      webp: "image/webp",
-      heic: "image/heic",
-      heif: "image/heif",
-    };
-    const contentType = mimeTypes[ext] ?? "image/jpeg";
+    // Determine content type from file extension or MIME type
+    const contentType =
+      photo.file_type && photo.file_type.startsWith("image/")
+        ? photo.file_type
+        : getMimeFromExtension(photo.file_name);
 
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
@@ -53,4 +50,21 @@ export async function GET(
     console.error(`[zuper-photos] Failed to proxy photo ${attachmentUid}:`, err);
     return new NextResponse("Failed to fetch photo", { status: 502 });
   }
+}
+
+function getMimeFromExtension(fileName?: string): string {
+  const ext = fileName?.split(".").pop()?.toLowerCase() || "jpg";
+  const mimeTypes: Record<string, string> = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    webp: "image/webp",
+    heic: "image/heic",
+    heif: "image/heif",
+    gif: "image/gif",
+    bmp: "image/bmp",
+    tiff: "image/tiff",
+    tif: "image/tiff",
+  };
+  return mimeTypes[ext] ?? "image/jpeg";
 }

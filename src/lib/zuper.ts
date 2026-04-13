@@ -163,6 +163,24 @@ export interface ZuperAttachment {
   updated_at?: string;
 }
 
+/** A note/activity on a Zuper job — may contain file attachments (photos, docs). */
+export interface ZuperNote {
+  note_uid: string;
+  note?: string;
+  attachments?: ZuperNoteAttachment[];
+  created_by?: { user_uid?: string; first_name?: string; last_name?: string };
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ZuperNoteAttachment {
+  attachment_uid?: string;
+  file_name: string;
+  url: string;
+  file_type?: string;
+  file_size?: number;
+}
+
 interface ZuperAssignmentRef {
   userUid: string;
   teamUid?: string;
@@ -1501,7 +1519,7 @@ export class ZuperClient {
     return null;
   }
 
-  // ========== JOB ATTACHMENTS ==========
+  // ========== JOB ATTACHMENTS & NOTES ==========
 
   /**
    * List attachments for a job.
@@ -1512,28 +1530,90 @@ export class ZuperClient {
   }
 
   /**
-   * Get image attachments from a job, filtered to photo MIME types.
+   * List notes (activities) for a job.
+   * Zuper endpoint: GET /jobs/{job_uid}/notes
+   * Notes often contain photo attachments uploaded by field technicians.
+   */
+  async getJobNotes(jobUid: string): Promise<ZuperApiResponse<{ notes: ZuperNote[] }>> {
+    // Try /notes first — Zuper's MCP server exposes `get_job_notes` which uses this pattern
+    const result = await this.request<{ notes: ZuperNote[] }>(
+      `/jobs/${encodeURIComponent(jobUid)}/notes`
+    );
+    if (result.type === "success") return result;
+
+    // Fallback: try singular /note (matches the POST endpoint path)
+    const fallback = await this.request<{ notes: ZuperNote[] }>(
+      `/jobs/${encodeURIComponent(jobUid)}/note`
+    );
+    return fallback;
+  }
+
+  /**
+   * Get image attachments from a job, aggregating from both the attachments
+   * endpoint and note attachments (mirroring Zuper's web Gallery view).
    * Returns attachment metadata with downloadable URLs.
    */
   async getJobPhotos(jobUid: string): Promise<ZuperAttachment[]> {
-    const result = await this.getJobAttachments(jobUid);
-    if (result.type === "error" || !result.data?.attachments) {
-      console.warn(`[Zuper] Failed to fetch attachments for job ${jobUid}:`, result.error);
-      return [];
-    }
-
-    const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "heic", "heif", "webp"]);
+    const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "bmp", "tiff", "tif"]);
     const IMAGE_MIME_PREFIXES = ["image/"];
 
-    return result.data.attachments.filter((att) => {
-      // Check MIME type if available
-      if (att.file_type && IMAGE_MIME_PREFIXES.some((p) => att.file_type!.toLowerCase().startsWith(p))) {
+    const isImage = (fileName?: string, fileType?: string): boolean => {
+      if (fileType && IMAGE_MIME_PREFIXES.some((p) => fileType.toLowerCase().startsWith(p))) {
         return true;
       }
-      // Fallback: check file extension
-      const ext = att.file_name?.split(".").pop()?.toLowerCase() || "";
+      const ext = fileName?.split(".").pop()?.toLowerCase() || "";
       return IMAGE_EXTENSIONS.has(ext);
-    });
+    };
+
+    // Fetch both sources in parallel
+    const [attachResult, notesResult] = await Promise.all([
+      this.getJobAttachments(jobUid),
+      this.getJobNotes(jobUid),
+    ]);
+
+    const photos: ZuperAttachment[] = [];
+    const seenUrls = new Set<string>();
+
+    // Source 1: Direct job attachments
+    if (attachResult.type === "success" && attachResult.data?.attachments) {
+      for (const att of attachResult.data.attachments) {
+        if (isImage(att.file_name, att.file_type) && !seenUrls.has(att.url)) {
+          seenUrls.add(att.url);
+          photos.push(att);
+        }
+      }
+    } else {
+      console.warn(`[Zuper] Failed to fetch attachments for job ${jobUid}:`, attachResult.type === "error" ? attachResult.error : "no data");
+    }
+
+    // Source 2: Note attachments (photos uploaded by field techs as part of job notes)
+    if (notesResult.type === "success") {
+      // Handle both { notes: [...] } and direct array responses
+      const rawData = notesResult.data;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const notes: ZuperNote[] = Array.isArray(rawData) ? rawData : (rawData as any)?.notes ?? (rawData as any)?.data ?? [];
+
+      for (const note of notes) {
+        if (!note.attachments || !Array.isArray(note.attachments)) continue;
+        for (const att of note.attachments) {
+          if (isImage(att.file_name, att.file_type) && att.url && !seenUrls.has(att.url)) {
+            seenUrls.add(att.url);
+            photos.push({
+              attachment_uid: att.attachment_uid || `note-${note.note_uid}-${att.file_name}`,
+              file_name: att.file_name,
+              url: att.url,
+              file_type: att.file_type,
+              file_size: att.file_size,
+              created_at: note.created_at,
+            });
+          }
+        }
+      }
+    } else {
+      console.warn(`[Zuper] Failed to fetch notes for job ${jobUid}:`, notesResult.type === "error" ? notesResult.error : "no data");
+    }
+
+    return photos;
   }
 
   /**

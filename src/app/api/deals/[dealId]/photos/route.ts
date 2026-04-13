@@ -54,24 +54,21 @@ export async function GET(
   }
 
   // Fetch photos from all linked jobs in parallel
+  // getJobPhotos now aggregates from both attachments AND notes
   const photoArrays = await Promise.all(
     [...jobUids].map(async (jobUid) => {
       try {
-        // First get raw attachments to log what Zuper actually returns
-        const rawResult = await zuper.getJobAttachments(jobUid);
-        const allAttachments = rawResult.type === "success" ? rawResult.data?.attachments ?? [] : [];
-        console.log(
-          `[deal-photos] Job ${jobUid}: ${allAttachments.length} total attachments, types: ${allAttachments.map((a) => a.file_name?.split(".").pop() || a.file_type || "unknown").join(", ") || "none"}`
-        );
-
         const photos = await zuper.getJobPhotos(jobUid);
-        console.log(`[deal-photos] Job ${jobUid}: ${photos.length} image attachments after filtering`);
+        console.log(
+          `[deal-photos] Job ${jobUid}: ${photos.length} photos found (attachments + notes)`
+        );
 
         const category = jobCategories.get(jobUid) ?? "Job";
         return photos.map((p) => ({
           id: p.attachment_uid,
           fileName: p.file_name,
           url: `/api/zuper/photos/${encodeURIComponent(jobUid)}/${encodeURIComponent(p.attachment_uid)}`,
+          directUrl: p.url, // Keep for fallback proxy
           jobCategory: category,
           createdAt: p.created_at ?? null,
         }));
