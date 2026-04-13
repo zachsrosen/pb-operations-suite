@@ -9,6 +9,7 @@ import ImpersonationBanner from "@/components/ImpersonationBanner";
 import PageViewTracker from "@/components/PageViewTracker";
 import ClickTracker from "@/components/ClickTracker";
 import ChatWidget from "@/components/ChatWidget";
+import AutoReload from "@/components/AutoReload";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -76,6 +77,7 @@ export default function RootLayout({
           {children}
           <ChatWidget />
         </Providers>
+        <AutoReload />
         <ServiceWorkerRegistration />
         <InstallPrompt />
         <Analytics />
