@@ -529,19 +529,17 @@ export default function PeDealsPage() {
             onStatusChange={handleStatusChange}
             savingDeals={savingDeals}
           />
-          {completedDeals.length > 0 && (
-            <DealSection
-              title="Project Complete — PE In Progress"
-              subtitle={`${completedDeals.length} deal${completedDeals.length !== 1 ? "s" : ""} with pending PE payments`}
-              deals={completedDeals}
-              sortKey={sortKey}
-              sortDir={sortDir}
-              sortArrow={sortArrow}
-              toggleSort={toggleSort}
-              onStatusChange={handleStatusChange}
-              savingDeals={savingDeals}
-            />
-          )}
+          <DealSection
+            title="Project Complete — PE In Progress"
+            subtitle={`${completedDeals.length} deal${completedDeals.length !== 1 ? "s" : ""} with pending PE payments`}
+            deals={completedDeals}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            sortArrow={sortArrow}
+            toggleSort={toggleSort}
+            onStatusChange={handleStatusChange}
+            savingDeals={savingDeals}
+          />
         </div>
       )}
     </DashboardShell>
