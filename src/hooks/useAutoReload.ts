@@ -1,18 +1,16 @@
 // src/hooks/useAutoReload.ts
 
 /**
- * Polls /api/health for the current deployId and reloads the page
- * when a new deployment is detected.
+ * Polls /api/health for the current deployId and reacts when a new deployment
+ * is detected.
  *
- * Reload strategy (visibility + idle aware):
+ * Read-only TV routes can auto-reload with visibility/idle guards:
  *   1. Tab is hidden when deploy detected → reload immediately.
- *   2. Tab is visible → defer until the tab becomes hidden (user
- *      switches away).
- *   3. Tab stays visible but user is idle (no mouse/keyboard/touch/
- *      scroll for 10 min) → reload. This covers unattended TV kiosks
- *      that never hide.
- *   4. Tab stays visible and user is active → never interrupt. The
- *      reload keeps waiting for condition 2 or 3.
+ *   2. Tab is visible → defer until the tab becomes hidden.
+ *   3. Tab stays visible but user is idle for 10 min → reload.
+ *
+ * Interactive routes should use `mode: "manual"` so they only show a
+ * "new version available" banner and never discard unsaved work.
  */
 
 import { useEffect, useRef } from "react";
@@ -40,10 +38,22 @@ interface Options {
   intervalMs?: number;
   /** Set false to disable (e.g. in dev) */
   enabled?: boolean;
+  /** Read-only TV routes can auto-reload; interactive routes should notify instead. */
+  mode?: "auto" | "manual";
+  /** Dirty pages should never auto-reload. */
+  isDirty?: boolean;
+  /** Called when a deploy is detected but the page should not auto-reload. */
+  onUpdateAvailable?: () => void;
 }
 
 export function useAutoReload(options: Options = {}) {
-  const { intervalMs = DEFAULT_INTERVAL_MS, enabled = true } = options;
+  const {
+    intervalMs = DEFAULT_INTERVAL_MS,
+    enabled = true,
+    mode = "auto",
+    isDirty = false,
+    onUpdateAvailable,
+  } = options;
   const baselineRef = useRef<string | null>(null);
   const pendingReloadRef = useRef(false);
 
@@ -87,14 +97,24 @@ export function useAutoReload(options: Options = {}) {
       }, IDLE_TIMEOUT_MS);
     }
 
-    function scheduleReload() {
+    function notifyUpdateAvailable() {
       if (pendingReloadRef.current) return;
       pendingReloadRef.current = true;
 
-      // Stop polling — we know there's a new deploy
+      // Stop polling — we know there's a new deploy.
       if (timer) {
         clearInterval(timer);
         timer = null;
+      }
+
+      onUpdateAvailable?.();
+    }
+
+    function scheduleReload() {
+      notifyUpdateAvailable();
+
+      if (mode === "manual" || isDirty) {
+        return;
       }
 
       // If the tab is already hidden, reload now
@@ -124,7 +144,7 @@ export function useAutoReload(options: Options = {}) {
 
     async function check() {
       try {
-        const res = await fetch("/api/health");
+        const res = await fetch("/api/health", { cache: "no-store" });
         if (!res.ok) return;
         const data = await res.json();
         const deployId = data.deployId as string | undefined;
@@ -154,5 +174,5 @@ export function useAutoReload(options: Options = {}) {
       if (timer) clearInterval(timer);
       cleanup();
     };
-  }, [intervalMs, enabled]);
+  }, [enabled, intervalMs, isDirty, mode, onUpdateAvailable]);
 }
