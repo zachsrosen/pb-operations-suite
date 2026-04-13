@@ -146,6 +146,9 @@ export default function DealDetailView({
               </CollapsibleSection>
             );
           })}
+
+          {/* Site Photos — full-width in main pane */}
+          <PhotoGalleryCard hubspotDealId={deal.hubspotDealId} zuperUid={deal.zuperUid} />
         </div>
 
         {/* Right: pinned sidebar */}
@@ -160,7 +163,6 @@ export default function DealDetailView({
             <TeamCard deal={deal} />
             <EquipmentCard deal={deal} />
             <ZuperJobCard jobs={zuperJobs} />
-            <PhotoGalleryCard hubspotDealId={deal.hubspotDealId} zuperUid={deal.zuperUid} />
             <RelatedDealsCard deals={relatedDeals} />
             <ChangeLogCard entries={changeLog} />
             <ExternalLinksCard deal={deal} />

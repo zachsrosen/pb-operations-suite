@@ -76,7 +76,7 @@ export async function GET(
     })
   );
 
-  const allPhotos = photoArrays.flat().slice(0, 20);
+  const allPhotos = photoArrays.flat();
   console.log(`[deal-photos] Returning ${allPhotos.length} photos for deal ${dealId}`);
 
   return NextResponse.json({ photos: allPhotos });

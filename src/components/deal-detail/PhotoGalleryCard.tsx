@@ -61,8 +61,8 @@ export default function PhotoGalleryCard({ hubspotDealId, zuperUid }: PhotoGalle
         <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted">
           Site Photos ({photos.length})
         </h3>
-        <div className="grid grid-cols-3 gap-1.5">
-          {photos.slice(0, 9).map((photo) => (
+        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-1.5">
+          {photos.map((photo) => (
             <button
               key={photo.id}
               onClick={() => setSelectedPhoto(photo)}
@@ -78,11 +78,6 @@ export default function PhotoGalleryCard({ hubspotDealId, zuperUid }: PhotoGalle
             </button>
           ))}
         </div>
-        {photos.length > 9 && (
-          <p className="mt-1.5 text-center text-[9px] text-muted">
-            +{photos.length - 9} more photos
-          </p>
-        )}
       </div>
 
       {/* Lightbox overlay */}
@@ -95,6 +90,29 @@ export default function PhotoGalleryCard({ hubspotDealId, zuperUid }: PhotoGalle
             className="relative max-h-[90vh] max-w-[90vw]"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Prev / Next arrows */}
+            {photos.length > 1 && (
+              <>
+                <button
+                  className="absolute left-0 top-1/2 -translate-x-12 -translate-y-1/2 rounded-full bg-white/10 p-2 text-white hover:bg-white/20 transition-colors"
+                  onClick={() => {
+                    const idx = photos.findIndex((p) => p.id === selectedPhoto.id);
+                    setSelectedPhoto(photos[(idx - 1 + photos.length) % photos.length]);
+                  }}
+                >
+                  &#8592;
+                </button>
+                <button
+                  className="absolute right-0 top-1/2 translate-x-12 -translate-y-1/2 rounded-full bg-white/10 p-2 text-white hover:bg-white/20 transition-colors"
+                  onClick={() => {
+                    const idx = photos.findIndex((p) => p.id === selectedPhoto.id);
+                    setSelectedPhoto(photos[(idx + 1) % photos.length]);
+                  }}
+                >
+                  &#8594;
+                </button>
+              </>
+            )}
             <img
               src={selectedPhoto.url}
               alt={selectedPhoto.fileName}
@@ -103,7 +121,14 @@ export default function PhotoGalleryCard({ hubspotDealId, zuperUid }: PhotoGalle
             <div className="mt-2 flex items-center justify-between">
               <div>
                 <p className="text-sm text-white">{selectedPhoto.fileName}</p>
-                <p className="text-xs text-zinc-400">{selectedPhoto.jobCategory}</p>
+                <p className="text-xs text-zinc-400">
+                  {selectedPhoto.jobCategory}
+                  {photos.length > 1 && (
+                    <span className="ml-2">
+                      {photos.findIndex((p) => p.id === selectedPhoto.id) + 1} / {photos.length}
+                    </span>
+                  )}
+                </p>
               </div>
               <button
                 onClick={() => setSelectedPhoto(null)}

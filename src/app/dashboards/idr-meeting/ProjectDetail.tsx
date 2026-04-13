@@ -9,6 +9,7 @@ import { InstallPlanningForm } from "./InstallPlanningForm";
 import { StatusActionsForm } from "./StatusActionsForm";
 import { MeetingNotesForm } from "./MeetingNotesForm";
 import { AhjUtilityInfo } from "./AhjUtilityInfo";
+import PhotoGalleryCard from "@/components/deal-detail/PhotoGalleryCard";
 
 const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "7086286";
 
@@ -255,6 +256,9 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
                 <p className="text-xs text-muted">No line items</p>
               ) : null}
             </Section>
+
+            {/* Site Photos */}
+            <PhotoGalleryCard hubspotDealId={item.dealId} />
 
             {/* Survey Readiness */}
             {readinessQuery.data && (
