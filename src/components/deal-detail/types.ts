@@ -98,3 +98,36 @@ export interface TimelineStage {
   completedDate: string | null;
   isCurrent: boolean;
 }
+
+/** Zuper job info resolved from ZuperJobCache */
+export interface ZuperJobInfo {
+  jobUid: string;
+  jobTitle: string;
+  jobCategory: string;
+  jobStatus: string;
+  jobPriority: string | null;
+  scheduledStart: string | null;
+  scheduledEnd: string | null;
+  completedDate: string | null;
+  assignedUsers: { user_uid: string; user_name?: string }[];
+}
+
+/** A single field change from DealSyncLog */
+export interface ChangeLogEntry {
+  id: string;
+  syncType: string;
+  source: string;
+  status: string;
+  changesDetected: Record<string, [unknown, unknown]> | null;
+  createdAt: string;
+}
+
+/** Minimal related deal for the sidebar */
+export interface RelatedDeal {
+  id: string;
+  hubspotDealId: string;
+  dealName: string;
+  pipeline: string;
+  stage: string;
+  amount: number | null;
+}

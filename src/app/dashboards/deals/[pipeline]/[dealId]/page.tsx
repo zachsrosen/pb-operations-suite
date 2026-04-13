@@ -1,9 +1,11 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
-import { prisma } from "@/lib/db";
+import { prisma, getUserByEmail } from "@/lib/db";
+import { auth } from "@/auth";
 import { syncSingleDeal } from "@/lib/deal-sync";
 import { serializeDeal, buildTimelineStages } from "@/components/deal-detail/serialize";
 import DealDetailView from "./DealDetailView";
+import type { ZuperJobInfo, ChangeLogEntry, RelatedDeal } from "@/components/deal-detail/types";
 
 // Stored stage shape from DealPipelineConfig.stages Json column
 type StoredStage = { id: string; name: string; displayOrder: number; isActive: boolean };
@@ -98,12 +100,88 @@ export default async function DealDetailPage({
   );
   const staleness = formatStalenessLocal(deal.lastSyncedAt);
 
+  // Fetch enrichment data in parallel
+  const [zuperJobs, syncLogs, relatedDeals, session] = await Promise.all([
+    // Zuper jobs linked to this deal
+    prisma.zuperJobCache.findMany({
+      where: { hubspotDealId: deal.hubspotDealId },
+      orderBy: { scheduledStart: "desc" },
+      take: 5,
+    }).catch(() => []),
+    // Recent sync log entries
+    prisma.dealSyncLog.findMany({
+      where: { dealId: deal.id, status: { not: "SKIPPED" } },
+      orderBy: { createdAt: "desc" },
+      take: 10,
+    }).catch(() => []),
+    // Related deals (same contact or company)
+    (async () => {
+      const conditions = [];
+      if (deal.hubspotContactId) conditions.push({ hubspotContactId: deal.hubspotContactId });
+      if (deal.hubspotCompanyId) conditions.push({ hubspotCompanyId: deal.hubspotCompanyId });
+      if (conditions.length === 0) return [];
+      return prisma.deal.findMany({
+        where: {
+          OR: conditions,
+          id: { not: deal.id },
+        },
+        select: { id: true, hubspotDealId: true, dealName: true, pipeline: true, stage: true, amount: true },
+        orderBy: { hubspotUpdatedAt: "desc" },
+        take: 5,
+      });
+    })().catch(() => []),
+    // Current user session for role-based visibility
+    auth().catch(() => null),
+  ]);
+
+  // Resolve user role
+  let userRole = "VIEWER";
+  if (session?.user?.email) {
+    const user = await getUserByEmail(session.user.email);
+    if (user) userRole = user.role;
+  }
+
+  // Serialize enrichment data
+  const zuperJobInfos: ZuperJobInfo[] = zuperJobs.map((j) => ({
+    jobUid: j.jobUid,
+    jobTitle: j.jobTitle,
+    jobCategory: j.jobCategory,
+    jobStatus: j.jobStatus,
+    jobPriority: j.jobPriority,
+    scheduledStart: j.scheduledStart?.toISOString() ?? null,
+    scheduledEnd: j.scheduledEnd?.toISOString() ?? null,
+    completedDate: j.completedDate?.toISOString() ?? null,
+    assignedUsers: (j.assignedUsers as { user_uid: string; user_name?: string }[]) ?? [],
+  }));
+
+  const changeLog: ChangeLogEntry[] = syncLogs.map((l) => ({
+    id: l.id,
+    syncType: l.syncType,
+    source: l.source,
+    status: l.status,
+    changesDetected: l.changesDetected as Record<string, [unknown, unknown]> | null,
+    createdAt: l.createdAt.toISOString(),
+  }));
+
+  const related: RelatedDeal[] = relatedDeals.map((d) => ({
+    id: d.id,
+    hubspotDealId: d.hubspotDealId,
+    dealName: d.dealName,
+    pipeline: d.pipeline,
+    stage: d.stage,
+    amount: d.amount ? Number(d.amount) : null,
+  }));
+
   return (
     <DealDetailView
       deal={serialized}
       timelineStages={timelineStages}
       stageOrder={stageOrder}
       staleness={staleness}
+      zuperJobs={zuperJobInfos}
+      changeLog={changeLog}
+      relatedDeals={related}
+      userRole={userRole}
     />
   );
 }

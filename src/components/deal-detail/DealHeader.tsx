@@ -6,7 +6,22 @@ interface DealHeaderProps {
   stageColor: string;
 }
 
+function formatStageDuration(dateEnteredStr: string | null): string | null {
+  if (!dateEnteredStr) return null;
+  const entered = new Date(dateEnteredStr.split("T")[0] + "T00:00:00");
+  if (isNaN(entered.getTime())) return null;
+  const now = new Date();
+  const days = Math.floor((now.getTime() - entered.getTime()) / 86400000);
+  if (days < 1) return "today";
+  if (days === 1) return "1 day";
+  return `${days} days`;
+}
+
 export default function DealHeader({ deal, stageColor }: DealHeaderProps) {
+  const stageDuration = formatStageDuration(
+    (deal.dateEnteredCurrentStage as string | null) ?? null
+  );
+
   return (
     <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
       <div>
@@ -18,6 +33,9 @@ export default function DealHeader({ deal, stageColor }: DealHeaderProps) {
           >
             {deal.stage}
           </span>
+          {stageDuration && (
+            <span className="text-[10px] text-muted">({stageDuration} in stage)</span>
+          )}
           <span className="text-xs text-muted">{deal.pipeline}</span>
           {deal.pbLocation && (
             <span className="text-xs text-muted">• {deal.pbLocation}</span>

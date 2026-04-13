@@ -291,3 +291,18 @@ html.sunset ::-webkit-scrollbar-thumb:hover {
   0%, 100% { transform: translate(0, 0) scale(1); }
   50% { transform: translate(-15px, 20px) scale(1.04); }
 }
+
+/* ---- Print styles ---- */
+@media print {
+  body::before, body::after { display: none !important; }
+  nav, header, .print\\:hidden { display: none !important; }
+  .bg-background { background: white !important; }
+  .bg-surface, .bg-surface-2, .bg-surface-2\/30, .bg-surface\/50 {
+    background: white !important;
+    border-color: #e5e7eb !important;
+  }
+  .text-foreground { color: black !important; }
+  .text-muted { color: #6b7280 !important; }
+  .shadow-card { box-shadow: none !important; }
+  * { color-adjust: exact; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
