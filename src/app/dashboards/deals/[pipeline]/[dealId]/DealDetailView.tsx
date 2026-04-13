@@ -17,6 +17,7 @@ import QuickActionsCard from "@/components/deal-detail/QuickActionsCard";
 import ZuperJobCard from "@/components/deal-detail/ZuperJobCard";
 import ChangeLogCard from "@/components/deal-detail/ChangeLogCard";
 import RelatedDealsCard from "@/components/deal-detail/RelatedDealsCard";
+import PhotoGalleryCard from "@/components/deal-detail/PhotoGalleryCard";
 import { getSectionsForPipeline, getStageColor } from "@/components/deal-detail/section-registry";
 import { useSSE } from "@/hooks/useSSE";
 import type {
@@ -158,6 +159,7 @@ export default function DealDetailView({
             <TeamCard deal={deal} />
             <EquipmentCard deal={deal} />
             <ZuperJobCard jobs={zuperJobs} />
+            <PhotoGalleryCard hubspotDealId={deal.hubspotDealId} />
             <ContactCard deal={deal} />
             <RelatedDealsCard deals={relatedDeals} />
             <ChangeLogCard entries={changeLog} />

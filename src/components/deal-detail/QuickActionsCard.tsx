@@ -1,6 +1,7 @@
 "use client";
 
 import type { SerializedDeal } from "./types";
+import { getZuperJobUrl } from "@/lib/external-links";
 
 interface QuickActionsCardProps {
   deal: SerializedDeal;
@@ -57,9 +58,7 @@ export default function QuickActionsCard({
   onRefresh,
   isRefreshing,
 }: QuickActionsCardProps) {
-  const zuperUrl = deal.zuperUid
-    ? `https://app.zuper.co/app/job-detail/${deal.zuperUid}`
-    : null;
+  const zuperUrl = getZuperJobUrl(deal.zuperUid);
 
   const hubspotUrl = deal.hubspotUrl
     ?? `https://app.hubspot.com/contacts/${process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || ""}/record/0-3/${deal.hubspotDealId}`;

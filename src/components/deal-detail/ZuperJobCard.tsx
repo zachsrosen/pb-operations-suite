@@ -1,4 +1,5 @@
 import type { ZuperJobInfo } from "./types";
+import { getZuperJobUrl } from "@/lib/external-links";
 
 interface ZuperJobCardProps {
   jobs: ZuperJobInfo[];
@@ -67,9 +68,9 @@ export default function ZuperJobCard({ jobs }: ZuperJobCardProps) {
           <JobEntry key={job.jobUid} job={job} />
         ))}
       </div>
-      {jobs.length > 0 && jobs[0].jobUid && (
+      {jobs.length > 0 && getZuperJobUrl(jobs[0].jobUid) && (
         <a
-          href={`https://app.zuper.co/app/job-detail/${jobs[0].jobUid}`}
+          href={getZuperJobUrl(jobs[0].jobUid)!}
           target="_blank"
           rel="noopener noreferrer"
           className="mt-2 block text-center text-[10px] text-orange-500 hover:underline"

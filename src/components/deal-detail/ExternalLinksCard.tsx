@@ -1,4 +1,5 @@
 import type { SerializedDeal } from "./types";
+import { getZuperJobUrl } from "@/lib/external-links";
 
 interface ExternalLinksCardProps {
   deal: SerializedDeal;
@@ -15,9 +16,7 @@ export default function ExternalLinksCard({ deal }: ExternalLinksCardProps) {
     (deal.designFolderUrl as string | null) ||
     (deal.allDocumentFolderUrl as string | null);
 
-  const zuperUrl = deal.zuperUid
-    ? `https://app.zuper.co/app/job-detail/${deal.zuperUid}`
-    : null;
+  const zuperUrl = getZuperJobUrl(deal.zuperUid);
 
   const links: LinkItem[] = [
     { label: "HubSpot Record", url: deal.hubspotUrl },
