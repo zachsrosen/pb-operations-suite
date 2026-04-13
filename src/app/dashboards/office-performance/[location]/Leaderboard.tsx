@@ -77,7 +77,7 @@ export default function Leaderboard({
 
           return (
             <div
-              key={entry.name}
+              key={entry.userUid ?? entry.name}
               className="flex items-center gap-3 rounded-lg px-4 py-2.5 transition-all duration-300"
               style={{
                 background: rankStyle?.bg || "transparent",

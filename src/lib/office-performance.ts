@@ -1318,7 +1318,7 @@ export async function buildInspectionData(
   return {
     completedMtd,
     completedGoal: goals.inspections_completed,
-    firstPassRate: 0, // Populated from QC metrics
+    firstPassRate: -1, // -1 = no data; populated from QC metrics
     outstandingFailedInspections: 0, // Populated from QC metrics
     avgConstructionDays: 0,
     avgConstructionDaysPrior: 0,
