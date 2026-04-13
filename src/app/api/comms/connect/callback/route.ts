@@ -78,23 +78,35 @@ export async function GET(req: NextRequest) {
   const data = await tokenResp.json();
   const expiresIn = (data.expires_in as number) || 3600;
 
-  // Verify the authorized Gmail account matches the PB Ops user
+  // Verify the authorized Gmail account matches the PB Ops user.
+  // Fail closed: if we can't verify identity, don't save the tokens.
   const profileResp = await fetch(
     "https://gmail.googleapis.com/gmail/v1/users/me/profile",
     { headers: { Authorization: `Bearer ${data.access_token}` } }
   );
-  if (profileResp.ok) {
-    const profile = await profileResp.json();
-    const gmailEmail = (profile.emailAddress || "").toLowerCase();
-    const userEmail = (user.email || "").toLowerCase();
-    if (gmailEmail && userEmail && gmailEmail !== userEmail) {
-      return NextResponse.redirect(
-        new URL(
-          `/dashboards/comms?error=email_mismatch&expected=${encodeURIComponent(userEmail)}&got=${encodeURIComponent(gmailEmail)}`,
-          req.url
-        )
-      );
-    }
+  if (!profileResp.ok) {
+    // Can't verify identity — revoke the token and reject
+    fetch(`https://oauth2.googleapis.com/revoke?token=${data.access_token}`, {
+      method: "POST",
+    }).catch(() => {});
+    return NextResponse.redirect(
+      new URL("/dashboards/comms?error=identity_check_failed", req.url)
+    );
+  }
+  const profile = await profileResp.json();
+  const gmailEmail = (profile.emailAddress || "").toLowerCase();
+  const userEmail = (user.email || "").toLowerCase();
+  if (gmailEmail && userEmail && gmailEmail !== userEmail) {
+    // Wrong mailbox — revoke and reject
+    fetch(`https://oauth2.googleapis.com/revoke?token=${data.access_token}`, {
+      method: "POST",
+    }).catch(() => {});
+    return NextResponse.redirect(
+      new URL(
+        `/dashboards/comms?error=email_mismatch&expected=${encodeURIComponent(userEmail)}&got=${encodeURIComponent(gmailEmail)}`,
+        req.url
+      )
+    );
   }
 
   // Upsert token record
@@ -105,11 +117,13 @@ export async function GET(req: NextRequest) {
       gmailAccessToken: commsEncryptToken(data.access_token),
       gmailRefreshToken: commsEncryptToken(data.refresh_token || ""),
       gmailTokenExpiry: BigInt(Date.now() + expiresIn * 1000),
+      gmailEmail: gmailEmail || null,
       chatEnabled: true,
       scopes: data.scope || "",
     },
     update: {
       gmailAccessToken: commsEncryptToken(data.access_token),
+      gmailEmail: gmailEmail || null,
       // Only overwrite refresh token if Google actually returns a new one —
       // reconnects often omit it, and blanking the stored token disconnects
       // the user once the access token expires.

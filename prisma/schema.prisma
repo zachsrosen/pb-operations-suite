@@ -2320,6 +2320,7 @@ model CommsGmailToken {
   gmailAccessToken  String
   gmailRefreshToken String
   gmailTokenExpiry  BigInt   @default(0)
+  gmailEmail        String?  /// Verified Gmail address from /users/me/profile at connect time
   chatEnabled       Boolean  @default(false)
   scopes            String   @default("")
   createdAt         DateTime @default(now())

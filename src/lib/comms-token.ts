@@ -18,11 +18,25 @@ type TokenResult =
 export async function getValidCommsAccessToken(
   userId: string
 ): Promise<TokenResult> {
-  const row = await prisma.commsGmailToken.findUnique({
-    where: { userId },
-  });
+  const [row, user] = await Promise.all([
+    prisma.commsGmailToken.findUnique({ where: { userId } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { email: true } }),
+  ]);
 
   if (!row) return { disconnected: true };
+
+  // Runtime identity check: if we recorded which Gmail mailbox this token
+  // belongs to, verify it still matches the PB user's email.  Tokens saved
+  // before the gmailEmail column was added will have null and skip this check
+  // until the next reconnect backfills the field.
+  if (row.gmailEmail && user?.email) {
+    if (row.gmailEmail.toLowerCase() !== user.email.toLowerCase()) {
+      // Mismatch — delete the stale token and signal disconnect so the
+      // user is prompted to reconnect with the correct mailbox.
+      await prisma.commsGmailToken.delete({ where: { userId } }).catch(() => {});
+      return { disconnected: true };
+    }
+  }
 
   const accessToken = commsDecryptToken(row.gmailAccessToken);
   const refreshToken = commsDecryptToken(row.gmailRefreshToken);

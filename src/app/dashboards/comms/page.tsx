@@ -27,7 +27,7 @@ function CommsPageInner() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
 
-  // Show email mismatch error from OAuth callback
+  // Show connection error from OAuth callback
   const [connectError, setConnectError] = useState<string | null>(null);
   useEffect(() => {
     const error = searchParams.get("error");
@@ -36,6 +36,10 @@ function CommsPageInner() {
       const got = searchParams.get("got") || "a different account";
       setConnectError(
         `Gmail connection rejected — you signed in as ${got} but your PB account is ${expected}. Please reconnect with the correct Google account.`
+      );
+    } else if (error === "identity_check_failed") {
+      setConnectError(
+        "Gmail connection failed — couldn't verify your Google account identity. Please try reconnecting."
       );
     }
   }, [searchParams]);
