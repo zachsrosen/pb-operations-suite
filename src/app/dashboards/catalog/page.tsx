@@ -12,6 +12,7 @@ import { getZohoItemUrl, getHubSpotProductUrl, getZuperProductUrl } from "@/lib/
 import type { SyncSystem } from "@/lib/catalog-sync-confirmation";
 import SyncModal from "@/components/catalog/SyncModal";
 import DedupPanel from "@/components/catalog/DedupPanel";
+import { buildSystemPreview } from "@/lib/catalog-preview";
 
 type Tab = "skus" | "sync" | "pending" | "dedup";
 
@@ -1659,6 +1660,63 @@ export default function CatalogPage() {
                     )}
                     {!isAdmin && <span className="text-xs text-muted italic">Awaiting admin</span>}
                   </div>
+
+                  {/* Per-system preview */}
+                  {(() => {
+                    const preview = buildSystemPreview(
+                      {
+                        category: p.category,
+                        brand: p.brand,
+                        model: p.model,
+                        // name intentionally omitted — matches current approval execution behavior
+                        description: p.description,
+                        sku: p.sku,
+                        vendorName: p.vendorName,
+                        vendorPartNumber: p.vendorPartNumber,
+                        // zohoVendorId not on PushRequest — resolved at approval time
+                        unitLabel: p.unitLabel,
+                        sellPrice: p.sellPrice,
+                        unitCost: p.unitCost,
+                        specValues: (p.metadata as Record<string, unknown>) ?? {},
+                      },
+                      p.systems as ("ZOHO" | "HUBSPOT" | "ZUPER")[],
+                    );
+                    if (preview.length === 0) return null;
+                    return (
+                      <div className="border-t border-t-border px-4 py-3">
+                        <details>
+                          <summary className="text-sm font-medium text-cyan-400 cursor-pointer hover:text-cyan-300">
+                            Preview what each system will receive ({preview.length} system{preview.length > 1 ? "s" : ""})
+                          </summary>
+                          <div className="mt-3 space-y-3">
+                            {preview.map((card) => (
+                              <div key={card.system} className="rounded-lg border border-t-border bg-surface-2 p-3">
+                                <div className="flex items-center gap-2 mb-2">
+                                  <span className="inline-block h-1.5 w-1.5 rounded-full bg-cyan-500" />
+                                  <span className="text-xs font-semibold text-foreground">
+                                    {card.system === "ZOHO" ? "Zoho" : card.system === "HUBSPOT" ? "HubSpot" : "Zuper"}
+                                  </span>
+                                  <span className="text-xs text-muted">
+                                    — {card.fields.filter((f) => !f.missing).length}/{card.fields.length} fields
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-0.5">
+                                  {card.fields.map((f) => (
+                                    <div key={f.externalField} className="flex justify-between text-xs py-0.5">
+                                      <span className={f.missing ? "text-amber-400" : "text-muted"}>{f.label}</span>
+                                      <span className={`font-mono ml-2 truncate max-w-[140px] ${f.missing ? "text-amber-400/60 italic" : "text-foreground"}`}>
+                                        {f.missing ? "—" : f.value != null ? String(f.value) : "—"}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </details>
+                      </div>
+                    );
+                  })()}
 
                   {/* Expandable edit panel */}
                   {isEditing && pushEditDraft && (

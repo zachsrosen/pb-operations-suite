@@ -2,6 +2,7 @@
 import { getCategoryLabel, getCategoryFields } from "@/lib/catalog-fields";
 import { validateCatalogForm } from "@/lib/catalog-form-state";
 import { getDownstreamReadiness } from "@/lib/catalog-readiness";
+import { buildSystemPreview } from "@/lib/catalog-preview";
 import type { CatalogFormState, CatalogFormAction } from "@/lib/catalog-form-state";
 
 interface ReviewStepProps {
@@ -41,6 +42,13 @@ function Row({
   );
 }
 
+function formatPreviewValue(value: string | number | null | unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value === "number") return String(value);
+  const s = String(value);
+  return s.length > 40 ? `${s.slice(0, 37)}...` : s;
+}
+
 const SYSTEM_OPTIONS = ["HUBSPOT", "ZUPER", "ZOHO"] as const;
 
 export default function ReviewStep({
@@ -58,6 +66,25 @@ export default function ReviewStep({
     systems: state.systems,
     specValues: state.specValues,
   });
+  const systemPreviews = buildSystemPreview(
+    {
+      category: state.category,
+      brand: state.brand,
+      model: state.model,
+      // CatalogFormState has no `name` field — preview falls back to brand+model,
+      // which matches what the approval API actually sends downstream.
+      description: state.description,
+      sku: state.sku,
+      vendorName: state.vendorName,
+      vendorPartNumber: state.vendorPartNumber,
+      zohoVendorId: state.zohoVendorId,
+      unitLabel: state.unitLabel,
+      sellPrice: state.sellPrice ? Number(state.sellPrice) : null,
+      unitCost: state.unitCost ? Number(state.unitCost) : null,
+      specValues: state.specValues,
+    },
+    [...state.systems] as ("ZOHO" | "HUBSPOT" | "ZUPER")[],
+  );
 
   // Build a set of fields with errors for quick lookup
   const errorFields = new Set(errors.map((e) => e.field));
@@ -180,34 +207,65 @@ export default function ReviewStep({
         </div>
       </div>
 
-      {/* System Sync Preview */}
-      {readiness.length > 0 && (
-        <div className="bg-surface rounded-xl border border-t-border p-6 shadow-card">
-          <h3 className="text-lg font-semibold text-foreground mb-4">System Sync Preview</h3>
-          <div className="space-y-2">
-            {readiness.map((r) => (
-              <div key={r.system} className="flex items-start gap-2">
-                <span
-                  className={`text-sm mt-0.5 ${
-                    r.status === "ready" ? "text-green-400" : "text-amber-400"
-                  }`}
-                >
-                  {r.status === "ready" ? "✓" : "⚠"}
+      {/* Per-System Create Preview */}
+      {systemPreviews.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold text-foreground">
+            What each system will receive
+          </h3>
+          {systemPreviews.map((card) => (
+            <div
+              key={card.system}
+              className="bg-surface rounded-xl border border-t-border p-5 shadow-card"
+            >
+              <div className="flex items-center gap-2 mb-3">
+                <span className="inline-block h-2 w-2 rounded-full bg-cyan-500" />
+                <h4 className="text-sm font-semibold text-foreground">
+                  {card.system === "ZOHO"
+                    ? "Zoho Inventory"
+                    : card.system === "HUBSPOT"
+                      ? "HubSpot"
+                      : "Zuper"}
+                </h4>
+                <span className="text-xs text-muted">
+                  — {card.fields.filter((f) => !f.missing).length} of{" "}
+                  {card.fields.length} fields populated
                 </span>
-                <div className="min-w-0">
-                  <span className="text-sm font-medium text-foreground">
-                    {r.system.charAt(0) + r.system.slice(1).toLowerCase()}
-                  </span>
-                  <span className="text-sm text-muted ml-2">
-                    — {r.details[0]}
-                  </span>
-                  {r.details.length > 1 && (
-                    <p className="text-xs text-muted mt-0.5">{r.details.slice(1).join(" · ")}</p>
-                  )}
-                </div>
               </div>
-            ))}
-          </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1">
+                {card.fields.map((field) => (
+                  <div
+                    key={field.externalField}
+                    className="flex items-baseline justify-between py-1 border-b border-t-border/30 last:border-0"
+                  >
+                    <span className={`text-xs ${field.missing ? "text-amber-400" : "text-muted"}`}>
+                      {field.label}
+                    </span>
+                    <span
+                      className={`text-xs font-mono ml-2 truncate max-w-[200px] ${
+                        field.missing
+                          ? "text-amber-400/60 italic"
+                          : "text-foreground"
+                      }`}
+                      title={field.value != null ? String(field.value) : undefined}
+                    >
+                      {field.missing ? "not set" : formatPreviewValue(field.value)}
+                      {field.transformed && (
+                        <span className="ml-1 text-[10px] text-amber-400/70 font-sans" title="This value will be mapped to a system-specific ID before sync">
+                          → mapped
+                        </span>
+                      )}
+                      {field.pushOnly && (
+                        <span className="ml-1 text-[10px] text-muted/50 font-sans" title="This field is push-only and cannot be pulled back">
+                          (one-way)
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
