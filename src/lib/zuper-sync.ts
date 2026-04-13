@@ -110,24 +110,25 @@ function resolveAssignedUsers(
   if (!Array.isArray(assignedTo) || assignedTo.length === 0) return undefined;
 
   return assignedTo
-    .map((entry) => {
+    .flatMap((entry) => {
       // GET format: { user: { user_uid, first_name, last_name } }
       if ("user" in entry && entry.user) {
         const u = entry.user as { user_uid?: string; first_name?: string; last_name?: string };
         const uid = u.user_uid || "";
-        return {
+        if (!uid) return [];
+        return [{
           user_uid: uid,
           user_name: [u.first_name, u.last_name].filter(Boolean).join(" ") || userNameCache?.get(uid),
-        };
+        }];
       }
       // POST/simple format: { user_uid, team_uid? }
       if ("user_uid" in entry) {
         const uid = (entry as { user_uid: string }).user_uid;
-        return { user_uid: uid, user_name: userNameCache?.get(uid) };
+        if (!uid) return [];
+        return [{ user_uid: uid, user_name: userNameCache?.get(uid) }];
       }
-      return null;
-    })
-    .filter((u): u is { user_uid: string; user_name?: string } => !!u && !!u.user_uid);
+      return [];
+    });
 }
 
 // ---------------------------------------------------------------------------
