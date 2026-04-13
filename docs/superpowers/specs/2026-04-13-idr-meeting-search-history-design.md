@@ -41,7 +41,7 @@ Search results from `/api/idr-meeting/search` are grouped by `dealId`. Each deal
 
 Clicking a deal selects it and loads the right panel. Selected deal gets an orange border highlight (matching existing selection pattern in `ProjectQueue`).
 
-Pagination via "Load more" button at bottom, using the existing `skip` parameter from the search API.
+**Pagination:** The search API returns flat `IdrMeetingItem` rows with a `skip`/`limit` cursor, but the left panel groups by deal. A single deal can span page boundaries, producing duplicate cards or partial meeting counts. To avoid this, the client must maintain a **cross-page merge map** keyed by `dealId`. Each "Load more" fetch appends new items into existing deal groups (incrementing meeting count, adding conclusion previews) or creates new groups. The "Load more" button shows when the API returns `hasMore: true`. Meeting counts and conclusion previews reflect all items loaded so far and may grow as more pages arrive — this is acceptable since the user is progressively loading.
 
 ### Right Panel: Full Deal History
 
@@ -84,7 +84,13 @@ The response shape is already sufficient:
 
 ### Updated `/api/idr-meeting/search`
 
-The existing `searchMeetingItems` function rejects queries under 2 characters. Update it to allow **date-range-only queries** (empty `q` with `from`/`to` set). When `q` is empty and at least one date param is provided, skip the text filter and return all items within the date range. This lets users browse "all meetings from last month" without typing a search term.
+Two changes are required to support date-range-only browsing:
+
+**1. Route-level guard** (`src/app/api/idr-meeting/search/route.ts:18`): The current `if (q.length < 2) return empty` guard must be relaxed. New logic: return empty only when `q.length < 2` **AND** neither `from` nor `to` is provided. If at least one date param is set, pass through to `searchMeetingItems` with an empty query.
+
+**2. `searchMeetingItems` function** (`src/lib/idr-meeting.ts`): When `query` is empty, omit the `textFilter` entirely (no `OR` clause) so only the date filter applies.
+
+**3. Date semantics**: `to` date must use **inclusive local-day** semantics. The current code builds `lte: new Date(dateTo)` which resolves to midnight UTC — excluding meetings later on that calendar day. Fix: when `dateTo` is a date-only string (YYYY-MM-DD), set the time to end-of-day (`T23:59:59.999Z`) or add one day and use `lt` instead of `lte`.
 
 The client groups results by `dealId` — no structural API changes needed since the response already includes `dealId`, `dealName`, `region`, `systemSizeKw`, `projectType`, and `conclusion` on each item.
 
@@ -129,7 +135,9 @@ Handles:
 - `ProjectQueue` and `ProjectDetail` continue receiving `isPreview` as a prop — they are only rendered in prep/meeting modes, never in search mode
 - Render `MeetingSearch` when mode is `"search"`
 - Existing prep/meeting rendering unchanged
-- **Presence:** In search mode, presence heartbeats send `{ sessionId: null, selectedItemId: null, mode: "search" }`. The presence API and display can ignore search-mode users from the prep/meeting presence lists (they're just browsing history, not actively in a session)
+- **Presence:** In search mode, presence heartbeats send `{ sessionId: null, selectedItemId: null, mode: "search" }`. The presence system must be updated in two places:
+  - **POST handler** (`src/app/api/idr-meeting/presence/route.ts`): Persist the `mode` field on the `PresenceEntry` interface (add `mode: string | null`, default `null` for backward compat).
+  - **GET handler** (same file, line 70): The current filter `entry.sessionId === null` buckets both prep and search users together. Add an exclusion: when listing prep users (`sessionId` param is absent), filter out entries where `mode === "search"`. This prevents search-mode users from leaking into the prep presence avatars.
 
 ## Query Keys
 
@@ -147,6 +155,15 @@ Add to `queryKeys.idrMeeting`:
 - Conclusion label: `text-emerald-500` (green)
 - Escalation label: `text-orange-500`
 - All using theme tokens — no hardcoded colors
+
+## Test Plan
+
+The implementation plan should include tests for these specific behaviors:
+
+1. **Date-only search through the route** — `GET /api/idr-meeting/search?from=2026-03-01&to=2026-03-31` (no `q`) returns items within the date range, not an empty array.
+2. **Inclusive `to`-date** — A meeting on `2026-03-31T14:00:00Z` is included when `to=2026-03-31`. Verify the off-by-one fix works.
+3. **Grouped pagination** — When a deal spans two pages (e.g., 3 items across pages of 2), the client merge map produces one card with meeting count 3 after both pages load.
+4. **Search-mode presence exclusion** — A user in search mode (`mode: "search"`, `sessionId: null`) does NOT appear in the prep presence list (`GET /api/idr-meeting/presence` without `sessionId` param).
 
 ## Scope Exclusions
 
