@@ -284,7 +284,7 @@ async function fetchWithRetry(url: string, options: RequestInit, maxRetries = 3)
 // ---------------------------------------------------------------------------
 
 /** Fetch all HubSpot owners and return an ID → name map (cached with TTL + 403 circuit breaker) */
-async function fetchOwnerMap(): Promise<Record<string, string>> {
+export async function fetchOwnerMap(): Promise<Record<string, string>> {
   const now = Date.now();
 
   // Return cached map if within TTL
@@ -851,6 +851,16 @@ export async function batchSyncPipeline(
           stage: stageName,
           stageId: properties.dealstage ?? "",
           dealOwnerName: ownerName,
+          // Resolve manager/surveyor owner IDs to names
+          projectManager: mapped.projectManager && ownerMap[String(mapped.projectManager)]
+            ? ownerMap[String(mapped.projectManager)]
+            : (mapped.projectManager as string | null),
+          operationsManager: mapped.operationsManager && ownerMap[String(mapped.operationsManager)]
+            ? ownerMap[String(mapped.operationsManager)]
+            : (mapped.operationsManager as string | null),
+          siteSurveyor: mapped.siteSurveyor && ownerMap[String(mapped.siteSurveyor)]
+            ? ownerMap[String(mapped.siteSurveyor)]
+            : (mapped.siteSurveyor as string | null),
           hubspotContactId: primaryContactId,
           customerName: contactProps?.name ?? null,
           customerEmail: contactProps?.email ?? null,
@@ -1174,6 +1184,16 @@ export async function syncSingleDeal(
       stage: stageName,
       stageId: properties.dealstage ?? "",
       dealOwnerName: ownerName,
+      // Resolve manager/surveyor owner IDs to names
+      projectManager: mapped.projectManager && ownerMap[String(mapped.projectManager)]
+        ? ownerMap[String(mapped.projectManager)]
+        : (mapped.projectManager as string | null),
+      operationsManager: mapped.operationsManager && ownerMap[String(mapped.operationsManager)]
+        ? ownerMap[String(mapped.operationsManager)]
+        : (mapped.operationsManager as string | null),
+      siteSurveyor: mapped.siteSurveyor && ownerMap[String(mapped.siteSurveyor)]
+        ? ownerMap[String(mapped.siteSurveyor)]
+        : (mapped.siteSurveyor as string | null),
       hubspotContactId: primaryContactId,
       customerName: contactProps?.name ?? null,
       customerEmail: contactProps?.email ?? null,

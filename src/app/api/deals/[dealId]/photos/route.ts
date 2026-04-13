@@ -38,7 +38,7 @@ export async function GET(
         return photos.map((p) => ({
           id: p.attachment_uid,
           fileName: p.file_name,
-          url: p.url,
+          url: `/api/zuper/photos/${encodeURIComponent(job.jobUid)}/${encodeURIComponent(p.attachment_uid)}`,
           jobCategory: job.jobCategory,
           createdAt: p.created_at ?? null,
         }));

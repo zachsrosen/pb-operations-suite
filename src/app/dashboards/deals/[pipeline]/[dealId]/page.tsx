@@ -76,6 +76,28 @@ export default async function DealDetailPage({
 
   if (!deal) return <DealNotFound dealId={dealId} />;
 
+  // Resolve team fields that may still contain raw HubSpot owner IDs
+  // (historic data before sync was patched to resolve names)
+  const teamFields = ["projectManager", "operationsManager", "siteSurveyor"] as const;
+  const needsResolution = teamFields.some((f) => {
+    const val = deal[f];
+    return val && /^\d+$/.test(String(val));
+  });
+  if (needsResolution) {
+    try {
+      const { fetchOwnerMap } = await import("@/lib/deal-sync");
+      const ownerMap = await fetchOwnerMap();
+      for (const field of teamFields) {
+        const val = deal[field];
+        if (val && /^\d+$/.test(String(val)) && ownerMap[String(val)]) {
+          (deal as Record<string, unknown>)[field] = ownerMap[String(val)];
+        }
+      }
+    } catch {
+      // Non-fatal — display IDs if resolution fails
+    }
+  }
+
   // Canonical URL enforcement: single redirect for both identifier + pipeline normalization
   const canonicalPipeline = deal.pipeline.toLowerCase();
   if (dealId !== deal.id || pipeline !== canonicalPipeline) {
