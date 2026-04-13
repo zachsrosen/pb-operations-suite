@@ -7,7 +7,6 @@
  */
 jest.mock("@/lib/db", () => ({ prisma: null }));
 
-import type { SerializedDeal, TimelineStage } from "@/components/deal-detail/types";
 import { serializeDeal, buildTimelineStages } from "@/components/deal-detail/serialize";
 
 const { Decimal } = require("@prisma/client/runtime/client");
