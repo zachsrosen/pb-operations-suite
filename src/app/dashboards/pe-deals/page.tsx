@@ -292,6 +292,8 @@ export default function PeDealsPage() {
   const [search, setSearch] = useState("");
   const [locationFilter, setLocationFilter] = useState<string[]>([]);
   const [stageFilter, setStageFilter] = useState<string[]>([]);
+  const [m1Filter, setM1Filter] = useState<string[]>([]);
+  const [m2Filter, setM2Filter] = useState<string[]>([]);
   const [savingDeals, setSavingDeals] = useState<Set<string>>(new Set());
 
   const handleStatusChange = useCallback(
@@ -365,6 +367,15 @@ export default function PeDealsPage() {
     [deals],
   );
 
+  const m1Options = useMemo(
+    () => [...new Set(deals.map((d) => d.peM1Status).filter(Boolean) as string[])].sort(),
+    [deals],
+  );
+  const m2Options = useMemo(
+    () => [...new Set(deals.map((d) => d.peM2Status).filter(Boolean) as string[])].sort(),
+    [deals],
+  );
+
   // Apply filters
   const filtered = useMemo(() => {
     let result = deals;
@@ -380,8 +391,14 @@ export default function PeDealsPage() {
     if (stageFilter.length > 0) {
       result = result.filter((d) => stageFilter.includes(d.dealStage));
     }
+    if (m1Filter.length > 0) {
+      result = result.filter((d) => d.peM1Status !== null && m1Filter.includes(d.peM1Status));
+    }
+    if (m2Filter.length > 0) {
+      result = result.filter((d) => d.peM2Status !== null && m2Filter.includes(d.peM2Status));
+    }
     return sortDeals(result, sortKey, sortDir);
-  }, [deals, search, locationFilter, stageFilter, sortKey, sortDir]);
+  }, [deals, search, locationFilter, stageFilter, m1Filter, m2Filter, sortKey, sortDir]);
 
   // Split into priority sections
   const paidDeals = useMemo(() => filtered.filter((d) => d.peM1Status === "Paid" && d.peM2Status === "Paid"), [filtered]);
@@ -485,6 +502,18 @@ export default function PeDealsPage() {
           selected={stageFilter}
           onChange={setStageFilter}
         />
+        <MultiSelectFilter
+          label="M1 Status"
+          options={m1Options.map((s) => ({ value: s, label: s }))}
+          selected={m1Filter}
+          onChange={setM1Filter}
+        />
+        <MultiSelectFilter
+          label="M2 Status"
+          options={m2Options.map((s) => ({ value: s, label: s }))}
+          selected={m2Filter}
+          onChange={setM2Filter}
+        />
       </div>
 
       {/* Tables by section */}
@@ -492,6 +521,18 @@ export default function PeDealsPage() {
         <div className="text-center py-12 text-muted">Loading PE deals...</div>
       ) : (
         <div className="space-y-8">
+          <DealSection
+            title="Paid"
+            subtitle={`${paidDeals.length} deal${paidDeals.length !== 1 ? "s" : ""} — M1 & M2 paid`}
+            accent="emerald"
+            deals={paidDeals}
+            sortKey={sortKey}
+            sortDir={sortDir}
+            sortArrow={sortArrow}
+            toggleSort={toggleSort}
+            onStatusChange={handleStatusChange}
+            savingDeals={savingDeals}
+          />
           {m1Deals.length > 0 && (
             <DealSection
               title="M1 — Permission To Operate"
@@ -524,18 +565,6 @@ export default function PeDealsPage() {
             title="All Active PE Deals"
             subtitle={`${allDeals.length} total`}
             deals={allDeals}
-            sortKey={sortKey}
-            sortDir={sortDir}
-            sortArrow={sortArrow}
-            toggleSort={toggleSort}
-            onStatusChange={handleStatusChange}
-            savingDeals={savingDeals}
-          />
-          <DealSection
-            title="Paid"
-            subtitle={`${paidDeals.length} deal${paidDeals.length !== 1 ? "s" : ""} — M1 & M2 paid`}
-            accent="emerald"
-            deals={paidDeals}
             sortKey={sortKey}
             sortDir={sortDir}
             sortArrow={sortArrow}
