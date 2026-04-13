@@ -151,6 +151,7 @@ export default function DealDetailView({
         {/* Right: pinned sidebar */}
         <div className="flex-1 lg:max-w-xs print:hidden">
           <DealSidebar>
+            <ContactCard deal={deal} />
             <QuickActionsCard
               deal={deal}
               onRefresh={handleRefresh}
@@ -160,7 +161,6 @@ export default function DealDetailView({
             <EquipmentCard deal={deal} />
             <ZuperJobCard jobs={zuperJobs} />
             <PhotoGalleryCard hubspotDealId={deal.hubspotDealId} zuperUid={deal.zuperUid} />
-            <ContactCard deal={deal} />
             <RelatedDealsCard deals={relatedDeals} />
             <ChangeLogCard entries={changeLog} />
             <ExternalLinksCard deal={deal} />
