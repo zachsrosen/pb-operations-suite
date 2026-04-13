@@ -2226,6 +2226,34 @@ model Deal {
   dateEnteredCurrentStage   DateTime?
   createDate                DateTime?
 
+  // Service pipeline
+  serviceType              String?
+  serviceVisitStatus       String?
+  serviceVisitCompleteDate DateTime?
+  serviceAgreementId       String?
+  serviceRevisitStatus     String?
+  serviceIssueResolved     String?
+  serviceNotes             String?
+  serviceAccountNumber     String?
+  serviceRateEquivalent    String?
+  serviceDocumentsUrl      String?
+  serviceDocumentsFolderId String?
+
+  // Roofing / D&R pipeline
+  roofType              String?
+  roofAge               String?
+  currentRoofingMaterial String?
+  desiredRoofingMaterial String?
+  roofColorSelection    String?
+  roofingProjectType    String?
+  roofingNotes          String?
+  roofrFormUrl          String?
+  roofrId               String?
+  roofrPropertyInfo     String?
+  roofrPropertyType     String?
+  roofSlope             String?
+  roofrGclid            String?
+
   // Associations
   hubspotContactId    String?
   customerName        String?
