@@ -298,7 +298,7 @@ describe("buildTimelineStages", () => {
     expect(ic?.completedDate).toBe("2026-03-10T00:00:00.000Z");
   });
 
-  it("marks current PROJECT stage via deal.stage substring matching", () => {
+  it("marks current PROJECT stage via explicit stage mapping", () => {
     const serialized = serializeDeal(mockDeal as any);
     const result = buildTimelineStages("PROJECT", rawStageOrder, serialized);
     const construction = result.find(s => s.label === "Construction");
@@ -312,6 +312,32 @@ describe("buildTimelineStages", () => {
     const inspection = result.find(s => s.label === "Inspection");
     expect(inspection?.isCurrent).toBe(false);
     expect(inspection?.completedDate).toBeNull();
+  });
+
+  it("maps 'Permitting & Interconnection' to Permitting only (not both)", () => {
+    const deal = { ...mockDeal, stage: "Permitting & Interconnection" };
+    const serialized = serializeDeal(deal as any);
+    const result = buildTimelineStages("PROJECT", rawStageOrder, serialized);
+    const permitting = result.find(s => s.label === "Permitting");
+    const ic = result.find(s => s.label === "IC");
+    expect(permitting?.isCurrent).toBe(true);
+    expect(ic?.isCurrent).toBe(false);
+  });
+
+  it("maps 'RTB - Blocked' to the RTB abstract node", () => {
+    const deal = { ...mockDeal, stage: "RTB - Blocked" };
+    const serialized = serializeDeal(deal as any);
+    const result = buildTimelineStages("PROJECT", rawStageOrder, serialized);
+    const rtb = result.find(s => s.label === "RTB");
+    expect(rtb?.isCurrent).toBe(true);
+  });
+
+  it("maps 'Close Out' to the Complete abstract node", () => {
+    const deal = { ...mockDeal, stage: "Close Out" };
+    const serialized = serializeDeal(deal as any);
+    const result = buildTimelineStages("PROJECT", rawStageOrder, serialized);
+    const complete = result.find(s => s.label === "Complete");
+    expect(complete?.isCurrent).toBe(true);
   });
 
   it("abbreviates SALES when raw stage count > 10", () => {

@@ -39,7 +39,7 @@ export default function MilestoneTimeline({ stages }: MilestoneTimelineProps) {
                 </span>
                 <span className="mt-0.5 text-center text-[8px] text-muted">
                   {stage.completedDate
-                    ? new Date(stage.completedDate).toLocaleDateString("en-US", {
+                    ? new Date(stage.completedDate.split("T")[0] + "T00:00:00").toLocaleDateString("en-US", {
                         month: "short",
                         day: "numeric",
                       })

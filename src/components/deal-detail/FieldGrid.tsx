@@ -8,7 +8,11 @@ function formatFieldValue(field: FieldDef): string {
 
   switch (field.format) {
     case "date": {
-      const d = new Date(String(field.value));
+      // ISO strings from serializeDeal() are UTC midnight (e.g. "2026-03-15T00:00:00.000Z").
+      // Parsing directly would shift to the previous day in US timezones.
+      // Strip time component and reconstruct as local midnight to match the existing pattern.
+      const dateOnly = String(field.value).split("T")[0];
+      const d = new Date(dateOnly + "T00:00:00");
       if (isNaN(d.getTime())) return "—";
       return d.toLocaleDateString("en-US", {
         month: "short",

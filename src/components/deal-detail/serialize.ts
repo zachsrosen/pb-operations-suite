@@ -89,17 +89,39 @@ export function serializeDeal(deal: PrismaDeal): SerializedDeal {
 }
 
 // --- Project pipeline: abstract 9-node flow ---
-const PROJECT_ABSTRACT_STAGES: { label: string; dateField: string | null; stageMatch: string }[] = [
-  { label: "Survey",      dateField: "siteSurveyCompletionDate", stageMatch: "survey" },
-  { label: "Design",      dateField: "designCompletionDate",     stageMatch: "design" },
-  { label: "Permitting",  dateField: "permitIssueDate",          stageMatch: "permitting" },
-  { label: "IC",          dateField: "icApprovalDate",           stageMatch: "interconnection" },
-  { label: "RTB",         dateField: "rtbDate",                  stageMatch: "ready to build" },
-  { label: "Construction",dateField: "constructionCompleteDate", stageMatch: "construction" },
-  { label: "Inspection",  dateField: "inspectionPassDate",       stageMatch: "inspection" },
-  { label: "PTO",         dateField: "ptoCompletionDate",        stageMatch: "permission to operate" },
-  { label: "Complete",    dateField: null,                       stageMatch: "complete" },
+const PROJECT_ABSTRACT_STAGES: { label: string; dateField: string | null }[] = [
+  { label: "Survey",       dateField: "siteSurveyCompletionDate" },
+  { label: "Design",       dateField: "designCompletionDate" },
+  { label: "Permitting",   dateField: "permitIssueDate" },
+  { label: "IC",           dateField: "icApprovalDate" },
+  { label: "RTB",          dateField: "rtbDate" },
+  { label: "Construction", dateField: "constructionCompleteDate" },
+  { label: "Inspection",   dateField: "inspectionPassDate" },
+  { label: "PTO",          dateField: "ptoCompletionDate" },
+  { label: "Complete",     dateField: null },
 ];
+
+/**
+ * Explicit mapping from raw HubSpot project stage names to abstract node labels.
+ * Substring matching fails because:
+ *   - "Permitting & Interconnection" matches both Permitting AND IC
+ *   - "RTB - Blocked" doesn't match "ready to build"
+ *   - "Close Out" doesn't match "complete"
+ */
+const RAW_STAGE_TO_ABSTRACT: Record<string, string> = {
+  "Site Survey":                     "Survey",
+  "Design & Engineering":            "Design",
+  "Permitting & Interconnection":    "Permitting",  // Combined stage maps to earlier node
+  "RTB - Blocked":                   "RTB",
+  "Ready To Build":                  "RTB",
+  "Construction":                    "Construction",
+  "Inspection":                      "Inspection",
+  "Permission To Operate":           "PTO",
+  "Close Out":                       "Complete",
+  "Project Complete":                "Complete",
+  "On Hold":                         "Survey",       // Fallback — show at beginning
+  "Project Rejected - Needs Review": "Survey",       // Fallback
+};
 
 /**
  * Build the milestone timeline stages — pipeline-aware.
@@ -116,14 +138,14 @@ export function buildTimelineStages(
 ): TimelineStage[] {
   // --- PROJECT: abstract 9-node flow ---
   if (pipeline === "PROJECT") {
-    const dealStageLower = (deal.stage ?? "").toLowerCase();
+    const currentAbstractLabel = RAW_STAGE_TO_ABSTRACT[deal.stage ?? ""] ?? null;
     return PROJECT_ABSTRACT_STAGES.map((s) => ({
       key: s.label.toLowerCase().replace(/\s+/g, "-"),
       label: s.label,
       completedDate: s.dateField
         ? (deal[s.dateField] as string | null) ?? null
         : null,
-      isCurrent: dealStageLower.includes(s.stageMatch),
+      isCurrent: s.label === currentAbstractLabel,
     }));
   }
 
