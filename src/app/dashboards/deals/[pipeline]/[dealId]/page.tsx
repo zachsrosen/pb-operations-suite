@@ -1,11 +1,19 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/db";
 import { serializeDeal, buildTimelineStages } from "@/components/deal-detail/serialize";
-import { formatStaleness } from "@/lib/deal-sync";
 import DealDetailView from "./DealDetailView";
 
 // Stored stage shape from DealPipelineConfig.stages Json column
 type StoredStage = { id: string; name: string; displayOrder: number; isActive: boolean };
+
+function formatStalenessLocal(lastSync: Date | null): string {
+  if (!lastSync) return "unknown";
+  const minutes = Math.floor((Date.now() - lastSync.getTime()) / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ago`;
+}
 
 export default async function DealDetailPage({
   params,
@@ -51,7 +59,7 @@ export default async function DealDetailPage({
     stageOrder,
     serialized,
   );
-  const staleness = formatStaleness(deal.lastSyncedAt);
+  const staleness = formatStalenessLocal(deal.lastSyncedAt);
 
   return (
     <DealDetailView
