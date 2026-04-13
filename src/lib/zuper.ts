@@ -1607,12 +1607,14 @@ export class ZuperClient {
       const trimmed = url.trim();
       if (!trimmed || seenUrls.has(trimmed)) return;
       seenUrls.add(trimmed);
-      // Extract filename from S3 URL or use label
+      // Extract filename (UUID.ext) from S3 URL — guaranteed unique per photo
       const segments = trimmed.split("/");
       const fileName = segments[segments.length - 1] || label;
+      // Use the filename as the UID (it's a UUID like "534ef39f-d673-4492-a0ec-9da089def2cd.jpg")
+      const uid = `form-${fileName.replace(/\.[^.]+$/, "")}`;
       photos.push({
-        attachment_uid: `form-${Buffer.from(trimmed).toString("base64url").slice(0, 24)}`,
-        file_name: fileName,
+        attachment_uid: uid,
+        file_name: `${label}.jpg`,
         url: trimmed,
         file_type: "image/jpeg",
         created_at: createdAt,
