@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useMemo, useEffect } from "react";
+import { Suspense, useState, useCallback, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
@@ -16,6 +16,14 @@ import CommsProjectView from "@/components/comms/CommsProjectView";
 import { queryKeys } from "@/lib/query-keys";
 
 export default function CommsPage() {
+  return (
+    <Suspense>
+      <CommsPageInner />
+    </Suspense>
+  );
+}
+
+function CommsPageInner() {
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
 
