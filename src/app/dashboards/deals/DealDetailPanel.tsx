@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useCallback } from "react";
+import Link from "next/link";
 import StatusDot from "./StatusDot";
 import { STATUS_COLUMNS, isProjectPipeline, formatStatusValue, type TableDeal } from "./deals-types";
 import { STAGE_COLORS } from "@/lib/constants";
@@ -66,17 +67,25 @@ export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps)
 
         <div className="px-5 py-4 space-y-6">
           {/* Quick actions */}
-          <a
-            href={deal.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/10 text-orange-400 border border-orange-500/30 rounded-lg text-xs font-medium hover:bg-orange-500/20 transition-colors"
-          >
-            Open in HubSpot
-            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-            </svg>
-          </a>
+          <div className="flex flex-wrap gap-2">
+            <a
+              href={deal.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-orange-500/10 text-orange-400 border border-orange-500/30 rounded-lg text-xs font-medium hover:bg-orange-500/20 transition-colors"
+            >
+              Open in HubSpot
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+            <Link
+              href={`/dashboards/deals/${deal.pipeline?.toLowerCase() ?? "project"}/${deal.id}`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-surface-2 text-foreground border border-t-border rounded-lg text-xs font-medium hover:bg-surface-2/80 transition-colors"
+            >
+              Open full record →
+            </Link>
+          </div>
 
           {/* Info section */}
           <Section title="Info">
