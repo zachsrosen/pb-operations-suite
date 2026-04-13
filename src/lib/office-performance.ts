@@ -1553,10 +1553,23 @@ export async function getOfficePerformanceData(
   // Supplementary fetch adds Project Complete deals with construction_complete_date this
   // year so all sections correctly count completed work (surveys, installs, inspections,
   // team results) even after a deal reaches Project Complete stage.
-  const [activeProjects, completedProjects] = await Promise.all([
-    fetchAllProjects({ activeOnly: true }),
+  //
+  // When the compliance 30-day window crosses the year boundary (Jan 1–30),
+  // also fetch prior-year completed deals so deal-based location attribution
+  // covers late-December jobs instead of falling back to team filtering.
+  const complianceWindowCrossesYear = month === 1 && now.getDate() <= 30;
+  const completedFetches: Promise<ProjectForMetrics[]>[] = [
     fetchCompletedProjects(year),
+  ];
+  if (complianceWindowCrossesYear) {
+    completedFetches.push(fetchCompletedProjects(year - 1));
+  }
+
+  const [activeProjects, ...completedArrays] = await Promise.all([
+    fetchAllProjects({ activeOnly: true }),
+    ...completedFetches,
   ]);
+  const completedProjects = completedArrays.flat();
 
   // Merge active + completed, deduplicate by ID
   const seenDealIds = new Set<number>();
@@ -1608,15 +1621,15 @@ export async function getOfficePerformanceData(
   // Enrich with QC metrics and live Zuper compliance in parallel
   const [, surveyCompliance, installCompliance, inspectionCompliance] = await Promise.all([
     enrichWithQcMetrics(location, null, surveys, installs, inspections),
-    computeLocationCompliance("Site Survey", location).catch((err) => {
+    computeLocationCompliance("Site Survey", location, 30, locationDealIds).catch((err) => {
       console.warn("[office-performance] Survey compliance fetch failed:", err);
       return null;
     }),
-    computeLocationCompliance("Construction", location).catch((err) => {
+    computeLocationCompliance("Construction", location, 30, locationDealIds).catch((err) => {
       console.warn("[office-performance] Install compliance fetch failed:", err);
       return null;
     }),
-    computeLocationCompliance("Inspection", location).catch((err) => {
+    computeLocationCompliance("Inspection", location, 30, locationDealIds).catch((err) => {
       console.warn("[office-performance] Inspection compliance fetch failed:", err);
       return null;
     }),
