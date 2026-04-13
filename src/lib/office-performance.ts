@@ -1608,15 +1608,15 @@ export async function getOfficePerformanceData(
   // Enrich with QC metrics and live Zuper compliance in parallel
   const [, surveyCompliance, installCompliance, inspectionCompliance] = await Promise.all([
     enrichWithQcMetrics(location, null, surveys, installs, inspections),
-    computeLocationCompliance("Site Survey", location).catch((err) => {
+    computeLocationCompliance("Site Survey", location, 30, locationDealIds).catch((err) => {
       console.warn("[office-performance] Survey compliance fetch failed:", err);
       return null;
     }),
-    computeLocationCompliance("Construction", location).catch((err) => {
+    computeLocationCompliance("Construction", location, 30, locationDealIds).catch((err) => {
       console.warn("[office-performance] Install compliance fetch failed:", err);
       return null;
     }),
-    computeLocationCompliance("Inspection", location).catch((err) => {
+    computeLocationCompliance("Inspection", location, 30, locationDealIds).catch((err) => {
       console.warn("[office-performance] Inspection compliance fetch failed:", err);
       return null;
     }),

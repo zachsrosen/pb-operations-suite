@@ -101,11 +101,17 @@ const CATEGORY_NAME_TO_UID: Record<string, string> = {
  * Compute compliance metrics for a single job category at a specific location.
  * Fetches from the live Zuper API, filters by location (team), and returns
  * per-employee metrics + aggregate summary.
+ *
+ * @param locationDealIds — when provided, jobs whose HubSpot deal ID is in
+ *   this set are attributed to this location regardless of the tech's team.
+ *   This is more reliable than the HubSpotProjectCache fallback, which may
+ *   be stale or empty.
  */
 export async function computeLocationCompliance(
   categoryName: string,
   location: string,
-  days: number = 30
+  days: number = 30,
+  locationDealIds?: Set<string>
 ): Promise<LocationComplianceResult | null> {
   const categoryUid = CATEGORY_NAME_TO_UID[categoryName];
   if (!categoryUid) return null;
@@ -123,15 +129,26 @@ export async function computeLocationCompliance(
   const jobs = await fetchJobsForCategory(categoryUid, fromDateStr, toDateStr);
   if (jobs.length === 0) return null;
 
-  // Build deal ID → pbLocation lookup from HubSpotProjectCache.
-  // This lets us attribute jobs to the correct location by their linked
-  // HubSpot deal, rather than by the tech's team assignment.
+  // Build deal ID → location lookup.
+  // When the caller provides locationDealIds (from HubSpot), use that directly —
+  // it's always fresh. Fall back to HubSpotProjectCache for callers that don't
+  // pass deal IDs (e.g. the standalone compliance dashboard).
+  const dealLocationMap = new Map<string, string>();
+
+  if (locationDealIds && locationDealIds.size > 0) {
+    // Caller provided deal IDs for this location — mark them all
+    for (const dealId of locationDealIds) {
+      dealLocationMap.set(dealId, location);
+    }
+  }
+
+  // Always supplement with the project cache (covers deals the caller may
+  // not have, e.g. if a Zuper job links to a deal outside the main query).
   const projectCacheRows = await prisma.hubSpotProjectCache.findMany({
     select: { dealId: true, pbLocation: true },
   });
-  const dealLocationMap = new Map<string, string>();
   for (const row of projectCacheRows) {
-    if (row.pbLocation) {
+    if (row.pbLocation && !dealLocationMap.has(row.dealId)) {
       dealLocationMap.set(row.dealId, row.pbLocation);
     }
   }
