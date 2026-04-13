@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
+import { syncSingleDeal } from "@/lib/deal-sync";
 import { serializeDeal, buildTimelineStages } from "@/components/deal-detail/serialize";
 import DealDetailView from "./DealDetailView";
 
@@ -58,6 +59,17 @@ export default async function DealDetailPage({
   // If cuid lookup failed, also try hubspotDealId (in case someone passes a cuid-like string)
   if (!deal && isCuid) {
     deal = await prisma.deal.findUnique({ where: { hubspotDealId: dealId } });
+  }
+
+  // On-demand sync: if the deal isn't in the mirror yet, try pulling it from HubSpot.
+  // This covers deals that exist in HubSpot but haven't been picked up by the cron yet.
+  if (!deal && /^\d+$/.test(dealId)) {
+    try {
+      await syncSingleDeal(dealId, "MANUAL");
+      deal = await prisma.deal.findUnique({ where: { hubspotDealId: dealId } });
+    } catch {
+      // HubSpot fetch failed (404, rate limit, etc.) — fall through to 404 UI
+    }
   }
 
   if (!deal) return <DealNotFound dealId={dealId} />;
