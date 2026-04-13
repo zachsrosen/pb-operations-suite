@@ -225,6 +225,34 @@ export const dealPropertyMap: Record<string, PropertyMapping> = {
   interior_access: { column: "interiorAccess", type: "string" },
   site_survey_documents: { column: "siteSurveyDocuments", type: "string" },
   system_performance_review: { column: "systemPerformanceReview", type: "string" },
+
+  // Service pipeline
+  service_type: { column: "serviceType", type: "string" },
+  service_visit_status: { column: "serviceVisitStatus", type: "string" },
+  service_visit_complete_date: { column: "serviceVisitCompleteDate", type: "datetime" },
+  service_agreement_id: { column: "serviceAgreementId", type: "string" },
+  service_revisit_status: { column: "serviceRevisitStatus", type: "string" },
+  service_issue_resolved: { column: "serviceIssueResolved", type: "string" },
+  notes_for_service: { column: "serviceNotes", type: "string" },
+  service_account_number: { column: "serviceAccountNumber", type: "string" },
+  service_rate_equivalent: { column: "serviceRateEquivalent", type: "string" },
+  service_documents: { column: "serviceDocumentsUrl", type: "string" },
+  service_documents_folder_id: { column: "serviceDocumentsFolderId", type: "string" },
+
+  // Roofing / D&R pipeline
+  roof_type: { column: "roofType", type: "string" },
+  roof_age: { column: "roofAge", type: "string" },
+  current_roofing_material: { column: "currentRoofingMaterial", type: "string" },
+  desired_roofing_material: { column: "desiredRoofingMaterial", type: "string" },
+  roof_color_selection: { column: "roofColorSelection", type: "string" },
+  roofing_project_type: { column: "roofingProjectType", type: "string" },
+  notes_for_roofing: { column: "roofingNotes", type: "string" },
+  roofr_form_url: { column: "roofrFormUrl", type: "string" },
+  roofr_id: { column: "roofrId", type: "string" },
+  roofr_property_information: { column: "roofrPropertyInfo", type: "string" },
+  roofr_property_type: { column: "roofrPropertyType", type: "string" },
+  os_roof_slope: { column: "roofSlope", type: "string" },
+  roofr_gclid: { column: "roofrGclid", type: "string" },
 };
 
 /**
