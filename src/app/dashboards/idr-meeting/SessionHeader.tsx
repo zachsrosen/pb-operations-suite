@@ -22,8 +22,10 @@ interface Props {
   onOpenAddDialog: () => void;
   onViewPreview: () => void;
   onSessionEnded: () => void;
+  onSearchHistory: () => void;
   creating: boolean;
   isPreview: boolean;
+  isSearch: boolean;
   previewCount: number;
   presenceUsers: PresenceUser[];
 }
@@ -36,8 +38,10 @@ export function SessionHeader({
   onOpenAddDialog,
   onViewPreview,
   onSessionEnded,
+  onSearchHistory,
   creating,
   isPreview,
+  isSearch,
   previewCount,
   presenceUsers,
 }: Props) {
@@ -92,7 +96,27 @@ export function SessionHeader({
   return (
     <>
       {/* ── Mode banner ── */}
-      {isPreview ? (
+      {isSearch ? (
+        <div className="rounded-xl border-2 border-dashed border-purple-500/40 bg-purple-500/5 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="rounded-full bg-purple-500 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">
+              Search History
+            </span>
+            <span className="text-sm font-medium text-foreground">
+              Browse past meeting notes
+            </span>
+
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                className="rounded-lg border border-t-border bg-surface-2 px-3 py-1.5 text-xs text-muted hover:text-foreground transition-colors"
+                onClick={onViewPreview}
+              >
+                &#8592; Prep Mode
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : isPreview ? (
         <div className="rounded-xl border-2 border-dashed border-blue-500/40 bg-blue-500/5 px-4 py-3">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
@@ -113,6 +137,13 @@ export function SessionHeader({
             )}
 
             <div className="ml-auto flex items-center gap-2">
+              <button
+                className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs font-medium text-purple-500 hover:bg-purple-500/20 transition-colors"
+                onClick={onSearchHistory}
+              >
+                Search History
+              </button>
+
               {/* Past meetings dropdown */}
               <select
                 className="rounded-lg border border-t-border bg-surface-2 px-2 py-1 text-xs text-muted"
@@ -179,6 +210,13 @@ export function SessionHeader({
             </div>
 
             <div className="ml-auto flex items-center gap-2">
+              <button
+                className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-xs font-medium text-purple-500 hover:bg-purple-500/20 transition-colors"
+                onClick={onSearchHistory}
+              >
+                Search History
+              </button>
+
               {/* Back to prep */}
               <button
                 className="rounded-lg border border-t-border bg-surface-2 px-3 py-1.5 text-xs text-muted hover:text-foreground transition-colors"

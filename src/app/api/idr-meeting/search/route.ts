@@ -10,15 +10,16 @@ export async function GET(req: NextRequest) {
   }
 
   const url = new URL(req.url);
-  const query = url.searchParams.get("q") ?? "";
+  const q = url.searchParams.get("q") ?? "";
   const dateFrom = url.searchParams.get("from") ?? undefined;
   const dateTo = url.searchParams.get("to") ?? undefined;
   const skip = parseInt(url.searchParams.get("skip") ?? "0");
 
-  if (query.length < 2) {
+  // Require at least a text query (2+ chars) OR a date range
+  if (q.length < 2 && !dateFrom && !dateTo) {
     return NextResponse.json({ items: [], total: 0, hasMore: false });
   }
 
-  const result = await searchMeetingItems({ query, dateFrom, dateTo, skip });
+  const result = await searchMeetingItems({ query: q.length >= 2 ? q : "", dateFrom, dateTo, skip });
   return NextResponse.json(result);
 }

@@ -113,6 +113,8 @@ export const queryKeys = {
     dealHistory: (dealId: string) => [...queryKeys.idrMeeting.root, "deal-history", dealId] as const,
     dealSearch: (q: string) => [...queryKeys.idrMeeting.root, "deal-search", q] as const,
     escalationQueue: () => [...queryKeys.idrMeeting.root, "escalation-queue"] as const,
+    meetingSearch: (q: string, from?: string, to?: string) =>
+      [...queryKeys.idrMeeting.root, "meeting-search", q, from ?? "", to ?? ""] as const,
   },
   comms: {
     root: ["comms"] as const,

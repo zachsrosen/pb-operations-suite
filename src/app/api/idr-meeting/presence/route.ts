@@ -20,6 +20,7 @@ interface PresenceEntry {
   name: string | null;
   sessionId: string | null; // null = preview mode
   selectedItemId: string | null;
+  mode: string | null; // "search" | null (null = prep or meeting)
   lastSeen: number;
 }
 
@@ -41,13 +42,14 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { sessionId, selectedItemId } = body;
+  const { sessionId, selectedItemId, mode } = body;
 
   presenceMap.set(auth.email, {
     email: auth.email,
     name: auth.name ?? null,
     sessionId: sessionId ?? null,
     selectedItemId: selectedItemId ?? null,
+    mode: mode ?? null,
     lastSeen: Date.now(),
   });
 
@@ -67,8 +69,12 @@ export async function GET(req: NextRequest) {
 
   const users: PresenceEntry[] = [];
   for (const entry of presenceMap.values()) {
-    if (sessionId ? entry.sessionId === sessionId : entry.sessionId === null) {
-      users.push(entry);
+    if (sessionId) {
+      // Meeting bucket: match by sessionId
+      if (entry.sessionId === sessionId) users.push(entry);
+    } else {
+      // Prep bucket: sessionId null AND not in search mode
+      if (entry.sessionId === null && entry.mode !== "search") users.push(entry);
     }
   }
 
