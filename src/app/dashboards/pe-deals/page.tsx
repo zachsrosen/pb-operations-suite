@@ -189,15 +189,15 @@ function DealSection({
         <h3 className="text-sm font-semibold text-foreground">{title}</h3>
         <span className="text-xs text-muted">{subtitle}</span>
       </div>
-      <div className="overflow-x-auto bg-surface rounded-lg border border-border shadow-card">
-        <table className="w-full text-sm">
+      <div className="bg-surface rounded-lg border border-border shadow-card">
+        <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border">
               {COLUMNS.map(([key, label, align]) => (
                 <th
                   key={key}
                   onClick={() => toggleSort(key)}
-                  className={`px-2 py-2 text-xs font-medium text-muted whitespace-nowrap cursor-pointer hover:text-foreground select-none ${align ?? "text-left"}`}
+                  className={`px-1.5 py-1.5 font-medium text-muted whitespace-nowrap cursor-pointer hover:text-foreground select-none ${align ?? "text-left"}`}
                 >
                   {label}{sortArrow(key)}
                 </th>
@@ -207,14 +207,14 @@ function DealSection({
           <tbody>
             {deals.length === 0 ? (
               <tr>
-                <td colSpan={COLUMNS.length} className="px-3 py-8 text-center text-muted">
+                <td colSpan={COLUMNS.length} className="px-3 py-8 text-center text-muted text-sm">
                   No deals
                 </td>
               </tr>
             ) : (
               deals.map((deal) => (
                 <tr key={deal.dealId} className="border-b border-border/50 hover:bg-surface-2/50">
-                  <td className="px-2 py-2 whitespace-nowrap max-w-[160px]">
+                  <td className="px-1.5 py-1.5 whitespace-nowrap max-w-[140px]">
                     <a
                       href={deal.hubspotUrl}
                       target="_blank"
@@ -222,18 +222,18 @@ function DealSection({
                       className="text-orange-400 hover:text-orange-300 hover:underline"
                       title={deal.dealName}
                     >
-                      {truncateName(deal.dealName)}
+                      {truncateName(deal.dealName, 16)}
                     </a>
                   </td>
-                  <td className="px-2 py-2 text-muted whitespace-nowrap" title={deal.pbLocation}>{shortLocation(deal.pbLocation) || "—"}</td>
-                  <td className="px-2 py-2 text-muted whitespace-nowrap">{deal.dealStageLabel}</td>
-                  <td className="px-2 py-2 text-muted whitespace-nowrap">
+                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap" title={deal.pbLocation}>{shortLocation(deal.pbLocation) || "—"}</td>
+                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap max-w-[80px] truncate" title={deal.dealStageLabel}>{deal.dealStageLabel}</td>
+                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap">
                     {deal.closeDate ? new Date(deal.closeDate).toLocaleDateString("en-US", { month: "numeric", day: "numeric", year: "2-digit" }) : "—"}
                   </td>
-                  <td className="px-2 py-2 text-muted whitespace-nowrap" title={deal.systemType}>
+                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap" title={deal.systemType}>
                     {shortType(deal.systemType)}
                   </td>
-                  <td className="px-2 py-2 whitespace-nowrap text-center">
+                  <td className="px-1.5 py-1.5 whitespace-nowrap text-center">
                     {deal.ecLookupFailed ? (
                       <span className="text-yellow-400" title="EC lookup failed">⚠️</span>
                     ) : deal.energyCommunity ? (
@@ -242,21 +242,21 @@ function DealSection({
                       <span className="text-muted">—</span>
                     )}
                   </td>
-                  <td className="px-2 py-2 text-muted whitespace-nowrap text-right">{deal.leaseFactor.toFixed(3)}</td>
-                  <td className="px-2 py-2 text-foreground whitespace-nowrap text-right font-medium">{fmt(deal.epcPrice)}</td>
-                  <td className="px-2 py-2 text-muted whitespace-nowrap text-right">{fmt(deal.customerPays)}</td>
-                  <td className="px-2 py-2 text-blue-400 whitespace-nowrap text-right font-medium">{fmt(deal.pePaymentTotal)}</td>
-                  <td className="px-2 py-2 text-muted whitespace-nowrap text-right">{fmt(deal.pePaymentIC)}</td>
-                  <td className="px-2 py-2 text-muted whitespace-nowrap text-right">{fmt(deal.pePaymentPC)}</td>
-                  <td className="px-2 py-2 text-emerald-400 whitespace-nowrap text-right font-medium">{fmt(deal.totalPBRevenue)}</td>
-                  <td className="px-2 py-2 whitespace-nowrap">
+                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{deal.leaseFactor.toFixed(3)}</td>
+                  <td className="px-1.5 py-1.5 text-foreground whitespace-nowrap text-right font-medium">{fmt(deal.epcPrice)}</td>
+                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{fmt(deal.customerPays)}</td>
+                  <td className="px-1.5 py-1.5 text-blue-400 whitespace-nowrap text-right font-medium">{fmt(deal.pePaymentTotal)}</td>
+                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{fmt(deal.pePaymentIC)}</td>
+                  <td className="px-1.5 py-1.5 text-muted whitespace-nowrap text-right">{fmt(deal.pePaymentPC)}</td>
+                  <td className="px-1.5 py-1.5 text-emerald-400 whitespace-nowrap text-right font-medium">{fmt(deal.totalPBRevenue)}</td>
+                  <td className="px-1.5 py-1.5 whitespace-nowrap">
                     <StatusDropdown
                       value={deal.peM1Status}
                       onChange={(val) => onStatusChange(deal.dealId, "pe_m1_status", val)}
                       saving={savingDeals.has(`${deal.dealId}:pe_m1_status`)}
                     />
                   </td>
-                  <td className="px-2 py-2 whitespace-nowrap">
+                  <td className="px-1.5 py-1.5 whitespace-nowrap">
                     <StatusDropdown
                       value={deal.peM2Status}
                       onChange={(val) => onStatusChange(deal.dealId, "pe_m2_status", val)}
@@ -533,12 +533,12 @@ export default function PeDealsPage() {
             onStatusChange={handleStatusChange}
             savingDeals={savingDeals}
           />
-          {m1Deals.length > 0 && (
+          {m2Deals.length > 0 && (
             <DealSection
-              title="M1 — Permission To Operate"
-              subtitle={`${m1Deals.length} deal${m1Deals.length !== 1 ? "s" : ""} pending PE payment (2/3)`}
-              accent="orange"
-              deals={m1Deals}
+              title="M2 — Close Out"
+              subtitle={`${m2Deals.length} deal${m2Deals.length !== 1 ? "s" : ""} pending PE payment (1/3)`}
+              accent="emerald"
+              deals={m2Deals}
               sortKey={sortKey}
               sortDir={sortDir}
               sortArrow={sortArrow}
@@ -547,12 +547,12 @@ export default function PeDealsPage() {
               savingDeals={savingDeals}
             />
           )}
-          {m2Deals.length > 0 && (
+          {m1Deals.length > 0 && (
             <DealSection
-              title="M2 — Close Out"
-              subtitle={`${m2Deals.length} deal${m2Deals.length !== 1 ? "s" : ""} pending PE payment (1/3)`}
-              accent="emerald"
-              deals={m2Deals}
+              title="M1 — Permission To Operate"
+              subtitle={`${m1Deals.length} deal${m1Deals.length !== 1 ? "s" : ""} pending PE payment (2/3)`}
+              accent="orange"
+              deals={m1Deals}
               sortKey={sortKey}
               sortDir={sortDir}
               sortArrow={sortArrow}
