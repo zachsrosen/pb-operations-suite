@@ -1,6 +1,7 @@
 export interface PersonStat {
   name: string;
   count: number;
+  userUid?: string;
   avgMetric?: number;
   streak?: { type: string; value: number; label: string };
 }
@@ -126,6 +127,8 @@ export interface InspectionData {
   completedMtd: number;
   completedGoal: number;
   firstPassRate: number;
+  /** Projects that failed inspection and have not yet passed */
+  outstandingFailedInspections: number;
   avgConstructionDays: number;
   avgConstructionDaysPrior: number;
   avgCcToPtoDays: number;

@@ -143,7 +143,8 @@ function StatusDropdown({
       value={value ?? ""}
       onChange={(e) => onChange(e.target.value)}
       disabled={saving}
-      className={`text-xs rounded px-1.5 py-0.5 border border-border bg-surface-2 text-foreground cursor-pointer hover:bg-surface-elevated transition-colors ${saving ? "opacity-50" : ""}`}
+      title={value || ""}
+      className={`text-xs rounded px-1 py-0.5 border border-border bg-surface-2 text-foreground cursor-pointer hover:bg-surface-elevated transition-colors max-w-[80px] truncate ${saving ? "opacity-50" : ""}`}
     >
       {M1M2_OPTIONS.map((opt) => (
         <option key={opt} value={opt}>

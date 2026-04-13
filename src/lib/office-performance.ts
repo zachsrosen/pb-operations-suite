@@ -749,7 +749,7 @@ export function buildLeaderboard(
   return userCounts
     .sort((a, b) => b.count - a.count)
     .map((u) => {
-      const stat: PersonStat = { name: u.name, count: u.count };
+      const stat: PersonStat = { name: u.name, count: u.count, userUid: u.userUid };
 
       // Compute monthly leader streak — sort keys explicitly (oldest→newest)
       // so streak evaluation is deterministic regardless of Map insertion order.
@@ -1318,7 +1318,8 @@ export async function buildInspectionData(
   return {
     completedMtd,
     completedGoal: goals.inspections_completed,
-    firstPassRate: 0, // Populated from QC metrics
+    firstPassRate: -1, // -1 = no data; populated from QC metrics
+    outstandingFailedInspections: 0, // Populated from QC metrics
     avgConstructionDays: 0,
     avgConstructionDaysPrior: 0,
     avgCcToPtoDays: 0,
@@ -1359,18 +1360,41 @@ async function enrichWithQcMetrics(
       (p: ProjectForMetrics) => normalizeLocation(p.pbLocation) === location
     );
 
-    // Compute rolling 60-day averages from projects with constructionCompleteDate
+    // Compute rolling 60-day averages using category-specific cohorts so each
+    // metric reflects projects recently completed in that discipline, not all
+    // projects whose construction finished recently.
     const now = new Date();
     const sixtyDaysAgo = new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000);
     const oneTwentyDaysAgo = new Date(now.getTime() - 120 * 24 * 60 * 60 * 1000);
 
-    const recentProjects = locProjects.filter((p: ProjectForMetrics) =>
+    // Construction-completed cohort (install turnaround, pipeline)
+    const recentConstructionProjects = locProjects.filter((p: ProjectForMetrics) =>
       p.constructionCompleteDate && new Date(p.constructionCompleteDate) >= sixtyDaysAgo
     );
-    const priorProjects = locProjects.filter((p: ProjectForMetrics) =>
+    const priorConstructionProjects = locProjects.filter((p: ProjectForMetrics) =>
       p.constructionCompleteDate &&
       new Date(p.constructionCompleteDate) >= oneTwentyDaysAgo &&
       new Date(p.constructionCompleteDate) < sixtyDaysAgo
+    );
+
+    // Survey-completed cohort (survey turnaround)
+    const recentSurveyProjects = locProjects.filter((p: ProjectForMetrics) =>
+      p.siteSurveyCompletionDate && new Date(p.siteSurveyCompletionDate) >= sixtyDaysAgo
+    );
+    const priorSurveyProjects = locProjects.filter((p: ProjectForMetrics) =>
+      p.siteSurveyCompletionDate &&
+      new Date(p.siteSurveyCompletionDate) >= oneTwentyDaysAgo &&
+      new Date(p.siteSurveyCompletionDate) < sixtyDaysAgo
+    );
+
+    // Inspection-passed cohort (CC→inspection turnaround)
+    const recentInspectionProjects = locProjects.filter((p: ProjectForMetrics) =>
+      p.inspectionPassDate && new Date(p.inspectionPassDate) >= sixtyDaysAgo
+    );
+    const priorInspectionProjects = locProjects.filter((p: ProjectForMetrics) =>
+      p.inspectionPassDate &&
+      new Date(p.inspectionPassDate) >= oneTwentyDaysAgo &&
+      new Date(p.inspectionPassDate) < sixtyDaysAgo
     );
 
     // Helper to compute average of a numeric field
@@ -1386,13 +1410,13 @@ async function enrichWithQcMetrics(
     //   timeCcToPto — days from construction complete to PTO
     //   isFirstTimeInspectionPass — boolean, true if inspection passed first try
 
-    // Surveys: turnaround
-    surveys.avgTurnaroundDays = avg(recentProjects, "siteSurveyTurnaroundTime");
-    surveys.avgTurnaroundPrior = avg(priorProjects, "siteSurveyTurnaroundTime");
+    // Surveys: turnaround (use survey-completed cohort, not construction-completed)
+    surveys.avgTurnaroundDays = avg(recentSurveyProjects, "siteSurveyTurnaroundTime");
+    surveys.avgTurnaroundPrior = avg(priorSurveyProjects, "siteSurveyTurnaroundTime");
 
     // Per-surveyor turnaround enrichment
     for (const entry of surveys.leaderboard) {
-      const surveyorProjects = recentProjects.filter(
+      const surveyorProjects = recentSurveyProjects.filter(
         (p: ProjectForMetrics) =>
           p.siteSurveyor && nameMatchesLoosely(p.siteSurveyor, entry.name) &&
           typeof p.siteSurveyTurnaroundTime === "number" &&
@@ -1408,12 +1432,12 @@ async function enrichWithQcMetrics(
     }
 
     // Installs: construction turnaround
-    installs.avgDaysPerInstall = avg(recentProjects, "constructionTurnaroundTime");
-    installs.avgDaysPerInstallPrior = avg(priorProjects, "constructionTurnaroundTime");
+    installs.avgDaysPerInstall = avg(recentConstructionProjects, "constructionTurnaroundTime");
+    installs.avgDaysPerInstallPrior = avg(priorConstructionProjects, "constructionTurnaroundTime");
 
     // Inspections: construction time, CC→Inspection pass, first-pass rate
-    inspections.avgConstructionDays = avg(recentProjects, "constructionTurnaroundTime");
-    inspections.avgConstructionDaysPrior = avg(priorProjects, "constructionTurnaroundTime");
+    inspections.avgConstructionDays = avg(recentConstructionProjects, "constructionTurnaroundTime");
+    inspections.avgConstructionDaysPrior = avg(priorConstructionProjects, "constructionTurnaroundTime");
 
     // CC → Inspection: compute from constructionCompleteDate to inspectionPassDate
     function avgCcToInspection(projects: ProjectForMetrics[]): number {
@@ -1428,21 +1452,24 @@ async function enrichWithQcMetrics(
       if (vals.length === 0) return 0;
       return Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 10) / 10;
     }
-    inspections.avgCcToPtoDays = avgCcToInspection(recentProjects);
-    inspections.avgCcToPtoDaysPrior = avgCcToInspection(priorProjects);
+    inspections.avgCcToPtoDays = avgCcToInspection(recentInspectionProjects);
+    inspections.avgCcToPtoDaysPrior = avgCcToInspection(priorInspectionProjects);
 
-    // First-pass inspection rate — uses ALL location projects (not just
-    // recentProjects which filters by constructionCompleteDate). This ensures
-    // projects that failed inspection and haven't re-passed are included in
-    // the denominator even if their construction completed long ago.
+    // First-pass inspection rate — only projects with a real inspection
+    // outcome (passed or failed) within the 60-day window. Projects that are
+    // merely scheduled but haven't been inspected yet are excluded so they
+    // don't drag down the rate as implicit failures.
     const withInspection = locProjects.filter((p: ProjectForMetrics) => {
-      // Include if inspection passed OR failed within the 60-day window
+      // Passed inspection within the window
       const passDate = p.inspectionPassDate ? new Date(p.inspectionPassDate) : null;
-      const schedDate = p.inspectionScheduleDate ? new Date(p.inspectionScheduleDate) : null;
-      const relevantDate = passDate || schedDate;
-      if (relevantDate && relevantDate >= sixtyDaysAgo) return true;
-      // Also include projects currently stuck with a failed inspection (no pass date)
-      if (p.hasInspectionFailed && !p.inspectionPassDate) return true;
+      if (passDate && passDate >= sixtyDaysAgo) return true;
+      // Failed but not yet re-passed — use schedule or construction date as proxy
+      if (p.hasInspectionFailed && !p.inspectionPassDate) {
+        const schedDate = p.inspectionScheduleDate ? new Date(p.inspectionScheduleDate) : null;
+        const fallbackDate = schedDate
+          || (p.constructionCompleteDate ? new Date(p.constructionCompleteDate) : null);
+        return fallbackDate !== null && fallbackDate >= sixtyDaysAgo;
+      }
       return false;
     });
     if (withInspection.length > 0) {
@@ -1454,35 +1481,62 @@ async function enrichWithQcMetrics(
       );
     }
 
+    // Outstanding failed inspections — projects that failed and have NOT yet
+    // passed. Unbounded (all-time) because these are actively stuck projects.
+    inspections.outstandingFailedInspections = locProjects.filter(
+      (p: ProjectForMetrics) => p.hasInspectionFailed && !p.inspectionPassDate
+    ).length;
+
     // Per-inspector pass rate + consecutive pass streak enrichment
     if (prisma) {
       try {
-        // Single consolidated query for 120-day window (reused for both pass rate and streaks)
+        // Single consolidated query for 120-day window (reused for both pass rate and streaks).
+        // Mirrors the terminal-status fallback from getZuperJobsByLocation so
+        // Failed jobs missing completedDate (from older sync runs) are included.
+        const INSPECTION_TERMINAL = ["Passed", "Partial Pass", "Failed", "Completed"];
         const allInspectionJobs = await prisma.zuperJobCache.findMany({
           where: {
             jobCategory: "Inspection",
-            completedDate: { gte: oneTwentyDaysAgo, lte: now },
             hubspotDealId: { not: null },
+            OR: [
+              { completedDate: { gte: oneTwentyDaysAgo, lte: now } },
+              {
+                jobStatus: { in: INSPECTION_TERMINAL },
+                completedDate: null,
+                scheduledStart: { gte: oneTwentyDaysAgo, lte: now },
+              },
+            ],
           },
           select: {
             assignedUsers: true,
             hubspotDealId: true,
             completedDate: true,
+            scheduledStart: true,
           },
           orderBy: { completedDate: "desc" },
         });
 
-        // Build dealId → isFirstTimePass map
+        // Build dealId → isFirstTimePass map. Include active failures
+        // (hasInspectionFailed && !inspectionPassDate) as false so they count
+        // against per-inspector pass rates and break consecutive-pass streaks.
         const passMap = new Map<string, boolean>();
         for (const p of locProjects) {
-          if (p.id && p.inspectionPassDate) {
+          if (!p.id) continue;
+          if (p.inspectionPassDate) {
             passMap.set(String(p.id), p.isFirstTimeInspectionPass === true);
+          } else if (p.hasInspectionFailed) {
+            passMap.set(String(p.id), false);
           }
         }
 
-        // Per-inspector pass rate (60-day window)
+        // Per-inspector pass rate (60-day window) — keyed on user_uid to
+        // avoid name-collision issues between inspectors with similar names.
+        // Use scheduledStart as fallback date for jobs missing completedDate.
         const sixtyDayJobs = allInspectionJobs.filter(
-          (j: { completedDate: Date | null; hubspotDealId: string | null; assignedUsers: unknown }) => j.completedDate && j.completedDate >= sixtyDaysAgo
+          (j) => {
+            const jobDate = j.completedDate ?? j.scheduledStart;
+            return jobDate != null && jobDate >= sixtyDaysAgo;
+          }
         );
         const inspectorStats = new Map<string, { passes: number; total: number }>();
 
@@ -1492,21 +1546,21 @@ async function enrichWithQcMetrics(
 
           const passed = passMap.get(dealId)!;
           for (const user of extractAssignedUsers(job.assignedUsers)) {
-            const stats = inspectorStats.get(user.user_name) || { passes: 0, total: 0 };
+            const stats = inspectorStats.get(user.user_uid) || { passes: 0, total: 0 };
             stats.total++;
             if (passed) stats.passes++;
-            inspectorStats.set(user.user_name, stats);
+            inspectorStats.set(user.user_uid, stats);
           }
         }
 
         for (const entry of inspections.leaderboard) {
-          const stats = inspectorStats.get(entry.name);
+          const stats = entry.userUid ? inspectorStats.get(entry.userUid) : undefined;
           if (stats && stats.total > 0) {
             entry.passRate = Math.round((stats.passes / stats.total) * 100);
           }
         }
 
-        // Consecutive pass streak (120-day window, ordered desc)
+        // Consecutive pass streak (120-day window, ordered desc) — also keyed on uid
         const streakMap = new Map<string, number>();
         const streakBroken = new Set<string>();
 
@@ -1516,17 +1570,17 @@ async function enrichWithQcMetrics(
 
           const passed = passMap.get(dealId)!;
           for (const user of extractAssignedUsers(job.assignedUsers)) {
-            if (streakBroken.has(user.user_name)) continue;
+            if (streakBroken.has(user.user_uid)) continue;
             if (passed) {
-              streakMap.set(user.user_name, (streakMap.get(user.user_name) || 0) + 1);
+              streakMap.set(user.user_uid, (streakMap.get(user.user_uid) || 0) + 1);
             } else {
-              streakBroken.add(user.user_name);
+              streakBroken.add(user.user_uid);
             }
           }
         }
 
         for (const entry of inspections.leaderboard) {
-          const streak = streakMap.get(entry.name);
+          const streak = entry.userUid ? streakMap.get(entry.userUid) : undefined;
           if (streak && streak >= 3) {
             entry.consecutivePasses = streak;
           }
@@ -1537,7 +1591,7 @@ async function enrichWithQcMetrics(
     }
 
     // Pipeline: avg days in stage prior period
-    if (pipeline) pipeline.avgDaysInStagePrior = avg(priorProjects, "daysSinceStageMovement");
+    if (pipeline) pipeline.avgDaysInStagePrior = avg(priorConstructionProjects, "daysSinceStageMovement");
   } catch (err) {
     console.error("[office-performance] QC metrics enrichment failed:", err);
     // Non-fatal — sections will show 0/"--" for turnaround metrics

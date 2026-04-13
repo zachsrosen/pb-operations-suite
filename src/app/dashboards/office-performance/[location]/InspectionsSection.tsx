@@ -35,16 +35,21 @@ export default function InspectionsSection({ data }: InspectionsSectionProps) {
 
         <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
           <CountUp
-            value={data.firstPassRate > 0 ? data.firstPassRate : 0}
-            suffix={data.firstPassRate > 0 ? "%" : ""}
+            value={data.firstPassRate >= 0 ? data.firstPassRate : 0}
+            suffix={data.firstPassRate >= 0 ? "%" : ""}
             className="text-[64px] font-extrabold leading-none"
-            style={{ color: data.firstPassRate > 0 ? passRateColor(data.firstPassRate) : "#64748b" }}
+            style={{ color: data.firstPassRate >= 0 ? passRateColor(data.firstPassRate) : "#64748b" }}
           />
           <div className="text-sm text-slate-400 mt-2">
-            {data.firstPassRate > 0 ? "First-Pass Rate" : "Pass Rate N/A"}
+            {data.firstPassRate >= 0 ? "First-Pass Rate" : "Pass Rate N/A"}
           </div>
-          {data.firstPassRate > 0 && (
+          {data.firstPassRate >= 0 && (
             <div className="text-xs text-slate-500 mt-0.5">Last 60 days</div>
+          )}
+          {data.outstandingFailedInspections > 0 && (
+            <div className="text-xs text-red-400 mt-1">
+              {data.outstandingFailedInspections} outstanding failed
+            </div>
           )}
         </div>
 
