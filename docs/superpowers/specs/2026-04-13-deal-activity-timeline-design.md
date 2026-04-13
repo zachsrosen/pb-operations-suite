@@ -81,9 +81,16 @@ The timeline is a read-time aggregation across existing tables. Communications a
 | Photos | `zuper.getJobPhotos()` | via ZuperJobCache job UIDs, cached 5-min | Snapshot — fetched from Zuper API |
 | HubSpot engagements | HubSpot API (cached) | by `deal.hubspotDealId` associations | Historical (HubSpot stores timestamps) |
 
-**Zuper jobs are snapshots, not historical events.** `ZuperJobCache` stores the current cached state of each linked job (title, status, scheduled dates) with a `lastSyncedAt` timestamp but no append-only history. The timeline renders each linked job as a single summary event using `scheduledStart` (or `lastSyncedAt` as fallback) for the timestamp — e.g. "Site Survey scheduled for Apr 15" or "Construction job — Started". These are not paginated with the `createdAt < cursor` filter; instead all linked jobs (typically 1–5) are fetched in full and merged into the sorted event list. Photos similarly have no DB-side pagination — they are fetched from the Zuper API, cached 5 minutes, and merged in full.
+**Zuper jobs are snapshots, not historical events.** `ZuperJobCache` stores the current cached state of each linked job (title, status, scheduled dates) with a `lastSyncedAt` timestamp but no append-only history. The timeline renders each linked job as a single summary event using `scheduledStart` (or `lastSyncedAt` as fallback) for the timestamp — e.g. "Site Survey scheduled for Apr 15" or "Construction job — Started". Photos are fetched from the Zuper API, cached 5 minutes, and each assigned a timestamp from `created_at` (or the job's `lastSyncedAt` as fallback).
 
-- **Pagination strategy:** Historical DB sources (DealNote, DealSyncLog) are queried with a `createdAt < cursor` filter. HubSpot engagements are filtered client-side by timestamp from the cached response. Zuper job snapshots and photos are always included in full (small cardinality — typically 1–5 jobs, up to ~100 photos). The merged list is sorted by timestamp desc and truncated to 50 items. The `nextCursor` is the timestamp of the 50th event.
+- **Pagination strategy:** All sources — including snapshots — are filtered by `timestamp < cursor` before merge. The full flow:
+  1. Historical DB sources (DealNote, DealSyncLog) are queried with a `createdAt < cursor` WHERE clause (pushed to the DB).
+  2. Snapshot sources (Zuper jobs, photos) are fetched in full (small cardinality) then filtered in-memory by `timestamp < cursor`.
+  3. HubSpot engagements are fetched from cache then filtered in-memory by `timestamp < cursor`.
+  4. All filtered results are merged, sorted by timestamp desc, and truncated to 50 items.
+  5. The `nextCursor` is the timestamp of the 50th event.
+  
+  This ensures snapshot events do not duplicate across pages — once a snapshot's timestamp falls before the cursor, it appears on the correct page and no earlier ones.
 
 - **Normalization:** All sources map to a common shape:
 
@@ -145,17 +152,22 @@ The Zuper client already has `appendJobNote(jobUid, note)` which appends text to
 User submits note
   ├─ Resolve Deal by cuid → get hubspotDealId
   ├─ Save DealNote to DB (hubspotSyncStatus: PENDING, zuperSyncStatus: PENDING|SKIPPED)
-  ├─ Invalidate SSE cache key deals:{hubspotDealId}
+  ├─ Invalidate SSE cache key deals:{hubspotDealId}  ← shows PENDING note to all viewers
   ├─ Return note to client immediately (optimistic)
   └─ Background via safeWaitUntil():
        ├─ HubSpot: createDealNote(hubspotDealId, noteBody)
        │    ├─ Success → update hubspotSyncStatus = "SYNCED"
+       │    │    └─ Invalidate engagement cache: deal-engagements:{hubspotDealId}:recent + :all
        │    └─ Failure → update hubspotSyncStatus = "FAILED"
-       └─ Zuper: for each linked job in ZuperJobCache
-            ├─ zuper.appendJobNote(jobUid, "[authorName] noteContent")
-            ├─ Success → update zuperSyncStatus = "SYNCED"
-            └─ Failure → update zuperSyncStatus = "FAILED"
+       ├─ Zuper: for each linked job in ZuperJobCache
+       │    ├─ zuper.appendJobNote(jobUid, "[authorName] noteContent")
+       │    ├─ Success → update zuperSyncStatus = "SYNCED"
+       │    └─ Failure → update zuperSyncStatus = "FAILED"
+       └─ After all syncs settle:
+            └─ Invalidate SSE cache key deals:{hubspotDealId}  ← updates PENDING→SYNCED/FAILED
 ```
+
+The second SSE invalidation after background work completes ensures all viewers (including the author) see the final sync status without a manual refresh. The engagement cache invalidation ensures the Communications tab picks up the newly created HubSpot note on its next fetch rather than serving stale data for up to five minutes.
 
 No automatic retry. Notes always exist locally regardless of sync outcome.
 
@@ -256,9 +268,10 @@ Deal Detail Page loads
       → NoteComposer shown at top
       → User submits note → POST /api/deals/{cuid}/notes
         → Optimistic insert into feed
-        → SSE invalidation on deals:{hubspotDealId} → cacheKeyToQueryKeys fans out
-          to dealTimeline.root + dealCommunications.root → other viewers refetch
+        → SSE invalidation #1 on deals:{hubspotDealId} → viewers see PENDING note
         → Background sync to HubSpot + Zuper via safeWaitUntil()
+          → On settle: SSE invalidation #2 → viewers see SYNCED/FAILED status
+          → On HubSpot success: bust deal-engagements cache so Comms tab is fresh
   → Communications tab (on click):
       → React Query fetches GET /api/deals/{cuid}/communications
         → Route resolves Deal, gets hubspotDealId
