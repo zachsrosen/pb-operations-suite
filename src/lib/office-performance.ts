@@ -314,7 +314,11 @@ const PROJECT_PIPELINE_ID = "6900017";
  * Returns lightweight ProjectForMetrics objects, not full Project objects.
  */
 async function fetchCompletedProjects(year: number): Promise<ProjectForMetrics[]> {
-  const yearStartMs = String(new Date(`${year}-01-01T00:00:00Z`).getTime());
+  return fetchCompletedProjectsSince(new Date(`${year}-01-01T00:00:00Z`));
+}
+
+async function fetchCompletedProjectsSince(since: Date): Promise<ProjectForMetrics[]> {
+  const yearStartMs = String(since.getTime());
 
   // Base filters shared by all groups: project pipeline + Project Complete stage
   const baseFilters = [
@@ -1557,12 +1561,18 @@ export async function getOfficePerformanceData(
   // When the compliance 30-day window crosses the year boundary (Jan 1–30),
   // also fetch prior-year completed deals so deal-based location attribution
   // covers late-December jobs instead of falling back to team filtering.
-  const complianceWindowCrossesYear = month === 1 && now.getDate() <= 30;
+  // Only fetches the narrow overlap slice (e.g. Dec 2–Dec 31), not the full
+  // prior year, to stay within HubSpot rate-limit / timeout budgets.
+  const complianceDays = 30;
+  const complianceWindowStart = new Date(now);
+  complianceWindowStart.setDate(complianceWindowStart.getDate() - complianceDays);
+  const complianceWindowCrossesYear = complianceWindowStart.getFullYear() < year;
+
   const completedFetches: Promise<ProjectForMetrics[]>[] = [
     fetchCompletedProjects(year),
   ];
   if (complianceWindowCrossesYear) {
-    completedFetches.push(fetchCompletedProjects(year - 1));
+    completedFetches.push(fetchCompletedProjectsSince(complianceWindowStart));
   }
 
   const [activeProjects, ...completedArrays] = await Promise.all([
