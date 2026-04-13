@@ -439,21 +439,35 @@ export async function createDealTimelineNote(
 /**
  * Convert a YYYY-MM-DD date string to the start of that local day in
  * America/Denver timezone, returned as a UTC Date.
+ *
+ * Uses a two-pass approach to handle DST transitions correctly: the first
+ * pass gets an approximate offset, the second pass refines it by sampling
+ * the offset at the actual boundary instant (not at noon).
  */
 function localDayToUtc(dateStr: string): Date {
   const [y, m, d] = dateStr.split("-").map(Number);
-  const noon = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
-  const parts = new Intl.DateTimeFormat("en-US", {
+
+  const fmt = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Denver",
     year: "numeric", month: "2-digit", day: "2-digit",
     hour: "2-digit", minute: "2-digit", second: "2-digit",
     hour12: false,
     hourCycle: "h23",
-  }).formatToParts(noon);
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "0";
-  const localNoon = new Date(`${get("year")}-${get("month")}-${get("day")}T${get("hour")}:${get("minute")}:${get("second")}Z`);
-  const offsetMs = noon.getTime() - localNoon.getTime();
-  return new Date(Date.UTC(y, m - 1, d) + offsetMs);
+  });
+
+  /** Return the Denver UTC offset (in ms) at a given UTC instant. */
+  function offsetAt(utcMs: number): number {
+    const parts = fmt.formatToParts(new Date(utcMs));
+    const g = (type: string) => Number(parts.find((p) => p.type === type)?.value ?? "0");
+    const localMs = Date.UTC(g("year"), g("month") - 1, g("day"), g("hour"), g("minute"), g("second"));
+    return utcMs - localMs;
+  }
+
+  const localMidnight = Date.UTC(y, m - 1, d);
+  // Pass 1: approximate offset from UTC midnight of the requested date
+  const guess = localMidnight + offsetAt(localMidnight);
+  // Pass 2: refine with the offset at the guessed boundary instant
+  return new Date(localMidnight + offsetAt(guess));
 }
 
 /** Search meeting items by text across note fields and/or date range. */

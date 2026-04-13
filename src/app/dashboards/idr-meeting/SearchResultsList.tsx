@@ -71,9 +71,10 @@ export function groupItemsByDeal(
 interface Props {
   selectedDealId: string | null;
   onSelectDeal: (dealId: string, dealName: string, region: string | null, systemSizeKw: number | null, projectType: string | null) => void;
+  onFiltersChange?: () => void;
 }
 
-export function SearchResultsList({ selectedDealId, onSelectDeal }: Props) {
+export function SearchResultsList({ selectedDealId, onSelectDeal, onFiltersChange }: Props) {
   const [searchText, setSearchText] = useState("");
   const [debouncedQ, setDebouncedQ] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -94,7 +95,8 @@ export function SearchResultsList({ selectedDealId, onSelectDeal }: Props) {
   useEffect(() => {
     setDealGroups(new Map());
     setSkip(0);
-  }, [debouncedQ, dateFrom, dateTo]);
+    onFiltersChange?.();
+  }, [debouncedQ, dateFrom, dateTo, onFiltersChange]);
 
   const hasQuery = debouncedQ.length >= 2 || dateFrom || dateTo;
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { SearchResultsList } from "./SearchResultsList";
 import { DealHistoryDetail } from "./DealHistoryDetail";
 
@@ -15,6 +15,8 @@ interface SelectedDeal {
 export function MeetingSearch() {
   const [selectedDeal, setSelectedDeal] = useState<SelectedDeal | null>(null);
 
+  const handleFiltersChange = useCallback(() => setSelectedDeal(null), []);
+
   return (
     <div className="flex gap-0 h-[calc(100vh-13rem)] overflow-hidden rounded-xl border border-t-border">
       <SearchResultsList
@@ -22,6 +24,7 @@ export function MeetingSearch() {
         onSelectDeal={(dealId, dealName, region, systemSizeKw, projectType) =>
           setSelectedDeal({ dealId, dealName, region, systemSizeKw, projectType })
         }
+        onFiltersChange={handleFiltersChange}
       />
 
       {selectedDeal ? (

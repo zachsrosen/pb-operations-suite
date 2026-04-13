@@ -254,4 +254,16 @@ describe("searchMeetingItems", () => {
     expect(gteDate).toBeInstanceOf(Date);
     expect(gteDate.toISOString()).toBe("2026-01-15T07:00:00.000Z");
   });
+
+  it("uses MST offset on spring-forward day (midnight is still MST)", async () => {
+    // 2026-03-08 is DST spring-forward in the US. Denver transitions at
+    // 2:00 AM from MST (UTC-7) to MDT (UTC-6). Midnight is still MST.
+    await searchMeetingItems({ query: "", dateFrom: "2026-03-08" });
+
+    const where = mockPrisma.idrMeetingItem.findMany.mock.calls[0][0].where;
+    const gteDate = where.session.date.gte;
+    // Midnight MST = 2026-03-08T07:00:00.000Z (UTC-7), NOT T06 (which noon MDT would give)
+    expect(gteDate).toBeInstanceOf(Date);
+    expect(gteDate.toISOString()).toBe("2026-03-08T07:00:00.000Z");
+  });
 });
