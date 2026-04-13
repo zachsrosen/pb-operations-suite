@@ -26,9 +26,10 @@ The IDR Meeting Hub gains a third mode state: `"search"`. The `IdrMeetingClient`
 Purple-themed banner (distinct from blue Prep and orange Live) containing:
 
 - **"Search History" badge** — purple pill, matches existing badge pattern
-- **Search input** — text field searching deal names, regions, notes, conclusions, escalation reasons (maps to existing `searchMeetingItems` API)
-- **Date range filters** — optional "From" and "To" date inputs to narrow results
+- **"Browse past meeting notes"** label text
 - **"Prep Mode" button** — returns to prep view
+
+The search input and date range filters live in the **left panel** (top of `SearchResultsList`), not in the header banner. This keeps them visually coupled to the results they filter and avoids overcrowding the header.
 
 ### Left Panel: Deal-Grouped Results
 
@@ -126,7 +127,7 @@ Handles:
 
 - Add "Search History" button (visible in prep and live modes)
 - Accept `onSearchHistory` callback prop
-- In search mode: render purple banner with search input, date filters, back button
+- In search mode: render purple banner with badge, label text, and back-to-prep button (search input and date filters are in `SearchResultsList`, not in the header)
 
 ### `IdrMeetingClient` changes
 

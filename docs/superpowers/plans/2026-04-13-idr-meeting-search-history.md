@@ -168,11 +168,14 @@ export async function searchMeetingItems(params: {
             ...(dateFrom ? { gte: localDayToUtc(dateFrom) } : {}),
             ...(dateTo
               ? {
-                  // Inclusive: advance to start of next local day, use lt
+                  // Inclusive: advance to start of next local day, use lt.
+                  // Compute next day from parsed YYYY-MM-DD parts to avoid
+                  // host-timezone dependency in Date constructor.
                   lt: (() => {
-                    const d = new Date(dateTo);
-                    d.setDate(d.getDate() + 1);
-                    return localDayToUtc(d.toISOString().slice(0, 10));
+                    const [y, m, d] = dateTo.split("-").map(Number);
+                    const nextDay = new Date(Date.UTC(y, m - 1, d + 1));
+                    const nd = nextDay.toISOString().slice(0, 10);
+                    return localDayToUtc(nd);
                   })(),
                 }
               : {}),
@@ -799,7 +802,7 @@ Create `src/app/dashboards/idr-meeting/SearchResultsList.tsx`:
 ```tsx
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -880,21 +883,20 @@ export function SearchResultsList({ selectedDealId, onSelectDeal }: Props) {
   const [skip, setSkip] = useState(0);
   const [dealGroups, setDealGroups] = useState<Map<string, DealGroup>>(new Map());
 
-  // Reset groups when search params change (but not when skip changes)
-  const searchParamsKey = `${debouncedQ}|${dateFrom}|${dateTo}`;
-  const prevParamsRef = useRef(searchParamsKey);
-  if (prevParamsRef.current !== searchParamsKey) {
-    prevParamsRef.current = searchParamsKey;
-    setDealGroups(new Map());
-    setSkip(0);
-  }
-
-  // Debounce search text
+  // Debounce search text. Normalize: if text drops below 2 chars and there
+  // are no date filters, clear debouncedQ so stale results don't linger.
   useEffect(() => {
-    if (searchText.length > 0 && searchText.length < 2) return;
-    const timer = setTimeout(() => setDebouncedQ(searchText), 300);
+    const normalized = searchText.length >= 2 ? searchText : "";
+    const timer = setTimeout(() => setDebouncedQ(normalized), 300);
     return () => clearTimeout(timer);
   }, [searchText]);
+
+  // Reset groups and pagination when search params change.
+  // Done in an effect (not during render) to avoid unsafe setState-during-render.
+  useEffect(() => {
+    setDealGroups(new Map());
+    setSkip(0);
+  }, [debouncedQ, dateFrom, dateTo]);
 
   const hasQuery = debouncedQ.length >= 2 || dateFrom || dateTo;
 
@@ -1185,10 +1187,17 @@ In the presence heartbeat effect (line 154–169), update the payload:
   useEffect(() => {
     const sendHeartbeat = () => {
       const { sessionId: sid, selectedItemId: selId, mode: m } = presencePayloadRef.current;
+      // In search mode, null out session/item so the user doesn't appear
+      // in a live meeting's or prep's presence bucket
+      const isSearch = m === "search";
       fetch("/api/idr-meeting/presence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: sid, selectedItemId: selId, mode: m === "search" ? "search" : undefined }),
+        body: JSON.stringify({
+          sessionId: isSearch ? null : sid,
+          selectedItemId: isSearch ? null : selId,
+          mode: isSearch ? "search" : undefined,
+        }),
       }).catch(() => {});
     };
     sendHeartbeat();
@@ -1204,10 +1213,15 @@ Also update the view-change heartbeat effect (line 173–179):
 
 ```tsx
   useEffect(() => {
+    const isSearch = mode === "search";
     fetch("/api/idr-meeting/presence", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, selectedItemId, mode: mode === "search" ? "search" : undefined }),
+      body: JSON.stringify({
+        sessionId: isSearch ? null : sessionId,
+        selectedItemId: isSearch ? null : selectedItemId,
+        mode: isSearch ? "search" : undefined,
+      }),
     }).catch(() => {});
   }, [sessionId, selectedItemId, mode]);
 ```
