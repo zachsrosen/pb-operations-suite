@@ -3,7 +3,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { zuper } from "@/lib/zuper";
 
-export const maxDuration = 15;
+export const maxDuration = 30; // Form submissions can take a moment
 
 export async function GET(
   request: NextRequest,
@@ -54,21 +54,18 @@ export async function GET(
   }
 
   // Fetch photos from all linked jobs in parallel
-  // getJobPhotos now aggregates from both attachments AND notes
+  // getJobPhotos aggregates from job attachments + service task form submissions
   const photoArrays = await Promise.all(
     [...jobUids].map(async (jobUid) => {
       try {
         const photos = await zuper.getJobPhotos(jobUid);
-        console.log(
-          `[deal-photos] Job ${jobUid}: ${photos.length} photos found (attachments + notes)`
-        );
+        console.log(`[deal-photos] Job ${jobUid}: ${photos.length} photos found`);
 
         const category = jobCategories.get(jobUid) ?? "Job";
         return photos.map((p) => ({
           id: p.attachment_uid,
           fileName: p.file_name,
           url: `/api/zuper/photos/${encodeURIComponent(jobUid)}/${encodeURIComponent(p.attachment_uid)}`,
-          directUrl: p.url, // Keep for fallback proxy
           jobCategory: category,
           createdAt: p.created_at ?? null,
         }));

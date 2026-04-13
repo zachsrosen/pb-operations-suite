@@ -181,6 +181,24 @@ export interface ZuperNoteAttachment {
   file_size?: number;
 }
 
+/** A service task linked to a Zuper job (checklist / form). */
+export interface ZuperServiceTask {
+  service_task_uid: string;
+  service_task_title: string;
+  service_task_status: string;
+  asset_inspection_submission_uid?: string;
+  inspection_form?: { asset_form_uid: string; asset_form_name: string };
+  attachments?: ZuperNoteAttachment[];
+  created_at?: string;
+}
+
+/** A field in a submitted inspection/service-task form. */
+export interface ZuperFormField {
+  label: string;
+  type: string; // IMAGE, MULTI_IMAGE, TEXT, SIGNATURE, etc.
+  value: string; // For images: comma-separated S3 URLs
+}
+
 interface ZuperAssignmentRef {
   userUid: string;
   teamUid?: string;
@@ -1549,68 +1567,126 @@ export class ZuperClient {
   }
 
   /**
-   * Get image attachments from a job, aggregating from both the attachments
-   * endpoint and note attachments (mirroring Zuper's web Gallery view).
-   * Returns attachment metadata with downloadable URLs.
+   * Get service tasks for a job (checklists / forms).
+   * Zuper endpoint: GET /service_tasks?filter.module_uid={job_uid}
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async getJobServiceTasks(jobUid: string): Promise<ZuperApiResponse<any>> {
+    return this.request(`/service_tasks?filter.module_uid=${encodeURIComponent(jobUid)}`);
+  }
+
+  /**
+   * Get a submitted inspection/service-task form.
+   * Zuper endpoint: GET /assets/inspection_form/{submission_uid}
+   */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async getFormSubmission(submissionUid: string): Promise<ZuperApiResponse<any>> {
+    return this.request(`/assets/inspection_form/${encodeURIComponent(submissionUid)}`);
+  }
+
+  /**
+   * Get image attachments from a job, aggregating from:
+   * 1. Job attachments (/jobs/{uid}/attachments)
+   * 2. Service task form submissions (IMAGE/MULTI_IMAGE fields)
+   *
+   * This mirrors what Zuper's web Gallery view shows.
    */
   async getJobPhotos(jobUid: string): Promise<ZuperAttachment[]> {
-    const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "bmp", "tiff", "tif"]);
-    const IMAGE_MIME_PREFIXES = ["image/"];
+    const photos: ZuperAttachment[] = [];
+    const seenUrls = new Set<string>();
 
-    const isImage = (fileName?: string, fileType?: string): boolean => {
-      if (fileType && IMAGE_MIME_PREFIXES.some((p) => fileType.toLowerCase().startsWith(p))) {
-        return true;
-      }
-      const ext = fileName?.split(".").pop()?.toLowerCase() || "";
+    const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "bmp", "tiff", "tif"]);
+    const isImageUrl = (url: string): boolean => {
+      // S3 attachment URLs from Zuper forms are always images when from IMAGE/MULTI_IMAGE fields
+      if (url.includes("/attachments/")) return true;
+      const ext = url.split(".").pop()?.split("?")[0]?.toLowerCase() || "";
       return IMAGE_EXTENSIONS.has(ext);
     };
 
-    // Fetch both sources in parallel
-    const [attachResult, notesResult] = await Promise.all([
-      this.getJobAttachments(jobUid),
-      this.getJobNotes(jobUid),
-    ]);
+    const addPhoto = (url: string, label: string, createdAt?: string) => {
+      const trimmed = url.trim();
+      if (!trimmed || seenUrls.has(trimmed)) return;
+      seenUrls.add(trimmed);
+      // Extract filename from S3 URL or use label
+      const segments = trimmed.split("/");
+      const fileName = segments[segments.length - 1] || label;
+      photos.push({
+        attachment_uid: `form-${Buffer.from(trimmed).toString("base64url").slice(0, 24)}`,
+        file_name: fileName,
+        url: trimmed,
+        file_type: "image/jpeg",
+        created_at: createdAt,
+      });
+    };
 
-    const photos: ZuperAttachment[] = [];
-    const seenUrls = new Set<string>();
+    // Fetch both sources in parallel
+    const [attachResult, tasksResult] = await Promise.all([
+      this.getJobAttachments(jobUid).catch(() => ({ type: "error" as const, error: "fetch failed" })),
+      this.getJobServiceTasks(jobUid).catch(() => ({ type: "error" as const, error: "fetch failed" })),
+    ]);
 
     // Source 1: Direct job attachments
     if (attachResult.type === "success" && attachResult.data?.attachments) {
       for (const att of attachResult.data.attachments) {
-        if (isImage(att.file_name, att.file_type) && !seenUrls.has(att.url)) {
+        const ext = att.file_name?.split(".").pop()?.toLowerCase() || "";
+        const isMime = att.file_type?.toLowerCase().startsWith("image/");
+        if ((isMime || IMAGE_EXTENSIONS.has(ext)) && !seenUrls.has(att.url)) {
           seenUrls.add(att.url);
           photos.push(att);
         }
       }
-    } else {
-      console.warn(`[Zuper] Failed to fetch attachments for job ${jobUid}:`, attachResult.type === "error" ? attachResult.error : "no data");
+      console.log(`[Zuper] Job ${jobUid}: ${photos.length} photos from attachments`);
     }
 
-    // Source 2: Note attachments (photos uploaded by field techs as part of job notes)
-    if (notesResult.type === "success") {
-      // Handle both { notes: [...] } and direct array responses
-      const rawData = notesResult.data;
+    // Source 2: Service task form submissions (where field techs actually upload photos)
+    if (tasksResult.type === "success") {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const notes: ZuperNote[] = Array.isArray(rawData) ? rawData : (rawData as any)?.notes ?? (rawData as any)?.data ?? [];
+      const tasks: any[] = Array.isArray(tasksResult.data)
+        ? tasksResult.data
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        : (tasksResult.data as any)?.data ?? [];
 
-      for (const note of notes) {
-        if (!note.attachments || !Array.isArray(note.attachments)) continue;
-        for (const att of note.attachments) {
-          if (isImage(att.file_name, att.file_type) && att.url && !seenUrls.has(att.url)) {
-            seenUrls.add(att.url);
-            photos.push({
-              attachment_uid: att.attachment_uid || `note-${note.note_uid}-${att.file_name}`,
-              file_name: att.file_name,
-              url: att.url,
-              file_type: att.file_type,
-              file_size: att.file_size,
-              created_at: note.created_at,
-            });
+      // Collect submission UIDs from completed tasks
+      const submissionUids: string[] = [];
+      for (const task of tasks) {
+        const uid = task?.asset_inspection_submission_uid;
+        if (uid && task.service_task_status === "COMPLETED") {
+          submissionUids.push(uid);
+        }
+      }
+
+      console.log(`[Zuper] Job ${jobUid}: ${tasks.length} service tasks, ${submissionUids.length} completed with form submissions`);
+
+      // Fetch form submissions in parallel (cap at 3 to avoid rate limits)
+      const formResults = await Promise.all(
+        submissionUids.slice(0, 3).map((uid) =>
+          this.getFormSubmission(uid).catch(() => ({ type: "error" as const, error: "fetch failed" }))
+        )
+      );
+
+      for (const formResult of formResults) {
+        if (formResult.type !== "success" || !formResult.data) continue;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const formData = formResult.data as any;
+        const fields: ZuperFormField[] = formData?.data ?? [];
+        const createdAt = formData?.created_at;
+
+        for (const field of fields) {
+          // Only extract IMAGE and MULTI_IMAGE fields (skip SIGNATURE)
+          if (field.type !== "IMAGE" && field.type !== "MULTI_IMAGE") continue;
+          if (!field.value || typeof field.value !== "string") continue;
+
+          // Value is comma-separated S3 URLs
+          const urls = field.value.split(",").map((u) => u.trim()).filter(Boolean);
+          for (const url of urls) {
+            if (isImageUrl(url)) {
+              addPhoto(url, field.label, createdAt);
+            }
           }
         }
       }
-    } else {
-      console.warn(`[Zuper] Failed to fetch notes for job ${jobUid}:`, notesResult.type === "error" ? notesResult.error : "no data");
+
+      console.log(`[Zuper] Job ${jobUid}: ${photos.length} total photos (attachments + forms)`);
     }
 
     return photos;

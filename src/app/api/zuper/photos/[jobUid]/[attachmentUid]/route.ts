@@ -20,7 +20,7 @@ export async function GET(
   }
 
   try {
-    // Fetch all photos (attachments + notes) for this job
+    // Fetch all photos (attachments + form submissions) for this job
     const photos = await zuper.getJobPhotos(jobUid);
     const photo = photos.find((p) => p.attachment_uid === attachmentUid);
 
@@ -31,10 +31,10 @@ export async function GET(
       return new NextResponse("Photo not found", { status: 404 });
     }
 
-    // Download the image through Zuper's authenticated API
+    // Download the image — form photos use S3 URLs that need the API key
     const buffer = await zuper.downloadFile(photo.url);
 
-    // Determine content type from file extension or MIME type
+    // Determine content type
     const contentType =
       photo.file_type && photo.file_type.startsWith("image/")
         ? photo.file_type
