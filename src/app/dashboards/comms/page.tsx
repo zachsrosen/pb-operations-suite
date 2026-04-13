@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useSearchParams } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import CommsConnectBanner from "@/components/comms/CommsConnectBanner";
 import CommsKpiCards from "@/components/comms/CommsKpiCards";
@@ -16,6 +17,20 @@ import { queryKeys } from "@/lib/query-keys";
 
 export default function CommsPage() {
   const queryClient = useQueryClient();
+  const searchParams = useSearchParams();
+
+  // Show email mismatch error from OAuth callback
+  const [connectError, setConnectError] = useState<string | null>(null);
+  useEffect(() => {
+    const error = searchParams.get("error");
+    if (error === "email_mismatch") {
+      const expected = searchParams.get("expected") || "your PB account";
+      const got = searchParams.get("got") || "a different account";
+      setConnectError(
+        `Gmail connection rejected — you signed in as ${got} but your PB account is ${expected}. Please reconnect with the correct Google account.`
+      );
+    }
+  }, [searchParams]);
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -213,6 +228,19 @@ export default function CommsPage() {
       lastUpdated={data?.lastUpdated}
       fullWidth
     >
+      {/* OAuth error banner */}
+      {connectError && (
+        <div className="mb-4 flex items-center gap-3 rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <span className="flex-1">{connectError}</span>
+          <button
+            onClick={() => setConnectError(null)}
+            className="text-red-400 hover:text-red-200 font-medium"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Not connected or impersonating */}
       {(!status?.connected || status?.impersonating) && (
         <CommsConnectBanner impersonating={status?.impersonating} />

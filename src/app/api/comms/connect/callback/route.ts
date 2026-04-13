@@ -78,6 +78,25 @@ export async function GET(req: NextRequest) {
   const data = await tokenResp.json();
   const expiresIn = (data.expires_in as number) || 3600;
 
+  // Verify the authorized Gmail account matches the PB Ops user
+  const profileResp = await fetch(
+    "https://gmail.googleapis.com/gmail/v1/users/me/profile",
+    { headers: { Authorization: `Bearer ${data.access_token}` } }
+  );
+  if (profileResp.ok) {
+    const profile = await profileResp.json();
+    const gmailEmail = (profile.emailAddress || "").toLowerCase();
+    const userEmail = (user.email || "").toLowerCase();
+    if (gmailEmail && userEmail && gmailEmail !== userEmail) {
+      return NextResponse.redirect(
+        new URL(
+          `/dashboards/comms?error=email_mismatch&expected=${encodeURIComponent(userEmail)}&got=${encodeURIComponent(gmailEmail)}`,
+          req.url
+        )
+      );
+    }
+  }
+
   // Upsert token record
   await prisma.commsGmailToken.upsert({
     where: { userId: user.id },
