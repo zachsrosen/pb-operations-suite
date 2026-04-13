@@ -70,7 +70,13 @@ The timeline is a read-time aggregation across existing tables. Communications a
 - **Auth:** Any authenticated user.
 - **Query params:**
   - `all=true` — full history (default: 90 days)
-  - `cursor=<timestamp>` — ISO timestamp cursor for pagination
+  - `cursor=<timestamp>:<id>` — composite cursor for pagination (ISO timestamp + event id, colon-separated)
+- **Time window:** Unless `all=true`, compute `windowStart = now() - 90 days`. This floor is applied to every source:
+  - Historical DB sources: add `createdAt >= windowStart` to the WHERE clause.
+  - Snapshot sources (Zuper jobs, photos): filter in-memory by `timestamp >= windowStart`.
+  - HubSpot engagements: filter in-memory by `timestamp >= windowStart`.
+  
+  When `all=true`, no floor is applied — all history is eligible for cursor-based pagination.
 - **Behavior:** Look up Deal by cuid, then fan-out parallel queries across 5 sources:
 
 | Source | Table/API | Filter | Nature |
@@ -83,14 +89,15 @@ The timeline is a read-time aggregation across existing tables. Communications a
 
 **Zuper jobs are snapshots, not historical events.** `ZuperJobCache` stores the current cached state of each linked job (title, status, scheduled dates) with a `lastSyncedAt` timestamp but no append-only history. The timeline renders each linked job as a single summary event using `scheduledStart` (or `lastSyncedAt` as fallback) for the timestamp — e.g. "Site Survey scheduled for Apr 15" or "Construction job — Started". Photos are fetched from the Zuper API, cached 5 minutes, and each assigned a timestamp from `created_at` (or the job's `lastSyncedAt` as fallback).
 
-- **Pagination strategy:** All sources — including snapshots — are filtered by `timestamp < cursor` before merge. The full flow:
-  1. Historical DB sources (DealNote, DealSyncLog) are queried with a `createdAt < cursor` WHERE clause (pushed to the DB).
-  2. Snapshot sources (Zuper jobs, photos) are fetched in full (small cardinality) then filtered in-memory by `timestamp < cursor`.
-  3. HubSpot engagements are fetched from cache then filtered in-memory by `timestamp < cursor`.
-  4. All filtered results are merged, sorted by timestamp desc, and truncated to 50 items.
-  5. The `nextCursor` is the timestamp of the 50th event.
+- **Pagination strategy:** Uses a composite cursor (`timestamp:id`) to handle events that share the same timestamp. Multiple batch sync logs, photos from the same upload, or HubSpot engagements rounded to the same second would otherwise be lost at page boundaries. The full flow:
+  1. Parse cursor into `(cursorTimestamp, cursorId)`. No cursor = first page.
+  2. Historical DB sources (DealNote, DealSyncLog) are queried with: `WHERE (createdAt < cursorTimestamp) OR (createdAt = cursorTimestamp AND id < cursorId)` — pushed to the DB via a compound ORDER BY (timestamp DESC, id DESC).
+  3. Snapshot sources (Zuper jobs, photos) are fetched in full (small cardinality) then filtered in-memory with the same `(timestamp, id)` comparison.
+  4. HubSpot engagements are fetched from cache then filtered in-memory with the same comparison.
+  5. All filtered results are merged, sorted by `(timestamp DESC, id DESC)`, and truncated to 50 items.
+  6. The `nextCursor` is `timestamp:id` of the 50th event. `null` if fewer than 50 results.
   
-  This ensures snapshot events do not duplicate across pages — once a snapshot's timestamp falls before the cursor, it appears on the correct page and no earlier ones.
+  This is lossless — no events are skipped even when multiple events share a timestamp.
 
 - **Normalization:** All sources map to a common shape:
 
@@ -106,13 +113,14 @@ interface TimelineEvent {
 }
 ```
 
-- **Returns:** `{ events: TimelineEvent[], nextCursor: string | null }`
-- **Pagination:** 50 events per page, sorted by timestamp descending.
+- **Returns:** `{ events: TimelineEvent[], nextCursor: string | null }` — `nextCursor` is `"<ISO timestamp>:<id>"` or `null` if no more pages.
+- **Pagination:** 50 events per page, sorted by `(timestamp DESC, id DESC)`.
 
 ### `GET /api/deals/[dealId]/communications`
 
 - **Auth:** Any authenticated user.
 - **Query params:** `all=true` (default: 90 days)
+- **Time window:** Unless `all=true`, compute `windowStart = now() - 90 days`. After fetching engagements from HubSpot (or cache), filter to only those with `timestamp >= windowStart`. The `:recent` cache key stores the full HubSpot response (not pre-filtered), and the 90-day filter is applied after cache retrieval — this avoids stale window boundaries baked into the cache.
 - **Behavior:** Look up Deal by cuid, then fetch HubSpot engagements associated with the deal. Four object types queried separately via HubSpot CRM v3 associations API:
 
 | Object Type | Association Endpoint | Key Fields |
