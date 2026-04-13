@@ -96,6 +96,8 @@ export interface SurveyData {
   completedMtd: number;
   completedGoal: number;
   scheduledMtd: number;
+  /** Surveys scheduled this month that have also been completed this month */
+  scheduledAndCompletedMtd: number;
   avgTurnaroundDays: number;
   avgTurnaroundPrior: number;
   scheduledThisWeek: number;
