@@ -82,9 +82,11 @@ The response shape is already sufficient:
 }
 ```
 
-### Enhanced `/api/idr-meeting/search`
+### Updated `/api/idr-meeting/search`
 
-The existing `searchMeetingItems` function returns flat items. The client will group results by `dealId`. No API changes needed — grouping happens client-side since the response already includes `dealId`, `dealName`, `region`, `systemSizeKw`, `projectType`, and `conclusion` on each item.
+The existing `searchMeetingItems` function rejects queries under 2 characters. Update it to allow **date-range-only queries** (empty `q` with `from`/`to` set). When `q` is empty and at least one date param is provided, skip the text filter and return all items within the date range. This lets users browse "all meetings from last month" without typing a search term.
+
+The client groups results by `dealId` — no structural API changes needed since the response already includes `dealId`, `dealName`, `region`, `systemSizeKw`, `projectType`, and `conclusion` on each item.
 
 ## New Components
 
@@ -109,7 +111,7 @@ Handles:
 
 Handles:
 - React Query call to `/api/idr-meeting/deal-history/[dealId]`
-- Merging items and notes into chronological list (same logic as existing `NoteHistory.tsx`)
+- Merging items and notes into a single chronological list (similar merge approach as `NoteHistory.tsx` but rendering substantially more fields — snapshot context, all note types, escalation reasons)
 - Rendering session cards with snapshot context + all note fields
 - Rendering standalone note cards with purple accent
 - Deal header with quick links
@@ -124,13 +126,15 @@ Handles:
 
 - Replace `isPreview` boolean with a `mode: "prep" | "meeting" | "search"` state
 - Derive `isPreview` and `isSearch` from mode for backward compatibility
+- `ProjectQueue` and `ProjectDetail` continue receiving `isPreview` as a prop — they are only rendered in prep/meeting modes, never in search mode
 - Render `MeetingSearch` when mode is `"search"`
 - Existing prep/meeting rendering unchanged
+- **Presence:** In search mode, presence heartbeats send `{ sessionId: null, selectedItemId: null, mode: "search" }`. The presence API and display can ignore search-mode users from the prep/meeting presence lists (they're just browsing history, not actively in a session)
 
 ## Query Keys
 
 Add to `queryKeys.idrMeeting`:
-- `search(query, from?, to?)` — search results (already exists as `dealSearch` for HubSpot, new one for meeting search)
+- `meetingSearch: (q: string, from?: string, to?: string) => [...root, "meeting-search", q, from ?? "", to ?? ""]` — includes all filter params for proper cache isolation. Distinct from existing `dealSearch` which queries HubSpot.
 - `dealHistory(dealId)` — already exists in the query keys
 
 ## Styling
