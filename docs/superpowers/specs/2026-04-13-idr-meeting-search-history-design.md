@@ -90,7 +90,7 @@ Two changes are required to support date-range-only browsing:
 
 **2. `searchMeetingItems` function** (`src/lib/idr-meeting.ts`): When `query` is empty, omit the `textFilter` entirely (no `OR` clause) so only the date filter applies.
 
-**3. Date semantics**: `to` date must use **inclusive local-day** semantics. The current code builds `lte: new Date(dateTo)` which resolves to midnight UTC — excluding meetings later on that calendar day. Fix: when `dateTo` is a date-only string (YYYY-MM-DD), set the time to end-of-day (`T23:59:59.999Z`) or add one day and use `lt` instead of `lte`.
+**3. Date semantics**: `to` date must use **inclusive local-day** semantics. The current code builds `lte: new Date(dateTo)` which resolves to midnight UTC — excluding meetings later on that calendar day. Fix: parse the date-only string in local time (Mountain Time for PB operations), advance to the start of the next local day, and use `lt nextDay` instead of `lte`. Do NOT use a UTC end-of-day like `T23:59:59.999Z` — that still misses late-evening local meetings that cross the UTC boundary.
 
 The client groups results by `dealId` — no structural API changes needed since the response already includes `dealId`, `dealName`, `region`, `systemSizeKw`, `projectType`, and `conclusion` on each item.
 
@@ -161,7 +161,7 @@ Add to `queryKeys.idrMeeting`:
 The implementation plan should include tests for these specific behaviors:
 
 1. **Date-only search through the route** — `GET /api/idr-meeting/search?from=2026-03-01&to=2026-03-31` (no `q`) returns items within the date range, not an empty array.
-2. **Inclusive `to`-date** — A meeting on `2026-03-31T14:00:00Z` is included when `to=2026-03-31`. Verify the off-by-one fix works.
+2. **Inclusive `to`-date** — A meeting on `2026-04-01T04:30:00Z` (March 31 at 10:30 PM Mountain Time) is included when `to=2026-03-31`. This UTC-boundary-crossing timestamp verifies the local-day semantics work correctly.
 3. **Grouped pagination** — When a deal spans two pages (e.g., 3 items across pages of 2), the client merge map produces one card with meeting count 3 after both pages load.
 4. **Search-mode presence exclusion** — A user in search mode (`mode: "search"`, `sessionId: null`) does NOT appear in the prep presence list (`GET /api/idr-meeting/presence` without `sessionId` param).
 
