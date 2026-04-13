@@ -1319,6 +1319,7 @@ export async function buildInspectionData(
     completedMtd,
     completedGoal: goals.inspections_completed,
     firstPassRate: 0, // Populated from QC metrics
+    outstandingFailedInspections: 0, // Populated from QC metrics
     avgConstructionDays: 0,
     avgConstructionDaysPrior: 0,
     avgCcToPtoDays: 0,
@@ -1479,6 +1480,12 @@ async function enrichWithQcMetrics(
         (firstTimePasses / withInspection.length) * 100
       );
     }
+
+    // Outstanding failed inspections — projects that failed and have NOT yet
+    // passed. Unbounded (all-time) because these are actively stuck projects.
+    inspections.outstandingFailedInspections = locProjects.filter(
+      (p: ProjectForMetrics) => p.hasInspectionFailed && !p.inspectionPassDate
+    ).length;
 
     // Per-inspector pass rate + consecutive pass streak enrichment
     if (prisma) {

@@ -46,6 +46,11 @@ export default function InspectionsSection({ data }: InspectionsSectionProps) {
           {data.firstPassRate > 0 && (
             <div className="text-xs text-slate-500 mt-0.5">Last 60 days</div>
           )}
+          {data.outstandingFailedInspections > 0 && (
+            <div className="text-xs text-red-400 mt-1">
+              {data.outstandingFailedInspections} outstanding failed
+            </div>
+          )}
         </div>
 
         <div className="bg-white/[0.04] rounded-2xl p-5 text-center border border-white/5">
