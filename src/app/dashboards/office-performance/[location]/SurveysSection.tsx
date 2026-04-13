@@ -17,7 +17,7 @@ export default function SurveysSection({ data }: SurveysSectionProps) {
   const trendImproving = turnaroundTrend < 0;
 
   const completionRate = data.scheduledMtd > 0
-    ? Math.round((data.completedMtd / data.scheduledMtd) * 100)
+    ? Math.round((data.scheduledAndCompletedMtd / data.scheduledMtd) * 100)
     : 0;
 
   function completionRateColor(rate: number): string {
@@ -73,7 +73,7 @@ export default function SurveysSection({ data }: SurveysSectionProps) {
           </div>
           {data.scheduledMtd > 0 && (
             <div className="text-xs text-slate-500 mt-0.5">
-              {data.completedMtd} of {data.scheduledMtd} scheduled
+              {data.scheduledAndCompletedMtd} of {data.scheduledMtd} scheduled
             </div>
           )}
         </div>

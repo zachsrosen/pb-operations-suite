@@ -1064,6 +1064,13 @@ export async function buildSurveyData(
     return d && d >= mtdStart && d <= now;
   }).length;
 
+  // Scheduled AND completed this month — for completion rate that excludes carryover
+  const scheduledAndCompletedMtd = (locationProjects || []).filter((p) => {
+    const sched = p.siteSurveyScheduleDate ? new Date(p.siteSurveyScheduleDate) : null;
+    const comp = p.siteSurveyCompletionDate ? new Date(p.siteSurveyCompletionDate) : null;
+    return sched && sched >= mtdStart && sched <= now && comp && comp >= mtdStart && comp <= now;
+  }).length;
+
   // Scheduled this week — from HubSpot schedule date (source of truth)
   const scheduledThisWeek = countScheduledThisWeek(locationProjects || [], "Site Survey", now);
 
@@ -1083,6 +1090,7 @@ export async function buildSurveyData(
     completedMtd,
     completedGoal: goals.surveys_completed,
     scheduledMtd,
+    scheduledAndCompletedMtd,
     avgTurnaroundDays: 0, // Populated from QC metrics in the orchestrator
     avgTurnaroundPrior: 0,
     scheduledThisWeek,
