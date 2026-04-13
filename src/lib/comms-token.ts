@@ -50,18 +50,22 @@ async function verifyMailboxIdentity(
     const profile = await profileResp.json();
     const gmailEmail = (profile.emailAddress || "").toLowerCase();
 
-    if (gmailEmail && gmailEmail !== userEmail.toLowerCase()) {
+    if (!gmailEmail) {
+      // Profile returned no email — can't verify, fail closed
+      await prisma.commsGmailToken.delete({ where: { userId: row.userId } }).catch(() => {});
+      return false;
+    }
+
+    if (gmailEmail !== userEmail.toLowerCase()) {
       // Mismatch — delete and disconnect
       await prisma.commsGmailToken.delete({ where: { userId: row.userId } }).catch(() => {});
       return false;
     }
 
     // Match — backfill gmailEmail so future checks skip the API call
-    if (gmailEmail) {
-      await prisma.commsGmailToken
-        .update({ where: { id: row.id }, data: { gmailEmail } })
-        .catch(() => {});
-    }
+    await prisma.commsGmailToken
+      .update({ where: { id: row.id }, data: { gmailEmail } })
+      .catch(() => {});
     return true;
   } catch {
     // Network error verifying identity — fail closed

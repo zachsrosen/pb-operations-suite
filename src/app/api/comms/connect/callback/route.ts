@@ -96,7 +96,16 @@ export async function GET(req: NextRequest) {
   const profile = await profileResp.json();
   const gmailEmail = (profile.emailAddress || "").toLowerCase();
   const userEmail = (user.email || "").toLowerCase();
-  if (gmailEmail && userEmail && gmailEmail !== userEmail) {
+  if (!gmailEmail) {
+    // Profile returned no email — can't verify identity, fail closed
+    fetch(`https://oauth2.googleapis.com/revoke?token=${data.access_token}`, {
+      method: "POST",
+    }).catch(() => {});
+    return NextResponse.redirect(
+      new URL("/dashboards/comms?error=identity_check_failed", req.url)
+    );
+  }
+  if (userEmail && gmailEmail !== userEmail) {
     // Wrong mailbox — revoke and reject
     fetch(`https://oauth2.googleapis.com/revoke?token=${data.access_token}`, {
       method: "POST",
