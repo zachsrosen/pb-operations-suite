@@ -19,21 +19,21 @@ export default function EquipmentCard({ deal }: EquipmentCardProps) {
     : "—";
 
   const inverterLine = deal.inverterBrand && deal.inverterModel
-    ? `${deal.inverterBrand} ${deal.inverterModel}${(deal as any).inverterQty ? ` (×${(deal as any).inverterQty})` : ""}`
+    ? `${deal.inverterBrand} ${deal.inverterModel}${deal["inverterQty"] ? ` (×${deal["inverterQty"]})` : ""}`
     : "—";
 
   const batteryLine = deal.batteryBrand && deal.batteryModel
-    ? `${deal.batteryBrand} ${deal.batteryModel}${(deal as any).batteryCount ? ` (×${(deal as any).batteryCount})` : ""}`
+    ? `${deal.batteryBrand} ${deal.batteryModel}${deal["batteryCount"] ? ` (×${deal["batteryCount"]})` : ""}`
     : "—";
 
-  const batteryExpCount = (deal as any).batteryExpansionCount as number | null;
-  const batteryExpModel = (deal as any).batteryExpansionModel as string | null;
+  const batteryExpCount = deal["batteryExpansionCount"] as number | null;
+  const batteryExpModel = deal["batteryExpansionModel"] as string | null;
   const showBatteryExp = batteryExpCount != null && batteryExpCount > 0;
 
-  const evCount = (deal as any).evCount as number | null;
+  const evCount = deal["evCount"] as number | null;
 
-  const dcSize = (deal as any).systemSizeKwdc as number | null;
-  const acSize = (deal as any).systemSizeKwac as number | null;
+  const dcSize = deal["systemSizeKwdc"] as number | null;
+  const acSize = deal["systemSizeKwac"] as number | null;
   const sizeStr = dcSize != null || acSize != null
     ? `${dcSize != null ? `${dcSize.toFixed(1)} kW DC` : "—"} / ${acSize != null ? `${acSize.toFixed(1)} kW AC` : "—"}`
     : "—";

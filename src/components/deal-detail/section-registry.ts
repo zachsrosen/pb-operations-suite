@@ -10,7 +10,7 @@ import { STAGE_COLORS } from "@/lib/constants";
 // --- Helper: shorthand field builder ---
 
 function f(label: string, key: string, format?: FieldDef["format"]): FieldDef & { _key: string } {
-  return { label, value: null, format, _key: key } as any;
+  return { label, value: null, format, _key: key } as FieldDef & { _key: string };
 }
 
 function resolveFields(
