@@ -733,9 +733,13 @@ interface UserJobCount {
 function extractAssignedUsers(assignedUsers: unknown): Array<{ user_uid: string; user_name: string }> {
   if (!Array.isArray(assignedUsers)) return [];
   return assignedUsers
-    .filter((u): u is { user_uid: string; user_name: string } =>
-      typeof u === "object" && u !== null && "user_uid" in u && "user_name" in u
-    );
+    .filter((u): u is { user_uid: string; user_name?: string } =>
+      typeof u === "object" && u !== null && "user_uid" in u
+    )
+    .map((u) => ({
+      user_uid: u.user_uid,
+      user_name: u.user_name || u.user_uid.slice(0, 8),
+    }));
 }
 
 export function buildLeaderboard(
