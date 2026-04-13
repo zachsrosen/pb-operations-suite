@@ -10,6 +10,7 @@ import { ProjectQueue } from "./ProjectQueue";
 import { ProjectDetail } from "./ProjectDetail";
 import { AddProjectDialog } from "./AddProjectDialog";
 import { AddEscalationDialog } from "./AddEscalationDialog";
+import { MeetingSearch } from "./MeetingSearch";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -128,8 +129,20 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEscalationDialog, setShowEscalationDialog] = useState(false);
   const [initialized, setInitialized] = useState(false);
+  const [mode, setMode] = useState<"prep" | "meeting" | "search">("prep");
 
-  const isPreview = !sessionId;
+  const isPreview = mode === "prep";
+  const isSearch = mode === "search";
+
+  const selectSession = (id: string) => {
+    setSessionId(id);
+    setMode("meeting");
+  };
+
+  const goToPrep = () => {
+    setSessionId(null);
+    setMode("prep");
+  };
 
   // ── Real-time sync via SSE ──
   // Suppress SSE-driven refetches while the user has pending local edits.
@@ -148,16 +161,21 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
   );
 
   // ── Presence heartbeat (every 8s) ──
-  const presencePayloadRef = useRef({ sessionId, selectedItemId });
-  presencePayloadRef.current = { sessionId, selectedItemId };
+  const presencePayloadRef = useRef({ sessionId, selectedItemId, mode });
+  presencePayloadRef.current = { sessionId, selectedItemId, mode };
 
   useEffect(() => {
     const sendHeartbeat = () => {
-      const { sessionId: sid, selectedItemId: selId } = presencePayloadRef.current;
+      const { sessionId: sid, selectedItemId: selId, mode: m } = presencePayloadRef.current;
+      const inSearch = m === "search";
       fetch("/api/idr-meeting/presence", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId: sid, selectedItemId: selId }),
+        body: JSON.stringify({
+          sessionId: inSearch ? null : sid,
+          selectedItemId: inSearch ? null : selId,
+          mode: inSearch ? "search" : undefined,
+        }),
       }).catch(() => {}); // fire-and-forget
     };
     sendHeartbeat(); // immediate
@@ -169,14 +187,19 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
     };
   }, []);
 
-  // Send heartbeat on view change (session switch or item selection)
+  // Send heartbeat on view change (session switch, item selection, or mode change)
   useEffect(() => {
+    const inSearch = mode === "search";
     fetch("/api/idr-meeting/presence", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sessionId, selectedItemId }),
+      body: JSON.stringify({
+        sessionId: inSearch ? null : sessionId,
+        selectedItemId: inSearch ? null : selectedItemId,
+        mode: inSearch ? "search" : undefined,
+      }),
     }).catch(() => {});
-  }, [sessionId, selectedItemId]);
+  }, [sessionId, selectedItemId, mode]);
 
   // ── Presence query ──
   const presenceQuery = useQuery({
@@ -236,7 +259,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
       return res.json() as Promise<{ session: { id: string } }>;
     },
     onSuccess: (data) => {
-      setSessionId(data.session.id);
+      selectSession(data.session.id);
       queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.sessions() });
       queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(data.session.id) });
       addToast({ type: "success", title: "Session started — prep data carried over" });
@@ -293,7 +316,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
       (s) => s.status !== "COMPLETED" && new Date(s.date).toISOString().slice(0, 10) === today,
     );
 
-    if (todaySession) setSessionId(todaySession.id);
+    if (todaySession) selectSession(todaySession.id);
   }, [sessionsQuery.data, initialized]);
 
   useEffect(() => {
@@ -433,7 +456,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
       <SessionHeader
         session={isPreview ? null : (sessionQuery.data ?? null)}
         sessions={sessionsQuery.data?.sessions ?? []}
-        onSelectSession={setSessionId}
+        onSelectSession={selectSession}
         onNewSession={() => createSession.mutate()}
         onOpenAddDialog={() => {
           if (isPreview) {
@@ -442,42 +465,48 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
             setShowAddDialog(true);
           }
         }}
-        onViewPreview={() => setSessionId(null)}
+        onViewPreview={goToPrep}
         onSessionEnded={() => {
-          setSessionId(null);
+          goToPrep();
           setSelectedItemId(null);
         }}
+        onSearchHistory={() => setMode("search")}
         creating={createSession.isPending}
         isPreview={isPreview}
+        isSearch={isSearch}
         previewCount={previewQuery.data?.items?.length ?? 0}
         presenceUsers={presenceUsers}
       />
 
-      <div className="flex gap-4 h-[calc(100vh-13rem)] overflow-hidden">
-        <ProjectQueue
-          items={displayItems}
-          selectedItemId={selectedItemId}
-          onSelectItem={setSelectedItemId}
-          loading={displayLoading}
-          isPreview={isPreview}
-          presenceUsers={presenceUsers}
-        />
+      {isSearch ? (
+        <MeetingSearch />
+      ) : (
+        <div className="flex gap-4 h-[calc(100vh-13rem)] overflow-hidden">
+          <ProjectQueue
+            items={displayItems}
+            selectedItemId={selectedItemId}
+            onSelectItem={setSelectedItemId}
+            loading={displayLoading}
+            isPreview={isPreview}
+            presenceUsers={presenceUsers}
+          />
 
-        <ProjectDetail
-          item={selectedItem}
-          onChange={handleItemChange}
-          readOnly={isArchive}
-          isPreview={isPreview}
-          sessionId={sessionId}
-          userEmail={userEmail}
-          onSkipItem={
-            !isPreview && !isArchive && selectedItem
-              ? () => skipItem.mutate(selectedItem.id)
-              : undefined
-          }
-          skipping={skipItem.isPending}
-        />
-      </div>
+          <ProjectDetail
+            item={selectedItem}
+            onChange={handleItemChange}
+            readOnly={isArchive}
+            isPreview={isPreview}
+            sessionId={sessionId}
+            userEmail={userEmail}
+            onSkipItem={
+              !isPreview && !isArchive && selectedItem
+                ? () => skipItem.mutate(selectedItem.id)
+                : undefined
+            }
+            skipping={skipItem.isPending}
+          />
+        </div>
+      )}
 
       {showAddDialog && sessionId && (
         <AddProjectDialog
