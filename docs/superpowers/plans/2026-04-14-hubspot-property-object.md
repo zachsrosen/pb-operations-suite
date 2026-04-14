@@ -1449,7 +1449,7 @@ Write the cache row + push updated rollup properties back to HubSpot so the HubS
 
 - [ ] **Step 1: Write tests — aggregate from mocked link rows**
 
-(Full test sketch omitted for length — follow the pattern of Task 2.4 mocks. Key cases: no deals → counts zero; 3 deals → counts three, system size summed across line items categorized as MODULE; one ticket with status="open" → openTicketsCount=1; most recent install date = max closeDate among closed-won deals.)
+(Full test sketch omitted for length — follow the pattern of Task 2.4 mocks. Key cases: no deals → counts zero; 3 deals → counts three, system size summed across line items categorized as MODULE; one ticket whose `hs_pipeline_stage` maps (via `getTicketStageMap().map`) to a non-closed label → `openTicketsCount=1`; `firstInstallDate` = min `constructionCompleteDate` across deals, `mostRecentInstallDate` = max `constructionCompleteDate`; deals with a null `constructionCompleteDate` are ignored for install-date rollups; `earliestWarrantyExpiry` stays `null` in v1 regardless of deal input.)
 
 - [ ] **Step 2: Implement**
 
