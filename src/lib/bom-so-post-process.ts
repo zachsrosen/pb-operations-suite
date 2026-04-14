@@ -344,7 +344,7 @@ export async function postProcessSoItems(
         corrections.push({ action: "item_removed", itemName: item.name, reason: "Gateway-3 not used on battery-only jobs" });
         toRemove.add(i);
       }
-      if (matchesSku(item, /\bac\s*disconnect\b|DG222URB|D224NRB|TGN3324R/i)) {
+      if (matchesSku(item, /\bac\s*disconnect\b|DG222URB|TGN3322R|D224NRB|TGN3324R/i)) {
         corrections.push({ action: "item_removed", itemName: item.name, reason: "AC disconnect not used on battery-only jobs" });
         toRemove.add(i);
       }

@@ -200,12 +200,12 @@ When PV-2 or PV-0 lists a "60A MAIN BREAKER ENCLOSURE", always output TWO items 
 2. { "category": "ELECTRICAL_BOS", "brand": "GE", "model": "THQL2160", "description": "60A 2-POLE GE CIRCUIT BREAKER", "qty": 1, "source": "PV-2" }
 Do NOT output a single "60A MAIN BREAKER ENCLOSURE" item — always split into these two.
 
-### AC DISCONNECT — 2-Wire vs 3-Wire
-Read the PV-4 SLD callout text for the AC disconnect:
-- "3-WIRE" in callout → model: "TGN3322R" (3-pole; used on service upgrade / tap jobs with neutral)
-- "2-WIRE" or no wire count → model: "DG222URB" (standard 2-pole, most common)
+### AC DISCONNECT — Always TGN3322R
+When the planset shows a 60A non-fused utility AC disconnect (any wire count), always use:
+- model: "TGN3322R"
+- description: "60A NON-FUSED, UTILITY PV AC DISCONNECT VISIBLE LOCKABLE LABELED DISCONNECT"
 
-**DG222URB is always 60A.** Its description must always be: "60A NON-FUSED, UTILITY PV AC DISCONNECT VISIBLE LOCKABLE LABELED DISCONNECT". Never use "200A" in the description even if the MSP or service panel is 200A — those are different components.
+Never use "200A" in the description even if the MSP or service panel is 200A — those are different components.
 
 ### JUNCTION BOX — Always Substitute SOLOBOX COMP-D
 Regardless of what the planset shows for JUNCTION BOX (e.g., "EZ SOLAR JB-1.2"), always output the UNIRAC SOLOBOX COMP-D instead:

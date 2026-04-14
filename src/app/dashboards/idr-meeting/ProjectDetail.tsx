@@ -257,9 +257,6 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
               ) : null}
             </Section>
 
-            {/* Site Photos */}
-            <PhotoGalleryCard hubspotDealId={item.dealId} />
-
             {/* Survey Readiness */}
             {readinessQuery.data && (
               <Section title="Survey Readiness">
@@ -274,20 +271,11 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
               </Section>
             )}
 
-            {/* AHJ & Utility Codes */}
-            <Section title="AHJ & Utility Codes">
-              <AhjUtilityInfo
-                dealId={item.dealId}
-                ahjName={item.ahj}
-                utilityName={item.utilityCompany}
-              />
-            </Section>
-
             {/* HubSpot Notes (read-only) */}
             <HubSpotNotes item={item} />
           </div>
 
-          {/* RIGHT: Planning + actions + notes */}
+          {/* RIGHT: Planning + actions + notes + codes */}
           <div className="space-y-3">
             <Section title="Install Planning">
               <InstallPlanningForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
@@ -300,8 +288,20 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
             <Section title="Meeting Notes">
               <MeetingNotesForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
             </Section>
+
+            {/* AHJ & Utility Codes */}
+            <Section title="AHJ & Utility Codes">
+              <AhjUtilityInfo
+                dealId={item.dealId}
+                ahjName={item.ahj}
+                utilityName={item.utilityCompany}
+              />
+            </Section>
           </div>
         </div>
+
+        {/* ── Site Photos (full width) ── */}
+        <PhotoGalleryCard hubspotDealId={item.dealId} />
       </div>
     </div>
   );
