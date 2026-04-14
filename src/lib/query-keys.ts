@@ -104,6 +104,10 @@ export const queryKeys = {
       [...queryKeys.officeCalendar.root, "service-jobs", location, from, to] as const,
     dnrJobs: (location: string, from: string, to: string) =>
       [...queryKeys.officeCalendar.root, "dnr-jobs", location, from, to] as const,
+    roofingJobs: (location: string, from: string, to: string) =>
+      [...queryKeys.officeCalendar.root, "roofing-jobs", location, from, to] as const,
+    otherJobs: (location: string, from: string, to: string) =>
+      [...queryKeys.officeCalendar.root, "other-jobs", location, from, to] as const,
   },
   idrMeeting: {
     root: ["idr-meeting"] as const,

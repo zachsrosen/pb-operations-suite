@@ -12,6 +12,8 @@ import {
   LEGEND_ITEMS,
   SERVICE_CATEGORY_UIDS,
   DNR_CATEGORY_UIDS,
+  ROOFING_CATEGORY_UIDS,
+  EXCLUDE_OTHER_CATEGORY_UIDS,
   type RawApiProject,
   type ZuperCategoryJob,
   type DayPill,
@@ -89,7 +91,39 @@ function useCalendarData(location: string) {
     staleTime: 60_000,
   });
 
-  return { projectsQuery, serviceQuery, dnrQuery, year, month };
+  const roofingQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
+    queryKey: queryKeys.officeCalendar.roofingJobs(location, fromStr, toStr),
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        categories: ROOFING_CATEGORY_UIDS,
+        from_date: fromStr,
+        to_date: toStr,
+      });
+      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
+      if (!res.ok) return { jobs: [] };
+      return res.json();
+    },
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+  });
+
+  const otherQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
+    queryKey: queryKeys.officeCalendar.otherJobs(location, fromStr, toStr),
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        exclude: EXCLUDE_OTHER_CATEGORY_UIDS,
+        from_date: fromStr,
+        to_date: toStr,
+      });
+      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
+      if (!res.ok) return { jobs: [] };
+      return res.json();
+    },
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+  });
+
+  return { projectsQuery, serviceQuery, dnrQuery, roofingQuery, otherQuery, year, month };
 }
 
 // ---------------------------------------------------------------------------
@@ -106,6 +140,8 @@ function formatEventLabel(eventType: string): string {
     case "blocked": return "Blocked";
     case "service": return "Service";
     case "dnr": return "D&R";
+    case "roofing": return "Roofing";
+    case "other": return "Other";
     default: return eventType;
   }
 }
@@ -313,7 +349,7 @@ function Legend() {
 // ---------------------------------------------------------------------------
 
 export default function CalendarSection({ location }: CalendarSectionProps) {
-  const { projectsQuery, serviceQuery, dnrQuery, year, month } = useCalendarData(location);
+  const { projectsQuery, serviceQuery, dnrQuery, roofingQuery, otherQuery, year, month } = useCalendarData(location);
 
   const isLoading = projectsQuery.isLoading;
 
@@ -323,15 +359,19 @@ export default function CalendarSection({ location }: CalendarSectionProps) {
     const projects = rawProjects.map(toCalendarProject);
     const serviceJobs = serviceQuery.data?.jobs || [];
     const dnrJobs = dnrQuery.data?.jobs || [];
+    const roofingJobs = roofingQuery.data?.jobs || [];
+    const otherJobs = otherQuery.data?.jobs || [];
 
     const loc = location as CanonicalLocation;
     const projectEvents = generateProjectEvents(projects, loc);
     const serviceEvents = generateZuperEvents(serviceJobs, "service", loc);
     const dnrEvents = generateZuperEvents(dnrJobs, "dnr", loc);
+    const roofingEvents = generateZuperEvents(roofingJobs, "roofing", loc);
+    const otherEvents = generateZuperEvents(otherJobs, "other", loc);
 
-    const allEvents = [...projectEvents, ...serviceEvents, ...dnrEvents];
+    const allEvents = [...projectEvents, ...serviceEvents, ...dnrEvents, ...roofingEvents, ...otherEvents];
     return expandToDayPills(allEvents, year, month);
-  }, [projectsQuery.data, serviceQuery.data, dnrQuery.data, location, year, month]);
+  }, [projectsQuery.data, serviceQuery.data, dnrQuery.data, roofingQuery.data, otherQuery.data, location, year, month]);
 
   // Build the month grid
   const grid = useMemo(() => {

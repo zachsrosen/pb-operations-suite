@@ -23,7 +23,9 @@ export type CalendarEventType =
   | "rtb"
   | "blocked"
   | "service"
-  | "dnr";
+  | "dnr"
+  | "roofing"
+  | "other";
 
 /** A single calendar event positioned on a date */
 export interface CalendarEvent {
@@ -179,6 +181,8 @@ export const EVENT_COLORS: Record<string, { border: string; bg: string; text: st
   blocked:                 { border: "border-l-yellow-500",  bg: "bg-yellow-500/15",  text: "text-yellow-300" },
   service:                 { border: "border-l-purple-500",  bg: "bg-purple-500/15",  text: "text-purple-300" },
   dnr:                     { border: "border-l-amber-500",   bg: "bg-amber-500/15",   text: "text-amber-300" },
+  roofing:                 { border: "border-l-rose-500",    bg: "bg-rose-500/15",    text: "text-rose-300" },
+  other:                   { border: "border-l-slate-400",   bg: "bg-slate-500/15",   text: "text-slate-300" },
 };
 
 /** Legend items for the bottom of the calendar slide */
@@ -190,6 +194,8 @@ export const LEGEND_ITEMS: { label: string; dotColor: string }[] = [
   { label: "Blocked",    dotColor: "bg-yellow-500" },
   { label: "Service",    dotColor: "bg-purple-500" },
   { label: "D&R",        dotColor: "bg-amber-500" },
+  { label: "Roofing",    dotColor: "bg-rose-500" },
+  { label: "Other",      dotColor: "bg-slate-400" },
 ];
 
 /** Zuper category UIDs — same constants as master scheduler (scheduler/page.tsx:267-276) */
@@ -202,6 +208,32 @@ export const DNR_CATEGORY_UIDS = [
   "d9d888a1-efc3-4f01-a8d6-c9e867374d71", // Detach
   "43df49e9-3835-48f2-80ca-cc77ad7c3f0d", // Reset
   "a5e54b76-8b79-4cd7-a960-bad53d24e1c5", // D&R Inspection
+].join(",");
+
+export const ROOFING_CATEGORY_UIDS = [
+  "b3289bad-d618-47c7-b592-43454b655982", // Walk Roof
+  "18f08c0d-f767-4e4a-8970-7c67597f4b4a", // Mid Roof Install
+  "92caf51d-1a53-4679-9b64-ba316ccb870d", // Roof Final
+].join(",");
+
+/**
+ * UIDs to exclude when fetching "Other" jobs — everything explicitly
+ * represented elsewhere on the calendar (survey, construction, inspection,
+ * service, d&r, roofing). Matches the master scheduler's EXCLUDE_OTHER list.
+ */
+export const EXCLUDE_OTHER_CATEGORY_UIDS = [
+  "002bac33-84d3-4083-a35d-50626fc49288", // Site Survey
+  "c53070e5-63fd-41bc-8803-f66ad842dbb5", // Pre-Sale Site Visit
+  "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf", // Construction
+  "b7dc03d2-25d0-40df-a2fc-b1a477b16b65", // Inspection
+  "cff6f839-c043-46ee-a09f-8d0e9f363437", // Service Visit
+  "8a29a1c0-9141-4db6-b8bb-9d9a65e2a1de", // Service Revisit
+  "d9d888a1-efc3-4f01-a8d6-c9e867374d71", // Detach
+  "43df49e9-3835-48f2-80ca-cc77ad7c3f0d", // Reset
+  "a5e54b76-8b79-4cd7-a960-bad53d24e1c5", // D&R Inspection
+  "b3289bad-d618-47c7-b592-43454b655982", // Walk Roof
+  "18f08c0d-f767-4e4a-8970-7c67597f4b4a", // Mid Roof Install
+  "92caf51d-1a53-4679-9b64-ba316ccb870d", // Roof Final
 ].join(",");
 
 // ---------------------------------------------------------------------------
@@ -383,7 +415,7 @@ export function generateProjectEvents(
 
 export function generateZuperEvents(
   jobs: ZuperCategoryJob[],
-  eventType: "service" | "dnr",
+  eventType: "service" | "dnr" | "roofing" | "other",
   location: CanonicalLocation
 ): CalendarEvent[] {
   const events: CalendarEvent[] = [];

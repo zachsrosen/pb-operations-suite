@@ -20,6 +20,8 @@ import {
   LEGEND_ITEMS,
   SERVICE_CATEGORY_UIDS,
   DNR_CATEGORY_UIDS,
+  ROOFING_CATEGORY_UIDS,
+  EXCLUDE_OTHER_CATEGORY_UIDS,
   type RawApiProject,
   type ZuperCategoryJob,
   type DayPill,
@@ -104,7 +106,39 @@ function useAllLocationsCalendarData() {
     staleTime: 60_000,
   });
 
-  return { projectsQuery, serviceQuery, dnrQuery, year, month };
+  const roofingQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
+    queryKey: queryKeys.officeCalendar.roofingJobs("all", fromStr, toStr),
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        categories: ROOFING_CATEGORY_UIDS,
+        from_date: fromStr,
+        to_date: toStr,
+      });
+      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
+      if (!res.ok) return { jobs: [] };
+      return res.json();
+    },
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+  });
+
+  const otherQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
+    queryKey: queryKeys.officeCalendar.otherJobs("all", fromStr, toStr),
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        exclude: EXCLUDE_OTHER_CATEGORY_UIDS,
+        from_date: fromStr,
+        to_date: toStr,
+      });
+      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
+      if (!res.ok) return { jobs: [] };
+      return res.json();
+    },
+    refetchInterval: 120_000,
+    staleTime: 60_000,
+  });
+
+  return { projectsQuery, serviceQuery, dnrQuery, roofingQuery, otherQuery, year, month };
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +155,8 @@ function formatEventLabel(eventType: string): string {
     case "blocked": return "Blk";
     case "service": return "Svc";
     case "dnr": return "D&R";
+    case "roofing": return "Roof";
+    case "other": return "Other";
     default: return eventType;
   }
 }
@@ -292,7 +328,7 @@ function Legend() {
 // ---------------------------------------------------------------------------
 
 export default function AllLocationsCalendarSection() {
-  const { projectsQuery, serviceQuery, dnrQuery, year, month } = useAllLocationsCalendarData();
+  const { projectsQuery, serviceQuery, dnrQuery, roofingQuery, otherQuery, year, month } = useAllLocationsCalendarData();
 
   const isLoading = projectsQuery.isLoading;
 
@@ -302,6 +338,8 @@ export default function AllLocationsCalendarSection() {
     const projects = rawProjects.map(toCalendarProject);
     const serviceJobs = serviceQuery.data?.jobs || [];
     const dnrJobs = dnrQuery.data?.jobs || [];
+    const roofingJobs = roofingQuery.data?.jobs || [];
+    const otherJobs = otherQuery.data?.jobs || [];
 
     // Generate events for each location and merge
     const allEvents: CalendarEvent[] = [];
@@ -309,7 +347,9 @@ export default function AllLocationsCalendarSection() {
       const projectEvents = generateProjectEvents(projects, loc as CanonicalLocation);
       const serviceEvents = generateZuperEvents(serviceJobs, "service", loc as CanonicalLocation);
       const dnrEvents = generateZuperEvents(dnrJobs, "dnr", loc as CanonicalLocation);
-      allEvents.push(...projectEvents, ...serviceEvents, ...dnrEvents);
+      const roofingEvents = generateZuperEvents(roofingJobs, "roofing", loc as CanonicalLocation);
+      const otherEvents = generateZuperEvents(otherJobs, "other", loc as CanonicalLocation);
+      allEvents.push(...projectEvents, ...serviceEvents, ...dnrEvents, ...roofingEvents, ...otherEvents);
     }
 
     // Deduplicate by event ID (same event shouldn't appear twice)
@@ -321,7 +361,7 @@ export default function AllLocationsCalendarSection() {
     });
 
     return expandToDayPills(unique, year, month);
-  }, [projectsQuery.data, serviceQuery.data, dnrQuery.data, year, month]);
+  }, [projectsQuery.data, serviceQuery.data, dnrQuery.data, roofingQuery.data, otherQuery.data, year, month]);
 
   // Build the month grid
   const grid = useMemo(() => {
