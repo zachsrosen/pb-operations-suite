@@ -240,13 +240,13 @@ describe("parseZuperStatusHistory", () => {
 
     expect(events).toHaveLength(3);
     expect(events[0]).toMatchObject({
-      id: "zstatus-job-abc-0",
+      id: "zstatus-job-abc-20260410100000-SCHEDULED",
       type: "zuper_status",
       title: "Construction — SCHEDULED",
       timestamp: "2026-04-10T10:00:00Z",
     });
     expect(events[2]).toMatchObject({
-      id: "zstatus-job-abc-2",
+      id: "zstatus-job-abc-20260411160000-COMPLETED",
       type: "zuper_status",
       title: "Construction — COMPLETED",
       timestamp: "2026-04-11T16:00:00Z",
@@ -294,12 +294,15 @@ export function parseZuperStatusHistory(
   if (!Array.isArray(data.job_status)) return [];
 
   return data.job_status
-    .map((entry: Record<string, unknown>, index: number) => {
+    .map((entry: Record<string, unknown>) => {
       const statusName = String(entry?.status_name ?? "Unknown");
       const ts = entry?.created_at as string | undefined;
       if (!ts) return null;
+      // Stable ID: derived from payload data, not array index.
+      // Avoids cursor/key breakage if Zuper reorders or backfills entries.
+      const tsSlug = ts.replace(/[^0-9]/g, "").slice(0, 14);
       return {
-        id: `zstatus-${jobUid}-${index}`,
+        id: `zstatus-${jobUid}-${tsSlug}-${statusName}`,
         type: "zuper_status" as const,
         timestamp: ts,
         title: `${jobCategory} — ${statusName}`,
@@ -354,7 +357,7 @@ git commit -m "feat(deal-detail): replace single Zuper event with full status hi
 **Files:**
 - Modify: `src/lib/deal-timeline.ts`
 
-Two new DB-backed fetchers following the same cursor pattern as `fetchNoteEvents` and `fetchSyncEvents`.
+Two new DB-backed fetchers delegating to `fetchDbEvents()` — the same helper used by `fetchNoteEvents` and `fetchSyncEvents`. This preserves the cross-source split-query cursor strategy.
 
 **Important:** `BomPipelineRun.dealId` stores the **HubSpot deal ID** (not the internal cuid), so this fetcher takes `hubspotDealId`.
 
@@ -363,57 +366,40 @@ Two new DB-backed fetchers following the same cursor pattern as `fetchNoteEvents
 In `src/lib/deal-timeline.ts`, add after `fetchSyncEvents`:
 
 ```typescript
+const BOM_STATUS_LABEL: Record<string, string> = {
+  RUNNING: "started",
+  SUCCEEDED: "completed",
+  FAILED: "failed",
+  PARTIAL: "partially completed",
+};
+
 async function fetchBomEvents(
   hubspotDealId: string,
   windowStart: Date | null,
   cursor: Cursor | null,
 ): Promise<TimelineEvent[]> {
-  const where: Record<string, unknown> = { dealId: hubspotDealId };
-  const andConditions: Record<string, unknown>[] = [];
-
-  if (windowStart) {
-    andConditions.push({ createdAt: { gte: windowStart } });
-  }
-  if (cursor) {
-    andConditions.push(buildCursorWhere(cursor.id, cursor.ts, "bom"));
-  }
-  if (andConditions.length > 0) {
-    where.AND = andConditions;
-  }
-
-  const runs = await prisma.bomPipelineRun.findMany({
-    where,
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: PAGE_SIZE,
+  return fetchDbEvents({
+    baseWhere: { dealId: hubspotDealId },
+    windowStart,
+    cursor,
+    prefix: "bom",
+    findMany: (args) => prisma.bomPipelineRun.findMany(args),
+    toEvent: (run) => ({
+      id: `bom-${run.id}`,
+      type: "bom" as const,
+      timestamp: run.createdAt.toISOString(),
+      title: `BOM ${BOM_STATUS_LABEL[run.status] ?? run.status} — ${run.trigger.replace(/_/g, " ").toLowerCase()}`,
+      detail: run.status === "FAILED" ? (run.errorMessage ?? run.failedStep ?? null) : null,
+      author: null,
+      metadata: {
+        trigger: run.trigger,
+        status: run.status,
+        failedStep: run.failedStep,
+        durationMs: run.durationMs,
+        snapshotVersion: run.snapshotVersion,
+      },
+    }),
   });
-
-  const statusLabel: Record<string, string> = {
-    RUNNING: "started",
-    SUCCEEDED: "completed",
-    FAILED: "failed",
-    PARTIAL: "partially completed",
-  };
-
-  const events = runs.map((run) => ({
-    id: `bom-${run.id}`,
-    type: "bom" as const,
-    timestamp: run.createdAt.toISOString(),
-    title: `BOM ${statusLabel[run.status] ?? run.status} — ${run.trigger.replace(/_/g, " ").toLowerCase()}`,
-    detail: run.status === "FAILED" ? (run.errorMessage ?? run.failedStep ?? null) : null,
-    author: null,
-    metadata: {
-      trigger: run.trigger,
-      status: run.status,
-      failedStep: run.failedStep,
-      durationMs: run.durationMs,
-      snapshotVersion: run.snapshotVersion,
-    },
-  }));
-
-  if (cursor && !cursor.id.startsWith("bom-")) {
-    return events.filter((e) => isBeforeCursor(e.timestamp, e.id, cursor));
-  }
-  return events;
 }
 ```
 
@@ -422,56 +408,39 @@ async function fetchBomEvents(
 Add after `fetchBomEvents`:
 
 ```typescript
+const SCHEDULE_TYPE_LABEL: Record<string, string> = {
+  survey: "Survey",
+  construction: "Install",
+  inspection: "Inspection",
+};
+
 async function fetchScheduleEvents(
   hubspotDealId: string,
   windowStart: Date | null,
   cursor: Cursor | null,
 ): Promise<TimelineEvent[]> {
-  const where: Record<string, unknown> = { projectId: hubspotDealId };
-  const andConditions: Record<string, unknown>[] = [];
-
-  if (windowStart) {
-    andConditions.push({ createdAt: { gte: windowStart } });
-  }
-  if (cursor) {
-    andConditions.push(buildCursorWhere(cursor.id, cursor.ts, "sched"));
-  }
-  if (andConditions.length > 0) {
-    where.AND = andConditions;
-  }
-
-  const records = await prisma.scheduleRecord.findMany({
-    where,
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: PAGE_SIZE,
+  return fetchDbEvents({
+    baseWhere: { projectId: hubspotDealId },
+    windowStart,
+    cursor,
+    prefix: "sched",
+    findMany: (args) => prisma.scheduleRecord.findMany(args),
+    toEvent: (rec) => ({
+      id: `sched-${rec.id}`,
+      type: "schedule" as const,
+      timestamp: rec.createdAt.toISOString(),
+      title: `${SCHEDULE_TYPE_LABEL[rec.scheduleType] ?? rec.scheduleType} ${rec.status} — ${rec.scheduledDate}`,
+      detail: rec.assignedUser ? `Assigned to ${rec.assignedUser}` : null,
+      author: rec.scheduledBy ?? null,
+      metadata: {
+        scheduleType: rec.scheduleType,
+        scheduledDate: rec.scheduledDate,
+        status: rec.status,
+        assignedUser: rec.assignedUser,
+        zuperSynced: rec.zuperSynced,
+      },
+    }),
   });
-
-  const typeLabel: Record<string, string> = {
-    survey: "Survey",
-    construction: "Install",
-    inspection: "Inspection",
-  };
-
-  const events = records.map((rec) => ({
-    id: `sched-${rec.id}`,
-    type: "schedule" as const,
-    timestamp: rec.createdAt.toISOString(),
-    title: `${typeLabel[rec.scheduleType] ?? rec.scheduleType} ${rec.status} — ${rec.scheduledDate}`,
-    detail: rec.assignedUser ? `Assigned to ${rec.assignedUser}` : null,
-    author: rec.scheduledBy ?? null,
-    metadata: {
-      scheduleType: rec.scheduleType,
-      scheduledDate: rec.scheduledDate,
-      status: rec.status,
-      assignedUser: rec.assignedUser,
-      zuperSynced: rec.zuperSynced,
-    },
-  }));
-
-  if (cursor && !cursor.id.startsWith("sched-")) {
-    return events.filter((e) => isBeforeCursor(e.timestamp, e.id, cursor));
-  }
-  return events;
 }
 ```
 
@@ -546,7 +515,7 @@ async function fetchZuperNoteEvents(
 
   const jobs = await prisma.zuperJobCache.findMany({
     where: { hubspotDealId },
-    select: { jobUid: true, jobCategory: true },
+    select: { jobUid: true, jobCategory: true, lastSyncedAt: true },
   });
   if (jobs.length === 0) return [];
 
@@ -559,14 +528,16 @@ async function fetchZuperNoteEvents(
         );
         if (cached.data.type === "error") return [];
         const notes = cached.data.data?.notes ?? [];
-        return notes.map((n) => {
+        return notes
+          .filter((n) => !!n.created_at) // Skip notes without timestamps — unstable for pagination
+          .map((n) => {
           const author = [n.created_by?.first_name, n.created_by?.last_name]
             .filter(Boolean)
             .join(" ") || "Unknown";
           return {
             id: `znote-${n.note_uid}`,
             type: "zuper_note" as const,
-            timestamp: n.created_at ?? new Date().toISOString(),
+            timestamp: n.created_at!,
             title: `Zuper Note by ${author} (${job.jobCategory})`,
             detail: n.note ?? null,
             author,
@@ -721,7 +692,7 @@ git commit -m "feat(deal-detail): add HubSpot tasks to engagement pipeline"
 - Modify: `src/lib/deal-timeline.ts` (fetchSyncEvents)
 - Modify: `src/components/deal-detail/TimelineEventRow.tsx` (SyncChangesDiff)
 
-- [ ] **Step 1: Import FIELD_LABELS and update fetchSyncEvents**
+- [ ] **Step 1: Import FIELD_LABELS and update fetchSyncEvents toEvent callback**
 
 In `src/lib/deal-timeline.ts`, add to imports:
 
@@ -729,54 +700,58 @@ In `src/lib/deal-timeline.ts`, add to imports:
 import { FIELD_LABELS } from "@/components/deal-detail/section-registry";
 ```
 
-In `fetchSyncEvents`, after building the `changes` object from `log.changesDetected` (around line 150), add a `displayChanges` field to the metadata:
-
-Replace the event mapping in `fetchSyncEvents` (the `logs.map` callback):
+Add a noise filter constant near the top of the file (after `NINETY_DAYS_MS`):
 
 ```typescript
-  const NOISE_FIELDS = new Set([
-    "lastmodifieddate", "hs_lastmodifieddate", "notes_last_updated",
-    "hs_object_id", "hs_all_owner_ids", "hs_updated_by_user_id",
-  ]);
-
-  const events = logs.map((log) => {
-    const rawChanges = log.changesDetected as Record<string, [unknown, unknown]> | null;
-    // Filter out noise fields
-    const changes = rawChanges
-      ? Object.fromEntries(
-          Object.entries(rawChanges).filter(([key]) => !NOISE_FIELDS.has(key)),
-        )
-      : null;
-    const fieldCount = changes ? Object.keys(changes).length : 0;
-    const sourceLabel = log.source.replace(/^(batch|single):/, "");
-
-    // Build display-friendly changes with human labels
-    const displayChanges = changes
-      ? Object.fromEntries(
-          Object.entries(changes).map(([key, pair]) => [
-            key,
-            {
-              label: FIELD_LABELS[key] ?? key,
-              old: (pair as [unknown, unknown])[0],
-              new: (pair as [unknown, unknown])[1],
-            },
-          ]),
-        )
-      : null;
-
-    return {
-      id: `sync-${log.id}`,
-      type: "sync" as const,
-      timestamp: log.createdAt.toISOString(),
-      title: fieldCount > 0
-        ? `${fieldCount} field${fieldCount === 1 ? "" : "s"} updated via ${sourceLabel}`
-        : `Sync (${log.syncType.toLowerCase()}) — no changes`,
-      detail: null,
-      author: null,
-      metadata: { changes, displayChanges, syncType: log.syncType, source: log.source },
-    };
-  });
+const SYNC_NOISE_FIELDS = new Set([
+  "lastmodifieddate", "hs_lastmodifieddate", "notes_last_updated",
+  "hs_object_id", "hs_all_owner_ids", "hs_updated_by_user_id",
+]);
 ```
+
+In `fetchSyncEvents`, the function delegates to `fetchDbEvents()` with a `toEvent` callback. Update that `toEvent` callback to add noise filtering, FIELD_LABELS lookup, and `displayChanges` metadata. Replace the existing `toEvent: (log) => { ... }` callback:
+
+```typescript
+    toEvent: (log) => {
+      const rawChanges = log.changesDetected as Record<string, [unknown, unknown]> | null;
+      // Filter out noise fields
+      const changes = rawChanges
+        ? Object.fromEntries(
+            Object.entries(rawChanges).filter(([key]) => !SYNC_NOISE_FIELDS.has(key)),
+          )
+        : null;
+      const fieldCount = changes ? Object.keys(changes).length : 0;
+      const sourceLabel = log.source.replace(/^(batch|single):/, "");
+
+      // Build display-friendly changes with human labels
+      const displayChanges = changes
+        ? Object.fromEntries(
+            Object.entries(changes).map(([key, pair]) => [
+              key,
+              {
+                label: FIELD_LABELS[key] ?? key,
+                old: (pair as [unknown, unknown])[0],
+                new: (pair as [unknown, unknown])[1],
+              },
+            ]),
+          )
+        : null;
+
+      return {
+        id: `sync-${log.id}`,
+        type: "sync" as const,
+        timestamp: log.createdAt.toISOString(),
+        title: fieldCount > 0
+          ? `${fieldCount} field${fieldCount === 1 ? "" : "s"} updated via ${sourceLabel}`
+          : `Sync (${log.syncType.toLowerCase()}) — no changes`,
+        detail: null,
+        author: null,
+        metadata: { changes, displayChanges, syncType: log.syncType, source: log.source },
+      };
+    },
+```
+
+Note: This replaces only the `toEvent` callback inside the existing `fetchDbEvents()` call — the cursor/pagination logic in `fetchDbEvents()` is untouched.
 
 - [ ] **Step 2: Update SyncChangesDiff to use displayChanges**
 
