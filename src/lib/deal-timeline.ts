@@ -396,6 +396,60 @@ async function fetchPhotoEvents(
     .filter((e) => !cursor || isBeforeCursor(e.timestamp, e.id, cursor));
 }
 
+async function fetchZuperNoteEvents(
+  hubspotDealId: string,
+  windowStart: Date | null,
+  cursor: Cursor | null,
+): Promise<TimelineEvent[]> {
+  if (!zuper.isConfigured()) return [];
+
+  const jobs = await prisma.zuperJobCache.findMany({
+    where: { hubspotDealId },
+    select: { jobUid: true, jobCategory: true, lastSyncedAt: true },
+  });
+  if (jobs.length === 0) return [];
+
+  const noteArrays = await Promise.all(
+    jobs.map(async (job) => {
+      try {
+        const cacheKey = `deal-zuper-notes:${hubspotDealId}:${job.jobUid}`;
+        const cached = await appCache.getOrFetch(cacheKey, () =>
+          zuper.getJobNotes(job.jobUid),
+        );
+        if (cached.data.type === "error") return [];
+        const notes = cached.data.data?.notes ?? [];
+        return notes
+          .filter((n) => !!n.created_at)
+          .map((n) => {
+            const author = [n.created_by?.first_name, n.created_by?.last_name]
+              .filter(Boolean)
+              .join(" ") || "Unknown";
+            return {
+              id: `znote-${n.note_uid}`,
+              type: "zuper_note" as const,
+              timestamp: n.created_at!,
+              title: `Zuper Note by ${author} (${job.jobCategory})`,
+              detail: n.note ?? null,
+              author,
+              metadata: {
+                jobUid: job.jobUid,
+                jobCategory: job.jobCategory,
+                noteUid: n.note_uid,
+              },
+            };
+          });
+      } catch {
+        return [];
+      }
+    }),
+  );
+
+  return noteArrays
+    .flat()
+    .filter((e) => isInWindow(e.timestamp, windowStart))
+    .filter((e) => !cursor || isBeforeCursor(e.timestamp, e.id, cursor));
+}
+
 function engagementToTimelineEvents(
   engagements: Engagement[],
   windowStart: Date | null,
@@ -406,11 +460,13 @@ function engagementToTimelineEvents(
       const typeLabel = eng.type === "email" ? "Email"
         : eng.type === "call" ? "Call"
         : eng.type === "meeting" ? "Meeting"
+        : eng.type === "task" ? "Task"
         : "HubSpot Note";
       const titleParts: string[] = [typeLabel];
       if (eng.type === "email" && eng.subject) titleParts.push(`— ${eng.subject}`);
       if (eng.type === "call" && eng.disposition) titleParts.push(`— ${eng.disposition}`);
       if (eng.type === "meeting" && eng.subject) titleParts.push(`— ${eng.subject}`);
+      if (eng.type === "task" && eng.subject) titleParts.push(`— ${eng.subject}`);
 
       return {
         id: eng.id,
@@ -436,7 +492,7 @@ function engagementToTimelineEvents(
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch a paginated timeline for a deal, aggregating 7 sources.
+ * Fetch a paginated timeline for a deal, aggregating 8 sources.
  *
  * @param dealId      Internal Deal cuid
  * @param hubspotDealId HubSpot deal ID (numeric string)
@@ -456,8 +512,8 @@ export async function getDealTimeline(
       ? { ts: options.cursorTs, id: options.cursorId }
       : null;
 
-  // Fan-out: all 7 sources in parallel
-  const [noteEvents, syncEvents, zuperEvents, photoEvents, bomEvents, scheduleEvents, engagements] =
+  // Fan-out: all 8 sources in parallel
+  const [noteEvents, syncEvents, zuperEvents, photoEvents, bomEvents, scheduleEvents, zuperNoteEvents, engagements] =
     await Promise.all([
       fetchNoteEvents(dealId, windowStart, cursor),
       fetchSyncEvents(dealId, windowStart, cursor),
@@ -465,6 +521,7 @@ export async function getDealTimeline(
       fetchPhotoEvents(hubspotDealId, windowStart, cursor),
       fetchBomEvents(hubspotDealId, windowStart, cursor),
       fetchScheduleEvents(hubspotDealId, windowStart, cursor),
+      fetchZuperNoteEvents(hubspotDealId, windowStart, cursor),
       getDealEngagements(hubspotDealId, options.all ?? false),
     ]);
 
@@ -478,6 +535,7 @@ export async function getDealTimeline(
     ...photoEvents,
     ...bomEvents,
     ...scheduleEvents,
+    ...zuperNoteEvents,
     ...engagementEvents,
   ].sort((a, b) => {
     const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();

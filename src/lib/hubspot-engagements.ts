@@ -64,6 +64,11 @@ const MEETING_PROPERTIES = [
   "hs_meeting_end_time", "hs_timestamp", "hs_attendee_owner_ids",
 ];
 
+const TASK_PROPERTIES = [
+  "hs_task_subject", "hs_task_body", "hs_task_status",
+  "hs_timestamp", "hs_task_priority", "hs_task_type",
+];
+
 // ---------------------------------------------------------------------------
 // Fetch associations + batch-read
 // ---------------------------------------------------------------------------
@@ -175,6 +180,22 @@ function mapMeeting(p: Record<string, string | null>, id: string): Engagement {
   };
 }
 
+function mapTask(p: Record<string, string | null>, id: string): Engagement {
+  return {
+    id: `task-${id}`,
+    type: "task",
+    timestamp: p.hs_timestamp ?? new Date(0).toISOString(),
+    subject: p.hs_task_subject ?? null,
+    body: p.hs_task_body ?? null,
+    from: null,
+    to: null,
+    duration: null,
+    disposition: p.hs_task_status ?? null,
+    attendees: null,
+    createdBy: null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -196,14 +217,15 @@ export async function getDealEngagements(
     : CACHE_KEYS.DEAL_ENGAGEMENTS_RECENT(hubspotDealId);
 
   const result = await appCache.getOrFetch(cacheKey, async () => {
-    const [emails, calls, notes, meetings] = await Promise.all([
+    const [emails, calls, notes, meetings, tasks] = await Promise.all([
       fetchAssociatedObjects(hubspotDealId, "emails", EMAIL_PROPERTIES, mapEmail),
       fetchAssociatedObjects(hubspotDealId, "calls", CALL_PROPERTIES, mapCall),
       fetchAssociatedObjects(hubspotDealId, "notes", NOTE_PROPERTIES, mapNote),
       fetchAssociatedObjects(hubspotDealId, "meetings", MEETING_PROPERTIES, mapMeeting),
+      fetchAssociatedObjects(hubspotDealId, "tasks", TASK_PROPERTIES, mapTask),
     ]);
 
-    return [...emails, ...calls, ...notes, ...meetings].sort(
+    return [...emails, ...calls, ...notes, ...meetings, ...tasks].sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
     );
   });
