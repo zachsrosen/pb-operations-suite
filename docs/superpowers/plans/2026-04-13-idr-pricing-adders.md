@@ -160,7 +160,7 @@ if (data.customAdders !== undefined) {
     return NextResponse.json({ error: "Maximum 20 custom adders" }, { status: 400 });
   }
   for (const adder of data.customAdders) {
-    if (!adder.name || typeof adder.name !== "string" || adder.name.length > 100) {
+    if (!adder.name || typeof adder.name !== "string" || adder.name.trim().length === 0 || adder.name.length > 100) {
       return NextResponse.json({ error: "Each custom adder must have a name (max 100 chars)" }, { status: 400 });
     }
     if (typeof adder.amount !== "number" || !isFinite(adder.amount)) {
@@ -334,7 +334,7 @@ In `src/lib/idr-meeting.ts`, add to `PropertyFields` interface (after line 300, 
 In `buildHubSpotPropertyUpdates()`, after line 329 (`opsChangeNotes`), add:
 
 ```typescript
-  if (fields.adderSummary) updates.idr_adders = fields.adderSummary;
+  updates.idr_adders = fields.adderSummary ?? "";
 ```
 
 - [ ] **Step 4: Create a helper to serialize adder state to a human-readable string**
@@ -409,6 +409,49 @@ Expected: No type errors.
 git add src/lib/idr-meeting.ts src/app/api/idr-meeting/items/[id]/sync/route.ts src/app/api/idr-meeting/sessions/[id]/route.ts
 git commit -m "feat(idr): sync adder summary to HubSpot on manual and auto-sync"
 ```
+
+---
+
+### Task 5b: Create idr_adders HubSpot deal property
+
+**Prerequisite:** This must be done before any sync is exercised, otherwise the HubSpot API will reject the property write.
+
+- [ ] **Step 1: Create the property via HubSpot Properties API or UI**
+
+Option A — HubSpot UI:
+1. Go to HubSpot Settings → Properties → Deal properties
+2. Create a new property:
+   - Group: `dealinformation`
+   - Label: `IDR Adders`
+   - Internal name: `idr_adders`
+   - Type: `string`
+   - Field type: `textarea`
+
+Option B — HubSpot API (run once):
+```bash
+curl -X POST 'https://api.hubapi.com/crm/v3/properties/deals' \
+  -H "Authorization: Bearer $HUBSPOT_ACCESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "idr_adders",
+    "label": "IDR Adders",
+    "type": "string",
+    "fieldType": "textarea",
+    "groupName": "dealinformation",
+    "description": "Comma-separated list of adders applied during IDR meeting"
+  }'
+```
+
+Expected: 201 Created (or 409 if already exists — safe to ignore).
+
+- [ ] **Step 2: Verify the property exists**
+
+```bash
+curl -s "https://api.hubapi.com/crm/v3/properties/deals/idr_adders" \
+  -H "Authorization: Bearer $HUBSPOT_ACCESS_TOKEN" | jq .name
+```
+
+Expected: `"idr_adders"`
 
 ---
 
@@ -919,7 +962,7 @@ function validateCustomAdders(input: unknown): string | null {
   if (!Array.isArray(input)) return "customAdders must be an array";
   if (input.length > 20) return "Maximum 20 custom adders";
   for (const adder of input) {
-    if (!adder.name || typeof adder.name !== "string" || adder.name.length > 100) {
+    if (!adder.name || typeof adder.name !== "string" || adder.name.trim().length === 0 || adder.name.length > 100) {
       return "Each custom adder must have a name (max 100 chars)";
     }
     if (typeof adder.amount !== "number" || !isFinite(adder.amount)) {
