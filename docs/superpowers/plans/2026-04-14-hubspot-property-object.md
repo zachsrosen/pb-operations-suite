@@ -112,6 +112,20 @@ model PropertyBackfillRun   { /* ... */ }
 
 Do not paraphrase. The spec includes every field, every index, every `onDelete` clause.
 
+**Schema divergence from spec — add `heartbeatAt` to `PropertyBackfillRun`.** The spec's model only tracks `startedAt`, which makes stale-lock detection brittle (a healthy multi-hour run looks indistinguishable from a crashed one). Add a heartbeat column the running process updates every ~30s; the lock acquirer checks `heartbeatAt`, not `startedAt`, when deciding whether to steal the lock. Add this field to the `PropertyBackfillRun` model before running the migration:
+
+```prisma
+  heartbeatAt     DateTime  @default(now())
+```
+
+And an index on it so the lock-acquire query can use it:
+
+```prisma
+  @@index([heartbeatAt])
+```
+
+This is a plan-level refinement of the spec, not a design change — same invariant (single running run), just a mechanism that actually holds under long runs. Record the deviation in the spec's §Neon Cache Schema during commit.
+
 - [ ] **Step 3: Extend `ActivityType` enum**
 
 At line ~91 find `enum ActivityType`. Add three members at the end of the existing list, alphabetized-ish or appended — match the file's convention:
@@ -309,8 +323,13 @@ async function main() {
     name: "property",
     labels: { singular: "Property", plural: "Properties" },
     primaryDisplayProperty: "record_name",
-    requiredProperties: ["google_place_id"],
-    searchableProperties: ["record_name", "full_address", "street_address", "city", "zip"],
+    // NOTE: `google_place_id` is intentionally NOT required. The spec supports
+    // addresses that Google returns no place_id for (rural, PO Box, new construction);
+    // those rows dedup via `address_hash` (which IS required). Making place_id
+    // required would either block those creates or force sentinel values that
+    // corrupt the field's meaning.
+    requiredProperties: ["record_name", "address_hash", "full_address"],
+    searchableProperties: ["record_name", "full_address", "normalized_address", "street_address", "city", "zip", "google_place_id"],
     properties: [
       // ... identity + geographic fields from spec §HubSpot Object Schema ...
       // Copy the full Field table literally. Use 'string' for text, 'number' for numeric,
@@ -378,6 +397,7 @@ Mirror the structure of `src/lib/hubspot-custom-objects.ts` (reviewed above). Ex
 - `associateProperty(propId, toType, toId, label?)` → void
 - `dissociateProperty(propId, toType, toId)` → void (exported but unused in v1; handy for tests/scripts)
 - `searchPropertyByPlaceId(placeId)` → `PropertyRecord | null` (uses HubSpot search API)
+- `searchPropertyByAddressHash(hash)` → `PropertyRecord | null` (fallback for no-place-id records)
 
 - [ ] **Step 1: Write skeleton + minimal tests**
 
@@ -391,7 +411,7 @@ const PROPERTY_OBJECT_TYPE = () => {
 };
 
 export const PROPERTY_PROPERTIES = [
-  "record_name", "google_place_id", "normalized_address", "full_address",
+  "record_name", "google_place_id", "address_hash", "normalized_address", "full_address",
   "street_address", "unit_number", "city", "state", "zip", "county",
   "latitude", "longitude",
   "attom_id",
@@ -926,7 +946,7 @@ async function resolveCustomObjectLink(
     fetchAll: () => Promise<Array<{ id: string; properties: Record<string, string | null> }>>;
   }
 ): Promise<GeoLinkResult | null> {
-  // 1) Nearby-deal mining
+  // 1) Exact-zip deal mining — cheapest & most reliable signal.
   const nearbyDeals = await prisma.deal.findMany({
     where: { zip, state, stage: { not: "DELETED" } },
     select: { hubspotDealId: true },
@@ -940,16 +960,79 @@ async function resolveCustomObjectLink(
     }
   }
 
-  // 2) service_area substring
+  // 2) service_area substring on city name.
   const all = await adapters.fetchAll();
   const cityLower = city.toLowerCase();
-  const hit = all.find((r) => (r.properties.service_area ?? "").toLowerCase().includes(cityLower));
-  if (hit) return { objectId: hit.id, name: hit.properties.record_name ?? "" };
+  const serviceAreaHit = all.find((r) => (r.properties.service_area ?? "").toLowerCase().includes(cityLower));
+  if (serviceAreaHit) {
+    return { objectId: serviceAreaHit.id, name: serviceAreaHit.properties.record_name ?? "" };
+  }
 
-  // 3) (TODO later) closest-match-by-zip — skipped in v1 because existing data doesn't expose a zip field on AHJ/Util.
-  //    The service_area cascade handles practical cases; log ambiguous misses in property-sync for Ops review.
+  // 3) Closest-match by zip within state.
+  //
+  // AHJ/Utility records don't carry a zip field directly, but every deal does AND
+  // deals carry AHJ/Utility associations. So we can build a zip→object map by mining
+  // same-state deals, then pick the object whose associated deals sit closest to the
+  // target zip numerically.
+  const closest = await resolveByClosestZip(state, zip, adapters.fetchFromDeal);
+  if (closest) return closest;
 
+  // 4) No match — return null and let the caller log for Ops review.
   return null;
+}
+
+/**
+ * Branch 3 helper. Mines same-state deals to build an object → {zip} map, then
+ * picks the object whose nearest associated zip has the minimum numeric distance
+ * to `targetZip`. Bounded: reads up to 200 same-state deals (most recent) so the
+ * worst case is 200 batch association fetches; the real number is smaller once
+ * we short-circuit on the first object hit per deal.
+ *
+ * State restriction is a hard filter: a Colorado address never maps to a
+ * California AHJ even if the zip numbers happen to be close.
+ */
+async function resolveByClosestZip(
+  state: string,
+  targetZip: string,
+  fetchFromDeal: (dealId: string) => Promise<Array<{ id: string; properties: Record<string, string | null> }>>,
+): Promise<GeoLinkResult | null> {
+  const targetNum = Number(targetZip);
+  if (!Number.isFinite(targetNum)) return null;
+
+  const sameStateDeals = await prisma.deal.findMany({
+    where: { state, stage: { not: "DELETED" }, zip: { not: null } },
+    select: { hubspotDealId: true, zip: true },
+    take: 200,
+    orderBy: { lastSyncedAt: "desc" },
+  });
+
+  // object id → best (smallest) zip distance observed
+  const bestByObject = new Map<string, { distance: number; name: string }>();
+  for (const d of sameStateDeals) {
+    const dZip = Number(d.zip);
+    if (!Number.isFinite(dZip)) continue;
+    const distance = Math.abs(dZip - targetNum);
+    const linked = await fetchFromDeal(d.hubspotDealId);
+    for (const r of linked) {
+      const prior = bestByObject.get(r.id);
+      if (!prior || distance < prior.distance) {
+        bestByObject.set(r.id, { distance, name: r.properties.record_name ?? "" });
+      }
+    }
+  }
+
+  if (bestByObject.size === 0) return null;
+
+  // Lowest distance wins. Tie-breaker: insertion order (= most recent deal first, from findMany orderBy).
+  let winnerId: string | null = null;
+  let winner: { distance: number; name: string } | null = null;
+  for (const [id, entry] of bestByObject) {
+    if (!winner || entry.distance < winner.distance) {
+      winnerId = id;
+      winner = entry;
+    }
+  }
+  return winner && winnerId ? { objectId: winnerId, name: winner.name } : null;
 }
 ```
 
@@ -1204,11 +1287,25 @@ async function createNewProperty(args: {
   ]);
   const pbLocation = resolvePbLocationFromAddress(geo.zip, geo.state);
 
+  // Build normalized_address — the human-readable, searchable canonical string.
+  // Per spec §Fields, this is "computed" from the address parts (NOT the SHA-256 hash).
+  // Keep this function in sync with `normalizeAddressForHash` in `address-hash.ts`:
+  // both collapse whitespace and lowercase, but normalized_address preserves the
+  // pipe-free human format so HubSpot-side search and debugging still work.
+  const normalizedAddress = [
+    geo.streetAddress,
+    unit ? unit : null,
+    geo.city,
+    geo.state,
+    geo.zip,
+  ].filter(Boolean).join(", ").toLowerCase().replace(/\s+/g, " ").trim();
+
   // Create in HubSpot
   const hs = await createProperty({
     record_name: `${geo.streetAddress}, ${geo.city} ${geo.state} ${geo.zip}`,
-    google_place_id: geo.placeId ?? "",
-    normalized_address: hash,             // human-readable is geo.formattedAddress; we store the hash here as search-index canonical
+    google_place_id: geo.placeId ?? "",        // empty string when Google returned no place_id
+    address_hash: hash,                        // SHA-256 dedupe key (DB + HubSpot carry the same value)
+    normalized_address: normalizedAddress,     // human-readable, searchable; NOT the hash
     full_address: geo.formattedAddress,
     street_address: geo.streetAddress, unit_number: unit ?? "", city: geo.city, state: geo.state, zip: geo.zip,
     county: geo.county ?? "",
@@ -1226,7 +1323,7 @@ async function createNewProperty(args: {
   const cache = await prisma.hubSpotPropertyCache.create({
     data: {
       hubspotObjectId: hs.id,
-      googlePlaceId: geo.placeId, addressHash: hash, normalizedAddress: geo.formattedAddress,
+      googlePlaceId: geo.placeId, addressHash: hash, normalizedAddress, // reuse the same normalized string we wrote to HubSpot
       fullAddress: geo.formattedAddress,
       streetAddress: geo.streetAddress, unitNumber: unit ?? null,
       city: geo.city, state: geo.state, zip: geo.zip, county: geo.county,
@@ -1524,17 +1621,22 @@ Two layers, defense-in-depth:
 import { prisma } from "@/lib/db";
 import { Prisma } from "@/generated/prisma";
 
-const STALE_LOCK_MS = 2 * 60 * 60 * 1000; // 2 hours — backfills of 8-15k addresses finish in ~1-3h
+// Heartbeat cadence: the running process updates heartbeatAt every HEARTBEAT_MS.
+// A lock is considered stale only after STALE_LOCK_MS without a heartbeat — i.e.
+// the process has almost certainly crashed or been killed. This explicitly does
+// NOT depend on startedAt, so a healthy multi-hour run is never at risk.
+export const HEARTBEAT_MS = 30_000;                   // 30s cadence
+export const STALE_LOCK_MS = 5 * 60 * 1000;           // 5 min without a heartbeat = dead
 
 export interface AcquiredLock {
   runId: string;
   resumeFrom: { phase: string; cursor: string | null } | null;
 }
 
-export async function acquireBackfillLock(): Promise<AcquiredLock | { reason: "already-running"; runningRunId: string }> {
+export async function acquireBackfillLock(): Promise<AcquiredLock | { reason: "already-running"; runningRunId: string; heartbeatAt: Date }> {
   try {
     const run = await prisma.propertyBackfillRun.create({
-      data: { status: "running", phase: "contacts" },
+      data: { status: "running", phase: "contacts", heartbeatAt: new Date() },
     });
     return { runId: run.id, resumeFrom: null };
   } catch (err) {
@@ -1543,17 +1645,32 @@ export async function acquireBackfillLock(): Promise<AcquiredLock | { reason: "a
     const running = await prisma.propertyBackfillRun.findFirst({ where: { status: "running" } });
     if (!running) throw new Error("Lock violation with no running row — index corrupt?");
 
-    // Stale-lock takeover
-    if (Date.now() - running.startedAt.getTime() > STALE_LOCK_MS) {
+    // Stale-lock takeover — based on heartbeat, NOT startedAt.
+    const heartbeatAgeMs = Date.now() - running.heartbeatAt.getTime();
+    if (heartbeatAgeMs > STALE_LOCK_MS) {
+      // Optimistic CAS: only flip if the heartbeat hasn't advanced between our read and write.
       const stolen = await prisma.propertyBackfillRun.updateMany({
-        where: { id: running.id, status: "running" },  // optimistic — only take if still running
-        data: { status: "failed", lastError: "stolen by stale-lock takeover" },
+        where: { id: running.id, status: "running", heartbeatAt: running.heartbeatAt },
+        data: { status: "failed", lastError: `stolen by stale-lock takeover (no heartbeat for ${Math.round(heartbeatAgeMs / 1000)}s)` },
       });
       if (stolen.count === 1) return acquireBackfillLock(); // retry now that the old row is flipped
-      // Someone else already flipped it; fall through to already-running path.
+      // Someone else's heartbeat raced us — the lock is live. Fall through to already-running.
     }
-    return { reason: "already-running", runningRunId: running.id };
+    return { reason: "already-running", runningRunId: running.id, heartbeatAt: running.heartbeatAt };
   }
+}
+
+/**
+ * The running process MUST call this on an interval (see HEARTBEAT_MS) for as
+ * long as it holds the lock. Missing heartbeats are what allow a dead process's
+ * lock to be stolen. Use `setInterval` in the backfill script's main() and
+ * `clearInterval` in the finally block. See Chunk 4 Task 4.2 for the wiring.
+ */
+export async function heartbeatBackfillLock(runId: string): Promise<void> {
+  await prisma.propertyBackfillRun.update({
+    where: { id: runId },
+    data: { heartbeatAt: new Date() },
+  });
 }
 
 export async function releaseBackfillLock(runId: string, outcome: "completed" | "failed" | "paused", error?: string) {
@@ -1573,10 +1690,13 @@ export async function resumeInterruptedRun(): Promise<AcquiredLock | null> {
 
 - [ ] **Step 1: Tests**
 
-Use a real test DB (Jest DB helper if configured) or a Prisma mock. Four test cases:
+Use a real test DB (Jest DB helper if configured) or a Prisma mock. Test cases:
 - First `acquireBackfillLock()` call → returns `{ runId, resumeFrom: null }`.
-- Second concurrent call → returns `{ reason: "already-running" }`.
-- Stale lock (startedAt > 2h) → is stolen, new lock acquired.
+- Second concurrent call → returns `{ reason: "already-running", heartbeatAt }`.
+- **Healthy long-running lock is NOT stolen.** Insert a running row with `startedAt` 4 hours ago but `heartbeatAt` set to 10 seconds ago → second acquire returns `already-running`, not a takeover.
+- **Lock with stale heartbeat (> 5 min) IS stolen.** Insert running row with `heartbeatAt` set 10 minutes ago → second acquire steals and returns new lock.
+- **Heartbeat race is safe.** Simulate an older row whose `heartbeatAt` advances between the read and the update (i.e. the "dead" process wasn't actually dead) — the optimistic `heartbeatAt` CAS in `updateMany.where` returns `count: 0`, and the caller gets `already-running`, never a double-acquisition.
+- `heartbeatBackfillLock(id)` advances `heartbeatAt`.
 - `releaseBackfillLock(id, "completed")` flips status and clears the lock so a subsequent acquire succeeds.
 
 - [ ] **Step 2: Implement**
@@ -1596,7 +1716,10 @@ Use a real test DB (Jest DB helper if configured) or a Prisma mock. Four test ca
 // scripts/backfill-properties.ts
 // Usage: tsx scripts/backfill-properties.ts [--resume]
 // Throttling: 10 concurrent contacts, 40 geocodes/sec (below Google's 50/s limit).
-import { acquireBackfillLock, releaseBackfillLock } from "@/lib/property-backfill-lock";
+import {
+  acquireBackfillLock, releaseBackfillLock,
+  heartbeatBackfillLock, HEARTBEAT_MS,
+} from "@/lib/property-backfill-lock";
 import { onContactAddressChange, onDealOrTicketCreated, reconcileAllProperties } from "@/lib/property-sync";
 import { prisma } from "@/lib/db";
 import { searchHubSpotContactsWithDeals, searchAllHubSpotDeals, searchAllHubSpotTickets } from "@/lib/hubspot";
@@ -1609,9 +1732,18 @@ async function main() {
 
   const lock = await acquireBackfillLock();
   if ("reason" in lock) {
-    console.error(`Another backfill is running (runId=${lock.runningRunId}). Aborting.`);
+    console.error(`Another backfill is running (runId=${lock.runningRunId}, last heartbeat ${lock.heartbeatAt.toISOString()}). Aborting.`);
     process.exit(2);
   }
+
+  // Heartbeat loop — required for the lock to remain valid. A crashed process
+  // stops heartbeating and becomes steal-eligible after STALE_LOCK_MS.
+  const heartbeatTimer = setInterval(() => {
+    heartbeatBackfillLock(lock.runId).catch((err) =>
+      console.error("[backfill] heartbeat failed:", err)
+    );
+  }, HEARTBEAT_MS);
+  heartbeatTimer.unref?.(); // don't keep process alive past main()
 
   try {
     // Phase 1: Contacts that have been on a Deal
@@ -1651,6 +1783,8 @@ async function main() {
   } catch (err) {
     await releaseBackfillLock(lock.runId, "failed", err instanceof Error ? err.message : "unknown");
     throw err;
+  } finally {
+    clearInterval(heartbeatTimer);
   }
 }
 
