@@ -38,7 +38,7 @@ const OPERATIONAL_ROLES = new Set([
 
 // Sections hidden from non-operational roles
 const OPERATIONAL_SECTIONS = new Set([
-  "qc-metrics", "install-planning", "revision-counts",
+  "install-planning",
 ]);
 
 interface DealDetailViewProps {

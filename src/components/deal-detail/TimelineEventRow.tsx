@@ -8,11 +8,16 @@ const EVENT_CONFIG: Record<TimelineEventType, { icon: string; color: string; lab
   note:         { icon: "\u{1F4DD}", color: "text-orange-500", label: "Note" },
   sync:         { icon: "\u{1F504}", color: "text-blue-500",   label: "Sync" },
   zuper:        { icon: "\u{1F527}", color: "text-green-500",  label: "Zuper" },
+  zuper_status: { icon: "\u{1F504}", color: "text-green-500",  label: "Job Status" },
+  zuper_note:   { icon: "\u{1F527}", color: "text-green-500",  label: "Zuper Note" },
+  bom:          { icon: "\u{1F4E6}", color: "text-purple-500", label: "BOM" },
+  schedule:     { icon: "\u{1F4C5}", color: "text-blue-500",   label: "Scheduled" },
   photo:        { icon: "\u{1F4F7}", color: "text-purple-500", label: "Photo" },
   email:        { icon: "\u2709\uFE0F",  color: "text-cyan-500",   label: "Email" },
   call:         { icon: "\u{1F4DE}", color: "text-cyan-500",   label: "Call" },
   meeting:      { icon: "\u{1F4C5}", color: "text-cyan-500",   label: "Meeting" },
   hubspot_note: { icon: "\u{1F4CB}", color: "text-cyan-500",   label: "HubSpot Note" },
+  task:         { icon: "\u2611\uFE0F",  color: "text-yellow-500", label: "Task" },
 };
 
 const SYNC_STATUS_ICONS: Record<string, { icon: string; title: string }> = {
@@ -53,10 +58,10 @@ function SyncChangesDiff({ changes }: { changes: Record<string, [unknown, unknow
 }
 
 // Event types whose detail bodies contain HubSpot HTML
-const HTML_BODY_TYPES = new Set<TimelineEventType>(["email", "call", "meeting", "hubspot_note"]);
+const HTML_BODY_TYPES = new Set<TimelineEventType>(["email", "call", "meeting", "hubspot_note", "task"]);
 
 // Event types whose bodies should be visible by default
-const AUTO_EXPAND_TYPES = new Set<TimelineEventType>(["note", "hubspot_note"]);
+const AUTO_EXPAND_TYPES = new Set<TimelineEventType>(["note", "hubspot_note", "zuper_note"]);
 
 export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
   const [expanded, setExpanded] = useState(AUTO_EXPAND_TYPES.has(event.type));

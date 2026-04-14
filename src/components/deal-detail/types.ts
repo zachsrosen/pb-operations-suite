@@ -140,11 +140,16 @@ export type TimelineEventType =
   | "note"
   | "sync"
   | "zuper"
+  | "zuper_status"
+  | "zuper_note"
+  | "bom"
+  | "schedule"
   | "photo"
   | "email"
   | "call"
   | "meeting"
-  | "hubspot_note";
+  | "hubspot_note"
+  | "task";
 
 export interface TimelineEvent {
   id: string;
@@ -174,7 +179,7 @@ export interface DealNoteData {
 
 export interface Engagement {
   id: string;
-  type: "email" | "call" | "note" | "meeting";
+  type: "email" | "call" | "note" | "meeting" | "task";
   timestamp: string;
   subject: string | null;
   body: string | null;
