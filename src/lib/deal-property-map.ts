@@ -29,7 +29,9 @@ export function msToDays(value: string | null | undefined): number | null {
 }
 
 function toBool(value: string | null | undefined): boolean {
-  return value === "true" || value === "True" || value === "TRUE";
+  if (!value) return false;
+  const lower = value.toLowerCase();
+  return lower === "true" || lower === "yes" || lower === "1";
 }
 
 function toDate(value: string | null | undefined): Date | null {

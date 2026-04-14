@@ -77,7 +77,8 @@ export default function CommunicationsFeed({ dealId }: CommunicationsFeedProps) 
 }
 
 function EngagementRow({ engagement }: { engagement: Engagement }) {
-  const [expanded, setExpanded] = useState(false);
+  const isNote = engagement.type === "note";
+  const [expanded, setExpanded] = useState(isNote);
   const config = TYPE_CONFIG[engagement.type] ?? { icon: "\u{1F4CB}", label: "Other" };
   // Sanitized via sanitize-html (strips scripts, event handlers, dangerous URIs)
   const sanitizedBody = useMemo(
