@@ -275,6 +275,10 @@ export const CACHE_KEYS = {
   OFFICE_PERFORMANCE: (location: string) => `office-performance:${location}`,
   GOALS_PIPELINE: (location: string) => `goals-pipeline:${location}`,
   FIVE_STAR_REVIEWS: (yearMonth: string) => `five-star-reviews:${yearMonth}`,
+  DEAL_ENGAGEMENTS_RECENT: (hubspotDealId: string) =>
+    `deal-engagements:${hubspotDealId}:recent` as const,
+  DEAL_ENGAGEMENTS_ALL: (hubspotDealId: string) =>
+    `deal-engagements:${hubspotDealId}:all` as const,
 } as const;
 
 // Revenue goals cache cascade: invalidate when deals change
