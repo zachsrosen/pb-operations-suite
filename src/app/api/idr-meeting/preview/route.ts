@@ -169,6 +169,21 @@ export async function GET() {
     if (existing) {
       existing.type = "ESCALATION";
       existing.escalationReason = esc.reason;
+      // Merge adder fields from escalation queue into existing IDR item
+      existing.adderTileRoof = esc.adderTileRoof || existing.adderTileRoof;
+      existing.adderMetalRoof = esc.adderMetalRoof || existing.adderMetalRoof;
+      existing.adderFlatFoamRoof = esc.adderFlatFoamRoof || existing.adderFlatFoamRoof;
+      existing.adderShakeRoof = esc.adderShakeRoof || existing.adderShakeRoof;
+      existing.adderSteepPitch = esc.adderSteepPitch || existing.adderSteepPitch;
+      existing.adderTwoStorey = esc.adderTwoStorey || existing.adderTwoStorey;
+      existing.adderTrenching = esc.adderTrenching || existing.adderTrenching;
+      existing.adderGroundMount = esc.adderGroundMount || existing.adderGroundMount;
+      existing.adderMpuUpgrade = esc.adderMpuUpgrade || existing.adderMpuUpgrade;
+      existing.adderEvCharger = esc.adderEvCharger || existing.adderEvCharger;
+      const queueCustom = esc.customAdders as Array<{ name: string; amount: number }> | null;
+      if (queueCustom && Array.isArray(queueCustom) && queueCustom.length > 0) {
+        existing.customAdders = queueCustom;
+      }
     }
   }
 
