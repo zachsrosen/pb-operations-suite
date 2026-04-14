@@ -191,24 +191,30 @@ model HubSpotPropertyCache {
   latitude           Float
   longitude          Float
 
-  // Denormalized attrs (mirrors HubSpot; ATTOM-sourced fields empty until integration ships)
-  propertyType           String?
-  yearBuilt              Int?
-  squareFootage          Int?
-  lotSizeSqft            Int?
-  stories                Int?
-  bedrooms               Int?
-  bathrooms              Float?
-  roofMaterial           String?
-  roofLastReplacedYear   Int?
-  parcelApn              String?
-  zoning                 String?
-  assessedValue          Int?
-  lastSaleDate           DateTime?
-  lastSalePrice          Int?
-  floodZone              String?
-  wildfireRiskZone       String?
-  hoaName                String?
+  // Denormalized attrs — FULL MIRROR of HubSpot (ATTOM-sourced fields empty until integration ships)
+  propertyType              String?
+  yearBuilt                 Int?
+  squareFootage             Int?
+  lotSizeSqft               Int?
+  stories                   Int?
+  bedrooms                  Int?
+  bathrooms                 Float?
+  foundationType            String?
+  constructionType          String?
+  roofMaterial              String?
+  roofAgeYears              Int?
+  roofLastReplacedYear      Int?
+  roofConditionNotes        String?
+  parcelApn                 String?
+  zoning                    String?
+  assessedValue             Int?
+  lastSaleDate              DateTime?
+  lastSalePrice             Int?
+  publicRecordOwnerName     String?
+  floodZone                 String?
+  wildfireRiskZone          String?
+  hoaName                   String?
+  generalNotes              String?   @db.Text
 
   // Electrical (manual)
   mainPanelAmperage      Int?
@@ -315,13 +321,18 @@ model PropertyCompanyLink {
 
 ### Contact address change (primary creation trigger)
 
+**Webhook subscription**: Configure HubSpot `contact.propertyChange` subscriptions for the following properties:
+`address`, `address2`, `city`, `state`, `zip`, `country`.
+
+**Debounce**: A single edit that touches multiple address fields fires N webhooks. The handler debounces by scheduling per-contact processing with a 2-second coalescing window (one geocode/sync per contact per edit burst), backed by a small in-memory or Redis-keyed queue. Without debounce, editing street+city+zip triggers 3 geocodes and race conditions against the cache.
+
 ```
-HubSpot webhook: contact.propertyChange (address|city|state|zip)
+HubSpot webhook: contact.propertyChange (address|address2|city|state|zip|country)
       │
       ▼
-/api/webhooks/property (signature verification)
+/api/webhooks/property (signature verification + debounce queue)
       │
-      ▼
+      ▼  (after 2s coalescing window)
 property-sync.ts::onContactAddressChange(contactId)
       │
       ├─ Read contact address fields from HubSpot
@@ -359,8 +370,13 @@ property-sync.ts::onDealOrTicketCreated(kind, id)
       │
       ├─ If exactly one → create association + link row
       ├─ If multiple → disambiguate by deal/ticket address match (geocode + place_id lookup)
-      └─ If none → run onContactAddressChange first, then retry
+      └─ If none →
+          ├─ If Contact has an address: run onContactAddressChange, then retry (once)
+          └─ If Contact has no address: skip + log WARN; reconciliation cron will
+             retry once the address is filled in. Do NOT block or endlessly retry.
 ```
+
+**Race condition note**: Deal/Ticket creation webhooks often fire before the Contact address webhook for a brand-new customer. The single-retry path above handles the common case; the reconciliation cron is the safety net for the rest.
 
 ### Nightly reconciliation
 
@@ -381,6 +397,17 @@ Rollup computation reads from existing sources:
 - Warranty expiry → earliest across associated deals
 - Ticket counts, service dates → query tickets
 
+**AHJ / Utility resolution** (v1): AHJ and Utility custom objects don't carry geo-polygons today — the `service_area` field is free text. Resolution lives in `property-sync.ts::resolveAhjForProperty(lat, lng, city, state)` and `resolveUtilityForProperty(...)` using this cascade:
+
+1. **Zip/city/state string match against existing Deal → AHJ/Utility associations** — the most reliable signal today. If existing deals at this zip consistently attach to `AHJ:Boulder`, use it.
+2. **Substring match on `service_area` text** (city/county name contained in the service-area description).
+3. **Closest-match by zip within state** if the above fail.
+4. **Fallback: leave null, flag for manual review**.
+
+A future spec can replace this with proper geo-polygon resolution; the resolver helpers are the seam.
+
+**PB Location resolution**: zip + state → PB shop mapping via existing location logic (DTC/Westy/COSP/CA/Camarillo).
+
 ### Backfill
 
 `scripts/backfill-properties.ts`:
@@ -398,9 +425,17 @@ Rollup computation reads from existing sources:
 3. After Contacts done, sweep all Deals + Tickets:
    - Trigger onDealOrTicketCreated for each to backfill associations
    - Skip if already linked
+
+4. Final pass: trigger one full reconciliation run to compute all rollups
+   (firstInstallDate, systemSizeKwDc, earliestWarrantyExpiry, etc.)
+   The backfill itself does NOT compute rollups — the reconciliation cron
+   owns rollup computation, and kicking it off at the end of backfill is
+   the cheapest way to populate everything consistently.
 ```
 
 Estimated volume: ~8-15k unique contacts. Google geocoding cost after free tier: under $50 one-time. No ATTOM cost (not wired up yet).
+
+**Multi-session feasibility**: Backfill throttled at ~40 req/s geocoding + HubSpot's rate limits should complete ~8-15k contacts in 1-3 hours. Fits comfortably in a single run; the `BackfillRun` row keeps it resumable if anything interrupts.
 
 ### Failure handling
 
@@ -505,7 +540,7 @@ End-to-end tests against live HubSpot are skipped; manual smoke tests in the Hub
 ### Phase 1 — Foundation (no user-visible changes)
 1. Create HubSpot Property custom object + fields via HubSpot API (one-time script)
 2. Configure 7 association definitions with labels
-3. Ship Prisma migration for `HubSpotPropertyCache` + link tables
+3. Ship Prisma migration for `HubSpotPropertyCache` + link tables, plus the `ActivityType` enum additions (`PROPERTY_CREATED`, `PROPERTY_ASSOCIATION_ADDED`, `PROPERTY_SYNC_FAILED`)
 4. Deploy `property-sync.ts` + webhook handler, gated behind `PROPERTY_SYNC_ENABLED` env flag (OFF in prod)
 5. Deploy nightly reconciliation cron (no-op while flag is OFF)
 
@@ -527,7 +562,7 @@ End-to-end tests against live HubSpot are skipped; manual smoke tests in the Hub
 16. Internal announcement; collect feedback
 
 **Rollback:**
-- Phases 1-3: flip `PROPERTY_SYNC_ENABLED` off; no user impact (no UI yet).
+- Phases 1-3: flip `PROPERTY_SYNC_ENABLED` off; no user impact (no UI yet). The Prisma migration itself is not rolled back — the cache tables sit empty/stale but cause no harm. If the feature is permanently abandoned, a follow-up down-migration can drop the tables.
 - Phase 4: feature-flag UI (`UI_PROPERTY_VIEWS_ENABLED`); removing the flag reverts to today's UI without code revert.
 
 ## Risks and Edge Cases
@@ -540,6 +575,7 @@ End-to-end tests against live HubSpot are skipped; manual smoke tests in the Hub
 | Address with no `place_id` (rural, PO Box, new construction) | Fall back to `normalizedAddress` as dedup key; accept small dupe risk |
 | Contact moves or corrects address | Each change creates/associates a Property; Contact accumulates associations — matches the many-to-many model |
 | Association label drift (house sold, label not updated) | Manual correction in HubSpot UI (v1) |
+| Multiple "Current Owner" labels per Property | In v1, `onContactAddressChange` always attaches the `Current Owner` label and NEVER demotes previous Current Owners. When a house sells, two contacts can both be labeled `Current Owner` until manually corrected in HubSpot. Acceptable trade-off for v1 — automated demotion is future work. UI should display all Current Owners (newest first by `associatedAt`) rather than pick one arbitrarily. |
 | AHJ/Utility resolution ambiguous (boundary addresses) | Use AHJ `service_area` when populated; fallback to closest-match by zip; log ambiguous cases |
 | PII in cache | Same classification as existing caches; no new compliance surface |
 | Backfill impact on HubSpot rate limits during business hours | Run off-hours, cap concurrency at 5, use `withRetry` |
