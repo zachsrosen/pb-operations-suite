@@ -10,6 +10,8 @@ import { StatusActionsForm } from "./StatusActionsForm";
 import { MeetingNotesForm } from "./MeetingNotesForm";
 import { AhjUtilityInfo } from "./AhjUtilityInfo";
 import PhotoGalleryCard from "@/components/deal-detail/PhotoGalleryCard";
+import { AddersChecklist } from "./AddersChecklist";
+import { PricingBreakdown } from "./PricingBreakdown";
 
 const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "7086286";
 
@@ -287,6 +289,14 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
 
             <Section title="Meeting Notes">
               <MeetingNotesForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
+            </Section>
+
+            <Section title="Adders Checklist">
+              <AddersChecklist item={item} onChange={handleFieldChange} readOnly={readOnly} />
+            </Section>
+
+            <Section title="Pricing Breakdown">
+              <PricingBreakdown item={item} lineItems={lineItemsQuery.data?.lineItems} />
             </Section>
 
             {/* AHJ & Utility Codes */}
