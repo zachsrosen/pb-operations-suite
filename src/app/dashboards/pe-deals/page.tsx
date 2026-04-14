@@ -406,8 +406,15 @@ export default function PeDealsPage() {
   const partiallyPaidDeals = useMemo(() => filtered.filter((d) =>
     (d.peM1Status === "Paid" || d.peM2Status === "Paid") && !(d.peM1Status === "Paid" && d.peM2Status === "Paid"),
   ), [filtered]);
-  const paidOrPartialIds = useMemo(() => new Set([...paidDeals, ...partiallyPaidDeals].map((d) => d.dealId)), [paidDeals, partiallyPaidDeals]);
-  const unpaid = useMemo(() => filtered.filter((d) => !paidOrPartialIds.has(d.dealId)), [filtered, paidOrPartialIds]);
+  const approvedDeals = useMemo(() => filtered.filter((d) =>
+    d.peM1Status !== "Paid" && d.peM2Status !== "Paid" &&
+    (d.peM1Status === "Approved" || d.peM2Status === "Approved"),
+  ), [filtered]);
+  const excludedIds = useMemo(
+    () => new Set([...paidDeals, ...partiallyPaidDeals, ...approvedDeals].map((d) => d.dealId)),
+    [paidDeals, partiallyPaidDeals, approvedDeals],
+  );
+  const unpaid = useMemo(() => filtered.filter((d) => !excludedIds.has(d.dealId)), [filtered, excludedIds]);
   const m2Deals = useMemo(() => unpaid.filter((d) => d.milestoneHighlight === "m2"), [unpaid]);
   const m1Deals = useMemo(() => unpaid.filter((d) => d.milestoneHighlight === "m1"), [unpaid]);
   const allDeals = unpaid;
@@ -543,6 +550,20 @@ export default function PeDealsPage() {
               subtitle={`${partiallyPaidDeals.length} deal${partiallyPaidDeals.length !== 1 ? "s" : ""} — M1 or M2 paid`}
               accent="orange"
               deals={partiallyPaidDeals}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              sortArrow={sortArrow}
+              toggleSort={toggleSort}
+              onStatusChange={handleStatusChange}
+              savingDeals={savingDeals}
+            />
+          )}
+          {approvedDeals.length > 0 && (
+            <DealSection
+              title="Approved — Waiting on Payment"
+              subtitle={`${approvedDeals.length} deal${approvedDeals.length !== 1 ? "s" : ""} approved, awaiting PE payment`}
+              accent="emerald"
+              deals={approvedDeals}
               sortKey={sortKey}
               sortDir={sortDir}
               sortArrow={sortArrow}
