@@ -131,3 +131,57 @@ export interface RelatedDeal {
   stage: string;
   amount: number | null;
 }
+
+// ---------------------------------------------------------------------------
+// Activity Timeline
+// ---------------------------------------------------------------------------
+
+export type TimelineEventType =
+  | "note"
+  | "sync"
+  | "zuper"
+  | "photo"
+  | "email"
+  | "call"
+  | "meeting"
+  | "hubspot_note";
+
+export interface TimelineEvent {
+  id: string;
+  type: TimelineEventType;
+  timestamp: string; // ISO 8601
+  title: string;
+  detail: string | null;
+  author: string | null;
+  metadata: Record<string, unknown> | null;
+}
+
+export interface TimelinePage {
+  events: TimelineEvent[];
+  nextCursor: { ts: string; id: string } | null;
+}
+
+export interface DealNoteData {
+  id: string;
+  dealId: string;
+  content: string;
+  authorEmail: string;
+  authorName: string;
+  hubspotSyncStatus: string | null;
+  zuperSyncStatus: string | null;
+  createdAt: string;
+}
+
+export interface Engagement {
+  id: string;
+  type: "email" | "call" | "note" | "meeting";
+  timestamp: string;
+  subject: string | null;
+  body: string | null;
+  from: string | null;
+  to: string[] | null;
+  duration: number | null;
+  disposition: string | null;
+  attendees: string[] | null;
+  createdBy: string | null;
+}
