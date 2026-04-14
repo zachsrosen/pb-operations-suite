@@ -55,7 +55,7 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
     queryFn: async () => {
       const res = await fetch(`/api/idr-meeting/line-items/${item!.dealId}`);
       if (!res.ok) throw new Error("Failed to fetch line items");
-      return res.json() as Promise<{ lineItems: Array<{ name: string; quantity: number; manufacturer: string; productCategory: string }> }>;
+      return res.json() as Promise<{ lineItems: Array<{ name: string; quantity: number; manufacturer: string; productCategory: string; sku: string; price: number; amount: number }> }>;
     },
     enabled: !!item,
     staleTime: 5 * 60 * 1000,
