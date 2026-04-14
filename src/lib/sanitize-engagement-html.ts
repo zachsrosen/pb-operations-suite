@@ -18,7 +18,7 @@ const ENGAGEMENT_SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
     "h1", "h2", "h3", "h4", "h5", "h6",
   ],
   allowedAttributes: {
-    a: ["href", "target", "rel"],
+    a: ["href", "target", "rel", "data-type"],
     img: ["src", "alt", "width", "height"],
     th: ["colspan", "rowspan"],
     td: ["colspan", "rowspan"],
@@ -28,14 +28,23 @@ const ENGAGEMENT_SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
   allowedStyles: {},
   allowedClasses: {},
   transformTags: {
-    a: (tagName, attribs) => ({
-      tagName,
-      attribs: {
-        ...attribs,
-        target: "_blank",
-        rel: "noopener noreferrer",
-      },
-    }),
+    a: (tagName, attribs) => {
+      // Strip @mention links — they point nowhere useful in our UI
+      if (attribs["data-type"] === "mention") {
+        return {
+          tagName: "span",
+          attribs: {},
+        };
+      }
+      return {
+        tagName,
+        attribs: {
+          ...attribs,
+          target: "_blank",
+          rel: "noopener noreferrer",
+        },
+      };
+    },
   },
 };
 
