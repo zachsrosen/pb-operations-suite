@@ -10,6 +10,8 @@ import { StatusActionsForm } from "./StatusActionsForm";
 import { MeetingNotesForm } from "./MeetingNotesForm";
 import { AhjUtilityInfo } from "./AhjUtilityInfo";
 import PhotoGalleryCard from "@/components/deal-detail/PhotoGalleryCard";
+import { AddersChecklist } from "./AddersChecklist";
+import { PricingBreakdown } from "./PricingBreakdown";
 
 const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "7086286";
 
@@ -55,7 +57,7 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
     queryFn: async () => {
       const res = await fetch(`/api/idr-meeting/line-items/${item!.dealId}`);
       if (!res.ok) throw new Error("Failed to fetch line items");
-      return res.json() as Promise<{ lineItems: Array<{ name: string; quantity: number; manufacturer: string; productCategory: string }> }>;
+      return res.json() as Promise<{ lineItems: Array<{ name: string; quantity: number; manufacturer: string; productCategory: string; sku: string; price: number; amount: number }> }>;
     },
     enabled: !!item,
     staleTime: 5 * 60 * 1000,
@@ -273,9 +275,18 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
 
             {/* HubSpot Notes (read-only) */}
             <HubSpotNotes item={item} />
+
+            {/* AHJ & Utility Codes */}
+            <Section title="AHJ & Utility Codes">
+              <AhjUtilityInfo
+                dealId={item.dealId}
+                ahjName={item.ahj}
+                utilityName={item.utilityCompany}
+              />
+            </Section>
           </div>
 
-          {/* RIGHT: Planning + actions + notes + codes */}
+          {/* RIGHT: Planning + actions + notes + pricing */}
           <div className="space-y-3">
             <Section title="Install Planning">
               <InstallPlanningForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
@@ -289,13 +300,12 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
               <MeetingNotesForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
             </Section>
 
-            {/* AHJ & Utility Codes */}
-            <Section title="AHJ & Utility Codes">
-              <AhjUtilityInfo
-                dealId={item.dealId}
-                ahjName={item.ahj}
-                utilityName={item.utilityCompany}
-              />
+            <Section title="Adders Checklist">
+              <AddersChecklist item={item} onChange={handleFieldChange} readOnly={readOnly} />
+            </Section>
+
+            <Section title="Pricing Breakdown">
+              <PricingBreakdown item={item} lineItems={lineItemsQuery.data?.lineItems} />
             </Section>
           </div>
         </div>

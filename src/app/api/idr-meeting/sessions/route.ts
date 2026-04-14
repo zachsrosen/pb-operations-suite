@@ -125,6 +125,17 @@ export async function POST(req: NextRequest) {
       ...(q.operationsNotes ? { operationsNotes: q.operationsNotes } : {}),
       ...(q.designNotes ? { designNotes: q.designNotes } : {}),
       ...(q.conclusion ? { conclusion: q.conclusion } : {}),
+      ...(q.adderTileRoof ? { adderTileRoof: q.adderTileRoof } : {}),
+      ...(q.adderMetalRoof ? { adderMetalRoof: q.adderMetalRoof } : {}),
+      ...(q.adderFlatFoamRoof ? { adderFlatFoamRoof: q.adderFlatFoamRoof } : {}),
+      ...(q.adderShakeRoof ? { adderShakeRoof: q.adderShakeRoof } : {}),
+      ...(q.adderSteepPitch ? { adderSteepPitch: q.adderSteepPitch } : {}),
+      ...(q.adderTwoStorey ? { adderTwoStorey: q.adderTwoStorey } : {}),
+      ...(q.adderTrenching ? { adderTrenching: q.adderTrenching } : {}),
+      ...(q.adderGroundMount ? { adderGroundMount: q.adderGroundMount } : {}),
+      ...(q.adderMpuUpgrade ? { adderMpuUpgrade: q.adderMpuUpgrade } : {}),
+      ...(q.adderEvCharger ? { adderEvCharger: q.adderEvCharger } : {}),
+      ...(Array.isArray(q.customAdders) && q.customAdders.length > 0 ? { customAdders: q.customAdders } : {}),
     });
 
     // New escalation deals (not already in session) — fetch snapshots and create items

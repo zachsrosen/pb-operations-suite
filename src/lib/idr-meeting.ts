@@ -232,6 +232,7 @@ interface NoteFields {
   needsSurveyInfo?: boolean | null;
   opsChangeNotes?: string | null;
   needsResurvey?: boolean | null;
+  adderSummary?: string | null;
 }
 
 /** Build the formatted note body for the HubSpot timeline. */
@@ -269,6 +270,7 @@ export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string): strin
   if (fields.needsSurveyInfo) lines.push(`<strong>Needs Survey Info:</strong> Yes`);
   if (fields.opsChangeNotes) lines.push(`<strong>Ops Communication Reason:</strong> ${esc(fields.opsChangeNotes)}`);
   if (fields.needsResurvey) lines.push(`<strong>Needs Resurvey:</strong> Yes`);
+  if (fields.adderSummary) lines.push(`<strong>Adders:</strong> ${esc(fields.adderSummary)}`);
   if (fields.designNotes) lines.push(`<strong>Design Notes:</strong> ${esc(fields.designNotes)}`);
   if (fields.conclusion) lines.push(`<strong>Conclusion:</strong> ${esc(fields.conclusion)}`);
 
@@ -298,6 +300,7 @@ interface PropertyFields {
   salesChangeRequested: boolean | null;
   salesChangeNotes: string | null;
   opsChangeNotes: string | null;
+  adderSummary?: string | null;
 }
 
 /** Map item fields to HubSpot deal property key-value pairs. Only includes non-null fields. */
@@ -328,7 +331,46 @@ export function buildHubSpotPropertyUpdates(
   if (fields.salesChangeNotes) updates.sales_communication_reason = fields.salesChangeNotes;
   if (fields.opsChangeNotes) updates.ops_communication_reason = fields.opsChangeNotes;
 
+  updates.idr_adders = fields.adderSummary ?? "";
+
   return updates;
+}
+
+/** Serialize adder checkbox + custom adder state into a human-readable summary string. */
+export function serializeAdderSummary(item: {
+  adderTileRoof: boolean;
+  adderMetalRoof: boolean;
+  adderFlatFoamRoof: boolean;
+  adderShakeRoof: boolean;
+  adderSteepPitch: boolean;
+  adderTwoStorey: boolean;
+  adderTrenching: boolean;
+  adderGroundMount: boolean;
+  adderMpuUpgrade: boolean;
+  adderEvCharger: boolean;
+  customAdders: unknown;
+}): string | null {
+  const parts: string[] = [];
+  if (item.adderTileRoof) parts.push("Tile roof");
+  if (item.adderMetalRoof) parts.push("Metal roof");
+  if (item.adderFlatFoamRoof) parts.push("Flat/foam roof");
+  if (item.adderShakeRoof) parts.push("Shake roof");
+  if (item.adderSteepPitch) parts.push("Steep pitch");
+  if (item.adderTwoStorey) parts.push("2+ storey");
+  if (item.adderTrenching) parts.push("Trenching");
+  if (item.adderGroundMount) parts.push("Ground mount");
+  if (item.adderMpuUpgrade) parts.push("MPU/svc upgrade");
+  if (item.adderEvCharger) parts.push("EV charger install");
+  const customs = Array.isArray(item.customAdders) ? item.customAdders : [];
+  for (const c of customs) {
+    if (c && typeof c === "object" && "name" in c) {
+      const amt = typeof c.amount === "number"
+        ? ` (${c.amount < 0 ? "-" : ""}$${Math.abs(c.amount).toLocaleString()})`
+        : "";
+      parts.push(`${c.name}${amt}`);
+    }
+  }
+  return parts.length > 0 ? parts.join(", ") : null;
 }
 
 // ---------------------------------------------------------------------------

@@ -7,6 +7,7 @@ import {
   buildHubSpotNoteBody,
   pushDealProperties,
   createDealTimelineNote,
+  serializeAdderSummary,
 } from "@/lib/idr-meeting";
 import { appCache } from "@/lib/cache";
 
@@ -50,6 +51,7 @@ export async function POST(
     salesChangeRequested: item.salesChangeRequested,
     salesChangeNotes: item.salesChangeNotes,
     opsChangeNotes: item.opsChangeNotes,
+    adderSummary: serializeAdderSummary(item),
   });
 
   try {
@@ -88,6 +90,7 @@ export async function POST(
       needsSurveyInfo: item.needsSurveyInfo,
       opsChangeNotes: item.opsChangeNotes,
       needsResurvey: item.needsResurvey,
+      adderSummary: serializeAdderSummary(item),
     },
     item.session.date.toISOString(),
   );
