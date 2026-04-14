@@ -284,6 +284,8 @@ function engagementToTimelineEvents(
   cursor: Cursor | null,
 ): TimelineEvent[] {
   return engagements
+    // Skip app-authored HubSpot notes — already represented by internal DealNote records
+    .filter((eng) => !(eng.type === "note" && eng.body?.startsWith("<!-- pb-ops-note -->")))
     .map((eng): TimelineEvent => {
       const typeLabel = eng.type === "email" ? "Email"
         : eng.type === "call" ? "Call"

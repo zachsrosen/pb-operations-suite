@@ -163,12 +163,30 @@ export async function GET() {
   }
 
   // Also handle escalation items for deals already in the list — upgrade to ESCALATION type
+  // and merge adder fields from the queue (saved when user skipped during a prior meeting)
   const existingEscalations = escalations.filter((e) => existingDealIds.has(e.dealId));
   for (const esc of existingEscalations) {
     const existing = items.find((i) => i.dealId === esc.dealId);
     if (existing) {
       existing.type = "ESCALATION";
       existing.escalationReason = esc.reason;
+      // Merge adder state from the queue — these were saved when the item was skipped.
+      // Use || so a true from either prep or queue wins (prep was already applied in Block 1).
+      existing.adderTileRoof = esc.adderTileRoof || existing.adderTileRoof;
+      existing.adderMetalRoof = esc.adderMetalRoof || existing.adderMetalRoof;
+      existing.adderFlatFoamRoof = esc.adderFlatFoamRoof || existing.adderFlatFoamRoof;
+      existing.adderShakeRoof = esc.adderShakeRoof || existing.adderShakeRoof;
+      existing.adderSteepPitch = esc.adderSteepPitch || existing.adderSteepPitch;
+      existing.adderTwoStorey = esc.adderTwoStorey || existing.adderTwoStorey;
+      existing.adderTrenching = esc.adderTrenching || existing.adderTrenching;
+      existing.adderGroundMount = esc.adderGroundMount || existing.adderGroundMount;
+      existing.adderMpuUpgrade = esc.adderMpuUpgrade || existing.adderMpuUpgrade;
+      existing.adderEvCharger = esc.adderEvCharger || existing.adderEvCharger;
+      // Prefer queue's custom adders if non-empty, else keep prep's
+      const queueCustom = esc.customAdders as Array<{ name: string; amount: number }> | null;
+      if (queueCustom && Array.isArray(queueCustom) && queueCustom.length > 0) {
+        existing.customAdders = queueCustom;
+      }
     }
   }
 
