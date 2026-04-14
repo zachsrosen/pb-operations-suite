@@ -33,6 +33,24 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
+function SyncChangesDiff({ changes }: { changes: Record<string, [unknown, unknown]> }) {
+  return (
+    <div className="mt-1 space-y-0.5">
+      {Object.entries(changes).map(([field, pair]) => {
+        const oldVal = (pair as [unknown, unknown])[0];
+        const newVal = (pair as [unknown, unknown])[1];
+        return (
+          <div key={field} className="text-[10px]">
+            <span className="font-medium text-muted">{field}:</span>{" "}
+            <span className="text-red-400 line-through">{String(oldVal ?? "\u2014")}</span>{" "}
+            <span className="text-emerald-400">{String(newVal ?? "\u2014")}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
   const [expanded, setExpanded] = useState(false);
   const config = EVENT_CONFIG[event.type];
@@ -41,7 +59,7 @@ export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
 
   // Sync change detail
   const changes = meta.changes as Record<string, [unknown, unknown]> | undefined;
-  const hasSyncChanges = event.type === "sync" && changes && Object.keys(changes).length > 0;
+  const hasSyncChanges = event.type === "sync" && !!changes && Object.keys(changes).length > 0;
 
   // Note sync indicators
   const hubspotStatus = meta.hubspotSyncStatus as string | undefined;
@@ -107,22 +125,14 @@ export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
           </p>
         )}
 
-        {expanded && hasSyncChanges && changes && (
-          <div className="mt-1 space-y-0.5">
-            {Object.entries(changes).map(([field, [oldVal, newVal]]) => (
-              <div key={field} className="text-[10px]">
-                <span className="font-medium text-muted">{field}:</span>{" "}
-                <span className="text-red-400 line-through">{String(oldVal ?? "\u2014")}</span>{" "}
-                <span className="text-emerald-400">{String(newVal ?? "\u2014")}</span>
-              </div>
-            ))}
-          </div>
+        {expanded && hasSyncChanges && (
+          <SyncChangesDiff changes={changes!} />
         )}
 
         {/* Photo thumbnail */}
-        {expanded && event.type === "photo" && meta.url && (
+        {expanded && event.type === "photo" && typeof meta.url === "string" && (
           <img
-            src={meta.url as string}
+            src={meta.url}
             alt={event.detail ?? "Site photo"}
             className="mt-1 h-20 w-20 rounded object-cover"
             loading="lazy"
