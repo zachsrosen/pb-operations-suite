@@ -52,7 +52,9 @@ export default function CommunicationsFeed({ dealId }: CommunicationsFeedProps) 
       )}
 
       {!query.isLoading && engagements.length === 0 && (
-        <p className="py-4 text-center text-xs text-muted">No communications found.</p>
+        <p className="py-4 text-center text-xs text-muted">
+          {showAll ? "No communications found." : "No recent communications."}
+        </p>
       )}
 
       {engagements.length > 0 && (
@@ -63,7 +65,7 @@ export default function CommunicationsFeed({ dealId }: CommunicationsFeedProps) 
         </div>
       )}
 
-      {!showAll && !query.isLoading && engagements.length > 0 && (
+      {!showAll && !query.isLoading && (
         <div className="flex justify-center py-2">
           <button
             onClick={() => setShowAll(true)}

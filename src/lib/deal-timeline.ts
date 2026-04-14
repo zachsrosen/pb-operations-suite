@@ -287,7 +287,8 @@ function engagementToTimelineEvents(
       };
     })
     .filter((e) => isInWindow(e.timestamp, windowStart))
-    .filter((e) => !cursor || isBeforeCursor(e.timestamp, e.id, cursor));
+    .filter((e) => !cursor || isBeforeCursor(e.timestamp, e.id, cursor))
+    .filter((eng) => !(eng.type === "hubspot_note" && eng.detail?.startsWith("<!-- pb-ops-note -->")));
 }
 
 // ---------------------------------------------------------------------------

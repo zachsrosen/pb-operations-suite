@@ -73,7 +73,7 @@ export async function POST(
 
       // HubSpot sync
       try {
-        await createDealNote(hubspotDealId, `[${authorName}] ${content}`);
+        await createDealNote(hubspotDealId, `<!-- pb-ops-note -->[${authorName}] ${content}`);
         await prisma.dealNote.update({
           where: { id: noteId },
           data: { hubspotSyncStatus: "SYNCED" },

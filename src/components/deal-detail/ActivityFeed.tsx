@@ -94,7 +94,9 @@ export default function ActivityFeed({ dealId }: ActivityFeedProps) {
       )}
 
       {!isLoading && allEvents.length === 0 && (
-        <p className="py-4 text-center text-xs text-muted">No activity yet.</p>
+        <p className="py-4 text-center text-xs text-muted">
+          {showAll ? "No activity yet." : "No recent activity."}
+        </p>
       )}
 
       {allEvents.length > 0 && (
@@ -116,7 +118,7 @@ export default function ActivityFeed({ dealId }: ActivityFeedProps) {
             {loadingMore ? "Loading..." : "Load more"}
           </button>
         )}
-        {!showAll && allEvents.length > 0 && (
+        {!showAll && (
           <button
             onClick={handleShowAll}
             className="text-xs text-muted hover:text-foreground transition-colors"
