@@ -15,6 +15,7 @@ const TYPE_CONFIG: Record<string, { icon: string; label: string }> = {
   call:    { icon: "\u{1F4DE}", label: "Call" },
   note:    { icon: "\u{1F4CB}", label: "Note" },
   meeting: { icon: "\u{1F4C5}", label: "Meeting" },
+  task:    { icon: "\u2611\uFE0F",  label: "Task" },
 };
 
 function formatDuration(ms: number | null): string {
