@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { sanitizeEngagementHtml } from "@/lib/sanitize-engagement-html";
 import type { TimelineEvent, TimelineEventType } from "./types";
 
 const EVENT_CONFIG: Record<TimelineEventType, { icon: string; color: string; label: string }> = {
@@ -51,10 +52,18 @@ function SyncChangesDiff({ changes }: { changes: Record<string, [unknown, unknow
   );
 }
 
+// Event types whose detail bodies contain HubSpot HTML
+const HTML_BODY_TYPES = new Set<TimelineEventType>(["email", "call", "meeting", "hubspot_note"]);
+
 export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
   const [expanded, setExpanded] = useState(false);
   const config = EVENT_CONFIG[event.type];
-  const hasDetail = !!event.detail;
+  const isHtmlBody = HTML_BODY_TYPES.has(event.type);
+  const sanitizedDetail = useMemo(
+    () => isHtmlBody ? sanitizeEngagementHtml(event.detail) : "",
+    [event.detail, isHtmlBody],
+  );
+  const hasDetail = isHtmlBody ? sanitizedDetail.length > 0 : !!event.detail;
   const meta = event.metadata ?? {};
 
   // Sync change detail
@@ -120,9 +129,13 @@ export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
         )}
 
         {expanded && hasDetail && event.type !== "sync" && (
-          <p className="mt-1 text-xs text-muted whitespace-pre-wrap leading-relaxed">
-            {event.detail}
-          </p>
+          isHtmlBody ? (
+            <TimelineHtmlBody html={sanitizedDetail} />
+          ) : (
+            <p className="mt-1 text-xs text-muted whitespace-pre-wrap leading-relaxed">
+              {event.detail}
+            </p>
+          )
         )}
 
         {expanded && hasSyncChanges && (
@@ -140,5 +153,15 @@ export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
         )}
       </div>
     </div>
+  );
+}
+
+/** Renders pre-sanitized engagement HTML (sanitized via sanitize-html library). */
+function TimelineHtmlBody({ html }: { html: string }) {
+  return (
+    <div
+      className="mt-1 rounded border border-t-border bg-surface p-2 text-xs text-muted leading-relaxed max-h-60 overflow-y-auto [&_a]:text-orange-400 [&_a]:underline [&_img]:max-w-full [&_img]:rounded [&_p]:mb-1 [&_br+br]:hidden"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }
