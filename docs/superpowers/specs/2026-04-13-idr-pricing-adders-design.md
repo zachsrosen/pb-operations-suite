@@ -38,10 +38,12 @@ Adders sit above Pricing Breakdown because toggling adders feeds into the price 
 **Site (4 checkboxes):**
 | ID | Label | Pricing impact |
 |----|-------|---------------|
-| `trenching` | Trenching | Custom fixed amount (not in current calculator — pass through as custom adder) |
-| `groundMount` | Ground mount | Custom fixed amount |
-| `mpuUpgrade` | MPU / service upgrade | Custom fixed amount |
-| `evChargerInstall` | EV charger install | Custom fixed amount |
+| `trenching` | Trenching | Planning-only flag, no pricing impact (future: add dollar amount input) |
+| `groundMount` | Ground mount | Planning-only flag, no pricing impact |
+| `mpuUpgrade` | MPU / service upgrade | Planning-only flag, no pricing impact |
+| `evChargerInstall` | EV charger install | Planning-only flag, no pricing impact |
+
+> **Note:** Site adders are install-planning checkmarks only. They do not affect the pricing calculation. Dollar amount inputs for these can be added in a future iteration.
 
 **Custom (dynamic list):**
 - User can add arbitrary name + dollar amount entries
@@ -53,10 +55,10 @@ Adders sit above Pricing Breakdown because toggling adders feeds into the price 
 
 When computing the pricing breakdown:
 
-- **Roof checkboxes** — Only one roof type can apply at a time (they're mutually exclusive in the calculator). If multiple are checked, use the first checked one. If none checked, default to `"comp"` (no adder).
+- **Roof checkboxes** — Mutually exclusive: render as radio-style behavior. Checking one unchecks any other roof type. Precedence if somehow multiple are set: tile > metal > flat/foam > shake. If none checked, default to `"comp"` (no adder).
 - **Steep pitch** — Maps to `pitchId: "steep1"`. If unchecked, `pitchId: "none"`.
 - **2+ storey** — Maps to `storeyId: "2"`. If unchecked, `storeyId: "1"`.
-- **Site checkboxes** — These don't have per-watt rates in the current calculator. Sum their associated amounts into `customFixedAdder`. If we don't have dollar amounts for these yet, they contribute $0 to the calculator but still serve as install planning checkmarks.
+- **Site checkboxes** — Planning-only flags with no pricing impact. They do NOT feed into `customFixedAdder`.
 - **Custom entries** — Sum all custom amounts into `customFixedAdder`.
 
 ### Persistence
@@ -82,13 +84,23 @@ customAdders        Json    @default("[]")
 
 These fields follow the same pattern as existing editable fields (difficulty, installerCount, etc.) — updated via the `PATCH /api/idr-meeting/items/[id]` endpoint and synced to HubSpot on "Sync to HubSpot" click.
 
+**Required whitelist updates** (5 files):
+1. `src/app/api/idr-meeting/items/[id]/route.ts` — add all 11 fields to `EDITABLE_FIELDS`
+2. `src/app/api/idr-meeting/prep/route.ts` — add all 11 fields to `PREP_FIELDS`
+3. `src/app/api/idr-meeting/sessions/route.ts` — add fields to `pickPrepFields()` helper so prep data carries into live sessions
+4. `src/app/api/idr-meeting/items/[id]/route.ts` DELETE handler — include adder fields when re-queuing skipped escalation items
+5. `src/app/api/idr-meeting/items/[id]/sync/route.ts` — add adder serialization to `buildHubSpotPropertyUpdates()` and `buildHubSpotNoteBody()`
+
+**`customAdders` validation:** Max 20 entries. Name max 100 chars, must be non-empty. Amount can be negative (discounts). Validate in the PATCH handler before persisting.
+
 ### HubSpot Sync
 
 On sync, write adder state to a single HubSpot deal property:
 
-- **Property name:** `idr_adders` (multi-line text or JSON string)
+- **Property name:** `idr_adders` (multi-line text)
+- **Prerequisite:** Create this property in HubSpot (group: `dealinformation`, type: `string`, fieldType: `textarea`) — either manually in HubSpot settings or via the Properties API during migration
 - **Format:** Comma-separated list of active adders, e.g., `"Tile roof, MPU upgrade, Tree removal ($800)"`
-- This is informational — the pricing calculator doesn't read from HubSpot, so we just store a human-readable summary.
+- This is informational — the pricing calculator doesn't read from HubSpot, so we just store a human-readable summary
 
 ---
 
@@ -97,20 +109,19 @@ On sync, write adder state to a single HubSpot deal property:
 ### Data Flow
 
 ```
-IdrItem snapshot props (module_brand, module_model, module_count,
-  inverter_brand, inverter_model, inverter_qty,
-  battery_brand, battery_model, battery_count,
-  pb_location)
+lineItemsQuery (existing, from /api/idr-meeting/line-items/[dealId])
+  → returns LineItem[] with name, sku, quantity, productCategory, manufacturer, price, amount
       │
       ▼
-matchLineItemToEquipment() — map deal equipment to EQUIPMENT_CATALOG codes
+matchLineItemToEquipment(name, sku, category, manufacturer)
+  → maps each line item to an EQUIPMENT_CATALOG code
       │
       ▼
 Build CalcInput:
-  - modules/inverters/batteries from matched equipment
-  - pricingSchemeId from LOCATION_SCHEME[pb_location]
+  - modules/inverters/batteries from matched equipment + quantities
+  - pricingSchemeId from LOCATION_SCHEME[item.region]  (IdrItem.region = pb_location)
   - roofTypeId/storeyId/pitchId from adder checkboxes
-  - customFixedAdder from site adders + custom adder amounts
+  - customFixedAdder from custom adder amounts only (site adders are planning-only)
   - activeAdderIds: [] (no PE/org adders in IDR scope)
       │
       ▼
@@ -120,18 +131,13 @@ calcPrice(input) → CalcBreakdown
 Display breakdown + compare finalPrice vs dealAmount
 ```
 
-### API Endpoint
+> **Note:** The calculation does NOT use IdrItem snapshot props for equipment. It uses line items fetched from HubSpot, which have the `sku`, `name`, `manufacturer`, and `productCategory` needed for `matchLineItemToEquipment()`. The IdrItem's `region` field (= `pb_location`) is used only for pricing scheme resolution.
 
-**`GET /api/idr-meeting/pricing?dealId=X`**
+### Calculation Approach
 
-Server-side endpoint that:
-1. Fetches the deal's line items from HubSpot (reuses existing `fetchLineItemsForDeal()`)
-2. Matches each line item to `EQUIPMENT_CATALOG` via `matchLineItemToEquipment()`
-3. Resolves `pricingSchemeId` from the deal's `pb_location` via `LOCATION_SCHEME`
-4. Accepts adder state as query params (or reads from IdrItem record)
-5. Calls `calcPrice()` and returns `CalcBreakdown`
+Client-side calculation — `calcPrice()` is a pure function with no server dependencies. The only server call needed is the line item fetch (already available via `/api/idr-meeting/line-items/[dealId]`). No new API endpoint required. Recalculates instantly when adders are toggled.
 
-Alternatively, the calculation can run client-side since `calcPrice()` is a pure function with no API dependencies. The only server call needed is the line item fetch (already available via `/api/idr-meeting/line-items/[dealId]`). **Recommendation: client-side calculation** — avoids a new endpoint and recalculates instantly when adders are toggled.
+> **PE deal caveat:** The IDR pricing breakdown excludes PE/org-level adders (`activeAdderIds: []`). For PE deals (visible by their "Participate" tag), the HubSpot deal amount stores full PB revenue (`hsAmount`), not the customer price. The delta will reflect this difference. Consider showing a note: "PE/org-level adders not included" when the deal has a PE-related tag.
 
 ### Display Sections
 
@@ -161,7 +167,9 @@ Alternatively, the calculation can run client-side since `calcPrice()` is a pure
 | Delta | `dealAmount - finalPrice` (absolute + percentage) |
 
 **Color thresholds for delta:**
-- Green: absolute percentage < 5%
+- Percentage = `|delta| / dealAmount` (denominator is always the HubSpot deal amount)
+- If `dealAmount` is 0 or null, show "N/A" instead of a percentage
+- Green: < 5%
 - Yellow: 5% - 15%
 - Red: > 15%
 
@@ -207,8 +215,10 @@ New component in `src/app/dashboards/idr-meeting/`:
 
 Props: `{ item: IdrItem; lineItems: LineItem[] | undefined }`
 
+> **Important:** The existing `lineItemsQuery` type assertion in `ProjectDetail.tsx` must be widened to include `sku`, `price`, and `amount` fields (the API already returns them — only the client-side type narrows them out). Use the full `LineItem` interface from `hubspot.ts` or at minimum add `sku: string`.
+
 Behavior:
-- On mount / when `item` or `lineItems` change, build `CalcInput` from item snapshot props + adder state + matched line items
+- On mount / when `item` or `lineItems` change, build `CalcInput` from adder state + matched line items
 - Call `calcPrice(input)` (client-side, pure function)
 - Render cost table, system metrics, and mismatch comparison
 - If line items are loading, show skeleton
@@ -251,16 +261,7 @@ customAdders: Array<{ name: string; amount: number }>;
 
 ## HubSpot Snapshot Properties
 
-Add to `SNAPSHOT_PROPERTIES` in `idr-meeting.ts`:
-
-```typescript
-"module_brand", "module_model", "module_count",    // already present
-"inverter_brand", "inverter_model", "inverter_qty", // already present
-"battery_brand", "battery_model", "battery_count",  // already present
-"pb_location",                                      // already present
-```
-
-No new HubSpot properties needed for the snapshot — all required equipment and location data is already fetched.
+No new HubSpot snapshot properties needed. Equipment data comes from line items (separate query), and `pb_location` is already captured as `IdrItem.region`.
 
 ---
 
