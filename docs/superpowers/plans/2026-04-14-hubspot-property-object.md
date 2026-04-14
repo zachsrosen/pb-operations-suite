@@ -186,6 +186,21 @@ Append under an appropriate "HubSpot" or "Feature flags" section:
 # HubSpot Property custom object (env-driven so sandbox != prod)
 HUBSPOT_PROPERTY_OBJECT_TYPE=
 
+# HubSpot labeled-association type IDs (Property ↔ Contact, Property ↔ Company)
+# HubSpot assigns a distinct integer ID to every label on every association
+# definition. These must be created in Task 1.4 (see script "create associations
+# with labels" step) and then captured here — the sync layer reads them by name
+# (see property-sync.ts CONTACT_LABEL_ASSOCIATION_IDS). Each label needs BOTH a
+# forward and inverse ID per HubSpot v4 convention; store both if the sync path
+# needs to create either direction. Start with forward-only (Contact → Property).
+HUBSPOT_PROPERTY_CONTACT_ASSOC_CURRENT_OWNER=
+HUBSPOT_PROPERTY_CONTACT_ASSOC_PREVIOUS_OWNER=
+HUBSPOT_PROPERTY_CONTACT_ASSOC_TENANT=
+HUBSPOT_PROPERTY_CONTACT_ASSOC_PROPERTY_MANAGER=
+HUBSPOT_PROPERTY_CONTACT_ASSOC_AUTHORIZED_CONTACT=
+HUBSPOT_PROPERTY_COMPANY_ASSOC_OWNER=
+HUBSPOT_PROPERTY_COMPANY_ASSOC_MANAGER=
+
 # Feature flags — Property v1
 PROPERTY_SYNC_ENABLED=false
 UI_PROPERTY_VIEWS_ENABLED=false
@@ -198,9 +213,20 @@ Check first whether `GOOGLE_MAPS_API_KEY` already exists; if yes, do not duplica
 
 - [ ] **Step 2: Add local dev values to `.env`**
 
-Set `PROPERTY_SYNC_ENABLED=false` locally so the handler short-circuits until we're ready. Leave `HUBSPOT_PROPERTY_OBJECT_TYPE` empty — it gets filled in during Task 1.4 once the object exists.
+Set `PROPERTY_SYNC_ENABLED=false` locally so the handler short-circuits until we're ready. Leave `HUBSPOT_PROPERTY_OBJECT_TYPE` empty — it gets filled in during Task 1.4 once the object exists. Leave all `HUBSPOT_PROPERTY_*_ASSOC_*` empty — Task 1.4 prints the IDs; paste them back into this file (and Vercel) after running the bootstrap script. Until then, any sync path that tries to dereference a zero ID throws a clear error (see the guard added to `property-sync.ts`).
 
-- [ ] **Step 3: Commit `.env.example` change**
+- [ ] **Step 3: Guard against unset association IDs in `property-sync.ts`**
+
+Where `CONTACT_LABEL_ASSOCIATION_IDS.CURRENT_OWNER` (etc.) is read, throw a clear error if the value is `0` rather than silently posting an invalid association:
+```ts
+function requireAssocId(label: keyof typeof CONTACT_LABEL_ASSOCIATION_IDS): number {
+  const id = CONTACT_LABEL_ASSOCIATION_IDS[label];
+  if (!id) throw new Error(`HUBSPOT_PROPERTY_CONTACT_ASSOC_${label} is not set — run scripts/create-hubspot-property-object.ts and paste the printed IDs into .env`);
+  return id;
+}
+```
+
+- [ ] **Step 4: Commit `.env.example` change**
 
 ```bash
 git add .env.example
@@ -352,8 +378,30 @@ async function main() {
   //   POST /crm/v4/associations/definitions/{propertyTypeId}/{customTypeId}
   //   with label configuration.
 
-  // 4. Create association labels on Contact and Company sides
+  // 4. Create association labels on Contact and Company sides.
   // Labels are defined in spec §Associations table. Use v4 API with name + label + category.
+  //
+  // Each label POST returns an integer association type ID (forward direction).
+  // Capture them all and emit a ready-to-paste .env block at the end so the
+  // implementer doesn't have to chase them down from HubSpot UI.
+  const CONTACT_LABELS = ["Current Owner", "Previous Owner", "Tenant", "Property Manager", "Authorized Contact"] as const;
+  const COMPANY_LABELS = ["Owner", "Manager"] as const;
+
+  const contactLabelIds: Record<string, number> = {};
+  for (const label of CONTACT_LABELS) {
+    // POST /crm/v4/associations/definitions/{propertyTypeId}/0-1  (0-1 = CONTACT)
+    // with { label, name: label.toUpperCase().replace(/\s+/g, "_") }
+    // const res = await hubspotClient.apiRequest({ method: "POST", path: ..., body: ... });
+    // contactLabelIds[envKey(label)] = res.results[0].typeId;
+  }
+  const companyLabelIds: Record<string, number> = {};
+  for (const label of COMPANY_LABELS) { /* same pattern against 0-2 (COMPANY) */ }
+
+  // Pretty-print env block
+  console.log("\n# Paste into .env and Vercel env vars:");
+  for (const [k, v] of Object.entries(contactLabelIds)) console.log(`HUBSPOT_PROPERTY_CONTACT_ASSOC_${k}=${v}`);
+  for (const [k, v] of Object.entries(companyLabelIds)) console.log(`HUBSPOT_PROPERTY_COMPANY_ASSOC_${k}=${v}`);
+  // envKey("Current Owner") → "CURRENT_OWNER"
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });
@@ -1419,16 +1467,33 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
   const dealIds = property.dealLinks.map((l) => l.dealId);
   const ticketIds = property.ticketLinks.map((l) => l.ticketId);
 
+  // Deal sources of truth (verified against prisma/schema.prisma `model Deal`):
+  //   - first/most-recent install date → `constructionCompleteDate` (the actual
+  //     field set when a deal's install is completed; `installScheduleDate` is
+  //     a forecast/plan, not actuals, and would overcount).
+  //   - warranty expiry → NOT present on the Deal model today. `earliestWarrantyExpiry`
+  //     stays null in v1 and is documented as a follow-up (see Out of Scope / Follow-up
+  //     in the plan). Adding a Deal.warrantyExpiresAt column is a separate project
+  //     because warranty term varies by product mix (module vs inverter vs battery)
+  //     and would require a data backfill to be meaningful.
   const deals = dealIds.length
     ? await prisma.deal.findMany({
         where: { hubspotDealId: { in: dealIds } },
-        select: { hubspotDealId: true, installDate: true, closeDate: true, warrantyExpiresAt: true, amount: true },
+        select: {
+          hubspotDealId: true,
+          constructionCompleteDate: true,
+          closeDate: true,
+          amount: true,
+        },
       })
     : [];
 
   // Aggregate deal-level fields
-  const installDates = deals.map((d) => d.installDate).filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime());
-  const warrantyExpiries = deals.map((d) => d.warrantyExpiresAt).filter((d): d is Date => !!d).sort((a, b) => a.getTime() - b.getTime());
+  const installDates = deals
+    .map((d) => d.constructionCompleteDate)
+    .filter((d): d is Date => !!d)
+    .sort((a, b) => a.getTime() - b.getTime());
+  // earliestWarrantyExpiry is null in v1 — see note above.
 
   // Line-item rollup: systemSizeKwDc, hasBattery, hasEvCharger
   // Read from HubSpot live; cache only the rollup, not the raw line items (spec decision 8).
@@ -1447,7 +1512,9 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
   const tickets: Array<{ id: string; properties: Record<string, string | null> }> = ticketIds.length
     ? await batchReadTickets(ticketIds, ["subject", "hs_pipeline_stage", "hs_lastmodifieddate", "closed_date"])
     : [];
-  const stageMap = ticketIds.length ? (await getTicketStageMap()).stageMap : {};
+  // `getTicketStageMap()` returns `{ map, orderedStageIds }` — destructure `map`
+  // (stageId → stageName). Do NOT read `.stageMap`; that field doesn't exist.
+  const stageMap = ticketIds.length ? (await getTicketStageMap()).map : {};
   const isOpenStage = (stageId: string | null | undefined) => {
     if (!stageId) return false;
     const label = (stageMap[stageId] ?? "").toLowerCase();
@@ -1478,7 +1545,7 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
       systemSizeKwDc,
       hasBattery, hasEvCharger,
       lastServiceDate,
-      earliestWarrantyExpiry: warrantyExpiries[0] ?? null,
+      earliestWarrantyExpiry: null, // v1: not yet derivable — see note above
       lastReconciledAt: new Date(),
     },
   });
@@ -1934,13 +2001,37 @@ Expected: 10 contacts processed, rows appear in `HubSpotPropertyCache`, Properti
 - [ ] Implement: read cache row + link rows + hydrate with live HubSpot fetches only for line items (they're not cached; spec decision 8).
 - [ ] Commit: `feat(property): detail endpoint`
 
-### Task 5.2: `GET /api/properties/resolve?address=...`
+### Task 5.2: `POST /api/properties/resolve` — lookup by structured address
 
-- [ ] Test: returns 200 + `{ propertyId }` when an existing `HubSpotPropertyCache` matches by `addressHash` of the normalized input address.
-- [ ] Test: returns 404 `{ propertyId: null }` when not found.
-- [ ] Test: never triggers a geocode (fast, synchronous) — legacy fallback UX.
-- [ ] Implement using `addressHash` over client-sent address parts.
-- [ ] Commit: `feat(property): address-resolve endpoint for legacy records`
+**Contract** (finalized — `PropertyLink` and the resolver MUST agree on this shape):
+
+- **Method**: `POST` (not GET). A display string is too lossy to hash reliably; the client always sends structured parts.
+- **Request body**:
+  ```ts
+  interface ResolveRequest {
+    street: string;   // required, already trimmed by caller
+    unit?: string | null;
+    city: string;     // required
+    state: string;    // required, 2-letter
+    zip: string;      // required
+  }
+  ```
+- **Response**:
+  - `200 { propertyId: string }` when a `HubSpotPropertyCache` row matches.
+  - `200 { propertyId: null }` when no match (NOT 404 — "no match" is a normal result; reserving 404 for "no such endpoint").
+  - `400` if any required field is missing or empty.
+- **Resolution**: server computes `addressHash({ street, unit, city, state, zip })` using the same `@/lib/address-hash` helper and normalization rules as the create path (Task 1.3). This guarantees the hash is identical whether a row was created via webhook, backfill, or legacy resolve — all three go through the same normalizer.
+
+**Why POST over GET with `?address=...`**: a display-string query param would require server-side parsing back into parts (fragile on unit variants, zip4, trailing country strings), and two clients with the same address but different whitespace/casing/abbreviation conventions would get different hashes. Structured parts + shared normalizer is the only way the hash is stable across entry paths.
+
+- [ ] Test: 200 + `{ propertyId }` when a cache row exists with matching `addressHash`.
+- [ ] Test: 200 + `{ propertyId: null }` when no match (never a geocode, never a create).
+- [ ] Test: 400 when `street` / `city` / `state` / `zip` is missing or empty-string.
+- [ ] Test: two requests with same logical address but different casing/whitespace (`"123 Main St"` vs `" 123 MAIN ST "`) resolve to the same `propertyId` — proves the shared normalizer.
+- [ ] Test: never triggers a geocode (mock Google Maps client; assert zero calls).
+- [ ] Implement — `POST`, parse with `zod`, compute hash via `addressHash({ ... })`, `prisma.hubSpotPropertyCache.findUnique({ where: { addressHash } })`, return `{ propertyId: row?.hubspotObjectId ?? null }`.
+- [ ] Update `PropertyLink` (Task 6.2) to require structured `AddressParts` (drop the raw-string variant from its props — underspecified is worse than restrictive here). Callers that only have a display string must parse first.
+- [ ] Commit: `feat(property): POST resolve endpoint with structured-address contract`
 
 ### Task 5.3: `GET /api/properties/by-contact/[contactId]`
 
@@ -1998,10 +2089,12 @@ Expected: 10 contacts processed, rows appear in `HubSpotPropertyCache`, Properti
 **Files:**
 - Create: `src/components/PropertyLink.tsx`
 
-- [ ] Accepts `address` (string or `AddressParts`) + optional `hubspotObjectId`.
+- [ ] Accepts `address: AddressParts` (structured only — no raw string overload) + optional `hubspotObjectId`. This matches the `POST /api/properties/resolve` contract in Task 5.2; a display string is kept only for rendering.
+- [ ] Props: `{ address: AddressParts; display?: string; hubspotObjectId?: string }` — `display` is what the user sees, `address` is what gets hashed and sent.
 - [ ] Renders as a button styled like a link; `onClick` opens `PropertyDrawer` via an app-level context (create `PropertyDrawerContext` if needed).
-- [ ] If `hubspotObjectId` missing, fetches `/api/properties/resolve` lazily on click.
+- [ ] If `hubspotObjectId` missing, `POST`s to `/api/properties/resolve` lazily on click with the `AddressParts` body.
 - [ ] Legacy-record fallback: "No property record yet" + admin-only "Create Property" button.
+- [ ] Also find any existing `customer-resolver`/`ticket-detail` call sites and verify they already have structured parts (deal address fields are already separate columns; ticket location fallback goes through the deal). Document any site that only has a display string in a follow-up issue — do NOT paper over with a string-parser.
 - [ ] Commit: `feat(property): PropertyLink wrapper for clickable addresses`
 
 ### Task 6.3: Wire into Service Suite customer-360 view
