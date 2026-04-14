@@ -1970,6 +1970,19 @@ model IdrMeetingItem {
   shitShowFlagged  Boolean  @default(false)
   shitShowReason   String?
 
+  // Adder checkboxes
+  adderTileRoof     Boolean  @default(false)
+  adderMetalRoof    Boolean  @default(false)
+  adderFlatFoamRoof Boolean  @default(false)
+  adderShakeRoof    Boolean  @default(false)
+  adderSteepPitch   Boolean  @default(false)
+  adderTwoStorey    Boolean  @default(false)
+  adderTrenching    Boolean  @default(false)
+  adderGroundMount  Boolean  @default(false)
+  adderMpuUpgrade   Boolean  @default(false)
+  adderEvCharger    Boolean  @default(false)
+  customAdders      Json     @default("[]")
+
   // Sync status
   hubspotSyncStatus IdrSyncStatus       @default(DRAFT)
   hubspotSyncedAt   DateTime?
@@ -2031,6 +2044,19 @@ model IdrEscalationQueue {
   operationsNotes      String?
   designNotes          String?
   conclusion           String?
+
+  // Adder checkboxes (carried over from prep/skip)
+  adderTileRoof     Boolean  @default(false)
+  adderMetalRoof    Boolean  @default(false)
+  adderFlatFoamRoof Boolean  @default(false)
+  adderShakeRoof    Boolean  @default(false)
+  adderSteepPitch   Boolean  @default(false)
+  adderTwoStorey    Boolean  @default(false)
+  adderTrenching    Boolean  @default(false)
+  adderGroundMount  Boolean  @default(false)
+  adderMpuUpgrade   Boolean  @default(false)
+  adderEvCharger    Boolean  @default(false)
+  customAdders      Json     @default("[]")
 
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
