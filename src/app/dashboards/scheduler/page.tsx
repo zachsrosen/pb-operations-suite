@@ -164,7 +164,7 @@ interface OverlayEvent {
   assignedUsers: string[];
   address: string;
   location: string;
-  eventType: "service" | "dnr";
+  eventType: "service" | "dnr" | "roofing" | "other";
   eventSubtype: string;
   isOverlay: true;
   isOverdue: false;
@@ -273,6 +273,32 @@ const DNR_CATEGORY_UIDS = [
   "d9d888a1-efc3-4f01-a8d6-c9e867374d71", // Detach
   "43df49e9-3835-48f2-80ca-cc77ad7c3f0d", // Reset
   "a5e54b76-8b79-4cd7-a960-bad53d24e1c5", // D&R Inspection
+].join(",");
+
+const ROOFING_CATEGORY_UIDS = [
+  "b3289bad-d618-47c7-b592-43454b655982", // Walk Roof
+  "18f08c0d-f767-4e4a-8970-7c67597f4b4a", // Mid Roof Install
+  "92caf51d-1a53-4679-9b64-ba316ccb870d", // Roof Final
+].join(",");
+
+// Categories already surfaced elsewhere on the master schedule (project-linked
+// lookups for survey/pre-sale/construction/inspection, plus the Service, D&R,
+// and Roofing overlays). Anything NOT in this list falls into the "Other"
+// overlay — primarily Additional Visit today, plus any new categories Zuper
+// adds in the future.
+const EXCLUDE_OTHER_CATEGORY_UIDS = [
+  "002bac33-84d3-4083-a35d-50626fc49288", // Site Survey
+  "c53070e5-63fd-41bc-8803-f66ad842dbb5", // Pre-Sale Site Visit
+  "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf", // Construction
+  "b7dc03d2-25d0-40df-a2fc-b1a477b16b65", // Inspection
+  "cff6f839-c043-46ee-a09f-8d0e9f363437", // Service Visit
+  "8a29a1c0-9141-4db6-b8bb-9d9a65e2a1de", // Service Revisit
+  "d9d888a1-efc3-4f01-a8d6-c9e867374d71", // Detach
+  "43df49e9-3835-48f2-80ca-cc77ad7c3f0d", // Reset
+  "a5e54b76-8b79-4cd7-a960-bad53d24e1c5", // D&R Inspection
+  "b3289bad-d618-47c7-b592-43454b655982", // Walk Roof
+  "18f08c0d-f767-4e4a-8970-7c67597f4b4a", // Mid Roof Install
+  "92caf51d-1a53-4679-9b64-ba316ccb870d", // Roof Final
 ].join(",");
 
 /* ---- Zuper default assignees per location (for auto-assignment when scheduling) ---- */
@@ -485,7 +511,7 @@ function normalizeLocation(location?: string | null): string {
 
 function mapZuperJobsToOverlays(
   jobs: ZuperCategoryJob[],
-  eventType: "service" | "dnr"
+  eventType: "service" | "dnr" | "roofing" | "other"
 ): OverlayEvent[] {
   return jobs
     .map((j): OverlayEvent | null => {
@@ -544,14 +570,26 @@ function mapZuperJobsToOverlays(
 
 function getOverlayColorClass(e: DisplayEvent): string | null {
   if (!isOverlayEvent(e)) return null;
-  return e.eventType === "service"
-    ? "bg-purple-500/20 text-purple-300 border border-dashed border-purple-400"
-    : "bg-amber-500/20 text-amber-300 border border-dashed border-amber-400";
+  switch (e.eventType) {
+    case "service":
+      return "bg-purple-500/20 text-purple-300 border border-dashed border-purple-400";
+    case "dnr":
+      return "bg-amber-500/20 text-amber-300 border border-dashed border-amber-400";
+    case "roofing":
+      return "bg-rose-500/20 text-rose-300 border border-dashed border-rose-400";
+    case "other":
+      return "bg-slate-500/20 text-slate-300 border border-dashed border-slate-400";
+  }
 }
 
 function getOverlayBadge(e: DisplayEvent): string | null {
   if (!isOverlayEvent(e)) return null;
-  return e.eventType === "service" ? "SVC" : "D&R";
+  switch (e.eventType) {
+    case "service": return "SVC";
+    case "dnr":     return "D&R";
+    case "roofing": return "ROOF";
+    case "other":   return "OTHR";
+  }
 }
 
 function formatOverlayAssigneeLabel(users: string[]): string {
@@ -765,12 +803,16 @@ export default function SchedulerPage() {
     });
   }, []);
 
-  /* ---- service & D&R overlay toggles ---- */
+  /* ---- service / D&R / roofing / other overlay toggles ---- */
   const [showService, setShowService] = useState(false);
   const [showDnr, setShowDnr] = useState(false);
+  const [showRoofing, setShowRoofing] = useState(false);
+  const [showOther, setShowOther] = useState(false);
   useEffect(() => {
     if (localStorage.getItem("scheduler-show-service") === "true") setShowService(true);
     if (localStorage.getItem("scheduler-show-dnr") === "true") setShowDnr(true);
+    if (localStorage.getItem("scheduler-show-roofing") === "true") setShowRoofing(true);
+    if (localStorage.getItem("scheduler-show-other") === "true") setShowOther(true);
   }, []);
   const toggleService = useCallback(() => {
     setShowService((prev) => {
@@ -783,6 +825,20 @@ export default function SchedulerPage() {
     setShowDnr((prev) => {
       const next = !prev;
       localStorage.setItem("scheduler-show-dnr", String(next));
+      return next;
+    });
+  }, []);
+  const toggleRoofing = useCallback(() => {
+    setShowRoofing((prev) => {
+      const next = !prev;
+      localStorage.setItem("scheduler-show-roofing", String(next));
+      return next;
+    });
+  }, []);
+  const toggleOther = useCallback(() => {
+    setShowOther((prev) => {
+      const next = !prev;
+      localStorage.setItem("scheduler-show-other", String(next));
       return next;
     });
   }, []);
@@ -1137,6 +1193,40 @@ export default function SchedulerPage() {
     refetchOnWindowFocus: true,
   });
 
+  const roofingJobsQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
+    queryKey: ["zuper-roofing-overlay", overlayDateRange.from_date, overlayDateRange.to_date],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        categories: ROOFING_CATEGORY_UIDS,
+        from_date: overlayDateRange.from_date,
+        to_date: overlayDateRange.to_date,
+      });
+      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
+      if (!res.ok) return { jobs: [] };
+      return res.json();
+    },
+    enabled: showRoofing,
+    staleTime: 2 * 60 * 1000,
+    refetchOnWindowFocus: true,
+  });
+
+  const otherJobsQuery = useQuery<{ jobs: ZuperCategoryJob[] }>({
+    queryKey: ["zuper-other-overlay", overlayDateRange.from_date, overlayDateRange.to_date],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        exclude: EXCLUDE_OTHER_CATEGORY_UIDS,
+        from_date: overlayDateRange.from_date,
+        to_date: overlayDateRange.to_date,
+      });
+      const res = await fetch(`/api/zuper/jobs/by-category?${params}`);
+      if (!res.ok) return { jobs: [] };
+      return res.json();
+    },
+    enabled: showOther,
+    staleTime: 2 * 60 * 1000,
+    refetchOnWindowFocus: true,
+  });
+
   const overlayEvents = useMemo((): OverlayEvent[] => {
     const service = showService && serviceJobsQuery.data?.jobs
       ? mapZuperJobsToOverlays(serviceJobsQuery.data.jobs, "service")
@@ -1144,12 +1234,18 @@ export default function SchedulerPage() {
     const dnr = showDnr && dnrJobsQuery.data?.jobs
       ? mapZuperJobsToOverlays(dnrJobsQuery.data.jobs, "dnr")
       : [];
-    let combined = [...service, ...dnr];
+    const roofing = showRoofing && roofingJobsQuery.data?.jobs
+      ? mapZuperJobsToOverlays(roofingJobsQuery.data.jobs, "roofing")
+      : [];
+    const other = showOther && otherJobsQuery.data?.jobs
+      ? mapZuperJobsToOverlays(otherJobsQuery.data.jobs, "other")
+      : [];
+    let combined = [...service, ...dnr, ...roofing, ...other];
     if (calendarLocations.length > 0) {
       combined = combined.filter(e => calendarLocations.includes(e.location));
     }
     return combined;
-  }, [showService, showDnr, serviceJobsQuery.data, dnrJobsQuery.data, calendarLocations]);
+  }, [showService, showDnr, showRoofing, showOther, serviceJobsQuery.data, dnrJobsQuery.data, roofingJobsQuery.data, otherJobsQuery.data, calendarLocations]);
 
   const fetchProjects = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["scheduler", "main-projects"] });
@@ -4030,6 +4126,46 @@ export default function SchedulerPage() {
                   {overlayEvents.filter(e => e.eventType === "dnr").length} D&R job{overlayEvents.filter(e => e.eventType === "dnr").length !== 1 ? "s" : ""}
                 </span>
               )}
+              <button
+                onClick={toggleRoofing}
+                className={`flex items-center gap-1 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ${
+                  showRoofing
+                    ? "border-rose-400 text-rose-400 bg-rose-500/10"
+                    : "border-t-border text-muted opacity-60 hover:border-muted"
+                }`}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${
+                  showRoofing ? "border-rose-400" : "border-t-border"
+                }`}>
+                  {showRoofing && <span className="w-1 h-1 rounded-full bg-rose-400" />}
+                </span>
+                Roofing
+              </button>
+              {showRoofing && overlayEvents.filter(e => e.eventType === "roofing").length > 0 && (
+                <span className="text-[0.55rem] text-rose-400/70 ml-0.5">
+                  {overlayEvents.filter(e => e.eventType === "roofing").length} roofing job{overlayEvents.filter(e => e.eventType === "roofing").length !== 1 ? "s" : ""}
+                </span>
+              )}
+              <button
+                onClick={toggleOther}
+                className={`flex items-center gap-1 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ${
+                  showOther
+                    ? "border-slate-400 text-slate-300 bg-slate-500/10"
+                    : "border-t-border text-muted opacity-60 hover:border-muted"
+                }`}
+              >
+                <span className={`w-2.5 h-2.5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${
+                  showOther ? "border-slate-400" : "border-t-border"
+                }`}>
+                  {showOther && <span className="w-1 h-1 rounded-full bg-slate-400" />}
+                </span>
+                Other
+              </button>
+              {showOther && overlayEvents.filter(e => e.eventType === "other").length > 0 && (
+                <span className="text-[0.55rem] text-slate-400/70 ml-0.5">
+                  {overlayEvents.filter(e => e.eventType === "other").length} other job{overlayEvents.filter(e => e.eventType === "other").length !== 1 ? "s" : ""}
+                </span>
+              )}
             </div>
           </div>
 
@@ -6023,16 +6159,26 @@ export default function SchedulerPage() {
           onClick={(e) => { if (e.target === e.currentTarget) setOverlayDetail(null); }}
         >
           <div className={`bg-surface border rounded-xl p-5 max-w-[400px] w-[90%] ${
-            overlayDetail.eventType === "service" ? "border-purple-500/50" : "border-amber-500/50"
+            overlayDetail.eventType === "service" ? "border-purple-500/50"
+              : overlayDetail.eventType === "dnr" ? "border-amber-500/50"
+              : overlayDetail.eventType === "roofing" ? "border-rose-500/50"
+              : "border-slate-500/50"
           }`}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-base font-semibold">
-                {overlayDetail.eventType === "service" ? "Service Job" : "D&R Job"}
+                {overlayDetail.eventType === "service" ? "Service Job"
+                  : overlayDetail.eventType === "dnr" ? "D&R Job"
+                  : overlayDetail.eventType === "roofing" ? "Roofing Job"
+                  : "Zuper Job"}
               </h3>
               <span className={`text-[0.65rem] px-2 py-0.5 rounded-full font-medium ${
                 overlayDetail.eventType === "service"
                   ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
-                  : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                  : overlayDetail.eventType === "dnr"
+                    ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                    : overlayDetail.eventType === "roofing"
+                      ? "bg-rose-500/20 text-rose-300 border border-rose-500/30"
+                      : "bg-slate-500/20 text-slate-300 border border-slate-500/30"
               }`}>
                 {overlayDetail.eventSubtype}
               </span>
@@ -6042,7 +6188,12 @@ export default function SchedulerPage() {
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Address</span><span className="text-foreground">{overlayDetail.address || "—"}</span></div>
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Location</span><span className="text-foreground">{overlayDetail.location}</span></div>
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Assigned</span><span className="text-foreground">{formatOverlayAssigneeList(overlayDetail.assignedUsers)}</span></div>
-              <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Status</span><span className={`font-medium ${overlayDetail.eventType === "service" ? "text-purple-400" : "text-amber-400"}`}>{overlayDetail.status || "—"}</span></div>
+              <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Status</span><span className={`font-medium ${
+                overlayDetail.eventType === "service" ? "text-purple-400"
+                  : overlayDetail.eventType === "dnr" ? "text-amber-400"
+                  : overlayDetail.eventType === "roofing" ? "text-rose-400"
+                  : "text-slate-300"
+              }`}>{overlayDetail.status || "—"}</span></div>
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Date</span><span className="text-foreground">{formatDateShort(overlayDetail.date)}{overlayDetail.days > 1 ? ` (${overlayDetail.days} days)` : ""}</span></div>
               {overlayDetail.scheduledTime && (
                 <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Time</span><span className="text-foreground">{overlayDetail.scheduledTime}</span></div>
