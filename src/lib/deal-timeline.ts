@@ -44,38 +44,29 @@ function isInWindow(eventTs: string, windowStart: Date | null): boolean {
 }
 
 /**
- * Extract the raw DB id from a prefixed cursor id, if the prefix matches
- * the expected source. Returns null when the cursor came from a different
- * source — in that case the DB query should only filter by timestamp (<),
- * not the equality branch, because the id domains are incomparable.
+ * Build a Prisma WHERE clause for cursor pagination on DB-backed sources.
+ *
+ * Same-source cursor (prefix matches): push the full compound comparison
+ * (timestamp, rawId) to the DB for exact boundary handling.
+ *
+ * Cross-source cursor (prefix doesn't match): use `createdAt <= cursor.ts`
+ * to fetch the overlap band at the cursor timestamp. The caller then applies
+ * `isBeforeCursor()` in-memory using the prefixed event IDs — the same
+ * comparison all snapshot sources use — so equal-timestamp events from
+ * different sources are ordered correctly and never skipped.
  */
-function extractRawId(cursorId: string, prefix: string): string | null {
+function buildCursorWhere(cursorId: string, cursorTs: string, prefix: string): Record<string, unknown> {
   if (cursorId.startsWith(`${prefix}-`)) {
-    return cursorId.slice(prefix.length + 1);
-  }
-  return null;
-}
-
-/**
- * Build a Prisma WHERE clause for composite cursor pagination.
- * When the cursor came from the same source (prefix matches), use the
- * compound (timestamp, id) comparison for lossless pagination.
- * When the cursor came from a different source, fall back to strict
- * timestamp-only < comparison — the merge step deduplicates anyway.
- */
-function buildCursorWhere(cursor: Cursor, prefix: string): Record<string, unknown> {
-  const rawId = extractRawId(cursor.id, prefix);
-  if (rawId) {
-    // Same-source cursor: compound comparison
+    const rawId = cursorId.slice(prefix.length + 1);
     return {
       OR: [
-        { createdAt: { lt: new Date(cursor.ts) } },
-        { createdAt: new Date(cursor.ts), id: { lt: rawId } },
+        { createdAt: { lt: new Date(cursorTs) } },
+        { createdAt: new Date(cursorTs), id: { lt: rawId } },
       ],
     };
   }
-  // Cross-source cursor: timestamp-only (safe — no id comparison across domains)
-  return { createdAt: { lt: new Date(cursor.ts) } };
+  // Cross-source: include the cursor timestamp band, filter in-memory later
+  return { createdAt: { lte: new Date(cursorTs) } };
 }
 
 // ---------------------------------------------------------------------------
@@ -94,7 +85,7 @@ async function fetchNoteEvents(
     andConditions.push({ createdAt: { gte: windowStart } });
   }
   if (cursor) {
-    andConditions.push(buildCursorWhere(cursor, "note"));
+    andConditions.push(buildCursorWhere(cursor.id, cursor.ts, "note"));
   }
   if (andConditions.length > 0) {
     where.AND = andConditions;
@@ -106,7 +97,7 @@ async function fetchNoteEvents(
     take: PAGE_SIZE,
   });
 
-  return notes.map((n) => ({
+  const events = notes.map((n) => ({
     id: `note-${n.id}`,
     type: "note" as const,
     timestamp: n.createdAt.toISOString(),
@@ -119,6 +110,13 @@ async function fetchNoteEvents(
       zuperSyncStatus: n.zuperSyncStatus,
     },
   }));
+
+  // For cross-source cursors the DB fetched the overlap band (<=).
+  // Apply the unified isBeforeCursor filter using prefixed IDs.
+  if (cursor && !cursor.id.startsWith("note-")) {
+    return events.filter((e) => isBeforeCursor(e.timestamp, e.id, cursor));
+  }
+  return events;
 }
 
 async function fetchSyncEvents(
@@ -136,7 +134,7 @@ async function fetchSyncEvents(
     andConditions.push({ createdAt: { gte: windowStart } });
   }
   if (cursor) {
-    andConditions.push(buildCursorWhere(cursor, "sync"));
+    andConditions.push(buildCursorWhere(cursor.id, cursor.ts, "sync"));
   }
   if (andConditions.length > 0) {
     where.AND = andConditions;
@@ -148,7 +146,7 @@ async function fetchSyncEvents(
     take: PAGE_SIZE,
   });
 
-  return logs.map((log) => {
+  const events = logs.map((log) => {
     const changes = log.changesDetected as Record<string, [unknown, unknown]> | null;
     const fieldCount = changes ? Object.keys(changes).length : 0;
     const sourceLabel = log.source.replace(/^(batch|single):/, "");
@@ -164,6 +162,13 @@ async function fetchSyncEvents(
       metadata: { changes, syncType: log.syncType, source: log.source },
     };
   });
+
+  // For cross-source cursors the DB fetched the overlap band (<=).
+  // Apply the unified isBeforeCursor filter using prefixed IDs.
+  if (cursor && !cursor.id.startsWith("sync-")) {
+    return events.filter((e) => isBeforeCursor(e.timestamp, e.id, cursor));
+  }
+  return events;
 }
 
 async function fetchZuperEvents(
