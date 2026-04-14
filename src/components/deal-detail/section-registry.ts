@@ -178,6 +178,37 @@ export const SECTION_REGISTRY: SectionConfig[] = [
   },
 ];
 
+// --- Field label lookup (for sync changelog display) ---
+
+/**
+ * Maps deal column names (camelCase) to human-readable labels.
+ * Built by extracting the (key, label) pairs from all section field definitions.
+ */
+export const FIELD_LABELS: Record<string, string> = buildFieldLabels();
+
+function buildFieldLabels(): Record<string, string> {
+  const labels: Record<string, string> = {};
+  // Use a Proxy-based SerializedDeal that records which keys are accessed
+  // by the field functions, paired with the labels from the returned FieldDefs.
+  for (const section of SECTION_REGISTRY) {
+    const accessed: string[] = [];
+    const proxy = new Proxy({} as SerializedDeal, {
+      get(_target, prop: string) {
+        accessed.push(prop);
+        return null;
+      },
+    });
+    const defs = section.fields(proxy);
+    // accessed[] and defs[] are parallel arrays (same order)
+    for (let i = 0; i < defs.length; i++) {
+      if (accessed[i]) {
+        labels[accessed[i]] = defs[i].label;
+      }
+    }
+  }
+  return labels;
+}
+
 // --- Pipeline filtering ---
 
 export function getSectionsForPipeline(pipeline: string): SectionConfig[] {
