@@ -84,12 +84,14 @@ customAdders        Json    @default("[]")
 
 These fields follow the same pattern as existing editable fields (difficulty, installerCount, etc.) — updated via the `PATCH /api/idr-meeting/items/[id]` endpoint and synced to HubSpot on "Sync to HubSpot" click.
 
-**Required whitelist updates** (5 files):
+**Required whitelist updates** (7 files):
 1. `src/app/api/idr-meeting/items/[id]/route.ts` — add all 11 fields to `EDITABLE_FIELDS`
-2. `src/app/api/idr-meeting/prep/route.ts` — add all 11 fields to `PREP_FIELDS`
+2. `src/app/api/idr-meeting/prep/route.ts` — add all 11 fields to `PREP_FIELDS`; validate `customAdders` on this route too
 3. `src/app/api/idr-meeting/sessions/route.ts` — add fields to `pickPrepFields()` helper so prep data carries into live sessions
 4. `src/app/api/idr-meeting/items/[id]/route.ts` DELETE handler — include adder fields when re-queuing skipped escalation items
 5. `src/app/api/idr-meeting/items/[id]/sync/route.ts` — add adder serialization to `buildHubSpotPropertyUpdates()` and `buildHubSpotNoteBody()`
+6. `src/app/api/idr-meeting/preview/route.ts` — ensure preview merge path reads/writes adder fields from `IdrEscalationQueue`
+7. `src/app/api/idr-meeting/sessions/[id]/route.ts` — session-complete auto-sync must include `idr_adders` property and adder content in the note body (otherwise "finish meeting" flow skips adder sync for any items not manually synced)
 
 **`customAdders` validation:** Max 20 entries. Name max 100 chars, must be non-empty. Amount can be negative (discounts). Validate in the PATCH handler before persisting.
 
@@ -119,7 +121,9 @@ matchLineItemToEquipment(name, sku, category, manufacturer)
       ▼
 Build CalcInput:
   - modules/inverters/batteries from matched equipment + quantities
-  - pricingSchemeId from LOCATION_SCHEME[item.region]  (IdrItem.region = pb_location)
+  - pricingSchemeId from LOCATION_SCHEME[normalizeLocation(item.region)]
+    (item.region stores raw pb_location which may be non-canonical;
+     normalize before lookup, fall back to "base" if unrecognized)
   - roofTypeId/storeyId/pitchId from adder checkboxes
   - customFixedAdder from custom adder amounts only (site adders are planning-only)
   - activeAdderIds: [] (no PE/org adders in IDR scope)
@@ -131,7 +135,7 @@ calcPrice(input) → CalcBreakdown
 Display breakdown + compare finalPrice vs dealAmount
 ```
 
-> **Note:** The calculation does NOT use IdrItem snapshot props for equipment. It uses line items fetched from HubSpot, which have the `sku`, `name`, `manufacturer`, and `productCategory` needed for `matchLineItemToEquipment()`. The IdrItem's `region` field (= `pb_location`) is used only for pricing scheme resolution.
+> **Note:** The calculation does NOT use IdrItem snapshot props for equipment. It uses line items fetched from HubSpot, which have the `sku`, `name`, `manufacturer`, and `productCategory` needed for `matchLineItemToEquipment()`. The IdrItem's `region` field (= `pb_location`) is used only for pricing scheme resolution via `normalizeLocation()`. If the normalized location is not in `LOCATION_SCHEME`, fall back to `"base"` (Colorado) and display a warning: "Unknown location — using default pricing scheme."
 
 ### Calculation Approach
 
@@ -200,7 +204,8 @@ Layout:
 - Two-column grid of checkboxes grouped by category (ROOF, SITE headers)
 - Custom adders list below with name/amount per row + remove button
 - Add-custom row: text input + dollar input + "+" button
-- Each checkbox onChange calls `onChange({ adderTileRoof: true })` etc.
+- **Roof checkbox onChange** sends all four roof fields in one update to enforce mutual exclusivity: `onChange({ adderTileRoof: true, adderMetalRoof: false, adderFlatFoamRoof: false, adderShakeRoof: false })`. This prevents stale true values from prior selections surviving the optimistic merge/PATCH flow.
+- Site/pitch/storey checkboxes send single-field updates: `onChange({ adderTrenching: true })`
 - Custom adders onChange calls `onChange({ customAdders: [...] })`
 
 ### `PricingBreakdown.tsx`
@@ -267,11 +272,13 @@ No new HubSpot snapshot properties needed. Equipment data comes from line items 
 
 ## Migration
 
-Single Prisma migration adding 11 fields to `IdrMeetingItem`:
+Single Prisma migration adding 11 fields to **both** `IdrMeetingItem` and `IdrEscalationQueue`:
 - 10 Boolean fields (all default false)
 - 1 Json field (default `[]`)
 
-No data backfill needed — existing items get defaults.
+Both models need the same fields because prep-mode edits persist through `IdrEscalationQueue` and merge back into preview items. Without the escalation queue columns, adders entered in prep mode will not survive skip/re-queue or session creation.
+
+No data backfill needed — existing rows get defaults.
 
 ---
 
