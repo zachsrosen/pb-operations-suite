@@ -82,6 +82,18 @@ export interface IdrItem {
   reviewed: boolean;
   shitShowFlagged: boolean;
   shitShowReason: string | null;
+  // Adder checkboxes
+  adderTileRoof: boolean;
+  adderMetalRoof: boolean;
+  adderFlatFoamRoof: boolean;
+  adderShakeRoof: boolean;
+  adderSteepPitch: boolean;
+  adderTwoStorey: boolean;
+  adderTrenching: boolean;
+  adderGroundMount: boolean;
+  adderMpuUpgrade: boolean;
+  adderEvCharger: boolean;
+  customAdders: Array<{ name: string; amount: number }>;
   hubspotSyncStatus: "DRAFT" | "SYNCED" | "FAILED";
   hubspotSyncedAt: string | null;
   addedBy: string;
