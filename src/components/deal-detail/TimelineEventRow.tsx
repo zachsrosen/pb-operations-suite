@@ -39,7 +39,29 @@ function formatRelativeTime(iso: string): string {
   return new Date(iso).toLocaleDateString();
 }
 
-function SyncChangesDiff({ changes }: { changes: Record<string, [unknown, unknown]> }) {
+function SyncChangesDiff({
+  changes,
+  displayChanges,
+}: {
+  changes?: Record<string, [unknown, unknown]>;
+  displayChanges?: Record<string, { label: string; old: unknown; new: unknown }>;
+}) {
+  // Prefer displayChanges (has human-readable labels)
+  if (displayChanges) {
+    return (
+      <div className="mt-1 space-y-0.5">
+        {Object.entries(displayChanges).map(([field, { label, old: oldVal, new: newVal }]) => (
+          <div key={field} className="text-[10px]">
+            <span className="font-medium text-muted">{label}:</span>{" "}
+            <span className="text-red-400 line-through">{String(oldVal ?? "\u2014")}</span>{" "}
+            <span className="text-emerald-400">{String(newVal ?? "\u2014")}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+  // Fallback: raw changes (old events without displayChanges)
+  if (!changes) return null;
   return (
     <div className="mt-1 space-y-0.5">
       {Object.entries(changes).map(([field, pair]) => {
@@ -75,8 +97,9 @@ export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
   const meta = event.metadata ?? {};
 
   // Sync change detail
+  const displayChanges = meta.displayChanges as Record<string, { label: string; old: unknown; new: unknown }> | undefined;
   const changes = meta.changes as Record<string, [unknown, unknown]> | undefined;
-  const hasSyncChanges = event.type === "sync" && !!changes && Object.keys(changes).length > 0;
+  const hasSyncChanges = event.type === "sync" && !!(displayChanges ? Object.keys(displayChanges).length > 0 : changes && Object.keys(changes).length > 0);
 
   // Note sync indicators
   const hubspotStatus = meta.hubspotSyncStatus as string | undefined;
@@ -147,7 +170,7 @@ export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
         )}
 
         {expanded && hasSyncChanges && (
-          <SyncChangesDiff changes={changes!} />
+          <SyncChangesDiff changes={changes} displayChanges={displayChanges} />
         )}
 
         {/* Photo thumbnail */}
