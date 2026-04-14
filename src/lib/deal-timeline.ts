@@ -6,6 +6,7 @@ import { prisma } from "@/lib/db";
 import { zuper } from "@/lib/zuper";
 import { appCache } from "@/lib/cache";
 import { getDealEngagements } from "@/lib/hubspot-engagements";
+import { FIELD_LABELS } from "@/components/deal-detail/section-registry";
 import type {
   TimelineEvent,
   TimelinePage,
@@ -14,6 +15,14 @@ import type {
 
 const PAGE_SIZE = 50;
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+
+/** Fields that change on every sync but carry no user-visible meaning. */
+const SYNC_NOISE_FIELDS = new Set([
+  "lastmodifieddate",
+  "hs_lastmodifieddate",
+  "notes_last_updated",
+  "hs_object_id",
+]);
 
 // ---------------------------------------------------------------------------
 // Cursor helpers
@@ -260,9 +269,26 @@ async function fetchSyncEvents(
     prefix: "sync",
     findMany: (args) => prisma.dealSyncLog.findMany(args),
     toEvent: (log) => {
-      const changes = log.changesDetected as Record<string, [unknown, unknown]> | null;
+      const rawChanges = log.changesDetected as Record<string, [unknown, unknown]> | null;
+      // Filter out noisy fields that change on every sync
+      const changes = rawChanges
+        ? Object.fromEntries(
+            Object.entries(rawChanges).filter(([k]) => !SYNC_NOISE_FIELDS.has(k))
+          )
+        : null;
       const fieldCount = changes ? Object.keys(changes).length : 0;
       const sourceLabel = log.source.replace(/^(batch|single):/, "");
+
+      // Build display-friendly changes with human-readable labels
+      const displayChanges = changes
+        ? Object.fromEntries(
+            Object.entries(changes).map(([k, pair]) => [
+              k,
+              { label: FIELD_LABELS[k] ?? k, old: pair[0], new: pair[1] },
+            ])
+          )
+        : null;
+
       return {
         id: `sync-${log.id}`,
         type: "sync" as const,
@@ -272,7 +298,7 @@ async function fetchSyncEvents(
           : `Sync (${log.syncType.toLowerCase()}) — no changes`,
         detail: null,
         author: null,
-        metadata: { changes, syncType: log.syncType, source: log.source },
+        metadata: { changes, displayChanges, syncType: log.syncType, source: log.source },
       };
     },
   });
