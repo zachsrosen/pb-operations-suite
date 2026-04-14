@@ -2274,6 +2274,7 @@ model Deal {
 
   // Relations
   syncLogs            DealSyncLog[]
+  notes               DealNote[]
 
   @@index([pipeline, stage])
   @@index([pbLocation])
@@ -2372,4 +2373,18 @@ model ProductSyncRun {
 
   @@unique([lockSentinel], name: "uq_product_sync_active_run")
   @@index([startedAt])
+}
+
+model DealNote {
+  id                String   @id @default(cuid())
+  dealId            String
+  deal              Deal     @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  content           String   @db.VarChar(5000)
+  authorEmail       String
+  authorName        String
+  hubspotSyncStatus String?  // PENDING | SYNCED | FAILED
+  zuperSyncStatus   String?  // PENDING | SYNCED | FAILED | SKIPPED
+  createdAt         DateTime @default(now())
+
+  @@index([dealId, createdAt])
 }
