@@ -267,24 +267,7 @@ In `src/app/api/idr-meeting/preview/route.ts`, there are **two** item-constructi
 
 **Block 3 — Existing-deal escalations (lines 166-173, `existingEscalations` loop):**
 
-This block handles escalation items whose `dealId` already appears in the IDR list. Currently it only copies `type` and `escalationReason` from the queued record — the adder fields from the escalation queue are silently dropped. Add adder field merges after `existing.escalationReason = esc.reason;`:
-
-```typescript
-      existing.adderTileRoof = esc.adderTileRoof ?? existing.adderTileRoof;
-      existing.adderMetalRoof = esc.adderMetalRoof ?? existing.adderMetalRoof;
-      existing.adderFlatFoamRoof = esc.adderFlatFoamRoof ?? existing.adderFlatFoamRoof;
-      existing.adderShakeRoof = esc.adderShakeRoof ?? existing.adderShakeRoof;
-      existing.adderSteepPitch = esc.adderSteepPitch ?? existing.adderSteepPitch;
-      existing.adderTwoStorey = esc.adderTwoStorey ?? existing.adderTwoStorey;
-      existing.adderTrenching = esc.adderTrenching ?? existing.adderTrenching;
-      existing.adderGroundMount = esc.adderGroundMount ?? existing.adderGroundMount;
-      existing.adderMpuUpgrade = esc.adderMpuUpgrade ?? existing.adderMpuUpgrade;
-      existing.adderEvCharger = esc.adderEvCharger ?? existing.adderEvCharger;
-      const escCustom = Array.isArray(esc.customAdders) ? esc.customAdders as Array<{ name: string; amount: number }> : [];
-      if (escCustom.length > 0) existing.customAdders = escCustom;
-```
-
-Without Block 3, skip/re-queued escalation items whose `dealId` overlaps an IDR deal will appear with blank adder state in preview.
+**Do NOT merge adder fields here.** This block handles escalation items whose `dealId` already appears in the IDR list. The escalation queue route (`POST /api/idr-meeting/escalation-queue`) only stores `dealId`, `dealName`, `region`, and `reason` — the adder booleans will all be schema defaults (`false`). Because `false ?? value` evaluates to `false` (not `value`), merging these fields would silently overwrite any adders already applied from the PREP record in Block 1. Adder state for same-deal escalations comes from the PREP record, which is already handled. This block should continue to only set `type` and `escalationReason`, which is its current behavior — no adder changes needed.
 
 - [ ] **Step 3: Add adder fields to DELETE handler re-queue**
 
