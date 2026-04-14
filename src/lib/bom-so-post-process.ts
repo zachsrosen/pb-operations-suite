@@ -167,12 +167,12 @@ export function detectJobContext(
   const hasProductionMeter = items.some(i =>
     /production\s*meter|pv\s*meter|U4801|U9701|U9101/i.test(`${i.model ?? ""} ${i.description}`));
   const hasServiceTap = items.some(i =>
-    /DG222NRB|TG3222R|TGN3322R/i.test(i.model ?? "") ||
-    /service\s*tap|fusible/i.test(i.description));
+    /DG222NRB/i.test(i.model ?? "") ||
+    /service\s*tap|fusible|service\s*upgrade|utility\s*tap/i.test(i.description));
   const serviceTapType: JobContext["serviceTapType"] = items.some(i =>
     /DG222NRB/i.test(i.model ?? "") || /fusible/i.test(i.description))
     ? "fused_disconnect"
-    : items.some(i => /TG3222R|TGN3322R/i.test(i.model ?? "") || /breaker\s*enclosure/i.test(i.description))
+    : items.some(i => /breaker\s*enclosure|service\s*upgrade|utility\s*tap/i.test(i.description))
       ? "breaker_enclosure"
       : null;
   const hasEnphase = items.some(i =>

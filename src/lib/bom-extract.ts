@@ -268,8 +268,9 @@ When the job has PV modules and uses IronRidge HUG attachments (XR10 rail, not m
 Do NOT add for battery-only jobs (no PV modules) or metal roof (S-5! ProteaBracket) jobs.
 
 ### Triggered by Tap / Service Upgrade
-When PV-4 shows 3-wire AC disconnect (TGN3322R) or PV-0 mentions "SERVICE UPGRADE" / "UTILITY TAP", add:
+When PV-0 mentions "SERVICE UPGRADE" or "UTILITY TAP", add:
 - { "category": "ELECTRICAL_BOS", "brand": "", "model": "BIPC4/010S", "description": "INSULATION PIERCING CONNECTOR", "qty": 3, "source": "OPS_STANDARD" }
+Do NOT trigger this rule based on the AC disconnect model alone — TGN3322R is now the standard disconnect for all jobs.
 
 ## Validation Cross-Checks
 
