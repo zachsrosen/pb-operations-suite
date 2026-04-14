@@ -10,7 +10,9 @@ describe("getSectionsForPipeline", () => {
     expect(keys).toContain("project-details");
     expect(keys).toContain("milestone-dates");
     expect(keys).toContain("status-details");
-    expect(keys).toContain("qc-metrics");
+    expect(keys).not.toContain("qc-metrics");
+    expect(keys).not.toContain("revision-counts");
+    expect(keys).not.toContain("incentive-programs");
     expect(keys).not.toContain("service-details");
     expect(keys).not.toContain("roofing-details");
   });
@@ -43,9 +45,9 @@ describe("getSectionsForPipeline", () => {
   it("returns correct default open states", () => {
     const sections = getSectionsForPipeline("PROJECT");
     const projectDetails = sections.find(s => s.key === "project-details");
-    const qcMetrics = sections.find(s => s.key === "qc-metrics");
+    const installPlanning = sections.find(s => s.key === "install-planning");
     expect(projectDetails?.defaultOpen).toBe(true);
-    expect(qcMetrics?.defaultOpen).toBe(false);
+    expect(installPlanning?.defaultOpen).toBe(false);
   });
 });
 
