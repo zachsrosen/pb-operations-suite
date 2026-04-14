@@ -18,6 +18,10 @@ const PREP_FIELDS = [
   "needsSurveyInfo", "needsResurvey", "salesChangeRequested",
   "salesChangeNotes", "opsChangeNotes",
   "customerNotes", "operationsNotes", "designNotes", "conclusion",
+  // Adders
+  "adderTileRoof", "adderMetalRoof", "adderFlatFoamRoof", "adderShakeRoof",
+  "adderSteepPitch", "adderTwoStorey", "adderTrenching", "adderGroundMount",
+  "adderMpuUpgrade", "adderEvCharger", "customAdders",
 ] as const;
 
 export async function POST(req: NextRequest) {
@@ -39,6 +43,28 @@ export async function POST(req: NextRequest) {
   for (const key of PREP_FIELDS) {
     if (key in body && body[key] !== undefined) {
       updates[key] = body[key];
+    }
+  }
+
+  // Validate customAdders if present
+  if (updates.customAdders !== undefined) {
+    if (!Array.isArray(updates.customAdders)) {
+      return NextResponse.json({ error: "customAdders must be an array" }, { status: 400 });
+    }
+    if ((updates.customAdders as unknown[]).length > 20) {
+      return NextResponse.json({ error: "Maximum 20 custom adders" }, { status: 400 });
+    }
+    for (const adder of updates.customAdders as unknown[]) {
+      if (adder == null || typeof adder !== "object") {
+        return NextResponse.json({ error: "Each custom adder must be an object" }, { status: 400 });
+      }
+      const a = adder as Record<string, unknown>;
+      if (!a.name || typeof a.name !== "string" || a.name.trim().length === 0 || a.name.length > 100) {
+        return NextResponse.json({ error: "Each custom adder must have a name (max 100 chars)" }, { status: 400 });
+      }
+      if (typeof a.amount !== "number" || !isFinite(a.amount)) {
+        return NextResponse.json({ error: "Each custom adder must have a numeric amount" }, { status: 400 });
+      }
     }
   }
 

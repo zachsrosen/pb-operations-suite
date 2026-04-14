@@ -11,6 +11,10 @@ const EDITABLE_FIELDS = [
   "customerNotes",
   "operationsNotes", "designNotes", "conclusion", "sortOrder",
   "escalationReason", "type", "reviewed", "shitShowFlagged", "shitShowReason",
+  // Adders
+  "adderTileRoof", "adderMetalRoof", "adderFlatFoamRoof", "adderShakeRoof",
+  "adderSteepPitch", "adderTwoStorey", "adderTrenching", "adderGroundMount",
+  "adderMpuUpgrade", "adderEvCharger", "customAdders",
 ];
 
 export async function PATCH(
@@ -47,6 +51,27 @@ export async function PATCH(
 
   if (Object.keys(data).length === 0) {
     return NextResponse.json({ error: "No editable fields provided" }, { status: 400 });
+  }
+
+  // Validate customAdders if present
+  if (data.customAdders !== undefined) {
+    if (!Array.isArray(data.customAdders)) {
+      return NextResponse.json({ error: "customAdders must be an array" }, { status: 400 });
+    }
+    if (data.customAdders.length > 20) {
+      return NextResponse.json({ error: "Maximum 20 custom adders" }, { status: 400 });
+    }
+    for (const adder of data.customAdders) {
+      if (adder == null || typeof adder !== "object") {
+        return NextResponse.json({ error: "Each custom adder must be an object" }, { status: 400 });
+      }
+      if (!adder.name || typeof adder.name !== "string" || adder.name.trim().length === 0 || adder.name.length > 100) {
+        return NextResponse.json({ error: "Each custom adder must have a name (max 100 chars)" }, { status: 400 });
+      }
+      if (typeof adder.amount !== "number" || !isFinite(adder.amount)) {
+        return NextResponse.json({ error: "Each custom adder must have a numeric amount" }, { status: 400 });
+      }
+    }
   }
 
   const updated = await prisma.idrMeetingItem.update({
