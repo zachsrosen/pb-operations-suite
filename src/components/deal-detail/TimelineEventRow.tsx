@@ -55,8 +55,11 @@ function SyncChangesDiff({ changes }: { changes: Record<string, [unknown, unknow
 // Event types whose detail bodies contain HubSpot HTML
 const HTML_BODY_TYPES = new Set<TimelineEventType>(["email", "call", "meeting", "hubspot_note"]);
 
+// Event types whose bodies should be visible by default
+const AUTO_EXPAND_TYPES = new Set<TimelineEventType>(["note", "hubspot_note"]);
+
 export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(AUTO_EXPAND_TYPES.has(event.type));
   const config = EVENT_CONFIG[event.type];
   const isHtmlBody = HTML_BODY_TYPES.has(event.type);
   const sanitizedDetail = useMemo(
