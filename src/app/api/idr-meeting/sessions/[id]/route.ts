@@ -10,6 +10,7 @@ import {
   buildHubSpotNoteBody,
   pushDealProperties,
   createDealTimelineNote,
+  serializeAdderSummary,
 } from "@/lib/idr-meeting";
 
 export async function GET(
@@ -93,6 +94,7 @@ export async function PATCH(
           salesChangeRequested: item.salesChangeRequested,
           salesChangeNotes: item.salesChangeNotes,
           opsChangeNotes: item.opsChangeNotes,
+          adderSummary: serializeAdderSummary(item),
         });
 
         if (Object.keys(properties).length > 0) {
@@ -118,6 +120,7 @@ export async function PATCH(
             needsSurveyInfo: item.needsSurveyInfo,
             opsChangeNotes: item.opsChangeNotes,
             needsResurvey: item.needsResurvey,
+            adderSummary: serializeAdderSummary(item),
           },
           item.session.date.toISOString(),
         );
