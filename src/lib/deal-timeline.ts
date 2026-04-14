@@ -52,30 +52,81 @@ function isInWindow(eventTs: string, windowStart: Date | null): boolean {
   return new Date(eventTs).getTime() >= windowStart.getTime();
 }
 
+// ---------------------------------------------------------------------------
+// DB-backed source pagination
+// ---------------------------------------------------------------------------
+
 /**
- * Build a Prisma WHERE clause for cursor pagination on DB-backed sources.
+ * Generic paginated fetch for DB-backed timeline sources.
  *
- * Same-source cursor (prefix matches): push the full compound comparison
- * (timestamp, rawId) to the DB for exact boundary handling.
- *
- * Cross-source cursor (prefix doesn't match): use `createdAt <= cursor.ts`
- * to fetch the overlap band at the cursor timestamp. The caller then applies
- * `isBeforeCursor()` in-memory using the prefixed event IDs — the same
- * comparison all snapshot sources use — so equal-timestamp events from
- * different sources are ordered correctly and never skipped.
+ * Cursor strategy:
+ *  - Same-source cursor (prefix matches): push the full compound
+ *    (timestamp, rawId) comparison to the DB. Exact and efficient.
+ *  - Cross-source cursor (prefix doesn't match): split into two queries:
+ *    1. Overlap band: `createdAt = cursor.ts`, no LIMIT — small cardinality,
+ *       filtered in-memory via `isBeforeCursor()` using prefixed IDs.
+ *    2. Older rows: `createdAt < cursor.ts`, LIMIT PAGE_SIZE.
+ *    This avoids the starvation problem where many same-timestamp rows
+ *    fill the LIMIT and crowd out older eligible rows.
  */
-function buildCursorWhere(cursorId: string, cursorTs: string, prefix: string): Record<string, unknown> {
-  if (cursorId.startsWith(`${prefix}-`)) {
-    const rawId = cursorId.slice(prefix.length + 1);
-    return {
-      OR: [
-        { createdAt: { lt: new Date(cursorTs) } },
-        { createdAt: new Date(cursorTs), id: { lt: rawId } },
-      ],
-    };
+async function fetchDbEvents<T extends { createdAt: Date; id: string }>(opts: {
+  baseWhere: Record<string, unknown>;
+  windowStart: Date | null;
+  cursor: Cursor | null;
+  prefix: string;
+  findMany: (args: { where: Record<string, unknown>; orderBy: ({ createdAt: "desc" } | { id: "desc" })[]; take?: number }) => Promise<T[]>;
+  toEvent: (row: T) => TimelineEvent;
+}): Promise<TimelineEvent[]> {
+  const { baseWhere, windowStart, cursor, prefix, findMany, toEvent } = opts;
+  const isSameSource = cursor?.id.startsWith(`${prefix}-`);
+
+  // --- Same-source cursor: single efficient query ---
+  if (!cursor || isSameSource) {
+    const andConditions: Record<string, unknown>[] = [];
+    if (windowStart) andConditions.push({ createdAt: { gte: windowStart } });
+    if (cursor && isSameSource) {
+      const rawId = cursor.id.slice(prefix.length + 1);
+      andConditions.push({
+        OR: [
+          { createdAt: { lt: new Date(cursor.ts) } },
+          { createdAt: new Date(cursor.ts), id: { lt: rawId } },
+        ],
+      });
+    }
+    const where = andConditions.length > 0
+      ? { ...baseWhere, AND: andConditions }
+      : { ...baseWhere };
+
+    const rows = await findMany({
+      where,
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      take: PAGE_SIZE,
+    });
+    return rows.map(toEvent);
   }
-  // Cross-source: include the cursor timestamp band, filter in-memory later
-  return { createdAt: { lte: new Date(cursorTs) } };
+
+  // --- Cross-source cursor: split into overlap band + older rows ---
+  const cursorTime = new Date(cursor.ts);
+  const windowCondition = windowStart ? [{ createdAt: { gte: windowStart } }] : [];
+
+  // 1. Overlap band at cursor timestamp (no LIMIT — bounded by cardinality)
+  const overlapRows = await findMany({
+    where: { ...baseWhere, AND: [...windowCondition, { createdAt: cursorTime }] },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+  });
+  const overlapEvents = overlapRows
+    .map(toEvent)
+    .filter((e) => isBeforeCursor(e.timestamp, e.id, cursor));
+
+  // 2. Older rows strictly before cursor timestamp
+  const olderRows = await findMany({
+    where: { ...baseWhere, AND: [...windowCondition, { createdAt: { lt: cursorTime } }] },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    take: PAGE_SIZE,
+  });
+  const olderEvents = olderRows.map(toEvent);
+
+  return [...overlapEvents, ...olderEvents];
 }
 
 // ---------------------------------------------------------------------------
@@ -117,53 +168,6 @@ export function parseZuperStatusHistory(
 }
 
 // ---------------------------------------------------------------------------
-// Generic DB-backed source fetcher
-// ---------------------------------------------------------------------------
-
-/**
- * Generic helper for DB-backed timeline sources. Handles window filtering,
- * cursor pagination via buildCursorWhere, and cross-source cursor filtering.
- */
-async function fetchDbEvents<T extends { createdAt: Date; id: string }>(opts: {
-  baseWhere: Record<string, unknown>;
-  windowStart: Date | null;
-  cursor: Cursor | null;
-  prefix: string;
-  findMany: (args: { where: Record<string, unknown>; orderBy: { createdAt: "desc" }[]; take: number }) => Promise<T[]>;
-  toEvent: (row: T) => TimelineEvent;
-}): Promise<TimelineEvent[]> {
-  const { baseWhere, windowStart, cursor, prefix, findMany, toEvent } = opts;
-
-  const where: Record<string, unknown> = { ...baseWhere };
-  const andConditions: Record<string, unknown>[] = [];
-
-  if (windowStart) {
-    andConditions.push({ createdAt: { gte: windowStart } });
-  }
-  if (cursor) {
-    andConditions.push(buildCursorWhere(cursor.id, cursor.ts, prefix));
-  }
-  if (andConditions.length > 0) {
-    where.AND = andConditions;
-  }
-
-  const rows = await findMany({
-    where,
-    orderBy: [{ createdAt: "desc" }],
-    take: PAGE_SIZE,
-  });
-
-  const events = rows.map(toEvent);
-
-  // For cross-source cursors the DB fetched the overlap band (<=).
-  // Apply the unified isBeforeCursor filter using prefixed IDs.
-  if (cursor && !cursor.id.startsWith(`${prefix}-`)) {
-    return events.filter((e) => isBeforeCursor(e.timestamp, e.id, cursor));
-  }
-  return events;
-}
-
-// ---------------------------------------------------------------------------
 // Source fetchers → TimelineEvent[]
 // ---------------------------------------------------------------------------
 
@@ -172,45 +176,26 @@ async function fetchNoteEvents(
   windowStart: Date | null,
   cursor: Cursor | null,
 ): Promise<TimelineEvent[]> {
-  const where: Record<string, unknown> = { dealId };
-  const andConditions: Record<string, unknown>[] = [];
-
-  if (windowStart) {
-    andConditions.push({ createdAt: { gte: windowStart } });
-  }
-  if (cursor) {
-    andConditions.push(buildCursorWhere(cursor.id, cursor.ts, "note"));
-  }
-  if (andConditions.length > 0) {
-    where.AND = andConditions;
-  }
-
-  const notes = await prisma.dealNote.findMany({
-    where,
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: PAGE_SIZE,
+  return fetchDbEvents({
+    baseWhere: { dealId },
+    windowStart,
+    cursor,
+    prefix: "note",
+    findMany: (args) => prisma.dealNote.findMany(args),
+    toEvent: (n) => ({
+      id: `note-${n.id}`,
+      type: "note" as const,
+      timestamp: n.createdAt.toISOString(),
+      title: `Note by ${n.authorName}`,
+      detail: n.content,
+      author: n.authorName,
+      metadata: {
+        authorEmail: n.authorEmail,
+        hubspotSyncStatus: n.hubspotSyncStatus,
+        zuperSyncStatus: n.zuperSyncStatus,
+      },
+    }),
   });
-
-  const events = notes.map((n) => ({
-    id: `note-${n.id}`,
-    type: "note" as const,
-    timestamp: n.createdAt.toISOString(),
-    title: `Note by ${n.authorName}`,
-    detail: n.content,
-    author: n.authorName,
-    metadata: {
-      authorEmail: n.authorEmail,
-      hubspotSyncStatus: n.hubspotSyncStatus,
-      zuperSyncStatus: n.zuperSyncStatus,
-    },
-  }));
-
-  // For cross-source cursors the DB fetched the overlap band (<=).
-  // Apply the unified isBeforeCursor filter using prefixed IDs.
-  if (cursor && !cursor.id.startsWith("note-")) {
-    return events.filter((e) => isBeforeCursor(e.timestamp, e.id, cursor));
-  }
-  return events;
 }
 
 async function fetchSyncEvents(
@@ -218,68 +203,46 @@ async function fetchSyncEvents(
   windowStart: Date | null,
   cursor: Cursor | null,
 ): Promise<TimelineEvent[]> {
-  const where: Record<string, unknown> = {
-    dealId,
-    status: { not: "SKIPPED" },
-  };
-  const andConditions: Record<string, unknown>[] = [];
+  return fetchDbEvents({
+    baseWhere: { dealId, status: { not: "SKIPPED" } },
+    windowStart,
+    cursor,
+    prefix: "sync",
+    findMany: (args) => prisma.dealSyncLog.findMany(args),
+    toEvent: (log) => {
+      const rawChanges = log.changesDetected as Record<string, [unknown, unknown]> | null;
+      // Filter out noisy fields that change on every sync
+      const changes = rawChanges
+        ? Object.fromEntries(
+            Object.entries(rawChanges).filter(([k]) => !SYNC_NOISE_FIELDS.has(k))
+          )
+        : null;
+      const fieldCount = changes ? Object.keys(changes).length : 0;
+      const sourceLabel = log.source.replace(/^(batch|single):/, "");
 
-  if (windowStart) {
-    andConditions.push({ createdAt: { gte: windowStart } });
-  }
-  if (cursor) {
-    andConditions.push(buildCursorWhere(cursor.id, cursor.ts, "sync"));
-  }
-  if (andConditions.length > 0) {
-    where.AND = andConditions;
-  }
+      // Build display-friendly changes with human-readable labels
+      const displayChanges = changes
+        ? Object.fromEntries(
+            Object.entries(changes).map(([k, pair]) => [
+              k,
+              { label: FIELD_LABELS[k] ?? k, old: pair[0], new: pair[1] },
+            ])
+          )
+        : null;
 
-  const logs = await prisma.dealSyncLog.findMany({
-    where,
-    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    take: PAGE_SIZE,
+      return {
+        id: `sync-${log.id}`,
+        type: "sync" as const,
+        timestamp: log.createdAt.toISOString(),
+        title: fieldCount > 0
+          ? `${fieldCount} field${fieldCount === 1 ? "" : "s"} updated via ${sourceLabel}`
+          : `Sync (${log.syncType.toLowerCase()}) — no changes`,
+        detail: null,
+        author: null,
+        metadata: { changes, displayChanges, syncType: log.syncType, source: log.source },
+      };
+    },
   });
-
-  const events = logs.map((log) => {
-    const rawChanges = log.changesDetected as Record<string, [unknown, unknown]> | null;
-    // Filter out noisy fields that change on every sync
-    const changes = rawChanges
-      ? Object.fromEntries(
-          Object.entries(rawChanges).filter(([k]) => !SYNC_NOISE_FIELDS.has(k))
-        )
-      : null;
-    const fieldCount = changes ? Object.keys(changes).length : 0;
-    const sourceLabel = log.source.replace(/^(batch|single):/, "");
-
-    // Build display-friendly changes with human-readable labels
-    const displayChanges = changes
-      ? Object.fromEntries(
-          Object.entries(changes).map(([k, pair]) => [
-            k,
-            { label: FIELD_LABELS[k] ?? k, old: pair[0], new: pair[1] },
-          ])
-        )
-      : null;
-
-    return {
-      id: `sync-${log.id}`,
-      type: "sync" as const,
-      timestamp: log.createdAt.toISOString(),
-      title: fieldCount > 0
-        ? `${fieldCount} field${fieldCount === 1 ? "" : "s"} updated via ${sourceLabel}`
-        : `Sync (${log.syncType.toLowerCase()}) — no changes`,
-      detail: null,
-      author: null,
-      metadata: { changes, displayChanges, syncType: log.syncType, source: log.source },
-    };
-  });
-
-  // For cross-source cursors the DB fetched the overlap band (<=).
-  // Apply the unified isBeforeCursor filter using prefixed IDs.
-  if (cursor && !cursor.id.startsWith("sync-")) {
-    return events.filter((e) => isBeforeCursor(e.timestamp, e.id, cursor));
-  }
-  return events;
 }
 
 const BOM_STATUS_LABEL: Record<string, string> = {
@@ -482,6 +445,8 @@ function engagementToTimelineEvents(
   cursor: Cursor | null,
 ): TimelineEvent[] {
   return engagements
+    // Skip app-authored HubSpot notes — already represented by internal DealNote records
+    .filter((eng) => !(eng.type === "note" && eng.body?.startsWith("<!-- pb-ops-note -->")))
     .map((eng): TimelineEvent => {
       const typeLabel = eng.type === "email" ? "Email"
         : eng.type === "call" ? "Call"

@@ -95,7 +95,7 @@ export default function ActivityFeed({ dealId }: ActivityFeedProps) {
 
       {!isLoading && allEvents.length === 0 && (
         <p className="py-4 text-center text-xs text-muted">
-          {showAll ? "No activity yet." : "No recent activity."}
+          {showAll ? "No activity found." : "No recent activity."}
         </p>
       )}
 

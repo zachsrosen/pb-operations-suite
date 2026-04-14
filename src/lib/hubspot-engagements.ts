@@ -148,7 +148,7 @@ function mapCall(p: Record<string, string | null>, id: string): Engagement {
 
 function mapNote(p: Record<string, string | null>, id: string): Engagement {
   return {
-    id: `note-${id}`,
+    id: `hsnote-${id}`,
     type: "note",
     timestamp: p.hs_timestamp ?? new Date(0).toISOString(),
     subject: null,
