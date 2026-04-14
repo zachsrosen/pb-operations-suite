@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
+import { sanitizeEngagementHtml } from "@/lib/sanitize-engagement-html";
 import type { Engagement } from "./types";
 
 interface CommunicationsFeedProps {
@@ -78,6 +79,12 @@ export default function CommunicationsFeed({ dealId }: CommunicationsFeedProps) 
 function EngagementRow({ engagement }: { engagement: Engagement }) {
   const [expanded, setExpanded] = useState(false);
   const config = TYPE_CONFIG[engagement.type] ?? { icon: "\u{1F4CB}", label: "Other" };
+  // Sanitized via sanitize-html (strips scripts, event handlers, dangerous URIs)
+  const sanitizedBody = useMemo(
+    () => sanitizeEngagementHtml(engagement.body),
+    [engagement.body],
+  );
+  const hasBody = sanitizedBody.length > 0;
 
   return (
     <div className="flex gap-3 py-2.5">
@@ -111,8 +118,8 @@ function EngagementRow({ engagement }: { engagement: Engagement }) {
           )}
         </div>
 
-        {/* Expandable body */}
-        {engagement.body && (
+        {/* Expandable body — sanitized HTML rendered as markup */}
+        {hasBody && (
           <>
             <button
               onClick={() => setExpanded(!expanded)}
@@ -121,13 +128,21 @@ function EngagementRow({ engagement }: { engagement: Engagement }) {
               {expanded ? "Hide \u25B4" : "Show details \u25BE"}
             </button>
             {expanded && (
-              <div className="mt-1 rounded border border-t-border bg-surface p-2 text-xs text-muted whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
-                {engagement.body}
-              </div>
+              <EngagementBody html={sanitizedBody} />
             )}
           </>
         )}
       </div>
     </div>
+  );
+}
+
+/** Renders sanitized engagement HTML. Content is pre-sanitized via sanitize-html. */
+function EngagementBody({ html }: { html: string }) {
+  return (
+    <div
+      className="engagement-body mt-1 rounded border border-t-border bg-surface p-2 text-xs text-muted leading-relaxed max-h-60 overflow-y-auto [&_a]:text-orange-400 [&_a]:underline [&_img]:max-w-full [&_img]:rounded [&_p]:mb-1 [&_br+br]:hidden"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }

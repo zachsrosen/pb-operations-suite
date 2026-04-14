@@ -5,7 +5,7 @@ const PROJECT_FLAGS: { key: string; label: string; stage: string }[] = [
   { key: "isSiteSurveyScheduled", label: "Survey Scheduled", stage: "Site Survey" },
   { key: "isSiteSurveyCompleted", label: "Survey Completed", stage: "Site Survey" },
   { key: "isDaSent", label: "DA Sent", stage: "Design & Engineering" },
-  { key: "isLayoutApproved", label: "Layout Approved", stage: "Design & Engineering" },
+  { key: "isLayoutApproved", label: "Design Approved", stage: "Design & Engineering" },
   { key: "isDesignDrafted", label: "Design Drafted", stage: "Design & Engineering" },
   { key: "isDesignCompleted", label: "Design Completed", stage: "Design & Engineering" },
   { key: "isPermitSubmitted", label: "Permit Submitted", stage: "Permitting & Interconnection" },
