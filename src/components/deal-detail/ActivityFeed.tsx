@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import NoteComposer from "./NoteComposer";
@@ -17,15 +17,25 @@ export default function ActivityFeed({ dealId }: ActivityFeedProps) {
   const [pages, setPages] = useState<TimelinePage[]>([]);
   const [loadingMore, setLoadingMore] = useState(false);
 
+  // Guard against stale query responses overwriting pages when showAll toggles.
+  // The ref tracks which mode the latest query was initiated for — only responses
+  // matching the current mode are allowed to write to pages state.
+  const modeRef = useRef(showAll);
+  modeRef.current = showAll;
+
   // First page query — include showAll in key so toggling refetches correctly
   const firstPageQuery = useQuery({
     queryKey: [...queryKeys.dealTimeline.events(dealId), showAll],
     queryFn: async () => {
+      const modeAtStart = showAll;
       const url = `/api/deals/${dealId}/timeline${showAll ? "?all=true" : ""}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error("Failed to fetch timeline");
       const data: TimelinePage = await res.json();
-      setPages([data]); // Reset pages on refetch
+      // Only write to pages if the mode hasn't changed since this fetch started
+      if (modeRef.current === modeAtStart) {
+        setPages([data]);
+      }
       return data;
     },
     staleTime: 30_000,
@@ -38,13 +48,14 @@ export default function ActivityFeed({ dealId }: ActivityFeedProps) {
 
     setLoadingMore(true);
     try {
+      const modeAtStart = showAll;
       const params = new URLSearchParams();
       params.set("cursorTs", lastPage.nextCursor.ts);
       params.set("cursorId", lastPage.nextCursor.id);
       if (showAll) params.set("all", "true");
 
       const res = await fetch(`/api/deals/${dealId}/timeline?${params}`);
-      if (res.ok) {
+      if (res.ok && modeRef.current === modeAtStart) {
         const data: TimelinePage = await res.json();
         setPages((prev) => [...prev, data]);
       }
@@ -63,8 +74,9 @@ export default function ActivityFeed({ dealId }: ActivityFeedProps) {
   const handleShowAll = useCallback(() => {
     setShowAll(true);
     setPages([]);
-    queryClient.invalidateQueries({ queryKey: queryKeys.dealTimeline.events(dealId) });
-  }, [queryClient, dealId]);
+    // No manual invalidation needed — the query key includes showAll,
+    // so React Query automatically fetches for the new key
+  }, []);
 
   // Merge all loaded pages
   const allEvents = pages.flatMap((p) => p.events);

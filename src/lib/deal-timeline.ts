@@ -4,6 +4,7 @@
  */
 import { prisma } from "@/lib/db";
 import { zuper } from "@/lib/zuper";
+import { appCache } from "@/lib/cache";
 import { getDealEngagements } from "@/lib/hubspot-engagements";
 import type {
   TimelineEvent,
@@ -42,6 +43,41 @@ function isInWindow(eventTs: string, windowStart: Date | null): boolean {
   return new Date(eventTs).getTime() >= windowStart.getTime();
 }
 
+/**
+ * Extract the raw DB id from a prefixed cursor id, if the prefix matches
+ * the expected source. Returns null when the cursor came from a different
+ * source — in that case the DB query should only filter by timestamp (<),
+ * not the equality branch, because the id domains are incomparable.
+ */
+function extractRawId(cursorId: string, prefix: string): string | null {
+  if (cursorId.startsWith(`${prefix}-`)) {
+    return cursorId.slice(prefix.length + 1);
+  }
+  return null;
+}
+
+/**
+ * Build a Prisma WHERE clause for composite cursor pagination.
+ * When the cursor came from the same source (prefix matches), use the
+ * compound (timestamp, id) comparison for lossless pagination.
+ * When the cursor came from a different source, fall back to strict
+ * timestamp-only < comparison — the merge step deduplicates anyway.
+ */
+function buildCursorWhere(cursor: Cursor, prefix: string): Record<string, unknown> {
+  const rawId = extractRawId(cursor.id, prefix);
+  if (rawId) {
+    // Same-source cursor: compound comparison
+    return {
+      OR: [
+        { createdAt: { lt: new Date(cursor.ts) } },
+        { createdAt: new Date(cursor.ts), id: { lt: rawId } },
+      ],
+    };
+  }
+  // Cross-source cursor: timestamp-only (safe — no id comparison across domains)
+  return { createdAt: { lt: new Date(cursor.ts) } };
+}
+
 // ---------------------------------------------------------------------------
 // Source fetchers → TimelineEvent[]
 // ---------------------------------------------------------------------------
@@ -58,12 +94,7 @@ async function fetchNoteEvents(
     andConditions.push({ createdAt: { gte: windowStart } });
   }
   if (cursor) {
-    andConditions.push({
-      OR: [
-        { createdAt: { lt: new Date(cursor.ts) } },
-        { createdAt: new Date(cursor.ts), id: { lt: cursor.id } },
-      ],
-    });
+    andConditions.push(buildCursorWhere(cursor, "note"));
   }
   if (andConditions.length > 0) {
     where.AND = andConditions;
@@ -105,12 +136,7 @@ async function fetchSyncEvents(
     andConditions.push({ createdAt: { gte: windowStart } });
   }
   if (cursor) {
-    andConditions.push({
-      OR: [
-        { createdAt: { lt: new Date(cursor.ts) } },
-        { createdAt: new Date(cursor.ts), id: { lt: cursor.id } },
-      ],
-    });
+    andConditions.push(buildCursorWhere(cursor, "sync"));
   }
   if (andConditions.length > 0) {
     where.AND = andConditions;
@@ -190,7 +216,13 @@ async function fetchPhotoEvents(
   const photoArrays = await Promise.all(
     jobs.map(async (job) => {
       try {
-        const photos = await zuper.getJobPhotos(job.jobUid);
+        // Cache photos per deal+job for 5 minutes to avoid hammering Zuper
+        // on every SSE-driven refetch and pagination request
+        const cacheKey = `deal-photos:${hubspotDealId}:${job.jobUid}`;
+        const cached = await appCache.getOrFetch(cacheKey, () =>
+          zuper.getJobPhotos(job.jobUid),
+        );
+        const photos = cached.data;
         return photos.map((p) => {
           const ts = p.created_at ?? job.lastSyncedAt.toISOString();
           return {
