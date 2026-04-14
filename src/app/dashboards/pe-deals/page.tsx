@@ -406,13 +406,17 @@ export default function PeDealsPage() {
   const partiallyPaidDeals = useMemo(() => filtered.filter((d) =>
     (d.peM1Status === "Paid" || d.peM2Status === "Paid") && !(d.peM1Status === "Paid" && d.peM2Status === "Paid"),
   ), [filtered]);
-  const approvedDeals = useMemo(() => filtered.filter((d) =>
+  const fullyApprovedDeals = useMemo(() => filtered.filter((d) =>
+    d.peM1Status === "Approved" && d.peM2Status === "Approved",
+  ), [filtered]);
+  const partiallyApprovedDeals = useMemo(() => filtered.filter((d) =>
     d.peM1Status !== "Paid" && d.peM2Status !== "Paid" &&
+    !(d.peM1Status === "Approved" && d.peM2Status === "Approved") &&
     (d.peM1Status === "Approved" || d.peM2Status === "Approved"),
   ), [filtered]);
   const excludedIds = useMemo(
-    () => new Set([...paidDeals, ...partiallyPaidDeals, ...approvedDeals].map((d) => d.dealId)),
-    [paidDeals, partiallyPaidDeals, approvedDeals],
+    () => new Set([...paidDeals, ...partiallyPaidDeals, ...fullyApprovedDeals, ...partiallyApprovedDeals].map((d) => d.dealId)),
+    [paidDeals, partiallyPaidDeals, fullyApprovedDeals, partiallyApprovedDeals],
   );
   const unpaid = useMemo(() => filtered.filter((d) => !excludedIds.has(d.dealId)), [filtered, excludedIds]);
   const m2Deals = useMemo(() => unpaid.filter((d) => d.milestoneHighlight === "m2"), [unpaid]);
@@ -558,12 +562,26 @@ export default function PeDealsPage() {
               savingDeals={savingDeals}
             />
           )}
-          {approvedDeals.length > 0 && (
+          {fullyApprovedDeals.length > 0 && (
             <DealSection
-              title="Approved — Waiting on Payment"
-              subtitle={`${approvedDeals.length} deal${approvedDeals.length !== 1 ? "s" : ""} approved, awaiting PE payment`}
+              title="Fully Approved — Waiting on Payment"
+              subtitle={`${fullyApprovedDeals.length} deal${fullyApprovedDeals.length !== 1 ? "s" : ""} — M1 & M2 approved, awaiting PE payment`}
               accent="emerald"
-              deals={approvedDeals}
+              deals={fullyApprovedDeals}
+              sortKey={sortKey}
+              sortDir={sortDir}
+              sortArrow={sortArrow}
+              toggleSort={toggleSort}
+              onStatusChange={handleStatusChange}
+              savingDeals={savingDeals}
+            />
+          )}
+          {partiallyApprovedDeals.length > 0 && (
+            <DealSection
+              title="Partially Approved — In Progress"
+              subtitle={`${partiallyApprovedDeals.length} deal${partiallyApprovedDeals.length !== 1 ? "s" : ""} — M1 or M2 approved, other milestone still in progress`}
+              accent="orange"
+              deals={partiallyApprovedDeals}
               sortKey={sortKey}
               sortDir={sortDir}
               sortArrow={sortArrow}
