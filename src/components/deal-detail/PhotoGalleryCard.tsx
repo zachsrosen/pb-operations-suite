@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 interface Photo {
   id: string;
@@ -15,10 +15,30 @@ interface PhotoGalleryCardProps {
   zuperUid?: string | null;
 }
 
+const PHOTO_COLLAPSE_KEY = "deal-detail:photos-collapsed";
+
+function loadCollapsed(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    return localStorage.getItem(PHOTO_COLLAPSE_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
 export default function PhotoGalleryCard({ hubspotDealId, zuperUid }: PhotoGalleryCardProps) {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [collapsed, setCollapsed] = useState(loadCollapsed);
+
+  const toggleCollapsed = useCallback(() => {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try { localStorage.setItem(PHOTO_COLLAPSE_KEY, String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,10 +63,10 @@ export default function PhotoGalleryCard({ hubspotDealId, zuperUid }: PhotoGalle
   if (loading) {
     return (
       <div className="rounded-lg border border-t-border bg-surface-2/30 p-3">
-        <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted">
+        <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted">
           Site Photos
         </h3>
-        <div className="flex items-center gap-2 text-[10px] text-muted">
+        <div className="mt-2 flex items-center gap-2 text-[10px] text-muted">
           <span className="animate-spin">⟳</span> Loading...
         </div>
       </div>
@@ -58,26 +78,33 @@ export default function PhotoGalleryCard({ hubspotDealId, zuperUid }: PhotoGalle
   return (
     <>
       <div className="rounded-lg border border-t-border bg-surface-2/30 p-3">
-        <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted">
-          Site Photos ({photos.length})
-        </h3>
-        <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-1.5">
-          {photos.map((photo) => (
-            <button
-              key={photo.id}
-              onClick={() => setSelectedPhoto(photo)}
-              className="group relative aspect-square overflow-hidden rounded bg-surface-2"
-            >
-              <img
-                src={photo.url}
-                alt={photo.fileName}
-                className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                loading="lazy"
-              />
-              <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/20" />
-            </button>
-          ))}
-        </div>
+        <button
+          onClick={toggleCollapsed}
+          className="flex w-full items-center justify-between text-left"
+        >
+          <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted">
+            {collapsed ? "▶" : "▼"} Site Photos ({photos.length})
+          </h3>
+        </button>
+        {!collapsed && (
+          <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-1.5">
+            {photos.map((photo) => (
+              <button
+                key={photo.id}
+                onClick={() => setSelectedPhoto(photo)}
+                className="group relative aspect-square overflow-hidden rounded bg-surface-2"
+              >
+                <img
+                  src={photo.url}
+                  alt={photo.fileName}
+                  className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                  loading="lazy"
+                />
+                <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/20" />
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Lightbox overlay */}

@@ -18,7 +18,8 @@ import ZuperJobCard from "@/components/deal-detail/ZuperJobCard";
 import ChangeLogCard from "@/components/deal-detail/ChangeLogCard";
 import RelatedDealsCard from "@/components/deal-detail/RelatedDealsCard";
 import PhotoGalleryCard from "@/components/deal-detail/PhotoGalleryCard";
-import DealActivityPanel from "@/components/deal-detail/DealActivityPanel";
+import ActivityFeed from "@/components/deal-detail/ActivityFeed";
+import CommunicationsFeed from "@/components/deal-detail/CommunicationsFeed";
 import { getSectionsForPipeline, getStageColor } from "@/components/deal-detail/section-registry";
 import { useSSE } from "@/hooks/useSSE";
 import type {
@@ -101,6 +102,22 @@ export default function DealDetailView({
 
   const stageColor = getStageColor(deal.pipeline, deal.stage, stageOrder);
 
+  // Main content tab state (persisted to localStorage)
+  type ContentTab = "details" | "activity" | "communications";
+  const [activeTab, setActiveTab] = useState<ContentTab>(() => {
+    if (typeof window === "undefined") return "details";
+    try {
+      const saved = localStorage.getItem("deal-detail:active-tab");
+      if (saved === "details" || saved === "activity" || saved === "communications") return saved;
+    } catch { /* ignore */ }
+    return "details";
+  });
+
+  const switchTab = useCallback((tab: ContentTab) => {
+    setActiveTab(tab);
+    try { localStorage.setItem("deal-detail:active-tab", tab); } catch { /* ignore */ }
+  }, []);
+
   // Print handler
   const handlePrint = useCallback(() => {
     window.print();
@@ -131,28 +148,53 @@ export default function DealDetailView({
 
       {/* Two-column layout */}
       <div className="mt-4 flex flex-col gap-6 lg:flex-row">
-        {/* Left: collapsible sections */}
+        {/* Left: tabbed content */}
         <div className="min-w-0 flex-[2]">
-          {sections.map((section) => {
-            const fields = section.fields(deal);
-            return (
-              <CollapsibleSection
-                key={section.key}
-                sectionKey={section.key}
-                title={section.title}
-                fieldCount={fields.length}
-                defaultOpen={section.defaultOpen}
+          {/* Tab bar */}
+          <div className="flex border-b border-t-border mb-4 print:hidden">
+            {([
+              { key: "details", label: "Project Details" },
+              { key: "activity", label: "Activity" },
+              { key: "communications", label: "Communications" },
+            ] as const).map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => switchTab(tab.key)}
+                className={`px-4 py-2.5 text-xs font-medium transition-colors ${
+                  activeTab === tab.key
+                    ? "border-b-2 border-orange-500 text-foreground"
+                    : "text-muted hover:text-foreground"
+                }`}
               >
-                <FieldGrid fields={fields} />
-              </CollapsibleSection>
-            );
-          })}
+                {tab.label}
+              </button>
+            ))}
+          </div>
 
-          {/* Site Photos — full-width in main pane */}
-          <PhotoGalleryCard hubspotDealId={deal.hubspotDealId} zuperUid={deal.zuperUid} />
+          {/* Tab content */}
+          {activeTab === "details" && (
+            <>
+              {sections.map((section) => {
+                const fields = section.fields(deal);
+                return (
+                  <CollapsibleSection
+                    key={section.key}
+                    sectionKey={section.key}
+                    title={section.title}
+                    fieldCount={fields.length}
+                    defaultOpen={section.defaultOpen}
+                  >
+                    <FieldGrid fields={fields} />
+                  </CollapsibleSection>
+                );
+              })}
+              <PhotoGalleryCard hubspotDealId={deal.hubspotDealId} zuperUid={deal.zuperUid} />
+            </>
+          )}
 
-          {/* Deal Activity & Communications */}
-          <DealActivityPanel dealId={deal.id} />
+          {activeTab === "activity" && <ActivityFeed dealId={deal.id} />}
+
+          {activeTab === "communications" && <CommunicationsFeed dealId={deal.id} />}
         </div>
 
         {/* Right: pinned sidebar */}
