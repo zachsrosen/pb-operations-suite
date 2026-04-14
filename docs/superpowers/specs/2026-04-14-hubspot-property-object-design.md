@@ -318,7 +318,25 @@ model PropertySyncWatermark {
 
   @@index([lastSyncAt])                // cleanup cron drops rows > 7 days old
 }
+
+model PropertyBackfillRun {
+  id              String    @id @default(cuid())
+  startedAt       DateTime  @default(now())
+  completedAt     DateTime?
+  status          String                             // "running" | "completed" | "failed" | "paused"
+  phase           String                             // "contacts" | "deals" | "tickets" | "reconcile"
+  cursor          String?                            // HubSpot paging cursor for the current phase
+  totalProcessed  Int       @default(0)
+  totalCreated    Int       @default(0)
+  totalAssociated Int       @default(0)
+  totalFailed     Int       @default(0)
+  lastError       String?
+
+  @@index([status])
+}
 ```
+
+`PropertyBackfillRun` is a new model specific to this backfill. It is intentionally separate from the generic `HubSpotSyncRun` model to keep phase/cursor semantics clear, and because the backfill's 4-phase flow (contacts → deals → tickets → reconcile) doesn't map onto any existing run model. Only one row is `status=running` at a time; the script reads the latest row on startup and resumes from `phase` + `cursor` if it was interrupted.
 
 **Notes:**
 - Separate link tables (not JSON arrays) for indexed reverse lookup.
@@ -337,10 +355,10 @@ model PropertySyncWatermark {
 **Idempotency & coalescing (DB-backed, matches deal-sync pattern)**:
 
 1. **Per-event idempotency** via the existing `IdempotencyKey` model. Each HubSpot webhook event has an `eventId`; we write `{ key: eventId, scope: "property-sync:hubspot-webhook" }` and skip processing if it already exists. This mirrors `src/app/api/webhooks/hubspot/deal-sync/route.ts`.
-2. **Per-contact coalescing via a sync-watermark**. A single form edit that touches street+city+zip fires 3 webhook events for the same contact in ~100ms. After each event's idempotency check passes, the handler checks `HubSpotPropertyCache.lastContactSyncAt[contactId]` (see note below) — if the contact's Property was synced within the last 2 seconds, skip the geocode+upsert (the first event in the burst already captured the final state; HubSpot propagates edits atomically so later events in the same burst don't carry different addresses).
+2. **Per-contact coalescing via `PropertySyncWatermark`**. A single form edit that touches street+city+zip fires 3 webhook events for the same contact in ~100ms. After each event's idempotency check passes, the handler reads `PropertySyncWatermark.lastSyncAt` for that `contactId` — if it's within the last 2 seconds, skip the geocode+upsert (the first event in the burst already captured the final state; HubSpot propagates edits atomically so later events in the same burst don't carry different addresses). On every successful sync, upsert the watermark row with the current timestamp.
 3. **Handler is idempotent regardless**. If coalescing is defeated (race, clock skew), running `onContactAddressChange` twice in a row is safe: the geocode is deterministic, the upsert is keyed by `googlePlaceId`/`addressHash`, and associations are idempotent. Worst case is a duplicate geocode call, not a data corruption.
 
-The `lastContactSyncAt` map lives on a new small table keyed by contactId (not on `HubSpotPropertyCache`, because a contact with no address yet has no Property row):
+The watermark lives on its own small table keyed by contactId (not on `HubSpotPropertyCache`, because a contact with no address yet has no Property row):
 
 ```prisma
 model PropertySyncWatermark {
@@ -456,7 +474,7 @@ A future spec can replace this with proper geo-polygon resolution; the resolver 
 2. For each Contact:
    - Run property-sync.ts::onContactAddressChange (same code path as webhook)
    - Throttle to HubSpot (100 req / 10s) + Google geocoding (40 req/s, below 50 limit)
-   - Log progress to a BackfillRun table for resumability
+   - Log progress to `PropertyBackfillRun` (phase="contacts", cursor=HubSpot paging token) for resumability
 
 3. After Contacts done, sweep all Deals + Tickets:
    - Trigger onDealOrTicketCreated for each to backfill associations
@@ -471,7 +489,7 @@ A future spec can replace this with proper geo-polygon resolution; the resolver 
 
 Estimated volume: ~8-15k unique contacts. Google geocoding cost after free tier: under $50 one-time. No ATTOM cost (not wired up yet).
 
-**Multi-session feasibility**: Backfill throttled at ~40 req/s geocoding + HubSpot's rate limits should complete ~8-15k contacts in 1-3 hours. Fits comfortably in a single run; the `BackfillRun` row keeps it resumable if anything interrupts.
+**Multi-session feasibility**: Backfill throttled at ~40 req/s geocoding + HubSpot's rate limits should complete ~8-15k contacts in 1-3 hours. Fits comfortably in a single run; the `PropertyBackfillRun` row keeps it resumable if anything interrupts.
 
 ### Failure handling
 
@@ -480,7 +498,7 @@ Estimated volume: ~8-15k unique contacts. Google geocoding cost after free tier:
 | Webhook delivery failure | HubSpot retries 10× over 3 hours; reconciliation cron catches remainder |
 | Geocoding failure | Retry queue with exponential backoff, 3 attempts, then manual review |
 | HubSpot rate limit | Existing `withRetry()` wrapper |
-| Duplicate Properties from inconsistent geocoding | Dedup by `place_id` AND `normalizedAddress`; log + alert when keys diverge |
+| Duplicate Properties from inconsistent geocoding | DB-enforced via `googlePlaceId` and `addressHash` unique constraints on `HubSpotPropertyCache`. A retry that geocodes to a different `place_id` for the same address is caught by the `addressHash` conflict; log + alert when the two keys disagree so we can merge. |
 
 ## UI Integration
 
@@ -640,10 +658,10 @@ End-to-end tests against live HubSpot are skipped; manual smoke tests in the Hub
 
 | Risk | Mitigation |
 |---|---|
-| Duplicate Properties from inconsistent geocoding | Dedup by `place_id` AND `normalizedAddress`; alert when they diverge |
+| Duplicate Properties from inconsistent geocoding | DB-enforced via `googlePlaceId` and `addressHash` unique constraints. Inconsistent geocode results across retries collide on `addressHash`; alert + merge workflow when `place_id` drift is detected on an existing row. |
 | Webhook misses | Nightly reconciliation; `lastReconciledAt > 48h` alert |
 | Google geocoding rate-limit during backfill | Throttle to 40 req/s (below 50 limit); existing retry wrapper |
-| Address with no `place_id` (rural, PO Box, new construction) | Fall back to `normalizedAddress` as dedup key; accept small dupe risk |
+| Address with no `place_id` (rural, PO Box, new construction) | `addressHash` is the authoritative dedupe key in this case (unique constraint enforces one-property-per-address). `googlePlaceId` is null; everything else still works. |
 | Contact moves or corrects address | Each change creates/associates a Property; Contact accumulates associations — matches the many-to-many model |
 | Association label drift (house sold, label not updated) | Manual correction in HubSpot UI (v1) |
 | Multiple "Current Owner" labels per Property | In v1, `onContactAddressChange` always attaches the `Current Owner` label and NEVER demotes previous Current Owners. When a house sells, two contacts can both be labeled `Current Owner` until manually corrected in HubSpot. Acceptable trade-off for v1 — automated demotion is future work. UI should display all Current Owners (newest first by `associatedAt`) rather than pick one arbitrarily. |
