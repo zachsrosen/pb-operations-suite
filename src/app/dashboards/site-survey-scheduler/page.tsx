@@ -221,6 +221,18 @@ function slotMatchesProjectLocation(slotLocation?: string, projectLocation?: str
   return !!allowed && allowed.includes(slotKey);
 }
 
+// When the user has toggled one or more PB location filters at the top of the
+// scheduler, narrow availability lanes to crews whose slot.location matches.
+// An empty array means "no filter" — show everyone. Deliberately does NOT
+// expand Camarillo↔SLO (survey schedules differ per-location, see
+// PROJECT_LOCATION_MATCHES comment above).
+function slotMatchesSelectedLocations(slotLocation: string | undefined, selectedLocations: string[]): boolean {
+  if (!selectedLocations || selectedLocations.length === 0) return true;
+  if (!slotLocation) return false;
+  const slotKey = locationKey(slotLocation);
+  return selectedLocations.some(loc => locationKey(loc) === slotKey);
+}
+
 // Check if a survey is overdue: scheduled in the past but not completed
 function isSurveyOverdue(project: SurveyProject, manualScheduleDate?: string): boolean {
   const schedDate = manualScheduleDate || project.scheduleDate;
@@ -2270,11 +2282,13 @@ export default function SiteSurveySchedulerPage() {
                           })}
                                                     {/* Show available surveyors with time slots - scrollable list */}
                           {showAvailability && hasAvailability && (() => {
-                            // Filter slots by project location if a project is selected
+                            // Filter slots by project location if a project is selected;
+                            // otherwise honor the user-selected PB location filter at the top.
                             const projectLocation = (selectedPreSaleDeal || selectedProject)?.location;
                             const bookedForDay = dayAvailability?.bookedSlots || [];
                             const matchingSlots = dayAvailability?.availableSlots?.filter(slot => {
                               if (!slotMatchesProjectLocation(slot.location, projectLocation)) return false;
+                              if (!projectLocation && !slotMatchesSelectedLocations(slot.location, selectedLocations)) return false;
 
                               // Defensive client-side guard: hide slots already booked for this surveyor+time.
                               // This prevents stale/mismatched key edge cases from showing double-bookable slots.
@@ -2351,7 +2365,9 @@ export default function SiteSurveySchedulerPage() {
                           {showAvailability && dayAvailability?.bookedSlots && dayAvailability.bookedSlots.length > 0 && (() => {
                             const projectLocation = (selectedPreSaleDeal || selectedProject)?.location;
                             const matchingBooked = dayAvailability.bookedSlots.filter(slot => {
-                              return slotMatchesProjectLocation(slot.location, projectLocation);
+                              if (!slotMatchesProjectLocation(slot.location, projectLocation)) return false;
+                              if (!projectLocation && !slotMatchesSelectedLocations(slot.location, selectedLocations)) return false;
+                              return true;
                             });
 
                             // Group booked slots by surveyor
