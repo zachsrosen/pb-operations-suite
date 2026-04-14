@@ -160,6 +160,9 @@ if (data.customAdders !== undefined) {
     return NextResponse.json({ error: "Maximum 20 custom adders" }, { status: 400 });
   }
   for (const adder of data.customAdders) {
+    if (adder == null || typeof adder !== "object") {
+      return NextResponse.json({ error: "Each custom adder must be an object" }, { status: 400 });
+    }
     if (!adder.name || typeof adder.name !== "string" || adder.name.trim().length === 0 || adder.name.length > 100) {
       return NextResponse.json({ error: "Each custom adder must have a name (max 100 chars)" }, { status: 400 });
     }
@@ -262,7 +265,26 @@ In `src/app/api/idr-meeting/preview/route.ts`, there are **two** item-constructi
           customAdders: (esc.customAdders as Array<{ name: string; amount: number }>) ?? [],
 ```
 
-Without Block 2, escalation items in preview mode lose their adder data.
+**Block 3 — Existing-deal escalations (lines 166-173, `existingEscalations` loop):**
+
+This block handles escalation items whose `dealId` already appears in the IDR list. Currently it only copies `type` and `escalationReason` from the queued record — the adder fields from the escalation queue are silently dropped. Add adder field merges after `existing.escalationReason = esc.reason;`:
+
+```typescript
+      existing.adderTileRoof = esc.adderTileRoof ?? existing.adderTileRoof;
+      existing.adderMetalRoof = esc.adderMetalRoof ?? existing.adderMetalRoof;
+      existing.adderFlatFoamRoof = esc.adderFlatFoamRoof ?? existing.adderFlatFoamRoof;
+      existing.adderShakeRoof = esc.adderShakeRoof ?? existing.adderShakeRoof;
+      existing.adderSteepPitch = esc.adderSteepPitch ?? existing.adderSteepPitch;
+      existing.adderTwoStorey = esc.adderTwoStorey ?? existing.adderTwoStorey;
+      existing.adderTrenching = esc.adderTrenching ?? existing.adderTrenching;
+      existing.adderGroundMount = esc.adderGroundMount ?? existing.adderGroundMount;
+      existing.adderMpuUpgrade = esc.adderMpuUpgrade ?? existing.adderMpuUpgrade;
+      existing.adderEvCharger = esc.adderEvCharger ?? existing.adderEvCharger;
+      const escCustom = Array.isArray(esc.customAdders) ? esc.customAdders as Array<{ name: string; amount: number }> : [];
+      if (escCustom.length > 0) existing.customAdders = escCustom;
+```
+
+Without Block 3, skip/re-queued escalation items whose `dealId` overlaps an IDR deal will appear with blank adder state in preview.
 
 - [ ] **Step 3: Add adder fields to DELETE handler re-queue**
 
@@ -962,6 +984,9 @@ function validateCustomAdders(input: unknown): string | null {
   if (!Array.isArray(input)) return "customAdders must be an array";
   if (input.length > 20) return "Maximum 20 custom adders";
   for (const adder of input) {
+    if (adder == null || typeof adder !== "object") {
+      return "Each custom adder must be an object";
+    }
     if (!adder.name || typeof adder.name !== "string" || adder.name.trim().length === 0 || adder.name.length > 100) {
       return "Each custom adder must have a name (max 100 chars)";
     }
@@ -1011,6 +1036,20 @@ describe("customAdders validation", () => {
   it("rejects Infinity", () => {
     expect(validateCustomAdders([{ name: "test", amount: Infinity }])).toBe(
       "Each custom adder must have a numeric amount"
+    );
+  });
+
+  it("rejects null elements", () => {
+    expect(validateCustomAdders([null])).toBe("Each custom adder must be an object");
+  });
+
+  it("rejects primitive elements", () => {
+    expect(validateCustomAdders([123])).toBe("Each custom adder must be an object");
+  });
+
+  it("rejects whitespace-only name", () => {
+    expect(validateCustomAdders([{ name: "   ", amount: 100 }])).toBe(
+      "Each custom adder must have a name (max 100 chars)"
     );
   });
 });
