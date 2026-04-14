@@ -4,8 +4,9 @@ import { zuper } from "@/lib/zuper";
 
 /**
  * GET /api/zuper/jobs/by-category?categories=uid1,uid2&from_date=2026-01-01&to_date=2026-03-31
- * Fetches Zuper jobs filtered by one or more category UIDs.
- * Client-side filters since Zuper API doesn't natively support category filtering.
+ * GET /api/zuper/jobs/by-category?exclude=uid1,uid2&from_date=2026-01-01&to_date=2026-03-31
+ * Fetches Zuper jobs filtered by category UIDs.
+ * Client-side filters since Zuper API doesn't reliably support multi-category filters.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -21,43 +22,89 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const categoriesParam = searchParams.get("categories");
+    const excludeParam = searchParams.get("exclude");
     const fromDate = searchParams.get("from_date");
     const toDate = searchParams.get("to_date");
-    const limit = parseInt(searchParams.get("limit") || "500");
+    const limitParam = searchParams.get("limit");
+    const outputLimit = limitParam ? parseInt(limitParam, 10) : null;
 
-    if (!categoriesParam) {
+    if (!categoriesParam && !excludeParam) {
       return NextResponse.json(
-        { error: "categories parameter is required" },
+        { error: "categories or exclude parameter is required" },
         { status: 400 }
       );
     }
 
-    const categoryUids = categoriesParam.split(",").map(s => s.trim()).filter(Boolean);
+    const categoryUids = categoriesParam
+      ? categoriesParam.split(",").map(s => s.trim()).filter(Boolean)
+      : [];
+    const excludeUids = excludeParam
+      ? excludeParam.split(",").map(s => s.trim()).filter(Boolean)
+      : [];
 
-    const result = await zuper.searchJobs({
+    const PAGE_SIZE = 500;
+    const MAX_PAGES = 10; // Safety cap: 5000 raw jobs max per request
+
+    const page1 = await zuper.searchJobs({
       from_date: fromDate || undefined,
       to_date: toDate || undefined,
-      limit,
+      limit: PAGE_SIZE,
+      page: 1,
     });
 
-    if (result.type === "error") {
-      return NextResponse.json({ error: result.error }, { status: 500 });
+    if (page1.type === "error") {
+      return NextResponse.json({ error: page1.error }, { status: 500 });
     }
 
-    // Client-side filter by category UIDs
+    const allJobs = [...(page1.data?.jobs || [])];
+    const total = page1.data?.total || allJobs.length;
+    const totalPages = Math.min(Math.ceil(total / PAGE_SIZE), MAX_PAGES);
+
+    if (totalPages > 1) {
+      const pagePromises = [];
+      for (let page = 2; page <= totalPages; page++) {
+        pagePromises.push(zuper.searchJobs({
+          from_date: fromDate || undefined,
+          to_date: toDate || undefined,
+          limit: PAGE_SIZE,
+          page,
+        }));
+      }
+      const pageResults = await Promise.all(pagePromises);
+      for (const result of pageResults) {
+        if (result.type === "success" && result.data?.jobs) {
+          allJobs.push(...result.data.jobs);
+        }
+      }
+    }
+
+    if (totalPages === MAX_PAGES && total > PAGE_SIZE * MAX_PAGES) {
+      console.warn(
+        "Zuper jobs by category truncated at pagination safety cap",
+        { total, maxRawJobs: PAGE_SIZE * MAX_PAGES }
+      );
+    }
+
+    // Client-side filter by category UIDs (include list or exclude list)
     // Cast to `any` since Zuper API returns more fields than typed ZuperJob interface
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const allJobs = (result.data?.jobs || []) as any[];
-    const filtered = allJobs.filter(job => {
+    const filtered = (allJobs as any[]).filter(job => {
       const cat = job.job_category;
       const jobCatUid = typeof cat === "string"
         ? cat
         : (cat as Record<string, unknown> | null)?.category_uid;
-      return jobCatUid && categoryUids.includes(jobCatUid as string);
+      if (!jobCatUid) return false;
+      if (excludeUids.length > 0) {
+        return !excludeUids.includes(jobCatUid as string);
+      }
+      return categoryUids.includes(jobCatUid as string);
     });
+    const limited = outputLimit && outputLimit > 0
+      ? filtered.slice(0, outputLimit)
+      : filtered;
 
     // Transform to a simpler shape for the frontend
-    const jobs = filtered.map(job => {
+    const jobs = limited.map(job => {
       const cat = typeof job.job_category === "object" ? job.job_category as Record<string, string> | null : null;
       const status = (job.current_job_status || null) as Record<string, string> | null;
       const customer = (job.customer || {}) as Record<string, string>;
