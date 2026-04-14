@@ -275,9 +275,18 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
 
             {/* HubSpot Notes (read-only) */}
             <HubSpotNotes item={item} />
+
+            {/* AHJ & Utility Codes */}
+            <Section title="AHJ & Utility Codes">
+              <AhjUtilityInfo
+                dealId={item.dealId}
+                ahjName={item.ahj}
+                utilityName={item.utilityCompany}
+              />
+            </Section>
           </div>
 
-          {/* RIGHT: Planning + actions + notes + codes */}
+          {/* RIGHT: Planning + actions + notes + pricing */}
           <div className="space-y-3">
             <Section title="Install Planning">
               <InstallPlanningForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
@@ -297,15 +306,6 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
 
             <Section title="Pricing Breakdown">
               <PricingBreakdown item={item} lineItems={lineItemsQuery.data?.lineItems} />
-            </Section>
-
-            {/* AHJ & Utility Codes */}
-            <Section title="AHJ & Utility Codes">
-              <AhjUtilityInfo
-                dealId={item.dealId}
-                ahjName={item.ahj}
-                utilityName={item.utilityCompany}
-              />
             </Section>
           </div>
         </div>
