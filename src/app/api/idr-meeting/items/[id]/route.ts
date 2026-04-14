@@ -141,6 +141,17 @@ export async function DELETE(
           operationsNotes: item.operationsNotes,
           designNotes: item.designNotes,
           conclusion: item.conclusion,
+          adderTileRoof: item.adderTileRoof,
+          adderMetalRoof: item.adderMetalRoof,
+          adderFlatFoamRoof: item.adderFlatFoamRoof,
+          adderShakeRoof: item.adderShakeRoof,
+          adderSteepPitch: item.adderSteepPitch,
+          adderTwoStorey: item.adderTwoStorey,
+          adderTrenching: item.adderTrenching,
+          adderGroundMount: item.adderGroundMount,
+          adderMpuUpgrade: item.adderMpuUpgrade,
+          adderEvCharger: item.adderEvCharger,
+          ...(item.customAdders != null ? { customAdders: item.customAdders } : {}),
         },
       });
     }
