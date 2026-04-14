@@ -324,11 +324,14 @@ async function main() {
     labels: { singular: "Property", plural: "Properties" },
     primaryDisplayProperty: "record_name",
     // NOTE: `google_place_id` is intentionally NOT required. The spec supports
-    // addresses that Google returns no place_id for (rural, PO Box, new construction);
-    // those rows dedup via `address_hash` (which IS required). Making place_id
-    // required would either block those creates or force sentinel values that
-    // corrupt the field's meaning.
-    requiredProperties: ["record_name", "address_hash", "full_address"],
+    // addresses where Google returns no place_id (rural, PO Box, new construction);
+    // those rows dedup via the DB-side `addressHash` unique index (see
+    // `HubSpotPropertyCache.addressHash` in the Neon cache schema). Per the spec,
+    // `address_hash` is NOT a HubSpot property — dedup enforcement lives in
+    // `property-sync.ts` (search-by-place_id before create, DB unique constraint
+    // as the hard backstop). Keep the hash out of HubSpot: it would be noise in
+    // the UI and duplicate a check the DB already owns.
+    requiredProperties: ["record_name", "full_address"],
     searchableProperties: ["record_name", "full_address", "normalized_address", "street_address", "city", "zip", "google_place_id"],
     properties: [
       // ... identity + geographic fields from spec §HubSpot Object Schema ...
@@ -410,8 +413,10 @@ const PROPERTY_OBJECT_TYPE = () => {
   return id;
 };
 
+// NOTE: `address_hash` is intentionally absent — it lives in the DB cache only
+// (`HubSpotPropertyCache.addressHash @unique`), not on the HubSpot object.
 export const PROPERTY_PROPERTIES = [
-  "record_name", "google_place_id", "address_hash", "normalized_address", "full_address",
+  "record_name", "google_place_id", "normalized_address", "full_address",
   "street_address", "unit_number", "city", "state", "zip", "county",
   "latitude", "longitude",
   "attom_id",
@@ -1304,8 +1309,9 @@ async function createNewProperty(args: {
   const hs = await createProperty({
     record_name: `${geo.streetAddress}, ${geo.city} ${geo.state} ${geo.zip}`,
     google_place_id: geo.placeId ?? "",        // empty string when Google returned no place_id
-    address_hash: hash,                        // SHA-256 dedupe key (DB + HubSpot carry the same value)
-    normalized_address: normalizedAddress,     // human-readable, searchable; NOT the hash
+    // NOTE: `address_hash` is deliberately NOT sent — it's DB-only (see
+    // PROPERTY_PROPERTIES note above and spec §HubSpot Object Schema).
+    normalized_address: normalizedAddress,     // human-readable, searchable
     full_address: geo.formattedAddress,
     street_address: geo.streetAddress, unit_number: unit ?? "", city: geo.city, state: geo.state, zip: geo.zip,
     county: geo.county ?? "",
@@ -1433,19 +1439,32 @@ export async function computePropertyRollups(propertyCacheId: string): Promise<v
   const hasBattery = byCategory.BATTERY.length > 0 || byCategory.BATTERY_EXPANSION.length > 0;
   const hasEvCharger = byCategory.EV_CHARGER.length > 0;
 
-  // Ticket fields
-  const tickets = ticketIds.length
-    ? await prisma.serviceTicketCache?.findMany?.({ where: { hubspotTicketId: { in: ticketIds } } }) ?? []
+  // Ticket fields — there is no `ServiceTicketCache` model; tickets live in HubSpot
+  // and are read via `hubspot-tickets.ts`. Use a batch-read on the ticket IDs, then
+  // map stage → open/closed via the existing `getTicketStageMap()` helper (same
+  // source of truth the service suite uses).
+  const { getTicketStageMap } = await import("@/lib/hubspot-tickets");
+  const tickets: Array<{ id: string; properties: Record<string, string | null> }> = ticketIds.length
+    ? await batchReadTickets(ticketIds, ["subject", "hs_pipeline_stage", "hs_lastmodifieddate", "closed_date"])
     : [];
-  // If no local ticket cache, fall back to a lightweight HubSpot batch read.
-  const openTicketsCount = tickets.filter((t: { status?: string; stage?: string }) => {
-    const stage = (t.stage ?? t.status ?? "").toLowerCase();
-    return !["closed", "resolved", "cancelled"].some((s) => stage.includes(s));
-  }).length;
+  const stageMap = ticketIds.length ? (await getTicketStageMap()).stageMap : {};
+  const isOpenStage = (stageId: string | null | undefined) => {
+    if (!stageId) return false;
+    const label = (stageMap[stageId] ?? "").toLowerCase();
+    return !["closed", "resolved", "cancelled"].some((s) => label.includes(s));
+  };
+  const openTicketsCount = tickets.filter((t) => isOpenStage(t.properties.hs_pipeline_stage)).length;
   const lastServiceDate = tickets
-    .map((t: { updatedAt?: Date; closedAt?: Date }) => t.closedAt ?? t.updatedAt ?? null)
-    .filter(Boolean)
-    .sort((a: Date, b: Date) => b.getTime() - a.getTime())[0] ?? null;
+    .map((t) => {
+      const d = t.properties.closed_date ?? t.properties.hs_lastmodifieddate;
+      return d ? new Date(d) : null;
+    })
+    .filter((d): d is Date => !!d)
+    .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+
+  // `batchReadTickets` is a thin wrapper around hubspotClient.crm.tickets.batchApi.read
+  // (model it on fetchLineItemsForDeals). Add it to src/lib/hubspot-tickets.ts as
+  // part of this task if it doesn't already exist — small enough to inline here.
 
   // Write cache
   await prisma.hubSpotPropertyCache.update({
@@ -1705,7 +1724,84 @@ Use a real test DB (Jest DB helper if configured) or a Prisma mock. Test cases:
 
 ---
 
-### Task 4.2: Backfill script
+### Task 4.2: HubSpot paging helpers (prereq for the script)
+
+The backfill needs cursor-paged iteration over three HubSpot object types. `src/lib/hubspot.ts` already has `fetchAllProjects()` (which pages but eagerly drains), `searchWithRetry()` (single-page search with 429 backoff), and various single-record helpers — but no cursor-returning paged helpers suitable for resumable streaming. Add three thin wrappers that each return one page + an opaque `after` cursor.
+
+**Files:**
+- Modify: `src/lib/hubspot.ts` — add three new exports below.
+
+- [ ] **Step 1: Add the return type**
+
+```ts
+// src/lib/hubspot.ts (near other export interfaces)
+export interface HubSpotSearchPage<T> {
+  results: T[];
+  paging?: { next?: { after: string } };
+}
+```
+
+- [ ] **Step 2: Add `searchHubSpotContactsWithDeals(after)`**
+
+```ts
+export async function searchHubSpotContactsWithDeals(
+  after: string | null,
+): Promise<HubSpotSearchPage<{ id: string; properties: Record<string, string | null> }>> {
+  // Contacts that have at least one associated deal — filterGroup with
+  // hs_associated_deal_ids HAS_PROPERTY. Uses the same searchWithRetry wrapper
+  // as the rest of this module so we inherit 429 backoff.
+  const body = {
+    filterGroups: [{ filters: [{ propertyName: "num_associated_deals", operator: "GT", value: "0" }] }],
+    properties: ["firstname", "lastname", "email", "address", "address2", "city", "state", "zip", "country"],
+    limit: 100,
+    after: after ?? undefined,
+  };
+  const res = await searchWithRetry("contacts", body);
+  return { results: res.results ?? [], paging: res.paging };
+}
+```
+
+- [ ] **Step 3: Add `searchAllHubSpotDeals(after)` and `searchAllHubSpotTickets(after)`**
+
+```ts
+export async function searchAllHubSpotDeals(
+  after: string | null,
+): Promise<HubSpotSearchPage<{ id: string; properties: Record<string, string | null> }>> {
+  const body = {
+    filterGroups: [],                     // all deals across all pipelines
+    properties: ["dealname", "pipeline", "dealstage", "createdate"],
+    sorts: [{ propertyName: "createdate", direction: "ASCENDING" }],
+    limit: 100,
+    after: after ?? undefined,
+  };
+  const res = await searchWithRetry("deals", body);
+  return { results: res.results ?? [], paging: res.paging };
+}
+
+export async function searchAllHubSpotTickets(
+  after: string | null,
+): Promise<HubSpotSearchPage<{ id: string; properties: Record<string, string | null> }>> {
+  const body = {
+    filterGroups: [],
+    properties: ["subject", "hs_pipeline", "hs_pipeline_stage", "createdate"],
+    sorts: [{ propertyName: "createdate", direction: "ASCENDING" }],
+    limit: 100,
+    after: after ?? undefined,
+  };
+  const res = await searchWithRetry("tickets", body);
+  return { results: res.results ?? [], paging: res.paging };
+}
+```
+
+If `searchWithRetry` doesn't accept an object type string generically (check its signature before writing these), use the typed `hubspotClient.crm.contacts.searchApi.doSearch(body)` etc. pattern used elsewhere in the module and wrap each call in the existing retry helper.
+
+- [ ] **Step 4: Tests** — mock `hubspotClient.crm.*.searchApi.doSearch` and verify each helper forwards `after`, returns `{ results, paging }`, and surfaces rate-limit errors from `searchWithRetry`.
+
+- [ ] **Step 5: Commit**: `feat(hubspot): cursor-paged helpers for contacts/deals/tickets streaming`
+
+---
+
+### Task 4.3: Backfill script
 
 **Files:**
 - Create: `scripts/backfill-properties.ts`
@@ -1866,8 +1962,8 @@ Expected: 10 contacts processed, rows appear in `HubSpotPropertyCache`, Properti
 **Files:**
 - Modify: `src/lib/customer-resolver.ts`
 
-- [ ] Extend the result type to include `properties: PropertyDetail[]`.
-- [ ] In `resolveCustomerDetail`, after contact resolution, fetch properties via `prisma.propertyContactLink.findMany({ where: { contactId: { in: contactIds } }, include: { property: true } })`.
+- [ ] Extend `ContactDetail` (the return type of `resolveContactDetail`) to include `properties: PropertyDetail[]`.
+- [ ] In `resolveContactDetail(contactId)` — this is the real entrypoint; there is no `resolveCustomerDetail` — after contact resolution, fetch properties via `prisma.propertyContactLink.findMany({ where: { contactId }, include: { property: true }, orderBy: { associatedAt: "desc" } })`. Note the where-clause takes the single `contactId` the function already has in scope, not a `contactIds` array.
 - [ ] Map to `PropertyDetail` shape matching spec §UI Integration.
 - [ ] Add test covering a contact with 2 properties, one with open tickets.
 - [ ] Commit: `feat(service-suite): surface Properties in customer resolver`
