@@ -70,6 +70,91 @@ function buildCursorWhere(cursorId: string, cursorTs: string, prefix: string): R
 }
 
 // ---------------------------------------------------------------------------
+// Zuper status history parser (exported for testing)
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse Zuper job_status array from rawData into timeline events.
+ * Exported for testing.
+ */
+export function parseZuperStatusHistory(
+  jobUid: string,
+  jobCategory: string,
+  rawData: unknown,
+): TimelineEvent[] {
+  if (!rawData || typeof rawData !== "object") return [];
+  const data = rawData as Record<string, unknown>;
+  if (!Array.isArray(data.job_status)) return [];
+
+  const events: TimelineEvent[] = [];
+  for (const entry of data.job_status) {
+    const rec = entry as Record<string, unknown>;
+    const statusName = String(rec?.status_name ?? "Unknown");
+    const ts = rec?.created_at as string | undefined;
+    if (!ts) continue;
+    // Stable ID: derived from payload data, not array index.
+    const tsSlug = ts.replace(/[^0-9]/g, "").slice(0, 14);
+    events.push({
+      id: `zstatus-${jobUid}-${tsSlug}-${statusName}`,
+      type: "zuper_status",
+      timestamp: ts,
+      title: `${jobCategory} — ${statusName}`,
+      detail: null,
+      author: null,
+      metadata: { jobUid, statusName },
+    });
+  }
+  return events;
+}
+
+// ---------------------------------------------------------------------------
+// Generic DB-backed source fetcher
+// ---------------------------------------------------------------------------
+
+/**
+ * Generic helper for DB-backed timeline sources. Handles window filtering,
+ * cursor pagination via buildCursorWhere, and cross-source cursor filtering.
+ */
+async function fetchDbEvents<T extends { createdAt: Date; id: string }>(opts: {
+  baseWhere: Record<string, unknown>;
+  windowStart: Date | null;
+  cursor: Cursor | null;
+  prefix: string;
+  findMany: (args: { where: Record<string, unknown>; orderBy: { createdAt: "desc" }[]; take: number }) => Promise<T[]>;
+  toEvent: (row: T) => TimelineEvent;
+}): Promise<TimelineEvent[]> {
+  const { baseWhere, windowStart, cursor, prefix, findMany, toEvent } = opts;
+
+  const where: Record<string, unknown> = { ...baseWhere };
+  const andConditions: Record<string, unknown>[] = [];
+
+  if (windowStart) {
+    andConditions.push({ createdAt: { gte: windowStart } });
+  }
+  if (cursor) {
+    andConditions.push(buildCursorWhere(cursor.id, cursor.ts, prefix));
+  }
+  if (andConditions.length > 0) {
+    where.AND = andConditions;
+  }
+
+  const rows = await findMany({
+    where,
+    orderBy: [{ createdAt: "desc" }],
+    take: PAGE_SIZE,
+  });
+
+  const events = rows.map(toEvent);
+
+  // For cross-source cursors the DB fetched the overlap band (<=).
+  // Apply the unified isBeforeCursor filter using prefixed IDs.
+  if (cursor && !cursor.id.startsWith(`${prefix}-`)) {
+    return events.filter((e) => isBeforeCursor(e.timestamp, e.id, cursor));
+  }
+  return events;
+}
+
+// ---------------------------------------------------------------------------
 // Source fetchers → TimelineEvent[]
 // ---------------------------------------------------------------------------
 
@@ -171,6 +256,77 @@ async function fetchSyncEvents(
   return events;
 }
 
+const BOM_STATUS_LABEL: Record<string, string> = {
+  RUNNING: "started",
+  SUCCEEDED: "completed",
+  FAILED: "failed",
+  PARTIAL: "partially completed",
+};
+
+async function fetchBomEvents(
+  hubspotDealId: string,
+  windowStart: Date | null,
+  cursor: Cursor | null,
+): Promise<TimelineEvent[]> {
+  return fetchDbEvents({
+    baseWhere: { dealId: hubspotDealId },
+    windowStart,
+    cursor,
+    prefix: "bom",
+    findMany: (args) => prisma.bomPipelineRun.findMany(args),
+    toEvent: (run) => ({
+      id: `bom-${run.id}`,
+      type: "bom" as const,
+      timestamp: run.createdAt.toISOString(),
+      title: `BOM ${BOM_STATUS_LABEL[run.status] ?? run.status} — ${run.trigger.replace(/_/g, " ").toLowerCase()}`,
+      detail: run.status === "FAILED" ? (run.errorMessage ?? run.failedStep ?? null) : null,
+      author: null,
+      metadata: {
+        trigger: run.trigger,
+        status: run.status,
+        failedStep: run.failedStep,
+        durationMs: run.durationMs,
+        snapshotVersion: run.snapshotVersion,
+      },
+    }),
+  });
+}
+
+const SCHEDULE_TYPE_LABEL: Record<string, string> = {
+  survey: "Survey",
+  construction: "Install",
+  inspection: "Inspection",
+};
+
+async function fetchScheduleEvents(
+  hubspotDealId: string,
+  windowStart: Date | null,
+  cursor: Cursor | null,
+): Promise<TimelineEvent[]> {
+  return fetchDbEvents({
+    baseWhere: { projectId: hubspotDealId },
+    windowStart,
+    cursor,
+    prefix: "sched",
+    findMany: (args) => prisma.scheduleRecord.findMany(args),
+    toEvent: (rec) => ({
+      id: `sched-${rec.id}`,
+      type: "schedule" as const,
+      timestamp: rec.createdAt.toISOString(),
+      title: `${SCHEDULE_TYPE_LABEL[rec.scheduleType] ?? rec.scheduleType} ${rec.status} — ${rec.scheduledDate}`,
+      detail: rec.assignedUser ? `Assigned to ${rec.assignedUser}` : null,
+      author: rec.scheduledBy ?? null,
+      metadata: {
+        scheduleType: rec.scheduleType,
+        scheduledDate: rec.scheduledDate,
+        status: rec.status,
+        assignedUser: rec.assignedUser,
+        zuperSynced: rec.zuperSynced,
+      },
+    }),
+  });
+}
+
 async function fetchZuperEvents(
   hubspotDealId: string,
   windowStart: Date | null,
@@ -180,27 +336,11 @@ async function fetchZuperEvents(
     where: { hubspotDealId },
   });
 
-  return jobs
-    .map((job) => {
-      const ts = job.scheduledStart?.toISOString()
-        ?? job.lastSyncedAt.toISOString();
-      const eventId = `zuper-${job.jobUid}`;
-      return {
-        id: eventId,
-        type: "zuper" as const,
-        timestamp: ts,
-        title: `${job.jobCategory} — ${job.jobStatus}`,
-        detail: job.jobTitle,
-        author: null,
-        metadata: {
-          jobUid: job.jobUid,
-          jobStatus: job.jobStatus,
-          scheduledStart: job.scheduledStart?.toISOString() ?? null,
-          scheduledEnd: job.scheduledEnd?.toISOString() ?? null,
-          assignedUsers: job.assignedUsers,
-        },
-      };
-    })
+  const events = jobs.flatMap((job) =>
+    parseZuperStatusHistory(job.jobUid, job.jobCategory, job.rawData),
+  );
+
+  return events
     .filter((e) => isInWindow(e.timestamp, windowStart))
     .filter((e) => !cursor || isBeforeCursor(e.timestamp, e.id, cursor));
 }
@@ -296,7 +436,7 @@ function engagementToTimelineEvents(
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch a paginated timeline for a deal, aggregating 5 sources.
+ * Fetch a paginated timeline for a deal, aggregating 7 sources.
  *
  * @param dealId      Internal Deal cuid
  * @param hubspotDealId HubSpot deal ID (numeric string)
@@ -316,13 +456,15 @@ export async function getDealTimeline(
       ? { ts: options.cursorTs, id: options.cursorId }
       : null;
 
-  // Fan-out: all 5 sources in parallel
-  const [noteEvents, syncEvents, zuperEvents, photoEvents, engagements] =
+  // Fan-out: all 7 sources in parallel
+  const [noteEvents, syncEvents, zuperEvents, photoEvents, bomEvents, scheduleEvents, engagements] =
     await Promise.all([
       fetchNoteEvents(dealId, windowStart, cursor),
       fetchSyncEvents(dealId, windowStart, cursor),
       fetchZuperEvents(hubspotDealId, windowStart, cursor),
       fetchPhotoEvents(hubspotDealId, windowStart, cursor),
+      fetchBomEvents(hubspotDealId, windowStart, cursor),
+      fetchScheduleEvents(hubspotDealId, windowStart, cursor),
       getDealEngagements(hubspotDealId, options.all ?? false),
     ]);
 
@@ -334,6 +476,8 @@ export async function getDealTimeline(
     ...syncEvents,
     ...zuperEvents,
     ...photoEvents,
+    ...bomEvents,
+    ...scheduleEvents,
     ...engagementEvents,
   ].sort((a, b) => {
     const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
