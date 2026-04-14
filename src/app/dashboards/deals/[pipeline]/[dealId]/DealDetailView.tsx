@@ -18,6 +18,7 @@ import ZuperJobCard from "@/components/deal-detail/ZuperJobCard";
 import ChangeLogCard from "@/components/deal-detail/ChangeLogCard";
 import RelatedDealsCard from "@/components/deal-detail/RelatedDealsCard";
 import PhotoGalleryCard from "@/components/deal-detail/PhotoGalleryCard";
+import DealActivityPanel from "@/components/deal-detail/DealActivityPanel";
 import { getSectionsForPipeline, getStageColor } from "@/components/deal-detail/section-registry";
 import { useSSE } from "@/hooks/useSSE";
 import type {
@@ -149,6 +150,9 @@ export default function DealDetailView({
 
           {/* Site Photos — full-width in main pane */}
           <PhotoGalleryCard hubspotDealId={deal.hubspotDealId} zuperUid={deal.zuperUid} />
+
+          {/* Deal Activity & Communications */}
+          <DealActivityPanel dealId={deal.id} />
         </div>
 
         {/* Right: pinned sidebar */}

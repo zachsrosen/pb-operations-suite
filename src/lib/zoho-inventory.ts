@@ -316,7 +316,7 @@ const BOM_QUERY_OVERRIDES: ReadonlyArray<{ pattern: RegExp; sku: string }> = [
   { pattern: /\bbackup\s+switch\b|\b1624171\b/i,          sku: "1624171-00-x" },
 
   // 60A non-fused AC disconnect
-  { pattern: /\b60a?\s+non.?fused\b/i,                   sku: "DG222URB" },
+  { pattern: /\b60a?\s+non.?fused\b/i,                   sku: "TGN3322R" },
 
   // 200A non-fused AC disconnect (utility service upgrade, Burnham-style)
   { pattern: /\b200a?\s+non.?fused\b/i,                  sku: "TGN3324R" },

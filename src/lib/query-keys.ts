@@ -127,6 +127,16 @@ export const queryKeys = {
     preferences: (key?: string) =>
       [...queryKeys.comms.root, "preferences", key] as const,
   },
+  dealTimeline: {
+    root: ["dealTimeline"] as const,
+    events: (dealId: string) =>
+      ["dealTimeline", "events", dealId] as const,
+  },
+  dealCommunications: {
+    root: ["dealCommunications"] as const,
+    list: (dealId: string) =>
+      ["dealCommunications", "list", dealId] as const,
+  },
 } as const;
 
 /**
@@ -140,7 +150,8 @@ export function cacheKeyToQueryKeys(
   serverKey: string
 ): readonly (readonly unknown[])[] {
   if (serverKey.startsWith("projects")) return [queryKeys.projects.root];
-  if (serverKey.startsWith("deals")) return [queryKeys.deals.root];
+  if (serverKey.startsWith("deals"))
+    return [queryKeys.deals.root, queryKeys.dealTimeline.root, queryKeys.dealCommunications.root];
   if (serverKey.startsWith("stats")) return [queryKeys.stats.root];
   if (serverKey.startsWith("zuper")) return [queryKeys.zuper.root];
   if (serverKey.startsWith("forecast")) return [queryKeys.forecasting.root];
