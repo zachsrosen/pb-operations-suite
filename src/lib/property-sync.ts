@@ -114,8 +114,9 @@ export async function onContactAddressChange(contactId: string): Promise<SyncOut
     return { status: "skipped", reason: "address incomplete" };
   }
 
-  // 3) Geocode — Google Maps resolution gives us place_id + structured parts.
-  const geo = await geocodeAddress({
+  // 3) Geocode + find-or-create — delegated to `upsertPropertyFromGeocode`
+  //    so the admin manual-create route can reuse the exact same path.
+  const upsert = await upsertPropertyFromGeocode({
     street: p.address,
     unit: p.address2,
     city: p.city,
@@ -123,7 +124,7 @@ export async function onContactAddressChange(contactId: string): Promise<SyncOut
     zip: p.zip,
     country: p.country ?? "USA",
   });
-  if (!geo) {
+  if ("status" in upsert) {
     await logActivity("PROPERTY_SYNC_FAILED", "Geocode failed for contact", {
       contactId,
       reason: "geocode miss",
@@ -131,31 +132,7 @@ export async function onContactAddressChange(contactId: string): Promise<SyncOut
     return { status: "failed", reason: "geocode failed" };
   }
 
-  // 4) Dedup — cache lookup by place_id (preferred) or address hash fallback.
-  const hash = addressHash({
-    street: geo.streetAddress,
-    unit: p.address2,
-    city: geo.city,
-    state: geo.state,
-    zip: geo.zip,
-  });
-
-  const existing = geo.placeId
-    ? await prisma.hubSpotPropertyCache.findUnique({
-        where: { googlePlaceId: geo.placeId },
-      })
-    : await prisma.hubSpotPropertyCache.findUnique({ where: { addressHash: hash } });
-
-  let result: { propertyCacheId: string; hubspotObjectId: string; created: boolean };
-  if (existing) {
-    result = {
-      propertyCacheId: existing.id,
-      hubspotObjectId: existing.hubspotObjectId,
-      created: false,
-    };
-  } else {
-    result = await createNewProperty({ geo, hash, unit: p.address2 });
-  }
+  const result = upsert;
 
   // 5) Associate Property → Contact with the "Current Owner" label and mirror
   //    the association in the local PropertyContactLink table for fast reads.
@@ -918,10 +895,60 @@ async function refreshAssociationLinks(
   }
 }
 
-/** Implemented in Task 3.2. */
-export async function upsertPropertyFromGeocode(
-  _contactId: string,
-  _addressParts: unknown,
-): Promise<{ propertyCacheId: string; created: boolean }> {
-  throw new Error("not implemented");
+/**
+ * Geocode a structured address and find-or-create a Property cache row.
+ *
+ * Used by `onContactAddressChange` for webhook-driven creation and by
+ * `/api/properties/manual-create` for admin-driven creation. Intentionally
+ * contact-agnostic: callers handle association, watermarks, and rollups.
+ *
+ * Returns `{ status: "failed", reason: "geocode failed" }` on geocode miss —
+ * does NOT throw and does NOT log activity (callers decide how to surface).
+ */
+export async function upsertPropertyFromGeocode(args: {
+  street: string;
+  unit?: string | null;
+  city: string;
+  state: string;
+  zip: string;
+  country?: string;
+}): Promise<
+  | { propertyCacheId: string; hubspotObjectId: string; created: boolean }
+  | { status: "failed"; reason: "geocode failed" }
+> {
+  const geo = await geocodeAddress({
+    street: args.street,
+    unit: args.unit,
+    city: args.city,
+    state: args.state,
+    zip: args.zip,
+    country: args.country ?? "USA",
+  });
+  if (!geo) {
+    return { status: "failed", reason: "geocode failed" };
+  }
+
+  const hash = addressHash({
+    street: geo.streetAddress,
+    unit: args.unit ?? null,
+    city: geo.city,
+    state: geo.state,
+    zip: geo.zip,
+  });
+
+  const existing = geo.placeId
+    ? await prisma.hubSpotPropertyCache.findUnique({
+        where: { googlePlaceId: geo.placeId },
+      })
+    : await prisma.hubSpotPropertyCache.findUnique({ where: { addressHash: hash } });
+
+  if (existing) {
+    return {
+      propertyCacheId: existing.id,
+      hubspotObjectId: existing.hubspotObjectId,
+      created: false,
+    };
+  }
+
+  return createNewProperty({ geo, hash, unit: args.unit });
 }
