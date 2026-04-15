@@ -270,6 +270,7 @@ async function main() {
         body: {
           label,
           name: envKey(label),
+          category: "USER_DEFINED",
         },
       })
       .then((r) => r.json());
@@ -292,6 +293,7 @@ async function main() {
         body: {
           label,
           name: envKey(label),
+          category: "USER_DEFINED",
         },
       })
       .then((r) => r.json());
