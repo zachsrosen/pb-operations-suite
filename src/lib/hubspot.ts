@@ -1524,6 +1524,127 @@ export async function fetchContactById(
   }
 }
 
+/**
+ * Fetch a single HubSpot deal by ID with the requested properties.
+ * Returns null on 404 or auth failure. Thin mirror of `fetchContactById`,
+ * used by the Property sync orchestrator to read deal address + metadata
+ * when disambiguating which existing Property to associate on deal creation.
+ */
+export async function fetchDealById(
+  dealId: string,
+  properties: string[]
+): Promise<{ id: string; properties: Record<string, string | null> } | null> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  const url = new URL(
+    `https://api.hubapi.com/crm/v3/objects/deals/${encodeURIComponent(dealId)}`
+  );
+  if (properties.length) url.searchParams.set("properties", properties.join(","));
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) return null;
+    const data = (await response.json()) as {
+      id: string;
+      properties?: Record<string, string | null>;
+    };
+    return { id: data.id, properties: data.properties ?? {} };
+  } catch (err) {
+    console.warn(`[HubSpot] fetchDealById ${dealId} failed:`, err);
+    return null;
+  }
+}
+
+/**
+ * Fetch a single HubSpot ticket by ID with the requested properties.
+ * Returns null on 404 or auth failure. Counterpart to `fetchDealById` used
+ * by the Property sync orchestrator when handling `ticket.creation` webhooks.
+ */
+export async function fetchTicketById(
+  ticketId: string,
+  properties: string[]
+): Promise<{ id: string; properties: Record<string, string | null> } | null> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  const url = new URL(
+    `https://api.hubapi.com/crm/v3/objects/tickets/${encodeURIComponent(ticketId)}`
+  );
+  if (properties.length) url.searchParams.set("properties", properties.join(","));
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) return null;
+    const data = (await response.json()) as {
+      id: string;
+      properties?: Record<string, string | null>;
+    };
+    return { id: data.id, properties: data.properties ?? {} };
+  } catch (err) {
+    console.warn(`[HubSpot] fetchTicketById ${ticketId} failed:`, err);
+    return null;
+  }
+}
+
+/**
+ * Fetch the primary associated contact ID for a ticket using HubSpot v4
+ * associations. Mirrors `fetchPrimaryContactId` (deals version). Falls back
+ * to the single associated contact when no "Primary" label is present.
+ */
+export async function fetchPrimaryContactIdForTicket(ticketId: string): Promise<string | null> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  try {
+    const response = await fetch(
+      `https://api.hubapi.com/crm/v4/objects/tickets/${encodeURIComponent(ticketId)}/associations/contacts`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      }
+    );
+    if (!response.ok) return null;
+    const data = (await response.json()) as {
+      results?: Array<{
+        toObjectId: number;
+        associationTypes: Array<{ label: string | null; typeId: number; category: string }>;
+      }>;
+    };
+    const results = data.results ?? [];
+    if (results.length === 0) return null;
+
+    for (const assoc of results) {
+      const isPrimary = assoc.associationTypes?.some(
+        (t) => t.label && t.label.toLowerCase().includes("primary")
+      );
+      if (isPrimary) return String(assoc.toObjectId);
+    }
+    if (results.length === 1) return String(results[0].toObjectId);
+    return null;
+  } catch (e) {
+    console.warn(`[HubSpot] fetchPrimaryContactIdForTicket ${ticketId} failed:`, e);
+    return null;
+  }
+}
+
 export async function fetchProjectById(id: string): Promise<Project | null> {
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
 

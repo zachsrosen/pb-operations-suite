@@ -1,12 +1,18 @@
-import { onContactAddressChange, computePropertyRollups } from "@/lib/property-sync";
+import {
+  onContactAddressChange,
+  computePropertyRollups,
+  onDealOrTicketCreated,
+} from "@/lib/property-sync";
 
 jest.mock("@/lib/db", () => ({
   prisma: {
-    hubSpotPropertyCache: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
-    propertyContactLink: { upsert: jest.fn() },
+    hubSpotPropertyCache: { findUnique: jest.fn(), findMany: jest.fn(), create: jest.fn(), update: jest.fn() },
+    propertyContactLink: { upsert: jest.fn(), findMany: jest.fn() },
+    propertyDealLink: { upsert: jest.fn() },
+    propertyTicketLink: { upsert: jest.fn() },
     propertySyncWatermark: { findUnique: jest.fn(), upsert: jest.fn() },
     activityLog: { create: jest.fn() },
-    deal: { findMany: jest.fn() },
+    deal: { findMany: jest.fn(), findUnique: jest.fn() },
     internalProduct: { findMany: jest.fn() },
   },
 }));
@@ -21,6 +27,10 @@ jest.mock("@/lib/hubspot-property", () => ({
 jest.mock("@/lib/hubspot", () => ({
   fetchContactById: jest.fn(),
   fetchLineItemsForDeals: jest.fn(),
+  fetchDealById: jest.fn(),
+  fetchTicketById: jest.fn(),
+  fetchPrimaryContactId: jest.fn(),
+  fetchPrimaryContactIdForTicket: jest.fn(),
 }));
 jest.mock("@/lib/hubspot-tickets", () => ({
   batchReadTickets: jest.fn(),
@@ -466,5 +476,192 @@ describe("computePropertyRollups", () => {
 
     const call = prisma.hubSpotPropertyCache.update.mock.calls[0][0];
     expect(call.data.earliestWarrantyExpiry).toBeNull();
+  });
+});
+
+describe("onDealOrTicketCreated", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.PROPERTY_SYNC_ENABLED = "true";
+    process.env.HUBSPOT_PROPERTY_CONTACT_ASSOC_CURRENT_OWNER = "42";
+  });
+
+  // Skeleton rollup cache row used by computePropertyRollups so the happy-path
+  // tests don't need to prime every rollup dependency. We care about the
+  // associate/link/log behavior here, not the rollup contents.
+  function primeEmptyRollup(propertyCacheId: string, hubspotObjectId: string) {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { getTicketStageMap } = jest.requireMock("@/lib/hubspot-tickets");
+    const { fetchLineItemsForDeals } = jest.requireMock("@/lib/hubspot");
+    prisma.hubSpotPropertyCache.findUnique.mockResolvedValue({
+      id: propertyCacheId,
+      hubspotObjectId,
+      dealLinks: [],
+      ticketLinks: [],
+    });
+    prisma.deal.findMany.mockResolvedValue([]);
+    fetchLineItemsForDeals.mockResolvedValue([]);
+    getTicketStageMap.mockResolvedValue({ map: {}, orderedStageIds: [] });
+  }
+
+  it("returns skipped when the feature flag is off", async () => {
+    process.env.PROPERTY_SYNC_ENABLED = "false";
+    const outcome = await onDealOrTicketCreated("deal", "d1");
+    expect(outcome.status).toBe("skipped");
+    expect(outcome.reason).toMatch(/feature flag/i);
+  });
+
+  it("returns deferred when a deal has no primary contact", async () => {
+    const { fetchDealById, fetchPrimaryContactId } = jest.requireMock("@/lib/hubspot");
+    fetchDealById.mockResolvedValue({ id: "d1", properties: {} });
+    fetchPrimaryContactId.mockResolvedValue(null);
+
+    const outcome = await onDealOrTicketCreated("deal", "d1");
+    expect(outcome.status).toBe("deferred");
+    expect(outcome.reason).toMatch(/no primary contact/i);
+  });
+
+  it("associates to the sole existing Property when the contact has exactly one", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchDealById, fetchPrimaryContactId } = jest.requireMock("@/lib/hubspot");
+    const { associateProperty } = jest.requireMock("@/lib/hubspot-property");
+
+    fetchDealById.mockResolvedValue({ id: "d1", properties: {} });
+    fetchPrimaryContactId.mockResolvedValue("c1");
+    prisma.propertyContactLink.findMany.mockResolvedValue([
+      { propertyId: "cache-1", contactId: "c1", label: "Current Owner" },
+    ]);
+    prisma.hubSpotPropertyCache.findMany.mockResolvedValue([
+      { id: "cache-1", hubspotObjectId: "prop-hs-1", googlePlaceId: "p1" },
+    ]);
+    primeEmptyRollup("cache-1", "prop-hs-1");
+
+    const outcome = await onDealOrTicketCreated("deal", "d1");
+
+    expect(associateProperty).toHaveBeenCalledWith("prop-hs-1", "deals", "d1");
+    expect(prisma.propertyDealLink.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { propertyId_dealId: { propertyId: "cache-1", dealId: "d1" } },
+        create: { propertyId: "cache-1", dealId: "d1" },
+      })
+    );
+    // Rollup recomputed for the matched property.
+    expect(prisma.hubSpotPropertyCache.update).toHaveBeenCalled();
+    expect(prisma.activityLog.create).toHaveBeenCalled();
+    expect(outcome.status).toBe("associated");
+    expect(outcome.propertyCacheId).toBe("cache-1");
+  });
+
+  it("disambiguates to the Property whose placeId matches the geocoded deal address", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchDealById, fetchPrimaryContactId } = jest.requireMock("@/lib/hubspot");
+    const { geocodeAddress } = jest.requireMock("@/lib/geocode");
+    const { associateProperty } = jest.requireMock("@/lib/hubspot-property");
+
+    fetchDealById.mockResolvedValue({
+      id: "d1",
+      properties: { address: "2 B", city: "B", state: "CO", zip: "80301" },
+    });
+    fetchPrimaryContactId.mockResolvedValue("c1");
+    prisma.propertyContactLink.findMany.mockResolvedValue([
+      { propertyId: "cache-1", contactId: "c1", label: "Current Owner" },
+      { propertyId: "cache-2", contactId: "c1", label: "Current Owner" },
+    ]);
+    prisma.hubSpotPropertyCache.findMany.mockResolvedValue([
+      { id: "cache-1", hubspotObjectId: "prop-hs-1", googlePlaceId: "p-mismatch" },
+      { id: "cache-2", hubspotObjectId: "prop-hs-2", googlePlaceId: "p-match" },
+    ]);
+    geocodeAddress.mockResolvedValue({ placeId: "p-match", city: "B", state: "CO", zip: "80301" });
+    primeEmptyRollup("cache-2", "prop-hs-2");
+
+    const outcome = await onDealOrTicketCreated("deal", "d1");
+
+    expect(associateProperty).toHaveBeenCalledWith("prop-hs-2", "deals", "d1");
+    expect(prisma.propertyDealLink.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        create: { propertyId: "cache-2", dealId: "d1" },
+      })
+    );
+    expect(outcome.status).toBe("associated");
+    expect(outcome.propertyCacheId).toBe("cache-2");
+  });
+
+  it("returns deferred when multiple properties exist and none match the deal's place_id", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchDealById, fetchPrimaryContactId } = jest.requireMock("@/lib/hubspot");
+    const { geocodeAddress } = jest.requireMock("@/lib/geocode");
+    const { associateProperty } = jest.requireMock("@/lib/hubspot-property");
+
+    fetchDealById.mockResolvedValue({
+      id: "d1",
+      properties: { address: "2 B", city: "B", state: "CO", zip: "80301" },
+    });
+    fetchPrimaryContactId.mockResolvedValue("c1");
+    prisma.propertyContactLink.findMany.mockResolvedValue([
+      { propertyId: "cache-1", contactId: "c1", label: "Current Owner" },
+      { propertyId: "cache-2", contactId: "c1", label: "Current Owner" },
+    ]);
+    prisma.hubSpotPropertyCache.findMany.mockResolvedValue([
+      { id: "cache-1", hubspotObjectId: "prop-hs-1", googlePlaceId: "p-a" },
+      { id: "cache-2", hubspotObjectId: "prop-hs-2", googlePlaceId: "p-b" },
+    ]);
+    geocodeAddress.mockResolvedValue({ placeId: "p-other", city: "B", state: "CO", zip: "80301" });
+
+    const outcome = await onDealOrTicketCreated("deal", "d1");
+
+    expect(associateProperty).not.toHaveBeenCalled();
+    expect(prisma.propertyDealLink.upsert).not.toHaveBeenCalled();
+    expect(outcome.status).toBe("deferred");
+    expect(outcome.reason).toMatch(/ambiguous|no address match/i);
+  });
+
+  it("when contact has zero Properties, triggers onContactAddressChange and retries; still zero → deferred", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchDealById, fetchPrimaryContactId, fetchContactById } = jest.requireMock("@/lib/hubspot");
+    const { geocodeAddress } = jest.requireMock("@/lib/geocode");
+
+    fetchDealById.mockResolvedValue({ id: "d1", properties: {} });
+    fetchPrimaryContactId.mockResolvedValue("c1");
+    prisma.propertyContactLink.findMany.mockResolvedValue([]);
+    // onContactAddressChange will fetch the contact; simulate incomplete address so
+    // the recovery call no-ops (status: "skipped") and Properties stays at 0.
+    fetchContactById.mockResolvedValue({ id: "c1", properties: { address: "", city: "", state: "", zip: "" } });
+    prisma.propertySyncWatermark.findUnique.mockResolvedValue(null);
+    geocodeAddress.mockResolvedValue(null);
+
+    const outcome = await onDealOrTicketCreated("deal", "d1");
+
+    // Recovery attempt fired (fetchContactById got called).
+    expect(fetchContactById).toHaveBeenCalled();
+    expect(outcome.status).toBe("deferred");
+    expect(outcome.reason).toMatch(/no properties/i);
+  });
+
+  it("ticket variant with one Property associates with 'tickets' scope", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchTicketById, fetchPrimaryContactIdForTicket } = jest.requireMock("@/lib/hubspot");
+    const { associateProperty } = jest.requireMock("@/lib/hubspot-property");
+
+    fetchTicketById.mockResolvedValue({ id: "t1", properties: {} });
+    fetchPrimaryContactIdForTicket.mockResolvedValue("c1");
+    prisma.propertyContactLink.findMany.mockResolvedValue([
+      { propertyId: "cache-1", contactId: "c1", label: "Current Owner" },
+    ]);
+    prisma.hubSpotPropertyCache.findMany.mockResolvedValue([
+      { id: "cache-1", hubspotObjectId: "prop-hs-1", googlePlaceId: "p1" },
+    ]);
+    primeEmptyRollup("cache-1", "prop-hs-1");
+
+    const outcome = await onDealOrTicketCreated("ticket", "t1");
+
+    expect(associateProperty).toHaveBeenCalledWith("prop-hs-1", "tickets", "t1");
+    expect(prisma.propertyTicketLink.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { propertyId_ticketId: { propertyId: "cache-1", ticketId: "t1" } },
+        create: { propertyId: "cache-1", ticketId: "t1" },
+      })
+    );
+    expect(outcome.status).toBe("associated");
+    expect(outcome.propertyCacheId).toBe("cache-1");
   });
 });

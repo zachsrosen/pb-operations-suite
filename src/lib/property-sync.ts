@@ -21,7 +21,14 @@ import {
   associateProperty,
   updateProperty,
 } from "@/lib/hubspot-property";
-import { fetchContactById, fetchLineItemsForDeals } from "@/lib/hubspot";
+import {
+  fetchContactById,
+  fetchLineItemsForDeals,
+  fetchDealById,
+  fetchTicketById,
+  fetchPrimaryContactId,
+  fetchPrimaryContactIdForTicket,
+} from "@/lib/hubspot";
 import { batchReadTickets, getTicketStageMap } from "@/lib/hubspot-tickets";
 import { EquipmentCategory } from "@/generated/prisma/enums";
 import {
@@ -523,12 +530,145 @@ function toDateString(d: Date | null | undefined): string {
   return d ? d.toISOString().slice(0, 10) : "";
 }
 
-/** Implemented in Task 2.6. */
+/**
+ * Associate a freshly-created deal or ticket to the correct Property for its
+ * primary contact. Flow per spec §Deal/Ticket creation:
+ *   1) Feature-flag gate.
+ *   2) Look up the primary contact on the new object; defer if absent.
+ *   3) Read the contact's existing PropertyContactLink rows.
+ *   4) If exactly one Property → associate + upsert link + recompute rollups.
+ *   5) If multiple → geocode the deal/ticket address and match by `place_id`
+ *      against the candidate Properties; defer if no match.
+ *   6) If zero → trigger `onContactAddressChange` to create-or-associate a
+ *      Property from the contact's own address, retry once, and defer if the
+ *      contact-side sync can't produce one (e.g. missing address).
+ */
 export async function onDealOrTicketCreated(
-  _kind: "deal" | "ticket",
-  _objectId: string,
+  kind: "deal" | "ticket",
+  objectId: string,
 ): Promise<SyncOutcome> {
-  throw new Error("not implemented");
+  if (!isFeatureEnabled()) {
+    return { status: "skipped", reason: "feature flag off" };
+  }
+
+  // 1) Resolve the primary contact. Pull the object itself so we can read its
+  // address properties later for disambiguation — the extra fetch is cheap and
+  // avoids a second round-trip on the ambiguous-Properties branch.
+  const addressProps =
+    kind === "deal"
+      ? ["address", "city", "state", "zip"]
+      : ["hs_address", "hs_city", "hs_state", "hs_zip"];
+
+  const object =
+    kind === "deal"
+      ? await fetchDealById(objectId, addressProps)
+      : await fetchTicketById(objectId, addressProps);
+
+  const contactId =
+    kind === "deal"
+      ? await fetchPrimaryContactId(objectId)
+      : await fetchPrimaryContactIdForTicket(objectId);
+
+  if (!contactId) {
+    return { status: "deferred", reason: "no primary contact" };
+  }
+
+  // 2) Read Properties the contact is already associated to. Single cheap
+  // table scan; labels don't matter for this lookup (any ownership label
+  // qualifies the contact as "tied to" that Property).
+  let links = await prisma.propertyContactLink.findMany({ where: { contactId } });
+
+  // 3) Zero-property recovery: trigger contact sync, retry once.
+  if (links.length === 0) {
+    await onContactAddressChange(contactId);
+    links = await prisma.propertyContactLink.findMany({ where: { contactId } });
+    if (links.length === 0) {
+      await logActivity("PROPERTY_SYNC_FAILED", "No properties for contact on deal/ticket creation", {
+        kind,
+        objectId,
+        contactId,
+      });
+      return { status: "deferred", reason: "no properties for contact" };
+    }
+  }
+
+  const candidateIds = Array.from(new Set(links.map((l) => l.propertyId)));
+  const candidates = await prisma.hubSpotPropertyCache.findMany({
+    where: { id: { in: candidateIds } },
+  });
+
+  // 4) Pick a single Property. One candidate → trivial match. Multiple
+  // candidates → disambiguate by geocoding the deal/ticket address and
+  // matching `place_id` against candidate cache rows. If the address is
+  // missing or the geocode doesn't match any candidate, defer rather than
+  // guess — linking to the wrong Property would be harder to unwind than
+  // waiting for the next webhook cycle.
+  let chosen: { id: string; hubspotObjectId: string } | null = null;
+  if (candidates.length === 1) {
+    chosen = { id: candidates[0].id, hubspotObjectId: candidates[0].hubspotObjectId };
+  } else if (candidates.length > 1) {
+    const addr = object?.properties ?? {};
+    const street = kind === "deal" ? addr.address : addr.hs_address;
+    const city = kind === "deal" ? addr.city : addr.hs_city;
+    const state = kind === "deal" ? addr.state : addr.hs_state;
+    const zip = kind === "deal" ? addr.zip : addr.hs_zip;
+
+    if (street && city && state && zip) {
+      const geo = await geocodeAddress({
+        street,
+        city,
+        state,
+        zip,
+        country: "USA",
+      });
+      const placeId = geo?.placeId ?? null;
+      if (placeId) {
+        const match = candidates.find((c) => c.googlePlaceId === placeId);
+        if (match) chosen = { id: match.id, hubspotObjectId: match.hubspotObjectId };
+      }
+    }
+    if (!chosen) {
+      return { status: "deferred", reason: "ambiguous properties, no address match" };
+    }
+  }
+
+  if (!chosen) {
+    // Defensive — candidates.length was 0 above, we returned early. This
+    // keeps the type checker happy without a non-null assertion.
+    return { status: "deferred", reason: "no properties for contact" };
+  }
+
+  // 5) Mirror the association in HubSpot and in the local link table. No
+  // labelAssociationTypeId means `associateProperty` falls back to the
+  // HUBSPOT_DEFINED (unlabeled) association — the spec's default for
+  // deal/ticket links.
+  await associateProperty(chosen.hubspotObjectId, kind === "deal" ? "deals" : "tickets", objectId);
+
+  if (kind === "deal") {
+    await prisma.propertyDealLink.upsert({
+      where: { propertyId_dealId: { propertyId: chosen.id, dealId: objectId } },
+      create: { propertyId: chosen.id, dealId: objectId },
+      update: {},
+    });
+  } else {
+    await prisma.propertyTicketLink.upsert({
+      where: { propertyId_ticketId: { propertyId: chosen.id, ticketId: objectId } },
+      create: { propertyId: chosen.id, ticketId: objectId },
+      update: {},
+    });
+  }
+
+  // 6) Refresh denormalized rollups so the associated counts and
+  // install/service dates include the new object immediately.
+  await computePropertyRollups(chosen.id);
+
+  await logActivity(
+    "PROPERTY_ASSOCIATION_ADDED",
+    `Property associated to new ${kind}`,
+    { kind, objectId, contactId, propertyCacheId: chosen.id },
+  );
+
+  return { status: "associated", propertyCacheId: chosen.id };
 }
 
 /** Implemented in Task 2.7. */
