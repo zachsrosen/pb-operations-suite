@@ -1482,6 +1482,44 @@ export async function fetchContactEmail(dealId: string): Promise<{ email: string
   }
 }
 
+/**
+ * Fetch a single HubSpot contact by ID with the requested properties.
+ * Returns null on 404 or auth failure. Used by the Property sync orchestrator
+ * and the manual-create flow.
+ */
+export async function fetchContactById(
+  contactId: string,
+  properties: string[]
+): Promise<{ id: string; properties: Record<string, string | null> } | null> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  const url = new URL(
+    `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}`
+  );
+  if (properties.length) url.searchParams.set("properties", properties.join(","));
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) return null;
+    const data = (await response.json()) as {
+      id: string;
+      properties?: Record<string, string | null>;
+    };
+    return { id: data.id, properties: data.properties ?? {} };
+  } catch (err) {
+    console.warn(`[HubSpot] fetchContactById ${contactId} failed:`, err);
+    return null;
+  }
+}
+
 export async function fetchProjectById(id: string): Promise<Project | null> {
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
 
