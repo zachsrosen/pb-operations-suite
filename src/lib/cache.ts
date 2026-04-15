@@ -265,6 +265,7 @@ export const CACHE_KEYS = {
   FORECAST_BASELINES: "forecast:baselines",
   FORECAST_ACCURACY: "forecast:accuracy",
   SERVICE_PRIORITY_QUEUE: "service:priority-queue",
+  SERVICE_SALES_PIPELINE: "service:sales-pipeline",
   SERVICE_TICKETS: "service-tickets:all",
   SERVICE_CUSTOMERS_SEARCH: (queryHash: string) => `service:customers:search:${queryHash}`,
   SERVICE_CUSTOMER_DETAIL: (contactId: string) => `service:customers:detail:${contactId}`,
@@ -279,6 +280,12 @@ export const CACHE_KEYS = {
     `deal-engagements:${hubspotDealId}:recent` as const,
   DEAL_ENGAGEMENTS_ALL: (hubspotDealId: string) =>
     `deal-engagements:${hubspotDealId}:all` as const,
+  DEAL_TASKS_RECENT: (hubspotDealId: string) =>
+    `deal-tasks:${hubspotDealId}:recent` as const,
+  DEAL_TASKS_ALL: (hubspotDealId: string) =>
+    `deal-tasks:${hubspotDealId}:all` as const,
+  ZUPER_SERVICE_TASKS: (hubspotDealId: string, jobUid: string) =>
+    `zuper-service-tasks:${hubspotDealId}:${jobUid}` as const,
 } as const;
 
 // Revenue goals cache cascade: invalidate when deals change

@@ -29,6 +29,9 @@ export async function GET(
 
   let engagements = await getDealEngagements(deal.hubspotDealId, all);
 
+  // Tasks are operational todos, not communications — they surface in Activity.
+  engagements = engagements.filter((e) => e.type !== "task");
+
   // Apply 90-day window filter post-cache-retrieval
   if (!all) {
     const windowStart = Date.now() - NINETY_DAYS_MS;

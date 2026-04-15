@@ -74,19 +74,20 @@ const TASK_PROPERTIES = [
 // ---------------------------------------------------------------------------
 
 async function fetchAssociatedObjects<T>(
-  dealId: string,
+  fromId: string,
   toObjectType: string,
   properties: string[],
   mapper: (obj: Record<string, string | null>, id: string) => T,
+  fromObjectType: string = "deals",
 ): Promise<T[]> {
   try {
     // Step 1: Get association IDs (with rate-limit retry)
     const assocResponse = await withHubSpotRetry(
-      `associations:${toObjectType}`,
+      `associations:${fromObjectType}->${toObjectType}`,
       () => hubspotClient.crm.associations.batchApi.read(
-        "deals",
+        fromObjectType,
         toObjectType,
-        { inputs: [{ id: dealId }] },
+        { inputs: [{ id: fromId }] },
       ),
     );
     const ids = (assocResponse.results?.[0]?.to ?? []).map((a) => a.id);
@@ -105,7 +106,7 @@ async function fetchAssociatedObjects<T>(
       mapper(obj.properties as Record<string, string | null>, obj.id),
     );
   } catch (err) {
-    console.warn(`[hubspot-engagements] Failed to fetch ${toObjectType} for deal ${dealId}:`, err);
+    console.warn(`[hubspot-engagements] Failed to fetch ${toObjectType} for ${fromObjectType} ${fromId}:`, err);
     return [];
   }
 }
@@ -231,6 +232,52 @@ export async function getDealEngagements(
   });
 
   return result.data;
+}
+
+/**
+ * Fetch HubSpot tasks only for a deal. Tasks are operational todos, not
+ * communications, so they surface in the Activity feed (not Communications).
+ * Cached 5 minutes under deal-tasks:{hubspotDealId}:{mode}.
+ */
+export async function getDealTasks(
+  hubspotDealId: string,
+  all = false,
+): Promise<Engagement[]> {
+  const cacheKey = all
+    ? CACHE_KEYS.DEAL_TASKS_ALL(hubspotDealId)
+    : CACHE_KEYS.DEAL_TASKS_RECENT(hubspotDealId);
+
+  const result = await appCache.getOrFetch(cacheKey, async () =>
+    fetchAssociatedObjects(hubspotDealId, "tasks", TASK_PROPERTIES, mapTask),
+  );
+
+  return result.data;
+}
+
+/**
+ * Fetch the most recent engagement (email / call / note / meeting) for a
+ * contact. Used by the Customer History slide-over to show a "last
+ * communication" preview. Returns null if the contact has no engagements.
+ *
+ * Not cached at the module level — the caller (resolveContactDetail) already
+ * sits behind the customer-detail 5-min cache, so caching here would be
+ * redundant.
+ */
+export async function getContactLatestEngagement(
+  contactId: string,
+): Promise<Engagement | null> {
+  const [emails, calls, notes, meetings] = await Promise.all([
+    fetchAssociatedObjects(contactId, "emails", EMAIL_PROPERTIES, mapEmail, "contacts"),
+    fetchAssociatedObjects(contactId, "calls", CALL_PROPERTIES, mapCall, "contacts"),
+    fetchAssociatedObjects(contactId, "notes", NOTE_PROPERTIES, mapNote, "contacts"),
+    fetchAssociatedObjects(contactId, "meetings", MEETING_PROPERTIES, mapMeeting, "contacts"),
+  ]);
+
+  const all = [...emails, ...calls, ...notes, ...meetings];
+  if (all.length === 0) return null;
+
+  all.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+  return all[0];
 }
 
 /**

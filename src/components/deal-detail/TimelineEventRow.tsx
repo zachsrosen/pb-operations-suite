@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from "react";
 import { sanitizeEngagementHtml } from "@/lib/sanitize-engagement-html";
-import type { TimelineEvent, TimelineEventType } from "./types";
+import type { TimelineAttachment, TimelineEvent, TimelineEventType } from "./types";
 
 const EVENT_CONFIG: Record<TimelineEventType, { icon: string; color: string; label: string }> = {
   note:         { icon: "\u{1F4DD}", color: "text-orange-500", label: "Note" },
@@ -18,6 +18,15 @@ const EVENT_CONFIG: Record<TimelineEventType, { icon: string; color: string; lab
   meeting:      { icon: "\u{1F4C5}", color: "text-cyan-500",   label: "Meeting" },
   hubspot_note: { icon: "\u{1F4CB}", color: "text-cyan-500",   label: "HubSpot Note" },
   task:         { icon: "\u2611\uFE0F",  color: "text-yellow-500", label: "Task" },
+  service_task: { icon: "\u2611\uFE0F",  color: "text-green-500",  label: "Checklist" },
+};
+
+const SERVICE_TASK_STATUS_COLORS: Record<string, string> = {
+  COMPLETED: "text-emerald-500",
+  IN_PROGRESS: "text-yellow-500",
+  PENDING: "text-muted",
+  FAILED: "text-red-500",
+  NOT_STARTED: "text-muted",
 };
 
 const SYNC_STATUS_ICONS: Record<string, { icon: string; title: string }> = {
@@ -85,6 +94,48 @@ const HTML_BODY_TYPES = new Set<TimelineEventType>(["email", "call", "meeting", 
 // Event types whose bodies should be visible by default
 const AUTO_EXPAND_TYPES = new Set<TimelineEventType>(["note", "hubspot_note", "zuper_note"]);
 
+// Event types that may carry file attachments (shown as chips under the detail)
+const ATTACHMENT_TYPES = new Set<TimelineEventType>(["zuper_note", "service_task"]);
+
+function AttachmentChips({ attachments }: { attachments: TimelineAttachment[] }) {
+  if (attachments.length === 0) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap gap-1.5">
+      {attachments.map((a, i) =>
+        a.isImage ? (
+          <a
+            key={`${a.url}-${i}`}
+            href={a.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block shrink-0"
+            title={a.fileName}
+          >
+            <img
+              src={a.url}
+              alt={a.fileName}
+              className="h-14 w-14 rounded border border-t-border object-cover"
+              loading="lazy"
+            />
+          </a>
+        ) : (
+          <a
+            key={`${a.url}-${i}`}
+            href={a.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 rounded border border-t-border bg-surface px-1.5 py-0.5 text-[10px] text-muted hover:text-foreground transition-colors max-w-[200px]"
+            title={a.fileName}
+          >
+            <span>{"\u{1F4CE}"}</span>
+            <span className="truncate">{a.fileName}</span>
+          </a>
+        ),
+      )}
+    </div>
+  );
+}
+
 export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
   const [expanded, setExpanded] = useState(AUTO_EXPAND_TYPES.has(event.type));
   const config = EVENT_CONFIG[event.type];
@@ -106,6 +157,16 @@ export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
   const zuperStatus = meta.zuperSyncStatus as string | undefined;
   const showSyncStatus = event.type === "note" && (hubspotStatus || zuperStatus);
 
+  // Attachments (Zuper notes + service tasks)
+  const rawAttachments = meta.attachments;
+  const attachments: TimelineAttachment[] = ATTACHMENT_TYPES.has(event.type) && Array.isArray(rawAttachments)
+    ? (rawAttachments as TimelineAttachment[])
+    : [];
+  const hasAttachments = attachments.length > 0;
+
+  // Service task status badge
+  const serviceTaskStatus = event.type === "service_task" ? (meta.status as string | undefined) : undefined;
+
   return (
     <div className="flex gap-3 py-2">
       {/* Left icon */}
@@ -120,6 +181,14 @@ export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
             <span className="text-xs font-medium text-foreground truncate">
               {event.title}
             </span>
+            {serviceTaskStatus && (
+              <span
+                className={`shrink-0 text-[10px] font-medium ${SERVICE_TASK_STATUS_COLORS[serviceTaskStatus] ?? "text-muted"}`}
+                title={`Status: ${serviceTaskStatus}`}
+              >
+                {serviceTaskStatus.replace(/_/g, " ").toLowerCase()}
+              </span>
+            )}
             {showSyncStatus && (
               <span className="flex items-center gap-0.5 shrink-0">
                 {hubspotStatus && (
@@ -150,7 +219,7 @@ export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
         </div>
 
         {/* Expandable detail */}
-        {(hasDetail || hasSyncChanges) && (
+        {(hasDetail || hasSyncChanges || hasAttachments) && (
           <button
             onClick={() => setExpanded(!expanded)}
             className="mt-0.5 text-[10px] text-muted hover:text-foreground transition-colors"
@@ -182,6 +251,9 @@ export default function TimelineEventRow({ event }: { event: TimelineEvent }) {
             loading="lazy"
           />
         )}
+
+        {/* Attachments for Zuper notes + service tasks */}
+        {expanded && hasAttachments && <AttachmentChips attachments={attachments} />}
       </div>
     </div>
   );

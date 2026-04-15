@@ -28,3 +28,15 @@ describe("SYNC_NOISE_FIELDS filtering", () => {
     }
   });
 });
+
+describe("STATIC_FIELD_LABELS fallback", () => {
+  it("covers deal fields that are not rendered in any section (ownership, equipment, flags)", () => {
+    // Fields not in any SECTION_REGISTRY section but can change via sync
+    expect(FIELD_LABELS["dealOwnerName"]).toBe("Deal Owner");
+    expect(FIELD_LABELS["customerName"]).toBe("Customer");
+    expect(FIELD_LABELS["moduleBrand"]).toBe("Module Brand");
+    expect(FIELD_LABELS["batterySizeKwh"]).toBe("Battery Size (kWh)");
+    expect(FIELD_LABELS["isPermitIssued"]).toBe("Permit Issued");
+    expect(FIELD_LABELS["totalRevisionCount"]).toBe("Total Revisions");
+  });
+});
