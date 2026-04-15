@@ -2,7 +2,13 @@ import {
   onContactAddressChange,
   computePropertyRollups,
   onDealOrTicketCreated,
+  reconcileAllProperties,
 } from "@/lib/property-sync";
+
+jest.mock("@sentry/nextjs", () => ({
+  captureException: jest.fn(),
+  captureMessage: jest.fn(),
+}));
 
 jest.mock("@/lib/db", () => ({
   prisma: {
@@ -10,7 +16,7 @@ jest.mock("@/lib/db", () => ({
     propertyContactLink: { upsert: jest.fn(), findMany: jest.fn() },
     propertyDealLink: { upsert: jest.fn() },
     propertyTicketLink: { upsert: jest.fn() },
-    propertySyncWatermark: { findUnique: jest.fn(), upsert: jest.fn() },
+    propertySyncWatermark: { findUnique: jest.fn(), upsert: jest.fn(), deleteMany: jest.fn() },
     activityLog: { create: jest.fn() },
     deal: { findMany: jest.fn(), findUnique: jest.fn() },
     internalProduct: { findMany: jest.fn() },
@@ -23,6 +29,8 @@ jest.mock("@/lib/hubspot-property", () => ({
   associateProperty: jest.fn(),
   fetchPropertyById: jest.fn(),
   updateProperty: jest.fn(),
+  fetchAllProperties: jest.fn(),
+  fetchAssociatedIdsFromProperty: jest.fn(),
 }));
 jest.mock("@/lib/hubspot", () => ({
   fetchContactById: jest.fn(),
@@ -663,5 +671,246 @@ describe("onDealOrTicketCreated", () => {
     );
     expect(outcome.status).toBe("associated");
     expect(outcome.propertyCacheId).toBe("cache-1");
+  });
+});
+
+describe("reconcileAllProperties", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.PROPERTY_SYNC_ENABLED = "true";
+
+    // Default: no stale cache rows, empty watermark cleanup, empty rollup deps.
+    const { prisma } = jest.requireMock("@/lib/db");
+    prisma.hubSpotPropertyCache.findMany.mockResolvedValue([]);
+    prisma.propertySyncWatermark.deleteMany.mockResolvedValue({ count: 0 });
+    prisma.deal.findMany.mockResolvedValue([]);
+    const { fetchLineItemsForDeals } = jest.requireMock("@/lib/hubspot");
+    fetchLineItemsForDeals.mockResolvedValue([]);
+    const { getTicketStageMap, batchReadTickets } = jest.requireMock("@/lib/hubspot-tickets");
+    getTicketStageMap.mockResolvedValue({ map: {}, orderedStageIds: [] });
+    batchReadTickets.mockResolvedValue([]);
+    const { fetchAssociatedIdsFromProperty } = jest.requireMock("@/lib/hubspot-property");
+    fetchAssociatedIdsFromProperty.mockResolvedValue([]);
+  });
+
+  function makeRecord(id: string, overrides: Record<string, string | null> = {}) {
+    return {
+      id,
+      properties: {
+        street_address: "1 Main St",
+        city: "Boulder",
+        state: "CO",
+        zip: "80301",
+        google_place_id: `place-${id}`,
+        normalized_address: "1 main st, boulder co 80301",
+        full_address: "1 Main St, Boulder CO 80301",
+        unit_number: null,
+        county: null,
+        latitude: "40.0",
+        longitude: "-105.0",
+        ahj_name: null,
+        utility_name: null,
+        pb_location: null,
+        ...overrides,
+      },
+    };
+  }
+
+  it("empty HubSpot response → {processed:0, drifted:0, failed:0}, still cleans watermarks", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchAllProperties } = jest.requireMock("@/lib/hubspot-property");
+    fetchAllProperties.mockResolvedValue([]);
+
+    const result = await reconcileAllProperties();
+
+    expect(result).toEqual({ processed: 0, drifted: 0, failed: 0 });
+    // Watermark cleanup runs unconditionally on every pass.
+    expect(prisma.propertySyncWatermark.deleteMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("2 properties, 1 cache row exists → processed=2, failed=0", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchAllProperties } = jest.requireMock("@/lib/hubspot-property");
+    fetchAllProperties.mockResolvedValue([
+      makeRecord("P1"),
+      makeRecord("P2"),
+    ]);
+    // P1 has a cache row with MATCHING key fields → no drift.
+    // P2 has no cache row → create.
+    prisma.hubSpotPropertyCache.findUnique.mockImplementation(
+      ({ where }: { where: { hubspotObjectId?: string; id?: string } }) => {
+        if (where.hubspotObjectId === "P1") {
+          return Promise.resolve({
+            id: "cache-p1",
+            hubspotObjectId: "P1",
+            streetAddress: "1 Main St",
+            city: "Boulder",
+            state: "CO",
+            zip: "80301",
+            googlePlaceId: "place-P1",
+            normalizedAddress: "old",
+            fullAddress: "old",
+            latitude: 40,
+            longitude: -105,
+            ahjName: null,
+            utilityName: null,
+            pbLocation: null,
+            dealLinks: [],
+            ticketLinks: [],
+          });
+        }
+        if (where.hubspotObjectId === "P2") return Promise.resolve(null);
+        // Rollup recomputation reads by id.
+        if (where.id === "cache-p1" || where.id === "cache-p2") {
+          return Promise.resolve({
+            id: where.id,
+            hubspotObjectId: where.id === "cache-p1" ? "P1" : "P2",
+            dealLinks: [],
+            ticketLinks: [],
+          });
+        }
+        return Promise.resolve(null);
+      },
+    );
+    prisma.hubSpotPropertyCache.create.mockResolvedValue({ id: "cache-p2" });
+    prisma.hubSpotPropertyCache.update.mockResolvedValue({});
+
+    const result = await reconcileAllProperties();
+
+    expect(result.processed).toBe(2);
+    expect(result.failed).toBe(0);
+    // One create (P2), one or more updates (P1 + rollups).
+    expect(prisma.hubSpotPropertyCache.create).toHaveBeenCalledTimes(1);
+  });
+
+  it("counts drift when key fields change on an existing cache row", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchAllProperties } = jest.requireMock("@/lib/hubspot-property");
+    fetchAllProperties.mockResolvedValue([
+      makeRecord("P1", { street_address: "999 New St" }),
+    ]);
+    prisma.hubSpotPropertyCache.findUnique.mockImplementation(
+      ({ where }: { where: { hubspotObjectId?: string; id?: string } }) => {
+        if (where.hubspotObjectId === "P1") {
+          return Promise.resolve({
+            id: "cache-p1",
+            hubspotObjectId: "P1",
+            streetAddress: "1 Main St",
+            city: "Boulder",
+            state: "CO",
+            zip: "80301",
+            googlePlaceId: "place-P1",
+            normalizedAddress: "old",
+            fullAddress: "old",
+            latitude: 40,
+            longitude: -105,
+            ahjName: null,
+            utilityName: null,
+            pbLocation: null,
+          });
+        }
+        if (where.id === "cache-p1") {
+          return Promise.resolve({
+            id: "cache-p1",
+            hubspotObjectId: "P1",
+            dealLinks: [],
+            ticketLinks: [],
+          });
+        }
+        return Promise.resolve(null);
+      },
+    );
+    prisma.hubSpotPropertyCache.update.mockResolvedValue({});
+
+    const result = await reconcileAllProperties();
+
+    expect(result.processed).toBe(1);
+    expect(result.drifted).toBe(1);
+  });
+
+  it("continues the loop and counts a per-property failure", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchAllProperties } = jest.requireMock("@/lib/hubspot-property");
+    fetchAllProperties.mockResolvedValue([
+      makeRecord("P1"),
+      makeRecord("P2"),
+    ]);
+
+    let callCount = 0;
+    prisma.hubSpotPropertyCache.findUnique.mockImplementation(
+      ({ where }: { where: { hubspotObjectId?: string; id?: string } }) => {
+        if (where.hubspotObjectId === "P1") {
+          callCount += 1;
+          throw new Error("db boom");
+        }
+        if (where.hubspotObjectId === "P2") return Promise.resolve(null);
+        if (where.id === "cache-p2") {
+          return Promise.resolve({
+            id: "cache-p2",
+            hubspotObjectId: "P2",
+            dealLinks: [],
+            ticketLinks: [],
+          });
+        }
+        return Promise.resolve(null);
+      },
+    );
+    prisma.hubSpotPropertyCache.create.mockResolvedValue({ id: "cache-p2" });
+    prisma.hubSpotPropertyCache.update.mockResolvedValue({});
+
+    const result = await reconcileAllProperties();
+
+    expect(callCount).toBe(1);
+    expect(result.failed).toBe(1);
+    expect(result.processed).toBe(1); // P2 succeeded
+    // activityLog fired for the failure.
+    expect(prisma.activityLog.create).toHaveBeenCalled();
+  });
+
+  it("cleans up watermark rows older than 7 days", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchAllProperties } = jest.requireMock("@/lib/hubspot-property");
+    fetchAllProperties.mockResolvedValue([]);
+
+    const before = Date.now();
+    await reconcileAllProperties();
+    const after = Date.now();
+
+    expect(prisma.propertySyncWatermark.deleteMany).toHaveBeenCalledTimes(1);
+    const arg = prisma.propertySyncWatermark.deleteMany.mock.calls[0][0];
+    // Cutoff should be ~7 days ago (within the test window).
+    const cutoff: Date = arg.where.lastSyncAt.lt;
+    const sevenDays = 7 * 24 * 60 * 60 * 1000;
+    expect(cutoff.getTime()).toBeGreaterThanOrEqual(before - sevenDays - 50);
+    expect(cutoff.getTime()).toBeLessThanOrEqual(after - sevenDays + 50);
+  });
+
+  it("Sentry captureMessage fires when cache rows have lastReconciledAt > 48h old", async () => {
+    const Sentry = jest.requireMock("@sentry/nextjs");
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchAllProperties } = jest.requireMock("@/lib/hubspot-property");
+    fetchAllProperties.mockResolvedValue([]);
+    prisma.hubSpotPropertyCache.findMany.mockResolvedValue([
+      { id: "stale-1", hubspotObjectId: "hs-1", lastReconciledAt: new Date("2020-01-01") },
+      { id: "stale-2", hubspotObjectId: "hs-2", lastReconciledAt: new Date("2020-01-01") },
+    ]);
+
+    await reconcileAllProperties();
+
+    expect(Sentry.captureMessage).toHaveBeenCalledTimes(1);
+    const [msg, ctx] = Sentry.captureMessage.mock.calls[0];
+    expect(msg).toMatch(/stale/i);
+    expect(ctx.extra.staleIds).toEqual(["stale-1", "stale-2"]);
+  });
+
+  it("does NOT call Sentry.captureMessage when no stale rows exist", async () => {
+    const Sentry = jest.requireMock("@sentry/nextjs");
+    const { fetchAllProperties } = jest.requireMock("@/lib/hubspot-property");
+    fetchAllProperties.mockResolvedValue([]);
+    // prisma.hubSpotPropertyCache.findMany already returns [] via beforeEach.
+
+    await reconcileAllProperties();
+
+    expect(Sentry.captureMessage).not.toHaveBeenCalled();
   });
 });

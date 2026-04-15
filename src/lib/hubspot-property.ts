@@ -257,6 +257,36 @@ export async function fetchPropertyById(
   }
 }
 
+/**
+ * Page through associations FROM a Property TO another object type, returning
+ * the associated object IDs. Used by the nightly reconciliation cron to
+ * refresh local `PropertyContactLink` / `PropertyDealLink` / `PropertyTicketLink`
+ * rows against HubSpot's source of truth.
+ */
+export async function fetchAssociatedIdsFromProperty(
+  propertyId: string,
+  toObjectType: "contacts" | "deals" | "tickets" | "companies"
+): Promise<string[]> {
+  const ids: string[] = [];
+  let after: string | undefined;
+
+  do {
+    const associations = await withRetry(() =>
+      hubspotClient.crm.associations.v4.basicApi.getPage(
+        PROPERTY_OBJECT_TYPE(),
+        propertyId,
+        toObjectType,
+        after,
+        undefined
+      )
+    );
+    ids.push(...associations.results.map((a) => a.toObjectId.toString()));
+    after = associations.paging?.next?.after;
+  } while (after);
+
+  return ids;
+}
+
 /** Fetch all Property records associated with a given contact. */
 export async function fetchPropertiesForContact(
   contactId: string

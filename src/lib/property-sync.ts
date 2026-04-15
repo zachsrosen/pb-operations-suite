@@ -13,6 +13,7 @@
  * `docs/superpowers/plans/2026-04-14-hubspot-property-object.md` Tasks 2.5–3.2).
  */
 
+import * as Sentry from "@sentry/nextjs";
 import { prisma } from "@/lib/db";
 import { geocodeAddress, type GeocodeResult } from "@/lib/geocode";
 import { addressHash } from "@/lib/address-hash";
@@ -20,6 +21,9 @@ import {
   createProperty,
   associateProperty,
   updateProperty,
+  fetchAllProperties,
+  fetchAssociatedIdsFromProperty,
+  type PropertyRecord,
 } from "@/lib/hubspot-property";
 import {
   fetchContactById,
@@ -671,9 +675,247 @@ export async function onDealOrTicketCreated(
   return { status: "associated", propertyCacheId: chosen.id };
 }
 
-/** Implemented in Task 2.7. */
+/**
+ * Nightly reconciliation: page through all HubSpot Property records and
+ * refresh the local cache + association link tables. This is a HubSpot → DB
+ * sync — geocoding is intentionally NOT re-run here (that only happens on
+ * contact address change or explicit manual create).
+ *
+ * Per-Property failures are logged and counted but do NOT abort the run —
+ * one bad record shouldn't stall the whole pass.
+ *
+ * After the pass, any cache row with `lastReconciledAt > 48h` indicates the
+ * webhook is dropping events on the floor. We surface that via Sentry.
+ *
+ * Finally, we drop `PropertySyncWatermark` rows older than 7 days. Watermarks
+ * are per-contact coalescing markers with a 2-second window; 7 days is a safe
+ * retention far in excess of the coalescing TTL.
+ */
 export async function reconcileAllProperties(): Promise<ReconcileStats> {
-  throw new Error("not implemented");
+  const stats: ReconcileStats = { processed: 0, drifted: 0, failed: 0 };
+
+  let properties: PropertyRecord[] = [];
+  try {
+    properties = await fetchAllProperties();
+  } catch (err) {
+    Sentry.captureException(err, { tags: { module: "property-reconcile", step: "fetchAll" } });
+    throw err;
+  }
+
+  for (const record of properties) {
+    try {
+      const drifted = await reconcileSingleProperty(record);
+      stats.processed += 1;
+      if (drifted) stats.drifted += 1;
+    } catch (err) {
+      stats.failed += 1;
+      await logActivity(
+        "PROPERTY_SYNC_FAILED",
+        "Property reconciliation failed",
+        {
+          propertyId: record.id,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
+      Sentry.captureException(err, {
+        tags: { module: "property-reconcile", step: "perProperty" },
+        extra: { propertyId: record.id },
+      });
+      // Continue to the next property — don't abort the whole pass.
+    }
+  }
+
+  // Post-pass drift check: any cache rows not touched in 48h suggest the
+  // webhook pipeline is silently dropping events. This is an anomaly signal,
+  // not a data-integrity problem — we've just refreshed everything visible in
+  // HubSpot, so stale cache rows mean the HubSpot object itself is missing.
+  const STALE_MS = 48 * 60 * 60 * 1000;
+  const staleCutoff = new Date(Date.now() - STALE_MS);
+  const stale = await prisma.hubSpotPropertyCache.findMany({
+    where: { lastReconciledAt: { lt: staleCutoff } },
+    select: { id: true, hubspotObjectId: true, lastReconciledAt: true },
+  });
+  if (stale.length > 0) {
+    Sentry.captureMessage(
+      `Property reconciliation: ${stale.length} cache rows stale (>48h since last reconcile)`,
+      {
+        level: "warning",
+        tags: { module: "property-reconcile", alert: "stale-cache" },
+        extra: { staleIds: stale.map((s) => s.id) },
+      },
+    );
+  }
+
+  // Watermark cleanup — spec §Contact address change: drop rows > 7 days old.
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  const sevenDaysAgo = new Date(Date.now() - SEVEN_DAYS_MS);
+  await prisma.propertySyncWatermark.deleteMany({
+    where: { lastSyncAt: { lt: sevenDaysAgo } },
+  });
+
+  return stats;
+}
+
+/**
+ * Reconcile a single HubSpot Property record against the local cache:
+ *   1. Find the cache row (create if missing, update if present).
+ *   2. Refresh associations (contacts / deals / tickets) via add-only reconcile.
+ *   3. Recompute rollups.
+ *   4. Stamp `lastReconciledAt`.
+ *
+ * Returns `true` if any of the watched drift fields changed on an existing
+ * cache row (triggers the `drifted` counter). New cache rows are not counted
+ * as drift — they're simple first-sight creates.
+ */
+async function reconcileSingleProperty(record: PropertyRecord): Promise<boolean> {
+  const props = record.properties;
+  const existing = await prisma.hubSpotPropertyCache.findUnique({
+    where: { hubspotObjectId: record.id },
+  });
+
+  // Watched fields for drift detection — a small stable set we expect HubSpot
+  // to be the source of truth for. The full column list gets overwritten
+  // regardless; we only count the flip.
+  const nextStreet = props.street_address ?? null;
+  const nextCity = props.city ?? null;
+  const nextState = props.state ?? null;
+  const nextZip = props.zip ?? null;
+  const nextPlaceId = props.google_place_id || null;
+
+  let cacheId: string;
+  let drifted = false;
+
+  if (!existing) {
+    // Create minimally from HubSpot data — no geocode. `addressHash` is
+    // required + unique, so derive it from the HubSpot-supplied address.
+    // Several cache columns are non-null in the schema (fullAddress,
+    // streetAddress, city/state/zip, latitude/longitude, geocodedAt) — fall
+    // back to safe defaults when HubSpot has blanks rather than throw.
+    const hash = addressHash({
+      street: nextStreet ?? "",
+      unit: props.unit_number ?? null,
+      city: nextCity ?? "",
+      state: nextState ?? "",
+      zip: nextZip ?? "",
+    });
+    const created = await prisma.hubSpotPropertyCache.create({
+      data: {
+        hubspotObjectId: record.id,
+        googlePlaceId: nextPlaceId,
+        addressHash: hash,
+        normalizedAddress: props.normalized_address ?? "",
+        fullAddress: props.full_address ?? "",
+        streetAddress: nextStreet ?? "",
+        unitNumber: props.unit_number || null,
+        city: nextCity ?? "",
+        state: nextState ?? "",
+        zip: nextZip ?? "",
+        county: props.county || null,
+        latitude: props.latitude ? Number(props.latitude) : 0,
+        longitude: props.longitude ? Number(props.longitude) : 0,
+        ahjName: props.ahj_name || null,
+        utilityName: props.utility_name || null,
+        pbLocation: props.pb_location || null,
+        geocodedAt: new Date(),
+        lastReconciledAt: new Date(),
+      },
+    });
+    cacheId = created.id;
+  } else {
+    drifted =
+      existing.streetAddress !== nextStreet ||
+      existing.city !== nextCity ||
+      existing.state !== nextState ||
+      existing.zip !== nextZip ||
+      existing.googlePlaceId !== nextPlaceId;
+
+    await prisma.hubSpotPropertyCache.update({
+      where: { id: existing.id },
+      data: {
+        googlePlaceId: nextPlaceId,
+        normalizedAddress: props.normalized_address ?? existing.normalizedAddress,
+        fullAddress: props.full_address ?? existing.fullAddress,
+        streetAddress: nextStreet ?? existing.streetAddress,
+        unitNumber: props.unit_number || null,
+        city: nextCity ?? existing.city,
+        state: nextState ?? existing.state,
+        zip: nextZip ?? existing.zip,
+        county: props.county || null,
+        latitude: props.latitude ? Number(props.latitude) : existing.latitude,
+        longitude: props.longitude ? Number(props.longitude) : existing.longitude,
+        ahjName: props.ahj_name || existing.ahjName,
+        utilityName: props.utility_name || existing.utilityName,
+        pbLocation: props.pb_location || existing.pbLocation,
+        lastReconciledAt: new Date(),
+      },
+    });
+    cacheId = existing.id;
+  }
+
+  // Refresh associations — add-only reconcile for v1 (documented deviation).
+  // We upsert missing link rows; we don't delete stale ones. HubSpot is the
+  // source of truth for add/remove — aggressive deletion risks racing with
+  // in-flight webhooks. A follow-up can add deletion once we're confident.
+  await refreshAssociationLinks(record.id, cacheId);
+
+  // Recompute denormalized rollups from the freshly reconciled links.
+  await computePropertyRollups(cacheId);
+
+  return drifted;
+}
+
+/**
+ * Add-only association refresh: fetch current contacts/deals/tickets for a
+ * Property from HubSpot and upsert each as a link row. Does not remove stale
+ * link rows in v1 (see `reconcileSingleProperty` comment).
+ */
+async function refreshAssociationLinks(
+  hubspotObjectId: string,
+  propertyCacheId: string,
+): Promise<void> {
+  const [contactIds, dealIds, ticketIds] = await Promise.all([
+    fetchAssociatedIdsFromProperty(hubspotObjectId, "contacts"),
+    fetchAssociatedIdsFromProperty(hubspotObjectId, "deals"),
+    fetchAssociatedIdsFromProperty(hubspotObjectId, "tickets"),
+  ]);
+
+  // Contacts: labels come from HubSpot, but the nightly reconcile API doesn't
+  // surface labels cheaply — default to "Current Owner" for any link HubSpot
+  // reports that we don't already have. (The webhook path sets the correct
+  // label on new associations; this path only patches gaps.)
+  for (const contactId of contactIds) {
+    await prisma.propertyContactLink.upsert({
+      where: {
+        propertyId_contactId_label: {
+          propertyId: propertyCacheId,
+          contactId,
+          label: "Current Owner",
+        },
+      },
+      create: {
+        propertyId: propertyCacheId,
+        contactId,
+        label: "Current Owner",
+      },
+      update: {},
+    });
+  }
+
+  for (const dealId of dealIds) {
+    await prisma.propertyDealLink.upsert({
+      where: { propertyId_dealId: { propertyId: propertyCacheId, dealId } },
+      create: { propertyId: propertyCacheId, dealId },
+      update: {},
+    });
+  }
+
+  for (const ticketId of ticketIds) {
+    await prisma.propertyTicketLink.upsert({
+      where: { propertyId_ticketId: { propertyId: propertyCacheId, ticketId } },
+      create: { propertyId: propertyCacheId, ticketId },
+      update: {},
+    });
+  }
 }
 
 /** Implemented in Task 3.2. */
