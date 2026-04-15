@@ -709,6 +709,26 @@ export async function onDealOrTicketCreated(
         const match = candidates.find((c) => c.googlePlaceId === placeId);
         if (match) chosen = { id: match.id, hubspotObjectId: match.hubspotObjectId };
       }
+      // Fallback: rural / new-construction addresses geocode successfully
+      // but without a placeId. Match by addressHash instead — computed from
+      // the same normalized parts we'd use on any upsert.
+      //
+      // Scope: unitless only. Deal/ticket HubSpot properties don't expose
+      // `unit_number`, so any candidate whose addressHash was computed with
+      // a non-null unit will miss. That's an acceptable v1 tradeoff; proper
+      // unit-aware matching needs richer source data. A miss here still
+      // defers (we'd rather wait for the next webhook cycle than guess).
+      if (!chosen && geo && !placeId) {
+        const hash = addressHash({
+          street: geo.streetAddress ?? (street as string),
+          unit: null,
+          city: geo.city ?? (city as string),
+          state: geo.state ?? (state as string),
+          zip: geo.zip ?? (zip as string),
+        });
+        const match = candidates.find((c) => c.addressHash === hash);
+        if (match) chosen = { id: match.id, hubspotObjectId: match.hubspotObjectId };
+      }
     }
     if (!chosen) {
       return { status: "deferred", reason: "ambiguous properties, no address match" };

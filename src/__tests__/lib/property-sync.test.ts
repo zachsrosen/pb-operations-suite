@@ -842,6 +842,63 @@ describe("onDealOrTicketCreated", () => {
     expect(outcome.reason).toMatch(/no properties/i);
   });
 
+  it("falls back to addressHash match when geocode returns no placeId (F3, unitless)", async () => {
+    // F3: rural / new-construction addresses geocode without a placeId.
+    // Before this fix, the ambiguous-Properties branch deferred those as
+    // "no address match" even when one of the candidate cache rows had
+    // the exact same normalized address. The fallback computes the hash
+    // from the geocoded parts and matches by addressHash.
+    //
+    // Scope: unitless addresses only. Deal/ticket HubSpot properties
+    // don't expose unit_number, so for any property whose addressHash
+    // was computed with a non-null unit, the fallback will miss. That's
+    // an acceptable tradeoff for v1 — unit-bearing cases need richer
+    // source data than HubSpot currently surfaces.
+    const { addressHash } = await import("@/lib/address-hash");
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchDealById, fetchPrimaryContactId } = jest.requireMock("@/lib/hubspot");
+    const { geocodeAddress } = jest.requireMock("@/lib/geocode");
+    const { associateProperty } = jest.requireMock("@/lib/hubspot-property");
+
+    const matchingHash = addressHash({
+      street: "rural rd",
+      unit: null,
+      city: "nowhere",
+      state: "MT",
+      zip: "59001",
+    });
+
+    fetchDealById.mockResolvedValue({
+      id: "d1",
+      properties: { address: "rural rd", city: "nowhere", state: "MT", zip: "59001" },
+    });
+    fetchPrimaryContactId.mockResolvedValue("c1");
+    prisma.propertyContactLink.findMany.mockResolvedValue([
+      { propertyId: "cache-1", contactId: "c1", label: "Current Owner" },
+      { propertyId: "cache-2", contactId: "c1", label: "Current Owner" },
+    ]);
+    prisma.hubSpotPropertyCache.findMany.mockResolvedValue([
+      { id: "cache-1", hubspotObjectId: "prop-hs-1", googlePlaceId: null, addressHash: "other-hash" },
+      { id: "cache-2", hubspotObjectId: "prop-hs-2", googlePlaceId: null, addressHash: matchingHash },
+    ]);
+    // Geocode succeeds but returns no placeId — placeId-based match is
+    // impossible, addressHash is the only viable dedup signal.
+    geocodeAddress.mockResolvedValue({
+      placeId: null,
+      streetAddress: "rural rd",
+      city: "nowhere",
+      state: "MT",
+      zip: "59001",
+    });
+    primeEmptyRollup("cache-2", "prop-hs-2");
+
+    const outcome = await onDealOrTicketCreated("deal", "d1");
+
+    expect(associateProperty).toHaveBeenCalledWith("prop-hs-2", "deals", "d1");
+    expect(outcome.status).toBe("associated");
+    expect(outcome.propertyCacheId).toBe("cache-2");
+  });
+
   it("ticket variant with one Property associates with 'tickets' scope", async () => {
     const { prisma } = jest.requireMock("@/lib/db");
     const { fetchTicketById, fetchPrimaryContactIdForTicket } = jest.requireMock("@/lib/hubspot");
