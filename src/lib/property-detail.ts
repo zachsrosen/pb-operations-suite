@@ -61,12 +61,14 @@ export interface PropertyDetail {
   equipmentSummary: EquipmentSummary;
 }
 
-const EMPTY_SUMMARY: EquipmentSummary = {
-  modules: { count: 0, totalWattage: 0 },
-  inverters: { count: 0 },
-  batteries: { count: 0, totalKwh: 0 },
-  evChargers: { count: 0 },
-};
+function createEmptySummary(): EquipmentSummary {
+  return {
+    modules: { count: 0, totalWattage: 0 },
+    inverters: { count: 0 },
+    batteries: { count: 0, totalKwh: 0 },
+    evChargers: { count: 0 },
+  };
+}
 
 /**
  * Aggregate equipment counts for a set of deals.
@@ -80,10 +82,10 @@ const EMPTY_SUMMARY: EquipmentSummary = {
 export async function computeEquipmentSummary(
   dealIds: string[],
 ): Promise<EquipmentSummary> {
-  if (dealIds.length === 0) return { ...EMPTY_SUMMARY };
+  if (dealIds.length === 0) return createEmptySummary();
 
   const lineItems = await fetchLineItemsForDeals(dealIds);
-  if (lineItems.length === 0) return { ...EMPTY_SUMMARY };
+  if (lineItems.length === 0) return createEmptySummary();
 
   const productIds = Array.from(
     new Set(
@@ -92,7 +94,7 @@ export async function computeEquipmentSummary(
         .filter((id): id is string => !!id && id.length > 0),
     ),
   );
-  if (productIds.length === 0) return { ...EMPTY_SUMMARY };
+  if (productIds.length === 0) return createEmptySummary();
 
   const products = await prisma.internalProduct.findMany({
     where: { hubspotProductId: { in: productIds } },
@@ -113,8 +115,10 @@ export async function computeEquipmentSummary(
     }
   >();
   for (const p of products) {
-    if (!p.hubspotProductId) continue;
-    byHubspotId.set(p.hubspotProductId, {
+    // `hubspotProductId` is nullable on the model, but the `where` clause
+    // above filters by `{ in: productIds }` where productIds are non-empty
+    // strings, so every row here has a string id. Assert for the type.
+    byHubspotId.set(p.hubspotProductId as string, {
       category: p.category,
       wattage: p.moduleSpec?.wattage ?? null,
       capacityKwh: p.batterySpec?.capacityKwh ?? null,

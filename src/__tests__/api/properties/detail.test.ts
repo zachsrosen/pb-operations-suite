@@ -251,4 +251,112 @@ describe("GET /api/properties/[id]", () => {
       }),
     );
   });
+
+  it("returns 200 with zeroed equipment when HubSpot line-item fetch fails", async () => {
+    mockGetUserByEmail.mockResolvedValue({ id: "u1", role: "ADMIN" });
+
+    const createdAt = new Date("2025-01-01T00:00:00.000Z");
+    const linkAt = new Date("2026-02-01T12:00:00.000Z");
+
+    mockPropertyFindUnique.mockResolvedValue({
+      id: "prop-cuid-2",
+      hubspotObjectId: "456",
+      fullAddress: "456 Side St, Denver, CO 80203",
+      latitude: 39.7,
+      longitude: -104.9,
+      pbLocation: "DTC",
+      ahjName: "Denver",
+      utilityName: "Xcel",
+
+      firstInstallDate: new Date("2024-05-01T00:00:00.000Z"),
+      mostRecentInstallDate: new Date("2025-12-01T00:00:00.000Z"),
+      systemSizeKwDc: 8.4,
+      hasBattery: true,
+      hasEvCharger: false,
+      openTicketsCount: 1,
+      lastServiceDate: new Date("2025-11-15T00:00:00.000Z"),
+      earliestWarrantyExpiry: null,
+
+      createdAt,
+
+      contactLinks: [
+        {
+          contactId: "c-newer",
+          label: "Current Owner",
+          associatedAt: linkAt,
+        },
+      ],
+      dealLinks: [{ dealId: "d1", associatedAt: new Date() }],
+      ticketLinks: [{ ticketId: "t1", associatedAt: new Date() }],
+    });
+
+    // Simulate a HubSpot outage — the route's inner catch should log and zero.
+    mockFetchLineItemsForDeals.mockRejectedValue(new Error("HubSpot 503"));
+    const errSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    const res = await callGet("456");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    // Cached rollup passthroughs still populated.
+    expect(body.systemSizeKwDc).toBe(8.4);
+    expect(body.hasBattery).toBe(true);
+    expect(body.hasEvCharger).toBe(false);
+    expect(body.openTicketsCount).toBe(1);
+
+    // Equipment summary zeroed.
+    expect(body.equipmentSummary).toEqual({
+      modules: { count: 0, totalWattage: 0 },
+      inverters: { count: 0 },
+      batteries: { count: 0, totalKwh: 0 },
+      evChargers: { count: 0 },
+    });
+
+    errSpy.mockRestore();
+  });
+
+  it("defaults ownershipLabel + associatedAt when property has no contact links", async () => {
+    mockGetUserByEmail.mockResolvedValue({ id: "u1", role: "ADMIN" });
+
+    const createdAt = new Date("2025-03-15T08:30:00.000Z");
+
+    mockPropertyFindUnique.mockResolvedValue({
+      id: "prop-cuid-3",
+      hubspotObjectId: "789",
+      fullAddress: "789 Lonely Ln, Denver, CO 80204",
+      latitude: 39.71,
+      longitude: -104.98,
+      pbLocation: "DTC",
+      ahjName: null,
+      utilityName: null,
+
+      firstInstallDate: null,
+      mostRecentInstallDate: null,
+      systemSizeKwDc: null,
+      hasBattery: false,
+      hasEvCharger: false,
+      openTicketsCount: 0,
+      lastServiceDate: null,
+      earliestWarrantyExpiry: null,
+
+      createdAt,
+
+      contactLinks: [],
+      dealLinks: [],
+      ticketLinks: [],
+    });
+
+    const res = await callGet("789");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    expect(body.ownershipLabel).toBe("Current Owner");
+    expect(new Date(body.associatedAt).toISOString()).toBe(createdAt.toISOString());
+    expect(body.contactIds).toEqual([]);
+    expect(body.dealIds).toEqual([]);
+    expect(body.ticketIds).toEqual([]);
+
+    // No deals → computeEquipmentSummary short-circuits; never calls HubSpot.
+    expect(mockFetchLineItemsForDeals).not.toHaveBeenCalled();
+  });
 });
