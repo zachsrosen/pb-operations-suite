@@ -81,6 +81,13 @@ const bool = (name: string, label: string, groupName: string, description?: stri
   type: "bool",
   fieldType: "booleancheckbox",
   groupName,
+  // HubSpot requires boolean properties to declare exactly two options with
+  // values 'true' and 'false'. Without this the schema create call 400s with
+  // "Boolean properties must have exactly two options".
+  options: [
+    { label: "Yes", value: "true", displayOrder: 0 },
+    { label: "No", value: "false", displayOrder: 1 },
+  ],
   ...(description ? { description } : {}),
 });
 
@@ -211,6 +218,15 @@ function envKey(label: string): string {
   return label.toUpperCase().replace(/\s+/g, "_");
 }
 
+// HubSpot association-definition `name` values are unique PORTAL-WIDE, not per
+// (fromTypeId, toTypeId) pair. Bare names like "OWNER" / "TENANT" already
+// exist in portal 21710069 from other custom objects, so we namespace ours.
+// Env var keys stay unprefixed (HUBSPOT_PROPERTY_CONTACT_ASSOC_TENANT, etc.)
+// to match the runbook and integration guide.
+function hubspotAssocName(label: string): string {
+  return `PROPERTY_${envKey(label)}`;
+}
+
 // ---------------------------------------------------------------------------
 // Helper: ensure a single association label exists, creating it if absent.
 //
@@ -229,6 +245,7 @@ async function ensureLabel(
   failures: string[],
 ): Promise<void> {
   const key = envKey(label);
+  const name = hubspotAssocName(label);
 
   // Check whether this label already exists.
   try {
@@ -240,7 +257,7 @@ async function ensureLabel(
       .then((r) => r.json());
     const results: Array<{ typeId?: number; label?: string; name?: string }> =
       existing?.results ?? [];
-    const found = results.find((r) => r.label === label || r.name === key);
+    const found = results.find((r) => r.label === label || r.name === name);
     if (found && typeof found.typeId === "number") {
       console.log(`Skipped existing label: ${label}`);
       labelIds[key] = found.typeId;
@@ -260,7 +277,7 @@ async function ensureLabel(
         path: `/crm/v4/associations/${propertyTypeId}/${toTypeId}/labels`,
         body: {
           label,
-          name: key,
+          name,
           category: "USER_DEFINED",
         },
       })
