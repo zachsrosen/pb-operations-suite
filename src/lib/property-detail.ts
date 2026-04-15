@@ -193,6 +193,64 @@ export function normalizeOwnershipLabel(raw: string | null | undefined): Ownersh
 }
 
 /**
+ * Ownership-label precedence for dedup. When a single contact is linked to
+ * the same property under multiple labels (Current Owner + Authorized
+ * Contact, etc.), we surface the most active role. Active > historical.
+ *
+ * Order: Current Owner > Property Manager > Tenant > Authorized Contact >
+ * Previous Owner. Unknown/legacy labels are treated as lowest precedence.
+ */
+const LABEL_PRECEDENCE: readonly OwnershipLabel[] = [
+  "Current Owner",
+  "Property Manager",
+  "Tenant",
+  "Authorized Contact",
+  "Previous Owner",
+];
+
+function labelRank(label: string): number {
+  const idx = (LABEL_PRECEDENCE as readonly string[]).indexOf(label);
+  // Unknown labels rank lower than every known label.
+  return idx === -1 ? LABEL_PRECEDENCE.length : idx;
+}
+
+/**
+ * Dedupe a list of contact↔property links down to one row per propertyId.
+ *
+ * A contact can be linked to the same property under multiple labels
+ * (Current Owner + Authorized Contact, etc.). Consumers that render one
+ * card per property need a single representative link — we pick the
+ * highest-precedence label, breaking ties by most-recent `associatedAt`.
+ *
+ * Shape-polymorphic on purpose: works with any row that carries
+ * `propertyId`, `label`, and `associatedAt`. Preserves the chosen row
+ * verbatim so callers can still read fields like `property` or `contactId`.
+ */
+export function dedupeContactLinksByProperty<
+  T extends { propertyId: string; label: string; associatedAt: Date },
+>(links: readonly T[]): T[] {
+  const byProperty = new Map<string, T>();
+  for (const link of links) {
+    const current = byProperty.get(link.propertyId);
+    if (!current) {
+      byProperty.set(link.propertyId, link);
+      continue;
+    }
+    const currentRank = labelRank(current.label);
+    const newRank = labelRank(link.label);
+    if (newRank < currentRank) {
+      byProperty.set(link.propertyId, link);
+    } else if (newRank === currentRank) {
+      // Same precedence tier — keep the most-recently-associated row.
+      if (link.associatedAt.getTime() > current.associatedAt.getTime()) {
+        byProperty.set(link.propertyId, link);
+      }
+    }
+  }
+  return Array.from(byProperty.values());
+}
+
+/**
  * Cache row with the three link relations eagerly included. This is the shape
  * required to build a PropertyDetail — both the `[id]` detail endpoint (5.1)
  * and the `by-contact` endpoint (5.3) pass the same include clause into

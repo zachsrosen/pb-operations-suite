@@ -6,6 +6,7 @@ import { canAccessRoute } from "@/lib/role-permissions";
 import {
   computeEquipmentSummary,
   createEmptySummary,
+  dedupeContactLinksByProperty,
   mapCacheRowToPropertyDetail,
   normalizeOwnershipLabel,
   type PropertyDetail,
@@ -45,7 +46,7 @@ export async function GET(
 
     const { contactId } = await params;
 
-    const links = await prisma.propertyContactLink.findMany({
+    const rawLinks = await prisma.propertyContactLink.findMany({
       where: { contactId },
       include: {
         property: {
@@ -58,6 +59,11 @@ export async function GET(
       },
       orderBy: { associatedAt: "desc" },
     });
+
+    // A contact can be linked to the same property under multiple labels
+    // (Current Owner + Authorized Contact, etc.). Render one card per
+    // property with the highest-precedence label.
+    const links = dedupeContactLinksByProperty(rawLinks);
 
     if (links.length === 0) {
       return NextResponse.json({ properties: [] });
