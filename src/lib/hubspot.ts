@@ -3048,3 +3048,130 @@ export function filterProjectsForContext(
       return projects;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Cursor-paged search helpers (Task 4.2)
+// ---------------------------------------------------------------------------
+//
+// Thin wrappers around HubSpot search that return a single page + opaque
+// `after` cursor, suitable for resumable streaming by the backfill script.
+// `searchWithRetry` above is deals-only, so for contacts/tickets we inline
+// the same 429 retry pattern against the typed client search APIs.
+
+export interface HubSpotSearchPage<T> {
+  results: T[];
+  paging?: { next?: { after: string } };
+}
+
+async function retryingSearch<T>(fn: () => Promise<T>, category: string, maxRetries = 5): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: unknown) {
+      const isRateLimit =
+        error instanceof Error &&
+        (error.message.includes("429") || error.message.includes("rate") || error.message.includes("secondly"));
+      const statusCode = (error as { code?: number })?.code;
+
+      if ((isRateLimit || statusCode === 429) && attempt < maxRetries - 1) {
+        const base = Math.pow(2, attempt) * 1100;
+        const jitter = Math.random() * 400;
+        const delay = Math.round(base + jitter);
+        Sentry.addBreadcrumb({
+          category,
+          message: `Rate limited, retry ${attempt + 1}/${maxRetries}`,
+          level: "warning",
+          data: { delay, attempt },
+        });
+        await sleep(delay);
+        continue;
+      }
+      Sentry.addBreadcrumb({
+        category,
+        message: "Search failed after retries",
+        level: "error",
+        data: { attempt, statusCode },
+      });
+      throw error;
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
+
+/**
+ * One page of contacts that have at least one associated deal, sorted by
+ * HubSpot's default ordering. Returns the opaque `after` cursor for the next
+ * page (if any). `after: null` on the first call; pass `page.paging?.next?.after`
+ * back in for subsequent pages.
+ */
+export async function searchHubSpotContactsWithDeals(
+  after: string | null
+): Promise<HubSpotSearchPage<{ id: string; properties: Record<string, string | null> }>> {
+  const body = {
+    filterGroups: [
+      {
+        filters: [{ propertyName: "num_associated_deals", operator: "GT" as const, value: "0" }],
+      },
+    ],
+    properties: ["firstname", "lastname", "email", "address", "address2", "city", "state", "zip", "country"],
+    limit: 100,
+    // HubSpot rejects `after: null` — must be undefined on the first page.
+    after: after ?? undefined,
+  } as unknown as Parameters<typeof hubspotClient.crm.contacts.searchApi.doSearch>[0];
+
+  const res = await retryingSearch(
+    () => hubspotClient.crm.contacts.searchApi.doSearch(body),
+    "hubspot-contacts-paging"
+  );
+  return {
+    results: (res.results ?? []) as Array<{ id: string; properties: Record<string, string | null> }>,
+    paging: res.paging,
+  };
+}
+
+/**
+ * One page of deals (all pipelines), sorted by `createdate` ascending for
+ * deterministic streaming across resumable runs.
+ */
+export async function searchAllHubSpotDeals(
+  after: string | null
+): Promise<HubSpotSearchPage<{ id: string; properties: Record<string, string | null> }>> {
+  const body = {
+    filterGroups: [],
+    properties: ["dealname", "pipeline", "dealstage", "createdate"],
+    sorts: [{ propertyName: "createdate", direction: "ASCENDING" }],
+    limit: 100,
+    after: after ?? undefined,
+  } as unknown as Parameters<typeof hubspotClient.crm.deals.searchApi.doSearch>[0];
+
+  const res = await searchWithRetry(body);
+  return {
+    results: (res.results ?? []) as Array<{ id: string; properties: Record<string, string | null> }>,
+    paging: res.paging,
+  };
+}
+
+/**
+ * One page of tickets (all pipelines), sorted by `createdate` ascending for
+ * deterministic streaming across resumable runs.
+ */
+export async function searchAllHubSpotTickets(
+  after: string | null
+): Promise<HubSpotSearchPage<{ id: string; properties: Record<string, string | null> }>> {
+  const body = {
+    filterGroups: [],
+    properties: ["subject", "hs_pipeline", "hs_pipeline_stage", "createdate"],
+    sorts: [{ propertyName: "createdate", direction: "ASCENDING" }],
+    limit: 100,
+    after: after ?? undefined,
+  } as unknown as Parameters<typeof hubspotClient.crm.tickets.searchApi.doSearch>[0];
+
+  const res = await retryingSearch(
+    () => hubspotClient.crm.tickets.searchApi.doSearch(body),
+    "hubspot-tickets-paging"
+  );
+  return {
+    results: (res.results ?? []) as Array<{ id: string; properties: Record<string, string | null> }>,
+    paging: res.paging,
+  };
+}
