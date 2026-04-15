@@ -12,6 +12,7 @@
 
 import { Client } from "@hubspot/api-client";
 import { AssociationSpecAssociationCategoryEnum } from "@hubspot/api-client/lib/codegen/crm/associations/v4";
+import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/objects/models/Filter";
 import { withRetry } from "@/lib/hubspot-custom-objects";
 import { prisma } from "@/lib/db";
 
@@ -387,7 +388,7 @@ export async function searchPropertyByPlaceId(
           filters: [
             {
               propertyName: "google_place_id",
-              operator: "EQ" as never,
+              operator: FilterOperatorEnum.Eq,
               value: placeId,
             },
           ],
