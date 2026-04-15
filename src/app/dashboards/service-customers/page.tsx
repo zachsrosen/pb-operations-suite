@@ -97,13 +97,17 @@ function formatRelativeDate(dateStr: string | null): string | null {
 // Strip HTML + truncate engagement body for preview.
 function previewText(raw: string | null, max = 180): string {
   if (!raw) return "";
+  // Single-pass entity decode: avoids double-unescaping (e.g. `&amp;lt;` → `<`).
+  const entities: Record<string, string> = {
+    "&nbsp;": " ",
+    "&lt;": "<",
+    "&gt;": ">",
+    "&quot;": '"',
+    "&amp;": "&",
+  };
   const text = raw
     .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
+    .replace(/&(nbsp|lt|gt|quot|amp);/g, (m) => entities[m] ?? m)
     .replace(/\s+/g, " ")
     .trim();
   return text.length > max ? `${text.slice(0, max).trim()}\u2026` : text;
