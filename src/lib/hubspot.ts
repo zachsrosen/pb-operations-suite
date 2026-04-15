@@ -1519,7 +1519,7 @@ export async function fetchContactById(
     };
     return { id: data.id, properties: data.properties ?? {} };
   } catch (err) {
-    console.warn(`[HubSpot] fetchContactById ${contactId} failed:`, err);
+    console.warn("[HubSpot] fetchContactById %s failed:", contactId, err);
     return null;
   }
 }
@@ -1558,7 +1558,7 @@ export async function fetchDealById(
     };
     return { id: data.id, properties: data.properties ?? {} };
   } catch (err) {
-    console.warn(`[HubSpot] fetchDealById ${dealId} failed:`, err);
+    console.warn("[HubSpot] fetchDealById %s failed:", dealId, err);
     return null;
   }
 }
@@ -1596,7 +1596,7 @@ export async function fetchTicketById(
     };
     return { id: data.id, properties: data.properties ?? {} };
   } catch (err) {
-    console.warn(`[HubSpot] fetchTicketById ${ticketId} failed:`, err);
+    console.warn("[HubSpot] fetchTicketById %s failed:", ticketId, err);
     return null;
   }
 }
@@ -1640,7 +1640,7 @@ export async function fetchPrimaryContactIdForTicket(ticketId: string): Promise<
     if (results.length === 1) return String(results[0].toObjectId);
     return null;
   } catch (e) {
-    console.warn(`[HubSpot] fetchPrimaryContactIdForTicket ${ticketId} failed:`, e);
+    console.warn("[HubSpot] fetchPrimaryContactIdForTicket %s failed:", ticketId, e);
     return null;
   }
 }
