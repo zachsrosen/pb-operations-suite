@@ -25,6 +25,8 @@ jest.mock("@/lib/db", () => ({
 jest.mock("@/lib/geocode", () => ({ geocodeAddress: jest.fn() }));
 jest.mock("@/lib/hubspot-property", () => ({
   searchPropertyByPlaceId: jest.fn(),
+  searchPropertyByNormalizedAddress: jest.fn(),
+  archiveProperty: jest.fn(),
   createProperty: jest.fn(),
   associateProperty: jest.fn(),
   fetchPropertyById: jest.fn(),
@@ -177,6 +179,201 @@ describe("onContactAddressChange", () => {
     );
     expect(outcome.status).toBe("associated");
     expect(outcome.propertyCacheId).toBe("cache-1");
+  });
+
+  describe("duplicate HubSpot object guard (F1)", () => {
+    function primeContact() {
+      const { prisma } = jest.requireMock("@/lib/db");
+      const { fetchContactById } = jest.requireMock("@/lib/hubspot");
+      const { geocodeAddress } = jest.requireMock("@/lib/geocode");
+      const { resolveAhjForProperty, resolveUtilityForProperty } = jest.requireMock(
+        "@/lib/resolve-geo-links",
+      );
+      const {
+        searchPropertyByPlaceId,
+        searchPropertyByNormalizedAddress,
+      } = jest.requireMock("@/lib/hubspot-property");
+      prisma.propertySyncWatermark.findUnique.mockResolvedValue(null);
+      fetchContactById.mockResolvedValue({
+        id: "c1",
+        properties: { address: "1 A", city: "B", state: "CO", zip: "80301" },
+      });
+      geocodeAddress.mockResolvedValue({
+        placeId: "p1",
+        formattedAddress: "1 A, B CO 80301",
+        latitude: 40,
+        longitude: -105,
+        streetAddress: "1 A",
+        streetNumber: "1",
+        route: "A",
+        city: "B",
+        state: "CO",
+        zip: "80301",
+        county: "Boulder",
+      });
+      prisma.hubSpotPropertyCache.findUnique.mockResolvedValue(null);
+      resolveAhjForProperty.mockResolvedValue(null);
+      resolveUtilityForProperty.mockResolvedValue(null);
+      // Reset both dedup searches to null — jest.clearAllMocks() does NOT
+      // clear mockResolvedValue implementations, so prior tests' values
+      // would otherwise leak into later tests and cause false adoptions.
+      searchPropertyByPlaceId.mockResolvedValue(null);
+      searchPropertyByNormalizedAddress.mockResolvedValue(null);
+    }
+
+    it("adopts an existing HubSpot Property found by google_place_id instead of creating a duplicate", async () => {
+      const { prisma } = jest.requireMock("@/lib/db");
+      const { createProperty, searchPropertyByPlaceId } = jest.requireMock(
+        "@/lib/hubspot-property",
+      );
+      primeContact();
+      searchPropertyByPlaceId.mockResolvedValue({ id: "prop-hs-pre-existing", properties: {} });
+      prisma.hubSpotPropertyCache.create.mockResolvedValue({ id: "cache-1" });
+
+      const outcome = await onContactAddressChange("c1");
+
+      expect(createProperty).not.toHaveBeenCalled();
+      expect(prisma.hubSpotPropertyCache.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ hubspotObjectId: "prop-hs-pre-existing" }),
+        }),
+      );
+      // "created" status requires a fresh HubSpot object; adopting is "associated".
+      expect(outcome.status).toBe("associated");
+    });
+
+    it("falls back to normalized_address search when place_id is absent and adopts the match", async () => {
+      const { prisma } = jest.requireMock("@/lib/db");
+      const { fetchContactById } = jest.requireMock("@/lib/hubspot");
+      const { geocodeAddress } = jest.requireMock("@/lib/geocode");
+      const { resolveAhjForProperty, resolveUtilityForProperty } = jest.requireMock(
+        "@/lib/resolve-geo-links",
+      );
+      const {
+        createProperty,
+        searchPropertyByPlaceId,
+        searchPropertyByNormalizedAddress,
+      } = jest.requireMock("@/lib/hubspot-property");
+      prisma.propertySyncWatermark.findUnique.mockResolvedValue(null);
+      fetchContactById.mockResolvedValue({
+        id: "c1",
+        properties: { address: "rural rd", city: "nowhere", state: "MT", zip: "59001" },
+      });
+      geocodeAddress.mockResolvedValue({
+        placeId: null,
+        formattedAddress: "rural rd, nowhere MT 59001",
+        latitude: 46,
+        longitude: -110,
+        streetAddress: "rural rd",
+        streetNumber: "",
+        route: "rural rd",
+        city: "nowhere",
+        state: "MT",
+        zip: "59001",
+        county: null,
+      });
+      prisma.hubSpotPropertyCache.findUnique.mockResolvedValue(null);
+      resolveAhjForProperty.mockResolvedValue(null);
+      resolveUtilityForProperty.mockResolvedValue(null);
+      searchPropertyByPlaceId.mockResolvedValue(null);
+      searchPropertyByNormalizedAddress.mockResolvedValue({
+        id: "prop-hs-by-addr",
+        properties: {},
+      });
+      prisma.hubSpotPropertyCache.create.mockResolvedValue({ id: "cache-1" });
+
+      const outcome = await onContactAddressChange("c1");
+
+      expect(searchPropertyByPlaceId).not.toHaveBeenCalled();
+      expect(searchPropertyByNormalizedAddress).toHaveBeenCalled();
+      expect(createProperty).not.toHaveBeenCalled();
+      expect(prisma.hubSpotPropertyCache.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ hubspotObjectId: "prop-hs-by-addr" }),
+        }),
+      );
+      expect(outcome.status).toBe("associated");
+    });
+
+    it("on Prisma P2002 race: returns winner and archives the orphan HubSpot object we just created", async () => {
+      const { prisma } = jest.requireMock("@/lib/db");
+      const {
+        createProperty,
+        searchPropertyByPlaceId,
+        archiveProperty,
+      } = jest.requireMock("@/lib/hubspot-property");
+      primeContact(); // default findUnique = null (pre-check cache miss)
+      searchPropertyByPlaceId.mockResolvedValue(null);
+      createProperty.mockResolvedValue({ id: "prop-hs-fresh-orphan" });
+
+      // Winner already landed a row with a DIFFERENT HubSpot id (the simultaneous
+      // caller adopted a pre-existing HubSpot object between our search and create).
+      prisma.hubSpotPropertyCache.create.mockRejectedValueOnce(
+        Object.assign(new Error("unique"), { code: "P2002" }),
+      );
+      // Call 1 = pre-check cache miss (null, inherited from primeContact default).
+      // Call 2 = P2002 recovery lookup → winner.
+      prisma.hubSpotPropertyCache.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: "cache-winner", hubspotObjectId: "prop-hs-winner" });
+
+      const outcome = await onContactAddressChange("c1");
+
+      expect(createProperty).toHaveBeenCalledTimes(1);
+      expect(archiveProperty).toHaveBeenCalledWith("prop-hs-fresh-orphan");
+      expect(outcome.status).toBe("associated");
+      expect(outcome.propertyCacheId).toBe("cache-winner");
+    });
+
+    it("on Prisma P2002 race: does NOT archive when winner references the same HubSpot id", async () => {
+      const { prisma } = jest.requireMock("@/lib/db");
+      const {
+        createProperty,
+        searchPropertyByPlaceId,
+        archiveProperty,
+      } = jest.requireMock("@/lib/hubspot-property");
+      primeContact();
+      searchPropertyByPlaceId.mockResolvedValue(null);
+      createProperty.mockResolvedValue({ id: "prop-hs-shared" });
+
+      prisma.hubSpotPropertyCache.create.mockRejectedValueOnce(
+        Object.assign(new Error("unique"), { code: "P2002" }),
+      );
+      prisma.hubSpotPropertyCache.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: "cache-winner", hubspotObjectId: "prop-hs-shared" });
+
+      await onContactAddressChange("c1");
+
+      expect(archiveProperty).not.toHaveBeenCalled();
+    });
+
+    it("on Prisma P2002 race: when archive fails, logs to Sentry and still returns winner", async () => {
+      const { prisma } = jest.requireMock("@/lib/db");
+      const Sentry = jest.requireMock("@sentry/nextjs");
+      const {
+        createProperty,
+        searchPropertyByPlaceId,
+        archiveProperty,
+      } = jest.requireMock("@/lib/hubspot-property");
+      primeContact();
+      searchPropertyByPlaceId.mockResolvedValue(null);
+      createProperty.mockResolvedValue({ id: "prop-hs-fresh-orphan" });
+      archiveProperty.mockRejectedValue(new Error("hubspot archive 500"));
+
+      prisma.hubSpotPropertyCache.create.mockRejectedValueOnce(
+        Object.assign(new Error("unique"), { code: "P2002" }),
+      );
+      prisma.hubSpotPropertyCache.findUnique
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ id: "cache-winner", hubspotObjectId: "prop-hs-winner" });
+
+      const outcome = await onContactAddressChange("c1");
+
+      expect(archiveProperty).toHaveBeenCalledWith("prop-hs-fresh-orphan");
+      expect(Sentry.captureException).toHaveBeenCalled();
+      expect(outcome.propertyCacheId).toBe("cache-winner");
+    });
   });
 });
 
