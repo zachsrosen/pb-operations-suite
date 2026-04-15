@@ -61,6 +61,28 @@ interface PriorityQueueResponse {
   lastUpdated: string;
 }
 
+interface SalesDeal {
+  id: string;
+  name: string;
+  stage: string;
+  amount: number | null;
+  ownerId: string | null;
+  ownerName: string | null;
+  closeDate: string | null;
+  lastModified: string;
+  url: string;
+}
+
+interface SalesPipelineResponse {
+  deals: SalesDeal[];
+  summary: {
+    totalDeals: number;
+    totalValue: number;
+    byOwner: Array<{ ownerId: string; ownerName: string; deals: number; value: number }>;
+  };
+  lastUpdated: string;
+}
+
 // ---------------------------------------------------------------------------
 // Tier config helpers
 // ---------------------------------------------------------------------------
@@ -110,6 +132,7 @@ const ALL_TIERS: PriorityTier[] = ["critical", "high", "medium", "low"];
 
 export default function ServiceOverviewPage() {
   const [data, setData] = useState<PriorityQueueResponse | null>(null);
+  const [salesData, setSalesData] = useState<SalesPipelineResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterLocations, setFilterLocations] = useState<string[]>([]);
@@ -141,11 +164,24 @@ export default function ServiceOverviewPage() {
     }
   }, []);
 
+  // Sales pipeline load is independent — failure here shouldn't block the queue.
+  const fetchSalesPipeline = useCallback(async () => {
+    try {
+      const res = await fetch("/api/service/sales-pipeline");
+      if (!res.ok) return;
+      const json: SalesPipelineResponse = await res.json();
+      setSalesData(json);
+    } catch (err) {
+      console.warn("[ServiceOverview] Sales pipeline fetch failed:", err);
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
     setLoading(true);
     fetchData();
-  }, [fetchData]);
+    fetchSalesPipeline();
+  }, [fetchData, fetchSalesPipeline]);
 
   // Real-time updates via SSE
   const { connected } = useSSE(fetchData, {
@@ -345,6 +381,11 @@ export default function ServiceOverviewPage() {
           color="green"
         />
       </div>
+
+      {/* Service Team Sales Pipeline */}
+      {salesData && salesData.summary.totalDeals > 0 && (
+        <SalesPipelineCard data={salesData} />
+      )}
 
       {/* Priority Queue */}
       <div className="bg-surface rounded-xl border border-t-border overflow-hidden mb-6">
@@ -557,5 +598,107 @@ export default function ServiceOverviewPage() {
       </div>
 
     </DashboardShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// SalesPipelineCard — sales-pipeline deals owned by service team
+// ---------------------------------------------------------------------------
+
+function formatCurrency(value: number): string {
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
+}
+
+function formatShortDate(dateStr: string | null): string {
+  if (!dateStr) return "\u2014";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "\u2014";
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function SalesPipelineCard({ data }: { data: SalesPipelineResponse }) {
+  const { deals, summary } = data;
+  const ownersWithDeals = summary.byOwner.filter((o) => o.deals > 0);
+
+  return (
+    <div className="bg-surface rounded-xl border border-t-border overflow-hidden mb-6">
+      <div className="p-4 border-b border-t-border">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-foreground">
+              Service Team Sales Pipeline
+              <span className="ml-2 text-sm font-normal text-muted">
+                ({summary.totalDeals} deal{summary.totalDeals !== 1 ? "s" : ""})
+              </span>
+            </h2>
+            <p className="text-xs text-muted mt-0.5">
+              Open sales-pipeline deals owned by Ted, Jake, Terrell, or Mike Wagner
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-xs text-muted uppercase tracking-wider">Total Value</div>
+            <div className="text-lg font-semibold text-cyan-400">
+              {formatCurrency(summary.totalValue)}
+            </div>
+          </div>
+        </div>
+
+        {/* Per-owner summary chips */}
+        {ownersWithDeals.length > 0 && (
+          <div className="flex flex-wrap gap-2 mt-3">
+            {ownersWithDeals.map((o) => (
+              <span
+                key={o.ownerId}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-cyan-500/10 text-xs text-cyan-300"
+              >
+                <span className="font-medium">{o.ownerName}</span>
+                <span className="opacity-70">
+                  {o.deals} · {formatCurrency(o.value)}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Deal list */}
+      <div className="divide-y divide-t-border max-h-96 overflow-y-auto">
+        {deals.map((d) => (
+          <a
+            key={d.id}
+            href={d.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-4 px-4 py-3 hover:bg-surface-2/50 transition-colors"
+          >
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-foreground truncate">{d.name}</p>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted mt-0.5">
+                <span>{d.stage}</span>
+                {d.ownerName && (
+                  <>
+                    <span className="opacity-40">·</span>
+                    <span>{d.ownerName}</span>
+                  </>
+                )}
+                {d.closeDate && (
+                  <>
+                    <span className="opacity-40">·</span>
+                    <span>Close {formatShortDate(d.closeDate)}</span>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="shrink-0 text-sm font-medium text-cyan-400">
+              {d.amount != null ? formatCurrency(d.amount) : "\u2014"}
+            </div>
+          </a>
+        ))}
+      </div>
+    </div>
   );
 }

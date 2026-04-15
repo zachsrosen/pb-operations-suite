@@ -14,6 +14,8 @@ import { getCachedZuperJobsByDealIds, prisma } from "@/lib/db";
 import { FilterOperatorEnum as ContactFilterOp } from "@hubspot/api-client/lib/codegen/crm/contacts";
 import { FilterOperatorEnum as CompanyFilterOp } from "@hubspot/api-client/lib/codegen/crm/companies";
 import { enrichServiceItems, type EnrichmentInput } from "@/lib/service-enrichment";
+import { getContactLatestEngagement } from "@/lib/hubspot-engagements";
+import type { Engagement } from "@/components/deal-detail/types";
 import { getZuperJobUrl } from "@/lib/external-links";
 import {
   computeEquipmentSummary,
@@ -43,6 +45,7 @@ export interface ContactSearchResult {
   phone: string | null;
   address: string | null;
   companyName: string | null;
+  lastContactedDate: string | null;
 }
 
 export interface SearchResult {
@@ -97,6 +100,8 @@ export interface ContactDetail {
   phone: string | null;
   address: string | null;
   companyName: string | null;
+  lastContactedDate: string | null;
+  latestEngagement: Engagement | null;
   deals: ContactDeal[];
   tickets: ContactTicket[];
   jobs: ContactJob[];
@@ -230,6 +235,7 @@ async function resolveCompanyContacts(companyIds: string[]): Promise<Map<string,
 const CONTACT_SEARCH_PROPERTIES = [
   "firstname", "lastname", "email", "phone",
   "address", "city", "state", "zip", "company",
+  "notes_last_contacted",
 ];
 
 const COMPANY_SEARCH_PROPERTIES = ["name", "address"];
@@ -289,6 +295,7 @@ export async function searchContacts(query: string): Promise<SearchResult> {
         phone: c.properties?.phone || null,
         address: formatContactAddress(c.properties),
         companyName: c.properties?.company || null,
+        lastContactedDate: c.properties?.notes_last_contacted || null,
       });
     }
   } else {
@@ -329,6 +336,7 @@ export async function searchContacts(query: string): Promise<SearchResult> {
                     address: formatContactAddress(contact.properties),
                     // Prefer company name from the matched company, fall back to contact's company property
                     companyName: company.properties?.name || contact.properties?.company || null,
+                    lastContactedDate: contact.properties?.notes_last_contacted || null,
                   });
                 }
               }
@@ -681,6 +689,15 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
     return new Date(dateB).getTime() - new Date(dateA).getTime();
   });
 
+  // 6c. Latest engagement (email / call / note / meeting) for the contact.
+  //     Non-blocking: slide-over still renders with null preview on failure.
+  let latestEngagement: Engagement | null = null;
+  try {
+    latestEngagement = await getContactLatestEngagement(contactId);
+  } catch (err) {
+    console.warn("[CustomerResolver] Latest engagement fetch failed:", err);
+  }
+
   // 7. Properties — surface all Property cache rows the contact is linked to,
   //    most-recently-associated first. Equipment summary fetched live per property.
   const properties: PropertyDetail[] = [];
@@ -731,6 +748,8 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
     phone: contactProps.phone || null,
     address: formatContactAddress(contactProps),
     companyName: resolvedCompanyName,
+    lastContactedDate: contactProps.notes_last_contacted || null,
+    latestEngagement,
     deals,
     tickets,
     jobs,

@@ -11,6 +11,7 @@ import type {
   ContactTicket as BaseContactTicket,
   ContactJob as BaseContactJob,
 } from "@/lib/customer-resolver";
+import type { Engagement } from "@/components/deal-detail/types";
 import { getZuperJobUrl } from "@/lib/external-links";
 import PropertyLink from "@/components/PropertyLink";
 import { PropertyDrawerProvider } from "@/components/property/PropertyDrawerContext";
@@ -78,6 +79,43 @@ function formatDate(dateStr: string | null): string {
     return "\u2014";
   }
 }
+
+function formatRelativeDate(dateStr: string | null): string | null {
+  if (!dateStr) return null;
+  const date = new Date(dateStr);
+  const ts = date.getTime();
+  if (Number.isNaN(ts)) return null;
+  const diffDays = Math.floor((Date.now() - ts) / 86_400_000);
+  if (diffDays < 0) return formatDate(dateStr);
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays}d ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  return formatDate(dateStr);
+}
+
+// Strip HTML + truncate engagement body for preview.
+function previewText(raw: string | null, max = 180): string {
+  if (!raw) return "";
+  const text = raw
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > max ? `${text.slice(0, max).trim()}\u2026` : text;
+}
+
+const ENGAGEMENT_TYPE_LABEL: Record<string, string> = {
+  email: "Email",
+  call: "Call",
+  note: "Note",
+  meeting: "Meeting",
+  task: "Task",
+};
 
 // Matches DEFAULT_HUBSPOT_PORTAL_ID in src/lib/external-links.ts.
 // Hardcoded because this is a client component and can't read server-side env vars.
@@ -258,6 +296,11 @@ export default function CustomerHistoryPage() {
                   {contact.companyName}
                 </p>
               )}
+              {contact.lastContactedDate && (
+                <p className="text-xs text-muted mt-1">
+                  Last contacted: {formatRelativeDate(contact.lastContactedDate) || formatDate(contact.lastContactedDate)}
+                </p>
+              )}
             </button>
           ))}
         </div>
@@ -334,6 +377,24 @@ export default function CustomerHistoryPage() {
                 </div>
               ) : detail ? (
                 <PropertyDrawerProvider>
+                  {/* Last Communication */}
+                  {detail.latestEngagement ? (
+                    <LastCommunicationCard engagement={detail.latestEngagement} />
+                  ) : detail.lastContactedDate ? (
+                    <section className="mb-2 rounded bg-surface-2 p-3">
+                      <h3 className="text-xs font-medium text-muted uppercase tracking-wider mb-1">
+                        Last Communication
+                      </h3>
+                      <p className="text-sm text-foreground">
+                        {formatRelativeDate(detail.lastContactedDate) ||
+                          formatDate(detail.lastContactedDate)}
+                      </p>
+                      <p className="text-xs text-muted">
+                        No message preview available
+                      </p>
+                    </section>
+                  ) : null}
+
                   {/* Properties Section (above Deals/Tickets/Jobs) */}
                   {UI_PROPERTY_VIEWS_ENABLED && detail.properties.length > 0 && (
                     <section className="mb-6">
@@ -551,5 +612,49 @@ export default function CustomerHistoryPage() {
         </>
       )}
     </DashboardShell>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// LastCommunicationCard
+// ---------------------------------------------------------------------------
+
+function LastCommunicationCard({ engagement }: { engagement: Engagement }) {
+  const typeLabel = ENGAGEMENT_TYPE_LABEL[engagement.type] || engagement.type;
+  const preview = previewText(engagement.body);
+  const subject = engagement.subject;
+  const when =
+    formatRelativeDate(engagement.timestamp) ||
+    formatDate(engagement.timestamp);
+  const who =
+    engagement.type === "email"
+      ? engagement.from
+      : engagement.type === "call"
+      ? engagement.from
+      : engagement.createdBy;
+
+  return (
+    <section className="mb-2 rounded bg-surface-2 p-3">
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <h3 className="text-xs font-medium text-muted uppercase tracking-wider">
+          Last Communication
+        </h3>
+        <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-xs text-cyan-300">
+          {typeLabel}
+        </span>
+      </div>
+      <p className="text-xs text-muted">
+        {when}
+        {who && ` · ${who}`}
+      </p>
+      {subject && (
+        <p className="text-sm font-medium text-foreground mt-1 truncate">
+          {subject}
+        </p>
+      )}
+      {preview && (
+        <p className="text-xs text-muted mt-1 line-clamp-3">{preview}</p>
+      )}
+    </section>
   );
 }
