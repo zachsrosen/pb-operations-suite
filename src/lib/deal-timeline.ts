@@ -5,12 +5,10 @@
 import { prisma } from "@/lib/db";
 import { zuper } from "@/lib/zuper";
 import { appCache } from "@/lib/cache";
-import { getDealEngagements } from "@/lib/hubspot-engagements";
 import { FIELD_LABELS } from "@/components/deal-detail/section-registry";
 import type {
   TimelineEvent,
   TimelinePage,
-  Engagement,
 } from "@/components/deal-detail/types";
 
 const PAGE_SIZE = 50;
@@ -439,51 +437,13 @@ async function fetchZuperNoteEvents(
     .filter((e) => !cursor || isBeforeCursor(e.timestamp, e.id, cursor));
 }
 
-function engagementToTimelineEvents(
-  engagements: Engagement[],
-  windowStart: Date | null,
-  cursor: Cursor | null,
-): TimelineEvent[] {
-  return engagements
-    // Skip app-authored HubSpot notes — already represented by internal DealNote records
-    .filter((eng) => !(eng.type === "note" && eng.body?.startsWith("<!-- pb-ops-note -->")))
-    .map((eng): TimelineEvent => {
-      const typeLabel = eng.type === "email" ? "Email"
-        : eng.type === "call" ? "Call"
-        : eng.type === "meeting" ? "Meeting"
-        : eng.type === "task" ? "Task"
-        : "HubSpot Note";
-      const titleParts: string[] = [typeLabel];
-      if (eng.type === "email" && eng.subject) titleParts.push(`— ${eng.subject}`);
-      if (eng.type === "call" && eng.disposition) titleParts.push(`— ${eng.disposition}`);
-      if (eng.type === "meeting" && eng.subject) titleParts.push(`— ${eng.subject}`);
-      if (eng.type === "task" && eng.subject) titleParts.push(`— ${eng.subject}`);
-
-      return {
-        id: eng.id,
-        type: eng.type === "note" ? "hubspot_note" : eng.type,
-        timestamp: eng.timestamp,
-        title: titleParts.join(" "),
-        detail: eng.body,
-        author: eng.from ?? eng.createdBy ?? null,
-        metadata: {
-          to: eng.to,
-          duration: eng.duration,
-          attendees: eng.attendees,
-        },
-      };
-    })
-    .filter((e) => isInWindow(e.timestamp, windowStart))
-    .filter((e) => !cursor || isBeforeCursor(e.timestamp, e.id, cursor))
-    .filter((eng) => !(eng.type === "hubspot_note" && eng.detail?.startsWith("<!-- pb-ops-note -->")));
-}
-
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch a paginated timeline for a deal, aggregating 8 sources.
+ * Fetch a paginated timeline for a deal, aggregating 7 operational sources.
+ * HubSpot engagements live in the Communications tab, not Activity.
  *
  * @param dealId      Internal Deal cuid
  * @param hubspotDealId HubSpot deal ID (numeric string)
@@ -503,8 +463,11 @@ export async function getDealTimeline(
       ? { ts: options.cursorTs, id: options.cursorId }
       : null;
 
-  // Fan-out: all 8 sources in parallel
-  const [noteEvents, syncEvents, zuperEvents, photoEvents, bomEvents, scheduleEvents, zuperNoteEvents, engagements] =
+  // Fan-out: 7 internal sources in parallel.
+  // HubSpot engagements (emails, calls, notes, meetings, tasks) are intentionally
+  // excluded — they live in the Communications tab. Activity shows operational
+  // events only: app notes, syncs, Zuper status/notes, BOM runs, schedules, photos.
+  const [noteEvents, syncEvents, zuperEvents, photoEvents, bomEvents, scheduleEvents, zuperNoteEvents] =
     await Promise.all([
       fetchNoteEvents(dealId, windowStart, cursor),
       fetchSyncEvents(dealId, windowStart, cursor),
@@ -513,10 +476,7 @@ export async function getDealTimeline(
       fetchBomEvents(hubspotDealId, windowStart, cursor),
       fetchScheduleEvents(hubspotDealId, windowStart, cursor),
       fetchZuperNoteEvents(hubspotDealId, windowStart, cursor),
-      getDealEngagements(hubspotDealId, options.all ?? false),
     ]);
-
-  const engagementEvents = engagementToTimelineEvents(engagements, windowStart, cursor);
 
   // Merge, sort by (timestamp DESC, id DESC), paginate
   const allEvents = [
@@ -527,7 +487,6 @@ export async function getDealTimeline(
     ...bomEvents,
     ...scheduleEvents,
     ...zuperNoteEvents,
-    ...engagementEvents,
   ].sort((a, b) => {
     const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     if (timeDiff !== 0) return timeDiff;
