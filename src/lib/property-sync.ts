@@ -944,41 +944,25 @@ async function reconcileSingleProperty(record: PropertyRecord): Promise<boolean>
 }
 
 /**
- * Add-only association refresh: fetch current contacts/deals/tickets for a
- * Property from HubSpot and upsert each as a link row. Does not remove stale
- * link rows in v1 (see `reconcileSingleProperty` comment).
+ * Add-only association refresh: fetch current deals/tickets for a Property
+ * from HubSpot and upsert each as a link row. Does not remove stale link
+ * rows in v1 (see `reconcileSingleProperty` comment).
+ *
+ * Contact links are intentionally NOT refreshed here. HubSpot's association
+ * pager doesn't surface labels cheaply, so this path used to default every
+ * missing link to "Current Owner" — which invented ownership state we
+ * couldn't actually observe (e.g. marking a Tenant as the Owner). The
+ * webhook path owns contact-link upserts because it has access to the
+ * real label via `HUBSPOT_PROPERTY_CONTACT_ASSOC_*` typeId → label mapping.
  */
 async function refreshAssociationLinks(
   hubspotObjectId: string,
   propertyCacheId: string,
 ): Promise<void> {
-  const [contactIds, dealIds, ticketIds] = await Promise.all([
-    fetchAssociatedIdsFromProperty(hubspotObjectId, "contacts"),
+  const [dealIds, ticketIds] = await Promise.all([
     fetchAssociatedIdsFromProperty(hubspotObjectId, "deals"),
     fetchAssociatedIdsFromProperty(hubspotObjectId, "tickets"),
   ]);
-
-  // Contacts: labels come from HubSpot, but the nightly reconcile API doesn't
-  // surface labels cheaply — default to "Current Owner" for any link HubSpot
-  // reports that we don't already have. (The webhook path sets the correct
-  // label on new associations; this path only patches gaps.)
-  for (const contactId of contactIds) {
-    await prisma.propertyContactLink.upsert({
-      where: {
-        propertyId_contactId_label: {
-          propertyId: propertyCacheId,
-          contactId,
-          label: "Current Owner",
-        },
-      },
-      create: {
-        propertyId: propertyCacheId,
-        contactId,
-        label: "Current Owner",
-      },
-      update: {},
-    });
-  }
 
   for (const dealId of dealIds) {
     await prisma.propertyDealLink.upsert({

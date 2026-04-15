@@ -1100,6 +1100,67 @@ describe("reconcileAllProperties", () => {
     expect(ctx.extra.staleIds).toEqual(["stale-1", "stale-2"]);
   });
 
+  it("refreshes deal and ticket association links but leaves contact links alone (F2)", async () => {
+    // F2: refreshAssociationLinks used to upsert every HubSpot-reported
+    // contact association with a hardcoded "Current Owner" label. That
+    // invented ownership state we couldn't actually observe. Reconcile now
+    // refreshes deal + ticket links only; contact links are owned by the
+    // webhook path where we can read the real label.
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchAllProperties, fetchAssociatedIdsFromProperty } = jest.requireMock(
+      "@/lib/hubspot-property",
+    );
+    fetchAllProperties.mockResolvedValue([makeRecord("P1")]);
+    prisma.hubSpotPropertyCache.findUnique.mockImplementation(
+      ({ where }: { where: { hubspotObjectId?: string; id?: string } }) => {
+        if (where.hubspotObjectId === "P1") {
+          return Promise.resolve({
+            id: "cache-p1",
+            hubspotObjectId: "P1",
+            streetAddress: "1 Main St",
+            city: "Boulder",
+            state: "CO",
+            zip: "80301",
+            googlePlaceId: "place-P1",
+            normalizedAddress: "old",
+            fullAddress: "old",
+            latitude: 40,
+            longitude: -105,
+            ahjName: null,
+            utilityName: null,
+            pbLocation: null,
+          });
+        }
+        if (where.id === "cache-p1") {
+          return Promise.resolve({
+            id: "cache-p1",
+            hubspotObjectId: "P1",
+            dealLinks: [],
+            ticketLinks: [],
+          });
+        }
+        return Promise.resolve(null);
+      },
+    );
+    prisma.hubSpotPropertyCache.update.mockResolvedValue({});
+    fetchAssociatedIdsFromProperty.mockImplementation(
+      (_propertyId: string, toType: string) => {
+        if (toType === "contacts") return Promise.resolve(["ct-stale", "ct-orphan"]);
+        if (toType === "deals") return Promise.resolve(["d-1", "d-2"]);
+        if (toType === "tickets") return Promise.resolve(["t-1"]);
+        return Promise.resolve([]);
+      },
+    );
+
+    await reconcileAllProperties();
+
+    // Deals and tickets refreshed ...
+    expect(prisma.propertyDealLink.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.propertyTicketLink.upsert).toHaveBeenCalledTimes(1);
+    // ... but contact links are left alone — the webhook path owns labels.
+    expect(prisma.propertyContactLink.upsert).not.toHaveBeenCalled();
+  });
+
   it("does NOT call Sentry.captureMessage when no stale rows exist", async () => {
     const Sentry = jest.requireMock("@sentry/nextjs");
     const { fetchAllProperties } = jest.requireMock("@/lib/hubspot-property");
