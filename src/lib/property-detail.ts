@@ -10,6 +10,7 @@
 import { prisma } from "@/lib/db";
 import { fetchLineItemsForDeals } from "@/lib/hubspot";
 import { EquipmentCategory } from "@/generated/prisma/enums";
+import type { AddressParts } from "@/lib/address-hash";
 import type {
   HubSpotPropertyCache,
   PropertyContactLink,
@@ -35,6 +36,12 @@ export interface PropertyDetail {
   id: string;
   hubspotObjectId: string;
   fullAddress: string;
+  /**
+   * Structured address parts matching `AddressParts` — used by PropertyLink so
+   * the client doesn't have to parse `fullAddress`. Populated directly from the
+   * cache row columns (`streetAddress`, `unitNumber`, `city`, `state`, `zip`).
+   */
+  addressParts: AddressParts;
   lat: number;
   lng: number;
   pbLocation: string | null;
@@ -239,6 +246,13 @@ export function mapCacheRowToPropertyDetail(
     id: row.id,
     hubspotObjectId: row.hubspotObjectId,
     fullAddress: row.fullAddress,
+    addressParts: {
+      street: row.streetAddress,
+      unit: row.unitNumber,
+      city: row.city,
+      state: row.state,
+      zip: row.zip,
+    },
     lat: row.latitude,
     lng: row.longitude,
     pbLocation: row.pbLocation,
