@@ -187,6 +187,7 @@ describe("searchContacts", () => {
       phone: "555-0001",
       address: "100 Oak Ave, Boulder, CO, 80301",
       companyName: "Solar Corp",
+      lastContactedDate: null,
     });
 
     expect(result.results[1]).toEqual({
@@ -197,6 +198,7 @@ describe("searchContacts", () => {
       phone: "555-0002",
       address: "200 Pine Dr, Denver, CO, 80202",
       companyName: null,
+      lastContactedDate: null,
     });
   });
 
