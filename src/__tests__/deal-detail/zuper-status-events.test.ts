@@ -1,7 +1,10 @@
 jest.mock("@/lib/db", () => ({ prisma: null }));
 jest.mock("@/lib/zuper", () => ({ zuper: { isConfigured: () => false } }));
 jest.mock("@/lib/cache", () => ({ appCache: { getOrFetch: jest.fn() } }));
-jest.mock("@/lib/hubspot-engagements", () => ({ getDealEngagements: jest.fn() }));
+jest.mock("@/lib/hubspot-engagements", () => ({
+  getDealEngagements: jest.fn(),
+  getDealTasks: jest.fn(),
+}));
 
 import { parseZuperStatusHistory } from "@/lib/deal-timeline";
 

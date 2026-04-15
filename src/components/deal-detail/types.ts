@@ -149,7 +149,15 @@ export type TimelineEventType =
   | "call"
   | "meeting"
   | "hubspot_note"
-  | "task";
+  | "task"
+  | "service_task";
+
+/** A file attached to a Zuper note or service task. */
+export interface TimelineAttachment {
+  fileName: string;
+  url: string;
+  isImage: boolean;
+}
 
 export interface TimelineEvent {
   id: string;

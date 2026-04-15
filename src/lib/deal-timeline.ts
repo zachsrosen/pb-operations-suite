@@ -4,15 +4,28 @@
  */
 import { prisma } from "@/lib/db";
 import { zuper } from "@/lib/zuper";
-import { appCache } from "@/lib/cache";
+import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { FIELD_LABELS } from "@/components/deal-detail/section-registry";
+import { getDealTasks } from "@/lib/hubspot-engagements";
 import type {
+  TimelineAttachment,
   TimelineEvent,
   TimelinePage,
 } from "@/components/deal-detail/types";
+import type { ZuperNoteAttachment, ZuperServiceTask } from "@/lib/zuper";
 
 const PAGE_SIZE = 50;
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
+
+const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "heic", "heif", "webp", "gif", "bmp", "tiff", "tif"]);
+
+function toTimelineAttachment(a: ZuperNoteAttachment): TimelineAttachment {
+  const ext = a.url.split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+  const isImage =
+    IMAGE_EXTENSIONS.has(ext) ||
+    (typeof a.file_type === "string" && a.file_type.toLowerCase().startsWith("image/"));
+  return { fileName: a.file_name, url: a.url, isImage };
+}
 
 /** Fields that change on every sync but carry no user-visible meaning. */
 const SYNC_NOISE_FIELDS = new Set([
@@ -411,6 +424,7 @@ async function fetchZuperNoteEvents(
             const author = [n.created_by?.first_name, n.created_by?.last_name]
               .filter(Boolean)
               .join(" ") || "Unknown";
+            const attachments = (n.attachments ?? []).map(toTimelineAttachment);
             return {
               id: `znote-${n.note_uid}`,
               type: "zuper_note" as const,
@@ -422,6 +436,7 @@ async function fetchZuperNoteEvents(
                 jobUid: job.jobUid,
                 jobCategory: job.jobCategory,
                 noteUid: n.note_uid,
+                attachments: attachments.length > 0 ? attachments : undefined,
               },
             };
           });
@@ -437,13 +452,99 @@ async function fetchZuperNoteEvents(
     .filter((e) => !cursor || isBeforeCursor(e.timestamp, e.id, cursor));
 }
 
+async function fetchServiceTaskEvents(
+  hubspotDealId: string,
+  windowStart: Date | null,
+  cursor: Cursor | null,
+): Promise<TimelineEvent[]> {
+  if (!zuper.isConfigured()) return [];
+
+  const jobs = await prisma.zuperJobCache.findMany({
+    where: { hubspotDealId },
+    select: { jobUid: true, jobCategory: true, lastSyncedAt: true },
+  });
+  if (jobs.length === 0) return [];
+
+  const taskArrays = await Promise.all(
+    jobs.map(async (job) => {
+      try {
+        const cacheKey = CACHE_KEYS.ZUPER_SERVICE_TASKS(hubspotDealId, job.jobUid);
+        const cached = await appCache.getOrFetch(cacheKey, () =>
+          zuper.getJobServiceTasks(job.jobUid),
+        );
+        if (cached.data.type !== "success") return [];
+        // Zuper wraps lists as { data: [...] } OR { data: { data: [...] } }.
+        const rawData = cached.data.data;
+        const tasks: ZuperServiceTask[] = Array.isArray(rawData)
+          ? (rawData as ZuperServiceTask[])
+          : ((rawData as { data?: ZuperServiceTask[] })?.data ?? []);
+        return tasks
+          .filter((t) => !!t.service_task_uid)
+          .map((t) => {
+            const ts = t.created_at ?? job.lastSyncedAt.toISOString();
+            const attachments = (t.attachments ?? []).map(toTimelineAttachment);
+            return {
+              id: `stask-${t.service_task_uid}`,
+              type: "service_task" as const,
+              timestamp: ts,
+              title: `${job.jobCategory}: ${t.service_task_title}`,
+              detail: null,
+              author: null,
+              metadata: {
+                jobUid: job.jobUid,
+                jobCategory: job.jobCategory,
+                status: t.service_task_status,
+                formName: t.inspection_form?.asset_form_name,
+                attachments: attachments.length > 0 ? attachments : undefined,
+              },
+            };
+          });
+      } catch {
+        return [];
+      }
+    }),
+  );
+
+  return taskArrays
+    .flat()
+    .filter((e) => isInWindow(e.timestamp, windowStart))
+    .filter((e) => !cursor || isBeforeCursor(e.timestamp, e.id, cursor));
+}
+
+async function fetchTaskEvents(
+  hubspotDealId: string,
+  all: boolean,
+  windowStart: Date | null,
+  cursor: Cursor | null,
+): Promise<TimelineEvent[]> {
+  try {
+    const tasks = await getDealTasks(hubspotDealId, all);
+    const events: TimelineEvent[] = tasks.map((t) => ({
+      // t.id is already prefixed "task-{hubspotId}" from mapTask
+      id: t.id,
+      type: "task" as const,
+      timestamp: t.timestamp,
+      title: t.subject ? `Task: ${t.subject}` : "Task",
+      detail: t.body,
+      author: null,
+      metadata: { status: t.disposition },
+    }));
+    return events
+      .filter((e) => isInWindow(e.timestamp, windowStart))
+      .filter((e) => !cursor || isBeforeCursor(e.timestamp, e.id, cursor));
+  } catch {
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch a paginated timeline for a deal, aggregating 7 operational sources.
- * HubSpot engagements live in the Communications tab, not Activity.
+ * Fetch a paginated timeline for a deal, aggregating 9 operational sources.
+ * HubSpot emails/calls/notes/meetings live in the Communications tab; HubSpot
+ * tasks + Zuper service tasks (checklists) surface here as operational todos.
  *
  * @param dealId      Internal Deal cuid
  * @param hubspotDealId HubSpot deal ID (numeric string)
@@ -463,20 +564,31 @@ export async function getDealTimeline(
       ? { ts: options.cursorTs, id: options.cursorId }
       : null;
 
-  // Fan-out: 7 internal sources in parallel.
-  // HubSpot engagements (emails, calls, notes, meetings, tasks) are intentionally
-  // excluded — they live in the Communications tab. Activity shows operational
-  // events only: app notes, syncs, Zuper status/notes, BOM runs, schedules, photos.
-  const [noteEvents, syncEvents, zuperEvents, photoEvents, bomEvents, scheduleEvents, zuperNoteEvents] =
-    await Promise.all([
-      fetchNoteEvents(dealId, windowStart, cursor),
-      fetchSyncEvents(dealId, windowStart, cursor),
-      fetchZuperEvents(hubspotDealId, windowStart, cursor),
-      fetchPhotoEvents(hubspotDealId, windowStart, cursor),
-      fetchBomEvents(hubspotDealId, windowStart, cursor),
-      fetchScheduleEvents(hubspotDealId, windowStart, cursor),
-      fetchZuperNoteEvents(hubspotDealId, windowStart, cursor),
-    ]);
+  // Fan-out: 9 sources in parallel.
+  // HubSpot emails/calls/notes/meetings live in the Communications tab.
+  // HubSpot tasks are operational todos and surface here in Activity.
+  // Zuper service tasks (checklist items) also surface here.
+  const [
+    noteEvents,
+    syncEvents,
+    zuperEvents,
+    photoEvents,
+    bomEvents,
+    scheduleEvents,
+    zuperNoteEvents,
+    taskEvents,
+    serviceTaskEvents,
+  ] = await Promise.all([
+    fetchNoteEvents(dealId, windowStart, cursor),
+    fetchSyncEvents(dealId, windowStart, cursor),
+    fetchZuperEvents(hubspotDealId, windowStart, cursor),
+    fetchPhotoEvents(hubspotDealId, windowStart, cursor),
+    fetchBomEvents(hubspotDealId, windowStart, cursor),
+    fetchScheduleEvents(hubspotDealId, windowStart, cursor),
+    fetchZuperNoteEvents(hubspotDealId, windowStart, cursor),
+    fetchTaskEvents(hubspotDealId, options.all ?? false, windowStart, cursor),
+    fetchServiceTaskEvents(hubspotDealId, windowStart, cursor),
+  ]);
 
   // Merge, sort by (timestamp DESC, id DESC), paginate
   const allEvents = [
@@ -487,6 +599,8 @@ export async function getDealTimeline(
     ...bomEvents,
     ...scheduleEvents,
     ...zuperNoteEvents,
+    ...taskEvents,
+    ...serviceTaskEvents,
   ].sort((a, b) => {
     const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     if (timeDiff !== 0) return timeDiff;
