@@ -1,4 +1,4 @@
-import { onContactAddressChange } from "@/lib/property-sync";
+import { onContactAddressChange, computePropertyRollups } from "@/lib/property-sync";
 
 jest.mock("@/lib/db", () => ({
   prisma: {
@@ -6,6 +6,8 @@ jest.mock("@/lib/db", () => ({
     propertyContactLink: { upsert: jest.fn() },
     propertySyncWatermark: { findUnique: jest.fn(), upsert: jest.fn() },
     activityLog: { create: jest.fn() },
+    deal: { findMany: jest.fn() },
+    internalProduct: { findMany: jest.fn() },
   },
 }));
 jest.mock("@/lib/geocode", () => ({ geocodeAddress: jest.fn() }));
@@ -14,8 +16,16 @@ jest.mock("@/lib/hubspot-property", () => ({
   createProperty: jest.fn(),
   associateProperty: jest.fn(),
   fetchPropertyById: jest.fn(),
+  updateProperty: jest.fn(),
 }));
-jest.mock("@/lib/hubspot", () => ({ fetchContactById: jest.fn() }));
+jest.mock("@/lib/hubspot", () => ({
+  fetchContactById: jest.fn(),
+  fetchLineItemsForDeals: jest.fn(),
+}));
+jest.mock("@/lib/hubspot-tickets", () => ({
+  batchReadTickets: jest.fn(),
+  getTicketStageMap: jest.fn(),
+}));
 jest.mock("@/lib/resolve-geo-links", () => ({
   resolveAhjForProperty: jest.fn(),
   resolveUtilityForProperty: jest.fn(),
@@ -149,5 +159,312 @@ describe("onContactAddressChange", () => {
     );
     expect(outcome.status).toBe("associated");
     expect(outcome.propertyCacheId).toBe("cache-1");
+  });
+});
+
+describe("computePropertyRollups", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env.PROPERTY_SYNC_ENABLED = "true";
+  });
+
+  function primeStageMap(stages: Record<string, string>) {
+    const { getTicketStageMap } = jest.requireMock("@/lib/hubspot-tickets");
+    getTicketStageMap.mockResolvedValue({
+      map: stages,
+      orderedStageIds: Object.keys(stages),
+    });
+  }
+
+  it("no-ops when propertyCacheId does not exist", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    prisma.hubSpotPropertyCache.findUnique.mockResolvedValue(null);
+    await computePropertyRollups("missing");
+    expect(prisma.hubSpotPropertyCache.update).not.toHaveBeenCalled();
+  });
+
+  it("writes zero counts when the property has no deals or tickets", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { updateProperty } = jest.requireMock("@/lib/hubspot-property");
+    prisma.hubSpotPropertyCache.findUnique.mockResolvedValue({
+      id: "cache-1",
+      hubspotObjectId: "hs-1",
+      dealLinks: [],
+      ticketLinks: [],
+    });
+
+    await computePropertyRollups("cache-1");
+
+    expect(prisma.hubSpotPropertyCache.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "cache-1" },
+        data: expect.objectContaining({
+          associatedDealsCount: 0,
+          associatedTicketsCount: 0,
+          openTicketsCount: 0,
+          firstInstallDate: null,
+          mostRecentInstallDate: null,
+          systemSizeKwDc: null,
+          hasBattery: false,
+          hasEvCharger: false,
+          lastServiceDate: null,
+          earliestWarrantyExpiry: null,
+        }),
+      })
+    );
+    expect(updateProperty).toHaveBeenCalledWith(
+      "hs-1",
+      expect.objectContaining({
+        associated_deals_count: 0,
+        associated_tickets_count: 0,
+        open_tickets_count: 0,
+        has_battery: false,
+        has_ev_charger: false,
+        system_size_kw_dc: null,
+        earliest_warranty_expiry: "",
+      })
+    );
+  });
+
+  it("aggregates install dates from constructionCompleteDate across 3 deals", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchLineItemsForDeals } = jest.requireMock("@/lib/hubspot");
+    prisma.hubSpotPropertyCache.findUnique.mockResolvedValue({
+      id: "cache-1",
+      hubspotObjectId: "hs-1",
+      dealLinks: [
+        { dealId: "d1" },
+        { dealId: "d2" },
+        { dealId: "d3" },
+      ],
+      ticketLinks: [],
+    });
+    prisma.deal.findMany.mockResolvedValue([
+      { hubspotDealId: "d1", constructionCompleteDate: new Date("2024-03-01"), closeDate: null, amount: null },
+      { hubspotDealId: "d2", constructionCompleteDate: new Date("2022-06-15"), closeDate: null, amount: null },
+      { hubspotDealId: "d3", constructionCompleteDate: new Date("2025-01-10"), closeDate: null, amount: null },
+    ]);
+    fetchLineItemsForDeals.mockResolvedValue([]);
+
+    await computePropertyRollups("cache-1");
+
+    const call = prisma.hubSpotPropertyCache.update.mock.calls[0][0];
+    expect(call.data.associatedDealsCount).toBe(3);
+    expect(call.data.firstInstallDate?.toISOString().slice(0, 10)).toBe("2022-06-15");
+    expect(call.data.mostRecentInstallDate?.toISOString().slice(0, 10)).toBe("2025-01-10");
+  });
+
+  it("ignores deals with null constructionCompleteDate for date rollups", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchLineItemsForDeals } = jest.requireMock("@/lib/hubspot");
+    prisma.hubSpotPropertyCache.findUnique.mockResolvedValue({
+      id: "cache-1",
+      hubspotObjectId: "hs-1",
+      dealLinks: [{ dealId: "d1" }, { dealId: "d2" }],
+      ticketLinks: [],
+    });
+    prisma.deal.findMany.mockResolvedValue([
+      { hubspotDealId: "d1", constructionCompleteDate: null, closeDate: null, amount: null },
+      { hubspotDealId: "d2", constructionCompleteDate: new Date("2024-01-10"), closeDate: null, amount: null },
+    ]);
+    fetchLineItemsForDeals.mockResolvedValue([]);
+
+    await computePropertyRollups("cache-1");
+
+    const call = prisma.hubSpotPropertyCache.update.mock.calls[0][0];
+    expect(call.data.associatedDealsCount).toBe(2);
+    expect(call.data.firstInstallDate?.toISOString().slice(0, 10)).toBe("2024-01-10");
+    expect(call.data.mostRecentInstallDate?.toISOString().slice(0, 10)).toBe("2024-01-10");
+  });
+
+  it("sums MODULE wattage × quantity / 1000 for systemSizeKwDc", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchLineItemsForDeals } = jest.requireMock("@/lib/hubspot");
+    prisma.hubSpotPropertyCache.findUnique.mockResolvedValue({
+      id: "cache-1",
+      hubspotObjectId: "hs-1",
+      dealLinks: [{ dealId: "d1" }],
+      ticketLinks: [],
+    });
+    prisma.deal.findMany.mockResolvedValue([
+      { hubspotDealId: "d1", constructionCompleteDate: null, closeDate: null, amount: null },
+    ]);
+    fetchLineItemsForDeals.mockResolvedValue([
+      { id: "li1", dealId: "d1", hubspotProductId: "p-mod-a", quantity: 20 },
+      { id: "li2", dealId: "d1", hubspotProductId: "p-bos", quantity: 1 },
+    ]);
+    prisma.internalProduct.findMany.mockResolvedValue([
+      {
+        id: "ip1",
+        category: "MODULE",
+        hubspotProductId: "p-mod-a",
+        moduleSpec: { wattage: 400 },
+      },
+      {
+        id: "ip2",
+        category: "ELECTRICAL_BOS",
+        hubspotProductId: "p-bos",
+        moduleSpec: null,
+      },
+    ]);
+
+    await computePropertyRollups("cache-1");
+
+    const call = prisma.hubSpotPropertyCache.update.mock.calls[0][0];
+    // 20 * 400W = 8000W → 8 kW
+    expect(call.data.systemSizeKwDc).toBe(8);
+    expect(call.data.hasBattery).toBe(false);
+    expect(call.data.hasEvCharger).toBe(false);
+  });
+
+  it("flags hasBattery when a BATTERY or BATTERY_EXPANSION line item is present", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchLineItemsForDeals } = jest.requireMock("@/lib/hubspot");
+    prisma.hubSpotPropertyCache.findUnique.mockResolvedValue({
+      id: "cache-1",
+      hubspotObjectId: "hs-1",
+      dealLinks: [{ dealId: "d1" }],
+      ticketLinks: [],
+    });
+    prisma.deal.findMany.mockResolvedValue([
+      { hubspotDealId: "d1", constructionCompleteDate: null, closeDate: null, amount: null },
+    ]);
+    fetchLineItemsForDeals.mockResolvedValue([
+      { id: "li1", dealId: "d1", hubspotProductId: "p-batt-exp", quantity: 2 },
+    ]);
+    prisma.internalProduct.findMany.mockResolvedValue([
+      {
+        id: "ip1",
+        category: "BATTERY_EXPANSION",
+        hubspotProductId: "p-batt-exp",
+        moduleSpec: null,
+      },
+    ]);
+
+    await computePropertyRollups("cache-1");
+
+    const call = prisma.hubSpotPropertyCache.update.mock.calls[0][0];
+    expect(call.data.hasBattery).toBe(true);
+    expect(call.data.hasEvCharger).toBe(false);
+  });
+
+  it("flags hasEvCharger when an EV_CHARGER line item is present", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchLineItemsForDeals } = jest.requireMock("@/lib/hubspot");
+    prisma.hubSpotPropertyCache.findUnique.mockResolvedValue({
+      id: "cache-1",
+      hubspotObjectId: "hs-1",
+      dealLinks: [{ dealId: "d1" }],
+      ticketLinks: [],
+    });
+    prisma.deal.findMany.mockResolvedValue([
+      { hubspotDealId: "d1", constructionCompleteDate: null, closeDate: null, amount: null },
+    ]);
+    fetchLineItemsForDeals.mockResolvedValue([
+      { id: "li1", dealId: "d1", hubspotProductId: "p-ev", quantity: 1 },
+    ]);
+    prisma.internalProduct.findMany.mockResolvedValue([
+      { id: "ip1", category: "EV_CHARGER", hubspotProductId: "p-ev", moduleSpec: null },
+    ]);
+
+    await computePropertyRollups("cache-1");
+
+    const call = prisma.hubSpotPropertyCache.update.mock.calls[0][0];
+    expect(call.data.hasEvCharger).toBe(true);
+  });
+
+  it("classifies a non-closed ticket stage as open", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { batchReadTickets } = jest.requireMock("@/lib/hubspot-tickets");
+    const { fetchLineItemsForDeals } = jest.requireMock("@/lib/hubspot");
+    prisma.hubSpotPropertyCache.findUnique.mockResolvedValue({
+      id: "cache-1",
+      hubspotObjectId: "hs-1",
+      dealLinks: [],
+      ticketLinks: [{ ticketId: "t1" }],
+    });
+    fetchLineItemsForDeals.mockResolvedValue([]);
+    primeStageMap({ s1: "In Progress", s2: "Closed" });
+    batchReadTickets.mockResolvedValue([
+      {
+        id: "t1",
+        properties: {
+          hs_pipeline_stage: "s1",
+          closed_date: null,
+          hs_lastmodifieddate: null,
+        },
+      },
+    ]);
+
+    await computePropertyRollups("cache-1");
+
+    const call = prisma.hubSpotPropertyCache.update.mock.calls[0][0];
+    expect(call.data.associatedTicketsCount).toBe(1);
+    expect(call.data.openTicketsCount).toBe(1);
+  });
+
+  it("classifies a closed stage as not open and takes lastServiceDate = max of closed/lastmodified", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { batchReadTickets } = jest.requireMock("@/lib/hubspot-tickets");
+    const { fetchLineItemsForDeals } = jest.requireMock("@/lib/hubspot");
+    prisma.hubSpotPropertyCache.findUnique.mockResolvedValue({
+      id: "cache-1",
+      hubspotObjectId: "hs-1",
+      dealLinks: [],
+      ticketLinks: [{ ticketId: "t1" }, { ticketId: "t2" }],
+    });
+    fetchLineItemsForDeals.mockResolvedValue([]);
+    primeStageMap({ s1: "In Progress", s2: "Closed" });
+    batchReadTickets.mockResolvedValue([
+      {
+        id: "t1",
+        properties: {
+          hs_pipeline_stage: "s2",
+          closed_date: "2024-02-01T00:00:00Z",
+          hs_lastmodifieddate: "2024-01-01T00:00:00Z",
+        },
+      },
+      {
+        id: "t2",
+        properties: {
+          hs_pipeline_stage: "s2",
+          closed_date: "2025-06-10T00:00:00Z",
+          hs_lastmodifieddate: "2025-06-11T00:00:00Z",
+        },
+      },
+    ]);
+
+    await computePropertyRollups("cache-1");
+
+    const call = prisma.hubSpotPropertyCache.update.mock.calls[0][0];
+    expect(call.data.associatedTicketsCount).toBe(2);
+    expect(call.data.openTicketsCount).toBe(0);
+    // Max of closed_date across the two tickets is 2025-06-10.
+    expect(call.data.lastServiceDate?.toISOString().slice(0, 10)).toBe("2025-06-10");
+  });
+
+  it("keeps earliestWarrantyExpiry null in v1 regardless of deal input", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchLineItemsForDeals } = jest.requireMock("@/lib/hubspot");
+    prisma.hubSpotPropertyCache.findUnique.mockResolvedValue({
+      id: "cache-1",
+      hubspotObjectId: "hs-1",
+      dealLinks: [{ dealId: "d1" }],
+      ticketLinks: [],
+    });
+    prisma.deal.findMany.mockResolvedValue([
+      {
+        hubspotDealId: "d1",
+        constructionCompleteDate: new Date("2024-01-01"),
+        closeDate: null,
+        amount: null,
+      },
+    ]);
+    fetchLineItemsForDeals.mockResolvedValue([]);
+
+    await computePropertyRollups("cache-1");
+
+    const call = prisma.hubSpotPropertyCache.update.mock.calls[0][0];
+    expect(call.data.earliestWarrantyExpiry).toBeNull();
   });
 });

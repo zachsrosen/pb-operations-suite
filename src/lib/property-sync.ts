@@ -19,8 +19,11 @@ import { addressHash } from "@/lib/address-hash";
 import {
   createProperty,
   associateProperty,
+  updateProperty,
 } from "@/lib/hubspot-property";
-import { fetchContactById } from "@/lib/hubspot";
+import { fetchContactById, fetchLineItemsForDeals } from "@/lib/hubspot";
+import { batchReadTickets, getTicketStageMap } from "@/lib/hubspot-tickets";
+import { EquipmentCategory } from "@/generated/prisma/enums";
 import {
   resolveAhjForProperty,
   resolveUtilityForProperty,
@@ -309,10 +312,215 @@ async function logActivity(
 
 /**
  * Recompute denormalized rollups on the cache row and push them back to
- * HubSpot. Implemented in Task 2.5 — stubbed so callers here type-check.
+ * HubSpot. Reads associated deals + tickets + line items, classifies the
+ * line items by `InternalProduct.category`, and writes:
+ *   - firstInstallDate / mostRecentInstallDate (min/max of `Deal.constructionCompleteDate`)
+ *   - associatedDealsCount / associatedTicketsCount / openTicketsCount
+ *   - systemSizeKwDc (sum of MODULE wattage × qty / 1000)
+ *   - hasBattery (any BATTERY or BATTERY_EXPANSION)
+ *   - hasEvCharger (any EV_CHARGER)
+ *   - lastServiceDate (max of closed_date ?? hs_lastmodifieddate across tickets)
+ *   - earliestWarrantyExpiry = null in v1 (see note below)
  */
 export async function computePropertyRollups(propertyCacheId: string): Promise<void> {
-  void propertyCacheId;
+  const property = await prisma.hubSpotPropertyCache.findUnique({
+    where: { id: propertyCacheId },
+    include: {
+      dealLinks: true,
+      ticketLinks: true,
+    },
+  });
+  if (!property) return;
+
+  // `dealLinks` / `ticketLinks` are `include`d above; fall back to [] so a
+  // freshly-created Property with no associations still rollups cleanly.
+  const dealIds = (property.dealLinks ?? []).map((l) => l.dealId);
+  const ticketIds = (property.ticketLinks ?? []).map((l) => l.ticketId);
+
+  // Deal sources of truth (verified against prisma/schema.prisma `model Deal`):
+  //   - first/most-recent install date → `constructionCompleteDate` (the actual
+  //     field set when a deal's install is completed; `installScheduleDate` is
+  //     a forecast/plan, not actuals, and would overcount).
+  //   - warranty expiry → NOT present on the Deal model today.
+  //     `earliestWarrantyExpiry` stays null in v1 and is documented as a
+  //     follow-up. Adding a `Deal.warrantyExpiresAt` column is a separate
+  //     project because warranty term varies by product mix (module vs
+  //     inverter vs battery) and would require a data backfill to be meaningful.
+  const deals = dealIds.length
+    ? await prisma.deal.findMany({
+        where: { hubspotDealId: { in: dealIds } },
+        select: {
+          hubspotDealId: true,
+          constructionCompleteDate: true,
+          closeDate: true,
+          amount: true,
+        },
+      })
+    : [];
+
+  const installDates = deals
+    .map((d) => d.constructionCompleteDate)
+    .filter((d): d is Date => !!d)
+    .sort((a, b) => a.getTime() - b.getTime());
+
+  // Line-item rollup. We classify by `InternalProduct.category` via the
+  // `hubspotProductId` the line item points at — matching the join used by
+  // `bom-hubspot-line-items.ts`. Raw line items are not cached (see decision 8
+  // in the plan); only the rollup lands on the cache row.
+  const lineItems = dealIds.length ? await fetchLineItemsForDeals(dealIds) : [];
+  const byCategory = await categorizeLineItemsByInternalProduct(lineItems);
+  const moduleWatts = sumWattage(byCategory.get(EquipmentCategory.MODULE) ?? []);
+  const systemSizeKwDc = moduleWatts > 0 ? moduleWatts / 1000 : null;
+  const hasBattery =
+    (byCategory.get(EquipmentCategory.BATTERY)?.length ?? 0) > 0 ||
+    (byCategory.get(EquipmentCategory.BATTERY_EXPANSION)?.length ?? 0) > 0;
+  const hasEvCharger = (byCategory.get(EquipmentCategory.EV_CHARGER)?.length ?? 0) > 0;
+
+  // Ticket fields — tickets live in HubSpot (no ServiceTicketCache model).
+  // `getTicketStageMap()` returns `{ map, orderedStageIds }`; we destructure
+  // `map` (stageId → label) — `.stageMap` does not exist.
+  const tickets = ticketIds.length
+    ? await batchReadTickets(ticketIds, [
+        "subject",
+        "hs_pipeline_stage",
+        "hs_lastmodifieddate",
+        "closed_date",
+      ])
+    : [];
+  const stageMap = ticketIds.length ? (await getTicketStageMap()).map : {};
+  const isOpenStage = (stageId: string | null | undefined): boolean => {
+    if (!stageId) return false;
+    const label = (stageMap[stageId] ?? "").toLowerCase();
+    return !["closed", "resolved", "cancelled"].some((needle) => label.includes(needle));
+  };
+  const openTicketsCount = tickets.filter((t) => isOpenStage(t.properties.hs_pipeline_stage)).length;
+  const lastServiceDate =
+    tickets
+      .map((t) => {
+        const raw = t.properties.closed_date ?? t.properties.hs_lastmodifieddate;
+        return raw ? new Date(raw) : null;
+      })
+      .filter((d): d is Date => !!d && !Number.isNaN(d.getTime()))
+      .sort((a, b) => b.getTime() - a.getTime())[0] ?? null;
+
+  await prisma.hubSpotPropertyCache.update({
+    where: { id: propertyCacheId },
+    data: {
+      firstInstallDate: installDates[0] ?? null,
+      mostRecentInstallDate: installDates[installDates.length - 1] ?? null,
+      associatedDealsCount: deals.length,
+      associatedTicketsCount: tickets.length,
+      openTicketsCount,
+      systemSizeKwDc,
+      hasBattery,
+      hasEvCharger,
+      lastServiceDate,
+      earliestWarrantyExpiry: null, // v1: not yet derivable — see note above.
+      lastReconciledAt: new Date(),
+    },
+  });
+
+  await updateProperty(property.hubspotObjectId, {
+    first_install_date: toDateString(installDates[0] ?? null),
+    most_recent_install_date: toDateString(installDates[installDates.length - 1] ?? null),
+    associated_deals_count: deals.length,
+    associated_tickets_count: tickets.length,
+    open_tickets_count: openTicketsCount,
+    system_size_kw_dc: systemSizeKwDc,
+    has_battery: hasBattery,
+    has_ev_charger: hasEvCharger,
+    last_service_date: toDateString(lastServiceDate),
+    earliest_warranty_expiry: "", // v1: not yet derivable.
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Rollup helpers
+// ---------------------------------------------------------------------------
+
+interface CategorizableLineItem {
+  hubspotProductId: string | null;
+  quantity: number;
+}
+
+interface ModuleLineItem extends CategorizableLineItem {
+  /** Wattage pulled off the joined InternalProduct.moduleSpec.wattage. */
+  _wattage: number;
+}
+
+/**
+ * Group line items by the EquipmentCategory of their joined InternalProduct.
+ * Line items with no HubSpot product ID or no catalog match are skipped — they
+ * cannot be classified and would pollute the rollup (e.g. freeform "Service
+ * Call" line items on a service deal).
+ */
+async function categorizeLineItemsByInternalProduct(
+  lineItems: ReadonlyArray<CategorizableLineItem>
+): Promise<Map<EquipmentCategory, Array<CategorizableLineItem | ModuleLineItem>>> {
+  const byCategory = new Map<EquipmentCategory, Array<CategorizableLineItem | ModuleLineItem>>();
+  const productIds = Array.from(
+    new Set(
+      lineItems
+        .map((li) => li.hubspotProductId)
+        .filter((id): id is string => !!id && id.length > 0)
+    )
+  );
+  if (productIds.length === 0) return byCategory;
+
+  const products = await prisma.internalProduct.findMany({
+    where: { hubspotProductId: { in: productIds } },
+    select: {
+      id: true,
+      category: true,
+      hubspotProductId: true,
+      moduleSpec: { select: { wattage: true } },
+    },
+  });
+
+  const byHubspotId = new Map<
+    string,
+    { category: EquipmentCategory; wattage: number | null }
+  >();
+  for (const p of products) {
+    if (!p.hubspotProductId) continue;
+    byHubspotId.set(p.hubspotProductId, {
+      category: p.category,
+      wattage: p.moduleSpec?.wattage ?? null,
+    });
+  }
+
+  for (const item of lineItems) {
+    if (!item.hubspotProductId) continue;
+    const match = byHubspotId.get(item.hubspotProductId);
+    if (!match) continue;
+    const bucket = byCategory.get(match.category) ?? [];
+    if (match.category === EquipmentCategory.MODULE) {
+      bucket.push({
+        hubspotProductId: item.hubspotProductId,
+        quantity: item.quantity,
+        _wattage: match.wattage ?? 0,
+      });
+    } else {
+      bucket.push(item);
+    }
+    byCategory.set(match.category, bucket);
+  }
+  return byCategory;
+}
+
+/** Sum wattage × quantity across MODULE line items. Returns watts (not kW). */
+function sumWattage(items: Array<CategorizableLineItem | ModuleLineItem>): number {
+  let total = 0;
+  for (const item of items) {
+    if ("_wattage" in item) {
+      total += (item._wattage ?? 0) * (item.quantity ?? 0);
+    }
+  }
+  return total;
+}
+
+function toDateString(d: Date | null | undefined): string {
+  return d ? d.toISOString().slice(0, 10) : "";
 }
 
 /** Implemented in Task 2.6. */

@@ -2086,6 +2086,79 @@ export async function fetchLineItemsForDealStrict(dealId: string): Promise<LineI
   }));
 }
 
+/**
+ * Fetch line items associated with multiple deals in one pass.
+ *
+ * Resolves deal → line_item associations for all input deal IDs, then batch-reads
+ * the resulting line item properties. Returns a flat array; callers that need
+ * per-deal grouping should build it from the `dealId` field.
+ *
+ * Used by the property-sync rollup computation in `property-sync.ts`, which needs
+ * to aggregate equipment (modules / batteries / EV chargers) across every deal
+ * linked to a property. Keeps the request count O(1) in deal count instead of
+ * fanning out to `fetchLineItemsForDeal` per id.
+ */
+export async function fetchLineItemsForDeals(
+  dealIds: string[]
+): Promise<Array<LineItem & { dealId: string }>> {
+  if (dealIds.length === 0) return [];
+
+  const associationsResponse = await hubspotClient.crm.associations.batchApi.read(
+    "deals",
+    "line_items",
+    { inputs: dealIds.map((id) => ({ id })) }
+  );
+
+  const lineItemToDeal = new Map<string, string>();
+  for (const result of associationsResponse.results ?? []) {
+    const dealId = String(result._from?.id ?? "").trim();
+    if (!dealId) continue;
+    for (const to of result.to ?? []) {
+      const liId = String(to.id ?? "").trim();
+      if (liId) lineItemToDeal.set(liId, dealId);
+    }
+  }
+  if (lineItemToDeal.size === 0) return [];
+
+  const lineItemIds = Array.from(lineItemToDeal.keys());
+  const lineItemsResponse = await hubspotClient.crm.lineItems.batchApi.read({
+    inputs: lineItemIds.map((id) => ({ id })),
+    properties: [
+      "hs_product_id",
+      "name",
+      "hs_sku",
+      "sku",
+      "description",
+      "quantity",
+      "price",
+      "amount",
+      "product_category",
+      "manufacturer",
+      "dc_size",
+      "ac_size",
+      "energy_storage_capacity",
+    ],
+    propertiesWithHistory: [],
+  });
+
+  return lineItemsResponse.results.map((item) => ({
+    id: item.id,
+    dealId: lineItemToDeal.get(item.id) ?? "",
+    hubspotProductId: String(item.properties.hs_product_id || "").trim() || null,
+    name: String(item.properties.name || ""),
+    sku: String(item.properties.hs_sku || item.properties.sku || ""),
+    description: String(item.properties.description || ""),
+    quantity: Number(item.properties.quantity) || 1,
+    price: Number(item.properties.price) || 0,
+    amount: Number(item.properties.amount) || 0,
+    productCategory: String(item.properties.product_category || ""),
+    manufacturer: String(item.properties.manufacturer || ""),
+    dcSize: Number(item.properties.dc_size) || 0,
+    acSize: Number(item.properties.ac_size) || 0,
+    energyStorageCapacity: Number(item.properties.energy_storage_capacity) || 0,
+  }));
+}
+
 function trimOrNull(value: string | null | undefined): string | null {
   const trimmed = String(value || "").trim();
   return trimmed || null;

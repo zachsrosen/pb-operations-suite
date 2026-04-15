@@ -189,6 +189,37 @@ export function transformTicketToPriorityItem(
 // ---------------------------------------------------------------------------
 
 /**
+ * Batch-read ticket properties by ID. Thin wrapper around
+ * `hubspotClient.crm.tickets.batchApi.read`, modeled on the line-items batch
+ * reader in `hubspot.ts`. Used by property-sync rollups which need to classify
+ * tickets as open/closed and compute `lastServiceDate` without paying the cost
+ * of a full ticket-detail fetch per ID.
+ */
+export async function batchReadTickets(
+  ticketIds: string[],
+  properties: string[]
+): Promise<Array<{ id: string; properties: Record<string, string | null> }>> {
+  if (ticketIds.length === 0) return [];
+  const results: Array<{ id: string; properties: Record<string, string | null> }> = [];
+  for (const ids of chunk(ticketIds, BATCH_SIZE)) {
+    const response = await hubspotClient.crm.tickets.batchApi.read({
+      inputs: ids.map((id) => ({ id })),
+      properties,
+      propertiesWithHistory: [],
+    });
+    for (const t of response.results ?? []) {
+      const props: Record<string, string | null> = {};
+      for (const name of properties) {
+        const raw = (t.properties as Record<string, string | undefined | null> | undefined)?.[name];
+        props[name] = raw == null ? null : String(raw);
+      }
+      results.push({ id: t.id, properties: props });
+    }
+  }
+  return results;
+}
+
+/**
  * Discover ticket pipeline stages from HubSpot.
  * Returns a map of stageId → stageName.
  */
