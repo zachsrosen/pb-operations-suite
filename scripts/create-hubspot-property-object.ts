@@ -13,7 +13,7 @@ if (!TOKEN) {
   process.exit(1);
 }
 
-const hubspot = new Client({ accessToken: TOKEN });
+const hubspot = new Client({ accessToken: TOKEN, numberOfApiCallRetries: 2 });
 
 // ---------------------------------------------------------------------------
 // Property definitions — copied from the spec's Field table.
@@ -212,6 +212,73 @@ function envKey(label: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Helper: ensure a single association label exists, creating it if absent.
+//
+// GETs existing labels for the (fromTypeId, toTypeId) pair and skips the POST
+// if a label with the same name already exists — making this safe to call on
+// both the "newly created object" path and the "object already existed" recovery
+// path. On POST error the label is logged and skipped (Fix 3); the caller
+// accumulates whichever IDs succeed.
+// ---------------------------------------------------------------------------
+
+async function ensureLabel(
+  propertyTypeId: string,
+  toTypeId: string,
+  label: string,
+  labelIds: Record<string, number>,
+  failures: string[],
+): Promise<void> {
+  const key = envKey(label);
+
+  // Check whether this label already exists.
+  try {
+    const existing = await hubspot
+      .apiRequest({
+        method: "GET",
+        path: `/crm/v4/associations/${propertyTypeId}/${toTypeId}/labels`,
+      })
+      .then((r) => r.json());
+    const results: Array<{ typeId?: number; label?: string; name?: string }> =
+      existing?.results ?? [];
+    const found = results.find((r) => r.label === label || r.name === key);
+    if (found && typeof found.typeId === "number") {
+      console.log(`Skipped existing label: ${label}`);
+      labelIds[key] = found.typeId;
+      return;
+    }
+  } catch (err) {
+    // Non-fatal — proceed to attempt creation.
+    console.warn(`  ! Could not fetch existing labels for "${label}" — attempting POST anyway:`, err);
+  }
+
+  // Create the label (Fix 3: per-label try/catch).
+  try {
+    console.log(`Creating association label: ${label}`);
+    const res = await hubspot
+      .apiRequest({
+        method: "POST",
+        path: `/crm/v4/associations/${propertyTypeId}/${toTypeId}/labels`,
+        body: {
+          label,
+          name: key,
+          category: "USER_DEFINED",
+        },
+      })
+      .then((r) => r.json());
+    const typeId = res?.results?.[0]?.typeId;
+    if (typeof typeId === "number") {
+      labelIds[key] = typeId;
+    } else {
+      console.warn(`  ! Could not parse typeId for "${label}" — response:`, JSON.stringify(res));
+      failures.push(label);
+    }
+  } catch (err) {
+    console.error(`Failed to create label ${label}:`, err);
+    failures.push(label);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -221,88 +288,60 @@ async function main() {
   const existing = schemas.results.find(
     (s) => s.name === "property" || s.labels?.singular === "Property",
   );
+
+  let propertyTypeId: string;
+
   if (existing) {
-    console.log(`Property object already exists: ${existing.objectTypeId}`);
-    console.log(`Set HUBSPOT_PROPERTY_OBJECT_TYPE=${existing.objectTypeId}`);
-    console.log("\nNo changes made. If you need association labels, delete the object in HubSpot UI and re-run, or add labels manually via the v4 associations API.");
-    return;
+    // Object already exists. Re-running now reconciles any missing labels that
+    // were not created on a previous (partial) run — no destructive reset needed.
+    propertyTypeId = existing.objectTypeId;
+    console.log(`Property object already exists: ${propertyTypeId}`);
+    console.log("Continuing to reconcile association labels...");
+  } else {
+    // 2. Create the object with identity + geographic + rollup + ATTOM fields.
+    console.log("Creating Property custom object...");
+    const created = await hubspot.crm.schemas.coreApi.create({
+      name: "property",
+      labels: { singular: "Property", plural: "Properties" },
+      primaryDisplayProperty: "record_name",
+      // NOTE: `google_place_id` is intentionally NOT required. The spec supports
+      // addresses where Google returns no place_id (rural, PO Box, new
+      // construction); those rows dedup via the DB-side `addressHash` unique
+      // index (see `HubSpotPropertyCache.addressHash` in the Neon cache schema).
+      requiredProperties: ["record_name", "full_address"],
+      searchableProperties: [
+        "record_name",
+        "full_address",
+        "normalized_address",
+        "street_address",
+        "city",
+        "zip",
+        "google_place_id",
+      ],
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      properties: PROPERTY_FIELDS as any,
+      associatedObjects: ["CONTACT", "DEAL", "TICKET", "COMPANY"],
+    });
+
+    propertyTypeId = created.objectTypeId;
+    console.log(`Created Property object: ${propertyTypeId}`);
   }
 
-  // 2. Create the object with identity + geographic + rollup + ATTOM fields.
-  console.log("Creating Property custom object...");
-  const created = await hubspot.crm.schemas.coreApi.create({
-    name: "property",
-    labels: { singular: "Property", plural: "Properties" },
-    primaryDisplayProperty: "record_name",
-    // NOTE: `google_place_id` is intentionally NOT required. The spec supports
-    // addresses where Google returns no place_id (rural, PO Box, new
-    // construction); those rows dedup via the DB-side `addressHash` unique
-    // index (see `HubSpotPropertyCache.addressHash` in the Neon cache schema).
-    requiredProperties: ["record_name", "full_address"],
-    searchableProperties: [
-      "record_name",
-      "full_address",
-      "normalized_address",
-      "street_address",
-      "city",
-      "zip",
-      "google_place_id",
-    ],
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    properties: PROPERTY_FIELDS as any,
-    associatedObjects: ["CONTACT", "DEAL", "TICKET", "COMPANY"],
-  });
+  const failures: string[] = [];
 
-  const propertyTypeId = created.objectTypeId;
-  console.log(`Created Property object: ${propertyTypeId}`);
-
-  // 3. Create association labels on the Contact side (toObjectType 0-1).
-  //    v4 label endpoint: POST /crm/v4/associations/definitions/{fromTypeId}/{toTypeId}/labels
+  // 3. Reconcile association labels on the Contact side (toObjectType 0-1).
+  //    v4 label endpoint: POST /crm/v4/associations/{fromTypeId}/{toTypeId}/labels
   //    Body: { label, name, category: "USER_DEFINED", inverseLabel? }
   //    Response: { results: [{ typeId, label, category }] }
   const contactLabelIds: Record<string, number> = {};
   for (const label of CONTACT_LABELS) {
-    console.log(`Creating Contact association label: ${label}`);
-    const res = await hubspot
-      .apiRequest({
-        method: "POST",
-        path: `/crm/v4/associations/${propertyTypeId}/0-1/labels`,
-        body: {
-          label,
-          name: envKey(label),
-          category: "USER_DEFINED",
-        },
-      })
-      .then((r) => r.json());
-    const typeId = res?.results?.[0]?.typeId;
-    if (typeof typeId === "number") {
-      contactLabelIds[envKey(label)] = typeId;
-    } else {
-      console.warn(`  ! Could not parse typeId for "${label}" — response:`, JSON.stringify(res));
-    }
+    await ensureLabel(propertyTypeId, "0-1", label, contactLabelIds, failures);
   }
 
-  // 4. Create association labels on the Company side (toObjectType 0-2).
+  // 4. Reconcile association labels on the Company side (toObjectType 0-2).
   const companyLabelIds: Record<string, number> = {};
   for (const label of COMPANY_LABELS) {
-    console.log(`Creating Company association label: ${label}`);
-    const res = await hubspot
-      .apiRequest({
-        method: "POST",
-        path: `/crm/v4/associations/${propertyTypeId}/0-2/labels`,
-        body: {
-          label,
-          name: envKey(label),
-          category: "USER_DEFINED",
-        },
-      })
-      .then((r) => r.json());
-    const typeId = res?.results?.[0]?.typeId;
-    if (typeof typeId === "number") {
-      companyLabelIds[envKey(label)] = typeId;
-    } else {
-      console.warn(`  ! Could not parse typeId for "${label}" — response:`, JSON.stringify(res));
-    }
+    await ensureLabel(propertyTypeId, "0-2", label, companyLabelIds, failures);
   }
 
   // 5. Custom-object associations (AHJ, Utility, Location).
@@ -328,7 +367,7 @@ async function main() {
   void UTILITY_OBJECT_TYPE;
   void LOCATION_OBJECT_TYPE;
 
-  // 6. Pretty-print env block.
+  // 6. Pretty-print env block (includes both existing and newly created IDs).
   console.log("\n# Paste into .env and Vercel env vars:");
   console.log(`HUBSPOT_PROPERTY_OBJECT_TYPE=${propertyTypeId}`);
   for (const [k, v] of Object.entries(contactLabelIds)) {
@@ -337,7 +376,12 @@ async function main() {
   for (const [k, v] of Object.entries(companyLabelIds)) {
     console.log(`HUBSPOT_PROPERTY_COMPANY_ASSOC_${k}=${v}`);
   }
-  console.log("\nDone.");
+
+  if (failures.length > 0) {
+    console.warn(`\n⚠️ ${failures.length} label${failures.length === 1 ? "" : "s"} failed — re-run after resolving the errors above.`);
+  } else {
+    console.log("\nDone.");
+  }
 }
 
 main().catch((err) => {
