@@ -65,3 +65,4 @@ public/remotion/music/*.wav
 scripts/4x10-analysis-data.json
 reports/4x10-crew-rotation-analysis.xlsx
 reports/4x10-crew-rotation-playground.html
+.logs/

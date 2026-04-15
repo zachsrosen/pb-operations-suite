@@ -21,7 +21,11 @@ describe("resolvePbLocationFromAddress", () => {
   });
 });
 
-import { resolveAhjForProperty, resolveUtilityForProperty } from "@/lib/resolve-geo-links";
+import {
+  resolveAhjForProperty,
+  resolveUtilityForProperty,
+  __resetGeoCacheForTests,
+} from "@/lib/resolve-geo-links";
 
 jest.mock("@/lib/db", () => ({ prisma: { deal: { findMany: jest.fn() } } }));
 jest.mock("@/lib/hubspot-custom-objects", () => ({
@@ -34,6 +38,7 @@ jest.mock("@/lib/hubspot-custom-objects", () => ({
 describe("resolveAhjForProperty", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    __resetGeoCacheForTests();
   });
 
   it("returns AHJ from an existing deal at the same zip when available", async () => {
@@ -98,6 +103,7 @@ describe("resolveAhjForProperty", () => {
 describe("resolveUtilityForProperty", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    __resetGeoCacheForTests();
   });
 
   it("returns Utility from an existing deal at the same zip when available", async () => {
@@ -153,5 +159,75 @@ describe("resolveUtilityForProperty", () => {
 
     const r = await resolveUtilityForProperty({ zip: "80301", city: "Boulder", state: "CO" });
     expect(r).toEqual({ objectId: "u-near", name: "Xcel Energy" });
+  });
+});
+
+describe("geo cache (per-process)", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    __resetGeoCacheForTests();
+  });
+
+  it("resolveAhjForProperty hits HubSpot only once per (state, zip)", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchAHJsForDeal } = jest.requireMock("@/lib/hubspot-custom-objects");
+    prisma.deal.findMany.mockResolvedValue([{ hubspotDealId: "d1", zipCode: "80301" }]);
+    fetchAHJsForDeal.mockResolvedValue([{ id: "ahj-boulder", properties: { record_name: "Boulder" } }]);
+
+    const a = await resolveAhjForProperty({ zip: "80301", city: "Boulder", state: "CO" });
+    const b = await resolveAhjForProperty({ zip: "80301", city: "Boulder", state: "CO" });
+    const c = await resolveAhjForProperty({ zip: "80301", city: "Different", state: "CO" });
+
+    expect(a).toEqual({ objectId: "ahj-boulder", name: "Boulder" });
+    expect(b).toEqual(a);
+    expect(c).toEqual(a);
+    // One call total for the same (state, zip); city differences must not bust.
+    expect(fetchAHJsForDeal).toHaveBeenCalledTimes(1);
+    expect(prisma.deal.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("caches negative (null) results so dead zips don't re-fetch", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchAllAHJs } = jest.requireMock("@/lib/hubspot-custom-objects");
+    prisma.deal.findMany.mockResolvedValue([]);
+    fetchAllAHJs.mockResolvedValue([]);
+
+    const a = await resolveAhjForProperty({ zip: "99999", city: "Nowhere", state: "XX" });
+    const b = await resolveAhjForProperty({ zip: "99999", city: "Nowhere", state: "XX" });
+
+    expect(a).toBeNull();
+    expect(b).toBeNull();
+    // fetchAllAHJs is the expensive fallback — must be called once, not twice.
+    expect(fetchAllAHJs).toHaveBeenCalledTimes(1);
+  });
+
+  it("different (state, zip) combos do NOT share cache entries", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchAHJsForDeal } = jest.requireMock("@/lib/hubspot-custom-objects");
+    prisma.deal.findMany.mockResolvedValue([{ hubspotDealId: "d1", zipCode: "80301" }]);
+    fetchAHJsForDeal.mockResolvedValue([{ id: "ahj-x", properties: { record_name: "X" } }]);
+
+    await resolveAhjForProperty({ zip: "80301", city: "Boulder", state: "CO" });
+    await resolveAhjForProperty({ zip: "80302", city: "Boulder", state: "CO" }); // same state, diff zip
+    await resolveAhjForProperty({ zip: "80301", city: "Boulder", state: "NM" }); // same zip, diff state
+
+    expect(fetchAHJsForDeal).toHaveBeenCalledTimes(3);
+  });
+
+  it("AHJ and Utility caches are independent", async () => {
+    const { prisma } = jest.requireMock("@/lib/db");
+    const { fetchAHJsForDeal, fetchUtilitiesForDeal } = jest.requireMock(
+      "@/lib/hubspot-custom-objects",
+    );
+    prisma.deal.findMany.mockResolvedValue([{ hubspotDealId: "d1", zipCode: "80301" }]);
+    fetchAHJsForDeal.mockResolvedValue([{ id: "a1", properties: { record_name: "A" } }]);
+    fetchUtilitiesForDeal.mockResolvedValue([{ id: "u1", properties: { record_name: "U" } }]);
+
+    await resolveAhjForProperty({ zip: "80301", city: "Boulder", state: "CO" });
+    await resolveUtilityForProperty({ zip: "80301", city: "Boulder", state: "CO" });
+
+    // Caching AHJ doesn't satisfy a Utility lookup.
+    expect(fetchAHJsForDeal).toHaveBeenCalledTimes(1);
+    expect(fetchUtilitiesForDeal).toHaveBeenCalledTimes(1);
   });
 });
