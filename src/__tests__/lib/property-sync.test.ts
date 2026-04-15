@@ -689,6 +689,8 @@ describe("onDealOrTicketCreated", () => {
     jest.clearAllMocks();
     process.env.PROPERTY_SYNC_ENABLED = "true";
     process.env.HUBSPOT_PROPERTY_CONTACT_ASSOC_CURRENT_OWNER = "42";
+    process.env.HUBSPOT_PROPERTY_DEAL_ASSOC_DEFAULT = "403";
+    process.env.HUBSPOT_PROPERTY_TICKET_ASSOC_DEFAULT = "401";
   });
 
   // Skeleton rollup cache row used by computePropertyRollups so the happy-path
@@ -743,7 +745,7 @@ describe("onDealOrTicketCreated", () => {
 
     const outcome = await onDealOrTicketCreated("deal", "d1");
 
-    expect(associateProperty).toHaveBeenCalledWith("prop-hs-1", "deals", "d1");
+    expect(associateProperty).toHaveBeenCalledWith("prop-hs-1", "deals", "d1", 403);
     expect(prisma.propertyDealLink.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { propertyId_dealId: { propertyId: "cache-1", dealId: "d1" } },
@@ -781,7 +783,7 @@ describe("onDealOrTicketCreated", () => {
 
     const outcome = await onDealOrTicketCreated("deal", "d1");
 
-    expect(associateProperty).toHaveBeenCalledWith("prop-hs-2", "deals", "d1");
+    expect(associateProperty).toHaveBeenCalledWith("prop-hs-2", "deals", "d1", 403);
     expect(prisma.propertyDealLink.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         create: { propertyId: "cache-2", dealId: "d1" },
@@ -894,7 +896,7 @@ describe("onDealOrTicketCreated", () => {
 
     const outcome = await onDealOrTicketCreated("deal", "d1");
 
-    expect(associateProperty).toHaveBeenCalledWith("prop-hs-2", "deals", "d1");
+    expect(associateProperty).toHaveBeenCalledWith("prop-hs-2", "deals", "d1", 403);
     expect(outcome.status).toBe("associated");
     expect(outcome.propertyCacheId).toBe("cache-2");
   });
@@ -916,7 +918,7 @@ describe("onDealOrTicketCreated", () => {
 
     const outcome = await onDealOrTicketCreated("ticket", "t1");
 
-    expect(associateProperty).toHaveBeenCalledWith("prop-hs-1", "tickets", "t1");
+    expect(associateProperty).toHaveBeenCalledWith("prop-hs-1", "tickets", "t1", 401);
     expect(prisma.propertyTicketLink.upsert).toHaveBeenCalledWith(
       expect.objectContaining({
         where: { propertyId_ticketId: { propertyId: "cache-1", ticketId: "t1" } },

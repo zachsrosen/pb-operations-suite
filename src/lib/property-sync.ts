@@ -43,10 +43,6 @@ import {
   resolveUtilityForProperty,
 } from "@/lib/resolve-geo-links";
 import { resolvePbLocationFromAddress } from "@/lib/locations";
-import {
-  AHJ_OBJECT_TYPE,
-  UTILITY_OBJECT_TYPE,
-} from "@/lib/hubspot-custom-objects";
 import type { ActivityType } from "@/generated/prisma/enums";
 
 // ---------------------------------------------------------------------------
@@ -79,6 +75,27 @@ export interface ReconcileStats {
 const CONTACT_LABEL_ASSOCIATION_IDS = {
   CURRENT_OWNER: Number(process.env.HUBSPOT_PROPERTY_CONTACT_ASSOC_CURRENT_OWNER ?? 0),
 };
+
+/**
+ * HubSpot association typeIds for Property → Deal / Property → Ticket.
+ *
+ * HubSpot does NOT register a HUBSPOT_DEFINED (typeId 1) default between the
+ * custom Property object and standard Deal/Ticket objects, so we must send an
+ * explicit USER_DEFINED typeId on every create. Missing or zero means the
+ * associate call will 400 with a misleading "INVALID_OBJECT_IDS" error — fail
+ * loudly here instead of at the API boundary.
+ */
+function dealAssocTypeId(): number {
+  const id = Number(process.env.HUBSPOT_PROPERTY_DEAL_ASSOC_DEFAULT ?? 0);
+  if (!id) throw new Error("HUBSPOT_PROPERTY_DEAL_ASSOC_DEFAULT is not set");
+  return id;
+}
+
+function ticketAssocTypeId(): number {
+  const id = Number(process.env.HUBSPOT_PROPERTY_TICKET_ASSOC_DEFAULT ?? 0);
+  if (!id) throw new Error("HUBSPOT_PROPERTY_TICKET_ASSOC_DEFAULT is not set");
+  return id;
+}
 
 const COALESCE_WINDOW_MS = 2_000;
 
@@ -270,16 +287,15 @@ async function createNewProperty(args: {
     createdHubspotId = hs.id;
   }
 
-  // Associate to AHJ / Utility custom objects (HUBSPOT_DEFINED typeId 1, no
-  // label). Location association is future work — needs a bootstrap map from
-  // canonical location string → Location object ID. Skipped when we adopted
-  // an existing HubSpot object — its associations were set on original create
-  // (or will be caught up by the nightly reconcile) and we don't want to
-  // write to a pre-existing record on a dedup hit.
-  if (createdHubspotId) {
-    if (ahj) await associateProperty(createdHubspotId, AHJ_OBJECT_TYPE, ahj.objectId);
-    if (utility) await associateProperty(createdHubspotId, UTILITY_OBJECT_TYPE, utility.objectId);
-  }
+  // AHJ / Utility custom-object associations are intentionally NOT mirrored to
+  // HubSpot here. HubSpot has no registered association type between Property
+  // and either custom object in this portal, so any create call 400s with a
+  // misleading "INVALID_OBJECT_IDS" error. The AHJ/Utility objectIds we
+  // resolved above are persisted on the cache row below, which is the
+  // authoritative source for local queries. If HubSpot UI links to AHJ/Utility
+  // are needed later, register labeled association types in the portal, add
+  // typeId env vars, and wire them here — same pattern as Contact / Deal /
+  // Ticket. Location association is also future work.
 
   // Persist the cache row. Field parity with HubSpot is deliberate — the cache
   // is the authoritative source for local queries and backfill diff detection.
@@ -741,11 +757,16 @@ export async function onDealOrTicketCreated(
     return { status: "deferred", reason: "no properties for contact" };
   }
 
-  // 5) Mirror the association in HubSpot and in the local link table. No
-  // labelAssociationTypeId means `associateProperty` falls back to the
-  // HUBSPOT_DEFINED (unlabeled) association — the spec's default for
-  // deal/ticket links.
-  await associateProperty(chosen.hubspotObjectId, kind === "deal" ? "deals" : "tickets", objectId);
+  // 5) Mirror the association in HubSpot and in the local link table. HubSpot
+  // has no HUBSPOT_DEFINED (typeId 1) default registered between Property and
+  // Deal / Ticket — the portal only has USER_DEFINED labels — so we MUST pass
+  // an explicit typeId or the create 400s with an "INVALID_OBJECT_IDS" error.
+  await associateProperty(
+    chosen.hubspotObjectId,
+    kind === "deal" ? "deals" : "tickets",
+    objectId,
+    kind === "deal" ? dealAssocTypeId() : ticketAssocTypeId(),
+  );
 
   if (kind === "deal") {
     await prisma.propertyDealLink.upsert({
