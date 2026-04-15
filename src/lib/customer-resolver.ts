@@ -15,6 +15,13 @@ import { FilterOperatorEnum as ContactFilterOp } from "@hubspot/api-client/lib/c
 import { FilterOperatorEnum as CompanyFilterOp } from "@hubspot/api-client/lib/codegen/crm/companies";
 import { enrichServiceItems, type EnrichmentInput } from "@/lib/service-enrichment";
 import { getZuperJobUrl } from "@/lib/external-links";
+import {
+  computeEquipmentSummary,
+  createEmptySummary,
+  mapCacheRowToPropertyDetail,
+  normalizeOwnershipLabel,
+  type PropertyDetail,
+} from "@/lib/property-detail";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -92,6 +99,7 @@ export interface ContactDetail {
   deals: ContactDeal[];
   tickets: ContactTicket[];
   jobs: ContactJob[];
+  properties: PropertyDetail[];
 }
 
 // ---------------------------------------------------------------------------
@@ -353,7 +361,14 @@ export async function searchContacts(query: string): Promise<SearchResult> {
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve full detail for a single contact: properties, deals, tickets, and Zuper jobs.
+ * Resolve full detail for a single contact: contact info, deals, tickets,
+ * Zuper jobs, and linked Properties (HubSpot Property custom objects).
+ *
+ * Properties are surfaced from `PropertyContactLink` — all cache rows this
+ * contact is linked to, most-recently-associated first, each carrying the
+ * per-link `ownershipLabel` + `associatedAt`. The fetch is non-blocking: if
+ * the Property lookup or any per-property equipment summary fails, the
+ * customer view still renders with `properties` defaulting to an empty array.
  */
 export async function resolveContactDetail(contactId: string): Promise<ContactDetail> {
   // 1. Batch-read contact properties
@@ -665,6 +680,43 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
     return new Date(dateB).getTime() - new Date(dateA).getTime();
   });
 
+  // 7. Properties — surface all Property cache rows the contact is linked to,
+  //    most-recently-associated first. Equipment summary fetched live per property.
+  const properties: PropertyDetail[] = [];
+  try {
+    const propertyLinks = await prisma.propertyContactLink.findMany({
+      where: { contactId },
+      include: {
+        property: {
+          include: {
+            dealLinks: true,
+            ticketLinks: true,
+            contactLinks: true,
+          },
+        },
+      },
+      orderBy: { associatedAt: "desc" },
+    });
+
+    for (const link of propertyLinks) {
+      const base = mapCacheRowToPropertyDetail(link.property, {
+        ownershipLabel: normalizeOwnershipLabel(link.label),
+        associatedAt: link.associatedAt,
+      });
+      let equipmentSummary;
+      try {
+        equipmentSummary = await computeEquipmentSummary(base.dealIds);
+      } catch (err) {
+        console.error("[CustomerResolver] Property equipment fetch failed:", err);
+        equipmentSummary = createEmptySummary();
+      }
+      properties.push({ ...base, equipmentSummary });
+    }
+  } catch (err) {
+    Sentry.captureException(err);
+    console.error("[CustomerResolver] Property fetch failed:", err);
+  }
+
   return {
     contactId,
     firstName: contactProps.firstname || null,
@@ -676,5 +728,6 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
     deals,
     tickets,
     jobs,
+    properties,
   };
 }

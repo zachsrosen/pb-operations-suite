@@ -1,6 +1,10 @@
 import * as Sentry from "@sentry/nextjs";
 import { Client } from "@hubspot/api-client";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
+import { chunk } from "@/lib/utils";
+
+/** HubSpot batch API input limit — matches BATCH_SIZE in hubspot-tickets.ts */
+const HUBSPOT_BATCH_SIZE = 100;
 
 export const hubspotClient = new Client({
   accessToken: process.env.HUBSPOT_ACCESS_TOKEN,
@@ -1482,6 +1486,165 @@ export async function fetchContactEmail(dealId: string): Promise<{ email: string
   }
 }
 
+/**
+ * Fetch a single HubSpot contact by ID with the requested properties.
+ * Returns null on 404 or auth failure. Used by the Property sync orchestrator
+ * and the manual-create flow.
+ */
+export async function fetchContactById(
+  contactId: string,
+  properties: string[]
+): Promise<{ id: string; properties: Record<string, string | null> } | null> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  const url = new URL(
+    `https://api.hubapi.com/crm/v3/objects/contacts/${encodeURIComponent(contactId)}`
+  );
+  if (properties.length) url.searchParams.set("properties", properties.join(","));
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) return null;
+    const data = (await response.json()) as {
+      id: string;
+      properties?: Record<string, string | null>;
+    };
+    return { id: data.id, properties: data.properties ?? {} };
+  } catch (err) {
+    console.warn("[HubSpot] fetchContactById %s failed:", contactId, err);
+    return null;
+  }
+}
+
+/**
+ * Fetch a single HubSpot deal by ID with the requested properties.
+ * Returns null on 404 or auth failure. Thin mirror of `fetchContactById`,
+ * used by the Property sync orchestrator to read deal address + metadata
+ * when disambiguating which existing Property to associate on deal creation.
+ */
+export async function fetchDealById(
+  dealId: string,
+  properties: string[]
+): Promise<{ id: string; properties: Record<string, string | null> } | null> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  const url = new URL(
+    `https://api.hubapi.com/crm/v3/objects/deals/${encodeURIComponent(dealId)}`
+  );
+  if (properties.length) url.searchParams.set("properties", properties.join(","));
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) return null;
+    const data = (await response.json()) as {
+      id: string;
+      properties?: Record<string, string | null>;
+    };
+    return { id: data.id, properties: data.properties ?? {} };
+  } catch (err) {
+    console.warn("[HubSpot] fetchDealById %s failed:", dealId, err);
+    return null;
+  }
+}
+
+/**
+ * Fetch a single HubSpot ticket by ID with the requested properties.
+ * Returns null on 404 or auth failure. Counterpart to `fetchDealById` used
+ * by the Property sync orchestrator when handling `ticket.creation` webhooks.
+ */
+export async function fetchTicketById(
+  ticketId: string,
+  properties: string[]
+): Promise<{ id: string; properties: Record<string, string | null> } | null> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  const url = new URL(
+    `https://api.hubapi.com/crm/v3/objects/tickets/${encodeURIComponent(ticketId)}`
+  );
+  if (properties.length) url.searchParams.set("properties", properties.join(","));
+
+  try {
+    const response = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+    });
+    if (response.status === 404) return null;
+    if (!response.ok) return null;
+    const data = (await response.json()) as {
+      id: string;
+      properties?: Record<string, string | null>;
+    };
+    return { id: data.id, properties: data.properties ?? {} };
+  } catch (err) {
+    console.warn("[HubSpot] fetchTicketById %s failed:", ticketId, err);
+    return null;
+  }
+}
+
+/**
+ * Fetch the primary associated contact ID for a ticket using HubSpot v4
+ * associations. Mirrors `fetchPrimaryContactId` (deals version). Falls back
+ * to the single associated contact when no "Primary" label is present.
+ */
+export async function fetchPrimaryContactIdForTicket(ticketId: string): Promise<string | null> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) return null;
+
+  try {
+    const response = await fetch(
+      `https://api.hubapi.com/crm/v4/objects/tickets/${encodeURIComponent(ticketId)}/associations/contacts`,
+      {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      }
+    );
+    if (!response.ok) return null;
+    const data = (await response.json()) as {
+      results?: Array<{
+        toObjectId: number;
+        associationTypes: Array<{ label: string | null; typeId: number; category: string }>;
+      }>;
+    };
+    const results = data.results ?? [];
+    if (results.length === 0) return null;
+
+    for (const assoc of results) {
+      const isPrimary = assoc.associationTypes?.some(
+        (t) => t.label && t.label.toLowerCase().includes("primary")
+      );
+      if (isPrimary) return String(assoc.toObjectId);
+    }
+    if (results.length === 1) return String(results[0].toObjectId);
+    return null;
+  } catch (e) {
+    console.warn("[HubSpot] fetchPrimaryContactIdForTicket %s failed:", ticketId, e);
+    return null;
+  }
+}
+
 export async function fetchProjectById(id: string): Promise<Project | null> {
   const portalId = process.env.HUBSPOT_PORTAL_ID || "21710069";
 
@@ -2046,6 +2209,92 @@ export async function fetchLineItemsForDealStrict(dealId: string): Promise<LineI
     acSize: Number(item.properties.ac_size) || 0,
     energyStorageCapacity: Number(item.properties.energy_storage_capacity) || 0,
   }));
+}
+
+/**
+ * Fetch line items associated with multiple deals in one pass.
+ *
+ * Resolves deal → line_item associations for all input deal IDs, then batch-reads
+ * the resulting line item properties. Returns a flat array; callers that need
+ * per-deal grouping should build it from the `dealId` field.
+ *
+ * Used by the property-sync rollup computation in `property-sync.ts`, which needs
+ * to aggregate equipment (modules / batteries / EV chargers) across every deal
+ * linked to a property. Keeps the request count O(1) in deal count instead of
+ * fanning out to `fetchLineItemsForDeal` per id.
+ */
+export async function fetchLineItemsForDeals(
+  dealIds: string[]
+): Promise<Array<LineItem & { dealId: string }>> {
+  if (dealIds.length === 0) return [];
+
+  // Chunk deal IDs at the HubSpot batch cap (100) when resolving associations.
+  // A property with >100 linked deals would otherwise exceed the batch input limit.
+  const lineItemToDeal = new Map<string, string>();
+  for (const dealIdBatch of chunk(dealIds, HUBSPOT_BATCH_SIZE)) {
+    const associationsResponse = await hubspotClient.crm.associations.batchApi.read(
+      "deals",
+      "line_items",
+      { inputs: dealIdBatch.map((id) => ({ id })) }
+    );
+    for (const result of associationsResponse.results ?? []) {
+      const dealId = String(result._from?.id ?? "").trim();
+      if (!dealId) continue;
+      for (const to of result.to ?? []) {
+        const liId = String(to.id ?? "").trim();
+        if (liId) lineItemToDeal.set(liId, dealId);
+      }
+    }
+  }
+  if (lineItemToDeal.size === 0) return [];
+
+  // Chunk line item IDs at the HubSpot batch cap (100) when reading properties.
+  // Deals can fan out to many line items each, so even a small deal set can
+  // produce >100 line items.
+  const lineItemIds = Array.from(lineItemToDeal.keys());
+  const results: Array<LineItem & { dealId: string }> = [];
+  for (const liIdBatch of chunk(lineItemIds, HUBSPOT_BATCH_SIZE)) {
+    const lineItemsResponse = await hubspotClient.crm.lineItems.batchApi.read({
+      inputs: liIdBatch.map((id) => ({ id })),
+      properties: [
+        "hs_product_id",
+        "name",
+        "hs_sku",
+        "sku",
+        "description",
+        "quantity",
+        "price",
+        "amount",
+        "product_category",
+        "manufacturer",
+        "dc_size",
+        "ac_size",
+        "energy_storage_capacity",
+      ],
+      propertiesWithHistory: [],
+    });
+
+    for (const item of lineItemsResponse.results) {
+      results.push({
+        id: item.id,
+        dealId: lineItemToDeal.get(item.id) ?? "",
+        hubspotProductId: String(item.properties.hs_product_id || "").trim() || null,
+        name: String(item.properties.name || ""),
+        sku: String(item.properties.hs_sku || item.properties.sku || ""),
+        description: String(item.properties.description || ""),
+        quantity: Number(item.properties.quantity) || 1,
+        price: Number(item.properties.price) || 0,
+        amount: Number(item.properties.amount) || 0,
+        productCategory: String(item.properties.product_category || ""),
+        manufacturer: String(item.properties.manufacturer || ""),
+        dcSize: Number(item.properties.dc_size) || 0,
+        acSize: Number(item.properties.ac_size) || 0,
+        energyStorageCapacity: Number(item.properties.energy_storage_capacity) || 0,
+      });
+    }
+  }
+
+  return results;
 }
 
 function trimOrNull(value: string | null | undefined): string | null {
@@ -2798,4 +3047,131 @@ export function filterProjectsForContext(
     default:
       return projects;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Cursor-paged search helpers (Task 4.2)
+// ---------------------------------------------------------------------------
+//
+// Thin wrappers around HubSpot search that return a single page + opaque
+// `after` cursor, suitable for resumable streaming by the backfill script.
+// `searchWithRetry` above is deals-only, so for contacts/tickets we inline
+// the same 429 retry pattern against the typed client search APIs.
+
+export interface HubSpotSearchPage<T> {
+  results: T[];
+  paging?: { next?: { after: string } };
+}
+
+async function retryingSearch<T>(fn: () => Promise<T>, category: string, maxRetries = 5): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: unknown) {
+      const isRateLimit =
+        error instanceof Error &&
+        (error.message.includes("429") || error.message.includes("rate") || error.message.includes("secondly"));
+      const statusCode = (error as { code?: number })?.code;
+
+      if ((isRateLimit || statusCode === 429) && attempt < maxRetries - 1) {
+        const base = Math.pow(2, attempt) * 1100;
+        const jitter = Math.random() * 400;
+        const delay = Math.round(base + jitter);
+        Sentry.addBreadcrumb({
+          category,
+          message: `Rate limited, retry ${attempt + 1}/${maxRetries}`,
+          level: "warning",
+          data: { delay, attempt },
+        });
+        await sleep(delay);
+        continue;
+      }
+      Sentry.addBreadcrumb({
+        category,
+        message: "Search failed after retries",
+        level: "error",
+        data: { attempt, statusCode },
+      });
+      throw error;
+    }
+  }
+  throw new Error("Max retries exceeded");
+}
+
+/**
+ * One page of contacts that have at least one associated deal, sorted by
+ * HubSpot's default ordering. Returns the opaque `after` cursor for the next
+ * page (if any). `after: null` on the first call; pass `page.paging?.next?.after`
+ * back in for subsequent pages.
+ */
+export async function searchHubSpotContactsWithDeals(
+  after: string | null
+): Promise<HubSpotSearchPage<{ id: string; properties: Record<string, string | null> }>> {
+  const body = {
+    filterGroups: [
+      {
+        filters: [{ propertyName: "num_associated_deals", operator: "GT" as const, value: "0" }],
+      },
+    ],
+    properties: ["firstname", "lastname", "email", "address", "address2", "city", "state", "zip", "country"],
+    limit: 100,
+    // HubSpot rejects `after: null` — must be undefined on the first page.
+    after: after ?? undefined,
+  } as unknown as Parameters<typeof hubspotClient.crm.contacts.searchApi.doSearch>[0];
+
+  const res = await retryingSearch(
+    () => hubspotClient.crm.contacts.searchApi.doSearch(body),
+    "hubspot-contacts-paging"
+  );
+  return {
+    results: (res.results ?? []) as Array<{ id: string; properties: Record<string, string | null> }>,
+    paging: res.paging,
+  };
+}
+
+/**
+ * One page of deals (all pipelines), sorted by `createdate` ascending for
+ * deterministic streaming across resumable runs.
+ */
+export async function searchAllHubSpotDeals(
+  after: string | null
+): Promise<HubSpotSearchPage<{ id: string; properties: Record<string, string | null> }>> {
+  const body = {
+    filterGroups: [],
+    properties: ["dealname", "pipeline", "dealstage", "createdate"],
+    sorts: [{ propertyName: "createdate", direction: "ASCENDING" }],
+    limit: 100,
+    after: after ?? undefined,
+  } as unknown as Parameters<typeof hubspotClient.crm.deals.searchApi.doSearch>[0];
+
+  const res = await searchWithRetry(body);
+  return {
+    results: (res.results ?? []) as Array<{ id: string; properties: Record<string, string | null> }>,
+    paging: res.paging,
+  };
+}
+
+/**
+ * One page of tickets (all pipelines), sorted by `createdate` ascending for
+ * deterministic streaming across resumable runs.
+ */
+export async function searchAllHubSpotTickets(
+  after: string | null
+): Promise<HubSpotSearchPage<{ id: string; properties: Record<string, string | null> }>> {
+  const body = {
+    filterGroups: [],
+    properties: ["subject", "hs_pipeline", "hs_pipeline_stage", "createdate"],
+    sorts: [{ propertyName: "createdate", direction: "ASCENDING" }],
+    limit: 100,
+    after: after ?? undefined,
+  } as unknown as Parameters<typeof hubspotClient.crm.tickets.searchApi.doSearch>[0];
+
+  const res = await retryingSearch(
+    () => hubspotClient.crm.tickets.searchApi.doSearch(body),
+    "hubspot-tickets-paging"
+  );
+  return {
+    results: (res.results ?? []) as Array<{ id: string; properties: Record<string, string | null> }>,
+    paging: res.paging,
+  };
 }

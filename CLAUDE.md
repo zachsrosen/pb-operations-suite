@@ -304,7 +304,41 @@ Activity tracking and compliance monitoring.
 - **Compliance digest**: Scheduled email reports via `/api/cron/`
 - **Zuper compliance**: Cross-reference job status tracking
 
-### 10. Suite Navigation (`lib/suite-nav.ts`)
+### 10. HubSpot Property Object (`lib/property-*.ts`, webhooks, cron, `/api/properties/`)
+
+Custom HubSpot Property object that anchors deals, tickets, contacts, and equipment rollups to a canonical address. One property per normalized address; enforces dedup via `addressHash` (SHA-256 of `street+unit+city+state+zip`) and optional `googlePlaceId`.
+
+**Data flow:**
+```
+Contact address change (HubSpot webhook)
+  └─ geocode → resolve-geo-links (PB shop, AHJ, utility)
+  └─ upsertPropertyFromGeocode → HubSpotPropertyCache row
+  └─ associate deals/tickets/contacts via PropertyDealLink / PropertyTicketLink / PropertyContactLink
+  └─ compute rollups (systemSizeKwDc, hasBattery, openTicketsCount, warranty dates)
+```
+
+**Components:**
+- **Cache**: `HubSpotPropertyCache` (full mirror of HubSpot Property object) + three link tables with ownership labels (Current Owner / Previous Owner / Authorized Contact).
+- **Sync** (`property-sync.ts`): `onContactAddressChange` is the entry point for all property creation/association. `upsertPropertyFromGeocode` is a reusable helper for manual-create flow.
+- **Reconcile cron** (`/api/cron/property-reconcile`, daily 9am): nightly drift repair — re-fetches any property touched in last 24h and corrects cache divergence. Watermark-driven; safe to re-run.
+- **Backfill script** (`scripts/backfill-properties.ts`): resumable 4-phase backfill (contacts → deals → tickets → rollups) with DB-tracked `PropertyBackfillRun` progress and stale-lock takeover.
+- **Webhooks** (`/api/webhooks/hubspot/property/`): handles `contact.propertyChange` for address fields with DB-backed idempotency. `PROPERTY_SYNC_ENABLED=false` short-circuits to 200.
+
+**UI surfaces** (gated on `NEXT_PUBLIC_UI_PROPERTY_VIEWS_ENABLED`):
+- `<PropertyDrawer>` — slide-in detail view with equipment summary, owners, deals, tickets.
+- `<PropertyLink>` — clickable address wrapper; requires structured `AddressParts` (no string parsing).
+- `<PropertyDrawerProvider>` — context for opening the drawer from nested components.
+- Wired on: Service Suite customer-360 (Properties section above Deals/Tickets/Jobs), Deals detail panel address row. Follow-ups tracked in `docs/superpowers/followups/` for ticket detail and scheduler pages.
+
+**API routes** (`/api/properties/`): `[id]` (drawer detail), `resolve` (POST address → propertyId or null), `by-contact/[contactId]`, `manual-create` (admin-only).
+
+**Feature flags:**
+- `PROPERTY_SYNC_ENABLED` — webhook + cron + backfill kill switch. Cache tables sit empty until on.
+- `NEXT_PUBLIC_UI_PROPERTY_VIEWS_ENABLED` — UI surfaces kill switch. Independent from sync flag.
+
+Note: ATTOM-sourced fields (yearBuilt, squareFootage, roofMaterial, etc.) are null until ATTOM integration ships (follow-up spec). Current implementation populates only HubSpot-derivable + Google-geocoded fields.
+
+### 11. Suite Navigation (`lib/suite-nav.ts`)
 
 8 departmental suites with role-based visibility:
 
@@ -476,6 +510,7 @@ Prisma models organized by domain:
 - **BOM Pipeline**: BomToolFeedback, ProjectBomSnapshot, PendingCatalogPush, BomHubSpotPushLog, BomPipelineRun, CatalogMatchGroup
 - **Service**: ServicePriorityOverride, ChatMessage
 - **Caches**: HubSpotProjectCache, ZuperJobCache
+- **Property Object**: HubSpotPropertyCache, PropertyDealLink, PropertyTicketLink, PropertyContactLink, PropertyCompanyLink, PropertySyncWatermark, PropertyBackfillRun
 - **Reviews**: ProjectReview, DesignReviewFeedback
 - **SOP**: SopTab, SopSection, SopRevision, SopSuggestion
 - **Solar Surveyor**: SolarProject, SolarProjectRevision, SolarFeedback, SolarProjectShare, SolarPendingState, SolarWeatherCache, SolarShadeCache, SolarCustomEquipment

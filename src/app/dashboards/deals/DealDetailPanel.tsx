@@ -6,6 +6,14 @@ import StatusDot from "./StatusDot";
 import { STATUS_COLUMNS, isProjectPipeline, formatStatusValue, type TableDeal } from "./deals-types";
 import { STAGE_COLORS } from "@/lib/constants";
 import { formatMoney } from "@/lib/format";
+import PropertyLink from "@/components/PropertyLink";
+import { PropertyDrawerProvider } from "@/components/property/PropertyDrawerContext";
+
+// Task 6.4: property address drawer integration. When the flag is off, the
+// address InfoRow falls back to the joined-string render and the provider is
+// not mounted, so no PropertyLink bundle ships for disabled users.
+const UI_PROPERTY_VIEWS_ENABLED =
+  process.env.NEXT_PUBLIC_UI_PROPERTY_VIEWS_ENABLED === "true";
 
 interface DealDetailPanelProps {
   deal: TableDeal | null;
@@ -39,7 +47,19 @@ export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps)
   const isProject = isProjectPipeline(deal.pipeline);
   const stageColor = STAGE_COLORS[deal.stage]?.hex || "#71717A";
 
-  return (
+  // Only render the PropertyLink when we have enough structured address data
+  // to hash (and the flag is on). Otherwise fall back to the joined-string
+  // InfoRow below. PropertyLink throws if the drawer provider is missing, so
+  // we only mount it inside the provider branch.
+  const addressLinkable =
+    UI_PROPERTY_VIEWS_ENABLED &&
+    Boolean(deal.address && deal.city && deal.state && deal.postalCode);
+  const joinedAddress =
+    [deal.address, deal.city, deal.state, deal.postalCode]
+      .filter(Boolean)
+      .join(", ") || "—";
+
+  const panel = (
     <>
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/40 z-40" onClick={onClose} />
@@ -89,7 +109,26 @@ export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps)
 
           {/* Info section */}
           <Section title="Info">
-            <InfoRow label="Address" value={[deal.address, deal.city, deal.state, deal.postalCode].filter(Boolean).join(", ") || "—"} />
+            {addressLinkable ? (
+              <div className="flex items-center justify-between py-1.5">
+                <span className="text-xs text-muted">Address</span>
+                <span className="text-xs text-right max-w-[200px] truncate" title={joinedAddress}>
+                  <PropertyLink
+                    address={{
+                      street: deal.address,
+                      unit: null,
+                      city: deal.city,
+                      state: deal.state,
+                      zip: deal.postalCode,
+                    }}
+                    display={joinedAddress}
+                    className="text-xs"
+                  />
+                </span>
+              </div>
+            ) : (
+              <InfoRow label="Address" value={joinedAddress} />
+            )}
             <InfoRow label="Location" value={deal.pbLocation} />
             <InfoRow label="Project Type" value={deal.projectType} />
             {isProject && <InfoRow label="Owner" value={deal.dealOwner || "—"} />}
@@ -149,6 +188,14 @@ export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps)
       </div>
     </>
   );
+
+  // Mount the drawer provider only when the flag is on. Keeps the drawer
+  // bundle out of the tree for disabled users and means PropertyLink's
+  // usePropertyDrawer() hook always resolves when linkable.
+  if (UI_PROPERTY_VIEWS_ENABLED) {
+    return <PropertyDrawerProvider>{panel}</PropertyDrawerProvider>;
+  }
+  return panel;
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {

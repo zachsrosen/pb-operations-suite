@@ -12,6 +12,14 @@ import type {
   ContactJob as BaseContactJob,
 } from "@/lib/customer-resolver";
 import { getZuperJobUrl } from "@/lib/external-links";
+import PropertyLink from "@/components/PropertyLink";
+import { PropertyDrawerProvider } from "@/components/property/PropertyDrawerContext";
+
+// Feature flag — when off, the Properties section in the detail panel doesn't
+// render at all (and the PropertyDrawerProvider isn't mounted). Flag flip
+// happens in Task 7.3.
+const UI_PROPERTY_VIEWS_ENABLED =
+  process.env.NEXT_PUBLIC_UI_PROPERTY_VIEWS_ENABLED === "true";
 
 // ---------------------------------------------------------------------------
 // Types (client-side mirrors — extends server types with enrichment fields)
@@ -325,7 +333,56 @@ export default function CustomerHistoryPage() {
                   <LoadingSpinner />
                 </div>
               ) : detail ? (
-                <>
+                <PropertyDrawerProvider>
+                  {/* Properties Section (above Deals/Tickets/Jobs) */}
+                  {UI_PROPERTY_VIEWS_ENABLED && detail.properties.length > 0 && (
+                    <section className="mb-6">
+                      <h3 className="text-sm font-medium text-muted uppercase tracking-wider mb-3">
+                        Properties ({detail.properties.length})
+                      </h3>
+                      <div className="space-y-2">
+                        {detail.properties.map((p) => (
+                          <div
+                            key={p.id}
+                            className="p-3 rounded bg-surface-2"
+                          >
+                            <div className="flex flex-wrap items-center gap-1.5 mb-1">
+                              <PropertyLink
+                                address={p.addressParts}
+                                display={p.fullAddress}
+                                hubspotObjectId={p.hubspotObjectId}
+                                className="text-sm font-medium"
+                              />
+                              <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-xs text-cyan-300">
+                                {p.ownershipLabel}
+                              </span>
+                              {p.openTicketsCount > 0 && (
+                                <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs text-amber-300">
+                                  &#9888; {p.openTicketsCount} open ticket
+                                  {p.openTicketsCount !== 1 ? "s" : ""}
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-muted">
+                              Associated {formatDate(p.associatedAt as unknown as string)}
+                              {p.systemSizeKwDc != null && (
+                                <span> &middot; {p.systemSizeKwDc} kW</span>
+                              )}
+                              {p.pbLocation && <span> &middot; {p.pbLocation}</span>}
+                            </p>
+                            {(p.ahjName || p.utilityName) && (
+                              <p className="text-xs text-muted">
+                                {[p.ahjName, p.utilityName]
+                                  .filter(Boolean)
+                                  .join(" \u00B7 ")}
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </section>
+                  )}
+
                   {/* Three-Column Grid: Deals | Tickets | Jobs */}
                   <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                     {/* Deals */}
@@ -485,7 +542,7 @@ export default function CustomerHistoryPage() {
                       )}
                     </section>
                   </div>
-                </>
+                </PropertyDrawerProvider>
               ) : (
                 <ErrorState message="Failed to load customer detail" />
               )}

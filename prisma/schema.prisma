@@ -186,6 +186,11 @@ enum ActivityType {
   DEAL_SYNC_WEBHOOK_RECEIVED
   DEAL_SYNC_ERROR
   DEAL_SYNC_DISCREPANCY
+
+  // HubSpot Property Object
+  PROPERTY_CREATED
+  PROPERTY_ASSOCIATION_ADDED
+  PROPERTY_SYNC_FAILED
 }
 
 enum ClientType {
@@ -519,6 +524,177 @@ model HubSpotProjectCache {
   @@index([lastSyncedAt])
   @@index([zuperJobUid])
 }
+
+// ===========================================
+// HUBSPOT PROPERTY CACHE
+// ===========================================
+
+model HubSpotPropertyCache {
+  id                 String   @id @default(cuid())
+
+  // HubSpot identity
+  hubspotObjectId    String   @unique
+
+  // Dedup keys — BOTH are unique to enforce one-property-per-address invariant
+  googlePlaceId      String?  @unique           // canonical key when Google returns a place_id
+  addressHash        String   @unique           // SHA-256 of normalized(street+unit+city+state+zip); enforces dedup when googlePlaceId is null (rural, PO Box, new construction)
+  normalizedAddress  String                     // human-readable search index, NOT authoritative
+  attomId            String?  @unique
+
+  // Address
+  fullAddress        String
+  streetAddress      String
+  unitNumber         String?
+  city               String
+  state              String
+  zip                String
+  county             String?
+  latitude           Float
+  longitude          Float
+
+  // Denormalized attrs — FULL MIRROR of HubSpot (ATTOM-sourced fields empty until integration ships)
+  propertyType              String?
+  yearBuilt                 Int?
+  squareFootage             Int?
+  lotSizeSqft               Int?
+  stories                   Int?
+  bedrooms                  Int?
+  bathrooms                 Float?
+  foundationType            String?
+  constructionType          String?
+  roofMaterial              String?
+  roofAgeYears              Int?
+  roofLastReplacedYear      Int?
+  roofConditionNotes        String?
+  parcelApn                 String?
+  zoning                    String?
+  assessedValue             Int?
+  lastSaleDate              DateTime?
+  lastSalePrice             Int?
+  publicRecordOwnerName     String?
+  floodZone                 String?
+  wildfireRiskZone          String?
+  hoaName                   String?
+  generalNotes              String?   @db.Text
+
+  // Electrical (manual)
+  mainPanelAmperage      Int?
+  mainPanelManufacturer  String?
+  serviceEntranceType    String?
+
+  // Rollups (sync-maintained)
+  firstInstallDate        DateTime?
+  mostRecentInstallDate   DateTime?
+  associatedDealsCount    Int      @default(0)
+  associatedTicketsCount  Int      @default(0)
+  openTicketsCount        Int      @default(0)
+  systemSizeKwDc          Float?
+  hasBattery              Boolean  @default(false)
+  hasEvCharger            Boolean  @default(false)
+  lastServiceDate         DateTime?
+  earliestWarrantyExpiry  DateTime?
+
+  // Geographic links
+  ahjObjectId        String?
+  ahjName            String?
+  utilityObjectId    String?
+  utilityName        String?
+  locationObjectId   String?
+  pbLocation         String?
+
+  // Sync metadata
+  geocodedAt           DateTime
+  attomLastSyncedAt    DateTime?
+  attomSyncStatus      String?           // OK | FAILED | PENDING | NO_MATCH
+  attomMatchConfidence String?           // HIGH | MEDIUM | LOW
+  lastReconciledAt     DateTime
+  updatedAt            DateTime @updatedAt
+  createdAt            DateTime @default(now())
+
+  // Relations
+  contactLinks         PropertyContactLink[]
+  dealLinks            PropertyDealLink[]
+  ticketLinks          PropertyTicketLink[]
+  companyLinks         PropertyCompanyLink[]
+
+  @@index([normalizedAddress])
+  @@index([city, state])
+  @@index([latitude, longitude])
+  @@index([attomSyncStatus])
+  @@index([pbLocation])
+}
+
+model PropertyContactLink {
+  id           String   @id @default(cuid())
+  propertyId   String
+  property     HubSpotPropertyCache @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  contactId    String
+  label        String                    // Current Owner | Previous Owner | Tenant | Property Manager | Authorized Contact
+  associatedAt DateTime @default(now())
+
+  @@unique([propertyId, contactId, label])
+  @@index([contactId])
+}
+
+model PropertyDealLink {
+  id           String   @id @default(cuid())
+  propertyId   String
+  property     HubSpotPropertyCache @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  dealId       String
+  associatedAt DateTime @default(now())
+
+  @@unique([propertyId, dealId])
+  @@index([dealId])
+}
+
+model PropertyTicketLink {
+  id           String   @id @default(cuid())
+  propertyId   String
+  property     HubSpotPropertyCache @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  ticketId     String
+  associatedAt DateTime @default(now())
+
+  @@unique([propertyId, ticketId])
+  @@index([ticketId])
+}
+
+model PropertyCompanyLink {
+  id           String   @id @default(cuid())
+  propertyId   String
+  property     HubSpotPropertyCache @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  companyId    String
+  label        String                    // Owner | Manager
+  associatedAt DateTime @default(now())
+
+  @@unique([propertyId, companyId, label])
+  @@index([companyId])
+}
+
+model PropertySyncWatermark {
+  contactId   String   @id            // HubSpot contact ID
+  lastSyncAt  DateTime
+
+  @@index([lastSyncAt])                // cleanup cron drops rows > 7 days old
+}
+
+model PropertyBackfillRun {
+  id              String    @id @default(cuid())
+  startedAt       DateTime  @default(now())
+  completedAt     DateTime?
+  status          String                             // "running" | "completed" | "failed" | "paused"
+  phase           String                             // "contacts" | "deals" | "tickets" | "reconcile"
+  cursor          String?                            // HubSpot paging cursor for the current phase
+  totalProcessed  Int       @default(0)
+  totalCreated    Int       @default(0)
+  totalAssociated Int       @default(0)
+  totalFailed     Int       @default(0)
+  lastError       String?
+  heartbeatAt     DateTime  @default(now())          // NEW — plan refinement; running process updates every ~30s for stale-lock detection
+
+  @@index([status])
+  @@index([heartbeatAt])
+}
+
 // ===========================================
 // DEAL STATUS SNAPSHOTS (EOD Summary Email)
 // ===========================================
