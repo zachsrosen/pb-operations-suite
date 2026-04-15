@@ -67,7 +67,7 @@ export interface PropertyDetail {
   equipmentSummary: EquipmentSummary;
 }
 
-function createEmptySummary(): EquipmentSummary {
+export function createEmptySummary(): EquipmentSummary {
   return {
     modules: { count: 0, totalWattage: 0 },
     inverters: { count: 0 },

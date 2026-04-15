@@ -5,6 +5,7 @@ import { getUserByEmail } from "@/lib/db";
 import { canAccessRoute } from "@/lib/role-permissions";
 import {
   computeEquipmentSummary,
+  createEmptySummary,
   mapCacheRowToPropertyDetail,
   normalizeOwnershipLabel,
   type PropertyDetail,
@@ -80,12 +81,7 @@ export async function GET(
           `[PropertyByContact] equipment summary failed for property ${base.hubspotObjectId}; returning zeros`,
           err,
         );
-        equipmentSummary = {
-          modules: { count: 0, totalWattage: 0 },
-          inverters: { count: 0 },
-          batteries: { count: 0, totalKwh: 0 },
-          evChargers: { count: 0 },
-        };
+        equipmentSummary = createEmptySummary();
       }
 
       properties.push({ ...base, equipmentSummary });

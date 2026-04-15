@@ -5,6 +5,7 @@ import { getUserByEmail } from "@/lib/db";
 import { canAccessRoute } from "@/lib/role-permissions";
 import {
   computeEquipmentSummary,
+  createEmptySummary,
   mapCacheRowToPropertyDetail,
   type PropertyDetail,
   type EquipmentSummary,
@@ -71,12 +72,7 @@ export async function GET(
         "[PropertyDetail] equipment summary failed; returning zeros",
         err,
       );
-      equipmentSummary = {
-        modules: { count: 0, totalWattage: 0 },
-        inverters: { count: 0 },
-        batteries: { count: 0, totalKwh: 0 },
-        evChargers: { count: 0 },
-      };
+      equipmentSummary = createEmptySummary();
     }
 
     const detail: PropertyDetail = { ...base, equipmentSummary };

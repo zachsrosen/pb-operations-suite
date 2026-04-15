@@ -1,8 +1,24 @@
 // Mock @/lib/db before any imports
 jest.mock("@/lib/db", () => ({
   getCachedZuperJobsByDealIds: jest.fn().mockResolvedValue([]),
-  prisma: { zuperJobCache: { findMany: jest.fn().mockResolvedValue([]) } },
+  prisma: {
+    zuperJobCache: { findMany: jest.fn().mockResolvedValue([]) },
+    propertyContactLink: { findMany: jest.fn().mockResolvedValue([]) },
+  },
 }));
+
+jest.mock("@/lib/property-detail", () => {
+  const actual = jest.requireActual("@/lib/property-detail");
+  return {
+    ...actual,
+    computeEquipmentSummary: jest.fn().mockResolvedValue({
+      modules: { count: 0, totalWattage: 0 },
+      inverters: { count: 0 },
+      batteries: { count: 0, totalKwh: 0 },
+      evChargers: { count: 0 },
+    }),
+  };
+});
 
 jest.mock("@/lib/hubspot", () => ({
   hubspotClient: {
@@ -32,6 +48,7 @@ jest.mock("@sentry/nextjs", () => ({
 import { searchContacts, resolveContactDetail } from "@/lib/customer-resolver";
 import { hubspotClient } from "@/lib/hubspot";
 import { getCachedZuperJobsByDealIds, prisma } from "@/lib/db";
+import { computeEquipmentSummary } from "@/lib/property-detail";
 
 // Typed mock references
 const mockContactSearch = hubspotClient.crm.contacts.searchApi.doSearch as jest.Mock;
@@ -43,6 +60,8 @@ const mockTicketBatchRead = hubspotClient.crm.tickets.batchApi.read as jest.Mock
 const mockCompanyBatchRead = hubspotClient.crm.companies.batchApi.read as jest.Mock;
 const mockGetZuperJobs = getCachedZuperJobsByDealIds as jest.Mock;
 const mockPrismaFindMany = prisma.zuperJobCache.findMany as jest.Mock;
+const mockPropertyContactLinkFindMany = prisma.propertyContactLink.findMany as jest.Mock;
+const mockComputeEquipmentSummary = computeEquipmentSummary as jest.Mock;
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -55,6 +74,13 @@ beforeEach(() => {
   mockTicketBatchRead.mockResolvedValue({ results: [] });
   mockGetZuperJobs.mockResolvedValue([]);
   mockPrismaFindMany.mockResolvedValue([]);
+  mockPropertyContactLinkFindMany.mockResolvedValue([]);
+  mockComputeEquipmentSummary.mockResolvedValue({
+    modules: { count: 0, totalWattage: 0 },
+    inverters: { count: 0 },
+    batteries: { count: 0, totalKwh: 0 },
+    evChargers: { count: 0 },
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -633,5 +659,141 @@ describe("resolveContactDetail", () => {
         ],
       },
     });
+  });
+
+  it("surfaces linked Properties with per-link ownership and open ticket counts", async () => {
+    mockContactBatchRead.mockResolvedValue({
+      results: [{
+        id: "c1",
+        properties: {
+          firstname: "Multi",
+          lastname: "Property",
+          email: null, phone: null,
+          address: null, city: null, state: null, zip: null,
+          company: null,
+        },
+      }],
+    });
+
+    mockAssociationRead.mockResolvedValue({ results: [] });
+
+    // Two property links, most-recent first (orderBy associatedAt desc)
+    mockPropertyContactLinkFindMany.mockResolvedValue([
+      {
+        contactId: "c1",
+        propertyId: "prop-current",
+        label: "Current Owner",
+        associatedAt: new Date("2026-02-01T00:00:00Z"),
+        property: {
+          id: "prop-current",
+          hubspotObjectId: "hs-current",
+          fullAddress: "100 Current St, Denver, CO 80202",
+          latitude: 39.74,
+          longitude: -104.99,
+          pbLocation: "Denver",
+          ahjName: "Denver",
+          utilityName: "Xcel",
+          firstInstallDate: new Date("2025-06-01T00:00:00Z"),
+          mostRecentInstallDate: new Date("2025-06-01T00:00:00Z"),
+          systemSizeKwDc: 8.5,
+          hasBattery: true,
+          hasEvCharger: false,
+          openTicketsCount: 2,
+          lastServiceDate: new Date("2026-01-15T00:00:00Z"),
+          earliestWarrantyExpiry: new Date("2035-06-01T00:00:00Z"),
+          createdAt: new Date("2025-05-01T00:00:00Z"),
+          dealLinks: [{ dealId: "d-current" }],
+          ticketLinks: [{ ticketId: "t1" }, { ticketId: "t2" }],
+          contactLinks: [{ contactId: "c1", label: "Current Owner", associatedAt: new Date("2026-02-01T00:00:00Z") }],
+        },
+      },
+      {
+        contactId: "c1",
+        propertyId: "prop-previous",
+        label: "Previous Owner",
+        associatedAt: new Date("2026-01-01T00:00:00Z"),
+        property: {
+          id: "prop-previous",
+          hubspotObjectId: "hs-previous",
+          fullAddress: "200 Previous Ave, Boulder, CO 80301",
+          latitude: 40.01,
+          longitude: -105.27,
+          pbLocation: "Boulder",
+          ahjName: "Boulder",
+          utilityName: "Xcel",
+          firstInstallDate: null,
+          mostRecentInstallDate: null,
+          systemSizeKwDc: null,
+          hasBattery: false,
+          hasEvCharger: false,
+          openTicketsCount: 0,
+          lastServiceDate: null,
+          earliestWarrantyExpiry: null,
+          createdAt: new Date("2024-01-01T00:00:00Z"),
+          dealLinks: [],
+          ticketLinks: [],
+          contactLinks: [{ contactId: "c1", label: "Previous Owner", associatedAt: new Date("2026-01-01T00:00:00Z") }],
+        },
+      },
+    ]);
+
+    mockComputeEquipmentSummary.mockResolvedValue({
+      modules: { count: 20, totalWattage: 8000 },
+      inverters: { count: 1 },
+      batteries: { count: 1, totalKwh: 13.5 },
+      evChargers: { count: 0 },
+    });
+
+    const detail = await resolveContactDetail("c1");
+
+    expect(detail.properties).toHaveLength(2);
+
+    // Most recent first
+    expect(detail.properties[0].ownershipLabel).toBe("Current Owner");
+    expect(detail.properties[0].openTicketsCount).toBe(2);
+    expect(detail.properties[0].hubspotObjectId).toBe("hs-current");
+    expect(detail.properties[0].dealIds).toEqual(["d-current"]);
+
+    expect(detail.properties[1].ownershipLabel).toBe("Previous Owner");
+    expect(detail.properties[1].openTicketsCount).toBe(0);
+    expect(detail.properties[1].hubspotObjectId).toBe("hs-previous");
+
+    // Called once per property
+    expect(mockComputeEquipmentSummary).toHaveBeenCalledTimes(2);
+
+    // Verify the prisma query shape
+    expect(mockPropertyContactLinkFindMany).toHaveBeenCalledWith({
+      where: { contactId: "c1" },
+      include: {
+        property: {
+          include: {
+            dealLinks: true,
+            ticketLinks: true,
+            contactLinks: true,
+          },
+        },
+      },
+      orderBy: { associatedAt: "desc" },
+    });
+  });
+
+  it("returns properties: [] when the Property lookup fails", async () => {
+    mockContactBatchRead.mockResolvedValue({
+      results: [{
+        id: "c1",
+        properties: {
+          firstname: "Err",
+          lastname: "Test",
+          email: null, phone: null,
+          address: null, city: null, state: null, zip: null,
+          company: null,
+        },
+      }],
+    });
+    mockAssociationRead.mockResolvedValue({ results: [] });
+    mockPropertyContactLinkFindMany.mockRejectedValue(new Error("DB down"));
+
+    const detail = await resolveContactDetail("c1");
+    expect(detail.properties).toEqual([]);
   });
 });
