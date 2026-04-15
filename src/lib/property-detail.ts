@@ -10,6 +10,12 @@
 import { prisma } from "@/lib/db";
 import { fetchLineItemsForDeals } from "@/lib/hubspot";
 import { EquipmentCategory } from "@/generated/prisma/enums";
+import type {
+  HubSpotPropertyCache,
+  PropertyContactLink,
+  PropertyDealLink,
+  PropertyTicketLink,
+} from "@/generated/prisma/client";
 
 export type OwnershipLabel =
   | "Current Owner"
@@ -177,4 +183,82 @@ export function normalizeOwnershipLabel(raw: string | null | undefined): Ownersh
     default:
       return "Current Owner";
   }
+}
+
+/**
+ * Cache row with the three link relations eagerly included. This is the shape
+ * required to build a PropertyDetail — both the `[id]` detail endpoint (5.1)
+ * and the `by-contact` endpoint (5.3) pass the same include clause into
+ * Prisma, so we centralize the mapping here.
+ */
+export type PropertyCacheRowWithLinks = HubSpotPropertyCache & {
+  dealLinks: PropertyDealLink[];
+  ticketLinks: PropertyTicketLink[];
+  contactLinks: PropertyContactLink[];
+};
+
+/**
+ * Pure mechanical mapper: cache row + link tables → PropertyDetail (minus the
+ * equipment summary, which is a separate HubSpot call the caller does).
+ *
+ * Ownership/associatedAt policy:
+ *   - Callers that know a specific contact's relationship to the property
+ *     (e.g. the by-contact endpoint) pass `options.ownershipLabel` and
+ *     `options.associatedAt` — those override the defaults.
+ *   - Otherwise we default to the MOST RECENT contact link
+ *     (`contactLinks[0]` — callers pass `orderBy: associatedAt desc`).
+ *   - If there are no contact links, fall back to "Current Owner" tied to
+ *     `createdAt` so the UI always has a label.
+ */
+export function mapCacheRowToPropertyDetail(
+  row: PropertyCacheRowWithLinks,
+  options: { ownershipLabel?: OwnershipLabel; associatedAt?: Date } = {},
+): Omit<PropertyDetail, "equipmentSummary"> {
+  const dealIds = row.dealLinks.map((l) => l.dealId);
+  const ticketIds = row.ticketLinks.map((l) => l.ticketId);
+  // Dedupe contactIds — a contact can appear under multiple link labels
+  // (Current Owner + Authorized Contact, etc.) and the UI only needs the id set.
+  const contactIds = Array.from(
+    new Set(row.contactLinks.map((l) => l.contactId)),
+  );
+
+  let ownershipLabel: OwnershipLabel;
+  let associatedAt: Date;
+  if (options.ownershipLabel !== undefined && options.associatedAt !== undefined) {
+    ownershipLabel = options.ownershipLabel;
+    associatedAt = options.associatedAt;
+  } else {
+    const latestLink = row.contactLinks[0];
+    ownershipLabel = latestLink
+      ? normalizeOwnershipLabel(latestLink.label)
+      : ("Current Owner" as const);
+    associatedAt = latestLink?.associatedAt ?? row.createdAt;
+  }
+
+  return {
+    id: row.id,
+    hubspotObjectId: row.hubspotObjectId,
+    fullAddress: row.fullAddress,
+    lat: row.latitude,
+    lng: row.longitude,
+    pbLocation: row.pbLocation,
+    ahjName: row.ahjName,
+    utilityName: row.utilityName,
+
+    firstInstallDate: row.firstInstallDate,
+    mostRecentInstallDate: row.mostRecentInstallDate,
+    systemSizeKwDc: row.systemSizeKwDc,
+    hasBattery: row.hasBattery,
+    hasEvCharger: row.hasEvCharger,
+    openTicketsCount: row.openTicketsCount,
+    lastServiceDate: row.lastServiceDate,
+    earliestWarrantyExpiry: row.earliestWarrantyExpiry,
+
+    ownershipLabel,
+    associatedAt,
+
+    dealIds,
+    ticketIds,
+    contactIds,
+  };
 }

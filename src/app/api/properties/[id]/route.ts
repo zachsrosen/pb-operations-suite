@@ -5,7 +5,7 @@ import { getUserByEmail } from "@/lib/db";
 import { canAccessRoute } from "@/lib/role-permissions";
 import {
   computeEquipmentSummary,
-  normalizeOwnershipLabel,
+  mapCacheRowToPropertyDetail,
   type PropertyDetail,
   type EquipmentSummary,
 } from "@/lib/property-detail";
@@ -61,13 +61,11 @@ export async function GET(
       return NextResponse.json({ error: "Property not found" }, { status: 404 });
     }
 
-    const dealIds = property.dealLinks.map((l) => l.dealId);
-    const ticketIds = property.ticketLinks.map((l) => l.ticketId);
-    const contactIds = property.contactLinks.map((l) => l.contactId);
+    const base = mapCacheRowToPropertyDetail(property);
 
     let equipmentSummary: EquipmentSummary;
     try {
-      equipmentSummary = await computeEquipmentSummary(dealIds);
+      equipmentSummary = await computeEquipmentSummary(base.dealIds);
     } catch (err) {
       console.error(
         "[PropertyDetail] equipment summary failed; returning zeros",
@@ -81,44 +79,7 @@ export async function GET(
       };
     }
 
-    // Ownership/associatedAt describe the MOST RECENT contact link (see
-    // property-detail.ts for the full rationale). Falls back to a synthetic
-    // "Current Owner" tied to the row's creation timestamp when the property
-    // has no contact links (e.g. deal-seeded before any contact attached).
-    const latestLink = property.contactLinks[0];
-    const ownershipLabel = latestLink
-      ? normalizeOwnershipLabel(latestLink.label)
-      : ("Current Owner" as const);
-    const associatedAt = latestLink?.associatedAt ?? property.createdAt;
-
-    const detail: PropertyDetail = {
-      id: property.id,
-      hubspotObjectId: property.hubspotObjectId,
-      fullAddress: property.fullAddress,
-      lat: property.latitude,
-      lng: property.longitude,
-      pbLocation: property.pbLocation,
-      ahjName: property.ahjName,
-      utilityName: property.utilityName,
-
-      firstInstallDate: property.firstInstallDate,
-      mostRecentInstallDate: property.mostRecentInstallDate,
-      systemSizeKwDc: property.systemSizeKwDc,
-      hasBattery: property.hasBattery,
-      hasEvCharger: property.hasEvCharger,
-      openTicketsCount: property.openTicketsCount,
-      lastServiceDate: property.lastServiceDate,
-      earliestWarrantyExpiry: property.earliestWarrantyExpiry,
-
-      ownershipLabel,
-      associatedAt,
-
-      dealIds,
-      ticketIds,
-      contactIds,
-
-      equipmentSummary,
-    };
+    const detail: PropertyDetail = { ...base, equipmentSummary };
 
     return NextResponse.json(detail);
   } catch (error) {
