@@ -10,8 +10,6 @@ export interface GeoResolveInput {
   zip: string;
   city: string;
   state: string;
-  lat: number;
-  lng: number;
 }
 
 export interface GeoLinkResult {
