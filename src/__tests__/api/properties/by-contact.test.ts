@@ -131,6 +131,7 @@ describe("GET /api/properties/by-contact/[contactId]", () => {
     mockPropertyContactLinkFindMany.mockResolvedValue([
       {
         contactId: "c1",
+        propertyId: "prop-newer",
         label: "Current Owner",
         associatedAt: newer,
         property: makeCacheRow({
@@ -140,6 +141,7 @@ describe("GET /api/properties/by-contact/[contactId]", () => {
       },
       {
         contactId: "c1",
+        propertyId: "prop-older",
         label: "Current Owner",
         associatedAt: older,
         property: makeCacheRow({
@@ -188,6 +190,7 @@ describe("GET /api/properties/by-contact/[contactId]", () => {
     mockPropertyContactLinkFindMany.mockResolvedValue([
       {
         contactId: "c1",
+        propertyId: "prop-current",
         label: "Current Owner",
         associatedAt: t1,
         property: makeCacheRow({
@@ -206,6 +209,7 @@ describe("GET /api/properties/by-contact/[contactId]", () => {
       },
       {
         contactId: "c1",
+        propertyId: "prop-previous",
         label: "Previous Owner",
         associatedAt: t2,
         property: makeCacheRow({
@@ -229,5 +233,38 @@ describe("GET /api/properties/by-contact/[contactId]", () => {
     expect(second.hubspotObjectId).toBe("hs-previous");
     expect(second.ownershipLabel).toBe("Previous Owner");
     expect(new Date(second.associatedAt).toISOString()).toBe(t2.toISOString());
+  });
+
+  it("dedupes multiple links to the same property under different labels, keeping the highest-precedence label (F4)", async () => {
+    mockGetUserByEmail.mockResolvedValue({ id: "u1", role: "ADMIN" });
+
+    // Same property, same contact, two labels. The active role (Current
+    // Owner) should win over the historical/auxiliary one (Authorized
+    // Contact), even though Prisma returns the Authorized Contact row
+    // first (it's the most recent associatedAt).
+    mockPropertyContactLinkFindMany.mockResolvedValue([
+      {
+        contactId: "c1",
+        propertyId: "prop-1",
+        label: "Authorized Contact",
+        associatedAt: new Date("2026-05-01T00:00:00.000Z"),
+        property: makeCacheRow({ id: "prop-1", hubspotObjectId: "hs-1" }),
+      },
+      {
+        contactId: "c1",
+        propertyId: "prop-1",
+        label: "Current Owner",
+        associatedAt: new Date("2026-01-01T00:00:00.000Z"),
+        property: makeCacheRow({ id: "prop-1", hubspotObjectId: "hs-1" }),
+      },
+    ]);
+
+    const res = await callGet("c1");
+    expect(res.status).toBe(200);
+    const body = await res.json();
+
+    expect(body.properties).toHaveLength(1);
+    expect(body.properties[0].hubspotObjectId).toBe("hs-1");
+    expect(body.properties[0].ownershipLabel).toBe("Current Owner");
   });
 });

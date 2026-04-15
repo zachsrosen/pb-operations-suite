@@ -23,6 +23,9 @@ import {
   updateProperty,
   fetchAllProperties,
   fetchAssociatedIdsFromProperty,
+  searchPropertyByPlaceId,
+  searchPropertyByNormalizedAddress,
+  archiveProperty,
   type PropertyRecord,
 } from "@/lib/hubspot-property";
 import {
@@ -195,16 +198,8 @@ async function createNewProperty(args: {
   geo: GeocodeResult;
   hash: string;
   unit: string | null | undefined;
-}): Promise<{ propertyCacheId: string; hubspotObjectId: string; created: true }> {
+}): Promise<{ propertyCacheId: string; hubspotObjectId: string; created: boolean }> {
   const { geo, hash, unit } = args;
-
-  // Resolve geographic links — AHJ / utility from the resolver (deal-mining
-  // → service_area fallback) and PB location from the zip-prefix table.
-  const [ahj, utility] = await Promise.all([
-    resolveAhjForProperty({ zip: geo.zip, city: geo.city, state: geo.state }),
-    resolveUtilityForProperty({ zip: geo.zip, city: geo.city, state: geo.state }),
-  ]);
-  const pbLocation = resolvePbLocationFromAddress(geo.zip, geo.state);
 
   // Build the human-readable normalized address mirrored to HubSpot. Kept in
   // sync with `normalizeAddressForHash` in `address-hash.ts`: both collapse
@@ -217,60 +212,167 @@ async function createNewProperty(args: {
     .replace(/\s+/g, " ")
     .trim();
 
-  // Create the HubSpot Property record. `address_hash` is intentionally NOT
-  // sent — it lives only in the local cache.
-  const hs = await createProperty({
-    record_name: `${geo.streetAddress}, ${geo.city} ${geo.state} ${geo.zip}`,
-    google_place_id: geo.placeId ?? "",
-    normalized_address: normalizedAddress,
-    full_address: geo.formattedAddress,
-    street_address: geo.streetAddress,
-    unit_number: unit ?? "",
-    city: geo.city,
-    state: geo.state,
-    zip: geo.zip,
-    county: geo.county ?? "",
-    latitude: geo.latitude,
-    longitude: geo.longitude,
-    ahj_name: ahj?.name ?? "",
-    utility_name: utility?.name ?? "",
-    pb_location: pbLocation ?? "",
-  });
+  // ── HubSpot-side pre-check: don't create a duplicate object ──
+  // When `place_id` is present, that's our canonical dedup key. When it's
+  // not (rural / new-construction), fall back to an exact match on
+  // `normalized_address` — best-effort, not authoritative, but good enough
+  // to avoid spawning a second HubSpot Property for the same address.
+  let hubspotObjectId: string | null = null;
+  if (geo.placeId) {
+    const existing = await searchPropertyByPlaceId(geo.placeId);
+    if (existing) hubspotObjectId = existing.id;
+  }
+  if (!hubspotObjectId && normalizedAddress) {
+    try {
+      const existing = await searchPropertyByNormalizedAddress(normalizedAddress);
+      if (existing) hubspotObjectId = existing.id;
+    } catch (err) {
+      // Search failure is non-fatal — we'll fall through to create. Log so
+      // we notice if the search endpoint is chronically failing.
+      console.warn(
+        "[property-sync] searchPropertyByNormalizedAddress failed; falling through to create",
+        err,
+      );
+    }
+  }
 
-  // Associate to AHJ / Utility custom objects (HUBSPOT_DEFINED typeId 1, no
-  // label). Location association is future work — needs a bootstrap map from
-  // canonical location string → Location object ID.
-  if (ahj) await associateProperty(hs.id, AHJ_OBJECT_TYPE, ahj.objectId);
-  if (utility) await associateProperty(hs.id, UTILITY_OBJECT_TYPE, utility.objectId);
+  // Resolve geographic links — AHJ / utility from the resolver (deal-mining
+  // → service_area fallback) and PB location from the zip-prefix table.
+  const [ahj, utility] = await Promise.all([
+    resolveAhjForProperty({ zip: geo.zip, city: geo.city, state: geo.state }),
+    resolveUtilityForProperty({ zip: geo.zip, city: geo.city, state: geo.state }),
+  ]);
+  const pbLocation = resolvePbLocationFromAddress(geo.zip, geo.state);
 
-  // Persist the cache row. Field parity with HubSpot is deliberate — the cache
-  // is the authoritative source for local queries and backfill diff detection.
-  const cache = await prisma.hubSpotPropertyCache.create({
-    data: {
-      hubspotObjectId: hs.id,
-      googlePlaceId: geo.placeId,
-      addressHash: hash,
-      normalizedAddress,
-      fullAddress: geo.formattedAddress,
-      streetAddress: geo.streetAddress,
-      unitNumber: unit ?? null,
+  // Create the HubSpot Property record only if the pre-check found nothing.
+  // `address_hash` is intentionally NOT sent — it lives only in the local
+  // cache.
+  let createdHubspotId: string | null = null;
+  if (!hubspotObjectId) {
+    const hs = await createProperty({
+      record_name: `${geo.streetAddress}, ${geo.city} ${geo.state} ${geo.zip}`,
+      google_place_id: geo.placeId ?? "",
+      normalized_address: normalizedAddress,
+      full_address: geo.formattedAddress,
+      street_address: geo.streetAddress,
+      unit_number: unit ?? "",
       city: geo.city,
       state: geo.state,
       zip: geo.zip,
-      county: geo.county,
+      county: geo.county ?? "",
       latitude: geo.latitude,
       longitude: geo.longitude,
-      ahjObjectId: ahj?.objectId ?? null,
-      ahjName: ahj?.name ?? null,
-      utilityObjectId: utility?.objectId ?? null,
-      utilityName: utility?.name ?? null,
-      pbLocation: pbLocation ?? null,
-      geocodedAt: new Date(),
-      lastReconciledAt: new Date(),
-    },
-  });
+      ahj_name: ahj?.name ?? "",
+      utility_name: utility?.name ?? "",
+      pb_location: pbLocation ?? "",
+    });
+    hubspotObjectId = hs.id;
+    createdHubspotId = hs.id;
+  }
 
-  return { propertyCacheId: cache.id, hubspotObjectId: hs.id, created: true };
+  // Associate to AHJ / Utility custom objects (HUBSPOT_DEFINED typeId 1, no
+  // label). Location association is future work — needs a bootstrap map from
+  // canonical location string → Location object ID. Skipped when we adopted
+  // an existing HubSpot object — its associations were set on original create
+  // (or will be caught up by the nightly reconcile) and we don't want to
+  // write to a pre-existing record on a dedup hit.
+  if (createdHubspotId) {
+    if (ahj) await associateProperty(createdHubspotId, AHJ_OBJECT_TYPE, ahj.objectId);
+    if (utility) await associateProperty(createdHubspotId, UTILITY_OBJECT_TYPE, utility.objectId);
+  }
+
+  // Persist the cache row. Field parity with HubSpot is deliberate — the cache
+  // is the authoritative source for local queries and backfill diff detection.
+  //
+  // Race handling: two concurrent `upsertPropertyFromGeocode` calls for the
+  // same address can both pass the initial cache miss and reach this line.
+  // The DB unique constraints on `googlePlaceId` / `addressHash` /
+  // `hubspotObjectId` guarantee exactly one winner. The loser catches
+  // Prisma P2002, re-reads the winner, and — if the loser also created a
+  // NEW HubSpot object while the winner adopted a different one — archives
+  // the orphan so HubSpot doesn't accumulate dupes.
+  try {
+    const cache = await prisma.hubSpotPropertyCache.create({
+      data: {
+        hubspotObjectId,
+        googlePlaceId: geo.placeId,
+        addressHash: hash,
+        normalizedAddress,
+        fullAddress: geo.formattedAddress,
+        streetAddress: geo.streetAddress,
+        unitNumber: unit ?? null,
+        city: geo.city,
+        state: geo.state,
+        zip: geo.zip,
+        county: geo.county,
+        latitude: geo.latitude,
+        longitude: geo.longitude,
+        ahjObjectId: ahj?.objectId ?? null,
+        ahjName: ahj?.name ?? null,
+        utilityObjectId: utility?.objectId ?? null,
+        utilityName: utility?.name ?? null,
+        pbLocation: pbLocation ?? null,
+        geocodedAt: new Date(),
+        lastReconciledAt: new Date(),
+      },
+    });
+    return { propertyCacheId: cache.id, hubspotObjectId, created: createdHubspotId !== null };
+  } catch (err) {
+    if (!isPrismaUniqueViolation(err)) throw err;
+
+    // Race loser: re-read the winner by the same key we used to dedup.
+    const winner = geo.placeId
+      ? await prisma.hubSpotPropertyCache.findUnique({
+          where: { googlePlaceId: geo.placeId },
+        })
+      : await prisma.hubSpotPropertyCache.findUnique({ where: { addressHash: hash } });
+
+    if (!winner) {
+      // Extremely rare: P2002 fired but no row found by either key. Re-throw
+      // so callers see the original error rather than fabricating success.
+      throw err;
+    }
+
+    // If we created a fresh HubSpot object AND the winner references a
+    // different one, our create is an orphan — archive it best-effort.
+    if (createdHubspotId && winner.hubspotObjectId !== createdHubspotId) {
+      try {
+        await archiveProperty(createdHubspotId);
+      } catch (archiveErr) {
+        Sentry.captureException(archiveErr, {
+          tags: { module: "property-sync", step: "archive-orphan" },
+          extra: { orphanId: createdHubspotId, winnerId: winner.hubspotObjectId },
+        });
+        console.error(
+          "[property-sync] orphan HubSpot Property %s needs manual cleanup (winner=%s)",
+          createdHubspotId,
+          winner.hubspotObjectId,
+          archiveErr,
+        );
+      }
+    }
+
+    return {
+      propertyCacheId: winner.id,
+      hubspotObjectId: winner.hubspotObjectId,
+      // From this caller's perspective, they did not create the winning
+      // record — another concurrent caller did.
+      created: false,
+    };
+  }
+}
+
+/**
+ * Narrow type guard for Prisma unique-constraint violations (error code P2002).
+ * Kept local so we don't import `@prisma/client` just for the error class.
+ */
+function isPrismaUniqueViolation(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    (err as { code?: unknown }).code === "P2002"
+  );
 }
 
 async function logActivity(
@@ -607,6 +709,26 @@ export async function onDealOrTicketCreated(
         const match = candidates.find((c) => c.googlePlaceId === placeId);
         if (match) chosen = { id: match.id, hubspotObjectId: match.hubspotObjectId };
       }
+      // Fallback: rural / new-construction addresses geocode successfully
+      // but without a placeId. Match by addressHash instead — computed from
+      // the same normalized parts we'd use on any upsert.
+      //
+      // Scope: unitless only. Deal/ticket HubSpot properties don't expose
+      // `unit_number`, so any candidate whose addressHash was computed with
+      // a non-null unit will miss. That's an acceptable v1 tradeoff; proper
+      // unit-aware matching needs richer source data. A miss here still
+      // defers (we'd rather wait for the next webhook cycle than guess).
+      if (!chosen && geo && !placeId) {
+        const hash = addressHash({
+          street: geo.streetAddress ?? (street as string),
+          unit: null,
+          city: geo.city ?? (city as string),
+          state: geo.state ?? (state as string),
+          zip: geo.zip ?? (zip as string),
+        });
+        const match = candidates.find((c) => c.addressHash === hash);
+        if (match) chosen = { id: match.id, hubspotObjectId: match.hubspotObjectId };
+      }
     }
     if (!chosen) {
       return { status: "deferred", reason: "ambiguous properties, no address match" };
@@ -842,41 +964,25 @@ async function reconcileSingleProperty(record: PropertyRecord): Promise<boolean>
 }
 
 /**
- * Add-only association refresh: fetch current contacts/deals/tickets for a
- * Property from HubSpot and upsert each as a link row. Does not remove stale
- * link rows in v1 (see `reconcileSingleProperty` comment).
+ * Add-only association refresh: fetch current deals/tickets for a Property
+ * from HubSpot and upsert each as a link row. Does not remove stale link
+ * rows in v1 (see `reconcileSingleProperty` comment).
+ *
+ * Contact links are intentionally NOT refreshed here. HubSpot's association
+ * pager doesn't surface labels cheaply, so this path used to default every
+ * missing link to "Current Owner" — which invented ownership state we
+ * couldn't actually observe (e.g. marking a Tenant as the Owner). The
+ * webhook path owns contact-link upserts because it has access to the
+ * real label via `HUBSPOT_PROPERTY_CONTACT_ASSOC_*` typeId → label mapping.
  */
 async function refreshAssociationLinks(
   hubspotObjectId: string,
   propertyCacheId: string,
 ): Promise<void> {
-  const [contactIds, dealIds, ticketIds] = await Promise.all([
-    fetchAssociatedIdsFromProperty(hubspotObjectId, "contacts"),
+  const [dealIds, ticketIds] = await Promise.all([
     fetchAssociatedIdsFromProperty(hubspotObjectId, "deals"),
     fetchAssociatedIdsFromProperty(hubspotObjectId, "tickets"),
   ]);
-
-  // Contacts: labels come from HubSpot, but the nightly reconcile API doesn't
-  // surface labels cheaply — default to "Current Owner" for any link HubSpot
-  // reports that we don't already have. (The webhook path sets the correct
-  // label on new associations; this path only patches gaps.)
-  for (const contactId of contactIds) {
-    await prisma.propertyContactLink.upsert({
-      where: {
-        propertyId_contactId_label: {
-          propertyId: propertyCacheId,
-          contactId,
-          label: "Current Owner",
-        },
-      },
-      create: {
-        propertyId: propertyCacheId,
-        contactId,
-        label: "Current Owner",
-      },
-      update: {},
-    });
-  }
 
   for (const dealId of dealIds) {
     await prisma.propertyDealLink.upsert({

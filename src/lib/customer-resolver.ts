@@ -18,6 +18,7 @@ import { getZuperJobUrl } from "@/lib/external-links";
 import {
   computeEquipmentSummary,
   createEmptySummary,
+  dedupeContactLinksByProperty,
   mapCacheRowToPropertyDetail,
   normalizeOwnershipLabel,
   type PropertyDetail,
@@ -684,7 +685,7 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
   //    most-recently-associated first. Equipment summary fetched live per property.
   const properties: PropertyDetail[] = [];
   try {
-    const propertyLinks = await prisma.propertyContactLink.findMany({
+    const rawPropertyLinks = await prisma.propertyContactLink.findMany({
       where: { contactId },
       include: {
         property: {
@@ -697,6 +698,11 @@ export async function resolveContactDetail(contactId: string): Promise<ContactDe
       },
       orderBy: { associatedAt: "desc" },
     });
+
+    // A contact can be linked to the same property under multiple labels
+    // (Current Owner + Authorized Contact, etc.). Surface one card per
+    // property with the highest-precedence label.
+    const propertyLinks = dedupeContactLinksByProperty(rawPropertyLinks);
 
     for (const link of propertyLinks) {
       const base = mapCacheRowToPropertyDetail(link.property, {

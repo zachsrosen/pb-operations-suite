@@ -460,3 +460,59 @@ export async function searchPropertyByAddressHash(
   if (!cache) return null;
   return fetchPropertyById(cache.hubspotObjectId);
 }
+
+/**
+ * Best-effort lookup of a Property by its exact `normalized_address` string.
+ *
+ * Used as a HubSpot-side dedup check when Google did NOT return a `place_id`
+ * (rural / new-construction addresses) and we would otherwise fall through to
+ * a fresh create. This is intentionally NOT a canonical key — the DB-side
+ * `addressHash` is the source of truth for dedup. We trust this enough to
+ * adopt an existing HubSpot record rather than create a second, but not
+ * enough to rely on it for correctness.
+ *
+ * Returns `null` if no exact match.
+ */
+export async function searchPropertyByNormalizedAddress(
+  normalizedAddress: string
+): Promise<PropertyRecord | null> {
+  if (!normalizedAddress) return null;
+  const response = await withRetry(() =>
+    hubspotClient.crm.objects.searchApi.doSearch(PROPERTY_OBJECT_TYPE(), {
+      filterGroups: [
+        {
+          filters: [
+            {
+              propertyName: "normalized_address",
+              operator: FilterOperatorEnum.Eq,
+              value: normalizedAddress,
+            },
+          ],
+        },
+      ],
+      properties: [...PROPERTY_PROPERTIES],
+      limit: 1,
+      after: "0",
+      sorts: [],
+      query: "",
+    })
+  );
+  const r = response.results[0];
+  if (!r) return null;
+  return {
+    id: r.id,
+    properties: r.properties as Record<string, string | null>,
+  };
+}
+
+/**
+ * Archive (soft-delete) a Property record. Used to clean up orphan HubSpot
+ * objects produced when our create-side dedup loses a race — see
+ * `createNewProperty` in `property-sync.ts`. Best-effort: callers must handle
+ * failures (we log + Sentry; never throw into the sync flow).
+ */
+export async function archiveProperty(id: string): Promise<void> {
+  await withRetry(() =>
+    hubspotClient.crm.objects.basicApi.archive(PROPERTY_OBJECT_TYPE(), id)
+  );
+}
