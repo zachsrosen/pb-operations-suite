@@ -139,6 +139,7 @@ export default function ServiceOverviewPage() {
   const [filterOwners, setFilterOwners] = useState<string[]>([]);
   const [filterTiers, setFilterTiers] = useState<PriorityTier[]>([]);
   const [filterReasons, setFilterReasons] = useState<string[]>([]);
+  const [filterTypes, setFilterTypes] = useState<Array<"deal" | "ticket">>([]);
   const [overridingId, setOverridingId] = useState<string | null>(null);
   const [overrideLoading, setOverrideLoading] = useState(false);
 
@@ -231,10 +232,11 @@ export default function ServiceOverviewPage() {
 
   // ---- Derived data ---------------------------------------------------------
 
-  // Pre-tier filter (location + owner only) — used for accurate tier badge counts
+  // Pre-tier filter (location + owner + type) — used for accurate tier badge counts
   const preTierFiltered = useMemo(() => {
     if (!data?.queue) return [];
     return data.queue.filter((entry) => {
+      if (filterTypes.length > 0 && !filterTypes.includes(entry.item.type)) return false;
       if (filterLocations.length > 0 && (!entry.item.location || !filterLocations.includes(entry.item.location))) return false;
       if (filterOwners.length > 0) {
         if (filterOwners.includes("__unassigned__") && !entry.item.ownerId) return true;
@@ -243,7 +245,7 @@ export default function ServiceOverviewPage() {
       }
       return true;
     });
-  }, [data?.queue, filterLocations, filterOwners]);
+  }, [data?.queue, filterLocations, filterOwners, filterTypes]);
 
   // Full filter (location + owner + tier)
   const filteredQueue = useMemo(() => {
@@ -259,7 +261,7 @@ export default function ServiceOverviewPage() {
     );
   }, [filteredQueue, filterReasons]);
 
-  // Tier counts from pre-tier-filtered subset (accurate to location + owner selection)
+  // Tier counts from pre-tier-filtered subset (accurate to location + owner + type selection)
   const tierCounts = useMemo(() => ({
     total: preTierFiltered.length,
     critical: preTierFiltered.filter(i => i.tier === "critical").length,
@@ -267,6 +269,24 @@ export default function ServiceOverviewPage() {
     medium: preTierFiltered.filter(i => i.tier === "medium").length,
     low: preTierFiltered.filter(i => i.tier === "low").length,
   }), [preTierFiltered]);
+
+  // Type counts — computed from the location+owner subset so counts reflect the
+  // other filters but NOT the type filter itself (stable toggle badges).
+  const typeCounts = useMemo(() => {
+    const base = (data?.queue ?? []).filter((entry) => {
+      if (filterLocations.length > 0 && (!entry.item.location || !filterLocations.includes(entry.item.location))) return false;
+      if (filterOwners.length > 0) {
+        if (filterOwners.includes("__unassigned__") && !entry.item.ownerId) return true;
+        if (entry.item.ownerId && filterOwners.includes(entry.item.ownerId)) return true;
+        return false;
+      }
+      return true;
+    });
+    return {
+      deal: base.filter((e) => e.item.type === "deal").length,
+      ticket: base.filter((e) => e.item.type === "ticket").length,
+    };
+  }, [data?.queue, filterLocations, filterOwners]);
 
   // Build filter options
   const locationOptions: FilterOption[] = useMemo(
@@ -360,16 +380,48 @@ export default function ServiceOverviewPage() {
     >
       {/* KPI Strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 stagger-grid">
-        <StatCard
-          label="Service Deals"
-          value={data?.queue.filter(i => i.item.type === "deal").length ?? 0}
-          color="cyan"
-        />
-        <StatCard
-          label="Open Tickets"
-          value={data?.queue.filter(i => i.item.type === "ticket").length ?? 0}
-          color="blue"
-        />
+        <button
+          type="button"
+          onClick={() => {
+            setFilterTypes((prev) =>
+              prev.length === 1 && prev[0] === "deal" ? [] : ["deal"]
+            );
+          }}
+          className={`text-left rounded-xl transition-all ${
+            filterTypes.length === 1 && filterTypes[0] === "deal"
+              ? "ring-2 ring-purple-400/60 ring-offset-2 ring-offset-background"
+              : "hover:brightness-110"
+          }`}
+          aria-pressed={filterTypes.length === 1 && filterTypes[0] === "deal"}
+          title="Click to filter queue to Deals only"
+        >
+          <StatCard
+            label="Service Deals"
+            value={data?.queue.filter(i => i.item.type === "deal").length ?? 0}
+            color="purple"
+          />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setFilterTypes((prev) =>
+              prev.length === 1 && prev[0] === "ticket" ? [] : ["ticket"]
+            );
+          }}
+          className={`text-left rounded-xl transition-all ${
+            filterTypes.length === 1 && filterTypes[0] === "ticket"
+              ? "ring-2 ring-cyan-400/60 ring-offset-2 ring-offset-background"
+              : "hover:brightness-110"
+          }`}
+          aria-pressed={filterTypes.length === 1 && filterTypes[0] === "ticket"}
+          title="Click to filter queue to Tickets only"
+        >
+          <StatCard
+            label="Open Tickets"
+            value={data?.queue.filter(i => i.item.type === "ticket").length ?? 0}
+            color="cyan"
+          />
+        </button>
         <StatCard
           label="Stuck in Stage"
           value={stuckCount}
@@ -400,6 +452,44 @@ export default function ServiceOverviewPage() {
             </h2>
 
             <div className="flex items-center gap-2 flex-wrap">
+              {/* Type toggle buttons (deal / ticket) */}
+              <div className="flex items-center gap-1 mr-1">
+                <button
+                  onClick={() => {
+                    setFilterTypes((prev) =>
+                      prev.includes("deal") ? prev.filter((t) => t !== "deal") : [...prev, "deal"]
+                    );
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                    filterTypes.includes("deal")
+                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
+                      : "bg-surface-2 text-muted hover:text-foreground"
+                  }`}
+                  aria-pressed={filterTypes.includes("deal")}
+                >
+                  Deals
+                  <span className="ml-1 opacity-70">({typeCounts.deal})</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setFilterTypes((prev) =>
+                      prev.includes("ticket") ? prev.filter((t) => t !== "ticket") : [...prev, "ticket"]
+                    );
+                  }}
+                  className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                    filterTypes.includes("ticket")
+                      ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                      : "bg-surface-2 text-muted hover:text-foreground"
+                  }`}
+                  aria-pressed={filterTypes.includes("ticket")}
+                >
+                  Tickets
+                  <span className="ml-1 opacity-70">({typeCounts.ticket})</span>
+                </button>
+              </div>
+
+              <span className="h-5 w-px bg-t-border/60 mr-1" aria-hidden="true" />
+
               {/* Tier multi-toggle buttons */}
               {ALL_TIERS.map((tier) => {
                 const cfg = TIER_CONFIG[tier];
@@ -441,7 +531,7 @@ export default function ServiceOverviewPage() {
         <div className="divide-y divide-t-border">
           {reasonFiltered.length === 0 ? (
             <div className="px-4 py-12 text-center text-muted">
-              {filterTiers.length > 0 || filterLocations.length > 0 || filterOwners.length > 0 || filterReasons.length > 0
+              {filterTiers.length > 0 || filterLocations.length > 0 || filterOwners.length > 0 || filterReasons.length > 0 || filterTypes.length > 0
                 ? "No items match current filters"
                 : "No items in priority queue"}
             </div>
@@ -474,8 +564,14 @@ export default function ServiceOverviewPage() {
                         </span>
                       )}
 
-                      {/* Type badge */}
-                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-surface-2 text-muted capitalize">
+                      {/* Type badge — deal=purple, ticket=cyan (matches scheduler) */}
+                      <span
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-[0.65rem] font-semibold uppercase tracking-wider border ${
+                          item.type === "deal"
+                            ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
+                            : "bg-cyan-500/20 text-cyan-300 border-cyan-500/40"
+                        }`}
+                      >
                         {item.type}
                       </span>
 
