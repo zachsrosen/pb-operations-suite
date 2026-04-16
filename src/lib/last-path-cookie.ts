@@ -45,7 +45,7 @@ export function isRememberablePath(pathname: string): boolean {
  * Rejects non-absolute paths, protocol-relative URLs, control characters,
  * over-long strings, and anything that is not a rememberable path.
  */
-export function isValidStoredPath(value: string | undefined | null): boolean {
+export function isValidStoredPath(value: string | undefined | null): value is string {
   if (!value) return false;
   if (value.length > MAX_PATH_LENGTH) return false;
   if (!value.startsWith("/")) return false;
@@ -89,6 +89,6 @@ export function resolveRedirectFromCookie(
   canAccessRoute: (role: UserRole, path: string) => boolean
 ): string | null {
   if (!isValidStoredPath(cookieValue)) return null;
-  if (!canAccessRoute(userRole, cookieValue as string)) return null;
-  return cookieValue as string;
+  if (!canAccessRoute(userRole, cookieValue)) return null;
+  return cookieValue;
 }
