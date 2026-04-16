@@ -1399,12 +1399,23 @@ export async function fetchAllProjects(options?: {
  * Best-effort — never blocks deal loading.
  */
 export async function fetchPrimaryContactId(dealId: string): Promise<string | null> {
+  return fetchPrimaryContactIdForObject("deals", dealId);
+}
+
+/**
+ * Fetch the primary associated contact ID for either a deal or a ticket using
+ * HubSpot v4 associations. Returns null if no primary contact exists or the call fails.
+ */
+export async function fetchPrimaryContactIdForObject(
+  objectType: "deals" | "tickets",
+  objectId: string
+): Promise<string | null> {
   const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!accessToken) return null;
 
   try {
     const response = await fetch(
-      `https://api.hubapi.com/crm/v4/objects/deals/${encodeURIComponent(dealId)}/associations/contacts`,
+      `https://api.hubapi.com/crm/v4/objects/${objectType}/${encodeURIComponent(objectId)}/associations/contacts`,
       {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -1414,7 +1425,7 @@ export async function fetchPrimaryContactId(dealId: string): Promise<string | nu
       }
     );
     if (!response.ok) {
-      console.warn(`[HubSpot] Failed to fetch contact associations for deal ${dealId}: ${response.status}`);
+      console.warn(`[HubSpot] Failed to fetch contact associations for ${objectType.slice(0, -1)} ${objectId}: ${response.status}`);
       return null;
     }
     const data = await response.json() as {
@@ -1446,11 +1457,20 @@ export async function fetchPrimaryContactId(dealId: string): Promise<string | nu
       (r) => r.associationTypes?.map((t) => t.label).filter(Boolean) ?? []
     );
     console.log(
-      `[HubSpot] Deal ${dealId}: no "Primary" contact label found. Labels: [${allLabels.map((l) => `"${l}"`).join(", ")}]`
+      `[HubSpot] ${objectType.slice(0, -1)} ${objectId}: no "Primary" contact label found. Labels: [${allLabels.map((l) => `"${l}"`).join(", ")}]`
     );
     return null;
   } catch (e) {
-    console.warn(`[HubSpot] Error fetching primary contact for deal ${dealId}:`, e);
+    // objectId reaches here from request bodies/URL params/webhook payloads, so it
+    // must not be embedded in console.warn's format string directly (Node treats
+    // the first arg as a format string when additional args follow — a %s in the
+    // ID would consume `e`, garbling the log). CWE-134 / CodeQL js/tainted-format-string.
+    console.warn(
+      "[HubSpot] Error fetching primary contact for %s %s:",
+      objectType.slice(0, -1),
+      objectId,
+      e,
+    );
     return null;
   }
 }
