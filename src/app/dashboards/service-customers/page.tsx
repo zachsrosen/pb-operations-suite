@@ -463,52 +463,55 @@ export default function CustomerHistoryPage() {
                       ) : (
                         <div className="space-y-2">
                           {detail.deals.map((d) => (
-                            <a
+                            <div
                               key={d.id}
-                              href={d.hubspotUrl || hubspotDealUrl(d.id)}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="block p-2 rounded bg-surface-2 hover:bg-surface-2/80 transition-colors"
+                              className="flex items-start gap-2 p-2 rounded bg-surface-2 hover:bg-surface-2/80 transition-colors"
                             >
-                              <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
-                                <p className="text-sm font-medium text-foreground truncate">
-                                  {d.name}
-                                </p>
-                                {d.serviceType && (
-                                  <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-xs text-cyan-300">
-                                    {d.serviceType}
-                                  </span>
-                                )}
-                                <Link
-                                  href={getInternalDealUrl(d.id, d.pipeline)}
-                                  onClick={(e) => e.stopPropagation()}
-                                  className="ml-auto rounded-full bg-purple-500/20 px-2 py-0.5 text-xs font-semibold text-purple-300 hover:bg-purple-500/30 transition-colors no-underline"
-                                >
-                                  Open Deal
-                                </Link>
-                              </div>
-                              <p className="text-xs text-muted">
-                                {d.stage}
-                                {d.daysInStage != null && d.daysInStage > 0 && (
-                                  <span> · {d.daysInStage}d in stage</span>
-                                )}
-                                {" · "}
-                                {d.location || "No location"}
-                              </p>
-                              <p className="text-xs text-muted">
-                                {formatDate(d.closeDate)}
-                                {d.amount &&
-                                  ` · $${Number(d.amount).toLocaleString()}`}
-                              </p>
-                              {d.lineItems && d.lineItems.length > 0 && (
-                                <div className="mt-1 text-xs text-muted">
-                                  <span className="font-medium">{d.lineItems.length} line item{d.lineItems.length !== 1 ? "s" : ""}</span>
-                                  {" — "}
-                                  {d.lineItems.slice(0, 2).map(li => li.name).join(", ")}
-                                  {d.lineItems.length > 2 && `, +${d.lineItems.length - 2} more`}
+                              <a
+                                href={d.hubspotUrl || hubspotDealUrl(d.id)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex-1 min-w-0"
+                              >
+                                <div className="flex flex-wrap items-center gap-1.5 mb-0.5">
+                                  <p className="text-sm font-medium text-foreground truncate">
+                                    {d.name}
+                                  </p>
+                                  {d.serviceType && (
+                                    <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-xs text-cyan-300">
+                                      {d.serviceType}
+                                    </span>
+                                  )}
                                 </div>
-                              )}
-                            </a>
+                                <p className="text-xs text-muted">
+                                  {d.stage}
+                                  {d.daysInStage != null && d.daysInStage > 0 && (
+                                    <span> · {d.daysInStage}d in stage</span>
+                                  )}
+                                  {" · "}
+                                  {d.location || "No location"}
+                                </p>
+                                <p className="text-xs text-muted">
+                                  {formatDate(d.closeDate)}
+                                  {d.amount &&
+                                    ` · $${Number(d.amount).toLocaleString()}`}
+                                </p>
+                                {d.lineItems && d.lineItems.length > 0 && (
+                                  <div className="mt-1 text-xs text-muted">
+                                    <span className="font-medium">{d.lineItems.length} line item{d.lineItems.length !== 1 ? "s" : ""}</span>
+                                    {" — "}
+                                    {d.lineItems.slice(0, 2).map(li => li.name).join(", ")}
+                                    {d.lineItems.length > 2 && `, +${d.lineItems.length - 2} more`}
+                                  </div>
+                                )}
+                              </a>
+                              <Link
+                                href={getInternalDealUrl(d.id, d.pipeline)}
+                                className="shrink-0 self-center rounded-full bg-purple-500/20 px-2 py-0.5 text-xs font-semibold text-purple-300 hover:bg-purple-500/30 transition-colors no-underline"
+                              >
+                                Open Deal
+                              </Link>
+                            </div>
                           ))}
                         </div>
                       )}
