@@ -6,6 +6,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { toDateStr } from "@/lib/scheduling-utils";
 import { JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import { getInternalDealUrl } from "@/lib/external-links";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -556,14 +557,22 @@ export default function RoofingSchedulerPage() {
                   Open in Zuper
                 </a>
                 {selectedJob.hubspotDealId && (
-                  <a
-                    href={`https://app.hubspot.com/contacts/22460157/deal/${selectedJob.hubspotDealId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex-1 text-center text-xs py-2 rounded-md bg-blue-500 text-white font-semibold hover:bg-blue-400 transition-colors"
-                  >
-                    Open in HubSpot
-                  </a>
+                  <>
+                    <Link
+                      href={getInternalDealUrl(selectedJob.hubspotDealId, "roofing")}
+                      className="flex-1 text-center text-xs py-2 rounded-md bg-purple-500 text-white font-semibold hover:bg-purple-400 transition-colors"
+                    >
+                      Open Deal
+                    </Link>
+                    <a
+                      href={`https://app.hubspot.com/contacts/22460157/deal/${selectedJob.hubspotDealId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 text-center text-xs py-2 rounded-md bg-blue-500 text-white font-semibold hover:bg-blue-400 transition-colors"
+                    >
+                      Open in HubSpot
+                    </a>
+                  </>
                 )}
               </div>
             </div>
