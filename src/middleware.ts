@@ -7,7 +7,11 @@ import {
   normalizeRole,
   type UserRole,
 } from "@/lib/role-permissions";
-import { writeLastPathCookie } from "@/lib/last-path-cookie";
+import {
+  LAST_PATH_COOKIE_NAME,
+  resolveRedirectFromCookie,
+  writeLastPathCookie,
+} from "@/lib/last-path-cookie";
 // Solar CORS no longer needed — Solar Surveyor served from same origin
 
 // Routes that are always accessible (login, auth callbacks)
@@ -242,7 +246,7 @@ export default auth((req) => {
 
   // Redirect logged-in users away from login page
   if (isLoginPage && isLoggedIn) {
-    // Honor callbackUrl if present and same-origin
+    // 1. Honor explicit callbackUrl if present and same-origin
     const callbackUrl = req.nextUrl.searchParams.get("callbackUrl");
     if (callbackUrl) {
       try {
@@ -252,12 +256,26 @@ export default auth((req) => {
           return addSecurityHeaders(requestId, NextResponse.redirect(target));
         }
       } catch {
-        // Invalid URL — fall through to default route
+        // Invalid URL — fall through to cookie/default
       }
     }
 
+    // 2. Try the last-path cookie
+    const lastPath = req.cookies.get(LAST_PATH_COOKIE_NAME)?.value;
+    const resolved = resolveRedirectFromCookie(lastPath, userRole, canAccessRoute);
+    if (resolved) {
+      return addSecurityHeaders(
+        requestId,
+        NextResponse.redirect(new URL(resolved, req.url))
+      );
+    }
+
+    // 3. Fall back to role default
     const defaultRoute = getDefaultRouteForRole(userRole);
-    return addSecurityHeaders(requestId, NextResponse.redirect(new URL(defaultRoute, req.url)));
+    return addSecurityHeaders(
+      requestId,
+      NextResponse.redirect(new URL(defaultRoute, req.url))
+    );
   }
 
   // Public page routes (portal, etc.) — allow regardless of auth status
