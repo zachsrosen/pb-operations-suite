@@ -1668,6 +1668,10 @@ export async function sendBugReportEmail(
     })
   );
 
+  const fromOverride = params.reporterName
+    ? `${params.reporterName} <${params.reporterEmail}>`
+    : params.reporterEmail;
+
   return sendEmailMessage({
     to: recipient,
     subject: `Bug Report: ${params.title}`,
@@ -1682,6 +1686,8 @@ Time: ${timestamp}
 Ticket ID: ${params.reportId}
 
 - PB Operations`,
+    fromOverride,
+    senderEmailOverride: params.reporterEmail,
     debugFallbackTitle: `BUG REPORT NOTIFICATION for ${recipient}`,
     debugFallbackBody: [
       `Title: ${params.title}`,
