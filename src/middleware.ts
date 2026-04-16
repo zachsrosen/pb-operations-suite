@@ -7,6 +7,12 @@ import {
   normalizeRole,
   type UserRole,
 } from "@/lib/role-permissions";
+import {
+  LAST_PATH_COOKIE_NAME,
+  resolveCallbackPathFromCookie,
+  resolveRedirectFromCookie,
+  writeLastPathCookie,
+} from "@/lib/last-path-cookie";
 // Solar CORS no longer needed — Solar Surveyor served from same origin
 
 // Routes that are always accessible (login, auth callbacks)
@@ -241,7 +247,7 @@ export default auth((req) => {
 
   // Redirect logged-in users away from login page
   if (isLoginPage && isLoggedIn) {
-    // Honor callbackUrl if present and same-origin
+    // 1. Honor explicit callbackUrl if present and same-origin
     const callbackUrl = req.nextUrl.searchParams.get("callbackUrl");
     if (callbackUrl) {
       try {
@@ -251,12 +257,39 @@ export default auth((req) => {
           return addSecurityHeaders(requestId, NextResponse.redirect(target));
         }
       } catch {
-        // Invalid URL — fall through to default route
+        // Invalid URL — fall through to cookie/default
       }
     }
 
+    // 2. Try the last-path cookie
+    const lastPath = req.cookies.get(LAST_PATH_COOKIE_NAME)?.value;
+    const resolved = resolveRedirectFromCookie(lastPath, userRole, canAccessRoute);
+    if (resolved) {
+      return addSecurityHeaders(
+        requestId,
+        NextResponse.redirect(new URL(resolved, req.url))
+      );
+    }
+
+    // 3. Fall back to role default
     const defaultRoute = getDefaultRouteForRole(userRole);
-    return addSecurityHeaders(requestId, NextResponse.redirect(new URL(defaultRoute, req.url)));
+    return addSecurityHeaders(
+      requestId,
+      NextResponse.redirect(new URL(defaultRoute, req.url))
+    );
+  }
+
+  // Unauthenticated user hit bare /login — if a last-path cookie exists
+  // and no callbackUrl is already set, rewrite so NextAuth restores it
+  // after sign-in. `!searchParams.has("callbackUrl")` prevents loops.
+  if (isLoginPage && !isLoggedIn && !req.nextUrl.searchParams.has("callbackUrl")) {
+    const lastPath = req.cookies.get(LAST_PATH_COOKIE_NAME)?.value;
+    const callbackPath = resolveCallbackPathFromCookie(lastPath);
+    if (callbackPath) {
+      const redirectUrl = new URL("/login", req.url);
+      redirectUrl.searchParams.set("callbackUrl", callbackPath);
+      return addSecurityHeaders(requestId, NextResponse.redirect(redirectUrl));
+    }
   }
 
   // Public page routes (portal, etc.) — allow regardless of auth status
@@ -286,7 +319,13 @@ export default auth((req) => {
     }
   }
 
-  return nextWithRequestId(requestId, req);
+  const response = nextWithRequestId(requestId, req);
+  writeLastPathCookie(
+    response,
+    pathname,
+    process.env.NODE_ENV === "production"
+  );
+  return response;
 });
 
 export const config = {
