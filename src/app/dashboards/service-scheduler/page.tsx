@@ -26,6 +26,7 @@ interface ZuperJob {
   city: string;
   state: string;
   assignedUser: string;
+  assignedUsers?: string[];
   teamName: string;
   hubspotDealId: string;
   jobTotal: number;
@@ -71,6 +72,20 @@ function formatTime(isoStr: string | null): string {
   return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
+function formatScheduledDateTime(isoStr: string | null): string {
+  if (!isoStr) return "Not scheduled";
+  const d = new Date(isoStr);
+  return d.toLocaleString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
 function isWeekend(dateStr: string): boolean {
   const [y, m, d] = dateStr.split("-").map(Number);
   const dow = new Date(y, m - 1, d).getDay();
@@ -83,7 +98,29 @@ function getCustomerName(title: string): string {
   return parts[1] || parts[0] || title;
 }
 
+function getAssignees(j: { assignedUsers?: string[]; assignedUser?: string }): string[] {
+  if (Array.isArray(j.assignedUsers) && j.assignedUsers.length > 0) return j.assignedUsers;
+  return j.assignedUser ? [j.assignedUser] : [];
+}
+
 const ZUPER_WEB_BASE = "https://web.zuperpro.com";
+
+function TypeBadge({ type, size = "md" }: { type: "deal" | "ticket" | null | undefined; size?: "sm" | "md" }) {
+  if (!type) return null;
+  const sizeClass = size === "sm" ? "text-[0.45rem] px-1 py-0" : "text-[0.5rem] px-1 py-0.5";
+  if (type === "deal") {
+    return (
+      <span className={`${sizeClass} rounded bg-purple-500/25 text-purple-300 border border-purple-500/40 font-semibold uppercase tracking-wider`}>
+        Deal
+      </span>
+    );
+  }
+  return (
+    <span className={`${sizeClass} rounded bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 font-semibold uppercase tracking-wider`}>
+      Ticket
+    </span>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /*  Component                                                          */
@@ -111,10 +148,14 @@ export default function ServiceSchedulerPage() {
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
+  const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
   const [selectedJob, setSelectedJob] = useState<ZuperJob | null>(null);
   const [primaryContactId, setPrimaryContactId] = useState<string | null>(null);
   const [contactLoading, setContactLoading] = useState(false);
   const contactCacheRef = useRef<Record<string, string | null>>({});
+  // HubSpot object-type resolution (deal vs ticket) for the id stored on each job
+  const [objectTypes, setObjectTypes] = useState<Record<string, "deal" | "ticket" | null>>({});
+  const typeCacheRef = useRef<Record<string, "deal" | "ticket" | null>>({});
   const hubspotPortalId = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "";
 
   // Fetch data
@@ -148,15 +189,57 @@ export default function ServiceSchedulerPage() {
     }
   }, [loading, jobs.length, trackDashboardView]);
 
-  // Lazy-fetch primary contact id when a job modal opens
+  // Bulk-resolve HubSpot object types (deal vs ticket) for every job that carries an id.
+  // The Zuper external_id.hubspot_deal field stores EITHER a deal id OR a ticket id.
   useEffect(() => {
-    const dealId = selectedJob?.hubspotDealId;
-    if (!dealId) {
+    if (jobs.length === 0) return;
+    const ids = Array.from(new Set(
+      jobs.map((j) => j.hubspotDealId).filter((id) => id && /^\d+$/.test(id))
+    ));
+    const uncached = ids.filter((id) => !(id in typeCacheRef.current));
+    if (uncached.length === 0) {
+      // Still publish cached values to state so UI has them
+      setObjectTypes({ ...typeCacheRef.current });
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/hubspot/object-resolve", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids: uncached }),
+        });
+        if (!res.ok) return;
+        const data = await res.json() as { types: Record<string, "deal" | "ticket" | null> };
+        for (const id of uncached) {
+          typeCacheRef.current[id] = data.types?.[id] ?? null;
+        }
+        if (!cancelled) setObjectTypes({ ...typeCacheRef.current });
+      } catch (err) {
+        console.warn("[service-scheduler] object-resolve failed:", err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [jobs]);
+
+  // Lazy-fetch primary contact id when a job modal opens (type-aware)
+  const selectedObjectType = selectedJob ? objectTypes[selectedJob.hubspotDealId] ?? null : null;
+  useEffect(() => {
+    const objectId = selectedJob?.hubspotDealId;
+    if (!objectId) {
       setPrimaryContactId(null);
       return;
     }
-    if (dealId in contactCacheRef.current) {
-      setPrimaryContactId(contactCacheRef.current[dealId]);
+    // Wait for type resolution before fetching contact; unresolved type = no contact path.
+    const type = objectTypes[objectId];
+    if (!type) {
+      setPrimaryContactId(null);
+      return;
+    }
+    const cacheKey = `${type}:${objectId}`;
+    if (cacheKey in contactCacheRef.current) {
+      setPrimaryContactId(contactCacheRef.current[cacheKey]);
       return;
     }
     let cancelled = false;
@@ -164,10 +247,10 @@ export default function ServiceSchedulerPage() {
     setPrimaryContactId(null);
     (async () => {
       try {
-        const res = await fetch(`/api/deals/${dealId}/primary-contact`);
+        const res = await fetch(`/api/deals/${objectId}/primary-contact?type=${type}`);
         const data = res.ok ? await res.json() : { contactId: null };
         const id = (data?.contactId ?? null) as string | null;
-        contactCacheRef.current[dealId] = id;
+        contactCacheRef.current[cacheKey] = id;
         if (!cancelled) setPrimaryContactId(id);
       } catch {
         if (!cancelled) setPrimaryContactId(null);
@@ -176,7 +259,7 @@ export default function ServiceSchedulerPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [selectedJob?.hubspotDealId]);
+  }, [selectedJob, objectTypes]);
 
   // Derived data
   const uniqueStatuses = useMemo(() => {
@@ -184,21 +267,38 @@ export default function ServiceSchedulerPage() {
     return Array.from(s).sort();
   }, [jobs]);
 
+  const uniqueAssignees = useMemo(() => {
+    const s = new Set<string>();
+    for (const j of jobs) {
+      for (const a of getAssignees(j)) s.add(a);
+    }
+    return Array.from(s).sort();
+  }, [jobs]);
+
   const filteredJobs = useMemo(() => {
     return jobs.filter(j => {
+      const assignees = getAssignees(j);
       if (searchText) {
         const q = searchText.toLowerCase();
+        const matchesAssignee = assignees.some(a => a.toLowerCase().includes(q));
         if (!j.title.toLowerCase().includes(q) &&
             !j.customerName.toLowerCase().includes(q) &&
             !j.address.toLowerCase().includes(q) &&
-            !j.assignedUser.toLowerCase().includes(q)) return false;
+            !matchesAssignee) return false;
       }
       if (selectedCategories.length > 0 && !selectedCategories.includes(j.categoryName)) return false;
       if (selectedLocations.length > 0 && !selectedLocations.includes(j.teamName)) return false;
       if (selectedStatuses.length > 0 && !selectedStatuses.includes(j.statusName)) return false;
+      if (selectedAssignees.length > 0) {
+        if (selectedAssignees.includes("__unassigned__")) {
+          if (assignees.length > 0 && !assignees.some(a => selectedAssignees.includes(a))) return false;
+        } else {
+          if (!assignees.some(a => selectedAssignees.includes(a))) return false;
+        }
+      }
       return true;
     });
-  }, [jobs, searchText, selectedCategories, selectedLocations, selectedStatuses]);
+  }, [jobs, searchText, selectedCategories, selectedLocations, selectedStatuses, selectedAssignees]);
 
   // Calendar data
   const calendarDays = useMemo(() => {
@@ -430,6 +530,43 @@ export default function ServiceSchedulerPage() {
                 )}
               </div>
             )}
+            {/* Assignee filters */}
+            {uniqueAssignees.length > 0 && (
+              <div>
+                <div className="text-[0.55rem] uppercase tracking-wider text-muted mb-1">Assignees</div>
+                <div className="flex flex-wrap gap-1 max-h-[132px] overflow-y-auto">
+                  <button
+                    onClick={() => toggleFilter(selectedAssignees, "__unassigned__", setSelectedAssignees)}
+                    className={`px-1.5 py-0.5 text-[0.6rem] rounded border transition-colors ${
+                      selectedAssignees.includes("__unassigned__")
+                        ? "bg-surface-2 border-muted text-foreground"
+                        : "bg-background border-t-border text-muted hover:border-muted"
+                    }`}
+                  >
+                    Unassigned
+                  </button>
+                  {uniqueAssignees.map(a => (
+                    <button
+                      key={a}
+                      onClick={() => toggleFilter(selectedAssignees, a, setSelectedAssignees)}
+                      className={`px-1.5 py-0.5 text-[0.6rem] rounded border transition-colors ${
+                        selectedAssignees.includes(a)
+                          ? "bg-emerald-500/20 border-emerald-400/50 text-emerald-300"
+                          : "bg-background border-t-border text-muted hover:border-muted"
+                      }`}
+                      title={a}
+                    >
+                      {a.split(" ")[0]}
+                    </button>
+                  ))}
+                  {selectedAssignees.length > 0 && (
+                    <button onClick={() => setSelectedAssignees([])} className="px-1.5 py-0.5 text-[0.6rem] text-muted hover:text-foreground">
+                      Clear
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Stats bar */}
@@ -477,6 +614,7 @@ export default function ServiceSchedulerPage() {
                     {j.address}
                   </div>
                   <div className="flex gap-1 flex-wrap">
+                    <TypeBadge type={objectTypes[j.hubspotDealId]} />
                     <span className={`text-[0.5rem] px-1 py-0.5 rounded ${
                       CATEGORY_COLORS[j.categoryName]?.replace("bg-", "bg-") + "/20 " + (CATEGORY_TEXT_COLORS[j.categoryName] || "text-muted")
                     }`}>
@@ -491,9 +629,9 @@ export default function ServiceSchedulerPage() {
                       </span>
                     )}
                   </div>
-                  {j.assignedUser && (
-                    <div className="text-[0.55rem] text-muted mt-1">
-                      Assigned: {j.assignedUser}
+                  {getAssignees(j).length > 0 && (
+                    <div className="text-[0.55rem] text-muted mt-1 truncate" title={getAssignees(j).join(", ")}>
+                      Assigned: {getAssignees(j).join(", ")}
                     </div>
                   )}
                 </div>
@@ -596,15 +734,20 @@ export default function ServiceSchedulerPage() {
                                 ? "bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30"
                                 : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
                             } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""}`}
-                            title={`${j.title}\n${j.statusName}\n${j.assignedUser || "Unassigned"}${j.scheduledStart ? "\n" + formatTime(j.scheduledStart) : ""}`}
+                            title={`${j.title}\n${j.statusName}\n${getAssignees(j).join(", ") || "Unassigned"}${j.scheduledStart ? "\n" + formatTime(j.scheduledStart) : ""}`}
                           >
-                            <div className="truncate font-medium">{getCustomerName(j.title)}</div>
+                            <div className="flex items-center gap-1">
+                              <TypeBadge type={objectTypes[j.hubspotDealId]} size="sm" />
+                              <div className="truncate font-medium flex-1 min-w-0">{getCustomerName(j.title)}</div>
+                            </div>
                             <div className="flex items-center gap-1 mt-0.5">
                               {j.scheduledStart && (
                                 <span className="text-[0.5rem] opacity-70">{formatTime(j.scheduledStart)}</span>
                               )}
-                              {j.assignedUser && (
-                                <span className="text-[0.5rem] opacity-60 truncate">{j.assignedUser.split(" ")[0]}</span>
+                              {getAssignees(j).length > 0 && (
+                                <span className="text-[0.5rem] opacity-60 truncate">
+                                  {getAssignees(j).map(a => a.split(" ")[0]).join(", ")}
+                                </span>
                               )}
                             </div>
                           </div>
@@ -668,15 +811,20 @@ export default function ServiceSchedulerPage() {
                                   ? "bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30"
                                   : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
                               } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""}`}
-                              title={`${j.title}\n${j.statusName}\n${j.assignedUser || "Unassigned"}`}
+                              title={`${j.title}\n${j.statusName}\n${getAssignees(j).join(", ") || "Unassigned"}`}
                             >
-                              {j.scheduledStart && (
-                                <div className="text-[0.55rem] opacity-80 mb-0.5">{formatTime(j.scheduledStart)}</div>
-                              )}
+                              <div className="flex items-center justify-between gap-1 mb-0.5">
+                                {j.scheduledStart ? (
+                                  <span className="text-[0.55rem] opacity-80">{formatTime(j.scheduledStart)}</span>
+                                ) : <span />}
+                                <TypeBadge type={objectTypes[j.hubspotDealId]} size="sm" />
+                              </div>
                               <div className="font-medium truncate">{getCustomerName(j.title)}</div>
                               <div className="text-[0.55rem] opacity-70 truncate">{j.statusName}</div>
-                              {j.assignedUser && (
-                                <div className="text-[0.55rem] opacity-60 truncate">{j.assignedUser}</div>
+                              {getAssignees(j).length > 0 && (
+                                <div className="text-[0.55rem] opacity-60 truncate" title={getAssignees(j).join(", ")}>
+                                  {getAssignees(j).join(", ")}
+                                </div>
                               )}
                             </div>
                           ))
@@ -725,8 +873,11 @@ export default function ServiceSchedulerPage() {
                                   : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
                               } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""}`}
                             >
-                              <div className="font-medium">{getCustomerName(j.title)}</div>
-                              <div className="text-[0.6rem] opacity-70">{j.statusName} · {j.assignedUser || "Unassigned"}</div>
+                              <div className="flex items-center gap-1">
+                                <TypeBadge type={objectTypes[j.hubspotDealId]} size="sm" />
+                                <div className="font-medium">{getCustomerName(j.title)}</div>
+                              </div>
+                              <div className="text-[0.6rem] opacity-70">{j.statusName} · {getAssignees(j).join(", ") || "Unassigned"}</div>
                             </div>
                           ))}
                         </div>
@@ -756,13 +907,16 @@ export default function ServiceSchedulerPage() {
                                   } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""}`}
                                 >
                                   <div className="flex justify-between gap-2">
-                                    <div className="font-medium truncate">{getCustomerName(j.title)}</div>
+                                    <div className="flex items-center gap-1 min-w-0">
+                                      <TypeBadge type={objectTypes[j.hubspotDealId]} size="sm" />
+                                      <div className="font-medium truncate">{getCustomerName(j.title)}</div>
+                                    </div>
                                     {j.scheduledStart && (
                                       <span className="text-[0.6rem] opacity-80 shrink-0">{formatTime(j.scheduledStart)}</span>
                                     )}
                                   </div>
                                   <div className="text-[0.6rem] opacity-70 truncate">
-                                    {j.statusName} · {j.assignedUser || "Unassigned"}{j.teamName ? ` · ${j.teamName}` : ""}
+                                    {j.statusName} · {getAssignees(j).join(", ") || "Unassigned"}{j.teamName ? ` · ${j.teamName}` : ""}
                                   </div>
                                 </div>
                               ))}
@@ -792,7 +946,19 @@ export default function ServiceSchedulerPage() {
             <div className="p-5 border-b border-t-border">
               <div className="flex justify-between items-start">
                 <div>
-                  <div className="text-sm font-bold">{getCustomerName(selectedJob.title)}</div>
+                  <div className="flex items-center gap-2">
+                    <div className="text-sm font-bold">{getCustomerName(selectedJob.title)}</div>
+                    {selectedObjectType === "deal" && (
+                      <span className="text-[0.55rem] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 font-semibold uppercase tracking-wider">
+                        Deal
+                      </span>
+                    )}
+                    {selectedObjectType === "ticket" && (
+                      <span className="text-[0.55rem] px-1.5 py-0.5 rounded bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 font-semibold uppercase tracking-wider">
+                        Ticket
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-muted mt-0.5">{selectedJob.title.split(" | ")[0]}</div>
                 </div>
                 <button onClick={() => setSelectedJob(null)} className="text-muted hover:text-foreground text-lg leading-none">&times;</button>
@@ -817,18 +983,16 @@ export default function ServiceSchedulerPage() {
                   <span className="text-foreground">{selectedJob.teamName || "—"}</span>
                 </div>
                 <div>
-                  <div className="text-muted text-[0.6rem] mb-0.5">Assigned To</div>
-                  <span className="text-foreground">{selectedJob.assignedUser || "Unassigned"}</span>
-                </div>
-                <div>
-                  <div className="text-muted text-[0.6rem] mb-0.5">Due Date</div>
-                  <span className="text-foreground">{selectedJob.dueDate || "—"}</span>
-                </div>
-                <div>
-                  <div className="text-muted text-[0.6rem] mb-0.5">Scheduled</div>
+                  <div className="text-muted text-[0.6rem] mb-0.5">
+                    Assigned To{getAssignees(selectedJob).length > 1 ? ` (${getAssignees(selectedJob).length})` : ""}
+                  </div>
                   <span className="text-foreground">
-                    {selectedJob.scheduledStart ? formatTime(selectedJob.scheduledStart) : "Not scheduled"}
+                    {getAssignees(selectedJob).join(", ") || "Unassigned"}
                   </span>
+                </div>
+                <div className="col-span-2">
+                  <div className="text-muted text-[0.6rem] mb-0.5">Scheduled Date</div>
+                  <span className="text-foreground">{formatScheduledDateTime(selectedJob.scheduledStart)}</span>
                 </div>
                 <div className="col-span-2">
                   <div className="text-muted text-[0.6rem] mb-0.5">Address</div>
@@ -852,7 +1016,7 @@ export default function ServiceSchedulerPage() {
                 >
                   Open in Zuper
                 </a>
-                {selectedJob.hubspotDealId && (
+                {selectedJob.hubspotDealId && selectedObjectType === "deal" && (
                   <>
                     <Link
                       href={getInternalDealUrl(selectedJob.hubspotDealId, "service")}
@@ -868,21 +1032,38 @@ export default function ServiceSchedulerPage() {
                     >
                       HubSpot Deal
                     </a>
-                    {primaryContactId ? (
-                      <a
-                        href={`https://app.hubspot.com/contacts/${hubspotPortalId || "22460157"}/record/0-1/${primaryContactId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex-1 min-w-[120px] text-center text-xs py-2 rounded-md bg-orange-400 text-black font-semibold hover:bg-orange-300 transition-colors"
-                      >
-                        HubSpot Contact
-                      </a>
-                    ) : (
-                      <span className="flex-1 min-w-[120px] text-center text-xs py-2 rounded-md bg-surface-2 text-muted">
-                        {contactLoading ? "Loading contact..." : "No contact linked"}
-                      </span>
-                    )}
                   </>
+                )}
+                {selectedJob.hubspotDealId && selectedObjectType === "ticket" && (
+                  <a
+                    href={`https://app.hubspot.com/contacts/${hubspotPortalId || "22460157"}/ticket/${selectedJob.hubspotDealId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 min-w-[120px] text-center text-xs py-2 rounded-md bg-cyan-500 text-black font-semibold hover:bg-cyan-400 transition-colors"
+                  >
+                    HubSpot Ticket
+                  </a>
+                )}
+                {selectedJob.hubspotDealId && selectedObjectType === null && (
+                  <span className="flex-1 min-w-[120px] text-center text-xs py-2 rounded-md bg-surface-2 text-muted">
+                    Resolving HubSpot link…
+                  </span>
+                )}
+                {selectedJob.hubspotDealId && selectedObjectType && (
+                  primaryContactId ? (
+                    <a
+                      href={`https://app.hubspot.com/contacts/${hubspotPortalId || "22460157"}/record/0-1/${primaryContactId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 min-w-[120px] text-center text-xs py-2 rounded-md bg-orange-400 text-black font-semibold hover:bg-orange-300 transition-colors"
+                    >
+                      HubSpot Contact
+                    </a>
+                  ) : (
+                    <span className="flex-1 min-w-[120px] text-center text-xs py-2 rounded-md bg-surface-2 text-muted">
+                      {contactLoading ? "Loading contact..." : "No contact linked"}
+                    </span>
+                  )
                 )}
               </div>
             </div>
