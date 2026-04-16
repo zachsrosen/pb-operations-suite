@@ -67,10 +67,12 @@ describe("hubspot-engagements scope-drop alerting", () => {
   });
 
   it("sends a 403 MISSING_SCOPES error to Sentry with module + status tags", async () => {
-    // All 5 engagement types see a single associated engagement.
+    // All engagement types see a single associated engagement.
     mockAssocRead.mockResolvedValue({ results: [{ to: [{ id: "eng-1" }] }] });
 
     // Only the "emails" object read fails — simulates the real prod bug.
+    // The 403 may fire twice (deal→emails AND contact→emails) since
+    // getDealEngagements walks both; both are legitimate Sentry alerts.
     mockObjectsRead.mockImplementation((toType: string) => {
       if (toType === "emails") {
         return Promise.reject(hubspotError(403, "MISSING_SCOPES: requires sales-email-read"));
@@ -83,11 +85,11 @@ describe("hubspot-engagements scope-drop alerting", () => {
     // Function doesn't crash — emails silently become [].
     expect(Array.isArray(result)).toBe(true);
 
-    // But the 403 IS sent to Sentry with useful context.
-    expect(mockCapture).toHaveBeenCalledTimes(1);
-    const [errArg, ctxArg] = mockCapture.mock.calls[0];
-    expect(errArg).toBeInstanceOf(Error);
-    expect(ctxArg).toEqual(
+    // The 403 IS sent to Sentry with useful context. Called at least once —
+    // real-world scope drop on emails fires once per association walk.
+    expect(mockCapture).toHaveBeenCalled();
+    expect(mockCapture).toHaveBeenCalledWith(
+      expect.any(Error),
       expect.objectContaining({
         tags: expect.objectContaining({
           module: "hubspot-engagements",
@@ -98,6 +100,9 @@ describe("hubspot-engagements scope-drop alerting", () => {
     );
   });
 
+  // Per-test timeout bump: 429 retry delays (1.1s + 2.2s ≈ 3.3s per sequence)
+  // happen twice (deals→emails and contacts→emails walks) so we need ~7s
+  // real time. Default jest timeout is 5s.
   it("does NOT send transient 429 (rate limit) errors to Sentry", async () => {
     mockAssocRead.mockResolvedValue({ results: [{ to: [{ id: "eng-1" }] }] });
     mockObjectsRead.mockImplementation((toType: string) => {
@@ -110,7 +115,7 @@ describe("hubspot-engagements scope-drop alerting", () => {
     await getDealEngagements("deal-hs-123", false);
 
     expect(mockCapture).not.toHaveBeenCalled();
-  });
+  }, 15_000);
 
   it("does NOT send transient 5xx errors to Sentry", async () => {
     mockAssocRead.mockResolvedValue({ results: [{ to: [{ id: "eng-1" }] }] });
