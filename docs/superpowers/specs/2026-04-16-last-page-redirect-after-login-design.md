@@ -48,26 +48,38 @@ Explicitly do not overwrite the cookie for:
 
 ### When is the cookie written?
 
-In middleware, after all auth/maintenance/role checks pass and we're about to return `nextWithRequestId()` for a rememberable path. Only for authenticated users — unauthenticated users never reach that branch.
+In middleware, **only at the final `return nextWithRequestId(requestId, req)` call at line 289** — after all auth, maintenance, role, and `canAccessRoute` checks have passed. This is the single fall-through branch for authenticated users on non-API, non-login, non-protected-static paths. Writing only there guarantees we never cache a path the user was blocked from.
 
-The write uses `response.cookies.set(...)` on the NextResponse returned from `nextWithRequestId`. We extend `nextWithRequestId` to accept an optional cookie write, or do it inline at the call site. Implementation detail for the plan, not the spec.
+Do **not** modify `nextWithRequestId`. `nextWithRequestId` is called from many branches (auth routes, static files, public API, impersonation API, protected static files, API fall-through). Writing the cookie there would pollute cases we explicitly exclude. Instead, at the final return site, capture the response, call `response.cookies.set("pb_last_path", pathname, { ...attrs })` if `pathname` matches the rememberable patterns, then return it.
+
+Unauthenticated users never reach this branch (they're redirected at line 268-271), so no auth check is needed at the write site.
 
 ### When is the cookie read?
 
-Two places, both in middleware:
+Two places, both in middleware. The `/login` page itself is **not** modified; all cookie reading happens in middleware. This keeps the auth flow in one place and avoids implementation thrash between middleware and server-component approaches.
 
-1. **`/login` when already logged in** (existing redirect at lines 243-259): current order is explicit `?callbackUrl=` → role default. New order: explicit `?callbackUrl=` → `pb_last_path` → role default.
-2. **`/login` after fresh sign-in.** NextAuth's signIn callback honors `callbackUrl`. The login page (`src/app/login/page.tsx:15`) currently defaults to `"/"`. We change it to read the cookie via a server component (or pass through the middleware redirect) so the fresh sign-in uses `pb_last_path` too.
+**Read 1: `/login` when user is already logged in** (existing redirect at lines 243-259).
 
-Actually the cleaner path: when the user hits `/login` unauthenticated, middleware lets them through. They click "Sign in with Google." NextAuth redirects to `callbackUrl` after sign-in. The login page reads `callbackUrl` from search params, which middleware already set (either from the `/login?callbackUrl=<path>` pattern or from our new `pb_last_path` cookie).
+Current order: explicit `?callbackUrl=` → role default.
+New order: explicit `?callbackUrl=` → `pb_last_path` → role default.
 
-So: in the middleware `if (!isLoginPage && !isLoggedIn)` branch (lines 268-271), we already set `callbackUrl` from the current pathname. We don't touch this — timeout case is already covered.
+If the cookie is present and the path validates and `canAccessRoute(userRole, cookiePath)` passes, redirect there. Otherwise fall through to role default.
 
-For the "user closed tab and came back to bare `/login`" case: we add logic to the `/login` page server-side read of the cookie and include it in the signIn `callbackUrl`. Alternative: middleware intercepts `/login` when the user is unauthenticated AND no `callbackUrl` param is set AND the cookie exists — rewrites the URL to include `callbackUrl=<cookie>`. Simpler and keeps everything in middleware.
+**Read 2: `/login` when user is unauthenticated, no `callbackUrl`, cookie present** (new branch, inserted before line 263).
+
+This is the "user closed tab during a timed-out session and came back fresh" case. The unauthenticated user lands on `/login` with no query params and no session. Today, middleware falls through to `nextWithRequestId` (line 264) and the login page uses its default `"/"`.
+
+New behavior: if `pathname === "/login" && !isLoggedIn && !searchParams.has("callbackUrl") && pb_last_path cookie exists && cookie value validates`, issue a 307 redirect to `/login?callbackUrl=<cookie>`. The login page then respects the `callbackUrl` through NextAuth's signIn as it already does today.
+
+**Loop prevention.** The rewrite condition includes `!searchParams.has("callbackUrl")`, so after the rewrite lands the user back on `/login?callbackUrl=...`, the condition is false and we fall through normally. No loop.
+
+**Why not have the login page read the cookie directly?** The login page runs as a React server component, which *can* read httpOnly cookies, but that would split the redirect logic between two files and create a second code path that needs to stay in sync with middleware's validation and role checks. Keeping it all in middleware is simpler.
 
 ### Role access check before redirect
 
 Before redirecting a user to `pb_last_path`, call `canAccessRoute(userRole, cookiePath)`. If the role no longer has access to that path (e.g., user was demoted, or cookie path is stale), fall back to role default. This is the same check the middleware already does for general route access.
+
+`getDefaultRouteForRole(userRole)` is guaranteed to return a path the role can access — that's its contract. So the fallback chain (cookie fails → role default) is terminal and will never itself redirect. No second redirect round-trip.
 
 ### Path validation
 
@@ -82,7 +94,16 @@ The cookie value is treated as untrusted input:
 
 ### Admin impersonation
 
-Admins who impersonate another user get a `pb_effective_role` cookie. The middleware already uses the effective role for `canAccessRoute`. The last-path cookie should still be written (so when the admin stops impersonating and signs back in later, they return to where they were as themselves). The role check on read uses the *current* role at read time — if the admin is no longer impersonating, the effective role is ADMIN, and the check still passes for any dashboard.
+Admins who impersonate another user get a `pb_effective_role` cookie. The middleware already uses the effective role for `canAccessRoute`. The last-path cookie is written under whichever role is effective at the time of the page view — we don't try to track "real user identity" separately. This means:
+
+- Admin A impersonates user B, navigates to `/dashboards/pi-action-queue`. Cookie written.
+- Admin A stops impersonating, signs out, signs back in later. Cookie still says `/dashboards/pi-action-queue`. Admin A's role is ADMIN (access to all routes), so `canAccessRoute` passes and they land there.
+
+This is correct behavior: the cookie is per-browser state, not per-user-identity state. If admin A wanted to return to their own last page, they shouldn't have been impersonating. If they want to jump to an impersonation-era view, that's fine too.
+
+### OWNER / EXECUTIVE roles
+
+`normalizeRole()` in `role-permissions.ts` maps OWNER → EXECUTIVE. Both have `*` route access in `ROLE_ROUTES`. The feature is effectively a no-op for them (role default works fine), but the cookie still writes and reads normally — they just always pass the `canAccessRoute` check.
 
 ### User on `/login` when already logged in
 
@@ -118,14 +139,20 @@ If a user explicitly signs out from `/admin/users`, the cookie still holds their
   - Cookie is written on `/dashboards/foo` for authenticated user
   - Cookie is NOT written on `/api/*`, `/admin/*`, `/login`, `/maintenance`
   - Cookie is NOT written when redirecting (auth fail, maintenance mode, role fail)
-  - Cookie is read on `/login` with no `callbackUrl` when user is unauthenticated
+  - Cookie is read on `/login` with no `callbackUrl` when user is unauthenticated (redirect to `/login?callbackUrl=<cookie>`)
+  - Cookie is read on `/login` when user is already logged in (redirect straight to cookie path)
   - Explicit `?callbackUrl=` takes precedence over cookie
-  - Cookie path that fails `canAccessRoute` is ignored
-  - Cookie value with `\\`, `//`, or non-dashboard path is rejected
+  - Cookie path that fails `canAccessRoute` is ignored at read time (even if cookie was valid when written)
+  - Cookie value with `\\`, `//`, protocol-relative, or non-rememberable path is rejected at read time
+  - Redirect loop prevention: after `/login?callbackUrl=<cookie>` lands, middleware does NOT re-rewrite
 - Manual test:
   - Sign in → navigate to `/dashboards/service-tickets` → sign out → sign in → land on `/dashboards/service-tickets`
   - Sign in → navigate to `/dashboards/service-tickets` → close tab for 5+ minutes until session times out → open `/login` → sign in → land on `/dashboards/service-tickets`
   - Set cookie to `/dashboards/executive` → sign in as SALES → land on SALES default (not `/dashboards/executive`)
+
+## Out-of-Scope Flow
+
+`/api/auth/logout` is a server-side GET route that logs a LOGOUT activity and redirects to `/login`. **`UserMenu.tsx` does not use this route** — it calls NextAuth's client-side `signOut({ callbackUrl: "/login" })` directly. This feature touches the NextAuth flow (middleware-level), not the `/api/auth/logout` route. That route is orthogonal and stays as-is.
 
 ## Rollout
 
