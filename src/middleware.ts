@@ -9,6 +9,7 @@ import {
 } from "@/lib/role-permissions";
 import {
   LAST_PATH_COOKIE_NAME,
+  resolveCallbackPathFromCookie,
   resolveRedirectFromCookie,
   writeLastPathCookie,
 } from "@/lib/last-path-cookie";
@@ -276,6 +277,19 @@ export default auth((req) => {
       requestId,
       NextResponse.redirect(new URL(defaultRoute, req.url))
     );
+  }
+
+  // Unauthenticated user hit bare /login — if a last-path cookie exists
+  // and no callbackUrl is already set, rewrite so NextAuth restores it
+  // after sign-in. `!searchParams.has("callbackUrl")` prevents loops.
+  if (isLoginPage && !isLoggedIn && !req.nextUrl.searchParams.has("callbackUrl")) {
+    const lastPath = req.cookies.get(LAST_PATH_COOKIE_NAME)?.value;
+    const callbackPath = resolveCallbackPathFromCookie(lastPath);
+    if (callbackPath) {
+      const redirectUrl = new URL("/login", req.url);
+      redirectUrl.searchParams.set("callbackUrl", callbackPath);
+      return addSecurityHeaders(requestId, NextResponse.redirect(redirectUrl));
+    }
   }
 
   // Public page routes (portal, etc.) — allow regardless of auth status

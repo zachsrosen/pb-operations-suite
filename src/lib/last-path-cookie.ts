@@ -78,6 +78,18 @@ export function writeLastPathCookie(
 }
 
 /**
+ * Resolve the last-path cookie for use as a pre-signin `callbackUrl`. No
+ * role check (we don't know the role yet). The post-signin flow validates
+ * role access via `resolveRedirectFromCookie`.
+ */
+export function resolveCallbackPathFromCookie(
+  cookieValue: string | undefined | null
+): string | null {
+  if (!isValidStoredPath(cookieValue)) return null;
+  return cookieValue;
+}
+
+/**
  * Resolve the last-path cookie into a safe redirect target, or null if it
  * should be ignored. Caller must pass the role-permission check function
  * so this module doesn't pull role-permissions directly (the caller

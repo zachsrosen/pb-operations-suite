@@ -1,4 +1,4 @@
-import { resolveRedirectFromCookie } from "@/lib/last-path-cookie";
+import { resolveCallbackPathFromCookie, resolveRedirectFromCookie } from "@/lib/last-path-cookie";
 import type { UserRole } from "@/lib/role-permissions";
 
 function fakeCanAccess(allowed: Set<string>) {
@@ -50,5 +50,27 @@ describe("resolveRedirectFromCookie", () => {
         fakeCanAccess(new Set(["/dashboards/service-tickets"]))
       )
     ).toBe("/dashboards/service-tickets");
+  });
+});
+
+describe("resolveCallbackPathFromCookie", () => {
+  it("returns null for missing/empty cookie", () => {
+    expect(resolveCallbackPathFromCookie(undefined)).toBeNull();
+    expect(resolveCallbackPathFromCookie("")).toBeNull();
+  });
+
+  it("returns null for invalid path", () => {
+    expect(resolveCallbackPathFromCookie("//evil.com/dashboards")).toBeNull();
+    expect(resolveCallbackPathFromCookie("/admin/users")).toBeNull();
+    expect(resolveCallbackPathFromCookie("/dashboards/foo\n")).toBeNull();
+  });
+
+  it("returns the path when valid", () => {
+    expect(
+      resolveCallbackPathFromCookie("/dashboards/service-tickets")
+    ).toBe("/dashboards/service-tickets");
+    expect(resolveCallbackPathFromCookie("/suites/operations")).toBe(
+      "/suites/operations"
+    );
   });
 });
