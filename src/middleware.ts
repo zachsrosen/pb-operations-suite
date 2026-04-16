@@ -7,6 +7,7 @@ import {
   normalizeRole,
   type UserRole,
 } from "@/lib/role-permissions";
+import { writeLastPathCookie } from "@/lib/last-path-cookie";
 // Solar CORS no longer needed — Solar Surveyor served from same origin
 
 // Routes that are always accessible (login, auth callbacks)
@@ -286,7 +287,13 @@ export default auth((req) => {
     }
   }
 
-  return nextWithRequestId(requestId, req);
+  const response = nextWithRequestId(requestId, req);
+  writeLastPathCookie(
+    response,
+    pathname,
+    process.env.NODE_ENV === "production"
+  );
+  return response;
 });
 
 export const config = {

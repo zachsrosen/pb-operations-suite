@@ -53,3 +53,26 @@ export function isValidStoredPath(value: string | undefined | null): boolean {
   if (value.includes("\0")) return false;
   return isRememberablePath(value);
 }
+
+import type { NextResponse } from "next/server";
+
+/**
+ * Write the last-path cookie onto the given NextResponse if the pathname
+ * is rememberable. No-op otherwise. Safe to call on any response.
+ *
+ * `isProduction` toggles the `secure` cookie attribute. Pass
+ * `process.env.NODE_ENV === "production"` from the caller (middleware
+ * runs in the edge runtime where process.env lookups are compile-time).
+ */
+export function writeLastPathCookie(
+  response: NextResponse,
+  pathname: string,
+  isProduction: boolean
+): void {
+  if (!isRememberablePath(pathname)) return;
+  response.cookies.set(
+    LAST_PATH_COOKIE_NAME,
+    pathname,
+    getCookieOptions(isProduction)
+  );
+}
