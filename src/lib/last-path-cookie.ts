@@ -2,6 +2,7 @@
  * Cookie name, policy, and path validation for the "last visited page"
  * redirect feature. See docs/superpowers/specs/2026-04-16-last-page-redirect-after-login-design.md
  */
+import type { NextResponse } from "next/server";
 
 export const LAST_PATH_COOKIE_NAME = "pb_last_path";
 
@@ -53,8 +54,6 @@ export function isValidStoredPath(value: string | undefined | null): boolean {
   if (value.includes("\0")) return false;
   return isRememberablePath(value);
 }
-
-import type { NextResponse } from "next/server";
 
 /**
  * Write the last-path cookie onto the given NextResponse if the pathname
