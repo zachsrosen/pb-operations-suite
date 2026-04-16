@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
+import { DealLinks } from "@/components/ui/DealLinks";
 import { queryKeys } from "@/lib/query-keys";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
@@ -29,8 +30,6 @@ function getCellBg(value: number | null | undefined): string {
 function formatMoney(v: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(v);
 }
-
-const ZUPER_BASE_URL = "https://web.zuperpro.com";
 
 // ── Sortable column header ──
 type SortDir = "asc" | "desc";
@@ -333,12 +332,7 @@ export default function SurveyMetricsDashboardPage() {
                   {fmt(d.turnaroundDays)}
                 </td>
                 <td className="text-center px-4 py-2.5">
-                  <div className="flex items-center justify-center gap-2">
-                    <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 underline text-xs">HubSpot ↗</a>
-                    {d.zuperJobUid && (
-                      <a href={`${ZUPER_BASE_URL}/jobs/${d.zuperJobUid}/details`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 underline text-xs">Zuper ↗</a>
-                    )}
-                  </div>
+                  <DealLinks dealId={d.dealId} zuperJobUid={d.zuperJobUid} />
                 </td>
               </tr>
             ))}

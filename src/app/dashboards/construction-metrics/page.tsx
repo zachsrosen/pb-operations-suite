@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
+import { DealLinks } from "@/components/ui/DealLinks";
 import { queryKeys } from "@/lib/query-keys";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 
@@ -51,8 +52,6 @@ interface DealDetail {
   zuperJobUid: string | null;
   metrics: Record<string, number | null>;
 }
-
-const ZUPER_BASE_URL = "https://web.zuperpro.com";
 
 interface MetricAverages {
   count: number;
@@ -337,16 +336,7 @@ export default function ConstructionMetricsDashboardPage() {
                           {fmt(val)}
                         </td>
                         <td className="text-center px-4 py-2.5">
-                          <div className="flex items-center justify-center gap-2">
-                            <a href={d.url} target="_blank" rel="noopener noreferrer" className="text-orange-400 hover:text-orange-300 underline text-xs">
-                              HubSpot ↗
-                            </a>
-                            {d.zuperJobUid && (
-                              <a href={`${ZUPER_BASE_URL}/jobs/${d.zuperJobUid}/details`} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 underline text-xs">
-                                Zuper ↗
-                              </a>
-                            )}
-                          </div>
+                          <DealLinks dealId={d.dealId} zuperJobUid={d.zuperJobUid} />
                         </td>
                       </tr>
                     );
