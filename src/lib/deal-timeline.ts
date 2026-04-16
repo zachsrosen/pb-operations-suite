@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { zuper } from "@/lib/zuper";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { FIELD_LABELS } from "@/components/deal-detail/section-registry";
-import { getDealTasks } from "@/lib/hubspot-engagements";
+import { getDealEngagements, getDealTasks } from "@/lib/hubspot-engagements";
 import type {
   TimelineAttachment,
   TimelineEvent,
@@ -537,14 +537,47 @@ async function fetchTaskEvents(
   }
 }
 
+/**
+ * HubSpot notes surface in the Activity timeline (not Communications).
+ * Reuses the DEAL_ENGAGEMENTS cache populated by the Communications tab,
+ * so no extra HubSpot calls.
+ */
+async function fetchHubspotNoteEvents(
+  hubspotDealId: string,
+  all: boolean,
+  windowStart: Date | null,
+  cursor: Cursor | null,
+): Promise<TimelineEvent[]> {
+  try {
+    const engagements = await getDealEngagements(hubspotDealId, all);
+    const events: TimelineEvent[] = engagements
+      .filter((e) => e.type === "note")
+      .map((n) => ({
+        // n.id is already prefixed "hsnote-{id}" from mapNote
+        id: n.id,
+        type: "hubspot_note" as const,
+        timestamp: n.timestamp,
+        title: "HubSpot Note",
+        detail: n.body,
+        author: null,
+        metadata: {},
+      }));
+    return events
+      .filter((e) => isInWindow(e.timestamp, windowStart))
+      .filter((e) => !cursor || isBeforeCursor(e.timestamp, e.id, cursor));
+  } catch {
+    return [];
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /**
- * Fetch a paginated timeline for a deal, aggregating 9 operational sources.
- * HubSpot emails/calls/notes/meetings live in the Communications tab; HubSpot
- * tasks + Zuper service tasks (checklists) surface here as operational todos.
+ * Fetch a paginated timeline for a deal, aggregating 10 operational sources.
+ * HubSpot emails/calls/meetings live in the Communications tab; HubSpot notes,
+ * HubSpot tasks, and Zuper service tasks surface here as operational records.
  *
  * @param dealId      Internal Deal cuid
  * @param hubspotDealId HubSpot deal ID (numeric string)
@@ -564,10 +597,9 @@ export async function getDealTimeline(
       ? { ts: options.cursorTs, id: options.cursorId }
       : null;
 
-  // Fan-out: 9 sources in parallel.
-  // HubSpot emails/calls/notes/meetings live in the Communications tab.
-  // HubSpot tasks are operational todos and surface here in Activity.
-  // Zuper service tasks (checklist items) also surface here.
+  // Fan-out: 10 sources in parallel.
+  // HubSpot emails/calls/meetings live in the Communications tab.
+  // HubSpot notes + tasks and Zuper service tasks surface here in Activity.
   const [
     noteEvents,
     syncEvents,
@@ -578,6 +610,7 @@ export async function getDealTimeline(
     zuperNoteEvents,
     taskEvents,
     serviceTaskEvents,
+    hubspotNoteEvents,
   ] = await Promise.all([
     fetchNoteEvents(dealId, windowStart, cursor),
     fetchSyncEvents(dealId, windowStart, cursor),
@@ -588,6 +621,7 @@ export async function getDealTimeline(
     fetchZuperNoteEvents(hubspotDealId, windowStart, cursor),
     fetchTaskEvents(hubspotDealId, options.all ?? false, windowStart, cursor),
     fetchServiceTaskEvents(hubspotDealId, windowStart, cursor),
+    fetchHubspotNoteEvents(hubspotDealId, options.all ?? false, windowStart, cursor),
   ]);
 
   // Merge, sort by (timestamp DESC, id DESC), paginate
@@ -601,6 +635,7 @@ export async function getDealTimeline(
     ...zuperNoteEvents,
     ...taskEvents,
     ...serviceTaskEvents,
+    ...hubspotNoteEvents,
   ].sort((a, b) => {
     const timeDiff = new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     if (timeDiff !== 0) return timeDiff;

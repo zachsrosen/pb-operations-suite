@@ -13,7 +13,6 @@ interface CommunicationsFeedProps {
 const TYPE_CONFIG: Record<string, { icon: string; label: string }> = {
   email:   { icon: "\u2709\uFE0F",  label: "Email" },
   call:    { icon: "\u{1F4DE}", label: "Call" },
-  note:    { icon: "\u{1F4CB}", label: "Note" },
   meeting: { icon: "\u{1F4C5}", label: "Meeting" },
 };
 
@@ -79,8 +78,7 @@ export default function CommunicationsFeed({ dealId }: CommunicationsFeedProps) 
 }
 
 function EngagementRow({ engagement }: { engagement: Engagement }) {
-  const isNote = engagement.type === "note";
-  const [expanded, setExpanded] = useState(isNote);
+  const [expanded, setExpanded] = useState(false);
   const config = TYPE_CONFIG[engagement.type] ?? { icon: "\u{1F4CB}", label: "Other" };
   // Sanitized via sanitize-html (strips scripts, event handlers, dangerous URIs)
   const sanitizedBody = useMemo(
