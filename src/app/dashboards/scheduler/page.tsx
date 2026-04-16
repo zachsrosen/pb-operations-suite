@@ -6245,7 +6245,7 @@ export default function SchedulerPage() {
                       overlayDetail.eventType === "service"
                         ? "service"
                         : overlayDetail.eventType === "dnr"
-                          ? "d&r"
+                          ? "dnr"
                           : overlayDetail.eventType === "roofing"
                             ? "roofing"
                             : "sales",
