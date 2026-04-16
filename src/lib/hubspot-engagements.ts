@@ -225,8 +225,40 @@ function mapTask(p: Record<string, string | null>, id: string): Engagement {
 // ---------------------------------------------------------------------------
 
 /**
+ * Fetch associated object IDs without materializing the target objects.
+ * Used to walk deal → contacts so we can expand the engagement fetch below.
+ */
+async function fetchAssociatedIds(
+  fromId: string,
+  toObjectType: string,
+  fromObjectType: string = "deals",
+): Promise<string[]> {
+  try {
+    const res = await withHubSpotRetry(
+      `associations:${fromObjectType}->${toObjectType}`,
+      () => hubspotClient.crm.associations.batchApi.read(
+        fromObjectType,
+        toObjectType,
+        { inputs: [{ id: fromId }] },
+      ),
+    );
+    return (res.results?.[0]?.to ?? []).map((a) => a.id);
+  } catch (err) {
+    console.warn(`[hubspot-engagements] Failed to fetch ${toObjectType} IDs for ${fromObjectType} ${fromId}:`, err);
+    return [];
+  }
+}
+
+/**
  * Fetch all HubSpot engagements (emails, calls, notes, meetings) for a deal.
  * Results are cached for 5 minutes under deal-engagements:{hubspotDealId}:{mode}.
+ *
+ * Expands beyond deal-direct associations: also pulls emails/calls/meetings
+ * from each associated contact and dedupes by engagement ID. HubSpot commonly
+ * only associates emails to contacts (Gmail-extension captures, inbox, tracking
+ * pixels), so the deal-only view under-reports communications vs. HubSpot's
+ * own deal timeline. Notes and tasks stay deal-only — contact notes often
+ * reference different deals for the same customer and shouldn't leak here.
  *
  * @param hubspotDealId - The HubSpot deal ID (numeric string)
  * @param all - If true, fetches full history. If false, stores in :recent cache.
@@ -241,15 +273,47 @@ export async function getDealEngagements(
     : CACHE_KEYS.DEAL_ENGAGEMENTS_RECENT(hubspotDealId);
 
   const result = await appCache.getOrFetch(cacheKey, async () => {
-    const [emails, calls, notes, meetings, tasks] = await Promise.all([
+    // First batch: deal-direct engagements + the contact ID list.
+    const [dealEmails, dealCalls, dealNotes, dealMeetings, dealTasks, contactIds] = await Promise.all([
       fetchAssociatedObjects(hubspotDealId, "emails", EMAIL_PROPERTIES, mapEmail),
       fetchAssociatedObjects(hubspotDealId, "calls", CALL_PROPERTIES, mapCall),
       fetchAssociatedObjects(hubspotDealId, "notes", NOTE_PROPERTIES, mapNote),
       fetchAssociatedObjects(hubspotDealId, "meetings", MEETING_PROPERTIES, mapMeeting),
       fetchAssociatedObjects(hubspotDealId, "tasks", TASK_PROPERTIES, mapTask),
+      fetchAssociatedIds(hubspotDealId, "contacts"),
     ]);
 
-    return [...emails, ...calls, ...notes, ...meetings, ...tasks].sort(
+    // Second batch: contact-associated emails/calls/meetings for each contact.
+    const contactEngagements = (
+      await Promise.all(
+        contactIds.flatMap((contactId) => [
+          fetchAssociatedObjects(contactId, "emails", EMAIL_PROPERTIES, mapEmail, "contacts"),
+          fetchAssociatedObjects(contactId, "calls", CALL_PROPERTIES, mapCall, "contacts"),
+          fetchAssociatedObjects(contactId, "meetings", MEETING_PROPERTIES, mapMeeting, "contacts"),
+        ]),
+      )
+    ).flat();
+
+    // Merge and dedupe by engagement ID — same engagement can be associated to
+    // both the deal and its contact, and mappers produce deterministic IDs
+    // (e.g. `email-${id}`) so Set dedup works without further normalization.
+    const merged = [
+      ...dealEmails,
+      ...dealCalls,
+      ...dealNotes,
+      ...dealMeetings,
+      ...dealTasks,
+      ...contactEngagements,
+    ];
+    const seen = new Set<string>();
+    const deduped: Engagement[] = [];
+    for (const eng of merged) {
+      if (seen.has(eng.id)) continue;
+      seen.add(eng.id);
+      deduped.push(eng);
+    }
+
+    return deduped.sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
     );
   });
