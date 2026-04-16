@@ -8,6 +8,7 @@ import { useToast } from "@/contexts/ToastContext";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { formatCurrency, formatDateShort, formatShortDate, formatTime12h, formatTimeRange12h } from "@/lib/format";
 import { getTodayStr, isPastDate, toDateStr } from "@/lib/scheduling-utils";
+import { getInternalDealUrl } from "@/lib/external-links";
 import MyAvailability from "./my-availability";
 
 /* ------------------------------------------------------------------ */
@@ -2461,6 +2462,13 @@ export default function SiteSurveySchedulerPage() {
                             </td>
                             <td className="px-4 py-3 text-center">
                               <div className="flex items-center justify-center gap-2">
+                                <Link
+                                  href={getInternalDealUrl(project.id, "sales")}
+                                  className="p-1 hover:bg-surface-2 rounded transition-colors text-purple-400 hover:text-purple-300 underline text-xs"
+                                  title="Open internal deal page"
+                                >
+                                  Deal
+                                </Link>
                                 <a
                                   href={project.hubspotUrl}
                                   target="_blank"
@@ -2853,6 +2861,15 @@ export default function SiteSurveySchedulerPage() {
               <div>
                 <span className="text-xs text-muted">Links</span>
                 <div className="flex items-center gap-3 mt-1">
+                  <Link
+                    href={getInternalDealUrl(scheduleModal.project.id, "sales")}
+                    className="inline-flex items-center gap-1.5 text-xs text-purple-400 hover:text-purple-300"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                    </svg>
+                    Deal
+                  </Link>
                   <a
                     href={scheduleModal.project.hubspotUrl}
                     target="_blank"
