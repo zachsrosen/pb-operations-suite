@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
+import { getInternalDealUrl } from "@/lib/external-links";
 import type { IdrItem } from "./IdrMeetingClient";
 import { InstallPlanningForm } from "./InstallPlanningForm";
 import { StatusActionsForm } from "./StatusActionsForm";
@@ -205,6 +207,12 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
 
         {/* ── Quick links ── */}
         <div className="flex flex-wrap gap-1.5">
+          <Link
+            href={getInternalDealUrl(item.dealId)}
+            className="inline-flex items-center gap-0.5 rounded border border-purple-500/40 bg-purple-500/10 px-2 py-0.5 text-[11px] font-semibold text-purple-300 hover:bg-purple-500/20 transition-colors no-underline"
+          >
+            Deal
+          </Link>
           <QuickLink
             href={`https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${item.dealId}`}
             label="HubSpot"
