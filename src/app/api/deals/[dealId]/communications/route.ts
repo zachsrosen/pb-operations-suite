@@ -29,8 +29,9 @@ export async function GET(
 
   let engagements = await getDealEngagements(deal.hubspotDealId, all);
 
-  // Tasks are operational todos, not communications — they surface in Activity.
-  engagements = engagements.filter((e) => e.type !== "task");
+  // Communications = external contact channels (email/call/meeting). HubSpot
+  // notes and tasks are operational records; they surface in the Activity tab.
+  engagements = engagements.filter((e) => e.type !== "task" && e.type !== "note");
 
   // Apply 90-day window filter post-cache-retrieval
   if (!all) {
