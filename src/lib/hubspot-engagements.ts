@@ -4,6 +4,7 @@
  * Separated from hubspot.ts (2800+ lines) to keep files focused.
  * Uses rate-limit retry wrapper consistent with searchWithRetry() in hubspot.ts.
  */
+import * as Sentry from "@sentry/nextjs";
 import { hubspotClient } from "@/lib/hubspot";
 import {
   AssociationSpecAssociationCategoryEnum,
@@ -107,6 +108,28 @@ async function fetchAssociatedObjects<T>(
     );
   } catch (err) {
     console.warn(`[hubspot-engagements] Failed to fetch ${toObjectType} for ${fromObjectType} ${fromId}:`, err);
+
+    // Classify the error:
+    //   4xx (except 429) → config/permissions issue (revoked scope, wrong ID,
+    //     deleted object). Silent [] is wrong — it masks production bugs like
+    //     the 2026-04-16 missing-email-scope incident. Send to Sentry.
+    //   429 / 5xx / network → transient. Keep existing silent fallback so we
+    //     don't spam Sentry when HubSpot has a rough minute.
+    const status = (err as { code?: number; statusCode?: number })?.code
+      ?? (err as { code?: number; statusCode?: number })?.statusCode;
+    const isAlertableClientError =
+      typeof status === "number" && status >= 400 && status < 500 && status !== 429;
+    if (isAlertableClientError) {
+      Sentry.captureException(err, {
+        tags: {
+          module: "hubspot-engagements",
+          status,
+          fromObjectType,
+          toObjectType,
+        },
+      });
+    }
+
     return [];
   }
 }
