@@ -9,9 +9,11 @@
 // bundle for disabled users.
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { PropertyDetail } from "@/lib/property-detail";
+import { getInternalDealUrl } from "@/lib/external-links";
 import PropertyEquipmentList from "./property/PropertyEquipmentList";
 import PropertyOwnershipList from "./property/PropertyOwnershipList";
 
@@ -237,18 +239,26 @@ export default function PropertyDrawer({
                         key={id}
                         className="px-4 py-2 flex items-center justify-between gap-3 text-sm"
                       >
-                        <a
-                          href={
-                            portalId
-                              ? `https://app.hubspot.com/contacts/${portalId}/deal/${id}`
-                              : "#"
-                          }
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-cyan-400 hover:underline"
-                        >
-                          {id}
-                        </a>
+                        <div className="flex items-center gap-3">
+                          <Link
+                            href={getInternalDealUrl(id)}
+                            className="text-purple-400 hover:underline font-medium"
+                          >
+                            {id}
+                          </Link>
+                          <a
+                            href={
+                              portalId
+                                ? `https://app.hubspot.com/contacts/${portalId}/deal/${id}`
+                                : "#"
+                            }
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-orange-400 hover:underline"
+                          >
+                            HubSpot ↗
+                          </a>
+                        </div>
                         <span className="text-xs text-muted">—</span>
                       </li>
                     ))}

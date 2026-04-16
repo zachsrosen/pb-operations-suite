@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import Link from "next/link";
 import DashboardShell from "@/components/DashboardShell";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { formatMoney, formatShortDate } from "@/lib/format";
+import { getInternalDealUrl } from "@/lib/external-links";
 
 // ---- Types ----
 
@@ -1497,14 +1499,24 @@ export default function ZuperStatusComparisonPage() {
                       </div>
                     </td>
                     <td className="px-3 py-2">
-                      <a
-                        href={`https://app.hubspot.com/contacts/21710069/record/0-3/${deal.dealId}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-500 hover:text-blue-400 underline"
-                      >
-                        HubSpot
-                      </a>
+                      <div className="flex items-center gap-2">
+                        {deal.dealId && (
+                          <Link
+                            href={getInternalDealUrl(deal.dealId)}
+                            className="text-purple-500 hover:text-purple-400 underline"
+                          >
+                            Deal
+                          </Link>
+                        )}
+                        <a
+                          href={`https://app.hubspot.com/contacts/21710069/record/0-3/${deal.dealId}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-500 hover:text-blue-400 underline"
+                        >
+                          HubSpot
+                        </a>
+                      </div>
                     </td>
                   </tr>
                 ))}

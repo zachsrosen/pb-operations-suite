@@ -7,7 +7,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
 import { useSession } from "next-auth/react";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
-import { getZohoSalesOrderUrl, getZohoPurchaseOrderUrl } from "@/lib/external-links";
+import { getZohoSalesOrderUrl, getZohoPurchaseOrderUrl, getInternalDealUrl } from "@/lib/external-links";
+import Link from "next/link";
 import type { PoGroupingResult, ZohoPurchaseOrderEntry } from "@/lib/bom-po-create";
 // PDF upload uses chunked /api/bom/chunk — stays on our domain, no CORS issues
 
@@ -3744,6 +3745,7 @@ function ValidationBadge({ value, label }: { value: boolean | null; label: strin
 }
 
 function QuickLinks({ project }: { project: ProjectResult }) {
+  const internalDealHref = getInternalDealUrl(project.hs_object_id, "project");
   const links: Array<{ label: string; href: string; color: string }> = [
     {
       label: "HubSpot",
@@ -3781,6 +3783,12 @@ function QuickLinks({ project }: { project: ProjectResult }) {
 
   return (
     <div className="flex flex-wrap gap-2">
+      <Link
+        href={internalDealHref}
+        className="inline-flex items-center gap-1 px-3 py-1 rounded-lg border text-xs font-medium bg-surface hover:bg-surface-2 transition-colors text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800 no-underline"
+      >
+        Deal →
+      </Link>
       {links.map(({ label, href, color }) => (
         <a
           key={label}

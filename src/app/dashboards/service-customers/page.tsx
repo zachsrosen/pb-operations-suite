@@ -12,7 +12,8 @@ import type {
   ContactJob as BaseContactJob,
 } from "@/lib/customer-resolver";
 import type { Engagement } from "@/components/deal-detail/types";
-import { getZuperJobUrl } from "@/lib/external-links";
+import { getZuperJobUrl, getInternalDealUrl } from "@/lib/external-links";
+import Link from "next/link";
 import PropertyLink from "@/components/PropertyLink";
 import { PropertyDrawerProvider } from "@/components/property/PropertyDrawerContext";
 
@@ -478,6 +479,13 @@ export default function CustomerHistoryPage() {
                                     {d.serviceType}
                                   </span>
                                 )}
+                                <Link
+                                  href={getInternalDealUrl(d.id, d.pipeline)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  className="ml-auto rounded-full bg-purple-500/20 px-2 py-0.5 text-xs font-semibold text-purple-300 hover:bg-purple-500/30 transition-colors no-underline"
+                                >
+                                  Open Deal
+                                </Link>
                               </div>
                               <p className="text-xs text-muted">
                                 {d.stage}
