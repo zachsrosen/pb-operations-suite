@@ -38,6 +38,19 @@ export function getHubSpotDealUrl(dealId: string): string {
   return `https://app.hubspot.com/contacts/${portalId}/record/0-3/${dealId}`;
 }
 
+/**
+ * Internal PB Operations Suite deal detail page.
+ *
+ * The `/dashboards/deals/[pipeline]/[dealId]` route accepts either the
+ * internal cuid or the HubSpot deal ID and redirects to canonical, so
+ * passing `hubspotDealId` here works even if the caller only has that.
+ * Pipeline is optional — if unknown the route normalizes via redirect.
+ */
+export function getInternalDealUrl(hubspotDealId: string, pipeline?: string | null): string {
+  const pipelineSegment = (pipeline ?? "sales").toLowerCase();
+  return `/dashboards/deals/${encodeURIComponent(pipelineSegment)}/${encodeURIComponent(hubspotDealId)}`;
+}
+
 function applyUrlTemplate(
   template: string,
   replacements: Record<string, string>
