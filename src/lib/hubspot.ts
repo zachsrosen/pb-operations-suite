@@ -1461,7 +1461,16 @@ export async function fetchPrimaryContactIdForObject(
     );
     return null;
   } catch (e) {
-    console.warn(`[HubSpot] Error fetching primary contact for ${objectType.slice(0, -1)} ${objectId}:`, e);
+    // objectId reaches here from request bodies/URL params/webhook payloads, so it
+    // must not be embedded in console.warn's format string directly (Node treats
+    // the first arg as a format string when additional args follow — a %s in the
+    // ID would consume `e`, garbling the log). CWE-134 / CodeQL js/tainted-format-string.
+    console.warn(
+      "[HubSpot] Error fetching primary contact for %s %s:",
+      objectType.slice(0, -1),
+      objectId,
+      e,
+    );
     return null;
   }
 }
