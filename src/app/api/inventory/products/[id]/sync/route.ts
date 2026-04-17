@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getUserByEmail, prisma } from "@/lib/db";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 import { isCatalogSyncEnabled, validatePlanConfirmationToken } from "@/lib/catalog-sync-confirmation";
 import type { SkuRecord } from "@/lib/catalog-sync";
 import { buildSnapshots, derivePlan, executePlan, deriveDefaultIntents, computeBasePreviewHash } from "@/lib/catalog-sync-plan";
@@ -28,7 +29,7 @@ async function authenticate() {
   if (authResult instanceof NextResponse) return { error: authResult };
 
   const dbUser = await getUserByEmail(authResult.email);
-  const role = normalizeRole((dbUser?.role ?? authResult.role) as UserRole);
+  const role = (ROLES[((dbUser?.role ?? authResult.role) as UserRole)]?.normalizesTo ?? ((dbUser?.role ?? authResult.role) as UserRole));
   if (!ALLOWED_ROLES.has(role)) {
     return { error: NextResponse.json({ error: "Admin or owner access required" }, { status: 403 }) };
   }

@@ -11,7 +11,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma, logActivity } from "@/lib/db";
 import type { MatchConfidence, MatchDecisionStatus } from "@/generated/prisma/enums";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 
 // ── GET: List match groups ──────────────────────────────────────────────────
 
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
-  const role = normalizeRole(authResult.role as UserRole);
+  const role = (ROLES[authResult.role as UserRole]?.normalizesTo ?? (authResult.role as UserRole));
   if (role !== "ADMIN" && role !== "EXECUTIVE") {
     return NextResponse.json(
       { error: "Admin or Owner access required" },
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
-  const role = normalizeRole(authResult.role as UserRole);
+  const role = (ROLES[authResult.role as UserRole]?.normalizesTo ?? (authResult.role as UserRole));
   const { email } = authResult;
   if (role !== "ADMIN" && role !== "EXECUTIVE") {
     return NextResponse.json(

@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
 
   // Check if user is admin - fetch from DB since JWT may be stale
   const currentUser = await getUserByEmail(session.user.email);
-  if (!currentUser || currentUser.role !== "ADMIN") {
+  if (!currentUser || !(currentUser.roles?.includes("ADMIN") || currentUser.role === "ADMIN")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 

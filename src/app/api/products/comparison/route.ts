@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getUserByEmail, prisma } from "@/lib/db";
 import { CatalogProductSource } from "@/generated/prisma/enums";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 import { zohoInventory, type ZohoInventoryItem } from "@/lib/zoho-inventory";
 import {
   getHubSpotProductUrl,
@@ -2102,7 +2103,7 @@ export async function GET() {
 
   const dbUser = await getUserByEmail(authResult.email);
   const rawRole = (dbUser?.role ?? authResult.role) as UserRole;
-  const role = normalizeRole(rawRole);
+  const role = (ROLES[rawRole]?.normalizesTo ?? rawRole);
 
   if (!isAllowedRole(role)) {
     return NextResponse.json(

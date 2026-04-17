@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { prisma, getUserByEmail } from "@/lib/db";
-import { canAccessRoute } from "@/lib/role-permissions";
+import { isPathAllowedByAccess, resolveUserAccess } from "@/lib/user-access";
 import { addressHash } from "@/lib/address-hash";
 
 /**
@@ -45,7 +45,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Same gate as the drawer: any role with `/api/service` access can resolve.
-    if (!canAccessRoute(user.role, "/api/service")) {
+    if (!isPathAllowedByAccess(resolveUserAccess(user), "/api/service")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

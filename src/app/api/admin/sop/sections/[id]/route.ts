@@ -7,7 +7,8 @@ import {
   extractRequestContext,
 } from "@/lib/audit/admin-activity";
 import { sanitizeSopContent } from "@/lib/sop-sanitize";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 
 const MAX_CONTENT_LENGTH = 500_000;
 
@@ -36,8 +37,11 @@ export async function PUT(
 
     // Defense-in-depth: verify ADMIN or OWNER (route already gated by ADMIN_ONLY_ROUTES)
     const currentUser = await getUserByEmail(session.user.email);
-    const role = currentUser?.role ? normalizeRole(currentUser.role as UserRole) : null;
-    if (role !== "ADMIN" && role !== "EXECUTIVE") {
+    const rawRoles: UserRole[] = currentUser?.roles && currentUser.roles.length > 0
+      ? currentUser.roles
+      : currentUser?.role ? [currentUser.role as UserRole] : [];
+    const normalizedRoles = rawRoles.map((r) => ROLES[r]?.normalizesTo ?? r);
+    if (!normalizedRoles.some((r) => r === "ADMIN" || r === "EXECUTIVE")) {
       return NextResponse.json(
         { error: "Admin access required" },
         { status: 403 }

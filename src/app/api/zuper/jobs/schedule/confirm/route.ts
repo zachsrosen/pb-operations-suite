@@ -259,7 +259,10 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 403 });
     }
-    const effectiveRole = resolveEffectiveRoleFromRequest(request, user.role as UserRole);
+    const userRolesForPolicy: UserRole[] = (user as { roles?: UserRole[] }).roles && (user as { roles: UserRole[] }).roles.length > 0
+      ? (user as { roles: UserRole[] }).roles
+      : [user.role as UserRole];
+    const effectiveRole = resolveEffectiveRoleFromRequest(request, userRolesForPolicy[0] as UserRole);
 
     if (!prisma) {
       return NextResponse.json({ error: "Database not configured" }, { status: 503 });
@@ -338,12 +341,7 @@ export async function POST(request: NextRequest) {
     }
 
     const timezoneFromNotes = effectiveNotes?.match(/\[TZ:([A-Za-z_\/]+)\]/)?.[1];
-    const effectiveRoles = resolveEffectiveRolesFromRequest(
-      request,
-      ((user as { roles?: UserRole[] }).roles && (user as { roles: UserRole[] }).roles.length > 0
-        ? (user as { roles: UserRole[] }).roles
-        : [user.role as UserRole]),
-    );
+    const effectiveRoles = resolveEffectiveRolesFromRequest(request, userRolesForPolicy);
     const salesLeadTimeError = getSalesSurveyLeadTimeError({
       roles: effectiveRoles,
       scheduleType,

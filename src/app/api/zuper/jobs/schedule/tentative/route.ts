@@ -22,7 +22,10 @@ export async function PUT(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 403 });
     }
-    const effectiveRole = resolveEffectiveRoleFromRequest(request, user.role as UserRole);
+    const userRolesForPolicy: UserRole[] = (user as { roles?: UserRole[] }).roles && (user as { roles: UserRole[] }).roles.length > 0
+      ? (user as { roles: UserRole[] }).roles
+      : [user.role as UserRole];
+    const effectiveRole = resolveEffectiveRoleFromRequest(request, userRolesForPolicy[0] as UserRole);
 
     const body = await request.json();
     const { project, schedule } = body;
@@ -48,12 +51,7 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
-    const effectiveRoles = resolveEffectiveRolesFromRequest(
-      request,
-      ((user as { roles?: UserRole[] }).roles && (user as { roles: UserRole[] }).roles.length > 0
-        ? (user as { roles: UserRole[] }).roles
-        : [user.role as UserRole]),
-    );
+    const effectiveRoles = resolveEffectiveRolesFromRequest(request, userRolesForPolicy);
     const salesLeadTimeError = getSalesSurveyLeadTimeError({
       roles: effectiveRoles,
       scheduleType,

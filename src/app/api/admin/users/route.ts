@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/auth";
 import { prisma, getAllUsers, updateUserRoles, UserRole, getUserByEmail } from "@/lib/db";
-import { normalizeRole } from "@/lib/role-permissions";
 import { ROLES } from "@/lib/roles";
 import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 
@@ -72,14 +71,14 @@ export async function GET() {
 
   // Check if user is admin - fetch from DB since JWT may be stale
   const currentUser = await getUserByEmail(session.user.email);
-  if (!currentUser || currentUser.role !== "ADMIN") {
+  if (!currentUser || !(currentUser.roles?.includes("ADMIN") || currentUser.role === "ADMIN")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
   try {
     const users = (await getAllUsers()).map((u) => ({
       ...u,
-      role: normalizeRole(u.role as UserRole),
+      role: (ROLES[u.role as UserRole]?.normalizesTo ?? (u.role as UserRole)),
     }));
     return NextResponse.json({ users });
   } catch (error) {
@@ -106,7 +105,7 @@ export async function PUT(request: NextRequest) {
 
   // Check if user is admin - fetch from DB since JWT may be stale
   const currentUser = await getUserByEmail(session.user.email);
-  if (!currentUser || currentUser.role !== "ADMIN") {
+  if (!currentUser || !(currentUser.roles?.includes("ADMIN") || currentUser.role === "ADMIN")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 

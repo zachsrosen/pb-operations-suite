@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { getUserByEmail } from "@/lib/db";
-import { canAccessRoute } from "@/lib/role-permissions";
+import { isPathAllowedByAccess, resolveUserAccess } from "@/lib/user-access";
 import {
   computeEquipmentSummary,
   createEmptySummary,
@@ -40,7 +40,7 @@ export async function GET(
       return NextResponse.json({ error: "User not found" }, { status: 403 });
     }
 
-    if (!canAccessRoute(user.role, "/api/service")) {
+    if (!isPathAllowedByAccess(resolveUserAccess(user), "/api/service")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

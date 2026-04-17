@@ -10,14 +10,15 @@
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma, logActivity } from "@/lib/db";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 
 export async function POST() {
   // ── Auth ──────────────────────────────────────────────────────────────
   const authResult = await requireApiAuth();
   if (authResult instanceof NextResponse) return authResult;
 
-  const role = normalizeRole(authResult.role as UserRole);
+  const role = (ROLES[authResult.role as UserRole]?.normalizesTo ?? (authResult.role as UserRole));
   const { email } = authResult;
   if (role !== "ADMIN" && role !== "EXECUTIVE") {
     return NextResponse.json(

@@ -21,7 +21,8 @@ export async function DELETE(
       return NextResponse.json({ error: "User not found" }, { status: 403 });
     }
 
-    if (!ALLOWED_ROLES.includes(user.role)) {
+    const userRoles = user.roles && user.roles.length > 0 ? user.roles : [user.role];
+    if (!userRoles.some((r) => ALLOWED_ROLES.includes(r))) {
       return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
     }
 

@@ -13,7 +13,8 @@ import {
   dedupeSkuIds,
   productCleanupRequestSchema,
 } from "@/lib/schemas/product-cleanup";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
   if (authResult instanceof NextResponse) return authResult;
 
   const dbUser = await getUserByEmail(authResult.email);
-  const role = normalizeRole((dbUser?.role ?? authResult.role) as UserRole);
+  const role = (ROLES[((dbUser?.role ?? authResult.role) as UserRole)]?.normalizesTo ?? ((dbUser?.role ?? authResult.role) as UserRole));
   if (!ALLOWED_ROLES.has(role)) {
     return NextResponse.json({ error: "Admin or owner access required" }, { status: 403 });
   }

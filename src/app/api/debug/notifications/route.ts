@@ -22,7 +22,7 @@ export async function GET() {
   }
 
   const user = await getUserByEmail(session.user.email);
-  if (!user || user.role !== "ADMIN") {
+  if (!user || !(user.roles?.includes("ADMIN") || user.role === "ADMIN")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
