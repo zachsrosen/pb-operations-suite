@@ -146,7 +146,7 @@ export function resolveUserAccess(user: User): EffectiveUserAccess;
 
 `resolveUserAccess` is called:
 - In middleware (route gate).
-- In `/api/auth/sync` (returned to the client for home-page rendering).
+- In `/api/auth/sync` — existing endpoint that returns `{ role: UserRole, ... }` to the client. Extend additively: the response gains `access: EffectiveUserAccess` alongside the existing `role` field (kept during Phase 1 for back-compat with any client code still reading it). Phase 2 replaces `role` with `roles`.
 - In server components that render role-sensitive UI.
 
 ### Consumer changes
@@ -155,7 +155,8 @@ Every other file that currently reads roles changes to read from `ROLES` / `reso
 
 | File | Before | After |
 |---|---|---|
-| `src/middleware.ts` | `canAccessRoute(user.role, path)` with special-cased ADMIN_ONLY check | `access.allowedRoutes.has(path)` — no second filter |
+| `src/middleware.ts` | `canAccessRoute(user.role, path)` with special-cased ADMIN_ONLY check | `access.allowedRoutes` consulted using the same exact-match-or-prefix-match semantics as today (an allowlist entry `/api/deals` grants `/api/deals/123`; an entry without trailing slash matches both exact and `entry/*`). The existing `API_SECRET_TOKEN` machine-auth bypass path is preserved unchanged. |
+| `auth.ts` / NextAuth `jwt` + `session` callbacks | JWT carries `role: string` | JWT carries `roles: string[]`. `jwt` callback sets `token.roles = user.roles`. `session` callback exposes `session.user.roles`. Back-compat: if a JWT is re-issued for a user whose record still had only the legacy `role` field (phase 1 window), populate `roles` from `[role]`. |
 | `src/lib/role-permissions.ts` | `ROLE_PERMISSIONS` map + `ADMIN_ONLY_ROUTES` + `canAccessRoute` | Thin shim that re-exports `resolveUserAccess` for back-compat during Phase 1. Deleted in Phase 2. |
 | `src/lib/suite-nav.ts` | `SUITE_SWITCHER_ALLOWLIST` map | `getSuiteSwitcherEntriesForRoles(roles)` derived from `ROLES[r].suites` |
 | `src/app/page.tsx` | `SUITE_LINKS` + `visibleSuites` role-branches + `ROLE_LANDING_CARDS` | Reads `access.suites` + `access.landingCards` from `/api/auth/sync` response. No role-specific branches. |
@@ -171,7 +172,7 @@ Every other file that currently reads roles changes to read from `ROLES` / `reso
 
 1. **Pipeline-by-stage widget** — unchanged; uses `/api/deals` which already scopes by user.
 2. **Suite grid** — one card per suite in `access.suites`. Cards are clickable; every card a user sees is a card their middleware would allow.
-3. **Landing cards row** — `access.landingCards`, deduped by href, capped at 8 (display-only cap; if a role's cards exceed 8 we order by role-definition order and take the first 8). Rendered only if at least one card exists.
+3. **Landing cards row** — `access.landingCards`, deduped by href, capped at 10 (display-only cap). Cut order when over cap: preserve role-definition declaration order, and within each role preserve the order listed in that role's `landingCards`. Rendered only if at least one card exists.
 
 No special cases for specific roles in `page.tsx`. No `visibility` model. No `ROLE_LANDING_CARDS`.
 
@@ -230,7 +231,7 @@ ALTER TABLE "User" ADD COLUMN "roles" "UserRole"[] NOT NULL DEFAULT '{}';
 UPDATE "User" SET "roles" = ARRAY["role"]::"UserRole"[] WHERE "roles" = '{}';
 ```
 
-Writes during Phase 1: application code writes BOTH `role` (first element of new roles array, or VIEWER if empty) and `roles`. Reads use `roles`.
+Writes during Phase 1: application code writes BOTH `role` (first element of new roles array, or VIEWER if empty) and `roles` **within a single `prisma.$transaction` or a single `update()` call that sets both columns at once** — no separate sequential writes that could drift mid-flight. Reads use `roles`.
 
 ### Migration — Phase 2
 
@@ -288,7 +289,7 @@ Out of scope for this spec. If/when we want dashboards that show live data (prio
 
 ### Risk: Shim-layer blast radius
 
-~170 files currently reference `role`, `UserRole`, or role strings directly. Most will work fine via the Phase 1 shim. Some may be doing arithmetic like `role === "OPERATIONS" || role === "PROJECT_MANAGER"` — these should become `roles.includes("OPERATIONS") || roles.includes("PROJECT_MANAGER")`. **Mitigation:** Phase 1 spot-checks these patterns during migration; Phase 2 audit catches the rest.
+~170 files currently reference `role`, `UserRole`, or role strings directly. Most will work fine via the Phase 1 shim. Some may be doing arithmetic like `role === "OPERATIONS" || role === "PROJECT_MANAGER"` — these should become `roles.includes("OPERATIONS") || roles.includes("PROJECT_MANAGER")`. **Mitigation:** Phase 1 spot-checks these patterns during migration; Phase 2 audit catches the rest. Planner should confirm the current `UserRole` enum count against Prisma schema (spec estimates 13 including legacy; CLAUDE.md docs have drifted) and use that as the iteration scope for audit.
 
 ### Risk: Cookie-based impersonation array size
 
