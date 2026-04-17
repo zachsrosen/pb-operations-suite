@@ -542,6 +542,7 @@ export default function DEMetricsPage() {
       "Lost",
     ]);
     const buckets = {
+      notYetSent: { count: 0, revenue: 0 },
       awaitingCustomer: { count: 0, revenue: 0 },
       pendingSales: { count: 0, revenue: 0 },
       pendingOps: { count: 0, revenue: 0 },
@@ -549,10 +550,12 @@ export default function DEMetricsPage() {
       rejected: { count: 0, revenue: 0 },
     };
     for (const p of designProjects) {
+      // Exclude closed/lost/complete and already-approved — not in-flight.
       if (p.stage && CLOSED_STAGES.has(p.stage)) continue;
+      if (p.designApprovalDate) continue;
       const s = p.layoutStatus;
-      if (!s) continue;
       const amt = p.amount || 0;
+      // Status-based buckets first (mutually exclusive via if/else-if).
       if (s === "Sent to Customer" || s === "Resent For Approval" || s === "Pending Review") {
         buckets.awaitingCustomer.count += 1;
         buckets.awaitingCustomer.revenue += amt;
@@ -568,6 +571,10 @@ export default function DEMetricsPage() {
       } else if (s === "Design Rejected") {
         buckets.rejected.count += 1;
         buckets.rejected.revenue += amt;
+      } else if (!p.designApprovalSentDate) {
+        // Fallback: not in any pending-state and never sent for DA.
+        buckets.notYetSent.count += 1;
+        buckets.notYetSent.revenue += amt;
       }
     }
     return buckets;
@@ -1056,7 +1063,13 @@ export default function DEMetricsPage() {
         <p className="text-sm text-muted mb-3">
           Active deals grouped by where they&apos;re blocked right now · Respects Location and Designer filters
         </p>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 stagger-grid">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 stagger-grid">
+          <MetricCard
+            label="Not Yet Sent"
+            value={loading ? "\u2014" : String(daPipelineBuckets.notYetSent.count)}
+            sub={loading ? undefined : formatMoney(daPipelineBuckets.notYetSent.revenue)}
+            border="border-l-4 border-l-slate-500"
+          />
           <MetricCard
             label="Awaiting Customer"
             value={loading ? "\u2014" : String(daPipelineBuckets.awaitingCustomer.count)}
