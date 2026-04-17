@@ -542,7 +542,7 @@ export default function AdminUsersPage() {
                       className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors border ${
                         checked
                           ? "bg-cyan-500/10 border-cyan-500/40"
-                          : "bg-surface-2 border-transparent hover:bg-zinc-750"
+                          : "bg-surface-2 border-transparent hover:bg-surface-elevated"
                       }`}
                     >
                       <input
@@ -574,7 +574,7 @@ export default function AdminUsersPage() {
                 <button
                   onClick={saveRolesEditor}
                   disabled={updating === rolesEditorUserId || rolesEditorSelection.length === 0}
-                  className="flex-1 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-700 disabled:bg-cyan-800 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
+                  className="flex-1 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-700 disabled:bg-cyan-800 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
                 >
                   {updating === rolesEditorUserId ? "Saving..." : "Save Roles"}
                 </button>
@@ -610,7 +610,7 @@ export default function AdminUsersPage() {
               {(Object.keys(PERMISSION_LABELS) as Array<keyof Omit<UserPermissions, "allowedLocations">>).map(key => (
                 <label
                   key={key}
-                  className="flex items-center justify-between p-3 bg-surface-2 rounded-lg cursor-pointer hover:bg-zinc-750 transition-colors"
+                  className="flex items-center justify-between p-3 bg-surface-2 rounded-lg cursor-pointer hover:bg-surface-elevated transition-colors"
                 >
                   <div>
                     <p className="font-medium text-sm">{PERMISSION_LABELS[key].label}</p>
@@ -644,7 +644,7 @@ export default function AdminUsersPage() {
                     className={`flex items-center gap-2 p-3 rounded-lg cursor-pointer transition-colors ${
                       editPermissions.allowedLocations.includes(location)
                         ? "bg-cyan-500/20 border border-cyan-500/50"
-                        : "bg-surface-2 border border-transparent hover:bg-zinc-750"
+                        : "bg-surface-2 border border-transparent hover:bg-surface-elevated"
                     }`}
                   >
                     <input
@@ -703,7 +703,7 @@ export default function AdminUsersPage() {
               <button
                 onClick={savePermissions}
                 disabled={updating === editingUser.id}
-                className="flex-1 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-700 disabled:bg-cyan-800 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
+                className="flex-1 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-700 disabled:bg-cyan-800 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
               >
                 {updating === editingUser.id ? "Saving..." : "Save Changes"}
               </button>
