@@ -719,21 +719,51 @@ function formatShortDate(dateStr: string | null): string {
 function SalesPipelineCard({ data }: { data: SalesPipelineResponse }) {
   const { deals, summary } = data;
   const ownersWithDeals = summary.byOwner.filter((o) => o.deals > 0);
+  // Persist collapse preference across reloads. Default collapsed — the card
+  // is a reference view, not an action surface, and the deal list takes a
+  // lot of vertical space above the priority queue below it.
+  const [expanded, setExpanded] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("service-overview:sales-pipeline-expanded") === "1";
+  });
+  const toggle = () => {
+    setExpanded((prev) => {
+      const next = !prev;
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem("service-overview:sales-pipeline-expanded", next ? "1" : "0");
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="bg-surface rounded-xl border border-t-border overflow-hidden mb-6">
-      <div className="p-4 border-b border-t-border">
+      <button
+        type="button"
+        onClick={toggle}
+        aria-expanded={expanded}
+        aria-controls="service-sales-pipeline-body"
+        className="w-full text-left p-4 border-b border-t-border hover:bg-surface-2/40 transition-colors"
+      >
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-foreground">
-              Service Team Sales Pipeline
-              <span className="ml-2 text-sm font-normal text-muted">
-                ({summary.totalDeals} deal{summary.totalDeals !== 1 ? "s" : ""})
-              </span>
-            </h2>
-            <p className="text-xs text-muted mt-0.5">
-              Open sales-pipeline deals owned by Ted, Jake, Terrell, or Mike Wagner
-            </p>
+          <div className="flex items-start gap-2">
+            <span
+              aria-hidden="true"
+              className={`text-muted mt-1 transition-transform ${expanded ? "rotate-90" : ""}`}
+            >
+              ▸
+            </span>
+            <div>
+              <h2 className="text-lg font-semibold text-foreground">
+                Service Team Sales Pipeline
+                <span className="ml-2 text-sm font-normal text-muted">
+                  ({summary.totalDeals} deal{summary.totalDeals !== 1 ? "s" : ""})
+                </span>
+              </h2>
+              <p className="text-xs text-muted mt-0.5">
+                Open sales-pipeline deals owned by Ted, Jake, Terrell, or Mike Wagner
+              </p>
+            </div>
           </div>
           <div className="text-right">
             <div className="text-xs text-muted uppercase tracking-wider">Total Value</div>
@@ -743,7 +773,7 @@ function SalesPipelineCard({ data }: { data: SalesPipelineResponse }) {
           </div>
         </div>
 
-        {/* Per-owner summary chips */}
+        {/* Per-owner summary chips — always visible so the collapsed state still communicates distribution */}
         {ownersWithDeals.length > 0 && (
           <div className="flex flex-wrap gap-2 mt-3">
             {ownersWithDeals.map((o) => (
@@ -759,42 +789,44 @@ function SalesPipelineCard({ data }: { data: SalesPipelineResponse }) {
             ))}
           </div>
         )}
-      </div>
+      </button>
 
-      {/* Deal list */}
-      <div className="divide-y divide-t-border max-h-96 overflow-y-auto">
-        {deals.map((d) => (
-          <a
-            key={d.id}
-            href={d.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-4 px-4 py-3 hover:bg-surface-2/50 transition-colors"
-          >
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">{d.name}</p>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted mt-0.5">
-                <span>{d.stage}</span>
-                {d.ownerName && (
-                  <>
-                    <span className="opacity-40">·</span>
-                    <span>{d.ownerName}</span>
-                  </>
-                )}
-                {d.closeDate && (
-                  <>
-                    <span className="opacity-40">·</span>
-                    <span>Close {formatShortDate(d.closeDate)}</span>
-                  </>
-                )}
+      {/* Deal list — collapsible */}
+      {expanded && (
+        <div id="service-sales-pipeline-body" className="divide-y divide-t-border max-h-96 overflow-y-auto">
+          {deals.map((d) => (
+            <a
+              key={d.id}
+              href={d.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-4 px-4 py-3 hover:bg-surface-2/50 transition-colors"
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">{d.name}</p>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted mt-0.5">
+                  <span>{d.stage}</span>
+                  {d.ownerName && (
+                    <>
+                      <span className="opacity-40">·</span>
+                      <span>{d.ownerName}</span>
+                    </>
+                  )}
+                  {d.closeDate && (
+                    <>
+                      <span className="opacity-40">·</span>
+                      <span>Close {formatShortDate(d.closeDate)}</span>
+                    </>
+                  )}
+                </div>
               </div>
-            </div>
-            <div className="shrink-0 text-sm font-medium text-cyan-400">
-              {d.amount != null ? formatCurrency(d.amount) : "\u2014"}
-            </div>
-          </a>
-        ))}
-      </div>
+              <div className="shrink-0 text-sm font-medium text-cyan-400">
+                {d.amount != null ? formatCurrency(d.amount) : "\u2014"}
+              </div>
+            </a>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -103,23 +103,86 @@ function getAssignees(j: { assignedUsers?: string[]; assignedUser?: string }): s
   return j.assignedUser ? [j.assignedUser] : [];
 }
 
+// ── Job state classification ────────────────────────────────────────────────
+// Matches the master scheduler's mutually-exclusive scheme: a job is in exactly
+// one of {scheduled, overdue, completed} — used by the three calendar toggles.
+
+type JobState = "scheduled" | "overdue" | "completed";
+
+// Heuristic: Zuper doesn't expose a single "is terminal" flag for service-job
+// status workflows, so match on name. Covers "Completed", "Closed",
+// "Cancelled/Canceled", "Job Complete", "Done", "Invoiced". Errs toward
+// "completed" only when the status name clearly says so.
+function isJobCompleted(j: { statusName?: string | null }): boolean {
+  const name = (j.statusName || "").toLowerCase();
+  if (!name) return false;
+  return /(complete|closed|cancel|invoiced|\bdone\b)/.test(name);
+}
+
+// Overdue: scheduled time (or due date, for unscheduled jobs) is strictly
+// before the start of today AND the job is not already completed. Matches the
+// master scheduler's survey/inspection rule ("overdue the day after the
+// scheduled date").
+function isJobOverdue(j: ZuperJob, now: Date): boolean {
+  if (isJobCompleted(j)) return false;
+  const ref = j.scheduledEnd || j.scheduledStart || j.dueDate;
+  if (!ref) return false;
+  const refDate = new Date(ref);
+  if (Number.isNaN(refDate.getTime())) return false;
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+  return refDate < startOfToday;
+}
+
+function getJobState(j: ZuperJob, now: Date): JobState {
+  if (isJobCompleted(j)) return "completed";
+  if (isJobOverdue(j, now)) return "overdue";
+  return "scheduled";
+}
+
 const ZUPER_WEB_BASE = "https://web.zuperpro.com";
 
-function TypeBadge({ type, size = "md" }: { type: "deal" | "ticket" | null | undefined; size?: "sm" | "md" }) {
+function TypeBadge({
+  type,
+  size = "md",
+  objectId,
+  portalId,
+}: {
+  type: "deal" | "ticket" | null | undefined;
+  size?: "sm" | "md";
+  objectId?: string;
+  portalId?: string;
+}) {
   if (!type) return null;
   const sizeClass = size === "sm" ? "text-[0.45rem] px-1 py-0" : "text-[0.5rem] px-1 py-0.5";
-  if (type === "deal") {
+  const isDeal = type === "deal";
+  const colorClass = isDeal
+    ? "bg-purple-500/25 text-purple-300 border border-purple-500/40 hover:bg-purple-500/40 hover:text-purple-100"
+    : "bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 hover:bg-cyan-500/40 hover:text-cyan-100";
+  const label = isDeal ? "Deal" : "Ticket";
+  const baseClass = `${sizeClass} rounded font-semibold uppercase tracking-wider ${colorClass}`;
+
+  // If we have enough info to link directly to the HubSpot record, render an
+  // anchor so users can open the deal/ticket from the calendar tile without
+  // having to open the job modal first.
+  if (objectId && portalId) {
+    const href = isDeal
+      ? `https://app.hubspot.com/contacts/${portalId}/record/0-3/${objectId}`
+      : `https://app.hubspot.com/contacts/${portalId}/ticket/${objectId}`;
     return (
-      <span className={`${sizeClass} rounded bg-purple-500/25 text-purple-300 border border-purple-500/40 font-semibold uppercase tracking-wider`}>
-        Deal
-      </span>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className={`${baseClass} transition-colors`}
+        title={`Open HubSpot ${label}`}
+      >
+        {label}
+      </a>
     );
   }
-  return (
-    <span className={`${sizeClass} rounded bg-cyan-500/25 text-cyan-300 border border-cyan-500/40 font-semibold uppercase tracking-wider`}>
-      Ticket
-    </span>
-  );
+  return <span className={baseClass}>{label}</span>;
 }
 
 /* ------------------------------------------------------------------ */
@@ -149,6 +212,11 @@ export default function ServiceSchedulerPage() {
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>([]);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
+  // Three-way job-state toggles (match master scheduler): scheduled / overdue / completed.
+  // Default: scheduled + overdue on, completed off — otherwise old jobs crowd the calendar.
+  const [showScheduled, setShowScheduled] = useState(true);
+  const [showOverdue, setShowOverdue] = useState(true);
+  const [showCompleted, setShowCompleted] = useState(false);
   const [selectedJob, setSelectedJob] = useState<ZuperJob | null>(null);
   const [primaryContactId, setPrimaryContactId] = useState<string | null>(null);
   const [contactLoading, setContactLoading] = useState(false);
@@ -275,8 +343,71 @@ export default function ServiceSchedulerPage() {
     return Array.from(s).sort();
   }, [jobs]);
 
+  // "Now" reference for overdue computation. Recomputed on every render but
+  // stable within a single pass — good enough; the scheduler doesn't need
+  // second-level precision.
+  const nowRef = useMemo(() => new Date(), []);
+
+  // Classify each job once up-front so the state is reused by filter + counts
+  // + tile styling without re-running the regex per render path.
+  const jobsWithState = useMemo(() => {
+    return jobs.map((j) => ({ job: j, state: getJobState(j, nowRef) }));
+  }, [jobs, nowRef]);
+
   const filteredJobs = useMemo(() => {
-    return jobs.filter(j => {
+    return jobsWithState
+      .filter(({ job: j, state }) => {
+        // State toggles (applied first so overdue-only / completed-only views
+        // don't have to pass the other filters to get counted).
+        if (state === "scheduled" && !showScheduled) return false;
+        if (state === "overdue" && !showOverdue) return false;
+        if (state === "completed" && !showCompleted) return false;
+
+        const assignees = getAssignees(j);
+        if (searchText) {
+          const q = searchText.toLowerCase();
+          const matchesAssignee = assignees.some(a => a.toLowerCase().includes(q));
+          if (!j.title.toLowerCase().includes(q) &&
+              !j.customerName.toLowerCase().includes(q) &&
+              !j.address.toLowerCase().includes(q) &&
+              !matchesAssignee) return false;
+        }
+        if (selectedCategories.length > 0 && !selectedCategories.includes(j.categoryName)) return false;
+        if (selectedLocations.length > 0 && !selectedLocations.includes(j.teamName)) return false;
+        if (selectedStatuses.length > 0 && !selectedStatuses.includes(j.statusName)) return false;
+        if (selectedAssignees.length > 0) {
+          if (selectedAssignees.includes("__unassigned__")) {
+            if (assignees.length > 0 && !assignees.some(a => selectedAssignees.includes(a))) return false;
+          } else {
+            if (!assignees.some(a => selectedAssignees.includes(a))) return false;
+          }
+        }
+        return true;
+      })
+      .map(({ job }) => job);
+  }, [
+    jobsWithState,
+    searchText,
+    selectedCategories,
+    selectedLocations,
+    selectedStatuses,
+    selectedAssignees,
+    showScheduled,
+    showOverdue,
+    showCompleted,
+  ]);
+
+  // Quick lookup of state by job uid (for tile styling without re-running regex).
+  const jobStateByUid = useMemo(() => {
+    const map: Record<string, JobState> = {};
+    for (const { job, state } of jobsWithState) map[job.jobUid] = state;
+    return map;
+  }, [jobsWithState]);
+
+  // Counts for toggle badges. Based on the filter-eligible pool MINUS the
+  // state filter itself (so toggling one state doesn't zero its own count).
+  const stateCounts = useMemo(() => {
+    const base = jobsWithState.filter(({ job: j }) => {
       const assignees = getAssignees(j);
       if (searchText) {
         const q = searchText.toLowerCase();
@@ -298,7 +429,19 @@ export default function ServiceSchedulerPage() {
       }
       return true;
     });
-  }, [jobs, searchText, selectedCategories, selectedLocations, selectedStatuses, selectedAssignees]);
+    return {
+      scheduled: base.filter((e) => e.state === "scheduled").length,
+      overdue: base.filter((e) => e.state === "overdue").length,
+      completed: base.filter((e) => e.state === "completed").length,
+    };
+  }, [
+    jobsWithState,
+    searchText,
+    selectedCategories,
+    selectedLocations,
+    selectedStatuses,
+    selectedAssignees,
+  ]);
 
   // Calendar data
   const calendarDays = useMemo(() => {
@@ -570,9 +713,12 @@ export default function ServiceSchedulerPage() {
           </div>
 
           {/* Stats bar */}
-          <div className="text-[0.65rem] text-muted px-3 py-2 border-b border-t-border bg-background flex justify-between">
+          <div className="text-[0.65rem] text-muted px-3 py-2 border-b border-t-border bg-background flex justify-between items-center flex-wrap gap-x-2 gap-y-1">
             <span>{stats.scheduled} scheduled</span>
             <span>{stats.unscheduled} unscheduled</span>
+            {stateCounts.overdue > 0 && (
+              <span className="text-red-400 font-medium">{stateCounts.overdue} overdue</span>
+            )}
           </div>
 
           {/* Category breakdown */}
@@ -593,20 +739,28 @@ export default function ServiceSchedulerPage() {
             {filteredJobs.filter(j => !j.scheduledStart).length === 0 ? (
               <div className="text-[0.65rem] text-muted text-center py-4">No unscheduled jobs</div>
             ) : (
-              filteredJobs.filter(j => !j.scheduledStart).map(j => (
+              filteredJobs.filter(j => !j.scheduledStart).map(j => {
+                const state = jobStateByUid[j.jobUid];
+                const isOverdue = state === "overdue";
+                const isCompleted = state === "completed";
+                return (
                 <div
                   key={j.jobUid}
                   onClick={() => setSelectedJob(j)}
-                  className={`bg-background border rounded-lg p-2.5 mb-1.5 cursor-pointer transition-all hover:border-emerald-500 hover:translate-x-0.5 border-l-[3px] ${
-                    CATEGORY_COLORS[j.categoryName]?.replace("bg-", "border-l-") || "border-l-zinc-600"
+                  className={`bg-background border rounded-lg p-2.5 mb-1.5 cursor-pointer transition-all hover:translate-x-0.5 border-l-[3px] ${
+                    isOverdue
+                      ? "border-l-red-500"
+                      : (CATEGORY_COLORS[j.categoryName]?.replace("bg-", "border-l-") || "border-l-zinc-600")
                   } ${
                     selectedJob?.jobUid === j.jobUid
                       ? "border-emerald-500 bg-emerald-500/10 shadow-[0_0_0_1px] shadow-emerald-500"
-                      : "border-t-border"
-                  }`}
+                      : isOverdue
+                        ? "border-red-500/40 hover:border-red-500"
+                        : "border-t-border hover:border-emerald-500"
+                  } ${isCompleted ? "opacity-60" : ""}`}
                 >
                   <div className="flex justify-between items-start mb-0.5">
-                    <div className="text-[0.7rem] font-semibold truncate max-w-[180px]" title={j.title}>
+                    <div className={`text-[0.7rem] font-semibold truncate max-w-[180px] ${isCompleted ? "line-through" : ""}`} title={j.title}>
                       {getCustomerName(j.title)}
                     </div>
                   </div>
@@ -614,7 +768,12 @@ export default function ServiceSchedulerPage() {
                     {j.address}
                   </div>
                   <div className="flex gap-1 flex-wrap">
-                    <TypeBadge type={objectTypes[j.hubspotDealId]} />
+                    <TypeBadge type={objectTypes[j.hubspotDealId]} objectId={j.hubspotDealId} portalId={hubspotPortalId} />
+                    {isOverdue && (
+                      <span className="text-[0.5rem] px-1 py-0.5 rounded bg-red-500/25 text-red-300 border border-red-500/40 font-semibold uppercase tracking-wider">
+                        Overdue
+                      </span>
+                    )}
                     <span className={`text-[0.5rem] px-1 py-0.5 rounded ${
                       CATEGORY_COLORS[j.categoryName]?.replace("bg-", "bg-") + "/20 " + (CATEGORY_TEXT_COLORS[j.categoryName] || "text-muted")
                     }`}>
@@ -635,7 +794,8 @@ export default function ServiceSchedulerPage() {
                     </div>
                   )}
                 </div>
-              ))
+                );
+              })
             )}
           </div>
         </aside>
@@ -657,20 +817,52 @@ export default function ServiceSchedulerPage() {
                 Today
               </button>
             </div>
-            <div className="flex items-center gap-1 bg-background border border-t-border rounded-md p-0.5">
-              {(["month", "week", "day"] as const).map((v) => (
-                <button
-                  key={v}
-                  onClick={() => setViewMode(v)}
-                  className={`px-2.5 py-1 text-[0.65rem] rounded transition-colors capitalize ${
-                    viewMode === v
-                      ? "bg-emerald-500 text-black font-semibold"
-                      : "text-muted hover:text-foreground"
-                  }`}
-                >
-                  {v}
-                </button>
-              ))}
+            <div className="flex items-center gap-2">
+              {/* Job-state toggles — match master scheduler */}
+              <div className="flex items-center gap-1">
+                {([
+                  { key: "scheduled", label: "Scheduled", color: "bg-blue-500 border-blue-500", active: showScheduled, toggle: () => setShowScheduled(!showScheduled), count: stateCounts.scheduled },
+                  { key: "overdue", label: "Overdue", color: "bg-red-500 border-red-500", active: showOverdue, toggle: () => setShowOverdue(!showOverdue), count: stateCounts.overdue },
+                  { key: "completed", label: "Completed", color: "bg-emerald-500 border-emerald-500", active: showCompleted, toggle: () => setShowCompleted(!showCompleted), count: stateCounts.completed },
+                ] as const).map((t) => (
+                  <button
+                    key={t.key}
+                    onClick={t.toggle}
+                    className={`flex items-center gap-1 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ${
+                      t.active ? "border-t-border text-foreground/80 bg-surface-2" : "border-t-border text-muted opacity-60"
+                    }`}
+                    aria-pressed={t.active}
+                    title={`${t.active ? "Hide" : "Show"} ${t.label.toLowerCase()} jobs`}
+                  >
+                    <span className={`w-2.5 h-2.5 rounded-sm border flex items-center justify-center shrink-0 ${t.active ? t.color : "border-t-border"}`}>
+                      {t.active && (
+                        <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                      )}
+                    </span>
+                    {t.label}
+                    <span className="opacity-70">({t.count})</span>
+                  </button>
+                ))}
+              </div>
+
+              {/* View-mode toggle */}
+              <div className="flex items-center gap-1 bg-background border border-t-border rounded-md p-0.5">
+                {(["month", "week", "day"] as const).map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => setViewMode(v)}
+                    className={`px-2.5 py-1 text-[0.65rem] rounded transition-colors capitalize ${
+                      viewMode === v
+                        ? "bg-emerald-500 text-black font-semibold"
+                        : "text-muted hover:text-foreground"
+                    }`}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -725,20 +917,26 @@ export default function ServiceSchedulerPage() {
                         {parseInt(dateStr.split("-")[2])}
                       </div>
                       <div className="space-y-0.5">
-                        {dayJobs.map(j => (
+                        {dayJobs.map(j => {
+                          const state = jobStateByUid[j.jobUid];
+                          const isOverdue = state === "overdue";
+                          const isCompleted = state === "completed";
+                          return (
                           <div
                             key={j.jobUid}
                             onClick={(e) => { e.stopPropagation(); setSelectedJob(j); }}
                             className={`text-[0.6rem] p-1 rounded cursor-pointer transition-colors ${
-                              j.categoryName === "Service Revisit"
-                                ? "bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30"
-                                : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
-                            } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""}`}
-                            title={`${j.title}\n${j.statusName}\n${getAssignees(j).join(", ") || "Unassigned"}${j.scheduledStart ? "\n" + formatTime(j.scheduledStart) : ""}`}
+                              isOverdue
+                                ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
+                                : j.categoryName === "Service Revisit"
+                                  ? "bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30"
+                                  : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
+                            } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""} ${isCompleted ? "opacity-60" : ""}`}
+                            title={`${j.title}\n${j.statusName}\n${getAssignees(j).join(", ") || "Unassigned"}${j.scheduledStart ? "\n" + formatTime(j.scheduledStart) : ""}${isOverdue ? "\n⚠ Overdue" : ""}`}
                           >
                             <div className="flex items-center gap-1">
-                              <TypeBadge type={objectTypes[j.hubspotDealId]} size="sm" />
-                              <div className="truncate font-medium flex-1 min-w-0">{getCustomerName(j.title)}</div>
+                              <TypeBadge type={objectTypes[j.hubspotDealId]} size="sm" objectId={j.hubspotDealId} portalId={hubspotPortalId} />
+                              <div className={`truncate font-medium flex-1 min-w-0 ${isCompleted ? "line-through" : ""}`}>{getCustomerName(j.title)}</div>
                             </div>
                             <div className="flex items-center gap-1 mt-0.5">
                               {j.scheduledStart && (
@@ -751,7 +949,8 @@ export default function ServiceSchedulerPage() {
                               )}
                             </div>
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   );
@@ -802,24 +1001,30 @@ export default function ServiceSchedulerPage() {
                         {dayJobs.length === 0 ? (
                           <div className="text-[0.55rem] text-muted/60 text-center py-4">—</div>
                         ) : (
-                          dayJobs.map(j => (
+                          dayJobs.map(j => {
+                            const state = jobStateByUid[j.jobUid];
+                            const isOverdue = state === "overdue";
+                            const isCompleted = state === "completed";
+                            return (
                             <div
                               key={j.jobUid}
                               onClick={() => setSelectedJob(j)}
                               className={`text-[0.65rem] p-1.5 rounded cursor-pointer transition-colors ${
-                                j.categoryName === "Service Revisit"
-                                  ? "bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30"
-                                  : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
-                              } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""}`}
-                              title={`${j.title}\n${j.statusName}\n${getAssignees(j).join(", ") || "Unassigned"}`}
+                                isOverdue
+                                  ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
+                                  : j.categoryName === "Service Revisit"
+                                    ? "bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30"
+                                    : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
+                              } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""} ${isCompleted ? "opacity-60" : ""}`}
+                              title={`${j.title}\n${j.statusName}\n${getAssignees(j).join(", ") || "Unassigned"}${isOverdue ? "\n⚠ Overdue" : ""}`}
                             >
                               <div className="flex items-center justify-between gap-1 mb-0.5">
                                 {j.scheduledStart ? (
                                   <span className="text-[0.55rem] opacity-80">{formatTime(j.scheduledStart)}</span>
                                 ) : <span />}
-                                <TypeBadge type={objectTypes[j.hubspotDealId]} size="sm" />
+                                <TypeBadge type={objectTypes[j.hubspotDealId]} size="sm" objectId={j.hubspotDealId} portalId={hubspotPortalId} />
                               </div>
-                              <div className="font-medium truncate">{getCustomerName(j.title)}</div>
+                              <div className={`font-medium truncate ${isCompleted ? "line-through" : ""}`}>{getCustomerName(j.title)}</div>
                               <div className="text-[0.55rem] opacity-70 truncate">{j.statusName}</div>
                               {getAssignees(j).length > 0 && (
                                 <div className="text-[0.55rem] opacity-60 truncate" title={getAssignees(j).join(", ")}>
@@ -827,7 +1032,8 @@ export default function ServiceSchedulerPage() {
                                 </div>
                               )}
                             </div>
-                          ))
+                            );
+                          })
                         )}
                       </div>
                     </div>
@@ -863,23 +1069,35 @@ export default function ServiceSchedulerPage() {
                       <div className="mb-3 mx-2 p-2 border border-dashed border-t-border rounded">
                         <div className="text-[0.6rem] uppercase text-muted mb-1">No scheduled time</div>
                         <div className="space-y-1">
-                          {untimed.map((j) => (
+                          {untimed.map((j) => {
+                            const state = jobStateByUid[j.jobUid];
+                            const isOverdue = state === "overdue";
+                            const isCompleted = state === "completed";
+                            return (
                             <div
                               key={j.jobUid}
                               onClick={() => setSelectedJob(j)}
                               className={`text-[0.7rem] p-2 rounded cursor-pointer ${
-                                j.categoryName === "Service Revisit"
-                                  ? "bg-amber-500/20 border border-amber-500/30 text-amber-300"
-                                  : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
-                              } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""}`}
+                                isOverdue
+                                  ? "bg-red-500/20 border border-red-500/40 text-red-300"
+                                  : j.categoryName === "Service Revisit"
+                                    ? "bg-amber-500/20 border border-amber-500/30 text-amber-300"
+                                    : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
+                              } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""} ${isCompleted ? "opacity-60" : ""}`}
                             >
                               <div className="flex items-center gap-1">
-                                <TypeBadge type={objectTypes[j.hubspotDealId]} size="sm" />
-                                <div className="font-medium">{getCustomerName(j.title)}</div>
+                                <TypeBadge type={objectTypes[j.hubspotDealId]} size="sm" objectId={j.hubspotDealId} portalId={hubspotPortalId} />
+                                <div className={`font-medium ${isCompleted ? "line-through" : ""}`}>{getCustomerName(j.title)}</div>
+                                {isOverdue && (
+                                  <span className="text-[0.55rem] px-1 py-0.5 rounded bg-red-500/30 text-red-200 border border-red-500/50 font-semibold uppercase tracking-wider">
+                                    Overdue
+                                  </span>
+                                )}
                               </div>
                               <div className="text-[0.6rem] opacity-70">{j.statusName} · {getAssignees(j).join(", ") || "Unassigned"}</div>
                             </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     )}
@@ -896,20 +1114,31 @@ export default function ServiceSchedulerPage() {
                           <div key={h} className="flex gap-3 px-3 py-2 min-h-[52px]">
                             <div className="w-14 text-[0.65rem] text-muted shrink-0 pt-0.5">{label}</div>
                             <div className="flex-1 space-y-1">
-                              {hourJobs.map((j) => (
+                              {hourJobs.map((j) => {
+                                const state = jobStateByUid[j.jobUid];
+                                const isOverdue = state === "overdue";
+                                const isCompleted = state === "completed";
+                                return (
                                 <div
                                   key={j.jobUid}
                                   onClick={() => setSelectedJob(j)}
                                   className={`text-[0.7rem] p-2 rounded cursor-pointer ${
-                                    j.categoryName === "Service Revisit"
-                                      ? "bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30"
-                                      : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
-                                  } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""}`}
+                                    isOverdue
+                                      ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
+                                      : j.categoryName === "Service Revisit"
+                                        ? "bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30"
+                                        : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
+                                  } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""} ${isCompleted ? "opacity-60" : ""}`}
                                 >
                                   <div className="flex justify-between gap-2">
                                     <div className="flex items-center gap-1 min-w-0">
-                                      <TypeBadge type={objectTypes[j.hubspotDealId]} size="sm" />
-                                      <div className="font-medium truncate">{getCustomerName(j.title)}</div>
+                                      <TypeBadge type={objectTypes[j.hubspotDealId]} size="sm" objectId={j.hubspotDealId} portalId={hubspotPortalId} />
+                                      <div className={`font-medium truncate ${isCompleted ? "line-through" : ""}`}>{getCustomerName(j.title)}</div>
+                                      {isOverdue && (
+                                        <span className="text-[0.55rem] px-1 py-0.5 rounded bg-red-500/30 text-red-200 border border-red-500/50 font-semibold uppercase tracking-wider shrink-0">
+                                          Overdue
+                                        </span>
+                                      )}
                                     </div>
                                     {j.scheduledStart && (
                                       <span className="text-[0.6rem] opacity-80 shrink-0">{formatTime(j.scheduledStart)}</span>
@@ -919,7 +1148,8 @@ export default function ServiceSchedulerPage() {
                                     {j.statusName} · {getAssignees(j).join(", ") || "Unassigned"}{j.teamName ? ` · ${j.teamName}` : ""}
                                   </div>
                                 </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           </div>
                         );
