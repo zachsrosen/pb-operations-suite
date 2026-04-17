@@ -47,8 +47,7 @@ Three fixes unrelated to the big refactor; each stands alone.
 
 **Rationale:** The gate fires when an admin tries to change a user's role to a location-scoped role (OPERATIONS or VIEWER) without `allowedLocations` set. But [`buildLocationScope` in `scope-resolver.ts`](../../../src/lib/scope-resolver.ts) returns `{ type: "global" }` (all locations) when allowedLocations is empty AND `scopeEnforcementEnabled` is false. Scope enforcement is **off everywhere in production** (every non-test call site omits the flag). So the gate is rejecting legitimate role assignments — a user with `role=OPERATIONS` + empty locations works fine today.
 
-**Decision needed before executing:**
-- **D1** — Remove entirely (option A), or make it conditional on a feature flag so when scope enforcement is turned on, the gate kicks in (option B)? **Recommendation: option A.** Simpler, matches current reality. If enforcement is ever turned on, the UX needs re-design anyway (the gate alone isn't enough — we'd need messaging + UI affordances).
+**Decision locked:** Remove the gate entirely (option A). Simpler, matches current reality. If scope enforcement is ever turned on, the UX will need a re-design anyway (the gate alone isn't enough — we'd need messaging + UI affordances, not a silent 400).
 
 **Files:**
 - `src/app/api/admin/users/route.ts` — delete the `requiresLocations` gate block.
@@ -94,8 +93,8 @@ One PR titled `fix(auth): drop spurious requiresLocations gate + multi-role SALE
 
 ## Part 2 — Phase 2 proper: finish the role→roles migration (2 PRs, ~3-5 days across execution)
 
-### Decision before executing
-- **D2** — Start from branch `feat/multi-role-phase-2` (salvaging the 3 Phase 2 commits from today — 72 files migrated role→roles in `src/app/api`, `src/app/admin|suites|dashboards|prototypes`, and partial lib/) OR start fresh from main? **Recommendation: start fresh from main.** Reasons: (a) the partial Cluster 3 commit is confusing provenance, (b) redoing the work in smaller chunks with the new safeguards catches any drift-bugs the subagent may have introduced silently, (c) the incident showed our scope discipline was weak; fresh start lets us re-verify each file.
+### Decision locked: start fresh from main
+Throw away the 3 commits on `feat/multi-role-phase-2` (not pushed, ~72 files migrated but the Cluster 3 commit is partial and confusing provenance). Redo the work in smaller chunks with the new safeguards — catches any drift-bugs the subagent may have introduced silently and gives us clean commit history.
 
 ### Structure — 2 PRs
 
@@ -168,23 +167,10 @@ The `requiresLocations` gate incident raised the question: is the location model
 - `scopeEnforcementEnabled` is **off at every non-test call site** in prod.
 - Net: `allowedLocations` effectively does nothing in prod today. It's a filter primitive that's never enabled.
 
-### Decision needed
-- **D3** — Is scope enforcement an intended future feature (keep the machinery), or is it a relic of an earlier design that should be ripped out?
-  - **Option X**: Keep the hooks. Leave `scopeEnforcementEnabled` parameter in place, keep `allowedLocations` column as-is. Someday flip a feature flag.
-  - **Option Y**: Remove the machinery. Rename `allowedLocations` → `preferredLocations` (or similar) and treat it purely as a UI default filter, not an access constraint. Remove `scopeEnforcementEnabled` parameter. Simpler mental model.
-- This is a product decision, not an engineering one. Bring this to the user's weekly review before starting work.
+### Decision locked: keep the machinery (option X)
+Scope enforcement is a "maybe one day but not yet" feature per user. Leave `scopeEnforcementEnabled` parameter in place, keep `allowedLocations` column as-is. The `requiresLocations` gate fix in Part 1A is sufficient for now.
 
-**If option Y is chosen:**
-
-- [ ] Branch `feat/location-model-simplify` off main.
-- [ ] Remove `scopeEnforcementEnabled` parameter from `resolveAccessScope` and related functions.
-- [ ] `buildLocationScope` always returns `{ type: "global" }` for empty, `{ type: "location", ... }` for non-empty. No flag needed.
-- [ ] Remove the `scopeEnforcementEnabled: true` test case as well (it was testing a feature that's never enabled in prod).
-- [ ] Optional: rename `allowedLocations` → `defaultLocations` via migration. Low value, high churn — probably skip unless the team wants it.
-- [ ] Update CLAUDE.md's Location restrictions section.
-
-**If option X is chosen:**
-- Leave as-is. Just fix Part 1A's `requiresLocations` gate and move on.
+**Consequence for this plan:** Part 3 is NO-OP. The scope enforcement machinery stays. No code changes in Part 3. Revisit if/when the product decision to enable scope enforcement is made — at that point we'll need: (a) an actual enforcement rollout plan, (b) admin UI that makes "this role needs locations" obvious (not a silent 400), (c) a way to audit/backfill users who should have location restrictions.
 
 ---
 
@@ -223,21 +209,20 @@ Add to [`~/.claude/projects/-Users-zach-Downloads-Dev-Projects-PB-Operations-Sui
 
 - New file: `feedback_subagents_no_migrations.md` — "Subagents MUST NOT run `prisma migrate deploy` or any DDL-producing command. Migration steps are orchestrator-only and require explicit user approval at the moment. Subagents writing migration FILES is fine; running them is not."
 
-### 4C — `.env` safety
+### 4C — `.env` safety (decision locked: skip for now)
 
-Consider renaming `.env` → `.env.prod` on local and requiring `dotenv -f .env.prod -- <cmd>` for explicit prod access. Tradeoff: breaks `npm run dev` unless we add a `.env.local` pointing at dev DB. Discuss with user before doing — involves dev workflow changes.
+Considered renaming `.env` → `.env.prod` on local to force explicit selection. Decision: **don't do it yet.** Tradeoff is too disruptive to dev workflow (breaks `npm run dev` unless a matching `.env.local` is set up). The incident's real root cause was a subagent running `prisma migrate deploy`, which 4A + 4B address. If 4A/4B prove insufficient or human error later causes a similar incident, revisit.
 
 ---
 
-## Sequencing
+## Sequencing (decisions locked)
 
-Recommended order (all happen next week):
+All happen next week:
 
-1. **Monday morning — Part 1 (all 3 tiny fixes + Part 4A migration guard).** One PR. Ship.
-2. **Monday afternoon — user decides on D3 (location model).** If Option Y, schedule Part 3 next.
-3. **Tuesday / Wednesday — PR 2A (shim-internal migration).** Biggest effort but safe (no DB change). Ship when green.
-4. **Thursday — PR 2B (shim delete + column drop).** Requires the explicit migration gate. Ship in a low-traffic window (early morning).
-5. **Friday — monitor + cleanup.** If Part 3 Option Y was chosen, ship it now.
+1. **Monday morning — Part 1 + Part 4A.** One PR containing all 3 tiny fixes + the `scripts/migrate-prod.sh` wrapper. Ship.
+2. **Tuesday / Wednesday — PR 2A (shim-internal migration).** Biggest effort but safe (no DB change). Ship when green.
+3. **Thursday early AM (low traffic) — PR 2B (shim delete + column drop).** Executed via the new `migrate-prod.sh CONFIRM` wrapper with explicit user approval at the migration moment.
+4. **Friday — monitor + any cleanup.** Part 3 is no-op (scope enforcement kept). Part 4C is no-op (.env stays as-is). Buffer day.
 
 Each step is independently revertible. No single PR touches more than one concern.
 
@@ -257,11 +242,13 @@ Each step is independently revertible. No single PR touches more than one concer
 | Legacy JWT sessions carry only `role` and reject after Part 2B | Phase 1's JWT callback backfills `token.roles = [token.role]` on refresh. JWTs refresh every request that touches the session. Worst case: one stale tab sees a micro-glitch, auto-recovers. |
 | Locations UX gets worse after Part 3 Option Y | N/A — Option Y is cosmetic/simplification; same user-facing behavior. |
 
-## Open decisions (user answers before starting execution)
+## Decisions (all locked as of 2026-04-17 evening)
 
-- **D1** — Part 1A: remove `requiresLocations` gate entirely (Option A, recommended) vs. make conditional on scope flag (Option B)?
-- **D2** — Part 2: start fresh from main (recommended) vs. salvage `feat/multi-role-phase-2` branch commits?
-- **D3** — Part 3: is scope enforcement an intended future feature (Option X, keep machinery) or a relic to rip out (Option Y, simplify)?
-- **D4** — Part 4C: rename local `.env` to `.env.prod` to force explicit selection? (Breaks `npm run dev` unless `.env.local` is added.)
+| # | Topic | Decision |
+|---|---|---|
+| D1 | Part 1A — `requiresLocations` gate | **Remove entirely.** |
+| D2 | Part 2 — start fresh or salvage | **Start fresh from main.** The 3 commits on `feat/multi-role-phase-2` are abandoned. |
+| D3 | Part 3 — scope enforcement future | **Keep machinery (Option X).** Scope enforcement is a "maybe one day" feature; don't rip out the hooks. Part 3 becomes no-op. |
+| D4 | Part 4C — `.env` rename | **Skip.** Part 4A's wrapper + 4B's memory rule are sufficient. Revisit if future incidents show they aren't. |
 
-Three mechanical answers + one product answer. Ideally answered before Monday.
+All decisions integrated into the plan above. Ready to execute Monday.
