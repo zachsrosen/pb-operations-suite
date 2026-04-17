@@ -5,6 +5,7 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
 import { isBlank, validateRequiredSpecFields } from "@/lib/catalog-form-state";
 import { executeCatalogPushApproval } from "@/lib/catalog-push-approve";
+import { notifyAdminsOfNewCatalogRequest } from "@/lib/catalog-notify";
 
 const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
 const VALID_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
@@ -138,13 +139,29 @@ export async function POST(request: NextRequest) {
     return null;
   });
 
+  const autoApproved = approval ? !approval.retryable : false;
+
+  // If auto-approval didn't finish (partial external-system failure or throw),
+  // fall back to the legacy admin notification so someone can retry the push.
+  if (!autoApproved) {
+    notifyAdminsOfNewCatalogRequest({
+      id: push.id,
+      brand: push.brand,
+      model: push.model,
+      category: push.category,
+      requestedBy: push.requestedBy,
+      systems: push.systems,
+      dealId: push.dealId,
+    });
+  }
+
   return NextResponse.json(
     {
       push: approval?.push ?? push,
       outcomes: approval?.outcomes ?? {},
       summary: approval?.summary ?? null,
       retryable: approval?.retryable ?? true,
-      autoApproved: approval ? !approval.retryable : false,
+      autoApproved,
     },
     { status: 201 }
   );
