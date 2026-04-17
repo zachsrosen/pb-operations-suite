@@ -530,6 +530,49 @@ export default function DEMetricsPage() {
       .sort((a, b) => b.daysWaiting - a.daysWaiting);
   }, [designProjects]);
 
+  // ---- Current DA Pipeline (grouped by current layout_status) ----
+  // Snapshot of in-flight deals by where they're currently blocked. Uses HubSpot
+  // value strings (not labels) — see /crm/v3/properties/deals/layout_status.
+  const daPipelineBuckets = useMemo(() => {
+    const CLOSED_STAGES = new Set([
+      "Project Complete",
+      "Cancelled",
+      "Closed Lost",
+      "Closed Won",
+      "Lost",
+    ]);
+    const buckets = {
+      awaitingCustomer: { count: 0, revenue: 0 },
+      pendingSales: { count: 0, revenue: 0 },
+      pendingOps: { count: 0, revenue: 0 },
+      pendingDesign: { count: 0, revenue: 0 },
+      rejected: { count: 0, revenue: 0 },
+    };
+    for (const p of designProjects) {
+      if (p.stage && CLOSED_STAGES.has(p.stage)) continue;
+      const s = p.layoutStatus;
+      if (!s) continue;
+      const amt = p.amount || 0;
+      if (s === "Sent to Customer" || s === "Resent For Approval" || s === "Pending Review") {
+        buckets.awaitingCustomer.count += 1;
+        buckets.awaitingCustomer.revenue += amt;
+      } else if (s === "Pending Sales Changes") {
+        buckets.pendingSales.count += 1;
+        buckets.pendingSales.revenue += amt;
+      } else if (s === "Pending Ops Changes") {
+        buckets.pendingOps.count += 1;
+        buckets.pendingOps.revenue += amt;
+      } else if (s === "Pending Design Changes" || s === "In Revision") {
+        buckets.pendingDesign.count += 1;
+        buckets.pendingDesign.revenue += amt;
+      } else if (s === "Design Rejected") {
+        buckets.rejected.count += 1;
+        buckets.rejected.revenue += amt;
+      }
+    }
+    return buckets;
+  }, [designProjects]);
+
   // ---- DA Submission Rate per Designer (Weekly) ----
   const daWeeklyByDesigner = useMemo(() => {
     const now = Date.now();
@@ -1005,6 +1048,49 @@ export default function DEMetricsPage() {
             </table>
           </div>
         )}
+      </div>
+
+      {/* Current DA Pipeline — grouped by current status */}
+      <div className="mb-6">
+        <h2 className="text-lg font-semibold text-foreground mb-3">Current DA Pipeline</h2>
+        <p className="text-sm text-muted mb-3">
+          Active deals grouped by where they&apos;re blocked right now · Respects Location and Designer filters
+        </p>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 stagger-grid">
+          <MetricCard
+            label="Awaiting Customer"
+            value={loading ? "\u2014" : String(daPipelineBuckets.awaitingCustomer.count)}
+            sub={loading ? undefined : formatMoney(daPipelineBuckets.awaitingCustomer.revenue)}
+            border="border-l-4 border-l-blue-500"
+          />
+          <MetricCard
+            label="Pending Sales Changes"
+            value={loading ? "\u2014" : String(daPipelineBuckets.pendingSales.count)}
+            sub={loading ? undefined : formatMoney(daPipelineBuckets.pendingSales.revenue)}
+            border="border-l-4 border-l-amber-500"
+            valueColor={daPipelineBuckets.pendingSales.count > 0 ? "text-amber-400" : undefined}
+          />
+          <MetricCard
+            label="Pending Ops Changes"
+            value={loading ? "\u2014" : String(daPipelineBuckets.pendingOps.count)}
+            sub={loading ? undefined : formatMoney(daPipelineBuckets.pendingOps.revenue)}
+            border="border-l-4 border-l-orange-500"
+            valueColor={daPipelineBuckets.pendingOps.count > 0 ? "text-orange-400" : undefined}
+          />
+          <MetricCard
+            label="Pending Design Changes"
+            value={loading ? "\u2014" : String(daPipelineBuckets.pendingDesign.count)}
+            sub={loading ? undefined : formatMoney(daPipelineBuckets.pendingDesign.revenue)}
+            border="border-l-4 border-l-purple-500"
+          />
+          <MetricCard
+            label="Currently Rejected"
+            value={loading ? "\u2014" : String(daPipelineBuckets.rejected.count)}
+            sub={loading ? undefined : formatMoney(daPipelineBuckets.rejected.revenue)}
+            border="border-l-4 border-l-red-500"
+            valueColor={daPipelineBuckets.rejected.count > 0 ? "text-red-400" : undefined}
+          />
+        </div>
       </div>
 
       {/* DA Backlog — Awaiting Approval */}
