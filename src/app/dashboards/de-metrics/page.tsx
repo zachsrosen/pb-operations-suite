@@ -47,6 +47,23 @@ type DaReworkFlags = {
   hadOpsChanges: boolean;
 };
 
+type DaBucketKey =
+  | "notYetSent"
+  | "awaitingCustomer"
+  | "pendingSales"
+  | "pendingOps"
+  | "pendingDesign"
+  | "rejected";
+
+const DA_BUCKET_LABELS: Record<DaBucketKey, string> = {
+  notYetSent: "Not Yet Sent",
+  awaitingCustomer: "Awaiting Customer",
+  pendingSales: "Pending Sales Changes",
+  pendingOps: "Pending Ops Changes",
+  pendingDesign: "Pending Design Changes",
+  rejected: "Currently Rejected",
+};
+
 interface DAGroupMetrics {
   count: number;
   avgTurnaround: number | null;
@@ -135,6 +152,9 @@ export default function DEMetricsPage() {
   // ---- DA Performance flags (from property history) ----
   const [reworkFlags, setReworkFlags] = useState<Record<string, DaReworkFlags>>({});
   const [reworkLoading, setReworkLoading] = useState(false);
+
+  // ---- Pipeline drill-down modal state ----
+  const [activeBucket, setActiveBucket] = useState<DaBucketKey | null>(null);
 
   // ---- DA Performance by Office (computed from designProjects, respects all filters) ----
   const computeGroupMetrics = useCallback(
@@ -541,43 +561,48 @@ export default function DEMetricsPage() {
       "Closed Won",
       "Lost",
     ]);
-    const buckets = {
-      notYetSent: { count: 0, revenue: 0 },
-      awaitingCustomer: { count: 0, revenue: 0 },
-      pendingSales: { count: 0, revenue: 0 },
-      pendingOps: { count: 0, revenue: 0 },
-      pendingDesign: { count: 0, revenue: 0 },
-      rejected: { count: 0, revenue: 0 },
+    const deals: Record<DaBucketKey, RawProject[]> = {
+      notYetSent: [],
+      awaitingCustomer: [],
+      pendingSales: [],
+      pendingOps: [],
+      pendingDesign: [],
+      rejected: [],
     };
     for (const p of designProjects) {
       // Exclude closed/lost/complete and already-approved — not in-flight.
       if (p.stage && CLOSED_STAGES.has(p.stage)) continue;
       if (p.designApprovalDate) continue;
       const s = p.layoutStatus;
-      const amt = p.amount || 0;
       // Status-based buckets first (mutually exclusive via if/else-if).
       if (s === "Sent to Customer" || s === "Resent For Approval" || s === "Pending Review") {
-        buckets.awaitingCustomer.count += 1;
-        buckets.awaitingCustomer.revenue += amt;
+        deals.awaitingCustomer.push(p);
       } else if (s === "Pending Sales Changes") {
-        buckets.pendingSales.count += 1;
-        buckets.pendingSales.revenue += amt;
+        deals.pendingSales.push(p);
       } else if (s === "Pending Ops Changes") {
-        buckets.pendingOps.count += 1;
-        buckets.pendingOps.revenue += amt;
+        deals.pendingOps.push(p);
       } else if (s === "Pending Design Changes" || s === "In Revision") {
-        buckets.pendingDesign.count += 1;
-        buckets.pendingDesign.revenue += amt;
+        deals.pendingDesign.push(p);
       } else if (s === "Design Rejected") {
-        buckets.rejected.count += 1;
-        buckets.rejected.revenue += amt;
+        deals.rejected.push(p);
       } else if (!p.designApprovalSentDate) {
         // Fallback: not in any pending-state and never sent for DA.
-        buckets.notYetSent.count += 1;
-        buckets.notYetSent.revenue += amt;
+        deals.notYetSent.push(p);
       }
     }
-    return buckets;
+    const summary = (list: RawProject[]) => ({
+      count: list.length,
+      revenue: list.reduce((s, p) => s + (p.amount || 0), 0),
+    });
+    return {
+      deals,
+      notYetSent: summary(deals.notYetSent),
+      awaitingCustomer: summary(deals.awaitingCustomer),
+      pendingSales: summary(deals.pendingSales),
+      pendingOps: summary(deals.pendingOps),
+      pendingDesign: summary(deals.pendingDesign),
+      rejected: summary(deals.rejected),
+    };
   }, [designProjects]);
 
   // ---- DA Submission Rate per Designer (Weekly) ----
@@ -1064,47 +1089,98 @@ export default function DEMetricsPage() {
           Active deals grouped by where they&apos;re blocked right now · Respects Location and Designer filters
         </p>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 stagger-grid">
-          <MetricCard
-            label="Not Yet Sent"
-            value={loading ? "\u2014" : String(daPipelineBuckets.notYetSent.count)}
-            sub={loading ? undefined : formatMoney(daPipelineBuckets.notYetSent.revenue)}
-            border="border-l-4 border-l-slate-500"
-          />
-          <MetricCard
-            label="Awaiting Customer"
-            value={loading ? "\u2014" : String(daPipelineBuckets.awaitingCustomer.count)}
-            sub={loading ? undefined : formatMoney(daPipelineBuckets.awaitingCustomer.revenue)}
-            border="border-l-4 border-l-blue-500"
-          />
-          <MetricCard
-            label="Pending Sales Changes"
-            value={loading ? "\u2014" : String(daPipelineBuckets.pendingSales.count)}
-            sub={loading ? undefined : formatMoney(daPipelineBuckets.pendingSales.revenue)}
-            border="border-l-4 border-l-amber-500"
-            valueColor={daPipelineBuckets.pendingSales.count > 0 ? "text-amber-400" : undefined}
-          />
-          <MetricCard
-            label="Pending Ops Changes"
-            value={loading ? "\u2014" : String(daPipelineBuckets.pendingOps.count)}
-            sub={loading ? undefined : formatMoney(daPipelineBuckets.pendingOps.revenue)}
-            border="border-l-4 border-l-orange-500"
-            valueColor={daPipelineBuckets.pendingOps.count > 0 ? "text-orange-400" : undefined}
-          />
-          <MetricCard
-            label="Pending Design Changes"
-            value={loading ? "\u2014" : String(daPipelineBuckets.pendingDesign.count)}
-            sub={loading ? undefined : formatMoney(daPipelineBuckets.pendingDesign.revenue)}
-            border="border-l-4 border-l-purple-500"
-          />
-          <MetricCard
-            label="Currently Rejected"
-            value={loading ? "\u2014" : String(daPipelineBuckets.rejected.count)}
-            sub={loading ? undefined : formatMoney(daPipelineBuckets.rejected.revenue)}
-            border="border-l-4 border-l-red-500"
-            valueColor={daPipelineBuckets.rejected.count > 0 ? "text-red-400" : undefined}
-          />
+          <button
+            type="button"
+            onClick={() => setActiveBucket("notYetSent")}
+            disabled={loading || daPipelineBuckets.notYetSent.count === 0}
+            className="text-left hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-muted rounded-xl disabled:cursor-default disabled:hover:brightness-100 transition-all"
+          >
+            <MetricCard
+              label="Not Yet Sent"
+              value={loading ? "\u2014" : String(daPipelineBuckets.notYetSent.count)}
+              sub={loading ? undefined : formatMoney(daPipelineBuckets.notYetSent.revenue)}
+              border="border-l-4 border-l-slate-500"
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveBucket("awaitingCustomer")}
+            disabled={loading || daPipelineBuckets.awaitingCustomer.count === 0}
+            className="text-left hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-muted rounded-xl disabled:cursor-default disabled:hover:brightness-100 transition-all"
+          >
+            <MetricCard
+              label="Awaiting Customer"
+              value={loading ? "\u2014" : String(daPipelineBuckets.awaitingCustomer.count)}
+              sub={loading ? undefined : formatMoney(daPipelineBuckets.awaitingCustomer.revenue)}
+              border="border-l-4 border-l-blue-500"
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveBucket("pendingSales")}
+            disabled={loading || daPipelineBuckets.pendingSales.count === 0}
+            className="text-left hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-muted rounded-xl disabled:cursor-default disabled:hover:brightness-100 transition-all"
+          >
+            <MetricCard
+              label="Pending Sales Changes"
+              value={loading ? "\u2014" : String(daPipelineBuckets.pendingSales.count)}
+              sub={loading ? undefined : formatMoney(daPipelineBuckets.pendingSales.revenue)}
+              border="border-l-4 border-l-amber-500"
+              valueColor={daPipelineBuckets.pendingSales.count > 0 ? "text-amber-400" : undefined}
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveBucket("pendingOps")}
+            disabled={loading || daPipelineBuckets.pendingOps.count === 0}
+            className="text-left hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-muted rounded-xl disabled:cursor-default disabled:hover:brightness-100 transition-all"
+          >
+            <MetricCard
+              label="Pending Ops Changes"
+              value={loading ? "\u2014" : String(daPipelineBuckets.pendingOps.count)}
+              sub={loading ? undefined : formatMoney(daPipelineBuckets.pendingOps.revenue)}
+              border="border-l-4 border-l-orange-500"
+              valueColor={daPipelineBuckets.pendingOps.count > 0 ? "text-orange-400" : undefined}
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveBucket("pendingDesign")}
+            disabled={loading || daPipelineBuckets.pendingDesign.count === 0}
+            className="text-left hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-muted rounded-xl disabled:cursor-default disabled:hover:brightness-100 transition-all"
+          >
+            <MetricCard
+              label="Pending Design Changes"
+              value={loading ? "\u2014" : String(daPipelineBuckets.pendingDesign.count)}
+              sub={loading ? undefined : formatMoney(daPipelineBuckets.pendingDesign.revenue)}
+              border="border-l-4 border-l-purple-500"
+            />
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveBucket("rejected")}
+            disabled={loading || daPipelineBuckets.rejected.count === 0}
+            className="text-left hover:brightness-110 focus:outline-none focus:ring-2 focus:ring-muted rounded-xl disabled:cursor-default disabled:hover:brightness-100 transition-all"
+          >
+            <MetricCard
+              label="Currently Rejected"
+              value={loading ? "\u2014" : String(daPipelineBuckets.rejected.count)}
+              sub={loading ? undefined : formatMoney(daPipelineBuckets.rejected.revenue)}
+              border="border-l-4 border-l-red-500"
+              valueColor={daPipelineBuckets.rejected.count > 0 ? "text-red-400" : undefined}
+            />
+          </button>
         </div>
       </div>
+
+      {/* Pipeline drill-down modal */}
+      {activeBucket && (
+        <DaPipelineDrilldown
+          bucketKey={activeBucket}
+          deals={daPipelineBuckets.deals[activeBucket]}
+          onClose={() => setActiveBucket(null)}
+        />
+      )}
 
       {/* DA Backlog — Awaiting Approval */}
       <div className="bg-surface border border-t-border rounded-xl p-6 shadow-card mb-6">
@@ -1217,5 +1293,136 @@ export default function DEMetricsPage() {
         )}
       </div>
     </DashboardShell>
+  );
+}
+
+// ---- Pipeline drill-down modal ----
+
+interface DaPipelineDrilldownProps {
+  bucketKey: DaBucketKey;
+  deals: RawProject[];
+  onClose: () => void;
+}
+
+function DaPipelineDrilldown({ bucketKey, deals, onClose }: DaPipelineDrilldownProps) {
+  // Close on Escape, lock body scroll while open.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  const sorted = useMemo(
+    () => [...deals].sort((a, b) => (b.daysSinceStageMovement ?? 0) - (a.daysSinceStageMovement ?? 0)),
+    [deals]
+  );
+  const totalRevenue = useMemo(() => deals.reduce((s, p) => s + (p.amount || 0), 0), [deals]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="da-drilldown-title"
+    >
+      <div
+        className="bg-surface border border-t-border rounded-xl shadow-card-lg w-full max-w-6xl max-h-[85vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-5 py-4 border-b border-t-border flex items-start justify-between gap-4">
+          <div>
+            <h3 id="da-drilldown-title" className="text-lg font-semibold text-foreground">
+              {DA_BUCKET_LABELS[bucketKey]}
+            </h3>
+            <p className="text-sm text-muted mt-0.5">
+              {deals.length} {deals.length === 1 ? "deal" : "deals"} · {formatMoney(totalRevenue)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="text-muted hover:text-foreground text-xl leading-none px-2 py-0.5"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        <div className="overflow-auto flex-1">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 bg-surface-2/95 backdrop-blur">
+              <tr className="border-b border-t-border text-left text-muted">
+                <th className="px-4 py-2 font-semibold">Deal</th>
+                <th className="px-4 py-2 font-semibold">Location</th>
+                <th className="px-4 py-2 font-semibold">Designer</th>
+                <th className="px-4 py-2 font-semibold">Design Status</th>
+                <th className="px-4 py-2 font-semibold">Design Approval Status</th>
+                <th className="px-4 py-2 font-semibold text-right">Days in Status</th>
+                <th className="px-4 py-2 font-semibold text-right">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((p, i) => {
+                const days = p.daysSinceStageMovement ?? null;
+                const isHot = days !== null && days > 14;
+                const isWarm = days !== null && !isHot && days > 7;
+                return (
+                  <tr
+                    key={p.id ?? `${p.name}-${i}`}
+                    className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}
+                  >
+                    <td className="px-4 py-2 text-foreground">
+                      {p.url ? (
+                        <a
+                          href={p.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-400 hover:underline"
+                        >
+                          {p.name}
+                        </a>
+                      ) : (
+                        p.name
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-muted">{p.pbLocation || "—"}</td>
+                    <td className="px-4 py-2 text-muted">{p.designLead || "—"}</td>
+                    <td className="px-4 py-2 text-muted">{p.designStatus || "—"}</td>
+                    <td className="px-4 py-2 text-muted">{p.layoutStatus || "—"}</td>
+                    <td className="px-4 py-2 text-right">
+                      {days !== null ? (
+                        <span
+                          className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${
+                            isHot
+                              ? "text-red-400 bg-red-500/10"
+                              : isWarm
+                              ? "text-orange-400 bg-orange-500/10"
+                              : "text-foreground"
+                          }`}
+                        >
+                          {days}d
+                        </span>
+                      ) : (
+                        <span className="text-muted">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-2 text-right text-muted">
+                      {p.amount ? formatMoney(p.amount) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }
