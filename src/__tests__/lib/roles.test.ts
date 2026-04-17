@@ -1,6 +1,9 @@
 import { UserRole } from "@/generated/prisma/enums";
 import { ROLES } from "@/lib/roles";
 
+const ROLE_ENTRIES = Object.entries(ROLES);
+const VALID_SCOPES = ["global", "location", "owner"] as const;
+
 describe("ROLES map", () => {
   it("has exactly one entry per UserRole enum value", () => {
     const enumValues = Object.values(UserRole);
@@ -8,25 +11,27 @@ describe("ROLES map", () => {
     expect(mapKeys).toEqual([...enumValues].sort());
   });
 
-  it("every normalizesTo target is itself a canonical role (visibleInPicker: true)", () => {
-    for (const [role, def] of Object.entries(ROLES)) {
+  it.each(ROLE_ENTRIES)(
+    "%s: normalizesTo target is itself canonical (visibleInPicker: true)",
+    (role, def) => {
       if (def.normalizesTo !== role) {
-        expect(ROLES[def.normalizesTo].visibleInPicker, `${role} normalizes to ${def.normalizesTo} which must be canonical`).toBe(true);
+        expect(ROLES[def.normalizesTo].visibleInPicker).toBe(true);
       }
-    }
-  });
+    },
+  );
 
-  it("every role has badge color + abbrev", () => {
-    for (const [role, def] of Object.entries(ROLES)) {
-      expect(def.badge.color, `${role} badge.color`).toMatch(/^[a-z-]+$/);
-      expect(def.badge.abbrev, `${role} badge.abbrev`).toBeTruthy();
-    }
-  });
+  it.each(ROLE_ENTRIES)(
+    "%s: badge has tailwind-friendly color + truthy abbrev",
+    (_role, def) => {
+      expect(def.badge.color).toMatch(/^[a-z-]+$/);
+      expect(def.badge.abbrev).toBeTruthy();
+    },
+  );
 
-  it("every role has a valid scope", () => {
-    const validScopes = ["global", "location", "owner"] as const;
-    for (const [role, def] of Object.entries(ROLES)) {
-      expect(validScopes, `${role} scope must be one of ${validScopes.join("/")}`).toContain(def.scope);
-    }
-  });
+  it.each(ROLE_ENTRIES)(
+    "%s: scope is valid",
+    (_role, def) => {
+      expect(VALID_SCOPES).toContain(def.scope);
+    },
+  );
 });
