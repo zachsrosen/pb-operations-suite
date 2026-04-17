@@ -15,7 +15,7 @@ function validateRoleUpdate(data: unknown): data is { userId: string; role: User
   if (!data || typeof data !== "object") return false;
   const req = data as UpdateUserRoleRequest;
 
-  const validRoles: UserRole[] = ["ADMIN", "EXECUTIVE", "MANAGER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "OPERATIONS", "TECH_OPS", "DESIGNER", "PERMITTING", "SALES", "VIEWER"];
+  const validRoles: UserRole[] = ["ADMIN", "EXECUTIVE", "MANAGER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "OPERATIONS", "SERVICE", "TECH_OPS", "DESIGNER", "PERMITTING", "SALES", "VIEWER"];
 
   return (
     typeof req.userId === "string" &&

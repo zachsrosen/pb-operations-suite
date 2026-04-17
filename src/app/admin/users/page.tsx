@@ -38,7 +38,7 @@ interface ActivityLog {
   description: string;
 }
 
-const ROLES = ["ADMIN", "EXECUTIVE", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "OPERATIONS", "TECH_OPS", "SALES", "VIEWER"];
+const ROLES = ["ADMIN", "EXECUTIVE", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "OPERATIONS", "SERVICE", "TECH_OPS", "SALES", "VIEWER"];
 
 const ROLE_LABELS: Record<string, string> = {
   EXECUTIVE: "EXECUTIVE",
@@ -58,6 +58,7 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
   OPERATIONS_MANAGER: "Crew oversight, scheduling, availability management",
   PROJECT_MANAGER: "Can access Operations, D&E, P&I, and Intelligence Suites",
   OPERATIONS: "Only access to Operations Suite",
+  SERVICE: "Only access to Service Suite (tickets, priority queue, service scheduling)",
   TECH_OPS: "Access to Operations, D&E, and P&I Suites",
   SALES: "Only access to Site Survey Schedule",
   VIEWER: "Unassigned — no dashboard access until role is set",
@@ -70,6 +71,7 @@ const ROLE_COLORS: Record<string, string> = {
   OPERATIONS_MANAGER: "bg-amber-500/20 text-amber-400 border-amber-500/30",
   PROJECT_MANAGER: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
   OPERATIONS: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  SERVICE: "bg-teal-500/20 text-teal-400 border-teal-500/30",
   TECH_OPS: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
   SALES: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
   VIEWER: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",

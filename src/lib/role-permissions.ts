@@ -412,6 +412,58 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
     canEditPermitting: false,
     canViewAllLocations: true,
   },
+  SERVICE: {
+    // Service team: tickets, priority queue, service scheduling, customer history.
+    // Scoped to the Service Suite + deal/equipment lookup for customer context.
+    // Does NOT get Accounting, Ops, or Intelligence suites.
+    allowedRoutes: [
+      "/",
+      // Suite landing
+      "/suites/service",
+      // Service Suite dashboards
+      "/dashboards/service",
+      "/dashboards/service-overview",
+      "/dashboards/service-tickets",
+      "/dashboards/service-customers",
+      "/dashboards/service-backlog",
+      "/dashboards/service-scheduler",
+      "/dashboards/service-catalog",
+      // Deal lookup (customer history / warranty research)
+      "/dashboards/deals",
+      "/api/deals",
+      "/api/projects",
+      // Equipment / inventory lookup for service calls
+      "/dashboards/inventory",
+      "/dashboards/equipment-backlog",
+      "/dashboards/catalog",
+      "/dashboards/product-catalog",
+      "/dashboards/product-comparison",
+      // APIs the Service Suite relies on
+      "/api/service",
+      "/api/zuper",
+      "/api/properties",
+      "/api/catalog",
+      "/api/products",
+      "/api/inventory",
+      "/api/hubspot/qc-metrics",
+      "/api/activity/log",
+      "/api/bugs",
+      // Solar Surveyor (customer project context)
+      "/api/solar",
+      // SOP Guide
+      "/sop",
+      "/api/sop",
+    ],
+    canScheduleSurveys: false,
+    canScheduleInstalls: false,
+    canScheduleInspections: false,
+    canSyncZuper: true, // Service tickets sync to Zuper jobs
+    canManageUsers: false,
+    canManageAvailability: false,
+    canEditDesign: false,
+    canEditPermitting: false,
+    canViewAllLocations: true,
+  },
   PROJECT_MANAGER: {
     allowedRoutes: [
       "/",

@@ -21,6 +21,7 @@ enum UserRole {
   MANAGER             // Legacy — normalizes to PROJECT_MANAGER
   OPERATIONS          // Can schedule installs/inspections, manage construction flow
   OPERATIONS_MANAGER  // Operations managers — crew oversight, scheduling, availability
+  SERVICE             // Service team — tickets, priority queue, service scheduling, customer history
   PROJECT_MANAGER     // Project managers — project tracking, scheduling, reporting
   SALES_MANAGER       // Sales managers — team oversight, pipeline visibility, scheduling
   TECH_OPS            // Field technicians — view schedules, self-service availability

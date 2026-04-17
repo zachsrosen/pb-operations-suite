@@ -100,6 +100,7 @@ const SUITE_SWITCHER_ALLOWLIST: Record<UserRole, string[]> = {
   PROJECT_MANAGER: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection", "/suites/intelligence", "/suites/service", "/suites/dnr-roofing", "/suites/accounting"],
   OPERATIONS: ["/suites/operations", "/suites/service", "/suites/dnr-roofing", "/suites/accounting"],
   OPERATIONS_MANAGER: ["/suites/operations", "/suites/intelligence", "/suites/service", "/suites/dnr-roofing", "/suites/accounting"],
+  SERVICE: ["/suites/service"],
   TECH_OPS: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection", "/suites/accounting"],
   DESIGNER: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection", "/suites/accounting"],
   PERMITTING: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection", "/suites/accounting"],
