@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { auth } from "@/auth";
 import { prisma, getAllUsers, updateUserRole, UserRole, getUserByEmail } from "@/lib/db";
 import { normalizeRole } from "@/lib/role-permissions";
+import { ROLE_SCOPE_TYPE } from "@/lib/access-scope";
 import { logAdminActivity, extractRequestContext } from "@/lib/audit/admin-activity";
 
 // Inline validation for role update request
@@ -15,7 +16,21 @@ function validateRoleUpdate(data: unknown): data is { userId: string; role: User
   if (!data || typeof data !== "object") return false;
   const req = data as UpdateUserRoleRequest;
 
-  const validRoles: UserRole[] = ["ADMIN", "EXECUTIVE", "MANAGER", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "OPERATIONS", "SERVICE", "TECH_OPS", "DESIGNER", "PERMITTING", "SALES", "VIEWER"];
+  const validRoles: UserRole[] = [
+    "ADMIN",
+    "EXECUTIVE",
+    "MANAGER",
+    "OPERATIONS_MANAGER",
+    "PROJECT_MANAGER",
+    "OPERATIONS",
+    "SERVICE",
+    "SALES_MANAGER",
+    "TECH_OPS",
+    "DESIGNER",
+    "PERMITTING",
+    "SALES",
+    "VIEWER",
+  ];
 
   return (
     typeof req.userId === "string" &&
@@ -96,9 +111,26 @@ export async function PUT(request: NextRequest) {
 
     const { userId, role } = body;
 
-    // Get the target user to log the change
+    // Get the target user to log the change and to enforce location requirements
     const targetUser = await prisma.user.findUnique({ where: { id: userId } });
-    const oldRole = targetUser?.role;
+    if (!targetUser) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 });
+    }
+    const oldRole = targetUser.role;
+
+    // Location-scoped roles (OPERATIONS, VIEWER) require at least one allowedLocation.
+    // Reject the role change before it hits the DB so the admin knows to assign locations first.
+    const newRoleScope = ROLE_SCOPE_TYPE[role];
+    const targetLocations = (targetUser as { allowedLocations?: string[] | null }).allowedLocations ?? [];
+    if (newRoleScope === "location" && targetLocations.length === 0) {
+      return NextResponse.json(
+        {
+          error: "This role requires at least one allowed location. Assign locations before changing the role.",
+          requiresLocations: true,
+        },
+        { status: 400 }
+      );
+    }
 
     const updatedUser = await updateUserRole(userId, role);
 

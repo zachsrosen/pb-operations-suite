@@ -13,6 +13,7 @@ const ROLES: UserRole[] = [
   "OPERATIONS",
   "SERVICE",
   "TECH_OPS",
+  "SALES_MANAGER",
   "SALES",
   "VIEWER",
 ];
