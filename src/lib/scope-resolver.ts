@@ -4,7 +4,8 @@ import type { User } from "@/generated/prisma/client";
 import type { UserRole } from "@/lib/role-permissions";
 import { normalizeRole } from "@/lib/role-permissions";
 import { prisma, getUserByEmail } from "@/lib/db";
-import { type AccessScope, getScopeTypeForRole } from "@/lib/access-scope";
+import { type AccessScope } from "@/lib/access-scope";
+import { resolveEffectiveRole } from "@/lib/user-access";
 import { normalizeLocation, type CanonicalLocation } from "@/lib/locations";
 
 export interface ResolvedScope {
@@ -32,6 +33,17 @@ function buildLocationScope(
   }
 
   return { type: "location", locations: normalizedLocations };
+}
+
+/**
+ * Read the canonical roles array off a user, falling back to `[user.role]` if
+ * `roles` is missing/empty. Phase-1 back-compat while the dual-write migration
+ * settles.
+ */
+function rolesFromUser(user: { roles?: UserRole[] | null; role?: UserRole | null }): UserRole[] {
+  if (user.roles && user.roles.length > 0) return user.roles;
+  if (user.role) return [user.role];
+  return [];
 }
 
 export async function resolveAccessScope(
@@ -68,8 +80,9 @@ export async function resolveAccessScope(
     }
   }
 
+  const userRoles = rolesFromUser(effectiveUser);
   const effectiveRole = normalizeRole(effectiveUser.role as UserRole);
-  const scopeType = getScopeTypeForRole(effectiveRole);
+  const scopeType = resolveEffectiveRole(userRoles).scope;
 
   if (scopeType === "global") {
     return {

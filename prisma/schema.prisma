@@ -36,7 +36,8 @@ model User {
   email         String    @unique
   name          String?
   image         String?
-  role          UserRole  @default(VIEWER)
+  role   UserRole   @default(VIEWER)  // DEPRECATED: removed in Phase 2. Kept for dual-write back-compat.
+  roles  UserRole[] @default([])
 
   // OAuth fields
   googleId      String?   @unique

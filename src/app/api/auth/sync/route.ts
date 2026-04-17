@@ -3,6 +3,37 @@ import { headers } from "next/headers";
 import { auth } from "@/auth";
 import { prisma, getOrCreateUser, getUserByEmail, logActivity } from "@/lib/db";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import { resolveUserAccess, type UserLike, type EffectiveUserAccess } from "@/lib/user-access";
+
+/**
+ * Compute the serializable access payload for a user. `EffectiveUserAccess`
+ * carries `suites` and `allowedRoutes` as Sets, which don't survive JSON.stringify —
+ * we convert them to arrays here.
+ */
+function serializeAccess(user: UserLike): {
+  roles: EffectiveUserAccess["roles"];
+  access: {
+    roles: EffectiveUserAccess["roles"];
+    suites: string[];
+    allowedRoutes: string[];
+    landingCards: EffectiveUserAccess["landingCards"];
+    scope: EffectiveUserAccess["scope"];
+    capabilities: EffectiveUserAccess["capabilities"];
+  };
+} {
+  const access = resolveUserAccess(user);
+  return {
+    roles: access.roles,
+    access: {
+      roles: access.roles,
+      suites: Array.from(access.suites),
+      allowedRoutes: Array.from(access.allowedRoutes),
+      landingCards: access.landingCards,
+      scope: access.scope,
+      capabilities: access.capabilities,
+    },
+  };
+}
 
 function withEffectiveRoleCookie(response: NextResponse, role: string): NextResponse {
   response.cookies.set("pb_effective_role", role, {
@@ -80,14 +111,19 @@ export async function POST() {
       userAgent,
     });
 
+    const { roles, access } = serializeAccess(user);
+
     return withRoleAndImpersonationCookies(NextResponse.json({
       role: normalizedRole,
+      roles,
+      access,
       synced: true,
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
         role: normalizedRole,
+        roles,
       }
     }), normalizedRole, false);
   } catch (error) {
@@ -131,8 +167,11 @@ export async function GET() {
 
       if (impersonatedUser) {
         const normalizedRole = normalizeRole(impersonatedUser.role as UserRole);
+        const { roles, access } = serializeAccess(impersonatedUser);
         return withRoleAndImpersonationCookies(NextResponse.json({
           role: normalizedRole,
+          roles,
+          access,
           found: true,
           isImpersonating: true,
           user: {
@@ -140,12 +179,14 @@ export async function GET() {
             email: impersonatedUser.email,
             name: impersonatedUser.name,
             role: normalizedRole,
+            roles,
           },
           impersonatedUser: {
             id: impersonatedUser.id,
             email: impersonatedUser.email,
             name: impersonatedUser.name,
             role: normalizedRole,
+            roles,
           },
           adminUser: {
             id: user.id,
@@ -157,8 +198,11 @@ export async function GET() {
     }
 
     const normalizedRole = normalizeRole(user.role as UserRole);
+    const { roles, access } = serializeAccess(user);
     return withRoleAndImpersonationCookies(NextResponse.json({
       role: normalizedRole,
+      roles,
+      access,
       found: true,
       isImpersonating: false,
       user: {
@@ -166,6 +210,7 @@ export async function GET() {
         email: user.email,
         name: user.name,
         role: normalizedRole,
+        roles,
       }
     }), normalizedRole, false);
   } catch (error) {

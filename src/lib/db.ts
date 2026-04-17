@@ -7,6 +7,7 @@
  */
 
 import { PrismaClient } from "@/generated/prisma/client";
+import type { User } from "@/generated/prisma/client";
 import { ActivityType, SurveyInviteStatus } from "@/generated/prisma/enums";
 import { PrismaNeon } from "@prisma/adapter-neon";
 
@@ -115,15 +116,25 @@ export async function getOrCreateUser(userData: {
 }
 
 /**
- * Update user role
+ * Update a user's roles (canonical multi-role API). Writes both `roles` (canonical) and
+ * `role` (Phase 1 back-compat — first element of roles, or VIEWER if empty) in a single
+ * DB statement to prevent mid-flight drift. The legacy `role` column is dropped in Phase 2.
  */
-export async function updateUserRole(userId: string, role: UserRole) {
+export async function updateUserRoles(userId: string, roles: UserRole[]): Promise<User | null> {
   if (!prisma) return null;
-
-  return prisma.user.update({
+  const primary = roles[0] ?? UserRole.VIEWER;
+  return await prisma.user.update({
     where: { id: userId },
-    data: { role },
+    data: { roles, role: primary },
   });
+}
+
+/**
+ * @deprecated — use `updateUserRoles`. Kept for Phase 1 back-compat so existing single-role
+ * call sites keep working; they'll be migrated during Phase 2 audit.
+ */
+export async function updateUserRole(userId: string, role: UserRole): Promise<User | null> {
+  return updateUserRoles(userId, [role]);
 }
 
 /**

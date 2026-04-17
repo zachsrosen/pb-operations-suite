@@ -23,6 +23,7 @@ describe("scope-resolver", () => {
     mockGetUserByEmail.mockResolvedValue({
       id: "admin-1",
       email: "admin@photonbrothers.com",
+      roles: ["ADMIN"],
       role: "ADMIN",
       allowedLocations: [],
       impersonatingUserId: null,
@@ -40,6 +41,7 @@ describe("scope-resolver", () => {
     mockGetUserByEmail.mockResolvedValue({
       id: "sales-manager-1",
       email: "sales.manager@photonbrothers.com",
+      roles: ["SALES_MANAGER"],
       role: "SALES_MANAGER",
       allowedLocations: [],
       impersonatingUserId: null,
@@ -55,6 +57,7 @@ describe("scope-resolver", () => {
     mockGetUserByEmail.mockResolvedValue({
       id: "ops-1",
       email: "ops@photonbrothers.com",
+      roles: ["OPERATIONS"],
       role: "OPERATIONS",
       allowedLocations: ["DTC", "Westminster", "Unknown"],
       impersonatingUserId: null,
@@ -70,6 +73,7 @@ describe("scope-resolver", () => {
     mockGetUserByEmail.mockResolvedValue({
       id: "sales-1",
       email: "sales@photonbrothers.com",
+      roles: ["SALES"],
       role: "SALES",
       allowedLocations: [],
       impersonatingUserId: null,
@@ -85,6 +89,7 @@ describe("scope-resolver", () => {
     mockGetUserByEmail.mockResolvedValue({
       id: "ops-2",
       email: "ops2@photonbrothers.com",
+      roles: ["OPERATIONS"],
       role: "OPERATIONS",
       allowedLocations: [],
       impersonatingUserId: null,
@@ -99,6 +104,7 @@ describe("scope-resolver", () => {
     mockGetUserByEmail.mockResolvedValue({
       id: "ops-3",
       email: "ops3@photonbrothers.com",
+      roles: ["OPERATIONS"],
       role: "OPERATIONS",
       allowedLocations: [],
       impersonatingUserId: null,
@@ -113,6 +119,7 @@ describe("scope-resolver", () => {
     mockGetUserByEmail.mockResolvedValue({
       id: "admin-2",
       email: "admin2@photonbrothers.com",
+      roles: ["ADMIN"],
       role: "ADMIN",
       allowedLocations: [],
       impersonatingUserId: "ops-4",
@@ -120,6 +127,7 @@ describe("scope-resolver", () => {
     mockFindUnique.mockResolvedValue({
       id: "ops-4",
       email: "ops4@photonbrothers.com",
+      roles: ["OPERATIONS"],
       role: "OPERATIONS",
       allowedLocations: ["San Luis Obispo"],
       impersonatingUserId: null,
@@ -144,5 +152,20 @@ describe("scope-resolver", () => {
   it("returns null when the email is unknown", async () => {
     mockGetUserByEmail.mockResolvedValue(null);
     await expect(resolveAccessScope("missing@photonbrothers.com")).resolves.toBeNull();
+  });
+
+  it("picks max-privilege scope for multi-role users (location + global → global)", async () => {
+    mockGetUserByEmail.mockResolvedValue({
+      id: "multi-1",
+      email: "multi@photonbrothers.com",
+      roles: ["OPERATIONS", "EXECUTIVE"],
+      role: "OPERATIONS",
+      allowedLocations: ["DTC"],
+      impersonatingUserId: null,
+    });
+
+    await expect(resolveAccessScope("multi@photonbrothers.com", { scopeEnforcementEnabled: true })).resolves.toMatchObject({
+      scope: { type: "global" },
+    });
   });
 });

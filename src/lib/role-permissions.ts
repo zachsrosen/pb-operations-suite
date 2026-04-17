@@ -1,20 +1,29 @@
 /**
- * Role-Based Permissions (Edge-Compatible)
+ * @deprecated Phase 1 back-compat shim.
  *
- * This file is importable in Next.js Edge Runtime (middleware)
- * because it has ZERO Node.js or Prisma dependencies.
+ * All role data now lives in `@/lib/roles`. All access derivation lives in
+ * `@/lib/user-access`. This file re-exports a compatibility surface so existing
+ * call sites continue to compile during Phase 1. Phase 2 (spec:
+ * docs/superpowers/specs/2026-04-16-multi-role-access-and-home-redesign-design.md)
+ * deletes this file and migrates imports.
  *
- * All permission checks and role constants live here.
- * db.ts re-exports these for backward compatibility.
+ * Prefer: import { ROLES } from "@/lib/roles"
+ * Prefer: import { resolveUserAccess, isPathAllowedByAccess } from "@/lib/user-access"
  */
 
 import { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
+import { isPathAllowedByAccess, resolveUserAccess } from "@/lib/user-access";
 
 // Re-export UserRole for convenience
 export { UserRole };
 
 /**
- * Permission structure for roles
+ * Permission structure for roles.
+ *
+ * @deprecated Prefer `ROLES[role].allowedRoutes` + `ROLES[role].defaultCapabilities`
+ * from `@/lib/roles`, or `resolveUserAccess(user).capabilities` from
+ * `@/lib/user-access` for merged per-user access.
  */
 export interface RolePermissions {
   allowedRoutes: string[];
@@ -31,994 +40,45 @@ export interface RolePermissions {
 
 /**
  * Normalize legacy roles to the current role model.
- * This keeps old DB enum values working without granting unintended access.
+ *
+ * @deprecated Prefer `ROLES[role].normalizesTo` from `@/lib/roles`.
  */
 export function normalizeRole(role: UserRole): UserRole {
-  if ((role as string) === "OWNER") return "EXECUTIVE";
-  if (role === "MANAGER") return "PROJECT_MANAGER";
-  if (role === "DESIGNER" || role === "PERMITTING") return "TECH_OPS";
-  return role;
+  return ROLES[role]?.normalizesTo ?? role;
 }
 
 /**
- * Define which routes and actions each role can access
+ * Derived from `ROLES` for shape-compatibility with legacy readers that access
+ * `ROLE_PERMISSIONS[role].allowedRoutes` or capability booleans directly.
+ *
+ * @deprecated Read from `ROLES[role]` in `@/lib/roles` instead.
  */
-export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
-  ADMIN: {
-    allowedRoutes: ["*", "/dashboards/ai"], // All routes
-    canScheduleSurveys: true,
-    canScheduleInstalls: true,
-    canScheduleInspections: true,
-    canSyncZuper: true,
-    canManageUsers: true,
-    canManageAvailability: true,
-    canEditDesign: true,
-    canEditPermitting: true,
-    canViewAllLocations: true,
-  },
-  EXECUTIVE: {
-    allowedRoutes: ["*", "/dashboards/ai"], // All routes — like ADMIN but no user management
-    canScheduleSurveys: true,
-    canScheduleInstalls: true,
-    canScheduleInspections: true,
-    canSyncZuper: true,
-    canManageUsers: false,
-    canManageAvailability: true,
-    canEditDesign: true,
-    canEditPermitting: true,
-    canViewAllLocations: true,
-  },
-  OWNER: {
-    // Legacy role: normalized to EXECUTIVE at runtime
-    allowedRoutes: ["*", "/dashboards/ai"],
-    canScheduleSurveys: true,
-    canScheduleInstalls: true,
-    canScheduleInspections: true,
-    canSyncZuper: true,
-    canManageUsers: false,
-    canManageAvailability: true,
-    canEditDesign: true,
-    canEditPermitting: true,
-    canViewAllLocations: true,
-  },
-  MANAGER: {
-    // Legacy role: normalized to PROJECT_MANAGER at runtime
-    allowedRoutes: [
-      "/",
-      "/suites/operations",
-      "/suites/design-engineering",
-      "/suites/permitting-interconnection",
-      "/suites/service",
-      "/suites/dnr-roofing",
-      "/suites/intelligence",
-      "/suites/accounting",
-      "/dashboards/scheduler",
-      "/dashboards/forecast-schedule",
-      "/dashboards/site-survey-scheduler",
-      "/dashboards/construction-scheduler",
-      "/dashboards/inspection-scheduler",
-      "/dashboards/service-scheduler",
-      "/dashboards/dnr-scheduler",
-      "/dashboards/equipment-backlog",
-      "/dashboards/service-backlog",
-      "/dashboards/service",
-      "/dashboards/service-overview",
-      "/dashboards/service-tickets",
-      "/dashboards/service-catalog",
-      "/dashboards/service-customers",
-      "/dashboards/inventory",
-      "/dashboards/timeline",
-      "/dashboards/bom",
-      "/dashboards/bom/history",
-      "/dashboards/pricing-calculator",
-      "/dashboards/pe-deals",
-      "/api/accounting",
-      "/dashboards/ai",
-      "/dashboards/dnr",
-      "/dashboards/roofing",
-      "/dashboards/roofing-scheduler",
-      "/dashboards/site-survey",
-      "/dashboards/design",
-      "/dashboards/permitting",
-      "/dashboards/inspections",
-      "/dashboards/interconnection",
-      "/dashboards/construction",
-      "/dashboards/construction-metrics",
-      "/dashboards/inspection-metrics",
-      "/dashboards/survey-metrics",
-      "/dashboards/preconstruction-metrics",
-      "/dashboards/incentives",
-      "/api/hubspot/qc-metrics",
-      // Intelligence dashboards
-      "/dashboards/at-risk",
-      "/dashboards/qc",
-      "/dashboards/alerts",
-      "/dashboards/pipeline",
-      "/dashboards/optimizer",
-      "/dashboards/capacity",
-      "/dashboards/pe",
-      "/dashboards/sales",
-      "/dashboards/project-management",
-      "/dashboards/design-engineering",
-      "/dashboards/permitting-interconnection",
-      "/dashboards/office-performance",
-      "/api/office-performance",
-      // D&E Suite dashboards
-      "/dashboards/de-overview",
-      "/dashboards/plan-review",
-      "/dashboards/pending-approval",
-      "/dashboards/design-revisions",
-      "/dashboards/de-metrics",
-      "/dashboards/clipping-analytics",
-      "/dashboards/ahj-requirements",
-      "/dashboards/utility-design-requirements",
-      "/dashboards/solar-surveyor",
-      "/dashboards/solar-designer",
-      "/api/solar-designer",
-      // P&I Suite dashboards
-      "/dashboards/pi-overview",
-      "/dashboards/pi-metrics",
-      "/dashboards/pi-action-queue",
-      "/dashboards/pi-revisions",
-      "/dashboards/pi-permit-action-queue",
-      "/dashboards/pi-ic-action-queue",
-      "/dashboards/pi-permit-revisions",
-      "/dashboards/pi-ic-revisions",
-      "/dashboards/ahj-tracker",
-      "/dashboards/utility-tracker",
-      "/dashboards/pi-timeline",
-      // Equipment catalog
-      "/dashboards/catalog",
-      "/dashboards/product-catalog",
-      "/dashboards/submit-product",
-      "/api/projects",
-      "/api/bom",
-      "/api/catalog",
-      "/api/products",
-      "/api/service",
-      "/api/zuper",
-      "/api/activity/log",
-      "/api/inventory",
-      "/api/bugs",
-      "/api/ahj",
-      "/api/utility",
-      // Deals
-      "/dashboards/deals",
-      "/api/deals",
-      // Design review
-      "/dashboards/reviews",
-      "/api/reviews",
-      // Install photo review
-      "/dashboards/inspections",
-      "/api/install-review",
-      // Solar Surveyor
-      "/api/solar",
-      // SOP Guide (read-only; writes gated by /api/admin/sop)
-      "/sop",
-      "/api/sop",
-      // IDR Meeting Hub
-      "/dashboards/idr-meeting",
-      "/api/idr-meeting",
-      // Comms
-      "/dashboards/comms",
-      "/api/comms",
-    ],
-    canScheduleSurveys: true,
-    canScheduleInstalls: true,
-    canScheduleInspections: true,
-    canSyncZuper: true,
-    canManageUsers: false,
-    canManageAvailability: true,
-    canEditDesign: true,
-    canEditPermitting: true,
-    canViewAllLocations: true,
-  },
-  OPERATIONS: {
-    allowedRoutes: [
-      "/",
-      "/suites/operations",
-      "/suites/service",
-      "/suites/dnr-roofing",
-      "/suites/accounting",
-      "/dashboards/scheduler",
-      "/dashboards/forecast-schedule",
-      "/dashboards/site-survey-scheduler",
-      "/dashboards/site-survey",
-      "/dashboards/construction-scheduler",
-      "/dashboards/construction",
-      "/dashboards/inspection-scheduler",
-      "/dashboards/service-scheduler",
-      "/dashboards/dnr-scheduler",
-      "/dashboards/equipment-backlog",
-      "/dashboards/service-backlog",
-      "/dashboards/service",
-      "/dashboards/service-overview",
-      "/dashboards/service-tickets",
-      "/dashboards/service-catalog",
-      "/dashboards/service-customers",
-      "/dashboards/inventory",
-      "/dashboards/timeline",
-      "/dashboards/bom",
-      "/dashboards/bom/history",
-      "/dashboards/pricing-calculator",
-      "/dashboards/pe-deals",
-      "/api/accounting",
-      "/dashboards/dnr",
-      "/dashboards/roofing",
-      "/dashboards/roofing-scheduler",
-      "/dashboards/construction-metrics",
-      "/dashboards/inspection-metrics",
-      "/dashboards/survey-metrics",
-      "/api/hubspot/qc-metrics",
-      // Equipment catalog
-      "/dashboards/catalog",
-      "/dashboards/product-catalog",
-      "/dashboards/submit-product",
-      "/dashboards/product-comparison",
-      "/dashboards/solar-designer",
-      "/api/solar-designer",
-      "/api/projects",
-      "/api/bom",
-      "/api/catalog",
-      "/api/products",
-      "/api/service",
-      "/api/zuper",
-      "/api/activity/log",
-      "/api/inventory",
-      "/api/bugs",
-      // Deals
-      "/dashboards/deals",
-      "/api/deals",
-      // Install photo review
-      "/dashboards/inspections",
-      "/api/install-review",
-      // Solar Surveyor
-      "/api/solar",
-      // SOP Guide
-      "/sop",
-      "/api/sop",
-      // Forecasting API (read-only, needed for scheduler ghost events)
-      "/api/forecasting",
-      // IDR Meeting Hub
-      "/dashboards/idr-meeting",
-      "/api/idr-meeting",
-      // Comms
-      "/dashboards/comms",
-      "/api/comms",
-    ],
-    canScheduleSurveys: false,
-    canScheduleInstalls: true,
-    canScheduleInspections: true,
-    canSyncZuper: true,
-    canManageUsers: false,
-    canManageAvailability: true,
-    canEditDesign: false,
-    canEditPermitting: false,
-    canViewAllLocations: true,
-  },
-  OPERATIONS_MANAGER: {
-    allowedRoutes: [
-      "/",
-      "/suites/operations",
-      "/suites/service",
-      "/suites/dnr-roofing",
-      "/suites/intelligence",
-      "/suites/accounting",
-      "/dashboards/scheduler",
-      "/dashboards/forecast-schedule",
-      "/dashboards/site-survey-scheduler",
-      "/dashboards/site-survey",
-      "/dashboards/construction-scheduler",
-      "/dashboards/construction",
-      "/dashboards/inspection-scheduler",
-      "/dashboards/service-scheduler",
-      "/dashboards/dnr-scheduler",
-      "/dashboards/equipment-backlog",
-      "/dashboards/service-backlog",
-      "/dashboards/service",
-      "/dashboards/service-overview",
-      "/dashboards/service-tickets",
-      "/dashboards/service-catalog",
-      "/dashboards/service-customers",
-      "/dashboards/inventory",
-      "/dashboards/timeline",
-      "/dashboards/bom",
-      "/dashboards/bom/history",
-      "/dashboards/pricing-calculator",
-      "/dashboards/pe-deals",
-      "/api/accounting",
-      "/dashboards/ai",
-      "/dashboards/dnr",
-      "/dashboards/roofing",
-      "/dashboards/roofing-scheduler",
-      "/dashboards/construction-metrics",
-      "/dashboards/inspection-metrics",
-      "/dashboards/survey-metrics",
-      "/api/hubspot/qc-metrics",
-      // Intelligence dashboards
-      "/dashboards/at-risk",
-      "/dashboards/qc",
-      "/dashboards/alerts",
-      "/dashboards/pipeline",
-      "/dashboards/optimizer",
-      "/dashboards/capacity",
-      "/dashboards/pe",
-      "/dashboards/sales",
-      "/dashboards/project-management",
-      "/dashboards/design-engineering",
-      "/dashboards/permitting-interconnection",
-      // Executive dashboards (read-only visibility)
-      "/suites/executive",
-      "/dashboards/executive",
-      "/dashboards/executive-calendar",
-      "/dashboards/revenue",
-      "/dashboards/locations",
-      "/dashboards/command-center",
-      "/dashboards/capacity",
-      "/dashboards/forecast-accuracy",
-      "/dashboards/forecast-timeline",
-      "/dashboards/preconstruction-metrics",
-      "/dashboards/zuper-compliance",
-      "/dashboards/design-pipeline-funnel",
-      "/dashboards/territory-map",
-      "/api/territory-map",
-      "/api/forecasting",
-      "/dashboards/office-performance",
-      "/api/office-performance",
-      // Equipment catalog
-      "/dashboards/catalog",
-      "/dashboards/product-catalog",
-      "/dashboards/submit-product",
-      "/dashboards/product-comparison",
-      "/dashboards/solar-designer",
-      "/api/solar-designer",
-      "/api/projects",
-      "/api/bom",
-      "/api/catalog",
-      "/api/products",
-      "/api/service",
-      "/api/zuper",
-      "/api/activity/log",
-      "/api/inventory",
-      "/api/bugs",
-      // Deals
-      "/dashboards/deals",
-      "/api/deals",
-      // Design review
-      "/dashboards/reviews",
-      "/api/reviews",
-      // Install photo review
-      "/dashboards/inspections",
-      "/api/install-review",
-      // Solar Surveyor
-      "/api/solar",
-      // SOP Guide
-      "/sop",
-      "/api/sop",
-      // IDR Meeting Hub
-      "/dashboards/idr-meeting",
-      "/api/idr-meeting",
-      // Comms
-      "/dashboards/comms",
-      "/api/comms",
-    ],
-    canScheduleSurveys: true,
-    canScheduleInstalls: true,
-    canScheduleInspections: true,
-    canSyncZuper: true,
-    canManageUsers: false,
-    canManageAvailability: true,
-    canEditDesign: false,
-    canEditPermitting: false,
-    canViewAllLocations: true,
-  },
-  SERVICE: {
-    // Service team: tickets, priority queue, service scheduling, customer history.
-    // Scoped to the Service Suite + deal/equipment lookup for customer context.
-    // Does NOT get Accounting, Ops, or Intelligence suites.
-    allowedRoutes: [
-      "/",
-      // Suite landing
-      "/suites/service",
-      // Service Suite dashboards
-      "/dashboards/service",
-      "/dashboards/service-overview",
-      "/dashboards/service-tickets",
-      "/dashboards/service-customers",
-      "/dashboards/service-backlog",
-      "/dashboards/service-scheduler",
-      "/dashboards/service-catalog",
-      // Deal lookup (customer history / warranty research)
-      "/dashboards/deals",
-      "/api/deals",
-      "/api/projects",
-      // Equipment lookup for service calls.
-      // NOTE: /dashboards/inventory, /dashboards/catalog, and /dashboards/product-comparison
-      // are in ADMIN_ONLY_ROUTES and intentionally excluded here — canAccessRoute short-circuits
-      // on those before consulting this allowlist. See PR #185 review.
-      "/dashboards/equipment-backlog",
-      "/dashboards/product-catalog",
-      // APIs the Service Suite relies on
-      "/api/service",
-      "/api/zuper",
-      "/api/properties",
-      "/api/catalog",
-      "/api/products",
-      "/api/inventory",
-      "/api/hubspot/qc-metrics",
-      "/api/activity/log",
-      "/api/bugs",
-      // Solar Surveyor (customer project context + service-suite tool card)
-      "/dashboards/solar-surveyor",
-      "/api/solar",
-      // SOP Guide
-      "/sop",
-      "/api/sop",
-    ],
-    canScheduleSurveys: false,
-    canScheduleInstalls: false,
-    canScheduleInspections: false,
-    canSyncZuper: true, // Service tickets sync to Zuper jobs
-    canManageUsers: false,
-    canManageAvailability: false,
-    canEditDesign: false,
-    canEditPermitting: false,
-    canViewAllLocations: true,
-  },
-  PROJECT_MANAGER: {
-    allowedRoutes: [
-      "/",
-      "/suites/operations",
-      "/suites/design-engineering",
-      "/suites/permitting-interconnection",
-      "/suites/service",
-      "/suites/dnr-roofing",
-      "/suites/intelligence",
-      "/suites/executive",
-      "/suites/accounting",
-      "/dashboards/scheduler",
-      "/dashboards/forecast-schedule",
-      "/dashboards/site-survey-scheduler",
-      "/dashboards/construction-scheduler",
-      "/dashboards/inspection-scheduler",
-      "/dashboards/service-scheduler",
-      "/dashboards/dnr-scheduler",
-      "/dashboards/equipment-backlog",
-      "/dashboards/service-backlog",
-      "/dashboards/service",
-      "/dashboards/service-overview",
-      "/dashboards/service-tickets",
-      "/dashboards/service-catalog",
-      "/dashboards/service-customers",
-      "/dashboards/inventory",
-      "/dashboards/timeline",
-      "/dashboards/bom",
-      "/dashboards/bom/history",
-      "/dashboards/pricing-calculator",
-      "/dashboards/pe-deals",
-      "/api/accounting",
-      "/dashboards/ai",
-      "/dashboards/dnr",
-      "/dashboards/roofing",
-      "/dashboards/roofing-scheduler",
-      "/dashboards/site-survey",
-      "/dashboards/design",
-      "/dashboards/permitting",
-      "/dashboards/inspections",
-      "/dashboards/interconnection",
-      "/dashboards/construction",
-      "/dashboards/construction-metrics",
-      "/dashboards/inspection-metrics",
-      "/dashboards/survey-metrics",
-      "/dashboards/incentives",
-      "/api/hubspot/qc-metrics",
-      // Intelligence dashboards
-      "/dashboards/at-risk",
-      "/dashboards/qc",
-      "/dashboards/alerts",
-      "/dashboards/pipeline",
-      "/dashboards/optimizer",
-      "/dashboards/capacity",
-      "/dashboards/pe",
-      "/dashboards/sales",
-      "/dashboards/project-management",
-      "/dashboards/design-engineering",
-      "/dashboards/permitting-interconnection",
-      // Executive dashboards (read-only visibility)
-      "/dashboards/executive",
-      "/dashboards/executive-calendar",
-      "/dashboards/revenue",
-      "/dashboards/locations",
-      "/dashboards/command-center",
-      "/dashboards/forecast-accuracy",
-      "/dashboards/forecast-timeline",
-      "/dashboards/preconstruction-metrics",
-      "/dashboards/design-pipeline-funnel",
-      "/dashboards/territory-map",
-      "/api/territory-map",
-      "/api/forecasting",
-      "/dashboards/office-performance",
-      "/api/office-performance",
-      // D&E Suite dashboards
-      "/dashboards/de-overview",
-      "/dashboards/plan-review",
-      "/dashboards/pending-approval",
-      "/dashboards/design-revisions",
-      "/dashboards/de-metrics",
-      "/dashboards/clipping-analytics",
-      "/dashboards/ahj-requirements",
-      "/dashboards/utility-design-requirements",
-      "/dashboards/solar-surveyor",
-      "/dashboards/solar-designer",
-      "/api/solar-designer",
-      // P&I Suite dashboards
-      "/dashboards/pi-overview",
-      "/dashboards/pi-metrics",
-      "/dashboards/pi-action-queue",
-      "/dashboards/pi-revisions",
-      "/dashboards/pi-permit-action-queue",
-      "/dashboards/pi-ic-action-queue",
-      "/dashboards/pi-permit-revisions",
-      "/dashboards/pi-ic-revisions",
-      "/dashboards/ahj-tracker",
-      "/dashboards/utility-tracker",
-      "/dashboards/pi-timeline",
-      // Equipment catalog
-      "/dashboards/catalog",
-      "/dashboards/product-catalog",
-      "/dashboards/submit-product",
-      "/api/projects",
-      "/api/bom",
-      "/api/catalog",
-      "/api/products",
-      "/api/service",
-      "/api/zuper",
-      "/api/activity/log",
-      "/api/inventory",
-      "/api/bugs",
-      "/api/ahj",
-      "/api/utility",
-      // Deals
-      "/dashboards/deals",
-      "/api/deals",
-      // Design review
-      "/dashboards/reviews",
-      "/api/reviews",
-      // Install photo review
-      "/dashboards/inspections",
-      "/api/install-review",
-      // Solar Surveyor
-      "/api/solar",
-      // SOP Guide
-      "/sop",
-      "/api/sop",
-      // IDR Meeting Hub
-      "/dashboards/idr-meeting",
-      "/api/idr-meeting",
-      // Comms
-      "/dashboards/comms",
-      "/api/comms",
-    ],
-    canScheduleSurveys: true,
-    canScheduleInstalls: true,
-    canScheduleInspections: true,
-    canSyncZuper: true,
-    canManageUsers: false,
-    canManageAvailability: false,
-    canEditDesign: false,
-    canEditPermitting: false,
-    canViewAllLocations: true,
-  },
-  TECH_OPS: {
-    allowedRoutes: [
-      "/",
-      "/suites/design-engineering",
-      "/suites/permitting-interconnection",
-      "/suites/operations",
-      "/suites/accounting",
-      "/dashboards/site-survey",
-      "/dashboards/design",
-      "/dashboards/permitting",
-      "/dashboards/inspections",
-      "/dashboards/interconnection",
-      "/dashboards/construction",
-      "/dashboards/construction-metrics",
-      "/dashboards/inspection-metrics",
-      "/dashboards/survey-metrics",
-      "/dashboards/incentives",
-      "/api/hubspot/qc-metrics",
-      "/dashboards/scheduler",
-      "/dashboards/forecast-schedule",
-      "/dashboards/site-survey-scheduler",
-      "/dashboards/construction-scheduler",
-      "/dashboards/inspection-scheduler",
-      "/dashboards/service-scheduler",
-      "/dashboards/dnr-scheduler",
-      "/dashboards/equipment-backlog",
-      "/dashboards/service-backlog",
-      "/dashboards/service",
-      "/dashboards/service-tickets",
-      "/dashboards/service-catalog",
-      "/dashboards/service-customers",
-      "/dashboards/inventory",
-      "/dashboards/timeline",
-      "/dashboards/bom",
-      "/dashboards/bom/history",
-      "/dashboards/pricing-calculator",
-      "/dashboards/pe-deals",
-      "/api/accounting",
-      "/dashboards/dnr",
-      "/dashboards/roofing",
-      "/dashboards/roofing-scheduler",
-      // D&E Suite dashboards
-      "/dashboards/de-overview",
-      "/dashboards/plan-review",
-      "/dashboards/pending-approval",
-      "/dashboards/design-revisions",
-      "/dashboards/de-metrics",
-      "/dashboards/clipping-analytics",
-      "/dashboards/ahj-requirements",
-      "/dashboards/utility-design-requirements",
-      "/dashboards/solar-surveyor",
-      "/dashboards/solar-designer",
-      "/api/solar-designer",
-      // P&I Suite dashboards
-      "/dashboards/pi-overview",
-      "/dashboards/pi-metrics",
-      "/dashboards/pi-action-queue",
-      "/dashboards/pi-revisions",
-      "/dashboards/pi-permit-action-queue",
-      "/dashboards/pi-ic-action-queue",
-      "/dashboards/pi-permit-revisions",
-      "/dashboards/pi-ic-revisions",
-      "/dashboards/ahj-tracker",
-      "/dashboards/utility-tracker",
-      "/dashboards/pi-timeline",
-      // Equipment catalog
-      "/dashboards/catalog",
-      "/dashboards/product-catalog",
-      "/dashboards/submit-product",
-      "/api/projects",
-      "/api/bom",
-      "/api/catalog",
-      "/api/products",
-      "/api/service",
-      "/api/zuper",
-      "/api/activity/log",
-      "/api/inventory",
-      "/api/bugs",
-      "/api/ahj",
-      "/api/utility",
-      // Deals
-      "/dashboards/deals",
-      "/dashboards/design-pipeline-funnel",
-      "/api/deals",
-      // Design review
-      "/dashboards/reviews",
-      "/api/reviews",
-      // Install photo review
-      "/dashboards/inspections",
-      "/api/install-review",
-      // Solar Surveyor
-      "/api/solar",
-      // AI hub
-      "/dashboards/ai",
-      // SOP Guide
-      "/sop",
-      "/api/sop",
-      // Forecasting API (read-only, needed for scheduler ghost events)
-      "/api/forecasting",
-      // IDR Meeting Hub
-      "/dashboards/idr-meeting",
-      "/api/idr-meeting",
-      // Comms
-      "/dashboards/comms",
-      "/api/comms",
-    ],
-    canScheduleSurveys: false,
-    canScheduleInstalls: false,
-    canScheduleInspections: false,
-    canSyncZuper: false,
-    canManageUsers: false,
-    canManageAvailability: true, // Can manage their own availability
-    canEditDesign: false,
-    canEditPermitting: false,
-    canViewAllLocations: false, // Only their location
-  },
-  DESIGNER: {
-    // Legacy role: normalized to TECH_OPS at runtime
-    allowedRoutes: [
-      "/",
-      "/suites/operations",
-      "/suites/design-engineering",
-      "/suites/permitting-interconnection",
-      "/dashboards/site-survey",
-      "/dashboards/design",
-      "/dashboards/permitting",
-      "/dashboards/inspections",
-      "/dashboards/interconnection",
-      "/dashboards/construction",
-      "/dashboards/construction-metrics",
-      "/dashboards/inspection-metrics",
-      "/dashboards/survey-metrics",
-      "/dashboards/incentives",
-      "/api/hubspot/qc-metrics",
-      // D&E Suite dashboards
-      "/dashboards/de-overview",
-      "/dashboards/plan-review",
-      "/dashboards/pending-approval",
-      "/dashboards/design-revisions",
-      "/dashboards/de-metrics",
-      "/dashboards/clipping-analytics",
-      "/dashboards/ahj-requirements",
-      "/dashboards/utility-design-requirements",
-      "/dashboards/solar-surveyor",
-      // P&I Suite dashboards
-      "/dashboards/pi-overview",
-      "/dashboards/pi-metrics",
-      "/dashboards/pi-action-queue",
-      "/dashboards/pi-revisions",
-      "/dashboards/pi-permit-action-queue",
-      "/dashboards/pi-ic-action-queue",
-      "/dashboards/pi-permit-revisions",
-      "/dashboards/pi-ic-revisions",
-      "/dashboards/ahj-tracker",
-      "/dashboards/utility-tracker",
-      "/dashboards/pi-timeline",
-      "/api/projects",
-      "/api/activity/log",
-      "/api/bugs",
-      "/api/ahj",
-      "/api/utility",
-      // Deals
-      "/dashboards/deals",
-      "/api/deals",
-      // Design review
-      "/dashboards/reviews",
-      "/api/reviews",
-      // Solar Surveyor
-      "/api/solar",
-      // SOP Guide
-      "/sop",
-      "/api/sop",
-      // IDR Meeting Hub
-      "/dashboards/idr-meeting",
-      "/api/idr-meeting",
-    ],
-    canScheduleSurveys: false,
-    canScheduleInstalls: false,
-    canScheduleInspections: false,
-    canSyncZuper: false,
-    canManageUsers: false,
-    canManageAvailability: false,
-    canEditDesign: true,
-    canEditPermitting: false,
-    canViewAllLocations: true,
-  },
-  PERMITTING: {
-    // Legacy role: normalized to TECH_OPS at runtime
-    allowedRoutes: [
-      "/",
-      "/suites/operations",
-      "/suites/design-engineering",
-      "/suites/permitting-interconnection",
-      "/dashboards/site-survey",
-      "/dashboards/design",
-      "/dashboards/permitting",
-      "/dashboards/inspections",
-      "/dashboards/interconnection",
-      "/dashboards/construction",
-      "/dashboards/construction-metrics",
-      "/dashboards/inspection-metrics",
-      "/dashboards/survey-metrics",
-      "/dashboards/incentives",
-      "/api/hubspot/qc-metrics",
-      // D&E Suite dashboards
-      "/dashboards/de-overview",
-      "/dashboards/plan-review",
-      "/dashboards/pending-approval",
-      "/dashboards/design-revisions",
-      "/dashboards/de-metrics",
-      "/dashboards/clipping-analytics",
-      "/dashboards/ahj-requirements",
-      "/dashboards/utility-design-requirements",
-      "/dashboards/solar-surveyor",
-      // P&I Suite dashboards
-      "/dashboards/pi-overview",
-      "/dashboards/pi-metrics",
-      "/dashboards/pi-action-queue",
-      "/dashboards/pi-revisions",
-      "/dashboards/pi-permit-action-queue",
-      "/dashboards/pi-ic-action-queue",
-      "/dashboards/pi-permit-revisions",
-      "/dashboards/pi-ic-revisions",
-      "/dashboards/ahj-tracker",
-      "/dashboards/utility-tracker",
-      "/dashboards/pi-timeline",
-      "/api/projects",
-      "/api/activity/log",
-      "/api/bugs",
-      "/api/ahj",
-      "/api/utility",
-      // Deals
-      "/dashboards/deals",
-      "/api/deals",
-      // Solar Surveyor
-      "/api/solar",
-      // SOP Guide
-      "/sop",
-      "/api/sop",
-      // IDR Meeting Hub
-      "/dashboards/idr-meeting",
-      "/api/idr-meeting",
-    ],
-    canScheduleSurveys: false,
-    canScheduleInstalls: false,
-    canScheduleInspections: false,
-    canSyncZuper: false,
-    canManageUsers: false,
-    canManageAvailability: false,
-    canEditDesign: false,
-    canEditPermitting: true,
-    canViewAllLocations: true,
-  },
-  VIEWER: {
-    // Unassigned role (new users default here until explicitly assigned)
-    allowedRoutes: [
-      "/",
-      "/unassigned",
-      "/dashboards/deals",
-      "/api/deals",
-      "/api/projects",
-      "/api/activity/log",
-      "/api/user/me",
-      "/api/solar",
-      // SOP Guide
-      "/sop",
-      "/api/sop",
-      // IDR Meeting Hub
-      "/dashboards/idr-meeting",
-      "/api/idr-meeting",
-      // Comms
-      "/dashboards/comms",
-      "/api/comms",
-    ],
-    canScheduleSurveys: false,
-    canScheduleInstalls: false,
-    canScheduleInspections: false,
-    canSyncZuper: false,
-    canManageUsers: false,
-    canManageAvailability: false,
-    canEditDesign: false,
-    canEditPermitting: false,
-    canViewAllLocations: true,
-  },
-  SALES_MANAGER: {
-    allowedRoutes: [
-      "/",
-      "/suites/operations",
-      "/suites/intelligence",
-      "/suites/executive",
-      "/suites/accounting",
-      // Sales & deals dashboards
-      "/dashboards/sales",
-      "/dashboards/deals",
-      "/dashboards/pipeline",
-      "/dashboards/site-survey-scheduler",
-      "/dashboards/forecast-schedule",
-      "/dashboards/forecast-timeline",
-      "/dashboards/forecast-accuracy",
-      // Operations visibility
-      "/dashboards/scheduler",
-      "/dashboards/construction-scheduler",
-      "/dashboards/inspection-scheduler",
-      "/dashboards/timeline",
-      "/dashboards/construction",
-      "/dashboards/survey-metrics",
-      // Intelligence dashboards
-      "/dashboards/at-risk",
-      "/dashboards/qc",
-      "/dashboards/alerts",
-      "/dashboards/optimizer",
-      "/dashboards/capacity",
-      "/dashboards/pe",
-      "/dashboards/pe-deals",
-      "/api/accounting",
-      "/dashboards/pricing-calculator",
-      "/dashboards/project-management",
-      // Executive dashboards
-      "/dashboards/executive",
-      "/dashboards/executive-calendar",
-      "/dashboards/revenue",
-      "/dashboards/locations",
-      "/dashboards/command-center",
-      // API access
-      "/api/projects",
-      "/api/deals",
-      "/api/forecasting",
-      "/api/revenue-goals",
-      "/api/zuper/availability",
-      "/api/zuper/status",
-      "/api/zuper/jobs/lookup",
-      "/api/zuper/jobs/schedule",
-      "/api/activity/log",
-      "/api/bugs",
-      // SOP Guide
-      "/sop",
-      "/api/sop",
-      // IDR Meeting Hub
-      "/dashboards/idr-meeting",
-      "/api/idr-meeting",
-      // Comms
-      "/dashboards/comms",
-      "/api/comms",
-    ],
-    canScheduleSurveys: true,
-    canScheduleInstalls: false,
-    canScheduleInspections: false,
-    canSyncZuper: true,
-    canManageUsers: false,
-    canManageAvailability: false,
-    canEditDesign: false,
-    canEditPermitting: false,
-    canViewAllLocations: true,
-  },
-  SALES: {
-    allowedRoutes: [
-      "/",
-      "/dashboards/site-survey-scheduler",
-      "/dashboards/sales",
-      "/dashboards/deals",
-      "/api/deals",
-      "/api/projects",
-      "/api/zuper/availability",
-      "/api/zuper/status",
-      "/api/zuper/jobs/lookup",
-      "/api/zuper/jobs/schedule",
-      "/api/zuper/my-availability",
-      "/api/bugs",
-      // SOP Guide
-      "/sop",
-      "/api/sop",
-      // IDR Meeting Hub
-      "/dashboards/idr-meeting",
-      "/api/idr-meeting",
-      // Comms
-      "/dashboards/comms",
-      "/api/comms",
-    ],
-    canScheduleSurveys: true,
-    canScheduleInstalls: false,
-    canScheduleInspections: false,
-    canSyncZuper: true,
-    canManageUsers: false,
-    canManageAvailability: false,
-    canEditDesign: false,
-    canEditPermitting: false,
-    canViewAllLocations: false, // SALES sees only their location
-  },
-};
+export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = Object.fromEntries(
+  (Object.keys(ROLES) as UserRole[]).map((role) => {
+    const def = ROLES[role];
+    const caps = def.defaultCapabilities;
+    return [
+      role,
+      {
+        allowedRoutes: def.allowedRoutes,
+        canScheduleSurveys: caps.canScheduleSurveys,
+        canScheduleInstalls: caps.canScheduleInstalls,
+        canScheduleInspections: caps.canScheduleInspections,
+        canSyncZuper: caps.canSyncZuper,
+        canManageUsers: caps.canManageUsers,
+        canManageAvailability: caps.canManageAvailability,
+        canEditDesign: caps.canEditDesign,
+        canEditPermitting: caps.canEditPermitting,
+        canViewAllLocations: caps.canViewAllLocations,
+      },
+    ];
+  })
+) as Record<UserRole, RolePermissions>;
 
 /**
- * Get the default landing route for a role.
- * Prefers suite pages, then dashboard pages, then first explicit route.
- */
-export function getDefaultRouteForRole(role: UserRole): string {
-  const effectiveRole = normalizeRole(role);
-  const permissions = ROLE_PERMISSIONS[effectiveRole];
-  if (!permissions || permissions.allowedRoutes.includes("*")) return "/";
-
-  const suiteRoute = permissions.allowedRoutes.find((r) => r.startsWith("/suites/"));
-  if (suiteRoute) return suiteRoute;
-
-  const dashboardRoute = permissions.allowedRoutes.find((r) => r.startsWith("/dashboards/"));
-  if (dashboardRoute) return dashboardRoute;
-
-  return permissions.allowedRoutes[0] || "/";
-}
-
-/**
- * Routes restricted to ADMIN role only.
+ * Routes restricted to ADMIN role only. Kept here as the authoritative source
+ * — `@/lib/user-access` imports these for `isPathAllowedByAccess`.
+ *
  * Policy: new pages/features should be added here first (admin-only) until
  * explicitly approved for broader roles.
  */
@@ -1049,38 +109,50 @@ export const ADMIN_ONLY_EXCEPTIONS: string[] = [
   "/api/catalog/upload-photo",
 ];
 
-
 /**
- * Check if a user role can access a specific route
+ * Get the default landing route for a role.
+ * Prefers suite pages, then dashboard pages, then first explicit route.
+ *
+ * @deprecated Prefer `ROLES[role].allowedRoutes` and derive landing as needed.
  */
-export function canAccessRoute(role: UserRole, route: string): boolean {
+export function getDefaultRouteForRole(role: UserRole): string {
   const effectiveRole = normalizeRole(role);
   const permissions = ROLE_PERMISSIONS[effectiveRole];
-  if (!permissions) return false;
+  if (!permissions || permissions.allowedRoutes.includes("*")) return "/";
 
-  // Check admin-only routes first — only ADMIN can access these
-  // But allow specific sub-routes that are exempted (e.g. /dashboards/catalog/new)
-  const isAdminOnly = ADMIN_ONLY_ROUTES.some((restricted) => route === restricted || route.startsWith(`${restricted}/`));
-  if (isAdminOnly) {
-    const isExempted = ADMIN_ONLY_EXCEPTIONS.some((exempted) => route === exempted || route.startsWith(`${exempted}/`));
-    if (!isExempted) {
-      return effectiveRole === "ADMIN";
-    }
-  }
+  const suiteRoute = permissions.allowedRoutes.find((r) => r.startsWith("/suites/"));
+  if (suiteRoute) return suiteRoute;
 
-  // Roles with "*" can access all routes
-  if (permissions.allowedRoutes.includes("*")) return true;
+  const dashboardRoute = permissions.allowedRoutes.find((r) => r.startsWith("/dashboards/"));
+  if (dashboardRoute) return dashboardRoute;
 
-  // Check specific routes (segment-boundary matching to prevent /api/catalog matching /api/catalogue)
-  return permissions.allowedRoutes.some(allowed =>
-    allowed === "/" ? route === "/" : (route === allowed || route.startsWith(`${allowed}/`))
-  );
+  return permissions.allowedRoutes[0] || "/";
 }
 
 /**
- * Check if user can schedule a specific type
+ * Check if a user role can access a specific route.
+ *
+ * Delegates to `isPathAllowedByAccess` in `@/lib/user-access` so the single-role
+ * legacy API matches the multi-role semantics exactly.
+ *
+ * @deprecated Prefer `isPathAllowedByAccess(resolveUserAccess(user), path)`.
  */
-export function canScheduleType(role: UserRole, scheduleType: "survey" | "pre-sale-survey" | "installation" | "inspection"): boolean {
+export function canAccessRoute(role: UserRole, route: string): boolean {
+  if (!ROLES[role]) return false;
+  const access = resolveUserAccess({ roles: [role], role });
+  return isPathAllowedByAccess(access, route);
+}
+
+/**
+ * Check if user can schedule a specific type.
+ *
+ * @deprecated Prefer `resolveUserAccess(user).capabilities.canScheduleSurveys`
+ * etc. from `@/lib/user-access`.
+ */
+export function canScheduleType(
+  role: UserRole,
+  scheduleType: "survey" | "pre-sale-survey" | "installation" | "inspection"
+): boolean {
   const permissions = ROLE_PERMISSIONS[normalizeRole(role)];
   if (!permissions) return false;
 
@@ -1098,16 +170,24 @@ export function canScheduleType(role: UserRole, scheduleType: "survey" | "pre-sa
 }
 
 /**
- * Check if user can perform any scheduling actions (legacy support)
+ * Check if user can perform any scheduling actions (legacy support).
+ *
+ * @deprecated Prefer `resolveUserAccess(user).capabilities` from `@/lib/user-access`.
  */
 export function canSchedule(role: UserRole): boolean {
   const permissions = ROLE_PERMISSIONS[normalizeRole(role)];
   if (!permissions) return false;
-  return permissions.canScheduleSurveys || permissions.canScheduleInstalls || permissions.canScheduleInspections;
+  return (
+    permissions.canScheduleSurveys ||
+    permissions.canScheduleInstalls ||
+    permissions.canScheduleInspections
+  );
 }
 
 /**
- * Check if user can sync to Zuper
+ * Check if user can sync to Zuper.
+ *
+ * @deprecated Prefer `resolveUserAccess(user).capabilities.canSyncZuper`.
  */
 export function canSyncZuper(role: UserRole): boolean {
   return ROLE_PERMISSIONS[normalizeRole(role)]?.canSyncZuper ?? false;

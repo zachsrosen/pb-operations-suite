@@ -2,7 +2,7 @@ const mockAuth = jest.fn();
 const mockHeaders = jest.fn();
 const mockGetUserByEmail = jest.fn();
 const mockGetAllUsers = jest.fn();
-const mockUpdateUserRole = jest.fn();
+const mockUpdateUserRoles = jest.fn();
 const mockFindUnique = jest.fn();
 const mockLogAdminActivity = jest.fn();
 const mockExtractRequestContext = jest.fn(() => ({}));
@@ -22,7 +22,7 @@ jest.mock("@/lib/db", () => ({
     },
   },
   getAllUsers: () => mockGetAllUsers(),
-  updateUserRole: (...args: [string, string]) => mockUpdateUserRole(...args),
+  updateUserRoles: (...args: [string, string[]]) => mockUpdateUserRoles(...args),
   UserRole: {},
   getUserByEmail: (email: string) => mockGetUserByEmail(email),
 }));
@@ -55,12 +55,13 @@ describe("PUT /api/admin/users", () => {
       id: "user-1",
       email: "ops@photonbrothers.com",
       role: "VIEWER",
+      roles: ["VIEWER"],
       allowedLocations: [],
     });
 
     const response = await PUT(new NextRequest("http://localhost/api/admin/users", {
       method: "PUT",
-      body: JSON.stringify({ userId: "user-1", role: "OPERATIONS" }),
+      body: JSON.stringify({ userId: "user-1", roles: ["OPERATIONS"] }),
       headers: { "content-type": "application/json" },
     }));
 
@@ -68,7 +69,7 @@ describe("PUT /api/admin/users", () => {
     await expect(response.json()).resolves.toMatchObject({
       requiresLocations: true,
     });
-    expect(mockUpdateUserRole).not.toHaveBeenCalled();
+    expect(mockUpdateUserRoles).not.toHaveBeenCalled();
   });
 
   it("allows switching to a global role without locations", async () => {
@@ -76,25 +77,27 @@ describe("PUT /api/admin/users", () => {
       id: "user-2",
       email: "sales.manager@photonbrothers.com",
       role: "VIEWER",
+      roles: ["VIEWER"],
       allowedLocations: [],
     });
-    mockUpdateUserRole.mockResolvedValue({
+    mockUpdateUserRoles.mockResolvedValue({
       id: "user-2",
       email: "sales.manager@photonbrothers.com",
       role: "SALES_MANAGER",
+      roles: ["SALES_MANAGER"],
     });
 
     const response = await PUT(new NextRequest("http://localhost/api/admin/users", {
       method: "PUT",
-      body: JSON.stringify({ userId: "user-2", role: "SALES_MANAGER" }),
+      body: JSON.stringify({ userId: "user-2", roles: ["SALES_MANAGER"] }),
       headers: { "content-type": "application/json" },
     }));
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      user: { role: "SALES_MANAGER" },
+      user: { roles: ["SALES_MANAGER"] },
     });
-    expect(mockUpdateUserRole).toHaveBeenCalledWith("user-2", "SALES_MANAGER");
+    expect(mockUpdateUserRoles).toHaveBeenCalledWith("user-2", ["SALES_MANAGER"]);
   });
 
   it("allows switching to a location-scoped role when locations are already assigned", async () => {
@@ -102,24 +105,96 @@ describe("PUT /api/admin/users", () => {
       id: "user-3",
       email: "ops2@photonbrothers.com",
       role: "VIEWER",
+      roles: ["VIEWER"],
       allowedLocations: ["Westminster"],
     });
-    mockUpdateUserRole.mockResolvedValue({
+    mockUpdateUserRoles.mockResolvedValue({
       id: "user-3",
       email: "ops2@photonbrothers.com",
       role: "OPERATIONS",
+      roles: ["OPERATIONS"],
     });
 
     const response = await PUT(new NextRequest("http://localhost/api/admin/users", {
       method: "PUT",
-      body: JSON.stringify({ userId: "user-3", role: "OPERATIONS" }),
+      body: JSON.stringify({ userId: "user-3", roles: ["OPERATIONS"] }),
       headers: { "content-type": "application/json" },
     }));
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
-      user: { role: "OPERATIONS" },
+      user: { roles: ["OPERATIONS"] },
     });
-    expect(mockUpdateUserRole).toHaveBeenCalledWith("user-3", "OPERATIONS");
+    expect(mockUpdateUserRoles).toHaveBeenCalledWith("user-3", ["OPERATIONS"]);
+  });
+
+  it("accepts a multi-role assignment", async () => {
+    mockFindUnique.mockResolvedValue({
+      id: "user-4",
+      email: "dual@photonbrothers.com",
+      role: "VIEWER",
+      roles: ["VIEWER"],
+      allowedLocations: ["Westminster"],
+    });
+    mockUpdateUserRoles.mockResolvedValue({
+      id: "user-4",
+      email: "dual@photonbrothers.com",
+      role: "SERVICE",
+      roles: ["SERVICE", "OPERATIONS"],
+    });
+
+    const response = await PUT(new NextRequest("http://localhost/api/admin/users", {
+      method: "PUT",
+      body: JSON.stringify({ userId: "user-4", roles: ["SERVICE", "OPERATIONS"] }),
+      headers: { "content-type": "application/json" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mockUpdateUserRoles).toHaveBeenCalledWith("user-4", ["SERVICE", "OPERATIONS"]);
+  });
+
+  it("rejects an empty roles array", async () => {
+    const response = await PUT(new NextRequest("http://localhost/api/admin/users", {
+      method: "PUT",
+      body: JSON.stringify({ userId: "user-5", roles: [] }),
+      headers: { "content-type": "application/json" },
+    }));
+
+    expect(response.status).toBe(400);
+    expect(mockUpdateUserRoles).not.toHaveBeenCalled();
+    expect(mockFindUnique).not.toHaveBeenCalled();
+  });
+
+  it("rejects assignment to a legacy role", async () => {
+    const response = await PUT(new NextRequest("http://localhost/api/admin/users", {
+      method: "PUT",
+      body: JSON.stringify({ userId: "user-6", roles: ["OWNER"] }),
+      headers: { "content-type": "application/json" },
+    }));
+
+    expect(response.status).toBe(400);
+    expect(mockUpdateUserRoles).not.toHaveBeenCalled();
+  });
+
+  it("requires locations when ANY role is location-scoped", async () => {
+    mockFindUnique.mockResolvedValue({
+      id: "user-7",
+      email: "multi@photonbrothers.com",
+      role: "VIEWER",
+      roles: ["VIEWER"],
+      allowedLocations: [],
+    });
+
+    const response = await PUT(new NextRequest("http://localhost/api/admin/users", {
+      method: "PUT",
+      body: JSON.stringify({ userId: "user-7", roles: ["SERVICE", "OPERATIONS"] }),
+      headers: { "content-type": "application/json" },
+    }));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toMatchObject({
+      requiresLocations: true,
+    });
+    expect(mockUpdateUserRoles).not.toHaveBeenCalled();
   });
 });

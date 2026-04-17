@@ -3,8 +3,18 @@ import { auth } from "@/auth";
 import { prisma, getUserByEmail, logActivity } from "@/lib/db";
 import { normalizeRole, type UserRole } from "@/lib/role-permissions";
 
-function withEffectiveRoleCookie(response: NextResponse, role: string): NextResponse {
-  response.cookies.set("pb_effective_role", role, {
+function withEffectiveRoleCookies(response: NextResponse, roles: UserRole[]): NextResponse {
+  // Multi-role cookie — middleware prefers this when present.
+  response.cookies.set("pb_effective_roles", JSON.stringify(roles), {
+    path: "/",
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 8,
+  });
+  // Back-compat single-role cookie for one release window so old sessions/middleware
+  // paths still resolve a role until all readers flip over.
+  response.cookies.set("pb_effective_role", roles[0] ?? "VIEWER", {
     path: "/",
     httpOnly: true,
     sameSite: "lax",
@@ -27,10 +37,26 @@ function withImpersonationStateCookie(response: NextResponse, isImpersonating: b
 
 function withRoleAndImpersonationCookies(
   response: NextResponse,
-  role: string,
+  roles: UserRole[],
   isImpersonating: boolean
 ): NextResponse {
-  return withImpersonationStateCookie(withEffectiveRoleCookie(response, role), isImpersonating);
+  return withImpersonationStateCookie(withEffectiveRoleCookies(response, roles), isImpersonating);
+}
+
+function resolveTargetRoles(user: { role: string; roles?: UserRole[] | null }): UserRole[] {
+  const raw: UserRole[] = user.roles && user.roles.length > 0
+    ? user.roles
+    : [user.role as UserRole];
+  const normalized = raw.map((r) => normalizeRole(r));
+  // Dedup, preserve order.
+  const seen = new Set<UserRole>();
+  const out: UserRole[] = [];
+  for (const r of normalized) {
+    if (seen.has(r)) continue;
+    seen.add(r);
+    out.push(r);
+  }
+  return out;
 }
 
 /**
@@ -100,7 +126,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const normalizedTargetRole = normalizeRole(targetUser.role as UserRole);
+    const normalizedTargetRoles = resolveTargetRoles(targetUser as { role: string; roles?: UserRole[] | null });
+    const normalizedTargetRole = normalizedTargetRoles[0] ?? normalizeRole(targetUser.role as UserRole);
     return withRoleAndImpersonationCookies(NextResponse.json({
       success: true,
       impersonating: {
@@ -108,13 +135,14 @@ export async function POST(request: NextRequest) {
         email: targetUser.email,
         name: targetUser.name,
         role: normalizedTargetRole,
+        roles: normalizedTargetRoles,
       },
       admin: {
         id: adminUser.id,
         email: adminUser.email,
       },
       startedAt: new Date().toISOString(),
-    }), normalizedTargetRole, true);
+    }), normalizedTargetRoles, true);
   } catch (error) {
     console.error("Error starting impersonation:", error);
     return NextResponse.json({ error: "Failed to start impersonation" }, { status: 500 });
@@ -141,7 +169,7 @@ export async function DELETE() {
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
-  const normalizedRole = normalizeRole(user.role as UserRole);
+  const adminRoles = resolveTargetRoles(user as { role: string; roles?: UserRole[] | null });
 
   // Only admins can manage impersonation state
   if (user.role !== "ADMIN") {
@@ -153,7 +181,7 @@ export async function DELETE() {
   if (!isCurrentlyImpersonating) {
     return withRoleAndImpersonationCookies(
       NextResponse.json({ success: true, message: "Not currently impersonating" }),
-      normalizedRole,
+      adminRoles,
       false
     );
   }
@@ -193,7 +221,7 @@ export async function DELETE() {
       success: true,
       message: "Impersonation ended",
       endedAt: new Date().toISOString(),
-    }), normalizedRole, false);
+    }), adminRoles, false);
   } catch (error) {
     console.error("Error ending impersonation:", error);
     return NextResponse.json({ error: "Failed to end impersonation" }, { status: 500 });
@@ -224,12 +252,12 @@ export async function GET() {
   if (user.role !== "ADMIN") {
     return NextResponse.json({ isImpersonating: false });
   }
-  const normalizedAdminRole = normalizeRole(user.role as UserRole);
+  const normalizedAdminRoles = resolveTargetRoles(user as { role: string; roles?: UserRole[] | null });
 
   if (!user.impersonatingUserId) {
     return withRoleAndImpersonationCookies(
       NextResponse.json({ isImpersonating: false }),
-      normalizedAdminRole,
+      normalizedAdminRoles,
       false
     );
   }
@@ -247,12 +275,13 @@ export async function GET() {
     });
     return withRoleAndImpersonationCookies(
       NextResponse.json({ isImpersonating: false }),
-      normalizedAdminRole,
+      normalizedAdminRoles,
       false
     );
   }
 
-  const normalizedTargetRole = normalizeRole(targetUser.role as UserRole);
+  const normalizedTargetRoles = resolveTargetRoles(targetUser as { role: string; roles?: UserRole[] | null });
+  const normalizedTargetRole = normalizedTargetRoles[0] ?? normalizeRole(targetUser.role as UserRole);
   return withRoleAndImpersonationCookies(NextResponse.json({
     isImpersonating: true,
     impersonating: {
@@ -260,11 +289,12 @@ export async function GET() {
       email: targetUser.email,
       name: targetUser.name,
       role: normalizedTargetRole,
+      roles: normalizedTargetRoles,
     },
     admin: {
       id: user.id,
       email: user.email,
       name: user.name,
     },
-  }), normalizedTargetRole, true);
+  }), normalizedTargetRoles, true);
 }

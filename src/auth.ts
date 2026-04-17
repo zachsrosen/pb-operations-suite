@@ -20,6 +20,7 @@ declare module "next-auth" {
       name?: string | null;
       image?: string | null;
       role?: string;
+      roles?: string[];
     };
   }
 }
@@ -27,6 +28,7 @@ declare module "next-auth" {
 declare module "next-auth/jwt" {
   interface JWT {
     role?: string;
+    roles?: string[];
     roleSyncedAt?: number;
     accessToken?: string;
     refreshToken?: string;
@@ -70,12 +72,26 @@ async function syncRoleToToken(token: JWT): Promise<JWT> {
       image: typeof token.picture === "string" ? token.picture : undefined,
     }, { touchLastLogin: false });
 
-    token.role = normalizeRole((dbUser?.role || token.role || "VIEWER") as UserRole);
+    // Prefer the multi-role array if it's populated; fall back to the single
+    // `role` column for Phase 1 back-compat (synthesize a 1-element array).
+    const dbRoles = dbUser?.roles && dbUser.roles.length > 0 ? dbUser.roles : null;
+    const rolesRaw: UserRole[] = dbRoles
+      ? (dbRoles as UserRole[])
+      : dbUser?.role
+        ? [dbUser.role as UserRole]
+        : token.role
+          ? [token.role as UserRole]
+          : ["VIEWER" as UserRole];
+    const normalizedRoles = rolesRaw.map((r) => normalizeRole(r));
+    token.roles = normalizedRoles;
+    token.role = normalizedRoles[0] ?? "VIEWER";
     token.roleSyncedAt = Date.now();
     return token;
   } catch (error) {
     console.error("[auth] Failed to sync role to token:", error);
-    token.role = normalizeRole((token.role || "VIEWER") as UserRole);
+    const fallback = normalizeRole((token.role || "VIEWER") as UserRole);
+    token.role = fallback;
+    token.roles = token.roles && token.roles.length > 0 ? token.roles : [fallback];
     return token;
   }
 }
@@ -155,6 +171,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       if (token.role) {
         session.user.role = token.role as string;
       }
+      if (token.roles && Array.isArray(token.roles)) {
+        session.user.roles = token.roles;
+      } else if (token.role) {
+        // Phase 1 back-compat: synthesize roles[] if JWT predates multi-role.
+        session.user.roles = [token.role as string];
+      }
       // Note: accessToken intentionally NOT forwarded to session.user — it stays
       // server-side in the JWT only. API routes read it via getToken({ req }).
       return session;
@@ -184,6 +206,9 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
 
       token.role = normalizeRole((token.role || "VIEWER") as UserRole);
+      if (!token.roles || token.roles.length === 0) {
+        token.roles = [token.role];
+      }
       return token;
     },
   },

@@ -2,11 +2,14 @@ import * as Sentry from "@sentry/nextjs";
 import { auth } from "@/auth";
 import { NextRequest, NextResponse } from "next/server";
 import {
-  canAccessRoute,
   getDefaultRouteForRole,
   normalizeRole,
   type UserRole,
 } from "@/lib/role-permissions";
+import {
+  isPathAllowedByAccess,
+  resolveUserAccess,
+} from "@/lib/user-access";
 import {
   LAST_PATH_COOKIE_NAME,
   resolveCallbackPathFromCookie,
@@ -123,7 +126,33 @@ export default auth((req) => {
 
   const isLoggedIn = !!req.auth;
   const tokenRole = req.auth?.user?.role as UserRole | undefined;
+  // Multi-role JWT — preferred source. Phase-1 transition: older JWTs only
+  // carry `role`, so fall back to `[tokenRole]` when `roles` is absent/empty.
+  const tokenRolesRaw = (req.auth?.user as { roles?: UserRole[] } | undefined)?.roles;
+  const tokenRoles: UserRole[] | undefined =
+    tokenRolesRaw && tokenRolesRaw.length > 0
+      ? tokenRolesRaw
+      : tokenRole
+        ? [tokenRole]
+        : undefined;
   const cookieRole = req.cookies.get("pb_effective_role")?.value as UserRole | undefined;
+  // Multi-role impersonation cookie (Chunk 9 will start writing this). Prefer
+  // when present; fall back to the legacy single-role cookie.
+  const cookieRolesRaw = req.cookies.get("pb_effective_roles")?.value;
+  let cookieRoles: UserRole[] | undefined;
+  if (cookieRolesRaw) {
+    try {
+      const parsed = JSON.parse(cookieRolesRaw);
+      if (Array.isArray(parsed) && parsed.every((r) => typeof r === "string")) {
+        cookieRoles = parsed as UserRole[];
+      }
+    } catch {
+      // Malformed cookie — ignore; fall through to legacy cookie.
+    }
+  }
+  if ((!cookieRoles || cookieRoles.length === 0) && cookieRole) {
+    cookieRoles = [cookieRole];
+  }
   const isImpersonatingCookie = req.cookies.get("pb_is_impersonating")?.value === "1";
   // Impersonation cookie (set server-side, httpOnly) takes precedence only
   // when the authenticated user is ADMIN. This prevents privilege escalation
@@ -148,6 +177,21 @@ export default auth((req) => {
     !isImpersonatingCookie;
   const rawRole = (shouldUseCookieRole ? cookieRole : isEdgeSyncFallback ? cookieRole : tokenRole) || "VIEWER";
   const userRole = normalizeRole(rawRole);
+  // Mirror the single-role decision into the multi-role array: whichever
+  // source wins above, use the matching multi-role list (cookie vs token).
+  const effectiveRolesSource: UserRole[] =
+    shouldUseCookieRole || isEdgeSyncFallback
+      ? cookieRoles ?? []
+      : tokenRoles ?? [];
+  const effectiveRoles: UserRole[] =
+    effectiveRolesSource.length > 0 ? effectiveRolesSource : [userRole];
+  const access = resolveUserAccess({
+    roles: effectiveRoles,
+    role: effectiveRoles[0] ?? "VIEWER",
+  });
+  const isPathAllowed = (path: string) => isPathAllowedByAccess(access, path);
+  const canAccessRouteAdapter = (_role: UserRole, path: string) =>
+    isPathAllowedByAccess(access, path);
 
   // Set Sentry context for edge-level errors
   Sentry.getCurrentScope().setTag("request_id", requestId);
@@ -233,7 +277,7 @@ export default auth((req) => {
     }
 
     // Enforce role-based API access (check if the role can access this API path)
-    if (!canAccessRoute(userRole, pathname)) {
+    if (!isPathAllowed(pathname)) {
       const response = NextResponse.json(
         { error: "Forbidden - Insufficient permissions" },
         { status: 403 }
@@ -263,7 +307,7 @@ export default auth((req) => {
 
     // 2. Try the last-path cookie
     const lastPath = req.cookies.get(LAST_PATH_COOKIE_NAME)?.value;
-    const resolved = resolveRedirectFromCookie(lastPath, userRole, canAccessRoute);
+    const resolved = resolveRedirectFromCookie(lastPath, userRole, canAccessRouteAdapter);
     if (resolved) {
       return addSecurityHeaders(
         requestId,
@@ -312,7 +356,7 @@ export default auth((req) => {
   // Role-based access control for ALL roles (not just SALES)
   if (isLoggedIn && !isLoginPage) {
     // Check role permissions
-    if (!canAccessRoute(userRole, pathname)) {
+    if (!isPathAllowed(pathname)) {
       // Redirect to their default allowed page
       const defaultRoute = getDefaultRouteForRole(userRole);
       return addSecurityHeaders(requestId, NextResponse.redirect(new URL(defaultRoute, req.url)));
