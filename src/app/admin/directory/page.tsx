@@ -4,53 +4,30 @@ import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
 import { APP_PAGE_ROUTES } from "@/lib/page-directory";
 import { canAccessRoute, type UserRole } from "@/lib/role-permissions";
+import { ROLES } from "@/lib/roles";
 
-const ROLES: UserRole[] = [
-  "ADMIN",
-  "EXECUTIVE",
-  "OPERATIONS_MANAGER",
-  "PROJECT_MANAGER",
-  "OPERATIONS",
-  "SERVICE",
-  "TECH_OPS",
-  "SALES_MANAGER",
-  "SALES",
-  "VIEWER",
-];
+const PICKER_ROLES: UserRole[] = (Object.entries(ROLES) as Array<[UserRole, (typeof ROLES)[UserRole]]>)
+  .filter(([, def]) => def.visibleInPicker)
+  .map(([role]) => role);
 
-const ROLE_LABELS: Record<UserRole, string> = {
-  ADMIN: "ADMIN",
-  EXECUTIVE: "EXECUTIVE",
-  OWNER: "EXECUTIVE",
-  OPERATIONS_MANAGER: "OPS MGR",
-  PROJECT_MANAGER: "PM",
-  OPERATIONS: "OPS",
-  SERVICE: "SERVICE",
-  TECH_OPS: "TECH OPS",
-  SALES: "SALES",
-  SALES_MANAGER: "SALES MGR",
-  VIEWER: "UNASSIGNED",
-  MANAGER: "PM",
-  DESIGNER: "TECH OPS",
-  PERMITTING: "TECH OPS",
+// Static map keeps Tailwind's JIT scanner happy — dynamic string templates
+// like `bg-${color}-500/20` would be purged from the build.
+const BADGE_CLASSES_BY_COLOR: Record<string, string> = {
+  red: "bg-red-500/20 text-red-300 border-red-500/30",
+  amber: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  orange: "bg-orange-500/20 text-orange-300 border-orange-500/30",
+  indigo: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
+  teal: "bg-teal-500/20 text-teal-300 border-teal-500/30",
+  emerald: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+  yellow: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+  cyan: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
+  zinc: "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
 };
 
-const ROLE_STYLES: Record<UserRole, string> = {
-  ADMIN: "bg-red-500/20 text-red-300 border-red-500/30",
-  EXECUTIVE: "bg-amber-500/20 text-amber-300 border-amber-500/30",
-  OWNER: "bg-amber-500/20 text-amber-300 border-amber-500/30",
-  OPERATIONS_MANAGER: "bg-orange-500/20 text-orange-300 border-orange-500/30",
-  PROJECT_MANAGER: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
-  OPERATIONS: "bg-orange-500/20 text-orange-300 border-orange-500/30",
-  SERVICE: "bg-teal-500/20 text-teal-300 border-teal-500/30",
-  TECH_OPS: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-  SALES: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
-  SALES_MANAGER: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
-  VIEWER: "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
-  MANAGER: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
-  DESIGNER: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-  PERMITTING: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-};
+function badgeClassesForRole(role: UserRole): string {
+  const color = ROLES[role]?.badge.color ?? "zinc";
+  return BADGE_CLASSES_BY_COLOR[color] ?? BADGE_CLASSES_BY_COLOR.zinc;
+}
 
 function getSection(path: string): string {
   if (path === "/") return "Root";
@@ -76,7 +53,7 @@ export default async function AdminDirectoryPage() {
   if (!user || user.role !== "ADMIN") redirect("/");
 
   const rows = APP_PAGE_ROUTES.map((path) => {
-    const allowedRoles = ROLES.filter((role) => canAccessRoute(role, path));
+    const allowedRoles = PICKER_ROLES.filter((role) => canAccessRoute(role, path));
     return {
       path,
       section: getSection(path),
@@ -85,7 +62,7 @@ export default async function AdminDirectoryPage() {
     };
   });
 
-  const countsByRole = ROLES.map((role) => ({
+  const countsByRole = PICKER_ROLES.map((role) => ({
     role,
     count: rows.filter((row) => row.allowedRoles.includes(role)).length,
   }));
@@ -106,7 +83,7 @@ export default async function AdminDirectoryPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
           {countsByRole.map(({ role, count }) => (
             <div key={role} className="bg-surface/50 border border-t-border rounded-lg p-3">
-              <div className="text-xs text-muted mb-1">{ROLE_LABELS[role]}</div>
+              <div className="text-xs text-muted mb-1">{ROLES[role].badge.abbrev}</div>
               <div className="text-lg font-semibold">{count}</div>
               <div className="text-[11px] text-muted">routes</div>
             </div>
@@ -141,9 +118,9 @@ export default async function AdminDirectoryPage() {
                         {row.allowedRoles.map((role) => (
                           <span
                             key={`${row.path}-${role}`}
-                            className={`text-[10px] font-medium px-2 py-0.5 rounded border ${ROLE_STYLES[role]}`}
+                            className={`text-[10px] font-medium px-2 py-0.5 rounded border ${badgeClassesForRole(role)}`}
                           >
-                            {ROLE_LABELS[role]}
+                            {ROLES[role].badge.abbrev}
                           </span>
                         ))}
                       </div>

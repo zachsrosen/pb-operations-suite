@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { prisma } from "@/lib/db";
+import { prisma, updateUserRoles, type UserRole } from "@/lib/db";
 
 /**
  * POST /api/admin/fix-role
@@ -51,15 +51,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    // Update user role to ADMIN using Prisma
-    await prisma.user.update({
-      where: { email: session.user.email },
-      data: { role: "ADMIN" },
-    });
+    // Accept either `{ roles: string[] }` or legacy `{ role: string }`. Default
+    // to ["ADMIN"] when neither is provided (preserves original recovery behavior).
+    let newRoles: UserRole[];
+    if (Array.isArray(body?.roles) && body.roles.every((r: unknown) => typeof r === "string") && body.roles.length > 0) {
+      newRoles = body.roles as UserRole[];
+    } else if (typeof body?.role === "string" && body.role.length > 0) {
+      newRoles = [body.role as UserRole];
+    } else {
+      newRoles = ["ADMIN" as UserRole];
+    }
+
+    await updateUserRoles(user.id, newRoles);
 
     return NextResponse.json({
       success: true,
-      message: `Role restored to ADMIN for ${session.user.email}`,
+      message: `Roles restored to [${newRoles.join(", ")}] for ${session.user.email}`,
       rowsUpdated: 1,
     });
   } catch (error) {

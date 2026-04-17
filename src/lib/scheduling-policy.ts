@@ -42,23 +42,70 @@ function addDays(dateYmd: string, days: number): string {
   return utcDate.toISOString().slice(0, 10);
 }
 
-export function resolveEffectiveRoleFromRequest(request: NextRequest, actualRole: UserRole): UserRole {
-  const normalizedActualRole = normalizeRole(actualRole);
-  const cookieRole = parseRole(request.cookies.get("pb_effective_role")?.value);
+function parseRolesCookie(value: string | undefined): UserRole[] | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return null;
+    const out: UserRole[] = [];
+    for (const entry of parsed) {
+      const role = parseRole(typeof entry === "string" ? entry : null);
+      if (role) out.push(role);
+    }
+    return out.length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Multi-role variant of `resolveEffectiveRoleFromRequest`. Reads the new
+ * `pb_effective_roles` cookie (JSON array) and falls back to the legacy
+ * single-role `pb_effective_role` cookie so mid-rollout sessions still resolve.
+ *
+ * Impersonation rules are preserved:
+ *   - Only ADMINs can have their effective roles overridden by the cookie.
+ *   - ADMIN/EXECUTIVE cookie values are ignored (never elevate via cookie).
+ *   - A VIEWER cookie requires `pb_is_impersonating=1` to take effect.
+ */
+export function resolveEffectiveRolesFromRequest(
+  request: NextRequest,
+  actualRoles: UserRole[],
+): UserRole[] {
+  const normalizedActualRoles = actualRoles.map((r) => normalizeRole(r));
+  const isActualAdmin = normalizedActualRoles.includes("ADMIN");
+
+  const cookieRoles =
+    parseRolesCookie(request.cookies.get("pb_effective_roles")?.value) ??
+    (parseRole(request.cookies.get("pb_effective_role")?.value)
+      ? [parseRole(request.cookies.get("pb_effective_role")?.value)!]
+      : null);
+
   const isImpersonating = request.cookies.get("pb_is_impersonating")?.value === "1";
 
-  if (!cookieRole) return normalizedActualRole;
-  if (normalizedActualRole !== "ADMIN") return normalizedActualRole;
+  if (!cookieRoles || cookieRoles.length === 0) return normalizedActualRoles;
+  if (!isActualAdmin) return normalizedActualRoles;
 
-  const normalizedCookieRole = normalizeRole(cookieRole);
-  if (normalizedCookieRole === "ADMIN" || normalizedCookieRole === "EXECUTIVE") {
-    return normalizedActualRole;
+  const normalizedCookieRoles = cookieRoles.map((r) => normalizeRole(r));
+
+  // Never elevate to or stay at ADMIN/EXECUTIVE via cookie.
+  if (normalizedCookieRoles.some((r) => r === "ADMIN" || r === "EXECUTIVE")) {
+    return normalizedActualRoles;
   }
-  if (normalizedCookieRole === "VIEWER" && !isImpersonating) {
-    return normalizedActualRole;
+  // VIEWER-only cookie without the impersonation flag stays as actual.
+  if (
+    normalizedCookieRoles.every((r) => r === "VIEWER") &&
+    !isImpersonating
+  ) {
+    return normalizedActualRoles;
   }
 
-  return normalizedCookieRole;
+  return normalizedCookieRoles;
+}
+
+export function resolveEffectiveRoleFromRequest(request: NextRequest, actualRole: UserRole): UserRole {
+  const resolved = resolveEffectiveRolesFromRequest(request, [actualRole]);
+  return resolved[0] ?? normalizeRole(actualRole);
 }
 
 export function getSalesSurveyLeadTimeError({

@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { ROLES as ROLE_DEFS } from "@/lib/roles";
+import type { UserRole } from "@/generated/prisma/enums";
 
 interface UserPermissions {
   canScheduleSurveys: boolean;
@@ -18,6 +20,7 @@ interface User {
   email: string;
   name: string | null;
   role: string;
+  roles?: string[] | null;
   lastLoginAt: string | null;
   createdAt: string;
   canScheduleSurveys: boolean;
@@ -38,45 +41,44 @@ interface ActivityLog {
   description: string;
 }
 
-const ROLES = ["ADMIN", "EXECUTIVE", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "OPERATIONS", "SERVICE", "TECH_OPS", "SALES_MANAGER", "SALES", "VIEWER"];
+// Canonical picker-eligible roles (visibleInPicker === true), derived from the
+// single source of truth in @/lib/roles. Order follows ROLE_DEFS insertion.
+const PICKER_ROLES: string[] = (Object.entries(ROLE_DEFS) as Array<[string, (typeof ROLE_DEFS)[UserRole]]>)
+  .filter(([, def]) => def.visibleInPicker)
+  .map(([role]) => role);
 
-const ROLE_LABELS: Record<string, string> = {
-  EXECUTIVE: "EXECUTIVE",
-  OWNER: "EXECUTIVE",
-  VIEWER: "UNASSIGNED",
-  MANAGER: "PROJECT_MANAGER",
-  DESIGNER: "TECH_OPS",
-  PERMITTING: "TECH_OPS",
+const getRoleLabel = (role: string): string => {
+  const def = ROLE_DEFS[role as UserRole];
+  return def?.badge.abbrev ?? role;
 };
 
-const getRoleLabel = (role: string): string => ROLE_LABELS[role] || role;
+const getRoleDescription = (role: string): string =>
+  ROLE_DEFS[role as UserRole]?.description ?? "";
 
-const ROLE_DESCRIPTIONS: Record<string, string> = {
-  ADMIN: "Full access, can manage users",
-  EXECUTIVE: "Executive access like Admin, but cannot manage users",
-  OWNER: "Executive access like Admin, but cannot manage users",
-  OPERATIONS_MANAGER: "Crew oversight, scheduling, availability management",
-  PROJECT_MANAGER: "Can access Operations, D&E, P&I, and Intelligence Suites",
-  OPERATIONS: "Only access to Operations Suite",
-  SERVICE: "Only access to Service Suite (tickets, priority queue, service scheduling)",
-  TECH_OPS: "Access to Operations, D&E, and P&I Suites",
-  SALES_MANAGER: "Sales team oversight — Accounting Suite access for pipeline visibility",
-  SALES: "Only access to Site Survey Schedule",
-  VIEWER: "Unassigned — no dashboard access until role is set",
+// Static map — Tailwind's JIT can't expand template literals.
+const ROLE_BADGE_BY_COLOR: Record<string, string> = {
+  red: "bg-red-500/20 text-red-400 border-red-500/30",
+  amber: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  orange: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  indigo: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
+  teal: "bg-teal-500/20 text-teal-400 border-teal-500/30",
+  emerald: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+  yellow: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+  cyan: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+  zinc: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
 };
 
-const ROLE_COLORS: Record<string, string> = {
-  ADMIN: "bg-red-500/20 text-red-400 border-red-500/30",
-  EXECUTIVE: "bg-amber-600/20 text-amber-300 border-amber-500/30",
-  OWNER: "bg-amber-600/20 text-amber-300 border-amber-500/30",
-  OPERATIONS_MANAGER: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-  PROJECT_MANAGER: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
-  OPERATIONS: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-  SERVICE: "bg-teal-500/20 text-teal-400 border-teal-500/30",
-  TECH_OPS: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-  SALES_MANAGER: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-  SALES: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-  VIEWER: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
+const getRoleBadgeClasses = (role: string): string => {
+  const color = ROLE_DEFS[role as UserRole]?.badge.color ?? "zinc";
+  return ROLE_BADGE_BY_COLOR[color] ?? ROLE_BADGE_BY_COLOR.zinc;
+};
+
+// Read the effective role array for a user. Phase-1 back-compat: if `roles`
+// is missing/empty (user created before the Chunk 4 migration ran), fall back
+// to [role].
+const getUserRoles = (user: User): string[] => {
+  if (user.roles && user.roles.length > 0) return user.roles;
+  return user.role ? [user.role] : [];
 };
 
 const LOCATIONS = ["Westminster", "Centennial", "Colorado Springs", "San Luis Obispo", "Camarillo"];
@@ -108,6 +110,8 @@ export default function AdminUsersPage() {
   const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
   const [bulkUpdateRole, setBulkUpdateRole] = useState<string | null>(null);
   const [activityLogs, setActivityLogs] = useState<Record<string, ActivityLog[]>>({});
+  const [rolesEditorUserId, setRolesEditorUserId] = useState<string | null>(null);
+  const [rolesEditorSelection, setRolesEditorSelection] = useState<string[]>([]);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -163,29 +167,59 @@ export default function AdminUsersPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const updateRole = async (userId: string, newRole: string) => {
+  const updateRoles = async (userId: string, newRoles: string[]) => {
+    if (newRoles.length === 0) {
+      showToast("Error: Pick at least one role");
+      return;
+    }
     setUpdating(userId);
     try {
       const response = await fetch("/api/admin/users", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, role: newRole }),
+        body: JSON.stringify({ userId, roles: newRoles }),
       });
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.error || "Failed to update role");
+        throw new Error(data.error || "Failed to update roles");
       }
 
       setUsers(users.map(u =>
-        u.id === userId ? { ...u, role: newRole } : u
+        u.id === userId ? { ...u, roles: newRoles, role: newRoles[0] } : u
       ));
-      showToast(`Role updated to ${getRoleLabel(newRole)}`);
+      showToast(
+        newRoles.length === 1
+          ? `Role updated to ${getRoleLabel(newRoles[0])}`
+          : `Roles updated: ${newRoles.map(getRoleLabel).join(", ")}`
+      );
     } catch (err) {
       showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
     } finally {
       setUpdating(null);
     }
+  };
+
+  const openRolesEditor = (user: User) => {
+    setRolesEditorUserId(user.id);
+    setRolesEditorSelection(getUserRoles(user));
+  };
+
+  const closeRolesEditor = () => {
+    setRolesEditorUserId(null);
+    setRolesEditorSelection([]);
+  };
+
+  const toggleRoleInEditor = (role: string) => {
+    setRolesEditorSelection((prev) =>
+      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+    );
+  };
+
+  const saveRolesEditor = async () => {
+    if (!rolesEditorUserId) return;
+    await updateRoles(rolesEditorUserId, rolesEditorSelection);
+    closeRolesEditor();
   };
 
   const openPermissionsModal = (user: User) => {
@@ -331,7 +365,8 @@ export default function AdminUsersPage() {
         user.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
         user.email.toLowerCase().includes(searchQuery.toLowerCase());
 
-      const matchesRole = selectedRole === "All" || user.role === selectedRole;
+      const matchesRole =
+        selectedRole === "All" || getUserRoles(user).includes(selectedRole);
 
       return matchesSearch && matchesRole;
     });
@@ -389,9 +424,9 @@ export default function AdminUsersPage() {
         throw new Error(data.error || "Failed to update roles");
       }
 
-      // Update local state
+      // Update local state — bulk assignment sets a single role for each user.
       setUsers(users.map(u =>
-        selectedUsers.has(u.id) ? { ...u, role: bulkUpdateRole } : u
+        selectedUsers.has(u.id) ? { ...u, role: bulkUpdateRole, roles: [bulkUpdateRole] } : u
       ));
       showToast(`Updated ${selectedUsers.size} users to ${getRoleLabel(bulkUpdateRole)}`);
       setSelectedUsers(new Set());
@@ -470,6 +505,84 @@ export default function AdminUsersPage() {
           {toast}
         </div>
       )}
+
+      {/* Roles Editor Modal */}
+      {rolesEditorUserId && (() => {
+        const targetUser = users.find((u) => u.id === rolesEditorUserId);
+        if (!targetUser) return null;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={closeRolesEditor} />
+            <div className="relative bg-surface rounded-2xl border border-t-border w-full max-w-md mx-4 p-6 shadow-2xl max-h-[85vh] overflow-y-auto">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-lg font-bold">Edit Roles</h2>
+                  <p className="text-sm text-muted">{targetUser.name || targetUser.email}</p>
+                </div>
+                <button
+                  onClick={closeRolesEditor}
+                  className="p-2 hover:bg-surface-2 rounded-lg transition-colors"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <p className="text-xs text-muted mb-3">
+                Select one or more roles. The user&apos;s effective access is the union of every selected role.
+              </p>
+
+              <div className="space-y-2 mb-6">
+                {PICKER_ROLES.map((role) => {
+                  const checked = rolesEditorSelection.includes(role);
+                  return (
+                    <label
+                      key={role}
+                      className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors border ${
+                        checked
+                          ? "bg-cyan-500/10 border-cyan-500/40"
+                          : "bg-surface-2 border-transparent hover:bg-zinc-750"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleRoleInEditor(role)}
+                        className="mt-1"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-block px-2 py-0.5 rounded border text-xs ${getRoleBadgeClasses(role)}`}>
+                            {getRoleLabel(role)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted mt-1">{getRoleDescription(role)}</p>
+                      </div>
+                    </label>
+                  );
+                })}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={closeRolesEditor}
+                  className="flex-1 px-4 py-2.5 bg-surface-2 hover:bg-surface-2 rounded-lg text-sm font-medium transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveRolesEditor}
+                  disabled={updating === rolesEditorUserId || rolesEditorSelection.length === 0}
+                  className="flex-1 px-4 py-2.5 bg-cyan-600 hover:bg-cyan-700 disabled:bg-cyan-800 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
+                >
+                  {updating === rolesEditorUserId ? "Saving..." : "Save Roles"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Permissions Modal */}
       {editingUser && editPermissions && (
@@ -730,7 +843,7 @@ export default function AdminUsersPage() {
 
           {/* Role Filters */}
           <div className="flex flex-wrap gap-2">
-            {["All", ...ROLES].map(role => (
+            {["All", ...PICKER_ROLES].map(role => (
               <button
                 key={role}
                 onClick={() => setSelectedRole(role)}
@@ -759,7 +872,7 @@ export default function AdminUsersPage() {
                 className="px-3 py-1.5 bg-surface-2 border border-t-border rounded-lg text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
               >
                 <option value="">Select role...</option>
-                {ROLES.map(role => (
+                {PICKER_ROLES.map(role => (
                   <option key={role} value={role}>
                     {getRoleLabel(role)}
                   </option>
@@ -780,12 +893,12 @@ export default function AdminUsersPage() {
         <div className="mb-6 p-4 bg-surface rounded-xl border border-t-border">
           <h2 className="text-sm font-semibold mb-3 text-muted">Role Permissions</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
-            {ROLES.map(role => (
+            {PICKER_ROLES.map(role => (
               <div key={role} className="text-xs">
-                <span className={`inline-block px-2 py-1 rounded border ${ROLE_COLORS[role] || "bg-zinc-500/20 text-muted border-muted/30"}`}>
+                <span className={`inline-block px-2 py-1 rounded border ${getRoleBadgeClasses(role)}`}>
                   {getRoleLabel(role)}
                 </span>
-                <p className="mt-1 text-muted">{ROLE_DESCRIPTIONS[role]}</p>
+                <p className="mt-1 text-muted">{getRoleDescription(role)}</p>
               </div>
             ))}
           </div>
@@ -831,18 +944,26 @@ export default function AdminUsersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <select
-                        value={user.role}
-                        onChange={(e) => updateRole(user.id, e.target.value)}
-                        disabled={updating === user.id}
-                        className={`px-3 py-1.5 rounded border text-sm bg-transparent cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-500 ${ROLE_COLORS[user.role] || "bg-zinc-500/20 text-muted border-muted/30"} ${updating === user.id ? "opacity-50" : ""}`}
-                      >
-                        {ROLES.map(role => (
-                          <option key={role} value={role} className="bg-surface text-white">
-                            {getRoleLabel(role)}
-                          </option>
-                        ))}
-                      </select>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1 flex-wrap">
+                          {getUserRoles(user).map((role) => (
+                            <span
+                              key={`${user.id}-${role}`}
+                              className={`inline-block px-2 py-0.5 rounded border text-xs ${getRoleBadgeClasses(role)}`}
+                            >
+                              {getRoleLabel(role)}
+                            </span>
+                          ))}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openRolesEditor(user)}
+                          disabled={updating === user.id}
+                          className={`px-2 py-0.5 text-xs rounded border border-t-border hover:bg-surface-2 transition-colors ${updating === user.id ? "opacity-50" : ""}`}
+                        >
+                          Edit
+                        </button>
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
