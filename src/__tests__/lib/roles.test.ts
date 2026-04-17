@@ -1,4 +1,3 @@
-import { describe, it, expect } from "@jest/globals";
 import { UserRole } from "@/generated/prisma/enums";
 import { ROLES } from "@/lib/roles";
 
@@ -21,6 +20,13 @@ describe("ROLES map", () => {
     for (const [role, def] of Object.entries(ROLES)) {
       expect(def.badge.color, `${role} badge.color`).toMatch(/^[a-z-]+$/);
       expect(def.badge.abbrev, `${role} badge.abbrev`).toBeTruthy();
+    }
+  });
+
+  it("every role has a valid scope", () => {
+    const validScopes = ["global", "location", "owner"] as const;
+    for (const [role, def] of Object.entries(ROLES)) {
+      expect(validScopes, `${role} scope must be one of ${validScopes.join("/")}`).toContain(def.scope);
     }
   });
 });
