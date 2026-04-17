@@ -432,12 +432,12 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/dashboards/deals",
       "/api/deals",
       "/api/projects",
-      // Equipment / inventory lookup for service calls
-      "/dashboards/inventory",
+      // Equipment lookup for service calls.
+      // NOTE: /dashboards/inventory, /dashboards/catalog, and /dashboards/product-comparison
+      // are in ADMIN_ONLY_ROUTES and intentionally excluded here — canAccessRoute short-circuits
+      // on those before consulting this allowlist. See PR #185 review.
       "/dashboards/equipment-backlog",
-      "/dashboards/catalog",
       "/dashboards/product-catalog",
-      "/dashboards/product-comparison",
       // APIs the Service Suite relies on
       "/api/service",
       "/api/zuper",
