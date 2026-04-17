@@ -1,5 +1,6 @@
 import type { UserRole } from "@/generated/prisma/enums";
 import { ROLES, type LandingCard, type Scope } from "@/lib/roles";
+import { ADMIN_ONLY_ROUTES, ADMIN_ONLY_EXCEPTIONS } from "@/lib/role-permissions";
 
 /**
  * Capability keys — the union of per-user/per-role permission flags that gate
@@ -260,4 +261,47 @@ export function resolveUserAccess(user: UserLike): EffectiveUserAccess {
     scope: effective.scope,
     capabilities,
   };
+}
+
+/**
+ * True if the given path is accessible under the resolved access record.
+ *
+ * Mirrors the semantics of `canAccessRoute(role, path)` in
+ * `@/lib/role-permissions`: admin-only routes short-circuit unless the user
+ * has ADMIN in their canonical roles OR the path matches one of the
+ * ADMIN_ONLY_EXCEPTIONS. Wildcard `"*"` in the allowed-routes set grants
+ * access to everything non-admin-gated. Otherwise, the path must match an
+ * allowed-route entry exactly, or live under it with a `/` segment boundary
+ * (so `/api/catalog` does not match `/api/catalogue`). The `"/"` entry
+ * matches only `"/"` exactly.
+ */
+export function isPathAllowedByAccess(
+  access: EffectiveUserAccess,
+  path: string
+): boolean {
+  // Admin-only gate first — matches canAccessRoute semantics.
+  const isAdminOnly = ADMIN_ONLY_ROUTES.some(
+    (restricted) => path === restricted || path.startsWith(`${restricted}/`)
+  );
+  if (isAdminOnly) {
+    const isExempted = ADMIN_ONLY_EXCEPTIONS.some(
+      (exempted) => path === exempted || path.startsWith(`${exempted}/`)
+    );
+    if (!isExempted) {
+      return access.roles.includes("ADMIN");
+    }
+  }
+
+  // Wildcard grants everything (past the admin gate).
+  if (access.allowedRoutes.has("*")) return true;
+
+  // Exact or segment-boundary prefix match, with `/` treated as exact-only.
+  for (const allowed of access.allowedRoutes) {
+    if (allowed === "/") {
+      if (path === "/") return true;
+      continue;
+    }
+    if (path === allowed || path.startsWith(`${allowed}/`)) return true;
+  }
+  return false;
 }

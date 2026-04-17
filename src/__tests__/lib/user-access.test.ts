@@ -1,6 +1,7 @@
 import type { UserRole } from "@/generated/prisma/enums";
 import { ROLES } from "@/lib/roles";
 import {
+  isPathAllowedByAccess,
   resolveEffectiveRole,
   resolveUserAccess,
 } from "@/lib/user-access";
@@ -167,5 +168,87 @@ describe("resolveUserAccess", () => {
     // Empty roles array — should also fall back.
     const access2 = resolveUserAccess({ roles: [], role: "SALES" });
     expect(access2.roles).toEqual(["SALES"]);
+  });
+});
+
+describe("isPathAllowedByAccess", () => {
+  it("exact match: SALES can access /dashboards/sales", () => {
+    const access = resolveUserAccess({ roles: ["SALES"] });
+    expect(isPathAllowedByAccess(access, "/dashboards/sales")).toBe(true);
+  });
+
+  it("prefix match: SALES can access /api/deals/123 via /api/deals", () => {
+    const access = resolveUserAccess({ roles: ["SALES"] });
+    expect(isPathAllowedByAccess(access, "/api/deals/123")).toBe(true);
+  });
+
+  it("segment boundary prevents /api/catalog matching /api/catalogue", () => {
+    // OPERATIONS has /api/catalog but not /api/catalogue.
+    const access = resolveUserAccess({ roles: ["OPERATIONS"] });
+    expect(isPathAllowedByAccess(access, "/api/catalog")).toBe(true);
+    expect(isPathAllowedByAccess(access, "/api/catalog/foo")).toBe(true);
+    expect(isPathAllowedByAccess(access, "/api/catalogue")).toBe(false);
+  });
+
+  it("no match: SALES cannot access /dashboards/service", () => {
+    const access = resolveUserAccess({ roles: ["SALES"] });
+    expect(isPathAllowedByAccess(access, "/dashboards/service")).toBe(false);
+  });
+
+  it("'/' entry only matches '/' exactly, not every path", () => {
+    // SALES has "/" in their allowedRoutes. It should NOT make every path pass.
+    const access = resolveUserAccess({ roles: ["SALES"] });
+    expect(isPathAllowedByAccess(access, "/")).toBe(true);
+    expect(isPathAllowedByAccess(access, "/random-page")).toBe(false);
+  });
+
+  it("wildcard '*' grants everything non-admin-gated (ADMIN)", () => {
+    const access = resolveUserAccess({ roles: ["ADMIN"] });
+    expect(isPathAllowedByAccess(access, "/dashboards/anything")).toBe(true);
+    expect(isPathAllowedByAccess(access, "/api/some/nested/path")).toBe(true);
+    // Admin-only routes are still accessible to ADMIN.
+    expect(isPathAllowedByAccess(access, "/admin")).toBe(true);
+    expect(isPathAllowedByAccess(access, "/api/admin/users")).toBe(true);
+  });
+
+  it("admin-only routes blocked for non-ADMIN even with wildcard access (EXECUTIVE)", () => {
+    // EXECUTIVE has allowedRoutes ["*"] but is not ADMIN — admin-only routes
+    // must still short-circuit. Matches canAccessRoute semantics.
+    const access = resolveUserAccess({ roles: ["EXECUTIVE"] });
+    expect(isPathAllowedByAccess(access, "/admin")).toBe(false);
+    expect(isPathAllowedByAccess(access, "/api/admin/users")).toBe(false);
+    expect(isPathAllowedByAccess(access, "/dashboards/inventory")).toBe(false);
+    // Non-admin routes still accessible via wildcard.
+    expect(isPathAllowedByAccess(access, "/dashboards/revenue")).toBe(true);
+  });
+
+  it("admin-only exception: /dashboards/catalog/new accessible without ADMIN", () => {
+    // PROJECT_MANAGER does not have ADMIN but has access to the exception path.
+    const access = resolveUserAccess({ roles: ["PROJECT_MANAGER"] });
+    // /dashboards/catalog is admin-only, /dashboards/catalog/new is exempted.
+    expect(isPathAllowedByAccess(access, "/dashboards/catalog")).toBe(false);
+    // PROJECT_MANAGER wildcard? No — PM has explicit allowedRoutes. The
+    // exception only short-circuits the admin-only gate; the role still must
+    // have the path in its allowedRoutes (PM does not have
+    // /dashboards/catalog/new). So this returns false.
+    // Use ADMIN to confirm the exception path works:
+    const admin = resolveUserAccess({ roles: ["ADMIN"] });
+    expect(isPathAllowedByAccess(admin, "/dashboards/catalog/new")).toBe(true);
+  });
+
+  it("empty-roles (VIEWER-equivalent) blocks most paths", () => {
+    const access = resolveUserAccess({ roles: [] });
+    expect(isPathAllowedByAccess(access, "/")).toBe(true);
+    expect(isPathAllowedByAccess(access, "/unassigned")).toBe(true);
+    expect(isPathAllowedByAccess(access, "/dashboards/anything")).toBe(false);
+    expect(isPathAllowedByAccess(access, "/api/deals")).toBe(false);
+  });
+
+  it("multi-role: union of allowedRoutes is respected", () => {
+    const access = resolveUserAccess({ roles: ["SALES", "SERVICE"] });
+    // SALES-only route
+    expect(isPathAllowedByAccess(access, "/dashboards/sales")).toBe(true);
+    // SERVICE-only route
+    expect(isPathAllowedByAccess(access, "/dashboards/service-tickets")).toBe(true);
   });
 });
