@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
@@ -26,10 +27,12 @@ export default async function SolarSurveyorPage() {
       | null) ?? null;
 
   return (
-    <SolarSurveyorShell
-      initialMode={mode}
-      modeReason={reason}
-      userPreference={preference}
-    />
+    <Suspense>
+      <SolarSurveyorShell
+        initialMode={mode}
+        modeReason={reason}
+        userPreference={preference}
+      />
+    </Suspense>
   );
 }

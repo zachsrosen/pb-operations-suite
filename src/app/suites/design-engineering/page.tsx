@@ -84,7 +84,7 @@ const LINKS: SuitePageCard[] = [
     section: "Reference",
   },
   {
-    href: "/dashboards/solar-surveyor",
+    href: "/dashboards/solar-surveyor?suite=de",
     title: "Solar Surveyor",
     description: "Interactive solar site survey tool.",
     tag: "TOOL",
