@@ -39,6 +39,12 @@ export async function POST(request: NextRequest) {
     }
 
     const flags: Record<string, DaReworkFlags> = await getDaReworkFlagsBatch(normalized);
+    // TEMP diagnostic — remove once root cause confirmed
+    const flagKeys = Object.keys(flags);
+    const rejectedCount = flagKeys.filter((k) => flags[k].hadRejection).length;
+    console.log(
+      `[da-rework-flags] received=${deals.length} normalized=${normalized.length} flagKeys=${flagKeys.length} rejected=${rejectedCount} sampleIn=${normalized.slice(0, 2).map((n) => n.dealId).join(",")} sampleOut=${flagKeys.slice(0, 2).join(",")}`
+    );
     return NextResponse.json({ flags });
   } catch (error) {
     console.error("DA rework flags API error:", error);
