@@ -50,13 +50,23 @@ describe("PUT /api/admin/users", () => {
     mockLogAdminActivity.mockResolvedValue(null);
   });
 
-  it("rejects switching to a location-scoped role when no locations are assigned", async () => {
+  it("allows switching to a location-scoped role without locations (gate removed)", async () => {
+    // Pre-existing `requiresLocations` gate removed 2026-04-17: scope enforcement
+    // is off in prod (see buildLocationScope + scopeEnforcementEnabled=false at
+    // every call site), so empty allowedLocations → `{ type: "global" }`, meaning
+    // the user sees everything. The gate was blocking legitimate role changes.
     mockFindUnique.mockResolvedValue({
       id: "user-1",
       email: "ops@photonbrothers.com",
       role: "VIEWER",
       roles: ["VIEWER"],
       allowedLocations: [],
+    });
+    mockUpdateUserRoles.mockResolvedValue({
+      id: "user-1",
+      email: "ops@photonbrothers.com",
+      role: "OPERATIONS",
+      roles: ["OPERATIONS"],
     });
 
     const response = await PUT(new NextRequest("http://localhost/api/admin/users", {
@@ -65,11 +75,8 @@ describe("PUT /api/admin/users", () => {
       headers: { "content-type": "application/json" },
     }));
 
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toMatchObject({
-      requiresLocations: true,
-    });
-    expect(mockUpdateUserRoles).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(mockUpdateUserRoles).toHaveBeenCalledWith("user-1", ["OPERATIONS"]);
   });
 
   it("allows switching to a global role without locations", async () => {
@@ -176,13 +183,20 @@ describe("PUT /api/admin/users", () => {
     expect(mockUpdateUserRoles).not.toHaveBeenCalled();
   });
 
-  it("requires locations when ANY role is location-scoped", async () => {
+  it("allows multi-role assignment with a location-scoped member (gate removed)", async () => {
+    // Complement to the earlier "gate removed" test — multi-role case.
     mockFindUnique.mockResolvedValue({
       id: "user-7",
       email: "multi@photonbrothers.com",
       role: "VIEWER",
       roles: ["VIEWER"],
       allowedLocations: [],
+    });
+    mockUpdateUserRoles.mockResolvedValue({
+      id: "user-7",
+      email: "multi@photonbrothers.com",
+      role: "SERVICE",
+      roles: ["SERVICE", "OPERATIONS"],
     });
 
     const response = await PUT(new NextRequest("http://localhost/api/admin/users", {
@@ -191,10 +205,7 @@ describe("PUT /api/admin/users", () => {
       headers: { "content-type": "application/json" },
     }));
 
-    expect(response.status).toBe(400);
-    await expect(response.json()).resolves.toMatchObject({
-      requiresLocations: true,
-    });
-    expect(mockUpdateUserRoles).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(mockUpdateUserRoles).toHaveBeenCalledWith("user-7", ["SERVICE", "OPERATIONS"]);
   });
 });

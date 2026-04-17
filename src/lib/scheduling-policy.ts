@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 import { normalizeRole, UserRole as UserRoleEnum, type UserRole } from "@/lib/role-permissions";
 
 interface SalesSurveyLeadTimeInput {
-  role: UserRole;
+  roles: UserRole[];
   scheduleType: "survey" | "pre-sale-survey" | "installation" | "inspection";
   scheduleDate: string;
   timezone?: string | null;
@@ -109,12 +109,14 @@ export function resolveEffectiveRoleFromRequest(request: NextRequest, actualRole
 }
 
 export function getSalesSurveyLeadTimeError({
-  role,
+  roles,
   scheduleType,
   scheduleDate,
   timezone,
 }: SalesSurveyLeadTimeInput): string | null {
-  if (role !== "SALES" || (scheduleType !== "survey" && scheduleType !== "pre-sale-survey")) return null;
+  // Multi-role: guard applies if ANY of the user's roles is SALES. A user with
+  // roles [PROJECT_MANAGER, SALES] — PM first — still gets the lead-time rule.
+  if (!roles.includes("SALES") || (scheduleType !== "survey" && scheduleType !== "pre-sale-survey")) return null;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduleDate)) return null;
 
   const tz = timezone || "America/Denver";

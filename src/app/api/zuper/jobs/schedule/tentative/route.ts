@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, createScheduleRecord, canScheduleType, prisma, UserRole } from "@/lib/db";
 import { headers } from "next/headers";
-import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest } from "@/lib/scheduling-policy";
+import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest, resolveEffectiveRolesFromRequest } from "@/lib/scheduling-policy";
 
 /**
  * PUT /api/zuper/jobs/schedule/tentative
@@ -48,8 +48,14 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
+    const effectiveRoles = resolveEffectiveRolesFromRequest(
+      request,
+      ((user as { roles?: UserRole[] }).roles && (user as { roles: UserRole[] }).roles.length > 0
+        ? (user as { roles: UserRole[] }).roles
+        : [user.role as UserRole]),
+    );
     const salesLeadTimeError = getSalesSurveyLeadTimeError({
-      role: effectiveRole,
+      roles: effectiveRoles,
       scheduleType,
       scheduleDate: schedule.date,
       timezone: typeof schedule.timezone === "string" ? schedule.timezone : undefined,

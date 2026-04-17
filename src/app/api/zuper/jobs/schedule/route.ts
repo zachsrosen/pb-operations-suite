@@ -20,7 +20,7 @@ import {
 } from "@/lib/google-calendar";
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
-import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest } from "@/lib/scheduling-policy";
+import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest, resolveEffectiveRolesFromRequest } from "@/lib/scheduling-policy";
 import { getGoogleCalendarEventUrl } from "@/lib/external-links";
 import { normalizeEmail } from "@/lib/email-utils";
 import { extractInstallerNote as extractInstallerNoteFromBlob } from "@/lib/schedule-notes";
@@ -442,8 +442,14 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
+    const effectiveRoles = resolveEffectiveRolesFromRequest(
+      request,
+      ((user as { roles?: UserRole[] }).roles && (user as { roles: UserRole[] }).roles.length > 0
+        ? (user as { roles: UserRole[] }).roles
+        : [user.role as UserRole]),
+    );
     const salesLeadTimeError = getSalesSurveyLeadTimeError({
-      role: effectiveRole,
+      roles: effectiveRoles,
       scheduleType,
       scheduleDate: schedule.date,
       timezone: typeof schedule.timezone === "string" ? schedule.timezone : undefined,
