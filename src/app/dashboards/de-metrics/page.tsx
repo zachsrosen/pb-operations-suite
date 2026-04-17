@@ -759,7 +759,7 @@ export default function DEMetricsPage() {
         ) : (
           <>
             {/* Summary row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 px-5 py-4 border-b border-t-border bg-surface-2/30">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 px-5 py-4 border-b border-t-border bg-surface-2/30">
               <div className="text-center">
                 <p className="text-xs text-muted mb-0.5">Avg Turnaround</p>
                 <p className={`text-xl font-mono font-bold ${getDaColor(daTotals.avgTurnaround, DA_TURNAROUND_THRESHOLDS)}`}>
@@ -789,6 +789,28 @@ export default function DEMetricsPage() {
                     : "—"}
                 </p>
                 <p className="text-xs text-muted">never rejected</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted mb-0.5">Needed Sales Changes</p>
+                <p className={`text-xl font-mono font-bold ${getReworkColor(daTotals.salesChangesRate)}`}>
+                  {daTotals.salesChangesRate !== null
+                    ? `${daTotals.salesChangesRate}%`
+                    : reworkLoading
+                    ? "…"
+                    : "—"}
+                </p>
+                <p className="text-xs text-muted">sales rework</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xs text-muted mb-0.5">Needed Ops Changes</p>
+                <p className={`text-xl font-mono font-bold ${getReworkColor(daTotals.opsChangesRate)}`}>
+                  {daTotals.opsChangesRate !== null
+                    ? `${daTotals.opsChangesRate}%`
+                    : reworkLoading
+                    ? "…"
+                    : "—"}
+                </p>
+                <p className="text-xs text-muted">ops rework</p>
               </div>
             </div>
 
