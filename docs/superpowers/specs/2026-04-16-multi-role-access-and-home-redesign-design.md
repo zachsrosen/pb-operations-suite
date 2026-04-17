@@ -133,7 +133,7 @@ export function resolveEffectiveRole(roles: UserRole[]): RoleDefinition;
 ```ts
 // src/lib/user-access.ts
 export interface EffectiveUserAccess {
-  roles: UserRole[];              // canonical (legacy normalized)
+  roles: UserRole[];              // canonical (legacy normalized, unknown values filtered)
   suites: Set<string>;
   allowedRoutes: Set<string>;
   landingCards: LandingCard[];    // deduped by href
@@ -143,6 +143,11 @@ export interface EffectiveUserAccess {
 
 export function resolveUserAccess(user: User): EffectiveUserAccess;
 ```
+
+**Resolution rules:**
+- **Unknown roles** in `user.roles` (e.g. a role string that no longer exists in the `ROLES` map) are filtered out with a warning log. They never grant access. This prevents stale DB values from becoming silent access grants.
+- **Empty roles array** (`user.roles = []`) resolves to the VIEWER default: no suites, minimal allowed routes (`/`, `/unassigned`, `/api/auth/*`, `/api/user/me`), no landing cards, location scope with no allowed locations. Middleware treats this as "redirect to `/unassigned`." Admin UI enforces minimum of one role at write time; empty arrays only exist for freshly-created users pre-assignment.
+- **Capability OR across roles, user override wins.** `user.canSyncZuper` is `boolean | null`. If null, the effective value is `defaultCapabilities.canSyncZuper` ORed across all of the user's roles. If non-null, the user's explicit value wins regardless of role defaults — this is the "admin denies a capability for a specific user" escape hatch.
 
 `resolveUserAccess` is called:
 - In middleware (route gate).
@@ -172,7 +177,7 @@ Every other file that currently reads roles changes to read from `ROLES` / `reso
 
 1. **Pipeline-by-stage widget** — unchanged; uses `/api/deals` which already scopes by user.
 2. **Suite grid** — one card per suite in `access.suites`. Cards are clickable; every card a user sees is a card their middleware would allow.
-3. **Landing cards row** — `access.landingCards`, deduped by href, capped at 10 (display-only cap). Cut order when over cap: preserve role-definition declaration order, and within each role preserve the order listed in that role's `landingCards`. Rendered only if at least one card exists.
+3. **Landing cards row** — `access.landingCards`, deduped by href, capped at 10 (display-only cap). Cut order when over cap: preserve role-definition declaration order, and within each role preserve the order listed in that role's `landingCards`. **Dedupe collision rule:** when two roles declare the same href with different metadata (title / description / tag), the first role in declaration order wins for the display payload. Rendered only if at least one card exists.
 
 No special cases for specific roles in `page.tsx`. No `visibility` model. No `ROLE_LANDING_CARDS`.
 
@@ -280,9 +285,13 @@ Out of scope for this spec. If/when we want dashboards that show live data (prio
 ## Testing
 
 - Unit tests for `resolveEffectiveRole` covering single-role, multi-role, legacy role normalization, capability OR, scope max-privilege.
-- Unit tests for `resolveUserAccess` covering per-user capability overrides, impersonation cookie precedence.
-- Unit tests for admin users route: multi-role assignment, location-scope requirement triggered when ANY of the roles is location-scoped.
-- Existing tests (`role-permissions.test.ts`, `admin-users-role-update.test.ts`, `scope-resolver.test.ts`) pass without changes to assertions (we're changing the underlying implementation, not the contract). If they fail, they reveal a behavior drift — that's a feature.
+- Unit tests for `resolveUserAccess` covering per-user capability overrides, impersonation cookie precedence, unknown-role resilience (see below), empty-roles fallback.
+- Unit tests for admin users route: multi-role assignment, location-scope requirement triggered when ANY of the roles is location-scoped, empty-array rejection.
+- Existing tests will need assertion updates in three files because the underlying API signatures change (`user.role` → `user.roles`, admin PUT body shape, `canAccessRoute` signature):
+  - `src/__tests__/lib/role-permissions.test.ts` — update fixtures to use `roles: [...]`; assertions on `canAccessRoute` become assertions on `resolveUserAccess(...).allowedRoutes`.
+  - `src/__tests__/api/admin-users-role-update.test.ts` — PUT body becomes `{ userId, roles: [...] }`; response + mocks update accordingly.
+  - `src/__tests__/lib/scope-resolver.test.ts` — user fixtures carry `roles: [...]`; scope resolution is now max-privilege across roles.
+  The 3 currently-passing tests in `admin-users-role-update.test.ts` (added in PR #185) must continue to pass after update. These are contract tests and must be preserved.
 - Manual QA: create a multi-role user (`[SERVICE, OPERATIONS]`), log in as them, verify suite grid and landing cards show the union. Flip to `[SERVICE]` only, verify operations content drops out.
 
 ## Risks and open questions
@@ -299,9 +308,9 @@ Browsers cap cookies at 4KB. `pb_effective_roles` with a JSON-encoded array of e
 
 Worst realistic case: OPERATIONS_MANAGER (6 cards) + SERVICE (3 cards) = 9 deduped. Cap at 8 in spec. **Mitigation:** cap is display-only; no data lost; role-definition order determines which cards get cut. If this becomes painful, add a user preference in Phase 3.
 
-### Open question: How should the admin UI render capability overrides for multi-role users?
+### Resolved: capability overrides for multi-role users
 
-Capability defaults OR across roles. A user with `[SERVICE, OPERATIONS]` gets `canSyncZuper: true` by default (SERVICE and OPERATIONS both set it true). If an admin wants to DENY that capability for a specific user, they'd need to toggle the per-user override to false. Today the override is simple — `User.canSyncZuper: boolean | null` (null = use role default, true/false = override). With multi-role, the "role default" is derived. **Proposed resolution:** keep the current per-user override model. Admin UI shows "Role default: TRUE — override: [toggle]" for each capability. Out-of-scope for this spec to change the override data model.
+Capability defaults OR across roles (see Resolution rules above). A user with `[SERVICE, OPERATIONS]` gets `canSyncZuper: true` by default because SERVICE and OPERATIONS both set it true — the OR never goes down. If an admin wants to DENY that capability, they set the per-user override to `false`, which wins over any role default. The `User.canSyncZuper: boolean | null` data model is unchanged; the only UI change is the admin capability panel shows "Role default: TRUE (via [SERVICE, OPERATIONS]) — override: [toggle]" instead of the single-role form.
 
 ### Open question: What does `pb_effective_roles` impersonation allow?
 
