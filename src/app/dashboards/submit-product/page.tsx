@@ -101,6 +101,7 @@ function CatalogWizard() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [autoApproved, setAutoApproved] = useState(true);
 
   const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set());
 
@@ -257,6 +258,8 @@ function CatalogWizard() {
         throw new Error(body?.error || `Request failed (${res.status})`);
       }
 
+      const body = await res.json().catch(() => null);
+      setAutoApproved(body?.autoApproved !== false);
       setSuccess(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submission failed");
@@ -285,10 +288,12 @@ function CatalogWizard() {
           </svg>
         </div>
         <h2 className="text-xl font-semibold text-foreground">
-          Product Submitted for Approval
+          {autoApproved ? "Product Added to Catalog" : "Product Submitted"}
         </h2>
-        <p className="text-sm text-muted">
-          Your product has been submitted and is awaiting review.
+        <p className="text-sm text-muted text-center max-w-md">
+          {autoApproved
+            ? "Your product is available now — no approval needed."
+            : "Your product was saved, but one or more systems need a retry. An admin has been notified."}
         </p>
         <button
           onClick={() => router.push("/suites/operations")}

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef } from "react";
+import { upload } from "@vercel/blob/client";
 import CategoryFields from "./CategoryFields";
 import FieldTooltip from "./FieldTooltip";
 import { getCategoryFields } from "@/lib/catalog-fields";
@@ -48,6 +49,7 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
 
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
+  const [photoDragOver, setPhotoDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handlePhotoUpload(file: File) {
@@ -68,16 +70,16 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
 
     setPhotoUploading(true);
     try {
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/catalog/upload-photo", { method: "POST", body: fd });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: "Upload failed" }));
-        throw new Error(err.error || "Upload failed");
-      }
-      const { url, fileName } = await res.json();
-      dispatch({ type: "SET_FIELD", field: "photoUrl", value: url });
-      dispatch({ type: "SET_FIELD", field: "photoFileName", value: fileName });
+      // Client-side upload bypasses the Vercel serverless 4.5 MB body limit
+      // by PUTing directly to Blob storage after fetching a short-lived token.
+      const pathname = `catalog-photos/${Date.now()}-${file.name}`;
+      const blob = await upload(pathname, file, {
+        access: "public",
+        handleUploadUrl: "/api/catalog/upload-photo/upload-token",
+        contentType: file.type,
+      });
+      dispatch({ type: "SET_FIELD", field: "photoUrl", value: blob.url });
+      dispatch({ type: "SET_FIELD", field: "photoFileName", value: file.name });
     } catch (e) {
       setPhotoError(e instanceof Error ? e.message : "Upload failed");
     } finally {
@@ -346,10 +348,38 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
           </div>
         ) : (
           <label
+            onDragOver={(e) => {
+              if (photoUploading) return;
+              e.preventDefault();
+              e.stopPropagation();
+              if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+              if (!photoDragOver) setPhotoDragOver(true);
+            }}
+            onDragEnter={(e) => {
+              if (photoUploading) return;
+              e.preventDefault();
+              e.stopPropagation();
+              setPhotoDragOver(true);
+            }}
+            onDragLeave={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setPhotoDragOver(false);
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setPhotoDragOver(false);
+              if (photoUploading) return;
+              const file = e.dataTransfer?.files?.[0];
+              if (file) handlePhotoUpload(file);
+            }}
             className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 cursor-pointer transition-colors ${
               photoUploading
                 ? "border-cyan-500/30 bg-cyan-500/5 cursor-wait"
-                : "border-t-border hover:border-cyan-500/50 hover:bg-surface-2"
+                : photoDragOver
+                  ? "border-cyan-500 bg-cyan-500/10"
+                  : "border-t-border hover:border-cyan-500/50 hover:bg-surface-2"
             }`}
           >
             {photoUploading ? (

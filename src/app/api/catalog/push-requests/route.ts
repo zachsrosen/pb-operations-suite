@@ -4,7 +4,7 @@ import { prisma } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
 import { isBlank, validateRequiredSpecFields } from "@/lib/catalog-form-state";
-import { notifyAdminsOfNewCatalogRequest } from "@/lib/catalog-notify";
+import { executeCatalogPushApproval } from "@/lib/catalog-push-approve";
 
 const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
 const VALID_STATUSES = ["PENDING", "APPROVED", "REJECTED"] as const;
@@ -131,18 +131,23 @@ export async function POST(request: NextRequest) {
     },
   });
 
-  // Fire-and-forget admin notification
-  notifyAdminsOfNewCatalogRequest({
-    id: push.id,
-    brand: push.brand,
-    model: push.model,
-    category: push.category,
-    requestedBy: push.requestedBy,
-    systems: push.systems,
-    dealId: push.dealId,
+  // Auto-approve: submissions go straight into INTERNAL + selected external systems.
+  // Partial failures leave the row PENDING with a note so an admin can retry.
+  const approval = await executeCatalogPushApproval(push.id).catch((err) => {
+    console.error("[catalog/push-requests] Auto-approval failed:", err);
+    return null;
   });
 
-  return NextResponse.json({ push }, { status: 201 });
+  return NextResponse.json(
+    {
+      push: approval?.push ?? push,
+      outcomes: approval?.outcomes ?? {},
+      summary: approval?.summary ?? null,
+      retryable: approval?.retryable ?? true,
+      autoApproved: approval ? !approval.retryable : false,
+    },
+    { status: 201 }
+  );
 }
 
 export async function GET(request: NextRequest) {

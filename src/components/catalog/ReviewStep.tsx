@@ -247,7 +247,7 @@ export default function ReviewStep({
           onClick={onSubmit}
           className="px-8 py-3 text-sm font-semibold rounded-lg bg-cyan-600 text-white hover:bg-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
-          {submitting ? "Submitting..." : !valid ? "Fix required fields" : "Submit for Approval"}
+          {submitting ? "Submitting..." : !valid ? "Fix required fields" : "Add to Catalog"}
         </button>
       </div>
     </div>
