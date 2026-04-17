@@ -448,7 +448,8 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = {
       "/api/hubspot/qc-metrics",
       "/api/activity/log",
       "/api/bugs",
-      // Solar Surveyor (customer project context)
+      // Solar Surveyor (customer project context + service-suite tool card)
+      "/dashboards/solar-surveyor",
       "/api/solar",
       // SOP Guide
       "/sop",
