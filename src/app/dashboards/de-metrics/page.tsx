@@ -311,9 +311,9 @@ export default function DEMetricsPage() {
       return;
     }
     const dealsPayload = daProjectsInWindow
-      .filter((p) => p.id)
+      .filter((p) => p.id !== undefined && p.id !== null)
       .map((p) => ({
-        dealId: p.id!,
+        dealId: String(p.id),
         revisionCounter: p.daRevisionCounter ?? null,
         approvalDate: p.designApprovalDate ?? null,
       }));
