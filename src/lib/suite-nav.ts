@@ -1,4 +1,5 @@
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/lib/role-permissions";
+import { resolveEffectiveRole } from "@/lib/user-access";
 
 export interface SuiteNavEntry {
   href: string;
@@ -64,55 +65,19 @@ export const SUITE_NAV_ENTRIES: SuiteNavEntry[] = [
   },
 ];
 
-const SUITE_SWITCHER_ALLOWLIST: Record<UserRole, string[]> = {
-  ADMIN: [
-    "/suites/operations",
-    "/suites/design-engineering",
-    "/suites/permitting-interconnection",
-    "/suites/intelligence",
-    "/suites/service",
-    "/suites/dnr-roofing",
-    "/suites/executive",
-    "/suites/accounting",
-    "/suites/admin",
-  ],
-  EXECUTIVE: [
-    "/suites/operations",
-    "/suites/design-engineering",
-    "/suites/permitting-interconnection",
-    "/suites/intelligence",
-    "/suites/service",
-    "/suites/dnr-roofing",
-    "/suites/executive",
-    "/suites/accounting",
-  ],
-  OWNER: [
-    "/suites/operations",
-    "/suites/design-engineering",
-    "/suites/permitting-interconnection",
-    "/suites/intelligence",
-    "/suites/service",
-    "/suites/dnr-roofing",
-    "/suites/executive",
-    "/suites/accounting",
-  ],
-  MANAGER: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection", "/suites/intelligence", "/suites/service", "/suites/dnr-roofing", "/suites/accounting"],
-  PROJECT_MANAGER: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection", "/suites/intelligence", "/suites/service", "/suites/dnr-roofing", "/suites/accounting"],
-  OPERATIONS: ["/suites/operations", "/suites/service", "/suites/dnr-roofing", "/suites/accounting"],
-  OPERATIONS_MANAGER: ["/suites/operations", "/suites/intelligence", "/suites/service", "/suites/dnr-roofing", "/suites/accounting"],
-  SERVICE: ["/suites/service"],
-  TECH_OPS: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection", "/suites/accounting"],
-  DESIGNER: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection", "/suites/accounting"],
-  PERMITTING: ["/suites/operations", "/suites/design-engineering", "/suites/permitting-interconnection", "/suites/accounting"],
-  SALES: [],
-  SALES_MANAGER: ["/suites/accounting"],
-  VIEWER: [],
-};
-
-export function getSuiteSwitcherEntriesForRole(role: UserRole): SuiteNavEntry[] {
-  const effectiveRole = normalizeRole(role);
-  const allowlist = SUITE_SWITCHER_ALLOWLIST[effectiveRole] || [];
-  if (allowlist.length === 0) return [];
-  const allowed = new Set(allowlist);
+/**
+ * Filter the canonical suite-nav entries to those visible for a set of roles.
+ * Uses `resolveEffectiveRole(roles).suites` so multi-role users see the union
+ * of suites across their roles (max-privilege merge handled by the resolver).
+ */
+export function getSuiteSwitcherEntriesForRoles(roles: UserRole[]): SuiteNavEntry[] {
+  const { suites } = resolveEffectiveRole(roles);
+  if (suites.length === 0) return [];
+  const allowed = new Set(suites);
   return SUITE_NAV_ENTRIES.filter((suite) => allowed.has(suite.href));
+}
+
+/** Back-compat single-role wrapper. Prefer `getSuiteSwitcherEntriesForRoles`. */
+export function getSuiteSwitcherEntriesForRole(role: UserRole): SuiteNavEntry[] {
+  return getSuiteSwitcherEntriesForRoles([role]);
 }
