@@ -47,7 +47,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/clipping-analytics": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/ahj-requirements": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/utility-design-requirements": { href: "/suites/design-engineering", label: "D&E" },
-  "/dashboards/solar-surveyor": { href: "/suites/design-engineering", label: "D&E" },
+  // solar-surveyor: breadcrumb handled via ?suite= param in SolarSurveyorShell (linked from both D&E and Service)
   // solar-designer: breadcrumb handled via ?suite= param in page.tsx (linked from both D&E and Service)
   "/dashboards/idr-meeting": { href: "/suites/design-engineering", label: "D&E" },
   // Permitting & Interconnection Suite

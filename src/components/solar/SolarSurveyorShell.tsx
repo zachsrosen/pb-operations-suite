@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useCallback, useEffect, lazy, Suspense } from "react";
+import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import ProjectBrowser from "./ProjectBrowser";
 import ClassicWorkspace from "./ClassicWorkspace";
@@ -17,6 +18,11 @@ interface SolarSurveyorShellProps {
   modeReason: ModeReason;
   userPreference?: "wizard" | "classic" | "browser" | null;
 }
+
+const SUITE_BREADCRUMBS: Record<string, { label: string; href: string }> = {
+  de: { label: "D&E", href: "/suites/design-engineering" },
+  service: { label: "Service", href: "/suites/service" },
+};
 
 /**
  * Strict resolution order (first match wins):
@@ -58,6 +64,14 @@ export default function SolarSurveyorShell({
   const [wizardDraftId, setWizardDraftId] = useState<string | undefined>();
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const { trackFeature } = useActivityTracking();
+  const searchParams = useSearchParams();
+
+  // Breadcrumb points back to whichever suite the user came from
+  const breadcrumbs = useMemo(() => {
+    const from = searchParams.get("suite");
+    const parent = from ? SUITE_BREADCRUMBS[from] : null;
+    return parent ? [parent] : undefined;
+  }, [searchParams]);
 
   // CSRF bootstrap — call /api/solar/session to set csrf_token cookie
   useEffect(() => {
@@ -174,6 +188,7 @@ export default function SolarSurveyorShell({
       accentColor="orange"
       fullWidth={activeView === "classic"}
       headerRight={headerRight}
+      breadcrumbs={breadcrumbs}
     >
       {activeView === "native" && (
         <ProjectBrowser
