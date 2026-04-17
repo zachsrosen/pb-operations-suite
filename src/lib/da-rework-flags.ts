@@ -91,6 +91,10 @@ function flagsFromHistory(history: PropertyHistoryEntry[]): DaReworkFlags {
  * Compute rework flags for one deal. Returns EMPTY_FLAGS (all false) if the
  * history fetch fails — callers can distinguish by checking logs but the
  * dashboard treats failure as "no rework" conservatively.
+ *
+ * Failure path is intentionally uncached: fetcher throws, `appCache` skips
+ * the `.set` on rejection, wrapper returns EMPTY_FLAGS without poisoning
+ * the cache. Next call retries.
  */
 export async function getDaReworkFlags(
   dealId: string,
@@ -98,12 +102,16 @@ export async function getDaReworkFlags(
   approvalDate: string | null
 ): Promise<DaReworkFlags> {
   const key = cacheKey(dealId, revisionCounter, approvalDate);
-  const { data } = await appCache.getOrFetch<DaReworkFlags>(key, async () => {
-    const history = await fetchLayoutStatusHistory(dealId);
-    if (!history) return EMPTY_FLAGS;
-    return flagsFromHistory(history);
-  });
-  return data;
+  try {
+    const { data } = await appCache.getOrFetch<DaReworkFlags>(key, async () => {
+      const history = await fetchLayoutStatusHistory(dealId);
+      if (!history) throw new Error(`da-rework-flags: history fetch returned null for ${dealId}`);
+      return flagsFromHistory(history);
+    });
+    return data;
+  } catch {
+    return EMPTY_FLAGS;
+  }
 }
 
 /**
