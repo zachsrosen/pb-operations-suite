@@ -127,7 +127,7 @@ export async function PUT(request: NextRequest) {
 
     const { userId, roles: newRoles } = validated;
 
-    // Get the target user to log the change and to enforce location requirements
+    // Fetch the target user for audit-log context (old vs new roles).
     const targetUser = await prisma.user.findUnique({ where: { id: userId } });
     if (!targetUser) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
@@ -138,24 +138,16 @@ export async function PUT(request: NextRequest) {
         ? ((targetUser as { roles: UserRole[] }).roles)
         : [targetUser.role as UserRole];
 
-    // Location-scope gate: if ANY assigned role is location-scoped and the user
-    // has no allowedLocations, block the update so the admin assigns locations
-    // first. `resolveEffectiveRole` returns the *max* scope (global > location),
-    // so we check each role individually — a user with OPERATIONS still needs
-    // a location even if another role grants global access.
-    const hasLocationScopedRole = newRoles.some(
-      (r) => ROLES[r]?.scope === "location",
-    );
-    const targetLocations = (targetUser as { allowedLocations?: string[] | null }).allowedLocations ?? [];
-    if (hasLocationScopedRole && targetLocations.length === 0) {
-      return NextResponse.json(
-        {
-          error: "This role requires at least one allowed location. Assign locations before changing the role.",
-          requiresLocations: true,
-        },
-        { status: 400 }
-      );
-    }
+    // NOTE: prior versions had a `requiresLocations` gate here that rejected
+    // role changes to location-scoped roles when the user had no
+    // `allowedLocations`. That gate didn't match reality:
+    // `buildLocationScope` in scope-resolver.ts returns `{ type: "global" }`
+    // (all locations) when allowedLocations is empty and
+    // `scopeEnforcementEnabled` is false — which it is at every non-test
+    // call site in prod today. The gate was rejecting legitimate role
+    // assignments. Removed 2026-04-17. If scope enforcement is ever turned
+    // on, the admin UX will need a redesign anyway (messaging + affordances,
+    // not a silent 400).
 
     const updatedUser = await updateUserRoles(userId, newRoles);
 

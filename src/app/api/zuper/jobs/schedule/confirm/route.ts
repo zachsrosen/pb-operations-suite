@@ -18,7 +18,7 @@ import {
 import { getBusinessEndDateInclusive, isWeekendDate } from "@/lib/business-days";
 import { getInstallNotificationDetails } from "@/lib/scheduling-email-details";
 import { getInstallCalendarTimezone, resolveInstallCalendarLocation } from "@/lib/install-calendar-location";
-import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest } from "@/lib/scheduling-policy";
+import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest, resolveEffectiveRolesFromRequest } from "@/lib/scheduling-policy";
 import { getGoogleCalendarEventUrl } from "@/lib/external-links";
 import { normalizeEmail } from "@/lib/email-utils";
 import { waitUntil } from "@vercel/functions";
@@ -338,8 +338,14 @@ export async function POST(request: NextRequest) {
     }
 
     const timezoneFromNotes = effectiveNotes?.match(/\[TZ:([A-Za-z_\/]+)\]/)?.[1];
+    const effectiveRoles = resolveEffectiveRolesFromRequest(
+      request,
+      ((user as { roles?: UserRole[] }).roles && (user as { roles: UserRole[] }).roles.length > 0
+        ? (user as { roles: UserRole[] }).roles
+        : [user.role as UserRole]),
+    );
     const salesLeadTimeError = getSalesSurveyLeadTimeError({
-      role: effectiveRole,
+      roles: effectiveRoles,
       scheduleType,
       scheduleDate: record.scheduledDate,
       timezone: timezoneFromNotes,

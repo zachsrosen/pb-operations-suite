@@ -157,8 +157,9 @@ export default auth((req) => {
   // Impersonation cookie (set server-side, httpOnly) takes precedence only
   // when the authenticated user is ADMIN. This prevents privilege escalation
   // if the cookie is tampered with on a non-admin session.
-  // Never let the cookie elevate to ADMIN/OWNER. VIEWER is accepted only
-  // while the dedicated impersonation-state cookie is active.
+  // Never let the cookie elevate to ADMIN or EXECUTIVE (legacy OWNER
+  // normalizes to EXECUTIVE — both values are blocked). VIEWER is accepted
+  // only while the dedicated impersonation-state cookie is active.
   const isAdminToken = tokenRole === "ADMIN";
   const isSafeCookieRole = cookieRole && cookieRole !== "ADMIN" && cookieRole !== "EXECUTIVE";
   const shouldUseCookieRole =
