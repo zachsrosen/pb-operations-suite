@@ -41,11 +41,20 @@ const REVISION_STATUSES = [
 ];
 
 // ---- DA Performance types ----
+type DaReworkFlags = {
+  hadRejection: boolean;
+  hadSalesChanges: boolean;
+  hadOpsChanges: boolean;
+};
+
 interface DAGroupMetrics {
   count: number;
   avgTurnaround: number | null;
   avgRevisions: number | null;
   firstTryRate: number | null;
+  customerFirstTryRate: number | null;
+  salesChangesRate: number | null;
+  opsChangesRate: number | null;
   totalRevisions: number;
 }
 
@@ -68,6 +77,17 @@ function getFirstTryColor(rate: number | null | undefined): string {
   if (rate >= 40) return "text-orange-400";
   return "text-red-400";
 }
+
+// Inverse: higher % = worse. Used for "Needed Sales/Ops Changes %".
+function getReworkColor(rate: number | null | undefined): string {
+  if (rate === null || rate === undefined) return "text-muted";
+  if (rate < 5) return "text-emerald-400";
+  if (rate < 15) return "text-yellow-400";
+  if (rate < 30) return "text-orange-400";
+  return "text-red-400";
+}
+
+const REWORK_WINDOW_CAP_DAYS = 180;
 
 // ---- Sort helpers ----
 type SortKey = "designer" | "count" | "revenue";
@@ -112,34 +132,63 @@ export default function DEMetricsPage() {
     }
   }, [sortKey]);
 
+  // ---- DA Performance flags (from property history) ----
+  const [reworkFlags, setReworkFlags] = useState<Record<string, DaReworkFlags>>({});
+  const [reworkLoading, setReworkLoading] = useState(false);
+
   // ---- DA Performance by Office (computed from designProjects, respects all filters) ----
-  const computeGroupMetrics = useCallback((projects: RawProject[]): DAGroupMetrics => {
-    const turnarounds = projects
-      .filter((p) => p.designApprovalSentDate && p.designApprovalDate)
-      .map((p) => {
-        const sent = new Date(p.designApprovalSentDate! + "T12:00:00");
-        const approved = new Date(p.designApprovalDate! + "T12:00:00");
-        return Math.floor((approved.getTime() - sent.getTime()) / (1000 * 60 * 60 * 24));
-      })
-      .filter((d) => d >= 0);
-    const revisions = projects
-      .map((p) => p.daRevisionCounter)
-      .filter((v): v is number => v !== null && v !== undefined && !isNaN(v) && v >= 0);
-    const firstTryCount = revisions.filter((v) => v === 0).length;
-    return {
-      count: projects.length,
-      avgTurnaround: turnarounds.length > 0
-        ? Math.round((turnarounds.reduce((s, v) => s + v, 0) / turnarounds.length) * 10) / 10
-        : null,
-      avgRevisions: revisions.length > 0
-        ? Math.round((revisions.reduce((s, v) => s + v, 0) / revisions.length) * 10) / 10
-        : null,
-      firstTryRate: revisions.length > 0
-        ? Math.round((firstTryCount / revisions.length) * 1000) / 10
-        : null,
-      totalRevisions: revisions.reduce((s, v) => s + v, 0),
-    };
-  }, []);
+  const computeGroupMetrics = useCallback(
+    (projects: RawProject[], flags: Record<string, DaReworkFlags>, flagsEnabled: boolean): DAGroupMetrics => {
+      const turnarounds = projects
+        .filter((p) => p.designApprovalSentDate && p.designApprovalDate)
+        .map((p) => {
+          const sent = new Date(p.designApprovalSentDate! + "T12:00:00");
+          const approved = new Date(p.designApprovalDate! + "T12:00:00");
+          return Math.floor((approved.getTime() - sent.getTime()) / (1000 * 60 * 60 * 24));
+        })
+        .filter((d) => d >= 0);
+      const revisions = projects
+        .map((p) => p.daRevisionCounter)
+        .filter((v): v is number => v !== null && v !== undefined && !isNaN(v) && v >= 0);
+      const firstTryCount = revisions.filter((v) => v === 0).length;
+
+      // Rework rates: only computed when flags are enabled AND loaded for every deal in the group.
+      // A deal without a flag entry is treated as missing (not "false") to avoid understating rework.
+      let customerFirstTryRate: number | null = null;
+      let salesChangesRate: number | null = null;
+      let opsChangesRate: number | null = null;
+      if (flagsEnabled && projects.length > 0) {
+        const withFlags = projects.filter((p) => p.id && flags[p.id]);
+        if (withFlags.length > 0) {
+          const rejected = withFlags.filter((p) => flags[p.id!].hadRejection).length;
+          const sales = withFlags.filter((p) => flags[p.id!].hadSalesChanges).length;
+          const ops = withFlags.filter((p) => flags[p.id!].hadOpsChanges).length;
+          const denom = withFlags.length;
+          customerFirstTryRate = Math.round(((denom - rejected) / denom) * 1000) / 10;
+          salesChangesRate = Math.round((sales / denom) * 1000) / 10;
+          opsChangesRate = Math.round((ops / denom) * 1000) / 10;
+        }
+      }
+
+      return {
+        count: projects.length,
+        avgTurnaround: turnarounds.length > 0
+          ? Math.round((turnarounds.reduce((s, v) => s + v, 0) / turnarounds.length) * 10) / 10
+          : null,
+        avgRevisions: revisions.length > 0
+          ? Math.round((revisions.reduce((s, v) => s + v, 0) / revisions.length) * 10) / 10
+          : null,
+        firstTryRate: revisions.length > 0
+          ? Math.round((firstTryCount / revisions.length) * 1000) / 10
+          : null,
+        customerFirstTryRate,
+        salesChangesRate,
+        opsChangesRate,
+        totalRevisions: revisions.reduce((s, v) => s + v, 0),
+      };
+    },
+    []
+  );
 
   const TIME_PRESETS = [30, 60, 90, 180, 365] as const;
   type TimePreset = (typeof TIME_PRESETS)[number];
@@ -170,6 +219,18 @@ export default function DEMetricsPage() {
       return "All time";
     }
     return `Last ${timePreset} days`;
+  }, [timePreset, customFrom, customTo]);
+
+  // Rework flags are only computed inside a capped window (property history is N+1).
+  const reworkEnabled = useMemo(() => {
+    if (timePreset === "custom") {
+      if (!customFrom || !customTo) return false;
+      const from = new Date(customFrom + "T00:00:00");
+      const to = new Date(customTo + "T23:59:59");
+      const spanDays = Math.ceil((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24));
+      return spanDays <= REWORK_WINDOW_CAP_DAYS;
+    }
+    return timePreset <= REWORK_WINDOW_CAP_DAYS;
   }, [timePreset, customFrom, customTo]);
 
   // ---- Build filter option lists ----
@@ -236,11 +297,58 @@ export default function DEMetricsPage() {
     [safeProjects, persistedFilters, searchQuery]
   );
 
+  // Deals in the DA cohort for the current window (shared by table + flag fetch).
+  const daProjectsInWindow = useMemo(
+    () => designProjects.filter((p) => p.designApprovalDate && isInWindow(p.designApprovalDate)),
+    [designProjects, isInWindow]
+  );
+
+  // Fetch rework flags for in-window deals when enabled.
+  useEffect(() => {
+    if (!reworkEnabled) {
+      setReworkFlags({});
+      setReworkLoading(false);
+      return;
+    }
+    const dealsPayload = daProjectsInWindow
+      .filter((p) => p.id)
+      .map((p) => ({
+        dealId: p.id!,
+        revisionCounter: p.daRevisionCounter ?? null,
+        approvalDate: p.designApprovalDate ?? null,
+      }));
+    if (dealsPayload.length === 0) {
+      setReworkFlags({});
+      setReworkLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setReworkLoading(true);
+    fetch("/api/hubspot/da-rework-flags", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deals: dealsPayload }),
+      signal: controller.signal,
+    })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((json: { flags?: Record<string, DaReworkFlags> }) => {
+        setReworkFlags(json.flags ?? {});
+      })
+      .catch((err) => {
+        if (err?.name === "AbortError") return;
+        console.error("[de-metrics] rework flags fetch failed:", err);
+        setReworkFlags({});
+      })
+      .finally(() => {
+        setReworkLoading(false);
+      });
+    return () => controller.abort();
+  }, [reworkEnabled, daProjectsInWindow]);
+
   // ---- DA Performance by Office (computed from designProjects — respects all page filters) ----
   const daByLocation = useMemo(() => {
-    const daProjects = designProjects.filter((p) => p.designApprovalDate && isInWindow(p.designApprovalDate));
     const groups: Record<string, RawProject[]> = {};
-    for (const p of daProjects) {
+    for (const p of daProjectsInWindow) {
       const loc = p.pbLocation || "Unknown";
       if (loc === "Unknown") continue;
       if (!groups[loc]) groups[loc] = [];
@@ -248,20 +356,20 @@ export default function DEMetricsPage() {
     }
     const byLocation: Record<string, DAGroupMetrics> = {};
     for (const [loc, projects] of Object.entries(groups)) {
-      byLocation[loc] = computeGroupMetrics(projects);
+      byLocation[loc] = computeGroupMetrics(projects, reworkFlags, reworkEnabled);
     }
     return byLocation;
-  }, [designProjects, isInWindow, computeGroupMetrics]);
+  }, [daProjectsInWindow, computeGroupMetrics, reworkFlags, reworkEnabled]);
 
   const daLocations = useMemo(
     () => Object.keys(daByLocation).sort(),
     [daByLocation]
   );
 
-  const daTotals = useMemo((): DAGroupMetrics => {
-    const allDaProjects = designProjects.filter((p) => p.designApprovalDate && isInWindow(p.designApprovalDate));
-    return computeGroupMetrics(allDaProjects);
-  }, [designProjects, isInWindow, computeGroupMetrics]);
+  const daTotals = useMemo(
+    (): DAGroupMetrics => computeGroupMetrics(daProjectsInWindow, reworkFlags, reworkEnabled),
+    [daProjectsInWindow, computeGroupMetrics, reworkFlags, reworkEnabled]
+  );
 
   // ---- Approval Metrics (FIXED: use designApprovalSentDate for "Sent") ----
   const approvalMetrics = useMemo(() => {
@@ -665,20 +773,30 @@ export default function DEMetricsPage() {
                 <p className="text-xs text-muted">{timeWindowLabel}</p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-muted mb-0.5">First-Try Rate</p>
+                <p className="text-xs text-muted mb-0.5">Design First-Try</p>
                 <p className={`text-xl font-mono font-bold ${getFirstTryColor(daTotals.firstTryRate)}`}>
                   {daTotals.firstTryRate !== null ? `${daTotals.firstTryRate}%` : "--"}
                 </p>
                 <p className="text-xs text-muted">0 revisions</p>
               </div>
               <div className="text-center">
-                <p className="text-xs text-muted mb-0.5">Avg Revisions</p>
-                <p className={`text-xl font-mono font-bold ${getDaColor(daTotals.avgRevisions, DA_REVISION_THRESHOLDS)}`}>
-                  {daTotals.avgRevisions !== null ? daTotals.avgRevisions.toFixed(1) : "--"}
+                <p className="text-xs text-muted mb-0.5">Customer Approval First-Try</p>
+                <p className={`text-xl font-mono font-bold ${getFirstTryColor(daTotals.customerFirstTryRate)}`}>
+                  {daTotals.customerFirstTryRate !== null
+                    ? `${daTotals.customerFirstTryRate}%`
+                    : reworkLoading
+                    ? "…"
+                    : "—"}
                 </p>
-                <p className="text-xs text-muted">per DA</p>
+                <p className="text-xs text-muted">never rejected</p>
               </div>
             </div>
+
+            {!reworkEnabled && (
+              <div className="px-5 py-2 text-xs text-muted border-b border-t-border bg-surface-2/20">
+                Customer Approval First-Try, Sales Changes, and Ops Changes are only computed for windows ≤ {REWORK_WINDOW_CAP_DAYS} days.
+              </div>
+            )}
 
             {/* By-location table */}
             <div className="overflow-x-auto">
@@ -689,13 +807,17 @@ export default function DEMetricsPage() {
                     <th className="px-4 py-3 font-semibold text-center">DAs</th>
                     <th className="px-4 py-3 font-semibold text-center">Avg Turnaround</th>
                     <th className="px-4 py-3 font-semibold text-center">Avg Revisions</th>
-                    <th className="px-4 py-3 font-semibold text-center">First-Try %</th>
+                    <th className="px-4 py-3 font-semibold text-center">Design First-Try %</th>
+                    <th className="px-4 py-3 font-semibold text-center">Customer Approval First-Try %</th>
+                    <th className="px-4 py-3 font-semibold text-center">Needed Sales Changes %</th>
+                    <th className="px-4 py-3 font-semibold text-center">Needed Ops Changes %</th>
                     <th className="px-4 py-3 font-semibold text-center">Total Revisions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {daLocations.map((loc, i) => {
                     const m = daByLocation[loc];
+                    const pctCell = (v: number | null) => (v !== null ? `${v}%` : reworkLoading ? "…" : "—");
                     return (
                       <tr key={loc} className={`border-b border-t-border/50 ${i % 2 === 0 ? "" : "bg-surface-2/20"}`}>
                         <td className="px-4 py-3 font-medium text-foreground">{loc}</td>
@@ -708,6 +830,15 @@ export default function DEMetricsPage() {
                         </td>
                         <td className={`px-4 py-3 text-center font-mono ${getFirstTryColor(m.firstTryRate)}`}>
                           {m.firstTryRate !== null ? `${m.firstTryRate}%` : "--"}
+                        </td>
+                        <td className={`px-4 py-3 text-center font-mono ${getFirstTryColor(m.customerFirstTryRate)}`}>
+                          {pctCell(m.customerFirstTryRate)}
+                        </td>
+                        <td className={`px-4 py-3 text-center font-mono ${getReworkColor(m.salesChangesRate)}`}>
+                          {pctCell(m.salesChangesRate)}
+                        </td>
+                        <td className={`px-4 py-3 text-center font-mono ${getReworkColor(m.opsChangesRate)}`}>
+                          {pctCell(m.opsChangesRate)}
                         </td>
                         <td className="px-4 py-3 text-center text-muted">{m.totalRevisions}</td>
                       </tr>
