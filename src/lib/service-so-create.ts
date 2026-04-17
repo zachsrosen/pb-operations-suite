@@ -71,11 +71,12 @@ async function resolveDealContext(
   dealAddress: string;
   primaryContactId: string | null;
   pbLocation: string | null;
+  projectNumber: string | null;
 }> {
   // Fetch deal properties server-side (no client trust)
   const dealResp = await hubspotClient.crm.deals.batchApi.read({
     inputs: [{ id: dealId }],
-    properties: ["dealname", "address_line_1", "city", "state", "postal_code", "pb_location"],
+    properties: ["dealname", "address_line_1", "city", "state", "postal_code", "pb_location", "project_number"],
     propertiesWithHistory: [],
   });
   const dealProps = dealResp.results?.[0]?.properties || {};
@@ -83,6 +84,7 @@ async function resolveDealContext(
   const dealAddress = [dealProps.address_line_1, dealProps.city, dealProps.state, dealProps.postal_code]
     .filter(Boolean)
     .join(", ");
+  const projectNumber = dealProps.project_number?.trim() || null;
 
   // Deal → primary contact association
   let primaryContactId: string | null = null;
@@ -103,7 +105,13 @@ async function resolveDealContext(
     console.warn("[ServiceSO] Failed to resolve primary contact:", err);
   }
 
-  return { dealName, dealAddress, primaryContactId, pbLocation: dealProps.pb_location?.trim() || null };
+  return {
+    dealName,
+    dealAddress,
+    primaryContactId,
+    pbLocation: dealProps.pb_location?.trim() || null,
+    projectNumber,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +253,7 @@ export async function createServiceSo(
   try {
 
     // 3. Resolve deal context + Zoho customer (contact-based, same as BOM pipeline)
-    const { dealName, dealAddress, primaryContactId, pbLocation } = await resolveDealContext(dealId);
+    const { dealName, dealAddress, primaryContactId, pbLocation, projectNumber } = await resolveDealContext(dealId);
     const customerResult = await resolveCustomer({
       dealName,
       primaryContactId,
@@ -285,10 +293,28 @@ export async function createServiceSo(
       ...(warehouseId ? { warehouse_id: warehouseId } : {}),
     }));
 
-    const refNumber = dealName.split("|").slice(0, 2).join("|").trim().slice(0, 50);
-    // Extract PROJ-XXXX from deal name, matching BOM pipeline pattern
-    const projMatch = dealName.match(/PROJ-(\d+)/);
-    const soNumber = projMatch ? `SO-${projMatch[1]}` : `SO-${dealId}`;
+    // Reference number: anchor on PROJ-XXXX and preserve any pipeline prefix
+    // before it ("SVC | PROJ-8964 | McElheron"). Falls back to the legacy
+    // first-two-segment slice only if no PROJ-XXXX is present anywhere.
+    const refSegments = dealName.split("|").map((s) => s.trim());
+    const refProjIdx = refSegments.findIndex((s) => /^PROJ-\d+/i.test(s));
+    const refNumber = (refProjIdx >= 0
+      ? refSegments.slice(0, refProjIdx + 2)
+      : refSegments.slice(0, 2)
+    ).join(" | ").slice(0, 50);
+
+    // SO number: PROJ-XXXX in dealname → project_number property → hard-fail.
+    // We intentionally do NOT fall back to the raw HubSpot deal ID — service
+    // deals are expected to carry a project number one way or the other.
+    const projNumber =
+      dealName.match(/PROJ-(\d+)/i)?.[1] ??
+      (projectNumber ? projectNumber.replace(/^PROJ-/i, "") : null);
+    if (!projNumber) {
+      throw new Error(
+        `Cannot create Service SO for deal ${dealId}: no PROJ-XXXX in dealname "${dealName}" and project_number property is empty. Fix the deal record and retry.`
+      );
+    }
+    const soNumber = `SO-${projNumber}`;
 
     const zohoResult = await zohoInventory.createSalesOrder({
       customer_id: zohoCustomerId,

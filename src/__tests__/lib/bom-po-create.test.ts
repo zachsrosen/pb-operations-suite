@@ -192,4 +192,16 @@ describe("buildReferenceNumber", () => {
     expect(result).toMatch(/^Custom Deal Name Wit/);
     expect(result.length).toBeLessThanOrEqual(50);
   });
+
+  it("preserves D&R pipeline prefix before PROJ-XXXX", () => {
+    const result = buildReferenceNumber("D&R | PROJ-5736 | Goltz, James | 123 Main St, CO", 2, "QCells");
+    expect(result).toBe("D&R | PROJ-5736 V2 — QCells");
+    expect(result.length).toBeLessThanOrEqual(50);
+  });
+
+  it("preserves SVC pipeline prefix before PROJ-XXXX", () => {
+    const result = buildReferenceNumber("SVC | PROJ-8964 | McElheron | 456 Oak Ave", 1, "Tesla");
+    expect(result).toBe("SVC | PROJ-8964 V1 — Tesla");
+    expect(result.length).toBeLessThanOrEqual(50);
+  });
 });

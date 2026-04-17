@@ -117,8 +117,21 @@ export function buildReferenceNumber(
   version: number,
   vendorName: string,
 ): string {
-  const projMatch = dealName.match(/PROJ-\d+/);
-  const projId = projMatch ? projMatch[0] : dealName.slice(0, 20);
+  // Preserve any pipeline prefix that sits before PROJ-XXXX (e.g. "D&R | PROJ-5736")
+  // so non-project pipelines can be differentiated in Zoho. Falls back to first 20
+  // chars of dealName when no PROJ-XXXX is present anywhere.
+  const segments = dealName.split("|").map((s) => s.trim());
+  const projIdx = segments.findIndex((s) => /^PROJ-\d+/i.test(s));
+  let projId: string;
+  if (projIdx >= 0) {
+    const projToken = segments[projIdx].match(/PROJ-\d+/i)?.[0] ?? segments[projIdx];
+    projId = projIdx === 0
+      ? projToken
+      : `${segments.slice(0, projIdx).join(" | ")} | ${projToken}`;
+  } else {
+    projId = dealName.slice(0, 20);
+  }
+
   const prefix = `${projId} V${version} — `;
   const maxVendorLength = 50 - prefix.length;
 
