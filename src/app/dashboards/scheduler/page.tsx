@@ -5731,7 +5731,19 @@ export default function SchedulerPage() {
           }}
         >
           <div className="bg-surface border border-t-border rounded-xl p-5 max-w-[500px] w-[90%] max-h-[85vh] overflow-y-auto">
-            <h3 className="text-base mb-3">Project Details</h3>
+            <h3 className="text-base mb-3">
+              {(() => {
+                const et = detailModalEvent?.eventType;
+                if (et === "construction-complete") return "Construction — Completed";
+                if (et === "construction") return "Construction";
+                if (et === "inspection-pass") return "Inspection — Passed";
+                if (et === "inspection-fail") return "Inspection — Failed";
+                if (et === "inspection") return "Inspection";
+                if (et === "survey-complete") return "Survey — Completed";
+                if (et === "survey") return "Survey";
+                return "Project Details";
+              })()}
+            </h3>
             <div className="mb-4 space-y-3">
               {/* Project Info */}
               <ModalSection title="Project">
@@ -5754,21 +5766,54 @@ export default function SchedulerPage() {
                   value={`$${detailModal.amount.toLocaleString()}`}
                   valueClass="text-orange-400 font-semibold"
                 />
-                <ModalRow
-                  label="Status"
-                  value={
-                    detailModal.stage === "rtb"
-                      ? "RTB Ready"
-                      : detailModal.stage === "survey"
-                        ? "Site Survey"
-                        : detailModal.stage === "inspection"
-                          ? "Inspection"
-                          : detailModal.stage === "construction"
-                            ? "Construction"
-                            : "Blocked"
+                {(() => {
+                  const et = detailModalEvent?.eventType;
+                  const completed = detailModal.constructionCompleted;
+                  const inspDone = detailModal.inspectionCompleted;
+                  const surveyDone = detailModal.surveyCompleted;
+                  let eventStatus: string | null = null;
+                  let eventClass: string | undefined;
+                  if (et === "construction-complete") {
+                    eventStatus = completed
+                      ? `Construction Complete (${formatDateShort(completed)})`
+                      : "Construction Complete";
+                    eventClass = "text-emerald-400";
+                  } else if (et === "inspection-pass") {
+                    eventStatus = inspDone
+                      ? `Inspection Passed (${formatDateShort(inspDone)})`
+                      : "Inspection Passed";
+                    eventClass = "text-emerald-400";
+                  } else if (et === "inspection-fail") {
+                    eventStatus = inspDone
+                      ? `Inspection Failed (${formatDateShort(inspDone)})`
+                      : "Inspection Failed";
+                    eventClass = "text-red-400";
+                  } else if (et === "survey-complete") {
+                    eventStatus = surveyDone
+                      ? `Survey Complete (${formatDateShort(surveyDone)})`
+                      : "Survey Complete";
+                    eventClass = "text-emerald-400";
                   }
-                  valueClass={STAGE_TEXT_COLORS[detailModal.stage]}
-                />
+                  return eventStatus ? (
+                    <ModalRow label="Status" value={eventStatus} valueClass={eventClass} />
+                  ) : (
+                    <ModalRow
+                      label="Status"
+                      value={
+                        detailModal.stage === "rtb"
+                          ? "RTB Ready"
+                          : detailModal.stage === "survey"
+                            ? "Site Survey"
+                            : detailModal.stage === "inspection"
+                              ? "Inspection"
+                              : detailModal.stage === "construction"
+                                ? "Construction"
+                                : "Blocked"
+                      }
+                      valueClass={STAGE_TEXT_COLORS[detailModal.stage]}
+                    />
+                  );
+                })()}
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-[0.7rem] text-muted w-20">Links</span>
                   <div className="flex items-center gap-2">
@@ -5952,6 +5997,25 @@ export default function SchedulerPage() {
               {/* Schedule */}
               {!detailModalEvent?.isForecast && <ModalSection title="Schedule">
                 {(() => {
+                  const et = detailModalEvent?.eventType;
+                  const isConstructionEvent = et === "construction" || et === "construction-complete";
+                  const isInspectionEvent = et === "inspection" || et === "inspection-pass" || et === "inspection-fail";
+                  const isSurveyEvent = et === "survey" || et === "survey-complete";
+                  // Per-milestone schedule/completion dates from the clicked event
+                  const milestoneStart = isConstructionEvent
+                    ? detailModal.constructionScheduleDate
+                    : isInspectionEvent
+                      ? detailModal.inspectionScheduleDate
+                      : isSurveyEvent
+                        ? detailModal.surveyScheduleDate
+                        : null;
+                  const milestoneComplete = isConstructionEvent
+                    ? detailModal.constructionCompleted
+                    : isInspectionEvent
+                      ? detailModal.inspectionCompleted
+                      : isSurveyEvent
+                        ? detailModal.surveyCompleted
+                        : null;
                   const scheduleInfo =
                     manualSchedules[detailModal.id] ||
                     (detailModal.scheduleDate
@@ -5976,8 +6040,12 @@ export default function SchedulerPage() {
                     scheduleInfo?.days ||
                     detailModal.daysInstall ||
                     (isSurveyOrInspection ? 1 : 2);
-                  // Prefer Zuper start date if available
-                  const displayDate = normalizedZuperDates.startDate || scheduleInfo?.startDate || null;
+                  // Prefer the clicked event's milestone date, then fall back to Zuper/manual
+                  // (so tentative construction events still render their pending date)
+                  const displayDate = milestoneStart
+                    || normalizedZuperDates.startDate
+                    || scheduleInfo?.startDate
+                    || null;
                   return (
                     <>
                       <ModalRow
@@ -5989,6 +6057,13 @@ export default function SchedulerPage() {
                         }
                         valueClass="text-blue-400 font-semibold"
                       />
+                      {milestoneComplete && (
+                        <ModalRow
+                          label="Completed"
+                          value={formatDateShort(milestoneComplete)}
+                          valueClass={et === "inspection-fail" ? "text-red-400 font-semibold" : "text-emerald-400 font-semibold"}
+                        />
+                      )}
                       <ModalRow
                         label="Duration"
                         value={`${displayDays} ${displayDays === 1 ? "day" : "days"}`}
