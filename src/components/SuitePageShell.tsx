@@ -76,6 +76,8 @@ const SECTION_COLORS: Record<string, string> = {
   "Tracking": "#3b82f6",
   "Programs": "#f59e0b",
   "Service": "#06b6d4",
+  "Daily Operations": "#f97316",
+  "Customer & Equipment": "#3b82f6",
   "D&R": "#8b5cf6",
   "Roofing": "#ec4899",
   "Risk & Quality": "#f97316",
