@@ -168,7 +168,7 @@ export async function PUT(request: NextRequest) {
         id: updatedUser.id,
         email: updatedUser.email,
         name: updatedUser.name,
-        role: updatedUser.role,
+        roles: updatedUser.roles,
         canScheduleSurveys: updatedUser.canScheduleSurveys,
         canScheduleInstalls: updatedUser.canScheduleInstalls,
         canSyncToZuper: updatedUser.canSyncToZuper,

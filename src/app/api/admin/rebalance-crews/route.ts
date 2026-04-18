@@ -89,7 +89,7 @@ export async function POST(req: NextRequest) {
   const db = prisma; // narrowed non-null reference
   const user = await db.user.findUnique({
     where: { email: session.user.email },
-    select: { role: true, roles: true },
+    select: { roles: true },
   });
   const rawRoles: UserRole[] = (user?.roles && user.roles.length > 0 ? user.roles : null) ?? [];
   const normalizedRoles = rawRoles.map((r) => ROLES[r]?.normalizesTo ?? r);

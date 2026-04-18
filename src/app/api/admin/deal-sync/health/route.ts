@@ -11,7 +11,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
   const currentUser = await getUserByEmail(session.user.email);
-  if (!currentUser || !["ADMIN", "OWNER"].includes(currentUser.role)) {
+  const hasAccess = !!currentUser?.roles?.some((r) => r === "ADMIN" || r === "OWNER");
+  if (!currentUser || !hasAccess) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });
   }
 

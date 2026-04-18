@@ -133,7 +133,7 @@ export async function POST() {
               data: {
                 email,
                 name: fullName,
-                role: "VIEWER",
+                roles: ["VIEWER"],
               },
             });
             results.usersCreated++;

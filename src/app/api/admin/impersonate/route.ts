@@ -34,10 +34,8 @@ function withRoleAndImpersonationCookies(
   return withImpersonationStateCookie(withEffectiveRoleCookies(response, roles), isImpersonating);
 }
 
-function resolveTargetRoles({ role, roles }: { role: string; roles?: UserRole[] | null }): UserRole[] {
-  const raw: UserRole[] = roles && roles.length > 0
-    ? roles
-    : [role as UserRole];
+function resolveTargetRoles({ roles }: { roles?: UserRole[] | null }): UserRole[] {
+  const raw: UserRole[] = roles && roles.length > 0 ? roles : (["VIEWER"] as UserRole[]);
   const normalized = raw.map((r) => ROLES[r]?.normalizesTo ?? r);
   // Dedup, preserve order.
   const seen = new Set<UserRole>();
@@ -112,13 +110,13 @@ export async function POST(request: NextRequest) {
         action: "IMPERSONATION_START",
         targetUserId: targetUser.id,
         targetUserEmail: targetUser.email,
-        targetUserRole: targetUser.role,
+        targetUserRoles: targetUser.roles,
         reason: reason || "Not specified",
       },
     });
 
-    const normalizedTargetRoles = resolveTargetRoles(targetUser as { role: string; roles?: UserRole[] | null });
-    const normalizedTargetRole = normalizedTargetRoles[0] ?? (ROLES[targetUser.role as UserRole]?.normalizesTo ?? (targetUser.role as UserRole));
+    const normalizedTargetRoles = resolveTargetRoles(targetUser as { roles?: UserRole[] | null });
+    const normalizedTargetRole = normalizedTargetRoles[0] ?? ("VIEWER" as UserRole);
     return withRoleAndImpersonationCookies(NextResponse.json({
       success: true,
       impersonating: {
@@ -160,7 +158,7 @@ export async function DELETE() {
   if (!user) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
-  const adminRoles = resolveTargetRoles(user as { role: string; roles?: UserRole[] | null });
+  const adminRoles = resolveTargetRoles(user as { roles?: UserRole[] | null });
 
   // Only admins can manage impersonation state
   if (!user.roles?.includes("ADMIN")) {
@@ -243,7 +241,7 @@ export async function GET() {
   if (!user.roles?.includes("ADMIN")) {
     return NextResponse.json({ isImpersonating: false });
   }
-  const normalizedAdminRoles = resolveTargetRoles(user as { role: string; roles?: UserRole[] | null });
+  const normalizedAdminRoles = resolveTargetRoles(user as { roles?: UserRole[] | null });
 
   if (!user.impersonatingUserId) {
     return withRoleAndImpersonationCookies(
@@ -271,8 +269,8 @@ export async function GET() {
     );
   }
 
-  const normalizedTargetRoles = resolveTargetRoles(targetUser as { role: string; roles?: UserRole[] | null });
-  const normalizedTargetRole = normalizedTargetRoles[0] ?? (ROLES[targetUser.role as UserRole]?.normalizesTo ?? (targetUser.role as UserRole));
+  const normalizedTargetRoles = resolveTargetRoles(targetUser as { roles?: UserRole[] | null });
+  const normalizedTargetRole = normalizedTargetRoles[0] ?? ("VIEWER" as UserRole);
   return withRoleAndImpersonationCookies(NextResponse.json({
     isImpersonating: true,
     impersonating: {

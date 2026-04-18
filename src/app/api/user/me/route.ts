@@ -30,7 +30,8 @@ export async function GET() {
       });
 
       if (impersonatedUser) {
-        const normalizedRole = (ROLES[impersonatedUser.role as UserRole]?.normalizesTo ?? (impersonatedUser.role as UserRole));
+        const primary = (impersonatedUser.roles?.[0] ?? "VIEWER") as UserRole;
+        const normalizedRole = ROLES[primary]?.normalizesTo ?? primary;
         return NextResponse.json({
           user: {
             id: impersonatedUser.id,

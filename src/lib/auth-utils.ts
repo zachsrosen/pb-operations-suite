@@ -45,7 +45,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
         const impRoles: UserRole[] =
           impersonatedUser.roles.length > 0
             ? (impersonatedUser.roles as UserRole[]).map(normalizeRole)
-            : [normalizeRole(impersonatedUser.role as UserRole)];
+            : [normalizeRole("VIEWER" as UserRole)];
         return {
           id: impersonatedUser.id,
           email: impersonatedUser.email,
