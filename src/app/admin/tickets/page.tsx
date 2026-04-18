@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
+import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
+import { AdminEmpty } from "@/components/admin-shell/AdminEmpty";
 
 interface BugReport {
   id: string;
@@ -28,6 +31,7 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; b
 export default function AdminTicketsPage() {
   const router = useRouter();
   const { addToast } = useToast();
+  const searchParams = useSearchParams();
 
   const [tickets, setTickets] = useState<BugReport[]>([]);
   const [total, setTotal] = useState(0);
@@ -62,6 +66,14 @@ export default function AdminTicketsPage() {
   useEffect(() => {
     fetchTickets();
   }, [fetchTickets]);
+
+  // Deep-link: ?ticketId=<id> opens the ticket detail on load
+  const deepLinkedTicketId = searchParams.get("ticketId");
+  useEffect(() => {
+    if (!deepLinkedTicketId || tickets.length === 0) return;
+    const t = tickets.find((x) => x.id === deepLinkedTicketId);
+    if (t) setSelectedTicket(t);
+  }, [deepLinkedTicketId, tickets]);
 
   const handleStatusUpdate = async (ticketId: string, newStatus: string) => {
     setUpdating(true);
@@ -147,27 +159,15 @@ export default function AdminTicketsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Header */}
-      <div className="border-b border-t-border bg-surface">
-        <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center gap-3 mb-3">
-            <button
-              onClick={() => router.push("/suites/admin")}
-              className="text-muted hover:text-foreground transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <div>
-              <h1 className="text-lg font-bold text-foreground">Bug Reports</h1>
-              <p className="text-xs text-muted">User-submitted bug reports and feature issues</p>
-            </div>
-          </div>
+    <div>
+      <AdminPageHeader
+        title="Bug Tickets"
+        breadcrumb={["Admin", "Operations", "Tickets"]}
+        subtitle="User-submitted bug reports and feature issues"
+      />
 
-          {/* Status filter tabs */}
-          <div className="flex items-center gap-1">
+      {/* Status filter tabs */}
+      <div className="mb-6 flex items-center gap-1">
             {[
               { key: "", label: "All", count: statusCounts.all },
               { key: "OPEN", label: "Open", count: statusCounts.OPEN },
@@ -191,24 +191,23 @@ export default function AdminTicketsPage() {
               </button>
             ))}
           </div>
-        </div>
-      </div>
 
       {/* Content */}
-      <div className="max-w-7xl mx-auto px-6 py-6">
+      <div className="mt-4">
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" />
           </div>
         ) : tickets.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="w-12 h-12 rounded-xl bg-surface-2 border border-t-border flex items-center justify-center mx-auto mb-4">
-              <svg className="w-6 h-6 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <AdminEmpty
+            label={`No bug reports${statusFilter ? ` with status "${STATUS_CONFIG[statusFilter]?.label}"` : " yet"}`}
+            description="Bug reports submitted by users will appear here."
+            icon={
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-            </div>
-            <p className="text-sm text-muted">No bug reports {statusFilter ? `with status "${STATUS_CONFIG[statusFilter]?.label}"` : "yet"}</p>
-          </div>
+            }
+          />
         ) : (
           <div className="space-y-2">
             {tickets.map((ticket) => {
