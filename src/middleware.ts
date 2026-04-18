@@ -123,19 +123,9 @@ export default auth((req) => {
   const pathname = req.nextUrl.pathname;
 
   const isLoggedIn = !!req.auth;
-  const tokenRole = req.auth?.user?.role as UserRole | undefined;
-  // Multi-role JWT — preferred source. Phase-1 transition: older JWTs only
-  // carry `role`, so fall back to `[tokenRole]` when `roles` is absent/empty.
-  const tokenRolesRaw = (req.auth?.user as { roles?: UserRole[] } | undefined)?.roles;
-  const tokenRoles: UserRole[] | undefined =
-    tokenRolesRaw && tokenRolesRaw.length > 0
-      ? tokenRolesRaw
-      : tokenRole
-        ? [tokenRole]
-        : undefined;
-  const cookieRole = req.cookies.get("pb_effective_role")?.value as UserRole | undefined;
-  // Multi-role impersonation cookie (Chunk 9 will start writing this). Prefer
-  // when present; fall back to the legacy single-role cookie.
+  const tokenRoles = (req.auth?.user as { roles?: UserRole[] } | undefined)?.roles;
+  // Impersonation: admin sets pb_effective_roles (JSON array) via /api/admin/impersonate.
+  // Only respected when the JWT confirms the user is ADMIN.
   const cookieRolesRaw = req.cookies.get("pb_effective_roles")?.value;
   let cookieRoles: UserRole[] | undefined;
   if (cookieRolesRaw) {
@@ -145,48 +135,29 @@ export default auth((req) => {
         cookieRoles = parsed as UserRole[];
       }
     } catch {
-      // Malformed cookie — ignore; fall through to legacy cookie.
+      // Malformed cookie — ignore.
     }
   }
-  if ((!cookieRoles || cookieRoles.length === 0) && cookieRole) {
-    cookieRoles = [cookieRole];
-  }
   const isImpersonatingCookie = req.cookies.get("pb_is_impersonating")?.value === "1";
-  // Impersonation cookie (set server-side, httpOnly) takes precedence only
-  // when the authenticated user is ADMIN. This prevents privilege escalation
-  // if the cookie is tampered with on a non-admin session.
-  // Never let the cookie elevate to ADMIN or EXECUTIVE (legacy OWNER
-  // normalizes to EXECUTIVE — both values are blocked). VIEWER is accepted
-  // only while the dedicated impersonation-state cookie is active.
-  const isAdminToken = tokenRole === "ADMIN";
-  const isSafeCookieRole = cookieRole && cookieRole !== "ADMIN" && cookieRole !== "EXECUTIVE";
-  const shouldUseCookieRole =
-    isAdminToken && !!isSafeCookieRole && (cookieRole !== "VIEWER" || isImpersonatingCookie);
-  // Edge-runtime JWT sync gap: When sign-in happens on edge, syncRoleToToken
-  // bails (Prisma is unavailable) and the JWT role stays undefined/VIEWER.
-  // AuthSync.tsx later calls POST /api/auth/sync which sets pb_effective_role
-  // from the DB. Trust this httpOnly cookie as a fallback so users aren't
-  // stuck at VIEWER until their JWT naturally refreshes.
-  const isEdgeSyncFallback =
-    !shouldUseCookieRole &&
-    isLoggedIn &&
-    (!tokenRole || tokenRole === "VIEWER") &&
-    cookieRole &&
-    cookieRole !== "VIEWER" &&
-    !isImpersonatingCookie;
-  const rawRole = (shouldUseCookieRole ? cookieRole : isEdgeSyncFallback ? cookieRole : tokenRole) || "VIEWER";
-  const userRole = normalizeRole(rawRole);
-  // Mirror the single-role decision into the multi-role array: whichever
-  // source wins above, use the matching multi-role list (cookie vs token).
-  const effectiveRolesSource: UserRole[] =
-    shouldUseCookieRole || isEdgeSyncFallback
-      ? cookieRoles ?? []
-      : tokenRoles ?? [];
+  // Cookie override is only respected when the JWT confirms ADMIN and the cookie
+  // roles don't attempt to elevate to ADMIN/EXECUTIVE. VIEWER requires the
+  // impersonation flag to prevent accidental VIEWER lock-out on stale cookies.
+  const isAdminToken = tokenRoles?.includes("ADMIN") ?? false;
+  const isSafeCookieRoles = cookieRoles &&
+    !cookieRoles.some((r) => r === "ADMIN" || r === "EXECUTIVE");
+  const shouldUseCookieRoles =
+    isAdminToken &&
+    !!isSafeCookieRoles &&
+    (!(cookieRoles?.every((r) => r === "VIEWER")) || isImpersonatingCookie);
   const effectiveRoles: UserRole[] =
-    effectiveRolesSource.length > 0 ? effectiveRolesSource : [userRole];
+    shouldUseCookieRoles && cookieRoles && cookieRoles.length > 0
+      ? cookieRoles
+      : tokenRoles && tokenRoles.length > 0
+        ? tokenRoles
+        : ["VIEWER"];
+  const userRole = normalizeRole(effectiveRoles[0] ?? "VIEWER");
   const access = resolveUserAccess({
     roles: effectiveRoles,
-    role: effectiveRoles[0] ?? "VIEWER",
   });
   const isPathAllowed = (path: string) => isPathAllowedByAccess(access, path);
   const canAccessRouteAdapter = (_role: UserRole, path: string) =>
