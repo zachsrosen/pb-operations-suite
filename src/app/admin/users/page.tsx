@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ROLES as ROLE_DEFS } from "@/lib/roles";
 import type { UserRole } from "@/generated/prisma/enums";
+import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
 
 interface UserPermissions {
   canScheduleSurveys: boolean;
@@ -89,6 +91,8 @@ const PERMISSION_LABELS: Record<keyof Omit<UserPermissions, "allowedLocations">,
 };
 
 export default function AdminUsersPage() {
+  const searchParams = useSearchParams();
+  const deepLinkedUserId = searchParams.get("userId");
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -163,6 +167,22 @@ export default function AdminUsersPage() {
     checkWorkspaceConfig();
     fetchCurrentUser();
   }, [fetchUsers, checkWorkspaceConfig, fetchCurrentUser]);
+
+  // Deep-link: ?userId=<id> opens the permissions modal and scrolls to the row.
+  useEffect(() => {
+    if (!deepLinkedUserId || users.length === 0) return;
+    const target = users.find((u) => u.id === deepLinkedUserId);
+    if (!target) return;
+    openPermissionsModal(target);
+    requestAnimationFrame(() => {
+      document
+        .querySelector(`[data-user-id="${deepLinkedUserId}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    // openPermissionsModal is stable (defined inline, not memoized) — list only the
+    // reactive deps that should re-trigger this effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLinkedUserId, users]);
 
   const showToast = (message: string) => {
     setToast(message);
@@ -532,7 +552,7 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <>
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg ${
@@ -898,68 +918,36 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      {/* Header */}
-      <div className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b border-t-border">
-        <div className="max-w-5xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/" className="text-muted hover:text-foreground">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
-              </Link>
-              <h1 className="text-xl font-bold">User Management</h1>
-              <span className="text-xs text-muted bg-surface-2 px-2 py-1 rounded">
-                {users.length} users
-              </span>
-            </div>
-
-            {/* Navigation */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-white px-3 py-1.5 rounded-lg bg-surface-2">
-                Users
-              </span>
-              <Link
-                href="/admin/crew-availability"
-                className="text-xs text-muted hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-surface-2 transition-colors"
-              >
-                Crew Availability
-              </Link>
-              <Link
-                href="/admin/activity"
-                className="text-xs text-muted hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-surface-2 transition-colors"
-              >
-                Activity
-              </Link>
-              {/* Sync Button */}
-              {workspaceConfigured && (
-              <button
-                onClick={syncWorkspace}
-                disabled={syncing}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
-              >
-                {syncing ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Syncing...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    Sync Google Workspace
-                  </>
-                )}
-              </button>
+      <AdminPageHeader
+        title="Users"
+        breadcrumb={["Admin", "People", "Users"]}
+        actions={
+          workspaceConfigured ? (
+            <button
+              onClick={syncWorkspace}
+              disabled={syncing}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed rounded-lg text-sm font-medium transition-colors"
+            >
+              {syncing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Sync Google Workspace
+                </>
               )}
-            </div>
-          </div>
-        </div>
-      </div>
+            </button>
+          ) : undefined
+        }
+      />
 
       {/* Content */}
-      <div className="max-w-6xl mx-auto px-4 py-6">
+      <div>
         {/* Workspace Sync Info */}
         {workspaceConfigured === false && (
           <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
@@ -1114,7 +1102,7 @@ export default function AdminUsersPage() {
               {filterUsers().map(user => {
                 const indicator = getLastActiveIndicator(user.lastLoginAt);
                 return (
-                  <tr key={user.id} className="hover:bg-skeleton">
+                  <tr key={user.id} data-user-id={user.id} className="hover:bg-skeleton">
                     <td className="px-4 py-3">
                       <input
                         type="checkbox"
@@ -1179,32 +1167,40 @@ export default function AdminUsersPage() {
                       </button>
                     </td>
                     <td className="px-4 py-3">
-                      {user.email !== currentUserEmail && !getUserRoles(user).includes("ADMIN") && (
-                        <button
-                          onClick={() => startImpersonation(user)}
-                          disabled={impersonating === user.id}
-                          className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded-lg text-sm transition-colors disabled:opacity-50"
-                          title={`View as ${user.name || user.email}`}
+                      <div className="flex flex-col gap-1.5">
+                        {user.email !== currentUserEmail && !getUserRoles(user).includes("ADMIN") && (
+                          <button
+                            onClick={() => startImpersonation(user)}
+                            disabled={impersonating === user.id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 rounded-lg text-sm transition-colors disabled:opacity-50"
+                            title={`View as ${user.name || user.email}`}
+                          >
+                            {impersonating === user.id ? (
+                              <>
+                                <div className="w-3 h-3 border-2 border-amber-400/50 border-t-amber-400 rounded-full animate-spin" />
+                                <span>Starting...</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                </svg>
+                                <span>View As</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                        {getUserRoles(user).includes("ADMIN") && user.email !== currentUserEmail && (
+                          <span className="text-xs text-muted/70">Cannot impersonate admins</span>
+                        )}
+                        <Link
+                          href={`/admin/activity?userId=${encodeURIComponent(user.id)}`}
+                          className="text-xs text-muted hover:text-foreground"
                         >
-                          {impersonating === user.id ? (
-                            <>
-                              <div className="w-3 h-3 border-2 border-amber-400/50 border-t-amber-400 rounded-full animate-spin" />
-                              <span>Starting...</span>
-                            </>
-                          ) : (
-                            <>
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                              </svg>
-                              <span>View As</span>
-                            </>
-                          )}
-                        </button>
-                      )}
-                      {getUserRoles(user).includes("ADMIN") && user.email !== currentUserEmail && (
-                        <span className="text-xs text-muted/70">Cannot impersonate admins</span>
-                      )}
+                          Activity
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -1222,6 +1218,6 @@ export default function AdminUsersPage() {
           )}
         </div>
       </div>
-    </div>
+    </>
   );
 }
