@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
@@ -6,6 +5,7 @@ import { APP_PAGE_ROUTES } from "@/lib/page-directory";
 import { canAccessRoute } from "@/lib/user-access";
 import { ROLES } from "@/lib/roles";
 import type { UserRole } from "@/generated/prisma/enums";
+import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
 
 const PICKER_ROLES: UserRole[] = (Object.entries(ROLES) as Array<[UserRole, (typeof ROLES)[UserRole]]>)
   .filter(([, def]) => def.visibleInPicker)
@@ -69,73 +69,62 @@ export default async function AdminDirectoryPage() {
   }));
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <main className="max-w-7xl mx-auto px-6 py-8">
-        <div className="mb-6">
-          <Link href="/suites/admin" className="text-xs text-muted hover:text-foreground transition-colors">
-            &larr; Back to Admin Suite
-          </Link>
-          <h1 className="text-2xl font-bold mt-3">Page Directory</h1>
-          <p className="text-sm text-muted mt-1">
-            All app pages with role-based route access at the middleware level.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-          {countsByRole.map(({ role, count }) => (
-            <div key={role} className="bg-surface/50 border border-t-border rounded-lg p-3">
-              <div className="text-xs text-muted mb-1">{ROLES[role].badge.abbrev}</div>
-              <div className="text-lg font-semibold">{count}</div>
-              <div className="text-[11px] text-muted">routes</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
-          <div className="max-h-[70vh] overflow-auto">
-            <table className="w-full text-sm">
-              <thead className="sticky top-0 z-10 bg-surface border-b border-t-border">
-                <tr className="text-left">
-                  <th className="px-4 py-3 font-semibold">URL</th>
-                  <th className="px-4 py-3 font-semibold">Section</th>
-                  <th className="px-4 py-3 font-semibold">Roles</th>
-                  <th className="px-4 py-3 font-semibold">Notes</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row) => (
-                  <tr key={row.path} className="border-b border-t-border/70 align-top">
-                    <td className="px-4 py-3 font-mono text-xs">
-                      <a
-                        href={row.path}
-                        className="text-blue-300 hover:text-blue-200 underline-offset-2 hover:underline"
-                      >
-                        {`https://www.pbtechops.com${row.path}`}
-                      </a>
-                    </td>
-                    <td className="px-4 py-3 text-muted">{row.section}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1.5">
-                        {row.allowedRoles.map((role) => (
-                          <span
-                            key={`${row.path}-${role}`}
-                            className={`text-[10px] font-medium px-2 py-0.5 rounded border ${badgeClassesForRole(role)}`}
-                          >
-                            {ROLES[role].badge.abbrev}
-                          </span>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-xs text-muted">
-                      {row.notes || "-"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+    <div>
+      <AdminPageHeader title="Page Directory" breadcrumb={["Admin", "People", "Directory"]} />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        {countsByRole.map(({ role, count }) => (
+          <div key={role} className="bg-surface/50 border border-t-border rounded-lg p-3">
+            <div className="text-xs text-muted mb-1">{ROLES[role].badge.abbrev}</div>
+            <div className="text-lg font-semibold">{count}</div>
+            <div className="text-[11px] text-muted">routes</div>
           </div>
+        ))}
+      </div>
+
+      <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
+        <div className="max-h-[70vh] overflow-auto">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 z-10 bg-surface border-b border-t-border">
+              <tr className="text-left">
+                <th className="px-4 py-3 font-semibold">URL</th>
+                <th className="px-4 py-3 font-semibold">Section</th>
+                <th className="px-4 py-3 font-semibold">Roles</th>
+                <th className="px-4 py-3 font-semibold">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.path} className="border-b border-t-border/70 align-top">
+                  <td className="px-4 py-3 font-mono text-xs">
+                    <a
+                      href={row.path}
+                      className="text-blue-300 hover:text-blue-200 underline-offset-2 hover:underline"
+                    >
+                      {`https://www.pbtechops.com${row.path}`}
+                    </a>
+                  </td>
+                  <td className="px-4 py-3 text-muted">{row.section}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {row.allowedRoles.map((role) => (
+                        <span
+                          key={`${row.path}-${role}`}
+                          className={`text-[10px] font-medium px-2 py-0.5 rounded border ${badgeClassesForRole(role)}`}
+                        >
+                          {ROLES[role].badge.abbrev}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-muted">
+                    {row.notes || "-"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </main>
+      </div>
     </div>
   );
 }
