@@ -46,7 +46,7 @@ export interface RoleDefinition {
 // ADMIN_ONLY routes are stripped from every canonical role below — they're
 // dead entries per ROLE_PERMISSIONS (short-circuited by canAccessRoute).
 // Kept here as documentation of the sentinel list:
-// ["/admin", "/api/admin", "/suites/admin", "/dashboards/zuper-status-comparison",
+// ["/admin", "/api/admin", "/dashboards/zuper-status-comparison",
 //  "/dashboards/product-comparison", "/dashboards/mobile", "/dashboards/inventory",
 //  "/dashboards/catalog", "/dashboards/command-center", "/dashboards/capacity",
 //  "/dashboards/locations", "/api/chat"]
@@ -65,7 +65,6 @@ const ADMIN: RoleDefinition = {
     "/suites/dnr-roofing",
     "/suites/executive",
     "/suites/accounting",
-    "/suites/admin",
   ],
   allowedRoutes: ["*"],
   landingCards: [],
@@ -901,7 +900,6 @@ export const ROLES: Record<UserRole, RoleDefinition> = {
 export const ADMIN_ONLY_ROUTES: string[] = [
   "/admin",
   "/api/admin",
-  "/suites/admin",
   "/dashboards/zuper-status-comparison",
   "/dashboards/product-comparison",
   "/dashboards/mobile",

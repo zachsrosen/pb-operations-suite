@@ -130,13 +130,8 @@ const SUITE_METADATA: Record<string, SuiteMetadata> = {
     tag: "ACCOUNTING",
     tagColor: "green",
   },
-  "/suites/admin": {
-    title: "Admin Suite",
-    description: "Admin tools, compliance, documentation, and prototypes.",
-    tag: "ADMIN",
-    tagColor: "red",
-    adminSection: true,
-  },
+  // Admin no longer has a home-page card — admins reach /admin via the
+  // UserMenu dropdown. Keeps the home page scoped to end-user suites.
 };
 
 // ---- Main page ----

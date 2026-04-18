@@ -2,7 +2,52 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
+import SyncStatusCard from "@/components/admin-shell/SyncStatusCard";
 import type { ActivityType } from "@/generated/prisma/enums";
+
+/**
+ * Dashboards that belong to admins but live outside /admin/* (they're at
+ * /dashboards/*). Surfacing them here gives admins a single entry point.
+ */
+const ADMIN_DASHBOARDS: Array<{ href: string; title: string; description: string; icon: string }> = [
+  {
+    href: "/dashboards/zuper-status-comparison",
+    title: "Zuper Status Comparison",
+    description: "Compare Zuper job statuses against HubSpot.",
+    icon: "🔄",
+  },
+  {
+    href: "/dashboards/mobile",
+    title: "Mobile Dashboard",
+    description: "Touch-optimized view for field teams.",
+    icon: "📱",
+  },
+  {
+    href: "/dashboards/availability-approvals",
+    title: "Availability Approvals",
+    description: "Approve or reject crew availability change requests.",
+    icon: "✅",
+  },
+];
+
+/**
+ * Reference links — docs, prototypes, API shortcuts. Low-priority but kept
+ * accessible from the admin landing so nothing from the old /suites/admin
+ * is orphaned.
+ */
+const REFERENCE_LINKS: Array<{ href: string; label: string }> = [
+  { href: "/updates", label: "Updates" },
+  { href: "/guide", label: "Guide" },
+  { href: "/roadmap", label: "Roadmap" },
+  { href: "/handbook", label: "Handbook" },
+  { href: "/sop", label: "SOPs" },
+  { href: "/prototypes/home-refresh", label: "Home prototypes" },
+  { href: "/prototypes/layout-refresh", label: "Layout prototypes" },
+  { href: "/prototypes/solar-checkout", label: "Solar checkout proto" },
+  { href: "/api/projects?stats=true", label: "Projects+Stats API" },
+  { href: "/api/projects?context=pe", label: "PE Projects API" },
+  { href: "/api/projects?context=scheduling", label: "Scheduling API" },
+];
 
 const ADMIN_ACTIVITY_TYPES: ActivityType[] = [
   "USER_ROLE_CHANGED",
@@ -166,6 +211,29 @@ export default async function AdminLandingPage() {
         />
       </div>
 
+      {/* Pipeline sync status — ported from the old /suites/admin hero */}
+      <SyncStatusCard />
+
+      {/* Admin-gated dashboards that live outside /admin/* */}
+      <section>
+        <h2 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted">Dashboards</h2>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {ADMIN_DASHBOARDS.map((d) => (
+            <Link
+              key={d.href}
+              href={d.href}
+              className="rounded-lg border border-t-border/60 bg-surface p-4 transition-colors hover:bg-surface-elevated"
+            >
+              <div className="flex items-center gap-2">
+                <span aria-hidden="true">{d.icon}</span>
+                <span className="text-sm font-medium text-foreground">{d.title}</span>
+              </div>
+              <p className="mt-1 text-xs text-muted">{d.description}</p>
+            </Link>
+          ))}
+        </div>
+      </section>
+
       {/* Recent admin activity */}
       <section className="rounded-lg border border-t-border/60 bg-surface">
         <header className="flex items-center justify-between border-b border-t-border/60 px-4 py-3">
@@ -200,6 +268,22 @@ export default async function AdminLandingPage() {
             })}
           </ul>
         )}
+      </section>
+
+      {/* Reference — docs, prototypes, API shortcuts. Compact chips. */}
+      <section>
+        <h2 className="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted">Reference</h2>
+        <div className="flex flex-wrap gap-2">
+          {REFERENCE_LINKS.map((r) => (
+            <Link
+              key={r.href}
+              href={r.href}
+              className="rounded-full border border-t-border/60 bg-surface-2 px-3 py-1 text-xs text-muted transition-colors hover:bg-surface-elevated hover:text-foreground"
+            >
+              {r.label}
+            </Link>
+          ))}
+        </div>
       </section>
     </div>
   );

@@ -58,8 +58,8 @@ export const SUITE_NAV_ENTRIES: SuiteNavEntry[] = [
     description: "PE deal payments, pricing tools, and financial tracking.",
   },
   {
-    href: "/suites/admin",
-    title: "Admin Suite",
+    href: "/admin",
+    title: "Admin",
     shortLabel: "Admin",
     description: "Administrative controls, security, compliance, and documentation.",
   },
