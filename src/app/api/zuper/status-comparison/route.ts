@@ -710,7 +710,7 @@ export async function GET() {
 
     // Admin-only: check real DB role (JWT role is stale)
     const dbUser = await getUserByEmail(authResult.email);
-    if (!dbUser || dbUser.role !== "ADMIN") {
+    if (!dbUser || !dbUser.roles.includes("ADMIN")) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 

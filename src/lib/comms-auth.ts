@@ -44,7 +44,7 @@ export async function getActualCommsUser(): Promise<CommsAuthResult> {
       id: dbUser.id,
       email: dbUser.email,
       name: dbUser.name ?? undefined,
-      role: normalizeRole(dbUser.role as UserRole),
+      role: normalizeRole((dbUser.roles?.[0] ?? "VIEWER") as UserRole),
     },
     blocked: false,
   };

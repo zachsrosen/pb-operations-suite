@@ -60,7 +60,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     const dbRoles: UserRole[] =
       dbUser.roles.length > 0
         ? (dbUser.roles as UserRole[]).map(normalizeRole)
-        : [normalizeRole(dbUser.role as UserRole)];
+        : ["VIEWER"];
     return {
       id: dbUser.id,
       email: dbUser.email,

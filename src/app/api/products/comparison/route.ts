@@ -2102,7 +2102,7 @@ export async function GET() {
   if (authResult instanceof NextResponse) return authResult;
 
   const dbUser = await getUserByEmail(authResult.email);
-  const rawRole = (dbUser?.role ?? authResult.role) as UserRole;
+  const rawRole = (dbUser?.roles?.[0] ?? authResult.roles?.[0] ?? "VIEWER") as UserRole;
   const role = (ROLES[rawRole]?.normalizesTo ?? rawRole);
 
   if (!isAllowedRole(role)) {

@@ -89,7 +89,7 @@ async function handlePreview() {
 async function handleExecute(body: Record<string, unknown>, userEmail: string) {
   // Role check
   const dbUser = await getUserByEmail(userEmail);
-  const role = (ROLES[((dbUser?.role ?? "VIEWER") as UserRole)]?.normalizesTo ?? ((dbUser?.role ?? "VIEWER") as UserRole));
+  const role = (ROLES[((dbUser?.roles?.[0] ?? "VIEWER") as UserRole)]?.normalizesTo ?? ((dbUser?.roles?.[0] ?? "VIEWER") as UserRole));
   if (!ALLOWED_ROLES.has(role)) {
     return NextResponse.json({ error: "Admin or owner access required" }, { status: 403 });
   }

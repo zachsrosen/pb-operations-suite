@@ -128,7 +128,7 @@ export async function GET() {
   if (authResult instanceof NextResponse) return authResult;
 
   const dbUser = await getUserByEmail(authResult.email);
-  const role = (ROLES[((dbUser?.role ?? authResult.role) as UserRole)]?.normalizesTo ?? ((dbUser?.role ?? authResult.role) as UserRole));
+  const role = (ROLES[((dbUser?.roles?.[0] ?? authResult.roles?.[0] ?? "VIEWER") as UserRole)]?.normalizesTo ?? ((dbUser?.roles?.[0] ?? authResult.roles?.[0] ?? "VIEWER") as UserRole));
   if (!isAllowedRole(role)) {
     return NextResponse.json({ error: "Admin or owner access required" }, { status: 403 });
   }

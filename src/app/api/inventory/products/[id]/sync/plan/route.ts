@@ -29,7 +29,7 @@ async function authenticate() {
   if (authResult instanceof NextResponse) return { error: authResult };
 
   const dbUser = await getUserByEmail(authResult.email);
-  const role = (ROLES[((dbUser?.role ?? authResult.role) as UserRole)]?.normalizesTo ?? ((dbUser?.role ?? authResult.role) as UserRole));
+  const role = (ROLES[((dbUser?.roles?.[0] ?? authResult.roles?.[0] ?? "VIEWER") as UserRole)]?.normalizesTo ?? ((dbUser?.roles?.[0] ?? authResult.roles?.[0] ?? "VIEWER") as UserRole));
   if (!ALLOWED_ROLES.has(role)) {
     return { error: NextResponse.json({ error: "Admin or owner access required" }, { status: 403 }) };
   }
