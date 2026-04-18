@@ -45,6 +45,14 @@ const ADMIN_TOOLS: SuitePageCard[] = [
     section: "Admin Tools",
   },
   {
+    href: "/admin/roles",
+    title: "Role Inspector",
+    description: "Read-only view of every role's suites, routes, landing cards, scope, and capabilities. Source of truth: src/lib/roles.ts.",
+    tag: "ROLES",
+    icon: "🔐",
+    section: "Admin Tools",
+  },
+  {
     href: "/dashboards/zuper-status-comparison",
     title: "Zuper Status Comparison",
     description: "Compare Zuper job statuses and schedule/completion dates with HubSpot data.",
