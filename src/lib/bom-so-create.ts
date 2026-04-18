@@ -246,6 +246,17 @@ export async function createSalesOrder(params: {
   const projMatch = snapshot.dealName.match(/PROJ-(\d+)/);
   const soNumber = projMatch ? `SO-${projMatch[1]}` : `SO-${dealId}`;
 
+  // Reference number: anchor on PROJ-XXXX so pipeline prefixes (e.g. "D&R |")
+  // are preserved — produces "D&R | PROJ-5736 | Goltz, James" for D&R deals
+  // and "PROJ-1234 | Smith" for project deals. Falls back to first two
+  // pipe-segments when no PROJ-XXXX is present.
+  const refSegments = snapshot.dealName.split("|").map((s) => s.trim());
+  const refProjIdx = refSegments.findIndex((s) => /^PROJ-\d+/i.test(s));
+  const referenceNumber = (refProjIdx >= 0
+    ? refSegments.slice(0, refProjIdx + 2)
+    : refSegments.slice(0, 2)
+  ).join(" | ").slice(0, 50);
+
   // Resolve warehouse from PB location (fetch from HubSpot if not provided)
   let resolvedLocation = pbLocation;
   if (!resolvedLocation) {
@@ -272,9 +283,7 @@ export async function createSalesOrder(params: {
     soResult = await zohoInventory.createSalesOrder({
       customer_id: customerId,
       salesorder_number: soNumber,
-      reference_number: snapshot.dealName
-        .split("|").slice(0, 2).join("|").trim()
-        .slice(0, 50),
+      reference_number: referenceNumber,
       notes: `Generated from PB Ops BOM v${version}${address ? ` — ${address}` : ""}`,
       status: "draft",
       line_items: lineItems.map(({ item_id, name, quantity, description }) => ({

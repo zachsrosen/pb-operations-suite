@@ -60,11 +60,18 @@ describe("createServiceSo", () => {
   };
 
   // Mock helper: set up deal batch read (server-side deal name/address resolution)
-  const mockDealBatchRead = () => {
+  const mockDealBatchRead = (overrides: Partial<Record<string, string>> = {}) => {
     mockDealRead.mockResolvedValueOnce({
       results: [{
         id: "deal-1",
-        properties: { dealname: "PROJ-1234 | Smith, John | 123 Main St", address_line_1: "123 Main St", city: "Denver", state: "CO", postal_code: "80202" },
+        properties: {
+          dealname: "PROJ-1234 | Smith, John | 123 Main St",
+          address_line_1: "123 Main St",
+          city: "Denver",
+          state: "CO",
+          postal_code: "80202",
+          ...overrides,
+        },
       }],
     });
   };
@@ -179,6 +186,85 @@ describe("createServiceSo", () => {
       dealName: "PROJ-1234 | Smith, John | 123 Main St",
       primaryContactId: "cont-99",
       dealAddress: "123 Main St, Denver, CO, 80202",
+    });
+  });
+
+  describe("SO number + reference number", () => {
+    const setupHappyPath = () => {
+      mockSoFindUnique.mockResolvedValueOnce(null);
+      mockProductFind.mockResolvedValueOnce([{
+        id: "prod-1", name: "Widget", category: "SERVICE", isActive: true,
+        sku: null, description: null, sellPrice: 50, zohoItemId: "zi-1", brand: "B", model: "M",
+      }]);
+      mockSoCreate.mockResolvedValueOnce({ id: "req-ref" });
+      mockDealContactAssoc();
+      mockCustomerResolution();
+      mockSoUpdate.mockResolvedValue({});
+      mockCreateSo.mockResolvedValueOnce({ salesorder_id: "zso-ref", salesorder_number: "ignored" });
+    };
+
+    it("project-pipeline deal: SO-{projNumber} + first-two-segment ref", async () => {
+      setupHappyPath();
+      mockDealBatchRead({ dealname: "PROJ-1234 | Smith, John | 123 Main St" });
+
+      await createServiceSo(baseInput);
+
+      const call = mockCreateSo.mock.calls[0][0];
+      expect(call.salesorder_number).toBe("SO-1234");
+      expect(call.reference_number).toBe("PROJ-1234 | Smith, John");
+    });
+
+    it("SVC-prefixed service deal: SO-{projNumber} + prefix preserved in ref", async () => {
+      setupHappyPath();
+      mockDealBatchRead({ dealname: "SVC | PROJ-8964 | McElheron | 456 Oak Ave" });
+
+      await createServiceSo(baseInput);
+
+      const call = mockCreateSo.mock.calls[0][0];
+      expect(call.salesorder_number).toBe("SO-8964");
+      expect(call.reference_number).toBe("SVC | PROJ-8964 | McElheron");
+    });
+
+    it("dealname without PROJ-XXXX: falls back to project_number HubSpot property", async () => {
+      setupHappyPath();
+      mockDealBatchRead({
+        dealname: "SVC | McElheron | 456 Oak Ave",
+        project_number: "8964",
+      });
+
+      await createServiceSo(baseInput);
+
+      const call = mockCreateSo.mock.calls[0][0];
+      expect(call.salesorder_number).toBe("SO-8964");
+    });
+
+    it("strips leading PROJ- prefix on project_number property", async () => {
+      setupHappyPath();
+      mockDealBatchRead({
+        dealname: "SVC | McElheron | 456 Oak Ave",
+        project_number: "PROJ-8964",
+      });
+
+      await createServiceSo(baseInput);
+
+      const call = mockCreateSo.mock.calls[0][0];
+      expect(call.salesorder_number).toBe("SO-8964");
+    });
+
+    it("hard-fails when neither dealname nor project_number carries a project number", async () => {
+      mockSoFindUnique.mockResolvedValueOnce(null);
+      mockProductFind.mockResolvedValueOnce([{
+        id: "prod-1", name: "Widget", category: "SERVICE", isActive: true,
+        sku: null, description: null, sellPrice: 50, zohoItemId: "zi-1", brand: "B", model: "M",
+      }]);
+      mockSoCreate.mockResolvedValueOnce({ id: "req-fail" });
+      mockDealBatchRead({ dealname: "Service Call - McElheron", project_number: "" });
+      mockDealContactAssoc();
+      mockCustomerResolution();
+      mockSoUpdate.mockResolvedValue({});
+
+      await expect(createServiceSo(baseInput)).rejects.toThrow(/no PROJ-XXXX in dealname/);
+      expect(mockCreateSo).not.toHaveBeenCalled();
     });
   });
 });
