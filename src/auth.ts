@@ -12,7 +12,6 @@ const ALLOWED_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAIN || "photonbrothers.com
 // Note: Database operations are done via API routes, not in auth callbacks
 // This is because auth callbacks run in Edge Runtime which doesn't support Prisma
 
-// Extend the session type to include role
 declare module "next-auth" {
   interface Session {
     user: {
@@ -20,7 +19,6 @@ declare module "next-auth" {
       email?: string | null;
       name?: string | null;
       image?: string | null;
-      role?: string;
       roles?: string[];
     };
   }
@@ -28,7 +26,6 @@ declare module "next-auth" {
 
 declare module "next-auth/jwt" {
   interface JWT {
-    role?: string;
     roles?: string[];
     roleSyncedAt?: number;
     accessToken?: string;
@@ -73,26 +70,15 @@ async function syncRoleToToken(token: JWT): Promise<JWT> {
       image: typeof token.picture === "string" ? token.picture : undefined,
     }, { touchLastLogin: false });
 
-    // Prefer the multi-role array if it's populated; fall back to the single
-    // `role` column for Phase 1 back-compat (synthesize a 1-element array).
-    const dbRoles = dbUser?.roles && dbUser.roles.length > 0 ? dbUser.roles : null;
-    const rolesRaw: UserRole[] = dbRoles
-      ? (dbRoles as UserRole[])
-      : dbUser?.role
-        ? [dbUser.role as UserRole]
-        : token.role
-          ? [token.role as UserRole]
-          : ["VIEWER" as UserRole];
-    const normalizedRoles = rolesRaw.map((r) => normalizeRole(r));
-    token.roles = normalizedRoles;
-    token.role = normalizedRoles[0] ?? "VIEWER";
+    const rolesRaw: UserRole[] = dbUser?.roles && dbUser.roles.length > 0
+      ? (dbUser.roles as UserRole[])
+      : ["VIEWER" as UserRole];
+    token.roles = rolesRaw.map((r) => normalizeRole(r));
     token.roleSyncedAt = Date.now();
     return token;
   } catch (error) {
     console.error("[auth] Failed to sync role to token:", error);
-    const fallback = normalizeRole((token.role || "VIEWER") as UserRole);
-    token.role = fallback;
-    token.roles = token.roles && token.roles.length > 0 ? token.roles : [fallback];
+    token.roles = token.roles && token.roles.length > 0 ? token.roles : ["VIEWER"];
     return token;
   }
 }
@@ -164,19 +150,11 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       return baseUrl;
     },
     async session({ session, token }) {
-      // Add user info to session
       if (session.user && token.sub) {
         session.user.id = token.sub;
       }
-      // Role will be fetched via API call on client side
-      if (token.role) {
-        session.user.role = token.role as string;
-      }
       if (token.roles && Array.isArray(token.roles)) {
         session.user.roles = token.roles;
-      } else if (token.role) {
-        // Phase 1 back-compat: synthesize roles[] if JWT predates multi-role.
-        session.user.roles = [token.role as string];
       }
       // Note: accessToken intentionally NOT forwarded to session.user — it stays
       // server-side in the JWT only. API routes read it via getToken({ req }).
@@ -198,7 +176,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
 
       const needsRoleSync =
         !!user ||
-        !token.role ||
+        !token.roles?.length ||
         !token.roleSyncedAt ||
         Date.now() - token.roleSyncedAt > ROLE_SYNC_INTERVAL_MS;
 
@@ -206,10 +184,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         return syncRoleToToken(token);
       }
 
-      token.role = normalizeRole((token.role || "VIEWER") as UserRole);
-      if (!token.roles || token.roles.length === 0) {
-        token.roles = [token.role];
-      }
+      token.roles = token.roles!.map((r) => normalizeRole(r as UserRole));
       return token;
     },
   },
