@@ -199,7 +199,7 @@ export default function SecurityAuditPage() {
           <p className="text-muted text-sm mb-4">{error}</p>
           <Link
             href="/"
-            className="px-4 py-2 bg-surface-2 rounded-lg hover:bg-zinc-600"
+            className="px-4 py-2 bg-surface-2 rounded-lg hover:bg-surface-elevated transition-colors"
           >
             Go Home
           </Link>
