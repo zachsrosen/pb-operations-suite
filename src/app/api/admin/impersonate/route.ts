@@ -5,17 +5,7 @@ import type { UserRole } from "@/generated/prisma/enums";
 import { ROLES } from "@/lib/roles";
 
 function withEffectiveRoleCookies(response: NextResponse, roles: UserRole[]): NextResponse {
-  // Multi-role cookie — middleware prefers this when present.
   response.cookies.set("pb_effective_roles", JSON.stringify(roles), {
-    path: "/",
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    maxAge: 60 * 60 * 8,
-  });
-  // Back-compat single-role cookie for one release window so old sessions/middleware
-  // paths still resolve a role until all readers flip over.
-  response.cookies.set("pb_effective_role", roles[0] ?? "VIEWER", {
     path: "/",
     httpOnly: true,
     sameSite: "lax",
