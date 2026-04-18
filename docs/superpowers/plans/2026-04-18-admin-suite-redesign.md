@@ -64,6 +64,24 @@
 
 This chunk lays the simplest pieces first so later chunks have stable components to import.
 
+### Task 1.0: Branch sanity check
+
+- [ ] **Step 1: Confirm current branch is `spec/admin-suite-redesign`**
+
+```bash
+git branch --show-current
+```
+Expected: `spec/admin-suite-redesign`. If not, `git checkout spec/admin-suite-redesign` (or create from main if missing).
+
+- [ ] **Step 2: Confirm working tree is clean**
+
+```bash
+git status --short
+```
+Expected: no unstaged changes (spec + plan commits already present on branch).
+
+---
+
 ### Task 1.1: Shared nav data
 
 **Files:**
@@ -2176,13 +2194,13 @@ Confirm there's a single `src/app/admin/layout.tsx` and each page under `src/app
 
 - [ ] **Step 2: Confirm no page uses `<DashboardShell>` under `/admin`**
 
-Run: `npx grep "DashboardShell" src/app/admin -rn 2>/dev/null | grep -v __tests__`
-Expected: no results.
+Use the Grep tool (or `grep -rn "DashboardShell" src/app/admin`).
+Expected: no matches outside tests.
 
 - [ ] **Step 3: Confirm no page renders its own `<html>`, `<body>`, or global styles**
 
-Run: `grep -rn "<html\|<body" src/app/admin 2>/dev/null`
-Expected: no results.
+Use the Grep tool with pattern `<(html|body)\\b` over `src/app/admin`.
+Expected: no matches.
 
 ---
 
