@@ -24,12 +24,10 @@ export function AuthSync() {
         .then((res) => res.json())
         .then(async (data) => {
           if (data.synced) {
-            console.log("[AuthSync] User synced:", data.user?.email, "Role:", data.role);
-            // If the JWT role differs from the DB role, force a session refresh
-            // so the JWT callback runs in Node.js (not edge) and picks up the
-            // real role from Prisma.
-            if (data.role && data.role !== session?.user?.role) {
-              console.log("[AuthSync] JWT role mismatch, refreshing session token");
+            const dbPrimaryRole = data.roles?.[0];
+            const jwtPrimaryRole = session?.user?.roles?.[0];
+            if (dbPrimaryRole && dbPrimaryRole !== jwtPrimaryRole) {
+              console.log("[AuthSync] JWT roles mismatch, refreshing session token");
               await update();
             }
           }

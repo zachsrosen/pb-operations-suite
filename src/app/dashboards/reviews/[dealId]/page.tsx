@@ -10,7 +10,7 @@ interface Props {
 export default async function ReviewHistoryPage({ params }: Props) {
   const { dealId } = await params;
   const session = await auth();
-  const userRole = session?.user?.role || "VIEWER";
+  const userRole = session?.user?.roles?.[0] ?? "VIEWER";
 
   const reviews = await prisma.projectReview.findMany({
     where: { dealId },

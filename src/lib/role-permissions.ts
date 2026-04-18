@@ -76,40 +76,6 @@ export const ROLE_PERMISSIONS: Record<UserRole, RolePermissions> = Object.fromEn
 ) as Record<UserRole, RolePermissions>;
 
 /**
- * Routes restricted to ADMIN role only. Kept here as the authoritative source
- * — `@/lib/user-access` imports these for `isPathAllowedByAccess`.
- *
- * Policy: new pages/features should be added here first (admin-only) until
- * explicitly approved for broader roles.
- */
-export const ADMIN_ONLY_ROUTES: string[] = [
-  "/admin",
-  "/api/admin",
-  "/suites/admin",
-  "/dashboards/zuper-status-comparison",
-  "/dashboards/product-comparison",
-  "/dashboards/mobile",
-  "/dashboards/inventory",
-  "/dashboards/catalog",
-  "/dashboards/command-center",
-  "/dashboards/capacity",
-  "/dashboards/locations",
-  // AI assistant chat — admin-only until per-deal access boundaries confirmed
-  "/api/chat",
-];
-
-/**
- * Sub-routes exempt from the admin-only restriction above.
- * These are accessible to any role that has the parent route in their allowedRoutes.
- */
-export const ADMIN_ONLY_EXCEPTIONS: string[] = [
-  "/dashboards/catalog/new",
-  "/api/catalog/push-requests",
-  "/api/catalog/extract-from-datasheet",
-  "/api/catalog/upload-photo",
-];
-
-/**
  * Get the default landing route for a role.
  * Prefers suite pages, then dashboard pages, then first explicit route.
  *
@@ -139,7 +105,7 @@ export function getDefaultRouteForRole(role: UserRole): string {
  */
 export function canAccessRoute(role: UserRole, route: string): boolean {
   if (!ROLES[role]) return false;
-  const access = resolveUserAccess({ roles: [role], role });
+  const access = resolveUserAccess({ roles: [role] });
   return isPathAllowedByAccess(access, route);
 }
 

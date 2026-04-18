@@ -1,8 +1,6 @@
 import type { UserRole } from "@/generated/prisma/enums";
-import { ROLES, type LandingCard, type Scope } from "@/lib/roles";
+import { ROLES, ADMIN_ONLY_ROUTES, ADMIN_ONLY_EXCEPTIONS, type LandingCard, type Scope } from "@/lib/roles";
 import {
-  ADMIN_ONLY_ROUTES,
-  ADMIN_ONLY_EXCEPTIONS,
   normalizeRole,
   getDefaultRouteForRole,
   canAccessRoute as _canAccessRoute,
@@ -62,14 +60,9 @@ export interface EffectiveUserAccess {
  * Structural shape consumed by `resolveUserAccess`. Kept as a structural type
  * (not tied to the Prisma `User` model) so tests and other callers can pass
  * plain object literals with only the fields they care about.
- *
- * Phase-1 back-compat: if `roles` is missing/empty, fall back to `[user.role]`
- * so legacy callers still work while the dual-write migration settles.
  */
 export interface UserLike {
   roles?: UserRole[] | null;
-  /** Phase-1 back-compat fallback. */
-  role?: UserRole | null;
   canScheduleSurveys?: boolean | null;
   canScheduleInstalls?: boolean | null;
   canScheduleInspections?: boolean | null;
@@ -250,16 +243,10 @@ function overrideForKey(user: UserLike, key: CapabilityKey): boolean | null {
 
 /**
  * Resolve a user's final effective access: merge role definitions, then apply
- * per-user capability overrides. Phase-1 back-compat: if `user.roles` is empty
- * or missing, fall back to `[user.role]` so legacy single-role users still
- * resolve correctly.
+ * per-user capability overrides.
  */
 export function resolveUserAccess(user: UserLike): EffectiveUserAccess {
-  const rawRoles: UserRole[] = (() => {
-    if (user.roles && user.roles.length > 0) return user.roles;
-    if (user.role) return [user.role];
-    return [];
-  })();
+  const rawRoles: UserRole[] = (user.roles && user.roles.length > 0) ? user.roles : [];
 
   const canonical = normalizeRoles(rawRoles);
   const effective = resolveEffectiveRole(rawRoles);

@@ -263,7 +263,7 @@ export async function PUT(request: Request) {
 
     // Check if user is admin in database
     const currentUser = await getUserByEmail(session.user.email);
-    if (!currentUser || currentUser.role !== "ADMIN") {
+    if (!currentUser || !currentUser.roles?.includes("ADMIN")) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 

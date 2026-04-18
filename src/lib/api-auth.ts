@@ -56,13 +56,7 @@ export async function requireApiAuth(): Promise<AuthenticatedUser | NextResponse
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() || hdrs.get("x-real-ip") || "unknown";
   const userAgent = hdrs.get("user-agent") || "unknown";
 
-  const sessionUser = session.user as { roles?: string[]; role?: string };
-  const roles =
-    sessionUser.roles && sessionUser.roles.length > 0
-      ? sessionUser.roles
-      : sessionUser.role
-        ? [sessionUser.role]
-        : ["VIEWER"];
+  const roles = (session.user as { roles?: string[] }).roles ?? ["VIEWER"];
 
   return {
     email: session.user.email,

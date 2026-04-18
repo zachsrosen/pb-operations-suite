@@ -24,8 +24,6 @@ interface SuitePageShellProps {
   subtitle: string;
   cards: SuitePageCard[];
   roles?: UserRole[];
-  /** @deprecated Use roles instead */
-  role?: UserRole;
   columnsClassName?: string;
   heroContent?: ReactNode;
 }
@@ -113,14 +111,10 @@ export default function SuitePageShell({
   title,
   subtitle,
   cards,
-  roles: rolesProp,
-  role: roleProp,
+  roles,
   columnsClassName = "grid grid-cols-1 md:grid-cols-3 gap-4",
   heroContent,
 }: SuitePageShellProps) {
-  // Normalize: prefer roles array; fall back to single-role prop for back-compat
-  const roles: UserRole[] | undefined =
-    rolesProp ?? (roleProp ? [roleProp] : undefined);
   const primaryRole = roles?.[0];
 
   const accent = SUITE_ACCENT_COLORS[currentSuiteHref] || DEFAULT_SUITE_ACCENT;

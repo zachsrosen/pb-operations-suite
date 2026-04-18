@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
   }
 
   const currentUser = await getUserByEmail(session.user.email);
-  if (!currentUser || (!currentUser.canManageAvailability && currentUser.role !== "ADMIN")) {
+  if (!currentUser || (!currentUser.canManageAvailability && !currentUser.roles?.includes("ADMIN"))) {
     return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
 
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
   }
 
   const currentUser = await getUserByEmail(session.user.email);
-  if (!currentUser || (!currentUser.canManageAvailability && currentUser.role !== "ADMIN")) {
+  if (!currentUser || (!currentUser.canManageAvailability && !currentUser.roles?.includes("ADMIN"))) {
     return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
 
@@ -139,7 +139,7 @@ export async function PUT(request: NextRequest) {
   }
 
   const currentUser = await getUserByEmail(session.user.email);
-  if (!currentUser || (!currentUser.canManageAvailability && currentUser.role !== "ADMIN")) {
+  if (!currentUser || (!currentUser.canManageAvailability && !currentUser.roles?.includes("ADMIN"))) {
     return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
 
@@ -213,7 +213,7 @@ export async function DELETE(request: NextRequest) {
   }
 
   const currentUser = await getUserByEmail(session.user.email);
-  if (!currentUser || (!currentUser.canManageAvailability && currentUser.role !== "ADMIN")) {
+  if (!currentUser || (!currentUser.canManageAvailability && !currentUser.roles?.includes("ADMIN"))) {
     return NextResponse.json({ error: "Permission denied" }, { status: 403 });
   }
 
