@@ -3,7 +3,7 @@
  * redirect feature. See docs/superpowers/specs/2026-04-16-last-page-redirect-after-login-design.md
  */
 import type { NextResponse } from "next/server";
-import type { UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
 
 export const LAST_PATH_COOKIE_NAME = "pb_last_path";
 

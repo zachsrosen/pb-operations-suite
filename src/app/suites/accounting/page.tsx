@@ -36,7 +36,7 @@ export default async function AccountingSuitePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?callbackUrl=/suites/accounting");
   const allowed = ["ADMIN", "EXECUTIVE"];
-  if (!allowed.includes(user.role)) redirect("/");
+  if (!user.roles.some(r => allowed.includes(r))) redirect("/");
 
   return (
     <SuitePageShell
@@ -44,7 +44,7 @@ export default async function AccountingSuitePage() {
       title="Accounting Suite"
       subtitle="PE deal payments, pricing tools, and financial tracking."
       cards={LINKS}
-      role={user.role}
+      roles={user.roles}
     />
   );
 }

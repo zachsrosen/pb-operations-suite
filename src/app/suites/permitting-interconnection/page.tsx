@@ -135,7 +135,7 @@ export default async function PermittingInterconnectionSuitePage() {
       title="Permitting & Interconnection Suite"
       subtitle="Permit tracking, utility management, and SLA monitoring."
       cards={LINKS}
-      role={user.role}
+      roles={user.roles}
     />
   );
 }

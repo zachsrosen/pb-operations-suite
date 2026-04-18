@@ -6,7 +6,12 @@
 
 import { auth } from "@/auth";
 import { getUserByEmail, prisma } from "./db";
-import { canAccessRoute, normalizeRole, UserRole, ROLE_PERMISSIONS } from "./role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import {
+  normalizeRole,
+  canAccessRoute,
+  ROLE_PERMISSIONS,
+} from "@/lib/user-access";
 
 export interface SessionUser {
   id?: string;
@@ -14,6 +19,7 @@ export interface SessionUser {
   name?: string;
   image?: string;
   role: UserRole;
+  roles: UserRole[];
 }
 
 /**
@@ -30,30 +36,38 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
   const dbUser = await getUserByEmail(session.user.email);
 
   if (dbUser) {
-    if (dbUser.role === "ADMIN" && dbUser.impersonatingUserId && prisma) {
+    if (dbUser.roles.includes("ADMIN") && dbUser.impersonatingUserId && prisma) {
       const impersonatedUser = await prisma.user.findUnique({
         where: { id: dbUser.impersonatingUserId },
       });
 
       if (impersonatedUser) {
-        const normalizedImpersonatedRole = normalizeRole(impersonatedUser.role as UserRole);
+        const impRoles: UserRole[] =
+          impersonatedUser.roles.length > 0
+            ? (impersonatedUser.roles as UserRole[]).map(normalizeRole)
+            : [normalizeRole(impersonatedUser.role as UserRole)];
         return {
           id: impersonatedUser.id,
           email: impersonatedUser.email,
           name: impersonatedUser.name ?? undefined,
           image: impersonatedUser.image ?? undefined,
-          role: normalizedImpersonatedRole,
+          role: impRoles[0] ?? "VIEWER",
+          roles: impRoles,
         };
       }
     }
 
-    const normalizedRole = normalizeRole(dbUser.role as UserRole);
+    const dbRoles: UserRole[] =
+      dbUser.roles.length > 0
+        ? (dbUser.roles as UserRole[]).map(normalizeRole)
+        : ["VIEWER"];
     return {
       id: dbUser.id,
       email: dbUser.email,
       name: dbUser.name ?? undefined,
       image: dbUser.image ?? undefined,
-      role: normalizedRole,
+      role: dbRoles[0] ?? "VIEWER",
+      roles: dbRoles,
     };
   }
 
@@ -62,7 +76,8 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     email: session.user.email,
     name: session.user.name ?? undefined,
     image: session.user.image ?? undefined,
-    role: "VIEWER", // Unassigned until admin assigns access
+    role: "VIEWER",
+    roles: ["VIEWER"],
   };
 }
 
@@ -80,13 +95,13 @@ export async function checkRouteAccess(route: string): Promise<{
     return { allowed: false, user: null, reason: "Not authenticated" };
   }
 
-  const allowed = canAccessRoute(normalizeRole(user.role), route);
+  const allowed = user.roles.some((r) => canAccessRoute(r, route));
 
   if (!allowed) {
     return {
       allowed: false,
       user,
-      reason: `Role "${user.role}" cannot access ${route}`,
+      reason: `Roles "${user.roles.join(", ")}" cannot access ${route}`,
     };
   }
 
@@ -98,15 +113,8 @@ export async function checkRouteAccess(route: string): Promise<{
  */
 export async function getCurrentUserPermissions() {
   const user = await getCurrentUser();
-
-  if (!user) {
-    return null;
-  }
-
-  return {
-    user,
-    permissions: ROLE_PERMISSIONS[normalizeRole(user.role)],
-  };
+  if (!user) return null;
+  return { user, permissions: ROLE_PERMISSIONS[user.roles[0] ?? "VIEWER"] };
 }
 
 /**
@@ -119,8 +127,8 @@ export async function requireRole(...allowedRoles: UserRole[]): Promise<SessionU
     throw new Error("Not authenticated");
   }
 
-  if (!allowedRoles.includes(normalizeRole(user.role))) {
-    throw new Error(`Required role: ${allowedRoles.join(" or ")}. Current role: ${user.role}`);
+  if (!user.roles.some((r) => allowedRoles.includes(r))) {
+    throw new Error(`Required role: ${allowedRoles.join(" or ")}. Current roles: ${user.roles.join(", ")}`);
   }
 
   return user;

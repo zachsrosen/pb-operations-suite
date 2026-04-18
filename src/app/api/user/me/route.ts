@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma, getUserByEmail } from "@/lib/db";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 
 /**
  * GET /api/user/me
@@ -23,13 +24,13 @@ export async function GET() {
     }
 
     // Check if admin is impersonating another user
-    if (user.role === "ADMIN" && user.impersonatingUserId && prisma) {
+    if (user.roles?.includes("ADMIN") && user.impersonatingUserId && prisma) {
       const impersonatedUser = await prisma.user.findUnique({
         where: { id: user.impersonatingUserId },
       });
 
       if (impersonatedUser) {
-        const normalizedRole = normalizeRole(impersonatedUser.role as UserRole);
+        const normalizedRole = (ROLES[impersonatedUser.role as UserRole]?.normalizesTo ?? (impersonatedUser.role as UserRole));
         return NextResponse.json({
           user: {
             id: impersonatedUser.id,
@@ -55,7 +56,7 @@ export async function GET() {
 
     return NextResponse.json({
       user: {
-        role: normalizeRole(user.role as UserRole),
+        role: (ROLES[(user.roles?.[0] ?? "VIEWER") as UserRole]?.normalizesTo ?? ((user.roles?.[0] ?? "VIEWER") as UserRole)),
         id: user.id,
         email: user.email,
         name: user.name,

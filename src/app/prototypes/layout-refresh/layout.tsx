@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import { normalizeRole } from "@/lib/user-access";
+import type { UserRole } from "@/generated/prisma/enums";
 
 export default async function LayoutRefreshPrototypeLayout({
   children,
@@ -15,8 +16,8 @@ export default async function LayoutRefreshPrototypeLayout({
   }
 
   const user = await getUserByEmail(session.user.email);
-  const role = user?.role ? normalizeRole(user.role as UserRole) : null;
-  if (role !== "ADMIN" && role !== "EXECUTIVE") {
+  const roles: UserRole[] = (user?.roles ?? []).map((r) => normalizeRole(r as UserRole));
+  if (!roles.some((r) => r === "ADMIN" || r === "EXECUTIVE")) {
     redirect("/");
   }
 

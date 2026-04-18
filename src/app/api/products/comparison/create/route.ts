@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma, getUserByEmail, logActivity } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 import { CatalogProductSource } from "@/generated/prisma/enums";
 import {
   getHubspotCategoryValue,
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
   if (authResult instanceof NextResponse) return authResult;
 
   const dbUser = await getUserByEmail(authResult.email);
-  const role = normalizeRole((dbUser?.role ?? authResult.role) as UserRole);
+  const role = (ROLES[((dbUser?.roles?.[0] ?? authResult.roles?.[0] ?? "VIEWER") as UserRole)]?.normalizesTo ?? ((dbUser?.roles?.[0] ?? authResult.roles?.[0] ?? "VIEWER") as UserRole));
   if (!isAllowedRole(role)) {
     return NextResponse.json({ error: "Admin or owner access required" }, { status: 403 });
   }

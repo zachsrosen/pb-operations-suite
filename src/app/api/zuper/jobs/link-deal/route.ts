@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   if (authResult instanceof NextResponse) return authResult;
 
   const dbUser = await getUserByEmail(authResult.email);
-  if (!dbUser || dbUser.role !== "ADMIN") {
+  if (!dbUser || !dbUser.roles.includes("ADMIN")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 

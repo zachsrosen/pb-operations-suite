@@ -1,4 +1,5 @@
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import { normalizeRole } from "@/lib/user-access";
+import type { UserRole } from "@/generated/prisma/enums";
 import { ROLES } from "@/lib/roles";
 import type { CanonicalLocation } from "@/lib/locations";
 

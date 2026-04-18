@@ -62,9 +62,9 @@ async function runBackfill(request: NextRequest, applyOverride?: boolean) {
 
   const dbUser = await prisma.user.findUnique({
     where: { email: authResult.email },
-    select: { role: true },
+    select: { roles: true },
   });
-  if (!dbUser || !ALLOWED_ROLES.has(dbUser.role)) {
+  if (!dbUser || !dbUser.roles.some(r => ALLOWED_ROLES.has(r))) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 

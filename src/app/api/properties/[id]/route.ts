@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
 import { getUserByEmail } from "@/lib/db";
-import { canAccessRoute } from "@/lib/role-permissions";
+import { isPathAllowedByAccess, resolveUserAccess } from "@/lib/user-access";
 import {
   computeEquipmentSummary,
   createEmptySummary,
@@ -43,7 +43,7 @@ export async function GET(
     // Property drawer is surfaced from Service Suite (customer 360, ticket
     // detail). Any role with `/api/service` access can read it. Using the real
     // `canAccessRoute` — tests must exercise the real function, not a mock.
-    if (!canAccessRoute(user.role, "/api/service")) {
+    if (!isPathAllowedByAccess(resolveUserAccess(user), "/api/service")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

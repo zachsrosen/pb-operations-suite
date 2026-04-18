@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
 
   // Check if user is admin - fetch from DB since JWT may be stale
   const currentUser = await getUserByEmail(session.user.email);
-  if (!currentUser || currentUser.role !== "ADMIN") {
+  if (!currentUser || !currentUser.roles?.includes("ADMIN")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
@@ -107,15 +107,17 @@ export async function GET(request: NextRequest) {
       userRoles: expandedSelectedRoles.length > 0 ? expandedSelectedRoles : undefined,
     });
 
-    const normalizedActivities = activities.map((activity) => ({
-      ...activity,
-      user: activity.user
-        ? {
-            ...activity.user,
-            role: normalizeRole(activity.user.role as UserRole),
-          }
-        : null,
-    }));
+    const normalizedActivities = activities.map((activity) => {
+      if (!activity.user) return { ...activity, user: null };
+      const activityUserRole = activity.user.roles?.[0] ?? "VIEWER";
+      return {
+        ...activity,
+        user: {
+          ...activity.user,
+          role: normalizeRole(activityUserRole as UserRole),
+        },
+      };
+    });
 
     return NextResponse.json({ activities: normalizedActivities, total, limit, offset });
   } catch (error) {

@@ -15,7 +15,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma } from "@/lib/db";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 
 // Crew definitions per location (must match CREWS in scheduler/page.tsx)
 const CREWS: Record<string, string[]> = {
@@ -88,10 +89,11 @@ export async function POST(req: NextRequest) {
   const db = prisma; // narrowed non-null reference
   const user = await db.user.findUnique({
     where: { email: session.user.email },
-    select: { role: true },
+    select: { role: true, roles: true },
   });
-  const role = user?.role ? normalizeRole(user.role as UserRole) : null;
-  if (role !== "ADMIN" && role !== "EXECUTIVE") {
+  const rawRoles: UserRole[] = (user?.roles && user.roles.length > 0 ? user.roles : null) ?? [];
+  const normalizedRoles = rawRoles.map((r) => ROLES[r]?.normalizesTo ?? r);
+  if (!normalizedRoles.some((r) => r === "ADMIN" || r === "EXECUTIVE")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 

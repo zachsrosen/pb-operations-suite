@@ -8,12 +8,14 @@
 
 import { PrismaClient } from "@/generated/prisma/client";
 import type { User } from "@/generated/prisma/client";
-import { ActivityType, SurveyInviteStatus } from "@/generated/prisma/enums";
+import { ActivityType, SurveyInviteStatus, UserRole } from "@/generated/prisma/enums";
 import { PrismaNeon } from "@prisma/adapter-neon";
 
-// Import for local use + re-export role permissions from edge-compatible module
-import { UserRole, ROLE_PERMISSIONS, type RolePermissions } from "./role-permissions";
-export { UserRole, ROLE_PERMISSIONS, normalizeRole, canAccessRoute, canScheduleType, canSchedule, canSyncZuper } from "./role-permissions";
+// Re-export UserRole from the generated enum for consumers that imported it from here
+export { UserRole } from "@/generated/prisma/enums";
+// Import ROLE_PERMISSIONS for local use, then re-export role utilities for consumers
+import { ROLE_PERMISSIONS } from "./role-permissions";
+export { ROLE_PERMISSIONS, normalizeRole, canAccessRoute, canScheduleType, canSchedule, canSyncZuper } from "./role-permissions";
 export type { RolePermissions } from "./role-permissions";
 
 // Re-export types
@@ -504,6 +506,7 @@ export async function getUserPermissions(userEmail: string): Promise<RolePermiss
     where: { email: userEmail },
     select: {
       role: true,
+      roles: true,
       canScheduleSurveys: true,
       canScheduleInstalls: true,
       canSyncToZuper: true,
@@ -515,8 +518,9 @@ export async function getUserPermissions(userEmail: string): Promise<RolePermiss
 
   if (!user) return null;
 
-  // Start with role permissions
-  const basePermissions = ROLE_PERMISSIONS[user.role];
+  // Start with role permissions — use primary role from roles array
+  const primaryRole = (user.roles?.[0] ?? "VIEWER") as UserRole;
+  const basePermissions = ROLE_PERMISSIONS[primaryRole];
   if (!basePermissions) return null;
 
   // Apply user-specific overrides (true in user overrides role)

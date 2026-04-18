@@ -12,7 +12,8 @@ import {
   dedupeSkuIds,
   productCleanupActionsSchema,
 } from "@/lib/schemas/product-cleanup";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 import { z } from "zod";
 
 export const runtime = "nodejs";
@@ -65,7 +66,7 @@ async function requireCleanupAuth(): Promise<
   }
 
   const dbUser = await getUserByEmail(authResult.email);
-  const role = normalizeRole((dbUser?.role ?? authResult.role) as UserRole);
+  const role = (ROLES[((dbUser?.roles?.[0] ?? authResult.roles?.[0] ?? "VIEWER") as UserRole)]?.normalizesTo ?? ((dbUser?.roles?.[0] ?? authResult.roles?.[0] ?? "VIEWER") as UserRole));
   if (!ALLOWED_ROLES.has(role)) {
     return {
       ok: false,

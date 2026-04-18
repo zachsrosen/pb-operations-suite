@@ -1,4 +1,4 @@
-import type { UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
 import { resolveEffectiveRole } from "@/lib/user-access";
 
 export interface SuiteNavEntry {

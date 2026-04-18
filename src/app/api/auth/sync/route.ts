@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/auth";
 import { prisma, getOrCreateUser, getUserByEmail, logActivity } from "@/lib/db";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 import { resolveUserAccess, type UserLike, type EffectiveUserAccess } from "@/lib/user-access";
 
 /**
@@ -94,7 +95,7 @@ export async function POST() {
       );
     }
 
-    const normalizedRole = normalizeRole(user.role as UserRole);
+    const normalizedRole = (ROLES[(user.roles?.[0] ?? "VIEWER") as UserRole]?.normalizesTo ?? ((user.roles?.[0] ?? "VIEWER") as UserRole));
 
     // Log the login activity
     const headersList = await headers();
@@ -160,13 +161,13 @@ export async function GET() {
     }
 
     // Check if admin is impersonating another user
-    if (user.role === "ADMIN" && user.impersonatingUserId && prisma) {
+    if (user.roles?.includes("ADMIN") && user.impersonatingUserId && prisma) {
       const impersonatedUser = await prisma.user.findUnique({
         where: { id: user.impersonatingUserId },
       });
 
       if (impersonatedUser) {
-        const normalizedRole = normalizeRole(impersonatedUser.role as UserRole);
+        const normalizedRole = (ROLES[impersonatedUser.role as UserRole]?.normalizesTo ?? (impersonatedUser.role as UserRole));
         const { roles, access } = serializeAccess(impersonatedUser);
         return withRoleAndImpersonationCookies(NextResponse.json({
           role: normalizedRole,
@@ -197,7 +198,7 @@ export async function GET() {
       }
     }
 
-    const normalizedRole = normalizeRole(user.role as UserRole);
+    const normalizedRole = (ROLES[(user.roles?.[0] ?? "VIEWER") as UserRole]?.normalizesTo ?? ((user.roles?.[0] ?? "VIEWER") as UserRole));
     const { roles, access } = serializeAccess(user);
     return withRoleAndImpersonationCookies(NextResponse.json({
       role: normalizedRole,

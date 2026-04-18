@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
-import { normalizeRole, UserRole as UserRoleEnum, type UserRole } from "@/lib/role-permissions";
+import { normalizeRole } from "@/lib/user-access";
+import { UserRole as UserRoleEnum, type UserRole } from "@/generated/prisma/enums";
 
 interface SalesSurveyLeadTimeInput {
   roles: UserRole[];

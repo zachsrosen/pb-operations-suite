@@ -22,7 +22,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 403 });
     }
 
-    if (user.role === "VIEWER") {
+    const userRoles = user.roles ?? [];
+    if (userRoles.every((r) => r === "VIEWER")) {
       return NextResponse.json({ error: "Not authorized to submit bug reports" }, { status: 403 });
     }
 

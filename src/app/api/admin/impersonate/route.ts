@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { prisma, getUserByEmail, logActivity } from "@/lib/db";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 
 function withEffectiveRoleCookies(response: NextResponse, roles: UserRole[]): NextResponse {
   // Multi-role cookie — middleware prefers this when present.
@@ -43,11 +44,11 @@ function withRoleAndImpersonationCookies(
   return withImpersonationStateCookie(withEffectiveRoleCookies(response, roles), isImpersonating);
 }
 
-function resolveTargetRoles(user: { role: string; roles?: UserRole[] | null }): UserRole[] {
-  const raw: UserRole[] = user.roles && user.roles.length > 0
-    ? user.roles
-    : [user.role as UserRole];
-  const normalized = raw.map((r) => normalizeRole(r));
+function resolveTargetRoles({ role, roles }: { role: string; roles?: UserRole[] | null }): UserRole[] {
+  const raw: UserRole[] = roles && roles.length > 0
+    ? roles
+    : [role as UserRole];
+  const normalized = raw.map((r) => ROLES[r]?.normalizesTo ?? r);
   // Dedup, preserve order.
   const seen = new Set<UserRole>();
   const out: UserRole[] = [];
@@ -76,7 +77,7 @@ export async function POST(request: NextRequest) {
 
   // Get the actual admin user from database
   const adminUser = await getUserByEmail(session.user.email);
-  if (!adminUser || adminUser.role !== "ADMIN") {
+  if (!adminUser || !adminUser.roles?.includes("ADMIN")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
@@ -127,7 +128,7 @@ export async function POST(request: NextRequest) {
     });
 
     const normalizedTargetRoles = resolveTargetRoles(targetUser as { role: string; roles?: UserRole[] | null });
-    const normalizedTargetRole = normalizedTargetRoles[0] ?? normalizeRole(targetUser.role as UserRole);
+    const normalizedTargetRole = normalizedTargetRoles[0] ?? (ROLES[targetUser.role as UserRole]?.normalizesTo ?? (targetUser.role as UserRole));
     return withRoleAndImpersonationCookies(NextResponse.json({
       success: true,
       impersonating: {
@@ -172,7 +173,7 @@ export async function DELETE() {
   const adminRoles = resolveTargetRoles(user as { role: string; roles?: UserRole[] | null });
 
   // Only admins can manage impersonation state
-  if (user.role !== "ADMIN") {
+  if (!user.roles?.includes("ADMIN")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
@@ -249,7 +250,7 @@ export async function GET() {
   }
 
   // Only admins should be able to query impersonation status
-  if (user.role !== "ADMIN") {
+  if (!user.roles?.includes("ADMIN")) {
     return NextResponse.json({ isImpersonating: false });
   }
   const normalizedAdminRoles = resolveTargetRoles(user as { role: string; roles?: UserRole[] | null });
@@ -281,7 +282,7 @@ export async function GET() {
   }
 
   const normalizedTargetRoles = resolveTargetRoles(targetUser as { role: string; roles?: UserRole[] | null });
-  const normalizedTargetRole = normalizedTargetRoles[0] ?? normalizeRole(targetUser.role as UserRole);
+  const normalizedTargetRole = normalizedTargetRoles[0] ?? (ROLES[targetUser.role as UserRole]?.normalizesTo ?? (targetUser.role as UserRole));
   return withRoleAndImpersonationCookies(NextResponse.json({
     isImpersonating: true,
     impersonating: {

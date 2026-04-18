@@ -168,11 +168,11 @@ export default async function DealDetailPage({
     auth().catch(() => null),
   ]);
 
-  // Resolve user role
+  // Resolve user role (primary role for display; full multi-role used for access in middleware)
   let userRole = "VIEWER";
   if (session?.user?.email) {
     const user = await getUserByEmail(session.user.email);
-    if (user) userRole = user.role;
+    if (user) userRole = user.roles?.[0] ?? "VIEWER";
   }
 
   // Serialize enrichment data

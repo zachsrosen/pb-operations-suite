@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { canAccessTab, ADMIN_ONLY_SECTIONS } from "@/lib/sop-access";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 
 /**
  * GET /api/sop/tabs
@@ -22,7 +23,7 @@ export async function GET() {
     }
 
     const firstName = (user.name || "").split(" ")[0].toLowerCase();
-    const role = normalizeRole(user.role as UserRole);
+    const role = (ROLES[(user.roles?.[0] ?? "VIEWER") as UserRole]?.normalizesTo ?? ((user.roles?.[0] ?? "VIEWER") as UserRole));
     const isAdmin = role === "ADMIN" || role === "EXECUTIVE";
 
     const allTabs = await prisma.sopTab.findMany({

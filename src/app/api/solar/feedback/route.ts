@@ -64,7 +64,8 @@ export async function GET(req: NextRequest) {
   const [user, authError] = await requireSolarAuth(req);
   if (authError) return authError;
 
-  if (!isElevatedRole(user.role)) {
+  const { role: userRole } = user;
+  if (!isElevatedRole(userRole)) {
     return NextResponse.json({ error: "Forbidden — admin/manager only" }, { status: 403 });
   }
 

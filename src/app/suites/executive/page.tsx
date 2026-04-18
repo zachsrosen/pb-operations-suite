@@ -162,7 +162,7 @@ export default async function ExecutiveSuitePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?callbackUrl=/suites/executive");
   const allowed = ["ADMIN", "EXECUTIVE", "OPERATIONS_MANAGER", "PROJECT_MANAGER"];
-  if (!allowed.includes(user.role)) redirect("/");
+  if (!user.roles.some(r => allowed.includes(r))) redirect("/");
 
   return (
     <SuitePageShell
@@ -170,7 +170,7 @@ export default async function ExecutiveSuitePage() {
       title="Executive Suite"
       subtitle="Leadership dashboards, pipeline intelligence, and executive views."
       cards={LINKS}
-      role={user.role}
+      roles={user.roles}
       heroContent={<RevenueGoalTracker />}
     />
   );

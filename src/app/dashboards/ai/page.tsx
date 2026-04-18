@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { canAccessRoute, type UserRole } from "@/lib/role-permissions";
+import { canAccessRoute } from "@/lib/user-access";
+import type { UserRole } from "@/generated/prisma/enums";
 import AISkillsHub from "./AISkillsHub";
 
 const ALLOWED_ROLES = new Set<UserRole>([
@@ -17,7 +18,10 @@ export default async function AISkillsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?callbackUrl=/dashboards/ai");
 
-  if (!ALLOWED_ROLES.has(user.role) || !canAccessRoute(user.role, "/dashboards/ai")) {
+  if (
+    !user.roles.some((r) => ALLOWED_ROLES.has(r)) ||
+    !user.roles.some((r) => canAccessRoute(r, "/dashboards/ai"))
+  ) {
     redirect("/");
   }
 

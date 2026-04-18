@@ -2,15 +2,16 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import { normalizeRole } from "@/lib/user-access";
+import type { UserRole } from "@/generated/prisma/enums";
 
 export default async function SolarCheckoutPrototypePage() {
   const session = await auth();
   if (!session?.user?.email) redirect("/login?callbackUrl=/prototypes/solar-checkout");
 
   const user = await getUserByEmail(session.user.email);
-  const role = user?.role ? normalizeRole(user.role as UserRole) : null;
-  if (role !== "ADMIN" && role !== "EXECUTIVE") redirect("/");
+  const roles: UserRole[] = (user?.roles ?? []).map((r) => normalizeRole(r as UserRole));
+  if (!roles.some((r) => r === "ADMIN" || r === "EXECUTIVE")) redirect("/");
 
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col">

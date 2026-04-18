@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma, getUserByEmail } from "@/lib/db";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 import { isCatalogSyncEnabled, type SyncSystem } from "@/lib/catalog-sync-confirmation";
 import {
   validateBulkSyncToken,
@@ -172,7 +173,7 @@ async function handlePreview(body: Record<string, unknown>) {
 
 async function handleExecute(body: Record<string, unknown>, userEmail: string) {
   const dbUser = await getUserByEmail(userEmail);
-  const role = normalizeRole((dbUser?.role ?? "VIEWER") as UserRole);
+  const role = (ROLES[((dbUser?.roles?.[0] ?? "VIEWER") as UserRole)]?.normalizesTo ?? ((dbUser?.roles?.[0] ?? "VIEWER") as UserRole));
   if (!ALLOWED_ROLES.has(role)) {
     return NextResponse.json({ error: "Admin or owner access required" }, { status: 403 });
   }

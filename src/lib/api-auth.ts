@@ -12,7 +12,7 @@ import { headers } from "next/headers";
 export interface AuthenticatedUser {
   email: string;
   name?: string;
-  role: string;
+  roles: string[];
   ip: string;
   userAgent: string;
 }
@@ -25,7 +25,7 @@ export interface AuthenticatedUser {
  * ```ts
  * const authResult = await requireApiAuth();
  * if (authResult instanceof NextResponse) return authResult;
- * const { email, role } = authResult;
+ * const { email, roles } = authResult;
  * ```
  */
 export async function requireApiAuth(): Promise<AuthenticatedUser | NextResponse> {
@@ -37,7 +37,7 @@ export async function requireApiAuth(): Promise<AuthenticatedUser | NextResponse
     const tokenAuthenticatedByMiddleware = hdrsForToken.get("x-api-token-authenticated") === "1";
     if (tokenAuthenticatedByMiddleware && authHeader === `Bearer ${apiSecretToken}`) {
       const ip = hdrsForToken.get("x-forwarded-for")?.split(",")[0]?.trim() || hdrsForToken.get("x-real-ip") || "unknown";
-      return { email: "api@system", role: "ADMIN", ip, userAgent: hdrsForToken.get("user-agent") || "api-client" };
+      return { email: "api@system", roles: ["ADMIN"], ip, userAgent: hdrsForToken.get("user-agent") || "api-client" };
     }
   }
 
@@ -54,10 +54,18 @@ export async function requireApiAuth(): Promise<AuthenticatedUser | NextResponse
   const ip = hdrs.get("x-forwarded-for")?.split(",")[0]?.trim() || hdrs.get("x-real-ip") || "unknown";
   const userAgent = hdrs.get("user-agent") || "unknown";
 
+  const sessionUser = session.user as { roles?: string[]; role?: string };
+  const roles =
+    sessionUser.roles && sessionUser.roles.length > 0
+      ? sessionUser.roles
+      : sessionUser.role
+        ? [sessionUser.role]
+        : ["VIEWER"];
+
   return {
     email: session.user.email,
     name: session.user.name || undefined,
-    role: session.user.role || "VIEWER",
+    roles,
     ip,
     userAgent,
   };

@@ -82,7 +82,7 @@ export default async function ServiceDRSuitePage() {
       title="Service Suite"
       subtitle="Service scheduling, equipment tracking, priority queue, and pipelines."
       cards={LINKS}
-      role={user.role}
+      roles={user.roles}
     />
   );
 }

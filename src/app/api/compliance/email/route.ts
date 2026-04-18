@@ -11,7 +11,8 @@ export async function POST(request: NextRequest) {
   }
 
   const user = await getUserByEmail(session.user.email);
-  if (!user || !["ADMIN", "OWNER"].includes(user.role)) {
+  const userRoles = user?.roles ?? [];
+  if (!user || !userRoles.some((r) => ["ADMIN", "OWNER"].includes(r))) {
     return NextResponse.json({ error: "Admin or Owner access required" }, { status: 403 });
   }
 

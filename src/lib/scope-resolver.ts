@@ -1,8 +1,8 @@
 import "server-only";
 
 import type { User } from "@/generated/prisma/client";
-import type { UserRole } from "@/lib/role-permissions";
-import { normalizeRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { normalizeRole } from "@/lib/user-access";
 import { prisma, getUserByEmail } from "@/lib/db";
 import { type AccessScope } from "@/lib/access-scope";
 import { resolveEffectiveRole } from "@/lib/user-access";
@@ -35,15 +35,8 @@ function buildLocationScope(
   return { type: "location", locations: normalizedLocations };
 }
 
-/**
- * Read the canonical roles array off a user, falling back to `[user.role]` if
- * `roles` is missing/empty. Phase-1 back-compat while the dual-write migration
- * settles.
- */
-function rolesFromUser(user: { roles?: UserRole[] | null; role?: UserRole | null }): UserRole[] {
-  if (user.roles && user.roles.length > 0) return user.roles;
-  if (user.role) return [user.role];
-  return [];
+function rolesFromUser(user: { roles?: UserRole[] | null }): UserRole[] {
+  return (user.roles ?? []) as UserRole[];
 }
 
 export async function resolveAccessScope(
@@ -69,7 +62,7 @@ export async function resolveAccessScope(
   let isImpersonating = false;
   let adminEmail: string | null = null;
 
-  if (dbUser.role === "ADMIN" && dbUser.impersonatingUserId && prisma) {
+  if (dbUser.roles.includes("ADMIN") && dbUser.impersonatingUserId && prisma) {
     const impersonatedUser = await prisma.user.findUnique({
       where: { id: dbUser.impersonatingUserId },
     });
@@ -81,7 +74,7 @@ export async function resolveAccessScope(
   }
 
   const userRoles = rolesFromUser(effectiveUser);
-  const effectiveRole = normalizeRole(effectiveUser.role as UserRole);
+  const effectiveRole = normalizeRole((userRoles[0] ?? "VIEWER") as UserRole);
   const scopeType = resolveEffectiveRole(userRoles).scope;
 
   if (scopeType === "global") {

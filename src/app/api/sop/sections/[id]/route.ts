@@ -47,7 +47,7 @@ export async function GET(
 
     // Check access against parent tab and section-level restrictions
     const firstName = (user.name || "").split(" ")[0].toLowerCase();
-    if (!canAccessSection(section.id, section.tabId, user.role, firstName)) {
+    if (!canAccessSection(section.id, section.tabId, user.roles?.[0] ?? "VIEWER", firstName)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 

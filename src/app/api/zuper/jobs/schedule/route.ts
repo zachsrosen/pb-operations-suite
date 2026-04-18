@@ -58,7 +58,7 @@ async function getCachedZuperUser(
 }
 
 async function checkScheduleOwnership(
-  user: { email: string; role: string },
+  user: { email: string; roles: string[] },
   projectId: string,
   scheduleType: ScheduleType
 ): Promise<{
@@ -70,7 +70,7 @@ async function checkScheduleOwnership(
     scheduledByEmail: string | null;
   };
 }> {
-  if (MANAGER_ROLES.includes(user.role)) {
+  if (user.roles.some((r) => MANAGER_ROLES.includes(r))) {
     return { allowed: true };
   }
 
@@ -393,7 +393,8 @@ export async function PUT(request: NextRequest) {
         { status: 403 }
       );
     }
-    const effectiveRole = resolveEffectiveRoleFromRequest(request, user.role as UserRole);
+    const userRolesForPolicy: UserRole[] = user.roles ?? [];
+    const effectiveRole = resolveEffectiveRoleFromRequest(request, userRolesForPolicy[0] as UserRole);
 
     const body = await request.json();
     const { project, schedule, rescheduleOnly } = body;
@@ -442,12 +443,7 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
-    const effectiveRoles = resolveEffectiveRolesFromRequest(
-      request,
-      ((user as { roles?: UserRole[] }).roles && (user as { roles: UserRole[] }).roles.length > 0
-        ? (user as { roles: UserRole[] }).roles
-        : [user.role as UserRole]),
-    );
+    const effectiveRoles = resolveEffectiveRolesFromRequest(request, userRolesForPolicy);
     const salesLeadTimeError = getSalesSurveyLeadTimeError({
       roles: effectiveRoles,
       scheduleType,
@@ -458,7 +454,7 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: salesLeadTimeError }, { status: 403 });
     }
     const ownership = await checkScheduleOwnership(
-      { email: session.user.email, role: effectiveRole || "" },
+      { email: session.user.email, roles: effectiveRoles },
       String(project.id),
       scheduleType
     );
@@ -1241,7 +1237,9 @@ export async function DELETE(request: NextRequest) {
         { status: 403 }
       );
     }
-    const effectiveRole = resolveEffectiveRoleFromRequest(request, user.role as UserRole);
+    const userRolesForPolicy: UserRole[] = user.roles ?? [];
+    const effectiveRole = resolveEffectiveRoleFromRequest(request, userRolesForPolicy[0] as UserRole);
+    const effectiveRoles = resolveEffectiveRolesFromRequest(request, userRolesForPolicy);
 
     const body = await request.json();
     const scheduleType = (body?.scheduleType as ScheduleType) || "survey";
@@ -1280,7 +1278,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const ownership = await checkScheduleOwnership(
-      { email: session.user.email, role: effectiveRole || "" },
+      { email: session.user.email, roles: effectiveRoles },
       String(projectId),
       scheduleType
     );

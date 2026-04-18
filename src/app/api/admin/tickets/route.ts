@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, prisma } from "@/lib/db";
 import { headers } from "next/headers";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
 
 /**
  * GET /api/admin/tickets
@@ -23,8 +24,9 @@ export async function GET(request: NextRequest) {
     }
 
     const user = await getUserByEmail(session.user.email);
-    const role = user?.role ? normalizeRole(user.role as UserRole) : null;
-    if (role !== "ADMIN" && role !== "EXECUTIVE") {
+    const rawRoles: UserRole[] = (user?.roles && user.roles.length > 0 ? user.roles : null) ?? [];
+    const normalizedRoles = rawRoles.map((r) => ROLES[r]?.normalizesTo ?? r);
+    if (!normalizedRoles.some((r) => r === "ADMIN" || r === "EXECUTIVE")) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 
@@ -77,8 +79,9 @@ export async function PUT(request: NextRequest) {
     }
 
     const user = await getUserByEmail(session.user.email);
-    const role = user?.role ? normalizeRole(user.role as UserRole) : null;
-    if (role !== "ADMIN" && role !== "EXECUTIVE") {
+    const rawRoles: UserRole[] = (user?.roles && user.roles.length > 0 ? user.roles : null) ?? [];
+    const normalizedRoles = rawRoles.map((r) => ROLES[r]?.normalizesTo ?? r);
+    if (!normalizedRoles.some((r) => r === "ADMIN" || r === "EXECUTIVE")) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
     }
 

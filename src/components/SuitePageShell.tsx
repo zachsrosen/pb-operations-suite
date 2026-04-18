@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { ReactNode, CSSProperties } from "react";
-import { getSuiteSwitcherEntriesForRole, SUITE_NAV_ENTRIES } from "@/lib/suite-nav";
-import { canAccessRoute, getDefaultRouteForRole, type UserRole } from "@/lib/role-permissions";
+import { getSuiteSwitcherEntriesForRoles, SUITE_NAV_ENTRIES } from "@/lib/suite-nav";
+import { canAccessRoute, getDefaultRouteForRole } from "@/lib/user-access";
+import type { UserRole } from "@/generated/prisma/enums";
 import { SUITE_ACCENT_COLORS, DEFAULT_SUITE_ACCENT } from "@/lib/suite-accents";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
 
@@ -22,6 +23,8 @@ interface SuitePageShellProps {
   title: string;
   subtitle: string;
   cards: SuitePageCard[];
+  roles?: UserRole[];
+  /** @deprecated Use roles instead */
   role?: UserRole;
   columnsClassName?: string;
   heroContent?: ReactNode;
@@ -110,31 +113,37 @@ export default function SuitePageShell({
   title,
   subtitle,
   cards,
-  role,
+  roles: rolesProp,
+  role: roleProp,
   columnsClassName = "grid grid-cols-1 md:grid-cols-3 gap-4",
   heroContent,
 }: SuitePageShellProps) {
+  // Normalize: prefer roles array; fall back to single-role prop for back-compat
+  const roles: UserRole[] | undefined =
+    rolesProp ?? (roleProp ? [roleProp] : undefined);
+  const primaryRole = roles?.[0];
+
   const accent = SUITE_ACCENT_COLORS[currentSuiteHref] || DEFAULT_SUITE_ACCENT;
   const toRoutePath = (href: string): string | null => {
     if (!href.startsWith("/")) return null;
     return href.split("?")[0] || href;
   };
 
-  const visibleSuites = role
-    ? getSuiteSwitcherEntriesForRole(role)
+  const visibleSuites = roles
+    ? getSuiteSwitcherEntriesForRoles(roles)
     : SUITE_NAV_ENTRIES;
 
-  const visibleCards = role
+  const visibleCards = roles
     ? cards.filter((card) => {
-      const routePath = toRoutePath(card.href);
-      if (!routePath) return true;
-      return canAccessRoute(role, routePath);
-    })
+        const routePath = toRoutePath(card.href);
+        if (!routePath) return true;
+        return roles.some((r) => canAccessRoute(r, routePath));
+      })
     : cards;
 
   const sections = groupCards(visibleCards);
-  const backHref = role
-    ? (canAccessRoute(role, "/") ? "/" : getDefaultRouteForRole(role))
+  const backHref = primaryRole
+    ? (canAccessRoute(primaryRole, "/") ? "/" : getDefaultRouteForRole(primaryRole))
     : "/";
 
   return (

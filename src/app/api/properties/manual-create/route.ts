@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { auth } from "@/auth";
 import { getUserByEmail, prisma } from "@/lib/db";
-import { normalizeRole } from "@/lib/role-permissions";
+import { resolveUserAccess } from "@/lib/user-access";
 import { upsertPropertyFromGeocode } from "@/lib/property-sync";
 
 /**
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 403 });
     }
 
-    if (normalizeRole(user.role) !== "ADMIN") {
+    if (!resolveUserAccess(user).roles.includes("ADMIN")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

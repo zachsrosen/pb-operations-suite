@@ -73,13 +73,7 @@ const getRoleBadgeClasses = (role: string): string => {
   return ROLE_BADGE_BY_COLOR[color] ?? ROLE_BADGE_BY_COLOR.zinc;
 };
 
-// Read the effective role array for a user. Phase-1 back-compat: if `roles`
-// is missing/empty (user created before the Chunk 4 migration ran), fall back
-// to [role].
-const getUserRoles = (user: User): string[] => {
-  if (user.roles && user.roles.length > 0) return user.roles;
-  return user.role ? [user.role] : [];
-};
+const getUserRoles = (user: User): string[] => user.roles ?? [];
 
 const LOCATIONS = ["Westminster", "Centennial", "Colorado Springs", "San Luis Obispo", "Camarillo"];
 
@@ -383,7 +377,7 @@ export default function AdminUsersPage() {
   };
 
   const getAdminCount = () => {
-    return users.filter(user => user.role === "ADMIN").length;
+    return users.filter(user => getUserRoles(user).includes("ADMIN")).length;
   };
 
   const handleSelectUser = (userId: string) => {
@@ -993,7 +987,7 @@ export default function AdminUsersPage() {
                       </button>
                     </td>
                     <td className="px-4 py-3">
-                      {user.email !== currentUserEmail && user.role !== "ADMIN" && (
+                      {user.email !== currentUserEmail && !getUserRoles(user).includes("ADMIN") && (
                         <button
                           onClick={() => startImpersonation(user)}
                           disabled={impersonating === user.id}
@@ -1016,7 +1010,7 @@ export default function AdminUsersPage() {
                           )}
                         </button>
                       )}
-                      {user.role === "ADMIN" && user.email !== currentUserEmail && (
+                      {getUserRoles(user).includes("ADMIN") && user.email !== currentUserEmail && (
                         <span className="text-xs text-muted/70">Cannot impersonate admins</span>
                       )}
                     </td>
