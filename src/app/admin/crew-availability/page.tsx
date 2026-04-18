@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatTimeRange12h } from "@/lib/format";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
 
 interface CrewMember {
   id: string;
@@ -418,7 +419,7 @@ export default function CrewAvailabilityPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+      <div className="flex items-center justify-center py-20">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500" />
       </div>
     );
@@ -426,7 +427,7 @@ export default function CrewAvailabilityPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+      <div className="flex items-center justify-center py-20">
         <div className="text-center">
           <p className="text-red-400 text-xl mb-2">Error</p>
           <p className="text-muted text-sm mb-4">{error}</p>
@@ -439,7 +440,7 @@ export default function CrewAvailabilityPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div>
       {confirmDialog && (
         <ConfirmDialog
           open={confirmDialog.open}
@@ -459,20 +460,11 @@ export default function CrewAvailabilityPage() {
         </div>
       )}
 
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center gap-4">
-            <Link
-              href="/admin/users"
-              className="text-muted hover:text-foreground transition-colors"
-            >
-              &larr; Admin
-            </Link>
-            <h1 className="text-2xl font-bold">Crew Availability</h1>
-            <span className="text-muted text-sm">{records.length} slots</span>
-          </div>
-          <div className="flex items-center gap-3">
+      <AdminPageHeader
+        title="Crew Availability"
+        breadcrumb={["Admin", "Operations", "Crew availability"]}
+        actions={
+          <>
             <button
               onClick={handleSeed}
               disabled={seeding}
@@ -502,8 +494,11 @@ export default function CrewAvailabilityPage() {
             >
               + Add Slot
             </button>
-          </div>
-        </div>
+          </>
+        }
+      />
+      <div>
+        <span className="text-muted text-sm mb-6 block">{records.length} slots</span>
 
         {/* Filters */}
         <div className="flex gap-3 mb-6">
