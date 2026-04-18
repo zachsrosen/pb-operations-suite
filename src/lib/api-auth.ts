@@ -12,6 +12,8 @@ import { headers } from "next/headers";
 export interface AuthenticatedUser {
   email: string;
   name?: string;
+  /** Primary role — convenience accessor equal to `roles[0]` (or "VIEWER" for empty). Kept for Phase 1 back-compat; prefer `roles`. */
+  role: string;
   roles: string[];
   ip: string;
   userAgent: string;
@@ -37,7 +39,7 @@ export async function requireApiAuth(): Promise<AuthenticatedUser | NextResponse
     const tokenAuthenticatedByMiddleware = hdrsForToken.get("x-api-token-authenticated") === "1";
     if (tokenAuthenticatedByMiddleware && authHeader === `Bearer ${apiSecretToken}`) {
       const ip = hdrsForToken.get("x-forwarded-for")?.split(",")[0]?.trim() || hdrsForToken.get("x-real-ip") || "unknown";
-      return { email: "api@system", roles: ["ADMIN"], ip, userAgent: hdrsForToken.get("user-agent") || "api-client" };
+      return { email: "api@system", role: "ADMIN", roles: ["ADMIN"], ip, userAgent: hdrsForToken.get("user-agent") || "api-client" };
     }
   }
 
@@ -59,6 +61,7 @@ export async function requireApiAuth(): Promise<AuthenticatedUser | NextResponse
   return {
     email: session.user.email,
     name: session.user.name || undefined,
+    role: roles[0] ?? "VIEWER",
     roles,
     ip,
     userAgent,
