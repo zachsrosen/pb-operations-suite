@@ -225,6 +225,7 @@ export default function SecurityAuditPage() {
       <AdminPageHeader
         title="Security"
         breadcrumb={["Admin", "Audit", "Security alerts"]}
+        subtitle={`Generated ${formatRelative(data.generatedAt)}`}
         actions={
           <button
             onClick={fetchData}
