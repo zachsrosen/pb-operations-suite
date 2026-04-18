@@ -4,7 +4,8 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { formatMoney } from "@/lib/format";
-import { canAccessRoute, type UserRole } from "@/lib/role-permissions";
+import { canAccessRoute } from "@/lib/user-access";
+import type { UserRole } from "@/generated/prisma/enums";
 
 interface SearchResult {
   id: string;
@@ -91,14 +92,15 @@ export function GlobalSearch() {
   const isMac = useIsMac();
   const modKey = isMac ? "\u2318" : "Ctrl";
   const { data: session, status: sessionStatus } = useSession();
-  const userRole = (session?.user as { role?: string } | undefined)?.role as UserRole | undefined;
+  const sessionUser = session?.user as { roles?: string[]; role?: string } | undefined;
+  const userRoles = (sessionUser?.roles?.length ? sessionUser.roles : sessionUser?.role ? [sessionUser.role] : []) as UserRole[];
 
-  // Filter links to only those the user's role can access
+  // Filter links to only those any of the user's roles can access
   const accessibleLinks = useMemo(() => {
     // Fail closed while session/role is loading to avoid briefly showing restricted pages
-    if (sessionStatus !== "authenticated" || !userRole) return [];
-    return DASHBOARD_LINKS.filter((d) => canAccessRoute(userRole, d.path));
-  }, [sessionStatus, userRole]);
+    if (sessionStatus !== "authenticated" || userRoles.length === 0) return [];
+    return DASHBOARD_LINKS.filter((d) => userRoles.some((r) => canAccessRoute(r, d.path)));
+  }, [sessionStatus, userRoles]);
 
   // Filter dashboards by query
   const filteredDashboards = query.length > 0

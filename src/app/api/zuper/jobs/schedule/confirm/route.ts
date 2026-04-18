@@ -259,9 +259,7 @@ export async function POST(request: NextRequest) {
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 403 });
     }
-    const userRolesForPolicy: UserRole[] = (user as { roles?: UserRole[] }).roles && (user as { roles: UserRole[] }).roles.length > 0
-      ? (user as { roles: UserRole[] }).roles
-      : [user.role as UserRole];
+    const userRolesForPolicy: UserRole[] = user.roles ?? [];
     const effectiveRole = resolveEffectiveRoleFromRequest(request, userRolesForPolicy[0] as UserRole);
 
     if (!prisma) {

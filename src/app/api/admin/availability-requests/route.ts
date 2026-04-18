@@ -29,9 +29,7 @@ export async function GET(request: NextRequest) {
   }
 
   const user = await getUserByEmail(session.user.email);
-  const userRoles = user?.roles && user.roles.length > 0
-    ? user.roles
-    : user?.role ? [user.role] : [];
+  const userRoles = user?.roles ?? [];
   if (!user || !userRoles.some((r) => ALLOWED_ROLES.includes(r as typeof ALLOWED_ROLES[number]))) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }
@@ -73,9 +71,7 @@ export async function POST(request: NextRequest) {
   }
 
   const user = await getUserByEmail(session.user.email);
-  const userRoles = user?.roles && user.roles.length > 0
-    ? user.roles
-    : user?.role ? [user.role] : [];
+  const userRoles = user?.roles ?? [];
   if (!user || !userRoles.some((r) => ALLOWED_ROLES.includes(r as typeof ALLOWED_ROLES[number]))) {
     return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
   }

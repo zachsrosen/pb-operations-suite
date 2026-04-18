@@ -95,7 +95,7 @@ export async function POST() {
       );
     }
 
-    const normalizedRole = (ROLES[user.role as UserRole]?.normalizesTo ?? (user.role as UserRole));
+    const normalizedRole = (ROLES[(user.roles?.[0] ?? "VIEWER") as UserRole]?.normalizesTo ?? ((user.roles?.[0] ?? "VIEWER") as UserRole));
 
     // Log the login activity
     const headersList = await headers();
@@ -161,7 +161,7 @@ export async function GET() {
     }
 
     // Check if admin is impersonating another user
-    if ((user.roles?.includes("ADMIN") || user.role === "ADMIN") && user.impersonatingUserId && prisma) {
+    if (user.roles?.includes("ADMIN") && user.impersonatingUserId && prisma) {
       const impersonatedUser = await prisma.user.findUnique({
         where: { id: user.impersonatingUserId },
       });
@@ -198,7 +198,7 @@ export async function GET() {
       }
     }
 
-    const normalizedRole = (ROLES[user.role as UserRole]?.normalizesTo ?? (user.role as UserRole));
+    const normalizedRole = (ROLES[(user.roles?.[0] ?? "VIEWER") as UserRole]?.normalizesTo ?? ((user.roles?.[0] ?? "VIEWER") as UserRole));
     const { roles, access } = serializeAccess(user);
     return withRoleAndImpersonationCookies(NextResponse.json({
       role: normalizedRole,

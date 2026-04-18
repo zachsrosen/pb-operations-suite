@@ -66,7 +66,7 @@ export default async function IntelligenceSuitePage() {
   if (!user) redirect("/login?callbackUrl=/suites/intelligence");
 
   const allowed = ["ADMIN", "EXECUTIVE", "OPERATIONS_MANAGER", "PROJECT_MANAGER"];
-  if (!allowed.includes(user.role)) redirect("/");
+  if (!user.roles.some(r => allowed.includes(r))) redirect("/");
 
   return (
     <SuitePageShell
@@ -74,7 +74,7 @@ export default async function IntelligenceSuitePage() {
       title="Intelligence Suite"
       subtitle="Forecast-dependent dashboards under evaluation. Will be redistributed or cut."
       cards={LINKS}
-      role={user.role}
+      roles={user.roles}
       columnsClassName="grid grid-cols-1 md:grid-cols-3 gap-4"
     />
   );

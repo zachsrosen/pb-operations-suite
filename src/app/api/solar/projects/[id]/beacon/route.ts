@@ -49,6 +49,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
   const [user, authError] = await requireSolarAuth(req);
   if (authError) return authError;
 
+  const { role: userRole } = user;
   if (!prisma) {
     return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
   }
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
   if (rateLimited) return rateLimited;
 
   // Write access check
-  const canWrite = await canWriteProject(user.id, user.role, id);
+  const canWrite = await canWriteProject(user.id, userRole, id);
   if (!canWrite) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

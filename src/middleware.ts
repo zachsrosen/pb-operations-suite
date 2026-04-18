@@ -1,12 +1,10 @@
 import * as Sentry from "@sentry/nextjs";
 import { auth } from "@/auth";
 import { NextRequest, NextResponse } from "next/server";
+import type { UserRole } from "@/generated/prisma/enums";
 import {
   getDefaultRouteForRole,
   normalizeRole,
-  type UserRole,
-} from "@/lib/role-permissions";
-import {
   isPathAllowedByAccess,
   resolveUserAccess,
 } from "@/lib/user-access";

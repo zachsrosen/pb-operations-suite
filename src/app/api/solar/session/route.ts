@@ -64,12 +64,13 @@ export async function GET(req: Request) {
   const forwardedProto = req.headers.get("x-forwarded-proto");
   const isHttps = forwardedProto === "https" || process.env.NODE_ENV === "production";
 
+  const { role: userRole } = user;
   const response = NextResponse.json({
     data: {
       id: user.id,
       name: user.name,
       email: user.email,
-      role: user.role,
+      role: userRole,
       csrfToken,
       pendingStates,
     },

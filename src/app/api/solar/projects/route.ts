@@ -96,6 +96,7 @@ export async function GET(req: NextRequest) {
   const [user, authError] = await requireSolarAuth(req);
   if (authError) return authError;
 
+  const { role: userRole } = user;
   if (!prisma) {
     return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
   }
@@ -123,7 +124,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Role-based scoping
-  if (!isElevatedRole(user.role)) {
+  if (!isElevatedRole(userRole)) {
     // Non-elevated users see: own projects + TEAM-visibility + projects shared with them
     where.OR = [
       { createdById: user.id },

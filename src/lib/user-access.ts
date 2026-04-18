@@ -1,6 +1,23 @@
 import type { UserRole } from "@/generated/prisma/enums";
 import { ROLES, type LandingCard, type Scope } from "@/lib/roles";
-import { ADMIN_ONLY_ROUTES, ADMIN_ONLY_EXCEPTIONS } from "@/lib/role-permissions";
+import {
+  ADMIN_ONLY_ROUTES,
+  ADMIN_ONLY_EXCEPTIONS,
+  normalizeRole,
+  getDefaultRouteForRole,
+  canAccessRoute as _canAccessRoute,
+  ROLE_PERMISSIONS,
+} from "@/lib/role-permissions";
+
+export { normalizeRole, getDefaultRouteForRole, ROLE_PERMISSIONS };
+
+/**
+ * Single-role convenience wrapper for `isPathAllowedByAccess`. Equivalent to
+ * the old `canAccessRoute(role, path)` from `@/lib/role-permissions`.
+ */
+export function canAccessRoute(role: UserRole, path: string): boolean {
+  return _canAccessRoute(role, path);
+}
 
 /**
  * Capability keys — the union of per-user/per-role permission flags that gate

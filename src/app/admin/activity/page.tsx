@@ -22,7 +22,7 @@ interface ActivityLog {
     name: string | null;
     email: string;
     image: string | null;
-    role: string;
+    roles: string[];
   } | null;
 }
 
@@ -509,9 +509,9 @@ export default function AdminActivityPage() {
                           ) : (
                             <span>System</span>
                           )}
-                          {activity.user?.role && (
+                          {activity.user?.roles?.[0] && (
                             <span className="px-1.5 py-0.5 rounded bg-surface-2 text-[10px] uppercase tracking-wider text-muted">
-                              {formatRoleLabel(activity.user.role)}
+                              {formatRoleLabel(activity.user.roles[0])}
                             </span>
                           )}
                           <span>•</span>

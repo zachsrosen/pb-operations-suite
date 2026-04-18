@@ -44,10 +44,10 @@ function withRoleAndImpersonationCookies(
   return withImpersonationStateCookie(withEffectiveRoleCookies(response, roles), isImpersonating);
 }
 
-function resolveTargetRoles(user: { role: string; roles?: UserRole[] | null }): UserRole[] {
-  const raw: UserRole[] = user.roles && user.roles.length > 0
-    ? user.roles
-    : [user.role as UserRole];
+function resolveTargetRoles({ role, roles }: { role: string; roles?: UserRole[] | null }): UserRole[] {
+  const raw: UserRole[] = roles && roles.length > 0
+    ? roles
+    : [role as UserRole];
   const normalized = raw.map((r) => ROLES[r]?.normalizesTo ?? r);
   // Dedup, preserve order.
   const seen = new Set<UserRole>();
@@ -77,7 +77,7 @@ export async function POST(request: NextRequest) {
 
   // Get the actual admin user from database
   const adminUser = await getUserByEmail(session.user.email);
-  if (!adminUser || !(adminUser.roles?.includes("ADMIN") || adminUser.role === "ADMIN")) {
+  if (!adminUser || !adminUser.roles?.includes("ADMIN")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
@@ -173,7 +173,7 @@ export async function DELETE() {
   const adminRoles = resolveTargetRoles(user as { role: string; roles?: UserRole[] | null });
 
   // Only admins can manage impersonation state
-  if (!(user.roles?.includes("ADMIN") || user.role === "ADMIN")) {
+  if (!user.roles?.includes("ADMIN")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
@@ -250,7 +250,7 @@ export async function GET() {
   }
 
   // Only admins should be able to query impersonation status
-  if (!(user.roles?.includes("ADMIN") || user.role === "ADMIN")) {
+  if (!user.roles?.includes("ADMIN")) {
     return NextResponse.json({ isImpersonating: false });
   }
   const normalizedAdminRoles = resolveTargetRoles(user as { role: string; roles?: UserRole[] | null });

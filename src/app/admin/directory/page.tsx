@@ -3,8 +3,9 @@ import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
 import { APP_PAGE_ROUTES } from "@/lib/page-directory";
-import { canAccessRoute, type UserRole } from "@/lib/role-permissions";
+import { canAccessRoute } from "@/lib/user-access";
 import { ROLES } from "@/lib/roles";
+import type { UserRole } from "@/generated/prisma/enums";
 
 const PICKER_ROLES: UserRole[] = (Object.entries(ROLES) as Array<[UserRole, (typeof ROLES)[UserRole]]>)
   .filter(([, def]) => def.visibleInPicker)
@@ -50,7 +51,7 @@ export default async function AdminDirectoryPage() {
   if (!session?.user?.email) redirect("/login?callbackUrl=/admin/directory");
 
   const user = await getUserByEmail(session.user.email);
-  if (!user || user.role !== "ADMIN") redirect("/");
+  if (!user || !user.roles.includes("ADMIN")) redirect("/");
 
   const rows = APP_PAGE_ROUTES.map((path) => {
     const allowedRoles = PICKER_ROLES.filter((role) => canAccessRoute(role, path));

@@ -3,7 +3,8 @@ import Google from "next-auth/providers/google";
 import Credentials from "next-auth/providers/credentials";
 import type { JWT } from "next-auth/jwt";
 import { assertProductionEnvConfigured } from "@/lib/env";
-import { normalizeRole, type UserRole } from "@/lib/role-permissions";
+import { normalizeRole } from "@/lib/user-access";
+import type { UserRole } from "@/generated/prisma/enums";
 
 // Allowed email domains for authentication (comma-separated)
 const ALLOWED_DOMAINS = (process.env.ALLOWED_EMAIL_DOMAIN || "photonbrothers.com,pb-contractor.com");

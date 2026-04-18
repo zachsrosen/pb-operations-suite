@@ -23,7 +23,7 @@ export async function GET() {
     }
 
     const firstName = (user.name || "").split(" ")[0].toLowerCase();
-    const role = (ROLES[user.role as UserRole]?.normalizesTo ?? (user.role as UserRole));
+    const role = (ROLES[(user.roles?.[0] ?? "VIEWER") as UserRole]?.normalizesTo ?? ((user.roles?.[0] ?? "VIEWER") as UserRole));
     const isAdmin = role === "ADMIN" || role === "EXECUTIVE";
 
     const allTabs = await prisma.sopTab.findMany({

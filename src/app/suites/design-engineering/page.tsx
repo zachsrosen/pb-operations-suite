@@ -127,7 +127,7 @@ export default async function DesignEngineeringSuitePage() {
       title="Design & Engineering Suite"
       subtitle="Design review, system analytics, and engineering reference tools."
       cards={LINKS}
-      role={user.role}
+      roles={user.roles}
     />
   );
 }

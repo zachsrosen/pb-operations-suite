@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "User not found" }, { status: 403 });
     }
 
-    const userRoles = user.roles && user.roles.length > 0 ? user.roles : [user.role];
+    const userRoles = user.roles ?? [];
     if (!userRoles.some((r) => ALLOWED_ROLES.includes(r))) {
       return NextResponse.json({ error: "Insufficient permissions" }, { status: 403 });
     }

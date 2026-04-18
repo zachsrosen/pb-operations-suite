@@ -185,7 +185,7 @@ export default async function OperationsSuitePage() {
       title="Operations Suite"
       subtitle="Scheduling, field execution, and equipment management."
       cards={LINKS}
-      role={user.role}
+      roles={user.roles}
     />
   );
 }

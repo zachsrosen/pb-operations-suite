@@ -15,11 +15,12 @@ export async function GET(req: NextRequest, context: RouteContext) {
   const [user, authError] = await requireSolarAuth(req);
   if (authError) return authError;
 
+  const { role: userRole } = user;
   if (!prisma) {
     return NextResponse.json({ error: "Database unavailable" }, { status: 503 });
   }
 
-  const canRead = await canReadProject(user.id, user.role, id);
+  const canRead = await canReadProject(user.id, userRole, id);
   if (!canRead) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

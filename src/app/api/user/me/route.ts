@@ -24,7 +24,7 @@ export async function GET() {
     }
 
     // Check if admin is impersonating another user
-    if ((user.roles?.includes("ADMIN") || user.role === "ADMIN") && user.impersonatingUserId && prisma) {
+    if (user.roles?.includes("ADMIN") && user.impersonatingUserId && prisma) {
       const impersonatedUser = await prisma.user.findUnique({
         where: { id: user.impersonatingUserId },
       });
@@ -56,7 +56,7 @@ export async function GET() {
 
     return NextResponse.json({
       user: {
-        role: (ROLES[user.role as UserRole]?.normalizesTo ?? (user.role as UserRole)),
+        role: (ROLES[(user.roles?.[0] ?? "VIEWER") as UserRole]?.normalizesTo ?? ((user.roles?.[0] ?? "VIEWER") as UserRole)),
         id: user.id,
         email: user.email,
         name: user.name,

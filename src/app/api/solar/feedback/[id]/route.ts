@@ -23,10 +23,11 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
   const [user, authError] = await requireSolarAuth(req);
   if (authError) return authError;
 
+  const { role: userRole } = user;
   const rateLimited = checkSolarRateLimit(user.email);
   if (rateLimited) return rateLimited;
 
-  if (!isElevatedRole(user.role)) {
+  if (!isElevatedRole(userRole)) {
     return NextResponse.json({ error: "Forbidden — admin/manager only" }, { status: 403 });
   }
 

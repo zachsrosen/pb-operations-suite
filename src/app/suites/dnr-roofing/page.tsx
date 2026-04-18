@@ -47,7 +47,7 @@ export default async function DNRRoofingSuitePage() {
       title="D&R + Roofing Suite"
       subtitle="Detach & reset and roofing scheduling, pipelines, and tracking."
       cards={LINKS}
-      role={user.role}
+      roles={user.roles}
     />
   );
 }

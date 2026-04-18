@@ -393,9 +393,7 @@ export async function PUT(request: NextRequest) {
         { status: 403 }
       );
     }
-    const userRolesForPolicy: UserRole[] = (user as { roles?: UserRole[] }).roles && (user as { roles: UserRole[] }).roles.length > 0
-      ? (user as { roles: UserRole[] }).roles
-      : [user.role as UserRole];
+    const userRolesForPolicy: UserRole[] = user.roles ?? [];
     const effectiveRole = resolveEffectiveRoleFromRequest(request, userRolesForPolicy[0] as UserRole);
 
     const body = await request.json();
@@ -1239,9 +1237,7 @@ export async function DELETE(request: NextRequest) {
         { status: 403 }
       );
     }
-    const userRolesForPolicy: UserRole[] = (user as { roles?: UserRole[] }).roles && (user as { roles: UserRole[] }).roles.length > 0
-      ? (user as { roles: UserRole[] }).roles
-      : [user.role as UserRole];
+    const userRolesForPolicy: UserRole[] = user.roles ?? [];
     const effectiveRole = resolveEffectiveRoleFromRequest(request, userRolesForPolicy[0] as UserRole);
     const effectiveRoles = resolveEffectiveRolesFromRequest(request, userRolesForPolicy);
 

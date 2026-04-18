@@ -91,9 +91,7 @@ export async function POST(req: NextRequest) {
     where: { email: session.user.email },
     select: { role: true, roles: true },
   });
-  const rawRoles: UserRole[] = user?.roles && user.roles.length > 0
-    ? user.roles
-    : user?.role ? [user.role as UserRole] : [];
+  const rawRoles: UserRole[] = (user?.roles && user.roles.length > 0 ? user.roles : null) ?? [];
   const normalizedRoles = rawRoles.map((r) => ROLES[r]?.normalizesTo ?? r);
   if (!normalizedRoles.some((r) => r === "ADMIN" || r === "EXECUTIVE")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });

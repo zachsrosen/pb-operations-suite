@@ -171,7 +171,7 @@ const API_SHORTCUTS: SuitePageCard[] = [
 export default async function AdminSuitePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?callbackUrl=/suites/admin");
-  if (user.role !== "ADMIN") redirect("/");
+  if (!user.roles.includes("ADMIN")) redirect("/");
 
   return (
     <SuitePageShell
@@ -179,7 +179,7 @@ export default async function AdminSuitePage() {
       title="Admin Suite"
       subtitle="Admin tools, governance dashboards, and system docs."
       cards={[...ADMIN_TOOLS, ...DOCUMENTATION, ...API_SHORTCUTS, ...PROTOTYPES]}
-      role={user.role}
+      roles={user.roles}
       columnsClassName="grid grid-cols-1 md:grid-cols-3 gap-4"
       heroContent={<SyncStatusCard />}
     />

@@ -41,6 +41,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   const [user, authError] = await requireSolarAuth(req);
   if (authError) return authError;
 
+  const { role: userRole } = user;
   const rateLimited = checkSolarRateLimit(user.email);
   if (rateLimited) return rateLimited;
 
@@ -66,7 +67,7 @@ export async function PUT(req: NextRequest, context: RouteContext) {
   }
 
   // RBAC: creator OR elevated role
-  if (existing.createdById !== user.id && !isElevatedRole(user.role)) {
+  if (existing.createdById !== user.id && !isElevatedRole(userRole)) {
     return NextResponse.json(
       { error: "Not authorized to update this equipment" },
       { status: 403 }
@@ -166,6 +167,7 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
   const [user, authError] = await requireSolarAuth(req);
   if (authError) return authError;
 
+  const { role: userRole } = user;
   const rateLimited = checkSolarRateLimit(user.email);
   if (rateLimited) return rateLimited;
 
@@ -179,7 +181,7 @@ export async function DELETE(req: NextRequest, context: RouteContext) {
   const { id } = await context.params;
 
   // RBAC: ADMIN/MANAGER/OWNER only
-  if (!isElevatedRole(user.role)) {
+  if (!isElevatedRole(userRole)) {
     return NextResponse.json(
       { error: "Only admins/managers can archive equipment" },
       { status: 403 }

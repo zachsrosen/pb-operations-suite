@@ -24,9 +24,7 @@ export async function GET(request: NextRequest) {
     }
 
     const user = await getUserByEmail(session.user.email);
-    const rawRoles: UserRole[] = user?.roles && user.roles.length > 0
-      ? user.roles
-      : user?.role ? [user.role as UserRole] : [];
+    const rawRoles: UserRole[] = (user?.roles && user.roles.length > 0 ? user.roles : null) ?? [];
     const normalizedRoles = rawRoles.map((r) => ROLES[r]?.normalizesTo ?? r);
     if (!normalizedRoles.some((r) => r === "ADMIN" || r === "EXECUTIVE")) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
@@ -81,9 +79,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const user = await getUserByEmail(session.user.email);
-    const rawRoles: UserRole[] = user?.roles && user.roles.length > 0
-      ? user.roles
-      : user?.role ? [user.role as UserRole] : [];
+    const rawRoles: UserRole[] = (user?.roles && user.roles.length > 0 ? user.roles : null) ?? [];
     const normalizedRoles = rawRoles.map((r) => ROLES[r]?.normalizesTo ?? r);
     if (!normalizedRoles.some((r) => r === "ADMIN" || r === "EXECUTIVE")) {
       return NextResponse.json({ error: "Admin access required" }, { status: 403 });
