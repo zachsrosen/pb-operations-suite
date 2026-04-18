@@ -79,6 +79,22 @@ Audit
 
 Active-link state derived from pathname.
 
+**Collapse behavior:** 220px expanded, 64px (icon-only) collapsed. Auto-collapses at viewport width <1280px; admin can toggle manually above that. No persisted state across sessions in phase 1 — the collapsed state resets on reload.
+
+### URL convention for deep-links and filters
+
+Cross-links and search results land on existing pages with state in query params, not client-only state. One convention across the shell so users can bookmark and the server can render server-first:
+
+| Link | URL |
+|------|-----|
+| User row from search or cross-link | `/admin/users?userId=<id>` |
+| Activity for a specific user | `/admin/activity?userId=<id>` |
+| Activity of a specific type | `/admin/activity?type=<ACTIVITY_TYPE>` |
+| Role editor | `/admin/roles/<role>` (existing, unchanged) |
+| Ticket detail from search | `/admin/tickets?ticketId=<id>` |
+
+Each page handles the query param by scrolling the match into view and (where applicable) opening its detail panel. Pages that don't already support the query param gain one small change to do so — this is in-scope.
+
 ### New `/admin` landing page
 
 `src/app/admin/page.tsx`. Currently `/admin` redirects to `/suites/admin`. Replace the redirect with a server component that renders:
@@ -89,7 +105,7 @@ Active-link state derived from pathname.
 |------|-------------|-------|
 | Users | `prisma.user.count()` + count where `lastLoginAt > now - 7d` | "57 total · 44 active in last 7d" |
 | Risk events (7d) | `prisma.activityLog.count({ where: { riskLevel: { in: ['HIGH', 'CRITICAL'] }, createdAt: { gt: sevenDaysAgo } } })` | "3 HIGH · last: 12m ago" |
-| Open bug tickets | `prisma.bugReport.count({ where: { status: { not: 'RESOLVED' } } })` | "2 open · 0 flagged urgent" |
+| Open bug tickets | `prisma.bugReport.count({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] } } })` | "2 open · 0 flagged urgent" |
 
 **Row 2 — recent admin activity feed:**
 
@@ -112,6 +128,8 @@ Scope:
 - **Tickets** — match on `title` or `body` snippet; result links to `/admin/tickets`
 
 Implementation: one new API route `/api/admin/search?q=<query>` that parallel-fires the four queries with `take: 5` each and returns `{ users, roles, activity, tickets }`. Debounced client-side at 200ms.
+
+The new route lives under `/api/admin/*`, which is already in `ADMIN_ONLY_ROUTES` in `src/lib/roles.ts` and gated by middleware. The route handler still does an explicit fresh-DB admin check (matching the existing pattern in `/api/admin/users` — JWT can be stale). No entries are needed in each role's `allowedRoutes` because the admin-only short-circuit handles it.
 
 The existing global Cmd+K (`<GlobalSearch>`) is untouched. Admins can still use it; it stays unaware of admin entities. This avoids polluting global search with admin data for non-admins (who can't see admin APIs anyway, but clean separation makes future work easier).
 
@@ -146,10 +164,11 @@ Each existing admin page's ad-hoc empty / error UI is replaced with these.
 
 ## Testing
 
-- Component test for `<AdminShell>`: renders title, breadcrumb, active sidebar link matches pathname, action slot accepts children.
+- Component test for `<AdminShell>`: renders title, breadcrumb, active sidebar link matches pathname, action slot accepts children, collapse toggle works at both viewport widths.
 - Component test for `<AdminEmpty>`, `<AdminLoading>`, `<AdminError>`.
 - Unit test for the `/api/admin/search` route: admin-gate (returns 403 for non-admin); matches across four entity types; respects `take: 5` cap per category; returns consistent shape even when one category errors.
-- Manual smoke: walk through all 9 pages + landing page locally before merge; verify sidebar active state, breadcrumb, search from each page.
+- Accessibility checks for the in-shell search dropdown: keyboard nav (↑/↓ through results, Enter to open, Esc to close), `aria-activedescendant` on the input reflecting focused result, input has `role="combobox"` and result list has `role="listbox"`. These checks run as part of the component test.
+- Manual smoke: walk through all 9 pages + landing page locally before merge; verify sidebar active state, breadcrumb, search from each page, query-param deep-links from cross-links and search results.
 - No integration test changes — the pages' data paths are unchanged.
 
 ## Rollout
@@ -167,7 +186,7 @@ Each existing admin page's ad-hoc empty / error UI is replaced with these.
 
 | Risk | Mitigation |
 |------|------------|
-| New sidebar takes visual space away from page bodies that already felt cramped (e.g., /admin/users has a wide table). | Sidebar is 220px and can collapse to 64px (icon-only) on narrower viewports. Test on 1280px width. |
+| New sidebar takes visual space away from page bodies that already felt cramped (e.g., /admin/users has a wide table). | Sidebar auto-collapses to 64px (icon-only) at viewport widths <1280px. See "Collapse behavior" in Architecture. |
 | Cross-links introduce tight coupling between admin pages. | Cross-links are simple `<Link href>` — no shared state. Each page still functions if its neighbor's URL changes. |
 | The recent-activity feed on `/admin` becomes a noisy distraction. | Cap at 10 items. Filter to the admin-relevant activity types listed above, not every activity. |
 | Someone lands on the old `/suites/admin` and is confused about which admin is the "real" one. | Out of scope for phase 1. Phase 2 can either delete `/suites/admin`, redirect it, or make it a dashboard of a different kind. |
