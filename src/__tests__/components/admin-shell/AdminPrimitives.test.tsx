@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { AdminEmpty } from "@/components/admin-shell/AdminEmpty";
+import { AdminLoading } from "@/components/admin-shell/AdminLoading";
 
 describe("AdminEmpty", () => {
   it("renders label + description", () => {
@@ -16,5 +17,17 @@ describe("AdminEmpty", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Invite user" })).toBeInTheDocument();
+  });
+});
+
+describe("AdminLoading", () => {
+  it("renders optional label", () => {
+    render(<AdminLoading label="Loading users…" />);
+    expect(screen.getByText("Loading users…")).toBeInTheDocument();
+  });
+
+  it("sets role='status' for screen readers", () => {
+    render(<AdminLoading />);
+    expect(screen.getByRole("status")).toBeInTheDocument();
   });
 });
