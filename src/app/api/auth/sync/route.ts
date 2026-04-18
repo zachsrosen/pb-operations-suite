@@ -167,7 +167,7 @@ export async function GET() {
       });
 
       if (impersonatedUser) {
-        const normalizedRole = (ROLES[impersonatedUser.role as UserRole]?.normalizesTo ?? (impersonatedUser.role as UserRole));
+        const normalizedRole = (ROLES[(impersonatedUser.roles?.[0] ?? "VIEWER") as UserRole]?.normalizesTo ?? ((impersonatedUser.roles?.[0] ?? "VIEWER") as UserRole));
         const { roles, access } = serializeAccess(impersonatedUser);
         return withRoleAndImpersonationCookies(NextResponse.json({
           role: normalizedRole,
