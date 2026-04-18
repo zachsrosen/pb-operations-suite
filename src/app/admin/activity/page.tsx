@@ -2,8 +2,11 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { useToast } from "@/contexts/ToastContext";
+import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
+import { AdminEmpty } from "@/components/admin-shell/AdminEmpty";
 
 interface ActivityLog {
   id: string;
@@ -76,6 +79,7 @@ const PAGE_SIZE = 100;
 
 export default function AdminActivityPage() {
   const { addToast } = useToast();
+  const searchParams = useSearchParams();
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -87,6 +91,7 @@ export default function AdminActivityPage() {
   const [dateRange, setDateRange] = useState<"today" | "7d" | "30d" | "all">("all");
   const [searchEmail, setSearchEmail] = useState<string>("");
   const [debouncedEmail, setDebouncedEmail] = useState<string>("");
+  const [filterUserId, setFilterUserId] = useState<string>("");
   const [autoRefresh, setAutoRefresh] = useState<boolean>(false);
   const [allTypes, setAllTypes] = useState<string[]>([]);
   const activityTypeOptions = useMemo(
@@ -106,6 +111,14 @@ export default function AdminActivityPage() {
     }, 400);
     return () => clearTimeout(emailTimer.current);
   }, [searchEmail]);
+
+  // Deep-link: ?userId=<id> and ?type=<TYPE> preload filters
+  useEffect(() => {
+    const urlUserId = searchParams.get("userId");
+    const urlType = searchParams.get("type");
+    if (urlUserId) setFilterUserId(urlUserId);
+    if (urlType) setTypeFilters([urlType]);
+  }, [searchParams]);
 
   // Fetch distinct activity types on mount
   useEffect(() => {
@@ -162,6 +175,7 @@ export default function AdminActivityPage() {
         }
         if (sinceDate) params.set("since", sinceDate);
         if (debouncedEmail.trim()) params.set("email", debouncedEmail.trim());
+        if (filterUserId) params.set("userId", filterUserId);
 
         const response = await fetch(`/api/admin/activity?${params}`);
         if (!response.ok) {
@@ -187,7 +201,7 @@ export default function AdminActivityPage() {
         setLoadingMore(false);
       }
     },
-    [typeFilters, roleFilters, sinceDate, debouncedEmail, offset]
+    [typeFilters, roleFilters, sinceDate, debouncedEmail, filterUserId, offset]
   );
 
   // Re-fetch from start when filters change
@@ -195,7 +209,7 @@ export default function AdminActivityPage() {
     setOffset(0);
     fetchActivities(false, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeFilters, roleFilters, sinceDate, debouncedEmail]);
+  }, [typeFilters, roleFilters, sinceDate, debouncedEmail, filterUserId]);
 
   // Auto-refresh
   useEffect(() => {
@@ -299,7 +313,7 @@ export default function AdminActivityPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen bg-background text-foreground flex items-center justify-center">
+      <div className="flex items-center justify-center py-20">
         <div className="text-center">
           <p className="text-red-400 text-xl mb-2">Error</p>
           <p className="text-muted text-sm mb-4">{error}</p>
@@ -312,41 +326,15 @@ export default function AdminActivityPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Header */}
-      <div className="sticky top-0 z-40 bg-background/95 backdrop-blur border-b border-t-border">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/" className="text-muted hover:text-foreground">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                </svg>
-              </Link>
-              <h1 className="text-xl font-bold">Activity Log</h1>
-              <span className="text-xs text-muted bg-surface-2 px-2 py-1 rounded">
-                {total.toLocaleString()} total
-              </span>
-            </div>
-
-            {/* Navigation */}
-            <div className="flex items-center gap-2">
-              <Link
-                href="/admin/users"
-                className="text-xs text-muted hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-surface-2 transition-colors"
-              >
-                Users
-              </Link>
-              <span className="text-xs text-white px-3 py-1.5 rounded-lg bg-surface-2">
-                Activity
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div>
+      <AdminPageHeader
+        title="Activity Log"
+        breadcrumb={["Admin", "Audit", "Activity log"]}
+        subtitle={`${total.toLocaleString()} total events`}
+      />
 
       {/* Content */}
-      <div className="max-w-6xl mx-auto px-4 py-6">
+      <div>
         {/* Stats Summary */}
         <div className="mb-6 grid grid-cols-5 gap-3">
           <div className="bg-surface rounded-lg border border-t-border p-3">
@@ -472,13 +460,15 @@ export default function AdminActivityPage() {
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500" />
           </div>
         ) : activities.length === 0 ? (
-          <div className="text-center py-12 text-muted">
-            <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            <p>No activities match your filters</p>
-            <p className="text-sm mt-1">Try adjusting your search criteria or date range</p>
-          </div>
+          <AdminEmpty
+            label="No activities match your filters"
+            description="Try adjusting your search criteria or date range"
+            icon={
+              <svg className="w-12 h-12 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            }
+          />
         ) : (
           <>
             <div className="space-y-2">
@@ -523,6 +513,29 @@ export default function AdminActivityPage() {
                             </>
                           )}
                         </div>
+
+                        {/* Entity link */}
+                        {activity.entityName && (
+                          <p className="mt-1 text-xs text-muted">
+                            {activity.entityType === "user" && activity.entityId ? (
+                              <Link
+                                href={`/admin/users?userId=${encodeURIComponent(activity.entityId)}`}
+                                className="underline underline-offset-2 hover:text-foreground transition-colors"
+                              >
+                                {activity.entityName}
+                              </Link>
+                            ) : activity.entityType === "role" && activity.entityId ? (
+                              <Link
+                                href={`/admin/roles/${encodeURIComponent(activity.entityId)}`}
+                                className="underline underline-offset-2 hover:text-foreground transition-colors"
+                              >
+                                {activity.entityName}
+                              </Link>
+                            ) : (
+                              activity.entityName
+                            )}
+                          </p>
+                        )}
 
                         {/* Formatted Metadata */}
                         {metadataDisplay && (
