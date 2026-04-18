@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
 
 // ----- Types -----
 
@@ -192,13 +193,13 @@ export default function SecurityAuditPage() {
   // ----- Error State -----
   if (error) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+      <div className="flex items-center justify-center py-20">
         <div className="text-center">
           <p className="text-red-400 text-xl mb-2">Error</p>
-          <p className="text-gray-400 text-sm mb-4">{error}</p>
+          <p className="text-muted text-sm mb-4">{error}</p>
           <Link
             href="/"
-            className="px-4 py-2 bg-gray-700 rounded-lg hover:bg-gray-600"
+            className="px-4 py-2 bg-surface-2 rounded-lg hover:bg-zinc-600"
           >
             Go Home
           </Link>
@@ -210,87 +211,35 @@ export default function SecurityAuditPage() {
   // ----- Loading State -----
   if (loading || !data) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
+      <div className="flex items-center justify-center py-20">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500 mx-auto mb-4" />
-          <p className="text-gray-400 text-sm">Loading security audit...</p>
+          <p className="text-muted text-sm">Loading security audit...</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      {/* Header */}
-      <div className="sticky top-0 z-40 bg-gray-900/95 backdrop-blur border-b border-gray-700">
-        <div className="max-w-6xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Link href="/" className="text-gray-400 hover:text-foreground">
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M10 19l-7-7m0 0l7-7m-7 7h18"
-                  />
-                </svg>
-              </Link>
-              <h1 className="text-xl font-bold">Security Audit</h1>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <span className="text-xs text-gray-400">
-                Generated {formatRelative(data.generatedAt)}
-              </span>
-              <button
-                onClick={fetchData}
-                className="text-gray-400 hover:text-foreground p-2 rounded-lg hover:bg-gray-800 transition-colors"
-                title="Refresh"
-              >
-                <svg
-                  className="w-4 h-4"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
-                  />
-                </svg>
-              </button>
-
-              {/* Nav links */}
-              <Link
-                href="/admin/users"
-                className="text-xs text-gray-400 hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
-              >
-                Users
-              </Link>
-              <Link
-                href="/admin/activity"
-                className="text-xs text-gray-400 hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-gray-800 transition-colors"
-              >
-                Activity
-              </Link>
-              <span className="text-xs text-white px-3 py-1.5 rounded-lg bg-gray-800">
-                Security
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div>
+      <AdminPageHeader
+        title="Security"
+        breadcrumb={["Admin", "Audit", "Security alerts"]}
+        actions={
+          <button
+            onClick={fetchData}
+            className="text-muted hover:text-foreground p-2 rounded-lg hover:bg-surface-2 transition-colors"
+            title="Refresh"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+        }
+      />
 
       {/* Content */}
-      <div className="max-w-6xl mx-auto px-4 py-6 space-y-6">
+      <div className="space-y-6">
         {/* Section 1: Alert Banner */}
         {data.suspiciousEmails.length > 0 && (
           <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
