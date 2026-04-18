@@ -1351,3 +1351,47 @@ export async function resetRoleCapabilityOverride(role: UserRole) {
   await prisma.roleCapabilityOverride.delete({ where: { role } });
   return existing;
 }
+
+// ===========================================
+// Per-user extra route overrides (Option D)
+// ===========================================
+
+export interface UserExtraRoutesInput {
+  extraAllowedRoutes: string[];
+  extraDeniedRoutes: string[];
+}
+
+/**
+ * Replace a user's per-user extra/denied route lists. Both arrays are saved
+ * wholesale — the caller sends the full desired state. Route strings are
+ * trimmed + de-duped here so duplicate entries don't blow up the row.
+ *
+ * Returns the updated user, or null if the DB isn't configured.
+ */
+export async function updateUserExtraRoutes(
+  userId: string,
+  input: UserExtraRoutesInput,
+) {
+  if (!prisma) return null;
+
+  const dedup = (arr: string[]): string[] => {
+    const seen = new Set<string>();
+    const out: string[] = [];
+    for (const raw of arr) {
+      const trimmed = typeof raw === "string" ? raw.trim() : "";
+      if (!trimmed) continue;
+      if (seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      out.push(trimmed);
+    }
+    return out;
+  };
+
+  return prisma.user.update({
+    where: { id: userId },
+    data: {
+      extraAllowedRoutes: dedup(input.extraAllowedRoutes),
+      extraDeniedRoutes: dedup(input.extraDeniedRoutes),
+    },
+  });
+}

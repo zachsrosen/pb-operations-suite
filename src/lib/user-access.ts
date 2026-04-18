@@ -50,6 +50,12 @@ export interface EffectiveUserAccess {
   roles: UserRole[];
   suites: Set<string>;
   allowedRoutes: Set<string>;
+  /**
+   * Explicit per-user denials (Option D). Checked BEFORE the allow-list in
+   * `isPathAllowedByAccess`, so a denial wins over a wildcard or a specific
+   * role grant. Deny uses the same segment-boundary matcher as allow.
+   */
+  deniedRoutes: Set<string>;
   /** Deduped by href (first-declared wins), capped at 10 for display. */
   landingCards: LandingCard[];
   scope: Scope;
@@ -70,6 +76,17 @@ export interface UserLike {
   canSyncToZuper?: boolean | null;
   canManageUsers?: boolean | null;
   canManageAvailability?: boolean | null;
+  /**
+   * Per-user extra route grants (Option D). Added to the role union. Null or
+   * missing means "no per-user extras" — resolver treats absent = [].
+   */
+  extraAllowedRoutes?: string[] | null;
+  /**
+   * Per-user route denials. Win over role grants AND `extraAllowedRoutes`
+   * within the same user. If a route is both extra-allowed and extra-denied,
+   * it is DENIED. This matches least-privilege intent.
+   */
+  extraDeniedRoutes?: string[] | null;
 }
 
 const SCOPE_RANK: Record<Scope, number> = {
@@ -270,10 +287,22 @@ export function resolveUserAccess(
     if (typeof override === "boolean") capabilities[key] = override;
   }
 
+  // Option D: per-user extra routes. Merged onto role union; denied routes
+  // carried separately so they can subtract from a wildcard "*" as well.
+  const allowedRoutes = new Set(effective.allowedRoutes);
+  for (const route of user.extraAllowedRoutes ?? []) {
+    if (typeof route === "string" && route.length > 0) allowedRoutes.add(route);
+  }
+  const deniedRoutes = new Set<string>();
+  for (const route of user.extraDeniedRoutes ?? []) {
+    if (typeof route === "string" && route.length > 0) deniedRoutes.add(route);
+  }
+
   return {
     roles: canonical,
     suites: new Set(effective.suites),
-    allowedRoutes: new Set(effective.allowedRoutes),
+    allowedRoutes,
+    deniedRoutes,
     landingCards: effective.landingCards,
     scope: effective.scope,
     capabilities,
@@ -296,7 +325,18 @@ export function isPathAllowedByAccess(
   access: EffectiveUserAccess,
   path: string
 ): boolean {
-  // Admin-only gate first — matches canAccessRoute semantics.
+  // Per-user denial wins over everything (admin wildcard, role grants, extra
+  // allows). Same segment-boundary matcher as the allow-list. `"/"` matches
+  // only `"/"` exactly.
+  for (const denied of access.deniedRoutes) {
+    if (denied === "/") {
+      if (path === "/") return false;
+      continue;
+    }
+    if (path === denied || path.startsWith(`${denied}/`)) return false;
+  }
+
+  // Admin-only gate next — matches canAccessRoute semantics.
   const isAdminOnly = ADMIN_ONLY_ROUTES.some(
     (restricted) => path === restricted || path.startsWith(`${restricted}/`)
   );
@@ -309,7 +349,7 @@ export function isPathAllowedByAccess(
     }
   }
 
-  // Wildcard grants everything (past the admin gate).
+  // Wildcard grants everything (past the admin gate + explicit denials).
   if (access.allowedRoutes.has("*")) return true;
 
   // Exact or segment-boundary prefix match, with `/` treated as exact-only.

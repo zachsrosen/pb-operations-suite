@@ -20,6 +20,9 @@ declare module "next-auth" {
       name?: string | null;
       image?: string | null;
       roles?: string[];
+      /** Option D — per-user extra route grants, piped through JWT. */
+      extraAllowedRoutes?: string[];
+      extraDeniedRoutes?: string[];
     };
   }
 }
@@ -28,6 +31,12 @@ declare module "next-auth/jwt" {
   interface JWT {
     roles?: string[];
     roleSyncedAt?: number;
+    /**
+     * Per-user extra route grants (Option D). Piped through the JWT so
+     * middleware can honor them without an edge-runtime DB call.
+     */
+    extraAllowedRoutes?: string[];
+    extraDeniedRoutes?: string[];
     accessToken?: string;
     refreshToken?: string;
     accessTokenExpires?: number;
@@ -75,6 +84,14 @@ async function syncRoleToToken(token: JWT): Promise<JWT> {
       : ["VIEWER" as UserRole];
     token.roles = rolesRaw.map((r) => normalizeRole(r));
     token.roleSyncedAt = Date.now();
+    // Option D: per-user route overrides. Sparse — an absent/empty array
+    // means "no overrides for this user" (resolver treats as []).
+    const dbUserWithExtras = dbUser as unknown as {
+      extraAllowedRoutes?: string[] | null;
+      extraDeniedRoutes?: string[] | null;
+    } | null;
+    token.extraAllowedRoutes = dbUserWithExtras?.extraAllowedRoutes ?? [];
+    token.extraDeniedRoutes = dbUserWithExtras?.extraDeniedRoutes ?? [];
     return token;
   } catch (error) {
     console.error("[auth] Failed to sync role to token:", error);
@@ -155,6 +172,12 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
       }
       if (token.roles && Array.isArray(token.roles)) {
         session.user.roles = token.roles;
+      }
+      if (Array.isArray(token.extraAllowedRoutes)) {
+        session.user.extraAllowedRoutes = token.extraAllowedRoutes;
+      }
+      if (Array.isArray(token.extraDeniedRoutes)) {
+        session.user.extraDeniedRoutes = token.extraDeniedRoutes;
       }
       // Note: accessToken intentionally NOT forwarded to session.user — it stays
       // server-side in the JWT only. API routes read it via getToken({ req }).
