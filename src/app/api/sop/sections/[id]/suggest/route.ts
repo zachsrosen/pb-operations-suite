@@ -36,7 +36,8 @@ export async function POST(
         { status: 403 }
       );
     }
-    if (currentUser.role === "VIEWER") {
+    const primaryRole = currentUser.roles?.[0] ?? "VIEWER";
+    if (primaryRole === "VIEWER") {
       return NextResponse.json(
         { error: "Viewers cannot submit suggestions" },
         { status: 403 }

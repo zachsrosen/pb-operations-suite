@@ -97,7 +97,9 @@ export interface SolarUser {
   id: string;
   email: string;
   name: string | null;
+  /** Primary role derived from `roles[0] ?? "VIEWER"`. */
   role: UserRole;
+  roles: UserRole[];
 }
 
 /**
@@ -125,7 +127,7 @@ export async function requireSolarAuth(
 
   const user = await prisma.user.findUnique({
     where: { email: auth.email },
-    select: { id: true, email: true, name: true, role: true },
+    select: { id: true, email: true, name: true, roles: true },
   });
 
   if (!user) {
@@ -135,7 +137,15 @@ export async function requireSolarAuth(
     ];
   }
 
-  return [user as SolarUser, null];
+  const primary = (user.roles?.[0] ?? "VIEWER") as UserRole;
+  const solarUser: SolarUser = {
+    id: user.id,
+    email: user.email,
+    name: user.name,
+    role: primary,
+    roles: (user.roles ?? []) as UserRole[],
+  };
+  return [solarUser, null];
 }
 
 // ── Project Access Control ─────────────────────────────────

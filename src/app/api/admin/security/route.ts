@@ -42,7 +42,7 @@ export async function GET() {
           id: true,
           email: true,
           name: true,
-          role: true,
+          roles: true,
           lastLoginAt: true,
           createdAt: true,
           image: true,
@@ -107,7 +107,7 @@ export async function GET() {
       prisma.activityLog.findMany({
         where: {
           createdAt: { gte: ninetyDaysAgo },
-          user: { role: "ADMIN" },
+          user: { roles: { has: "ADMIN" } },
         },
         select: {
           id: true,
@@ -126,10 +126,13 @@ export async function GET() {
       prisma.activityLog.count(),
     ]);
 
-    const normalizedUsers = allUsers.map((u) => ({
-      ...u,
-      role: normalizeRole(u.role as UserRole),
-    }));
+    const normalizedUsers = allUsers.map((u) => {
+      const primary = (u.roles?.[0] ?? "VIEWER") as UserRole;
+      return {
+        ...u,
+        role: normalizeRole(primary),
+      };
+    });
 
     // Suspicious emails (not @photonbrothers.com)
     const suspiciousEmails = normalizedUsers.filter(

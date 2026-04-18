@@ -76,10 +76,16 @@ export async function GET() {
   }
 
   try {
-    const users = (await getAllUsers()).map((u) => ({
-      ...u,
-      role: (ROLES[u.role as UserRole]?.normalizesTo ?? (u.role as UserRole)),
-    }));
+    // Back-compat: derive `role` from roles[0] for legacy clients (admin UI
+    // tables still render a single-role badge). After Option E the column
+    // is gone from the DB so we can't read it anyway.
+    const users = (await getAllUsers()).map((u) => {
+      const firstRole = (u.roles?.[0] ?? "VIEWER") as UserRole;
+      return {
+        ...u,
+        role: ROLES[firstRole]?.normalizesTo ?? firstRole,
+      };
+    });
     return NextResponse.json({ users });
   } catch (error) {
     console.error("Error fetching users:", error);
@@ -135,7 +141,7 @@ export async function PUT(request: NextRequest) {
       Array.isArray((targetUser as { roles?: UserRole[] | null }).roles) &&
       ((targetUser as { roles?: UserRole[] | null }).roles?.length ?? 0) > 0
         ? ((targetUser as { roles: UserRole[] }).roles)
-        : [targetUser.role as UserRole];
+        : (["VIEWER"] as UserRole[]);
 
     // NOTE: prior versions had a `requiresLocations` gate here that rejected
     // role changes to location-scoped roles when the user had no

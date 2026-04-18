@@ -112,7 +112,8 @@ export async function getOrCreateUser(userData: {
       name: userData.name,
       image: userData.image,
       googleId: userData.googleId,
-      role: "VIEWER", // Unassigned by default until admin assigns access
+      // No explicit `roles` — schema default is `[]`. That resolves to VIEWER
+      // access via the `emptyFallback()` path in `resolveEffectiveRole`.
       ...(touchLastLogin ? { lastLoginAt: new Date() } : {}),
     },
   });
@@ -452,7 +453,7 @@ export async function getRecentActivities(options?: {
       where,
       include: {
         user: {
-          select: { name: true, email: true, image: true, role: true, roles: true },
+          select: { name: true, email: true, image: true, roles: true },
         },
       },
       orderBy: { createdAt: "desc" },
@@ -497,7 +498,6 @@ export async function getUserPermissions(userEmail: string): Promise<RolePermiss
   const user = await prisma.user.findUnique({
     where: { email: userEmail },
     select: {
-      role: true,
       roles: true,
       canScheduleSurveys: true,
       canScheduleInstalls: true,

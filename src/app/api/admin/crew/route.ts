@@ -457,7 +457,7 @@ export async function POST(request: NextRequest) {
             data: {
               email,
               name: fullName,
-              role: "TECH_OPS",
+              roles: ["TECH_OPS"],
               // No googleId, no lastLoginAt — they haven't logged in
             },
           });

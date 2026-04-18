@@ -93,7 +93,7 @@ export async function PUT(request: NextRequest) {
   // without a round-trip per user after the update has already run.
   const targets = await prisma.user.findMany({
     where: { id: { in: userIds } },
-    select: { id: true, email: true, roles: true, role: true },
+    select: { id: true, email: true, roles: true },
   });
   const byId = new Map(targets.map((t) => [t.id, t] as const));
 
@@ -114,7 +114,7 @@ export async function PUT(request: NextRequest) {
     const oldRoles: UserRole[] =
       Array.isArray(target.roles) && target.roles.length > 0
         ? (target.roles as UserRole[])
-        : [target.role as UserRole];
+        : (["VIEWER"] as UserRole[]);
 
     try {
       await updateUserRoles(userId, [role]);

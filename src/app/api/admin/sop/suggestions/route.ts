@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
     const currentUser = await getUserByEmail(session.user.email);
     const rawRoles: UserRole[] = currentUser?.roles && currentUser.roles.length > 0
       ? currentUser.roles
-      : currentUser?.role ? [(currentUser.roles?.[0] ?? "VIEWER") as UserRole] : [];
+      : [];
     const normalizedRoles = rawRoles.map((r) => ROLES[r]?.normalizesTo ?? r);
     if (!normalizedRoles.some((r) => r === "ADMIN" || r === "EXECUTIVE")) {
       return NextResponse.json(
