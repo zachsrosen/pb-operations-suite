@@ -4,14 +4,15 @@ import { auth } from "@/auth";
 import { prisma, getOrCreateUser, getUserByEmail, logActivity } from "@/lib/db";
 import type { UserRole } from "@/generated/prisma/enums";
 import { ROLES } from "@/lib/roles";
-import { resolveUserAccess, type UserLike, type EffectiveUserAccess } from "@/lib/user-access";
+import { type UserLike, type EffectiveUserAccess } from "@/lib/user-access";
+import { resolveUserAccessWithOverrides } from "@/lib/role-resolution";
 
 /**
  * Compute the serializable access payload for a user. `EffectiveUserAccess`
  * carries `suites` and `allowedRoutes` as Sets, which don't survive JSON.stringify —
  * we convert them to arrays here.
  */
-function serializeAccess(user: UserLike): {
+async function serializeAccess(user: UserLike): Promise<{
   roles: EffectiveUserAccess["roles"];
   access: {
     roles: EffectiveUserAccess["roles"];
@@ -21,8 +22,8 @@ function serializeAccess(user: UserLike): {
     scope: EffectiveUserAccess["scope"];
     capabilities: EffectiveUserAccess["capabilities"];
   };
-} {
-  const access = resolveUserAccess(user);
+}> {
+  const access = await resolveUserAccessWithOverrides(user);
   return {
     roles: access.roles,
     access: {
@@ -92,7 +93,7 @@ export async function POST() {
       userAgent,
     });
 
-    const { roles, access } = serializeAccess(user);
+    const { roles, access } = await serializeAccess(user);
 
     return withImpersonationStateCookie(NextResponse.json({
       role: normalizedRole,
@@ -146,7 +147,7 @@ export async function GET() {
 
       if (impersonatedUser) {
         const normalizedRole = (ROLES[(impersonatedUser.roles?.[0] ?? "VIEWER") as UserRole]?.normalizesTo ?? ((impersonatedUser.roles?.[0] ?? "VIEWER") as UserRole));
-        const { roles, access } = serializeAccess(impersonatedUser);
+        const { roles, access } = await serializeAccess(impersonatedUser);
         return withImpersonationStateCookie(NextResponse.json({
           role: normalizedRole,
           roles,
@@ -177,7 +178,7 @@ export async function GET() {
     }
 
     const normalizedRole = (ROLES[(user.roles?.[0] ?? "VIEWER") as UserRole]?.normalizesTo ?? ((user.roles?.[0] ?? "VIEWER") as UserRole));
-    const { roles, access } = serializeAccess(user);
+    const { roles, access } = await serializeAccess(user);
     return withImpersonationStateCookie(NextResponse.json({
       role: normalizedRole,
       roles,

@@ -193,6 +193,10 @@ enum ActivityType {
   PROPERTY_CREATED
   PROPERTY_ASSOCIATION_ADDED
   PROPERTY_SYNC_FAILED
+
+  // Role admin
+  ROLE_CAPABILITIES_CHANGED
+  ROLE_CAPABILITIES_RESET
 }
 
 enum ClientType {
@@ -2591,4 +2595,31 @@ model DealNote {
   createdAt         DateTime @default(now())
 
   @@index([dealId, createdAt])
+}
+
+// ===========================================
+// ROLE OVERRIDES (runtime-editable via admin UI)
+// ===========================================
+
+/// Per-role capability override. One row per role at most. Null field values
+/// mean "inherit the code-level default from src/lib/roles.ts defaultCapabilities".
+/// Admin edits via PUT /api/admin/roles/[role]/capabilities.
+///
+/// See: docs/superpowers/plans/2026-04-18-role-management-ui-roadmap.md (Option B)
+model RoleCapabilityOverride {
+  id                         String   @id @default(cuid())
+  role                       UserRole @unique
+  canScheduleSurveys         Boolean?
+  canScheduleInstalls        Boolean?
+  canScheduleInspections     Boolean?
+  canSyncZuper               Boolean?
+  canManageUsers             Boolean?
+  canManageAvailability      Boolean?
+  canEditDesign              Boolean?
+  canEditPermitting          Boolean?
+  canViewAllLocations        Boolean?
+  updatedAt                  DateTime @updatedAt
+  updatedByEmail             String?
+
+  @@index([role])
 }
