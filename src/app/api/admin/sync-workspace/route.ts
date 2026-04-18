@@ -27,7 +27,7 @@ export async function POST() {
 
   // Check if user is admin - fetch from DB since JWT may be stale
   const currentUser = await getUserByEmail(session.user.email);
-  if (!currentUser || currentUser.role !== "ADMIN") {
+  if (!currentUser || !currentUser.roles?.includes("ADMIN")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 
@@ -262,7 +262,7 @@ export async function GET() {
 
   // Check if user is admin - fetch from DB since JWT may be stale
   const currentUser = await getUserByEmail(session.user.email);
-  if (!currentUser || currentUser.role !== "ADMIN") {
+  if (!currentUser || !currentUser.roles?.includes("ADMIN")) {
     return NextResponse.json({ error: "Admin access required" }, { status: 403 });
   }
 

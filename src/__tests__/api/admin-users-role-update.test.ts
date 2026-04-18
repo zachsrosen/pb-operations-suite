@@ -44,6 +44,7 @@ describe("PUT /api/admin/users", () => {
       id: "admin-1",
       email: "admin@photonbrothers.com",
       role: "ADMIN",
+      roles: ["ADMIN"],
       name: "Admin",
     });
     mockExtractRequestContext.mockReturnValue({});

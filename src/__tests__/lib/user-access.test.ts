@@ -159,15 +159,13 @@ describe("resolveUserAccess", () => {
     }
   });
 
-  it("falls back to [user.role] when user.roles is empty (Phase 1 back-compat)", () => {
-    // No `roles` array at all — just `role`.
-    const access = resolveUserAccess({ role: "SALES" });
-    expect(access.roles).toEqual(["SALES"]);
-    expect(Array.from(access.suites)).toEqual(ROLES.SALES.suites);
-
-    // Empty roles array — should also fall back.
-    const access2 = resolveUserAccess({ roles: [], role: "SALES" });
-    expect(access2.roles).toEqual(["SALES"]);
+  it("returns VIEWER-equivalent when user.roles is empty (Phase 2: no role fallback)", () => {
+    // Part 2B removed the Phase-1 back-compat fallback to `user.role`. An empty
+    // `roles` array now resolves to the VIEWER empty-fallback defined in
+    // `resolveEffectiveRole([])` — no suites, minimum-privilege scope.
+    const access = resolveUserAccess({ roles: [] });
+    expect(access.roles).toEqual([]);
+    expect(Array.from(access.suites)).toEqual([]);
   });
 });
 

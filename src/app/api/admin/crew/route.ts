@@ -272,10 +272,10 @@ async function verifyAdmin(): Promise<{ authorized: boolean; error?: string }> {
 
   const user = await prisma.user.findUnique({
     where: { email: session.user.email },
-    select: { role: true },
+    select: { roles: true },
   });
 
-  if (user?.role !== "ADMIN") {
+  if (!user?.roles?.includes("ADMIN")) {
     return { authorized: false, error: "Admin access required" };
   }
 

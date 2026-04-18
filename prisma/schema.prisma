@@ -36,6 +36,7 @@ model User {
   email         String    @unique
   name          String?
   image         String?
+  role   UserRole   @default(VIEWER)  // DEPRECATED: kept during Phase-2B cleanup. Drop in a dedicated follow-up after all .role readers are gone.
   roles  UserRole[] @default([])
 
   // OAuth fields
@@ -81,6 +82,7 @@ model User {
   commsUserState    CommsUserState?   @relation("UserCommsUserState")
 
   @@index([email])
+  @@index([role])
   @@index([impersonatingUserId])
 }
 

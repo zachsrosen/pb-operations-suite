@@ -29,7 +29,7 @@ async function verifyPermission() {
     return { error: NextResponse.json({ error: "Database not configured" }, { status: 500 }) };
   }
   const currentUser = await getUserByEmail(session.user.email);
-  if (!currentUser || (!currentUser.canManageAvailability && currentUser.role !== "ADMIN")) {
+  if (!currentUser || (!currentUser.canManageAvailability && !currentUser.roles?.includes("ADMIN"))) {
     return { error: NextResponse.json({ error: "Permission denied" }, { status: 403 }) };
   }
   return { currentUser };

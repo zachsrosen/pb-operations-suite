@@ -105,7 +105,7 @@ export function getDefaultRouteForRole(role: UserRole): string {
  */
 export function canAccessRoute(role: UserRole, route: string): boolean {
   if (!ROLES[role]) return false;
-  const access = resolveUserAccess({ roles: [role], role });
+  const access = resolveUserAccess({ roles: [role] });
   return isPathAllowedByAccess(access, route);
 }
 

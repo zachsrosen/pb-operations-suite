@@ -45,7 +45,7 @@ async function resolveCrewMember(
   // Support admin impersonation: use the impersonated user's email for crew lookup
   let lookupEmail = session.user.email;
   if (
-    currentUser.role === "ADMIN" &&
+    currentUser.roles?.includes("ADMIN") &&
     (currentUser as Record<string, unknown>).impersonatingUserId &&
     prisma
   ) {
