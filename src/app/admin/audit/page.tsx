@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import DashboardShell from "@/components/DashboardShell";
 import { MetricCard } from "@/components/ui/MetricCard";
+import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
@@ -813,11 +813,11 @@ export default function AuditDashboardPage() {
   // ── Main render ──────────────────────────────────────────────────────
 
   return (
-    <DashboardShell
-      title="Audit Dashboard"
-      accentColor="red"
-      breadcrumbs={[{ label: "Admin", href: "/admin/users" }, { label: "Audit" }]}
-    >
+    <div>
+      <AdminPageHeader
+        title="Audit Sessions"
+        breadcrumb={["Admin", "Audit", "Audit sessions"]}
+      />
       {/* Metric Cards Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <MetricCard
@@ -1021,6 +1021,6 @@ export default function AuditDashboardPage() {
 
       {activeTab === "alerts" && renderAlertsTab()}
       {activeTab === "sessions" && renderSessionsTab()}
-    </DashboardShell>
+    </div>
   );
 }
