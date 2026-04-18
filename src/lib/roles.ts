@@ -893,3 +893,33 @@ export const ROLES: Record<UserRole, RoleDefinition> = {
   VIEWER,
   SALES,
 };
+
+/**
+ * Routes that require ADMIN role even if the role's allowedRoutes would otherwise
+ * permit access. Non-admin roles can be granted exceptions via ADMIN_ONLY_EXCEPTIONS.
+ */
+export const ADMIN_ONLY_ROUTES: string[] = [
+  "/admin",
+  "/api/admin",
+  "/suites/admin",
+  "/dashboards/zuper-status-comparison",
+  "/dashboards/product-comparison",
+  "/dashboards/mobile",
+  "/dashboards/inventory",
+  "/dashboards/catalog",
+  "/dashboards/command-center",
+  "/dashboards/capacity",
+  "/dashboards/locations",
+  "/api/chat",
+];
+
+/**
+ * Sub-routes exempt from the admin-only restriction above.
+ * Accessible to any role that has the parent route in their allowedRoutes.
+ */
+export const ADMIN_ONLY_EXCEPTIONS: string[] = [
+  "/dashboards/catalog/new",
+  "/api/catalog/push-requests",
+  "/api/catalog/extract-from-datasheet",
+  "/api/catalog/upload-photo",
+];

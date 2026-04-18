@@ -1,8 +1,6 @@
 import type { UserRole } from "@/generated/prisma/enums";
-import { ROLES, type LandingCard, type Scope } from "@/lib/roles";
+import { ROLES, ADMIN_ONLY_ROUTES, ADMIN_ONLY_EXCEPTIONS, type LandingCard, type Scope } from "@/lib/roles";
 import {
-  ADMIN_ONLY_ROUTES,
-  ADMIN_ONLY_EXCEPTIONS,
   normalizeRole,
   getDefaultRouteForRole,
   canAccessRoute as _canAccessRoute,
