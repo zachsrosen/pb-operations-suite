@@ -51,8 +51,8 @@ export const HOME_SUITES: HomeSuiteLink[] = [
     tag: "Intelligence",
   },
   {
-    href: "/suites/admin",
-    title: "Admin Suite",
+    href: "/admin",
+    title: "Admin",
     description: "Admin tools, security views, and testing pages.",
     tag: "Admin",
   },

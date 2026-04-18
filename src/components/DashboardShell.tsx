@@ -104,13 +104,13 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/roofing": { href: "/suites/dnr-roofing", label: "D&R + Roofing" },
   "/dashboards/roofing-scheduler": { href: "/suites/dnr-roofing", label: "D&R + Roofing" },
   // Admin Suite
-  "/dashboards/zuper-status-comparison": { href: "/suites/admin", label: "Admin" },
+  "/dashboards/zuper-status-comparison": { href: "/admin", label: "Admin" },
   // Design Reviews (dynamic: /dashboards/reviews/:dealId)
   "/dashboards/reviews": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/zuper-compliance": { href: "/suites/executive", label: "Executive" },
   "/dashboards/product-comparison": { href: "/suites/operations", label: "Operations" },
   "/dashboards/comms": { href: "/", label: "Home" },
-  "/dashboards/mobile": { href: "/suites/admin", label: "Admin" },
+  "/dashboards/mobile": { href: "/admin", label: "Admin" },
   "/dashboards/ai": { href: "/dashboards/ai", label: "AI Skills" },
 };
 

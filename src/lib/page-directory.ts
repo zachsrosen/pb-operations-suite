@@ -106,7 +106,7 @@ export const APP_PAGE_ROUTES = [
   "/prototypes/solar-surveyor",
   "/roadmap",
   "/sop",
-  "/suites/admin",
+  "/admin",
   "/suites/design-engineering",
   "/suites/dnr-roofing",
   "/suites/executive",
