@@ -46,6 +46,7 @@ interface ClientAccess {
   roles: string[];
   suites: string[];
   allowedRoutes: string[];
+  deniedRoutes?: string[];
   landingCards: Array<{
     href: string;
     title: string;

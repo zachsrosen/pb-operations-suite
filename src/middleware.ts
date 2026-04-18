@@ -123,7 +123,19 @@ export default auth((req) => {
   const pathname = req.nextUrl.pathname;
 
   const isLoggedIn = !!req.auth;
-  const tokenRoles = (req.auth?.user as { roles?: UserRole[] } | undefined)?.roles;
+  const tokenUser = req.auth?.user as
+    | {
+        roles?: UserRole[];
+        extraAllowedRoutes?: string[];
+        extraDeniedRoutes?: string[];
+      }
+    | undefined;
+  const tokenRoles = tokenUser?.roles;
+  // Option D extras are per-user; impersonation does NOT carry them (if an
+  // admin impersonates, they see the target role's access minus the target
+  // user's extras, which is safer — impersonation is a read-only lens).
+  const tokenExtraAllowed = tokenUser?.extraAllowedRoutes ?? [];
+  const tokenExtraDenied = tokenUser?.extraDeniedRoutes ?? [];
   // Impersonation: admin sets pb_effective_roles (JSON array) via /api/admin/impersonate.
   // Only respected when the JWT confirms the user is ADMIN.
   const cookieRolesRaw = req.cookies.get("pb_effective_roles")?.value;
@@ -158,6 +170,12 @@ export default auth((req) => {
   const userRole = normalizeRole(effectiveRoles[0] ?? "VIEWER");
   const access = resolveUserAccess({
     roles: effectiveRoles,
+    // Impersonation suppresses extras — admins see role-only access, not the
+    // impersonated user's per-user overrides. (Extras are piped from JWT which
+    // belongs to the real admin session, so we'd be applying the admin's
+    // extras to someone else's role anyway — which is wrong.)
+    extraAllowedRoutes: shouldUseCookieRoles ? [] : tokenExtraAllowed,
+    extraDeniedRoutes: shouldUseCookieRoles ? [] : tokenExtraDenied,
   });
   const isPathAllowed = (path: string) => isPathAllowedByAccess(access, path);
   const canAccessRouteAdapter = (_role: UserRole, path: string) =>

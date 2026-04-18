@@ -30,6 +30,8 @@ interface User {
   canManageUsers: boolean;
   canManageAvailability: boolean;
   allowedLocations: string[];
+  extraAllowedRoutes?: string[];
+  extraDeniedRoutes?: string[];
 }
 
 interface ActivityLog {
@@ -106,6 +108,12 @@ export default function AdminUsersPage() {
   const [activityLogs, setActivityLogs] = useState<Record<string, ActivityLog[]>>({});
   const [rolesEditorUserId, setRolesEditorUserId] = useState<string | null>(null);
   const [rolesEditorSelection, setRolesEditorSelection] = useState<string[]>([]);
+  // Per-user extra route overrides (Option D). Synced with the permissions
+  // modal — same target user, same open/close lifecycle. Null means not open.
+  const [editExtraAllowed, setEditExtraAllowed] = useState<string[] | null>(null);
+  const [editExtraDenied, setEditExtraDenied] = useState<string[] | null>(null);
+  const [extraAllowedInput, setExtraAllowedInput] = useState("");
+  const [extraDeniedInput, setExtraDeniedInput] = useState("");
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -227,6 +235,10 @@ export default function AdminUsersPage() {
       canManageAvailability: user.canManageAvailability,
       allowedLocations: user.allowedLocations || [],
     });
+    setEditExtraAllowed(user.extraAllowedRoutes ?? []);
+    setEditExtraDenied(user.extraDeniedRoutes ?? []);
+    setExtraAllowedInput("");
+    setExtraDeniedInput("");
     // Fetch activity logs for this user
     fetchActivityLogs(user.id);
   };
@@ -249,6 +261,10 @@ export default function AdminUsersPage() {
   const closePermissionsModal = () => {
     setEditingUser(null);
     setEditPermissions(null);
+    setEditExtraAllowed(null);
+    setEditExtraDenied(null);
+    setExtraAllowedInput("");
+    setExtraDeniedInput("");
   };
 
   const savePermissions = async () => {
@@ -270,10 +286,36 @@ export default function AdminUsersPage() {
         throw new Error(data.error || "Failed to update permissions");
       }
 
+      // Also save per-user extra routes if they've been edited in this modal
+      // session (state is seeded on open from the user row, so a no-op save
+      // still sends the current state — server is idempotent).
+      if (editExtraAllowed !== null && editExtraDenied !== null) {
+        const extraRes = await fetch(
+          `/api/admin/users/${editingUser.id}/extra-routes`,
+          {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              extraAllowedRoutes: editExtraAllowed,
+              extraDeniedRoutes: editExtraDenied,
+            }),
+          },
+        );
+        if (!extraRes.ok) {
+          const data = await extraRes.json().catch(() => ({}));
+          throw new Error(data.error || "Failed to update extra routes");
+        }
+      }
+
       // Update local state
       setUsers(users.map(u =>
         u.id === editingUser.id
-          ? { ...u, ...editPermissions }
+          ? {
+              ...u,
+              ...editPermissions,
+              extraAllowedRoutes: editExtraAllowed ?? u.extraAllowedRoutes,
+              extraDeniedRoutes: editExtraDenied ?? u.extraDeniedRoutes,
+            }
           : u
       ));
       showToast("Permissions updated successfully");
@@ -663,6 +705,156 @@ export default function AdminUsersPage() {
                 ))}
               </div>
             </div>
+
+            {/* Per-user Extra Routes (Option D) */}
+            {editExtraAllowed !== null && editExtraDenied !== null && (
+              <div className="mb-6 pb-6 border-t border-t-border pt-4">
+                <h3 className="text-sm font-medium text-foreground mb-1">Per-user extra routes</h3>
+                <p className="text-xs text-muted mb-4">
+                  Grant or revoke specific paths without changing the role. Paths start with
+                  &quot;/&quot;. Denials win over grants and even override an ADMIN wildcard.
+                  Changes apply on the user&apos;s next sign-in (JWT refresh ≤ 5 min).
+                </p>
+
+                {/* Allow list */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      Extra allowed ({editExtraAllowed.length})
+                    </span>
+                  </div>
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={extraAllowedInput}
+                      onChange={(e) => setExtraAllowedInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const path = extraAllowedInput.trim();
+                          if (path && path.startsWith("/") && !editExtraAllowed.includes(path)) {
+                            setEditExtraAllowed([...editExtraAllowed, path]);
+                          }
+                          setExtraAllowedInput("");
+                        }
+                      }}
+                      placeholder="/dashboards/executive"
+                      className="flex-1 px-3 py-2 bg-skeleton border border-t-border rounded-lg text-sm text-foreground placeholder-muted focus:outline-none focus:border-cyan-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const path = extraAllowedInput.trim();
+                        if (path && path.startsWith("/") && !editExtraAllowed.includes(path)) {
+                          setEditExtraAllowed([...editExtraAllowed, path]);
+                        }
+                        setExtraAllowedInput("");
+                      }}
+                      disabled={
+                        !extraAllowedInput.trim().startsWith("/") ||
+                        editExtraAllowed.includes(extraAllowedInput.trim())
+                      }
+                      className="px-3 py-2 bg-surface-2 hover:bg-surface-elevated rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {editExtraAllowed.length === 0 ? (
+                    <p className="text-xs text-muted italic">No extra allowed paths.</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {editExtraAllowed.map((path) => (
+                        <li
+                          key={path}
+                          className="flex items-center justify-between rounded border border-t-border bg-skeleton px-2 py-1 text-xs"
+                        >
+                          <code className="text-foreground">{path}</code>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditExtraAllowed(editExtraAllowed.filter((p) => p !== path))
+                            }
+                            className="text-muted hover:text-foreground"
+                            aria-label={`Remove ${path}`}
+                          >
+                            ×
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Deny list */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      Extra denied ({editExtraDenied.length})
+                    </span>
+                  </div>
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={extraDeniedInput}
+                      onChange={(e) => setExtraDeniedInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const path = extraDeniedInput.trim();
+                          if (path && path.startsWith("/") && !editExtraDenied.includes(path)) {
+                            setEditExtraDenied([...editExtraDenied, path]);
+                          }
+                          setExtraDeniedInput("");
+                        }
+                      }}
+                      placeholder="/dashboards/sensitive-thing"
+                      className="flex-1 px-3 py-2 bg-skeleton border border-t-border rounded-lg text-sm text-foreground placeholder-muted focus:outline-none focus:border-red-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const path = extraDeniedInput.trim();
+                        if (path && path.startsWith("/") && !editExtraDenied.includes(path)) {
+                          setEditExtraDenied([...editExtraDenied, path]);
+                        }
+                        setExtraDeniedInput("");
+                      }}
+                      disabled={
+                        !extraDeniedInput.trim().startsWith("/") ||
+                        editExtraDenied.includes(extraDeniedInput.trim())
+                      }
+                      className="px-3 py-2 bg-surface-2 hover:bg-surface-elevated rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Add
+                    </button>
+                  </div>
+                  {editExtraDenied.length === 0 ? (
+                    <p className="text-xs text-muted italic">No explicitly denied paths.</p>
+                  ) : (
+                    <ul className="space-y-1">
+                      {editExtraDenied.map((path) => (
+                        <li
+                          key={path}
+                          className="flex items-center justify-between rounded border border-t-border bg-skeleton px-2 py-1 text-xs"
+                        >
+                          <code className="text-foreground">{path}</code>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditExtraDenied(editExtraDenied.filter((p) => p !== path))
+                            }
+                            className="text-muted hover:text-foreground"
+                            aria-label={`Remove ${path}`}
+                          >
+                            ×
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Recent Changes */}
             {activityLogs[editingUser.id] && activityLogs[editingUser.id].length > 0 && (

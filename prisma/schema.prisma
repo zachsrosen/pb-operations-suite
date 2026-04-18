@@ -49,6 +49,12 @@ model User {
   canManageUsers          Boolean @default(false)
   canManageAvailability   Boolean @default(false)
 
+  // Per-user route overrides — extras added to / subtracted from the role
+  // union. Denied wins over allowed within the same user. Admin-editable via
+  // /admin/users (Option D). Empty arrays mean "no per-user route tweaks".
+  extraAllowedRoutes      String[] @default([])
+  extraDeniedRoutes       String[] @default([])
+
   // Location restrictions (empty = all locations)
   allowedLocations        String[] @default([])
 
@@ -197,6 +203,7 @@ enum ActivityType {
   // Role admin
   ROLE_CAPABILITIES_CHANGED
   ROLE_CAPABILITIES_RESET
+  USER_EXTRA_ROUTES_CHANGED
 }
 
 enum ClientType {

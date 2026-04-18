@@ -18,6 +18,7 @@ async function serializeAccess(user: UserLike): Promise<{
     roles: EffectiveUserAccess["roles"];
     suites: string[];
     allowedRoutes: string[];
+    deniedRoutes: string[];
     landingCards: EffectiveUserAccess["landingCards"];
     scope: EffectiveUserAccess["scope"];
     capabilities: EffectiveUserAccess["capabilities"];
@@ -30,6 +31,7 @@ async function serializeAccess(user: UserLike): Promise<{
       roles: access.roles,
       suites: Array.from(access.suites),
       allowedRoutes: Array.from(access.allowedRoutes),
+      deniedRoutes: Array.from(access.deniedRoutes),
       landingCards: access.landingCards,
       scope: access.scope,
       capabilities: access.capabilities,
