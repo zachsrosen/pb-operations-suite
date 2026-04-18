@@ -355,9 +355,9 @@ Suite switcher visibility (from `suite-nav.ts`):
 | Executive | ADMIN, OWNER |
 | Admin | ADMIN only |
 
-**Known divergence**: `role-permissions.ts` grants PM and OPS_MGR direct route access to executive dashboards, but `suite-nav.ts` hides Executive from the suite switcher for those roles. Direct URL access works; the switcher doesn't show it.
+**Note**: `roles.ts` grants PM and OPS_MGR direct route access to executive dashboards, but `suite-nav.ts` hides Executive from the suite switcher for those roles. Direct URL access works; the switcher doesn't show it.
 
-Each suite uses `<SuitePageShell>` and links to its relevant dashboard pages.
+Each suite uses `<SuitePageShell roles={user.roles}>` and links to its relevant dashboard pages.
 
 ## Key Patterns
 
@@ -442,7 +442,7 @@ Handles:
 
 ### User Roles
 
-11 roles defined in Prisma schema. Legacy roles auto-normalize:
+11 roles defined in Prisma schema (`User.roles: UserRole[]` — multi-role, Phase 2 complete). Legacy roles auto-normalize:
 - `MANAGER` → `PROJECT_MANAGER`
 - `DESIGNER` → `TECH_OPS`
 - `PERMITTING` → `TECH_OPS`
@@ -460,7 +460,9 @@ Handles:
 
 Permission booleans override role defaults: `canScheduleSurveys`, `canScheduleInstalls`, `canScheduleInspections`, `canSyncZuper`, `canManageUsers`, `canManageAvailability`, `canEditDesign`, `canEditPermitting`, `canViewAllLocations`.
 
-Admin impersonation: `pb_effective_role` + `pb_is_impersonating` cookies, admin-only.
+Admin impersonation: `pb_effective_roles` (JSON array) + `pb_is_impersonating` cookies, admin-only. The legacy `pb_effective_role` single-role cookie has been removed (Part 2B). The `User.role` single-role column is pending migration drop — see HUMAN ACTION REQUIRED in this doc.
+
+**Role data model**: All code reads `user.roles[]` (the multi-role array). The legacy `User.role` column still exists in the DB schema pending a migration that must be run manually. Do NOT run `prisma migrate deploy` automatically.
 
 ## Zuper Integration
 
