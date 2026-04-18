@@ -15,6 +15,7 @@ import { PrismaNeon } from "@prisma/adapter-neon";
 export { UserRole } from "@/generated/prisma/enums";
 // Import ROLE_PERMISSIONS for local use, then re-export role utilities for consumers
 import { ROLE_PERMISSIONS } from "./role-permissions";
+import type { RolePermissions } from "./role-permissions";
 export { ROLE_PERMISSIONS, normalizeRole, canAccessRoute, canScheduleType, canSchedule, canSyncZuper } from "./role-permissions";
 export type { RolePermissions } from "./role-permissions";
 
@@ -460,7 +461,7 @@ export async function getRecentActivities(options?: {
       where,
       include: {
         user: {
-          select: { name: true, email: true, image: true, role: true },
+          select: { name: true, email: true, image: true, role: true, roles: true },
         },
       },
       orderBy: { createdAt: "desc" },
