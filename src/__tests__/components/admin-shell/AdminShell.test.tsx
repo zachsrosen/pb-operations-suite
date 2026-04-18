@@ -5,6 +5,7 @@ import { AdminShell } from "@/components/admin-shell/AdminShell";
 
 jest.mock("next/navigation", () => ({
   usePathname: jest.fn(),
+  useRouter: () => ({ push: jest.fn() }),
 }));
 const { usePathname } = jest.requireMock("next/navigation");
 
