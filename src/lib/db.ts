@@ -1274,3 +1274,80 @@ export async function deleteAvailabilityOverride(id: string) {
     where: { id },
   });
 }
+
+// ===========================================
+// Role Capability Overrides (admin-tunable)
+// ===========================================
+
+/**
+ * Capability keys editable via the `RoleCapabilityOverride` table. Mirrors
+ * `CapabilityKey` in `@/lib/user-access`. Kept here as a string literal union
+ * so this module stays free of imports from the access layer.
+ */
+export type RoleCapabilityKey =
+  | "canScheduleSurveys"
+  | "canScheduleInstalls"
+  | "canScheduleInspections"
+  | "canSyncZuper"
+  | "canManageUsers"
+  | "canManageAvailability"
+  | "canEditDesign"
+  | "canEditPermitting"
+  | "canViewAllLocations";
+
+export type RoleCapabilityOverrideInput = Partial<Record<RoleCapabilityKey, boolean | null>>;
+
+/**
+ * Fetch the single override row for a given role, or null if none exists.
+ */
+export async function getRoleCapabilityOverride(role: UserRole) {
+  if (!prisma) return null;
+  return prisma.roleCapabilityOverride.findUnique({ where: { role } });
+}
+
+/**
+ * Upsert a role's capability override. `null` for any field means "inherit
+ * the code default" (same semantics the resolver uses). The caller should
+ * pass `updatedByEmail` so the row is auditable.
+ *
+ * Returns the upserted row, or null if the DB isn't configured.
+ */
+export async function upsertRoleCapabilityOverride(
+  role: UserRole,
+  overrides: RoleCapabilityOverrideInput,
+  updatedByEmail: string | null,
+) {
+  if (!prisma) return null;
+
+  const data = {
+    canScheduleSurveys: overrides.canScheduleSurveys ?? null,
+    canScheduleInstalls: overrides.canScheduleInstalls ?? null,
+    canScheduleInspections: overrides.canScheduleInspections ?? null,
+    canSyncZuper: overrides.canSyncZuper ?? null,
+    canManageUsers: overrides.canManageUsers ?? null,
+    canManageAvailability: overrides.canManageAvailability ?? null,
+    canEditDesign: overrides.canEditDesign ?? null,
+    canEditPermitting: overrides.canEditPermitting ?? null,
+    canViewAllLocations: overrides.canViewAllLocations ?? null,
+    updatedByEmail,
+  };
+
+  return prisma.roleCapabilityOverride.upsert({
+    where: { role },
+    create: { role, ...data },
+    update: data,
+  });
+}
+
+/**
+ * Delete the override row for a role, reverting all capabilities back to the
+ * code defaults from `src/lib/roles.ts`. Returns the deleted row if one
+ * existed, or null if nothing to delete.
+ */
+export async function resetRoleCapabilityOverride(role: UserRole) {
+  if (!prisma) return null;
+  const existing = await prisma.roleCapabilityOverride.findUnique({ where: { role } });
+  if (!existing) return null;
+  await prisma.roleCapabilityOverride.delete({ where: { role } });
+  return existing;
+}

@@ -1,5 +1,5 @@
 import type { UserRole } from "@/generated/prisma/enums";
-import { ROLES, ADMIN_ONLY_ROUTES, ADMIN_ONLY_EXCEPTIONS, type LandingCard, type Scope } from "@/lib/roles";
+import { ROLES, ADMIN_ONLY_ROUTES, ADMIN_ONLY_EXCEPTIONS, type LandingCard, type RoleDefinition, type Scope } from "@/lib/roles";
 import {
   normalizeRole,
   getDefaultRouteForRole,
@@ -149,8 +149,18 @@ function normalizeRoles(raw: UserRole[]): UserRole[] {
  *  - `scope`: max-privilege rank (global > location > owner).
  *  - `defaultCapabilities`: OR across roles (any true → true).
  *  - `landingCards`: dedup by `href`, first-declared wins, cap at 10.
+ *
+ * `overrides` (optional): map from canonical role → `RoleDefinition` that
+ * replaces the static `ROLES[role]` lookup. Used by the async variant
+ * (`resolveUserAccessWithOverrides` in `role-resolution.ts`) to inject
+ * DB-backed per-role capability overrides. When omitted, static defaults
+ * apply — existing sync call sites (middleware, non-auth endpoints) keep
+ * working unchanged.
  */
-export function resolveEffectiveRole(rawRoles: UserRole[]): EffectiveRole {
+export function resolveEffectiveRole(
+  rawRoles: UserRole[],
+  overrides?: ReadonlyMap<UserRole, RoleDefinition>,
+): EffectiveRole {
   const canonical = normalizeRoles(rawRoles);
   if (canonical.length === 0) return emptyFallback();
 
@@ -175,7 +185,7 @@ export function resolveEffectiveRole(rawRoles: UserRole[]): EffectiveRole {
   };
 
   for (const r of canonical) {
-    const def = ROLES[r];
+    const def = overrides?.get(r) ?? ROLES[r];
     for (const s of def.suites) {
       if (!suitesSeen.has(s)) {
         suitesSeen.add(s);
@@ -245,11 +255,14 @@ function overrideForKey(user: UserLike, key: CapabilityKey): boolean | null {
  * Resolve a user's final effective access: merge role definitions, then apply
  * per-user capability overrides.
  */
-export function resolveUserAccess(user: UserLike): EffectiveUserAccess {
+export function resolveUserAccess(
+  user: UserLike,
+  overrides?: ReadonlyMap<UserRole, RoleDefinition>,
+): EffectiveUserAccess {
   const rawRoles: UserRole[] = (user.roles && user.roles.length > 0) ? user.roles : [];
 
   const canonical = normalizeRoles(rawRoles);
-  const effective = resolveEffectiveRole(rawRoles);
+  const effective = resolveEffectiveRole(rawRoles, overrides);
 
   const capabilities: Record<CapabilityKey, boolean> = { ...effective.defaultCapabilities };
   for (const key of CAPABILITY_KEYS) {

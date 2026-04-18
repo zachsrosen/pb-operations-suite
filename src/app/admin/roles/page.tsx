@@ -8,8 +8,10 @@ import DashboardShell from "@/components/DashboardShell";
 /**
  * Admin — Role Inspector
  *
- * Read-only view of every role's current access definition. Source of truth is
- * `src/lib/roles.ts` (static code). To modify a role, edit that file and ship a PR.
+ * Lists every role's access definition. Suites, routes, scope, and landing
+ * cards are sourced from `src/lib/roles.ts` (static code) and are read-only
+ * here. Capabilities can be tuned per-role via the "Edit capabilities" link
+ * on each card (`/admin/roles/[role]`).
  *
  * Gated to ADMIN only.
  */
@@ -31,11 +33,14 @@ export default async function AdminRoleInspectorPage() {
       <div className="space-y-6">
         <div className="rounded-lg border border-t-border/60 bg-surface p-4 text-sm">
           <p className="text-foreground">
-            Read-only snapshot of every role&apos;s current access. Source of truth: {" "}
+            Snapshot of every role&apos;s current access. Source of truth for suites, routes,
+            scope, and landing cards: {" "}
             <code className="rounded bg-surface-2 px-1.5 py-0.5 text-xs">src/lib/roles.ts</code>
-            . To modify a role, edit that file and open a PR.
+            . To modify those, edit that file and open a PR.
           </p>
           <p className="mt-2 text-muted">
+            Per-role <strong>capabilities</strong> (schedule surveys/installs, manage users,
+            etc.) can be tuned live via the &quot;Edit capabilities&quot; link on each card.
             Canonical roles are what admins can assign. Legacy roles (OWNER, MANAGER, DESIGNER,
             PERMITTING) exist for pre-migration compat and normalize to their canonical target.
           </p>
@@ -104,6 +109,12 @@ function RoleCard({
           <p className="mt-1 text-sm font-medium text-foreground">{def.label}</p>
           <p className="mt-0.5 text-xs text-muted">{def.description}</p>
         </div>
+        <Link
+          href={`/admin/roles/${encodeURIComponent(role)}`}
+          className="shrink-0 rounded-lg border border-t-border/60 bg-surface-2 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-elevated"
+        >
+          Edit capabilities →
+        </Link>
       </header>
 
       <div className="space-y-3 text-sm">
@@ -236,5 +247,3 @@ function badgeClassForColor(color: string): string {
   return lookup[color] ?? "bg-zinc-500/20 text-zinc-400 border-zinc-500/30";
 }
 
-// Suppress the unused `Link` import warning — kept for potential future cross-links.
-void Link;
