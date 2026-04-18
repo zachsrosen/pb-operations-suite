@@ -3,7 +3,7 @@ import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { ROLES, type RoleDefinition, type Scope } from "@/lib/roles";
 import type { UserRole } from "@/generated/prisma/enums";
-import DashboardShell from "@/components/DashboardShell";
+import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
 
 /**
  * Admin — Role Inspector
@@ -29,7 +29,8 @@ export default async function AdminRoleInspectorPage() {
   const legacy = roleEntries.filter(([, def]) => !def.visibleInPicker);
 
   return (
-    <DashboardShell title="Role Inspector" accentColor="orange">
+    <div className="space-y-6">
+      <AdminPageHeader title="Role Inspector" breadcrumb={["Admin", "People", "Roles"]} />
       <div className="space-y-6">
         <div className="rounded-lg border border-t-border/60 bg-surface p-4 text-sm">
           <p className="text-foreground">
@@ -74,7 +75,7 @@ export default async function AdminRoleInspectorPage() {
           </section>
         )}
       </div>
-    </DashboardShell>
+    </div>
   );
 }
 
@@ -109,12 +110,20 @@ function RoleCard({
           <p className="mt-1 text-sm font-medium text-foreground">{def.label}</p>
           <p className="mt-0.5 text-xs text-muted">{def.description}</p>
         </div>
-        <Link
-          href={`/admin/roles/${encodeURIComponent(role)}`}
-          className="shrink-0 rounded-lg border border-t-border/60 bg-surface-2 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-elevated"
-        >
-          Edit capabilities →
-        </Link>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <Link
+            href={`/admin/roles/${encodeURIComponent(role)}`}
+            className="rounded-lg border border-t-border/60 bg-surface-2 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-elevated"
+          >
+            Edit capabilities →
+          </Link>
+          <Link
+            href={`/admin/users?role=${encodeURIComponent(role)}`}
+            className="text-xs text-muted hover:text-foreground"
+          >
+            Users with this role →
+          </Link>
+        </div>
       </header>
 
       <div className="space-y-3 text-sm">
