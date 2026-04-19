@@ -45,7 +45,7 @@ All in `src/components/admin-shell/`. Each under ~250 LOC. Each composable via p
 | Component | Responsibility |
 |---|---|
 | `<AdminTable>` | Rows, sortable columns, selection checkboxes, sticky header, hover states, empty-state slot, row-click handler (typically opens detail drawer) |
-| `<AdminFilterBar>` | Filter chips, multi-select dropdowns, date-range picker, search input, "clear all" action |
+| `<AdminFilterBar>` | Filter chips, multi-select dropdowns, date-range chip group (e.g. `Today / 7d / 30d / All` as seen on `/admin/activity` today — not a calendar picker), search input, "clear all" action |
 | `<AdminDetailDrawer>` | Right-side slide-out (384px default, 480px with `wide` prop). Scrollable body. Tabbed sections optional. Close via Esc / outside click / explicit close button |
 | `<AdminBulkActionBar>` | Sticky bottom bar that appears when rows are selected. Selection count, cancel, action buttons |
 | `<AdminForm>` | Label + input + help text + error pattern. Supports text / select / multi-select / toggle / textarea inputs |
@@ -59,7 +59,7 @@ All in `src/components/admin-shell/`. Each under ~250 LOC. Each composable via p
 - `ToastContext` for notifications
 - `AdminEmpty`, `AdminLoading`, `AdminError` from Phase 1
 - `AdminPageHeader` from Phase 1
-- Existing date-range picker patterns on scheduler pages (don't duplicate)
+- The date-range chip pattern already in use on `/admin/activity` (the segmented `today / 7d / 30d / all` buttons) — `AdminFilterBar` wraps that pattern, not a new component
 
 ### Per-page treatment
 
@@ -67,7 +67,7 @@ All in `src/components/admin-shell/`. Each under ~250 LOC. Each composable via p
 |---|---:|---:|---|
 | `/admin` (landing) | 320 | 320 | **No changes.** Already clean from Phase 1. |
 | `/admin/users` | 1,223 | ~500 | **Full rewrite.** Three modals (permissions / roles editor / extra routes) merge into one `<AdminDetailDrawer>` with tabbed sections: *Info / Roles / Permissions / Extra Routes / Activity*. Bulk action bar via `<AdminBulkActionBar>`. All Phase-1 features (Option B capability overrides surfaced via role link, Option D extra routes, role editing) preserved. |
-| `/admin/roles` | 258 | ~200 | Light rewrite. Role cards → `<AdminTable>` (columns: Role / Label / Scope / Badge / Users). Row click → `<AdminDetailDrawer>` containing the role's capability editor (the Option B UI, moved from `/admin/roles/[role]`). |
+| `/admin/roles` | 258 | ~200 | Rewrite. Today's layout is a 2-column card grid (each `RoleCard` has expandable routes + capabilities). Replace with `<AdminTable>` (columns: Role / Label / Scope / Badge / Users) and move the rich per-role content (allowed routes, landing cards, capability editor) into an `<AdminDetailDrawer>` opened on row click. The drawer content is the Option B capability editor UI, moved from `/admin/roles/[role]`. This is a meaningful re-layout — not just a wrapper swap. |
 | `/admin/roles/[role]` | 65 | **0 (deleted)** | Route deleted. Page redirects to `/admin/roles?role=X`. Deep-link preserved via query param. |
 | `/admin/directory` | 130 | ~130 | Light rewrite using `<AdminTable>` + `<AdminFilterBar>`. Already clean. |
 | `/admin/crew-availability` | 886 | ~450 | Rewrite. Filter bar + table + `<AdminDetailDrawer>` for edit (replaces inline forms). |
@@ -163,11 +163,11 @@ Each PR is independently mergeable. You can pause between any two.
 
 | Risk | Mitigation |
 |---|---|
-| Users' muscle memory breaks — people are used to where specific buttons live on `/admin/users`. | Anchor + light pages ship first; `/admin/users` is last, after patterns are validated on low-risk pages. Before merging PR 8, a walk-through with Zach of each tonight's Option B/D/E flow. |
+| Users' muscle memory breaks — people are used to where specific buttons live on `/admin/users`. | Anchor + light pages ship first; `/admin/users` is last, after patterns are validated on low-risk pages. Before merging PR 8, a walk-through with Zach of each tonight's Option B (per-role capability overrides) + Option D (per-user extra routes) + impersonation flow. |
 | `<AdminDetailDrawer>` gets bloated trying to handle every case (tabs, forms, bulk context, deep-links). | Hard cap at 250 LOC. If it bulges, extract a `<AdminDrawerTabs>` helper and limit the drawer itself to layout. |
 | Deleting `/admin/roles/[role]` breaks external links / SOPs / email templates. | Redirect shim at the old URL: `redirect(/admin/roles?role=${role})`. Grep for `/admin/roles/` across repo before merging PR 7 to catch any internal links. |
 | Admin code drops 2,400 LOC but the primitives add ~1,500 LOC, so the net is smaller than 44%. Still a real win but worth saying honestly. | Acknowledge in the PR summary. Net LOC including primitives is ~4,600 (~17% reduction) but per-page reason-ability is what actually matters, not the raw line count. |
-| Tonight's Option B/D/E features on `/admin/users` have brand-new state/modal behavior that could easily be lost in a rewrite. | PR 8 includes an explicit test-plan checklist walking every Option B/D/E workflow. No merge until each passes manually. |
+| Tonight's Option B (per-role capability overrides) + Option D (per-user extra routes) + impersonation features on `/admin/users` have brand-new state/modal behavior that could easily be lost in a rewrite. | PR 8 includes an explicit test-plan checklist walking every Option B (per-role capability overrides) + Option D (per-user extra routes) + impersonation workflow. No merge until each passes manually. |
 
 ## Open questions
 
