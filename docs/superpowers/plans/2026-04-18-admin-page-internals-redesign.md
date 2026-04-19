@@ -685,7 +685,8 @@ export interface AdminDetailDrawerProps {
 Behavior:
 - Esc closes
 - Outside click closes
-- Focus trap while open; restore focus to previously-focused element on close
+- **Focus trap while open:** Tab cycles within the drawer's focusable elements; Shift+Tab cycles backwards. Implement by querying `[href], button, input, textarea, select, [tabindex]:not([tabindex="-1"])` inside the drawer on keydown, and redirecting focus to first/last as needed.
+- Restore focus to previously-focused element on close
 - `aria-labelledby` points at the title element
 - Accepts a `title` that may be a `<AdminDetailHeader>` in Chunk 2 — for now any ReactNode renders in the title slot
 
@@ -725,6 +726,22 @@ describe("AdminDetailDrawer", () => {
     );
     await user.keyboard("{Escape}");
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("traps focus: Tab from last element cycles to first", async () => {
+    const user = userEvent.setup();
+    render(
+      <AdminDetailDrawer open onClose={() => {}} title="T">
+        <button>A</button>
+        <button>B</button>
+      </AdminDetailDrawer>,
+    );
+    // Close button is the first focusable; B is last
+    const b = screen.getByRole("button", { name: "B" });
+    b.focus();
+    await user.tab();
+    // Tab from last should land back on the close button
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: /close/i }));
   });
 
   it("calls onClose on outside click", async () => {
@@ -769,12 +786,15 @@ describe("AdminDetailDrawer", () => {
 
 - [ ] **Step 2: Run tests — expect FAIL**
 
-- [ ] **Step 3: Implement `<AdminDetailDrawer>`**
+- [ ] **Step 3: Implement `<AdminDetailDrawer>`** — includes Tab focus trap
 
 ```tsx
 "use client";
 
 import { useEffect, useId, useRef, type ReactNode } from "react";
+
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 export interface AdminDetailDrawerProps {
   open: boolean;
@@ -803,6 +823,23 @@ export function AdminDetailDrawer({ open, onClose, title, children, wide, footer
       if (e.key === "Escape") {
         e.stopPropagation();
         onClose();
+        return;
+      }
+      if (e.key === "Tab" && drawerRef.current) {
+        const focusables = Array.from(
+          drawerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
+        ).filter((el) => !el.hasAttribute("disabled"));
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        const active = document.activeElement;
+        if (e.shiftKey && active === first) {
+          e.preventDefault();
+          last.focus();
+        } else if (!e.shiftKey && active === last) {
+          e.preventDefault();
+          first.focus();
+        }
       }
     };
     document.addEventListener("keydown", onKeyDown);
@@ -1876,19 +1913,28 @@ Drawer-internal state lives in a dedicated `UserDetailDrawer` subcomponent (same
 
 ### Task 8.4 — Extract UserDetailDrawer subcomponent
 
-Inline in the same file, but structured:
+**Default: extract to its own file** `src/app/admin/users/UserDetailDrawer.tsx` to keep the page file under the 700 LOC cap. Inlining worked historically for smaller drawers but with 5 tabs + 4 API endpoints this drawer will be 200-300 LOC on its own.
 
 ```tsx
-interface UserDetailDrawerProps {
+// src/app/admin/users/UserDetailDrawer.tsx
+"use client";
+
+import { AdminDetailDrawer } from "@/components/admin-shell/AdminDetailDrawer";
+import { AdminDetailHeader } from "@/components/admin-shell/AdminDetailHeader";
+// …
+
+export interface UserDetailDrawerProps {
   user: User;
   onClose: () => void;
   onSave: (updates: UserUpdate) => Promise<void>;
   onImpersonate: () => Promise<void>;
 }
-function UserDetailDrawer({ user, onClose, onSave, onImpersonate }: UserDetailDrawerProps) {
+export default function UserDetailDrawer({ user, onClose, onSave, onImpersonate }: UserDetailDrawerProps) {
   /* tabs + forms, ~200-250 LOC */
 }
 ```
+
+The page imports it as a default export. This is a colocated page-only helper, not a shared admin-shell primitive — hence it lives next to `page.tsx` rather than in `src/components/admin-shell/`.
 
 ### Task 8.5 — Page-level integration test
 
