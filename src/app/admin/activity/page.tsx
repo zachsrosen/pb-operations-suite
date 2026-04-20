@@ -2,11 +2,19 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { useToast } from "@/contexts/ToastContext";
 import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
 import { AdminEmpty } from "@/components/admin-shell/AdminEmpty";
+import { AdminError } from "@/components/admin-shell/AdminError";
+import { AdminTable, type AdminTableColumn } from "@/components/admin-shell/AdminTable";
+import { AdminFilterBar, DateRangeChip, FilterSearch } from "@/components/admin-shell/AdminFilterBar";
+import { AdminDetailDrawer } from "@/components/admin-shell/AdminDetailDrawer";
+import { AdminDetailHeader } from "@/components/admin-shell/AdminDetailHeader";
+import { AdminKeyValueGrid } from "@/components/admin-shell/AdminKeyValueGrid";
+
+// ── Types ─────────────────────────────────────────────────────────────────
 
 interface ActivityLog {
   id: string;
@@ -20,578 +28,313 @@ interface ActivityLog {
   metadata: Record<string, unknown> | null;
   ipAddress: string | null;
   userAgent: string | null;
+  sessionId?: string | null;
+  requestPath?: string | null;
+  requestMethod?: string | null;
+  riskLevel?: string | null;
   createdAt: string;
-  user: {
-    name: string | null;
-    email: string;
-    image: string | null;
-    roles: string[];
-  } | null;
+  user: { name: string | null; email: string; image: string | null; roles: string[] } | null;
 }
 
-const USER_ROLES = [
-  "ADMIN",
-  "EXECUTIVE",
-  "OPERATIONS",
-  "OPERATIONS_MANAGER",
-  "PROJECT_MANAGER",
-  "TECH_OPS",
-  "VIEWER",
-  "SALES",
-] as const;
-
-const ROLE_DISPLAY_ALIASES: Record<string, string> = {
-  EXECUTIVE: "EXECUTIVE",
-  OWNER: "EXECUTIVE",
-  VIEWER: "UNASSIGNED",
-  MANAGER: "PROJECT_MANAGER",
-  DESIGNER: "TECH_OPS",
-  PERMITTING: "TECH_OPS",
+type DateRange = "today" | "7d" | "30d" | "all";
+type FiltersState = {
+  dateRange: DateRange;
+  typeFilters: string[];
+  roleFilters: string[];
+  emailQuery: string;
+  userIdFilter: string;
+  autoRefresh: boolean;
 };
 
-function formatRoleLabel(role: string): string {
-  const canonical = ROLE_DISPLAY_ALIASES[role] || role;
-  return canonical.replace(/_/g, " ");
-}
+// ── Constants ─────────────────────────────────────────────────────────────
 
-const ACTIVITY_TYPES: Record<string, { color: string; icon: string }> = {
-  LOGIN: { color: "text-green-400", icon: "M11 16l-4-4m0 0l4-4m-4 4h14m-5 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h7a3 3 0 013 3v1" },
-  LOGOUT: { color: "text-muted", icon: "M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" },
-  USER_CREATED: { color: "text-blue-400", icon: "M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" },
-  USER_ROLE_CHANGED: { color: "text-purple-400", icon: "M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" },
-  USER_UPDATED: { color: "text-cyan-400", icon: "M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" },
-  USER_DELETED: { color: "text-red-400", icon: "M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" },
-  SURVEY_SCHEDULED: { color: "text-emerald-400", icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" },
-  SURVEY_RESCHEDULED: { color: "text-yellow-400", icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" },
-  INSTALL_SCHEDULED: { color: "text-emerald-400", icon: "M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" },
-  ZUPER_JOB_CREATED: { color: "text-orange-400", icon: "M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" },
-  DASHBOARD_VIEWED: { color: "text-blue-400", icon: "M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" },
-  SETTINGS_CHANGED: { color: "text-muted", icon: "M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" },
-  ERROR_OCCURRED: { color: "text-red-400", icon: "M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" },
-  INVENTORY_RECEIVED: { color: "text-emerald-400", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
-  INVENTORY_ADJUSTED: { color: "text-amber-400", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
-  INVENTORY_ALLOCATED: { color: "text-orange-400", icon: "M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" },
-};
-
-const DEFAULT_ACTIVITY = { color: "text-muted", icon: "M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" };
-
+const USER_ROLES = ["ADMIN", "EXECUTIVE", "OPERATIONS", "OPERATIONS_MANAGER", "PROJECT_MANAGER", "TECH_OPS", "VIEWER", "SALES"] as const;
+const ROLE_ALIASES: Record<string, string> = { OWNER: "EXECUTIVE", VIEWER: "UNASSIGNED", MANAGER: "PROJECT_MANAGER", DESIGNER: "TECH_OPS", PERMITTING: "TECH_OPS" };
+const DATE_OPTS = [{ value: "today" as const, label: "Today" }, { value: "7d" as const, label: "7d" }, { value: "30d" as const, label: "30d" }, { value: "all" as const, label: "All" }];
+const RISK_COLORS: Record<string, string> = { LOW: "text-green-400 bg-green-400/10", MEDIUM: "text-yellow-400 bg-yellow-400/10", HIGH: "text-orange-400 bg-orange-400/10", CRITICAL: "text-red-400 bg-red-400/10" };
 const PAGE_SIZE = 100;
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function fmtRelative(ds: string): string {
+  const diff = Date.now() - new Date(ds).getTime();
+  const m = Math.floor(diff / 60000), h = Math.floor(diff / 3600000), d = Math.floor(diff / 86400000);
+  if (m < 1) return "Just now";
+  if (m < 60) return `${m}m ago`;
+  if (h < 24) return `${h}h ago`;
+  if (d < 7) return `${d}d ago`;
+  return new Date(ds).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+}
+
+function sinceFrom(dr: DateRange): string | null {
+  const now = new Date();
+  if (dr === "today") { const t = new Date(now); t.setHours(0, 0, 0, 0); return t.toISOString(); }
+  if (dr === "7d") return new Date(now.getTime() - 7 * 864e5).toISOString();
+  if (dr === "30d") return new Date(now.getTime() - 30 * 864e5).toISOString();
+  return null;
+}
+
+function entityLink(type: string | null, id: string | null): string | null {
+  if (!type || !id) return null;
+  if (type === "user") return `/admin/users?userId=${encodeURIComponent(id)}`;
+  if (type === "role") return `/admin/roles/${encodeURIComponent(id)}`;
+  return null;
+}
+
+function initFilters(sp: URLSearchParams): FiltersState {
+  return {
+    dateRange: (sp.get("dateRange") as DateRange) || "all",
+    typeFilters: sp.get("type") ? [sp.get("type")!] : [],
+    roleFilters: [],
+    emailQuery: sp.get("email") || "",
+    userIdFilter: sp.get("userId") || "",
+    autoRefresh: false,
+  };
+}
+
+// ── Drawer detail ─────────────────────────────────────────────────────────
+
+function ActivityDrawerBody({ a }: { a: ActivityLog }) {
+  const link = entityLink(a.entityType, a.entityId);
+  const kvItems = [
+    { label: "Type", value: a.type.replace(/_/g, " ") },
+    { label: "Actor", value: a.user?.email || a.userEmail || "System" },
+    { label: "Entity", value: a.entityName ? (link ? <Link href={link} className="underline underline-offset-2 hover:text-foreground">{a.entityName}</Link> : a.entityName) : "—" },
+    { label: "Session ID", value: a.sessionId || "—", mono: !!a.sessionId },
+    { label: "IP Address", value: a.ipAddress || "—", mono: !!a.ipAddress },
+    { label: "User Agent", value: a.userAgent || "—" },
+    ...(a.requestPath ? [{ label: "Request", value: `${a.requestMethod ?? "GET"} ${a.requestPath}`, mono: true }] : []),
+  ];
+  return (
+    <div className="space-y-5">
+      <AdminDetailHeader title={a.description || a.type.replace(/_/g, " ")} subtitle={new Date(a.createdAt).toLocaleString()} />
+      <AdminKeyValueGrid items={kvItems} />
+      {a.metadata && Object.keys(a.metadata).length > 0 && (
+        <div>
+          <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted">Metadata</p>
+          <pre className="rounded-md bg-surface-2 p-3 text-xs text-muted overflow-x-auto">{JSON.stringify(a.metadata, null, 2)}</pre>
+        </div>
+      )}
+      {link && (
+        <Link href={link} className="inline-flex items-center gap-1 text-xs text-cyan-400 hover:underline">
+          View {a.entityType}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className="h-3 w-3"><path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" /></svg>
+        </Link>
+      )}
+    </div>
+  );
+}
+
+// ── Table columns ─────────────────────────────────────────────────────────
+
+const COLUMNS: AdminTableColumn<ActivityLog>[] = [
+  {
+    key: "createdAt", label: "Time", width: "w-28",
+    render: (r) => <span className="text-xs text-muted whitespace-nowrap">{fmtRelative(r.createdAt)}</span>,
+  },
+  {
+    key: "actor", label: "Actor", width: "w-48",
+    render: (r) => <span className="text-xs truncate block max-w-[180px]">{r.user?.email || r.userEmail || "System"}</span>,
+  },
+  {
+    key: "event", label: "Event",
+    render: (r) => (
+      <div>
+        <span className="text-xs font-medium text-foreground">{r.type.replace(/_/g, " ")}</span>
+        {r.description && <p className="text-xs text-muted truncate max-w-xs">{r.description}</p>}
+      </div>
+    ),
+  },
+  {
+    key: "entity", label: "Entity", width: "w-36",
+    render: (r) => {
+      const link = entityLink(r.entityType, r.entityId);
+      if (!r.entityName) return <span className="text-xs text-muted">—</span>;
+      return link
+        ? <Link href={link} onClick={(e) => e.stopPropagation()} className="text-xs underline underline-offset-2 text-muted hover:text-foreground">{r.entityName}</Link>
+        : <span className="text-xs text-muted">{r.entityName}</span>;
+    },
+  },
+  {
+    key: "riskLevel", label: "Risk", width: "w-20", align: "center",
+    render: (r) => {
+      if (!r.riskLevel) return <span className="text-xs text-muted">—</span>;
+      return <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase ${RISK_COLORS[r.riskLevel] ?? "text-muted bg-surface-2"}`}>{r.riskLevel}</span>;
+    },
+  },
+];
+
+// ── Page ──────────────────────────────────────────────────────────────────
 
 export default function AdminActivityPage() {
   const { addToast } = useToast();
   const searchParams = useSearchParams();
-  const [activities, setActivities] = useState<ActivityLog[]>([]);
-  const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [typeFilters, setTypeFilters] = useState<string[]>([]);
-  const [roleFilters, setRoleFilters] = useState<string[]>([]);
-  const [dateRange, setDateRange] = useState<"today" | "7d" | "30d" | "all">("all");
-  const [searchEmail, setSearchEmail] = useState<string>("");
-  const [debouncedEmail, setDebouncedEmail] = useState<string>("");
-  const [filterUserId, setFilterUserId] = useState<string>("");
-  const [autoRefresh, setAutoRefresh] = useState<boolean>(false);
-  const [allTypes, setAllTypes] = useState<string[]>([]);
-  const activityTypeOptions = useMemo(
-    () => allTypes.map((type) => ({ value: type, label: type.replace(/_/g, " ") })),
-    [allTypes]
-  );
-  const roleOptions = useMemo(
-    () => USER_ROLES.map((role) => ({ value: role, label: formatRoleLabel(role) })),
-    []
-  );
+  const router = useRouter();
 
-  // Debounce email search
+  const [filters, setFilters] = useState<FiltersState>(() => initFilters(searchParams));
+  const [data, setData] = useState<{ activities: ActivityLog[]; total: number }>({ activities: [], total: 0 });
+  const [offset, setOffset] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<ActivityLog | null>(null);
+  const [allTypes, setAllTypes] = useState<string[]>([]);
+
+  // Debounce email (300 ms)
+  const [debouncedEmail, setDebouncedEmail] = useState(filters.emailQuery);
   const emailTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => {
-    emailTimer.current = setTimeout(() => {
-      setDebouncedEmail(searchEmail);
-    }, 400);
+    emailTimer.current = setTimeout(() => setDebouncedEmail(filters.emailQuery), 300);
     return () => clearTimeout(emailTimer.current);
-  }, [searchEmail]);
+  }, [filters.emailQuery]);
 
-  // Deep-link: ?userId=<id> and ?type=<TYPE> preload filters
+  // Sync filter state → URL (no history spam)
   useEffect(() => {
-    const urlUserId = searchParams.get("userId");
-    const urlType = searchParams.get("type");
-    if (urlUserId) setFilterUserId(urlUserId);
-    if (urlType) setTypeFilters([urlType]);
-  }, [searchParams]);
+    const p = new URLSearchParams();
+    if (filters.dateRange !== "all") p.set("dateRange", filters.dateRange);
+    if (filters.typeFilters.length === 1) p.set("type", filters.typeFilters[0]);
+    if (filters.emailQuery) p.set("email", filters.emailQuery);
+    if (filters.userIdFilter) p.set("userId", filters.userIdFilter);
+    if (selected) p.set("drawerId", selected.id);
+    router.replace(`?${p.toString()}`);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters.dateRange, filters.typeFilters, filters.emailQuery, filters.userIdFilter, selected]);
 
-  // Fetch distinct activity types on mount
+  // Load distinct types on mount
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetch("/api/admin/activity?meta=types");
-        if (res.ok) {
-          const data = await res.json();
-          setAllTypes(data.types || []);
-        }
-      } catch {
-        /* ignore */
-      }
-    })();
+    fetch("/api/admin/activity?meta=types").then((r) => r.ok ? r.json() : null).then((d) => d && setAllTypes(d.types || [])).catch(() => {});
   }, []);
 
-  // Build the "since" date from dateRange
-  const sinceDate = useMemo(() => {
-    const now = new Date();
-    switch (dateRange) {
-      case "today": {
-        const today = new Date(now);
-        today.setHours(0, 0, 0, 0);
-        return today.toISOString();
-      }
-      case "7d":
-        return new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
-      case "30d":
-        return new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-      default:
-        return null;
-    }
-  }, [dateRange]);
-
-  const fetchActivities = useCallback(
-    async (appendMode = false, customOffset?: number) => {
-      try {
-        if (appendMode) {
-          setLoadingMore(true);
-        } else {
-          setLoading(true);
-        }
-
-        const params = new URLSearchParams({
-          limit: PAGE_SIZE.toString(),
-          offset: (customOffset ?? (appendMode ? offset : 0)).toString(),
-        });
-
-        if (typeFilters.length > 0) {
-          typeFilters.forEach((type) => params.append("type", type));
-        }
-        if (roleFilters.length > 0) {
-          roleFilters.forEach((role) => params.append("role", role));
-        }
-        if (sinceDate) params.set("since", sinceDate);
-        if (debouncedEmail.trim()) params.set("email", debouncedEmail.trim());
-        if (filterUserId) params.set("userId", filterUserId);
-
-        const response = await fetch(`/api/admin/activity?${params}`);
-        if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error || "Failed to fetch activities");
-        }
-
-        const data = await response.json();
-
-        if (appendMode) {
-          setActivities((prev) => [...prev, ...data.activities]);
-        } else {
-          setActivities(data.activities);
-          setOffset(0);
-        }
-
-        setTotal(data.total);
-        setError(null);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
-      } finally {
-        setLoading(false);
-        setLoadingMore(false);
-      }
-    },
-    [typeFilters, roleFilters, sinceDate, debouncedEmail, filterUserId, offset]
-  );
-
-  // Re-fetch from start when filters change
+  // Deep-link: open drawer from ?drawerId= after first load
+  const deepLinked = useRef(false);
   useEffect(() => {
-    setOffset(0);
+    if (deepLinked.current || !data.activities.length) return;
+    const id = searchParams.get("drawerId");
+    if (id) { deepLinked.current = true; const m = data.activities.find((a) => a.id === id); if (m) setSelected(m); }
+  }, [data.activities, searchParams]);
+
+  // Build API query params
+  const buildParams = useCallback((off: number) => {
+    const p = new URLSearchParams({ limit: String(PAGE_SIZE), offset: String(off) });
+    filters.typeFilters.forEach((t) => p.append("type", t));
+    filters.roleFilters.forEach((r) => p.append("role", r));
+    const since = sinceFrom(filters.dateRange);
+    if (since) p.set("since", since);
+    if (debouncedEmail.trim()) p.set("email", debouncedEmail.trim());
+    if (filters.userIdFilter) p.set("userId", filters.userIdFilter);
+    return p;
+  }, [filters, debouncedEmail]);
+
+  // Fetch activities
+  const fetchActivities = useCallback(async (append = false, off = 0) => {
+    try {
+      append ? setLoadingMore(true) : setLoading(true);
+      const res = await fetch(`/api/admin/activity?${buildParams(append ? off : 0)}`);
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error || "Failed to fetch"); }
+      const d = await res.json();
+      setData((prev) => append
+        ? { activities: [...prev.activities, ...d.activities], total: d.total }
+        : { activities: d.activities, total: d.total });
+      if (!append) setOffset(0);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+    }
+  }, [buildParams]);
+
+  // Re-fetch when filters change
+  useEffect(() => {
     fetchActivities(false, 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeFilters, roleFilters, sinceDate, debouncedEmail, filterUserId]);
+  }, [filters.dateRange, filters.typeFilters, filters.roleFilters, debouncedEmail, filters.userIdFilter]);
 
-  // Auto-refresh
+  // Auto-refresh (30 s)
   useEffect(() => {
-    if (!autoRefresh) return;
-    const interval = setInterval(() => fetchActivities(false, 0), 30000);
-    return () => clearInterval(interval);
-  }, [autoRefresh, fetchActivities]);
+    if (!filters.autoRefresh) return;
+    const id = setInterval(() => fetchActivities(false, 0), 30000);
+    return () => clearInterval(id);
+  }, [filters.autoRefresh, fetchActivities]);
 
-  // Load more handler
-  const handleLoadMore = () => {
-    const nextOffset = offset + PAGE_SIZE;
-    setOffset(nextOffset);
-    fetchActivities(true, nextOffset);
-  };
+  const handleLoadMore = () => { const next = offset + PAGE_SIZE; setOffset(next); fetchActivities(true, next); };
+  const hasMore = data.activities.length < data.total;
+  const hasActiveFilters = filters.dateRange !== "all" || filters.typeFilters.length > 0 || filters.roleFilters.length > 0 || !!filters.emailQuery || !!filters.userIdFilter;
+  const clearAll = () => setFilters((f) => ({ ...f, dateRange: "all", typeFilters: [], roleFilters: [], emailQuery: "", userIdFilter: "" }));
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(diff / 86400000);
-
-    if (minutes < 1) return "Just now";
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 7) return `${days}d ago`;
-
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  };
-
-  const formatMetadata = (type: string, metadata: Record<string, unknown> | null): string => {
-    if (!metadata) return "";
-
-    switch (type) {
-      case "DASHBOARD_VIEWED":
-        return `Viewed ${metadata.dashboard || "dashboard"}`;
-      case "SURVEY_SCHEDULED":
-      case "INSTALL_SCHEDULED":
-      case "INSPECTION_SCHEDULED":
-        return `Scheduled for ${metadata.date || "unknown date"}`;
-      case "SEARCH":
-        return `Searched '${metadata.query || ""}' - ${metadata.resultCount || 0} results`;
-      case "FILTER":
-        return `Filter: ${metadata.name || "unknown"} = ${metadata.values || ""}`;
-      default:
-        return "";
-    }
-  };
-
-  // Summary counts from loaded activities
-  const activityTypeCounts = useMemo(() => {
-    return {
-      logins: activities.filter(a => a.type === "LOGIN").length,
-      dashboardViews: activities.filter(a => a.type === "DASHBOARD_VIEWED").length,
-      schedules: activities.filter(
-        a => a.type.includes("SCHEDULED") || a.type.includes("RESCHEDULED")
-      ).length,
-      exports: activities.filter(a => a.type.includes("EXPORT") || a.type.includes("DOWNLOADED")).length,
-      inventory: activities.filter(a => a.type.startsWith("INVENTORY_")).length,
-    };
-  }, [activities]);
+  const typeOptions = useMemo(() => allTypes.map((t) => ({ value: t, label: t.replace(/_/g, " ") })), [allTypes]);
+  const roleOptions = useMemo(() => USER_ROLES.map((r) => ({ value: r, label: (ROLE_ALIASES[r] || r).replace(/_/g, " ") })), []);
 
   const exportToCSV = () => {
-    if (activities.length === 0) {
-      addToast({ type: "warning", title: "Nothing to export", message: "No activities match the current filters." });
-      return;
-    }
-
-    const headers = ["Timestamp", "User", "Type", "Details", "IP"];
-    const rows = activities.map(activity => [
-      new Date(activity.createdAt).toLocaleString(),
-      activity.user?.email || activity.userEmail || "System",
-      activity.type,
-      activity.description,
-      activity.ipAddress || "N/A",
-    ]);
-
-    const csvContent = [
-      headers.join(","),
-      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(",")),
-    ].join("\n");
-
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    if (!data.activities.length) { addToast({ type: "warning", title: "Nothing to export", message: "No activities match the current filters." }); return; }
+    const rows = data.activities.map((a) => [new Date(a.createdAt).toLocaleString(), a.user?.email || a.userEmail || "System", a.type, a.description, a.ipAddress || "N/A"]);
+    const csv = [["Timestamp", "User", "Type", "Details", "IP"], ...rows].map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
+    link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
     link.download = `activity-log-${new Date().toISOString().split("T")[0]}.csv`;
     link.click();
   };
 
-  const getActivityStyle = (type: string) => {
-    return ACTIVITY_TYPES[type] || DEFAULT_ACTIVITY;
-  };
-
-  const hasMore = activities.length < total;
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="text-center">
-          <p className="text-red-400 text-xl mb-2">Error</p>
-          <p className="text-muted text-sm mb-4">{error}</p>
-          <Link href="/" className="px-4 py-2 bg-surface-2 rounded-lg hover:bg-zinc-600">
-            Go Home
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  // ── Render ────────────────────────────────────────────────────────────
 
   return (
     <div>
-      <AdminPageHeader
-        title="Activity Log"
-        breadcrumb={["Admin", "Audit", "Activity log"]}
-        subtitle={`${total.toLocaleString()} total events`}
+      <AdminPageHeader title="Activity Log" breadcrumb={["Admin", "Audit", "Activity log"]} subtitle={`${data.total.toLocaleString()} total events`} />
+
+      <div className="mb-4">
+        <AdminFilterBar hasActiveFilters={hasActiveFilters} onClearAll={clearAll}>
+          <DateRangeChip label="Range" selected={filters.dateRange} options={DATE_OPTS} onChange={(v) => setFilters((f) => ({ ...f, dateRange: v }))} />
+          <MultiSelectFilter label="Type" options={typeOptions} selected={filters.typeFilters} onChange={(v) => setFilters((f) => ({ ...f, typeFilters: v }))} placeholder="All Activities" accentColor="blue" />
+          <MultiSelectFilter label="Role" options={roleOptions} selected={filters.roleFilters} onChange={(v) => setFilters((f) => ({ ...f, roleFilters: v }))} placeholder="All Roles" accentColor="purple" />
+          <FilterSearch value={filters.emailQuery} onChange={(v) => setFilters((f) => ({ ...f, emailQuery: v }))} placeholder="Filter by email…" widthClass="w-48" />
+          <div className="ml-auto flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setFilters((f) => ({ ...f, autoRefresh: !f.autoRefresh }))}
+              aria-label={filters.autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh"}
+              title={filters.autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh (every 30s)"}
+              className={`rounded p-1.5 transition-colors ${filters.autoRefresh ? "bg-green-600/20 text-green-400 border border-green-600/50" : "text-muted hover:text-foreground hover:bg-surface-2"}`}
+            >
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+            <button type="button" onClick={() => fetchActivities(false, 0)} aria-label="Refresh" title="Refresh" className="rounded p-1.5 text-muted hover:text-foreground hover:bg-surface-2 transition-colors">
+              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+            <button type="button" onClick={exportToCSV} title="Export CSV" className="rounded px-2 py-1 text-xs text-muted hover:text-foreground hover:bg-surface-2 transition-colors">CSV</button>
+          </div>
+        </AdminFilterBar>
+      </div>
+
+      <AdminTable
+        caption="Activity log entries"
+        rows={data.activities}
+        rowKey={(r) => r.id}
+        columns={COLUMNS}
+        loading={loading}
+        error={error ? <AdminError error={error} onRetry={() => fetchActivities(false, 0)} /> : undefined}
+        empty={<AdminEmpty label="No activities match your filters" description="Try adjusting your search criteria or date range" />}
+        onRowClick={setSelected}
       />
 
-      {/* Content */}
-      <div>
-        {/* Stats Summary */}
-        <div className="mb-6 grid grid-cols-5 gap-3">
-          <div className="bg-surface rounded-lg border border-t-border p-3">
-            <div className="text-xs text-muted mb-1">Logins</div>
-            <div className="text-2xl font-bold text-green-400">{activityTypeCounts.logins}</div>
-          </div>
-          <div className="bg-surface rounded-lg border border-t-border p-3">
-            <div className="text-xs text-muted mb-1">Dashboard Views</div>
-            <div className="text-2xl font-bold text-blue-400">{activityTypeCounts.dashboardViews}</div>
-          </div>
-          <div className="bg-surface rounded-lg border border-t-border p-3">
-            <div className="text-xs text-muted mb-1">Schedules</div>
-            <div className="text-2xl font-bold text-emerald-400">{activityTypeCounts.schedules}</div>
-          </div>
-          <div className="bg-surface rounded-lg border border-t-border p-3">
-            <div className="text-xs text-muted mb-1">Exports</div>
-            <div className="text-2xl font-bold text-orange-400">{activityTypeCounts.exports}</div>
-          </div>
-          <div className="bg-surface rounded-lg border border-t-border p-3">
-            <div className="text-xs text-muted mb-1">Inventory</div>
-            <div className="text-2xl font-bold text-cyan-400">{activityTypeCounts.inventory}</div>
-          </div>
+      {!loading && !error && hasMore && (
+        <div className="mt-4 flex justify-center">
+          <button onClick={handleLoadMore} disabled={loadingMore} className="flex items-center gap-2 rounded-lg bg-surface-2 px-4 py-2 text-sm text-foreground transition-colors hover:bg-surface-elevated disabled:opacity-50">
+            {loadingMore ? <><span className="h-3.5 w-3.5 animate-spin rounded-full border-b-2 border-foreground" /> Loading…</> : `Load more (${data.activities.length.toLocaleString()} of ${data.total.toLocaleString()})`}
+          </button>
         </div>
+      )}
+      {!loading && !error && data.activities.length > 0 && (
+        <p className="mt-3 text-center text-xs text-muted">Showing {data.activities.length.toLocaleString()} of {data.total.toLocaleString()} activities</p>
+      )}
 
-        {/* Filter and Controls */}
-        <div className="mb-6 space-y-4">
-          {/* Date Range Filter */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted">Date Range:</span>
-            <div className="flex gap-2">
-              {(["today", "7d", "30d", "all"] as const).map(range => (
-                <button
-                  key={range}
-                  onClick={() => setDateRange(range)}
-                  className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
-                    dateRange === range
-                      ? "bg-cyan-600 text-white"
-                      : "bg-surface-2 text-muted hover:text-foreground hover:bg-surface-2"
-                  }`}
-                >
-                  {range === "today" && "Today"}
-                  {range === "7d" && "Last 7 Days"}
-                  {range === "30d" && "Last 30 Days"}
-                  {range === "all" && "All Time"}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Type Filter, Role Filter, and Search */}
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <MultiSelectFilter
-              label="Type"
-              options={activityTypeOptions}
-              selected={typeFilters}
-              onChange={setTypeFilters}
-              placeholder="All Activities"
-              accentColor="blue"
-            />
-
-            <MultiSelectFilter
-              label="Role"
-              options={roleOptions}
-              selected={roleFilters}
-              onChange={setRoleFilters}
-              placeholder="All Roles"
-              accentColor="purple"
-            />
-
-            <div className="flex items-center gap-3 flex-1">
-              <span className="text-sm text-muted">Search:</span>
-              <input
-                type="email"
-                placeholder="Filter by email..."
-                value={searchEmail}
-                onChange={(e) => setSearchEmail(e.target.value)}
-                className="bg-surface-2 border border-t-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500 flex-1"
-              />
-            </div>
-
-            {/* Control Buttons */}
-            <div className="flex gap-2">
-              <button
-                onClick={() => setAutoRefresh(!autoRefresh)}
-                className={`p-1.5 rounded-lg transition-colors ${
-                  autoRefresh
-                    ? "bg-green-600/20 text-green-400 border border-green-600/50"
-                    : "text-muted hover:text-foreground hover:bg-surface-2"
-                }`}
-                title={autoRefresh ? "Disable auto-refresh" : "Enable auto-refresh (every 30s)"}
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                </svg>
-              </button>
-              <button
-                onClick={() => fetchActivities(false, 0)}
-                className="text-muted hover:text-foreground p-1.5 rounded-lg hover:bg-surface-2 transition-colors"
-                title="Refresh"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-              </button>
-              <button
-                onClick={exportToCSV}
-                className="text-muted hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-surface-2 transition-colors text-sm"
-                title="Export to CSV"
-              >
-                <svg className="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                </svg>
-                CSV
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Activity List */}
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500" />
-          </div>
-        ) : activities.length === 0 ? (
-          <AdminEmpty
-            label="No activities match your filters"
-            description="Try adjusting your search criteria or date range"
-            icon={
-              <svg className="w-12 h-12 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            }
-          />
-        ) : (
-          <>
-            <div className="space-y-2">
-              {activities.map(activity => {
-                const style = getActivityStyle(activity.type);
-                const metadataDisplay = formatMetadata(activity.type, activity.metadata);
-                return (
-                  <div
-                    key={activity.id}
-                    className="bg-surface rounded-xl border border-t-border p-4 hover:border-t-border transition-colors"
-                  >
-                    <div className="flex items-start gap-3">
-                      {/* Icon */}
-                      <div className={`p-2 rounded-lg bg-surface-2 ${style.color}`}>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={style.icon} />
-                        </svg>
-                      </div>
-
-                      {/* Content */}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm text-white">{activity.description}</p>
-                        <div className="flex items-center gap-2 mt-1 text-xs text-muted flex-wrap">
-                          {activity.user ? (
-                            <span>{activity.user.name || activity.user.email}</span>
-                          ) : activity.userEmail ? (
-                            <span>{activity.userEmail}</span>
-                          ) : (
-                            <span>System</span>
-                          )}
-                          {activity.user?.roles?.[0] && (
-                            <span className="px-1.5 py-0.5 rounded bg-surface-2 text-[10px] uppercase tracking-wider text-muted">
-                              {formatRoleLabel(activity.user.roles[0])}
-                            </span>
-                          )}
-                          <span>•</span>
-                          <span>{formatDate(activity.createdAt)}</span>
-                          {activity.ipAddress && (
-                            <>
-                              <span>•</span>
-                              <span className="font-mono">{activity.ipAddress}</span>
-                            </>
-                          )}
-                        </div>
-
-                        {/* Entity link */}
-                        {activity.entityName && (
-                          <p className="mt-1 text-xs text-muted">
-                            {activity.entityType === "user" && activity.entityId ? (
-                              <Link
-                                href={`/admin/users?userId=${encodeURIComponent(activity.entityId)}`}
-                                className="underline underline-offset-2 hover:text-foreground transition-colors"
-                              >
-                                {activity.entityName}
-                              </Link>
-                            ) : activity.entityType === "role" && activity.entityId ? (
-                              <Link
-                                href={`/admin/roles/${encodeURIComponent(activity.entityId)}`}
-                                className="underline underline-offset-2 hover:text-foreground transition-colors"
-                              >
-                                {activity.entityName}
-                              </Link>
-                            ) : (
-                              activity.entityName
-                            )}
-                          </p>
-                        )}
-
-                        {/* Formatted Metadata */}
-                        {metadataDisplay && (
-                          <p className="mt-2 text-xs text-muted italic">{metadataDisplay}</p>
-                        )}
-
-                        {/* Raw Metadata Details */}
-                        {activity.metadata && Object.keys(activity.metadata).length > 0 && !metadataDisplay && (
-                          <details className="mt-2">
-                            <summary className="text-xs text-muted cursor-pointer hover:text-muted">
-                              Details
-                            </summary>
-                            <pre className="mt-2 p-2 bg-surface-2 rounded text-xs overflow-x-auto text-muted">
-                              {JSON.stringify(activity.metadata, null, 2)}
-                            </pre>
-                          </details>
-                        )}
-                      </div>
-
-                      {/* Type Badge */}
-                      <span className={`text-xs px-2 py-1 rounded-full bg-surface-2 ${style.color} whitespace-nowrap`}>
-                        {activity.type.replace(/_/g, " ")}
-                      </span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Load More Button */}
-            {hasMore && (
-              <div className="mt-6 flex justify-center">
-                <button
-                  onClick={handleLoadMore}
-                  disabled={loadingMore}
-                  className="px-4 py-2 bg-surface-2 hover:bg-surface-elevated text-white rounded-lg transition-colors text-sm disabled:opacity-50 flex items-center gap-2"
-                >
-                  {loadingMore ? (
-                    <>
-                      <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                      Loading...
-                    </>
-                  ) : (
-                    `Load More (${activities.length.toLocaleString()} of ${total.toLocaleString()})`
-                  )}
-                </button>
-              </div>
-            )}
-
-            {/* Results Summary */}
-            <div className="mt-4 text-center text-xs text-muted">
-              Showing {activities.length.toLocaleString()} of {total.toLocaleString()} activities
-            </div>
-          </>
-        )}
-      </div>
+      <AdminDetailDrawer open={selected !== null} onClose={() => setSelected(null)} wide title={selected ? selected.type.replace(/_/g, " ") : ""}>
+        {selected && <ActivityDrawerBody a={selected} />}
+      </AdminDetailDrawer>
     </div>
   );
 }
