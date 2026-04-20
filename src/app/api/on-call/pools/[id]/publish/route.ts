@@ -29,91 +29,88 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (!canAdminOnCall(user)) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const { id } = await params;
 
-  const pool = await getPool(id);
-  if (!pool) return NextResponse.json({ error: "Pool not found" }, { status: 404 });
-
-  const members = await getActiveMembersForRotation(id);
-  if (members.filter((m) => m.isActive).length === 0) {
-    return NextResponse.json({ error: "Pool has no active members" }, { status: 409 });
-  }
-
-  const from = todayInTz(pool.timezone);
-  const to = addDays(from, pool.horizonMonths * 30);
-
-  const generated = generateAssignments({
-    startDate: pool.startDate,
-    fromDate: from,
-    toDate: to,
-    members,
-  });
-
-  // Existing rows in range keyed by date.
-  const existing = await prisma.onCallAssignment.findMany({
-    where: { poolId: id, date: { gte: from, lte: to } },
-  });
-  const existingByDate = new Map(existing.map((e) => [e.date, e]));
-
-  let rowsCreated = 0;
-  let rowsUpdated = 0;
-
-  // Advisory lock to prevent concurrent publishes. Hash the pool id into an int.
-  // Neon supports pg_try_advisory_lock via $executeRawUnsafe.
-  const lockKey = Math.abs(
-    id.split("").reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 0),
-  );
-  const [{ locked }] = (await prisma.$queryRawUnsafe(
-    `SELECT pg_try_advisory_lock(${lockKey}) AS locked`,
-  )) as Array<{ locked: boolean }>;
-  if (!locked) {
-    return NextResponse.json({ error: "Publish already in progress" }, { status: 409 });
-  }
-
   try {
-    // Apply diffs inside a tx. Only touch "generated" rows; leave swap/pto-reassign alone.
-    await prisma.$transaction(async (tx) => {
-      for (const g of generated) {
-        const existing = existingByDate.get(g.date);
-        if (!existing) {
-          await tx.onCallAssignment.create({
-            data: {
-              poolId: id,
-              date: g.date,
-              crewMemberId: g.crewMemberId,
-              source: "generated",
-            },
-          });
-          rowsCreated++;
-        } else if (existing.source === "generated" && existing.crewMemberId !== g.crewMemberId) {
-          await tx.onCallAssignment.update({
-            where: { poolId_date: { poolId: id, date: g.date } },
-            data: { crewMemberId: g.crewMemberId },
-          });
-          rowsUpdated++;
-        }
-      }
-      await tx.onCallPool.update({
-        where: { id },
-        data: {
-          lastPublishedAt: new Date(),
-          lastPublishedBy: user?.id ?? null,
-          lastPublishedThrough: to,
-        },
-      });
+    const pool = await getPool(id);
+    if (!pool) return NextResponse.json({ error: "Pool not found" }, { status: 404 });
+
+    const members = await getActiveMembersForRotation(id);
+    if (members.filter((m) => m.isActive).length === 0) {
+      return NextResponse.json({ error: "Pool has no active members" }, { status: 409 });
+    }
+
+    const from = todayInTz(pool.timezone);
+    const to = addDays(from, pool.horizonMonths * 30);
+
+    const generated = generateAssignments({
+      startDate: pool.startDate,
+      fromDate: from,
+      toDate: to,
+      members,
     });
-  } finally {
-    await prisma.$queryRawUnsafe(`SELECT pg_advisory_unlock(${lockKey})`);
+
+    // Existing rows in range keyed by date — used to partition into net-new
+    // inserts vs in-place updates.
+    const existing = await prisma.onCallAssignment.findMany({
+      where: { poolId: id, date: { gte: from, lte: to } },
+    });
+    const existingByDate = new Map(existing.map((e) => [e.date, e]));
+
+    // Only touch "generated" rows; leave swap/pto-reassign alone.
+    const toCreate: Array<{ poolId: string; date: string; crewMemberId: string; source: string }> = [];
+    const toUpdate: Array<{ date: string; crewMemberId: string }> = [];
+    for (const g of generated) {
+      const hit = existingByDate.get(g.date);
+      if (!hit) {
+        toCreate.push({ poolId: id, date: g.date, crewMemberId: g.crewMemberId, source: "generated" });
+      } else if (hit.source === "generated" && hit.crewMemberId !== g.crewMemberId) {
+        toUpdate.push({ date: g.date, crewMemberId: g.crewMemberId });
+      }
+    }
+    const rowsCreated = toCreate.length;
+    const rowsUpdated = toUpdate.length;
+
+    // Concurrent-publish safety comes from:
+    // 1. @@unique([poolId, date]) + skipDuplicates on createMany — idempotent
+    // 2. Admin-only route with low call frequency
+    // (Advisory locks don't work reliably on Neon's serverless pooler.)
+    await prisma.$transaction(
+      async (tx) => {
+        if (toCreate.length > 0) {
+          await tx.onCallAssignment.createMany({ data: toCreate, skipDuplicates: true });
+        }
+        for (const u of toUpdate) {
+          await tx.onCallAssignment.update({
+            where: { poolId_date: { poolId: id, date: u.date } },
+            data: { crewMemberId: u.crewMemberId },
+          });
+        }
+        await tx.onCallPool.update({
+          where: { id },
+          data: {
+            lastPublishedAt: new Date(),
+            lastPublishedBy: user?.id ?? null,
+            lastPublishedThrough: to,
+          },
+        });
+      },
+      { timeout: 30_000, maxWait: 10_000 },
+    );
+
+    appCache.invalidateByPrefix("on-call:tonight");
+    await logActivity({
+      type: "ON_CALL_PUBLISHED",
+      description: `Published ${pool.name}: +${rowsCreated} created, ${rowsUpdated} updated, through ${to}`,
+      userId: user?.id,
+      userEmail: user?.email,
+      entityType: "OnCallPool",
+      entityId: id,
+      metadata: { rowsCreated, rowsUpdated, from, to },
+    });
+
+    return NextResponse.json({ rowsCreated, rowsUpdated, from, to });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Publish failed";
+    console.error("[on-call/publish] error", err);
+    return NextResponse.json({ error: message }, { status: 500 });
   }
-
-  appCache.invalidateByPrefix("on-call:tonight");
-  await logActivity({
-    type: "ON_CALL_PUBLISHED",
-    description: `Published ${pool.name}: +${rowsCreated} created, ${rowsUpdated} updated, through ${to}`,
-    userId: user?.id,
-    userEmail: user?.email,
-    entityType: "OnCallPool",
-    entityId: id,
-    metadata: { rowsCreated, rowsUpdated, from, to },
-  });
-
-  return NextResponse.json({ rowsCreated, rowsUpdated, from, to });
 }

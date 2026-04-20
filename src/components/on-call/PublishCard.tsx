@@ -24,13 +24,21 @@ export function PublishCard({ pool }: { pool: Pool }) {
     setResult(null);
     try {
       const res = await fetch(`/api/on-call/pools/${pool.id}/publish`, { method: "POST" });
-      const json = await res.json();
+      // Guard against empty 5xx bodies — response may not always be JSON.
+      const text = await res.text();
+      const json: {
+        error?: string;
+        rowsCreated?: number;
+        rowsUpdated?: number;
+        to?: string;
+      } = text ? JSON.parse(text) : {};
       if (!res.ok) {
-        setResult(json.error ?? "Publish failed");
+        setResult(json.error ?? `Publish failed (HTTP ${res.status})`);
       } else {
-        setResult(`Published: +${json.rowsCreated} new, ${json.rowsUpdated} updated, through ${json.to}`);
+        const through = json.to ?? "";
+        setResult(`Published: +${json.rowsCreated ?? 0} new, ${json.rowsUpdated ?? 0} updated, through ${through}`);
         setLastPublishedAt(new Date().toISOString());
-        setLastPublishedThrough(json.to);
+        if (through) setLastPublishedThrough(through);
       }
     } catch (e) {
       setResult(e instanceof Error ? e.message : "Publish failed");
