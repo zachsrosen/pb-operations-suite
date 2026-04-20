@@ -3,7 +3,7 @@
 **Date:** 2026-04-20
 **Status:** Draft — pending implementation plan
 **Owner:** Zach Rosen
-**Home:** Executive Suite (v1) — revisit placement once feature is live
+**Home:** Route at `/dashboards/on-call` (accessible to any role with route permission). Linked from the Executive Suite landing page for v1 discoverability — revisit placement once feature is live.
 
 ## Problem
 
@@ -34,7 +34,9 @@ This spec describes a first version: a rotation calendar with self-service swap/
 
 ### 1. Main Dashboard — "Tonight across all 3 regions"
 
-Route: `/dashboards/on-call` (or under `/suites/executive/on-call` — TBD in implementation plan).
+Route: `/dashboards/on-call`. Accessible via direct URL to permitted roles. Executive Suite landing page adds a tile linking here for v1.
+
+**"Tonight" resolution:** each pool's "tonight" is computed in that pool's own timezone. The hero strip may show CA on day N and CO on day N-1 if queried just after midnight MT (or vice versa).
 
 - **Hero strip:** three region cards side-by-side. Each card shows region name, tonight's on-call electrician (large), phone number, shift window, and three inline buttons: Call, Text, Swap.
 - **14-day lookahead grid:** horizontal strip below hero. One row per rotation. Today outlined in orange, weekends tinted, PTO days shown in red with strikethrough on the original assignee.
@@ -44,7 +46,7 @@ Route: `/dashboards/on-call` (or under `/suites/executive/on-call` — TBD in im
 
 Route: `/dashboards/on-call/month`.
 
-- **Controls:** region tabs, month navigation, action buttons (Block PTO, Regenerate, Export).
+- **Controls:** region tabs, month navigation, action buttons (Block PTO, Publish, Export). "Publish" re-runs rotation generation for the visible month + future horizon and applies diffs. There is no separate "Regenerate" action — publish is the only write verb.
 - **Calendar:** traditional 7-column month grid. One name per day cell. Weekends tinted. Today outlined. PTO days red with strikethrough. Swapped days marked with ↔. Federal holidays marked with ★.
 - **Workload sidebar:** per-electrician stats for the displayed month — total days, weekend days, holiday days. Hot/cold shading when someone's overloaded or underused. An inline alert banner surfaces imbalance.
 - **Upcoming PTO panel** below sidebar lists active blocks and who's covering.
@@ -62,7 +64,9 @@ All swaps and PTO reassignments are tracked in audit history with the reason, wh
 
 ### 4. Electrician Mobile View
 
-Route: `/dashboards/on-call/me` (auto-resolves to the logged-in user's electrician record).
+Route: `/dashboards/on-call/me` (auto-resolves to the logged-in user's electrician record via email match on `CrewMember.email`).
+
+**Prerequisite:** the electrician must have an active User account (SSO login). Electricians without User accounts cannot use the self-service mobile view. For v1, admins proxy on their behalf from the Day Actions drawer.
 
 - "Hey, {firstName} 👋" greeting.
 - **Tonight status card:** either "You're on tonight" or "Not on-call tonight, {X} is covering".
@@ -88,7 +92,7 @@ Route: `/dashboards/on-call/approvals`.
 Route: `/dashboards/on-call/setup` — gated to ADMIN, OWNER, OPERATIONS_MANAGER.
 
 - **Per-pool config cards:** rotation start date (anchors the cycle), shift window (start/end time + timezone), drag-reorder rotation order with active/inactive toggle per electrician, "Add Electrician to Pool" button (picks from existing CrewMember records with role = electrician).
-- **Federal holidays list:** read-only display of the 11 federal holidays for the current year. Used for workload stats and the ★ marker. No PB-specific holidays in v1.
+- **Federal holidays list:** read-only display of US federal holidays for the current year (sourced from a small constant in `lib/on-call-holidays.ts` — run `rg 'name:' src/lib/on-call-holidays.ts | wc -l` to see current count). Used for workload stats and the ★ marker. No PB-specific holidays in v1.
 - **Export panel:** Google Calendar subscribe URL per pool, email monthly preview toggle, PDF download, CSV download.
 - **Publish card:** shows last-published timestamp and range covered. "Publish Now" generates the next 3 months of assignments from today forward (preserving any existing approved swaps/PTO), pushes to Google Calendar, and sends monthly-preview email if enabled. Manual only — no scheduled auto-publish in v1.
 
@@ -98,18 +102,28 @@ Builds on the existing `CrewMember` / `CrewAvailability` / `AvailabilityOverride
 
 ```prisma
 model OnCallPool {
-  id            String   @id @default(cuid())
-  name          String   @unique // "California", "Denver", "Southern CO"
-  region        String   // matches PB location group for display
-  shiftStart    String   // HH:mm local, e.g. "17:00"
-  shiftEnd      String   // HH:mm local, e.g. "07:00"
-  timezone      String   // "America/Los_Angeles" or "America/Denver"
-  startDate     String   // YYYY-MM-DD — cycle anchor
-  isActive      Boolean  @default(true)
-  members       OnCallPoolMember[]
-  assignments   OnCallAssignment[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                 String   @id @default(cuid())
+  name               String   @unique // "California", "Denver", "Southern CO"
+  region             String   // matches PB location group for display
+  shiftStart         String   // HH:mm local, e.g. "17:00"
+  shiftEnd           String   // HH:mm local, e.g. "07:00"
+  timezone           String   // "America/Los_Angeles" or "America/Denver"
+  startDate          String   // YYYY-MM-DD — cycle anchor
+  horizonMonths      Int      @default(3) // how far ahead Publish generates
+  isActive           Boolean  @default(true)
+
+  // Publish tracking
+  lastPublishedAt    DateTime?
+  lastPublishedBy    String?  // User.id
+  lastPublishedThrough String? // YYYY-MM-DD — last date covered by Publish
+
+  // iCal feed
+  icalToken          String?  @unique // random opaque token; rotatable
+
+  members            OnCallPoolMember[]
+  assignments        OnCallAssignment[]
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 }
 
 model OnCallPoolMember {
@@ -129,7 +143,7 @@ model OnCallAssignment {
   id            String   @id @default(cuid())
   poolId        String
   pool          OnCallPool @relation(fields: [poolId], references: [id])
-  date          String   // YYYY-MM-DD in pool's local timezone
+  date          String   // YYYY-MM-DD in pool's local timezone — represents the SHIFT START date (5pm that day → 7am next day)
   crewMemberId  String
   crewMember    CrewMember @relation(fields: [crewMemberId], references: [id])
   source        String   // "generated" | "swap" | "pto-reassign" | "manual"
@@ -206,7 +220,7 @@ All under `/api/on-call/`:
 | `/api/on-call/pto` | GET/POST | List/create PTO requests. |
 | `/api/on-call/pto/[id]/approve` | POST | Admin approves + proposes reassignments. |
 | `/api/on-call/pto/[id]/deny` | POST | Admin denies with reason. |
-| `/api/on-call/workload` | GET | `?poolId=&month=YYYY-MM` — per-electrician stats (days, weekends, holidays) for a month. |
+| `/api/on-call/workload` | GET | `?poolId=&month=YYYY-MM` — per-electrician stats (days, weekends, holidays) for a month. Month is interpreted in the pool's own timezone. |
 | `/api/on-call/calendar/[poolId].ics` | GET | iCal subscribe feed per pool. Public URL with token in query. |
 | `/api/on-call/export/pdf` | GET | PDF render of current month schedule. |
 | `/api/on-call/export/csv` | GET | Raw CSV dump of assignments in a date range. |
@@ -234,15 +248,29 @@ function generateAssignments(pool, fromDate, toDate):
 
 **On Publish:** the handler runs this for each pool, diffs against existing assignments, and only writes net-new rows. Existing rows with `source != "generated"` (approved swaps, PTO reassignments) are preserved. Existing `source = "generated"` rows where the computed member has changed are overwritten (this happens when rotation order or membership changed since last publish).
 
-**On Swap Approval:**
+**On Swap Approval** (wrapped in a Prisma `$transaction`):
 
 ```
 function applySwap(swap):
-  swap two assignments:
-    - pool/requesterDate → counterparty (source: "swap", sourceRequestId: swap.id, originalCrewMemberId: requester)
-    - pool/counterpartyDate → requester (source: "swap", sourceRequestId: swap.id, originalCrewMemberId: counterparty)
+  await prisma.$transaction(async tx => {
+    // Both assignment updates must succeed or both fail.
+    // @@unique([poolId, date]) makes a naive two-step update risky:
+    // we update by composite key, one row at a time.
+    tx.onCallAssignment.update({
+      where: { poolId_date: { poolId, date: requesterDate } },
+      data: { crewMemberId: counterparty, source: "swap",
+              sourceRequestId: swap.id, originalCrewMemberId: requester }
+    })
+    tx.onCallAssignment.update({
+      where: { poolId_date: { poolId, date: counterpartyDate } },
+      data: { crewMemberId: requester, source: "swap",
+              sourceRequestId: swap.id, originalCrewMemberId: counterparty }
+    })
+    tx.onCallSwapRequest.update({ where: { id: swap.id }, data: { status: "approved", ... } })
+  })
+  // Side effects OUTSIDE the transaction:
   fire notifications to both parties
-  push update to Google Calendar
+  push update to Google Calendar (iCal feed auto-refreshes on next fetch)
 ```
 
 **On PTO Approval:** admin sees a proposed reassignment list (derived by "next available active member in rotation order who isn't on-call adjacent or themselves on PTO that day"). Admin can override any slot. On approve, each affected day gets a new assignment with `source: "pto-reassign"`, and the PTO-requester's CrewAvailability is NOT touched (keep on-call separate from survey/install availability).
@@ -252,15 +280,18 @@ function applySwap(swap):
 - **Swap proposed by requester** → email to counterparty: "Rich wants to swap with you — {dates}. Accept or decline."
 - **Counterparty accepts** → email to admins (OPERATIONS_MANAGER, ADMIN, OWNER): "New swap awaiting approval."
 - **Admin approves** → email to both parties: "Your swap is confirmed. New shifts: ..."
-- **Admin denies** → email to requester: "Your swap was denied. Reason: ..."
+- **Admin denies** → email to **both** requester and counterparty (if counterparty had accepted): "Swap denied. Reason: ..."
 - **PTO approved** → email to requester + all electricians picking up shifts: "PTO approved, {X} will cover {date}."
+- **PTO denied** → email to requester.
 - **Publish run** → email to all electricians: "Monthly preview attached."
 
 All emails use React Email templates in `src/emails/` (new templates required). Primary channel: Google Workspace. Fallback: Resend.
 
+**SMS notifications are explicitly out of scope for v1.** Hero-card "Call/Text" buttons use `tel:` and `sms:` links that hand off to the device's native app. No Twilio integration.
+
 ## Exports
 
-- **Google Calendar subscribe URL:** `/api/on-call/calendar/[poolId].ics?token=<signed-token>`. One feed per pool. Events titled "On-Call: {Electrician Name}". Refreshes on every Publish or swap approval.
+- **Google Calendar subscribe URL:** `/api/on-call/calendar/[poolId].ics?token=<OnCallPool.icalToken>`. One feed per pool. Events titled "On-Call: {Electrician Name}", with start/end reflecting the pool's shift window (e.g. May 18 17:00 → May 19 07:00 in pool's tz). Token is opaque and unique per pool; rotatable from admin setup. Route is added to the middleware **public routes list** so it bypasses session auth and validates only on token match.
 - **PDF:** server-rendered via `@react-pdf/renderer` (already in stack for BOM PDFs). One page per region for the month.
 - **CSV:** columns = `date, pool, electrician, source, original_electrician, reason`. Date range parameterized.
 - **Email monthly preview:** sent by Publish handler when enabled in pool config.
@@ -275,7 +306,9 @@ All emails use React Email templates in `src/emails/` (new templates required). 
 | Approve swap / PTO | ADMIN, OWNER, OPERATIONS_MANAGER |
 | Edit pools / publish | ADMIN, OWNER |
 
-Electrician identity resolves by matching the logged-in User's `email` against `CrewMember.email`. If no match, `/me` shows an empty state.
+Section 6 (Admin Setup) is gated to **ADMIN and OWNER only** — aligned with the table above. OPERATIONS_MANAGER can approve/deny swap and PTO requests but cannot edit pools or publish.
+
+Electrician identity resolves by matching the logged-in User's `email` against `CrewMember.email` (which already exists as an optional field on the `CrewMember` model). If no match, `/me` shows an empty state. Electricians without User accounts cannot self-serve — admins proxy on their behalf.
 
 ## Error Handling & Edge Cases
 
@@ -284,7 +317,32 @@ Electrician identity resolves by matching the logged-in User's `email` against `
 - **Swap collision:** if an electrician tries to swap into a day they're already on-call, the API returns `400` with "you're already on-call that day."
 - **PTO overlap with existing PTO:** API returns `400`; electrician must cancel the existing PTO first.
 - **Regenerate after rotation order change:** preserves swap/PTO-sourced assignments, overwrites only `source = "generated"` rows. Shows a diff preview in the admin UI before confirming.
-- **Inactive electrician with future assignments:** when an admin toggles inactive, existing assignments are NOT auto-reassigned — they show a warning banner in the calendar and the admin is prompted to run Regenerate.
+- **Inactive electrician with future assignments:** when an admin toggles inactive, existing assignments are NOT auto-reassigned — the calendar shows a warning banner and prompts the admin to re-run Publish. Re-running Publish overwrites only `source = "generated"` future rows; swap/PTO-sourced rows stay put (admin must manually reassign them if the inactive person is still on the hook).
+- **Rotation order mutation:** changing `orderIndex` or toggling `isActive` does NOT retroactively change past assignments (they're already persisted). Future assignments computed by Publish will reflect the new order. Between Publish runs, the UI computes "forecast" assignments on the fly from the current rotation order — the Publish button shows a diff before committing.
+
+## Feature Flag
+
+Env var: `ON_CALL_ROTATIONS_ENABLED` (server-side) and `NEXT_PUBLIC_ON_CALL_ROTATIONS_ENABLED` (client-visible). When off:
+
+- **Routes:** `/dashboards/on-call/*` returns 404 (via early return in layout). `/api/on-call/*` returns 503.
+- **UI:** Executive Suite landing page hides the "On-Call" tile.
+- **Webhooks & cron:** none in v1, no side effects to gate.
+- **Data:** DB tables exist but remain empty until flag flips on. No seeds run automatically.
+
+Default: **off**. Admins toggle on when ready to pilot.
+
+## Audit Log
+
+Reuse the existing `ActivityLog` table with new `ActivityType` enum values:
+
+- `ON_CALL_POOL_CREATED`, `ON_CALL_POOL_UPDATED`, `ON_CALL_POOL_MEMBERS_CHANGED`
+- `ON_CALL_PUBLISHED` (metadata: pool, range, rows created/updated)
+- `ON_CALL_SWAP_REQUESTED`, `ON_CALL_SWAP_ACCEPTED`, `ON_CALL_SWAP_APPROVED`, `ON_CALL_SWAP_DENIED`, `ON_CALL_SWAP_CANCELLED`
+- `ON_CALL_PTO_REQUESTED`, `ON_CALL_PTO_APPROVED`, `ON_CALL_PTO_DENIED`, `ON_CALL_PTO_CANCELLED`
+- `ON_CALL_MANUAL_OVERRIDE` (admin direct edit without swap/PTO flow)
+- `ON_CALL_ICAL_TOKEN_ROTATED`
+
+No new audit table. All writes via the existing `logActivity()` helper.
 
 ## Testing Strategy
 
