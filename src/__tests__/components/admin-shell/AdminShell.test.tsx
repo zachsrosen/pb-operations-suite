@@ -9,6 +9,14 @@ jest.mock("next/navigation", () => ({
 }));
 const { usePathname } = jest.requireMock("next/navigation");
 
+// AdminShell now renders UserMenu, which imports `next-auth/react`. Jest's
+// transformer can't parse ESM-only next-auth packages, so mock the module.
+jest.mock("next-auth/react", () => ({
+  useSession: () => ({ data: null }),
+  signOut: jest.fn(),
+  SessionProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
+
 beforeAll(() => {
   Object.defineProperty(window, "matchMedia", {
     writable: true,

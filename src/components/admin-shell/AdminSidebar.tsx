@@ -77,6 +77,30 @@ export function AdminSidebar({ collapsed, onToggleCollapsed }: AdminSidebarProps
         </button>
       </div>
 
+      {/* Back-to-app link — the only way out of the admin surface.
+          Collapsed state shows just the arrow icon with a title tooltip. */}
+      <div className="px-2 pb-2">
+        <Link
+          href="/"
+          title={collapsed ? "Back to home" : undefined}
+          className="flex items-center gap-2 rounded px-2 py-1.5 text-xs text-muted transition-colors hover:bg-surface-2 hover:text-foreground"
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.8}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="h-4 w-4 shrink-0"
+          >
+            <path d="M15 18l-6-6 6-6" />
+          </svg>
+          {!collapsed && <span className="truncate">Back to home</span>}
+        </Link>
+      </div>
+
       <nav className="flex-1 overflow-y-auto px-2 pb-4">
         {ADMIN_NAV.map((group) => (
           <div key={group.label} className="mt-2">
