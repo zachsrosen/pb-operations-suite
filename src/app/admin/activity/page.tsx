@@ -77,7 +77,7 @@ function sinceFrom(dr: DateRange): string | null {
 function entityLink(type: string | null, id: string | null): string | null {
   if (!type || !id) return null;
   if (type === "user") return `/admin/users?userId=${encodeURIComponent(id)}`;
-  if (type === "role") return `/admin/roles/${encodeURIComponent(id)}`;
+  if (type === "role") return `/admin/roles?role=${encodeURIComponent(id)}`;
   return null;
 }
 
