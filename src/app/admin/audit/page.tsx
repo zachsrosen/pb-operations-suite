@@ -147,14 +147,6 @@ const PAGE_SIZE = 20;
 
 // ── Helpers ───────────────────────────────────────────────────────────────
 
-function maskIp(ip: string): string {
-  if (!ip) return "N/A";
-  const parts = ip.split(".");
-  if (parts.length === 4) return `${parts[0]}.${parts[1]}.*.*`;
-  if (ip.length > 10) return ip.slice(0, 10) + "...";
-  return ip;
-}
-
 function fmtRelative(ds: string): string {
   const diff = Date.now() - new Date(ds).getTime();
   const m = Math.floor(diff / 60000);
