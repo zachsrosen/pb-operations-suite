@@ -1,10 +1,13 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import Link from "next/link";
+import { useState, useEffect, useCallback } from "react";
 import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
+import { AdminEmpty } from "@/components/admin-shell/AdminEmpty";
+import { AdminError } from "@/components/admin-shell/AdminError";
+import { AdminLoading } from "@/components/admin-shell/AdminLoading";
+import { AdminTable, type AdminTableColumn } from "@/components/admin-shell/AdminTable";
 
-// ----- Types -----
+// ── Types ─────────────────────────────────────────────────────────────────
 
 interface UserRecord {
   id: string;
@@ -74,67 +77,186 @@ interface SecurityAuditData {
   generatedAt: string;
 }
 
-const ROLE_LABELS: Record<string, string> = {
-  EXECUTIVE: "EXECUTIVE",
-  OWNER: "EXECUTIVE",
-  VIEWER: "UNASSIGNED",
-};
+// ── Helpers ───────────────────────────────────────────────────────────────
 
-function formatRoleLabel(role: string): string {
-  return (ROLE_LABELS[role] || role).replace(/_/g, " ");
+function maskIp(ip: string): string {
+  if (!ip) return "N/A";
+  const parts = ip.split(".");
+  if (parts.length === 4) return `${parts[0]}.${parts[1]}.*.*`;
+  if (ip.length > 10) return ip.slice(0, 10) + "...";
+  return ip;
 }
 
-function getRoleBadgeClasses(role: string): string {
-  if (role === "ADMIN") return "bg-amber-500/10 text-amber-400";
-  if (role === "EXECUTIVE" || role === "OWNER") return "bg-yellow-500/10 text-yellow-400";
-  if (role === "PROJECT_MANAGER") return "bg-blue-500/10 text-blue-400";
-  if (role === "OPERATIONS_MANAGER") return "bg-orange-500/10 text-orange-400";
-  if (role === "OPERATIONS") return "bg-orange-500/10 text-orange-400";
-  if (role === "TECH_OPS") return "bg-green-500/10 text-green-400";
-  if (role === "SALES") return "bg-cyan-500/10 text-cyan-400";
-  if (role === "VIEWER") return "bg-zinc-700 text-zinc-300";
-  return "bg-gray-700 text-gray-400";
+function fmtDate(ds: string | null): string {
+  if (!ds) return "Never";
+  return new Date(ds).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
-// ----- Collapsible Section Component -----
+function fmtRelative(ds: string): string {
+  const diff = Date.now() - new Date(ds).getTime();
+  const m = Math.floor(diff / 60000);
+  const h = Math.floor(diff / 3600000);
+  const d = Math.floor(diff / 86400000);
+  if (m < 1) return "Just now";
+  if (m < 60) return `${m}m ago`;
+  if (h < 24) return `${h}h ago`;
+  if (d < 7) return `${d}d ago`;
+  return fmtDate(ds);
+}
 
-function CollapsibleSection({
-  title,
-  count,
-  defaultOpen = true,
-  children,
-}: {
-  title: string;
-  count?: number;
-  defaultOpen?: boolean;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
+// ── Table column definitions ──────────────────────────────────────────────
 
-  return (
-    <div className="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-750 transition-colors"
+const SUSPICIOUS_EMAIL_COLUMNS: AdminTableColumn<UserRecord>[] = [
+  {
+    key: "email",
+    label: "Email",
+    render: (r) => (
+      <span className="text-xs font-mono text-foreground">{r.email}</span>
+    ),
+  },
+  {
+    key: "role",
+    label: "Role",
+    width: "w-32",
+    render: (r) => (
+      <span className="text-xs bg-surface-2 text-muted rounded px-2 py-0.5">
+        {r.role.replace(/_/g, " ")}
+      </span>
+    ),
+  },
+  {
+    key: "createdAt",
+    label: "First seen",
+    width: "w-36",
+    render: (r) => (
+      <span className="text-xs text-muted whitespace-nowrap">{fmtDate(r.createdAt)}</span>
+    ),
+  },
+  {
+    key: "lastLoginAt",
+    label: "Last seen",
+    width: "w-36",
+    render: (r) => (
+      <span className="text-xs text-muted whitespace-nowrap">{fmtDate(r.lastLoginAt)}</span>
+    ),
+  },
+];
+
+const IP_ANALYSIS_COLUMNS: AdminTableColumn<IpRecord>[] = [
+  {
+    key: "ip",
+    label: "IP Address",
+    render: (r) => (
+      <code className="text-xs rounded bg-surface-2 px-1 py-0.5">{maskIp(r.ip)}</code>
+    ),
+  },
+  {
+    key: "userCount",
+    label: "User count",
+    width: "w-24",
+    align: "right",
+    render: (r) => (
+      <span
+        className={`text-xs font-medium ${r.userCount >= 3 ? "text-amber-400" : "text-muted"}`}
       >
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-gray-400 font-mono">
-            {open ? "\u25BC" : "\u25B6"}
-          </span>
-          <h2 className="text-base font-semibold text-foreground">{title}</h2>
-          {count !== undefined && (
-            <span className="text-xs text-gray-400 bg-gray-700 px-2 py-0.5 rounded-full">
-              {count}
-            </span>
-          )}
-        </div>
-      </button>
-      {open && <div className="px-5 pb-5">{children}</div>}
-    </div>
-  );
-}
+        {r.userCount}
+      </span>
+    ),
+  },
+  {
+    key: "users",
+    label: "Users",
+    render: (r) => (
+      <span className="text-xs text-muted truncate block max-w-[280px]">
+        {r.users.join(", ") || "—"}
+      </span>
+    ),
+  },
+];
 
-// ----- Main Page Component -----
+const ROLE_CHANGE_COLUMNS: AdminTableColumn<RoleChangeRecord>[] = [
+  {
+    key: "createdAt",
+    label: "Time",
+    width: "w-28",
+    render: (r) => (
+      <span className="text-xs text-muted whitespace-nowrap">{fmtRelative(r.createdAt)}</span>
+    ),
+  },
+  {
+    key: "actor",
+    label: "Actor",
+    width: "w-44",
+    render: (r) => (
+      <span className="text-xs text-foreground truncate block max-w-[160px]">
+        {r.userName || r.userEmail || "Unknown"}
+      </span>
+    ),
+  },
+  {
+    key: "description",
+    label: "Description",
+    render: (r) => (
+      <span className="text-xs text-muted truncate block max-w-[320px]">{r.description}</span>
+    ),
+  },
+  {
+    key: "ipAddress",
+    label: "IP",
+    width: "w-28",
+    render: (r) => (
+      <code className="text-xs rounded bg-surface-2 px-1 py-0.5">
+        {r.ipAddress ? maskIp(r.ipAddress) : "—"}
+      </code>
+    ),
+  },
+];
+
+const ADMIN_ACTION_COLUMNS: AdminTableColumn<AdminActionRecord>[] = [
+  {
+    key: "createdAt",
+    label: "Time",
+    width: "w-28",
+    render: (r) => (
+      <span className="text-xs text-muted whitespace-nowrap">{fmtRelative(r.createdAt)}</span>
+    ),
+  },
+  {
+    key: "actor",
+    label: "Actor",
+    width: "w-44",
+    render: (r) => (
+      <span className="text-xs text-foreground truncate block max-w-[160px]">
+        {r.userName || r.userEmail || "Unknown"}
+      </span>
+    ),
+  },
+  {
+    key: "type",
+    label: "Action",
+    width: "w-44",
+    render: (r) => (
+      <span className="text-xs bg-surface-2 text-muted rounded px-2 py-0.5 whitespace-nowrap">
+        {r.type.replace(/_/g, " ")}
+      </span>
+    ),
+  },
+  {
+    key: "description",
+    label: "Entity",
+    render: (r) => (
+      <span className="text-xs text-muted truncate block max-w-[280px]">{r.description}</span>
+    ),
+  },
+];
+
+// ── Page ──────────────────────────────────────────────────────────────────
 
 export default function SecurityAuditPage() {
   const [data, setData] = useState<SecurityAuditData | null>(null);
@@ -144,16 +266,15 @@ export default function SecurityAuditPage() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch("/api/admin/security");
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error || "Failed to fetch security audit data");
+      const res = await fetch("/api/admin/security");
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to fetch security audit data");
       }
-      const result = await response.json();
-      setData(result);
+      setData(await res.json());
       setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Unknown error");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unknown error");
     } finally {
       setLoading(false);
     }
@@ -163,90 +284,61 @@ export default function SecurityAuditPage() {
     fetchData();
   }, [fetchData]);
 
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return "Never";
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  };
+  // ── Loading / error states ───────────────────────────────────────────
 
-  const formatRelative = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diff = now.getTime() - date.getTime();
-    const minutes = Math.floor(diff / 60000);
-    const hours = Math.floor(diff / 3600000);
-    const days = Math.floor(diff / 86400000);
+  if (loading) return <AdminLoading label="Loading security audit…" />;
 
-    if (minutes < 1) return "Just now";
-    if (minutes < 60) return `${minutes}m ago`;
-    if (hours < 24) return `${hours}h ago`;
-    if (days < 7) return `${days}d ago`;
-    return formatDate(dateString);
-  };
-
-  // ----- Error State -----
   if (error) {
     return (
-      <div className="flex items-center justify-center py-20">
-        <div className="text-center">
-          <p className="text-red-400 text-xl mb-2">Error</p>
-          <p className="text-muted text-sm mb-4">{error}</p>
-          <Link
-            href="/"
-            className="px-4 py-2 bg-surface-2 rounded-lg hover:bg-surface-elevated transition-colors"
-          >
-            Go Home
-          </Link>
-        </div>
+      <div>
+        <AdminPageHeader
+          title="Security"
+          breadcrumb={["Admin", "Audit", "Security alerts"]}
+        />
+        <AdminError error={error} onRetry={fetchData} />
       </div>
     );
   }
 
-  // ----- Loading State -----
-  if (loading || !data) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500 mx-auto mb-4" />
-          <p className="text-muted text-sm">Loading security audit...</p>
-        </div>
-      </div>
-    );
-  }
+  if (!data) return null;
+
+  const generatedSubtitle = `Generated ${fmtRelative(data.generatedAt)}`;
+
+  // ── Render ─────────────────────────────────────────────────────────────
 
   return (
     <div>
       <AdminPageHeader
         title="Security"
         breadcrumb={["Admin", "Audit", "Security alerts"]}
-        subtitle={`Generated ${formatRelative(data.generatedAt)}`}
+        subtitle={generatedSubtitle}
         actions={
           <button
+            type="button"
             onClick={fetchData}
-            className="text-muted hover:text-foreground p-2 rounded-lg hover:bg-surface-2 transition-colors"
+            aria-label="Refresh"
             title="Refresh"
+            className="rounded p-1.5 text-muted hover:text-foreground hover:bg-surface-2 transition-colors"
           >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+              />
             </svg>
           </button>
         }
       />
 
-      {/* Content */}
-      <div className="space-y-6">
-        {/* Section 1: Alert Banner */}
+      <div className="space-y-8">
+        {/* Alert banner — non-org emails */}
         {data.suspiciousEmails.length > 0 && (
-          <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4">
+          <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4">
             <div className="flex items-start gap-3">
               <svg
-                className="w-5 h-5 text-red-400 mt-0.5 flex-shrink-0"
+                className="h-5 w-5 text-red-400 mt-0.5 shrink-0"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"
@@ -259,414 +351,123 @@ export default function SecurityAuditPage() {
                 />
               </svg>
               <div>
-                <h3 className="text-red-400 font-semibold text-sm">
+                <h3 className="text-sm font-semibold text-red-400">
                   Non-Organization Emails Detected
                 </h3>
-                <p className="text-red-300/80 text-xs mt-1">
-                  {data.suspiciousEmails.length} user(s) with email addresses
-                  outside @photonbrothers.com:
+                <p className="mt-1 text-xs text-red-300/80">
+                  {data.suspiciousEmails.length} user(s) with email addresses outside
+                  @photonbrothers.com — see table below.
                 </p>
-                <ul className="mt-2 space-y-1">
-                  {data.suspiciousEmails.map((u) => (
-                    <li
-                      key={u.id}
-                      className="text-red-300 text-xs font-mono flex items-center gap-2"
-                    >
-                      <span className="w-1.5 h-1.5 bg-red-400 rounded-full" />
-                      {u.email}{" "}
-                      <span className="text-red-400/60">
-                        (role: {formatRoleLabel(u.role)})
-                      </span>
-                    </li>
-                  ))}
-                </ul>
               </div>
             </div>
           </div>
         )}
 
-        {/* Summary Stats */}
+        {/* Summary stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-            <div className="text-xs text-gray-400 mb-1">Total Users</div>
-            <div className="text-2xl font-bold text-foreground">
-              {data.users.length}
+          {[
+            { label: "Total Users", value: data.users.length, color: "text-foreground" },
+            { label: "Admin Users", value: data.adminUsers.length, color: "text-amber-400" },
+            { label: "Logins (90d)", value: data.recentLogins.length, color: "text-green-400" },
+            { label: "Total Activity", value: data.totalActivityCount.toLocaleString(), color: "text-cyan-400" },
+          ].map((stat) => (
+            <div
+              key={stat.label}
+              className="rounded-lg border border-t-border/60 bg-surface p-4"
+            >
+              <div className="text-xs text-muted mb-1">{stat.label}</div>
+              <div className={`text-2xl font-bold ${stat.color}`}>{stat.value}</div>
             </div>
-          </div>
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-            <div className="text-xs text-gray-400 mb-1">Admin Users</div>
-            <div className="text-2xl font-bold text-amber-400">
-              {data.adminUsers.length}
-            </div>
-          </div>
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-            <div className="text-xs text-gray-400 mb-1">
-              Logins (90 days)
-            </div>
-            <div className="text-2xl font-bold text-green-400">
-              {data.recentLogins.length}
-            </div>
-          </div>
-          <div className="bg-gray-800 rounded-lg border border-gray-700 p-4">
-            <div className="text-xs text-gray-400 mb-1">
-              Total Activity Logs
-            </div>
-            <div className="text-2xl font-bold text-cyan-400">
-              {data.totalActivityCount}
-            </div>
-          </div>
+          ))}
         </div>
 
-        {/* Section 3: Admin Users */}
-        <div>
-          <h2 className="text-base font-semibold text-foreground mb-3">
-            Admin Users
+        {/* Section 1: Suspicious emails */}
+        <section>
+          <h2 className="mb-3 text-sm font-semibold text-foreground">
+            Suspicious Emails
+            <span className="ml-2 text-xs font-normal text-muted">
+              ({data.suspiciousEmails.length})
+            </span>
           </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            {data.adminUsers.map((admin) => (
-              <div
-                key={admin.id}
-                className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4"
-              >
-                <div className="flex items-center gap-3">
-                  {admin.image ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={admin.image}
-                      alt=""
-                      className="w-10 h-10 rounded-full"
-                    />
-                  ) : (
-                    <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-400 font-bold text-sm">
-                      {(admin.name || admin.email)[0].toUpperCase()}
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-amber-300 truncate">
-                      {admin.name || "No Name"}
-                    </p>
-                    <p className="text-xs text-amber-400/70 truncate">
-                      {admin.email}
-                    </p>
-                    <p className="text-xs text-amber-400/50 mt-0.5">
-                      Last login: {formatDate(admin.lastLoginAt)}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+          <AdminTable<UserRecord>
+            caption="Users with non-organization email addresses"
+            rows={data.suspiciousEmails}
+            rowKey={(r) => r.id}
+            columns={SUSPICIOUS_EMAIL_COLUMNS}
+            empty={
+              <AdminEmpty
+                label="No suspicious emails"
+                description="All users have @photonbrothers.com addresses"
+              />
+            }
+          />
+        </section>
 
-        {/* Section 2: User Roster */}
-        <CollapsibleSection
-          title="User Roster"
-          count={data.users.length}
-          defaultOpen={true}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-400 border-b border-gray-700">
-                  <th className="pb-2 pr-4">Name</th>
-                  <th className="pb-2 pr-4">Email</th>
-                  <th className="pb-2 pr-4">Role</th>
-                  <th className="pb-2">Last Login</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-700/50">
-                {data.users.map((u) => (
-                  <tr
-                    key={u.id}
-                    className={
-                      u.role === "ADMIN"
-                        ? "bg-amber-500/5"
-                        : "hover:bg-gray-750"
-                    }
-                  >
-                    <td className="py-2 pr-4">
-                      <div className="flex items-center gap-2">
-                        {u.image ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={u.image}
-                            alt=""
-                            className="w-6 h-6 rounded-full"
-                          />
-                        ) : (
-                          <div className="w-6 h-6 rounded-full bg-gray-700 flex items-center justify-center text-gray-400 text-xs">
-                            {(u.name || u.email)[0].toUpperCase()}
-                          </div>
-                        )}
-                        <span className="text-white">
-                          {u.name || "No Name"}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="py-2 pr-4 text-gray-400 font-mono text-xs">
-                      {u.email}
-                    </td>
-                    <td className="py-2 pr-4">
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full ${getRoleBadgeClasses(u.role)}`}
-                      >
-                        {formatRoleLabel(u.role)}
-                      </span>
-                    </td>
-                    <td className="py-2 text-gray-400 text-xs">
-                      {formatDate(u.lastLoginAt)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CollapsibleSection>
+        {/* Section 2: IP analysis */}
+        <section>
+          <h2 className="mb-3 text-sm font-semibold text-foreground">
+            IP Analysis
+            <span className="ml-2 text-xs font-normal text-muted">
+              ({data.ipAnalysis.length} IPs from last 90d logins)
+            </span>
+          </h2>
+          <AdminTable<IpRecord>
+            caption="IP address analysis from recent logins"
+            rows={data.ipAnalysis}
+            rowKey={(r) => r.ip}
+            columns={IP_ANALYSIS_COLUMNS}
+            empty={
+              <AdminEmpty
+                label="No IP data available"
+                description="No login IP addresses recorded in the last 90 days"
+              />
+            }
+          />
+        </section>
 
-        {/* Section 4: Login History */}
-        <CollapsibleSection
-          title="Login History (90 days)"
-          count={data.recentLogins.length}
-          defaultOpen={false}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-400 border-b border-gray-700">
-                  <th className="pb-2 pr-4">Date</th>
-                  <th className="pb-2 pr-4">User</th>
-                  <th className="pb-2 pr-4">IP Address</th>
-                  <th className="pb-2">User Agent</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-700/50">
-                {data.recentLogins.map((login) => (
-                  <tr key={login.id} className="hover:bg-gray-750">
-                    <td className="py-2 pr-4 text-gray-400 text-xs whitespace-nowrap">
-                      {formatDate(login.createdAt)}
-                    </td>
-                    <td className="py-2 pr-4 text-white text-xs">
-                      {login.userName || login.userEmail || "Unknown"}
-                    </td>
-                    <td className="py-2 pr-4 text-gray-400 font-mono text-xs">
-                      {login.ipAddress || "N/A"}
-                    </td>
-                    <td className="py-2 text-gray-500 text-xs truncate max-w-xs">
-                      {login.userAgent || "N/A"}
-                    </td>
-                  </tr>
-                ))}
-                {data.recentLogins.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      className="py-6 text-center text-gray-500 text-sm"
-                    >
-                      No login records found
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CollapsibleSection>
+        {/* Section 3: Role changes (risk events proxy) */}
+        <section>
+          <h2 className="mb-3 text-sm font-semibold text-foreground">
+            Role Changes
+            <span className="ml-2 text-xs font-normal text-muted">
+              ({data.roleChanges.length})
+            </span>
+          </h2>
+          <AdminTable<RoleChangeRecord>
+            caption="User role change events"
+            rows={data.roleChanges}
+            rowKey={(r) => r.id}
+            columns={ROLE_CHANGE_COLUMNS}
+            empty={
+              <AdminEmpty
+                label="No role changes recorded"
+                description="No user role modifications have been logged"
+              />
+            }
+          />
+        </section>
 
-        {/* Section 5: Role Changes */}
-        <CollapsibleSection
-          title="Role Changes"
-          count={data.roleChanges.length}
-          defaultOpen={true}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-400 border-b border-gray-700">
-                  <th className="pb-2 pr-4">Date</th>
-                  <th className="pb-2 pr-4">Changed By</th>
-                  <th className="pb-2">Description</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-700/50">
-                {data.roleChanges.map((rc) => (
-                  <tr key={rc.id} className="hover:bg-gray-750">
-                    <td className="py-2 pr-4 text-gray-400 text-xs whitespace-nowrap">
-                      {formatDate(rc.createdAt)}
-                    </td>
-                    <td className="py-2 pr-4 text-white text-xs">
-                      {rc.userName || rc.userEmail || "Unknown"}
-                    </td>
-                    <td className="py-2 text-gray-300 text-xs">
-                      {rc.description}
-                    </td>
-                  </tr>
-                ))}
-                {data.roleChanges.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={3}
-                      className="py-6 text-center text-gray-500 text-sm"
-                    >
-                      No role changes recorded
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CollapsibleSection>
-
-        {/* Section 6: Impersonation Log */}
-        <CollapsibleSection
-          title="Impersonation Log"
-          count={data.impersonationEvents.length}
-          defaultOpen={true}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-400 border-b border-gray-700">
-                  <th className="pb-2 pr-4">Date</th>
-                  <th className="pb-2 pr-4">User</th>
-                  <th className="pb-2">Description</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-700/50">
-                {data.impersonationEvents.map((evt) => (
-                  <tr key={evt.id} className="hover:bg-gray-750">
-                    <td className="py-2 pr-4 text-gray-400 text-xs whitespace-nowrap">
-                      {formatDate(evt.createdAt)}
-                    </td>
-                    <td className="py-2 pr-4 text-white text-xs">
-                      {evt.userName || evt.userEmail || "Unknown"}
-                    </td>
-                    <td className="py-2 text-gray-300 text-xs">
-                      {evt.description}
-                    </td>
-                  </tr>
-                ))}
-                {data.impersonationEvents.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={3}
-                      className="py-6 text-center text-gray-500 text-sm"
-                    >
-                      No impersonation events recorded
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CollapsibleSection>
-
-        {/* Section 7: IP Analysis */}
-        <CollapsibleSection
-          title="IP Analysis"
-          count={data.ipAnalysis.length}
-          defaultOpen={true}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-400 border-b border-gray-700">
-                  <th className="pb-2 pr-4">IP Address</th>
-                  <th className="pb-2 pr-4">User Count</th>
-                  <th className="pb-2">Users</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-700/50">
-                {data.ipAnalysis.map((ip) => (
-                  <tr
-                    key={ip.ip}
-                    className={
-                      ip.userCount >= 3
-                        ? "bg-amber-500/5"
-                        : "hover:bg-gray-750"
-                    }
-                  >
-                    <td className="py-2 pr-4 text-gray-300 font-mono text-xs">
-                      {ip.ip}
-                    </td>
-                    <td className="py-2 pr-4">
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full ${
-                          ip.userCount >= 3
-                            ? "bg-amber-500/10 text-amber-400"
-                            : "bg-gray-700 text-gray-400"
-                        }`}
-                      >
-                        {ip.userCount}
-                      </span>
-                    </td>
-                    <td className="py-2 text-gray-400 text-xs">
-                      {ip.users.join(", ")}
-                    </td>
-                  </tr>
-                ))}
-                {data.ipAnalysis.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={3}
-                      className="py-6 text-center text-gray-500 text-sm"
-                    >
-                      No IP data available
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CollapsibleSection>
-
-        {/* Admin Actions (bonus - last 90 days) */}
-        <CollapsibleSection
-          title="Admin Actions (90 days)"
-          count={data.adminActions.length}
-          defaultOpen={false}
-        >
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-xs text-gray-400 border-b border-gray-700">
-                  <th className="pb-2 pr-4">Date</th>
-                  <th className="pb-2 pr-4">Admin</th>
-                  <th className="pb-2 pr-4">Type</th>
-                  <th className="pb-2">Description</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-700/50">
-                {data.adminActions.map((action) => (
-                  <tr key={action.id} className="hover:bg-gray-750">
-                    <td className="py-2 pr-4 text-gray-400 text-xs whitespace-nowrap">
-                      {formatDate(action.createdAt)}
-                    </td>
-                    <td className="py-2 pr-4 text-white text-xs">
-                      {action.userName || action.userEmail || "Unknown"}
-                    </td>
-                    <td className="py-2 pr-4">
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-gray-700 text-gray-400">
-                        {action.type.replace(/_/g, " ")}
-                      </span>
-                    </td>
-                    <td className="py-2 text-gray-300 text-xs">
-                      {action.description}
-                    </td>
-                  </tr>
-                ))}
-                {data.adminActions.length === 0 && (
-                  <tr>
-                    <td
-                      colSpan={4}
-                      className="py-6 text-center text-gray-500 text-sm"
-                    >
-                      No admin actions recorded
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </CollapsibleSection>
+        {/* Section 4: Admin actions (last 90d) */}
+        <section>
+          <h2 className="mb-3 text-sm font-semibold text-foreground">
+            Admin Actions{" "}
+            <span className="ml-2 text-xs font-normal text-muted">
+              (last 90d · {data.adminActions.length})
+            </span>
+          </h2>
+          <AdminTable<AdminActionRecord>
+            caption="Admin user actions in the last 90 days"
+            rows={data.adminActions}
+            rowKey={(r) => r.id}
+            columns={ADMIN_ACTION_COLUMNS}
+            empty={
+              <AdminEmpty
+                label="No admin actions recorded"
+                description="No admin activity in the last 90 days"
+              />
+            }
+          />
+        </section>
       </div>
     </div>
   );
