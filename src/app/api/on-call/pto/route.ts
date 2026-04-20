@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { assertOnCallEnabled } from "@/lib/on-call-guard";
+import { canAdminOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { resolveElectricianByEmail } from "@/lib/on-call-db";
 import { prisma, logActivity } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
@@ -31,12 +33,21 @@ export async function POST(req: Request) {
   const gate = assertOnCallEnabled();
   if (gate) return gate;
   const user = await getCurrentUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const body = (await req.json()) as CreateBody;
   if (!body.poolId || !body.crewMemberId || !body.startDate || !body.endDate) {
     return NextResponse.json({ error: "Missing fields" }, { status: 400 });
   }
   if (body.startDate > body.endDate) {
     return NextResponse.json({ error: "startDate after endDate" }, { status: 400 });
+  }
+
+  // Non-admin callers can only request PTO for themselves.
+  if (!canAdminOnCall(user)) {
+    const callerCrew = user.email ? await resolveElectricianByEmail(user.email) : null;
+    if (!callerCrew || callerCrew.id !== body.crewMemberId) {
+      return NextResponse.json({ error: "Forbidden: can only request PTO for yourself" }, { status: 403 });
+    }
   }
 
   // Overlap with existing approved PTO?

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { appCache, CACHE_KEYS } from "@/lib/cache";
+import { appCache } from "@/lib/cache";
 import { assertOnCallEnabled } from "@/lib/on-call-guard";
 import { getActiveMembersForRotation, listPools } from "@/lib/on-call-db";
 import { prisma } from "@/lib/db";
@@ -25,10 +25,18 @@ export async function GET() {
   const gate = assertOnCallEnabled();
   if (gate) return gate;
 
-  const cached = appCache.get(CACHE_KEYS.ON_CALL_TONIGHT);
-  if (cached) return NextResponse.json(cached);
-
   const pools = await listPools();
+  // Cache key includes each active pool's local "today" so the key naturally
+  // rolls over at midnight in each pool's timezone — no stale-past-midnight bug.
+  const activePools = pools.filter((p) => p.isActive);
+  const cacheKey =
+    "on-call:tonight:" +
+    activePools
+      .map((p) => `${p.id}@${todayInTz(p.timezone)}`)
+      .sort()
+      .join("|");
+  const cached = appCache.get(cacheKey);
+  if (cached.hit) return NextResponse.json(cached.data);
   const out: Array<{
     poolId: string;
     poolName: string;
@@ -41,8 +49,7 @@ export async function GET() {
     source: string | null;
   }> = [];
 
-  for (const pool of pools) {
-    if (!pool.isActive) continue;
+  for (const pool of activePools) {
     const date = todayInTz(pool.timezone);
     const existing = await prisma.onCallAssignment.findUnique({
       where: { poolId_date: { poolId: pool.id, date } },
@@ -99,6 +106,6 @@ export async function GET() {
   }
 
   const response = { pools: out, lastUpdated: new Date().toISOString() };
-  appCache.set(CACHE_KEYS.ON_CALL_TONIGHT, response);
+  appCache.set(cacheKey, response);
   return NextResponse.json(response);
 }

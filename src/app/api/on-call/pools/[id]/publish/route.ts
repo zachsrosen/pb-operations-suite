@@ -5,7 +5,7 @@ import { getCurrentUser } from "@/lib/auth-utils";
 import { getPool, getActiveMembersForRotation } from "@/lib/on-call-db";
 import { generateAssignments, addDays } from "@/lib/on-call-rotation";
 import { prisma, logActivity } from "@/lib/db";
-import { appCache, CACHE_KEYS } from "@/lib/cache";
+import { appCache } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -104,7 +104,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     await prisma.$queryRawUnsafe(`SELECT pg_advisory_unlock(${lockKey})`);
   }
 
-  appCache.invalidate(CACHE_KEYS.ON_CALL_TONIGHT);
+  appCache.invalidateByPrefix("on-call:tonight");
   await logActivity({
     type: "ON_CALL_PUBLISHED",
     description: `Published ${pool.name}: +${rowsCreated} created, ${rowsUpdated} updated, through ${to}`,

@@ -3,7 +3,7 @@ import { assertOnCallEnabled } from "@/lib/on-call-guard";
 import { canApproveOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { prisma, logActivity } from "@/lib/db";
-import { appCache, CACHE_KEYS } from "@/lib/cache";
+import { appCache } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -50,7 +50,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     }),
   ]);
 
-  appCache.invalidate(CACHE_KEYS.ON_CALL_TONIGHT);
+  appCache.invalidateByPrefix("on-call:tonight");
   await logActivity({
     type: "ON_CALL_PTO_APPROVED",
     description: `Approved PTO ${pto.startDate} – ${pto.endDate}`,

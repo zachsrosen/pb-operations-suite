@@ -734,9 +734,6 @@ const SALES_MANAGER: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/api/comms",
-    // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
-    "/dashboards/on-call",
-    "/api/on-call",
   ],
   landingCards: [],
   scope: "global",
@@ -779,9 +776,6 @@ const SALES: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/api/comms",
-    // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
-    "/dashboards/on-call",
-    "/api/on-call",
   ],
   landingCards: [
     { href: "/dashboards/sales", title: "Sales Pipeline", description: "Active deals, funnel visualization, and proposal tracking.", tag: "SALES", tagColor: "cyan" },
@@ -824,9 +818,6 @@ const VIEWER: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/api/comms",
-    // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
-    "/dashboards/on-call",
-    "/api/on-call",
   ],
   landingCards: [],
   scope: "location",
