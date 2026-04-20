@@ -4,6 +4,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AdminSidebar } from "./AdminSidebar";
 import { AdminSearch } from "./AdminSearch";
+import { UserMenu } from "@/components/UserMenu";
 
 export interface AdminShellProps {
   children: ReactNode;
@@ -11,9 +12,11 @@ export interface AdminShellProps {
 
 /**
  * Outer layout for every page under `/admin/*`. Provides:
- *   - Left sidebar with nav groups (People / Operations / Audit)
- *   - Top header bar containing the in-shell admin search box
- *   - Main content slot that children render into
+ *   - Left sidebar with nav groups (People / Operations / Audit), plus a
+ *     back-to-home link at the top for exiting the admin surface.
+ *   - Top header bar containing the in-shell admin search and the global
+ *     UserMenu (account controls + sign out).
+ *   - Main content slot that children render into.
  *
  * Pages render their own `<AdminPageHeader>` at the top of their body.
  * AdminShell does not read child props — it's pure chrome.
@@ -40,6 +43,7 @@ export function AdminShell({ children }: AdminShellProps) {
         <div className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-t-border/60 bg-surface/60 px-6 py-3 backdrop-blur-sm">
           <div className="min-w-0 flex-1" />
           <AdminSearch />
+          <UserMenu />
         </div>
         <main className="flex-1 px-6 py-6">{children}</main>
       </div>
