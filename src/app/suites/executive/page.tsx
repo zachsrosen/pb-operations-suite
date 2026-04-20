@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import SuitePageShell, { type SuitePageCard } from "@/components/SuitePageShell";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { RevenueGoalTracker } from "@/components/RevenueGoalTracker";
+import { isOnCallRotationsEnabled } from "@/lib/feature-flags";
 
 const LINKS: SuitePageCard[] = [
   {
@@ -164,12 +165,24 @@ export default async function ExecutiveSuitePage() {
   const allowed = ["ADMIN", "EXECUTIVE", "OPERATIONS_MANAGER", "PROJECT_MANAGER"];
   if (!user.roles.some(r => allowed.includes(r))) redirect("/");
 
+  const cards: SuitePageCard[] = [...LINKS];
+  if (isOnCallRotationsEnabled()) {
+    cards.push({
+      href: "/dashboards/on-call",
+      title: "On-Call Electricians",
+      description: "Daily rotation calendar for after-hours service coverage across California, Denver, and Southern CO.",
+      tag: "ON-CALL",
+      icon: "📞",
+      section: "Executive Views",
+    });
+  }
+
   return (
     <SuitePageShell
       currentSuiteHref="/suites/executive"
       title="Executive Suite"
       subtitle="Leadership dashboards, pipeline intelligence, and executive views."
-      cards={LINKS}
+      cards={cards}
       roles={user.roles}
       heroContent={<RevenueGoalTracker />}
     />

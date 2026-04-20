@@ -214,6 +214,9 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/api/comms",
+    // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
+    "/dashboards/on-call",
+    "/api/on-call",
   ],
   landingCards: [
     { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
@@ -368,6 +371,9 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/api/comms",
+    // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
+    "/dashboards/on-call",
+    "/api/on-call",
   ],
   landingCards: [
     { href: "/dashboards/pipeline", title: "Pipeline Overview", description: "Full pipeline with filters and milestone tracking.", tag: "PIPELINE", tagColor: "green" },
@@ -462,6 +468,9 @@ const OPERATIONS: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/api/comms",
+    // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
+    "/dashboards/on-call",
+    "/api/on-call",
   ],
   landingCards: [
     { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
@@ -521,6 +530,9 @@ const SERVICE: RoleDefinition = {
     "/api/solar",
     "/sop",
     "/api/sop",
+    // On-Call Electrician Rotations (viewing only).
+    "/dashboards/on-call",
+    "/api/on-call",
   ],
   landingCards: [
     { href: "/dashboards/service-overview", title: "Service Overview", description: "Priority queue command center — see what needs attention now.", tag: "OVERVIEW", tagColor: "orange" },
@@ -644,6 +656,9 @@ const TECH_OPS: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/api/comms",
+    // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
+    "/dashboards/on-call",
+    "/api/on-call",
   ],
   landingCards: [
     { href: "/dashboards/site-survey", title: "Site Survey", description: "Site survey scheduling and status tracking.", tag: "SURVEY", tagColor: "green" },

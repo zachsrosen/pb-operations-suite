@@ -286,6 +286,9 @@ export const CACHE_KEYS = {
     `deal-tasks:${hubspotDealId}:all` as const,
   ZUPER_SERVICE_TASKS: (hubspotDealId: string, jobUid: string) =>
     `zuper-service-tasks:${hubspotDealId}:${jobUid}` as const,
+  // On-call "tonight" keys are built dynamically per-pool-per-date in
+  // src/app/api/on-call/tonight/route.ts so they roll over at each pool's local
+  // midnight. Invalidate via appCache.invalidateByPrefix("on-call:tonight").
 } as const;
 
 // Revenue goals cache cascade: invalidate when deals change
