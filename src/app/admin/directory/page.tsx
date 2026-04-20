@@ -6,29 +6,11 @@ import { canAccessRoute } from "@/lib/user-access";
 import { ROLES } from "@/lib/roles";
 import type { UserRole } from "@/generated/prisma/enums";
 import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
+import { DirectoryClient, type DirectoryRow } from "./_DirectoryClient";
 
 const PICKER_ROLES: UserRole[] = (Object.entries(ROLES) as Array<[UserRole, (typeof ROLES)[UserRole]]>)
   .filter(([, def]) => def.visibleInPicker)
   .map(([role]) => role);
-
-// Static map keeps Tailwind's JIT scanner happy — dynamic string templates
-// like `bg-${color}-500/20` would be purged from the build.
-const BADGE_CLASSES_BY_COLOR: Record<string, string> = {
-  red: "bg-red-500/20 text-red-300 border-red-500/30",
-  amber: "bg-amber-500/20 text-amber-300 border-amber-500/30",
-  orange: "bg-orange-500/20 text-orange-300 border-orange-500/30",
-  indigo: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
-  teal: "bg-teal-500/20 text-teal-300 border-teal-500/30",
-  emerald: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-  yellow: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
-  cyan: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
-  zinc: "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
-};
-
-function badgeClassesForRole(role: UserRole): string {
-  const color = ROLES[role]?.badge.color ?? "zinc";
-  return BADGE_CLASSES_BY_COLOR[color] ?? BADGE_CLASSES_BY_COLOR.zinc;
-}
 
 function getSection(path: string): string {
   if (path === "/") return "Root";
@@ -53,24 +35,23 @@ export default async function AdminDirectoryPage() {
   const user = await getUserByEmail(session.user.email);
   if (!user || !user.roles.includes("ADMIN")) redirect("/");
 
-  const rows = APP_PAGE_ROUTES.map((path) => {
-    const allowedRoles = PICKER_ROLES.filter((role) => canAccessRoute(role, path));
-    return {
-      path,
-      section: getSection(path),
-      notes: getNotes(path),
-      allowedRoles,
-    };
-  });
+  const rows: DirectoryRow[] = APP_PAGE_ROUTES.map((path) => ({
+    path,
+    section: getSection(path),
+    notes: getNotes(path),
+    allowedRoles: PICKER_ROLES.filter((role) => canAccessRoute(role, path)),
+  }));
 
   const countsByRole = PICKER_ROLES.map((role) => ({
     role,
-    count: rows.filter((row) => row.allowedRoles.includes(role)).length,
+    count: rows.filter((r) => r.allowedRoles.includes(role)).length,
   }));
 
   return (
     <div>
       <AdminPageHeader title="Page Directory" breadcrumb={["Admin", "People", "Directory"]} />
+
+      {/* Per-role route counts */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {countsByRole.map(({ role, count }) => (
           <div key={role} className="bg-surface/50 border border-t-border rounded-lg p-3">
@@ -81,50 +62,7 @@ export default async function AdminDirectoryPage() {
         ))}
       </div>
 
-      <div className="bg-surface/50 border border-t-border rounded-xl overflow-hidden">
-        <div className="max-h-[70vh] overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-surface border-b border-t-border">
-              <tr className="text-left">
-                <th className="px-4 py-3 font-semibold">URL</th>
-                <th className="px-4 py-3 font-semibold">Section</th>
-                <th className="px-4 py-3 font-semibold">Roles</th>
-                <th className="px-4 py-3 font-semibold">Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.path} className="border-b border-t-border/70 align-top">
-                  <td className="px-4 py-3 font-mono text-xs">
-                    <a
-                      href={row.path}
-                      className="text-blue-300 hover:text-blue-200 underline-offset-2 hover:underline"
-                    >
-                      {`https://www.pbtechops.com${row.path}`}
-                    </a>
-                  </td>
-                  <td className="px-4 py-3 text-muted">{row.section}</td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-1.5">
-                      {row.allowedRoles.map((role) => (
-                        <span
-                          key={`${row.path}-${role}`}
-                          className={`text-[10px] font-medium px-2 py-0.5 rounded border ${badgeClassesForRole(role)}`}
-                        >
-                          {ROLES[role].badge.abbrev}
-                        </span>
-                      ))}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-xs text-muted">
-                    {row.notes || "-"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <DirectoryClient rows={rows} />
     </div>
   );
 }
