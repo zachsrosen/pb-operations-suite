@@ -38,20 +38,39 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Upload to Vercel Blob in the catalog-photos folder
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      console.error("[catalog] Photo upload blocked: BLOB_READ_WRITE_TOKEN missing");
+      return NextResponse.json(
+        { error: "Blob storage not configured — contact an admin." },
+        { status: 503 }
+      );
+    }
+
+    // The project's Vercel Blob store is configured as PRIVATE (matching other
+    // uploads in this repo — BOM plansets, solar designer files). Direct Vercel
+    // Blob URLs require `Authorization: Bearer BLOB_READ_WRITE_TOKEN` to read,
+    // so we can't put the raw URL in an <img src>. Instead:
+    //   1. Upload with access: "private"
+    //   2. Return a same-origin proxy URL that streams the blob server-side
+    //      via GET /api/catalog/photo, behind the app's session auth.
     const blob = await put(`catalog-photos/${file.name}`, file, {
-      access: "public",
+      access: "private",
       addRandomSuffix: true,
     });
 
+    // Persist the pathname and return an internal viewer URL.
+    const viewerUrl = `/api/catalog/photo?path=${encodeURIComponent(blob.pathname)}`;
+
     return NextResponse.json({
-      url: blob.url,
+      url: viewerUrl,
+      pathname: blob.pathname,
       fileName: file.name,
     });
   } catch (error) {
-    console.error("[catalog] Photo upload failed:", error);
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("[catalog] Photo upload failed:", msg, error);
     return NextResponse.json(
-      { error: "Upload failed. Please try again." },
+      { error: `Upload failed: ${msg}` },
       { status: 500 }
     );
   }
@@ -70,7 +89,20 @@ export async function DELETE(request: NextRequest) {
     if (!url || typeof url !== "string") {
       return NextResponse.json({ error: "Missing URL" }, { status: 400 });
     }
-    await del(url);
+
+    // Accept three shapes:
+    //   1. /api/catalog/photo?path=catalog-photos/foo.png  (new viewer URL)
+    //   2. https://<store>.private.blob.vercel-storage.com/catalog-photos/foo.png (direct)
+    //   3. catalog-photos/foo.png (bare pathname)
+    let target = url;
+    if (url.startsWith("/api/catalog/photo")) {
+      const params = new URL(url, "http://local").searchParams;
+      const path = params.get("path");
+      if (!path) return NextResponse.json({ error: "Missing path" }, { status: 400 });
+      target = path;
+    }
+
+    await del(target);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[catalog] Photo delete failed:", error);
