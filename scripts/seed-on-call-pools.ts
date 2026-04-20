@@ -8,10 +8,15 @@
  * Safe to re-run — upserts by pool name. Existing members are NOT reordered.
  */
 
+import dotenv from "dotenv";
+dotenv.config({ path: ".env" });
+
 import { PrismaClient } from "../src/generated/prisma/client";
+import { PrismaNeon } from "@prisma/adapter-neon";
 import { randomBytes } from "node:crypto";
 
-const prisma = new PrismaClient();
+const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
+const prisma = new PrismaClient({ adapter });
 
 const POOLS: Array<{
   name: string;
