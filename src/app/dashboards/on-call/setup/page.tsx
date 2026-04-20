@@ -4,6 +4,7 @@ import { canAdminOnCall } from "@/lib/on-call-auth";
 import { listPools } from "@/lib/on-call-db";
 import DashboardShell from "@/components/DashboardShell";
 import { OnCallSetupClient } from "@/components/on-call/OnCallSetupClient";
+import { OnCallNav } from "@/components/on-call/OnCallNav";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,12 @@ export default async function OnCallSetupPage() {
   const pools = await listPools();
 
   return (
-    <DashboardShell title="On-Call Setup" subtitle="Configure rotation pools, members, and publishing" accentColor="orange">
+    <DashboardShell
+      title="On-Call Setup"
+      subtitle="Configure rotation pools, members, and publishing"
+      accentColor="orange"
+      headerRight={<OnCallNav current="setup" isAdmin={true} />}
+    >
       <OnCallSetupClient initialPools={pools} />
     </DashboardShell>
   );
