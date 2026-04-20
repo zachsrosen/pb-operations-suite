@@ -163,7 +163,7 @@ function formatRelative(date: Date): string {
 function entityHref(entityType: string | null, entityId: string | null): string | null {
   if (!entityType || !entityId) return null;
   if (entityType === "user") return `/admin/users?userId=${encodeURIComponent(entityId)}`;
-  if (entityType === "role") return `/admin/roles/${encodeURIComponent(entityId)}`;
+  if (entityType === "role") return `/admin/roles?role=${encodeURIComponent(entityId)}`;
   return null;
 }
 

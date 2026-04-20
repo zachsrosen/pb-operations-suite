@@ -1,258 +1,334 @@
-import { redirect } from "next/navigation";
-import Link from "next/link";
-import { getCurrentUser } from "@/lib/auth-utils";
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ROLES, type RoleDefinition, type Scope } from "@/lib/roles";
 import type { UserRole } from "@/generated/prisma/enums";
+import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
+import { AdminEmpty } from "@/components/admin-shell/AdminEmpty";
+import { AdminTable, type AdminTableColumn } from "@/components/admin-shell/AdminTable";
+import {
+  AdminFilterBar,
+  FilterChip,
+  FilterSearch,
+} from "@/components/admin-shell/AdminFilterBar";
+import { AdminDetailDrawer } from "@/components/admin-shell/AdminDetailDrawer";
+import { RoleDrawerBody, scopeClass, type RoleRow } from "./_RoleDrawerBody";
 
 /**
- * Admin — Role Inspector
+ * Admin — Roles
  *
- * Lists every role's access definition. Suites, routes, scope, and landing
- * cards are sourced from `src/lib/roles.ts` (static code) and are read-only
- * here. Capabilities can be tuned per-role via the "Edit capabilities" link
- * on each card (`/admin/roles/[role]`).
+ * Consolidated role inspector + per-role capability editor. Roles are listed
+ * in a table; clicking a row (or deep-linking via `?role=<key>`) opens a
+ * drawer with the role's access detail and the capability editor inline.
  *
- * Gated to ADMIN only.
+ * Source of truth for code defaults: src/lib/roles.ts
+ * Source of truth for overrides: RoleCapabilityOverride table
+ *
+ * Middleware gates /admin/* to ADMIN — no local auth check needed here.
  */
-export default async function AdminRoleInspectorPage() {
-  const user = await getCurrentUser();
-  if (!user) redirect("/login?callbackUrl=/admin/roles");
-  if (!user.roles?.includes("ADMIN")) redirect("/unassigned");
 
-  const roleEntries: Array<[UserRole, RoleDefinition]> = Object.entries(ROLES) as Array<
-    [UserRole, RoleDefinition]
-  >;
+// RoleRow type comes from _RoleDrawerBody so page + drawer share one definition.
 
-  // Group canonical (visibleInPicker) first, then legacy.
-  const canonical = roleEntries.filter(([, def]) => def.visibleInPicker);
-  const legacy = roleEntries.filter(([, def]) => !def.visibleInPicker);
+const SCOPE_OPTIONS: Array<{ value: Scope; label: string }> = [
+  { value: "global", label: "Global" },
+  { value: "location", label: "Location" },
+  { value: "owner", label: "Owner" },
+];
 
-  return (
-    <div className="space-y-6">
-      <AdminPageHeader title="Role Inspector" breadcrumb={["Admin", "People", "Roles"]} />
-      <div className="space-y-6">
-        <div className="rounded-lg border border-t-border/60 bg-surface p-4 text-sm">
-          <p className="text-foreground">
-            Snapshot of every role&apos;s current access. Source of truth for suites, routes,
-            scope, and landing cards: {" "}
-            <code className="rounded bg-surface-2 px-1.5 py-0.5 text-xs">src/lib/roles.ts</code>
-            . To modify those, edit that file and open a PR.
-          </p>
-          <p className="mt-2 text-muted">
-            Per-role <strong>capabilities</strong> (schedule surveys/installs, manage users,
-            etc.) can be tuned live via the &quot;Edit capabilities&quot; link on each card.
-            Canonical roles are what admins can assign. Legacy roles (OWNER, MANAGER, DESIGNER,
-            PERMITTING) exist for pre-migration compat and normalize to their canonical target.
-          </p>
-        </div>
+const BADGE_COLOR_CLASSES: Record<string, string> = {
+  red: "bg-red-500/20 text-red-400 border-red-500/30",
+  amber: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+  orange: "bg-orange-500/20 text-orange-400 border-orange-500/30",
+  yellow: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
+  emerald: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
+  teal: "bg-teal-500/20 text-teal-400 border-teal-500/30",
+  cyan: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
+  indigo: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
+  purple: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+  zinc: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
+  slate: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+};
 
-        <section aria-labelledby="canonical-heading" className="space-y-4">
-          <h2 id="canonical-heading" className="text-lg font-semibold text-foreground">
-            Canonical roles ({canonical.length})
-          </h2>
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {canonical.map(([role, def]) => (
-              <RoleCard key={role} role={role} def={def} />
-            ))}
-          </div>
-        </section>
-
-        {legacy.length > 0 && (
-          <section aria-labelledby="legacy-heading" className="space-y-4">
-            <h2 id="legacy-heading" className="text-lg font-semibold text-foreground">
-              Legacy roles ({legacy.length})
-            </h2>
-            <p className="text-sm text-muted">
-              Not assignable via the admin role picker. Any user still carrying one of these
-              values has their access resolved via the `normalizesTo` target.
-            </p>
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              {legacy.map(([role, def]) => (
-                <RoleCard key={role} role={role} def={def} isLegacy />
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
-    </div>
-  );
+function badgeClass(color: string) {
+  return BADGE_COLOR_CLASSES[color] ?? BADGE_COLOR_CLASSES.zinc;
 }
 
-function RoleCard({
-  role,
-  def,
-  isLegacy = false,
-}: {
-  role: UserRole;
-  def: RoleDefinition;
-  isLegacy?: boolean;
-}) {
-  const badgeClass = badgeClassForColor(def.badge.color);
+// scopeClass was moved to _RoleDrawerBody — it's only used inside the drawer.
 
-  return (
-    <article className="rounded-lg border border-t-border/60 bg-surface p-5">
-      <header className="mb-3 flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h3 className="truncate font-mono text-sm font-semibold text-foreground">{role}</h3>
-            <span
-              className={`inline-flex rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badgeClass}`}
-            >
-              {def.badge.abbrev}
-            </span>
-            {isLegacy && (
-              <span className="inline-flex rounded border border-yellow-500/30 bg-yellow-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-yellow-400">
-                Legacy → {def.normalizesTo}
+// ── Types from /api/admin/users ──────────────────────────────────────────
+interface AdminUser {
+  id: string;
+  email: string;
+  roles?: UserRole[] | null;
+}
+interface AdminUsersResponse {
+  users: AdminUser[];
+}
+
+/**
+ * Count users per role by fetching the full user list once.
+ * Admin-only, small dataset (~50 users) — simpler than adding an API endpoint.
+ */
+function useRoleUserCounts() {
+  const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/admin/users", { credentials: "same-origin" });
+        if (!res.ok) throw new Error(`Failed to load users (${res.status})`);
+        const data = (await res.json()) as AdminUsersResponse;
+        if (cancelled) return;
+        const byRole: Record<string, number> = {};
+        for (const u of data.users ?? []) {
+          const roles = Array.isArray(u.roles) && u.roles.length > 0 ? u.roles : ["VIEWER"];
+          for (const r of roles) byRole[r] = (byRole[r] ?? 0) + 1;
+        }
+        setCounts(byRole);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load user counts");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { counts, error };
+}
+
+export default function AdminRolesPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const deepLinkedRole = searchParams.get("role");
+
+  const { counts, error: countsError } = useRoleUserCounts();
+
+  // Filters
+  const [scopes, setScopes] = useState<string[]>([]);
+  const [query, setQuery] = useState("");
+  const [showLegacy, setShowLegacy] = useState(false);
+
+  // All roles, sorted canonical-first
+  const allRows: RoleRow[] = useMemo(() => {
+    const entries = Object.entries(ROLES) as Array<[UserRole, RoleDefinition]>;
+    return entries.map(([role, def]) => ({
+      role,
+      def,
+      isLegacy: !def.visibleInPicker,
+      userCount: counts ? (counts[role] ?? 0) : null,
+    }));
+  }, [counts]);
+
+  // Filtered view
+  const rows: RoleRow[] = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return allRows
+      .filter((r) => (showLegacy ? true : !r.isLegacy))
+      .filter((r) => (scopes.length === 0 ? true : scopes.includes(r.def.scope)))
+      .filter((r) => {
+        if (!q) return true;
+        return (
+          r.role.toLowerCase().includes(q) ||
+          r.def.label.toLowerCase().includes(q)
+        );
+      })
+      .sort((a, b) => {
+        // Canonical first, then alpha by role key
+        if (a.isLegacy !== b.isLegacy) return a.isLegacy ? 1 : -1;
+        return a.role.localeCompare(b.role);
+      });
+  }, [allRows, scopes, query, showLegacy]);
+
+  // Derive the selected row from the URL (source of truth).
+  const selected: RoleRow | null = useMemo(() => {
+    if (!deepLinkedRole) return null;
+    return allRows.find((r) => r.role === deepLinkedRole) ?? null;
+  }, [allRows, deepLinkedRole]);
+
+  // Auto-show legacy if deep-linked row is legacy (so its selection makes sense)
+  useEffect(() => {
+    if (selected?.isLegacy && !showLegacy) setShowLegacy(true);
+  }, [selected, showLegacy]);
+
+  const openRole = useCallback(
+    (role: UserRole) => {
+      const sp = new URLSearchParams(searchParams.toString());
+      sp.set("role", role);
+      router.push(`/admin/roles?${sp.toString()}`, { scroll: false });
+    },
+    [router, searchParams],
+  );
+
+  const closeDrawer = useCallback(() => {
+    const sp = new URLSearchParams(searchParams.toString());
+    sp.delete("role");
+    const qs = sp.toString();
+    router.push(qs ? `/admin/roles?${qs}` : "/admin/roles", { scroll: false });
+  }, [router, searchParams]);
+
+  const hasActiveFilters = scopes.length > 0 || !!query || showLegacy;
+  const clearAll = () => {
+    setScopes([]);
+    setQuery("");
+    setShowLegacy(false);
+  };
+
+  const columns: AdminTableColumn<RoleRow>[] = useMemo(
+    () => [
+      {
+        key: "role",
+        label: "Role",
+        render: (r) => (
+          <span className="font-mono text-xs font-semibold text-foreground">{r.role}</span>
+        ),
+      },
+      {
+        key: "label",
+        label: "Label",
+        render: (r) => (
+          <div className="min-w-0">
+            <p className="truncate text-sm text-foreground">{r.def.label}</p>
+            {r.isLegacy && (
+              <span className="mt-0.5 inline-flex rounded border border-yellow-500/30 bg-yellow-500/10 px-1.5 py-0 text-[10px] font-semibold uppercase tracking-wide text-yellow-400">
+                Legacy → {r.def.normalizesTo}
               </span>
             )}
           </div>
-          <p className="mt-1 text-sm font-medium text-foreground">{def.label}</p>
-          <p className="mt-0.5 text-xs text-muted">{def.description}</p>
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
-          <Link
-            href={`/admin/roles/${encodeURIComponent(role)}`}
-            className="rounded-lg border border-t-border/60 bg-surface-2 px-3 py-1.5 text-xs font-medium text-foreground hover:bg-surface-elevated"
+        ),
+      },
+      {
+        key: "scope",
+        label: "Scope",
+        width: "w-28",
+        render: (r) => (
+          <span
+            className={`inline-flex rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${scopeClass(r.def.scope)}`}
           >
-            Edit capabilities →
-          </Link>
-          <Link
-            href={`/admin/users?role=${encodeURIComponent(role)}`}
-            className="text-xs text-muted hover:text-foreground"
+            {r.def.scope}
+          </span>
+        ),
+      },
+      {
+        key: "badge",
+        label: "Badge",
+        width: "w-24",
+        render: (r) => (
+          <span
+            className={`inline-flex rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badgeClass(r.def.badge.color)}`}
           >
-            Users with this role →
-          </Link>
-        </div>
-      </header>
-
-      <div className="space-y-3 text-sm">
-        <KeyValue label="Scope" value={<ScopeBadge scope={def.scope} />} />
-        <KeyValue
-          label="Normalizes to"
-          value={<span className="font-mono text-xs text-foreground">{def.normalizesTo}</span>}
-        />
-        <KeyValue
-          label="Assignable"
-          value={
-            <span className={def.visibleInPicker ? "text-green-400" : "text-muted"}>
-              {def.visibleInPicker ? "Yes (in admin picker)" : "No (legacy)"}
-            </span>
-          }
-        />
-
-        <KeyValue
-          label={`Suites (${def.suites.length})`}
-          value={
-            def.suites.length === 0 ? (
-              <span className="text-muted">none</span>
-            ) : (
-              <ul className="space-y-0.5">
-                {def.suites.map((s) => (
-                  <li key={s} className="font-mono text-xs">
-                    {s}
-                  </li>
-                ))}
-              </ul>
-            )
-          }
-        />
-
-        <KeyValue
-          label={`Landing cards (${def.landingCards.length})`}
-          value={
-            def.landingCards.length === 0 ? (
-              <span className="text-muted">none</span>
-            ) : (
-              <ul className="space-y-1">
-                {def.landingCards.map((card) => (
-                  <li key={card.href} className="text-xs">
-                    <span className="font-medium text-foreground">{card.title}</span>
-                    <span className="text-muted"> — </span>
-                    <code className="text-muted">{card.href}</code>
-                  </li>
-                ))}
-              </ul>
-            )
-          }
-        />
-
-        <details className="group rounded border border-t-border/60 bg-surface-2 p-2">
-          <summary className="cursor-pointer select-none text-xs font-medium text-foreground">
-            Allowed routes ({def.allowedRoutes.length})
-            <span className="ml-1 text-muted group-open:hidden">— click to expand</span>
-          </summary>
-          <ul className="mt-2 space-y-0.5 font-mono text-[11px]">
-            {def.allowedRoutes.map((r) => (
-              <li key={r} className="text-muted">
-                {r}
-              </li>
-            ))}
-          </ul>
-        </details>
-
-        <details className="group rounded border border-t-border/60 bg-surface-2 p-2">
-          <summary className="cursor-pointer select-none text-xs font-medium text-foreground">
-            Default capabilities
-            <span className="ml-1 text-muted group-open:hidden">— click to expand</span>
-          </summary>
-          <ul className="mt-2 grid grid-cols-1 gap-1 text-xs sm:grid-cols-2">
-            {Object.entries(def.defaultCapabilities).map(([key, value]) => (
-              <li key={key} className="flex items-center justify-between gap-2">
-                <span className="font-mono text-muted">{key}</span>
-                <span className={value ? "font-semibold text-green-400" : "text-muted"}>
-                  {value ? "true" : "false"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </details>
-      </div>
-    </article>
+            {r.def.badge.abbrev}
+          </span>
+        ),
+      },
+      {
+        key: "userCount",
+        label: "Users",
+        width: "w-20",
+        align: "right",
+        render: (r) =>
+          r.userCount === null ? (
+            <span className="text-xs text-muted">…</span>
+          ) : r.userCount === 0 ? (
+            <span className="text-xs text-muted">0</span>
+          ) : (
+            <span className="text-xs font-medium text-foreground">{r.userCount}</span>
+          ),
+      },
+    ],
+    [],
   );
-}
 
-function KeyValue({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="grid grid-cols-[140px_1fr] gap-3">
-      <span className="text-xs font-medium uppercase tracking-wide text-muted">{label}</span>
-      <div className="min-w-0">{value}</div>
+    <div>
+      <AdminPageHeader
+        title="Roles"
+        breadcrumb={["Admin", "People", "Roles"]}
+        subtitle="Snapshot of every role's access. Source of truth: src/lib/roles.ts"
+      />
+
+      {countsError && (
+        <div className="mb-3 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+          User counts unavailable: {countsError}
+        </div>
+      )}
+
+      <div className="mb-4">
+        <AdminFilterBar hasActiveFilters={hasActiveFilters} onClearAll={clearAll}>
+          <MultiSelectFilter
+            label="Scope"
+            options={SCOPE_OPTIONS}
+            selected={scopes}
+            onChange={setScopes}
+            placeholder="All Scopes"
+            accentColor="blue"
+          />
+          <FilterSearch
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter by role key or label…"
+            widthClass="w-56"
+          />
+          <FilterChip
+            active={showLegacy}
+            onClick={() => setShowLegacy((v) => !v)}
+            label="Toggle legacy roles"
+          >
+            Show legacy
+          </FilterChip>
+        </AdminFilterBar>
+      </div>
+
+      <AdminTable<RoleRow>
+        caption="Roles"
+        rows={rows}
+        rowKey={(r) => r.role}
+        columns={columns}
+        onRowClick={(r) => openRole(r.role)}
+        empty={
+          <AdminEmpty
+            label="No roles match your filters"
+            description={
+              hasActiveFilters
+                ? "Try clearing a filter or enabling legacy roles."
+                : "No roles defined."
+            }
+          />
+        }
+      />
+
+      <AdminDetailDrawer
+        open={selected !== null}
+        onClose={closeDrawer}
+        wide
+        title={
+          selected ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-sm font-semibold text-foreground">
+                {selected.role}
+              </span>
+              <span
+                className={`inline-flex rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${badgeClass(selected.def.badge.color)}`}
+              >
+                {selected.def.badge.abbrev}
+              </span>
+              {selected.isLegacy && (
+                <span className="inline-flex rounded border border-yellow-500/30 bg-yellow-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-yellow-400">
+                  Legacy → {selected.def.normalizesTo}
+                </span>
+              )}
+            </div>
+          ) : (
+            ""
+          )
+        }
+      >
+        {selected && <RoleDrawerBody row={selected} />}
+      </AdminDetailDrawer>
     </div>
   );
 }
-
-function ScopeBadge({ scope }: { scope: Scope }) {
-  const cls =
-    scope === "global"
-      ? "bg-green-500/10 text-green-400 border-green-500/30"
-      : scope === "location"
-        ? "bg-blue-500/10 text-blue-400 border-blue-500/30"
-        : "bg-zinc-500/10 text-zinc-400 border-zinc-500/30";
-  return (
-    <span
-      className={`inline-flex rounded border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${cls}`}
-    >
-      {scope}
-    </span>
-  );
-}
-
-function badgeClassForColor(color: string): string {
-  // Map the role's `badge.color` family to a Tailwind chip. Mirrors the existing
-  // admin UIs' pattern since Tailwind JIT can't expand dynamic class names.
-  const lookup: Record<string, string> = {
-    red: "bg-red-500/20 text-red-400 border-red-500/30",
-    amber: "bg-amber-500/20 text-amber-400 border-amber-500/30",
-    orange: "bg-orange-500/20 text-orange-400 border-orange-500/30",
-    yellow: "bg-yellow-500/20 text-yellow-400 border-yellow-500/30",
-    emerald: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
-    teal: "bg-teal-500/20 text-teal-400 border-teal-500/30",
-    cyan: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
-    indigo: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30",
-    purple: "bg-purple-500/20 text-purple-400 border-purple-500/30",
-    zinc: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
-    slate: "bg-slate-500/20 text-slate-400 border-slate-500/30",
-  };
-  return lookup[color] ?? "bg-zinc-500/20 text-zinc-400 border-zinc-500/30";
-}
-

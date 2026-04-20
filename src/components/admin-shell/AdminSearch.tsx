@@ -59,7 +59,7 @@ function flatten(r: SearchResponse): Flattened[] {
       key: `r-${role.role}`,
       label: role.label,
       detail: role.role,
-      href: `/admin/roles/${encodeURIComponent(role.role)}`,
+      href: `/admin/roles?role=${encodeURIComponent(role.role)}`,
       group: "Roles",
     });
   }
