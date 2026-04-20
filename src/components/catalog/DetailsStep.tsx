@@ -1,6 +1,5 @@
 "use client";
 import { useState, useRef } from "react";
-import { upload } from "@vercel/blob/client";
 import CategoryFields from "./CategoryFields";
 import FieldTooltip from "./FieldTooltip";
 import { getCategoryFields } from "@/lib/catalog-fields";
@@ -70,16 +69,19 @@ export default function DetailsStep({ state, dispatch, errors, warnings, touched
 
     setPhotoUploading(true);
     try {
-      // Client-side upload bypasses the Vercel serverless 4.5 MB body limit
-      // by PUTing directly to Blob storage after fetching a short-lived token.
-      const pathname = `catalog-photos/${Date.now()}-${file.name}`;
-      const blob = await upload(pathname, file, {
-        access: "public",
-        handleUploadUrl: "/api/catalog/upload-photo/upload-token",
-        contentType: file.type,
-      });
-      dispatch({ type: "SET_FIELD", field: "photoUrl", value: blob.url });
-      dispatch({ type: "SET_FIELD", field: "photoFileName", value: file.name });
+      // Same-origin POST → our route proxies to Vercel Blob server-side.
+      // The previous client-upload path (via @vercel/blob/client → vercel.com/api/blob)
+      // failed for users whose browsers/ad blockers/extensions block vercel.com.
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/catalog/upload-photo", { method: "POST", body: fd });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `Upload failed (${res.status})` }));
+        throw new Error(err.error || `Upload failed (${res.status})`);
+      }
+      const { url, fileName } = await res.json();
+      dispatch({ type: "SET_FIELD", field: "photoUrl", value: url });
+      dispatch({ type: "SET_FIELD", field: "photoFileName", value: fileName });
     } catch (e) {
       setPhotoError(e instanceof Error ? e.message : "Upload failed");
     } finally {
