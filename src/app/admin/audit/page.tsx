@@ -206,40 +206,74 @@ function ClientBadge({ clientType }: { clientType: string }) {
 }
 
 // ── Anomaly nested table ──────────────────────────────────────────────────
+//
+// The anomaly table lives inside the session detail drawer. Each unacknowledged
+// event gets an "Acknowledge" button; acknowledged events show a muted
+// timestamp. Acknowledging PATCHes /api/admin/audit/alerts and triggers the
+// detail-refresh callback so the row updates in place.
 
-const ANOMALY_COLUMNS: AdminTableColumn<AnomalyEvent>[] = [
-  {
-    key: "createdAt",
-    label: "Time",
-    width: "w-24",
-    render: (r) => (
-      <span className="text-xs text-muted whitespace-nowrap">{fmtRelative(r.createdAt)}</span>
-    ),
-  },
-  {
-    key: "rule",
-    label: "Type",
-    render: (r) => <span className="text-xs font-medium text-foreground">{r.rule}</span>,
-  },
-  {
-    key: "evidence",
-    label: "Description",
-    render: (r) => (
-      <span className="text-xs text-muted truncate block max-w-[200px]">
-        {Object.entries(r.evidence)
-          .slice(0, 2)
-          .map(([k, v]) => `${k}: ${String(v)}`)
-          .join("; ") || "—"}
-      </span>
-    ),
-  },
-  {
-    key: "riskScore",
-    label: "Severity",
-    align: "center",
+function buildAnomalyColumns(
+  acknowledging: string | null,
+  onAcknowledge: (alertId: string) => void,
+): AdminTableColumn<AnomalyEvent>[] {
+  return [
+    {
+      key: "createdAt",
+      label: "Time",
+      width: "w-24",
+      render: (r) => (
+        <span className="text-xs text-muted whitespace-nowrap">{fmtRelative(r.createdAt)}</span>
+      ),
+    },
+    {
+      key: "rule",
+      label: "Type",
+      render: (r) => <span className="text-xs font-medium text-foreground">{r.rule}</span>,
+    },
+    {
+      key: "evidence",
+      label: "Description",
+      render: (r) => (
+        <span className="text-xs text-muted truncate block max-w-[200px]">
+          {Object.entries(r.evidence)
+            .slice(0, 2)
+            .map(([k, v]) => `${k}: ${String(v)}`)
+            .join("; ") || "—"}
+        </span>
+      ),
+    },
+    {
+      key: "riskScore",
+      label: "Severity",
+      align: "center",
     render: (r) => <RiskPill score={r.riskScore} />,
   },
-];
+  {
+    key: "acknowledge",
+    label: "",
+    width: "w-28",
+    align: "right",
+    render: (r) =>
+      r.acknowledgedAt ? (
+        <span className="text-[10px] text-muted whitespace-nowrap">
+          ack {fmtRelative(r.acknowledgedAt)}
+        </span>
+      ) : (
+        <button
+          type="button"
+          disabled={acknowledging === r.id}
+          onClick={(e) => {
+            e.stopPropagation();
+            onAcknowledge(r.id);
+          }}
+          className="rounded-md border border-t-border/60 bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-foreground hover:bg-surface-elevated disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {acknowledging === r.id ? "…" : "Acknowledge"}
+        </button>
+      ),
+  },
+  ];
+}
 
 // ── Session drawer body ───────────────────────────────────────────────────
 
@@ -247,11 +281,38 @@ function SessionDrawerBody({
   session,
   detail,
   loading,
+  onAnomalyAcknowledged,
 }: {
   session: AuditSessionSummary;
   detail: SessionDetail | null;
   loading: boolean;
+  onAnomalyAcknowledged: () => void;
 }) {
+  const [acknowledging, setAcknowledging] = useState<string | null>(null);
+
+  async function acknowledgeAlert(alertId: string) {
+    setAcknowledging(alertId);
+    try {
+      const res = await fetch("/api/admin/audit/alerts", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ alertId }),
+      });
+      if (!res.ok) {
+        const err = (await res.json().catch(() => ({ error: "Acknowledge failed" }))) as {
+          error?: string;
+        };
+        throw new Error(err.error || `Acknowledge failed (${res.status})`);
+      }
+      onAnomalyAcknowledged();
+    } catch (e) {
+      console.error("[audit] acknowledge failed", e);
+    } finally {
+      setAcknowledging(null);
+    }
+  }
+
+  const anomalyColumns = buildAnomalyColumns(acknowledging, acknowledgeAlert);
   const userLink =
     detail?.userId ? `/admin/users?userId=${encodeURIComponent(detail.userId)}` : null;
 
@@ -334,7 +395,7 @@ function SessionDrawerBody({
           caption="Anomaly events for this session"
           rows={loading ? [] : (detail?.anomalyEvents ?? [])}
           rowKey={(r) => r.id}
-          columns={ANOMALY_COLUMNS}
+          columns={anomalyColumns}
           loading={loading}
           empty={
             <AdminEmpty
@@ -559,22 +620,38 @@ export default function AuditDashboardPage() {
 
   // ── Load session detail on row click ──────────────────────────────────
 
-  const handleRowClick = useCallback(async (row: AuditSessionSummary) => {
-    setSelected(row);
-    setDetail(null);
-    setDetailLoading(true);
+  const loadSessionDetail = useCallback(async (sessionId: string) => {
     try {
-      const res = await fetch(`/api/admin/audit/sessions?id=${row.id}`);
+      const res = await fetch(`/api/admin/audit/sessions?id=${sessionId}`);
       if (res.ok) {
         const data = await res.json();
         setDetail(data.session);
       }
     } catch {
       /* ignore */
-    } finally {
-      setDetailLoading(false);
     }
   }, []);
+
+  const handleRowClick = useCallback(
+    async (row: AuditSessionSummary) => {
+      setSelected(row);
+      setDetail(null);
+      setDetailLoading(true);
+      try {
+        await loadSessionDetail(row.id);
+      } finally {
+        setDetailLoading(false);
+      }
+    },
+    [loadSessionDetail],
+  );
+
+  // Refetch after an anomaly is acknowledged so the row updates in place.
+  const handleAnomalyAcknowledged = useCallback(async () => {
+    if (selected) await loadSessionDetail(selected.id);
+    // refresh the session list so the anomaly count column updates too
+    fetchSessions(false, 0);
+  }, [selected, loadSessionDetail, fetchSessions]);
 
   // ── Derived ────────────────────────────────────────────────────────────
 
@@ -758,6 +835,7 @@ export default function AuditDashboardPage() {
             session={selected}
             detail={detail}
             loading={detailLoading}
+            onAnomalyAcknowledged={handleAnomalyAcknowledged}
           />
         )}
       </AdminDetailDrawer>
