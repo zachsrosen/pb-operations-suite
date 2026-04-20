@@ -1,11 +1,19 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { useSearchParams } from "next/navigation";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
 import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
 import { AdminEmpty } from "@/components/admin-shell/AdminEmpty";
+import { AdminTable, type AdminTableColumn } from "@/components/admin-shell/AdminTable";
+import { AdminFilterBar, FilterChip, FilterSearch } from "@/components/admin-shell/AdminFilterBar";
+import { AdminDetailDrawer } from "@/components/admin-shell/AdminDetailDrawer";
+import { AdminDetailHeader } from "@/components/admin-shell/AdminDetailHeader";
+import { AdminKeyValueGrid } from "@/components/admin-shell/AdminKeyValueGrid";
+import { FormTextarea } from "@/components/admin-shell/AdminForm";
+import { FormSelect } from "@/components/admin-shell/AdminForm";
+
+// ── Types ─────────────────────────────────────────────────────────────────
 
 interface BugReport {
   id: string;
@@ -21,6 +29,8 @@ interface BugReport {
   updatedAt: string;
 }
 
+// ── Constants ─────────────────────────────────────────────────────────────
+
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; border: string }> = {
   OPEN: { label: "Open", bg: "bg-red-500/15", text: "text-red-400", border: "border-red-500/20" },
   IN_PROGRESS: { label: "In Progress", bg: "bg-amber-500/15", text: "text-amber-400", border: "border-amber-500/20" },
@@ -28,31 +38,187 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; b
   CLOSED: { label: "Closed", bg: "bg-zinc-500/15", text: "text-zinc-400", border: "border-zinc-500/20" },
 };
 
+const STATUS_OPTIONS = [
+  { value: "OPEN", label: "Open" },
+  { value: "IN_PROGRESS", label: "In Progress" },
+  { value: "RESOLVED", label: "Resolved" },
+  { value: "CLOSED", label: "Closed" },
+];
+
+const STATUS_TABS = [
+  { key: "", label: "All" },
+  { key: "OPEN", label: "Open" },
+  { key: "IN_PROGRESS", label: "In Progress" },
+  { key: "RESOLVED", label: "Resolved" },
+  { key: "CLOSED", label: "Closed" },
+] as const;
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+function fmtRelative(ds: string): string {
+  const diff = Date.now() - new Date(ds).getTime();
+  const m = Math.floor(diff / 60000), h = Math.floor(diff / 3600000), d = Math.floor(diff / 86400000);
+  if (m < 1) return "Just now";
+  if (m < 60) return `${m}m ago`;
+  if (h < 24) return `${h}h ago`;
+  if (d < 7) return `${d}d ago`;
+  return new Date(ds).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function fmtDateTime(ds: string): string {
+  return new Date(ds).toLocaleString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
+    year: "numeric", hour: "numeric", minute: "2-digit",
+  });
+}
+
+function StatusPill({ status }: { status: string }) {
+  const sc = STATUS_CONFIG[status] ?? STATUS_CONFIG.OPEN;
+  return (
+    <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase border ${sc.bg} ${sc.text} ${sc.border}`}>
+      {sc.label}
+    </span>
+  );
+}
+
+// ── Table columns ─────────────────────────────────────────────────────────
+
+const COLUMNS: AdminTableColumn<BugReport>[] = [
+  {
+    key: "status", label: "Status", width: "w-28",
+    render: (r) => <StatusPill status={r.status} />,
+  },
+  {
+    key: "title", label: "Title",
+    render: (r) => (
+      <div>
+        <div className="text-xs font-medium text-foreground truncate max-w-xs">{r.title}</div>
+        <div className="text-[10px] text-muted truncate max-w-xs">
+          {r.reporterName || r.reporterEmail}
+          {r.pageUrl && <span className="ml-1 opacity-60">{new URL(r.pageUrl).pathname}</span>}
+        </div>
+      </div>
+    ),
+  },
+  {
+    key: "reporter", label: "Reporter", width: "w-44",
+    render: (r) => <span className="text-xs text-muted truncate block max-w-[168px]">{r.reporterEmail}</span>,
+  },
+  {
+    key: "createdAt", label: "Created", width: "w-28",
+    render: (r) => <span className="text-xs text-muted whitespace-nowrap">{fmtRelative(r.createdAt)}</span>,
+  },
+];
+
+// ── Drawer body ───────────────────────────────────────────────────────────
+
+function TicketDrawerBody({
+  ticket,
+  onStatusChange,
+  onNotesSave,
+  updating,
+}: {
+  ticket: BugReport;
+  onStatusChange: (id: string, status: string) => Promise<void>;
+  onNotesSave: (id: string, notes: string) => Promise<void>;
+  updating: boolean;
+}) {
+  const [editNotes, setEditNotes] = useState(ticket.adminNotes ?? "");
+  const [editStatus, setEditStatus] = useState(ticket.status);
+
+  // Sync when ticket prop changes (different ticket selected)
+  const prevIdRef = useRef(ticket.id);
+  if (prevIdRef.current !== ticket.id) {
+    prevIdRef.current = ticket.id;
+    setEditNotes(ticket.adminNotes ?? "");
+    setEditStatus(ticket.status);
+  }
+
+  const kvItems = [
+    { label: "Reporter", value: ticket.reporterName ? `${ticket.reporterName} (${ticket.reporterEmail})` : ticket.reporterEmail },
+    { label: "Page URL", value: ticket.pageUrl
+      ? <a href={ticket.pageUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline underline-offset-2 break-all">{ticket.pageUrl}</a>
+      : "—"
+    },
+    { label: "Email sent", value: ticket.emailSent ? "Yes" : "No" },
+    { label: "Created", value: fmtDateTime(ticket.createdAt) },
+    { label: "Updated", value: fmtDateTime(ticket.updatedAt) },
+    { label: "ID", value: ticket.id, mono: true },
+  ];
+
+  const notesChanged = editNotes !== (ticket.adminNotes ?? "");
+
+  return (
+    <div className="space-y-5">
+      <AdminDetailHeader
+        title={ticket.title}
+        subtitle={`Submitted ${fmtDateTime(ticket.createdAt)}`}
+      />
+
+      <AdminKeyValueGrid items={kvItems} />
+
+      <div>
+        <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted">Description</p>
+        <pre className="rounded-md bg-surface-2 p-3 text-xs text-foreground whitespace-pre-wrap overflow-x-auto">{ticket.description}</pre>
+      </div>
+
+      <FormSelect
+        label="Status"
+        value={editStatus}
+        options={STATUS_OPTIONS}
+        onChange={async (v) => {
+          setEditStatus(v as BugReport["status"]);
+          await onStatusChange(ticket.id, v);
+        }}
+      />
+
+      <FormTextarea
+        label="Admin Notes"
+        value={editNotes}
+        onChange={setEditNotes}
+        placeholder="Internal notes (not visible to reporter)"
+        rows={3}
+        help="Only visible to admins"
+      />
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={() => onNotesSave(ticket.id, editNotes)}
+          disabled={updating || !notesChanged}
+          className="px-3.5 py-1.5 text-xs font-semibold text-white bg-orange-600 hover:bg-orange-500 disabled:opacity-40 rounded-lg transition-colors"
+        >
+          {updating ? "Saving…" : "Save Notes"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────
+
 export default function AdminTicketsPage() {
   const router = useRouter();
-  const { addToast } = useToast();
   const searchParams = useSearchParams();
+  const { addToast } = useToast();
 
   const [tickets, setTickets] = useState<BugReport[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("");
-  const [selectedTicket, setSelectedTicket] = useState<BugReport | null>(null);
-  const [editNotes, setEditNotes] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selected, setSelected] = useState<BugReport | null>(null);
   const [updating, setUpdating] = useState(false);
 
+  // ── Fetch ─────────────────────────────────────────────────────
   const fetchTickets = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
       if (statusFilter) params.set("status", statusFilter);
       params.set("limit", "100");
-
       const res = await fetch(`/api/admin/tickets?${params}`);
-      if (res.status === 403) {
-        router.push("/");
-        return;
-      }
+      if (res.status === 403) { router.push("/"); return; }
       const data = await res.json();
       setTickets(data.tickets || []);
       setTotal(data.total || 0);
@@ -63,19 +229,18 @@ export default function AdminTicketsPage() {
     }
   }, [statusFilter, router, addToast]);
 
-  useEffect(() => {
-    fetchTickets();
-  }, [fetchTickets]);
+  useEffect(() => { fetchTickets(); }, [fetchTickets]);
 
-  // Deep-link: ?ticketId=<id> opens the ticket detail on load
-  const deepLinkedTicketId = searchParams.get("ticketId");
+  // Deep-link: ?ticketId=<id> opens drawer on load
+  const deepLinked = useRef(false);
   useEffect(() => {
-    if (!deepLinkedTicketId || tickets.length === 0) return;
-    const t = tickets.find((x) => x.id === deepLinkedTicketId);
-    if (t) setSelectedTicket(t);
-  }, [deepLinkedTicketId, tickets]);
+    if (deepLinked.current || !tickets.length) return;
+    const id = searchParams.get("ticketId");
+    if (id) { deepLinked.current = true; const t = tickets.find((x) => x.id === id); if (t) setSelected(t); }
+  }, [tickets, searchParams]);
 
-  const handleStatusUpdate = async (ticketId: string, newStatus: string) => {
+  // ── Mutations ─────────────────────────────────────────────────
+  const handleStatusChange = useCallback(async (ticketId: string, newStatus: string) => {
     setUpdating(true);
     try {
       const res = await fetch("/api/admin/tickets", {
@@ -85,13 +250,9 @@ export default function AdminTicketsPage() {
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        addToast({ type: "success", title: "Status updated", message: `Ticket set to ${STATUS_CONFIG[newStatus]?.label || newStatus}` });
-        setTickets((prev) =>
-          prev.map((t) => (t.id === ticketId ? { ...t, status: newStatus as BugReport["status"] } : t))
-        );
-        if (selectedTicket?.id === ticketId) {
-          setSelectedTicket((prev) => prev ? { ...prev, status: newStatus as BugReport["status"] } : null);
-        }
+        addToast({ type: "success", title: "Status updated", message: `Set to ${STATUS_CONFIG[newStatus]?.label ?? newStatus}` });
+        setTickets((prev) => prev.map((t) => t.id === ticketId ? { ...t, status: newStatus as BugReport["status"] } : t));
+        setSelected((prev) => prev?.id === ticketId ? { ...prev, status: newStatus as BugReport["status"] } : prev);
       } else {
         addToast({ type: "error", title: "Update failed", message: data.error });
       }
@@ -100,24 +261,21 @@ export default function AdminTicketsPage() {
     } finally {
       setUpdating(false);
     }
-  };
+  }, [addToast]);
 
-  const handleNotesUpdate = async () => {
-    if (!selectedTicket) return;
+  const handleNotesSave = useCallback(async (ticketId: string, adminNotes: string) => {
     setUpdating(true);
     try {
       const res = await fetch("/api/admin/tickets", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ticketId: selectedTicket.id, adminNotes: editNotes }),
+        body: JSON.stringify({ ticketId, adminNotes }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
         addToast({ type: "success", title: "Notes saved" });
-        setTickets((prev) =>
-          prev.map((t) => (t.id === selectedTicket.id ? { ...t, adminNotes: editNotes } : t))
-        );
-        setSelectedTicket((prev) => prev ? { ...prev, adminNotes: editNotes } : null);
+        setTickets((prev) => prev.map((t) => t.id === ticketId ? { ...t, adminNotes } : t));
+        setSelected((prev) => prev?.id === ticketId ? { ...prev, adminNotes } : prev);
       } else {
         addToast({ type: "error", title: "Save failed", message: data.error });
       }
@@ -126,259 +284,79 @@ export default function AdminTicketsPage() {
     } finally {
       setUpdating(false);
     }
-  };
+  }, [addToast]);
 
-  const openDetail = (ticket: BugReport) => {
-    setSelectedTicket(ticket);
-    setEditNotes(ticket.adminNotes || "");
-  };
+  // ── Derived ───────────────────────────────────────────────────
+  const visibleTickets = searchQuery.trim()
+    ? tickets.filter((t) => {
+        const q = searchQuery.toLowerCase();
+        return t.title.toLowerCase().includes(q) || t.description.toLowerCase().includes(q);
+      })
+    : tickets;
 
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-  };
-
-  const formatDateTime = (dateStr: string) => {
-    const d = new Date(dateStr);
-    return d.toLocaleString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  };
-
-  const statusCounts = {
-    all: total,
-    OPEN: tickets.filter((t) => t.status === "OPEN").length,
-    IN_PROGRESS: tickets.filter((t) => t.status === "IN_PROGRESS").length,
-    RESOLVED: tickets.filter((t) => t.status === "RESOLVED").length,
-    CLOSED: tickets.filter((t) => t.status === "CLOSED").length,
-  };
+  const hasActiveFilters = !!statusFilter || !!searchQuery;
+  const clearAll = () => { setStatusFilter(""); setSearchQuery(""); };
 
   return (
     <div>
       <AdminPageHeader
         title="Bug Tickets"
         breadcrumb={["Admin", "Operations", "Tickets"]}
-        subtitle="User-submitted bug reports and feature issues"
+        subtitle={`${total.toLocaleString()} total reports`}
       />
 
-      {/* Status filter tabs */}
-      <div className="mb-6 flex items-center gap-1">
-            {[
-              { key: "", label: "All", count: statusCounts.all },
-              { key: "OPEN", label: "Open", count: statusCounts.OPEN },
-              { key: "IN_PROGRESS", label: "In Progress", count: statusCounts.IN_PROGRESS },
-              { key: "RESOLVED", label: "Resolved", count: statusCounts.RESOLVED },
-              { key: "CLOSED", label: "Closed", count: statusCounts.CLOSED },
-            ].map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => setStatusFilter(tab.key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-colors ${
-                  statusFilter === tab.key
-                    ? "bg-orange-500/15 text-orange-400 border border-orange-500/30"
-                    : "text-muted hover:text-foreground hover:bg-surface-2 border border-transparent"
-                }`}
-              >
-                {tab.label}
-                {tab.count > 0 && (
-                  <span className="ml-1.5 text-[0.6rem] opacity-60">({tab.count})</span>
-                )}
-              </button>
-            ))}
-          </div>
-
-      {/* Content */}
-      <div className="mt-4">
-        {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500" />
-          </div>
-        ) : tickets.length === 0 ? (
-          <AdminEmpty
-            label={`No bug reports${statusFilter ? ` with status "${STATUS_CONFIG[statusFilter]?.label}"` : " yet"}`}
-            description="Bug reports submitted by users will appear here."
-            icon={
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-            }
+      <div className="mb-4">
+        <AdminFilterBar hasActiveFilters={hasActiveFilters} onClearAll={clearAll}>
+          {STATUS_TABS.map((tab) => (
+            <FilterChip
+              key={tab.key}
+              active={statusFilter === tab.key}
+              onClick={() => setStatusFilter(tab.key)}
+              label={tab.label}
+            >
+              {tab.label}
+            </FilterChip>
+          ))}
+          <FilterSearch
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder="Search title / description…"
+            widthClass="w-52"
           />
-        ) : (
-          <div className="space-y-2">
-            {tickets.map((ticket) => {
-              const sc = STATUS_CONFIG[ticket.status] || STATUS_CONFIG.OPEN;
-              return (
-                <div
-                  key={ticket.id}
-                  onClick={() => openDetail(ticket)}
-                  className="group flex items-center gap-4 px-4 py-3 bg-surface border border-t-border rounded-lg hover:border-orange-500/30 transition-colors cursor-pointer"
-                >
-                  {/* Status badge */}
-                  <span className={`shrink-0 px-2 py-0.5 text-[0.6rem] font-semibold uppercase rounded ${sc.bg} ${sc.text} ${sc.border} border`}>
-                    {sc.label}
-                  </span>
-
-                  {/* Title + reporter */}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-foreground truncate group-hover:text-orange-400 transition-colors">
-                      {ticket.title}
-                    </div>
-                    <div className="text-[0.65rem] text-muted truncate">
-                      {ticket.reporterName || ticket.reporterEmail} &middot; {formatDate(ticket.createdAt)}
-                      {ticket.pageUrl && (
-                        <span className="ml-2 text-muted/50">{new URL(ticket.pageUrl).pathname}</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Email status */}
-                  <div className="shrink-0">
-                    {ticket.emailSent ? (
-                      <span className="text-[0.6rem] text-emerald-400/60" title="Email sent to techops">
-                        Emailed
-                      </span>
-                    ) : (
-                      <span className="text-[0.6rem] text-red-400/60" title="Email not sent">
-                        No email
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Arrow */}
-                  <svg className="w-3.5 h-3.5 text-muted/40 group-hover:text-orange-400/60 transition-colors shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        </AdminFilterBar>
       </div>
 
-      {/* Detail modal */}
-      {selectedTicket && (
-        <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[1000] p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setSelectedTicket(null);
-          }}
-        >
-          <div className="bg-surface border border-t-border rounded-xl shadow-card-lg w-full max-w-2xl max-h-[85vh] overflow-y-auto">
-            {/* Header */}
-            <div className="flex items-start justify-between px-6 py-5 border-b border-t-border">
-              <div className="flex-1 min-w-0 pr-4">
-                <div className="flex items-center gap-2 mb-2">
-                  {(() => {
-                    const sc = STATUS_CONFIG[selectedTicket.status] || STATUS_CONFIG.OPEN;
-                    return (
-                      <span className={`px-2 py-0.5 text-[0.6rem] font-semibold uppercase rounded ${sc.bg} ${sc.text} ${sc.border} border`}>
-                        {sc.label}
-                      </span>
-                    );
-                  })()}
-                  <span className="text-[0.6rem] text-muted font-mono">{selectedTicket.id}</span>
-                </div>
-                <h2 className="text-base font-bold text-foreground">{selectedTicket.title}</h2>
-                <p className="text-xs text-muted mt-1">
-                  {selectedTicket.reporterName || selectedTicket.reporterEmail} &middot; {formatDateTime(selectedTicket.createdAt)}
-                </p>
-              </div>
-              <button
-                onClick={() => setSelectedTicket(null)}
-                className="text-muted hover:text-foreground transition-colors p-1 shrink-0"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
+      <AdminTable
+        caption="Bug ticket reports"
+        rows={visibleTickets}
+        rowKey={(r) => r.id}
+        columns={COLUMNS}
+        loading={loading}
+        empty={
+          <AdminEmpty
+            label={statusFilter ? `No ${STATUS_CONFIG[statusFilter]?.label ?? statusFilter} tickets` : "No bug reports yet"}
+            description="Bug reports submitted by users will appear here."
+          />
+        }
+        onRowClick={setSelected}
+      />
 
-            {/* Body */}
-            <div className="px-6 py-5 space-y-5">
-              {/* Description */}
-              <div>
-                <h4 className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Description</h4>
-                <div className="bg-background border border-t-border rounded-lg p-4 text-sm text-foreground whitespace-pre-wrap">
-                  {selectedTicket.description}
-                </div>
-              </div>
-
-              {/* Page URL */}
-              {selectedTicket.pageUrl && (
-                <div>
-                  <h4 className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Page</h4>
-                  <a
-                    href={selectedTicket.pageUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-sm text-blue-400 hover:text-blue-300 underline underline-offset-2 break-all"
-                  >
-                    {selectedTicket.pageUrl}
-                  </a>
-                </div>
-              )}
-
-              {/* Status actions */}
-              <div>
-                <h4 className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Update Status</h4>
-                <div className="flex items-center gap-2 flex-wrap">
-                  {(["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"] as const).map((s) => {
-                    const sc = STATUS_CONFIG[s];
-                    const isActive = selectedTicket.status === s;
-                    return (
-                      <button
-                        key={s}
-                        onClick={() => !isActive && handleStatusUpdate(selectedTicket.id, s)}
-                        disabled={isActive || updating}
-                        className={`px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors ${
-                          isActive
-                            ? `${sc.bg} ${sc.text} ${sc.border} cursor-default`
-                            : "text-muted border-t-border hover:text-foreground hover:bg-surface-2"
-                        }`}
-                      >
-                        {sc.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Admin notes */}
-              <div>
-                <h4 className="text-xs font-semibold text-muted uppercase tracking-wide mb-2">Admin Notes</h4>
-                <textarea
-                  value={editNotes}
-                  onChange={(e) => setEditNotes(e.target.value)}
-                  placeholder="Internal notes about this bug (not visible to reporter)"
-                  rows={3}
-                  className="w-full px-3 py-2 text-sm bg-background border border-t-border rounded-lg text-foreground placeholder:text-muted/50 focus:outline-none focus:border-orange-500/50 focus:ring-1 focus:ring-orange-500/20 transition-colors resize-none"
-                />
-                <div className="flex justify-end mt-2">
-                  <button
-                    onClick={handleNotesUpdate}
-                    disabled={updating || editNotes === (selectedTicket.adminNotes || "")}
-                    className="px-3.5 py-1.5 text-xs font-semibold text-white bg-orange-600 hover:bg-orange-500 disabled:bg-orange-800 disabled:text-white/50 rounded-lg transition-colors"
-                  >
-                    {updating ? "Saving..." : "Save Notes"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Meta info */}
-              <div className="flex items-center gap-4 text-[0.6rem] text-muted/60 pt-2 border-t border-t-border">
-                <span>Reporter: {selectedTicket.reporterEmail}</span>
-                <span>Email: {selectedTicket.emailSent ? "Sent" : "Not sent"}</span>
-                <span>Updated: {formatDateTime(selectedTicket.updatedAt)}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <AdminDetailDrawer
+        open={selected !== null}
+        onClose={() => setSelected(null)}
+        title={selected ? <StatusPill status={selected.status} /> : null}
+        wide
+      >
+        {selected && (
+          <TicketDrawerBody
+            key={selected.id}
+            ticket={selected}
+            onStatusChange={handleStatusChange}
+            onNotesSave={handleNotesSave}
+            updating={updating}
+          />
+        )}
+      </AdminDetailDrawer>
     </div>
   );
 }
