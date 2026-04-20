@@ -15,76 +15,76 @@ datasource db {
 // ===========================================
 
 enum UserRole {
-  ADMIN               // Full access, user management, all dashboards
-  EXECUTIVE           // Executive — all routes except admin (renamed from OWNER)
-  OWNER               // Legacy — normalizes to EXECUTIVE (kept for pre-migration compat)
-  MANAGER             // Legacy — normalizes to PROJECT_MANAGER
-  OPERATIONS          // Can schedule installs/inspections, manage construction flow
-  OPERATIONS_MANAGER  // Operations managers — crew oversight, scheduling, availability
-  SERVICE             // Service team — tickets, priority queue, service scheduling, customer history
-  PROJECT_MANAGER     // Project managers — project tracking, scheduling, reporting
-  SALES_MANAGER       // Sales managers — team oversight, pipeline visibility, scheduling
-  TECH_OPS            // Field technicians — view schedules, self-service availability
-  DESIGNER            // Legacy — normalizes to TECH_OPS
-  PERMITTING          // Legacy — normalizes to TECH_OPS
-  VIEWER              // Read-only access to all dashboards
-  SALES               // Only survey scheduler access (for sales team)
+  ADMIN // Full access, user management, all dashboards
+  EXECUTIVE // Executive — all routes except admin (renamed from OWNER)
+  OWNER // Legacy — normalizes to EXECUTIVE (kept for pre-migration compat)
+  MANAGER // Legacy — normalizes to PROJECT_MANAGER
+  OPERATIONS // Can schedule installs/inspections, manage construction flow
+  OPERATIONS_MANAGER // Operations managers — crew oversight, scheduling, availability
+  SERVICE // Service team — tickets, priority queue, service scheduling, customer history
+  PROJECT_MANAGER // Project managers — project tracking, scheduling, reporting
+  SALES_MANAGER // Sales managers — team oversight, pipeline visibility, scheduling
+  TECH_OPS // Field technicians — view schedules, self-service availability
+  DESIGNER // Legacy — normalizes to TECH_OPS
+  PERMITTING // Legacy — normalizes to TECH_OPS
+  VIEWER // Read-only access to all dashboards
+  SALES // Only survey scheduler access (for sales team)
 }
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
-  name          String?
-  image         String?
-  roles  UserRole[] @default([])
+  id    String     @id @default(cuid())
+  email String     @unique
+  name  String?
+  image String?
+  roles UserRole[] @default([])
 
   // OAuth fields
-  googleId      String?   @unique
+  googleId String? @unique
 
   // Permissions - can override role defaults
-  canScheduleSurveys      Boolean @default(false)
-  canScheduleInstalls     Boolean @default(false)
-  canSyncToZuper          Boolean @default(false)
-  canManageUsers          Boolean @default(false)
-  canManageAvailability   Boolean @default(false)
+  canScheduleSurveys    Boolean @default(false)
+  canScheduleInstalls   Boolean @default(false)
+  canSyncToZuper        Boolean @default(false)
+  canManageUsers        Boolean @default(false)
+  canManageAvailability Boolean @default(false)
 
   // Per-user route overrides — extras added to / subtracted from the role
   // union. Denied wins over allowed within the same user. Admin-editable via
   // /admin/users (Option D). Empty arrays mean "no per-user route tweaks".
-  extraAllowedRoutes      String[] @default([])
-  extraDeniedRoutes       String[] @default([])
+  extraAllowedRoutes String[] @default([])
+  extraDeniedRoutes  String[] @default([])
 
   // Location restrictions (empty = all locations)
-  allowedLocations        String[] @default([])
+  allowedLocations String[] @default([])
 
   // Admin impersonation - when set, this admin is viewing as another user
-  impersonatingUserId     String?
+  impersonatingUserId String?
 
   // User preferences (JSON blob for flexible settings)
-  preferences             Json?
+  preferences Json?
 
   // Timestamps
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  lastLoginAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  lastLoginAt DateTime?
 
   // Relations
   activities    ActivityLog[]
   auditSessions AuditSession[]
 
   // Solar Surveyor relations
-  solarProjects         SolarProject[]         @relation("SolarProjectCreator")
-  solarProjectsUpdated  SolarProject[]         @relation("SolarProjectUpdater")
-  solarRevisions        SolarProjectRevision[] @relation("SolarRevisionCreator")
-  solarFeedback         SolarFeedback[]        @relation("SolarFeedbackAuthor")
-  solarProjectShares    SolarProjectShare[]    @relation("SolarProjectShares")
-  solarPendingStates    SolarPendingState[]    @relation("SolarPendingStates")
-  solarCustomEquipment  SolarCustomEquipment[] @relation("SolarCustomEquipmentCreator")
+  solarProjects        SolarProject[]         @relation("SolarProjectCreator")
+  solarProjectsUpdated SolarProject[]         @relation("SolarProjectUpdater")
+  solarRevisions       SolarProjectRevision[] @relation("SolarRevisionCreator")
+  solarFeedback        SolarFeedback[]        @relation("SolarFeedbackAuthor")
+  solarProjectShares   SolarProjectShare[]    @relation("SolarProjectShares")
+  solarPendingStates   SolarPendingState[]    @relation("SolarPendingStates")
+  solarCustomEquipment SolarCustomEquipment[] @relation("SolarCustomEquipmentCreator")
 
   // Comms
-  commsGmailToken   CommsGmailToken?  @relation("UserCommsGmailToken")
-  commsAiMemories   CommsAiMemory[]   @relation("UserCommsAiMemory")
-  commsUserState    CommsUserState?   @relation("UserCommsUserState")
+  commsGmailToken CommsGmailToken? @relation("UserCommsGmailToken")
+  commsAiMemories CommsAiMemory[]  @relation("UserCommsAiMemory")
+  commsUserState  CommsUserState?  @relation("UserCommsUserState")
 
   @@index([email])
   @@index([impersonatingUserId])
@@ -202,6 +202,23 @@ enum ActivityType {
   ROLE_CAPABILITIES_CHANGED
   ROLE_CAPABILITIES_RESET
   USER_EXTRA_ROUTES_CHANGED
+
+  // On-Call Electrician Rotations
+  ON_CALL_POOL_CREATED
+  ON_CALL_POOL_UPDATED
+  ON_CALL_POOL_MEMBERS_CHANGED
+  ON_CALL_PUBLISHED
+  ON_CALL_SWAP_REQUESTED
+  ON_CALL_SWAP_ACCEPTED
+  ON_CALL_SWAP_APPROVED
+  ON_CALL_SWAP_DENIED
+  ON_CALL_SWAP_CANCELLED
+  ON_CALL_PTO_REQUESTED
+  ON_CALL_PTO_APPROVED
+  ON_CALL_PTO_DENIED
+  ON_CALL_PTO_CANCELLED
+  ON_CALL_MANUAL_OVERRIDE
+  ON_CALL_ICAL_TOKEN_ROTATED
 }
 
 enum ClientType {
@@ -268,46 +285,46 @@ model ActivityLog {
   description String
 
   // Who performed the action
-  userId      String?
-  user        User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
-  userEmail   String?      // Stored separately in case user is deleted
-  userName    String?      // User's display name at time of action
+  userId    String?
+  user      User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userEmail String? // Stored separately in case user is deleted
+  userName  String? // User's display name at time of action
 
   // What was affected
-  entityType  String?      // "project", "job", "user", "dashboard", etc.
-  entityId    String?      // The ID of the affected entity
-  entityName  String?      // Human-readable name for display
+  entityType String? // "project", "job", "user", "dashboard", etc.
+  entityId   String? // The ID of the affected entity
+  entityName String? // Human-readable name for display
 
   // Location context
-  pbLocation  String?      // Westminster, Centennial, etc.
+  pbLocation String? // Westminster, Centennial, etc.
 
   // Additional context (JSON) - can include:
   // - filters applied, search terms, duration on page
   // - before/after values for changes
   // - error details, stack traces
   // - Zuper job IDs, HubSpot deal IDs
-  metadata    Json?
+  metadata Json?
 
   // Request context
-  ipAddress   String?
-  userAgent   String?
-  requestPath String?      // The URL/route accessed
-  requestMethod String?    // GET, POST, PUT, DELETE
-  responseStatus Int?      // HTTP status code
-  durationMs  Int?         // How long the request took
+  ipAddress      String?
+  userAgent      String?
+  requestPath    String? // The URL/route accessed
+  requestMethod  String? // GET, POST, PUT, DELETE
+  responseStatus Int? // HTTP status code
+  durationMs     Int? // How long the request took
 
   // Session tracking
-  sessionId   String?      // To group actions in a session
+  sessionId String? // To group actions in a session
 
   // Timestamp
-  createdAt   DateTime     @default(now())
+  createdAt DateTime @default(now())
 
   // Audit session link
-  auditSessionId  String?
-  auditSession    AuditSession? @relation(fields: [auditSessionId], references: [id], onDelete: SetNull)
+  auditSessionId String?
+  auditSession   AuditSession? @relation(fields: [auditSessionId], references: [id], onDelete: SetNull)
   // Per-action risk
-  riskLevel       RiskLevel     @default(LOW)
-  riskScore       Int           @default(1)
+  riskLevel      RiskLevel     @default(LOW)
+  riskScore      Int           @default(1)
 
   @@index([userId])
   @@index([userEmail])
@@ -324,24 +341,24 @@ model ActivityLog {
 // ===========================================
 
 model AuditSession {
-  id                   String          @id @default(cuid())
+  id                   String              @id @default(cuid())
   userId               String?
-  user                 User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  user                 User?               @relation(fields: [userId], references: [id], onDelete: SetNull)
   userEmail            String?
   userName             String?
-  clientType           ClientType      @default(UNKNOWN)
-  environment          Environment     @default(LOCAL)
+  clientType           ClientType          @default(UNKNOWN)
+  environment          Environment         @default(LOCAL)
   deviceFingerprint    String?
   fingerprintVersion   Int?
   ipAddress            String
   userAgent            String?
-  startedAt            DateTime        @default(now())
-  lastActiveAt         DateTime        @default(now())
+  startedAt            DateTime            @default(now())
+  lastActiveAt         DateTime            @default(now())
   endedAt              DateTime?
-  riskLevel            RiskLevel       @default(LOW)
-  riskScore            Int             @default(1)
-  anomalyReasons       String[]        @default([])
-  confidence           ConfidenceLevel @default(MEDIUM)
+  riskLevel            RiskLevel           @default(LOW)
+  riskScore            Int                 @default(1)
+  anomalyReasons       String[]            @default([])
+  confidence           ConfidenceLevel     @default(MEDIUM)
   immediateAlertSentAt DateTime?
   criticalAlertSentAt  DateTime?
   metadata             Json?
@@ -356,16 +373,16 @@ model AuditSession {
 }
 
 model AuditAnomalyEvent {
-  id              String        @id @default(cuid())
+  id              String       @id @default(cuid())
   sessionId       String
-  session         AuditSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session         AuditSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   rule            String
   riskScore       Int
   evidence        Json
   acknowledgedAt  DateTime?
   acknowledgedBy  String?
   acknowledgeNote String?
-  createdAt       DateTime      @default(now())
+  createdAt       DateTime     @default(now())
 
   @@index([sessionId])
   @@index([rule, createdAt])
@@ -379,36 +396,35 @@ model SystemConfig {
   updatedAt DateTime @updatedAt
 }
 
-
 // ===========================================
 // BOOKED SLOTS (Persistent storage)
 // ===========================================
 
 model BookedSlot {
-  id          String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Time slot info
-  date        String   // YYYY-MM-DD
-  startTime   String   // HH:mm
-  endTime     String   // HH:mm
+  date      String // YYYY-MM-DD
+  startTime String // HH:mm
+  endTime   String // HH:mm
 
   // Assignment
-  userName    String
-  location    String
+  userName String
+  location String
 
   // Project reference
-  projectId   String   // HubSpot deal ID
+  projectId   String // HubSpot deal ID
   projectName String
 
   // Zuper reference (if synced)
   zuperJobUid String?
 
   // Source of booking
-  source      String   @default("manual") // "manual", "zuper", "hubspot"
+  source String @default("manual") // "manual", "zuper", "hubspot"
 
   // Timestamps
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([date, userName, startTime])
   @@index([date])
@@ -425,7 +441,7 @@ model AppSetting {
   key       String   @unique
   value     Json
   updatedAt DateTime @updatedAt
-  updatedBy String?  // User ID who last updated
+  updatedBy String? // User ID who last updated
 
   @@index([key])
 }
@@ -435,38 +451,38 @@ model AppSetting {
 // ===========================================
 
 model ZuperJobCache {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Zuper job info
-  jobUid          String   @unique
-  jobTitle        String
-  jobCategory     String   // "Site Survey", "Construction", "Inspection"
-  jobStatus       String   // "UNSCHEDULED", "SCHEDULED", "STARTED", etc.
-  jobPriority     String?
+  jobUid      String  @unique
+  jobTitle    String
+  jobCategory String // "Site Survey", "Construction", "Inspection"
+  jobStatus   String // "UNSCHEDULED", "SCHEDULED", "STARTED", etc.
+  jobPriority String?
 
   // Schedule info
-  scheduledStart  DateTime?
-  scheduledEnd    DateTime?
-  completedDate   DateTime? // Populated when jobStatus is COMPLETED
+  scheduledStart DateTime?
+  scheduledEnd   DateTime?
+  completedDate  DateTime? // Populated when jobStatus is COMPLETED
 
   // Assignment
-  assignedUsers   Json?    // Array of { user_uid, user_name }
-  assignedTeam    String?  // Team UID
+  assignedUsers Json? // Array of { user_uid, user_name }
+  assignedTeam  String? // Team UID
 
   // Location
-  customerAddress Json?    // { street, city, state, zip_code }
+  customerAddress Json? // { street, city, state, zip_code }
 
   // HubSpot link
-  hubspotDealId   String?  // Extracted from job tags
-  projectName     String?
+  hubspotDealId String? // Extracted from job tags
+  projectName   String?
 
   // Metadata
-  jobTags         String[] @default([])
-  jobNotes        String?
+  jobTags  String[] @default([])
+  jobNotes String?
 
   // Cache management
-  lastSyncedAt    DateTime @default(now())
-  rawData         Json?    // Full Zuper response for debugging
+  lastSyncedAt DateTime @default(now())
+  rawData      Json? // Full Zuper response for debugging
 
   @@index([hubspotDealId])
   @@index([jobCategory])
@@ -480,32 +496,32 @@ model ZuperJobCache {
 // ===========================================
 
 model HubSpotProjectCache {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // HubSpot deal info
-  dealId          String   @unique
-  dealName        String
-  stage           String
-  amount          Float?
+  dealId   String @unique
+  dealName String
+  stage    String
+  amount   Float?
 
   // Customer info
-  customerName    String?
-  customerEmail   String?
-  customerPhone   String?
+  customerName  String?
+  customerEmail String?
+  customerPhone String?
 
   // Location
-  address         String?
-  city            String?
-  state           String?
-  zipCode         String?
-  pbLocation      String?  // Westminster, Centennial, etc.
+  address    String?
+  city       String?
+  state      String?
+  zipCode    String?
+  pbLocation String? // Westminster, Centennial, etc.
 
   // Equipment
-  systemSizeKw    Float?
-  moduleCount     Int?
-  inverterCount   Int?
-  batteryCount    Int?
-  evCount         Int?
+  systemSizeKw  Float?
+  moduleCount   Int?
+  inverterCount Int?
+  batteryCount  Int?
+  evCount       Int?
 
   // Key dates
   closeDate                   DateTime?
@@ -524,11 +540,11 @@ model HubSpotProjectCache {
   ptoGrantedDate              DateTime?
 
   // Zuper link
-  zuperJobUid     String?  // Cached Zuper job UID for quick lookup
+  zuperJobUid String? // Cached Zuper job UID for quick lookup
 
   // Cache management
-  lastSyncedAt    DateTime @default(now())
-  rawData         Json?    // Full HubSpot response
+  lastSyncedAt DateTime @default(now())
+  rawData      Json? // Full HubSpot response
 
   @@index([stage])
   @@index([pbLocation])
@@ -541,92 +557,92 @@ model HubSpotProjectCache {
 // ===========================================
 
 model HubSpotPropertyCache {
-  id                 String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // HubSpot identity
-  hubspotObjectId    String   @unique
+  hubspotObjectId String @unique
 
   // Dedup keys — BOTH are unique to enforce one-property-per-address invariant
-  googlePlaceId      String?  @unique           // canonical key when Google returns a place_id
-  addressHash        String   @unique           // SHA-256 of normalized(street+unit+city+state+zip); enforces dedup when googlePlaceId is null (rural, PO Box, new construction)
-  normalizedAddress  String                     // human-readable search index, NOT authoritative
-  attomId            String?  @unique
+  googlePlaceId     String? @unique // canonical key when Google returns a place_id
+  addressHash       String  @unique // SHA-256 of normalized(street+unit+city+state+zip); enforces dedup when googlePlaceId is null (rural, PO Box, new construction)
+  normalizedAddress String // human-readable search index, NOT authoritative
+  attomId           String? @unique
 
   // Address
-  fullAddress        String
-  streetAddress      String
-  unitNumber         String?
-  city               String
-  state              String
-  zip                String
-  county             String?
-  latitude           Float
-  longitude          Float
+  fullAddress   String
+  streetAddress String
+  unitNumber    String?
+  city          String
+  state         String
+  zip           String
+  county        String?
+  latitude      Float
+  longitude     Float
 
   // Denormalized attrs — FULL MIRROR of HubSpot (ATTOM-sourced fields empty until integration ships)
-  propertyType              String?
-  yearBuilt                 Int?
-  squareFootage             Int?
-  lotSizeSqft               Int?
-  stories                   Int?
-  bedrooms                  Int?
-  bathrooms                 Float?
-  foundationType            String?
-  constructionType          String?
-  roofMaterial              String?
-  roofAgeYears              Int?
-  roofLastReplacedYear      Int?
-  roofConditionNotes        String?
-  parcelApn                 String?
-  zoning                    String?
-  assessedValue             Int?
-  lastSaleDate              DateTime?
-  lastSalePrice             Int?
-  publicRecordOwnerName     String?
-  floodZone                 String?
-  wildfireRiskZone          String?
-  hoaName                   String?
-  generalNotes              String?   @db.Text
+  propertyType          String?
+  yearBuilt             Int?
+  squareFootage         Int?
+  lotSizeSqft           Int?
+  stories               Int?
+  bedrooms              Int?
+  bathrooms             Float?
+  foundationType        String?
+  constructionType      String?
+  roofMaterial          String?
+  roofAgeYears          Int?
+  roofLastReplacedYear  Int?
+  roofConditionNotes    String?
+  parcelApn             String?
+  zoning                String?
+  assessedValue         Int?
+  lastSaleDate          DateTime?
+  lastSalePrice         Int?
+  publicRecordOwnerName String?
+  floodZone             String?
+  wildfireRiskZone      String?
+  hoaName               String?
+  generalNotes          String?   @db.Text
 
   // Electrical (manual)
-  mainPanelAmperage      Int?
-  mainPanelManufacturer  String?
-  serviceEntranceType    String?
+  mainPanelAmperage     Int?
+  mainPanelManufacturer String?
+  serviceEntranceType   String?
 
   // Rollups (sync-maintained)
-  firstInstallDate        DateTime?
-  mostRecentInstallDate   DateTime?
-  associatedDealsCount    Int      @default(0)
-  associatedTicketsCount  Int      @default(0)
-  openTicketsCount        Int      @default(0)
-  systemSizeKwDc          Float?
-  hasBattery              Boolean  @default(false)
-  hasEvCharger            Boolean  @default(false)
-  lastServiceDate         DateTime?
-  earliestWarrantyExpiry  DateTime?
+  firstInstallDate       DateTime?
+  mostRecentInstallDate  DateTime?
+  associatedDealsCount   Int       @default(0)
+  associatedTicketsCount Int       @default(0)
+  openTicketsCount       Int       @default(0)
+  systemSizeKwDc         Float?
+  hasBattery             Boolean   @default(false)
+  hasEvCharger           Boolean   @default(false)
+  lastServiceDate        DateTime?
+  earliestWarrantyExpiry DateTime?
 
   // Geographic links
-  ahjObjectId        String?
-  ahjName            String?
-  utilityObjectId    String?
-  utilityName        String?
-  locationObjectId   String?
-  pbLocation         String?
+  ahjObjectId      String?
+  ahjName          String?
+  utilityObjectId  String?
+  utilityName      String?
+  locationObjectId String?
+  pbLocation       String?
 
   // Sync metadata
   geocodedAt           DateTime
   attomLastSyncedAt    DateTime?
-  attomSyncStatus      String?           // OK | FAILED | PENDING | NO_MATCH
-  attomMatchConfidence String?           // HIGH | MEDIUM | LOW
+  attomSyncStatus      String? // OK | FAILED | PENDING | NO_MATCH
+  attomMatchConfidence String? // HIGH | MEDIUM | LOW
   lastReconciledAt     DateTime
-  updatedAt            DateTime @updatedAt
-  createdAt            DateTime @default(now())
+  updatedAt            DateTime  @updatedAt
+  createdAt            DateTime  @default(now())
 
   // Relations
-  contactLinks         PropertyContactLink[]
-  dealLinks            PropertyDealLink[]
-  ticketLinks          PropertyTicketLink[]
-  companyLinks         PropertyCompanyLink[]
+  contactLinks PropertyContactLink[]
+  dealLinks    PropertyDealLink[]
+  ticketLinks  PropertyTicketLink[]
+  companyLinks PropertyCompanyLink[]
 
   @@index([normalizedAddress])
   @@index([city, state])
@@ -636,71 +652,71 @@ model HubSpotPropertyCache {
 }
 
 model PropertyContactLink {
-  id           String   @id @default(cuid())
+  id           String               @id @default(cuid())
   propertyId   String
   property     HubSpotPropertyCache @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   contactId    String
-  label        String                    // Current Owner | Previous Owner | Tenant | Property Manager | Authorized Contact
-  associatedAt DateTime @default(now())
+  label        String // Current Owner | Previous Owner | Tenant | Property Manager | Authorized Contact
+  associatedAt DateTime             @default(now())
 
   @@unique([propertyId, contactId, label])
   @@index([contactId])
 }
 
 model PropertyDealLink {
-  id           String   @id @default(cuid())
+  id           String               @id @default(cuid())
   propertyId   String
   property     HubSpotPropertyCache @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   dealId       String
-  associatedAt DateTime @default(now())
+  associatedAt DateTime             @default(now())
 
   @@unique([propertyId, dealId])
   @@index([dealId])
 }
 
 model PropertyTicketLink {
-  id           String   @id @default(cuid())
+  id           String               @id @default(cuid())
   propertyId   String
   property     HubSpotPropertyCache @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   ticketId     String
-  associatedAt DateTime @default(now())
+  associatedAt DateTime             @default(now())
 
   @@unique([propertyId, ticketId])
   @@index([ticketId])
 }
 
 model PropertyCompanyLink {
-  id           String   @id @default(cuid())
+  id           String               @id @default(cuid())
   propertyId   String
   property     HubSpotPropertyCache @relation(fields: [propertyId], references: [id], onDelete: Cascade)
   companyId    String
-  label        String                    // Owner | Manager
-  associatedAt DateTime @default(now())
+  label        String // Owner | Manager
+  associatedAt DateTime             @default(now())
 
   @@unique([propertyId, companyId, label])
   @@index([companyId])
 }
 
 model PropertySyncWatermark {
-  contactId   String   @id            // HubSpot contact ID
-  lastSyncAt  DateTime
+  contactId  String   @id // HubSpot contact ID
+  lastSyncAt DateTime
 
-  @@index([lastSyncAt])                // cleanup cron drops rows > 7 days old
+  @@index([lastSyncAt]) // cleanup cron drops rows > 7 days old
 }
 
 model PropertyBackfillRun {
   id              String    @id @default(cuid())
   startedAt       DateTime  @default(now())
   completedAt     DateTime?
-  status          String                             // "running" | "completed" | "failed" | "paused"
-  phase           String                             // "contacts" | "deals" | "tickets" | "reconcile"
-  cursor          String?                            // HubSpot paging cursor for the current phase
+  status          String // "running" | "completed" | "failed" | "paused"
+  phase           String // "contacts" | "deals" | "tickets" | "reconcile"
+  cursor          String? // HubSpot paging cursor for the current phase
   totalProcessed  Int       @default(0)
   totalCreated    Int       @default(0)
   totalAssociated Int       @default(0)
   totalFailed     Int       @default(0)
   lastError       String?
-  heartbeatAt     DateTime  @default(now())          // NEW — plan refinement; running process updates every ~30s for stale-lock detection
+  heartbeatAt     DateTime  @default(now()) // NEW — plan refinement; running process updates every ~30s for stale-lock detection
 
   @@index([status])
   @@index([heartbeatAt])
@@ -730,48 +746,54 @@ model DealStatusSnapshot {
   @@index([snapshotDate])
 }
 
-
-
 // ===========================================
 // CREW MEMBERS (Zuper User Configuration)
 // ===========================================
 
 model CrewMember {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Display info
-  name            String   @unique // "Drew Perry", "Joe Lynch", etc.
-  email           String?  // Optional email for notifications
+  name  String  @unique // "Drew Perry", "Joe Lynch", etc.
+  email String? // Optional email for notifications
 
   // Zuper identifiers (encrypted at rest by Neon)
-  zuperUserUid    String   // Zuper user UID
-  zuperTeamUid    String?  // Zuper team UID for assignment
+  zuperUserUid String // Zuper user UID
+  zuperTeamUid String? // Zuper team UID for assignment
 
   // Work configuration
-  role            String   @default("technician") // "surveyor", "technician", "inspector", "electrician", "roofer"
-  locations       String[] @default([]) // Which PB locations they serve
-  teamName        String?  // Crew team name: "Godzilla", "Mothman", "Jackalope", "Summit", etc.
-  permissions     String[] @default([]) // Job capabilities: "Inspections", "MPUs", "GW3s", "Roof", etc.
+  role        String   @default("technician") // "surveyor", "technician", "inspector", "electrician", "roofer"
+  locations   String[] @default([]) // Which PB locations they serve
+  teamName    String? // Crew team name: "Godzilla", "Mothman", "Jackalope", "Summit", etc.
+  permissions String[] @default([]) // Job capabilities: "Inspections", "MPUs", "GW3s", "Roof", etc.
 
   // Scheduling
-  isActive        Boolean  @default(true)
-  maxDailyJobs    Int      @default(4)
+  isActive     Boolean @default(true)
+  maxDailyJobs Int     @default(4)
 
   // Timestamps
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  availabilities  CrewAvailability[]
-  overrides       AvailabilityOverride[]
+  availabilities CrewAvailability[]
+  overrides      AvailabilityOverride[]
+
+  // On-Call rotation back-relations
+  onCallMemberships         OnCallPoolMember[]
+  onCallAssignments         OnCallAssignment[]
+  onCallOriginalAssignments OnCallAssignment[]  @relation("OriginalAssigneeSwaps")
+  onCallSwapsRequested      OnCallSwapRequest[] @relation("RequesterSwaps")
+  onCallSwapsAsCounterparty OnCallSwapRequest[] @relation("CounterpartySwaps")
+  onCallPtoRequests         OnCallPtoRequest[]
+
+  // Approval workflow
+  availabilityRequests AvailabilityChangeRequest[]
 
   @@index([name])
   @@index([role])
   @@index([teamName])
   @@index([isActive])
-
-  // Approval workflow
-  availabilityRequests AvailabilityChangeRequest[]
 }
 
 // ===========================================
@@ -779,35 +801,35 @@ model CrewMember {
 // ===========================================
 
 model CrewAvailability {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Crew member link
-  crewMemberId    String
-  crewMember      CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+  crewMemberId String
+  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
 
   // Location
-  location        String   // "Westminster", "DTC", "Colorado Springs", "SLO", "Camarillo"
-  reportLocation  String?  // Where crew reports to (if different)
+  location       String // "Westminster", "DTC", "Colorado Springs", "SLO", "Camarillo"
+  reportLocation String? // Where crew reports to (if different)
 
   // Job type
-  jobType         String   @default("survey") // "survey", "construction", "inspection"
+  jobType String @default("survey") // "survey", "construction", "inspection"
 
   // Weekly schedule
-  dayOfWeek       Int      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
-  startTime       String   // HH:mm format (e.g. "08:00")
-  endTime         String   // HH:mm format (e.g. "17:00")
+  dayOfWeek Int // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  startTime String // HH:mm format (e.g. "08:00")
+  endTime   String // HH:mm format (e.g. "17:00")
 
   // Timezone
-  timezone        String   @default("America/Denver")
+  timezone String @default("America/Denver")
 
   // Status
-  isActive        Boolean  @default(true)
+  isActive Boolean @default(true)
 
   // Audit
-  createdBy       String?  // User ID who created
-  updatedBy       String?  // User ID who last updated
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdBy String? // User ID who created
+  updatedBy String? // User ID who last updated
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([crewMemberId, location, dayOfWeek, startTime])
   @@index([crewMemberId])
@@ -822,31 +844,31 @@ model CrewAvailability {
 // ===========================================
 
 model AvailabilityOverride {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Crew member link
-  crewMemberId    String
-  crewMember      CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+  crewMemberId String
+  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
 
   // Specific date this override applies to
-  date            String   // YYYY-MM-DD
+  date String // YYYY-MM-DD
 
   // Optional link to the recurring slot being overridden (null = block ALL slots for this crew+date)
-  availabilityId  String?
+  availabilityId String?
 
   // Override type
-  type            String   // "blocked" | "custom"
-  reason          String?  // "PTO", "Training", "Appointment", etc.
+  type   String // "blocked" | "custom"
+  reason String? // "PTO", "Training", "Appointment", etc.
 
   // For "custom" type: alternative time window
-  startTime       String?  // HH:mm
-  endTime         String?  // HH:mm
+  startTime String? // HH:mm
+  endTime   String? // HH:mm
 
   // Audit
-  createdBy       String?
-  updatedBy       String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdBy String?
+  updatedBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([crewMemberId, date, availabilityId])
   @@index([crewMemberId])
@@ -859,39 +881,39 @@ model AvailabilityOverride {
 // ===========================================
 
 model AvailabilityChangeRequest {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Crew member link
-  crewMemberId    String
-  crewMember      CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
+  crewMemberId String
+  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id], onDelete: Cascade)
 
   // What kind of change
-  requestType     String   // "add" | "modify" | "delete"
+  requestType String // "add" | "modify" | "delete"
 
   // Recurring availability fields (for add/modify)
-  dayOfWeek       Int?     // 0-6 for recurring availability
-  startTime       String?  // "HH:MM" for recurring
-  endTime         String?  // "HH:MM" for recurring
-  location        String?  // Location for this slot
-  jobType         String?  // "survey" | "construction" | "inspection"
+  dayOfWeek Int? // 0-6 for recurring availability
+  startTime String? // "HH:MM" for recurring
+  endTime   String? // "HH:MM" for recurring
+  location  String? // Location for this slot
+  jobType   String? // "survey" | "construction" | "inspection"
 
   // Date-specific override fields
-  overrideDate    String?  // YYYY-MM-DD for date-specific overrides
-  isAvailable     Boolean  @default(true)
-  reason          String?
+  overrideDate String? // YYYY-MM-DD for date-specific overrides
+  isAvailable  Boolean @default(true)
+  reason       String?
 
   // Original slot ID if modifying/deleting existing
-  originalSlotId  String?
+  originalSlotId String?
 
   // Approval status
-  status          String   @default("pending") // "pending" | "approved" | "rejected"
-  reviewedBy      String?
-  reviewedAt      DateTime?
-  reviewNote      String?
+  status     String    @default("pending") // "pending" | "approved" | "rejected"
+  reviewedBy String?
+  reviewedAt DateTime?
+  reviewNote String?
 
   // Audit
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([crewMemberId])
   @@index([status])
@@ -902,17 +924,17 @@ model AvailabilityChangeRequest {
 // ===========================================
 
 model RateLimit {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Identifier (email, IP, or composite)
-  identifier      String   @unique
+  identifier String @unique
 
   // Limit tracking
-  count           Int      @default(0)
-  windowStart     DateTime @default(now())
+  count       Int      @default(0)
+  windowStart DateTime @default(now())
 
   // Cleanup
-  expiresAt       DateTime
+  expiresAt DateTime
 
   @@index([identifier])
   @@index([expiresAt])
@@ -923,39 +945,39 @@ model RateLimit {
 // ===========================================
 
 model ScheduleRecord {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // What was scheduled
-  scheduleType    String   // "survey", "construction", "inspection"
-  projectId       String   // HubSpot deal ID
-  projectName     String
+  scheduleType String // "survey", "construction", "inspection"
+  projectId    String // HubSpot deal ID
+  projectName  String
 
   // When
-  scheduledDate   String   // YYYY-MM-DD
-  scheduledDays   Float?   // Number of days scheduled (e.g. 2, 0.25)
-  scheduledStart  String?  // HH:mm (for time slots)
-  scheduledEnd    String?  // HH:mm
+  scheduledDate  String // YYYY-MM-DD
+  scheduledDays  Float? // Number of days scheduled (e.g. 2, 0.25)
+  scheduledStart String? // HH:mm (for time slots)
+  scheduledEnd   String? // HH:mm
 
   // Who
-  assignedUser    String?  // User name
-  assignedUserUid String?  // Zuper user UID
-  assignedTeamUid String?  // Zuper team UID
-  scheduledBy     String?  // User who made the schedule
+  assignedUser     String? // User name
+  assignedUserUid  String? // Zuper user UID
+  assignedTeamUid  String? // Zuper team UID
+  scheduledBy      String? // User who made the schedule
   scheduledByEmail String? // Email of user who made the schedule (ownership checks)
 
   // Zuper sync status
-  zuperJobUid     String?
-  zuperSynced     Boolean  @default(false)
-  zuperAssigned   Boolean  @default(false)  // Did user assignment succeed?
-  zuperError      String?  // Error message if sync/assign failed
+  zuperJobUid   String?
+  zuperSynced   Boolean @default(false)
+  zuperAssigned Boolean @default(false) // Did user assignment succeed?
+  zuperError    String? // Error message if sync/assign failed
 
   // Status
-  status          String   @default("scheduled") // "scheduled", "completed", "cancelled", "rescheduled"
-  notes           String?
+  status String  @default("scheduled") // "scheduled", "completed", "cancelled", "rescheduled"
+  notes  String?
 
   // Timestamps
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([projectId])
   @@index([scheduledDate])
@@ -969,26 +991,26 @@ model ScheduleRecord {
 // ===========================================
 
 model RoadmapItem {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Item content
-  title           String
-  description     String
+  title       String
+  description String
 
   // Classification
-  category        String   // "performance", "features", "integrations", "ux", "analytics"
-  status          String   @default("planned") // "planned", "in-progress", "under-review", "completed"
+  category String // "performance", "features", "integrations", "ux", "analytics"
+  status   String @default("planned") // "planned", "in-progress", "under-review", "completed"
 
   // Voting
-  votes           Int      @default(0)
+  votes Int @default(0)
 
   // Source
-  isOfficial      Boolean  @default(false)
-  submittedBy     String?
+  isOfficial  Boolean @default(false)
+  submittedBy String?
 
   // Timestamps
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([category])
@@ -1034,34 +1056,34 @@ enum TransactionType {
 }
 
 model InternalProduct {
-  id          String            @id @default(cuid())
-  category    EquipmentCategory
-  brand       String
-  model       String
-  name        String?           // Display name override; defaults to "brand model" when null
-  description String?
-  vendorName  String?
+  id               String            @id @default(cuid())
+  category         EquipmentCategory
+  brand            String
+  model            String
+  name             String? // Display name override; defaults to "brand model" when null
+  description      String?
+  vendorName       String?
   vendorPartNumber String?
-  unitSpec    Float?            // Wattage for modules, kW for inverters, kWh for batteries
-  unitLabel   String?           // "W", "kW AC", "kWh"
-  unitCost    Float?
-  sellPrice   Float?
-  sku         String?           // Cross-system product code
-  hardToProcure Boolean         @default(false)
-  length      Float?            // Physical dimension
-  width       Float?
-  weight      Float?
-  isActive    Boolean           @default(true)
+  unitSpec         Float? // Wattage for modules, kW for inverters, kWh for batteries
+  unitLabel        String? // "W", "kW AC", "kWh"
+  unitCost         Float?
+  sellPrice        Float?
+  sku              String? // Cross-system product code
+  hardToProcure    Boolean           @default(false)
+  length           Float? // Physical dimension
+  width            Float?
+  weight           Float?
+  isActive         Boolean           @default(true)
   hubspotProductId String?
   zuperItemId      String?
-  zohoItemId  String?           // Zoho Inventory item_id for PO line item matching
-  canonicalBrand  String?
-  canonicalModel  String?
-  canonicalKey    String?
-  zohoVendorId           String?
+  zohoItemId       String? // Zoho Inventory item_id for PO line item matching
+  canonicalBrand   String?
+  canonicalModel   String?
+  canonicalKey     String?
+  zohoVendorId     String?
 
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
   stockLevels InventoryStock[]
@@ -1088,98 +1110,98 @@ model InternalProduct {
 }
 
 model VendorLookup {
-  id              String   @id @default(cuid())
-  zohoVendorId    String   @unique
-  name            String
-  isActive        Boolean  @default(true)
-  lastSyncedAt    DateTime
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id           String   @id @default(cuid())
+  zohoVendorId String   @unique
+  name         String
+  isActive     Boolean  @default(true)
+  lastSyncedAt DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   @@index([isActive, name])
 }
 
 model ModuleSpec {
-  id                String @id @default(cuid())
-  internalProductId String @unique @map("skuId")
+  id                String          @id @default(cuid())
+  internalProductId String          @unique @map("skuId")
   internalProduct   InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
-  wattage          Float?
-  efficiency       Float?            // percentage
-  cellType         String?           // "Mono PERC", "TOPCon", "HJT", "Poly", "Thin Film"
-  voc              Float?            // Open Circuit Voltage (V)
-  isc              Float?            // Short Circuit Current (A)
-  vmp              Float?            // Max Power Voltage (V)
-  imp              Float?            // Max Power Current (A)
-  tempCoefficient  Float?            // %/°C
+  wattage           Float?
+  efficiency        Float? // percentage
+  cellType          String? // "Mono PERC", "TOPCon", "HJT", "Poly", "Thin Film"
+  voc               Float? // Open Circuit Voltage (V)
+  isc               Float? // Short Circuit Current (A)
+  vmp               Float? // Max Power Voltage (V)
+  imp               Float? // Max Power Current (A)
+  tempCoefficient   Float? // %/°C
 }
 
 model InverterSpec {
-  id                String @id @default(cuid())
-  internalProductId String @unique @map("skuId")
+  id                String          @id @default(cuid())
+  internalProductId String          @unique @map("skuId")
   internalProduct   InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
-  acOutputKw       Float?
-  maxDcInput       Float?
-  phase            String?           // "Single", "Three-phase"
-  nominalAcVoltage String?           // "240V", "208V", "480V"
-  mpptChannels     Int?
-  maxInputVoltage  Float?
-  inverterType     String?           // "String", "Micro", "Hybrid", "Central"
+  acOutputKw        Float?
+  maxDcInput        Float?
+  phase             String? // "Single", "Three-phase"
+  nominalAcVoltage  String? // "240V", "208V", "480V"
+  mpptChannels      Int?
+  maxInputVoltage   Float?
+  inverterType      String? // "String", "Micro", "Hybrid", "Central"
 }
 
 model BatterySpec {
-  id                      String @id @default(cuid())
-  internalProductId       String @unique @map("skuId")
-  internalProduct         InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
-  capacityKwh             Float?
-  energyStorageCapacity   Float?
-  usableCapacityKwh       Float?
-  continuousPowerKw       Float?
-  peakPowerKw             Float?
-  chemistry               String?    // "LFP", "NMC"
-  roundTripEfficiency     Float?     // percentage
-  nominalVoltage          Float?
+  id                    String          @id @default(cuid())
+  internalProductId     String          @unique @map("skuId")
+  internalProduct       InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
+  capacityKwh           Float?
+  energyStorageCapacity Float?
+  usableCapacityKwh     Float?
+  continuousPowerKw     Float?
+  peakPowerKw           Float?
+  chemistry             String? // "LFP", "NMC"
+  roundTripEfficiency   Float? // percentage
+  nominalVoltage        Float?
 }
 
 model EvChargerSpec {
-  id                String @id @default(cuid())
-  internalProductId String @unique @map("skuId")
+  id                String          @id @default(cuid())
+  internalProductId String          @unique @map("skuId")
   internalProduct   InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
-  powerKw         Float?
-  connectorType   String?           // "J1772", "NACS", "CCS"
-  amperage        Float?
-  voltage         Float?
-  level           String?           // "Level 1", "Level 2", "DC Fast"
-  smartFeatures   Boolean?
+  powerKw           Float?
+  connectorType     String? // "J1772", "NACS", "CCS"
+  amperage          Float?
+  voltage           Float?
+  level             String? // "Level 1", "Level 2", "DC Fast"
+  smartFeatures     Boolean?
 }
 
 model MountingHardwareSpec {
-  id                String @id @default(cuid())
-  internalProductId String @unique @map("skuId")
+  id                String          @id @default(cuid())
+  internalProductId String          @unique @map("skuId")
   internalProduct   InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
-  mountType       String?           // "Roof", "Ground", "Carport", "Flat Roof"
-  material        String?           // "Aluminum", "Steel"
-  tiltRange       String?
-  windRating      Float?            // mph
-  snowLoad        Float?            // psf
-  roofAttachment  String?           // "Comp Shingle", "Tile", "Metal", "S-Tile"
+  mountType         String? // "Roof", "Ground", "Carport", "Flat Roof"
+  material          String? // "Aluminum", "Steel"
+  tiltRange         String?
+  windRating        Float? // mph
+  snowLoad          Float? // psf
+  roofAttachment    String? // "Comp Shingle", "Tile", "Metal", "S-Tile"
 }
 
 model ElectricalHardwareSpec {
-  id                String @id @default(cuid())
-  internalProductId String @unique @map("skuId")
+  id                String          @id @default(cuid())
+  internalProductId String          @unique @map("skuId")
   internalProduct   InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
-  componentType   String?           // "Conduit", "Wire", "Disconnect", "Breaker", "Combiner"
-  gaugeSize       String?           // AWG or conduit size
-  voltageRating   Float?
-  material        String?           // "Copper", "Aluminum", "PVC", "EMT"
+  componentType     String? // "Conduit", "Wire", "Disconnect", "Breaker", "Combiner"
+  gaugeSize         String? // AWG or conduit size
+  voltageRating     Float?
+  material          String? // "Copper", "Aluminum", "PVC", "EMT"
 }
 
 model RelayDeviceSpec {
-  id                  String @id @default(cuid())
-  internalProductId   String @unique @map("skuId")
+  id                  String          @id @default(cuid())
+  internalProductId   String          @unique @map("skuId")
   internalProduct     InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
-  deviceType          String?      // "Gateway", "Meter", "CT", "Consumption Monitor"
-  connectivity        String?      // "WiFi", "Cellular", "Ethernet", "Zigbee"
+  deviceType          String? // "Gateway", "Meter", "CT", "Consumption Monitor"
+  connectivity        String? // "WiFi", "Cellular", "Ethernet", "Zigbee"
   compatibleInverters String?
 }
 
@@ -1210,15 +1232,15 @@ model InventoryStock {
   id                String          @id @default(cuid())
   internalProductId String          @map("skuId")
   internalProduct   InternalProduct @relation(fields: [internalProductId], references: [id], onDelete: Cascade)
-  location          String          // PB Location = warehouse
+  location          String // PB Location = warehouse
   quantityOnHand    Int             @default(0)
-  minStockLevel     Int?            // Optional reorder threshold (future)
+  minStockLevel     Int? // Optional reorder threshold (future)
   lastCountedAt     DateTime?
 
-  updatedAt         DateTime        @updatedAt
+  updatedAt DateTime @updatedAt
 
   // Relations
-  transactions    StockTransaction[]
+  transactions StockTransaction[]
 
   @@unique([internalProductId, location], map: "InventoryStock_skuId_location_key")
   @@index([internalProductId], map: "InventoryStock_skuId_idx")
@@ -1226,17 +1248,17 @@ model InventoryStock {
 }
 
 model StockTransaction {
-  id            String          @id @default(cuid())
-  stockId       String
-  stock         InventoryStock  @relation(fields: [stockId], references: [id], onDelete: Cascade)
-  type          TransactionType
-  quantity      Int             // Positive = added, negative = removed
-  reason        String?
-  projectId     String?         // HubSpot deal ID if project-related
-  projectName   String?
-  performedBy   String?         // User name or email
+  id          String          @id @default(cuid())
+  stockId     String
+  stock       InventoryStock  @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  type        TransactionType
+  quantity    Int // Positive = added, negative = removed
+  reason      String?
+  projectId   String? // HubSpot deal ID if project-related
+  projectName String?
+  performedBy String? // User name or email
 
-  createdAt     DateTime        @default(now())
+  createdAt DateTime @default(now())
 
   @@index([stockId])
   @@index([type])
@@ -1249,12 +1271,12 @@ model StockTransaction {
 // ===========================================
 
 model BomToolFeedback {
-  id            String   @id @default(cuid())
-  notes         String   // Free-text feedback from the user
-  dealId        String?  // HubSpot deal ID if linked
-  dealName      String?  // Deal/project name for context
-  submittedBy   String   // User email
-  createdAt     DateTime @default(now())
+  id          String   @id @default(cuid())
+  notes       String // Free-text feedback from the user
+  dealId      String? // HubSpot deal ID if linked
+  dealName    String? // Deal/project name for context
+  submittedBy String // User email
+  createdAt   DateTime @default(now())
 
   @@index([createdAt])
 }
@@ -1264,14 +1286,14 @@ model BomToolFeedback {
 // ===========================================
 
 model DesignReviewFeedback {
-  id            String   @id @default(cuid())
-  reviewId      String?  // ProjectReview ID if linked to a specific run
-  rating        String   // "positive" or "negative"
-  notes         String?  // Optional free-text feedback
-  dealId        String?  // HubSpot deal ID
-  dealName      String?  // Deal/project name for context
-  submittedBy   String   // User email
-  createdAt     DateTime @default(now())
+  id          String   @id @default(cuid())
+  reviewId    String? // ProjectReview ID if linked to a specific run
+  rating      String // "positive" or "negative"
+  notes       String? // Optional free-text feedback
+  dealId      String? // HubSpot deal ID
+  dealName    String? // Deal/project name for context
+  submittedBy String // User email
+  createdAt   DateTime @default(now())
 
   @@index([createdAt])
   @@index([reviewId])
@@ -1289,27 +1311,27 @@ enum BugReportStatus {
 }
 
 model BugReport {
-  id            String          @id @default(cuid())
+  id String @id @default(cuid())
 
   // Report content
-  title         String
-  description   String
-  pageUrl       String?         // Auto-captured URL where the bug was reported
+  title       String
+  description String
+  pageUrl     String? // Auto-captured URL where the bug was reported
 
   // Reporter info
   reporterEmail String
   reporterName  String?
 
   // Status tracking
-  status        BugReportStatus @default(OPEN)
-  adminNotes    String?         // Internal notes from admin/developer
+  status     BugReportStatus @default(OPEN)
+  adminNotes String? // Internal notes from admin/developer
 
   // Notification
-  emailSent     Boolean         @default(false)
+  emailSent Boolean @default(false)
 
   // Timestamps
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([reporterEmail])
@@ -1321,18 +1343,18 @@ model BugReport {
 // ===========================================
 
 model ProjectBomSnapshot {
-  id          String   @id @default(cuid())
-  dealId      String                        // HubSpot deal ID
-  dealName    String
-  version     Int                           // 1, 2, 3… increments per dealId
-  bomData     Json                          // full BomData object (project + items + validation)
-  sourceFile  String?                       // original PDF filename
-  blobUrl     String?                       // Vercel Blob URL of the source PDF
-  savedBy     String                        // user email
-  zohoPurchaseOrders Json?                 // Array of created Zoho Purchase Orders
-  zohoSoId    String?                       // Zoho Sales Order ID once created
+  id                 String  @id @default(cuid())
+  dealId             String // HubSpot deal ID
+  dealName           String
+  version            Int // 1, 2, 3… increments per dealId
+  bomData            Json // full BomData object (project + items + validation)
+  sourceFile         String? // original PDF filename
+  blobUrl            String? // Vercel Blob URL of the source PDF
+  savedBy            String // user email
+  zohoPurchaseOrders Json? // Array of created Zoho Purchase Orders
+  zohoSoId           String? // Zoho Sales Order ID once created
 
-  createdAt   DateTime @default(now())
+  createdAt DateTime @default(now())
 
   @@index([dealId])
   @@index([dealId, version])
@@ -1347,47 +1369,47 @@ enum PushStatus {
 }
 
 model PendingCatalogPush {
-  id          String     @id @default(cuid())
-  status      PushStatus @default(PENDING)
+  id               String     @id @default(cuid())
+  status           PushStatus @default(PENDING)
   // Item data snapshot (what was in the BOM row at time of request)
-  brand       String
-  model       String
-  name        String?    // Display name override; defaults to "brand model" when null
-  description String
-  category    String     // BOM category string (may not be EquipmentCategory enum)
-  unitSpec    String?
-  unitLabel   String?
+  brand            String
+  model            String
+  name             String? // Display name override; defaults to "brand model" when null
+  description      String
+  category         String // BOM category string (may not be EquipmentCategory enum)
+  unitSpec         String?
+  unitLabel        String?
   sku              String?
   vendorName       String?
   vendorPartNumber String?
   unitCost         Float?
   sellPrice        Float?
-  hardToProcure    Boolean   @default(false)
+  hardToProcure    Boolean    @default(false)
   length           Float?
   width            Float?
   weight           Float?
-  metadata         Json?     // Category-specific spec fields (stored until approval)
+  metadata         Json? // Category-specific spec fields (stored until approval)
   // Which systems to push to
-  systems     String[]   // ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"]
+  systems          String[] // ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER", "QUICKBOOKS"]
   // Context
-  requestedBy String     // user email
-  dealId      String?
-  note        String?    // rejection note from admin
+  requestedBy      String // user email
+  dealId           String?
+  note             String? // rejection note from admin
   // Results after approval (nullable until approved)
   internalSkuId    String?
   zohoItemId       String?
   hubspotProductId String?
   zuperItemId      String?
   // Catalog rebuild additions
-  canonicalKey      String?
-  source            String?
-  candidateSkuIds   String[]
-  reviewReason      String?
-  expiresAt         DateTime?
-  zohoVendorId    String?
+  canonicalKey     String?
+  source           String?
+  candidateSkuIds  String[]
+  reviewReason     String?
+  expiresAt        DateTime?
+  zohoVendorId     String?
 
-  createdAt   DateTime   @default(now())
-  resolvedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  resolvedAt DateTime?
 
   @@index([status])
   @@index([requestedBy])
@@ -1409,21 +1431,21 @@ enum HubSpotPushStatus {
 }
 
 model BomHubSpotPushLog {
-  id                      String             @id @default(cuid())
+  id                      String            @id @default(cuid())
   dealId                  String
   snapshotId              String
   snapshotVersion         Int
-  pushedBy                String             // user email
-  pushedCount             Int                @default(0)
-  skippedCount            Int                @default(0)
-  deletedPriorCount       Int                @default(0)
-  catalogMissingCount     Int                @default(0)
-  hubspotLinkMissingCount Int                @default(0)
-  status                  HubSpotPushStatus  @default(PENDING)
+  pushedBy                String // user email
+  pushedCount             Int               @default(0)
+  skippedCount            Int               @default(0)
+  deletedPriorCount       Int               @default(0)
+  catalogMissingCount     Int               @default(0)
+  hubspotLinkMissingCount Int               @default(0)
+  status                  HubSpotPushStatus @default(PENDING)
   errorMessage            String?
 
-  createdAt               DateTime           @default(now())
-  updatedAt               DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // NOTE: partial unique index on (dealId) WHERE status='PENDING'
   // is in the migration SQL, not expressible in Prisma schema.
@@ -1480,12 +1502,12 @@ model BomPipelineRun {
   metadata        Json?
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
+  // NOTE: partial unique index on (dealId) WHERE status='RUNNING'
+  // is added via raw SQL in the migration file (not expressible in Prisma schema)
 
   @@index([dealId])
   @@index([status])
   @@index([createdAt])
-  // NOTE: partial unique index on (dealId) WHERE status='RUNNING'
-  // is added via raw SQL in the migration file (not expressible in Prisma schema)
 }
 
 // ===========================================
@@ -1506,8 +1528,8 @@ enum MatchDecisionStatus {
 }
 
 model CatalogMatchGroup {
-  id              String               @id @default(cuid())
-  matchGroupKey   String               @unique
+  id              String          @id @default(cuid())
+  matchGroupKey   String          @unique
   confidence      MatchConfidence
   canonicalBrand  String?
   canonicalModel  String?
@@ -1515,19 +1537,19 @@ model CatalogMatchGroup {
   score           Float
   memberSources   Json
   fieldProvenance Json?
-  needsReview     Boolean              @default(false)
+  needsReview     Boolean         @default(false)
   reviewReason    String?
 
-  decision        MatchDecisionStatus  @default(PENDING)
-  decidedBy       String?
-  decidedAt       DateTime?
-  decisionNote    String?
+  decision     MatchDecisionStatus @default(PENDING)
+  decidedBy    String?
+  decidedAt    DateTime?
+  decisionNote String?
 
-  internalSkuId   String?
-  linkedAt        DateTime?
+  internalSkuId String?
+  linkedAt      DateTime?
 
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([confidence])
   @@index([decision])
@@ -1609,47 +1631,47 @@ model ZohoDedupRun {
 // ===========================================
 
 enum SurveyInviteStatus {
-  PENDING      // invite sent, awaiting customer action
-  SCHEDULED    // customer booked a slot
-  RESCHEDULED  // customer changed their slot
-  EXPIRED      // token past expiry
-  CANCELLED    // cancelled by ops or customer
-  COMPLETED    // survey done
+  PENDING // invite sent, awaiting customer action
+  SCHEDULED // customer booked a slot
+  RESCHEDULED // customer changed their slot
+  EXPIRED // token past expiry
+  CANCELLED // cancelled by ops or customer
+  COMPLETED // survey done
 }
 
 model SurveyInvite {
-  id               String             @id @default(cuid())
-  tokenHash        String             @unique    // SHA-256 of raw token; raw token NEVER stored
-  dealId           String                        // HubSpot deal ID
-  customerEmail    String
-  customerName     String
-  customerPhone    String?
-  propertyAddress  String                        // survey site address
-  pbLocation       String                        // Westminster, Centennial, etc.
-  systemSize       Float?                        // kW, from deal
-  status           SurveyInviteStatus @default(PENDING)
-  expiresAt        DateTime                      // token TTL (default 14 days)
+  id              String             @id @default(cuid())
+  tokenHash       String             @unique // SHA-256 of raw token; raw token NEVER stored
+  dealId          String // HubSpot deal ID
+  customerEmail   String
+  customerName    String
+  customerPhone   String?
+  propertyAddress String // survey site address
+  pbLocation      String // Westminster, Centennial, etc.
+  systemSize      Float? // kW, from deal
+  status          SurveyInviteStatus @default(PENDING)
+  expiresAt       DateTime // token TTL (default 14 days)
 
   // Booking details (populated when customer schedules)
-  scheduledAt      DateTime?                     // UTC — when customer submitted booking
-  scheduledDate    String?                       // YYYY-MM-DD (location-local date)
-  scheduledTime    String?                       // HH:MM (location-local time)
-  cutoffAt         DateTime?                     // UTC — 24h before scheduled start (DST-safe, pre-computed)
-  crewMemberId     String?                       // assigned crew member
-  scheduleRecordId String?                       // link to ScheduleRecord
-  zuperJobUid      String?                       // Zuper job UID once created
-  accessNotes      String?                       // customer-provided gate codes, dogs, etc.
+  scheduledAt      DateTime? // UTC — when customer submitted booking
+  scheduledDate    String? // YYYY-MM-DD (location-local date)
+  scheduledTime    String? // HH:MM (location-local time)
+  cutoffAt         DateTime? // UTC — 24h before scheduled start (DST-safe, pre-computed)
+  crewMemberId     String? // assigned crew member
+  scheduleRecordId String? // link to ScheduleRecord
+  zuperJobUid      String? // Zuper job UID once created
+  accessNotes      String? // customer-provided gate codes, dogs, etc.
 
   // Invite tracking
-  sentAt           DateTime?                     // when invite email was sent
-  sentBy           String?                       // internal user who triggered it
+  sentAt DateTime? // when invite email was sent
+  sentBy String? // internal user who triggered it
 
   // Timestamps
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  outboxEvents     OutboxEvent[]
+  outboxEvents OutboxEvent[]
 
   // NOTE: partial unique index on (dealId) WHERE status IN ('PENDING','SCHEDULED')
   // is added via raw SQL in the migration file (not expressible in Prisma schema)
@@ -1661,30 +1683,30 @@ model SurveyInvite {
 
 model IdempotencyKey {
   id        String   @id @default(cuid())
-  key       String                               // client-generated UUID
-  scope     String                               // "book:{tokenHash}" | "reschedule:{tokenHash}" | "cancel:{tokenHash}"
-  status    String                               // "processing" | "completed" | "failed"
-  response  Json?                                // cached response payload for replay
+  key       String // client-generated UUID
+  scope     String // "book:{tokenHash}" | "reschedule:{tokenHash}" | "cancel:{tokenHash}"
+  status    String // "processing" | "completed" | "failed"
+  response  Json? // cached response payload for replay
   createdAt DateTime @default(now())
-  expiresAt DateTime                             // TTL: 24 hours
+  expiresAt DateTime // TTL: 24 hours
 
   @@unique([key, scope])
   @@index([expiresAt])
 }
 
 model OutboxEvent {
-  id          String        @id @default(cuid())
-  type        String                              // "zuper_create_job" | "send_confirmation_email" | "send_internal_notification"
-  payload     Json                                // serialized args for the handler
-  status      String        @default("pending")   // "pending" | "processing" | "completed" | "failed" | "dead_letter"
-  attempts    Int           @default(0)
-  maxAttempts Int           @default(5)
+  id          String       @id @default(cuid())
+  type        String // "zuper_create_job" | "send_confirmation_email" | "send_internal_notification"
+  payload     Json // serialized args for the handler
+  status      String       @default("pending") // "pending" | "processing" | "completed" | "failed" | "dead_letter"
+  attempts    Int          @default(0)
+  maxAttempts Int          @default(5)
   lastError   String?
-  nextRetryAt DateTime?                           // exponential backoff: 30s, 2m, 8m, 32m, 2h
-  inviteId    String                              // FK to SurveyInvite
-  invite      SurveyInvite  @relation(fields: [inviteId], references: [id], onDelete: Cascade)
-  dedupeKey   String?       @unique               // prevents duplicate event creation
-  createdAt   DateTime      @default(now())
+  nextRetryAt DateTime? // exponential backoff: 30s, 2m, 8m, 32m, 2h
+  inviteId    String // FK to SurveyInvite
+  invite      SurveyInvite @relation(fields: [inviteId], references: [id], onDelete: Cascade)
+  dedupeKey   String?      @unique // prevents duplicate event creation
+  createdAt   DateTime     @default(now())
   processedAt DateTime?
 
   @@index([status, nextRetryAt])
@@ -1696,22 +1718,22 @@ model OutboxEvent {
 // ===========================================
 
 model HubSpotSyncRun {
-  id            String    @id @default(cuid())
-  tokenHash     String    @unique           // SHA-256 of HMAC token — idempotency key
-  operation     String                      // "deal-line-item-sync" | "hubspot-product-bulk-sync"
-  operationId   String                      // dealId or "all"
-  status        String    @default("RUNNING") // "RUNNING" | "COMPLETED" | "FAILED"
-  inputHash     String                      // changesHash from preview
-  cursor        String?                     // last processed ID for chunked runs
-  targetIds     Json?                       // frozen set of target IDs for chunked bulk runs
-  outcomes      Json?
-  updatedAt     DateTime  @updatedAt        // heartbeat — updated each chunk/item for stale lock detection
-  itemsCreated  Int       @default(0)
-  itemsSkipped  Int       @default(0)
-  itemsFailed   Int       @default(0)
-  executedBy    String
-  createdAt     DateTime  @default(now())
-  completedAt   DateTime?
+  id           String    @id @default(cuid())
+  tokenHash    String    @unique // SHA-256 of HMAC token — idempotency key
+  operation    String // "deal-line-item-sync" | "hubspot-product-bulk-sync"
+  operationId  String // dealId or "all"
+  status       String    @default("RUNNING") // "RUNNING" | "COMPLETED" | "FAILED"
+  inputHash    String // changesHash from preview
+  cursor       String? // last processed ID for chunked runs
+  targetIds    Json? // frozen set of target IDs for chunked bulk runs
+  outcomes     Json?
+  updatedAt    DateTime  @updatedAt // heartbeat — updated each chunk/item for stale lock detection
+  itemsCreated Int       @default(0)
+  itemsSkipped Int       @default(0)
+  itemsFailed  Int       @default(0)
+  executedBy   String
+  createdAt    DateTime  @default(now())
+  completedAt  DateTime?
 
   // Supports mutual exclusion queries + partial unique index in migration SQL
   @@index([operation, operationId, status])
@@ -1754,36 +1776,36 @@ enum FeedbackStatus {
 }
 
 model SolarProject {
-  id              String                  @id @default(cuid())
-  name            String
-  address         String?
-  lat             Float?
-  lng             Float?
-  createdById     String
-  createdBy       User                    @relation("SolarProjectCreator", fields: [createdById], references: [id])
-  updatedById     String?
-  updatedBy       User?                   @relation("SolarProjectUpdater", fields: [updatedById], references: [id])
-  status          SolarProjectStatus      @default(DRAFT)
-  visibility      SolarProjectVisibility  @default(TEAM)
-  version         Int                     @default(1)
-  equipmentConfig Json?
-  stringsConfig   Json?
-  siteConditions  Json?
+  id                    String                 @id @default(cuid())
+  name                  String
+  address               String?
+  lat                   Float?
+  lng                   Float?
+  createdById           String
+  createdBy             User                   @relation("SolarProjectCreator", fields: [createdById], references: [id])
+  updatedById           String?
+  updatedBy             User?                  @relation("SolarProjectUpdater", fields: [updatedById], references: [id])
+  status                SolarProjectStatus     @default(DRAFT)
+  visibility            SolarProjectVisibility @default(TEAM)
+  version               Int                    @default(1)
+  equipmentConfig       Json?
+  stringsConfig         Json?
+  siteConditions        Json?
   homeConsumptionConfig Json?
-  batteryConfig   Json?
-  lossProfile     Json?
-  scenarios       Json?
-  geoJsonUrl      String?
-  radianceDxfUrl  String?
-  shadeDataUrl    String?
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  batteryConfig         Json?
+  lossProfile           Json?
+  scenarios             Json?
+  geoJsonUrl            String?
+  radianceDxfUrl        String?
+  shadeDataUrl          String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
 
   // Relations
-  revisions       SolarProjectRevision[]
-  feedback        SolarFeedback[]
-  shares          SolarProjectShare[]
-  pendingStates   SolarPendingState[]
+  revisions     SolarProjectRevision[]
+  feedback      SolarFeedback[]
+  shares        SolarProjectShare[]
+  pendingStates SolarPendingState[]
 
   @@index([createdById])
   @@index([status])
@@ -1791,16 +1813,16 @@ model SolarProject {
 }
 
 model SolarProjectRevision {
-  id              String         @id @default(cuid())
+  id              String       @id @default(cuid())
   projectId       String
-  project         SolarProject   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project         SolarProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   version         Int
   snapshot        Json
   analysisResults Json?
   createdById     String
-  createdBy       User           @relation("SolarRevisionCreator", fields: [createdById], references: [id])
+  createdBy       User         @relation("SolarRevisionCreator", fields: [createdById], references: [id])
   note            String?
-  createdAt       DateTime       @default(now())
+  createdAt       DateTime     @default(now())
 
   @@unique([projectId, version])
   @@index([projectId])
@@ -1808,16 +1830,16 @@ model SolarProjectRevision {
 }
 
 model SolarFeedback {
-  id          String            @id @default(cuid())
-  userId      String
-  user        User              @relation("SolarFeedbackAuthor", fields: [userId], references: [id])
-  projectId   String?
-  project     SolarProject?     @relation(fields: [projectId], references: [id])
-  category    FeedbackCategory
-  message     String
-  context     Json?
-  status      FeedbackStatus    @default(NEW)
-  createdAt   DateTime          @default(now())
+  id        String           @id @default(cuid())
+  userId    String
+  user      User             @relation("SolarFeedbackAuthor", fields: [userId], references: [id])
+  projectId String?
+  project   SolarProject?    @relation(fields: [projectId], references: [id])
+  category  FeedbackCategory
+  message   String
+  context   Json?
+  status    FeedbackStatus   @default(NEW)
+  createdAt DateTime         @default(now())
 
   @@index([userId])
   @@index([category])
@@ -1826,26 +1848,26 @@ model SolarFeedback {
 }
 
 model SolarProjectShare {
-  id          String          @id @default(cuid())
-  projectId   String
-  project     SolarProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User            @relation("SolarProjectShares", fields: [userId], references: [id])
-  permission  SharePermission @default(READ)
-  createdAt   DateTime        @default(now())
+  id         String          @id @default(cuid())
+  projectId  String
+  project    SolarProject    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User            @relation("SolarProjectShares", fields: [userId], references: [id])
+  permission SharePermission @default(READ)
+  createdAt  DateTime        @default(now())
 
   @@unique([projectId, userId])
   @@index([userId])
 }
 
 model SolarPendingState {
-  id          String       @id @default(cuid())
-  projectId   String
-  project     SolarProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  userId      String
-  user        User         @relation("SolarPendingStates", fields: [userId], references: [id])
-  version     Int
-  createdAt   DateTime     @default(now())
+  id        String       @id @default(cuid())
+  projectId String
+  project   SolarProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User         @relation("SolarPendingStates", fields: [userId], references: [id])
+  version   Int
+  createdAt DateTime     @default(now())
 
   @@unique([projectId, userId])
   @@index([userId])
@@ -1853,22 +1875,22 @@ model SolarPendingState {
 }
 
 model SolarWeatherCache {
-  id         String   @id @default(cuid())
-  latE3      Int
-  lngE3      Int
-  tmyData    Json
-  fetchedAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  latE3     Int
+  lngE3     Int
+  tmyData   Json
+  fetchedAt DateTime @default(now())
 
   @@unique([latE3, lngE3])
   @@index([fetchedAt])
 }
 
 model SolarShadeCache {
-  id         String   @id @default(cuid())
-  latE5      Int      // lat × 100,000 (~1.1m precision — building-level for Google Solar)
-  lngE5      Int      // lng × 100,000
-  shadeData  Json
-  fetchedAt  DateTime @default(now())
+  id        String   @id @default(cuid())
+  latE5     Int // lat × 100,000 (~1.1m precision — building-level for Google Solar)
+  lngE5     Int // lng × 100,000
+  shadeData Json
+  fetchedAt DateTime @default(now())
 
   @@unique([latE5, lngE5])
   @@index([fetchedAt])
@@ -1886,17 +1908,17 @@ model SolarCustomEquipment {
   category    SolarEquipmentCategory
   key         String
   profile     Json
-  isArchived  Boolean           @default(false)
+  isArchived  Boolean                @default(false)
   createdById String
-  createdBy   User              @relation("SolarCustomEquipmentCreator", fields: [createdById], references: [id])
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-
-  @@index([category])
+  createdBy   User                   @relation("SolarCustomEquipmentCreator", fields: [createdById], references: [id])
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
   // Active-only unique constraint enforced via raw SQL partial index in migration:
   //   CREATE UNIQUE INDEX "SolarCustomEquipment_active_key"
   //   ON "SolarCustomEquipment" ("category", "key")
   //   WHERE "isArchived" = false;
+
+  @@index([category])
 }
 
 // ===========================================
@@ -1904,8 +1926,8 @@ model SolarCustomEquipment {
 // ===========================================
 
 model SopTab {
-  id        String       @id              // Stable slug: "hubspot", "ops", "wf"
-  label     String                        // Display name: "HubSpot Guide", "Tech Ops"
+  id        String       @id // Stable slug: "hubspot", "ops", "wf"
+  label     String // Display name: "HubSpot Guide", "Tech Ops"
   sortOrder Int          @default(0)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
@@ -1915,18 +1937,18 @@ model SopTab {
 }
 
 model SopSection {
-  id           String        @id           // Stable slug: "hs-overview", "survey", "wf-ic"
+  id           String          @id // Stable slug: "hs-overview", "survey", "wf-ic"
   tabId        String
-  sidebarGroup String                      // Grouping label: "Project Pipeline", "Workflow Reference"
-  title        String                      // Sidebar link text
-  dotColor     String        @default("blue") // Sidebar dot color
-  sortOrder    Int           @default(0)
-  content      String                      // Sanitized HTML body
-  version      Int           @default(1)   // Optimistic locking counter
-  updatedBy    String?                     // Email of last editor
-  updatedAt    DateTime      @updatedAt
-  createdAt    DateTime      @default(now())
-  tab          SopTab            @relation(fields: [tabId], references: [id])
+  sidebarGroup String // Grouping label: "Project Pipeline", "Workflow Reference"
+  title        String // Sidebar link text
+  dotColor     String          @default("blue") // Sidebar dot color
+  sortOrder    Int             @default(0)
+  content      String // Sanitized HTML body
+  version      Int             @default(1) // Optimistic locking counter
+  updatedBy    String? // Email of last editor
+  updatedAt    DateTime        @updatedAt
+  createdAt    DateTime        @default(now())
+  tab          SopTab          @relation(fields: [tabId], references: [id])
   revisions    SopRevision[]
   suggestions  SopSuggestion[]
 
@@ -1937,9 +1959,9 @@ model SopSection {
 model SopRevision {
   id          String     @id @default(cuid())
   sectionId   String
-  content     String                      // Previous content snapshot
-  editedBy    String                      // Email of editor
-  editSummary String?                     // Optional change description
+  content     String // Previous content snapshot
+  editedBy    String // Email of editor
+  editSummary String? // Optional change description
   createdAt   DateTime   @default(now())
   section     SopSection @relation(fields: [sectionId], references: [id])
 
@@ -1956,13 +1978,13 @@ enum SopSuggestionStatus {
 model SopSuggestion {
   id             String              @id @default(cuid())
   sectionId      String
-  content        String              // Suggested HTML content (sanitized on submit)
-  summary        String              // Description of the change
+  content        String // Suggested HTML content (sanitized on submit)
+  summary        String // Description of the change
   status         SopSuggestionStatus @default(PENDING)
-  basedOnVersion Int                 // Section version when suggestion was created
-  submittedBy    String              // Email of submitter
-  reviewedBy     String?             // Email of reviewer
-  reviewNote     String?             // Optional review note
+  basedOnVersion Int // Section version when suggestion was created
+  submittedBy    String // Email of submitter
+  reviewedBy     String? // Email of reviewer
+  reviewNote     String? // Optional review note
   createdAt      DateTime            @default(now())
   reviewedAt     DateTime?
   section        SopSection          @relation(fields: [sectionId], references: [id])
@@ -1978,8 +2000,8 @@ model SopSuggestion {
 model ServicePriorityOverride {
   id               String    @id @default(cuid())
   itemId           String
-  itemType         String    // "deal" | "ticket"
-  overridePriority String    // "critical" | "high" | "medium" | "low"
+  itemType         String // "deal" | "ticket"
+  overridePriority String // "critical" | "high" | "medium" | "low"
   setBy            String
   reason           String?
   expiresAt        DateTime?
@@ -1996,19 +2018,19 @@ enum ServiceSoStatus {
 }
 
 model ServiceSoRequest {
-  id              String          @id @default(cuid())
-  dealId          String
-  requestToken    String          @unique
-  zohoSoId        String?
-  zohoSoNumber    String?
-  zohoCustomerId  String?
-  lineItems       Json
-  totalAmount     Float
-  status          ServiceSoStatus @default(DRAFT)
-  errorMessage    String?
-  createdBy       String
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  id             String          @id @default(cuid())
+  dealId         String
+  requestToken   String          @unique
+  zohoSoId       String?
+  zohoSoNumber   String?
+  zohoCustomerId String?
+  lineItems      Json
+  totalAmount    Float
+  status         ServiceSoStatus @default(DRAFT)
+  errorMessage   String?
+  createdBy      String
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 
   @@index([dealId])
   @@index([createdBy])
@@ -2019,11 +2041,11 @@ model ServiceSoRequest {
 // ===========================================
 
 model RevenueGoal {
-  id        String   @id @default(cuid())
-  year      Int
-  groupKey  String
-  month     Int
-  target    Decimal
+  id       String  @id @default(cuid())
+  year     Int
+  groupKey String
+  month    Int
+  target   Decimal
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2036,9 +2058,9 @@ model RevenueGoal {
 model OfficeGoal {
   id        String   @id @default(cuid())
   location  String
-  metric    String   // "surveys_completed", "installs_completed", "inspections_completed", "projects_completed"
+  metric    String // "surveys_completed", "installs_completed", "inspections_completed", "projects_completed"
   target    Int
-  month     Int      // 1-12
+  month     Int // 1-12
   year      Int
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2079,7 +2101,7 @@ model IdrMeetingSession {
   id        String           @id @default(cuid())
   date      DateTime
   status    IdrSessionStatus @default(DRAFT)
-  source    String?          // "app" or "google-doc-import"
+  source    String? // "app" or "google-doc-import"
   createdBy String
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
@@ -2090,94 +2112,94 @@ model IdrMeetingSession {
 }
 
 model IdrMeetingItem {
-  id        String      @id @default(cuid())
+  id        String            @id @default(cuid())
   sessionId String
   session   IdrMeetingSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   dealId    String
-  type      IdrItemType @default(IDR)
-  region    String      // pb_location
-  sortOrder Int         @default(0)
+  type      IdrItemType       @default(IDR)
+  region    String // pb_location
+  sortOrder Int               @default(0)
 
   // Snapshot fields (refreshed via stale-while-revalidate)
-  dealName         String
-  address          String?
-  projectType      String?
-  equipmentSummary String?
-  systemSizeKw     Float?
-  dealAmount       Float?
-  dealOwner         String?
-  siteSurveyor      String?
-  projectManager    String?
-  operationsManager String?
-  surveyStatus      String?
-  surveyDate       String?
-  designStatus     String?
-  plansetDate      String?
-  driveFolderUrl   String?
-  surveyFolderUrl  String?
-  designFolderUrl  String?
-  ahj              String?
-  utilityCompany   String?
-  openSolarUrl     String?
-  surveyCompleted  Boolean  @default(false)
-  tags             String[] @default([])
+  dealName               String
+  address                String?
+  projectType            String?
+  equipmentSummary       String?
+  systemSizeKw           Float?
+  dealAmount             Float?
+  dealOwner              String?
+  siteSurveyor           String?
+  projectManager         String?
+  operationsManager      String?
+  surveyStatus           String?
+  surveyDate             String?
+  designStatus           String?
+  plansetDate            String?
+  driveFolderUrl         String?
+  surveyFolderUrl        String?
+  designFolderUrl        String?
+  ahj                    String?
+  utilityCompany         String?
+  openSolarUrl           String?
+  surveyCompleted        Boolean  @default(false)
+  tags                   String[] @default([])
   // Read-only HubSpot notes (snapshot)
-  salesNotes              String?
-  salesChangeOrderNotes   String?
-  salesChangeOrderNeeded  Boolean  @default(false)
-  notesForDesign          String?
-  specificNotesForDesign  String?
-  snapshotUpdatedAt DateTime @default(now())
+  salesNotes             String?
+  salesChangeOrderNotes  String?
+  salesChangeOrderNeeded Boolean  @default(false)
+  notesForDesign         String?
+  specificNotesForDesign String?
+  snapshotUpdatedAt      DateTime @default(now())
 
   // Editable fields
-  difficulty       Int?
-  installerCount   Int?
-  installerDays    Int?
-  electricianCount Int?
-  electricianDays  Int?
-  discoReco        Boolean?
-  interiorAccess   Boolean?
-  needsSurveyInfo       Boolean?  // Flag: needs info from site surveyor → DA status "Pending Ops Changes"
-  needsResurvey         Boolean?  // Flag: requires resurvey → DA status "Pending Resurvey"
-  salesChangeRequested  Boolean?  // Flag: trigger sales change → DA status "Pending Sales Changes"
-  salesChangeNotes      String?   // Reason for sales change → HubSpot sales_communication_reason
-  opsChangeNotes        String?   // Reason for ops/survey change → HubSpot ops_communication_reason
-  customerNotes    String?
-  operationsNotes  String?
-  designNotes      String?
-  conclusion       String?
+  difficulty           Int?
+  installerCount       Int?
+  installerDays        Int?
+  electricianCount     Int?
+  electricianDays      Int?
+  discoReco            Boolean?
+  interiorAccess       Boolean?
+  needsSurveyInfo      Boolean? // Flag: needs info from site surveyor → DA status "Pending Ops Changes"
+  needsResurvey        Boolean? // Flag: requires resurvey → DA status "Pending Resurvey"
+  salesChangeRequested Boolean? // Flag: trigger sales change → DA status "Pending Sales Changes"
+  salesChangeNotes     String? // Reason for sales change → HubSpot sales_communication_reason
+  opsChangeNotes       String? // Reason for ops/survey change → HubSpot ops_communication_reason
+  customerNotes        String?
+  operationsNotes      String?
+  designNotes          String?
+  conclusion           String?
 
   // Escalation
   escalationReason String?
 
   // Reviewed — marks that the team has finished reviewing this item in the meeting
-  reviewed         Boolean  @default(false)
+  reviewed Boolean @default(false)
 
   // Shit Show flag — flagged for discussion in a shit show meeting
-  shitShowFlagged  Boolean  @default(false)
-  shitShowReason   String?
+  shitShowFlagged Boolean @default(false)
+  shitShowReason  String?
 
   // Adder checkboxes
-  adderTileRoof     Boolean  @default(false)
-  adderMetalRoof    Boolean  @default(false)
-  adderFlatFoamRoof Boolean  @default(false)
-  adderShakeRoof    Boolean  @default(false)
-  adderSteepPitch   Boolean  @default(false)
-  adderTwoStorey    Boolean  @default(false)
-  adderTrenching    Boolean  @default(false)
-  adderGroundMount  Boolean  @default(false)
-  adderMpuUpgrade   Boolean  @default(false)
-  adderEvCharger    Boolean  @default(false)
-  customAdders      Json     @default("[]")
+  adderTileRoof     Boolean @default(false)
+  adderMetalRoof    Boolean @default(false)
+  adderFlatFoamRoof Boolean @default(false)
+  adderShakeRoof    Boolean @default(false)
+  adderSteepPitch   Boolean @default(false)
+  adderTwoStorey    Boolean @default(false)
+  adderTrenching    Boolean @default(false)
+  adderGroundMount  Boolean @default(false)
+  adderMpuUpgrade   Boolean @default(false)
+  adderEvCharger    Boolean @default(false)
+  customAdders      Json    @default("[]")
 
   // Sync status
   hubspotSyncStatus IdrSyncStatus       @default(DRAFT)
   hubspotSyncedAt   DateTime?
-  threadPostStatus  IdrThreadPostStatus  @default(SKIPPED)
+  threadPostStatus  IdrThreadPostStatus @default(SKIPPED)
 
-  addedBy   String    // "system" or user email
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  addedBy   String // "system" or user email
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   notes IdrMeetingNote[]
 
@@ -2187,13 +2209,13 @@ model IdrMeetingItem {
 }
 
 model IdrMeetingNote {
-  id        String   @id @default(cuid())
+  id        String         @id @default(cuid())
   itemId    String
   item      IdrMeetingItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  dealId    String   // denormalized for cross-meeting queries
+  dealId    String // denormalized for cross-meeting queries
   content   String
   author    String
-  createdAt DateTime @default(now())
+  createdAt DateTime       @default(now())
 
   @@index([itemId])
   @@index([dealId, createdAt])
@@ -2204,15 +2226,15 @@ model IdrMeetingNote {
 /// PREP = field edits saved on preview items (merged into session on start).
 /// When a session is created, all QUEUED items are consumed.
 model IdrEscalationQueue {
-  id               String   @id @default(cuid())
-  dealId           String
-  dealName         String   // snapshot for display without HubSpot fetch
-  region           String?
-  queueType        String   @default("ESCALATION") // ESCALATION | PREP
-  reason           String   @default("") // escalation reason (empty for PREP)
-  status           IdrEscalationStatus @default(QUEUED)
-  requestedBy      String   // user email
-  consumedBySession String?  // session ID that consumed this item
+  id                String              @id @default(cuid())
+  dealId            String
+  dealName          String // snapshot for display without HubSpot fetch
+  region            String?
+  queueType         String              @default("ESCALATION") // ESCALATION | PREP
+  reason            String              @default("") // escalation reason (empty for PREP)
+  status            IdrEscalationStatus @default(QUEUED)
+  requestedBy       String // user email
+  consumedBySession String? // session ID that consumed this item
 
   // Prefilled fields — carried into the session item on consume
   difficulty           Int?
@@ -2233,20 +2255,20 @@ model IdrEscalationQueue {
   conclusion           String?
 
   // Adder checkboxes (carried over from prep/skip)
-  adderTileRoof     Boolean  @default(false)
-  adderMetalRoof    Boolean  @default(false)
-  adderFlatFoamRoof Boolean  @default(false)
-  adderShakeRoof    Boolean  @default(false)
-  adderSteepPitch   Boolean  @default(false)
-  adderTwoStorey    Boolean  @default(false)
-  adderTrenching    Boolean  @default(false)
-  adderGroundMount  Boolean  @default(false)
-  adderMpuUpgrade   Boolean  @default(false)
-  adderEvCharger    Boolean  @default(false)
-  customAdders      Json     @default("[]")
+  adderTileRoof     Boolean @default(false)
+  adderMetalRoof    Boolean @default(false)
+  adderFlatFoamRoof Boolean @default(false)
+  adderShakeRoof    Boolean @default(false)
+  adderSteepPitch   Boolean @default(false)
+  adderTwoStorey    Boolean @default(false)
+  adderTrenching    Boolean @default(false)
+  adderGroundMount  Boolean @default(false)
+  adderMpuUpgrade   Boolean @default(false)
+  adderEvCharger    Boolean @default(false)
+  customAdders      Json    @default("[]")
 
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([status])
   @@index([dealId])
@@ -2263,112 +2285,112 @@ enum IdrEscalationStatus {
 // ===========================================
 
 model Deal {
-  id              String   @id @default(cuid())
+  id String @id @default(cuid())
 
   // Identity
-  hubspotDealId   String   @unique
-  dealName        String
-  pipeline        DealPipeline
-  stage           String
-  stageId         String
-  amount          Decimal?
+  hubspotDealId String       @unique
+  dealName      String
+  pipeline      DealPipeline
+  stage         String
+  stageId       String
+  amount        Decimal?
 
   // Location
-  pbLocation      String?
-  address         String?
-  city            String?
-  state           String?
-  zipCode         String?
-  ahj             String?
-  utility         String?
+  pbLocation String?
+  address    String?
+  city       String?
+  state      String?
+  zipCode    String?
+  ahj        String?
+  utility    String?
 
   // Team
-  hubspotOwnerId      String?
-  dealOwnerName        String?
-  projectManager       String?
-  operationsManager    String?
-  siteSurveyor         String?
-  departmentLeads      Json?
+  hubspotOwnerId    String?
+  dealOwnerName     String?
+  projectManager    String?
+  operationsManager String?
+  siteSurveyor      String?
+  departmentLeads   Json?
 
   // Milestones
-  closeDate                    DateTime?
-  siteSurveyScheduleDate       DateTime?
-  siteSurveyScheduledDate      DateTime?
-  siteSurveyCompletionDate     DateTime?
-  dateReturnedFromDesigners    DateTime?
-  designStartDate              DateTime?
-  designDraftCompletionDate    DateTime?
-  designCompletionDate         DateTime?
-  designApprovalSentDate       DateTime?
-  layoutApprovalDate           DateTime?
-  permitSubmitDate             DateTime?
-  permitIssueDate              DateTime?
-  icSubmitDate                 DateTime?
-  icApprovalDate               DateTime?
-  rtbDate                      DateTime?
-  installScheduleDate          DateTime?
-  constructionCompleteDate     DateTime?
-  inspectionScheduleDate       DateTime?
-  inspectionPassDate           DateTime?
-  inspectionFailDate           DateTime?
-  inspectionBookedDate         DateTime?
-  ptoStartDate                 DateTime?
-  ptoCompletionDate            DateTime?
-  forecastedInstallDate        DateTime?
-  forecastedInspectionDate     DateTime?
-  forecastedPtoDate            DateTime?
+  closeDate                 DateTime?
+  siteSurveyScheduleDate    DateTime?
+  siteSurveyScheduledDate   DateTime?
+  siteSurveyCompletionDate  DateTime?
+  dateReturnedFromDesigners DateTime?
+  designStartDate           DateTime?
+  designDraftCompletionDate DateTime?
+  designCompletionDate      DateTime?
+  designApprovalSentDate    DateTime?
+  layoutApprovalDate        DateTime?
+  permitSubmitDate          DateTime?
+  permitIssueDate           DateTime?
+  icSubmitDate              DateTime?
+  icApprovalDate            DateTime?
+  rtbDate                   DateTime?
+  installScheduleDate       DateTime?
+  constructionCompleteDate  DateTime?
+  inspectionScheduleDate    DateTime?
+  inspectionPassDate        DateTime?
+  inspectionFailDate        DateTime?
+  inspectionBookedDate      DateTime?
+  ptoStartDate              DateTime?
+  ptoCompletionDate         DateTime?
+  forecastedInstallDate     DateTime?
+  forecastedInspectionDate  DateTime?
+  forecastedPtoDate         DateTime?
 
   // Status Flags
-  isSiteSurveyScheduled                Boolean  @default(false)
-  isSiteSurveyCompleted                Boolean  @default(false)
-  isDaSent                             Boolean  @default(false)
-  isLayoutApproved                     Boolean  @default(false)
-  isDesignDrafted                      Boolean  @default(false)
-  isDesignCompleted                    Boolean  @default(false)
-  isPermitSubmitted                    Boolean  @default(false)
-  isPermitIssued                       Boolean  @default(false)
-  isIcSubmitted                        Boolean  @default(false)
-  isIcApproved                         Boolean  @default(false)
-  isParticipateEnergy                  Boolean  @default(false)
-  isInspectionPassed                   Boolean  @default(false)
-  hasInspectionFailed                  Boolean  @default(false)
-  firstTimeInspectionPass              Boolean  @default(false)
-  hasInspectionFailedNotRejected       Boolean  @default(false)
-  firstTimeInspectionPassNotRejected   Boolean  @default(false)
-  readyForInspection                   String?
-  finalInspectionStatus                String?
-  inspectionFailCount                  Int?
-  inspectionFailureReason              String?
-  installStatus                        String?
-  designStatus                         String?
-  surveyStatus                         String?
-  permittingStatus                     String?
-  layoutStatus                         String?
-  icStatus                             String?
-  ptoStatus                            String?
+  isSiteSurveyScheduled              Boolean @default(false)
+  isSiteSurveyCompleted              Boolean @default(false)
+  isDaSent                           Boolean @default(false)
+  isLayoutApproved                   Boolean @default(false)
+  isDesignDrafted                    Boolean @default(false)
+  isDesignCompleted                  Boolean @default(false)
+  isPermitSubmitted                  Boolean @default(false)
+  isPermitIssued                     Boolean @default(false)
+  isIcSubmitted                      Boolean @default(false)
+  isIcApproved                       Boolean @default(false)
+  isParticipateEnergy                Boolean @default(false)
+  isInspectionPassed                 Boolean @default(false)
+  hasInspectionFailed                Boolean @default(false)
+  firstTimeInspectionPass            Boolean @default(false)
+  hasInspectionFailedNotRejected     Boolean @default(false)
+  firstTimeInspectionPassNotRejected Boolean @default(false)
+  readyForInspection                 String?
+  finalInspectionStatus              String?
+  inspectionFailCount                Int?
+  inspectionFailureReason            String?
+  installStatus                      String?
+  designStatus                       String?
+  surveyStatus                       String?
+  permittingStatus                   String?
+  layoutStatus                       String?
+  icStatus                           String?
+  ptoStatus                          String?
 
   // Equipment
-  systemSizeKwdc          Decimal?
-  systemSizeKwac          Decimal?
-  moduleBrand             String?
-  moduleModel             String?
-  moduleCount             Int?
-  moduleWattage           Int?
-  moduleName              String?
-  inverterBrand           String?
-  inverterModel           String?
-  inverterQty             Int?
-  inverterSizeKwac        Decimal?
-  inverterName            String?
-  batteryBrand            String?
-  batteryModel            String?
-  batteryCount            Int?
-  batterySizeKwh          Decimal?
-  batteryName             String?
-  batteryExpansionCount   Int?
-  batteryExpansionName    String?
-  batteryExpansionModel   String?
-  evCount                 Int?
+  systemSizeKwdc        Decimal?
+  systemSizeKwac        Decimal?
+  moduleBrand           String?
+  moduleModel           String?
+  moduleCount           Int?
+  moduleWattage         Int?
+  moduleName            String?
+  inverterBrand         String?
+  inverterModel         String?
+  inverterQty           Int?
+  inverterSizeKwac      Decimal?
+  inverterName          String?
+  batteryBrand          String?
+  batteryModel          String?
+  batteryCount          Int?
+  batterySizeKwh        Decimal?
+  batteryName           String?
+  batteryExpansionCount Int?
+  batteryExpansionName  String?
+  batteryExpansionModel String?
+  evCount               Int?
 
   // QC Metrics (days, converted from HubSpot ms)
   siteSurveyTurnaroundDays   Decimal?
@@ -2394,50 +2416,50 @@ model Deal {
   daToPermitDays             Decimal?
 
   // Revisions
-  daRevisionCount         Int?
-  asBuiltRevisionCount    Int?
-  permitRevisionCount     Int?
-  icRevisionCount         Int?
-  totalRevisionCount      Int?
+  daRevisionCount      Int?
+  asBuiltRevisionCount Int?
+  permitRevisionCount  Int?
+  icRevisionCount      Int?
+  totalRevisionCount   Int?
 
   // External Links
-  designDocumentsUrl      String?
-  designFolderUrl         String?
-  allDocumentFolderUrl    String?
-  driveUrl                String?
-  openSolarUrl            String?
-  openSolarId             String?
-  zuperUid                String?
-  hubspotUrl              String?
+  designDocumentsUrl   String?
+  designFolderUrl      String?
+  allDocumentFolderUrl String?
+  driveUrl             String?
+  openSolarUrl         String?
+  openSolarId          String?
+  zuperUid             String?
+  hubspotUrl           String?
 
   // Install Planning
-  expectedDaysForInstall    Int?
-  daysForInstallers         Int?
-  daysForElectricians       Int?
-  installCrew               String?
-  installDifficulty         Int?
-  installNotes              String?
-  expectedInstallerCount    Int?
-  expectedElectricianCount  Int?
+  expectedDaysForInstall   Int?
+  daysForInstallers        Int?
+  daysForElectricians      Int?
+  installCrew              String?
+  installDifficulty        Int?
+  installNotes             String?
+  expectedInstallerCount   Int?
+  expectedElectricianCount Int?
 
   // Incentive Programs
-  n3ceEvStatus              String?
-  n3ceBatteryStatus         String?
-  sgipStatus                String?
-  pbsrStatus                String?
-  cpaStatus                 String?
-  participateEnergyStatus   String?
+  n3ceEvStatus            String?
+  n3ceBatteryStatus       String?
+  sgipStatus              String?
+  pbsrStatus              String?
+  cpaStatus               String?
+  participateEnergyStatus String?
 
   // Misc
-  projectNumber             String?
-  projectType               String?
-  tags                      String?
-  discoReco                 String?
-  interiorAccess            String?
-  siteSurveyDocuments       String?
-  systemPerformanceReview   String?
-  dateEnteredCurrentStage   DateTime?
-  createDate                DateTime?
+  projectNumber           String?
+  projectType             String?
+  tags                    String?
+  discoReco               String?
+  interiorAccess          String?
+  siteSurveyDocuments     String?
+  systemPerformanceReview String?
+  dateEnteredCurrentStage DateTime?
+  createDate              DateTime?
 
   // Service pipeline
   serviceType              String?
@@ -2453,41 +2475,41 @@ model Deal {
   serviceDocumentsFolderId String?
 
   // Roofing / D&R pipeline
-  roofType              String?
-  roofAge               String?
+  roofType               String?
+  roofAge                String?
   currentRoofingMaterial String?
   desiredRoofingMaterial String?
-  roofColorSelection    String?
-  roofingProjectType    String?
-  roofingNotes          String?
-  roofrFormUrl          String?
-  roofrId               String?
-  roofrPropertyInfo     String?
-  roofrPropertyType     String?
-  roofSlope             String?
-  roofrGclid            String?
+  roofColorSelection     String?
+  roofingProjectType     String?
+  roofingNotes           String?
+  roofrFormUrl           String?
+  roofrId                String?
+  roofrPropertyInfo      String?
+  roofrPropertyType      String?
+  roofSlope              String?
+  roofrGclid             String?
 
   // Associations
-  hubspotContactId    String?
-  customerName        String?
-  customerEmail       String?
-  customerPhone       String?
-  hubspotCompanyId    String?
-  companyName         String?
+  hubspotContactId String?
+  customerName     String?
+  customerEmail    String?
+  customerPhone    String?
+  hubspotCompanyId String?
+  companyName      String?
 
   // Sync Metadata
-  hubspotUpdatedAt    DateTime?
-  lastSyncedAt        DateTime  @default(now())
-  syncSource          DealSyncSource
-  rawProperties       Json?
+  hubspotUpdatedAt DateTime?
+  lastSyncedAt     DateTime       @default(now())
+  syncSource       DealSyncSource
+  rawProperties    Json?
 
   // Standard
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relations
-  syncLogs            DealSyncLog[]
-  notes               DealNote[]
+  syncLogs DealSyncLog[]
+  notes    DealNote[]
 
   @@index([pipeline, stage])
   @@index([pbLocation])
@@ -2496,9 +2518,9 @@ model Deal {
 }
 
 model DealSyncLog {
-  id              String          @id @default(cuid())
+  id              String         @id @default(cuid())
   dealId          String?
-  deal            Deal?           @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  deal            Deal?          @relation(fields: [dealId], references: [id], onDelete: SetNull)
   hubspotDealId   String?
   syncType        DealSyncType
   source          String
@@ -2507,7 +2529,7 @@ model DealSyncLog {
   status          DealSyncStatus
   errorMessage    String?
   durationMs      Int?
-  createdAt       DateTime        @default(now())
+  createdAt       DateTime       @default(now())
 
   @@index([dealId, createdAt])
   @@index([syncType, createdAt])
@@ -2534,7 +2556,7 @@ model CommsGmailToken {
   gmailAccessToken  String
   gmailRefreshToken String
   gmailTokenExpiry  BigInt   @default(0)
-  gmailEmail        String?  /// Verified Gmail address from /users/me/profile at connect time
+  gmailEmail        String? /// Verified Gmail address from /users/me/profile at connect time
   chatEnabled       Boolean  @default(false)
   scopes            String   @default("")
   createdAt         DateTime @default(now())
@@ -2555,13 +2577,13 @@ model CommsAiMemory {
 }
 
 model CommsUserState {
-  id              Int      @id @default(autoincrement())
-  userId          String   @unique
-  user            User     @relation("UserCommsUserState", fields: [userId], references: [id])
-  gmailHistoryId  String   @default("")
+  id              Int       @id @default(autoincrement())
+  userId          String    @unique
+  user            User      @relation("UserCommsUserState", fields: [userId], references: [id])
+  gmailHistoryId  String    @default("")
   chatLastSyncAt  DateTime?
   lastRefreshedAt DateTime?
-  updatedAt       DateTime @updatedAt
+  updatedAt       DateTime  @updatedAt
 }
 
 // ===========================================
@@ -2572,8 +2594,8 @@ model ProductSyncRun {
   id             String    @id @default(cuid())
   startedAt      DateTime  @default(now())
   completedAt    DateTime?
-  trigger        String    // "cron" | "manual"
-  triggeredBy    String?   // user email for manual triggers
+  trigger        String // "cron" | "manual"
+  triggeredBy    String? // user email for manual triggers
   zohoScanned    Int       @default(0)
   hubspotScanned Int       @default(0)
   zuperScanned   Int       @default(0)
@@ -2581,8 +2603,8 @@ model ProductSyncRun {
   linked         Int       @default(0)
   flagged        Int       @default(0)
   skipped        Int       @default(0)
-  errors         String?   // JSON array of error messages
-  lockSentinel   String?   // "ACTIVE" while running, null when done
+  errors         String? // JSON array of error messages
+  lockSentinel   String? // "ACTIVE" while running, null when done
 
   @@unique([lockSentinel], name: "uq_product_sync_active_run")
   @@index([startedAt])
@@ -2595,8 +2617,8 @@ model DealNote {
   content           String   @db.VarChar(5000)
   authorEmail       String
   authorName        String
-  hubspotSyncStatus String?  // PENDING | SYNCED | FAILED
-  zuperSyncStatus   String?  // PENDING | SYNCED | FAILED | SKIPPED
+  hubspotSyncStatus String? // PENDING | SYNCED | FAILED
+  zuperSyncStatus   String? // PENDING | SYNCED | FAILED | SKIPPED
   createdAt         DateTime @default(now())
 
   @@index([dealId, createdAt])
@@ -2612,19 +2634,141 @@ model DealNote {
 ///
 /// See: docs/superpowers/plans/2026-04-18-role-management-ui-roadmap.md (Option B)
 model RoleCapabilityOverride {
-  id                         String   @id @default(cuid())
-  role                       UserRole @unique
-  canScheduleSurveys         Boolean?
-  canScheduleInstalls        Boolean?
-  canScheduleInspections     Boolean?
-  canSyncZuper               Boolean?
-  canManageUsers             Boolean?
-  canManageAvailability      Boolean?
-  canEditDesign              Boolean?
-  canEditPermitting          Boolean?
-  canViewAllLocations        Boolean?
-  updatedAt                  DateTime @updatedAt
-  updatedByEmail             String?
+  id                     String   @id @default(cuid())
+  role                   UserRole @unique
+  canScheduleSurveys     Boolean?
+  canScheduleInstalls    Boolean?
+  canScheduleInspections Boolean?
+  canSyncZuper           Boolean?
+  canManageUsers         Boolean?
+  canManageAvailability  Boolean?
+  canEditDesign          Boolean?
+  canEditPermitting      Boolean?
+  canViewAllLocations    Boolean?
+  updatedAt              DateTime @updatedAt
+  updatedByEmail         String?
 
   @@index([role])
+}
+
+// ===========================================
+// ON-CALL ELECTRICIAN ROTATIONS
+// ===========================================
+
+/// Pool — one per independent rotation. Current pools: California, Denver, Southern CO.
+model OnCallPool {
+  id            String  @id @default(cuid())
+  name          String  @unique
+  region        String
+  shiftStart    String
+  shiftEnd      String
+  timezone      String
+  startDate     String
+  horizonMonths Int     @default(3)
+  isActive      Boolean @default(true)
+
+  lastPublishedAt      DateTime?
+  lastPublishedBy      String?
+  lastPublishedThrough String?
+
+  icalToken String? @unique
+
+  members      OnCallPoolMember[]
+  assignments  OnCallAssignment[]
+  swapRequests OnCallSwapRequest[]
+  ptoRequests  OnCallPtoRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+}
+
+/// Pool membership with rotation order.
+model OnCallPoolMember {
+  id           String     @id @default(cuid())
+  poolId       String
+  pool         OnCallPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  crewMemberId String
+  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id])
+  orderIndex   Int
+  isActive     Boolean    @default(true)
+  addedAt      DateTime   @default(now())
+
+  @@unique([poolId, crewMemberId])
+  @@index([poolId, orderIndex])
+}
+
+/// A single day's on-call assignment. One row per (pool, date).
+model OnCallAssignment {
+  id                   String      @id @default(cuid())
+  poolId               String
+  pool                 OnCallPool  @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  date                 String
+  crewMemberId         String
+  crewMember           CrewMember  @relation(fields: [crewMemberId], references: [id])
+  source               String
+  originalCrewMemberId String?
+  originalCrewMember   CrewMember? @relation("OriginalAssigneeSwaps", fields: [originalCrewMemberId], references: [id])
+  sourceRequestId      String?
+  note                 String?
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
+
+  @@unique([poolId, date])
+  @@index([crewMemberId, date])
+  @@index([poolId, source])
+}
+
+/// Electrician-proposed swap. Two-party: requester gives up their day, counterparty covers; requester takes counterparty's day in return.
+model OnCallSwapRequest {
+  id     String     @id @default(cuid())
+  poolId String
+  pool   OnCallPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  requesterCrewMemberId String
+  requesterCrewMember   CrewMember @relation("RequesterSwaps", fields: [requesterCrewMemberId], references: [id])
+  requesterDate         String
+
+  counterpartyCrewMemberId String
+  counterpartyCrewMember   CrewMember @relation("CounterpartySwaps", fields: [counterpartyCrewMemberId], references: [id])
+  counterpartyDate         String
+
+  reason String?
+  status String
+
+  counterpartyAcceptedAt DateTime?
+  reviewedByUserId       String?
+  reviewedAt             DateTime?
+  denialReason           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([poolId, status])
+  @@index([requesterCrewMemberId])
+  @@index([counterpartyCrewMemberId])
+}
+
+/// Electrician-requested PTO that removes them from rotation for a date range.
+model OnCallPtoRequest {
+  id           String     @id @default(cuid())
+  poolId       String
+  pool         OnCallPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+  crewMemberId String
+  crewMember   CrewMember @relation(fields: [crewMemberId], references: [id])
+  startDate    String
+  endDate      String
+  reason       String?
+  status       String
+
+  reviewedByUserId String?
+  reviewedAt       DateTime?
+  denialReason     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([poolId, status])
+  @@index([crewMemberId])
 }

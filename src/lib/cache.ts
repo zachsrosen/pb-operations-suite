@@ -286,6 +286,7 @@ export const CACHE_KEYS = {
     `deal-tasks:${hubspotDealId}:all` as const,
   ZUPER_SERVICE_TASKS: (hubspotDealId: string, jobUid: string) =>
     `zuper-service-tasks:${hubspotDealId}:${jobUid}` as const,
+  ON_CALL_TONIGHT: "on-call:tonight",
 } as const;
 
 // Revenue goals cache cascade: invalidate when deals change

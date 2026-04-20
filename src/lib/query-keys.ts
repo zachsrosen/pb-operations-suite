@@ -73,6 +73,19 @@ export const queryKeys = {
     root: ["revenue-goals"] as const,
     byYear: (year: number) => ["revenue-goals", year] as const,
   },
+  onCall: {
+    root: ["on-call"] as const,
+    tonight: () => ["on-call", "tonight"] as const,
+    assignments: (poolId: string | null, from: string, to: string) =>
+      ["on-call", "assignments", poolId, from, to] as const,
+    workload: (poolId: string, month: string) =>
+      ["on-call", "workload", poolId, month] as const,
+    pools: () => ["on-call", "pools"] as const,
+    pool: (id: string) => ["on-call", "pool", id] as const,
+    swaps: (status?: string) => ["on-call", "swaps", status] as const,
+    pto: () => ["on-call", "pto"] as const,
+    me: () => ["on-call", "me"] as const,
+  },
   peDeals: {
     root: ["peDeals"] as const,
     list: () => [...queryKeys.peDeals.root, "list"] as const,
@@ -171,5 +184,6 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("territory-map")) return [queryKeys.territoryMap.root];
   if (serverKey.startsWith("office-performance")) return [queryKeys.officePerformance.root];
   if (serverKey.startsWith("idr-meeting")) return [queryKeys.idrMeeting.root];
+  if (serverKey.startsWith("on-call")) return [queryKeys.onCall.root];
   return [];
 }

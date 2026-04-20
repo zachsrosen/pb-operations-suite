@@ -39,6 +39,7 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/hubspot/deal-sync", // Deal mirror webhook — HubSpot signature validated in route
   "/api/portal/survey", // Customer portal — token-validated, no session needed
   "/api/solar/cron/cleanup-pending", // Solar cron — CRON_SECRET validated in route
+  "/api/on-call/calendar", // On-call iCal feed — pool icalToken validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed", "/api/install-review", "/api/zuper/sync-cache"] as const;
 
