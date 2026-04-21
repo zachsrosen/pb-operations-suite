@@ -63,8 +63,6 @@ interface SuiteMetadata {
   description: string;
   tag: string;
   tagColor: string;
-  /** If true, render under the "Admin" section heading instead of "Suites". */
-  adminSection?: boolean;
 }
 
 // Display metadata keyed by suite href. Which suites a user sees is driven by
@@ -96,7 +94,6 @@ const SUITE_METADATA: Record<string, SuiteMetadata> = {
     description: "Risk analysis, QC metrics, and pipeline forecasting.",
     tag: "INTELLIGENCE",
     tagColor: "cyan",
-    adminSection: true,
   },
   "/suites/executive": {
     title: "Executive Suite",
@@ -109,14 +106,12 @@ const SUITE_METADATA: Record<string, SuiteMetadata> = {
     description: "Service scheduling, equipment tracking, priority queue, and pipelines.",
     tag: "SERVICE",
     tagColor: "cyan",
-    adminSection: true,
   },
   "/suites/dnr-roofing": {
     title: "D&R + Roofing Suite",
     description: "Detach & reset and roofing scheduling, pipelines, and tracking.",
     tag: "D&R + ROOFING",
     tagColor: "purple",
-    adminSection: true,
   },
   "/dashboards/ai": {
     title: "AI Skills",
@@ -805,35 +800,20 @@ export default function Home() {
           </div>
         )}
 
-        {/* Suites (for ADMIN/EXECUTIVE) */}
-        {visibleSuites.length > 0 && (() => {
-          const mainSuites = visibleSuites.filter((s) => !s.adminSection);
-          const adminSuites = visibleSuites.filter((s) => s.adminSection);
-          return (
-            <>
-              {mainSuites.length > 0 && (
-                <div>
-                  <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">Suites</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
-                    {mainSuites.map((suite) => (
-                      <DashboardLink key={suite.href} {...suite} />
-                    ))}
-                  </div>
-                </div>
-              )}
-              {adminSuites.length > 0 && (
-                <div>
-                  <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">Admin</h2>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
-                    {adminSuites.map((suite) => (
-                      <DashboardLink key={suite.href} {...suite} />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </>
-          );
-        })()}
+        {/* All accessible suites — previously split into "Suites" + "Admin"
+            headings via the `adminSection` flag. After the admin surface
+            moved to /admin (UserMenu dropdown), the split made no sense —
+            everything here is just a suite the user can access. */}
+        {visibleSuites.length > 0 && (
+          <div>
+            <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">Suites</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
+              {visibleSuites.map((suite) => (
+                <DashboardLink key={suite.href} {...suite} />
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Browse All — driven by access.suites + AI Skills (same as visibleSuites) */}
         {roleLandingCards && visibleSuites.length > 0 && (
