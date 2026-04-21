@@ -99,10 +99,19 @@ export async function GET(request: NextRequest) {
     const tasks = enrichedAll.slice(0, rawOpen.length);
     const completedTasks = enrichedAll.slice(rawOpen.length);
 
-    // Only show queues that at least one open task is in.
+    // Surface every queue the user's open tasks belong to — even if an admin
+    // hasn't mapped it to a name yet (fall back to "Queue #<id>"). That way
+    // the filter bar always reflects reality and admins get nudged to map
+    // the unknown ids via /admin/hubspot-queues.
+    const queueById = new Map(queues.map((q) => [q.id, q]));
     const referencedQueueIds = new Set<string>();
     for (const t of tasks) for (const q of t.queueIds) referencedQueueIds.add(q);
-    const visibleQueues = queues.filter((q) => referencedQueueIds.has(q.id));
+
+    const visibleQueues: TaskQueue[] = [];
+    for (const id of referencedQueueIds) {
+      visibleQueues.push(queueById.get(id) ?? { id, name: `Queue #${id}` });
+    }
+    visibleQueues.sort((a, b) => a.name.localeCompare(b.name));
 
     const payload: MyTasksPayload = {
       ownerId,

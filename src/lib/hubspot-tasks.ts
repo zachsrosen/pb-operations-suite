@@ -277,49 +277,22 @@ export async function fetchRecentCompletedByOwner(
 
 // ---------------------------------------------------------------------------
 // Queues
+//
+// HubSpot's public API does not expose queue listings (tried /crm/v3/queues,
+// /sales-queues/v1/queues, /queues/v1/queues, /owners/v2/queues/tasks — all
+// 404). We maintain an admin-configured id→name map in the DB via
+// getQueueNameMap(), and derive the queue list from that.
 // ---------------------------------------------------------------------------
 
-const QUEUES_CACHE_KEY = "hubspot:task-queues";
-
-interface HubSpotQueueRaw {
-  objectId?: number | string;
-  queueId?: number | string;
-  id?: number | string;
-  name?: string;
-  label?: string;
-}
-
 export async function fetchQueues(): Promise<TaskQueue[]> {
-  const cached = appCache.get<TaskQueue[]>(QUEUES_CACHE_KEY);
-  if (cached.hit && cached.data) return cached.data;
-
-  const token = process.env.HUBSPOT_ACCESS_TOKEN;
-  if (!token) return [];
-
-  try {
-    const resp = await withHubSpotRetry("queues.list", async () => {
-      const r = await fetch("https://api.hubapi.com/crm/v3/objects/tasks/queues", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!r.ok) {
-        const err = new Error(`queues fetch ${r.status}`);
-        (err as unknown as { code: number }).code = r.status;
-        throw err;
-      }
-      return r.json() as Promise<{ results?: HubSpotQueueRaw[] }>;
-    });
-
-    const queues: TaskQueue[] = (resp.results ?? []).map((q) => ({
-      id: String(q.objectId ?? q.queueId ?? q.id ?? ""),
-      name: q.name ?? q.label ?? "Untitled queue",
-    })).filter((q) => q.id);
-
-    appCache.set(QUEUES_CACHE_KEY, queues);
-    return queues;
-  } catch (err) {
-    Sentry.captureException(err, { tags: { module: "hubspot-tasks", op: "fetchQueues" } });
-    return [];
+  const { getQueueNameMap } = await import("@/lib/hubspot-queue-names");
+  const map = await getQueueNameMap();
+  const queues: TaskQueue[] = [];
+  for (const [id, name] of map.entries()) {
+    queues.push({ id, name });
   }
+  queues.sort((a, b) => a.name.localeCompare(b.name));
+  return queues;
 }
 
 // ---------------------------------------------------------------------------
