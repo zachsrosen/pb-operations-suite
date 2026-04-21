@@ -8,15 +8,13 @@ import TaskFilters from "@/components/my-tasks/TaskFilters";
 import TasksGrouped from "@/components/my-tasks/TasksGrouped";
 import CompletedTasksSection from "@/components/my-tasks/CompletedTasksSection";
 import BulkActionBar from "@/components/my-tasks/BulkActionBar";
-import CreateTaskModal from "@/components/my-tasks/CreateTaskModal";
+import CreateTaskModal, { type CreateTaskInput } from "@/components/my-tasks/CreateTaskModal";
 import KeyboardHelp from "@/components/my-tasks/KeyboardHelp";
 import type { SortMode } from "@/components/my-tasks/grouping";
 import type {
   EnrichedTask,
   TaskQueue,
-  TaskPriority,
   TaskStatus,
-  TaskType,
 } from "@/lib/hubspot-tasks";
 
 interface MyTasksPayload {
@@ -27,17 +25,6 @@ interface MyTasksPayload {
   queues: TaskQueue[];
   allQueues: TaskQueue[];
   fetchedAt: string;
-}
-
-interface CreateTaskInput {
-  subject: string;
-  body?: string;
-  dueAt?: string;
-  priority?: TaskPriority;
-  type?: TaskType;
-  dealId?: string;
-  ticketId?: string;
-  contactId?: string;
 }
 
 const VALID_SORTS: SortMode[] = ["due", "created", "name"];

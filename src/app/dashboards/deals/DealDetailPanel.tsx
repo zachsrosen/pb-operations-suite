@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useState } from "react";
 import Link from "next/link";
 import StatusDot from "./StatusDot";
 import { STATUS_COLUMNS, isProjectPipeline, formatStatusValue, type TableDeal } from "./deals-types";
@@ -8,6 +8,7 @@ import { STAGE_COLORS } from "@/lib/constants";
 import { formatMoney } from "@/lib/format";
 import PropertyLink from "@/components/PropertyLink";
 import { PropertyDrawerProvider } from "@/components/property/PropertyDrawerContext";
+import CreateTaskModal, { type CreateTaskInput } from "@/components/my-tasks/CreateTaskModal";
 
 // Task 6.4: property address drawer integration. When the flag is off, the
 // address InfoRow falls back to the joined-string render and the provider is
@@ -30,6 +31,9 @@ function formatDate(date: string | null): string {
 }
 
 export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps) {
+  const [showCreateTask, setShowCreateTask] = useState(false);
+  const [taskCreateNote, setTaskCreateNote] = useState<string | null>(null);
+
   const handleEscape = useCallback(
     (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -41,6 +45,20 @@ export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps)
     document.addEventListener("keydown", handleEscape);
     return () => document.removeEventListener("keydown", handleEscape);
   }, [handleEscape]);
+
+  const handleCreateTask = async (input: CreateTaskInput) => {
+    const res = await fetch("/api/hubspot/tasks", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
+    if (!res.ok) {
+      const d = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(d.error || `create failed: ${res.status}`);
+    }
+    setTaskCreateNote("Task created — visible on /dashboards/my-tasks");
+    setTimeout(() => setTaskCreateNote(null), 4000);
+  };
 
   if (!deal) return null;
 
@@ -105,7 +123,19 @@ export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps)
             >
               Open full record →
             </Link>
+            <button
+              type="button"
+              onClick={() => setShowCreateTask(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 text-blue-400 border border-blue-500/30 rounded-lg text-xs font-medium hover:bg-blue-500/20 transition-colors"
+            >
+              + New task
+            </button>
           </div>
+          {taskCreateNote && (
+            <div className="rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-xs text-emerald-400">
+              {taskCreateNote}
+            </div>
+          )}
 
           {/* Info section */}
           <Section title="Info">
@@ -186,6 +216,15 @@ export default function DealDetailPanel({ deal, onClose }: DealDetailPanelProps)
           )}
         </div>
       </div>
+      {showCreateTask && (
+        <CreateTaskModal
+          onClose={() => setShowCreateTask(false)}
+          onCreate={handleCreateTask}
+          prefill={{
+            deal: { id: String(deal.id), label: deal.name, subtitle: deal.stage ?? null },
+          }}
+        />
+      )}
     </>
   );
 

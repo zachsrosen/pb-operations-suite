@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { TaskPriority, TaskType } from "@/lib/hubspot-tasks";
+import TypeaheadPicker, { type TypeaheadValue } from "./TypeaheadPicker";
 
-interface CreateTaskInput {
+export interface CreateTaskInput {
   subject: string;
   body?: string;
   dueAt?: string;
@@ -14,20 +15,26 @@ interface CreateTaskInput {
   contactId?: string;
 }
 
-interface CreateTaskModalProps {
+export interface CreateTaskModalProps {
   onClose: () => void;
   onCreate: (input: CreateTaskInput) => Promise<void>;
+  /** Optional pre-filled values, e.g. from the Deal Detail Panel "+ New task" */
+  prefill?: {
+    deal?: TypeaheadValue;
+    contact?: TypeaheadValue;
+    ticket?: TypeaheadValue;
+  };
 }
 
-export default function CreateTaskModal({ onClose, onCreate }: CreateTaskModalProps) {
+export default function CreateTaskModal({ onClose, onCreate, prefill }: CreateTaskModalProps) {
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
   const [dueAt, setDueAt] = useState("");
   const [priority, setPriority] = useState<TaskPriority | "">("");
   const [type, setType] = useState<TaskType | "">("TODO");
-  const [dealId, setDealId] = useState("");
-  const [ticketId, setTicketId] = useState("");
-  const [contactId, setContactId] = useState("");
+  const [deal, setDeal] = useState<TypeaheadValue | null>(prefill?.deal ?? null);
+  const [ticket, setTicket] = useState<TypeaheadValue | null>(prefill?.ticket ?? null);
+  const [contact, setContact] = useState<TypeaheadValue | null>(prefill?.contact ?? null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const subjectRef = useRef<HTMLInputElement>(null);
@@ -55,9 +62,9 @@ export default function CreateTaskModal({ onClose, onCreate }: CreateTaskModalPr
         dueAt: dueAt ? new Date(dueAt).toISOString() : undefined,
         priority: priority || undefined,
         type: type || undefined,
-        dealId: dealId.trim() || undefined,
-        ticketId: ticketId.trim() || undefined,
-        contactId: contactId.trim() || undefined,
+        dealId: deal?.id,
+        ticketId: ticket?.id,
+        contactId: contact?.id,
       });
       onClose();
     } catch (err) {
@@ -142,39 +149,32 @@ export default function CreateTaskModal({ onClose, onCreate }: CreateTaskModalPr
             <div />
           </div>
 
-          <details>
+          <details open={Boolean(prefill?.deal || prefill?.contact || prefill?.ticket)}>
             <summary className="cursor-pointer text-xs text-muted hover:text-foreground">
-              Link to a deal, ticket, or contact
+              Link to a deal, contact, or ticket
             </summary>
-            <div className="mt-2 space-y-2">
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-wide text-muted">Deal ID</span>
-                <input
-                  type="text"
-                  value={dealId}
-                  onChange={(e) => setDealId(e.target.value)}
-                  placeholder="e.g. 59318170772"
-                  className="mt-1 w-full rounded border border-t-border bg-background px-3 py-1 font-mono text-xs text-foreground focus:border-blue-500 focus:outline-none"
-                />
-              </label>
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-wide text-muted">Ticket ID</span>
-                <input
-                  type="text"
-                  value={ticketId}
-                  onChange={(e) => setTicketId(e.target.value)}
-                  className="mt-1 w-full rounded border border-t-border bg-background px-3 py-1 font-mono text-xs text-foreground focus:border-blue-500 focus:outline-none"
-                />
-              </label>
-              <label className="block">
-                <span className="text-[10px] uppercase tracking-wide text-muted">Contact ID</span>
-                <input
-                  type="text"
-                  value={contactId}
-                  onChange={(e) => setContactId(e.target.value)}
-                  className="mt-1 w-full rounded border border-t-border bg-background px-3 py-1 font-mono text-xs text-foreground focus:border-blue-500 focus:outline-none"
-                />
-              </label>
+            <div className="mt-2 space-y-3">
+              <TypeaheadPicker
+                type="deal"
+                label="Deal"
+                placeholder="Search by name…"
+                value={deal}
+                onChange={setDeal}
+              />
+              <TypeaheadPicker
+                type="contact"
+                label="Contact"
+                placeholder="Search by name or email…"
+                value={contact}
+                onChange={setContact}
+              />
+              <TypeaheadPicker
+                type="ticket"
+                label="Ticket"
+                placeholder="Search by subject…"
+                value={ticket}
+                onChange={setTicket}
+              />
             </div>
           </details>
 
