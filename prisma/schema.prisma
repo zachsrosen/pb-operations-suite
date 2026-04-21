@@ -201,6 +201,8 @@ enum ActivityType {
   // Role admin
   ROLE_CAPABILITIES_CHANGED
   ROLE_CAPABILITIES_RESET
+  ROLE_DEFINITION_CHANGED
+  ROLE_DEFINITION_RESET
   USER_EXTRA_ROUTES_CHANGED
 
   // On-Call Electrician Rotations
@@ -2647,6 +2649,26 @@ model RoleCapabilityOverride {
   canViewAllLocations    Boolean?
   updatedAt              DateTime @updatedAt
   updatedByEmail         String?
+
+  @@index([role])
+}
+
+/// Per-role definition override. One row per canonical role at most.
+/// The `override` column is a sparse RoleDefinitionOverridePayload JSON blob
+/// (see src/lib/role-override-types.ts). Missing keys mean "inherit the
+/// code default from src/lib/roles.ts"; present keys (including empty arrays)
+/// mean "replace the code default with this value."
+///
+/// Admin edits via PUT /api/admin/roles/[role]/definition. Resolver in
+/// src/lib/role-resolution.ts reads this table alongside RoleCapabilityOverride.
+///
+/// See: docs/superpowers/specs/2026-04-20-role-access-editor-design.md
+model RoleDefinitionOverride {
+  id             String   @id @default(cuid())
+  role           UserRole @unique
+  override       Json
+  updatedAt      DateTime @updatedAt
+  updatedByEmail String?
 
   @@index([role])
 }
