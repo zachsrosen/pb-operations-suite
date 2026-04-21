@@ -244,6 +244,37 @@ export async function fetchOpenTasksByOwner(ownerId: string): Promise<HubSpotTas
   return tasks;
 }
 
+/**
+ * Fetch tasks for an owner that were completed within the given lookback
+ * window (default 7 days). Used to power the "Show completed" toggle.
+ */
+export async function fetchRecentCompletedByOwner(
+  ownerId: string,
+  lookbackDays = 7,
+): Promise<HubSpotTask[]> {
+  const since = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
+
+  const resp: { results?: Array<{ id: string; properties: Record<string, string | null> }> } = await withHubSpotRetry(
+    "tasks.search.completed",
+    () => hubspotClient.crm.objects.tasks.searchApi.doSearch({
+      filterGroups: [
+        {
+          filters: [
+            { propertyName: "hubspot_owner_id", operator: FilterOperatorEnum.Eq, value: ownerId },
+            { propertyName: "hs_task_status", operator: FilterOperatorEnum.Eq, value: "COMPLETED" },
+            { propertyName: "hs_lastmodifieddate", operator: FilterOperatorEnum.Gte, value: String(since.getTime()) },
+          ],
+        },
+      ],
+      properties: [...TASK_PROPERTIES, "hs_task_completion_date", "hs_lastmodifieddate"],
+      sorts: [{ propertyName: "hs_lastmodifieddate", direction: "DESCENDING" }],
+      limit: 100,
+    } as never),
+  );
+
+  return (resp.results ?? []).map(mapRawTask);
+}
+
 // ---------------------------------------------------------------------------
 // Queues
 // ---------------------------------------------------------------------------
@@ -420,4 +451,79 @@ export async function markTaskComplete(taskId: string): Promise<void> {
       properties: { hs_task_status: "COMPLETED" },
     } as never),
   );
+}
+
+export interface UpdateTaskInput {
+  /** ISO string or null to clear */
+  dueAt?: string | null;
+  status?: TaskStatus;
+  priority?: TaskPriority | null;
+  subject?: string;
+  body?: string;
+}
+
+export async function updateTask(taskId: string, patch: UpdateTaskInput): Promise<void> {
+  const properties: Record<string, string | null> = {};
+  if (patch.dueAt !== undefined) properties.hs_timestamp = patch.dueAt;
+  if (patch.status !== undefined) properties.hs_task_status = patch.status;
+  if (patch.priority !== undefined) properties.hs_task_priority = patch.priority;
+  if (patch.subject !== undefined) properties.hs_task_subject = patch.subject;
+  if (patch.body !== undefined) properties.hs_task_body = patch.body;
+
+  if (Object.keys(properties).length === 0) return;
+
+  await withHubSpotRetry("tasks.update", () =>
+    hubspotClient.crm.objects.tasks.basicApi.update(taskId, { properties } as never),
+  );
+}
+
+export interface CreateTaskInput {
+  subject: string;
+  ownerId: string;
+  dueAt?: string | null;
+  priority?: TaskPriority | null;
+  type?: TaskType | null;
+  body?: string;
+  associate?: {
+    dealId?: string;
+    ticketId?: string;
+    contactId?: string;
+  };
+}
+
+const ASSOC_TYPE_IDS = {
+  // HubSpot default association type IDs for task-to-X associations
+  dealId: 216,
+  contactId: 204,
+  ticketId: 228,
+};
+
+export async function createTask(input: CreateTaskInput): Promise<{ id: string }> {
+  const properties: Record<string, string> = {
+    hs_task_subject: input.subject,
+    hs_task_status: "NOT_STARTED",
+    hubspot_owner_id: input.ownerId,
+  };
+  if (input.dueAt) properties.hs_timestamp = input.dueAt;
+  if (input.priority) properties.hs_task_priority = input.priority;
+  if (input.type) properties.hs_task_type = input.type;
+  if (input.body) properties.hs_task_body = input.body;
+
+  const associations: Array<{ to: { id: string }; types: Array<{ associationCategory: string; associationTypeId: number }> }> = [];
+  for (const [key, typeId] of Object.entries(ASSOC_TYPE_IDS) as Array<[keyof typeof ASSOC_TYPE_IDS, number]>) {
+    const id = input.associate?.[key];
+    if (id) {
+      associations.push({
+        to: { id },
+        types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: typeId }],
+      });
+    }
+  }
+
+  const resp: { id?: string } = await withHubSpotRetry("tasks.create", () =>
+    hubspotClient.crm.objects.tasks.basicApi.create({ properties, associations } as never),
+  );
+
+  if (!resp.id) throw new Error("[hubspot-tasks] create returned no id");
+  return { id: resp.id };
 }

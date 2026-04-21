@@ -38,6 +38,8 @@ interface TaskFiltersProps {
   availableStages: string[];
   sort: SortMode;
   onSortChange: (v: SortMode) => void;
+  showCompleted: boolean;
+  onShowCompletedChange: (v: boolean) => void;
 }
 
 export default function TaskFilters({
@@ -55,6 +57,8 @@ export default function TaskFilters({
   availableStages,
   sort,
   onSortChange,
+  showCompleted,
+  onShowCompletedChange,
 }: TaskFiltersProps) {
   const [localSearch, setLocalSearch] = useState(search);
 
@@ -107,6 +111,15 @@ export default function TaskFilters({
           accentColor="blue"
         />
       )}
+      <label className="flex items-center gap-2 text-xs text-muted">
+        <input
+          type="checkbox"
+          checked={showCompleted}
+          onChange={(e) => onShowCompletedChange(e.target.checked)}
+          className="h-3.5 w-3.5 cursor-pointer accent-blue-500"
+        />
+        Show completed (7d)
+      </label>
       <label className="ml-auto flex items-center gap-2 text-xs text-muted">
         <span>Sort</span>
         <select
