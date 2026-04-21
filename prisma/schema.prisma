@@ -403,6 +403,23 @@ model SystemConfig {
   updatedAt DateTime @updatedAt
 }
 
+// Admin-configured HubSpot task queue names.
+//
+// HubSpot does not expose task queues via their public API, so the IDs we
+// read from hs_queue_membership_ids are opaque. Admins map each queue ID
+// (copied from the URL bar on the queue's page in HubSpot) to a display
+// name here, which the My Tasks page reads when rendering filters and
+// pickers.
+model HubspotQueueName {
+  id        String   @id @default(cuid())
+  queueId   String   @unique
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
 // ===========================================
 // BOOKED SLOTS (Persistent storage)
 // ===========================================

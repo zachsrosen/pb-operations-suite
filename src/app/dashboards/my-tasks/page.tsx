@@ -114,7 +114,9 @@ function MyTasksPageInner() {
   const [showCreate, setShowCreate] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [bulkWorking, setBulkWorking] = useState(false);
-  const [focusIndex, setFocusIndex] = useState<number>(-1);
+  // Start with the first task focused so keyboard shortcuts (c, x) work
+  // without forcing the user to press j first.
+  const [focusIndex, setFocusIndex] = useState<number>(0);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 

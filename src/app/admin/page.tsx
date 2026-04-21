@@ -28,6 +28,12 @@ const ADMIN_DASHBOARDS: Array<{ href: string; title: string; description: string
     description: "Approve or reject crew availability change requests.",
     icon: "✅",
   },
+  {
+    href: "/admin/hubspot-queues",
+    title: "HubSpot Queue Names",
+    description: "Map HubSpot task-queue IDs to display names (HubSpot has no queue API).",
+    icon: "📁",
+  },
 ];
 
 /**
