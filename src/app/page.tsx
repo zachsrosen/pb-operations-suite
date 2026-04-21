@@ -448,15 +448,6 @@ export default function Home() {
     return entries;
   }, [userAccess]);
 
-  // Roles with landing cards get a curated "Your Dashboards" grid above the
-  // full suite grid. When empty (e.g. ADMIN, EXECUTIVE), the curated section
-  // is hidden and the suite grid stands alone.
-  const roleLandingCards = useMemo(() => {
-    if (!userAccess) return null;
-    return userAccess.landingCards.length > 0 ? userAccess.landingCards : null;
-  }, [userAccess]);
-
-
 
   if (!userRole || !userAccess || redirectTarget) {
     return (
@@ -770,55 +761,10 @@ export default function Home() {
           </div>
         )}
 
-        {/* Role-Based Curated Cards */}
-        {roleLandingCards && (
-          <div>
-            <h2 className="text-lg font-semibold text-foreground/80 mb-4">Your Dashboards</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
-              {roleLandingCards.map((card) => (
-                <DashboardLink
-                  key={card.href}
-                  href={card.href}
-                  title={card.title}
-                  description={card.description}
-                  tag={card.tag}
-                  tagColor={card.tagColor}
-                />
-              ))}
-            </div>
-            <div className="text-center mb-8">
-              <button
-                onClick={() => {
-                  const el = document.getElementById("all-suites");
-                  if (el) el.classList.toggle("hidden");
-                }}
-                className="text-sm text-muted hover:text-foreground underline transition-colors"
-              >
-                Browse All Suites
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* All accessible suites — previously split into "Suites" + "Admin"
-            headings via the `adminSection` flag. After the admin surface
-            moved to /admin (UserMenu dropdown), the split made no sense —
-            everything here is just a suite the user can access. */}
+        {/* Suites the user can access */}
         {visibleSuites.length > 0 && (
           <div>
-            <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">Suites</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
-              {visibleSuites.map((suite) => (
-                <DashboardLink key={suite.href} {...suite} />
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Browse All — driven by access.suites + AI Skills (same as visibleSuites) */}
-        {roleLandingCards && visibleSuites.length > 0 && (
-          <div id="all-suites" className="hidden">
-            <h2 className="text-lg font-semibold text-foreground/80 mb-4 mt-8">All Suites</h2>
+            <h2 className="text-lg font-semibold text-foreground/80 mb-4">Suites</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 stagger-grid">
               {visibleSuites.map((suite) => (
                 <DashboardLink key={suite.href} {...suite} />
