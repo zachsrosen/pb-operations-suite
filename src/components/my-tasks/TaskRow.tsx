@@ -2,14 +2,19 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import type { EnrichedTask, TaskPriority, TaskType } from "@/lib/hubspot-tasks";
+import type { EnrichedTask, TaskPriority, TaskQueue, TaskStatus, TaskType } from "@/lib/hubspot-tasks";
 import SnoozePopover from "./SnoozePopover";
+import StatusMenu from "./StatusMenu";
+import QueuePicker from "./QueuePicker";
 
 interface TaskRowProps {
   task: EnrichedTask;
   onComplete: () => void;
   onReopen?: () => void;
   onSnooze: (dueAt: string | null) => void;
+  onStatusChange: (status: TaskStatus) => void;
+  onQueuesChange: (queueIds: string[]) => void;
+  allQueues: TaskQueue[];
   pending: boolean;
   selected: boolean;
   onSelectedChange: (selected: boolean) => void;
@@ -33,6 +38,7 @@ const STATUS_LABEL: Record<string, string> = {
   IN_PROGRESS: "In progress",
   WAITING: "Waiting",
   COMPLETED: "Completed",
+  DEFERRED: "Deferred",
 };
 
 function formatDue(dueAt: string | null): string {
@@ -59,11 +65,24 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function queueChipLabel(queueIds: string[], allQueues: TaskQueue[]): string {
+  if (queueIds.length === 0) return "Add to queue";
+  const names = queueIds
+    .map((id) => allQueues.find((q) => q.id === id)?.name)
+    .filter((n): n is string => Boolean(n));
+  if (names.length === 0) return `${queueIds.length} queue${queueIds.length > 1 ? "s" : ""}`;
+  if (names.length === 1) return names[0];
+  return `${names[0]} +${names.length - 1}`;
+}
+
 export default function TaskRow({
   task,
   onComplete,
   onReopen,
   onSnooze,
+  onStatusChange,
+  onQueuesChange,
+  allQueues,
   pending,
   selected,
   onSelectedChange,
@@ -71,6 +90,8 @@ export default function TaskRow({
 }: TaskRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
+  const [queuesOpen, setQueuesOpen] = useState(false);
   const bodyText = task.body ? stripHtml(task.body) : "";
   const shouldTruncate = bodyText.length > 120;
   const bodyPreview = shouldTruncate && !expanded ? bodyText.slice(0, 120) + "…" : bodyText;
@@ -123,9 +144,29 @@ export default function TaskRow({
                 {task.priority}
               </span>
             )}
-            <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted">
-              {STATUS_LABEL[task.status] ?? task.status}
-            </span>
+            {isCompleted ? (
+              <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted">
+                {STATUS_LABEL[task.status] ?? task.status}
+              </span>
+            ) : (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setStatusOpen((v) => !v)}
+                  className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted hover:bg-surface-elevated hover:text-foreground"
+                  title="Change status"
+                >
+                  {STATUS_LABEL[task.status] ?? task.status}
+                </button>
+                {statusOpen && (
+                  <StatusMenu
+                    current={task.status}
+                    onSelect={onStatusChange}
+                    onClose={() => setStatusOpen(false)}
+                  />
+                )}
+              </div>
+            )}
             <div className="relative ml-auto">
               {isCompleted ? (
                 <span className="text-xs text-muted">{formatDue(task.dueAt)}</span>
@@ -188,6 +229,27 @@ export default function TaskRow({
               <span className="rounded bg-surface-2 px-2 py-1 text-foreground">
                 👤 {task.associations.contact.name}
               </span>
+            )}
+
+            {!isCompleted && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setQueuesOpen((v) => !v)}
+                  className="rounded bg-surface-2 px-2 py-1 text-muted hover:bg-surface-elevated hover:text-foreground"
+                  title="Change queues"
+                >
+                  📁 {queueChipLabel(task.queueIds, allQueues)}
+                </button>
+                {queuesOpen && (
+                  <QueuePicker
+                    currentQueueIds={task.queueIds}
+                    allQueues={allQueues}
+                    onSave={onQueuesChange}
+                    onClose={() => setQueuesOpen(false)}
+                  />
+                )}
+              </div>
             )}
 
             <div className="ml-auto flex items-center gap-2">

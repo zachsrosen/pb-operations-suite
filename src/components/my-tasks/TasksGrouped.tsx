@@ -1,6 +1,6 @@
 "use client";
 
-import type { EnrichedTask } from "@/lib/hubspot-tasks";
+import type { EnrichedTask, TaskQueue, TaskStatus } from "@/lib/hubspot-tasks";
 import { groupTasks, type SortMode } from "./grouping";
 import TaskRow from "./TaskRow";
 
@@ -9,6 +9,9 @@ interface TasksGroupedProps {
   sort: SortMode;
   onComplete: (taskId: string) => void;
   onSnooze: (taskId: string, dueAt: string | null) => void;
+  onStatusChange: (taskId: string, status: TaskStatus) => void;
+  onQueuesChange: (taskId: string, queueIds: string[]) => void;
+  allQueues: TaskQueue[];
   pendingTaskIds: Set<string>;
   selectedIds: Set<string>;
   onSelectedChange: (taskId: string, selected: boolean) => void;
@@ -20,6 +23,9 @@ export default function TasksGrouped({
   sort,
   onComplete,
   onSnooze,
+  onStatusChange,
+  onQueuesChange,
+  allQueues,
   pendingTaskIds,
   selectedIds,
   onSelectedChange,
@@ -63,6 +69,9 @@ export default function TasksGrouped({
                   mode="open"
                   onComplete={() => onComplete(task.id)}
                   onSnooze={(dueAt) => onSnooze(task.id, dueAt)}
+                  onStatusChange={(status) => onStatusChange(task.id, status)}
+                  onQueuesChange={(queueIds) => onQueuesChange(task.id, queueIds)}
+                  allQueues={allQueues}
                   pending={pendingTaskIds.has(task.id)}
                   selected={selectedIds.has(task.id)}
                   onSelectedChange={(sel) => onSelectedChange(task.id, sel)}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type RefObject } from "react";
 import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
 import type { TaskQueue } from "@/lib/hubspot-tasks";
 import type { SortMode } from "./grouping";
@@ -26,6 +26,7 @@ const SORT_OPTIONS: Array<{ value: SortMode; label: string }> = [
 interface TaskFiltersProps {
   search: string;
   onSearchChange: (v: string) => void;
+  searchInputRef?: RefObject<HTMLInputElement | null>;
   types: string[];
   onTypesChange: (v: string[]) => void;
   priorities: string[];
@@ -45,6 +46,7 @@ interface TaskFiltersProps {
 export default function TaskFilters({
   search,
   onSearchChange,
+  searchInputRef,
   types,
   onTypesChange,
   priorities,
@@ -73,10 +75,11 @@ export default function TaskFilters({
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-lg border border-t-border bg-surface p-3">
       <input
+        ref={searchInputRef}
         type="search"
         value={localSearch}
         onChange={(e) => setLocalSearch(e.target.value)}
-        placeholder="Search by subject, deal, ticket, contact…"
+        placeholder="Search by subject, deal, ticket, contact…   (press /)"
         className="min-w-[240px] flex-1 rounded-md border border-t-border bg-background px-3 py-1.5 text-sm text-foreground placeholder:text-muted focus:border-blue-500 focus:outline-none"
       />
       <MultiSelectFilter

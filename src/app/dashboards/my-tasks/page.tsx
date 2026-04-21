@@ -1,15 +1,23 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRouter, useSearchParams } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import TaskFilters from "@/components/my-tasks/TaskFilters";
 import TasksGrouped from "@/components/my-tasks/TasksGrouped";
 import CompletedTasksSection from "@/components/my-tasks/CompletedTasksSection";
 import BulkActionBar from "@/components/my-tasks/BulkActionBar";
 import CreateTaskModal from "@/components/my-tasks/CreateTaskModal";
+import KeyboardHelp from "@/components/my-tasks/KeyboardHelp";
 import type { SortMode } from "@/components/my-tasks/grouping";
-import type { EnrichedTask, TaskQueue, TaskPriority, TaskType } from "@/lib/hubspot-tasks";
+import type {
+  EnrichedTask,
+  TaskQueue,
+  TaskPriority,
+  TaskStatus,
+  TaskType,
+} from "@/lib/hubspot-tasks";
 
 interface MyTasksPayload {
   ownerId: string | null;
@@ -17,6 +25,7 @@ interface MyTasksPayload {
   tasks: EnrichedTask[];
   completedTasks: EnrichedTask[];
   queues: TaskQueue[];
+  allQueues: TaskQueue[];
   fetchedAt: string;
 }
 
@@ -31,8 +40,12 @@ interface CreateTaskInput {
   contactId?: string;
 }
 
+const VALID_SORTS: SortMode[] = ["due", "created", "name"];
+
 async function fetchMyTasks(includeCompleted: boolean): Promise<MyTasksPayload> {
-  const url = includeCompleted ? "/api/hubspot/tasks/mine?includeCompleted=1" : "/api/hubspot/tasks/mine";
+  const url = includeCompleted
+    ? "/api/hubspot/tasks/mine?includeCompleted=1"
+    : "/api/hubspot/tasks/mine";
   const r = await fetch(url);
   if (!r.ok) throw new Error(`failed: ${r.status}`);
   return r.json();
@@ -40,8 +53,44 @@ async function fetchMyTasks(includeCompleted: boolean): Promise<MyTasksPayload> 
 
 export default function MyTasksPage() {
   const queryClient = useQueryClient();
-  const [showCompleted, setShowCompleted] = useState(false);
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
+  // ── URL-backed view state ─────────────────────────────────────────────
+  const rawSort = searchParams.get("sort");
+  const initialSort: SortMode = VALID_SORTS.includes(rawSort as SortMode)
+    ? (rawSort as SortMode)
+    : "due";
+  const initialShowCompleted = searchParams.get("completed") === "1";
+
+  const [showCompleted, setShowCompletedState] = useState(initialShowCompleted);
+  const [sort, setSortState] = useState<SortMode>(initialSort);
+
+  const setSort = useCallback(
+    (next: SortMode) => {
+      setSortState(next);
+      const params = new URLSearchParams(searchParams.toString());
+      if (next === "due") params.delete("sort");
+      else params.set("sort", next);
+      const qs = params.toString();
+      router.replace(qs ? `/dashboards/my-tasks?${qs}` : "/dashboards/my-tasks", { scroll: false });
+    },
+    [router, searchParams],
+  );
+
+  const setShowCompleted = useCallback(
+    (next: boolean) => {
+      setShowCompletedState(next);
+      const params = new URLSearchParams(searchParams.toString());
+      if (next) params.set("completed", "1");
+      else params.delete("completed");
+      const qs = params.toString();
+      router.replace(qs ? `/dashboards/my-tasks?${qs}` : "/dashboards/my-tasks", { scroll: false });
+    },
+    [router, searchParams],
+  );
+
+  // ── Data ──────────────────────────────────────────────────────────────
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["my-tasks", showCompleted],
     queryFn: () => fetchMyTasks(showCompleted),
@@ -49,16 +98,20 @@ export default function MyTasksPage() {
     refetchOnWindowFocus: true,
   });
 
+  // ── Filter state ──────────────────────────────────────────────────────
   const [search, setSearch] = useState("");
   const [types, setTypes] = useState<string[]>([]);
   const [priorities, setPriorities] = useState<string[]>([]);
   const [queueIds, setQueueIds] = useState<string[]>([]);
   const [stages, setStages] = useState<string[]>([]);
-  const [sort, setSort] = useState<SortMode>("due");
   const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showCreate, setShowCreate] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [bulkWorking, setBulkWorking] = useState(false);
+  const [focusIndex, setFocusIndex] = useState<number>(-1);
+
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const needle = search.trim().toLowerCase();
   const filtered = (data?.tasks ?? []).filter((t) => {
@@ -94,11 +147,21 @@ export default function MyTasksPage() {
     ),
   ).sort();
 
-  // Drop selections for tasks no longer visible
   const selectedVisible = new Set(
     [...selectedIds].filter((id) => filtered.some((t) => t.id === id)),
   );
 
+  // ── Document title ────────────────────────────────────────────────────
+  const openCount = filtered.length;
+  useEffect(() => {
+    const base = "My Tasks";
+    document.title = openCount > 0 ? `${base} (${openCount}) · PB Tech Ops` : `${base} · PB Tech Ops`;
+    return () => {
+      document.title = "PB Tech Ops";
+    };
+  }, [openCount]);
+
+  // ── Mutation helpers ─────────────────────────────────────────────────
   const startPending = (taskId: string) =>
     setPendingIds((prev) => new Set(prev).add(taskId));
   const clearPending = (taskId: string) =>
@@ -108,13 +171,10 @@ export default function MyTasksPage() {
       return next;
     });
 
-  const optimisticallyRemoveTask = (taskId: string): MyTasksPayload | undefined => {
+  const updateCache = (mutator: (prev: MyTasksPayload) => MyTasksPayload): MyTasksPayload | undefined => {
     const previous = queryClient.getQueryData<MyTasksPayload>(["my-tasks", showCompleted]);
     if (previous) {
-      queryClient.setQueryData<MyTasksPayload>(["my-tasks", showCompleted], {
-        ...previous,
-        tasks: previous.tasks.filter((t) => t.id !== taskId),
-      });
+      queryClient.setQueryData<MyTasksPayload>(["my-tasks", showCompleted], mutator(previous));
     }
     return previous;
   };
@@ -125,14 +185,14 @@ export default function MyTasksPage() {
 
   const handleComplete = async (taskId: string) => {
     startPending(taskId);
-    const snap = optimisticallyRemoveTask(taskId);
+    const snap = updateCache((p) => ({ ...p, tasks: p.tasks.filter((t) => t.id !== taskId) }));
     try {
       const res = await fetch(`/api/hubspot/tasks/${taskId}/complete`, { method: "POST" });
       if (!res.ok) throw new Error(`complete failed: ${res.status}`);
       if (showCompleted) refetch();
     } catch (err) {
       rollback(snap);
-      console.error("[my-tasks] failed to complete task", err);
+      console.error("[my-tasks] complete", err);
     } finally {
       clearPending(taskId);
     }
@@ -149,7 +209,7 @@ export default function MyTasksPage() {
       if (!res.ok) throw new Error(`reopen failed: ${res.status}`);
       refetch();
     } catch (err) {
-      console.error("[my-tasks] failed to reopen task", err);
+      console.error("[my-tasks] reopen", err);
     } finally {
       clearPending(taskId);
     }
@@ -157,13 +217,10 @@ export default function MyTasksPage() {
 
   const handleSnooze = async (taskId: string, dueAt: string | null) => {
     startPending(taskId);
-    const previous = queryClient.getQueryData<MyTasksPayload>(["my-tasks", showCompleted]);
-    if (previous) {
-      queryClient.setQueryData<MyTasksPayload>(["my-tasks", showCompleted], {
-        ...previous,
-        tasks: previous.tasks.map((t) => (t.id === taskId ? { ...t, dueAt } : t)),
-      });
-    }
+    const snap = updateCache((p) => ({
+      ...p,
+      tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, dueAt } : t)),
+    }));
     try {
       const res = await fetch(`/api/hubspot/tasks/${taskId}`, {
         method: "PATCH",
@@ -172,8 +229,50 @@ export default function MyTasksPage() {
       });
       if (!res.ok) throw new Error(`snooze failed: ${res.status}`);
     } catch (err) {
-      rollback(previous);
-      console.error("[my-tasks] failed to snooze task", err);
+      rollback(snap);
+      console.error("[my-tasks] snooze", err);
+    } finally {
+      clearPending(taskId);
+    }
+  };
+
+  const handleStatusChange = async (taskId: string, status: TaskStatus) => {
+    startPending(taskId);
+    const snap = updateCache((p) => ({
+      ...p,
+      tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, status } : t)),
+    }));
+    try {
+      const res = await fetch(`/api/hubspot/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error(`status failed: ${res.status}`);
+    } catch (err) {
+      rollback(snap);
+      console.error("[my-tasks] status", err);
+    } finally {
+      clearPending(taskId);
+    }
+  };
+
+  const handleQueuesChange = async (taskId: string, nextQueueIds: string[]) => {
+    startPending(taskId);
+    const snap = updateCache((p) => ({
+      ...p,
+      tasks: p.tasks.map((t) => (t.id === taskId ? { ...t, queueIds: nextQueueIds } : t)),
+    }));
+    try {
+      const res = await fetch(`/api/hubspot/tasks/${taskId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ queueIds: nextQueueIds }),
+      });
+      if (!res.ok) throw new Error(`queues failed: ${res.status}`);
+    } catch (err) {
+      rollback(snap);
+      console.error("[my-tasks] queues", err);
     } finally {
       clearPending(taskId);
     }
@@ -203,13 +302,7 @@ export default function MyTasksPage() {
     const ids = [...selectedVisible];
     if (ids.length === 0) return;
     setBulkWorking(true);
-    const previous = queryClient.getQueryData<MyTasksPayload>(["my-tasks", showCompleted]);
-    if (previous) {
-      queryClient.setQueryData<MyTasksPayload>(["my-tasks", showCompleted], {
-        ...previous,
-        tasks: previous.tasks.filter((t) => !ids.includes(t.id)),
-      });
-    }
+    const snap = updateCache((p) => ({ ...p, tasks: p.tasks.filter((t) => !ids.includes(t.id)) }));
     setSelectedIds(new Set());
     try {
       const results = await Promise.allSettled(
@@ -219,7 +312,8 @@ export default function MyTasksPage() {
         (r) => r.status === "rejected" || (r.status === "fulfilled" && !r.value.ok),
       );
       if (failures.length > 0) {
-        console.error(`[my-tasks] ${failures.length} of ${ids.length} bulk-complete requests failed`);
+        console.error(`[my-tasks] ${failures.length} of ${ids.length} bulk-complete failed`);
+        rollback(snap);
         refetch();
       } else if (showCompleted) {
         refetch();
@@ -242,6 +336,58 @@ export default function MyTasksPage() {
     refetch();
   };
 
+  // ── Keyboard shortcuts ────────────────────────────────────────────────
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      // Skip when typing in an input / textarea / select
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable) {
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      if (e.key === "/") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+      if (e.key === "?") {
+        e.preventDefault();
+        setShowHelp((v) => !v);
+        return;
+      }
+      if (e.key === "n") {
+        e.preventDefault();
+        setShowCreate(true);
+        return;
+      }
+      if (e.key === "j") {
+        e.preventDefault();
+        setFocusIndex((i) => Math.min(filtered.length - 1, i + 1));
+        return;
+      }
+      if (e.key === "k") {
+        e.preventDefault();
+        setFocusIndex((i) => Math.max(0, i - 1));
+        return;
+      }
+      if (e.key === "c" && focusIndex >= 0 && focusIndex < filtered.length) {
+        e.preventDefault();
+        handleComplete(filtered[focusIndex].id);
+        return;
+      }
+      if (e.key === "x" && focusIndex >= 0 && focusIndex < filtered.length) {
+        e.preventDefault();
+        const id = filtered[focusIndex].id;
+        handleSelectedChange(id, !selectedIds.has(id));
+        return;
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [filtered, focusIndex, selectedIds, handleComplete]);
+
   const isMissingOwner = data?.reason === "NO_HUBSPOT_OWNER";
 
   return (
@@ -258,6 +404,14 @@ export default function MyTasksPage() {
             className="rounded-md bg-blue-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-600 disabled:opacity-50"
           >
             + New task
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowHelp(true)}
+            title="Keyboard shortcuts (press ?)"
+            className="rounded-md border border-t-border bg-surface px-2 py-1.5 text-xs font-medium text-muted hover:bg-surface-2"
+          >
+            ?
           </button>
           <button
             type="button"
@@ -302,6 +456,7 @@ export default function MyTasksPage() {
           <TaskFilters
             search={search}
             onSearchChange={setSearch}
+            searchInputRef={searchInputRef}
             types={types}
             onTypesChange={setTypes}
             priorities={priorities}
@@ -327,6 +482,9 @@ export default function MyTasksPage() {
               sort={sort}
               onComplete={handleComplete}
               onSnooze={handleSnooze}
+              onStatusChange={handleStatusChange}
+              onQueuesChange={handleQueuesChange}
+              allQueues={data?.allQueues ?? []}
               pendingTaskIds={pendingIds}
               selectedIds={selectedIds}
               onSelectedChange={handleSelectedChange}
@@ -338,6 +496,7 @@ export default function MyTasksPage() {
               tasks={data?.completedTasks ?? []}
               onReopen={handleReopen}
               pendingTaskIds={pendingIds}
+              allQueues={data?.allQueues ?? []}
             />
           )}
         </div>
@@ -346,6 +505,7 @@ export default function MyTasksPage() {
       {showCreate && (
         <CreateTaskModal onClose={() => setShowCreate(false)} onCreate={handleCreate} />
       )}
+      {showHelp && <KeyboardHelp onClose={() => setShowHelp(false)} />}
     </DashboardShell>
   );
 }
