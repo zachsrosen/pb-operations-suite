@@ -86,7 +86,7 @@ Validated on 2026-04-21 via HubSpot MCP against real deals (82 PE deals with `pe
   - `collectedPct: number` — `(customerCollected + (peBonusCollected ?? 0)) / (customerContractTotal + (peBonusTotal ?? 0))`.
   - `bucket: PaymentBucket` — enum assigned by the bucketing function below.
   - `attentionReasons: string[]` — for attention-bucketed deals (e.g., "PE M1 Rejected", "M2 open >30 days post-install", "Stuck post-PTO").
-- Cache: `accounting:payment-tracking`, TTL 5 min. SSE invalidation cascades from `deals:*` upstream events — wire this the same way the service priority queue does (cascade listener in `lib/cache.ts` or equivalent, 500ms debounce to avoid thundering herd on bulk webhooks).
+- Cache: `accounting:payment-tracking`, TTL 5 min. SSE invalidation cascades from `deals:*` upstream events — wire this the same way the service priority queue does (cascade listener in `src/lib/cache.ts`, 500ms debounce to avoid thundering herd on bulk webhooks).
 - Add `queryKeys.paymentTracking` to `src/lib/query-keys.ts` for client React Query integration.
 - Response shape:
   ```ts
@@ -210,7 +210,7 @@ Wrap in `<DashboardShell title="Payment Tracking" accentColor="emerald" fullWidt
    - Close date range (two date inputs)
    - Search (name / deal ID / address substring)
    - "Outstanding only" toggle (default ON) — hides `fully_collected` bucket
-3. Sectioned tables — one collapsible section per bucket. Each section renders a `<DealSection>` component modeled after `pe-deals` but with payment-tracking columns.
+3. Sectioned tables — one collapsible section per bucket. Each section renders a `<DealSection>` component modeled after `pe-deals` but with payment-tracking columns. Fully Collected is collapsed by default; if its expanded row count is >500, render it with a simple "Show all N" pagination (load first 500, click to reveal rest) rather than React-window — keeps implementation simple and matches the pattern used elsewhere.
 
 **Section order and headers:**
 - 🚨 Attention Needed (expanded, red accent border-l)
@@ -262,9 +262,9 @@ Use the exact HubSpot enum value `"Waiting on Information"` as the source of tru
   - `defaultCapabilities`: all false.
   - `normalizesTo: "ACCOUNTING"`.
 - **Also add the new routes to existing roles that should reach them** (critical — middleware silently returns 403 if a route is absent from a role's `allowedRoutes`; see `feedback_api_route_role_allowlist.md`):
-  - `ADMIN.allowedRoutes` — add `"/dashboards/payment-tracking"`, `"/api/accounting/payment-tracking"`.
-  - `EXECUTIVE.allowedRoutes` — add `"/dashboards/payment-tracking"`, `"/api/accounting/payment-tracking"`.
-  - `/api/accounting` prefix may already cover the sub-path via prefix matching; verify against `canAccessRoute` logic in `role-permissions.ts` before trusting prefix semantics and add the explicit path regardless.
+  - `ADMIN.allowedRoutes` — add `"/dashboards/payment-tracking"`.
+  - `EXECUTIVE.allowedRoutes` — add `"/dashboards/payment-tracking"`.
+  - `/api/accounting/payment-tracking` is covered by the existing `/api/accounting` entry via segment-boundary prefix matching in `isPathAllowedByAccess` (`src/lib/user-access.ts:404`), so no additional API entries are needed for ADMIN / EXECUTIVE / roles that already have `/api/accounting`. `ACCOUNTING` gets both the suite path and `/api/accounting` to match that same pattern.
 - `src/app/suites/accounting/page.tsx` — update `allowed` to `["ADMIN", "EXECUTIVE", "ACCOUNTING"]`.
 - `src/app/dashboards/payment-tracking/page.tsx` — server-side role check against the same list (server component wrapper redirects if unauthorized). Client component rendered below.
 - Admin UI (`/admin/users`) already reads role options from the enum; `ACCOUNTING` will appear automatically after migration + Prisma client regen.
