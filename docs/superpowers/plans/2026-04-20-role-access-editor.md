@@ -285,8 +285,10 @@ Expected output includes line: `<timestamp>_add_role_definition_overrides` as a 
 
 - [ ] **Step 8: Commit**
 
+`src/generated/prisma/` IS gitignored in this repo (confirmed via `.gitignore` line `/src/generated/prisma`). Do NOT `git add` anything under that path — regenerate locally via `npx prisma generate`; consumers run it themselves on checkout.
+
 ```bash
-git add prisma/schema.prisma prisma/migrations/${TS}_add_role_definition_overrides/migration.sql src/generated/prisma/
+git add prisma/schema.prisma prisma/migrations/${TS}_add_role_definition_overrides/migration.sql
 git commit -m "feat(roles): add RoleDefinitionOverride table + ActivityType entries
 
 Prisma schema adds RoleDefinitionOverride model (one JSONB override
@@ -298,7 +300,7 @@ scripts/migrate-prod.sh after PR merge per standing rule.
 "
 ```
 
-Expected commit scope: 2 tracked files (schema + migration) plus generated Prisma client updates. If `src/generated/prisma/` is gitignored in this repo, omit it from the `git add` and let the generate run locally. Verify with `git log feat/role-access-editor ^main --stat` after commit.
+Expected commit scope: exactly 2 files (schema + migration). Verify with `git log feat/role-access-editor ^main --stat` after commit — the list must be exactly `prisma/schema.prisma` and `prisma/migrations/<ts>_add_role_definition_overrides/migration.sql`.
 
 ---
 
@@ -317,7 +319,15 @@ Adds three helpers in `src/lib/db.ts` mirroring the existing `RoleCapabilityOver
 
 Read `src/lib/db.ts` lines 1280-1355 to observe the exact pattern: doc block at top, `getRoleCapabilityOverride` → `upsertRoleCapabilityOverride` → `resetRoleCapabilityOverride`, prisma-null guard at each, returns.
 
-- [ ] **Step 2: Append the definition-override helpers**
+- [ ] **Step 2a: Add the top-of-file import**
+
+Add the following import to the existing top-level import block in `src/lib/db.ts` (in alphabetical/path order alongside other `@/lib/...` imports):
+
+```ts
+import type { RoleDefinitionOverridePayload } from "@/lib/role-override-types";
+```
+
+- [ ] **Step 2b: Append the definition-override helpers**
 
 Immediately after `resetRoleCapabilityOverride` (around line 1353, right before the `// Per-user extra route overrides (Option D)` section banner), insert:
 
@@ -327,11 +337,11 @@ Immediately after `resetRoleCapabilityOverride` (around line 1353, right before 
 // ===========================================
 
 /**
- * Sparse payload shape for RoleDefinitionOverride.override. Re-exported from
- * role-override-types so this module doesn't cross-import from the access
- * layer. Mirrored exactly in src/lib/role-override-types.ts.
+ * Sparse payload shape for RoleDefinitionOverride.override. Alias of
+ * RoleDefinitionOverridePayload from role-override-types — exported under
+ * this name so the helper signatures below match the RoleCapabilityOverride
+ * pattern (which uses an `Input` type alias).
  */
-import type { RoleDefinitionOverridePayload } from "@/lib/role-override-types";
 export type RoleDefinitionOverrideInput = RoleDefinitionOverridePayload;
 
 /**
@@ -881,15 +891,113 @@ describe("resolveRoleDefinition — definition overrides", () => {
     const def2 = await resolveRoleDefinition("OPERATIONS");
     expect(def2.label).toBe("Ops (renamed)");
   });
+
+  it("calling resolveRoleDefinition('OWNER') directly does NOT apply an EXECUTIVE override (documents the contract)", async () => {
+    // Per spec §Resolver changes: resolveRoleDefinition does NOT normalize.
+    // Normalization is the contract of resolveUserAccessWithOverrides only.
+    // So an override stored under EXECUTIVE does NOT affect a direct OWNER lookup.
+    mockDefFindUnique.mockImplementation(({ where }: { where: { role: string } }) =>
+      Promise.resolve(
+        where.role === "EXECUTIVE"
+          ? { role: "EXECUTIVE", override: { label: "Exec (custom)" } }
+          : null,
+      ),
+    );
+    const ownerDef = await resolveRoleDefinition("OWNER");
+    // OWNER's own base label (from ROLES.OWNER) is "Owner". EXECUTIVE's override
+    // is "Exec (custom)". OWNER lookup should return the OWNER base, unmodified.
+    expect(ownerDef.label).toBe(ROLES.OWNER.label);
+    expect(ownerDef.label).not.toBe("Exec (custom)");
+  });
 });
 ```
 
+- [ ] **Step 2b: Add multi-role + extras tests to `src/__tests__/lib/user-access.test.ts`**
+
+Append the following describe block at the end of `src/__tests__/lib/user-access.test.ts` (do not modify existing cases). These cover spec §Testing examples 1-3 and the `extraDeniedRoutes` precedence claim.
+
+```ts
+import { resolveEffectiveRole as _re, resolveUserAccess as _ru } from "@/lib/user-access";
+import { ROLES as _ROLES, type RoleDefinition as _RoleDefinition } from "@/lib/roles";
+
+describe("multi-role merge with definition overrides (spec examples 1-3)", () => {
+  it("example 1: role A override landingCards=[] + role B no override → union contains B's code cards", () => {
+    const opsOverride: _RoleDefinition = { ..._ROLES.OPERATIONS, landingCards: [] };
+    const overrides = new Map<import("@/generated/prisma/enums").UserRole, _RoleDefinition>([
+      ["OPERATIONS", opsOverride],
+    ]);
+    const eff = _re(["OPERATIONS", "OPERATIONS_MANAGER"], overrides);
+    // OPERATIONS contributes zero cards; OPS_MGR's code cards survive.
+    expect(eff.landingCards.length).toBe(_ROLES.OPERATIONS_MANAGER.landingCards.length);
+  });
+
+  it("example 2: role A override adds /x + role B no override → union contains /x plus B's code routes", () => {
+    const pmOverride: _RoleDefinition = {
+      ..._ROLES.PROJECT_MANAGER,
+      allowedRoutes: ["/dashboards/x"],
+    };
+    const overrides = new Map<import("@/generated/prisma/enums").UserRole, _RoleDefinition>([
+      ["PROJECT_MANAGER", pmOverride],
+    ]);
+    const eff = _re(["PROJECT_MANAGER", "SERVICE"], overrides);
+    expect(eff.allowedRoutes).toContain("/dashboards/x");
+    // A specific SERVICE code-default route is still present:
+    expect(eff.allowedRoutes).toContain("/dashboards/service-overview");
+  });
+
+  it("example 3: single role with empty override → effective routes empty (modulo per-user extras)", () => {
+    const srvOverride: _RoleDefinition = { ..._ROLES.SERVICE, allowedRoutes: [] };
+    const overrides = new Map<import("@/generated/prisma/enums").UserRole, _RoleDefinition>([
+      ["SERVICE", srvOverride],
+    ]);
+    const eff = _re(["SERVICE"], overrides);
+    expect(eff.allowedRoutes).toEqual([]);
+  });
+});
+
+describe("per-user extraDeniedRoutes still wins over role-level override grant", () => {
+  it("override grants /x; user denies /x → user's effective access excludes /x", () => {
+    const srvOverride: _RoleDefinition = {
+      ..._ROLES.SERVICE,
+      allowedRoutes: ["/", "/dashboards/x"],
+    };
+    const overrides = new Map<import("@/generated/prisma/enums").UserRole, _RoleDefinition>([
+      ["SERVICE", srvOverride],
+    ]);
+    const access = _ru(
+      { roles: ["SERVICE"], extraDeniedRoutes: ["/dashboards/x"] },
+      overrides,
+    );
+    expect(access.allowedRoutes.has("/dashboards/x")).toBe(true);
+    expect(access.deniedRoutes.has("/dashboards/x")).toBe(true);
+    // isPathAllowedByAccess checks deniedRoutes first — verify the API contract:
+    const { isPathAllowedByAccess } = await import("@/lib/user-access");
+    expect(isPathAllowedByAccess(access, "/dashboards/x")).toBe(false);
+  });
+});
+```
+
+Note: the dynamic `import` inside `it` can be converted to a top-level import if preferred; it's inline here so the appended block is self-contained. If top-level imports from `@/lib/user-access` already exist in the file, just reference them directly and delete the inline import.
+
 - [ ] **Step 3: Run tests — expect failure**
 
-Run: `npx jest src/__tests__/lib/role-resolution-full.test.ts`
-Expected: several tests FAIL (the resolver hasn't been extended yet — overrides are ignored). Confirm test failures reference the override-path tests, not the inherit test.
+Run: `npx jest src/__tests__/lib/role-resolution-full.test.ts src/__tests__/lib/user-access.test.ts`
+Expected: several tests FAIL in `role-resolution-full.test.ts` (the resolver hasn't been extended yet — overrides are ignored). The new `user-access.test.ts` blocks pass already — those test the pre-existing override-Map injection path and work without resolver changes.
 
-- [ ] **Step 4: Extend `src/lib/role-resolution.ts`**
+- [ ] **Step 4a: Add top-of-file imports**
+
+Add these imports to the existing import block at the top of `src/lib/role-resolution.ts`. Keep the existing `import type { UserRole } from "@/generated/prisma/enums"` and `ROLES` import as-is; ADD the new ones below them:
+
+```ts
+import type { LandingCard } from "@/lib/roles";
+import {
+  SCOPE_VALUES,
+  LANDING_CARDS_MAX,
+  type RoleDefinitionOverridePayload,
+} from "@/lib/role-override-types";
+```
+
+- [ ] **Step 4b: Extend `resolveRoleDefinition`**
 
 Modify `resolveRoleDefinition`. The existing function body fetches `roleCapabilityOverride.findUnique`. Change that single fetch to a parallel fetch, then add the definition merge after the capability merge.
 
@@ -933,16 +1041,11 @@ Replace the existing override-fetch block (lines ~58-77) with:
   return def;
 ```
 
-Then add the helper below `resolveRoleDefinition` (or above — keep it private to the module, NOT exported):
+- [ ] **Step 4c: Add the `applyDefinitionOverride` helper**
+
+Insert the helper function in the module body below `resolveRoleDefinitions` (before the `resolveUserAccessWithOverrides` export). Keep it unexported — it's private to this module. The imports it uses (`LandingCard`, `SCOPE_VALUES`, `LANDING_CARDS_MAX`, `RoleDefinitionOverridePayload`) were already added in Step 4a.
 
 ```ts
-import type { LandingCard } from "@/lib/roles";
-import {
-  SCOPE_VALUES,
-  LANDING_CARDS_MAX,
-  type RoleDefinitionOverridePayload,
-} from "@/lib/role-override-types";
-
 /**
  * Apply a definition-override payload onto a base RoleDefinition. Present
  * keys replace; absent keys inherit. Malformed values (wrong types) are
@@ -994,15 +1097,15 @@ function applyDefinitionOverride(
 Run: `npx jest src/__tests__/lib/role-resolution-full.test.ts`
 Expected: all tests PASS.
 
-- [ ] **Step 6: Run the existing related tests to confirm no regression**
+- [ ] **Step 6: Run the existing related tests + the new user-access additions to confirm all green**
 
 Run: `npx jest src/__tests__/lib/role-overrides.test.ts src/__tests__/lib/user-access.test.ts src/__tests__/lib/roles.test.ts`
-Expected: all tests PASS (no regressions in the pre-existing suites).
+Expected: all tests PASS (both pre-existing and the appended multi-role / extraDenied blocks added in Step 2b).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/lib/role-resolution.ts src/__tests__/lib/role-resolution-full.test.ts
+git add src/lib/role-resolution.ts src/__tests__/lib/role-resolution-full.test.ts src/__tests__/lib/user-access.test.ts
 git commit -m "feat(roles): resolver merges RoleDefinitionOverride with fail-open
 
 Extend resolveRoleDefinition to fetch definition overrides alongside
@@ -1015,11 +1118,13 @@ the resolver's public API.
 
 Tests cover: inherit, per-field override, empty-array replace,
 badge partial merge, landing-cards cap on read, malformed-JSON
-fallback, cache invalidation round-trip.
+fallback, cache invalidation round-trip, legacy-role direct
+lookup contract, plus new user-access.test.ts blocks covering
+spec multi-role examples 1-3 and extraDeniedRoutes precedence.
 "
 ```
 
-Expected commit scope: 2 files (1 modified, 1 added).
+Expected commit scope: 3 files (1 modified, 1 added, 1 test file appended).
 
 ---
 
@@ -1824,6 +1929,27 @@ interface SectionProps {
   allKnownRoutes?: string[];
 }
 
+/**
+ * Static Tailwind class map for the badge-color swatches. Tailwind JIT only
+ * emits utilities it sees as literal strings in source — `bg-${c}-500/40`
+ * would NOT reliably compile for every color. Keep this map in sync with
+ * BADGE_COLOR_OPTIONS; the shape mirrors existing BADGE_COLOR_CLASSES in
+ * src/app/admin/roles/page.tsx.
+ */
+const SWATCH_CLASS: Record<string, string> = {
+  red: "bg-red-500/40 border-red-500/60",
+  amber: "bg-amber-500/40 border-amber-500/60",
+  orange: "bg-orange-500/40 border-orange-500/60",
+  yellow: "bg-yellow-500/40 border-yellow-500/60",
+  emerald: "bg-emerald-500/40 border-emerald-500/60",
+  teal: "bg-teal-500/40 border-teal-500/60",
+  cyan: "bg-cyan-500/40 border-cyan-500/60",
+  indigo: "bg-indigo-500/40 border-indigo-500/60",
+  purple: "bg-purple-500/40 border-purple-500/60",
+  zinc: "bg-zinc-500/40 border-zinc-500/60",
+  slate: "bg-slate-500/40 border-slate-500/60",
+};
+
 function FieldViolations({ messages }: { messages?: string[] }) {
   if (!messages || messages.length === 0) return null;
   return (
@@ -2002,11 +2128,11 @@ function BasicsCard({ form, setForm, codeDefaults, violationsByField }: SectionP
                     onClick={() =>
                       setForm((p) => ({ ...p, badgeColor: { ...p.badgeColor, value: c } }))
                     }
-                    className={`h-6 w-6 rounded border ${
+                    className={`h-6 w-6 rounded border disabled:opacity-50 ${
                       form.badgeColor.value === c && form.badgeColor.on
                         ? "ring-2 ring-orange-400"
                         : ""
-                    } bg-${c}-500/40 disabled:opacity-50`}
+                    } ${SWATCH_CLASS[c]}`}
                     title={c}
                     aria-label={c}
                   />
@@ -2430,73 +2556,25 @@ Read the full file. Key observations:
 - `RoleDrawerBody` takes `{ row: RoleRow }` and renders the header/grid/capabilities section.
 - Legacy roles currently render the same body with a "Legacy → X" badge in the header; no redirection.
 
-- [ ] **Step 2: Add legacy-role banner + editor mount**
+- [ ] **Step 2: Add legacy-role short-circuit + mount the new editor**
 
-Replace the existing `export function RoleDrawerBody({ row }: { row: RoleRow })` body so it branches on legacy:
+**IMPORTANT — do not delete or summarize the existing `RoleDrawerBody` body.** The existing function renders `AdminDetailHeader` + `AdminKeyValueGrid` (with a specific `items` array spanning ~55 lines) + an allowed-routes `<details>` disclosure + the capabilities section. Leave all of that verbatim. The only changes in this step are:
+
+1. At the very top of `RoleDrawerBody`, before the `return`, add the `isLegacy` branch:
 
 ```tsx
 export function RoleDrawerBody({ row }: { row: RoleRow }) {
   const { role, def } = row;
   const isLegacy = def.normalizesTo !== role;
-
   if (isLegacy) {
     return <LegacyRoleBanner role={role} canonical={def.normalizesTo} />;
   }
+  // ...existing body below stays as-is...
+```
 
-  return (
-    <div className="space-y-5">
-      {/* ----- Header / key-value grid / allowed-routes disclosure stay unchanged ----- */}
-      <AdminDetailHeader
-        title={def.label}
-        subtitle={def.description}
-        actions={
-          <Link
-            href={`/admin/users?role=${encodeURIComponent(role)}`}
-            className="inline-flex items-center gap-1 text-xs text-cyan-400 hover:underline"
-          >
-            Users with this role
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              className="h-3 w-3"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-            </svg>
-          </Link>
-        }
-      />
+2. After the existing `<section aria-labelledby={\`caps-heading-${role}\`}>` block that contains `<RoleCapabilityEditorLoader role={role} def={def} />`, append a second section for the new editor. Do NOT modify the existing capabilities section itself:
 
-      {/* Existing AdminKeyValueGrid block unchanged */}
-      <AdminKeyValueGrid items={[/* …existing items… */]} />
-
-      {/* Existing allowed-routes <details> block unchanged */}
-      <details className="group rounded border border-t-border/60 bg-surface-2 p-2">
-        <summary className="cursor-pointer select-none text-xs font-medium text-foreground">
-          Allowed routes ({def.allowedRoutes.length})
-          <span className="ml-1 text-muted group-open:hidden">— click to expand</span>
-        </summary>
-        <ul className="mt-2 space-y-0.5 font-mono text-[11px]">
-          {def.allowedRoutes.map((r) => (
-            <li key={r} className="text-muted">
-              {r}
-            </li>
-          ))}
-        </ul>
-      </details>
-
-      {/* Existing capabilities section unchanged */}
-      <section aria-labelledby={`caps-heading-${role}`} className="space-y-2">
-        <h3
-          id={`caps-heading-${role}`}
-          className="text-[10px] font-semibold uppercase tracking-wider text-muted"
-        >
-          Capabilities
-        </h3>
-        <RoleCapabilityEditorLoader role={role} def={def} />
-      </section>
-
+```tsx
       {/* NEW: Full definition editor */}
       <section aria-labelledby={`def-heading-${role}`} className="space-y-2">
         <h3
@@ -2507,10 +2585,9 @@ export function RoleDrawerBody({ row }: { row: RoleRow }) {
         </h3>
         <RoleDefinitionEditorLoader role={role} def={def} />
       </section>
-    </div>
-  );
-}
 ```
+
+3. Verify after edit: `wc -l src/app/admin/roles/_RoleDrawerBody.tsx` — the file should grow by roughly 60-80 lines (the LegacyRoleBanner + Loader + new section), NOT shrink. If it shrank, the existing `items` array was accidentally replaced — revert the edit and try again.
 
 Add the legacy banner subcomponent after the `RoleCapabilityEditorLoader` function:
 
