@@ -261,7 +261,7 @@ async function handleOutOfArea(ctx: {
     console.warn("[estimator] out-of-area HubSpot contact create failed", err);
   }
 
-  await sendWaitlistEmail(contact).catch((err) => {
+  await sendWaitlistEmail(contact, zip).catch((err) => {
     console.warn("[estimator] waitlist email failed (non-fatal)", err);
   });
 
@@ -423,19 +423,67 @@ async function logActivity(
   }
 }
 
-// Email senders — real templates wired in Chunk 6; these are placeholders that log.
+// Email senders — real templates.
 async function sendResultEmail(input: {
   contact: { firstName: string; email: string };
   token: string;
   result: EstimatorResult;
 }): Promise<void> {
-  console.info("[estimator] would send results email", { to: input.contact.email, token: input.token });
+  const { sendEmailMessage } = await import("@/lib/email");
+  const { render } = await import("@react-email/render");
+  const React = await import("react");
+  const { EstimatorResultsEmail } = await import("@/emails/EstimatorResultsEmail");
+  const base = process.env.NEXTAUTH_URL ?? process.env.AUTH_URL ?? "https://app.photonbrothers.com";
+  const resultsUrl = `${base.replace(/\/$/, "")}/estimator/results/${input.token}`;
+  const html = await render(
+    React.createElement(EstimatorResultsEmail, {
+      firstName: input.contact.firstName,
+      resultsUrl,
+      systemSizeKw: input.result.systemKwDc,
+      panelCount: input.result.panelCount,
+      finalUsd: input.result.pricing.finalUsd,
+      monthlyPaymentUsd: input.result.pricing.monthlyPaymentUsd,
+      offsetPercent: input.result.offsetPercent,
+    }),
+  );
+  await sendEmailMessage({
+    to: input.contact.email,
+    subject: `Your Photon Brothers solar estimate — ${input.result.systemKwDc.toFixed(1)} kW`,
+    html,
+    text: `Hi ${input.contact.firstName},\n\nYour solar estimate is ready. System size: ${input.result.systemKwDc.toFixed(1)} kW (${input.result.panelCount} panels). Estimated final price: $${Math.round(input.result.pricing.finalUsd).toLocaleString()}. View the full breakdown: ${resultsUrl}`,
+    debugFallbackTitle: "Estimator results email",
+    debugFallbackBody: `Would send results email to ${input.contact.email} with link ${resultsUrl}`,
+  });
 }
 
-async function sendWaitlistEmail(contact: { firstName: string; email: string }): Promise<void> {
-  console.info("[estimator] would send waitlist email", { to: contact.email });
+async function sendWaitlistEmail(contact: { firstName: string; email: string }, zip: string): Promise<void> {
+  const { sendEmailMessage } = await import("@/lib/email");
+  const { render } = await import("@react-email/render");
+  const React = await import("react");
+  const { EstimatorWaitlistEmail } = await import("@/emails/EstimatorWaitlistEmail");
+  const html = await render(React.createElement(EstimatorWaitlistEmail, { firstName: contact.firstName, zip }));
+  await sendEmailMessage({
+    to: contact.email,
+    subject: "You're on the Photon Brothers solar waitlist",
+    html,
+    text: `Hi ${contact.firstName}, thanks for your interest. Your zip (${zip}) is outside our current service area; we'll reach out if we expand.`,
+    debugFallbackTitle: "Estimator waitlist email",
+    debugFallbackBody: `Would send waitlist email to ${contact.email} for zip ${zip}`,
+  });
 }
 
 async function sendManualQuoteEmail(contact: { firstName: string; email: string }): Promise<void> {
-  console.info("[estimator] would send manual-quote email", { to: contact.email });
+  const { sendEmailMessage } = await import("@/lib/email");
+  const { render } = await import("@react-email/render");
+  const React = await import("react");
+  const { EstimatorManualQuoteEmail } = await import("@/emails/EstimatorManualQuoteEmail");
+  const html = await render(React.createElement(EstimatorManualQuoteEmail, { firstName: contact.firstName }));
+  await sendEmailMessage({
+    to: contact.email,
+    subject: "Photon Brothers — we got your estimate request",
+    html,
+    text: `Hi ${contact.firstName}, we got your info. A rep will follow up within one business day with a tailored estimate.`,
+    debugFallbackTitle: "Estimator manual-quote email",
+    debugFallbackBody: `Would send manual-quote email to ${contact.email}`,
+  });
 }
