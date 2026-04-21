@@ -101,6 +101,14 @@
     {
       "path": "/api/cron/property-reconcile",
       "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron/estimator-cleanup",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/estimator-hubspot-reconcile",
+      "schedule": "*/20 * * * *"
     }
   ],
   "redirects": [

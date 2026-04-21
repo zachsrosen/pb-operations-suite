@@ -17,7 +17,7 @@ import {
 // Solar CORS no longer needed — Solar Surveyor served from same origin
 
 // Routes that are always accessible (login, auth callbacks)
-const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance", "/portal"];
+const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance", "/portal", "/estimator"];
 const PUBLIC_API_ROUTES = [
   "/api/deployment",
   "/api/updates/notify",
@@ -40,6 +40,9 @@ const PUBLIC_API_ROUTES = [
   "/api/portal/survey", // Customer portal — token-validated, no session needed
   "/api/solar/cron/cleanup-pending", // Solar cron — CRON_SECRET validated in route
   "/api/on-call/calendar", // On-call iCal feed — pool icalToken validated in route
+  "/api/estimator", // Public customer-facing estimator v2
+  "/api/cron/estimator-cleanup", // Estimator TTL cleanup — CRON_SECRET validated in route
+  "/api/cron/estimator-hubspot-reconcile", // Estimator HubSpot retry — CRON_SECRET validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed", "/api/install-review", "/api/zuper/sync-cache"] as const;
 
@@ -83,7 +86,7 @@ function addSecurityHeaders(requestId: string, response: NextResponse): NextResp
   // Google Maps JS API requires maps.googleapis.com (scripts) + maps.gstatic.com (resources)
   response.headers.set(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com https://maps.googleapis.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; worker-src 'self' blob:; frame-src 'self'; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self';"
+    "default-src 'self'; script-src 'self' 'unsafe-inline' https://va.vercel-scripts.com https://maps.googleapis.com https://www.google.com https://www.gstatic.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https:; worker-src 'self' blob:; frame-src 'self' https://www.google.com; frame-ancestors 'self'; object-src 'none'; base-uri 'self'; form-action 'self';"
   );
 
   // Strict Transport Security (HTTPS only in production)

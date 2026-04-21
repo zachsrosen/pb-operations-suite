@@ -1,0 +1,13 @@
+export const FALLBACK_PANEL_WATTAGE = 440;
+export const DEFAULT_OFFSET_TARGET = 1.0;
+export const EV_ADD_KWH_PER_YEAR = 3500;
+export const HOT_TUB_ADD_KWH_PER_YEAR = 2500;
+export const TOKEN_TTL_DAYS = 90;
+export const RECAPTCHA_REJECT_THRESHOLD = 0.3;
+export const RECAPTCHA_REVIEW_THRESHOLD = 0.5;
+export const ESTIMATOR_SOURCE_STANDARD = "public_estimator_v2";
+export const ESTIMATOR_SOURCE_MANUAL = "public_estimator_v2_manual";
+export const RECONCILE_MIN_AGE_MS = 15 * 60 * 1000;
+export const RECONCILE_MAX_RETRIES = 3;
+export const DEFAULT_FALLBACK_KWH_PER_KW_YEAR = 1400;
+export const DEFAULT_FALLBACK_PRICE_PER_WATT = 3.2;

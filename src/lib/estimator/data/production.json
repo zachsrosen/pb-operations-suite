@@ -1,0 +1,4 @@
+{
+  "CO": { "light": 1550, "moderate": 1400, "heavy": 1150 },
+  "CA": { "light": 1600, "moderate": 1450, "heavy": 1200 }
+}

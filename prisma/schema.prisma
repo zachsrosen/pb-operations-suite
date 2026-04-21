@@ -204,6 +204,10 @@ enum ActivityType {
   PROPERTY_ASSOCIATION_ADDED
   PROPERTY_SYNC_FAILED
 
+  // Estimator v2
+  ESTIMATOR_SUBMISSION
+  ESTIMATOR_OUT_OF_AREA
+
   // Role admin
   ROLE_CAPABILITIES_CHANGED
   ROLE_CAPABILITIES_RESET
@@ -1107,6 +1111,10 @@ model InternalProduct {
   canonicalKey     String?
   zohoVendorId     String?
 
+  // Estimator v2 — flag that picks this product as the default panel for sizing.
+  // Only applies to MODULE category; enforced by UI, not by schema.
+  defaultForEstimator Boolean @default(false)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1131,6 +1139,7 @@ model InternalProduct {
   @@index([canonicalKey])
   @@index([canonicalBrand, canonicalModel])
   @@index([zohoVendorId])
+  @@index([defaultForEstimator, category])
   @@map("EquipmentSku")
 }
 
@@ -2817,4 +2826,40 @@ model OnCallPtoRequest {
 
   @@index([poolId, status])
   @@index([crewMemberId])
+}
+
+// ===========================================
+// Estimator v2 — Customer-facing Solar Estimator
+// ===========================================
+
+model EstimatorRun {
+  id                    String   @id @default(cuid())
+  token                 String   @unique
+  quoteType             String
+  inputSnapshot         Json
+  resultSnapshot        Json?
+  contactSnapshot       Json
+  firstName             String
+  lastName              String
+  email                 String
+  address               String
+  normalizedAddressHash String?
+  location              String?
+  hubspotContactId      String?
+  hubspotDealId         String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  expiresAt             DateTime
+  ipHash                String?
+  outOfArea             Boolean  @default(false)
+  manualQuoteRequest    Boolean  @default(false)
+  recaptchaScore        Float?
+  flaggedForReview      Boolean  @default(false)
+  retryCount            Int      @default(0)
+
+  @@index([email])
+  @@index([createdAt])
+  @@index([hubspotDealId])
+  @@index([expiresAt])
+  @@index([normalizedAddressHash])
 }

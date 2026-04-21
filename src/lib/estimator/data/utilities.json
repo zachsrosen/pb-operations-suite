@@ -1,0 +1,50 @@
+[
+  {
+    "id": "xcel_co",
+    "name": "xcel_energy",
+    "displayName": "Xcel Energy (CO)",
+    "states": ["CO"],
+    "avgBlendedRateUsdPerKwh": 0.14
+  },
+  {
+    "id": "black_hills",
+    "name": "black_hills",
+    "displayName": "Black Hills Energy",
+    "states": ["CO"],
+    "avgBlendedRateUsdPerKwh": 0.13
+  },
+  {
+    "id": "colorado_springs_utilities",
+    "name": "csu",
+    "displayName": "Colorado Springs Utilities",
+    "states": ["CO"],
+    "zips": [
+      "80903", "80904", "80905", "80906", "80907", "80908", "80909", "80910",
+      "80915", "80916", "80917", "80918", "80919", "80920", "80921", "80922",
+      "80923", "80924", "80925", "80926", "80927", "80928", "80929", "80930",
+      "80938", "80939"
+    ],
+    "avgBlendedRateUsdPerKwh": 0.15
+  },
+  {
+    "id": "pge",
+    "name": "pge",
+    "displayName": "PG&E",
+    "states": ["CA"],
+    "avgBlendedRateUsdPerKwh": 0.32
+  },
+  {
+    "id": "sce",
+    "name": "sce",
+    "displayName": "Southern California Edison",
+    "states": ["CA"],
+    "avgBlendedRateUsdPerKwh": 0.28
+  },
+  {
+    "id": "sdge",
+    "name": "sdge",
+    "displayName": "San Diego Gas & Electric",
+    "states": ["CA"],
+    "avgBlendedRateUsdPerKwh": 0.35
+  }
+]
