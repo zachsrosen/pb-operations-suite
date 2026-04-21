@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
-  fetchRequesterIdByEmail,
+  fetchRequesterId,
   fetchTicketsByRequesterId,
 } from "@/lib/freshservice";
 
@@ -19,7 +19,7 @@ export async function GET() {
   }
 
   try {
-    const requesterId = await fetchRequesterIdByEmail(session.user.email);
+    const requesterId = await fetchRequesterId(session.user.email, session.user.name ?? null);
     if (!requesterId) {
       return NextResponse.json(
         { open: 0, pending: 0, total: 0 },
