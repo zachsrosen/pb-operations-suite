@@ -170,6 +170,13 @@ export default auth((req) => {
         : ["VIEWER"];
   const userRole = normalizeRole(effectiveRoles[0] ?? "VIEWER");
   const access = resolveUserAccess({
+    // Pass email so the super-admin break-glass bypass in resolveUserAccess
+    // fires at the edge too — otherwise middleware would block a super admin
+    // whose role was broken by a bad override, defeating the safeguard.
+    // During impersonation `req.auth.user.email` is still the real admin's
+    // email (cookies change roles, not identity), so super admins retain
+    // break-glass access even while impersonating.
+    email: req.auth?.user?.email ?? null,
     roles: effectiveRoles,
     // Impersonation suppresses extras — admins see role-only access, not the
     // impersonated user's per-user overrides. (Extras are piped from JWT which

@@ -67,6 +67,21 @@ describe("resolveUserAccess — super admin bypass", () => {
     expect(isPathAllowedByAccess(access, "/dashboards/executive")).toBe(true);
   });
 
+  it("middleware-shape call (email + roles + extras) activates bypass", () => {
+    // Regression guard: middleware builds a synthetic UserLike from the JWT
+    // with roles + extras + email (no other fields). If super-admin bypass
+    // isn't wired into that call site, the safeguard is dead at the edge.
+    const access = resolveUserAccess({
+      email: "zach@photonbrothers.com",
+      roles: ["VIEWER"],
+      extraAllowedRoutes: [],
+      extraDeniedRoutes: ["/admin"],
+    });
+    expect(access.roles).toEqual(["ADMIN"]);
+    expect(isPathAllowedByAccess(access, "/admin/roles")).toBe(true);
+    expect(isPathAllowedByAccess(access, "/api/admin/roles/ADMIN/definition")).toBe(true);
+  });
+
   it("non-super-admin email with same roles gets normal access (control)", () => {
     const access = resolveUserAccess({
       email: "someone.else@photonbrothers.com",
