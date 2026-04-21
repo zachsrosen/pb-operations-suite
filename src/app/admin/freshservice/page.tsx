@@ -20,7 +20,7 @@ import {
 interface ListResponse {
   tickets: FreshserviceTicket[];
   lastUpdated: string;
-  requesterFound: boolean;
+  agentFound: boolean;
 }
 
 const STATUS_PILL: Record<number, string> = {
@@ -148,10 +148,10 @@ export default function FreshserviceTicketsPage() {
         <AdminError error="Couldn't load Freshservice tickets." onRetry={() => refetch()} />
       ) : isLoading ? (
         <div className="rounded-lg border border-t-border bg-surface p-8 text-center text-muted">Loading…</div>
-      ) : data && !data.requesterFound ? (
+      ) : data && !data.agentFound ? (
         <AdminEmpty
-          label="No Freshservice account linked"
-          description="We couldn't find a Freshservice requester record for your email. Ask an admin to check your Freshservice account."
+          label="No Freshservice agent linked"
+          description="We couldn't find a Freshservice agent record for your email. Ask an admin to check your Freshservice account."
         />
       ) : tickets.length === 0 ? (
         <AdminEmpty

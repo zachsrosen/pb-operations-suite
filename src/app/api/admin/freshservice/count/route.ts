@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
-  fetchRequesterId,
-  fetchTicketsByRequesterId,
+  fetchAgentIdByEmail,
+  fetchTicketsByAgentId,
+  type FreshserviceTicket,
 } from "@/lib/freshservice";
 
 export async function GET() {
@@ -19,15 +20,15 @@ export async function GET() {
   }
 
   try {
-    const requesterId = await fetchRequesterId(session.user.email, session.user.name ?? null);
-    if (!requesterId) {
+    const agentId = await fetchAgentIdByEmail(session.user.email);
+    if (!agentId) {
       return NextResponse.json(
         { open: 0, pending: 0, total: 0 },
         { headers: { "Cache-Control": "private, max-age=60" } }
       );
     }
 
-    const tickets = await fetchTicketsByRequesterId(requesterId);
+    const tickets: FreshserviceTicket[] = await fetchTicketsByAgentId(agentId);
     const open = tickets.filter((t) => t.status === 2).length;
     const pending = tickets.filter((t) => t.status === 3).length;
     return NextResponse.json(

@@ -1,11 +1,11 @@
 /**
- * Freshservice REST client.
+ * Freshservice REST client — agent-assigned tickets view.
  *
- * Requester filtering uses a two-step documented path:
- *   1. GET /api/v2/requesters?email=<email>  → requester_id
- *   2. GET /api/v2/tickets?requester_id=<id>&per_page=100&page=N
+ * The "My Tickets" feature shows tickets ASSIGNED to the logged-in user (as a
+ * Freshservice agent), not tickets they filed. Lookup is by agent email;
+ * ticket filter uses the `/tickets/filter?query="agent_id:X"` endpoint.
  *
- * Tickets are cached 60s; requester-id lookups 10m (they rarely change).
+ * Tickets are cached 60s; agent-id lookups 10m (rarely change).
  *
  * Status codes: 2=Open, 3=Pending, 4=Resolved, 5=Closed.
  * Priority codes: 1=Low, 2=Medium, 3=High, 4=Urgent.
@@ -19,7 +19,7 @@ const FRESHSERVICE_DOMAIN = process.env.FRESHSERVICE_DOMAIN || "photonbrothers";
 const FRESHSERVICE_BASE = `https://${FRESHSERVICE_DOMAIN}.freshservice.com`;
 
 const ticketsCache = new CacheStore(60_000, 120_000);
-const requesterCache = new CacheStore(10 * 60_000, 30 * 60_000);
+const agentCache = new CacheStore(10 * 60_000, 30 * 60_000);
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -39,9 +39,9 @@ export interface FreshserviceTicket {
   category: string | null;
 }
 
-export interface FreshserviceRequester {
+export interface FreshserviceAgent {
   id: number;
-  primary_email: string;
+  email: string;
   first_name: string;
   last_name: string;
 }
@@ -114,85 +114,51 @@ export async function freshserviceFetch(
 
 // ─── Public API ─────────────────────────────────────────────────────────
 
-export async function fetchRequesterIdByEmail(email: string): Promise<number | null> {
+/**
+ * Resolve the Freshservice agent_id for the given email. Agents are
+ * support-staff records (distinct from requesters). Returns null when no
+ * agent exists for the email.
+ */
+export async function fetchAgentIdByEmail(email: string): Promise<number | null> {
   if (!email) throw new Error("email required");
-  const cacheKey = `freshservice:requester-id:${email.toLowerCase()}`;
+  const cacheKey = `freshservice:agent-id:${email.toLowerCase()}`;
 
-  // Serve cached positive result if present. Skip the cache entirely for
-  // negative (null) results — otherwise a newly-created Freshservice account
-  // is invisible to the user for up to 30 minutes.
-  const cached = requesterCache.get<number | null>(cacheKey);
+  // Positive results cached 10m; negative results NOT cached so a newly
+  // added agent is visible immediately.
+  const cached = agentCache.get<number | null>(cacheKey);
   if (cached.hit && cached.data !== null && !cached.stale) return cached.data;
 
   const res = await freshserviceFetch(
-    `/api/v2/requesters?email=${encodeURIComponent(email)}`
+    `/api/v2/agents?email=${encodeURIComponent(email)}`
   );
-  const body = (await res.json()) as { requesters?: FreshserviceRequester[] };
-  const first = body.requesters?.[0];
+  const body = (await res.json()) as { agents?: FreshserviceAgent[] };
+  const first = body.agents?.[0];
   const id = first ? first.id : null;
-  if (id !== null) requesterCache.set(cacheKey, id);
+  if (id !== null) agentCache.set(cacheKey, id);
   return id;
 }
 
 /**
- * Resolve a requester by full name (first + last). Fallback for cases where
- * the user's session email (e.g. zach@photonbrothers.com) doesn't match their
- * Freshservice primary_email (e.g. zach.rosen@photonbrothers.com) and no
- * secondary_email is configured.
+ * Fetch tickets assigned to the given agent. Uses the /tickets/filter
+ * endpoint (query syntax). Drops Closed tickets (status=5) client-side.
  */
-export async function fetchRequesterIdByName(fullName: string): Promise<number | null> {
-  if (!fullName) return null;
-  const parts = fullName.trim().split(/\s+/);
-  if (parts.length < 2) return null;
-  const firstName = parts[0];
-  const lastName = parts[parts.length - 1];
-  const cacheKey = `freshservice:requester-id-by-name:${firstName.toLowerCase()}-${lastName.toLowerCase()}`;
-
-  const cached = requesterCache.get<number | null>(cacheKey);
-  if (cached.hit && cached.data !== null && !cached.stale) return cached.data;
-
-  // Freshservice v2 filter: query="first_name:'X' AND last_name:'Y'"
-  const q = `"first_name:'${firstName}' AND last_name:'${lastName}'"`;
-  const res = await freshserviceFetch(
-    `/api/v2/requesters?query=${encodeURIComponent(q)}`
-  );
-  const body = (await res.json()) as { requesters?: FreshserviceRequester[] };
-  const first = body.requesters?.[0];
-  const id = first ? first.id : null;
-  if (id !== null) requesterCache.set(cacheKey, id);
-  return id;
-}
-
-/**
- * Resolve a requester by email first, then fall back to name if provided.
- * Use this in route handlers where both session.user.email and
- * session.user.name are available.
- */
-export async function fetchRequesterId(
-  email: string,
-  fullName?: string | null
-): Promise<number | null> {
-  const byEmail = await fetchRequesterIdByEmail(email);
-  if (byEmail !== null) return byEmail;
-  if (fullName) return fetchRequesterIdByName(fullName);
-  return null;
-}
-
-export async function fetchTicketsByRequesterId(
-  requesterId: number
+export async function fetchTicketsByAgentId(
+  agentId: number
 ): Promise<FreshserviceTicket[]> {
-  const cacheKey = `freshservice:tickets:${requesterId}`;
+  const cacheKey = `freshservice:tickets:agent:${agentId}`;
   const { data } = await ticketsCache.getOrFetch<FreshserviceTicket[]>(cacheKey, async () => {
     const all: FreshserviceTicket[] = [];
-    const perPage = 100;
+    const perPage = 30; // filter endpoint caps at 30 per page
     let page = 1;
     while (true) {
+      // Query fetches status 2, 3, 4 (exclude 5 Closed).
+      const query = `"agent_id:${agentId} AND (status:2 OR status:3 OR status:4)"`;
       const res = await freshserviceFetch(
-        `/api/v2/tickets?requester_id=${requesterId}&per_page=${perPage}&page=${page}&order_by=created_at&order_type=desc`
+        `/api/v2/tickets/filter?query=${encodeURIComponent(query)}&page=${page}`
       );
-      const body = (await res.json()) as { tickets?: FreshserviceTicket[] };
+      const body = (await res.json()) as { tickets?: FreshserviceTicket[]; total?: number };
       const tickets = body.tickets ?? [];
-      all.push(...tickets.filter((t) => t.status !== 5)); // drop Closed
+      all.push(...tickets);
       if (tickets.length < perPage) break;
       page++;
       if (page > 20) break; // hard cap
