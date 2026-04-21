@@ -79,6 +79,7 @@ model EstimatorRun {
   expiresAt             DateTime                       // default now() + 90 days; used by cron for cleanup
   ipHash                String?                        // SHA-256 of IP for rate-limiting + anti-abuse
   outOfArea             Boolean   @default(false)      // true = email-only waitlist lead, no deal
+  manualQuoteRequest    Boolean   @default(false)      // true = utility fallback, no engine run
   recaptchaScore        Float?                         // null if submission pre-recaptcha verified
   flaggedForReview      Boolean   @default(false)      // recaptcha 0.3–0.5 range
 
@@ -286,7 +287,7 @@ Single React page at `/estimator/new-install` with a step state machine driven b
 - Heat pump — Yes/No.
 - Considerations — 4 checkboxes (EV / panel upgrade / hot tub / new roof), each with a small "learn more" link.
 
-**Utility fallback.** If user's utility isn't in the list, show "Don't see your provider?" link → contact form (name/email/phone/message, submit as `outOfArea: true` with a flag so ops can manually quote). Does not advance to results.
+**Utility fallback.** If user's utility isn't in the list, show "Don't see your provider?" link → contact form (name/email/phone/message). Submits to `/api/estimator/submit` with `kind: "manual_quote_request"` — **separate from out-of-area**. Creates a contact + deal in HubSpot with `estimator_source: "public_estimator_v2_manual"` and `dealstage` = first stage. No engine run, no results page — deal is a lead for ops to manually quote.
 
 **Step 4 — Contact.** First name / Last name / Email / Phone / Referred by (optional) / Project notes (optional) / reCAPTCHA v3 (invisible badge). "See my estimate" triggers `POST /api/estimator/submit`.
 
@@ -299,28 +300,34 @@ Single React page at `/estimator/new-install` with a step state machine driven b
 
 ---
 
-## HubSpot Integration on Submit
+## Submit Sequence
 
-**Sequence** (executed in `/api/estimator/submit` after engine call succeeds):
+`/api/estimator/submit` accepts three `kind` values — `quote`, `out_of_area`, `manual_quote_request` — with different handling. Order-of-operations is intentional: **local persistence comes before HubSpot writes** so we never lose a submission if HubSpot is down.
 
-1. **Upsert Contact** — dedupe by email. If existing, update with any new fields; else create with:
-   - `firstname`, `lastname`, `email`, `phone`
-   - `lifecyclestage: lead`
-   - Address fields (triggers the existing Property webhook to build the `HubSpotPropertyCache` row if this address is new)
-2. **Create Deal** — new deal in sales pipeline (env: `HUBSPOT_PIPELINE_SALES`), first stage (TBD: either use existing first stage or add new stage "Estimator Lead" — decide during implementation based on current pipeline stage config).
-   - Associate to contact.
-   - Set custom deal properties via `deal-property-map.ts` (additive, not destructive):
-     - System size kW, panel count, annual production kWh, offset %
-     - Retail USD, incentives USD, final USD, monthly payment USD
-     - Booleans: `estimator_has_ev`, `estimator_has_panel_upgrade`, `estimator_considers_battery` (false in v1), `estimator_considers_new_roof`
-     - `estimator_results_token` (the EstimatorRun.token, for ops to pull the full snapshot)
-     - `source`: `"public_estimator_v2"` (tag for marketing attribution)
-3. **Email result link** — reuse existing email provider (Google Workspace primary, Resend fallback via `lib/email.ts` pattern). New React Email template `EstimatorResultsEmail.tsx` with link to `/estimator/results/[token]`. Email failure does not fail the submit — the results page is always accessible via the returned token regardless of email delivery (logged as a warning, surfaces to Sentry).
-4. **Persist** `EstimatorRun` with all foreign IDs.
+**Kind `quote` (in-area, happy path)** — engine already ran on client side via `/api/estimator/quote`; we re-run server-side to prevent tampering, then:
 
-**Out-of-area path** — skip step 2 (no deal). Contact created with `lifecyclestage: marketingqualifiedlead` and a `waitlist_zip` custom property (new). Email template acknowledges.
+1. **Idempotency check** — hash key per the Idempotency section below. If hit, return the existing token. No further writes.
+2. **Verify reCAPTCHA** — if score < 0.3, reject with 403. If 0.3–0.5, accept but set `flaggedForReview: true`.
+3. **Re-run engine server-side** with inputs; compare to client result. If drift > 1%, log Sentry warning but continue with server result.
+4. **Persist `EstimatorRun`** with `hubspotContactId=null`, `hubspotDealId=null`. Commit token. From here, the results page works even if HubSpot fails.
+5. **Upsert HubSpot contact** — dedupe by email. Create/update with `firstname`, `lastname`, `email`, `phone`, address fields (triggers existing Property webhook). `lifecyclestage: lead`. Patch `EstimatorRun.hubspotContactId`.
+6. **Create HubSpot deal** — pipeline `HUBSPOT_PIPELINE_SALES`, first stage. Associate to contact. Set the 14 `estimator_*` deal properties listed in the HubSpot Custom Properties section. Patch `EstimatorRun.hubspotDealId`.
+7. **Email result link** — `EstimatorResultsEmail.tsx` with link to `/estimator/results/[token]`. Failure logs Sentry warning; does not fail submit.
+8. **Activity log** — write `ActivityLog` with `ActivityType.ESTIMATOR_SUBMISSION`.
+9. **Return** `{ token }`.
 
-**Idempotency** — use existing `IdempotencyKey` model keyed by `(email, normalizedAddressHash, date)` to prevent dupes from refresh/resubmit. Match the pattern in `portal/survey/*`.
+If steps 5–7 fail, the `EstimatorRun` already exists (step 4). A reconcile cron (`/api/cron/estimator-hubspot-reconcile`, daily) retries rows where `hubspotDealId IS NULL AND createdAt < now() - 15min AND outOfArea = false AND manualQuoteRequest = false`.
+
+**Kind `out_of_area`** — skip engine re-run (no engine input in the first place). Skip step 6 (no deal). Contact created with `lifecyclestage: marketingqualifiedlead` and `waitlist_zip` property. Email template: waitlist acknowledgement. Activity type: `ESTIMATOR_OUT_OF_AREA`. `outOfArea: true` on the run.
+
+**Kind `manual_quote_request`** (utility fallback) — skip engine. Create contact + deal (same as quote), but with `estimator_source: "public_estimator_v2_manual"`. Set deal stage first stage. No `estimator_*` numeric properties (engine never ran). Activity type: `ESTIMATOR_SUBMISSION` (with a distinguishing metadata field). Email template: "we'll reach out to quote your system manually." `manualQuoteRequest: true` on the run.
+
+**Idempotency** — use existing `IdempotencyKey` model. Key shape:
+
+- In-service-area submits: `estimator:v2:${sha256(email)}:${normalizedAddressHash}:${YYYY-MM-DD}`
+- Out-of-area (no address hash): `estimator:v2:oos:${sha256(email)}:${zip}:${YYYY-MM-DD}`
+
+Scoped by day so a customer resubmitting after a week creates a fresh run. Match the pattern in `portal/survey/*`.
 
 ---
 
@@ -464,10 +471,35 @@ Funnel metrics queryable from `EstimatorRun` + `ActivityLog`: visitors → addre
 
 ---
 
+## Default Panel Source (resolved)
+
+The default panel used for sizing is resolved at API-layer boundary time, not hardcoded in `pricing.json`:
+
+1. Query `InternalProduct` where `category = 'MODULE'` AND `defaultForEstimator = true`.
+2. If exactly one found, use its `ModuleSpec.wattage`.
+3. If zero or multiple found, fall back to a hardcoded `FALLBACK_PANEL_WATTAGE = 440` constant in `lib/estimator/constants.ts` and log a Sentry warning tagged `estimator:no_default_panel`.
+
+**Schema change**: add `defaultForEstimator Boolean @default(false)` to `InternalProduct`. Migration lands with the estimator migration.
+
+`pricePerWatt` stays in `pricing.json` — it's a location-based commercial number, not a catalog property.
+
+---
+
+## Prisma Migrations Summary (human action)
+
+A single migration lands for Phase 1. Contents:
+
+1. New model: `EstimatorRun` (all fields/indexes above)
+2. New enum values on `ActivityType`: `ESTIMATOR_SUBMISSION`, `ESTIMATOR_OUT_OF_AREA`
+3. Add `defaultForEstimator Boolean @default(false)` to `InternalProduct`
+
+Per the "Prisma migration must land before code" memory: this migration must be applied to production **before** the Vercel deploy that contains the estimator code, because the client regen on build would otherwise query fields that don't exist.
+
+---
+
 ## Open Questions (deferrable during implementation)
 
-1. **Default panel wattage + pricePerWatt source** — read from `InternalProduct.defaultForEstimator` flag vs. hardcode in `pricing.json`? Lean toward flag on `InternalProduct` so catalog changes flow through; confirm during implementation.
-2. **Waitlist-notify email template** — reuse `ProductUpdate.tsx` pattern or new template?
-3. **Consultation CTA destination** — `/free-solar-estimate` today; revisit if Chili Piper / Calendly gets adopted.
+1. **Waitlist-notify email template** — reuse `ProductUpdate.tsx` pattern or new template?
+2. **Consultation CTA destination** — `/free-solar-estimate` today; revisit if Chili Piper / Calendly gets adopted.
 
 These don't block the spec; they're implementation-time decisions.
