@@ -5,6 +5,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { formatDate } from "@/lib/format";
+import { getStatusDisplayName } from "@/lib/hubspot-status-display";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
@@ -133,7 +134,7 @@ function DAStatusBadge({ status }: { status: string }) {
     : "bg-yellow-500/20 text-yellow-400 border-yellow-500/30";
   return (
     <span className={`inline-block px-2 py-0.5 text-xs font-medium rounded-full border ${cls}`}>
-      {status}
+      {getStatusDisplayName(status, "layout_status") || status}
     </span>
   );
 }
@@ -467,7 +468,7 @@ export default function DesignApprovalQueuePage() {
                       <td className="p-3 text-muted">{p.designLead || "\u2014"}</td>
                       <td className="p-3 text-muted">{p.stage || "\u2014"}</td>
                       <td className="p-3 text-muted">{formatDate(p.siteSurveyCompletionDate)}</td>
-                      <td className="p-3 text-muted">{p.layoutStatus || "\u2014"}</td>
+                      <td className="p-3 text-muted">{p.layoutStatus ? getStatusDisplayName(p.layoutStatus, "layout_status") : "\u2014"}</td>
                       <td className="p-3 text-right">
                         <span className={`font-semibold ${daysColor(p.daysWaiting)}`}>{p.daysWaiting}d</span>
                       </td>
