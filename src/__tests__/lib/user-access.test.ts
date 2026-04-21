@@ -1,5 +1,5 @@
 import type { UserRole } from "@/generated/prisma/enums";
-import { ROLES } from "@/lib/roles";
+import { ROLES, type RoleDefinition } from "@/lib/roles";
 import {
   isPathAllowedByAccess,
   resolveEffectiveRole,
@@ -248,5 +248,52 @@ describe("isPathAllowedByAccess", () => {
     expect(isPathAllowedByAccess(access, "/dashboards/sales")).toBe(true);
     // SERVICE-only route
     expect(isPathAllowedByAccess(access, "/dashboards/service-tickets")).toBe(true);
+  });
+});
+
+describe("multi-role merge with definition overrides (spec examples 1-3)", () => {
+  it("example 1: role A override landingCards=[] + role B no override → union contains B's code cards", () => {
+    const opsOverride: RoleDefinition = { ...ROLES.OPERATIONS, landingCards: [] };
+    const overrides = new Map<UserRole, RoleDefinition>([["OPERATIONS", opsOverride]]);
+    const eff = resolveEffectiveRole(["OPERATIONS", "OPERATIONS_MANAGER"], overrides);
+    // OPERATIONS contributes zero cards; OPS_MGR's code cards survive.
+    expect(eff.landingCards.length).toBe(ROLES.OPERATIONS_MANAGER.landingCards.length);
+  });
+
+  it("example 2: role A override adds /x + role B no override → union contains /x plus B's code routes", () => {
+    const pmOverride: RoleDefinition = {
+      ...ROLES.PROJECT_MANAGER,
+      allowedRoutes: ["/dashboards/x"],
+    };
+    const overrides = new Map<UserRole, RoleDefinition>([["PROJECT_MANAGER", pmOverride]]);
+    const eff = resolveEffectiveRole(["PROJECT_MANAGER", "SERVICE"], overrides);
+    expect(eff.allowedRoutes).toContain("/dashboards/x");
+    // A specific SERVICE code-default route is still present:
+    expect(eff.allowedRoutes).toContain("/dashboards/service-overview");
+  });
+
+  it("example 3: single role with empty override → effective routes empty (modulo per-user extras)", () => {
+    const srvOverride: RoleDefinition = { ...ROLES.SERVICE, allowedRoutes: [] };
+    const overrides = new Map<UserRole, RoleDefinition>([["SERVICE", srvOverride]]);
+    const eff = resolveEffectiveRole(["SERVICE"], overrides);
+    expect(eff.allowedRoutes).toEqual([]);
+  });
+});
+
+describe("per-user extraDeniedRoutes still wins over role-level override grant", () => {
+  it("override grants /x; user denies /x → isPathAllowedByAccess returns false", () => {
+    const srvOverride: RoleDefinition = {
+      ...ROLES.SERVICE,
+      allowedRoutes: ["/", "/dashboards/x"],
+    };
+    const overrides = new Map<UserRole, RoleDefinition>([["SERVICE", srvOverride]]);
+    const access = resolveUserAccess(
+      { roles: ["SERVICE"], extraDeniedRoutes: ["/dashboards/x"] },
+      overrides,
+    );
+    expect(access.allowedRoutes.has("/dashboards/x")).toBe(true);
+    expect(access.deniedRoutes.has("/dashboards/x")).toBe(true);
+    // isPathAllowedByAccess checks deniedRoutes first:
+    expect(isPathAllowedByAccess(access, "/dashboards/x")).toBe(false);
   });
 });
