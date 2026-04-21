@@ -286,6 +286,47 @@ describe("computeSummary", () => {
   });
 });
 
+describe("transformDeal — edge cases", () => {
+  it("post-install with DA still not paid goes to awaiting_m1, not attention (within 30 days of close)", () => {
+    // Intentional: DA-first principle. Post-install CC-not-paid attention
+    // rule is guarded by `daStatus === "Paid In Full"`, so DA-open deals
+    // fall through to awaiting_m1 regardless of stage. The >30-day rule is
+    // the only thing that would flag them earlier.
+    const deal = transformDeal(
+      {
+        ...BASE,
+        dealstage: "22580872", // Inspection (post-install)
+        closedate: "2026-04-15T00:00:00Z", // recent — not >30 days
+        da_invoice_status: "Open",
+        da_invoice_amount: "5000",
+      },
+      new Date("2026-04-21")
+    );
+    expect(deal.bucket).toBe("awaiting_m1");
+  });
+
+  it("PE M1 Paid but peM1ApprovalDate null does not fire stuck-M2 attention", () => {
+    // Defensive: without an approval date we can't measure "> 14 days stuck".
+    // Deal should NOT be flagged as attention on that basis.
+    const deal = transformDeal(
+      {
+        ...BASE,
+        da_invoice_status: "Paid In Full",
+        cc_invoice_status: "Paid In Full",
+        pto_invoice_status: "Paid In Full",
+        pe_m1_status: "Paid",
+        pe_m2_status: "Ready to Submit",
+        pe_payment_ic: "6000",
+        pe_payment_pc: "3000",
+        // pe_m1_approval_date intentionally omitted
+      },
+      new Date("2026-04-21")
+    );
+    expect(deal.bucket).toBe("awaiting_pe_m2");
+    expect(deal.attentionReasons).not.toContain("PE M1 Paid >14 days, M2 not submitted");
+  });
+});
+
 describe("computeBucket — disjointness", () => {
   it("first-match-wins — attention beats milestone buckets", () => {
     const bucket = computeBucket({
