@@ -122,6 +122,8 @@ export default function FreshserviceTicketsPage() {
       label: "Due",
       render: (t) => {
         const d = dueRelative(t.due_by);
+        const isDone = t.status === 4 || t.status === 5;
+        if (isDone) return <span className="text-muted">—</span>;
         return <span className={d.overdue ? "text-red-400" : ""}>{d.text}</span>;
       },
       width: "w-28",
@@ -204,7 +206,13 @@ export default function FreshserviceTicketsPage() {
                 { label: "Priority", value: FRESHSERVICE_PRIORITY_LABELS[selected.priority] ?? String(selected.priority) },
                 { label: "Created", value: relative(selected.created_at) },
                 { label: "Updated", value: relative(selected.updated_at) },
-                { label: "Due", value: dueRelative(selected.due_by).text || "—" },
+                {
+                  label: "Due",
+                  value:
+                    selected.status === 4 || selected.status === 5
+                      ? "—"
+                      : dueRelative(selected.due_by).text || "—",
+                },
                 { label: "Type", value: selected.type ?? "—" },
                 { label: "Category", value: selected.category ?? "—" },
               ]}
