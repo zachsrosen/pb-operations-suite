@@ -80,28 +80,53 @@ async function withHubSpotRetry<T>(label: string, fn: () => Promise<T>): Promise
 // Owner resolution by email
 // ---------------------------------------------------------------------------
 
-const OWNER_EMAIL_CACHE_KEY = (email: string) => `hubspot:owner-by-email:${email.toLowerCase()}`;
+const OWNER_MAP_CACHE_KEY = "hubspot:owner-email-to-id-map";
+
+/**
+ * Fetch ALL HubSpot owners and build an email→id map.
+ *
+ * Chose this over the ownersApi.getPage(email, ...) filter form because
+ * the filter form returned zero results for known owners in our tenant
+ * (possibly an SDK arg-order quirk, possibly a portal config issue).
+ * Listing all owners is a single request for tenants with fewer than 500
+ * owners, which matches our scale.
+ */
+async function getOwnerEmailMap(): Promise<Map<string, string>> {
+  const cached = appCache.get<Record<string, string>>(OWNER_MAP_CACHE_KEY);
+  if (cached.hit && cached.data) {
+    return new Map(Object.entries(cached.data));
+  }
+
+  const map = new Map<string, string>();
+  let after: string | undefined = undefined;
+  const MAX_PAGES = 10;
+
+  try {
+    for (let i = 0; i < MAX_PAGES; i++) {
+      const page: { results?: Array<{ id?: string; email?: string }>; paging?: { next?: { after?: string } } } =
+        await withHubSpotRetry(
+          "owners.list",
+          () => hubspotClient.crm.owners.ownersApi.getPage(undefined, after, 500, false),
+        );
+      for (const o of page.results ?? []) {
+        const email = o.email?.trim().toLowerCase();
+        if (email && o.id) map.set(email, o.id);
+      }
+      after = page.paging?.next?.after;
+      if (!after) break;
+    }
+    appCache.set(OWNER_MAP_CACHE_KEY, Object.fromEntries(map));
+  } catch (err) {
+    Sentry.captureException(err, { tags: { module: "hubspot-tasks", op: "getOwnerEmailMap" } });
+  }
+  return map;
+}
 
 export async function resolveOwnerIdByEmail(email: string): Promise<string | null> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return null;
-
-  const cacheKey = OWNER_EMAIL_CACHE_KEY(normalized);
-  const cached = appCache.get<string | null>(cacheKey);
-  if (cached.hit) return cached.data;
-
-  try {
-    const page = await withHubSpotRetry(
-      "owners.search",
-      () => hubspotClient.crm.owners.ownersApi.getPage(normalized, undefined, 1, false),
-    );
-    const id = page.results?.[0]?.id ?? null;
-    appCache.set(cacheKey, id);
-    return id;
-  } catch (err) {
-    Sentry.captureException(err, { tags: { module: "hubspot-tasks", op: "resolveOwnerIdByEmail" } });
-    return null;
-  }
+  const map = await getOwnerEmailMap();
+  return map.get(normalized) ?? null;
 }
 
 // ---------------------------------------------------------------------------
