@@ -76,7 +76,7 @@ async function resolveDefaultPanelWattage(): Promise<number> {
       include: { moduleSpec: true },
     });
     const watt = found?.moduleSpec?.wattage ?? found?.unitSpec;
-    if (typeof watt === "number" && watt > 100 && watt < 1200) return watt;
+    if (typeof watt === "number" && watt >= 300 && watt <= 800) return watt;
   } catch (err) {
     console.warn("[estimator] default panel lookup failed", err);
   }

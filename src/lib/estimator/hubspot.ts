@@ -135,7 +135,7 @@ export async function createEstimatorDeal(input: EstimatorDealInput): Promise<{ 
       associations: [
         {
           to: { id: input.contactId },
-          types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 3 }], // contact-to-deal
+          types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 3 }], // deal-to-contact (HUBSPOT_DEFINED typeId 3)
         },
       ],
     }),

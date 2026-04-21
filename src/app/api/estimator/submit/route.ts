@@ -227,6 +227,20 @@ async function handleOutOfArea(ctx: {
   const { submission, token, expiresAt, ipHash, recaptchaScore, flaggedForReview } = ctx;
   const { contact, zip } = submission;
 
+  // Idempotency: dedupe on (email, zip, today).
+  const existing = await prisma.estimatorRun.findFirst({
+    where: {
+      email: contact.email.toLowerCase(),
+      address: `zip: ${zip}`,
+      outOfArea: true,
+      createdAt: { gte: startOfDay() },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (existing) {
+    return NextResponse.json({ token: existing.token, outOfArea: true, dedupedFromExisting: true });
+  }
+
   const run = await prisma.estimatorRun.create({
     data: {
       token,
@@ -288,6 +302,20 @@ async function handleManualQuote(ctx: {
     state: address.state,
     zip: address.zip,
   });
+
+  // Idempotency: dedupe on (email, address hash, today).
+  const existing = await prisma.estimatorRun.findFirst({
+    where: {
+      email: contact.email.toLowerCase(),
+      normalizedAddressHash: normalizedHash,
+      manualQuoteRequest: true,
+      createdAt: { gte: startOfDay() },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (existing) {
+    return NextResponse.json({ token: existing.token, manualQuoteRequest: true, dedupedFromExisting: true });
+  }
 
   const run = await prisma.estimatorRun.create({
     data: {
@@ -386,7 +414,7 @@ async function resolveDefaultPanelWattage(): Promise<number> {
       include: { moduleSpec: true },
     });
     const watt = found?.moduleSpec?.wattage ?? found?.unitSpec;
-    if (typeof watt === "number" && watt > 100 && watt < 1200) return watt;
+    if (typeof watt === "number" && watt >= 300 && watt <= 800) return watt;
   } catch (err) {
     console.warn("[estimator] default panel lookup failed", err);
   }

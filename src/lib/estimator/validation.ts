@@ -43,11 +43,6 @@ export const ContactInfoSchema = z.object({
   notes: z.string().max(2000).optional(),
 });
 
-// Client-facing request for /api/estimator/address-validate
-export const AddressValidateRequestSchema = z.object({
-  address: z.string().min(3).max(500),
-});
-
 // Client-facing request for /api/estimator/quote
 // The quote endpoint accepts user-facing fields and resolves engine internals server-side.
 export const QuoteRequestSchema = z.object({
