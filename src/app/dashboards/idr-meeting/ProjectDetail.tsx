@@ -5,7 +5,7 @@ import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
-import { getInternalDealUrl } from "@/lib/external-links";
+import { getInternalDealUrl, getZuperJobUrl } from "@/lib/external-links";
 import type { IdrItem } from "./IdrMeetingClient";
 import { InstallPlanningForm } from "./InstallPlanningForm";
 import { StatusActionsForm } from "./StatusActionsForm";
@@ -209,9 +209,12 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
         <div className="flex flex-wrap gap-1.5">
           <Link
             href={getInternalDealUrl(item.dealId)}
+            target="_blank"
+            rel="noopener noreferrer"
             className="inline-flex items-center gap-0.5 rounded border border-purple-500/40 bg-purple-500/10 px-2 py-0.5 text-[11px] font-semibold text-purple-300 hover:bg-purple-500/20 transition-colors no-underline"
           >
             Deal
+            <span className="text-purple-300/70">&#8599;</span>
           </Link>
           <QuickLink
             href={`https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${item.dealId}`}
@@ -219,6 +222,9 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
           />
           {item.designFolderUrl && <QuickLink href={item.designFolderUrl} label="Design" />}
           {item.surveyFolderUrl && <QuickLink href={item.surveyFolderUrl} label="Survey" />}
+          {item.surveyJobUid && (
+            <QuickLink href={getZuperJobUrl(item.surveyJobUid)!} label="Zuper Survey Job" />
+          )}
           {item.openSolarUrl && <QuickLink href={item.openSolarUrl} label="OpenSolar" />}
           {item.driveFolderUrl && <QuickLink href={item.driveFolderUrl} label="Drive" />}
         </div>
@@ -232,6 +238,7 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
                 <InfoCell label="System Size" value={item.systemSizeKw ? `${item.systemSizeKw} kW` : null} />
                 <InfoCell label="Amount" value={amountStr} />
                 <InfoCell label="Design Status" value={item.designStatus} />
+                <InfoCell label="Design Approval" value={item.designApprovalStatus} />
                 <InfoCell label="Survey Date" value={item.surveyDate} />
                 <InfoCell label="AHJ" value={item.ahj} />
                 <InfoCell label="Utility" value={item.utilityCompany} />

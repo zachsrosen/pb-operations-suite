@@ -39,10 +39,34 @@ export async function GET(
   }
 
   const returningDealIds = await getReturningDealIds(session.date);
+
+  // Look up cached Zuper site-survey job UIDs per deal so the UI can deep-link.
+  const dealIds = session.items.map((i) => i.dealId);
+  const surveyJobs = dealIds.length
+    ? await prisma.zuperJobCache.findMany({
+        where: {
+          hubspotDealId: { in: dealIds },
+          jobCategory: { in: ["Site Survey", "Pre-Sale Site Visit"] },
+        },
+        orderBy: { lastSyncedAt: "desc" },
+        select: { hubspotDealId: true, jobUid: true, jobCategory: true },
+      })
+    : [];
+  // Prefer real Site Survey over Pre-Sale Site Visit when both exist.
+  const surveyJobByDeal = new Map<string, string>();
+  for (const j of surveyJobs) {
+    if (!j.hubspotDealId) continue;
+    const existing = surveyJobByDeal.get(j.hubspotDealId);
+    if (!existing || j.jobCategory === "Site Survey") {
+      surveyJobByDeal.set(j.hubspotDealId, j.jobUid);
+    }
+  }
+
   const itemsWithBadges = session.items.map((item) => ({
     ...item,
     badge: computeReadinessBadge(item.surveyCompleted, item.plansetDate),
     isReturning: returningDealIds.has(item.dealId),
+    surveyJobUid: surveyJobByDeal.get(item.dealId) ?? null,
   }));
 
   return NextResponse.json({ ...session, items: itemsWithBadges });

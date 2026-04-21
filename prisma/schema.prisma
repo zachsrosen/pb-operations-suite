@@ -2158,6 +2158,7 @@ model IdrMeetingItem {
   surveyStatus           String?
   surveyDate             String?
   designStatus           String?
+  designApprovalStatus   String? // HubSpot `layout_status` — DA workflow state
   plansetDate            String?
   driveFolderUrl         String?
   surveyFolderUrl        String?

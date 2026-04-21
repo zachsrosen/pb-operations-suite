@@ -47,6 +47,7 @@ export interface IdrItem {
   surveyStatus: string | null;
   surveyDate: string | null;
   designStatus: string | null;
+  designApprovalStatus: string | null;
   plansetDate: string | null;
   driveFolderUrl: string | null;
   surveyFolderUrl: string | null;
@@ -101,6 +102,7 @@ export interface IdrItem {
   updatedAt: string;
   badge: "green" | "yellow" | "orange" | "red";
   isReturning: boolean;
+  surveyJobUid: string | null;
   notes?: IdrNote[];
 }
 
