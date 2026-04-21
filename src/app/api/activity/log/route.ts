@@ -54,6 +54,7 @@ export async function POST(request: NextRequest) {
     // Resolve userId for audit (Amendment A3)
     const currentUser = await getUserByEmail(userEmail);
     const userId = currentUser?.id || null;
+    const userIdForLog = userId ?? undefined;
 
     let body;
     try {
@@ -101,6 +102,7 @@ export async function POST(request: NextRequest) {
         await logActivity({
           type: "DASHBOARD_VIEWED",
           description: `Viewed page ${data.path || "unknown"}`,
+          userId: userIdForLog,
           userEmail,
           userName,
           entityType: "page",
@@ -122,6 +124,7 @@ export async function POST(request: NextRequest) {
       case "dashboard_view":
         await logDashboardView({
           dashboard: data.dashboard,
+          userId: userIdForLog,
           userEmail,
           userName,
           filters: data.filters,
@@ -140,6 +143,7 @@ export async function POST(request: NextRequest) {
         await logProjectView({
           projectId: data.projectId,
           projectName: data.projectName,
+          userId: userIdForLog,
           userEmail,
           userName,
           source: data.source,
@@ -157,6 +161,7 @@ export async function POST(request: NextRequest) {
           searchTerm: data.searchTerm,
           resultCount: data.resultCount,
           dashboard: data.dashboard,
+          userId: userIdForLog,
           userEmail,
           userName,
           ipAddress,
@@ -172,6 +177,7 @@ export async function POST(request: NextRequest) {
         await logFilterChange({
           dashboard: data.dashboard,
           filters: data.filters,
+          userId: userIdForLog,
           userEmail,
           userName,
           sessionId: data.sessionId,
@@ -186,6 +192,7 @@ export async function POST(request: NextRequest) {
           exportType: data.exportType,
           dashboard: data.dashboard,
           recordCount: data.recordCount,
+          userId: userIdForLog,
           userEmail,
           userName,
           filters: data.filters,
@@ -201,6 +208,7 @@ export async function POST(request: NextRequest) {
         await logActivity({
           type: "FEATURE_USED",
           description: data.description || `Used feature: ${data.feature}`,
+          userId: userIdForLog,
           userEmail,
           userName,
           entityType: "feature",
@@ -227,6 +235,7 @@ export async function POST(request: NextRequest) {
         await logActivity({
           type: data.type as ActivityType,
           description: data.description,
+          userId: userIdForLog,
           userEmail,
           userName,
           entityType: data.entityType,

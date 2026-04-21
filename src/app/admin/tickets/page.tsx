@@ -17,6 +17,7 @@ import { FormSelect } from "@/components/admin-shell/AdminForm";
 
 interface BugReport {
   id: string;
+  type: "BUG" | "FEATURE_REQUEST";
   title: string;
   description: string;
   pageUrl: string | null;
@@ -53,6 +54,17 @@ const STATUS_TABS = [
   { key: "CLOSED", label: "Closed" },
 ] as const;
 
+const TYPE_TABS = [
+  { key: "", label: "All types" },
+  { key: "BUG", label: "Bugs" },
+  { key: "FEATURE_REQUEST", label: "Features" },
+] as const;
+
+const TYPE_CONFIG: Record<string, { label: string; bg: string; text: string; border: string }> = {
+  BUG: { label: "Bug", bg: "bg-red-500/15", text: "text-red-400", border: "border-red-500/20" },
+  FEATURE_REQUEST: { label: "Feature", bg: "bg-violet-500/15", text: "text-violet-300", border: "border-violet-500/20" },
+};
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function fmtRelative(ds: string): string {
@@ -81,9 +93,22 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
+function TypePill({ type }: { type: string }) {
+  const tc = TYPE_CONFIG[type] ?? TYPE_CONFIG.BUG;
+  return (
+    <span className={`inline-block rounded px-2 py-0.5 text-[10px] font-semibold uppercase border ${tc.bg} ${tc.text} ${tc.border}`}>
+      {tc.label}
+    </span>
+  );
+}
+
 // ── Table columns ─────────────────────────────────────────────────────────
 
 const COLUMNS: AdminTableColumn<BugReport>[] = [
+  {
+    key: "type", label: "Type", width: "w-24",
+    render: (r) => <TypePill type={r.type} />,
+  },
   {
     key: "status", label: "Status", width: "w-28",
     render: (r) => <StatusPill status={r.status} />,
@@ -135,6 +160,7 @@ function TicketDrawerBody({
   }
 
   const kvItems = [
+    { label: "Type", value: <TypePill type={ticket.type} /> },
     { label: "Reporter", value: ticket.reporterName ? `${ticket.reporterName} (${ticket.reporterEmail})` : ticket.reporterEmail },
     { label: "Page URL", value: ticket.pageUrl
       ? <a href={ticket.pageUrl} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:text-blue-300 underline underline-offset-2 break-all">{ticket.pageUrl}</a>
@@ -206,6 +232,7 @@ export default function AdminTicketsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [typeFilter, setTypeFilter] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState("");
   const [selected, setSelected] = useState<BugReport | null>(null);
   const [updating, setUpdating] = useState(false);
@@ -216,6 +243,7 @@ export default function AdminTicketsPage() {
     try {
       const params = new URLSearchParams();
       if (statusFilter) params.set("status", statusFilter);
+      if (typeFilter) params.set("type", typeFilter);
       params.set("limit", "100");
       const res = await fetch(`/api/admin/tickets?${params}`);
       if (res.status === 403) { router.push("/"); return; }
@@ -227,7 +255,7 @@ export default function AdminTicketsPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, router, addToast]);
+  }, [statusFilter, typeFilter, router, addToast]);
 
   useEffect(() => { fetchTickets(); }, [fetchTickets]);
 
@@ -294,18 +322,18 @@ export default function AdminTicketsPage() {
       })
     : tickets;
 
-  const hasActiveFilters = !!statusFilter || !!searchQuery;
-  const clearAll = () => { setStatusFilter(""); setSearchQuery(""); };
+  const hasActiveFilters = !!statusFilter || !!typeFilter || !!searchQuery;
+  const clearAll = () => { setStatusFilter(""); setTypeFilter(""); setSearchQuery(""); };
 
   return (
     <div>
       <AdminPageHeader
-        title="Bug Tickets"
+        title="Feedback Tickets"
         breadcrumb={["Admin", "Operations", "Tickets"]}
-        subtitle={`${total.toLocaleString()} total reports`}
+        subtitle={`${total.toLocaleString()} total submissions`}
       />
 
-      <div className="mb-4">
+      <div className="mb-4 space-y-2">
         <AdminFilterBar hasActiveFilters={hasActiveFilters} onClearAll={clearAll}>
           {STATUS_TABS.map((tab) => (
             <FilterChip
@@ -324,18 +352,30 @@ export default function AdminTicketsPage() {
             widthClass="w-52"
           />
         </AdminFilterBar>
+        <AdminFilterBar>
+          {TYPE_TABS.map((tab) => (
+            <FilterChip
+              key={tab.key}
+              active={typeFilter === tab.key}
+              onClick={() => setTypeFilter(tab.key)}
+              label={tab.label}
+            >
+              {tab.label}
+            </FilterChip>
+          ))}
+        </AdminFilterBar>
       </div>
 
       <AdminTable
-        caption="Bug ticket reports"
+        caption="Feedback submissions"
         rows={visibleTickets}
         rowKey={(r) => r.id}
         columns={COLUMNS}
         loading={loading}
         empty={
           <AdminEmpty
-            label={statusFilter ? `No ${STATUS_CONFIG[statusFilter]?.label ?? statusFilter} tickets` : "No bug reports yet"}
-            description="Bug reports submitted by users will appear here."
+            label={statusFilter ? `No ${STATUS_CONFIG[statusFilter]?.label ?? statusFilter} tickets` : "No submissions yet"}
+            description="Bug reports and feature requests submitted by users will appear here."
           />
         }
         onRowClick={setSelected}
@@ -344,7 +384,14 @@ export default function AdminTicketsPage() {
       <AdminDetailDrawer
         open={selected !== null}
         onClose={() => setSelected(null)}
-        title={selected ? <StatusPill status={selected.status} /> : null}
+        title={
+          selected ? (
+            <div className="flex items-center gap-2">
+              <TypePill type={selected.type} />
+              <StatusPill status={selected.status} />
+            </div>
+          ) : null
+        }
         wide
       >
         {selected && (
