@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
-  fetchRequesterId,
-  fetchTicketsByRequesterId,
+  fetchAgentIdByEmail,
+  fetchTicketsByAgentId,
 } from "@/lib/freshservice";
 
 export async function GET() {
@@ -19,24 +19,24 @@ export async function GET() {
   }
 
   try {
-    const requesterId = await fetchRequesterId(session.user.email, session.user.name ?? null);
-    if (!requesterId) {
+    const agentId = await fetchAgentIdByEmail(session.user.email);
+    if (!agentId) {
       return NextResponse.json(
         {
           tickets: [],
           lastUpdated: new Date().toISOString(),
-          requesterFound: false,
+          agentFound: false,
         },
         { headers: { "Cache-Control": "private, max-age=60" } }
       );
     }
 
-    const tickets = await fetchTicketsByRequesterId(requesterId);
+    const tickets = await fetchTicketsByAgentId(agentId);
     return NextResponse.json(
       {
         tickets,
         lastUpdated: new Date().toISOString(),
-        requesterFound: true,
+        agentFound: true,
       },
       { headers: { "Cache-Control": "private, max-age=60" } }
     );
