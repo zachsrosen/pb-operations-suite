@@ -207,6 +207,7 @@ export async function logActivity(data: {
  */
 export async function logDashboardView(data: {
   dashboard: string;
+  userId?: string;
   userEmail?: string;
   userName?: string;
   filters?: Record<string, unknown>;
@@ -222,6 +223,7 @@ export async function logDashboardView(data: {
   return logActivity({
     type: "DASHBOARD_VIEWED",
     description: `Viewed ${data.dashboard} dashboard`,
+    userId: data.userId,
     userEmail: data.userEmail,
     userName: data.userName,
     entityType: "dashboard",
@@ -247,6 +249,7 @@ export async function logDashboardView(data: {
 export async function logProjectView(data: {
   projectId: string;
   projectName: string;
+  userId?: string;
   userEmail?: string;
   userName?: string;
   source?: string; // "dashboard", "search", "direct"
@@ -260,6 +263,7 @@ export async function logProjectView(data: {
   return logActivity({
     type: "PROJECT_VIEWED",
     description: `Viewed project ${data.projectName}`,
+    userId: data.userId,
     userEmail: data.userEmail,
     userName: data.userName,
     entityType: "project",
@@ -282,6 +286,7 @@ export async function logSearch(data: {
   searchTerm: string;
   resultCount: number;
   dashboard?: string;
+  userId?: string;
   userEmail?: string;
   userName?: string;
   ipAddress?: string;
@@ -294,6 +299,7 @@ export async function logSearch(data: {
   return logActivity({
     type: "PROJECT_SEARCHED",
     description: `Searched for "${data.searchTerm}" (${data.resultCount} results)`,
+    userId: data.userId,
     userEmail: data.userEmail,
     userName: data.userName,
     entityType: "search",
@@ -318,6 +324,7 @@ export async function logSearch(data: {
 export async function logFilterChange(data: {
   dashboard: string;
   filters: Record<string, unknown>;
+  userId?: string;
   userEmail?: string;
   userName?: string;
   sessionId?: string;
@@ -328,6 +335,7 @@ export async function logFilterChange(data: {
   return logActivity({
     type: "DASHBOARD_FILTERED",
     description: `Applied filters on ${data.dashboard}`,
+    userId: data.userId,
     userEmail: data.userEmail,
     userName: data.userName,
     entityType: "dashboard",
@@ -381,6 +389,7 @@ export async function logDataExport(data: {
   exportType: string; // "csv", "pdf", "excel"
   dashboard?: string;
   recordCount: number;
+  userId?: string;
   userEmail?: string;
   userName?: string;
   filters?: Record<string, unknown>;
@@ -393,6 +402,7 @@ export async function logDataExport(data: {
   return logActivity({
     type: "DATA_EXPORTED",
     description: `Exported ${data.recordCount} records as ${data.exportType}`,
+    userId: data.userId,
     userEmail: data.userEmail,
     userName: data.userName,
     entityType: "export",
