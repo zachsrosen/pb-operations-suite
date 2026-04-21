@@ -60,7 +60,7 @@ UserMenu / Operations-suite tile
       fetchedAt: string; // ISO
     }
     ```
-  - If owner is null, logs `ActivityType.MISSING_HUBSPOT_OWNER` with user email in metadata.
+  - If owner is null, reports via `Sentry.captureMessage("MISSING_HUBSPOT_OWNER", { level: "warning", tags: { email } })`. No DB write → no Prisma migration required.
   - Cached server-side via `appCache` key `hubspot:tasks:owner:<ownerId>`, TTL 60s.
 
 - `src/app/dashboards/my-tasks/page.tsx`
@@ -87,20 +87,12 @@ UserMenu / Operations-suite tile
 - `src/components/UserMenu.tsx` — add "My Tasks" menu item above profile/sign-out, always visible when logged in.
 - `src/app/suites/operations/page.tsx` — new tile: `{ href: "/dashboards/my-tasks", title: "My Tasks", ... }` positioned adjacent to the Comms tile (line ~169).
 - `src/lib/roles.ts` — add `/api/hubspot/tasks/mine` and `/dashboards/my-tasks` to every role's `allowedRoutes` (including VIEWER, since this is personal-scoped data), per memory feedback about route allowlist.
-- `prisma/schema.prisma` — add `MISSING_HUBSPOT_OWNER` to `ActivityType` enum. **Migration file will be generated but NOT applied automatically** per user's migration discipline.
+
+**No DB changes. No Prisma migration.**
 
 ## Data model
 
-### New ActivityType enum value
-
-```prisma
-enum ActivityType {
-  // ... existing values
-  MISSING_HUBSPOT_OWNER
-}
-```
-
-No new tables. No new columns on `User`.
+No schema changes. No new tables or columns. Missing-owner events reported via Sentry only.
 
 ### HubSpotTask shape (internal)
 
@@ -167,7 +159,7 @@ interface EnrichedTask extends HubSpotTask {
 
 - Single PR from `feat/my-tasks-page` → `main`.
 - No feature flag — empty state is the natural gate for users without HubSpot owner records.
-- Prisma migration for `MISSING_HUBSPOT_OWNER` enum value generated locally but **not applied in this PR**. Ship code first (enum value tolerated by Postgres when writing via Prisma only if migration runs before). Actually — Postgres enum addition must be applied before code uses it. So: migration file committed, user runs `scripts/migrate-prod.sh` (or equivalent) before merging, or we defer the activity log write behind a try/catch until migration is confirmed applied. **Decision: wrap the log write in a try/catch so a missing enum value gracefully no-ops; this decouples code deploy from migration deploy.**
+- No DB migration. Code ships standalone.
 
 ## Risks / open questions
 
