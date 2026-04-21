@@ -1,0 +1,17 @@
+{
+  "basePricePerWatt": {
+    "DTC": 3.00,
+    "WESTY": 3.00,
+    "COSP": 2.95,
+    "CA": 3.50,
+    "CAMARILLO": 3.50
+  },
+  "addOns": {
+    "evCharger": 1800,
+    "panelUpgrade": 3500
+  },
+  "financing": {
+    "defaultApr": 0.07,
+    "defaultTermMonths": 300
+  }
+}

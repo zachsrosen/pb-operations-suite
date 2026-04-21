@@ -1,0 +1,30 @@
+[
+  {
+    "id": "federal_itc_2026",
+    "scope": "federal",
+    "match": {},
+    "type": "percent",
+    "value": 0.30,
+    "label": "Federal Investment Tax Credit",
+    "disclosure": "30% federal tax credit against retail price; subject to eligibility and the ITC phase-down schedule."
+  },
+  {
+    "id": "co_state_rebate_2026",
+    "scope": "state",
+    "match": { "state": "CO" },
+    "type": "fixed",
+    "value": 500,
+    "label": "Colorado state sales-tax exemption (estimated)",
+    "disclosure": "Estimated value of Colorado's sales-tax exemption on solar components. Actual benefit varies by system cost."
+  },
+  {
+    "id": "xcel_solar_rewards",
+    "scope": "utility",
+    "match": { "utilityId": "xcel_co" },
+    "type": "perWatt",
+    "value": 0.05,
+    "cap": 2500,
+    "label": "Xcel Solar Rewards rebate",
+    "disclosure": "Xcel Energy Solar Rewards rebate capped at $2,500; subject to program availability."
+  }
+]
