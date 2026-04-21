@@ -17,7 +17,7 @@ import {
 // Solar CORS no longer needed — Solar Surveyor served from same origin
 
 // Routes that are always accessible (login, auth callbacks)
-const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance", "/portal"];
+const ALWAYS_ALLOWED = ["/login", "/api/auth", "/maintenance", "/portal", "/estimator"];
 const PUBLIC_API_ROUTES = [
   "/api/deployment",
   "/api/updates/notify",
@@ -40,6 +40,9 @@ const PUBLIC_API_ROUTES = [
   "/api/portal/survey", // Customer portal — token-validated, no session needed
   "/api/solar/cron/cleanup-pending", // Solar cron — CRON_SECRET validated in route
   "/api/on-call/calendar", // On-call iCal feed — pool icalToken validated in route
+  "/api/estimator", // Public customer-facing estimator v2
+  "/api/cron/estimator-cleanup", // Estimator TTL cleanup — CRON_SECRET validated in route
+  "/api/cron/estimator-hubspot-reconcile", // Estimator HubSpot retry — CRON_SECRET validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed", "/api/install-review", "/api/zuper/sync-cache"] as const;
 
