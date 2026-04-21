@@ -173,10 +173,16 @@ export default auth((req) => {
     // Pass email so the super-admin break-glass bypass in resolveUserAccess
     // fires at the edge too — otherwise middleware would block a super admin
     // whose role was broken by a bad override, defeating the safeguard.
-    // During impersonation `req.auth.user.email` is still the real admin's
-    // email (cookies change roles, not identity), so super admins retain
-    // break-glass access even while impersonating.
-    email: req.auth?.user?.email ?? null,
+    //
+    // EXCEPTION: during impersonation (`shouldUseCookieRoles` is true), we
+    // withhold the super-admin email so the bypass does NOT fire. The whole
+    // point of impersonation is to see the app exactly as the target user
+    // sees it — if break-glass always wins, a super admin can never actually
+    // test another user's view. Stopping impersonation (clearing the cookie)
+    // restores break-glass access immediately since email starts flowing
+    // again. Worst-case recovery during a lockout: stop impersonating, then
+    // fix the bad override from the UI.
+    email: shouldUseCookieRoles ? null : (req.auth?.user?.email ?? null),
     roles: effectiveRoles,
     // Impersonation suppresses extras — admins see role-only access, not the
     // impersonated user's per-user overrides. (Extras are piped from JWT which
