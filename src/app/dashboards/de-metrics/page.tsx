@@ -6,6 +6,7 @@ import { MetricCard } from "@/components/ui/MetricCard";
 import { MonthlyBarChart, aggregateMonthly } from "@/components/ui/MonthlyBarChart";
 import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { formatMoney } from "@/lib/format";
+import { getStatusDisplayName } from "@/lib/hubspot-status-display";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
@@ -1394,8 +1395,8 @@ function DaPipelineDrilldown({ bucketKey, deals, onClose }: DaPipelineDrilldownP
                     </td>
                     <td className="px-4 py-2 text-muted">{p.pbLocation || "—"}</td>
                     <td className="px-4 py-2 text-muted">{p.designLead || "—"}</td>
-                    <td className="px-4 py-2 text-muted">{p.designStatus || "—"}</td>
-                    <td className="px-4 py-2 text-muted">{p.layoutStatus || "—"}</td>
+                    <td className="px-4 py-2 text-muted">{p.designStatus ? getStatusDisplayName(p.designStatus, "design_status") : "—"}</td>
+                    <td className="px-4 py-2 text-muted">{p.layoutStatus ? getStatusDisplayName(p.layoutStatus, "layout_status") : "—"}</td>
                     <td className="px-4 py-2 text-right">
                       {days !== null ? (
                         <span

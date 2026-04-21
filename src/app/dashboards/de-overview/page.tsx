@@ -5,6 +5,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { StatCard } from "@/components/ui/MetricCard";
 import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { formatMoney } from "@/lib/format";
+import { getStatusDisplayName } from "@/lib/hubspot-status-display";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
@@ -529,8 +530,8 @@ export default function DEOverviewPage() {
                         <span className="text-foreground">{p.name}</span>
                       )}
                     </td>
-                    <td className="py-2 pr-4 text-muted">{p.designStatus || "\u2014"}</td>
-                    <td className="py-2 pr-4 text-muted">{p.layoutStatus || "\u2014"}</td>
+                    <td className="py-2 pr-4 text-muted">{p.designStatus ? getStatusDisplayName(p.designStatus, "design_status") : "\u2014"}</td>
+                    <td className="py-2 pr-4 text-muted">{p.layoutStatus ? getStatusDisplayName(p.layoutStatus, "layout_status") : "\u2014"}</td>
                     <td className="py-2 pr-4 text-muted">{p.stage || "\u2014"}</td>
                     <td className="py-2 pr-4 text-muted">{p.designLead || "Unknown"}</td>
                     <td className="py-2 pr-4 text-muted">{p.pbLocation || "\u2014"}</td>

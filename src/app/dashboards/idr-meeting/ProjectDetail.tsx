@@ -6,6 +6,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
 import { getInternalDealUrl, getZuperJobUrl } from "@/lib/external-links";
+import { getStatusDisplayName } from "@/lib/hubspot-status-display";
 import type { IdrItem } from "./IdrMeetingClient";
 import { InstallPlanningForm } from "./InstallPlanningForm";
 import { StatusActionsForm } from "./StatusActionsForm";
@@ -237,8 +238,8 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
               <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                 <InfoCell label="System Size" value={item.systemSizeKw ? `${item.systemSizeKw} kW` : null} />
                 <InfoCell label="Amount" value={amountStr} />
-                <InfoCell label="Design Status" value={item.designStatus} />
-                <InfoCell label="Design Approval" value={item.designApprovalStatus} />
+                <InfoCell label="Design Status" value={getStatusDisplayName(item.designStatus, "design_status") || null} />
+                <InfoCell label="Design Approval" value={getStatusDisplayName(item.designApprovalStatus, "layout_status") || null} />
                 <InfoCell label="Survey Date" value={item.surveyDate} />
                 <InfoCell label="AHJ" value={item.ahj} />
                 <InfoCell label="Utility" value={item.utilityCompany} />

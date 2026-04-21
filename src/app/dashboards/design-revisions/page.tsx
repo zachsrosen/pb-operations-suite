@@ -5,6 +5,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
 import { formatMoney, formatDate } from "@/lib/format";
+import { getStatusDisplayName } from "@/lib/hubspot-status-display";
 import { RawProject } from "@/lib/types";
 import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
@@ -466,7 +467,7 @@ export default function DesignRevisionsPage() {
                         {p.revisionCategory}
                       </span>
                     </td>
-                    <td className="p-3 text-muted text-xs">{p.designStatus || "—"}</td>
+                    <td className="p-3 text-muted text-xs">{p.designStatus ? getStatusDisplayName(p.designStatus, "design_status") : "—"}</td>
                     <td className="p-3 text-right">
                       <span className={`font-semibold ${p.daysInRevision > 21 ? "text-red-400" : p.daysInRevision > 10 ? "text-yellow-400" : "text-foreground"}`}>
                         {p.daysInRevision}d
