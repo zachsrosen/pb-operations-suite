@@ -914,70 +914,70 @@ describe("resolveRoleDefinition — definition overrides", () => {
 
 - [ ] **Step 2b: Add multi-role + extras tests to `src/__tests__/lib/user-access.test.ts`**
 
-Append the following describe block at the end of `src/__tests__/lib/user-access.test.ts` (do not modify existing cases). These cover spec §Testing examples 1-3 and the `extraDeniedRoutes` precedence claim.
+The existing file already imports everything needed at the top:
 
 ```ts
-import { resolveEffectiveRole as _re, resolveUserAccess as _ru } from "@/lib/user-access";
-import { ROLES as _ROLES, type RoleDefinition as _RoleDefinition } from "@/lib/roles";
+import type { UserRole } from "@/generated/prisma/enums";
+import { ROLES } from "@/lib/roles";
+import {
+  isPathAllowedByAccess,
+  resolveEffectiveRole,
+  resolveUserAccess,
+} from "@/lib/user-access";
+```
 
+Add `type RoleDefinition` to the `@/lib/roles` import if not already there — the tests below reference it. Then append this describe block at the end of the file. Do not modify existing cases.
+
+```ts
 describe("multi-role merge with definition overrides (spec examples 1-3)", () => {
   it("example 1: role A override landingCards=[] + role B no override → union contains B's code cards", () => {
-    const opsOverride: _RoleDefinition = { ..._ROLES.OPERATIONS, landingCards: [] };
-    const overrides = new Map<import("@/generated/prisma/enums").UserRole, _RoleDefinition>([
-      ["OPERATIONS", opsOverride],
-    ]);
-    const eff = _re(["OPERATIONS", "OPERATIONS_MANAGER"], overrides);
+    const opsOverride: RoleDefinition = { ...ROLES.OPERATIONS, landingCards: [] };
+    const overrides = new Map<UserRole, RoleDefinition>([["OPERATIONS", opsOverride]]);
+    const eff = resolveEffectiveRole(["OPERATIONS", "OPERATIONS_MANAGER"], overrides);
     // OPERATIONS contributes zero cards; OPS_MGR's code cards survive.
-    expect(eff.landingCards.length).toBe(_ROLES.OPERATIONS_MANAGER.landingCards.length);
+    expect(eff.landingCards.length).toBe(ROLES.OPERATIONS_MANAGER.landingCards.length);
   });
 
   it("example 2: role A override adds /x + role B no override → union contains /x plus B's code routes", () => {
-    const pmOverride: _RoleDefinition = {
-      ..._ROLES.PROJECT_MANAGER,
+    const pmOverride: RoleDefinition = {
+      ...ROLES.PROJECT_MANAGER,
       allowedRoutes: ["/dashboards/x"],
     };
-    const overrides = new Map<import("@/generated/prisma/enums").UserRole, _RoleDefinition>([
-      ["PROJECT_MANAGER", pmOverride],
-    ]);
-    const eff = _re(["PROJECT_MANAGER", "SERVICE"], overrides);
+    const overrides = new Map<UserRole, RoleDefinition>([["PROJECT_MANAGER", pmOverride]]);
+    const eff = resolveEffectiveRole(["PROJECT_MANAGER", "SERVICE"], overrides);
     expect(eff.allowedRoutes).toContain("/dashboards/x");
     // A specific SERVICE code-default route is still present:
     expect(eff.allowedRoutes).toContain("/dashboards/service-overview");
   });
 
   it("example 3: single role with empty override → effective routes empty (modulo per-user extras)", () => {
-    const srvOverride: _RoleDefinition = { ..._ROLES.SERVICE, allowedRoutes: [] };
-    const overrides = new Map<import("@/generated/prisma/enums").UserRole, _RoleDefinition>([
-      ["SERVICE", srvOverride],
-    ]);
-    const eff = _re(["SERVICE"], overrides);
+    const srvOverride: RoleDefinition = { ...ROLES.SERVICE, allowedRoutes: [] };
+    const overrides = new Map<UserRole, RoleDefinition>([["SERVICE", srvOverride]]);
+    const eff = resolveEffectiveRole(["SERVICE"], overrides);
     expect(eff.allowedRoutes).toEqual([]);
   });
 });
 
 describe("per-user extraDeniedRoutes still wins over role-level override grant", () => {
-  it("override grants /x; user denies /x → user's effective access excludes /x", () => {
-    const srvOverride: _RoleDefinition = {
-      ..._ROLES.SERVICE,
+  it("override grants /x; user denies /x → isPathAllowedByAccess returns false", () => {
+    const srvOverride: RoleDefinition = {
+      ...ROLES.SERVICE,
       allowedRoutes: ["/", "/dashboards/x"],
     };
-    const overrides = new Map<import("@/generated/prisma/enums").UserRole, _RoleDefinition>([
-      ["SERVICE", srvOverride],
-    ]);
-    const access = _ru(
+    const overrides = new Map<UserRole, RoleDefinition>([["SERVICE", srvOverride]]);
+    const access = resolveUserAccess(
       { roles: ["SERVICE"], extraDeniedRoutes: ["/dashboards/x"] },
       overrides,
     );
     expect(access.allowedRoutes.has("/dashboards/x")).toBe(true);
     expect(access.deniedRoutes.has("/dashboards/x")).toBe(true);
-    // isPathAllowedByAccess checks deniedRoutes first — verify the API contract:
-    const { isPathAllowedByAccess } = await import("@/lib/user-access");
+    // isPathAllowedByAccess checks deniedRoutes first:
     expect(isPathAllowedByAccess(access, "/dashboards/x")).toBe(false);
   });
 });
 ```
 
-Note: the dynamic `import` inside `it` can be converted to a top-level import if preferred; it's inline here so the appended block is self-contained. If top-level imports from `@/lib/user-access` already exist in the file, just reference them directly and delete the inline import.
+**Do NOT** use `await import(...)` inside these test callbacks — they are synchronous (`() =>`), and `await` in a non-async function is a syntax error. Everything needed is available via the top-level imports.
 
 - [ ] **Step 3: Run tests — expect failure**
 
