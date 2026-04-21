@@ -826,6 +826,44 @@ const SALES: RoleDefinition = {
   },
 };
 
+const ACCOUNTING: RoleDefinition = {
+  label: "Accounting",
+  description: "Accounting team — Accounting Suite, payment tracking, pricing tools",
+  normalizesTo: "ACCOUNTING",
+  visibleInPicker: true,
+  suites: ["/suites/accounting"],
+  allowedRoutes: [
+    "/",
+    "/suites/accounting",
+    "/dashboards/payment-tracking",
+    "/dashboards/pe-deals",
+    "/dashboards/pe",
+    "/dashboards/pricing-calculator",
+    "/api/accounting",
+    "/api/auth",
+    "/api/deals",
+    "/api/projects",
+    "/api/session",
+    "/api/stream",
+    "/api/user/me",
+    "/api/activity/log",
+  ],
+  landingCards: [],
+  scope: "global",
+  badge: { color: "emerald", abbrev: "ACCT" },
+  defaultCapabilities: {
+    canScheduleSurveys: false,
+    canScheduleInstalls: false,
+    canScheduleInspections: false,
+    canSyncZuper: false,
+    canManageUsers: false,
+    canManageAvailability: false,
+    canEditDesign: false,
+    canEditPermitting: false,
+    canViewAllLocations: true,
+  },
+};
+
 const VIEWER: RoleDefinition = {
   label: "Viewer",
   description: "Unassigned — no dashboard access until role is set",
@@ -927,6 +965,7 @@ const PERMITTING: RoleDefinition = {
 export const ROLES: Record<UserRole, RoleDefinition> = {
   ADMIN,
   EXECUTIVE,
+  ACCOUNTING,
   OWNER,
   MANAGER,
   OPERATIONS,

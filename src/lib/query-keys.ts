@@ -160,6 +160,10 @@ export const queryKeys = {
     list: (dealId: string) =>
       ["dealCommunications", "list", dealId] as const,
   },
+  paymentTracking: {
+    root: ["paymentTracking"] as const,
+    list: () => ["paymentTracking", "list"] as const,
+  },
 } as const;
 
 /**
@@ -181,6 +185,8 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("service-tickets")) return [queryKeys.serviceTickets.root];
   if (serverKey.startsWith("service:priority")) return [queryKeys.servicePriority.root];
   if (serverKey.startsWith("service:customers")) return [queryKeys.serviceCustomers.root];
+  if (serverKey.startsWith("accounting:payment-tracking"))
+    return [queryKeys.paymentTracking.root];
   if (serverKey.startsWith("locations")) return [queryKeys.stats.root];
   if (serverKey.startsWith("ahjs")) return [queryKeys.stats.root];
   // pipelines: no RQ consumer depends on it in this batch

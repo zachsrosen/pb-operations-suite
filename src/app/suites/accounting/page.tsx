@@ -5,6 +5,14 @@ import { getCurrentUser } from "@/lib/auth-utils";
 const LINKS: SuitePageCard[] = [
   // ── Tools ──
   {
+    href: "/dashboards/payment-tracking",
+    title: "Payment Tracking",
+    description: "Per-project payment progress across DA, CC, PTO, and PE milestones.",
+    tag: "ACCOUNTING",
+    icon: "💵",
+    section: "Tools",
+  },
+  {
     href: "/dashboards/pricing-calculator",
     title: "Pricing Calculator",
     description: "Price solar + battery systems with PE lease value calculator and COGS breakdown.",
@@ -35,7 +43,7 @@ const LINKS: SuitePageCard[] = [
 export default async function AccountingSuitePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?callbackUrl=/suites/accounting");
-  const allowed = ["ADMIN", "EXECUTIVE"];
+  const allowed = ["ADMIN", "EXECUTIVE", "ACCOUNTING"];
   if (!user.roles.some(r => allowed.includes(r))) redirect("/");
 
   return (
