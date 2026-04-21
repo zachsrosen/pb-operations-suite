@@ -24,9 +24,14 @@ describe("isSuperAdmin", () => {
     expect(isSuperAdmin("")).toBe(false);
   });
 
+  it("SUPER_ADMIN_EMAILS covers both zach@ and zach.rosen@ aliases", () => {
+    expect(isSuperAdmin("zach@photonbrothers.com")).toBe(true);
+    expect(isSuperAdmin("zach.rosen@photonbrothers.com")).toBe(true);
+  });
+
   it("SUPER_ADMIN_EMAILS is tiny (guards against casual additions)", () => {
-    // If this ever grows beyond 2, reconsider. The whole point is a last-
-    // resort break-glass, not a convenience role.
+    // Two entries is the documented max — alias coverage for a single human.
+    // Growing past that should trigger a design conversation.
     expect(SUPER_ADMIN_EMAILS.size).toBeLessThanOrEqual(2);
   });
 });
