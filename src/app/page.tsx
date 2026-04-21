@@ -480,7 +480,7 @@ export default function Home() {
       }}
     >
       {/* Header */}
-      <header className="border-b border-t-border/80 bg-surface-elevated/75 backdrop-blur-sm px-6 py-4">
+      <header className="relative z-50 border-b border-t-border/80 bg-surface-elevated/75 backdrop-blur-sm px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex min-w-0 items-center gap-3">
             <PhotonBrothersBadge compact />
