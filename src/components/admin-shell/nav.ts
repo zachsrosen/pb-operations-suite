@@ -28,7 +28,8 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     label: "Operations",
     items: [
       { label: "Crew availability", href: "/admin/crew-availability", iconName: "calendar" },
-      { label: "Tickets", href: "/admin/tickets", iconName: "ticket" },
+      { label: "Bug reports", href: "/admin/tickets", iconName: "ticket" },
+      { label: "Freshservice", href: "/admin/freshservice", iconName: "ticket" },
     ],
   },
   {

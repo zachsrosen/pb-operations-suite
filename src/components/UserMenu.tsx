@@ -8,6 +8,7 @@ export function UserMenu() {
   const { data: session } = useSession();
   const [isOpen, setIsOpen] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
+  const [freshserviceCount, setFreshserviceCount] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Fetch user role from DB
@@ -23,6 +24,21 @@ export function UserMenu() {
         .catch(() => {});
     }
   }, [session]);
+
+  // Fetch Freshservice open-ticket count — ADMIN only in v1 (Patrick/Caleb
+  // navigate via the admin sidebar instead).
+  useEffect(() => {
+    if (userRole !== "ADMIN") return;
+    fetch("/api/admin/freshservice/count")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        const open = typeof d.open === "number" ? d.open : 0;
+        const pending = typeof d.pending === "number" ? d.pending : 0;
+        setFreshserviceCount(open + pending);
+      })
+      .catch(() => {});
+  }, [userRole]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -109,6 +125,23 @@ export function UserMenu() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
                 Admin
+              </Link>
+            )}
+            {isAdmin && (
+              <Link
+                href="/admin/freshservice"
+                onClick={() => setIsOpen(false)}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-foreground/80 hover:bg-surface-2 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z" />
+                </svg>
+                <span>Freshservice</span>
+                {freshserviceCount !== null && freshserviceCount > 0 && (
+                  <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">
+                    {freshserviceCount}
+                  </span>
+                )}
               </Link>
             )}
             <Link

@@ -69,6 +69,12 @@ export const queryKeys = {
     detail: (contactId: string) =>
       [...queryKeys.serviceCustomers.root, "detail", contactId] as const,
   },
+  freshservice: {
+    root: ["freshservice"] as const,
+    tickets: () => [...queryKeys.freshservice.root, "tickets"] as const,
+    ticket: (id: number) => [...queryKeys.freshservice.root, "ticket", id] as const,
+    count: () => [...queryKeys.freshservice.root, "count"] as const,
+  },
   revenueGoals: {
     root: ["revenue-goals"] as const,
     byYear: (year: number) => ["revenue-goals", year] as const,
