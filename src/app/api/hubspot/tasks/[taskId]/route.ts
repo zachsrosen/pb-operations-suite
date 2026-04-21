@@ -76,6 +76,17 @@ export async function PATCH(
     patch.body = body.body.slice(0, 10_000);
   }
 
+  if ("queueIds" in body) {
+    const raw = body.queueIds;
+    if (!Array.isArray(raw) || !raw.every((v) => typeof v === "string" && /^\d{1,20}$/.test(v))) {
+      return NextResponse.json(
+        { error: "queueIds must be an array of numeric strings" },
+        { status: 400 },
+      );
+    }
+    patch.queueIds = raw as string[];
+  }
+
   if (Object.keys(patch).length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }

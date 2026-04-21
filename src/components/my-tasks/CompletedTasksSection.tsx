@@ -1,18 +1,20 @@
 "use client";
 
-import type { EnrichedTask } from "@/lib/hubspot-tasks";
+import type { EnrichedTask, TaskQueue } from "@/lib/hubspot-tasks";
 import TaskRow from "./TaskRow";
 
 interface CompletedTasksSectionProps {
   tasks: EnrichedTask[];
   onReopen: (taskId: string) => void;
   pendingTaskIds: Set<string>;
+  allQueues: TaskQueue[];
 }
 
 export default function CompletedTasksSection({
   tasks,
   onReopen,
   pendingTaskIds,
+  allQueues,
 }: CompletedTasksSectionProps) {
   if (tasks.length === 0) {
     return (
@@ -41,6 +43,9 @@ export default function CompletedTasksSection({
             onComplete={() => {}}
             onReopen={() => onReopen(task.id)}
             onSnooze={() => {}}
+            onStatusChange={() => {}}
+            onQueuesChange={() => {}}
+            allQueues={allQueues}
             pending={pendingTaskIds.has(task.id)}
             selected={false}
             onSelectedChange={() => {}}

@@ -33,7 +33,10 @@ interface MyTasksPayload {
   reason?: "NO_HUBSPOT_OWNER";
   tasks: EnrichedTask[];
   completedTasks: EnrichedTask[];
+  /** Queues referenced by the user's loaded tasks — drives the filter bar. */
   queues: TaskQueue[];
+  /** All queues in the portal — drives the per-task queue editor picker. */
+  allQueues: TaskQueue[];
   fetchedAt: string;
 }
 
@@ -74,6 +77,7 @@ export async function GET(request: NextRequest) {
       tasks: [],
       completedTasks: [],
       queues: [],
+      allQueues: [],
       fetchedAt: new Date().toISOString(),
     };
     return NextResponse.json(payload);
@@ -105,6 +109,7 @@ export async function GET(request: NextRequest) {
       tasks,
       completedTasks,
       queues: visibleQueues,
+      allQueues: queues,
       fetchedAt: new Date().toISOString(),
     };
     appCache.set(key, payload);

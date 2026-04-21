@@ -460,6 +460,8 @@ export interface UpdateTaskInput {
   priority?: TaskPriority | null;
   subject?: string;
   body?: string;
+  /** Replace the task's queue membership. Empty array clears. */
+  queueIds?: string[];
 }
 
 export async function updateTask(taskId: string, patch: UpdateTaskInput): Promise<void> {
@@ -469,6 +471,10 @@ export async function updateTask(taskId: string, patch: UpdateTaskInput): Promis
   if (patch.priority !== undefined) properties.hs_task_priority = patch.priority;
   if (patch.subject !== undefined) properties.hs_task_subject = patch.subject;
   if (patch.body !== undefined) properties.hs_task_body = patch.body;
+  if (patch.queueIds !== undefined) {
+    // HubSpot stores queue membership as a semicolon-joined string.
+    properties.hs_queue_membership_ids = patch.queueIds.join(";");
+  }
 
   if (Object.keys(properties).length === 0) return;
 
