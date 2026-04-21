@@ -151,8 +151,9 @@ export async function fetchTicketsByAgentId(
     const perPage = 30; // filter endpoint caps at 30 per page
     let page = 1;
     while (true) {
-      // Query fetches status 2, 3, 4 (exclude 5 Closed).
-      const query = `"agent_id:${agentId} AND (status:2 OR status:3 OR status:4)"`;
+      // Query fetches all statuses incl. Closed (Freshservice auto-Closes
+      // older Resolved tickets, so excluding 5 hides most "done" work).
+      const query = `"agent_id:${agentId} AND (status:2 OR status:3 OR status:4 OR status:5)"`;
       const res = await freshserviceFetch(
         `/api/v2/tickets/filter?query=${encodeURIComponent(query)}&page=${page}`
       );

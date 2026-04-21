@@ -27,6 +27,7 @@ const STATUS_PILL: Record<number, string> = {
   2: "bg-red-500/15 text-red-400 border-red-500/20",
   3: "bg-amber-500/15 text-amber-400 border-amber-500/20",
   4: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
+  5: "bg-zinc-500/15 text-zinc-400 border-zinc-500/20",
 };
 
 const PRIORITY_PILL: Record<number, string> = {
@@ -80,7 +81,7 @@ function PriorityPill({ priority }: { priority: number }) {
 
 export default function FreshserviceTicketsPage() {
   const queryClient = useQueryClient();
-  const [statusFilter, setStatusFilter] = useState<"all" | "open" | "pending" | "resolved">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "open" | "pending" | "resolved" | "closed">("open");
   const [selected, setSelected] = useState<FreshserviceTicket | null>(null);
 
   const { data, isLoading, isError, refetch } = useQuery({
@@ -100,11 +101,13 @@ export default function FreshserviceTicketsPage() {
     open: tickets.filter((t) => t.status === 2).length,
     pending: tickets.filter((t) => t.status === 3).length,
     resolved: tickets.filter((t) => t.status === 4).length,
+    closed: tickets.filter((t) => t.status === 5).length,
   };
   const filtered = tickets.filter((t) => {
     if (statusFilter === "open") return t.status === 2;
     if (statusFilter === "pending") return t.status === 3;
     if (statusFilter === "resolved") return t.status === 4;
+    if (statusFilter === "closed") return t.status === 5;
     return true;
   });
 
@@ -165,6 +168,7 @@ export default function FreshserviceTicketsPage() {
             <FilterChip active={statusFilter === "open"} onClick={() => setStatusFilter("open")}>Open ({counts.open})</FilterChip>
             <FilterChip active={statusFilter === "pending"} onClick={() => setStatusFilter("pending")}>Pending ({counts.pending})</FilterChip>
             <FilterChip active={statusFilter === "resolved"} onClick={() => setStatusFilter("resolved")}>Resolved ({counts.resolved})</FilterChip>
+            <FilterChip active={statusFilter === "closed"} onClick={() => setStatusFilter("closed")}>Closed ({counts.closed})</FilterChip>
           </AdminFilterBar>
 
           <AdminTable
