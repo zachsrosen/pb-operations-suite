@@ -145,9 +145,26 @@ if (defOverride?.override) {
 }
 ```
 
-Legacy roles (OWNER, MANAGER, DESIGNER, PERMITTING) are keyed by their canonical `normalizesTo` at resolution time (already — `resolveUserAccessWithOverrides` normalizes before lookup). So overrides keyed on `EXECUTIVE` automatically apply to OWNER users, etc. No special handling needed in the resolver; the API rejects legacy role param instead.
+**Legacy role behavior — which resolver, which normalization.** The normalize-before-lookup behavior is a contract of the **async user-access path only**: `resolveUserAccessWithOverrides` in `role-resolution.ts:105-115` explicitly maps raw roles through `ROLES[r]?.normalizesTo` before calling `resolveRoleDefinitions`. So an OWNER user's override is fetched under `EXECUTIVE`, which is the key we want. `resolveRoleDefinition(role)` itself does NOT normalize — it's a pure `ROLES[role]` lookup plus overrides. If any caller ever invokes `resolveRoleDefinition("OWNER")` directly, it returns the legacy entry with no override applied. This is intentional (overrides are keyed on canonical roles), and the API route for this feature rejects legacy role params instead of silently no-op'ing. There is also a second, redundant normalization inside `resolveUserAccess` at `user-access.ts:281` via `normalizeRoles(rawRoles)` — harmless, and it operates on the already-canonicalized list.
 
-Cache invalidation: `invalidateRoleCache(role)` on every write and reset — already exists.
+**Multi-role users — per-role replace, then union across roles.** The word "replace" in this spec refers to replacing a *single role's* code defaults with that role's override. Across multiple roles on one user, `resolveEffectiveRole` in `user-access.ts:177-239` still applies its existing merge rules:
+
+- `suites`, `allowedRoutes`: **union** across roles (first-seen order, dedup).
+- `landingCards`: first-declared wins, dedup by `href`, capped at 10.
+- `scope`: max-privilege (global > location > owner).
+- `defaultCapabilities`: OR.
+
+Examples:
+
+1. User has OPERATIONS (override: `landingCards: []`) + OPERATIONS_MANAGER (no override). Effective landing cards = OPERATIONS_MANAGER's code defaults (OPERATIONS contributes zero entries; the union keeps OPS_MGR's). Empty override does not zero out cards system-wide — it only zeros that role's contribution to the multi-role union.
+2. User has PROJECT_MANAGER (override: `allowedRoutes: ["/dashboards/foo"]`) + SERVICE (no override). Effective routes = union of `["/dashboards/foo"]` + SERVICE's code-default routes. The PM override replaces PM's contribution; it does not subtract from SERVICE.
+3. User has only SERVICE (override: `allowedRoutes: []`). Effective routes = empty (modulo per-user `extraAllowedRoutes`). This is the **only** case where an override can zero out a user's access — single-role, empty override.
+
+**Per-user extras still apply last.** `resolveUserAccess` merges `user.extraAllowedRoutes` into the (override-influenced) role union at `user-access.ts:292-295`, and `isPathAllowedByAccess` at line 331-337 checks `deniedRoutes` **before** the allow-list — so a per-user denial still wins over any role-level override grant, matching existing semantics.
+
+**Cache invalidation:** `invalidateRoleCache(role)` on every write and reset — already exists. Invalidates the in-memory 30s cache for that role on the current server instance; other instances naturally expire within 30s.
+
+**Runtime validation of the JSONB column:** Writes are the validation gate. Reads coerce `defOverride.override as RoleDefinitionOverridePayload` without re-validation. Rationale: writes go exclusively through the admin API which runs `validateRoleEdit` + shape check before upsert, so valid DB rows are invariant. If a bad row slips in via manual DB edit (not a supported operation), `resolveRoleDefinition` logs `console.warn("[role-resolution] Malformed override for role X, using code defaults")` and skips the merge for that row — fail-open to code defaults rather than crash the resolver. Implementation: wrap the merge block in a `try/catch`. This is one safety net, not a contract.
 
 ### API — `/api/admin/roles/[role]/definition`
 
@@ -174,7 +191,7 @@ Response: { success: true, override: RoleDefinitionOverridePayload, violations?:
 
 Flow:
 1. Parse + validate body shape. Unknown keys → 400.
-2. Validate role param is canonical (ROLES[role] exists AND `visibleInPicker === true` at the code level, OR is VIEWER). Legacy → 400 with message pointing to canonical.
+2. Validate role param is canonical: `ROLES[role]` exists **and** `ROLES[role].normalizesTo === role` (i.e., the role normalizes to itself). Legacy roles (OWNER, MANAGER, DESIGNER, PERMITTING — anything whose `normalizesTo` is a different value) → 400 with message pointing to the canonical target: `"Role ${role} is legacy. Edit its canonical target ${ROLES[role].normalizesTo} instead."`.
 3. Run `validateRoleEdit(role, payload)` → if violations, 400 with list.
 4. Upsert `RoleDefinitionOverride`.
 5. `invalidateRoleCache(role)`.
@@ -207,16 +224,22 @@ export function validateRoleEdit(
 
 Invariants enforced:
 
-- **ADMIN lockout prevention.** If `role === "ADMIN"`, the effective `allowedRoutes` after applying the payload must contain `*`, OR must contain every path required for admin function: `/admin`, `/admin/roles`, `/admin/users`, `/api/admin`. (Segment-boundary match; `/admin` covers `/admin/roles` transitively, but we list them explicitly for clarity of error message.)
+- **ADMIN lockout prevention (single-role guard).** If `role === "ADMIN"`, the effective `allowedRoutes` after applying the payload must contain `*`, OR must contain `/admin` (which matches `/admin/roles`, `/admin/users`, etc. via segment boundary) **and** `/api/admin`. This guards the common footgun: an ADMIN user editing the ADMIN role itself and losing admin-route access. **It does NOT guard cross-role scenarios** — see the limitations paragraph below.
 - **Route shape.** Every entry in `allowedRoutes` must start with `/` or equal `*`.
 - **Suite shape.** Every entry in `suites` must start with `/suites/`.
 - **Landing card href shape.** Every `landingCards[i].href` must start with `/`.
 - **Landing card size.** `landingCards.length <= 10`.
-- **Badge color.** `badge.color` must be one of the 11 allowed colors (matches existing palette: red, amber, orange, yellow, emerald, teal, cyan, indigo, purple, zinc, slate).
+- **Badge color.** `badge.color` must be one of the allowed palette values. The allowed set is defined in **one place** — `src/lib/role-override-types.ts` exports `BADGE_COLOR_OPTIONS: readonly string[]`, which the editor swatch list AND the guard both import. No hardcoded list in the guard file. (Current palette, mirrored from usage in `src/app/admin/roles/page.tsx`: red, amber, orange, yellow, emerald, teal, cyan, indigo, purple, zinc, slate.)
 - **Badge abbrev length.** `badge.abbrev.length <= 16`.
 - **Scope value.** `scope` must be `"global" | "location" | "owner"`.
 - **Label length.** `label.length <= 40`.
 - **Description length.** `description.length <= 200`.
+
+**Lockout-guard limitations (explicit non-goals of the guard).** The ADMIN single-role guard does not prevent every possible lockout path. It deliberately leaves these unguarded because enforcing them would require cross-role reasoning or last-admin-user detection that adds complexity for marginal real-world safety:
+
+- **Cross-role lockout.** An admin user typically has only `roles: ["ADMIN"]`. If they somehow gained admin access via another mechanism (multi-role user, `extraAllowedRoutes`), the guard on the ADMIN role alone wouldn't help them. Conversely, the guard does not block an admin from editing, say, the SERVICE role in a way that makes SERVICE useless — because that's the admin's job, and SERVICE users still have the Reset button.
+- **Last admin user.** The guard runs per role-definition write. It does not check "after this change, does at least one user still have functional admin access?". Multi-user state is out of scope.
+- **Recovery path.** If lockout does happen despite the guard, run `DELETE FROM "RoleDefinitionOverride" WHERE role = 'ADMIN';` from the Neon console (requires DB credentials, not app login). Cache flushes within 30s and code defaults are restored. We intentionally do not build a CLI escape hatch in this ship.
 
 All checks are server-side canonical. UI mirrors them for live feedback but server is the source of truth.
 
@@ -288,8 +311,13 @@ The existing `/admin/activity` page already filters by type and renders generic 
   - Each field override in isolation (just suites, just routes, just landing cards, etc.)
   - Full payload override
   - Empty-array override (suites = []) correctly replaces, not inherits
-  - Legacy role correctly falls through to canonical via resolver normalization
+  - Legacy role user (OWNER in `User.roles`) picks up EXECUTIVE override via `resolveUserAccessWithOverrides` normalization — but `resolveRoleDefinition("OWNER")` called directly does NOT apply an EXECUTIVE override (documents the contract)
+  - Multi-role user: role A override (`allowedRoutes = []`) + role B (no override) → union contains only B's code defaults (spec example 1)
+  - Multi-role user: role A override (`allowedRoutes = ["/x"]`) + role B (no override) → union contains `/x` plus B's code defaults (spec example 2)
+  - Single-role user, empty override → effective routes empty (spec example 3)
+  - Per-user `extraDeniedRoutes` still wins over a role-level override grant
   - Capability + definition override combined
+  - Malformed JSONB override (e.g., `override: { allowedRoutes: "not an array" }`) → resolver logs warning and falls back to code defaults, does not crash
   - Cache invalidation busts correctly
 - `src/__tests__/lib/role-guards.test.ts` (new) — cover every invariant both positive (payload passes) and negative (payload rejected with expected violation).
 - `src/__tests__/lib/user-access.test.ts` (existing) — add a case that injects a role override map with non-default `allowedRoutes` and verifies `resolveUserAccess` produces the overridden union.
@@ -298,9 +326,9 @@ The existing `/admin/activity` page already filters by type and renders generic 
 - `src/__tests__/api/admin-roles-definition.test.ts` (new) — cover:
   - Non-admin → 403
   - Unknown role → 400
-  - Legacy role → 400 with canonical-target message
+  - Legacy role (`OWNER`, `MANAGER`, `DESIGNER`, `PERMITTING`) → 400 with message pointing to canonical target (based on `normalizesTo`)
   - Invalid shape (unknown key, wrong type) → 400
-  - Guard violation (ADMIN `allowedRoutes` missing `/admin`) → 400 with violations
+  - Guard violation (ADMIN `allowedRoutes` missing both `/admin` and `*`) → 400 with violations
   - Successful PUT → 200, override row written, cache invalidated, activity logged
   - DELETE → 200, row removed, activity logged
   - GET → 200, returns override + codeDefaults
@@ -336,12 +364,12 @@ The existing `/admin/activity` page already filters by type and renders generic 
 
 ## Migration
 
-One additive migration, `prisma/migrations/<ts>_add_role_definition_overrides/migration.sql`:
+One additive migration, `prisma/migrations/<ts>_add_role_definition_overrides/migration.sql`, containing both the new table and the enum additions in one file:
 
 ```sql
 -- Role-level definition overrides. Each role has 0 or 1 row here. The JSON
 -- `override` column is a sparse RoleDefinitionOverridePayload; missing keys
--- mean "inherit src/lib/roles.ts defaultCapabilities fields of that name."
+-- mean "inherit src/lib/roles.ts value of that name".
 -- Admin edits via /admin/roles drawer → PUT /api/admin/roles/[role]/definition.
 CREATE TABLE "RoleDefinitionOverride" (
   "id" TEXT NOT NULL,
@@ -354,16 +382,17 @@ CREATE TABLE "RoleDefinitionOverride" (
 
 CREATE UNIQUE INDEX "RoleDefinitionOverride_role_key" ON "RoleDefinitionOverride"("role");
 CREATE INDEX "RoleDefinitionOverride_role_idx" ON "RoleDefinitionOverride"("role");
-```
 
-Plus `ActivityType` enum additions:
-
-```sql
+-- ActivityType enum additions for audit entries on override writes.
 ALTER TYPE "ActivityType" ADD VALUE IF NOT EXISTS 'ROLE_DEFINITION_CHANGED';
 ALTER TYPE "ActivityType" ADD VALUE IF NOT EXISTS 'ROLE_DEFINITION_RESET';
 ```
 
-**Migration execution** follows the standing rule: subagents write the file, orchestrator runs `scripts/migrate-prod.sh CONFIRM` post-merge with explicit user approval. No exceptions.
+Schema side: same migration also updates `prisma/schema.prisma` to declare the `RoleDefinitionOverride` model and add the two enum values to `enum ActivityType`. Running `npx prisma generate` after editing the schema produces the updated client.
+
+**Migration execution** follows the standing rule: subagents write the migration file, orchestrator runs `scripts/migrate-prod.sh CONFIRM` post-merge with explicit user approval. No exceptions. Per the `feedback_subagents_no_migrations.md` memory rule.
+
+**Caveat on `ALTER TYPE ADD VALUE`:** PostgreSQL requires this to run outside a transaction. Prisma's migration runner handles this correctly when the `ALTER TYPE` statements are in their own migration file, but mixing them with `CREATE TABLE` in the same file can fail if Prisma wraps the file in a transaction. If this fires during local `prisma migrate dev`, split into two migration files: one for the enum values, one for the table. Verify by running locally first.
 
 ## Sequencing
 
@@ -389,6 +418,11 @@ Single migration, single merge, single post-merge migrate step.
 ## Open questions
 
 - **None at this scope.** Every judgment call has a committed decision documented in the "Decisions" table in the brainstorm transcript and encoded in this spec.
+
+## Minor follow-ups (not blocking this ship)
+
+- Surface `updatedAt` + `updatedByEmail` in the editor header ("Last changed by X at Y"). The capability editor doesn't show this either — would be a pleasant uplift to do both at the same time. Not in scope for this PR.
+- Consider adding Zod schemas for `RoleDefinitionOverridePayload` once we have a Zod dependency elsewhere in the repo. Current validation is manual shape checks inline with the existing pattern.
 
 ## Success criteria
 
