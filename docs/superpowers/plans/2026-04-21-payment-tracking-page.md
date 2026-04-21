@@ -682,21 +682,23 @@ export function computeBucket(args: {
     if (args.ccStatus === "Open") reasons.push("CC Open >30 days past close");
     if (args.ptoStatus === "Open") reasons.push("PTO Open >30 days past close");
   }
-  // Post-install and CC not paid — encoded by dealstage id. The "post-install"
-  // stage set is deliberately loose in v1; the condition fires when the stage
-  // is not the pre-install stages. We use the known Sales pipeline "closed won"
-  // stage (20440343) as the canonical post-sales stage. If the CC is not Paid
-  // In Full when we're past this, surface it.
+  // Post-install and CC not paid. Post-install stages per DEAL_STAGE_MAP in
+  // src/lib/hubspot.ts: Inspection (22580872), Permission To Operate (20461940),
+  // Close Out (24743347), Project Complete (20440343).
+  const POST_INSTALL_STAGES = new Set([
+    "22580872",
+    "20461940",
+    "24743347",
+    "20440343",
+  ]);
   if (
-    args.dealStage === "20440343" &&
+    args.dealStage &&
+    POST_INSTALL_STAGES.has(args.dealStage) &&
     args.ccStatus !== "Paid In Full" &&
-    args.daStatus === "Paid In Full"
+    args.daStatus === "Paid In Full" &&
+    !reasons.some((r) => r.startsWith("CC Open"))
   ) {
-    // Already covered by rule "CC Open >30 days" above if overdue; here we
-    // trigger attention earlier if deal is post-install regardless of age.
-    // Only add reason if not already present from the >30 day rule.
-    const msg = "Post-install, CC not paid";
-    if (!reasons.some((r) => r.startsWith("CC Open"))) reasons.push(msg);
+    reasons.push("Post-install, CC not paid");
   }
   // PE M1 Paid but PE M2 still pre-submit for >14 days
   if (
@@ -746,7 +748,8 @@ export function computeBucket(args: {
 
 export function transformDeal(
   props: HubSpotDealPaymentProps,
-  asOf: Date = new Date()
+  asOf: Date = new Date(),
+  resolveStageLabel: (stageId: string) => string = (s) => s
 ): PaymentTrackingDeal {
   const dealId = props.hs_object_id ?? "";
   const customerContractTotal = parseNumber(props.amount) ?? 0;
@@ -819,9 +822,7 @@ export function transformDeal(
     dealName: props.dealname ?? "(unnamed)",
     pbLocation: props.pb_location ?? "",
     dealStage: props.dealstage ?? "",
-    // dealStageLabel is resolved by the API route via the pipeline stage map
-    // before the deal is sent to the client; here we default to raw stage.
-    dealStageLabel: props.dealstage ?? "",
+    dealStageLabel: resolveStageLabel(props.dealstage ?? ""),
     closeDate: props.closedate ?? null,
     isPE,
 
@@ -1189,7 +1190,8 @@ Create `src/app/api/accounting/payment-tracking/route.ts`:
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
-import { searchWithRetry, getStageMap } from "@/lib/hubspot";
+import { searchWithRetry } from "@/lib/hubspot";
+import { getStageMaps } from "@/lib/deals-pipeline";
 import {
   transformDeal,
   computeSummary,
@@ -1253,17 +1255,16 @@ export async function GET() {
     if (!after) break;
   }
 
-  const stageMap = await getStageMap(projectPipeline).catch(() => ({} as Record<string, string>));
-  const salesStageMap = await getStageMap(salesPipeline).catch(() => ({} as Record<string, string>));
-  const mergedStageMap = { ...salesStageMap, ...stageMap };
+  const maps = await getStageMaps().catch(() => ({}));
+  const mergedStageMap: Record<string, string> = {
+    ...(maps[salesPipeline] ?? {}),
+    ...(maps[projectPipeline] ?? {}),
+  };
 
   const asOf = new Date();
-  const deals = props.map((p) => {
-    const deal = transformDeal(p, asOf);
-    // Resolve stage label now that we have the map
-    deal.dealStageLabel = mergedStageMap[deal.dealStage] ?? deal.dealStage;
-    return deal;
-  });
+  const deals = props.map((p) =>
+    transformDeal(p, asOf, (stageId) => mergedStageMap[stageId] ?? stageId)
+  );
 
   const summary = computeSummary(deals);
   const response: PaymentTrackingResponse = {
@@ -1290,7 +1291,9 @@ jest.mock("@/lib/auth-utils", () => ({
 }));
 jest.mock("@/lib/hubspot", () => ({
   searchWithRetry: jest.fn().mockResolvedValue({ results: [], paging: undefined }),
-  getStageMap: jest.fn().mockResolvedValue({}),
+}));
+jest.mock("@/lib/deals-pipeline", () => ({
+  getStageMaps: jest.fn().mockResolvedValue({}),
 }));
 jest.mock("@/lib/payment-tracking-cache", () => ({
   initPaymentTrackingCascade: jest.fn(),
@@ -1771,7 +1774,7 @@ export default function PaymentTrackingClient() {
           <MultiSelectFilter
             label="Location"
             options={allLocations.map((l) => ({ value: l, label: l }))}
-            value={locationFilter}
+            selected={locationFilter}
             onChange={setLocationFilter}
           />
           <div className="flex items-center gap-1 text-xs">
@@ -1789,7 +1792,7 @@ export default function PaymentTrackingClient() {
           <MultiSelectFilter
             label="Stage"
             options={allStages.map((s) => ({ value: s, label: s }))}
-            value={stageFilter}
+            selected={stageFilter}
             onChange={setStageFilter}
           />
           <input
