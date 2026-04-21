@@ -2171,9 +2171,26 @@ export default function SiteSurveySchedulerPage() {
                     const weekend = isWeekend(dateStr);
                     const events = eventsForDate(dateStr);
                     const dayAvailability = availabilityByDate[dateStr];
-                    const hasAvailability = dayAvailability?.hasAvailability && !dayAvailability?.isFullyBooked;
                     const isFullyBooked = dayAvailability?.isFullyBooked;
-                    const slotCount = dayAvailability?.availableSlots?.length || 0;
+                    // Apply the same location + already-booked filters used for the
+                    // rendered slot list so the count badge stays consistent with
+                    // what's actually selectable on this day.
+                    const projectLocationForCount = (selectedPreSaleDeal || selectedProject)?.location;
+                    const bookedForDayForCount = dayAvailability?.bookedSlots || [];
+                    const visibleSlotsForCount = (dayAvailability?.availableSlots || []).filter(slot => {
+                      if (!slotMatchesProjectLocation(slot.location, projectLocationForCount)) return false;
+                      if (!projectLocationForCount && !slotMatchesSelectedLocations(slot.location, selectedLocations)) return false;
+                      const isBooked = bookedForDayForCount.some(booked => {
+                        if (booked.start_time !== slot.start_time || booked.end_time !== slot.end_time) return false;
+                        if (booked.user_uid && slot.user_uid) return booked.user_uid === slot.user_uid;
+                        const bookedName = (booked.user_name || "").trim().toLowerCase();
+                        const slotName = (slot.user_name || "").trim().toLowerCase();
+                        return !!bookedName && bookedName === slotName;
+                      });
+                      return !isBooked;
+                    });
+                    const slotCount = visibleSlotsForCount.length;
+                    const hasAvailability = slotCount > 0 && !dayAvailability?.isFullyBooked;
 
                     return (
                       <div
