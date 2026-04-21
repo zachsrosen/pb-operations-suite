@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { EnrichedTask, TaskPriority, TaskQueue, TaskStatus, TaskType } from "@/lib/hubspot-tasks";
 import SnoozePopover from "./SnoozePopover";
@@ -19,6 +19,8 @@ interface TaskRowProps {
   selected: boolean;
   onSelectedChange: (selected: boolean) => void;
   mode: "open" | "completed";
+  /** Highlighted via keyboard navigation (j/k). */
+  focused?: boolean;
 }
 
 const TYPE_ICON: Record<TaskType, string> = {
@@ -87,6 +89,7 @@ export default function TaskRow({
   selected,
   onSelectedChange,
   mode,
+  focused = false,
 }: TaskRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [snoozeOpen, setSnoozeOpen] = useState(false);
@@ -96,6 +99,14 @@ export default function TaskRow({
   const shouldTruncate = bodyText.length > 120;
   const bodyPreview = shouldTruncate && !expanded ? bodyText.slice(0, 120) + "…" : bodyText;
   const isCompleted = mode === "completed";
+
+  // Scroll the row into view when it becomes keyboard-focused via j/k.
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focused && rowRef.current) {
+      rowRef.current.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [focused]);
 
   const copyLink = async () => {
     try {
@@ -107,13 +118,14 @@ export default function TaskRow({
 
   return (
     <div
+      ref={rowRef}
       className={`group rounded-lg border p-3 transition-colors ${
         isCompleted
           ? "border-t-border/50 bg-surface/50 opacity-70"
           : selected
             ? "border-blue-500/60 bg-blue-500/5"
             : "border-t-border bg-surface hover:bg-surface-2"
-      }`}
+      } ${focused ? "ring-2 ring-blue-400 ring-offset-1 ring-offset-background" : ""}`}
     >
       <div className="flex items-start gap-3">
         {!isCompleted && (

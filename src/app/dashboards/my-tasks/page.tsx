@@ -494,6 +494,9 @@ function MyTasksPageInner() {
               selectedIds={selectedIds}
               onSelectedChange={handleSelectedChange}
               onSelectGroup={handleSelectGroup}
+              focusedTaskId={
+                focusIndex >= 0 && focusIndex < filtered.length ? filtered[focusIndex].id : null
+              }
             />
           )}
           {showCompleted && (
