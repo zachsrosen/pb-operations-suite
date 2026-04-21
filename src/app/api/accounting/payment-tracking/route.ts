@@ -21,15 +21,58 @@ initPaymentTrackingCascade();
 
 const ALLOWED_ROLES = new Set(["ADMIN", "EXECUTIVE", "ACCOUNTING"]);
 
-// Terminal stages to exclude from the payment-tracking view.
-// Sales pipeline "Closed Lost"-style stages and Project pipeline "Cancelled"
-// plus legacy string variants.
-const TERMINAL_STAGES = [
-  "closedlost",
-  "closed_lost",
-  "dead",
-  "68229433", // Cancelled (Project pipeline)
-];
+// Terminal stage IDs per pipeline. HubSpot's search API has been observed to
+// silently return empty results when combining `pipeline IN […]` with
+// `dealstage NOT_IN […]`, so we query each pipeline separately with `Eq` on
+// pipeline (mirroring the pattern in service/priority-queue and pe-deals).
+const TERMINAL_STAGES_BY_PIPELINE: Record<string, string[]> = {
+  // Sales pipeline: HubSpot's default pipeline uses string stage IDs
+  default: ["closedlost"],
+  // Project pipeline (6900017): numeric stage IDs
+  "6900017": ["68229433" /* Cancelled */],
+};
+
+type SearchBody = Parameters<typeof searchWithRetry>[0];
+type SearchFilter = { propertyName: string; operator: FilterOperatorEnum; value?: string; values?: string[] };
+
+async function fetchPipelineDeals(pipelineId: string): Promise<HubSpotDealPaymentProps[]> {
+  const terminal = TERMINAL_STAGES_BY_PIPELINE[pipelineId] ?? [];
+  const props: HubSpotDealPaymentProps[] = [];
+
+  let after: string | undefined;
+  for (let page = 0; page < 50; page++) {
+    const filters: SearchFilter[] = [
+      { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: pipelineId } as SearchFilter,
+    ];
+    if (terminal.length > 0) {
+      filters.push({
+        propertyName: "dealstage",
+        operator: FilterOperatorEnum.NotIn,
+        values: terminal,
+      } as SearchFilter);
+    }
+
+    const response = await searchWithRetry({
+      filterGroups: [{ filters }],
+      properties: PAYMENT_TRACKING_PROPERTIES,
+      limit: 100,
+      ...(after ? { after } : {}),
+    } as SearchBody);
+
+    const results = response.results ?? [];
+    for (const r of results) {
+      props.push(r.properties as unknown as HubSpotDealPaymentProps);
+    }
+    const nextAfter = response.paging?.next?.after;
+    if (nextAfter && results.length > 0) {
+      after = nextAfter;
+    } else {
+      break;
+    }
+  }
+
+  return props;
+}
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -44,34 +87,17 @@ export async function GET() {
   const salesPipeline = process.env.HUBSPOT_PIPELINE_SALES ?? "default";
   const projectPipeline = process.env.HUBSPOT_PIPELINE_PROJECT ?? "6900017";
 
-  // Fetch deals from Sales + Project pipelines. Exclude terminal stages.
-  const props: HubSpotDealPaymentProps[] = [];
-  let after: string | undefined;
-  for (let page = 0; page < 50; page++) {
-    const response = await searchWithRetry({
-      filterGroups: [
-        {
-          filters: [
-            { propertyName: "pipeline", operator: FilterOperatorEnum.In, values: [salesPipeline, projectPipeline] },
-            { propertyName: "dealstage", operator: FilterOperatorEnum.NotIn, values: TERMINAL_STAGES },
-          ],
-        },
-      ],
-      properties: PAYMENT_TRACKING_PROPERTIES,
-      limit: 100,
-      ...(after ? { after } : {}),
-    });
+  // Fetch each pipeline in parallel.
+  const [salesProps, projectProps] = await Promise.all([
+    fetchPipelineDeals(salesPipeline),
+    fetchPipelineDeals(projectPipeline),
+  ]);
 
-    for (const r of response.results ?? []) {
-      props.push(r.properties as unknown as HubSpotDealPaymentProps);
-    }
-    const nextAfter = response.paging?.next?.after;
-    if (nextAfter) {
-      after = nextAfter;
-    } else {
-      break;
-    }
-  }
+  const props = [...salesProps, ...projectProps];
+
+  console.log(
+    `[payment-tracking] fetched ${salesProps.length} sales + ${projectProps.length} project deals`
+  );
 
   const maps = await getStageMaps().catch(() => ({} as Record<string, Record<string, string>>));
   const mergedStageMap: Record<string, string> = {
