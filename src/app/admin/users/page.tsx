@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ROLES as ROLE_DEFS } from "@/lib/roles";
+import { isSuperAdmin } from "@/lib/super-admin";
 import type { UserRole } from "@/generated/prisma/enums";
 import { AdminPageHeader } from "@/components/admin-shell/AdminPageHeader";
 import { AdminEmpty } from "@/components/admin-shell/AdminEmpty";
@@ -472,6 +473,7 @@ export default function AdminUsersPage() {
         label: "Roles",
         render: (u) => {
           const rs = u.roles ?? [];
+          const superAdmin = isSuperAdmin(u.email);
           return (
             <div className="flex flex-wrap items-center gap-1">
               {rs.length === 0 ? (
@@ -485,6 +487,28 @@ export default function AdminUsersPage() {
                     {roleLabel(r)}
                   </span>
                 ))
+              )}
+              {superAdmin && (
+                <span
+                  title="Break-glass access — hardcoded in src/lib/super-admin.ts"
+                  className="inline-flex items-center gap-1 rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-400"
+                >
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={2.25}
+                    className="h-2.5 w-2.5"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="M12 3l8 3v5c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-3z"
+                    />
+                  </svg>
+                  Super
+                </span>
               )}
             </div>
           );
