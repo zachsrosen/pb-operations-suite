@@ -1,8 +1,8 @@
 # Freshservice Tickets Integration — Design
 
 **Date:** 2026-04-20
-**Branch:** fix/on-call-nav (will branch off for this work)
-**Status:** Draft
+**Branch:** feat/freshservice-tickets
+**Status:** Approved (post spec-review v2)
 
 ## Problem
 
@@ -21,13 +21,13 @@ Surface a user's own open and pending Freshservice tickets inside the admin suit
 
 ## Users
 
-Admin-gated. Three users today:
+Admin-gated at the route level. Three users today:
 
 - **Zach** — ADMIN (native access)
-- **Patrick** — not ADMIN; granted via `ADMIN_ONLY_EXCEPTIONS` + explicit `allowedRoutes` entry on his role
+- **Patrick** — not ADMIN; granted via per-user `extraAllowedRoutes` on his User row
 - **Caleb** — same treatment as Patrick
 
-If Patrick/Caleb roles change, the exception list entries stay harmless.
+`extraAllowedRoutes` (per-user override, processed in `src/lib/user-access.ts`) is the right mechanism for a 2-user exception rather than role-wide grants. When combined with `ADMIN_ONLY_EXCEPTIONS` entries, the admin-only gate lifts for those paths and the user's route allowlist takes over.
 
 ## Architecture
 
@@ -35,14 +35,28 @@ If Patrick/Caleb roles change, the exception list entries stay harmless.
 
 Typed REST wrapper. Patterns mirrored from `scripts/sync-tasks.ts` (already proven against the same API).
 
-**Exports:**
-- `freshserviceFetch(endpoint: string, opts?: RequestInit): Promise<Response>` — HTTP Basic auth (`base64(API_KEY:X)`), exponential backoff on 429 (5 attempts, 1.1 × 2^attempt + jitter), throws on non-ok. Env: `FRESHSERVICE_API_KEY`, `FRESHSERVICE_DOMAIN` (default `photonbrothers`).
-- `fetchTicketsByRequester(email: string): Promise<FreshserviceTicket[]>` — calls `GET /api/v2/tickets?email={email}&per_page=100&page=N&order_by=created_at&order_type=desc`, paginates until `length < per_page`, filters to status ∈ {2, 3, 4} (Open, Pending, Resolved — excludes Closed).
-- `fetchTicketDetail(id: number): Promise<FreshserviceTicket>` — `GET /api/v2/tickets/:id?include=stats`.
-- `fetchRequester(id: number): Promise<FreshserviceRequester>` — used only if we need requester display names later; not called in v1 since the user's own tickets show their own name.
+**Filtering by requester — two-step lookup (documented path):**
 
-**Types** (exported):
+The Freshservice v2 `GET /api/v2/tickets` endpoint supports predefined filter names (`new_and_my_open`, `watching`, etc.) and certain scalar parameters, but using `?email=...` as a requester filter is inconsistent across tenants and undocumented. The safe, documented path:
+
+1. `GET /api/v2/requesters?email=<user_email>` → returns `{ requesters: [{ id, ... }] }`
+2. `GET /api/v2/tickets?requester_id=<id>&include=stats&per_page=100&page=N` → paginate
+
+Cache the `email → requester_id` lookup for 10 minutes (requesters rarely change per user).
+
+**Exports:**
 ```ts
+export async function freshserviceFetch(endpoint: string, opts?: RequestInit): Promise<Response>;
+// HTTP Basic (base64(API_KEY:X)), 5-attempt exponential backoff on 429.
+
+export async function fetchRequesterIdByEmail(email: string): Promise<number | null>;
+// Step 1. Returns null if no requester exists for the email.
+
+export async function fetchTicketsByRequesterId(requesterId: number): Promise<FreshserviceTicket[]>;
+// Step 2. Paginates; filters client-side to status ∈ {2, 3, 4}.
+
+export async function fetchTicketDetail(id: number): Promise<FreshserviceTicket>;
+
 export interface FreshserviceTicket {
   id: number;
   subject: string;
@@ -61,9 +75,9 @@ export interface FreshserviceTicket {
 
 export interface FreshserviceRequester {
   id: number;
+  primary_email: string;
   first_name: string;
   last_name: string;
-  primary_email: string;
 }
 
 export const FRESHSERVICE_STATUS_LABELS: Record<number, string> = {
@@ -74,98 +88,124 @@ export const FRESHSERVICE_PRIORITY_LABELS: Record<number, string> = {
 };
 ```
 
-**Server cache** (via existing `lib/cache.ts`):
-- Key: `freshservice:my-tickets:<email>`
-- TTL: 60s
-- Reason: Freshservice API is slow (~500ms-2s) and list refresh does not need to be sub-minute.
+**Server cache** — Dedicated `CacheStore` instances, not the shared `appCache` singleton (which uses a 5-minute default TTL incompatible with the 60s freshness we want).
+
+```ts
+// src/lib/freshservice.ts
+import { CacheStore } from "@/lib/cache";
+const ticketsCache = new CacheStore(60_000, 120_000); // 60s fresh, 120s stale window
+const requesterCache = new CacheStore(10 * 60_000, 30 * 60_000); // 10m fresh, 30m stale
+```
+
+Cache keys:
+- `freshservice:requester-id:<email>` (requester ID lookup)
+- `freshservice:tickets:<requester_id>` (ticket list)
+- `freshservice:ticket:<ticket_id>` (single ticket detail)
 
 ### 2. API routes
 
 **`GET /api/admin/freshservice/tickets`**
-- Session check via `auth()`; 401 if no session.
-- Role check: admin middleware (already in place for `/api/admin/*`).
-- Calls `fetchTicketsByRequester(session.user.email)`.
-- Returns `{ tickets: FreshserviceTicket[], lastUpdated: string }`.
-- Response headers: `Cache-Control: private, max-age=60`.
-- On missing `FRESHSERVICE_API_KEY`: 500 `{ error: "Freshservice not configured" }`.
+- `auth()` from `@/auth` → 401 if no session.
+- Route access handled by `middleware.ts` via `isPathAllowedByAccess` in `src/lib/user-access.ts`. ADMIN passes natively; Patrick/Caleb pass via `ADMIN_ONLY_EXCEPTIONS` + `extraAllowedRoutes`.
+- Flow: `email → fetchRequesterIdByEmail → fetchTicketsByRequesterId`.
+- Returns `{ tickets: FreshserviceTicket[], lastUpdated: string, requesterFound: boolean }`.
+- `Cache-Control: private, max-age=60`.
+- Missing `FRESHSERVICE_API_KEY`: 500 `{ error: "Freshservice not configured" }`.
+- `requesterFound=false`: 200 with `tickets: []` so the page can show a specific empty state ("No Freshservice account linked to your email").
 
 **`GET /api/admin/freshservice/tickets/[id]`**
-- Same auth. Calls `fetchTicketDetail(id)`.
-- Returns `{ ticket: FreshserviceTicket }` (stripped of fields we don't need).
+- Same auth/route check. Calls `fetchTicketDetail(id)`.
+- Authorization check: reject if `ticket.requester_id !== currentUserRequesterId` (prevents enumeration — users can only read their own tickets).
+- Returns `{ ticket: FreshserviceTicket }`.
 
 **`GET /api/admin/freshservice/count`**
-- Same auth. Shares the same 60s cache key as `/tickets`.
-- Returns `{ open: number, pending: number, total: number }` (counts of statuses 2, 3, and 2+3 respectively — Resolved doesn't count as "needs attention").
-- Separate endpoint rather than reusing `/tickets` so UserMenu doesn't ship full ticket payloads on every page load.
+- Same auth/route check. Shares the 60s cache with the tickets endpoint (reuses list result, runs counts).
+- Returns `{ open: number, pending: number, total: number }` (counts of status 2, 3, and 2+3; Resolved doesn't count as "needs attention").
+- Separate endpoint so UserMenu doesn't ship full ticket payloads on every page load.
 
 ### 3. Admin page — `src/app/admin/freshservice/page.tsx` (new)
 
 Client component. Uses existing admin-shell primitives:
 
 - `AdminPageHeader title="Freshservice Tickets" breadcrumb={["Admin", "Freshservice"]} subtitle="Your open tickets on photonbrothers.freshservice.com."`
-- `AdminFilterBar` with status tabs: All / Open / Pending / Resolved (counts next to each label)
-- `AdminTable` with columns:
-  - `id` — formatted as `#{id}` (monospace)
+- `AdminFilterBar` with `FilterChip` tabs: All / Open / Pending / Resolved. Counts rendered inline in the chip label (same pattern as `src/app/admin/tickets/page.tsx`).
+- `AdminTable` columns:
+  - `id` — `#{id}` (monospace)
   - `subject` — truncated, click opens drawer
-  - `status` — pill (colors: Open=red/15, Pending=amber/15, Resolved=emerald/15)
+  - `status` — pill (Open=red/15, Pending=amber/15, Resolved=emerald/15)
   - `priority` — pill (Low=zinc, Medium=blue, High=amber, Urgent=red)
   - `created_at` — relative ("3d ago")
   - `due_by` — relative, red text if overdue, blank if null
-- `AdminDetailDrawer` on row click → ticket detail view:
-  - `AdminDetailHeader` with subject and status/priority badges
+- `AdminDetailDrawer` on row click → ticket detail:
+  - `AdminDetailHeader` with subject + status/priority badges
   - `AdminKeyValueGrid`: Status, Priority, Created, Updated, Due, Type, Category
-  - Description (sanitized `description_text`, plain text)
+  - Description (`description_text`, rendered via React text children only — no raw HTML).
   - Footer: "View in Freshservice →" external link (`https://photonbrothers.freshservice.com/a/tickets/:id`)
-- Refresh button in header uses `queryClient.invalidateQueries({ queryKey: queryKeys.freshservice.root })`.
-- React Query `staleTime: 60_000`, `refetchOnWindowFocus: false`.
-- Empty state: `AdminEmpty` with "No open tickets 🎉" + link to Freshservice portal.
+- Refresh button calls `queryClient.invalidateQueries({ queryKey: queryKeys.freshservice.root })`.
+- React Query: `staleTime: 60_000`, `refetchOnWindowFocus: false`.
+- Empty states:
+  - `requesterFound=false`: `AdminEmpty` with "No Freshservice account linked to your email" + contact-admin note.
+  - `requesterFound=true`, `tickets=[]`: `AdminEmpty` with "No open tickets 🎉" + portal link.
 - Error state: `AdminError` with retry button.
 
 ### 4. UserMenu badge — modify `src/components/UserMenu.tsx`
 
-Add a menu item rendered only when `isAdmin === true`, between the existing `Admin` link and `SOP Guide` link:
+Add a menu item rendered only when the user is ADMIN. The count fetch must be gated so non-admin users don't fire a doomed request every session change. Use a second `useEffect` that depends on `userRole`:
 
 ```tsx
-<Link href="/admin/freshservice" ...>
-  <svg>...ticket icon...</svg>
-  Freshservice Tickets
-  {ticketCount > 0 && (
-    <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">
-      {ticketCount}
-    </span>
-  )}
-</Link>
-```
+const [ticketCount, setTicketCount] = useState<number | null>(null);
 
-Fetch count in the existing `useEffect` that calls `/api/auth/sync`:
-
-```tsx
-const [ticketCount, setTicketCount] = useState(0);
 useEffect(() => {
-  if (!session?.user?.email) return;
-  // ...existing /api/auth/sync fetch...
+  // Only fetch if userRole resolved to ADMIN. Patrick/Caleb don't see the badge
+  // in v1; they navigate via the admin sidebar (acceptable — they know about it).
+  if (userRole !== "ADMIN") return;
   fetch("/api/admin/freshservice/count")
     .then(r => (r.ok ? r.json() : null))
     .then(d => d && setTicketCount((d.open ?? 0) + (d.pending ?? 0)))
-    .catch(() => {}); // hide silently on failure
-}, [session]);
+    .catch(() => {});
+}, [userRole]);
 ```
 
-Non-admins: fetch returns 403, silently caught, count stays 0, menu item hidden via `isAdmin` guard.
+Menu item (between Admin and SOP Guide):
+
+```tsx
+{isAdmin && (
+  <Link href="/admin/freshservice" ...>
+    <svg>...ticket icon...</svg>
+    Freshservice Tickets
+    {ticketCount !== null && ticketCount > 0 && (
+      <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-red-500/20 text-red-400">
+        {ticketCount}
+      </span>
+    )}
+  </Link>
+)}
+```
 
 ### 5. Nav registration — modify `src/components/admin-shell/nav.ts`
 
-Add to the "Operations" group, after the existing "Tickets" item:
+Add to the "Operations" group and rename the existing item for clarity:
 
 ```ts
-{ label: "Freshservice", href: "/admin/freshservice", iconName: "ticket" },
+{
+  label: "Operations",
+  items: [
+    { label: "Crew availability", href: "/admin/crew-availability", iconName: "calendar" },
+    { label: "Bug reports", href: "/admin/tickets", iconName: "ticket" },  // renamed from "Tickets"
+    { label: "Freshservice", href: "/admin/freshservice", iconName: "ticket" },  // new
+  ],
+},
 ```
 
-Rename the existing `/admin/tickets` item from `"Tickets"` to `"Bug reports"` in the same change, so the two aren't confusingly both called "Tickets". No code path change — just the `label` string.
+**Nav label rename scope check** — the word "Tickets" as a user-visible label for `/admin/tickets` appears in:
+- `src/components/admin-shell/nav.ts` (primary — this change)
+- `src/lib/page-directory.ts:8` — update to "Bug reports"
+- `src/app/admin/tickets/page.tsx` — page header/breadcrumb strings; update to "Bug reports"
+- `src/app/handbook/page.tsx:391` — update if the handbook references the admin nav by name
 
-### 6. Role allowlist — modify `src/lib/roles.ts`
+`src/components/GlobalSearch.tsx` already says "Bug Reports" — no change.
 
-The user feedback memory says new `/api/*` routes must be added to every role's `allowedRoutes` or middleware returns 403 silently. BUT `/api/admin/*` is blanket-blocked by `ADMIN_ONLY_ROUTES` regardless, so only the admin exception path applies.
+### 6. Role allowlist — modify `src/lib/roles.ts` + Patrick/Caleb user records
 
 Add to `ADMIN_ONLY_EXCEPTIONS`:
 
@@ -174,13 +214,11 @@ Add to `ADMIN_ONLY_EXCEPTIONS`:
 "/api/admin/freshservice",
 ```
 
-These make the routes accessible to any role that has them in `allowedRoutes`. Then add the same two paths to Patrick's and Caleb's effective roles — likely PROJECT_MANAGER (Patrick) and OPERATIONS_MANAGER or TECH_OPS (Caleb, to be confirmed during implementation by looking up their `User.roles`).
+These lift the admin-only gate for the two paths. Then grant Patrick and Caleb via per-user `extraAllowedRoutes` (data change, not role definition change):
 
-If their roles already include broad `/admin/*` via wildcard-like patterns, the exception is unnecessary. Implementation will check actual role state before the change.
+Provide a one-off script `scripts/_grant-freshservice-access.ts` (underscore prefix marks it one-off) that pushes the two routes onto each user's `extraAllowedRoutes` array. Do NOT hard-code the user list in source — the script takes emails as CLI args.
 
 ### 7. Query keys — modify `src/lib/query-keys.ts`
-
-Add a new domain:
 
 ```ts
 freshservice: {
@@ -197,15 +235,18 @@ No SSE mapping added in `cacheKeyToQueryKeys` (no server push for Freshservice i
 
 ```
 Page load:
-  UserMenu useEffect → GET /api/admin/freshservice/count
-    → session check → freshservice.ts → Freshservice API (cached 60s)
-    → { open, pending, total } → badge pill
+  UserMenu useEffect (gated on userRole === "ADMIN") → GET /api/admin/freshservice/count
+    → session check → user-access middleware → freshservice.ts
+    → requester lookup (10m cache) → ticket list (60s cache)
+    → count aggregation → badge pill
 
 Admin page:
   useQuery(queryKeys.freshservice.tickets) → GET /api/admin/freshservice/tickets
-    → same client, same cache → render AdminTable
+    → same client, same caches → render AdminTable
     → row click → drawer opens → useQuery(queryKeys.freshservice.ticket(id))
-    → GET /api/admin/freshservice/tickets/[id] → drawer content
+    → GET /api/admin/freshservice/tickets/[id]
+    → authorization: ticket.requester_id === currentUserRequesterId
+    → drawer content
 ```
 
 ## Error handling
@@ -214,32 +255,51 @@ Admin page:
 |----------|----------|
 | `FRESHSERVICE_API_KEY` unset | API returns 500 `{ error: "Freshservice not configured" }`; page shows `AdminError`; UserMenu badge hides silently |
 | Freshservice 429 | Client retries up to 5× with exponential backoff; user sees loading state; eventual failure bubbles to `AdminError` |
-| Freshservice 401 / 403 (bad API key) | Logged to Sentry with tag `freshservice:auth-failure`; API returns 502; page shows `AdminError` with generic message (do not leak key) |
+| Freshservice 401/403 (bad API key) | Logged to Sentry with `setTag("integration", "freshservice")` + `setTag("failure_type", "auth")`; API returns 502; page shows `AdminError` with generic message (do not leak key) |
 | Freshservice network timeout | Default fetch timeout applies; surfaces as `AdminError` |
-| Non-admin hits `/api/admin/freshservice/*` | Middleware returns 403; UserMenu badge `.catch(() => {})` swallows; no UI |
-| User has 0 tickets | `AdminEmpty` with celebratory message + portal link; count badge hides (0 doesn't render) |
+| Non-admin without `extraAllowedRoutes` | Middleware returns 403; UserMenu badge `.catch(() => {})` swallows; no UI |
+| User has no Freshservice requester record | API returns 200 with `tickets: []`, `requesterFound: false`; page shows specific empty state |
+| User has 0 open tickets | `AdminEmpty` with celebratory message + portal link; count badge hides (0 doesn't render) |
+| Ticket detail requester_id mismatch | API returns 403 `{ error: "Not authorized to view this ticket" }`; drawer shows error |
+
+## Security & PII
+
+- `description_text` can contain user-supplied content including attachments metadata, error messages, emails, and potentially sensitive IT context. Rendered via React text children only — no raw HTML injection path.
+- Ticket detail endpoint enforces requester_id match — users cannot enumerate other users' tickets by incrementing ID.
+- Sentry tag convention: `setTag("integration", "freshservice")` + `setTag("failure_type", "<auth|rate-limit|network|unknown>")`, matching the convention used elsewhere in the repo.
+- No activity logging (read-only view, no mutations). Documented decision, not an oversight.
+
+## Rate-limit coordination
+
+Freshservice has a ~500/min rate limit per API key. The existing `scripts/sync-tasks.ts` runs as a manual/cron job and hits the same bucket. Mitigation:
+- 60s server cache → at most ~3 requests/user/hour/endpoint for UI consumers.
+- 10m requester cache → at most ~6 lookups/user/hour.
+- Sync-tasks at normal cadence adds ~30-60 requests/run.
+- Combined ceiling is well under 500/min at 3 users. No explicit coordination needed.
 
 ## Testing
 
 **Unit** (`src/__tests__/freshservice.test.ts`):
-- Basic auth header encoded correctly
+- Basic auth header encoded correctly (`base64(API_KEY:X)`)
 - 429 retry with exponential backoff (mock `setTimeout`)
 - Pagination terminates when `length < per_page`
 - Filter excludes status=5 (Closed)
-- Empty email throws
+- `fetchRequesterIdByEmail` returns null on empty response
 - Missing API key throws
 
 **Integration** (API route tests):
 - Session missing → 401
-- Non-admin session → 403 (handled by middleware; verify middleware allowlist covers the new path)
-- Admin session + mocked client → 200 with `{ tickets, lastUpdated }`
+- Non-admin session → 403 (verify middleware covers the new path)
+- Admin session + mocked client → 200 with `{ tickets, lastUpdated, requesterFound }`
 - Count endpoint returns correct status tallies
+- Ticket detail with mismatched requester_id → 403
 
 **Manual QA**:
 - Browser: load `/admin/freshservice` as Zach; verify open tickets render, drawer opens, priority/status colors correct, external link works.
 - UserMenu: open as Zach, verify badge count matches page row count for Open+Pending.
-- Non-admin (test user): verify no menu item, 403 on direct API call, 404 or redirect on direct page navigation.
-- Unplug `FRESHSERVICE_API_KEY` env var: verify graceful error states.
+- Non-admin (test user): verify no badge, 403 on direct API call, redirect or 404 on direct page navigation.
+- Unplug `FRESHSERVICE_API_KEY`: verify graceful error states.
+- After running `scripts/_grant-freshservice-access.ts` for Patrick: log in as Patrick, verify page loads, sidebar shows Freshservice item, no badge in UserMenu.
 
 ## File summary
 
@@ -250,20 +310,22 @@ Admin page:
 - `src/app/api/admin/freshservice/count/route.ts`
 - `src/app/admin/freshservice/page.tsx`
 - `src/__tests__/freshservice.test.ts`
+- `scripts/_grant-freshservice-access.ts`
 
 **Modified:**
 - `src/components/UserMenu.tsx`
-- `src/components/admin-shell/nav.ts` (add entry, rename Tickets → Bug reports)
-- `src/lib/roles.ts` (add to `ADMIN_ONLY_EXCEPTIONS`, update Patrick/Caleb roles if needed)
+- `src/components/admin-shell/nav.ts` (add Freshservice entry, rename Tickets → Bug reports)
+- `src/lib/page-directory.ts` (rename label)
+- `src/app/admin/tickets/page.tsx` (rename header/breadcrumb strings)
+- `src/app/handbook/page.tsx` (if references admin nav label)
+- `src/lib/roles.ts` (add two paths to `ADMIN_ONLY_EXCEPTIONS`)
 - `src/lib/query-keys.ts`
 
 ## Rollout
 
-Single PR. No feature flag needed — feature is visually additive and role-gated. Env var `FRESHSERVICE_API_KEY` already exists in prod.
+Single PR. No feature flag (integration is additive; kill-switch is unsetting `FRESHSERVICE_API_KEY`).
 
-## Open questions resolved
-
-- **Admin-only or per-user?** Admin-only. Three known users today.
-- **Real-time?** No. 60s cache + manual refresh.
-- **Ticket replies / closure in-app?** No. Read-only v1.
-- **Patrick/Caleb access?** Via `ADMIN_ONLY_EXCEPTIONS` + explicit `allowedRoutes` entry on their roles. Confirmed during implementation.
+**Post-merge steps:**
+1. Confirm `FRESHSERVICE_API_KEY` present in production Vercel env (already is).
+2. Run `npx tsx scripts/_grant-freshservice-access.ts patrick@photonbrothers.com caleb@photonbrothers.com` against prod DB.
+3. Verify as Zach in prod.
