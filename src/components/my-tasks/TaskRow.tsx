@@ -1,0 +1,151 @@
+"use client";
+
+import { useState } from "react";
+import Link from "next/link";
+import type { EnrichedTask, TaskPriority, TaskType } from "@/lib/hubspot-tasks";
+
+interface TaskRowProps {
+  task: EnrichedTask;
+}
+
+const TYPE_ICON: Record<TaskType, string> = {
+  CALL: "📞",
+  EMAIL: "✉️",
+  TODO: "☑️",
+};
+
+const PRIORITY_CLASS: Record<TaskPriority, string> = {
+  HIGH: "bg-red-500/10 text-red-500 border-red-500/30",
+  MEDIUM: "bg-yellow-500/10 text-yellow-500 border-yellow-500/30",
+  LOW: "bg-blue-500/10 text-blue-500 border-blue-500/30",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  NOT_STARTED: "Not started",
+  IN_PROGRESS: "In progress",
+  WAITING: "Waiting",
+};
+
+function formatDue(dueAt: string | null): string {
+  if (!dueAt) return "No due date";
+  const due = new Date(dueAt);
+  const now = new Date();
+  const diffMs = due.getTime() - now.getTime();
+  const diffHours = Math.round(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+
+  const timeStr = due.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  const dateStr = due.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+  if (diffDays === 0) return `Today ${timeStr}`;
+  if (diffDays === 1) return `Tomorrow ${timeStr}`;
+  if (diffDays === -1) return `Yesterday ${timeStr}`;
+  if (diffDays < -1 && diffDays >= -7) return `${Math.abs(diffDays)}d overdue`;
+  if (diffHours < 0 && diffHours > -24) return `${Math.abs(diffHours)}h overdue`;
+  if (diffDays > 1 && diffDays <= 7) return `${dateStr} ${timeStr}`;
+  return dateStr;
+}
+
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
+
+export default function TaskRow({ task }: TaskRowProps) {
+  const [expanded, setExpanded] = useState(false);
+  const bodyText = task.body ? stripHtml(task.body) : "";
+  const shouldTruncate = bodyText.length > 120;
+  const bodyPreview = shouldTruncate && !expanded ? bodyText.slice(0, 120) + "…" : bodyText;
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(task.hubspotUrl);
+    } catch {
+      // swallow — clipboard not available
+    }
+  };
+
+  return (
+    <div className="group rounded-lg border border-t-border bg-surface p-3 hover:bg-surface-2 transition-colors">
+      <div className="flex items-start gap-3">
+        <span className="text-lg leading-none pt-0.5" aria-label={task.type ?? "task"}>
+          {task.type ? TYPE_ICON[task.type] : "📌"}
+        </span>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-medium text-foreground">{task.subject || "(No subject)"}</h3>
+            {task.priority && (
+              <span className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${PRIORITY_CLASS[task.priority]}`}>
+                {task.priority}
+              </span>
+            )}
+            <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-muted">
+              {STATUS_LABEL[task.status] ?? task.status}
+            </span>
+            <span className="ml-auto text-xs text-muted">
+              {formatDue(task.dueAt)}
+            </span>
+          </div>
+
+          {bodyText && (
+            <p className="mt-1 text-sm text-muted">
+              {bodyPreview}
+              {shouldTruncate && (
+                <button
+                  type="button"
+                  onClick={() => setExpanded((v) => !v)}
+                  className="ml-2 text-blue-500 hover:underline"
+                >
+                  {expanded ? "show less" : "show more"}
+                </button>
+              )}
+            </p>
+          )}
+
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+            {task.associations.deal && (
+              <Link
+                href={`/dashboards/deals?dealId=${task.associations.deal.id}`}
+                className="rounded bg-surface-2 px-2 py-1 text-foreground hover:bg-surface-elevated"
+              >
+                🏷️ {task.associations.deal.name}
+              </Link>
+            )}
+            {task.associations.ticket && (
+              <Link
+                href={`/dashboards/service-tickets?ticketId=${task.associations.ticket.id}`}
+                className="rounded bg-surface-2 px-2 py-1 text-foreground hover:bg-surface-elevated"
+              >
+                🎫 {task.associations.ticket.subject}
+              </Link>
+            )}
+            {task.associations.contact && (
+              <span className="rounded bg-surface-2 px-2 py-1 text-foreground">
+                👤 {task.associations.contact.name}
+              </span>
+            )}
+
+            <div className="ml-auto flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+              <a
+                href={task.hubspotUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-500 hover:underline"
+              >
+                Open in HubSpot ↗
+              </a>
+              <button
+                type="button"
+                onClick={copyLink}
+                className="text-muted hover:text-foreground"
+                title="Copy link"
+              >
+                Copy link
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
