@@ -21,6 +21,10 @@ import {
 
 const cacheKey = (ownerId: string) => `hubspot:tasks:owner:${ownerId}`;
 
+// Dedupe Sentry noise — only report MISSING_HUBSPOT_OWNER once per hour per email.
+const missingOwnerReportedAt = new Map<string, number>();
+const MISSING_OWNER_DEDUPE_MS = 60 * 60 * 1000;
+
 interface MyTasksPayload {
   ownerId: string | null;
   reason?: "NO_HUBSPOT_OWNER";
@@ -38,10 +42,14 @@ export async function GET() {
 
   const ownerId = await resolveOwnerIdByEmail(email);
   if (!ownerId) {
-    Sentry.captureMessage("MISSING_HUBSPOT_OWNER", {
-      level: "warning",
-      tags: { email },
-    });
+    const lastReported = missingOwnerReportedAt.get(email) ?? 0;
+    if (Date.now() - lastReported > MISSING_OWNER_DEDUPE_MS) {
+      Sentry.captureMessage("MISSING_HUBSPOT_OWNER", {
+        level: "warning",
+        tags: { email },
+      });
+      missingOwnerReportedAt.set(email, Date.now());
+    }
     const payload: MyTasksPayload = {
       ownerId: null,
       reason: "NO_HUBSPOT_OWNER",

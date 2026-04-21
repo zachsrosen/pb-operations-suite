@@ -44,6 +44,12 @@ describe("bucketForTask", () => {
     expect(bucketForTask(null, now)).toBe("noDueDate");
     expect(bucketForTask("not a date", now)).toBe("noDueDate");
   });
+
+  it("when today is Saturday, Sunday is thisWeek and next Monday is later", () => {
+    const saturday = new Date(2026, 3, 25, 10, 0, 0);
+    expect(bucketForTask(new Date(2026, 3, 26, 9, 0, 0).toISOString(), saturday)).toBe("thisWeek");
+    expect(bucketForTask(new Date(2026, 3, 27, 9, 0, 0).toISOString(), saturday)).toBe("later");
+  });
 });
 
 describe("groupByBucket", () => {

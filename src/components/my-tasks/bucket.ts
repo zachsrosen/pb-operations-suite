@@ -14,7 +14,9 @@ export const BUCKET_ORDER: Bucket[] = ["overdue", "today", "thisWeek", "later", 
 
 /**
  * Assign a task to a date bucket, using the local machine's timezone for
- * day boundaries. "This week" means Mon–Sun, excluding today.
+ * day boundaries. "This week" means the remainder of the current Mon–Sun
+ * week, excluding today. On Sunday, the current week has already ended —
+ * next Monday onward falls into "Later" (the new week hasn't started yet).
  */
 export function bucketForTask(dueAt: string | null, now: Date = new Date()): Bucket {
   if (!dueAt) return "noDueDate";
@@ -27,11 +29,12 @@ export function bucketForTask(dueAt: string | null, now: Date = new Date()): Buc
   const startOfTomorrow = new Date(startOfToday);
   startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
 
-  // End of this week (Sunday 23:59:59)
-  const dayOfWeek = startOfToday.getDay(); // 0 = Sun, 1 = Mon, ...
-  const daysUntilSunday = (7 - dayOfWeek) % 7;
+  // End of this week — exclusive bound at start of next Monday.
+  // getDay(): 0=Sun, 1=Mon ... 6=Sat. From Sun→1, Mon→7, Sat→2 days until Mon.
+  const dayOfWeek = startOfToday.getDay();
+  const daysUntilNextMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
   const endOfWeek = new Date(startOfToday);
-  endOfWeek.setDate(endOfWeek.getDate() + daysUntilSunday + 1); // exclusive bound
+  endOfWeek.setDate(endOfWeek.getDate() + daysUntilNextMonday);
 
   if (due < startOfToday) return "overdue";
   if (due < startOfTomorrow) return "today";
