@@ -63,6 +63,11 @@ model User {
   // User preferences (JSON blob for flexible settings)
   preferences Json?
 
+  // HubSpot owner link — explicitly linking a PB user to their HubSpot owner
+  // record. Used by the My Tasks page to fetch the user's HubSpot tasks.
+  // When null, the app falls back to heuristic matching on login email.
+  hubspotOwnerId String?
+
   // Timestamps
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt

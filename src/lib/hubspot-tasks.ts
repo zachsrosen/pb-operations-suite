@@ -123,17 +123,20 @@ async function getOwnerEmailMap(): Promise<Map<string, string>> {
 }
 
 /**
- * Resolve a user's HubSpot owner id.
- *
- * PB Google Workspace commonly aliases `first@domain` → `first.last@domain`,
- * so the login email doesn't always match the HubSpot owner record. We:
- *   1. Try the exact normalized login email.
- *   2. Fall back to `first.last@domain` built from the display name.
+ * Resolve a user's HubSpot owner id. Resolution order:
+ *   1. Explicit link — if the caller passes a non-empty `linkedOwnerId`
+ *      (from User.hubspotOwnerId in the DB), trust it.
+ *   2. Exact match on the normalized login email.
+ *   3. Heuristic: `first.last@domain` built from the display name (handles
+ *      Google Workspace aliases like zach@ → zach.rosen@ at PB).
  */
 export async function resolveOwnerIdByEmail(
   email: string,
   displayName?: string | null,
+  linkedOwnerId?: string | null,
 ): Promise<string | null> {
+  if (linkedOwnerId) return linkedOwnerId;
+
   const normalized = email.trim().toLowerCase();
   if (!normalized) return null;
 

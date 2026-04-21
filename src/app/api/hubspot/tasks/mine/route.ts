@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { auth } from "@/auth";
 import { appCache } from "@/lib/cache";
+import { prisma } from "@/lib/db";
 import {
   resolveOwnerIdByEmail,
   fetchOpenTasksByOwner,
@@ -40,7 +41,20 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const ownerId = await resolveOwnerIdByEmail(email, session?.user?.name);
+  // Look up the user's explicit HubSpot owner link, if any. Swallowing errors
+  // here — missing column or DB hiccup is recoverable via the heuristic.
+  let linkedOwnerId: string | null = null;
+  try {
+    const user = await prisma?.user.findUnique({
+      where: { email },
+      select: { hubspotOwnerId: true },
+    });
+    linkedOwnerId = user?.hubspotOwnerId ?? null;
+  } catch {
+    // ignore — falls back to heuristic
+  }
+
+  const ownerId = await resolveOwnerIdByEmail(email, session?.user?.name, linkedOwnerId);
   if (!ownerId) {
     const lastReported = missingOwnerReportedAt.get(email) ?? 0;
     if (Date.now() - lastReported > MISSING_OWNER_DEDUPE_MS) {
