@@ -2,6 +2,7 @@ import "server-only";
 
 import type { UserRole } from "@/generated/prisma/enums";
 import { ROLES, type RoleDefinition } from "@/lib/roles";
+import { isSuperAdmin } from "@/lib/super-admin";
 import type { LandingCard } from "@/lib/roles";
 import {
   SCOPE_VALUES,
@@ -172,6 +173,14 @@ function applyDefinitionOverride(
 export async function resolveUserAccessWithOverrides(
   user: UserLike,
 ): Promise<EffectiveUserAccess> {
+  // Super-admin short-circuit: skip the DB override fetch entirely. The
+  // synthetic access record is fully determined by code, so hitting the
+  // overrides table adds latency for no benefit. `resolveUserAccess` will
+  // still re-check `isSuperAdmin` as defense-in-depth, but we bail here first.
+  if (isSuperAdmin(user.email)) {
+    return resolveUserAccess(user);
+  }
+
   const rawRoles = (user.roles && user.roles.length > 0) ? user.roles : [];
   // Normalize legacy roles first so we fetch overrides by canonical name.
   const canonical: UserRole[] = rawRoles

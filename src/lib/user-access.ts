@@ -6,6 +6,7 @@ import {
   canAccessRoute as _canAccessRoute,
   ROLE_PERMISSIONS,
 } from "@/lib/role-permissions";
+import { isSuperAdmin } from "@/lib/super-admin";
 
 export { normalizeRole, getDefaultRouteForRole, ROLE_PERMISSIONS };
 
@@ -68,6 +69,12 @@ export interface EffectiveUserAccess {
  * plain object literals with only the fields they care about.
  */
 export interface UserLike {
+  /**
+   * Primary email. When present AND listed in `SUPER_ADMIN_EMAILS`, the
+   * resolver short-circuits to a synthetic ADMIN-equivalent access record
+   * regardless of any DB state. See `src/lib/super-admin.ts`.
+   */
+  email?: string | null;
   roles?: UserRole[] | null;
   canScheduleSurveys?: boolean | null;
   canScheduleInstalls?: boolean | null;
@@ -108,6 +115,40 @@ const CAPABILITY_KEYS: CapabilityKey[] = [
 ];
 
 const LANDING_CARD_CAP = 10;
+
+/**
+ * Synthetic full-access record for super-admin users. Bypasses every DB-driven
+ * access check: `roles: ["ADMIN"]` ensures every `.roles?.includes("ADMIN")`
+ * check in the codebase passes; `allowedRoutes: ["*"]` + empty `deniedRoutes`
+ * grants every route past the ADMIN_ONLY gate (which the ADMIN role clears);
+ * every capability flipped true. Landing cards + scope match the ADMIN role's
+ * code defaults so downstream consumers see consistent state.
+ *
+ * Called from `resolveUserAccess` when `user.email` is in SUPER_ADMIN_EMAILS.
+ */
+function superAdminAccess(): EffectiveUserAccess {
+  const allCapsTrue: Record<CapabilityKey, boolean> = {
+    canScheduleSurveys: true,
+    canScheduleInstalls: true,
+    canScheduleInspections: true,
+    canSyncZuper: true,
+    canManageUsers: true,
+    canManageAvailability: true,
+    canEditDesign: true,
+    canEditPermitting: true,
+    canViewAllLocations: true,
+  };
+  const adminDef = ROLES.ADMIN;
+  return {
+    roles: ["ADMIN"],
+    suites: new Set(adminDef.suites),
+    allowedRoutes: new Set(["*"]),
+    deniedRoutes: new Set(),
+    landingCards: adminDef.landingCards.slice(0, LANDING_CARD_CAP),
+    scope: "global",
+    capabilities: allCapsTrue,
+  };
+}
 
 /**
  * VIEWER-equivalent fallback used when a user has no roles at all. This is
@@ -276,6 +317,13 @@ export function resolveUserAccess(
   user: UserLike,
   overrides?: ReadonlyMap<UserRole, RoleDefinition>,
 ): EffectiveUserAccess {
+  // Super-admin break-glass: hardcoded emails always resolve to a synthetic
+  // ADMIN-equivalent access record. Checked first so no DB state (role rows,
+  // overrides, per-user denials) can lock out the break-glass user.
+  if (isSuperAdmin(user.email)) {
+    return superAdminAccess();
+  }
+
   const rawRoles: UserRole[] = (user.roles && user.roles.length > 0) ? user.roles : [];
 
   const canonical = normalizeRoles(rawRoles);
