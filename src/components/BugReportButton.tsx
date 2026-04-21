@@ -38,6 +38,7 @@ export function BugReportButton() {
   // Don't render on login page
   if (pathname === "/login") return null;
   if (pathname?.startsWith("/dashboards/office-performance")) return null;
+  if (pathname?.startsWith("/estimator")) return null;
 
   const handleSubmit = async () => {
     if (!title.trim() || !description.trim()) {

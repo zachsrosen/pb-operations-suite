@@ -1,6 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
+import type { Metadata } from "next";
 import type { ReactNode } from "react";
+
+export const metadata: Metadata = {
+  title: "Solar Estimator | Photon Brothers",
+  description:
+    "Get an instant solar estimate for your home — system size, production, price, and financing, tailored to your address and utility.",
+};
 
 export default function EstimatorLayout({ children }: { children: ReactNode }) {
   return (
