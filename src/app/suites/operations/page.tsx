@@ -173,6 +173,14 @@ const LINKS: SuitePageCard[] = [
     icon: "✉️",
     section: "Communications",
   },
+  {
+    href: "/dashboards/my-tasks",
+    title: "My Tasks",
+    description: "Your open HubSpot tasks — grouped by due date, filter by type, priority, and queue.",
+    tag: "TASKS",
+    icon: "📋",
+    section: "Communications",
+  },
 ];
 
 export default async function OperationsSuitePage() {
