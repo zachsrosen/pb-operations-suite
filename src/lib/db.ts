@@ -6,7 +6,7 @@
  * where DATABASE_URL is not set.
  */
 
-import { PrismaClient } from "@/generated/prisma/client";
+import { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { User } from "@/generated/prisma/client";
 import { ActivityType, SurveyInviteStatus, UserRole } from "@/generated/prisma/enums";
 import { PrismaNeon } from "@prisma/adapter-neon";
@@ -18,6 +18,7 @@ import { ROLE_PERMISSIONS } from "./role-permissions";
 import type { RolePermissions } from "./role-permissions";
 export { ROLE_PERMISSIONS, normalizeRole, canAccessRoute, canScheduleType, canSchedule, canSyncZuper } from "./role-permissions";
 export type { RolePermissions } from "./role-permissions";
+import type { RoleDefinitionOverridePayload } from "@/lib/role-override-types";
 
 // Re-export types
 export { ActivityType, SurveyInviteStatus };
@@ -1349,6 +1350,65 @@ export async function resetRoleCapabilityOverride(role: UserRole) {
   const existing = await prisma.roleCapabilityOverride.findUnique({ where: { role } });
   if (!existing) return null;
   await prisma.roleCapabilityOverride.delete({ where: { role } });
+  return existing;
+}
+
+// ===========================================
+// Role definition overrides (Option C)
+// ===========================================
+
+/**
+ * Sparse payload shape for RoleDefinitionOverride.override. Alias of
+ * RoleDefinitionOverridePayload from role-override-types — exported under
+ * this name so the helper signatures below match the RoleCapabilityOverride
+ * pattern (which uses an `Input` type alias).
+ */
+export type RoleDefinitionOverrideInput = RoleDefinitionOverridePayload;
+
+/**
+ * Fetch the single definition override row for a role, or null if none.
+ * The `override` column is JSONB; Prisma returns it as `JsonValue` and the
+ * caller coerces to RoleDefinitionOverridePayload.
+ */
+export async function getRoleDefinitionOverride(role: UserRole) {
+  if (!prisma) return null;
+  return prisma.roleDefinitionOverride.findUnique({ where: { role } });
+}
+
+/**
+ * Upsert the definition override row for a role. The caller passes the full
+ * sparse payload — absent keys mean "inherit", present keys (including
+ * empty arrays) mean "replace." Validation happens at the API boundary
+ * (validateRoleEdit + shape check); this helper trusts its input.
+ *
+ * Returns the upserted row, or null if the DB isn't configured.
+ */
+export async function upsertRoleDefinitionOverride(
+  role: UserRole,
+  override: RoleDefinitionOverrideInput,
+  updatedByEmail: string | null,
+) {
+  if (!prisma) return null;
+  // RoleDefinitionOverridePayload has optional keys, which trips Prisma's
+  // structural InputJsonValue check; the payload is plain JSON at runtime.
+  const json = override as Prisma.InputJsonValue;
+  return prisma.roleDefinitionOverride.upsert({
+    where: { role },
+    create: { role, override: json, updatedByEmail },
+    update: { override: json, updatedByEmail },
+  });
+}
+
+/**
+ * Delete the definition override row for a role, reverting every overridden
+ * field back to its code default in src/lib/roles.ts. Returns the deleted
+ * row if one existed, or null if nothing to delete.
+ */
+export async function resetRoleDefinitionOverride(role: UserRole) {
+  if (!prisma) return null;
+  const existing = await prisma.roleDefinitionOverride.findUnique({ where: { role } });
+  if (!existing) return null;
+  await prisma.roleDefinitionOverride.delete({ where: { role } });
   return existing;
 }
 
