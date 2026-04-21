@@ -115,6 +115,7 @@ async function getOwnerEmailMap(): Promise<Map<string, string>> {
       after = page.paging?.next?.after;
       if (!after) break;
     }
+    console.log(`[hubspot-tasks] owner map built: ${map.size} owners`);
     appCache.set(OWNER_MAP_CACHE_KEY, Object.fromEntries(map));
   } catch (err) {
     Sentry.captureException(err, { tags: { module: "hubspot-tasks", op: "getOwnerEmailMap" } });
@@ -126,7 +127,9 @@ export async function resolveOwnerIdByEmail(email: string): Promise<string | nul
   const normalized = email.trim().toLowerCase();
   if (!normalized) return null;
   const map = await getOwnerEmailMap();
-  return map.get(normalized) ?? null;
+  const id = map.get(normalized) ?? null;
+  console.log(`[hubspot-tasks] resolveOwnerIdByEmail(${normalized}) → ${id ?? "NULL"} (map size ${map.size})`);
+  return id;
 }
 
 // ---------------------------------------------------------------------------
