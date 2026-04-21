@@ -1634,6 +1634,7 @@ export async function sendWeeklyComplianceEmail(
  */
 interface SendBugReportEmailParams {
   reportId: string;
+  type?: "BUG" | "FEATURE_REQUEST";
   title: string;
   description: string;
   pageUrl?: string;
@@ -1645,6 +1646,8 @@ export async function sendBugReportEmail(
   params: SendBugReportEmailParams
 ): Promise<{ success: boolean; error?: string }> {
   const recipient = "techops@photonbrothers.com";
+  const isFeature = params.type === "FEATURE_REQUEST";
+  const kindLabel = isFeature ? "Feature Request" : "Bug Report";
 
   const timestamp = new Date().toLocaleString("en-US", {
     weekday: "short",
@@ -1659,6 +1662,7 @@ export async function sendBugReportEmail(
   const html = await render(
     React.createElement(BugReport, {
       reportId: params.reportId,
+      type: params.type,
       title: params.title,
       description: params.description,
       pageUrl: params.pageUrl,
@@ -1674,9 +1678,9 @@ export async function sendBugReportEmail(
 
   return sendEmailMessage({
     to: recipient,
-    subject: `Bug Report: ${params.title}`,
+    subject: `${kindLabel}: ${params.title}`,
     html,
-    text: `Bug Report: ${params.title}
+    text: `${kindLabel}: ${params.title}
 
 ${params.description}
 
@@ -1688,7 +1692,7 @@ Ticket ID: ${params.reportId}
 - PB Operations`,
     fromOverride,
     senderEmailOverride: params.reporterEmail,
-    debugFallbackTitle: `BUG REPORT NOTIFICATION for ${recipient}`,
+    debugFallbackTitle: `${kindLabel.toUpperCase()} NOTIFICATION for ${recipient}`,
     debugFallbackBody: [
       `Title: ${params.title}`,
       `Description: ${params.description}`,

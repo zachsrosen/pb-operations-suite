@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { title, description, pageUrl } = body;
+    const { title, description, pageUrl, type: rawType } = body;
 
     if (!title || !description) {
       return NextResponse.json(
@@ -40,6 +40,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const type: "BUG" | "FEATURE_REQUEST" =
+      rawType === "FEATURE_REQUEST" ? "FEATURE_REQUEST" : "BUG";
 
     if (title.length > 200) {
       return NextResponse.json(
@@ -58,6 +61,7 @@ export async function POST(request: NextRequest) {
     // Create the bug report
     const report = await prisma.bugReport.create({
       data: {
+        type,
         title: title.trim(),
         description: description.trim(),
         pageUrl: pageUrl || null,
@@ -71,6 +75,7 @@ export async function POST(request: NextRequest) {
     try {
       const emailResult = await sendBugReportEmail({
         reportId: report.id,
+        type: report.type,
         title: report.title,
         description: report.description,
         pageUrl: report.pageUrl || undefined,
@@ -94,14 +99,18 @@ export async function POST(request: NextRequest) {
     const userAgent = hdrs.get("user-agent") || "unknown";
 
     await logActivity({
-      type: "BUG_REPORTED",
-      description: `Bug report submitted: ${title}`,
+      type: type === "FEATURE_REQUEST" ? "FEATURE_REQUESTED" : "BUG_REPORTED",
+      description:
+        type === "FEATURE_REQUEST"
+          ? `Feature request submitted: ${title}`
+          : `Bug report submitted: ${title}`,
       userEmail: session.user.email,
       userName: session.user.name || undefined,
       entityType: "bug_report",
       entityId: report.id,
       entityName: title,
       metadata: {
+        type,
         pageUrl,
         emailSent,
       },
@@ -112,8 +121,12 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       reportId: report.id,
+      type,
       emailSent,
-      message: "Bug report submitted successfully. The team has been notified.",
+      message:
+        type === "FEATURE_REQUEST"
+          ? "Feature request submitted successfully. The team has been notified."
+          : "Bug report submitted successfully. The team has been notified.",
     });
   } catch (error) {
     console.error("Error submitting bug report:", error);

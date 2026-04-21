@@ -2,8 +2,11 @@ import { Hr, Section, Text } from "@react-email/components";
 import * as React from "react";
 import { EmailShell } from "./_components/EmailShell";
 
+export type BugReportKind = "BUG" | "FEATURE_REQUEST";
+
 export interface BugReportProps {
   reportId: string;
+  type?: BugReportKind;
   title: string;
   description: string;
   pageUrl?: string;
@@ -14,6 +17,7 @@ export interface BugReportProps {
 
 export function BugReport({
   reportId,
+  type = "BUG",
   title,
   description,
   pageUrl,
@@ -21,14 +25,21 @@ export function BugReport({
   reporterEmail,
   timestamp,
 }: BugReportProps) {
+  const isFeature = type === "FEATURE_REQUEST";
+  const previewLabel = isFeature ? "Feature Request" : "Bug Report";
+  const headingLabel = isFeature
+    ? "New Feature Request Submitted"
+    : "New Bug Report Submitted";
+  const badgeLabel = isFeature ? "FEATURE REQUEST" : "BUG REPORT";
+
   return (
     <EmailShell
-      preview={`Bug Report: ${title}`}
-      subtitle="New Bug Report Submitted"
+      preview={`${previewLabel}: ${title}`}
+      subtitle={headingLabel}
     >
       <Section style={card}>
-        {/* Severity badge */}
-        <Text style={badge}>BUG REPORT</Text>
+        {/* Type badge */}
+        <Text style={isFeature ? badgeFeature : badge}>{badgeLabel}</Text>
 
         {/* Title */}
         <Text style={titleText}>{title}</Text>
@@ -90,6 +101,11 @@ const badge: React.CSSProperties = {
   fontSize: "12px",
   fontWeight: 600,
   marginBottom: "16px",
+};
+
+const badgeFeature: React.CSSProperties = {
+  ...badge,
+  backgroundColor: "#7c3aed",
 };
 
 const titleText: React.CSSProperties = {
