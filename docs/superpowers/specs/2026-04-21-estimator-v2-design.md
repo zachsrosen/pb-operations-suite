@@ -60,28 +60,39 @@ Phase 1 covers ~70% of estimator traffic (New Installation is the dominant quote
 
 ```prisma
 model EstimatorRun {
-  id              String    @id @default(cuid())
-  token           String    @unique              // opaque URL-safe token for result link
-  quoteType       String                         // "new_install" (Phase 1); future: "ev_charger", "battery", etc.
-  inputSnapshot   Json                           // full EstimatorInput at submission time
-  resultSnapshot  Json                           // full EstimatorResult at submission time
-  contactSnapshot Json                           // {firstName, lastName, email, phone, referredBy, notes}
-  address         String
-  normalizedAddressHash String?                  // FK-ish pointer to HubSpotPropertyCache.addressHash
-  location        String?                        // DTC | WESTY | COSP | CA | CAMARILLO | null (out-of-area)
-  hubspotContactId String?
-  hubspotDealId    String?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  ipHash          String?                        // SHA-256 of IP for rate-limiting + anti-abuse
-  outOfArea       Boolean   @default(false)      // true = email-only waitlist lead, no deal
-  @@index([email(fields: [contactSnapshot(path: "$.email")], operators: [jsonb_path_ops])])  // TODO: replace with extracted `email` column if index syntax unsupported
+  id                    String    @id @default(cuid())
+  token                 String    @unique              // opaque URL-safe token for result link
+  quoteType             String                         // "new_install" (Phase 1); future: "ev_charger", "battery", etc.
+  inputSnapshot         Json                           // full EstimatorInput at submission time
+  resultSnapshot        Json                           // full EstimatorResult at submission time
+  contactSnapshot       Json                           // {firstName, lastName, phone, referredBy, notes}
+  firstName             String                         // promoted from contactSnapshot for querying
+  lastName              String
+  email                 String                         // promoted from contactSnapshot for indexing + dedup
+  address               String
+  normalizedAddressHash String?                        // soft pointer; NOT an FK. No relation declared. See race-condition note below.
+  location              String?                        // DTC | WESTY | COSP | CA | CAMARILLO | null (out-of-area)
+  hubspotContactId      String?
+  hubspotDealId         String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  expiresAt             DateTime                       // default now() + 90 days; used by cron for cleanup
+  ipHash                String?                        // SHA-256 of IP for rate-limiting + anti-abuse
+  outOfArea             Boolean   @default(false)      // true = email-only waitlist lead, no deal
+  recaptchaScore        Float?                         // null if submission pre-recaptcha verified
+  flaggedForReview      Boolean   @default(false)      // recaptcha 0.3–0.5 range
+
+  @@index([email])
   @@index([createdAt])
   @@index([hubspotDealId])
+  @@index([expiresAt])
+  @@index([normalizedAddressHash])
 }
 ```
 
-(If Prisma's JSON path index syntax proves awkward, promote `email` to its own column; not a hill to die on.)
+**`normalizedAddressHash` is a soft pointer, not a foreign key.** Estimator submissions arrive synchronously but the corresponding `HubSpotPropertyCache` row is built asynchronously by the `onContactAddressChange` webhook — which may not fire until HubSpot processes the contact create (seconds to minutes). We compute the hash using the same `sha256(street+unit+city+state+zip)` algorithm exported from `property-sync.ts` at estimator-submit time, so the value is stable and the reconcile cron or the webhook will resolve it later without coordination. No FK constraint, no relation declared.
+
+**Cleanup cron** — add a daily job under `/api/cron/estimator-cleanup` that deletes `EstimatorRun` rows where `expiresAt < now()`. Shareable-link TTL = 90 days, mirroring `PendingCatalogPush`.
 
 ### Seed JSON (no new tables in v1)
 
@@ -304,12 +315,64 @@ Single React page at `/estimator/new-install` with a step state machine driven b
      - Booleans: `estimator_has_ev`, `estimator_has_panel_upgrade`, `estimator_considers_battery` (false in v1), `estimator_considers_new_roof`
      - `estimator_results_token` (the EstimatorRun.token, for ops to pull the full snapshot)
      - `source`: `"public_estimator_v2"` (tag for marketing attribution)
-3. **Email result link** — reuse existing email provider (Google Workspace primary, Resend fallback via `lib/email.ts` pattern). New React Email template `EstimatorResultsEmail.tsx` with link to `/estimator/results/[token]`.
+3. **Email result link** — reuse existing email provider (Google Workspace primary, Resend fallback via `lib/email.ts` pattern). New React Email template `EstimatorResultsEmail.tsx` with link to `/estimator/results/[token]`. Email failure does not fail the submit — the results page is always accessible via the returned token regardless of email delivery (logged as a warning, surfaces to Sentry).
 4. **Persist** `EstimatorRun` with all foreign IDs.
 
 **Out-of-area path** — skip step 2 (no deal). Contact created with `lifecyclestage: marketingqualifiedlead` and a `waitlist_zip` custom property (new). Email template acknowledges.
 
 **Idempotency** — use existing `IdempotencyKey` model keyed by `(email, normalizedAddressHash, date)` to prevent dupes from refresh/resubmit. Match the pattern in `portal/survey/*`.
+
+---
+
+## HubSpot Custom Properties (human action required)
+
+These deal + contact properties must be created in HubSpot admin **before** `/api/estimator/submit` is enabled in production. They cannot be created programmatically with the access token we use.
+
+**Deal properties** (pipeline: `HUBSPOT_PIPELINE_SALES`):
+
+| Property | Type | Group |
+|---|---|---|
+| `estimator_system_size_kw` | Number | Estimator |
+| `estimator_panel_count` | Number | Estimator |
+| `estimator_annual_production_kwh` | Number | Estimator |
+| `estimator_offset_percent` | Number | Estimator |
+| `estimator_retail_usd` | Number | Estimator |
+| `estimator_incentives_usd` | Number | Estimator |
+| `estimator_final_usd` | Number | Estimator |
+| `estimator_monthly_payment_usd` | Number | Estimator |
+| `estimator_has_ev` | Checkbox | Estimator |
+| `estimator_has_panel_upgrade` | Checkbox | Estimator |
+| `estimator_considers_battery` | Checkbox | Estimator |
+| `estimator_considers_new_roof` | Checkbox | Estimator |
+| `estimator_results_token` | Single-line text | Estimator |
+| `estimator_source` | Single-line text | Estimator |
+
+**Contact properties** (for out-of-area waitlist leads):
+
+| Property | Type | Group |
+|---|---|---|
+| `waitlist_zip` | Single-line text | Marketing |
+
+Deal property mapping uses the existing `src/lib/deal-property-map.ts` (additive only — do not modify existing mappings).
+
+**Pipeline first stage** — resolved decision: use existing first stage of `HUBSPOT_PIPELINE_SALES`. Do not add a new "Estimator Lead" stage in v1. If ops later needs to filter estimator-sourced deals, they use the `estimator_source` property.
+
+---
+
+## Environment Variables (human action required)
+
+New env vars — must be added to `.env.example`, local `.env`, and Vercel prod env before rollout (per prior incident: sync Vercel prod env before new-integration rollout).
+
+| Var | Context | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_ESTIMATOR_V2_ENABLED` | public | Feature flag for UI entry points |
+| `NEXT_PUBLIC_RECAPTCHA_SITE_KEY` | public | reCAPTCHA v3 client |
+| `RECAPTCHA_SECRET_KEY` | server | reCAPTCHA v3 verify |
+| `IP_HASH_SALT` | server | Salt for hashing IPs in `EstimatorRun.ipHash` |
+| `NEXT_PUBLIC_GOOGLE_PLACES_API_KEY` | public | Address autocomplete (Step 1) — reuse existing key if one is already configured; verify before provisioning new |
+| `GOOGLE_MAPS_STATIC_API_KEY` | server | Static satellite tile for roof confirm (Step 2) — server-side proxy endpoint so the key is not exposed client-side |
+
+Verify whether existing Google keys already cover Places Autocomplete + Static Maps before creating new ones. The `lib/property-sync.ts` geocoding flow uses a Google key — check scope before reusing.
 
 ---
 
@@ -390,11 +453,21 @@ Coordination item, not an engineering blocker for this spec.
 - Sentry breadcrumbs for every step transition and API call.
 - Rollback = flag off.
 
+## Analytics
+
+The "parallel analytics" language in the Swap-In Plan depends on having analytics wired. v1 instrumentation:
+
+- **Server-side**: `ActivityLog` entries with `ActivityType.ESTIMATOR_SUBMISSION` (new enum value — requires Prisma migration) and `ActivityType.ESTIMATOR_OUT_OF_AREA` capture the conversion funnel on our side.
+- **Client-side**: if the marketing site already has GA4 / PostHog, add matching page-view + step-transition events. If not, `ActivityLog` + Sentry breadcrumbs are sufficient for v1. Do not add a new analytics SDK just for this.
+
+Funnel metrics queryable from `EstimatorRun` + `ActivityLog`: visitors → address entered → in-service-area → usage submitted → contact submitted → deal created → consultation scheduled.
+
+---
+
 ## Open Questions (deferrable during implementation)
 
-1. **Sales pipeline first stage** — use existing first stage or add "Estimator Lead" stage? Decide when wiring deal creation; doesn't affect architecture.
-2. **Default panel wattage + pricePerWatt source** — read from `InternalProduct.defaultForEstimator` flag vs. hardcode in `pricing.json`? Lean toward flag on `InternalProduct` so catalog changes flow through; confirm during implementation.
-3. **Waitlist-notify email template** — reuse `ProductUpdate.tsx` pattern or new template?
-4. **Consultation CTA destination** — `/free-solar-estimate` today; revisit if Chili Piper / Calendly gets adopted.
+1. **Default panel wattage + pricePerWatt source** — read from `InternalProduct.defaultForEstimator` flag vs. hardcode in `pricing.json`? Lean toward flag on `InternalProduct` so catalog changes flow through; confirm during implementation.
+2. **Waitlist-notify email template** — reuse `ProductUpdate.tsx` pattern or new template?
+3. **Consultation CTA destination** — `/free-solar-estimate` today; revisit if Chili Piper / Calendly gets adopted.
 
 These don't block the spec; they're implementation-time decisions.
