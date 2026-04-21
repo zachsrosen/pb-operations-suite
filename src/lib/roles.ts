@@ -214,7 +214,7 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/dashboards/my-tasks",
-    "/api/hubspot/tasks/mine",
+    "/api/hubspot/tasks",
     "/api/comms",
     // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
     "/dashboards/on-call",
@@ -373,7 +373,7 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/dashboards/my-tasks",
-    "/api/hubspot/tasks/mine",
+    "/api/hubspot/tasks",
     "/api/comms",
     // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
     "/dashboards/on-call",
@@ -472,7 +472,7 @@ const OPERATIONS: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/dashboards/my-tasks",
-    "/api/hubspot/tasks/mine",
+    "/api/hubspot/tasks",
     "/api/comms",
     // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
     "/dashboards/on-call",
@@ -541,7 +541,7 @@ const SERVICE: RoleDefinition = {
     "/api/on-call",
     // My Tasks (personal HubSpot tasks view, available to every user)
     "/dashboards/my-tasks",
-    "/api/hubspot/tasks/mine",
+    "/api/hubspot/tasks",
   ],
   landingCards: [
     { href: "/dashboards/service-overview", title: "Service Overview", description: "Priority queue command center — see what needs attention now.", tag: "OVERVIEW", tagColor: "orange" },
@@ -665,7 +665,7 @@ const TECH_OPS: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/dashboards/my-tasks",
-    "/api/hubspot/tasks/mine",
+    "/api/hubspot/tasks",
     "/api/comms",
     // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
     "/dashboards/on-call",
@@ -745,7 +745,7 @@ const SALES_MANAGER: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/dashboards/my-tasks",
-    "/api/hubspot/tasks/mine",
+    "/api/hubspot/tasks",
     "/api/comms",
   ],
   landingCards: [],
@@ -789,7 +789,7 @@ const SALES: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/dashboards/my-tasks",
-    "/api/hubspot/tasks/mine",
+    "/api/hubspot/tasks",
     "/api/comms",
   ],
   landingCards: [
@@ -833,7 +833,7 @@ const VIEWER: RoleDefinition = {
     "/api/idr-meeting",
     "/dashboards/comms",
     "/dashboards/my-tasks",
-    "/api/hubspot/tasks/mine",
+    "/api/hubspot/tasks",
     "/api/comms",
   ],
   landingCards: [],

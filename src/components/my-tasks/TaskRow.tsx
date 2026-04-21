@@ -6,6 +6,8 @@ import type { EnrichedTask, TaskPriority, TaskType } from "@/lib/hubspot-tasks";
 
 interface TaskRowProps {
   task: EnrichedTask;
+  onComplete: () => void;
+  pending: boolean;
 }
 
 const TYPE_ICON: Record<TaskType, string> = {
@@ -50,7 +52,7 @@ function stripHtml(html: string): string {
   return html.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
 }
 
-export default function TaskRow({ task }: TaskRowProps) {
+export default function TaskRow({ task, onComplete, pending }: TaskRowProps) {
   const [expanded, setExpanded] = useState(false);
   const bodyText = task.body ? stripHtml(task.body) : "";
   const shouldTruncate = bodyText.length > 120;
@@ -109,6 +111,9 @@ export default function TaskRow({ task }: TaskRowProps) {
                 className="rounded bg-surface-2 px-2 py-1 text-foreground hover:bg-surface-elevated"
               >
                 🏷️ {task.associations.deal.name}
+                {task.associations.deal.stage && (
+                  <span className="ml-1.5 text-muted">· {task.associations.deal.stage}</span>
+                )}
               </Link>
             )}
             {task.associations.ticket && (
@@ -125,23 +130,34 @@ export default function TaskRow({ task }: TaskRowProps) {
               </span>
             )}
 
-            <div className="ml-auto flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-              <a
-                href={task.hubspotUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-blue-500 hover:underline"
-              >
-                Open in HubSpot ↗
-              </a>
+            <div className="ml-auto flex items-center gap-2">
               <button
                 type="button"
-                onClick={copyLink}
-                className="text-muted hover:text-foreground"
-                title="Copy link"
+                onClick={onComplete}
+                disabled={pending}
+                className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50"
+                title="Mark complete in HubSpot"
               >
-                Copy link
+                {pending ? "Completing…" : "✓ Complete"}
               </button>
+              <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                <a
+                  href={task.hubspotUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-500 hover:underline"
+                >
+                  Open in HubSpot ↗
+                </a>
+                <button
+                  type="button"
+                  onClick={copyLink}
+                  className="text-muted hover:text-foreground"
+                  title="Copy link"
+                >
+                  Copy link
+                </button>
+              </div>
             </div>
           </div>
         </div>

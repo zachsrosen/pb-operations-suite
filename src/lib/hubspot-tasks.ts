@@ -9,6 +9,7 @@ import * as Sentry from "@sentry/nextjs";
 import { hubspotClient } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/objects/tasks/models/Filter";
 import { appCache } from "@/lib/cache";
+import { getStageMaps } from "@/lib/deals-pipeline";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,13 +27,14 @@ export interface HubSpotTask {
   priority: TaskPriority | null;
   type: TaskType | null;
   dueAt: string | null; // ISO
+  createdAt: string | null; // ISO — when task was assigned
   queueIds: string[];
   ownerId: string;
   hubspotUrl: string;
 }
 
 export interface TaskAssociations {
-  deal?: { id: string; name: string };
+  deal?: { id: string; name: string; stage?: string | null; pipeline?: string | null };
   ticket?: { id: string; subject: string };
   contact?: { id: string; name: string };
 }
@@ -170,6 +172,7 @@ const TASK_PROPERTIES = [
   "hs_task_priority",
   "hs_task_type",
   "hs_timestamp",
+  "hs_createdate",
   "hs_queue_membership_ids",
   "hubspot_owner_id",
 ];
@@ -199,6 +202,7 @@ function mapRawTask(raw: { id: string; properties: Record<string, string | null>
     priority: (p.hs_task_priority as TaskPriority) ?? null,
     type: (p.hs_task_type as TaskType) ?? null,
     dueAt: p.hs_timestamp ?? null,
+    createdAt: p.hs_createdate ?? null,
     queueIds,
     ownerId: p.hubspot_owner_id ?? "",
     hubspotUrl: buildHubspotTaskUrl(raw.id),
@@ -360,11 +364,19 @@ export async function enrichWithAssociations(tasks: HubSpotTask[]): Promise<Enri
   const ticketIds = [...new Set(ticketMap.values())];
   const contactIds = [...new Set(contactMap.values())];
 
-  const [deals, tickets, contacts] = await Promise.all([
-    batchReadNames(dealIds, "deals", ["dealname"]),
+  const [deals, tickets, contacts, stageMaps] = await Promise.all([
+    batchReadNames(dealIds, "deals", ["dealname", "dealstage", "pipeline"]),
     batchReadNames(ticketIds, "tickets", ["subject"]),
     batchReadNames(contactIds, "contacts", ["firstname", "lastname"]),
+    getStageMaps().catch(() => ({} as Record<string, Record<string, string>>)),
   ]);
+
+  // Flatten stageMaps ({ pipelineKey: { stageId: label } }) into a single
+  // stageId → label lookup. Stage IDs are unique across pipelines in HubSpot.
+  const stageIdToLabel: Record<string, string> = {};
+  for (const stageMap of Object.values(stageMaps)) {
+    Object.assign(stageIdToLabel, stageMap);
+  }
 
   return tasks.map<EnrichedTask>((task) => {
     const associations: TaskAssociations = {};
@@ -372,7 +384,13 @@ export async function enrichWithAssociations(tasks: HubSpotTask[]): Promise<Enri
     const dealId = dealMap.get(task.id);
     if (dealId) {
       const dealProps = deals.get(dealId);
-      associations.deal = { id: dealId, name: dealProps?.dealname || `Deal ${dealId}` };
+      const rawStage = dealProps?.dealstage ?? null;
+      associations.deal = {
+        id: dealId,
+        name: dealProps?.dealname || `Deal ${dealId}`,
+        stage: rawStage ? (stageIdToLabel[rawStage] ?? rawStage) : null,
+        pipeline: dealProps?.pipeline ?? null,
+      };
     }
 
     const ticketId = ticketMap.get(task.id);
@@ -390,4 +408,16 @@ export async function enrichWithAssociations(tasks: HubSpotTask[]): Promise<Enri
 
     return { ...task, associations };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Mutations
+// ---------------------------------------------------------------------------
+
+export async function markTaskComplete(taskId: string): Promise<void> {
+  await withHubSpotRetry("tasks.complete", () =>
+    hubspotClient.crm.objects.tasks.basicApi.update(taskId, {
+      properties: { hs_task_status: "COMPLETED" },
+    } as never),
+  );
 }
