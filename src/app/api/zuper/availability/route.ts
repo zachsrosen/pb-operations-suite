@@ -212,16 +212,44 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     jobTypes: ["survey"],
   },
 
-  // Nick Scarpellino — California locations (times in Pacific Time)
+  // Lucas Scarpellino — California (times in Pacific Time)
+  // SLO Mon/Fri 8-10 → slots 8-9, 9-10
+  // Camarillo Mon 9-11 → slots 9-10, 10-11
+  // Shared Mondays: cross-office block applied below hides the other-office slots
+  // once a same-person booking appears on the day.
+  {
+    name: "Lucas Scarpellino",
+    location: "San Luis Obispo",
+    reportLocation: "San Luis Obispo",
+    timezone: "America/Los_Angeles",
+    schedule: [
+      { day: 1, startTime: "08:00", endTime: "10:00" }, // Mon 8-10am PT
+      { day: 5, startTime: "08:00", endTime: "10:00" }, // Fri 8-10am PT
+    ],
+    jobTypes: ["survey"],
+  },
+  {
+    name: "Lucas Scarpellino",
+    location: "Camarillo",
+    reportLocation: "Camarillo",
+    timezone: "America/Los_Angeles",
+    schedule: [
+      { day: 1, startTime: "09:00", endTime: "11:00" }, // Mon 9-11am PT
+    ],
+    jobTypes: ["survey"],
+  },
+
+  // Nick Scarpellino — California (times in Pacific Time)
+  // SLO Tue/Thu 1-3 → slots 1-2, 2-3
+  // Camarillo Wed 9-12 → slots 9-10, 10-11, 11-12
   {
     name: "Nick Scarpellino",
     location: "San Luis Obispo",
     reportLocation: "San Luis Obispo",
     timezone: "America/Los_Angeles",
     schedule: [
-      { day: 1, startTime: "08:00", endTime: "09:00" }, // Mon 8-9am PT
-      { day: 2, startTime: "08:00", endTime: "09:00" }, // Tue 8-9am PT
-      { day: 4, startTime: "08:00", endTime: "09:00" }, // Thu 8-9am PT
+      { day: 2, startTime: "13:00", endTime: "15:00" }, // Tue 1-3pm PT
+      { day: 4, startTime: "13:00", endTime: "15:00" }, // Thu 1-3pm PT
     ],
     jobTypes: ["survey"],
   },
@@ -231,7 +259,7 @@ const CREW_SCHEDULES: CrewSchedule[] = [
     reportLocation: "Camarillo",
     timezone: "America/Los_Angeles",
     schedule: [
-      { day: 3, startTime: "09:00", endTime: "10:00" }, // Wed 9-10am PT
+      { day: 3, startTime: "09:00", endTime: "12:00" }, // Wed 9-12pm PT
     ],
     jobTypes: ["survey"],
   },
@@ -811,7 +839,17 @@ export async function GET(request: NextRequest) {
               // No matching availability slot found, but the job IS assigned and scheduled in Zuper.
               // Determine the user's timezone from their crew schedule or default to MT.
               const displayName = (assignedUserUid && uidToDisplayName[assignedUserUid]) || assignedUserName;
-              const crewEntry = activeSchedules.find(c => c.name === displayName);
+              // Pick the crewEntry that matches THIS job's team, not just the first name
+              // match — crew members covering multiple teams (e.g. Lucas Scarpellino covers
+              // SLO + Camarillo) would otherwise always be labeled with the first-listed
+              // location, which breaks the CA cross-office block below. CrewMember.teamUid
+              // is a single primary team, so we resolve via the location → team map.
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              const jobTeamUid: string | undefined = (job as any).assigned_to_team?.[0]?.team?.team_uid;
+              const entriesForUser = activeSchedules.filter(c => c.name === displayName);
+              const crewEntry =
+                (jobTeamUid && entriesForUser.find(c => teamMap[c.location] === jobTeamUid)) ||
+                entriesForUser[0];
               const userTz = crewEntry?.timezone || LOCATION_TIMEZONE[crewEntry?.location || ""] || 'America/Denver';
               const localTime = utcToLocalTime(scheduledDate, userTz);
               const localStartTime = `${localTime.hour.toString().padStart(2, "0")}:00`;
@@ -1003,6 +1041,57 @@ export async function GET(request: NextRequest) {
 
     // Recheck availability after filtering
     day.hasAvailability = day.availableSlots.length > 0;
+  }
+
+  // --- California cross-office block (survey only) ---
+  // Lucas and Nick Scarpellino work both SLO and Camarillo. SLO↔Camarillo is a
+  // ~2.5hr drive so a same-day booking at one CA office blocks the sibling
+  // CA office for the same person.
+  if (type === "survey") {
+    const CA_SIBLINGS: Record<string, readonly string[]> = {
+      "San Luis Obispo": ["Camarillo"],
+      SLO: ["Camarillo"],
+      Camarillo: ["San Luis Obispo", "SLO"],
+    };
+    for (const dateStr in availabilityByDate) {
+      const day = availabilityByDate[dateStr];
+      const booked: Array<{ user_name?: string; user_uid?: string; location?: string }> =
+        ((day as unknown as { bookedSlots?: Array<{ user_name?: string; user_uid?: string; location?: string }> }).bookedSlots) || [];
+
+      // Build map: person-key → set of CA locations they're booked in today.
+      // Prefer user_uid (stable across name variants); fall back to lowered name.
+      const bookedCaLocs: Record<string, Set<string>> = {};
+      for (const b of booked) {
+        const loc = b.location || "";
+        if (!(loc in CA_SIBLINGS)) continue;
+        const key = b.user_uid || (b.user_name || "").trim().toLowerCase();
+        if (!key) continue;
+        if (!bookedCaLocs[key]) bookedCaLocs[key] = new Set<string>();
+        bookedCaLocs[key].add(loc);
+      }
+
+      if (Object.keys(bookedCaLocs).length === 0) continue;
+
+      const before = day.availableSlots.length;
+      day.availableSlots = day.availableSlots.filter((slot) => {
+        const loc = slot.location || "";
+        const siblings = CA_SIBLINGS[loc];
+        if (!siblings) return true;
+        const key = slot.user_uid || (slot.user_name || "").trim().toLowerCase();
+        if (!key) return true;
+        const bookedLocs = bookedCaLocs[key];
+        if (!bookedLocs) return true;
+        for (const sib of siblings) {
+          if (bookedLocs.has(sib)) return false;
+        }
+        return true;
+      });
+      const removed = before - day.availableSlots.length;
+      if (removed > 0) {
+        console.log(`[Zuper Availability] CA cross-office block removed ${removed} slot(s) on ${dateStr}`);
+        day.hasAvailability = day.availableSlots.length > 0;
+      }
+    }
   }
 
   // --- Per-office daily survey cap ---
