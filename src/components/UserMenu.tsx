@@ -81,7 +81,7 @@ export function UserMenu() {
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-56 bg-surface-elevated border border-t-border rounded-lg shadow-card-lg z-50 overflow-hidden" role="menu" aria-label="User actions">
+        <div className="absolute right-0 mt-2 w-56 bg-surface-elevated border border-t-border rounded-lg shadow-card-lg z-[100] overflow-hidden" role="menu" aria-label="User actions">
           <div className="p-3 border-b border-t-border">
             <p className="text-sm font-medium text-foreground truncate">{session.user.name}</p>
             <p className="text-xs text-muted truncate">{session.user.email}</p>
