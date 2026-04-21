@@ -86,6 +86,14 @@ const LINKS: SuitePageCard[] = [
     section: "Sales",
   },
   {
+    href: "/estimator/new-install?step=address",
+    title: "Customer Estimator (preview)",
+    description: "Public-facing instant solar estimator — walk a customer quote from address through results.",
+    tag: "PREVIEW",
+    icon: "⚡",
+    section: "Sales",
+  },
+  {
     href: "/dashboards/zuper-compliance",
     title: "Zuper Compliance",
     description: "Per-user compliance scorecards and crew-composition comparisons.",

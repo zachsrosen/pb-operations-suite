@@ -1634,6 +1634,7 @@ export async function sendWeeklyComplianceEmail(
  */
 interface SendBugReportEmailParams {
   reportId: string;
+  type?: "BUG" | "FEATURE_REQUEST";
   title: string;
   description: string;
   pageUrl?: string;
