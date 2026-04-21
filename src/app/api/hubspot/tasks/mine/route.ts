@@ -6,7 +6,7 @@
  * owner, returns { ownerId: null, reason: "NO_HUBSPOT_OWNER" }.
  */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { auth } from "@/auth";
 import { appCache } from "@/lib/cache";
@@ -14,13 +14,15 @@ import { prisma } from "@/lib/db";
 import {
   resolveOwnerIdByEmail,
   fetchOpenTasksByOwner,
+  fetchRecentCompletedByOwner,
   fetchQueues,
   enrichWithAssociations,
   type EnrichedTask,
   type TaskQueue,
 } from "@/lib/hubspot-tasks";
 
-const cacheKey = (ownerId: string) => `hubspot:tasks:owner:${ownerId}`;
+const cacheKey = (ownerId: string, includeCompleted: boolean) =>
+  `hubspot:tasks:owner:${ownerId}:${includeCompleted ? "withCompleted" : "openOnly"}`;
 
 // Dedupe Sentry noise — only report MISSING_HUBSPOT_OWNER once per hour per email.
 const missingOwnerReportedAt = new Map<string, number>();
@@ -30,12 +32,14 @@ interface MyTasksPayload {
   ownerId: string | null;
   reason?: "NO_HUBSPOT_OWNER";
   tasks: EnrichedTask[];
+  completedTasks: EnrichedTask[];
   queues: TaskQueue[];
   fetchedAt: string;
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const session = await auth();
+  const includeCompleted = request.nextUrl.searchParams.get("includeCompleted") === "1";
   const email = session?.user?.email;
   if (!email) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -68,24 +72,30 @@ export async function GET() {
       ownerId: null,
       reason: "NO_HUBSPOT_OWNER",
       tasks: [],
+      completedTasks: [],
       queues: [],
       fetchedAt: new Date().toISOString(),
     };
     return NextResponse.json(payload);
   }
 
-  const key = cacheKey(ownerId);
+  const key = cacheKey(ownerId, includeCompleted);
   const cached = appCache.get<MyTasksPayload>(key);
   if (cached.hit && cached.data) return NextResponse.json(cached.data);
 
   try {
-    const [rawTasks, queues] = await Promise.all([
+    const [rawOpen, rawCompleted, queues] = await Promise.all([
       fetchOpenTasksByOwner(ownerId),
+      includeCompleted ? fetchRecentCompletedByOwner(ownerId, 7) : Promise.resolve([]),
       fetchQueues(),
     ]);
-    const tasks = await enrichWithAssociations(rawTasks);
 
-    // Only show queues that at least one task is in (keeps filter dropdown tidy)
+    // Enrich both sets together to share the single assoc/stage-map fetch.
+    const enrichedAll = await enrichWithAssociations([...rawOpen, ...rawCompleted]);
+    const tasks = enrichedAll.slice(0, rawOpen.length);
+    const completedTasks = enrichedAll.slice(rawOpen.length);
+
+    // Only show queues that at least one open task is in.
     const referencedQueueIds = new Set<string>();
     for (const t of tasks) for (const q of t.queueIds) referencedQueueIds.add(q);
     const visibleQueues = queues.filter((q) => referencedQueueIds.has(q.id));
@@ -93,6 +103,7 @@ export async function GET() {
     const payload: MyTasksPayload = {
       ownerId,
       tasks,
+      completedTasks,
       queues: visibleQueues,
       fetchedAt: new Date().toISOString(),
     };
