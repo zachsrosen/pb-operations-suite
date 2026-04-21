@@ -35,6 +35,33 @@ export async function GET() {
 
   const ownerMap = await buildOwnerMap(deals);
 
+  // Pre-fetch cached Zuper site-survey job UIDs so we can deep-link per deal.
+  const surveyJobByDeal = new Map<string, string>();
+  {
+    const dealIds = deals.map((d) => d.dealId);
+    const escalationIds = queuedItems
+      .filter((q) => q.queueType === "ESCALATION")
+      .map((q) => q.dealId);
+    const allIds = [...new Set([...dealIds, ...escalationIds])];
+    if (allIds.length > 0) {
+      const surveyJobs = await prisma.zuperJobCache.findMany({
+        where: {
+          hubspotDealId: { in: allIds },
+          jobCategory: { in: ["Site Survey", "Pre-Sale Site Visit"] },
+        },
+        orderBy: { lastSyncedAt: "desc" },
+        select: { hubspotDealId: true, jobUid: true, jobCategory: true },
+      });
+      for (const j of surveyJobs) {
+        if (!j.hubspotDealId) continue;
+        const existing = surveyJobByDeal.get(j.hubspotDealId);
+        if (!existing || j.jobCategory === "Site Survey") {
+          surveyJobByDeal.set(j.hubspotDealId, j.jobUid);
+        }
+      }
+    }
+  }
+
   // Separate escalation items (new deals) from prep records (field edits on existing deals)
   const escalations = queuedItems.filter((q) => q.queueType === "ESCALATION");
   const preps = queuedItems.filter((q) => q.queueType === "PREP");
@@ -99,6 +126,7 @@ export async function GET() {
       updatedAt: new Date().toISOString(),
       badge,
       isReturning: false,
+      surveyJobUid: surveyJobByDeal.get(deal.dealId) ?? null,
     };
   });
 
@@ -177,6 +205,7 @@ export async function GET() {
           updatedAt: esc.updatedAt.toISOString(),
           badge,
           isReturning: false,
+          surveyJobUid: surveyJobByDeal.get(esc.dealId) ?? null,
         });
       }
     } catch (err) {

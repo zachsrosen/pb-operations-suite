@@ -29,7 +29,7 @@ export const SNAPSHOT_PROPERTIES = [
   "dealname", "pb_location", "project_type", "address_line_1", "city", "state",
   "amount",
   "calculated_system_size__kwdc_", "site_survey_status", "site_survey_date",
-  "design_status", "design_draft_completion_date", "is_site_survey_completed_",
+  "design_status", "layout_status", "design_draft_completion_date", "is_site_survey_completed_",
   "all_document_parent_folder_id", "site_survey_documents", "design_documents",
   "module_brand", "module_model", "module_count",
   "inverter_brand", "inverter_model", "inverter_qty",
@@ -56,10 +56,10 @@ export function isIdrAllowedRole(role: string): boolean {
 // Snapshot helpers
 // ---------------------------------------------------------------------------
 
-/** Parse deal tags from HubSpot comma-separated field. */
+/** Parse deal tags from HubSpot semicolon-separated field. Tag values may contain commas (e.g. "$1,000 Rebate"), so only split on `;`. */
 function parseDealTags(tagsRaw: string | null | undefined): string[] {
   if (!tagsRaw) return [];
-  return tagsRaw.split(/[;,]/).map((s) => s.trim()).filter(Boolean);
+  return tagsRaw.split(";").map((s) => s.trim()).filter(Boolean);
 }
 
 /** Build an equipment one-liner from deal properties. */
@@ -101,6 +101,7 @@ export type SnapshotFields = {
   surveyStatus: string | null;
   surveyDate: string | null;
   designStatus: string | null;
+  designApprovalStatus: string | null;
   plansetDate: string | null;
   driveFolderUrl: string | null;
   surveyFolderUrl: string | null;
@@ -150,6 +151,7 @@ export function snapshotDealProperties(
     surveyStatus: p.site_survey_status ?? null,
     surveyDate: p.site_survey_date ?? null,
     designStatus: p.design_status ?? null,
+    designApprovalStatus: p.layout_status ?? null,
     plansetDate: p.design_draft_completion_date ?? null,
     driveFolderUrl: p.all_document_parent_folder_id
       ? (p.all_document_parent_folder_id.startsWith("http")
