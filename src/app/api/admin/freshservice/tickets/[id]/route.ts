@@ -28,12 +28,19 @@ export async function GET(
   }
 
   try {
-    const [requesterId, ticket] = await Promise.all([
-      fetchRequesterIdByEmail(session.user.email),
-      fetchTicketDetail(id),
-    ]);
+    // Look up requester FIRST. If the user has no Freshservice account, fail
+    // closed without touching the ticket — prevents probing ticket existence
+    // by incrementing ID.
+    const requesterId = await fetchRequesterIdByEmail(session.user.email);
+    if (!requesterId) {
+      return NextResponse.json(
+        { error: "Not authorized to view this ticket" },
+        { status: 403 }
+      );
+    }
 
-    if (!requesterId || ticket.requester_id !== requesterId) {
+    const ticket = await fetchTicketDetail(id);
+    if (ticket.requester_id !== requesterId) {
       return NextResponse.json(
         { error: "Not authorized to view this ticket" },
         { status: 403 }

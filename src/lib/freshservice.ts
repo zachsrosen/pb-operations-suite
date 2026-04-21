@@ -117,15 +117,21 @@ export async function freshserviceFetch(
 export async function fetchRequesterIdByEmail(email: string): Promise<number | null> {
   if (!email) throw new Error("email required");
   const cacheKey = `freshservice:requester-id:${email.toLowerCase()}`;
-  const { data } = await requesterCache.getOrFetch<number | null>(cacheKey, async () => {
-    const res = await freshserviceFetch(
-      `/api/v2/requesters?email=${encodeURIComponent(email)}`
-    );
-    const body = (await res.json()) as { requesters?: FreshserviceRequester[] };
-    const first = body.requesters?.[0];
-    return first ? first.id : null;
-  });
-  return data;
+
+  // Serve cached positive result if present. Skip the cache entirely for
+  // negative (null) results — otherwise a newly-created Freshservice account
+  // is invisible to the user for up to 30 minutes.
+  const cached = requesterCache.get<number | null>(cacheKey);
+  if (cached.hit && cached.data !== null && !cached.stale) return cached.data;
+
+  const res = await freshserviceFetch(
+    `/api/v2/requesters?email=${encodeURIComponent(email)}`
+  );
+  const body = (await res.json()) as { requesters?: FreshserviceRequester[] };
+  const first = body.requesters?.[0];
+  const id = first ? first.id : null;
+  if (id !== null) requesterCache.set(cacheKey, id);
+  return id;
 }
 
 export async function fetchTicketsByRequesterId(
