@@ -43,18 +43,38 @@ export async function GET() {
   }
 
   try {
-    steps.push({ step: "filter-by-email-start" });
-    const filtered = await hubspotClient.crm.owners.ownersApi.getPage(normalized, undefined, 1, false);
+    steps.push({ step: "list-archived-start" });
+    const archived = await hubspotClient.crm.owners.ownersApi.getPage(undefined, undefined, 500, true);
+    const matchInArchived = (archived.results ?? []).find(
+      (o) => o.email?.toLowerCase() === normalized,
+    );
     steps.push({
-      step: "filter-by-email-result",
-      resultCount: filtered.results?.length ?? 0,
-      firstResult: filtered.results?.[0] ?? null,
+      step: "list-archived-result",
+      totalCount: archived.results?.length ?? 0,
+      myMatchInArchived: matchInArchived ?? null,
     });
   } catch (err) {
     steps.push({
-      step: "filter-by-email-error",
+      step: "list-archived-error",
       error: err instanceof Error ? err.message : String(err),
-      code: (err as { code?: number })?.code,
+    });
+  }
+
+  try {
+    steps.push({ step: "scan-for-zach-start" });
+    const all = await hubspotClient.crm.owners.ownersApi.getPage(undefined, undefined, 500, false);
+    const zachLike = (all.results ?? [])
+      .filter((o) => {
+        const fn = o.firstName?.toLowerCase() ?? "";
+        const em = o.email?.toLowerCase() ?? "";
+        return fn === "zach" || fn === "zachary" || em.startsWith("zach") || em.includes("zrosen") || em.includes("zachrosen");
+      })
+      .map((o) => ({ id: o.id, firstName: o.firstName, lastName: o.lastName, email: o.email }));
+    steps.push({ step: "scan-for-zach-result", matches: zachLike });
+  } catch (err) {
+    steps.push({
+      step: "scan-for-zach-error",
+      error: err instanceof Error ? err.message : String(err),
     });
   }
 
