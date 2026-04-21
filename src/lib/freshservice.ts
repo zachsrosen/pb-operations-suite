@@ -178,3 +178,102 @@ export async function fetchTicketDetail(id: number): Promise<FreshserviceTicket>
   });
   return data;
 }
+
+
+// ─── Requester-side (user's filed tickets) ─────────────────────────────
+
+export interface FreshserviceRequester {
+  id: number;
+  primary_email: string;
+  first_name: string;
+  last_name: string;
+}
+
+const requesterCache = new CacheStore(10 * 60_000, 30 * 60_000);
+
+/**
+ * Resolve a Freshservice requester id by exact email match. Returns null
+ * when no requester exists. Negative results are NOT cached so a newly
+ * provisioned account is visible immediately.
+ */
+export async function fetchRequesterIdByEmail(email: string): Promise<number | null> {
+  if (!email) throw new Error("email required");
+  const cacheKey = `freshservice:requester-id:${email.toLowerCase()}`;
+  const cached = requesterCache.get<number | null>(cacheKey);
+  if (cached.hit && cached.data !== null && !cached.stale) return cached.data;
+
+  const res = await freshserviceFetch(
+    `/api/v2/requesters?email=${encodeURIComponent(email)}`
+  );
+  const body = (await res.json()) as { requesters?: FreshserviceRequester[] };
+  const first = body.requesters?.[0];
+  const id = first ? first.id : null;
+  if (id !== null) requesterCache.set(cacheKey, id);
+  return id;
+}
+
+/**
+ * Fallback for users whose session email differs from their Freshservice
+ * primary_email (e.g., zach@ vs zach.rosen@). Searches by first + last name.
+ */
+export async function fetchRequesterIdByName(fullName: string): Promise<number | null> {
+  if (!fullName) return null;
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+  const firstName = parts[0];
+  const lastName = parts[parts.length - 1];
+  const cacheKey = `freshservice:requester-id-by-name:${firstName.toLowerCase()}-${lastName.toLowerCase()}`;
+  const cached = requesterCache.get<number | null>(cacheKey);
+  if (cached.hit && cached.data !== null && !cached.stale) return cached.data;
+
+  const q = `"first_name:'${firstName}' AND last_name:'${lastName}'"`;
+  const res = await freshserviceFetch(
+    `/api/v2/requesters?query=${encodeURIComponent(q)}`
+  );
+  const body = (await res.json()) as { requesters?: FreshserviceRequester[] };
+  const first = body.requesters?.[0];
+  const id = first ? first.id : null;
+  if (id !== null) requesterCache.set(cacheKey, id);
+  return id;
+}
+
+/** Combinator: try email first, then name. */
+export async function fetchRequesterId(
+  email: string,
+  fullName?: string | null
+): Promise<number | null> {
+  const byEmail = await fetchRequesterIdByEmail(email);
+  if (byEmail !== null) return byEmail;
+  if (fullName) return fetchRequesterIdByName(fullName);
+  return null;
+}
+
+/**
+ * Tickets filed BY the given requester. Includes Open + Pending + Resolved
+ * + Closed (Freshservice auto-Closes older Resolved tickets, so excluding
+ * Closed hides most history).
+ */
+export async function fetchTicketsByRequesterId(
+  requesterId: number
+): Promise<FreshserviceTicket[]> {
+  const cacheKey = `freshservice:tickets:requester:${requesterId}`;
+  const { data } = await ticketsCache.getOrFetch<FreshserviceTicket[]>(cacheKey, async () => {
+    const all: FreshserviceTicket[] = [];
+    const perPage = 30;
+    let page = 1;
+    while (true) {
+      const query = `"requester_id:${requesterId} AND (status:2 OR status:3 OR status:4 OR status:5)"`;
+      const res = await freshserviceFetch(
+        `/api/v2/tickets/filter?query=${encodeURIComponent(query)}&page=${page}`
+      );
+      const body = (await res.json()) as { tickets?: FreshserviceTicket[] };
+      const tickets = body.tickets ?? [];
+      all.push(...tickets);
+      if (tickets.length < perPage) break;
+      page++;
+      if (page > 20) break;
+    }
+    return all;
+  });
+  return data;
+}

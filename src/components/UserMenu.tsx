@@ -10,6 +10,7 @@ export function UserMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [freshserviceCount, setFreshserviceCount] = useState<number | null>(null);
+  const [myTicketsCount, setMyTicketsCount] = useState<number | null>(null);
   const [myTasksCount, setMyTasksCount] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -50,6 +51,21 @@ export function UserMenu() {
       .then((d) => {
         if (!d) return;
         if (typeof d.openCount === "number") setMyTasksCount(d.openCount);
+      })
+      .catch(() => {});
+  }, [session]);
+
+  // Fetch user's own filed Freshservice tickets count — visible to all
+  // logged-in users (not gated to ADMIN like the admin/freshservice link).
+  useEffect(() => {
+    if (!session?.user?.email) return;
+    fetch("/api/freshservice/my-tickets/count")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        const open = typeof d.open === "number" ? d.open : 0;
+        const pending = typeof d.pending === "number" ? d.pending : 0;
+        setMyTicketsCount(open + pending);
       })
       .catch(() => {});
   }, [session]);
@@ -173,6 +189,21 @@ export function UserMenu() {
               {myTasksCount !== null && myTasksCount > 0 && (
                 <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400">
                   {myTasksCount}
+                </span>
+              )}
+            </Link>
+            <Link
+              href="/dashboards/my-tickets"
+              onClick={() => setIsOpen(false)}
+              className="flex items-center gap-2 px-3 py-2 text-sm text-foreground/80 hover:bg-surface-2 transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>My Tickets</span>
+              {myTicketsCount !== null && myTicketsCount > 0 && (
+                <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-orange-500/20 text-orange-400">
+                  {myTicketsCount}
                 </span>
               )}
             </Link>

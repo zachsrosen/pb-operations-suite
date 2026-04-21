@@ -215,6 +215,8 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/dashboards/comms",
     "/dashboards/my-tasks",
     "/api/hubspot/tasks",
+    "/dashboards/my-tickets",
+    "/api/freshservice/my-tickets",
     "/api/comms",
     // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
     "/dashboards/on-call",
@@ -374,6 +376,8 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/dashboards/comms",
     "/dashboards/my-tasks",
     "/api/hubspot/tasks",
+    "/dashboards/my-tickets",
+    "/api/freshservice/my-tickets",
     "/api/comms",
     // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
     "/dashboards/on-call",
@@ -473,6 +477,8 @@ const OPERATIONS: RoleDefinition = {
     "/dashboards/comms",
     "/dashboards/my-tasks",
     "/api/hubspot/tasks",
+    "/dashboards/my-tickets",
+    "/api/freshservice/my-tickets",
     "/api/comms",
     // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
     "/dashboards/on-call",
@@ -542,6 +548,8 @@ const SERVICE: RoleDefinition = {
     // My Tasks (personal HubSpot tasks view, available to every user)
     "/dashboards/my-tasks",
     "/api/hubspot/tasks",
+    "/dashboards/my-tickets",
+    "/api/freshservice/my-tickets",
   ],
   landingCards: [
     { href: "/dashboards/service-overview", title: "Service Overview", description: "Priority queue command center — see what needs attention now.", tag: "OVERVIEW", tagColor: "orange" },
@@ -666,6 +674,8 @@ const TECH_OPS: RoleDefinition = {
     "/dashboards/comms",
     "/dashboards/my-tasks",
     "/api/hubspot/tasks",
+    "/dashboards/my-tickets",
+    "/api/freshservice/my-tickets",
     "/api/comms",
     // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
     "/dashboards/on-call",
@@ -746,6 +756,8 @@ const SALES_MANAGER: RoleDefinition = {
     "/dashboards/comms",
     "/dashboards/my-tasks",
     "/api/hubspot/tasks",
+    "/dashboards/my-tickets",
+    "/api/freshservice/my-tickets",
     "/api/comms",
   ],
   landingCards: [],
@@ -790,6 +802,8 @@ const SALES: RoleDefinition = {
     "/dashboards/comms",
     "/dashboards/my-tasks",
     "/api/hubspot/tasks",
+    "/dashboards/my-tickets",
+    "/api/freshservice/my-tickets",
     "/api/comms",
   ],
   landingCards: [
@@ -834,6 +848,8 @@ const VIEWER: RoleDefinition = {
     "/dashboards/comms",
     "/dashboards/my-tasks",
     "/api/hubspot/tasks",
+    "/dashboards/my-tickets",
+    "/api/freshservice/my-tickets",
     "/api/comms",
   ],
   landingCards: [],
