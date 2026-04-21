@@ -82,6 +82,23 @@ describe("resolveUserAccess — super admin bypass", () => {
     expect(isPathAllowedByAccess(access, "/api/admin/roles/ADMIN/definition")).toBe(true);
   });
 
+  it("impersonation withholds email, and the resulting access is the target user's not ADMIN", () => {
+    // Middleware passes `email: null` during impersonation so the super-admin
+    // bypass does NOT fire — the admin needs to actually see what the target
+    // user sees. This test simulates that call shape (email is null, roles
+    // are the cookie-impersonated roles).
+    const access = resolveUserAccess({
+      email: null,
+      roles: ["SERVICE"],
+    });
+    expect(access.roles).toEqual(["SERVICE"]);
+    expect(access.allowedRoutes.has("*")).toBe(false);
+    // SERVICE role should not grant admin routes
+    expect(isPathAllowedByAccess(access, "/admin/roles")).toBe(false);
+    // But should still grant SERVICE routes
+    expect(isPathAllowedByAccess(access, "/dashboards/service-overview")).toBe(true);
+  });
+
   it("non-super-admin email with same roles gets normal access (control)", () => {
     const access = resolveUserAccess({
       email: "someone.else@photonbrothers.com",
