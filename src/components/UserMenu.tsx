@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useSession, signOut } from "next-auth/react";
 import Link from "next/link";
+import { SuperAdminBadge } from "@/components/SuperAdminBadge";
 
 export function UserMenu() {
   const { data: session } = useSession();
@@ -101,16 +102,19 @@ export function UserMenu() {
           <div className="p-3 border-b border-t-border">
             <p className="text-sm font-medium text-foreground truncate">{session.user.name}</p>
             <p className="text-xs text-muted truncate">{session.user.email}</p>
-            {userRole && (
-              <span className={`inline-block mt-1 text-[10px] px-1.5 py-0.5 rounded ${
-                userRole === "ADMIN" ? "bg-red-500/20 text-red-400" :
-                isExecutive ? "bg-amber-500/20 text-amber-400" :
-                userRole === "SALES" ? "bg-cyan-500/20 text-cyan-400" :
-                "bg-zinc-500/20 text-muted"
-              }`}>
-                {roleLabel}
-              </span>
-            )}
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              {userRole && (
+                <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded ${
+                  userRole === "ADMIN" ? "bg-red-500/20 text-red-400" :
+                  isExecutive ? "bg-amber-500/20 text-amber-400" :
+                  userRole === "SALES" ? "bg-cyan-500/20 text-cyan-400" :
+                  "bg-zinc-500/20 text-muted"
+                }`}>
+                  {roleLabel}
+                </span>
+              )}
+              <SuperAdminBadge />
+            </div>
           </div>
 
           <div className="py-1">

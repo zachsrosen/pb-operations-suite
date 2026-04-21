@@ -8,6 +8,7 @@ import type { UserRole } from "@/generated/prisma/enums";
 import type { RoleDefinitionOverridePayload } from "@/lib/role-override-types";
 import { AdminDetailHeader } from "@/components/admin-shell/AdminDetailHeader";
 import { AdminKeyValueGrid } from "@/components/admin-shell/AdminKeyValueGrid";
+import { SuperAdminRoleNote } from "@/components/SuperAdminBadge";
 import CapabilityEditor from "./CapabilityEditor";
 import RoleDefinitionEditor from "./RoleDefinitionEditor";
 
@@ -50,6 +51,7 @@ export function RoleDrawerBody({ row }: { row: RoleRow }) {
   }
   return (
     <div className="space-y-5">
+      {role === "ADMIN" && <SuperAdminRoleNote />}
       <AdminDetailHeader
         title={def.label}
         subtitle={def.description}
