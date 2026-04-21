@@ -40,7 +40,7 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const ownerId = await resolveOwnerIdByEmail(email);
+  const ownerId = await resolveOwnerIdByEmail(email, session?.user?.name);
   if (!ownerId) {
     const lastReported = missingOwnerReportedAt.get(email) ?? 0;
     if (Date.now() - lastReported > MISSING_OWNER_DEDUPE_MS) {

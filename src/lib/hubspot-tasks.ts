@@ -115,7 +115,6 @@ async function getOwnerEmailMap(): Promise<Map<string, string>> {
       after = page.paging?.next?.after;
       if (!after) break;
     }
-    console.log(`[hubspot-tasks] owner map built: ${map.size} owners`);
     appCache.set(OWNER_MAP_CACHE_KEY, Object.fromEntries(map));
   } catch (err) {
     Sentry.captureException(err, { tags: { module: "hubspot-tasks", op: "getOwnerEmailMap" } });
@@ -123,13 +122,38 @@ async function getOwnerEmailMap(): Promise<Map<string, string>> {
   return map;
 }
 
-export async function resolveOwnerIdByEmail(email: string): Promise<string | null> {
+/**
+ * Resolve a user's HubSpot owner id.
+ *
+ * PB Google Workspace commonly aliases `first@domain` → `first.last@domain`,
+ * so the login email doesn't always match the HubSpot owner record. We:
+ *   1. Try the exact normalized login email.
+ *   2. Fall back to `first.last@domain` built from the display name.
+ */
+export async function resolveOwnerIdByEmail(
+  email: string,
+  displayName?: string | null,
+): Promise<string | null> {
   const normalized = email.trim().toLowerCase();
   if (!normalized) return null;
+
   const map = await getOwnerEmailMap();
-  const id = map.get(normalized) ?? null;
-  console.log(`[hubspot-tasks] resolveOwnerIdByEmail(${normalized}) → ${id ?? "NULL"} (map size ${map.size})`);
-  return id;
+  const exact = map.get(normalized);
+  if (exact) return exact;
+
+  // Fall back to first.last@domain
+  if (displayName) {
+    const parts = displayName.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const at = normalized.lastIndexOf("@");
+    if (parts.length >= 2 && at > 0) {
+      const domain = normalized.slice(at + 1);
+      const alias = `${parts[0]}.${parts[parts.length - 1]}@${domain}`;
+      const aliasMatch = map.get(alias);
+      if (aliasMatch) return aliasMatch;
+    }
+  }
+
+  return null;
 }
 
 // ---------------------------------------------------------------------------
