@@ -53,15 +53,37 @@ const SEED_SCHEDULES = [
     ],
     jobTypes: ["survey"],
   },
+  // Lucas Scarpellino — California (PT)
+  {
+    name: "Lucas Scarpellino",
+    location: "San Luis Obispo",
+    reportLocation: "San Luis Obispo",
+    timezone: "America/Los_Angeles",
+    schedule: [
+      { day: 1, startTime: "08:00", endTime: "10:00" }, // Mon 8-10
+      { day: 5, startTime: "08:00", endTime: "10:00" }, // Fri 8-10
+    ],
+    jobTypes: ["survey"],
+  },
+  {
+    name: "Lucas Scarpellino",
+    location: "Camarillo",
+    reportLocation: "Camarillo",
+    timezone: "America/Los_Angeles",
+    schedule: [
+      { day: 1, startTime: "09:00", endTime: "11:00" }, // Mon 9-11
+    ],
+    jobTypes: ["survey"],
+  },
+  // Nick Scarpellino — California (PT)
   {
     name: "Nick Scarpellino",
     location: "San Luis Obispo",
     reportLocation: "San Luis Obispo",
     timezone: "America/Los_Angeles",
     schedule: [
-      { day: 1, startTime: "08:00", endTime: "09:00" },
-      { day: 2, startTime: "08:00", endTime: "09:00" },
-      { day: 4, startTime: "08:00", endTime: "09:00" },
+      { day: 2, startTime: "13:00", endTime: "15:00" }, // Tue 1-3
+      { day: 4, startTime: "13:00", endTime: "15:00" }, // Thu 1-3
     ],
     jobTypes: ["survey"],
   },
@@ -71,7 +93,7 @@ const SEED_SCHEDULES = [
     reportLocation: "Camarillo",
     timezone: "America/Los_Angeles",
     schedule: [
-      { day: 3, startTime: "09:00", endTime: "10:00" },
+      { day: 3, startTime: "09:00", endTime: "12:00" }, // Wed 9-12
     ],
     jobTypes: ["survey"],
   },
