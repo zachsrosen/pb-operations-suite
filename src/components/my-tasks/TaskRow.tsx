@@ -136,9 +136,9 @@ export default function TaskRow({ task, onComplete, pending }: TaskRowProps) {
                 onClick={onComplete}
                 disabled={pending}
                 className="rounded border border-emerald-500/40 bg-emerald-500/10 px-2 py-1 text-[11px] font-semibold text-emerald-400 hover:bg-emerald-500/20 disabled:opacity-50"
-                title="Mark complete in HubSpot"
+                title="Mark this task done in HubSpot"
               >
-                {pending ? "Completing…" : "✓ Complete"}
+                {pending ? "Marking done…" : "✓ Mark done"}
               </button>
               <div className="flex items-center gap-2 opacity-0 transition-opacity group-hover:opacity-100">
                 <a
