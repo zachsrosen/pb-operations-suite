@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
@@ -52,6 +52,24 @@ async function fetchMyTasks(includeCompleted: boolean): Promise<MyTasksPayload> 
 }
 
 export default function MyTasksPage() {
+  return (
+    <Suspense fallback={<MyTasksLoadingShell />}>
+      <MyTasksPageInner />
+    </Suspense>
+  );
+}
+
+function MyTasksLoadingShell() {
+  return (
+    <DashboardShell title="My Tasks" accentColor="blue">
+      <div className="rounded-lg border border-t-border bg-surface p-8 text-center text-muted">
+        Loading your tasks…
+      </div>
+    </DashboardShell>
+  );
+}
+
+function MyTasksPageInner() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const searchParams = useSearchParams();

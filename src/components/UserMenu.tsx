@@ -10,6 +10,7 @@ export function UserMenu() {
   const [isOpen, setIsOpen] = useState(false);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [freshserviceCount, setFreshserviceCount] = useState<number | null>(null);
+  const [myTasksCount, setMyTasksCount] = useState<number | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Fetch user role from DB
@@ -40,6 +41,18 @@ export function UserMenu() {
       })
       .catch(() => {});
   }, [userRole]);
+
+  // Fetch the current user's open HubSpot task count for the My Tasks badge.
+  useEffect(() => {
+    if (!session?.user?.email) return;
+    fetch("/api/hubspot/tasks/mine/count")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        if (typeof d.openCount === "number") setMyTasksCount(d.openCount);
+      })
+      .catch(() => {});
+  }, [session]);
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -156,7 +169,12 @@ export function UserMenu() {
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
               </svg>
-              My Tasks
+              <span>My Tasks</span>
+              {myTasksCount !== null && myTasksCount > 0 && (
+                <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400">
+                  {myTasksCount}
+                </span>
+              )}
             </Link>
             <Link
               href="/sop"
