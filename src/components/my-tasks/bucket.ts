@@ -27,11 +27,12 @@ export function bucketForTask(dueAt: string | null, now: Date = new Date()): Buc
   const startOfTomorrow = new Date(startOfToday);
   startOfTomorrow.setDate(startOfTomorrow.getDate() + 1);
 
-  // End of this week (Sunday 23:59:59)
-  const dayOfWeek = startOfToday.getDay(); // 0 = Sun, 1 = Mon, ...
-  const daysUntilSunday = (7 - dayOfWeek) % 7;
+  // End of this week — exclusive bound at start of next Monday.
+  // getDay(): 0=Sun, 1=Mon ... 6=Sat. From Sun→1, Mon→7, Sat→2 days until Mon.
+  const dayOfWeek = startOfToday.getDay();
+  const daysUntilNextMonday = dayOfWeek === 0 ? 1 : 8 - dayOfWeek;
   const endOfWeek = new Date(startOfToday);
-  endOfWeek.setDate(endOfWeek.getDate() + daysUntilSunday + 1); // exclusive bound
+  endOfWeek.setDate(endOfWeek.getDate() + daysUntilNextMonday);
 
   if (due < startOfToday) return "overdue";
   if (due < startOfTomorrow) return "today";
