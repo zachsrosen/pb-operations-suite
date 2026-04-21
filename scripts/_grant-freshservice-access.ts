@@ -31,14 +31,14 @@ async function main() {
       const before = existing.size;
       for (const r of ROUTES) existing.add(r);
       if (existing.size === before) {
-        console.log(`[ok] ${email} already has access — nothing to change.`);
+        console.warn(`[ok] ${email} already has access — nothing to change.`);
         continue;
       }
       await prisma.user.update({
         where: { email },
         data: { extraAllowedRoutes: Array.from(existing) },
       });
-      console.log(`[grant] ${email} -> ${ROUTES.join(", ")}`);
+      console.warn(`[grant] ${email} -> ${ROUTES.join(", ")}`);
     }
   } finally {
     await prisma.$disconnect();
