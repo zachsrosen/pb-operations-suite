@@ -20,7 +20,6 @@ import type {
 initPaymentTrackingCascade();
 
 const ALLOWED_ROLES = new Set(["ADMIN", "EXECUTIVE", "ACCOUNTING"]);
-const CACHE_TTL_MS = 5 * 60 * 1000;
 
 // Terminal stages to exclude from the payment-tracking view.
 // Sales pipeline "Closed Lost"-style stages and Project pipeline "Cancelled"
@@ -92,6 +91,6 @@ export async function GET() {
     deals,
   };
 
-  appCache.set(CACHE_KEYS.PAYMENT_TRACKING, response, CACHE_TTL_MS);
+  appCache.set(CACHE_KEYS.PAYMENT_TRACKING, response);
   return NextResponse.json(response);
 }
