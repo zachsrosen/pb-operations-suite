@@ -86,7 +86,8 @@ Validated on 2026-04-21 via HubSpot MCP against real deals (82 PE deals with `pe
   - `collectedPct: number` — `(customerCollected + (peBonusCollected ?? 0)) / (customerContractTotal + (peBonusTotal ?? 0))`.
   - `bucket: PaymentBucket` — enum assigned by the bucketing function below.
   - `attentionReasons: string[]` — for attention-bucketed deals (e.g., "PE M1 Rejected", "M2 open >30 days post-install", "Stuck post-PTO").
-- Cache: `accounting:payment-tracking`, TTL 5 min, invalidated by `deals:*` SSE events.
+- Cache: `accounting:payment-tracking`, TTL 5 min. SSE invalidation cascades from `deals:*` upstream events — wire this the same way the service priority queue does (cascade listener in `lib/cache.ts` or equivalent, 500ms debounce to avoid thundering herd on bulk webhooks).
+- Add `queryKeys.paymentTracking` to `src/lib/query-keys.ts` for client React Query integration.
 - Response shape:
   ```ts
   {
@@ -154,6 +155,10 @@ interface PaymentTrackingDeal {
   bucket: PaymentBucket;
   attentionReasons: string[];
 
+  // HubSpot's own paid-in-full flag, shown for reference alongside the computed
+  // completion state. NOT used to determine bucket — see "Fields NOT trusted".
+  paidInFullFlag: boolean | null; // parsed from `paid_in_full` string property
+
   hubspotUrl: string;
 }
 
@@ -167,19 +172,23 @@ type PaymentBucket =
   | "fully_collected";
 ```
 
-### Bucketing rules (first match wins)
+### Bucketing rules (first match wins, checked top to bottom)
+
+Define "**customer side complete**" = `daStatus=Paid In Full` AND `ccStatus=Paid In Full`. PTO status is not a prerequisite — PE M1 submissions often run in parallel with PTO closeout, so PE buckets do not require `ptoStatus=Paid In Full`.
 
 1. **`attention`** — any of:
    - Any PE status = `Rejected`.
    - Any invoice status = `Open` for >30 days past `closedate`.
-   - `dealstage` is post-install (install complete / inspection / PTO) AND `cc_invoice_status` ≠ `Paid In Full`.
-   - PE deal with `pe_m1_status=Paid` for >14 days but `pe_m2_status` still in pre-submit states.
+   - `dealstage` is post-install (install complete / inspection / PTO) AND `ccStatus` ≠ `Paid In Full`.
+   - PE deal with `peM1Status=Paid` for >14 days but `peM2Status` still in pre-submit states (`Ready to Submit` / `Waiting on Information`).
 2. **`awaiting_m1`** — `daStatus` ≠ `Paid In Full`.
 3. **`awaiting_m2`** — `daStatus=Paid In Full` AND `ccStatus` ≠ `Paid In Full`.
-4. **`awaiting_pto`** — DA + CC both `Paid In Full`, `ptoStatus` ≠ `Paid In Full`.
-5. **`awaiting_pe_m1`** — PE deal, customer side complete, `peM1Status` ≠ `Paid`.
-6. **`awaiting_pe_m2`** — PE deal, customer side complete, `peM1Status=Paid`, `peM2Status` ≠ `Paid`.
-7. **`fully_collected`** — all applicable milestones terminal.
+4. **`awaiting_pto`** — customer side complete AND `ptoStatus` ≠ `Paid In Full` AND (not a PE deal OR PE side not yet meaningful — i.e., `peM1Status` is null or `Ready to Submit`). Non-PE deals end here if PTO isn't closed; PE deals with active PE progress skip to PE buckets even if PTO is still open.
+5. **`awaiting_pe_m1`** — PE deal AND customer side complete AND `peM1Status` ≠ `Paid`.
+6. **`awaiting_pe_m2`** — PE deal AND customer side complete AND `peM1Status=Paid` AND `peM2Status` ≠ `Paid`.
+7. **`fully_collected`** — all applicable milestones terminal (non-PE: DA/CC/PTO all `Paid In Full`; PE: same plus PE M1 and PE M2 = `Paid`).
+
+Bucket conditions are checked top to bottom; first match wins. The ordering above makes them effectively disjoint: attention traps problem deals first, then each milestone-gap bucket tests a condition that later buckets assume already satisfied.
 
 ### UI layer
 
@@ -226,10 +235,17 @@ Wrap in `<DashboardShell title="Payment Tracking" accentColor="emerald" fullWidt
 - PE M2: status pill · amount · paid date (blank for non-PE)
 - Total Revenue
 - Collected / Outstanding / %
+- **Paid In Full?** — compact indicator sourced from HubSpot's `paid_in_full` string property.
+  - `true` → emerald ✓ pill
+  - `false` → muted dash
+  - `null` → `—`
+  - If the HubSpot flag disagrees with the computed completion (`collectedPct=100` vs flag=`false`, or vice versa), add a ⚠️ warning icon alongside the pill with a tooltip reading "HubSpot flag and milestone statuses disagree — trust the milestones." This exposes the data-quality issue visibly so accounting can fix it at the source in HubSpot rather than hiding it.
 
 Status pill colors (reuse Tailwind pills already in use):
 - DA/CC/PTO: `Pending Approval` → zinc, `Open` → amber, `Paid In Full` → emerald
-- PE M1/M2: `Ready to Submit` / `Waiting on Info` → zinc, `Submitted` / `Resubmitted` → blue, `Rejected` → red, `Ready to Resubmit` → amber, `Approved` → cyan, `Paid` → emerald
+- PE M1/M2: `Ready to Submit` / `Waiting on Information` → zinc, `Submitted` / `Resubmitted` → blue, `Rejected` → red, `Ready to Resubmit` → amber, `Approved` → cyan, `Paid` → emerald
+
+Use the exact HubSpot enum value `"Waiting on Information"` as the source of truth; the pill label can abbreviate to "Waiting" if space is tight but the underlying value must match HubSpot exactly when sent back (Phase 2 inline edit).
 
 **Attention rows** display a small inline badge listing `attentionReasons[0]` with a tooltip for the full list.
 
@@ -237,15 +253,20 @@ Status pill colors (reuse Tailwind pills already in use):
 
 **New role: `ACCOUNTING`.**
 
-- Prisma migration: additive `ALTER TYPE "UserRole" ADD VALUE 'ACCOUNTING'`. Additive enum changes are safe and reversible by dropping usage before removal. Migration file will be added but not applied automatically — orchestrator applies after user approval per repo conventions.
+- Prisma migration: additive `ALTER TYPE "UserRole" ADD VALUE 'ACCOUNTING'`. Additive enum changes are safe and reversible by dropping usage before removal. Migration file will be added but not applied automatically — orchestrator applies with user approval per repo conventions.
+- **Critical ordering:** the migration must be applied to production **BEFORE the code PR that references `UserRole.ACCOUNTING` merges to `main`.** Vercel regenerates the Prisma client on build; if the production database's `UserRole` enum lacks `ACCOUNTING`, any query that touches `User.roles` fails — including NextAuth session loading — which takes the whole app down. This is a hard rule (see `feedback_prisma_migration_before_code.md` in user memory).
 - `src/lib/roles.ts` — add `ACCOUNTING` `RoleDefinition`:
   - `label: "Accounting"`, badge `{ color: "emerald", abbrev: "ACCT" }`, `scope: "global"`, `visibleInPicker: true`.
   - `suites: ["/suites/accounting"]`.
-  - `allowedRoutes: ["/", "/suites/accounting", "/dashboards/payment-tracking", "/dashboards/pe-deals", "/dashboards/pe", "/dashboards/pricing-calculator", "/api/accounting", "/api/auth", "/api/deals", "/api/projects", "/api/session"]` plus any baseline routes mirrored from other narrow roles.
+  - `allowedRoutes: ["/", "/suites/accounting", "/dashboards/payment-tracking", "/dashboards/pe-deals", "/dashboards/pe", "/dashboards/pricing-calculator", "/api/accounting", "/api/accounting/payment-tracking", "/api/auth", "/api/deals", "/api/projects", "/api/session"]` plus any baseline routes mirrored from other narrow roles.
   - `defaultCapabilities`: all false.
   - `normalizesTo: "ACCOUNTING"`.
+- **Also add the new routes to existing roles that should reach them** (critical — middleware silently returns 403 if a route is absent from a role's `allowedRoutes`; see `feedback_api_route_role_allowlist.md`):
+  - `ADMIN.allowedRoutes` — add `"/dashboards/payment-tracking"`, `"/api/accounting/payment-tracking"`.
+  - `EXECUTIVE.allowedRoutes` — add `"/dashboards/payment-tracking"`, `"/api/accounting/payment-tracking"`.
+  - `/api/accounting` prefix may already cover the sub-path via prefix matching; verify against `canAccessRoute` logic in `role-permissions.ts` before trusting prefix semantics and add the explicit path regardless.
 - `src/app/suites/accounting/page.tsx` — update `allowed` to `["ADMIN", "EXECUTIVE", "ACCOUNTING"]`.
-- `src/app/dashboards/payment-tracking/page.tsx` — server-side role check against the same list (server component wrapper redirects if unauthorized).
+- `src/app/dashboards/payment-tracking/page.tsx` — server-side role check against the same list (server component wrapper redirects if unauthorized). Client component rendered below.
 - Admin UI (`/admin/users`) already reads role options from the enum; `ACCOUNTING` will appear automatically after migration + Prisma client regen.
 
 **Per-user capability fallback:** Not needed. Access is binary; any finer grain can be handled by adding `extraAllowedRoutes` per user as the existing override pattern supports.
@@ -286,8 +307,9 @@ User loads /dashboards/payment-tracking
 - `paid_in_full` is ignored — fixture with `paid_in_full=true` + `da_invoice_status=Pending Approval` lands in `awaiting_m1`.
 - M3 vs PTO — deals with populated `m3_invoice_status` but blank `pto_invoice_status` treated as `pto_invoice_status=null` (no fallback).
 
-**Integration test:**
-- Role guard — `ACCOUNTING` user can access `/api/accounting/payment-tracking` and `/dashboards/payment-tracking`; a `VIEWER` user cannot.
+**Integration tests:**
+- Role guard — `ACCOUNTING` user can access `/api/accounting/payment-tracking` and `/dashboards/payment-tracking`; a `VIEWER` user cannot; `ADMIN` and `EXECUTIVE` both succeed (guards against the "forgot to add to every role's allowlist" regression).
+- Prisma enum round-trip — create a user with `roles: ["ACCOUNTING"]`, read it back, assert shape. Catches the case where code deploys against a prod DB that hasn't received the migration.
 
 **Manual QA checklist:**
 - Load page as ADMIN, EXECUTIVE, ACCOUNTING, VIEWER (only last should be blocked).
@@ -298,8 +320,16 @@ User loads /dashboards/payment-tracking
 
 ## Rollout
 
-1. Land Prisma migration (ACCOUNTING enum value) in its own PR. Additive, no code depends on it yet. Apply to prod after merge.
-2. Land code PR with roles.ts update, `ACCOUNTING` added to Accounting Suite gate, new page + API route.
+1. **PR 1 — Prisma migration only.** Adds `ACCOUNTING` to the `UserRole` enum. Nothing else.
+   - Merge PR 1 to `main`.
+   - **Apply to production immediately after merge** via `scripts/migrate-prod.sh` (orchestrator + user approval). The enum value must exist in prod DB before PR 2 ships.
+   - Verify: `psql "$DATABASE_URL" -c "\dT+ UserRole"` shows `ACCOUNTING`.
+2. **PR 2 — Code.** Only merge after the prod migration above is confirmed applied.
+   - `src/lib/roles.ts` — new `ACCOUNTING` role definition + `/dashboards/payment-tracking` and `/api/accounting/payment-tracking` added to `ADMIN` and `EXECUTIVE` `allowedRoutes`.
+   - `src/app/suites/accounting/page.tsx` — allow `ACCOUNTING`.
+   - `src/app/dashboards/payment-tracking/page.tsx` + `src/app/api/accounting/payment-tracking/route.ts`.
+   - `src/lib/query-keys.ts` — add `paymentTracking` key.
+   - Components + tests.
 3. Zach assigns `ACCOUNTING` role to target users via `/admin/users`.
 4. Phase 2 (separate PR): inline status editing — replace pills with `StatusDropdown` for users with `ACCOUNTING | ADMIN | EXECUTIVE`, POST to existing `/api/hubspot/update-deal` endpoint.
 
