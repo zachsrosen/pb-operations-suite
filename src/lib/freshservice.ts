@@ -134,6 +134,50 @@ export async function fetchRequesterIdByEmail(email: string): Promise<number | n
   return id;
 }
 
+/**
+ * Resolve a requester by full name (first + last). Fallback for cases where
+ * the user's session email (e.g. zach@photonbrothers.com) doesn't match their
+ * Freshservice primary_email (e.g. zach.rosen@photonbrothers.com) and no
+ * secondary_email is configured.
+ */
+export async function fetchRequesterIdByName(fullName: string): Promise<number | null> {
+  if (!fullName) return null;
+  const parts = fullName.trim().split(/\s+/);
+  if (parts.length < 2) return null;
+  const firstName = parts[0];
+  const lastName = parts[parts.length - 1];
+  const cacheKey = `freshservice:requester-id-by-name:${firstName.toLowerCase()}-${lastName.toLowerCase()}`;
+
+  const cached = requesterCache.get<number | null>(cacheKey);
+  if (cached.hit && cached.data !== null && !cached.stale) return cached.data;
+
+  // Freshservice v2 filter: query="first_name:'X' AND last_name:'Y'"
+  const q = `"first_name:'${firstName}' AND last_name:'${lastName}'"`;
+  const res = await freshserviceFetch(
+    `/api/v2/requesters?query=${encodeURIComponent(q)}`
+  );
+  const body = (await res.json()) as { requesters?: FreshserviceRequester[] };
+  const first = body.requesters?.[0];
+  const id = first ? first.id : null;
+  if (id !== null) requesterCache.set(cacheKey, id);
+  return id;
+}
+
+/**
+ * Resolve a requester by email first, then fall back to name if provided.
+ * Use this in route handlers where both session.user.email and
+ * session.user.name are available.
+ */
+export async function fetchRequesterId(
+  email: string,
+  fullName?: string | null
+): Promise<number | null> {
+  const byEmail = await fetchRequesterIdByEmail(email);
+  if (byEmail !== null) return byEmail;
+  if (fullName) return fetchRequesterIdByName(fullName);
+  return null;
+}
+
 export async function fetchTicketsByRequesterId(
   requesterId: number
 ): Promise<FreshserviceTicket[]> {

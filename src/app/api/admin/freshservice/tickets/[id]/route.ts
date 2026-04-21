@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/auth";
 import {
-  fetchRequesterIdByEmail,
+  fetchRequesterId,
   fetchTicketDetail,
 } from "@/lib/freshservice";
 
@@ -31,7 +31,7 @@ export async function GET(
     // Look up requester FIRST. If the user has no Freshservice account, fail
     // closed without touching the ticket — prevents probing ticket existence
     // by incrementing ID.
-    const requesterId = await fetchRequesterIdByEmail(session.user.email);
+    const requesterId = await fetchRequesterId(session.user.email, session.user.name ?? null);
     if (!requesterId) {
       return NextResponse.json(
         { error: "Not authorized to view this ticket" },
