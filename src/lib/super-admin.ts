@@ -40,10 +40,17 @@
  * (addresses are lowercased at compare time).
  *
  * Keep this set tiny — the whole point of a super admin is that it's an
- * escape hatch, not a convenience role. Two entries max, realistically one.
+ * escape hatch, not a convenience role.
+ *
+ * NOTE: Both `zach@` and `zach.rosen@` are listed because Google Workspace
+ * aliases the two forms and next-auth can surface either depending on the
+ * primary address at the moment the session was issued. PRs #239 and #242
+ * documented this alias behavior for HubSpot owner resolution; the same
+ * reality applies here. Both forms are the same human.
  */
 export const SUPER_ADMIN_EMAILS: ReadonlySet<string> = new Set([
   "zach@photonbrothers.com",
+  "zach.rosen@photonbrothers.com",
 ]);
 
 /**
