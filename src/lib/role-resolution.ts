@@ -2,6 +2,12 @@ import "server-only";
 
 import type { UserRole } from "@/generated/prisma/enums";
 import { ROLES, type RoleDefinition } from "@/lib/roles";
+import type { LandingCard } from "@/lib/roles";
+import {
+  SCOPE_VALUES,
+  LANDING_CARDS_MAX,
+  type RoleDefinitionOverridePayload,
+} from "@/lib/role-override-types";
 import { prisma } from "@/lib/db";
 import {
   resolveUserAccess,
@@ -55,23 +61,39 @@ export async function resolveRoleDefinition(role: UserRole): Promise<RoleDefinit
     return base;
   }
 
-  const override = await prisma.roleCapabilityOverride
-    .findUnique({ where: { role } })
-    .catch(() => null);
+  const [capOverride, defOverride] = await Promise.all([
+    prisma.roleCapabilityOverride.findUnique({ where: { role } }).catch(() => null),
+    prisma.roleDefinitionOverride.findUnique({ where: { role } }).catch(() => null),
+  ]);
 
-  if (!override) {
+  if (!capOverride && !defOverride) {
     cache.set(role, { def: base, expires: Date.now() + CACHE_TTL_MS });
     return base;
   }
 
   const defaultCapabilities = { ...base.defaultCapabilities };
-  const keys = Object.keys(defaultCapabilities) as Array<keyof typeof defaultCapabilities>;
-  for (const key of keys) {
-    const overrideVal = override[key];
-    if (typeof overrideVal === "boolean") defaultCapabilities[key] = overrideVal;
+  if (capOverride) {
+    const keys = Object.keys(defaultCapabilities) as Array<keyof typeof defaultCapabilities>;
+    for (const key of keys) {
+      const overrideVal = capOverride[key];
+      if (typeof overrideVal === "boolean") defaultCapabilities[key] = overrideVal;
+    }
   }
 
-  const def: RoleDefinition = { ...base, defaultCapabilities };
+  let def: RoleDefinition = { ...base, defaultCapabilities };
+
+  if (defOverride?.override) {
+    try {
+      def = applyDefinitionOverride(def, defOverride.override);
+    } catch (err) {
+      console.warn(
+        `[role-resolution] Malformed override for role ${role}, using code defaults:`,
+        err,
+      );
+      // def stays at the post-capability-merge version, which is the safe fallback.
+    }
+  }
+
   cache.set(role, { def, expires: Date.now() + CACHE_TTL_MS });
   return def;
 }
@@ -91,6 +113,51 @@ export async function resolveRoleDefinitions(
     }),
   );
   return result;
+}
+
+/**
+ * Apply a definition-override payload onto a base RoleDefinition. Present
+ * keys replace; absent keys inherit. Malformed values (wrong types) are
+ * skipped — the caller wraps this in try/catch and logs a warning, falling
+ * back to the base definition if this function throws.
+ *
+ * This function is intentionally defensive: DB rows are supposed to be valid
+ * because writes pass through the API's validateRoleEdit guard, but bad rows
+ * can slip in via manual DB edits. We never crash the resolver.
+ */
+function applyDefinitionOverride(
+  base: RoleDefinition,
+  payload: unknown,
+): RoleDefinition {
+  if (!payload || typeof payload !== "object") return base;
+  const o = payload as RoleDefinitionOverridePayload;
+  const out: RoleDefinition = { ...base };
+
+  if (typeof o.label === "string") out.label = o.label;
+  if (typeof o.description === "string") out.description = o.description;
+  if (typeof o.visibleInPicker === "boolean") out.visibleInPicker = o.visibleInPicker;
+  if (Array.isArray(o.suites) && o.suites.every((s) => typeof s === "string")) {
+    out.suites = o.suites;
+  }
+  if (Array.isArray(o.allowedRoutes) && o.allowedRoutes.every((r) => typeof r === "string")) {
+    out.allowedRoutes = o.allowedRoutes;
+  }
+  if (
+    Array.isArray(o.landingCards) &&
+    o.landingCards.every((c): c is LandingCard => !!c && typeof c === "object" && typeof (c as LandingCard).href === "string")
+  ) {
+    out.landingCards = o.landingCards.slice(0, LANDING_CARDS_MAX);
+  }
+  if (typeof o.scope === "string" && (SCOPE_VALUES as readonly string[]).includes(o.scope)) {
+    out.scope = o.scope as RoleDefinition["scope"];
+  }
+  if (o.badge && typeof o.badge === "object") {
+    out.badge = {
+      color: typeof o.badge.color === "string" ? o.badge.color : base.badge.color,
+      abbrev: typeof o.badge.abbrev === "string" ? o.badge.abbrev : base.badge.abbrev,
+    };
+  }
+  return out;
 }
 
 /**
