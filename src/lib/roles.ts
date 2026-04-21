@@ -935,4 +935,6 @@ export const ADMIN_ONLY_EXCEPTIONS: string[] = [
   "/api/catalog/push-requests",
   "/api/catalog/extract-from-datasheet",
   "/api/catalog/upload-photo",
+  "/admin/freshservice",
+  "/api/admin/freshservice",
 ];
