@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import TaskFilters from "@/components/my-tasks/TaskFilters";
 import TasksGrouped from "@/components/my-tasks/TasksGrouped";
+import type { SortMode } from "@/components/my-tasks/grouping";
 import type { EnrichedTask, TaskQueue } from "@/lib/hubspot-tasks";
 
 interface MyTasksPayload {
@@ -22,6 +23,7 @@ async function fetchMyTasks(): Promise<MyTasksPayload> {
 }
 
 export default function MyTasksPage() {
+  const queryClient = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ["my-tasks"],
     queryFn: fetchMyTasks,
@@ -33,6 +35,9 @@ export default function MyTasksPage() {
   const [types, setTypes] = useState<string[]>([]);
   const [priorities, setPriorities] = useState<string[]>([]);
   const [queueIds, setQueueIds] = useState<string[]>([]);
+  const [stages, setStages] = useState<string[]>([]);
+  const [sort, setSort] = useState<SortMode>("due");
+  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set());
 
   const needle = search.trim().toLowerCase();
   const filtered = (data?.tasks ?? []).filter((t) => {
@@ -41,6 +46,10 @@ export default function MyTasksPage() {
     if (queueIds.length > 0) {
       const hit = t.queueIds.some((q) => queueIds.includes(q));
       if (!hit) return false;
+    }
+    if (stages.length > 0) {
+      const stage = t.associations.deal?.stage ?? null;
+      if (!stage || !stages.includes(stage)) return false;
     }
     if (needle) {
       const haystack = [
@@ -53,6 +62,41 @@ export default function MyTasksPage() {
     }
     return true;
   });
+
+  // Derive available deal stages from loaded tasks — keeps the dropdown tight.
+  const availableStages = Array.from(
+    new Set(
+      (data?.tasks ?? [])
+        .map((t) => t.associations.deal?.stage)
+        .filter((s): s is string => typeof s === "string" && s.length > 0),
+    ),
+  ).sort();
+
+  const handleComplete = async (taskId: string) => {
+    setPendingIds((prev) => new Set(prev).add(taskId));
+    // Optimistically drop the task from the cache
+    const previous = queryClient.getQueryData<MyTasksPayload>(["my-tasks"]);
+    if (previous) {
+      queryClient.setQueryData<MyTasksPayload>(["my-tasks"], {
+        ...previous,
+        tasks: previous.tasks.filter((t) => t.id !== taskId),
+      });
+    }
+    try {
+      const res = await fetch(`/api/hubspot/tasks/${taskId}/complete`, { method: "POST" });
+      if (!res.ok) throw new Error(`complete failed: ${res.status}`);
+    } catch (err) {
+      // Rollback optimistic removal
+      if (previous) queryClient.setQueryData(["my-tasks"], previous);
+      console.error("[my-tasks] failed to complete task", err);
+    } finally {
+      setPendingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(taskId);
+        return next;
+      });
+    }
+  };
 
   const isMissingOwner = data?.reason === "NO_HUBSPOT_OWNER";
 
@@ -104,13 +148,23 @@ export default function MyTasksPage() {
             queueIds={queueIds}
             onQueueIdsChange={setQueueIds}
             queues={data?.queues ?? []}
+            stages={stages}
+            onStagesChange={setStages}
+            availableStages={availableStages}
+            sort={sort}
+            onSortChange={setSort}
           />
           {filtered.length === 0 ? (
             <div className="rounded-lg border border-t-border bg-surface p-8 text-center text-muted">
               {data?.tasks.length === 0 ? "No open tasks. Nice." : "No tasks match these filters."}
             </div>
           ) : (
-            <TasksGrouped tasks={filtered} />
+            <TasksGrouped
+              tasks={filtered}
+              sort={sort}
+              onComplete={handleComplete}
+              pendingTaskIds={pendingIds}
+            />
           )}
         </div>
       )}
