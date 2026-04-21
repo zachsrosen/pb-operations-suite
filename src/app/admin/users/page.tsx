@@ -395,6 +395,33 @@ export default function AdminUsersPage() {
     }
   };
 
+  const saveHubspotOwner = async (hubspotOwnerId: string | null) => {
+    if (!drawerUser) return;
+    setSaving(true);
+    try {
+      const res = await fetch(
+        `/api/admin/users/${drawerUser.id}/hubspot-owner`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ hubspotOwnerId }),
+        },
+      );
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Failed to update HubSpot link");
+      }
+      setUsers((prev) =>
+        prev.map((u) => (u.id === drawerUser.id ? { ...u, hubspotOwnerId } : u)),
+      );
+      showToast("HubSpot link updated");
+    } catch (err) {
+      showToast(`Error: ${err instanceof Error ? err.message : "Unknown error"}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const startImpersonation = async () => {
     if (!drawerUser) return;
     if (drawerUser.email === currentUserEmail) {
@@ -648,6 +675,7 @@ export default function AdminUsersPage() {
         onSaveRoles={saveRoles}
         onSavePermissions={savePermissions}
         onSaveRoutes={saveRoutes}
+        onSaveHubspotOwner={saveHubspotOwner}
         onImpersonate={startImpersonation}
       />
     </>

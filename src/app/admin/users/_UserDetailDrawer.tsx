@@ -28,6 +28,14 @@ export interface AdminUser {
   allowedLocations: string[];
   extraAllowedRoutes?: string[];
   extraDeniedRoutes?: string[];
+  hubspotOwnerId?: string | null;
+}
+
+export interface HubspotOwnerOption {
+  id: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
 }
 
 interface ActivityLog {
@@ -98,13 +106,14 @@ const PERMISSION_LABELS: Array<{
   { key: "canManageAvailability", label: "Manage Availability", help: "Can add/edit/remove crew availability" },
 ];
 
-type TabKey = "overview" | "roles" | "permissions" | "routes" | "activity";
+type TabKey = "overview" | "roles" | "permissions" | "routes" | "integrations" | "activity";
 
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "overview", label: "Overview" },
   { key: "roles", label: "Roles" },
   { key: "permissions", label: "Permissions" },
   { key: "routes", label: "Routes" },
+  { key: "integrations", label: "Integrations" },
   { key: "activity", label: "Activity" },
 ];
 
@@ -129,6 +138,7 @@ export interface UserDetailDrawerProps {
     extraAllowedRoutes: string[],
     extraDeniedRoutes: string[],
   ) => Promise<void>;
+  onSaveHubspotOwner: (hubspotOwnerId: string | null) => Promise<void>;
   onImpersonate: () => Promise<void>;
 }
 
@@ -140,6 +150,7 @@ export default function UserDetailDrawer({
   onSaveRoles,
   onSavePermissions,
   onSaveRoutes,
+  onSaveHubspotOwner,
   onImpersonate,
 }: UserDetailDrawerProps) {
   const [tab, setTab] = useState<TabKey>("overview");
@@ -157,6 +168,9 @@ export default function UserDetailDrawer({
   });
   const [extraAllowed, setExtraAllowed] = useState<string[]>([]);
   const [extraDenied, setExtraDenied] = useState<string[]>([]);
+  const [hubspotOwnerDraft, setHubspotOwnerDraft] = useState<string>("");
+  const [hubspotOwners, setHubspotOwners] = useState<HubspotOwnerOption[] | null>(null);
+  const [hubspotOwnersError, setHubspotOwnersError] = useState<string | null>(null);
   const [allowInput, setAllowInput] = useState("");
   const [denyInput, setDenyInput] = useState("");
   const [activity, setActivity] = useState<ActivityLog[] | null>(null);
@@ -176,10 +190,24 @@ export default function UserDetailDrawer({
     });
     setExtraAllowed(user.extraAllowedRoutes ?? []);
     setExtraDenied(user.extraDeniedRoutes ?? []);
+    setHubspotOwnerDraft(user.hubspotOwnerId ?? "");
     setAllowInput("");
     setDenyInput("");
     setActivity(null);
   }, [user]);
+
+  const loadHubspotOwners = useCallback(async () => {
+    if (hubspotOwners !== null) return;
+    try {
+      const res = await fetch("/api/admin/hubspot-owners");
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const data = (await res.json()) as { owners: HubspotOwnerOption[] };
+      setHubspotOwners(data.owners);
+      setHubspotOwnersError(null);
+    } catch (err) {
+      setHubspotOwnersError(err instanceof Error ? err.message : "Failed to load owners");
+    }
+  }, [hubspotOwners]);
 
   const loadActivity = useCallback(async (userId: string) => {
     try {
@@ -496,6 +524,30 @@ export default function UserDetailDrawer({
         </div>
       )}
 
+      {/* Integrations */}
+      {tab === "integrations" && (
+        <div className="space-y-4">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">HubSpot owner link</h3>
+            <p className="mt-1 text-xs text-muted">
+              Explicitly link this PB user to their HubSpot owner record. Used by &quot;My Tasks&quot; to pull the right person&apos;s tasks when a Google Workspace alias doesn&apos;t match the HubSpot email.
+            </p>
+          </div>
+
+          <IntegrationsOwnerPicker
+            userId={user.id}
+            currentId={user.hubspotOwnerId ?? null}
+            draftId={hubspotOwnerDraft}
+            setDraftId={setHubspotOwnerDraft}
+            owners={hubspotOwners}
+            ownersError={hubspotOwnersError}
+            onLoadOwners={loadHubspotOwners}
+            onSave={onSaveHubspotOwner}
+            saving={saving}
+          />
+        </div>
+      )}
+
       {/* Activity */}
       {tab === "activity" && (
         <div className="space-y-3">
@@ -604,6 +656,103 @@ function RoutesList({
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+// ── Integrations: HubSpot owner picker ───────────────────────────────────
+
+interface IntegrationsOwnerPickerProps {
+  userId: string;
+  currentId: string | null;
+  draftId: string;
+  setDraftId: (v: string) => void;
+  owners: HubspotOwnerOption[] | null;
+  ownersError: string | null;
+  onLoadOwners: () => void;
+  onSave: (hubspotOwnerId: string | null) => Promise<void>;
+  saving: boolean;
+}
+
+function IntegrationsOwnerPicker({
+  userId: _userId,
+  currentId,
+  draftId,
+  setDraftId,
+  owners,
+  ownersError,
+  onLoadOwners,
+  onSave,
+  saving,
+}: IntegrationsOwnerPickerProps) {
+  useEffect(() => {
+    onLoadOwners();
+  }, [onLoadOwners]);
+
+  const currentOwner = owners?.find((o) => o.id === currentId) ?? null;
+  const dirty = (draftId || null) !== (currentId || null);
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-md border border-t-border/60 bg-surface-2 p-3 text-xs">
+        <p className="text-muted">Currently linked</p>
+        <p className="mt-1 font-mono text-foreground">
+          {currentOwner
+            ? `${currentOwner.firstName ?? ""} ${currentOwner.lastName ?? ""}`.trim() +
+              (currentOwner.email ? ` · ${currentOwner.email}` : "") +
+              ` · #${currentOwner.id}`
+            : currentId
+              ? `#${currentId} (owner not in HubSpot list)`
+              : "Not linked — using email heuristic"}
+        </p>
+      </div>
+
+      {ownersError ? (
+        <p className="text-xs text-red-400">Error loading owners: {ownersError}</p>
+      ) : owners === null ? (
+        <p className="text-xs text-muted">Loading HubSpot owners…</p>
+      ) : (
+        <div className="space-y-2">
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted">
+            Change to
+          </label>
+          <select
+            value={draftId}
+            onChange={(e) => setDraftId(e.target.value)}
+            className="w-full rounded-md border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground focus:border-cyan-500 focus:outline-none"
+          >
+            <option value="">— Not linked (use email heuristic) —</option>
+            {owners.map((o) => {
+              const name = `${o.firstName ?? ""} ${o.lastName ?? ""}`.trim();
+              const label = [name, o.email, `#${o.id}`].filter(Boolean).join(" · ");
+              return (
+                <option key={o.id} value={o.id}>
+                  {label}
+                </option>
+              );
+            })}
+          </select>
+
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              disabled={!dirty || saving}
+              onClick={() => setDraftId(currentId ?? "")}
+              className="rounded-md border border-t-border bg-surface px-3 py-1.5 text-xs text-foreground hover:bg-surface-elevated disabled:opacity-40"
+            >
+              Reset
+            </button>
+            <button
+              type="button"
+              disabled={!dirty || saving}
+              onClick={() => onSave(draftId || null)}
+              className="rounded-md bg-cyan-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-cyan-400 disabled:opacity-40"
+            >
+              {saving ? "Saving…" : "Save link"}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
