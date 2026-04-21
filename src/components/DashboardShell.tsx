@@ -111,7 +111,19 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/product-comparison": { href: "/suites/operations", label: "Operations" },
   "/dashboards/comms": { href: "/", label: "Home" },
   "/dashboards/mobile": { href: "/admin", label: "Admin" },
-  "/dashboards/ai": { href: "/dashboards/ai", label: "AI Skills" },
+  "/dashboards/ai": { href: "/", label: "Home" },
+  // Ops metrics + catalog comparison
+  "/dashboards/survey-metrics": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/construction-metrics": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/inspection-metrics": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/product-catalog": { href: "/suites/operations", label: "Operations" },
+  // Executive dashboards
+  "/dashboards/preconstruction-metrics": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/office-performance": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/on-call": { href: "/suites/executive", label: "Executive" },
+  // Admin
+  "/dashboards/availability-approvals": { href: "/admin", label: "Admin" },
+  "/dashboards/revenue-goals": { href: "/admin", label: "Admin" },
 };
 
 function getParentSuiteForPath(pathname: string): { href: string; label: string } | null {
@@ -197,7 +209,11 @@ export default function DashboardShell({
   const { trackExport } = useActivityTracking();
   const parentSuite = getParentSuiteForPath(pathname);
 
-  const isValidParent = (parentSuite?.href?.startsWith("/suites/") || parentSuite?.href === "/") ?? false;
+  const isValidParent = (
+    parentSuite?.href?.startsWith("/suites/") ||
+    parentSuite?.href === "/" ||
+    parentSuite?.href === "/admin"
+  ) ?? false;
   const effectiveParent = isValidParent ? parentSuite : null;
   const suiteAccent = effectiveParent
     ? (SUITE_ACCENT_COLORS[effectiveParent.href] || DEFAULT_SUITE_ACCENT)
