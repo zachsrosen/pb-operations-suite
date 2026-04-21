@@ -16,6 +16,7 @@ interface TasksGroupedProps {
   selectedIds: Set<string>;
   onSelectedChange: (taskId: string, selected: boolean) => void;
   onSelectGroup: (taskIds: string[], selected: boolean) => void;
+  focusedTaskId: string | null;
 }
 
 export default function TasksGrouped({
@@ -30,6 +31,7 @@ export default function TasksGrouped({
   selectedIds,
   onSelectedChange,
   onSelectGroup,
+  focusedTaskId,
 }: TasksGroupedProps) {
   const groups = groupTasks(tasks, sort);
 
@@ -75,6 +77,7 @@ export default function TasksGrouped({
                   pending={pendingTaskIds.has(task.id)}
                   selected={selectedIds.has(task.id)}
                   onSelectedChange={(sel) => onSelectedChange(task.id, sel)}
+                  focused={focusedTaskId === task.id}
                 />
               ))}
             </div>
