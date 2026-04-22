@@ -5,8 +5,11 @@ import { retireAdder } from "@/lib/adders/catalog";
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  // TODO(session-type): canManageAdders not yet on Session type.
-  if (!(session.user as unknown as { canManageAdders?: boolean }).canManageAdders) {
+  // TODO: once next-auth session callback pipes canManageAdders, use that. For
+  // Chunk 1, ADMIN/OWNER are the only canManage roles, so a roles gate works.
+  const roles = session.user.roles ?? [];
+  const canManage = roles.includes("ADMIN") || roles.includes("OWNER");
+  if (!canManage) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
   const { id } = await params;

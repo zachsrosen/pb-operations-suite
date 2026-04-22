@@ -26,10 +26,13 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  // TODO(session-type): canManageAdders will be on the session once the Prisma
-  // client is regenerated (adder_can_manage_permission migration applied) and
-  // the next-auth session callback pipes the user's canManageAdders column.
-  if (!(session.user as unknown as { canManageAdders?: boolean }).canManageAdders) {
+  // TODO: once next-auth session callback pipes canManageAdders from the User
+  // row, replace this with a proper boolean check. For now, Chunk 1 has only
+  // ADMIN/OWNER as canManageAdders=true roles, so a roles-based gate is
+  // functionally equivalent and actually works without session-type changes.
+  const roles = session.user.roles ?? [];
+  const canManage = roles.includes("ADMIN") || roles.includes("OWNER");
+  if (!canManage) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
