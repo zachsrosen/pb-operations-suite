@@ -28,6 +28,11 @@ import { getDealProperties } from "@/lib/hubspot";
 import { runDesignCompletePipeline } from "@/lib/bom-pipeline";
 import { acquirePipelineLock, DuplicateRunError } from "@/lib/bom-pipeline-lock";
 import { PIPELINE_ACTOR } from "@/lib/actor-context";
+import {
+  bomDesignCompleteRequested,
+  inngest,
+  isInngestBomEnabled,
+} from "@/lib/inngest-client";
 import type { BomPipelineTrigger } from "@/generated/prisma/enums";
 
 export const runtime = "nodejs";
@@ -300,14 +305,35 @@ export async function POST(req: NextRequest) {
       console.error(`[design-complete] Failed to log pipeline start for deal ${dealId}:`, logErr);
     }
 
-    // ── 8. Run pipeline in background ──
-    waitUntil(
-      runDesignCompletePipeline(runId, dealId, trigger).catch((err) => {
-        console.error(`[design-complete] Unhandled pipeline error for deal ${dealId}:`, err);
-      }),
-    );
-
-    triggered.push(`${dealId}:started`);
+    // ── 8. Run pipeline ──
+    // When INNGEST_BOM_ENABLED=true, delegate to Inngest for concurrency
+    // control, retries, and run visibility. Otherwise, fall back to the
+    // original waitUntil() path.
+    if (isInngestBomEnabled()) {
+      try {
+        await inngest.send(
+          bomDesignCompleteRequested.create({ runId, dealId, trigger }),
+        );
+        triggered.push(`${dealId}:inngest`);
+      } catch (err) {
+        // Inngest send failed — fall back to in-process execution so we
+        // never lose a pipeline run due to transport issues.
+        console.error(`[design-complete] inngest.send failed, falling back to waitUntil for deal ${dealId}:`, err);
+        waitUntil(
+          runDesignCompletePipeline(runId, dealId, trigger).catch((pipelineErr) => {
+            console.error(`[design-complete] Unhandled pipeline error for deal ${dealId}:`, pipelineErr);
+          }),
+        );
+        triggered.push(`${dealId}:started_fallback`);
+      }
+    } else {
+      waitUntil(
+        runDesignCompletePipeline(runId, dealId, trigger).catch((err) => {
+          console.error(`[design-complete] Unhandled pipeline error for deal ${dealId}:`, err);
+        }),
+      );
+      triggered.push(`${dealId}:started`);
+    }
   }
 
   return NextResponse.json({ status: "ok", triggered });

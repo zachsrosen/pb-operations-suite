@@ -43,6 +43,7 @@ const PUBLIC_API_ROUTES = [
   "/api/estimator", // Public customer-facing estimator v2
   "/api/cron/estimator-cleanup", // Estimator TTL cleanup — CRON_SECRET validated in route
   "/api/cron/estimator-hubspot-reconcile", // Estimator HubSpot retry — CRON_SECRET validated in route
+  "/api/inngest", // Inngest Cloud → app handshake; signing-key validated by the serve handler
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed", "/api/install-review", "/api/zuper/sync-cache"] as const;
 
