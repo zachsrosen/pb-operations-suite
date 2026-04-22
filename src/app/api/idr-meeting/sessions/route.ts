@@ -48,6 +48,27 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  // If a non-COMPLETED session already exists for today (UTC), rejoin it
+  // instead of creating a duplicate. Prevents two people clicking Start from
+  // producing two sessions and splitting queued escalations across them.
+  const now = new Date();
+  const startOfDayUtc = new Date(Date.UTC(
+    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0,
+  ));
+  const endOfDayUtc = new Date(Date.UTC(
+    now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59, 59, 999,
+  ));
+  const existingToday = await prisma.idrMeetingSession.findFirst({
+    where: {
+      date: { gte: startOfDayUtc, lte: endOfDayUtc },
+      status: { not: "COMPLETED" },
+    },
+    orderBy: { date: "desc" },
+  });
+  if (existingToday) {
+    return NextResponse.json({ session: existingToday, reused: true }, { status: 200 });
+  }
+
   // Create session
   const session = await prisma.idrMeetingSession.create({
     data: {

@@ -84,15 +84,15 @@ export async function PATCH(
 
   const { id } = await params;
   const body = await req.json();
-  const { status } = body;
+  const { status, skipSync } = body;
 
   if (!["DRAFT", "ACTIVE", "COMPLETED"].includes(status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
   }
 
-  // Auto-sync all unsynced items when ending a meeting
+  // Auto-sync all unsynced items when ending a meeting (unless skipSync is set)
   let syncResults: { synced: number; failed: number } | undefined;
-  if (status === "COMPLETED") {
+  if (status === "COMPLETED" && !skipSync) {
     const unsyncedItems = await prisma.idrMeetingItem.findMany({
       where: { sessionId: id, hubspotSyncStatus: { not: "SYNCED" } },
       include: { session: { select: { date: true } } },

@@ -50,31 +50,38 @@ export function SessionHeader({
   const [showEndConfirm, setShowEndConfirm] = useState(false);
 
   const updateStatus = useMutation({
-    mutationFn: async (newStatus: string) => {
+    mutationFn: async ({ status: newStatus, skipSync }: { status: string; skipSync?: boolean }) => {
       if (!session) return;
       const res = await fetch(`/api/idr-meeting/sessions/${session.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        body: JSON.stringify({ status: newStatus, skipSync }),
       });
       if (!res.ok) throw new Error("Failed to update status");
       return res.json();
     },
-    onSuccess: (data, newStatus) => {
+    onSuccess: (data, variables) => {
       if (session) {
         queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(session.id) });
         queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.sessions() });
       }
-      if (newStatus === "COMPLETED") {
-        const sr = data?.syncResults;
-        const msg = sr
-          ? `${sr.synced} synced to HubSpot${sr.failed ? `, ${sr.failed} failed` : ""}`
-          : undefined;
-        addToast({
-          type: sr?.failed ? "warning" : "success",
-          title: "Meeting ended — all items synced",
-          message: msg,
-        });
+      if (variables.status === "COMPLETED") {
+        if (variables.skipSync) {
+          addToast({
+            type: "info",
+            title: "Meeting ended — nothing synced to HubSpot",
+          });
+        } else {
+          const sr = data?.syncResults;
+          const msg = sr
+            ? `${sr.synced} synced to HubSpot${sr.failed ? `, ${sr.failed} failed` : ""}`
+            : undefined;
+          addToast({
+            type: sr?.failed ? "warning" : "success",
+            title: "Meeting ended — all items synced",
+            message: msg,
+          });
+        }
         onSessionEnded();
       }
     },
@@ -255,12 +262,23 @@ export function SessionHeader({
                       <button
                         className="rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600 transition-colors disabled:opacity-50"
                         onClick={() => {
-                          updateStatus.mutate("COMPLETED");
+                          updateStatus.mutate({ status: "COMPLETED" });
                           setShowEndConfirm(false);
                         }}
                         disabled={updateStatus.isPending}
                       >
                         {updateStatus.isPending ? "Syncing & ending..." : "End & Sync All"}
+                      </button>
+                      <button
+                        className="rounded-lg border border-t-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground transition-colors disabled:opacity-50"
+                        onClick={() => {
+                          updateStatus.mutate({ status: "COMPLETED", skipSync: true });
+                          setShowEndConfirm(false);
+                        }}
+                        disabled={updateStatus.isPending}
+                        title="End the meeting without pushing anything to HubSpot — use for accidental or test meetings"
+                      >
+                        End without syncing
                       </button>
                       <button
                         className="text-xs text-muted hover:text-foreground"
