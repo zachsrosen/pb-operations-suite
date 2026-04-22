@@ -57,7 +57,7 @@ Sequencing rationale: Phase 0 is a prerequisite — you cannot build a governed 
 2. **Canonical adder list** as a CSV/Google Sheet with the following columns per row:
    - `code` — short stable identifier (e.g., `MPU_200A`, `TRENCH_LF`, `ROOF_STEEP_8_12`)
    - `name` — human-readable label
-   - `category` — one of: ELECTRICAL, ROOFING, STRUCTURAL, SITEWORK, LOGISTICS, DESIGN, PERMITTING, REMOVAL, MISC
+   - `category` — one of: ELECTRICAL, ROOFING, STRUCTURAL, SITEWORK, LOGISTICS, DESIGN, PERMITTING, REMOVAL, ORG, MISC
    - `trigger_condition` — plain-English rule (e.g., "roof pitch > 8/12", "run length > 50 ft")
    - `triage_question` — rep-facing question asked at point of sale (e.g., "What is the main panel amp rating?", "What is the steepest roof pitch?")
    - `triage_answer_type` — `boolean` | `numeric` | `choice` | `measurement` (lowercase in CSV; the import script uppercases to match the `TriageAnswerType` Prisma enum)
@@ -396,9 +396,9 @@ Today:
    - Roof/storey/pitch → `category: ROOFING | STRUCTURAL`, `type: FIXED`, `direction: ADD`, `unit: FLAT | PER_KW | PER_MODULE`
    - PE -30% discount → `category: ORG`, `type: PERCENTAGE`, `direction: DISCOUNT`, `basePrice: 30`, `autoApply: true`, `appliesTo: "deal.dealType=='PE'"`
    - Q1-2026 promo → `category: ORG`, `type: FIXED`, `direction: DISCOUNT`, `basePrice: 1000`, `autoApply: true`, `appliesTo: "now < '2026-04-01'"` (or similar date predicate)
-   - SoCo regional discount → `category: ORG`, `type: FIXED`, `direction: DISCOUNT`, `basePrice: 1500`, `autoApply: true`, `appliesTo: "shop=='SLO' || shop=='Camarillo'"`
+   - SoCo regional discount → `category: ORG`, `type: FIXED`, `direction: DISCOUNT`, `basePrice: 1500`, `autoApply: true`, `appliesTo: "shop in ['SLO','Camarillo']"`
 
-   A new helper `lib/adders/pricing.ts::resolveAddersForCalc(shop, context)` returns the catalog rows needed by `calcPrice()`, filtering by `autoApply` + `appliesTo` evaluation. The calculator stays pure — the helper does the I/O and passes resolved values in. `appliesTo` predicate syntax is intentionally narrow in Phase 1 (single condition per expression); a DSL is explicitly out of scope.
+   A new helper `lib/adders/pricing.ts::resolveAddersForCalc(shop, context)` returns the catalog rows needed by `calcPrice()`, filtering by `autoApply` + `appliesTo` evaluation. The calculator stays pure — the helper does the I/O and passes resolved values in. **`appliesTo` syntax (Phase 1):** one predicate per expression using ops `==`, `!=`, `<`, `<=`, `>`, `>=`, `in`, `not in`. Supported left-hand identifiers: `shop`, `deal.dealType`, `deal.valueCents`, `now` (current timestamp). Values are string, number, boolean, or bracketed list literal for `in`/`not in`. Boolean combinators (`&&`, `||`) are explicitly out of scope; express OR logic by creating multiple `Adder` rows. Validation is zod-enforced at the API boundary, same pattern as `triggerLogic`.
 2. **Unify IDR booleans with the catalog.** The seven `adder*` boolean columns on `IdrEscalationQueue` stay (no destructive migration), but each maps 1:1 to an `Adder.code`. The IDR meeting view reads amounts from the catalog at render time via the existing `PricingBreakdown` component. Previously-zero adders (trenching, ground mount, MPU, EV charger) now carry catalog prices.
 3. **`customFixedAdder` becomes an array.** `CalcInput.customAdders: Array<{ code?: string, name: string, amount: number, source: "catalog" | "adhoc" }>` replaces the single-number field. Catalog-sourced entries reference an `Adder.code`; ad-hoc entries are explicitly labeled so Phase 3 reconciliation can measure how often reps override the catalog.
 4. **TriageRun writes to the calculator, not just HubSpot.** On triage submit, the `selectedAdders` set is passed to `calcPrice()` as `customAdders` plus the catalog-sourced roof/storey/pitch rows, producing a deal-level price breakdown that also lands on the deal. HubSpot line items remain the customer-visible record; the calculator breakdown is the internal margin view.
