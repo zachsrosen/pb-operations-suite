@@ -19,7 +19,7 @@ export default async function OnCallSetupPage() {
       title="On-Call Setup"
       subtitle="Configure rotation pools, members, and publishing"
       accentColor="orange"
-      headerRight={<OnCallNav current="setup" isAdmin={true} />}
+      headerRight={<OnCallNav current="setup" isAdmin={true} isApprover={true} />}
     >
       <OnCallSetupClient initialPools={pools} />
     </DashboardShell>
