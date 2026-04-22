@@ -2698,6 +2698,7 @@ model RoleCapabilityOverride {
   canEditDesign          Boolean?
   canEditPermitting      Boolean?
   canViewAllLocations    Boolean?
+  canManageAdders        Boolean?
   updatedAt              DateTime @updatedAt
   updatedByEmail         String?
 
