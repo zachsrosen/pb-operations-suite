@@ -29,7 +29,7 @@ Nothing else changes. `BomPipelineRun`, `acquirePipelineLock`, `withRetry`, Clau
 ## Turning it on
 
 ### 1. Create the Inngest app
-- Sign up at https://inngest.com, create an app named `pb-ops-suite` (matches the client `id`).
+- Sign up at https://inngest.com, create an app named `pb-tech-ops` (matches the client `id`).
 - Grab the **Event Key** and **Signing Key** from the app settings.
 
 ### 2. Set env vars in Vercel (production)

@@ -35,7 +35,7 @@ export const bomDesignCompleteRequested = eventType(
   },
 );
 
-export const inngest = new Inngest({ id: "pb-ops-suite" });
+export const inngest = new Inngest({ id: "pb-tech-ops" });
 
 export function isInngestBomEnabled(): boolean {
   return process.env.INNGEST_BOM_ENABLED === "true";
