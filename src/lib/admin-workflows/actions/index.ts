@@ -12,13 +12,25 @@
 
 import type { AdminWorkflowAction } from "@/lib/admin-workflows/types";
 
+import { addHubspotNoteAction } from "./add-hubspot-note";
+import { aiComposeAction } from "./ai-compose";
+import { createHubspotTaskAction } from "./create-hubspot-task";
 import { sendEmailAction } from "./send-email";
 import { updateHubSpotPropertyAction } from "./update-hubspot-property";
+import { updateHubspotContactPropertyAction } from "./update-hubspot-contact-property";
 import { updateZuperPropertyAction } from "./update-zuper-property";
 
 export const ACTIONS: AdminWorkflowAction[] = [
+  // Messaging
   sendEmailAction,
+  // AI
+  aiComposeAction,
+  // HubSpot
   updateHubSpotPropertyAction,
+  updateHubspotContactPropertyAction,
+  addHubspotNoteAction,
+  createHubspotTaskAction,
+  // Zuper
   updateZuperPropertyAction,
 ] as AdminWorkflowAction[];
 
