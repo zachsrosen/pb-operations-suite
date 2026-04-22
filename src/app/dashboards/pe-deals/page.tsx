@@ -428,6 +428,28 @@ export default function PeDealsPage() {
   const totalPEReceivable = allDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
   const totalRevenue = allDeals.reduce((s, d) => s + (d.totalPBRevenue ?? 0), 0);
 
+  // Ready-to-invoice: PE has approved our docs but we haven't been paid.
+  // "Approved" status means PE signed off — we can issue the invoice. "Paid"
+  // means money already in. Anything earlier is upstream (waiting on us
+  // or waiting on PE).
+  const m1ReadyDeals = allDeals.filter((d) => d.peM1Status === "Approved");
+  const m2ReadyDeals = allDeals.filter((d) => d.peM2Status === "Approved");
+  const readyToInvoiceCount = m1ReadyDeals.length + m2ReadyDeals.length;
+  const readyToInvoiceValue =
+    m1ReadyDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0) +
+    m2ReadyDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
+
+  // Already-paid totals so we can show collected vs receivable on the
+  // PE Receivable card.
+  const m1PaidValue = allDeals
+    .filter((d) => d.peM1Status === "Paid")
+    .reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
+  const m2PaidValue = allDeals
+    .filter((d) => d.peM2Status === "Paid")
+    .reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
+  const totalPECollected = m1PaidValue + m2PaidValue;
+  const totalPEOutstanding = Math.max(0, totalPEReceivable - totalPECollected);
+
   // CSV export data
   const exportData = filtered.map((d) => ({
     "Deal Name": d.dealName,
@@ -469,29 +491,44 @@ export default function PeDealsPage() {
       exportData={{ data: exportData, filename: "pe-deals-payments" }}
     >
       {/* Hero Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 stagger-grid">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 stagger-grid">
         <StatCard
           key={`deals-${allDeals.length}`}
           label="Active PE Deals"
           value={String(allDeals.length)}
+          subtitle={`Total EPC ${fmt(totalEPC)}`}
           color="orange"
         />
         <StatCard
-          key={`epc-${totalEPC}`}
-          label="Total EPC"
-          value={fmt(totalEPC)}
-          color="blue"
+          key={`ready-${readyToInvoiceCount}-${readyToInvoiceValue}`}
+          label="Ready to Invoice"
+          value={String(readyToInvoiceCount)}
+          subtitle={`${fmt(readyToInvoiceValue)} · ${m1ReadyDeals.length} M1 + ${m2ReadyDeals.length} M2 approved`}
+          color="amber"
         />
         <StatCard
           key={`recv-${totalPEReceivable}`}
-          label="Total PE Receivable"
+          label="PE Receivable"
           value={fmt(totalPEReceivable)}
+          subtitle={`Collected ${fmt(totalPECollected)} · Outstanding ${fmt(totalPEOutstanding)}`}
+          color="emerald"
+        />
+        <StatCard
+          key={`pct-${totalPECollected}-${totalPEReceivable}`}
+          label="% PE Collected"
+          value={
+            totalPEReceivable > 0
+              ? `${((totalPECollected / totalPEReceivable) * 100).toFixed(0)}%`
+              : "—"
+          }
+          subtitle="Of expected PE receivable"
           color="emerald"
         />
         <StatCard
           key={`rev-${totalRevenue}`}
           label="Total PB Revenue"
           value={fmt(totalRevenue)}
+          subtitle="Customer + PE combined"
           color="green"
         />
       </div>
