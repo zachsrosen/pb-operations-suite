@@ -2,10 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { PaymentTrackingDeal } from "@/lib/payment-tracking-types";
-import { StatusPill } from "./StatusPill";
-import { PaidInFullIndicator } from "./PaidInFullIndicator";
-import { StagePill } from "./StagePill";
-import { InvoiceLink } from "./InvoiceLink";
+import { MilestoneStrip } from "./MilestoneStrip";
 
 function fmt(n: number | null): string {
   if (n === null) return "—";
@@ -26,55 +23,32 @@ const LOCATION_SHORT: Record<string, string> = {
 };
 const shortLocation = (loc: string) => LOCATION_SHORT[loc] ?? loc.slice(0, 3).toUpperCase();
 
-function truncate(s: string, n = 22) {
+function truncate(s: string, n = 28) {
   return s.length > n ? s.slice(0, n) + "…" : s;
 }
 
-// Sortable column keys correspond to deal fields or computed accessors.
 type SortKey =
   | "dealName"
   | "pbLocation"
   | "dealStageLabel"
   | "isPE"
-  | "closeDate"
   | "customerContractTotal"
-  | "daStatus"
-  | "daAmount"
-  | "daPaidDate"
-  | "ccStatus"
-  | "ccAmount"
-  | "ccPaidDate"
-  | "ptoStatus"
-  | "peM1Status"
-  | "peM1Amount"
-  | "peM2Status"
-  | "peM2Amount"
-  | "totalPBRevenue"
   | "outstanding"
   | "collectedPct"
-  | "paidInFullFlag";
-
+  | "attentionReasons";
 type SortDir = "asc" | "desc";
 
-function getSortValue(d: PaymentTrackingDeal, key: SortKey): string | number | null {
-  switch (key) {
-    case "outstanding":
-      return d.customerOutstanding + (d.peBonusOutstanding ?? 0);
-    case "isPE":
-      return d.isPE ? 1 : 0;
-    case "paidInFullFlag":
-      return d.paidInFullFlag === null ? -1 : d.paidInFullFlag ? 1 : 0;
-    default:
-      return (d[key as keyof PaymentTrackingDeal] as string | number | null) ?? null;
-  }
+function getSortValue(d: PaymentTrackingDeal, k: SortKey): string | number {
+  if (k === "outstanding") return d.customerOutstanding + (d.peBonusOutstanding ?? 0);
+  if (k === "isPE") return d.isPE ? 1 : 0;
+  if (k === "attentionReasons") return d.attentionReasons.length;
+  const v = d[k as keyof PaymentTrackingDeal];
+  return (v as string | number | null) ?? 0;
 }
 
-function compareDeals(a: PaymentTrackingDeal, b: PaymentTrackingDeal, key: SortKey, dir: SortDir): number {
-  const av = getSortValue(a, key);
-  const bv = getSortValue(b, key);
-  if (av === null && bv === null) return 0;
-  if (av === null) return 1;
-  if (bv === null) return -1;
+function compareDeals(a: PaymentTrackingDeal, b: PaymentTrackingDeal, k: SortKey, dir: SortDir): number {
+  const av = getSortValue(a, k);
+  const bv = getSortValue(b, k);
   if (typeof av === "number" && typeof bv === "number") {
     return dir === "asc" ? av - bv : bv - av;
   }
@@ -85,45 +59,29 @@ function compareDeals(a: PaymentTrackingDeal, b: PaymentTrackingDeal, key: SortK
 
 interface Props {
   title: string;
-  accent: "red" | "amber" | "blue" | "cyan" | "emerald";
+  accent: "red" | "amber" | "emerald";
   deals: PaymentTrackingDeal[];
   defaultCollapsed?: boolean;
   rowLimit?: number;
+  showWhy?: boolean;
 }
 
 const ACCENT_BORDER: Record<Props["accent"], string> = {
   red: "border-l-red-400",
   amber: "border-l-amber-400",
-  blue: "border-l-blue-400",
-  cyan: "border-l-cyan-400",
   emerald: "border-l-emerald-400",
 };
 
 const COLUMNS: { key: SortKey; label: string; align?: "left" | "right" | "center" }[] = [
   { key: "dealName", label: "Deal" },
-  { key: "pbLocation", label: "Loc" },
   { key: "dealStageLabel", label: "Stage" },
-  { key: "isPE", label: "Type", align: "center" },
-  { key: "closeDate", label: "Close" },
   { key: "customerContractTotal", label: "Contract", align: "right" },
-  { key: "daStatus", label: "DA" },
-  { key: "daAmount", label: "DA $", align: "right" },
-  { key: "daPaidDate", label: "DA Paid" },
-  { key: "ccStatus", label: "CC" },
-  { key: "ccAmount", label: "CC $", align: "right" },
-  { key: "ccPaidDate", label: "CC Paid" },
-  { key: "ptoStatus", label: "PTO" },
-  { key: "peM1Status", label: "PE M1" },
-  { key: "peM1Amount", label: "PE M1 $", align: "right" },
-  { key: "peM2Status", label: "PE M2" },
-  { key: "peM2Amount", label: "PE M2 $", align: "right" },
-  { key: "totalPBRevenue", label: "Total Rev", align: "right" },
+  // Milestones column (not sortable; just visual). Special-cased in render.
   { key: "outstanding", label: "Outstanding", align: "right" },
   { key: "collectedPct", label: "%", align: "right" },
-  { key: "paidInFullFlag", label: "Paid?", align: "center" },
 ];
 
-const ALIGN_CLASS = {
+const ALIGN: Record<string, string> = {
   left: "text-left",
   right: "text-right",
   center: "text-center",
@@ -135,32 +93,28 @@ export function DealSection({
   deals,
   defaultCollapsed = false,
   rowLimit,
+  showWhy = false,
 }: Props) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [showAll, setShowAll] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>("closeDate");
+  const [sortKey, setSortKey] = useState<SortKey>(showWhy ? "attentionReasons" : "customerContractTotal");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
 
-  const sortedDeals = useMemo(() => {
-    return [...deals].sort((a, b) => compareDeals(a, b, sortKey, sortDir));
-  }, [deals, sortKey, sortDir]);
+  const sorted = useMemo(
+    () => [...deals].sort((a, b) => compareDeals(a, b, sortKey, sortDir)),
+    [deals, sortKey, sortDir]
+  );
+  const effective = rowLimit && !showAll ? sorted.slice(0, rowLimit) : sorted;
+  const hidden = sorted.length - effective.length;
 
-  const effectiveDeals = rowLimit && !showAll ? sortedDeals.slice(0, rowLimit) : sortedDeals;
-  const hidden = sortedDeals.length - effectiveDeals.length;
-
-  const toggleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
+  const toggleSort = (k: SortKey) => {
+    if (sortKey === k) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(k);
       setSortDir("desc");
     }
   };
-
-  const sortArrow = (key: SortKey) => {
-    if (sortKey !== key) return "";
-    return sortDir === "asc" ? " ↑" : " ↓";
-  };
+  const arrow = (k: SortKey) => (sortKey !== k ? "" : sortDir === "asc" ? " ↑" : " ↓");
 
   return (
     <div className="mb-6">
@@ -180,128 +134,81 @@ export function DealSection({
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border">
-                {COLUMNS.map((col) => (
+                {COLUMNS.slice(0, 3).map((c) => (
                   <th
-                    key={col.key}
-                    onClick={() => toggleSort(col.key)}
-                    className={`px-2 py-1.5 font-medium text-muted whitespace-nowrap cursor-pointer hover:text-foreground select-none ${ALIGN_CLASS[col.align ?? "left"]}`}
+                    key={c.key}
+                    onClick={() => toggleSort(c.key)}
+                    className={`px-3 py-2 font-medium text-muted cursor-pointer hover:text-foreground select-none ${ALIGN[c.align ?? "left"]}`}
                   >
-                    {col.label}
-                    {sortArrow(col.key)}
+                    {c.label}
+                    {arrow(c.key)}
                   </th>
                 ))}
+                <th className="px-3 py-2 font-medium text-muted text-left">
+                  Milestones
+                </th>
+                {COLUMNS.slice(3).map((c) => (
+                  <th
+                    key={c.key}
+                    onClick={() => toggleSort(c.key)}
+                    className={`px-3 py-2 font-medium text-muted cursor-pointer hover:text-foreground select-none ${ALIGN[c.align ?? "left"]}`}
+                  >
+                    {c.label}
+                    {arrow(c.key)}
+                  </th>
+                ))}
+                {showWhy && (
+                  <th className="px-3 py-2 font-medium text-muted text-left">Why</th>
+                )}
               </tr>
             </thead>
             <tbody>
-              {effectiveDeals.length === 0 ? (
+              {effective.length === 0 ? (
                 <tr>
-                  <td colSpan={COLUMNS.length} className="px-3 py-6 text-center text-muted">
+                  <td colSpan={showWhy ? 7 : 6} className="px-3 py-6 text-center text-muted">
                     No deals
                   </td>
                 </tr>
               ) : (
-                effectiveDeals.map((d) => (
-                  <tr key={d.dealId} className="border-b border-border/50 hover:bg-surface-2/50">
-                    <td className="px-2 py-1.5">
-                      <a
-                        href={d.hubspotUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-orange-400 hover:text-orange-300 hover:underline"
-                        title={d.dealName}
-                      >
-                        {truncate(d.dealName)}
-                      </a>
-                      {d.attentionReasons.length > 0 && (
-                        <span
-                          className="ml-1 text-amber-400"
-                          title={d.attentionReasons.join("\n")}
+                effective.map((d) => {
+                  const outstanding = d.customerOutstanding + (d.peBonusOutstanding ?? 0);
+                  return (
+                    <tr key={d.dealId} className="border-b border-border/50 hover:bg-surface-2/50">
+                      <td className="px-3 py-2">
+                        <a
+                          href={d.hubspotUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-orange-400 hover:text-orange-300 hover:underline"
+                          title={d.dealName}
                         >
-                          ⚠️
-                        </span>
+                          {truncate(d.dealName)}
+                        </a>
+                        <span className="ml-1.5 text-[10px] text-muted">{shortLocation(d.pbLocation)}</span>
+                        {d.isPE && (
+                          <span className="ml-1 text-[10px] px-1 rounded bg-blue-500/20 text-blue-300">PE</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-muted" title={d.dealStageLabel}>
+                        {d.dealStageLabel}
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium">
+                        {fmt(d.customerContractTotal)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <MilestoneStrip deal={d} />
+                      </td>
+                      <td className="px-3 py-2 text-right text-muted">{fmt(outstanding)}</td>
+                      <td className="px-3 py-2 text-right text-muted">{d.collectedPct.toFixed(0)}%</td>
+                      {showWhy && (
+                        <td className="px-3 py-2 text-amber-300/90 text-[11px]" title={d.attentionReasons.join("\n")}>
+                          {d.attentionReasons[0] ?? ""}
+                          {d.attentionReasons.length > 1 ? ` (+${d.attentionReasons.length - 1})` : ""}
+                        </td>
                       )}
-                    </td>
-                    <td className="px-2 py-1.5 text-muted" title={d.pbLocation}>
-                      {shortLocation(d.pbLocation)}
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <StagePill stageId={d.dealStage} label={d.dealStageLabel} />
-                    </td>
-                    <td className="px-2 py-1.5 text-center">
-                      {d.isPE ? (
-                        <span className="text-blue-400">PE</span>
-                      ) : (
-                        <span className="text-muted">STD</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1.5 text-muted">
-                      {d.closeDate
-                        ? new Date(d.closeDate).toLocaleDateString("en-US", {
-                            month: "numeric",
-                            day: "numeric",
-                            year: "2-digit",
-                          })
-                        : "—"}
-                    </td>
-                    <td className="px-2 py-1.5 text-right font-medium">
-                      {fmt(d.customerContractTotal)}
-                    </td>
-                    <td className="px-2 py-1.5">
-                      <StatusPill status={d.daStatus} />
-                      <InvoiceLink invoice={d.invoices?.da} />
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-muted">{fmt(d.daAmount)}</td>
-                    <td className="px-2 py-1.5 text-muted">{d.daPaidDate ?? "—"}</td>
-                    <td className="px-2 py-1.5">
-                      <StatusPill status={d.ccStatus} />
-                      <InvoiceLink invoice={d.invoices?.cc} />
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-muted">{fmt(d.ccAmount)}</td>
-                    <td className="px-2 py-1.5 text-muted">{d.ccPaidDate ?? "—"}</td>
-                    <td className="px-2 py-1.5">
-                      <StatusPill status={d.ptoStatus} />
-                      <InvoiceLink invoice={d.invoices?.pto} />
-                    </td>
-                    <td className="px-2 py-1.5">
-                      {d.isPE ? (
-                        <>
-                          <StatusPill status={d.peM1Status} />
-                          <InvoiceLink invoice={d.invoices?.peM1} />
-                        </>
-                      ) : (
-                        <span className="text-muted">—</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-muted">
-                      {d.isPE ? fmt(d.peM1Amount) : "—"}
-                    </td>
-                    <td className="px-2 py-1.5">
-                      {d.isPE ? (
-                        <>
-                          <StatusPill status={d.peM2Status} />
-                          <InvoiceLink invoice={d.invoices?.peM2} />
-                        </>
-                      ) : (
-                        <span className="text-muted">—</span>
-                      )}
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-muted">
-                      {d.isPE ? fmt(d.peM2Amount) : "—"}
-                    </td>
-                    <td className="px-2 py-1.5 text-right font-medium text-emerald-400">
-                      {fmt(d.totalPBRevenue)}
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-muted">
-                      {fmt(d.customerOutstanding + (d.peBonusOutstanding ?? 0))}
-                    </td>
-                    <td className="px-2 py-1.5 text-right text-muted">
-                      {d.collectedPct.toFixed(0)}%
-                    </td>
-                    <td className="px-2 py-1.5 text-center">
-                      <PaidInFullIndicator flag={d.paidInFullFlag} computedPct={d.collectedPct} />
-                    </td>
-                  </tr>
-                ))
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

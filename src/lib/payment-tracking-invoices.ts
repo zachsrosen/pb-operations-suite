@@ -104,9 +104,12 @@ function moneyEqual(a: number | null, b: number | null, tolerance = 0.5): boolea
 }
 
 function invoiceUrl(invoiceId: string): string {
+  // HubSpot Commerce Invoices live at /payments/{portalId}/invoices/{id}
+  // (NOT /contacts/.../record/0-53/...; that pattern is for some other types
+  // and was returning 404s for the Accounting team).
   return PORTAL_ID
-    ? `https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-53/${invoiceId}`
-    : `https://app.hubspot.com/contacts/_/record/0-53/${invoiceId}`;
+    ? `https://app.hubspot.com/payments/${PORTAL_ID}/invoices/${invoiceId}`
+    : `https://app.hubspot.com/payments/_/invoices/${invoiceId}`;
 }
 
 function toSummary(inv: RawInvoice): InvoiceSummary {
