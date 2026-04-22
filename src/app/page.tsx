@@ -125,6 +125,12 @@ const SUITE_METADATA: Record<string, SuiteMetadata> = {
     tag: "ACCOUNTING",
     tagColor: "green",
   },
+  "/suites/sales-marketing": {
+    title: "Sales & Marketing Suite",
+    description: "Pipeline visibility, revenue tracking, forecasting, and marketing analytics.",
+    tag: "SALES & MKTG",
+    tagColor: "pink",
+  },
   // Admin no longer has a home-page card — admins reach /admin via the
   // UserMenu dropdown. Keeps the home page scoped to end-user suites.
 };
@@ -848,6 +854,7 @@ const DashboardLink = memo(function DashboardLink({
     green: "bg-green-500/20 text-green-400 border-green-500/30",
     cyan: "bg-cyan-500/20 text-cyan-400 border-cyan-500/30",
     amber: "bg-amber-500/20 text-amber-400 border-amber-500/30",
+    pink: "bg-pink-500/20 text-pink-400 border-pink-500/30",
     zinc: "bg-zinc-500/20 text-foreground/80 border-muted/30",
   };
 
