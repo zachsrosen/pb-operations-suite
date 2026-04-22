@@ -116,7 +116,7 @@ describe("recommendAdders", () => {
       direction: "DISCOUNT",
       basePrice: 30,
       type: "PERCENTAGE",
-    } as AdderWithOverrides;
+    } as unknown as AdderWithOverrides;
     const result = recommendAdders({
       answers: {},
       adders: [pe],
@@ -154,7 +154,7 @@ describe("recommendAdders", () => {
       direction: "DISCOUNT",
       triggerLogic: null,
       basePrice: 100,
-    } as AdderWithOverrides;
+    } as unknown as AdderWithOverrides;
     const result = recommendAdders({
       answers: {},
       adders: [discount],
