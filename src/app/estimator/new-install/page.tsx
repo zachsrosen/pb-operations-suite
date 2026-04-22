@@ -39,6 +39,7 @@ function WizardInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const step = parseStep(searchParams.get("step"));
+  const embedSuffix = searchParams.get("embed") === "1" ? "&embed=1" : "";
   const [state, dispatch] = useReducer(wizardReducer, INITIAL_STATE);
   const hydratedRef = useRef(false);
 
@@ -58,7 +59,7 @@ function WizardInner() {
 
   const goToStep = useCallback(
     (next: WizardStep) => {
-      router.push(`/estimator/new-install?step=${next}`);
+      router.push(`/estimator/new-install?step=${next}${embedSuffix}`);
     },
     [router],
   );
@@ -66,23 +67,23 @@ function WizardInner() {
   const onStartOver = useCallback(() => {
     clearDraft();
     dispatch({ type: "reset" });
-    router.push("/estimator/new-install?step=address");
+    router.push(`/estimator/new-install?step=address${embedSuffix}`);
   }, [router]);
 
   // Guard: don't let users jump ahead without prerequisites.
   useEffect(() => {
     if (step === "roof" && !state.normalizedAddress) {
-      router.replace("/estimator/new-install?step=address");
+      router.replace(`/estimator/new-install?step=address${embedSuffix}`);
       return;
     }
     if (step === "usage" && (!state.normalizedAddress || !state.inServiceArea)) {
-      router.replace("/estimator/new-install?step=address");
+      router.replace(`/estimator/new-install?step=address${embedSuffix}`);
       return;
     }
     if (step === "contact" && (!state.usage || !state.utilityId)) {
-      router.replace("/estimator/new-install?step=usage");
+      router.replace(`/estimator/new-install?step=usage${embedSuffix}`);
     }
-  }, [step, state.normalizedAddress, state.inServiceArea, state.usage, state.utilityId, router]);
+  }, [step, state.normalizedAddress, state.inServiceArea, state.usage, state.utilityId, router, embedSuffix]);
 
   const currentIndex = stepIndex(step);
 

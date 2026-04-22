@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState, type Dispatch } from "react";
 
 import type { AddressParts } from "@/lib/estimator";
@@ -47,6 +47,8 @@ function extractAddressFromPlace(place: PlaceResult): Partial<AddressParts> {
 
 export default function AddressStep({ state, dispatch, onContinue }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const embedSuffix = searchParams?.get("embed") === "1" ? "&embed=1" : "";
   const apiKey = process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY;
   const [mode, setMode] = useState<"auto" | "manual">("auto");
   const [googleReady, setGoogleReady] = useState(false);
@@ -111,7 +113,7 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
         utilities: Array<{ id: string; displayName: string; kwhRate: number }>;
       };
       if (!data.inServiceArea) {
-        router.push(`/estimator/out-of-area?zip=${encodeURIComponent(data.normalized.zip)}`);
+        router.push(`/estimator/out-of-area?zip=${encodeURIComponent(data.normalized.zip)}${embedSuffix}`);
         return;
       }
       dispatch({

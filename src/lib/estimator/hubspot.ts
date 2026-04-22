@@ -103,6 +103,10 @@ export interface EstimatorDealInput {
 }
 
 export async function createEstimatorDeal(input: EstimatorDealInput): Promise<{ dealId: string }> {
+  // Consolidated HubSpot property set (3 custom deal props total, down from 14)
+  // so it fits portals near their custom-property cap. All numeric detail is
+  // packed into estimator_summary as human-readable multi-line text; ops can
+  // pull the full snapshot via estimator_results_token at /estimator/results/[token].
   const properties: Record<string, string> = {
     dealname: input.dealName,
     pipeline: input.pipelineId,
@@ -110,23 +114,8 @@ export async function createEstimatorDeal(input: EstimatorDealInput): Promise<{ 
     amount: String(input.amount),
     estimator_source: input.source,
     estimator_results_token: input.resultsToken,
-    estimator_has_ev: input.addOns.evCharger || input.considerations.planningEv ? "true" : "false",
-    estimator_has_panel_upgrade:
-      input.addOns.panelUpgrade || input.considerations.needsPanelUpgrade ? "true" : "false",
-    estimator_considers_battery: "false",
-    estimator_considers_new_roof: input.considerations.mayNeedNewRoof ? "true" : "false",
+    estimator_summary: buildSummary(input),
   };
-
-  if (input.result) {
-    properties.estimator_system_size_kw = String(input.result.systemKwDc);
-    properties.estimator_panel_count = String(input.result.panelCount);
-    properties.estimator_annual_production_kwh = String(Math.round(input.result.annualProductionKwh));
-    properties.estimator_offset_percent = String(input.result.offsetPercent);
-    properties.estimator_retail_usd = String(Math.round(input.result.pricing.retailUsd));
-    properties.estimator_incentives_usd = String(Math.round(input.result.pricing.discountUsd));
-    properties.estimator_final_usd = String(Math.round(input.result.pricing.finalUsd));
-    properties.estimator_monthly_payment_usd = String(Math.round(input.result.pricing.monthlyPaymentUsd));
-  }
 
   const deal = await hubspotFetch<{ id: string }>("/crm/v3/objects/deals", {
     method: "POST",
@@ -141,4 +130,30 @@ export async function createEstimatorDeal(input: EstimatorDealInput): Promise<{ 
     }),
   });
   return { dealId: deal.id };
+}
+
+/**
+ * Build a single human-readable summary block packed into the
+ * `estimator_summary` multi-line text deal property. Sales reps can
+ * read it directly in the deal view without opening the results page.
+ */
+function buildSummary(input: EstimatorDealInput): string {
+  const r = input.result;
+  const lines: string[] = [];
+  if (r) {
+    lines.push(`System size: ${r.systemKwDc.toFixed(2)} kW DC (${r.panelCount} panels)`);
+    lines.push(`Annual production: ${Math.round(r.annualProductionKwh).toLocaleString()} kWh (${Math.round(r.offsetPercent)}% offset)`);
+    lines.push(`Retail: $${Math.round(r.pricing.retailUsd).toLocaleString()}`);
+    lines.push(`Discount: -$${Math.round(r.pricing.discountUsd).toLocaleString()}`);
+    lines.push(`Final: $${Math.round(r.pricing.finalUsd).toLocaleString()}`);
+    lines.push(`Monthly payment: $${Math.round(r.pricing.monthlyPaymentUsd).toLocaleString()}/mo`);
+  }
+  const flags: string[] = [];
+  if (input.addOns.evCharger || input.considerations.planningEv) flags.push("EV");
+  if (input.addOns.panelUpgrade || input.considerations.needsPanelUpgrade) flags.push("Panel upgrade");
+  if (input.considerations.mayNeedNewRoof) flags.push("May need new roof");
+  if (flags.length) lines.push(`Considerations: ${flags.join(", ")}`);
+  lines.push(`Source: ${input.source}`);
+  lines.push(`Token: ${input.resultsToken}`);
+  return lines.join("\n");
 }
