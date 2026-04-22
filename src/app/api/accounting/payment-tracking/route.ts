@@ -9,6 +9,7 @@ import {
   computeSummary,
   PAYMENT_TRACKING_PROPERTIES,
 } from "@/lib/payment-tracking";
+import { attachInvoicesToDeals } from "@/lib/payment-tracking-invoices";
 import { initPaymentTrackingCascade } from "@/lib/payment-tracking-cache";
 import type {
   HubSpotDealPaymentProps,
@@ -140,6 +141,15 @@ export async function GET(request: Request) {
   const deals = props.map((p) =>
     transformDeal(p, asOf, (stageId) => mergedStageMap[stageId] ?? stageId)
   );
+
+  // Augment with invoice records (DA/CC via line item product, PE M1/M2 via
+  // amount match). Failures are logged but don't break the page — falls back
+  // to deal-property-only display for any deal where invoice fetch fails.
+  try {
+    await attachInvoicesToDeals(deals);
+  } catch (err) {
+    console.error("[payment-tracking] invoice attachment failed:", err);
+  }
 
   const summary = computeSummary(deals);
   const response: PaymentTrackingResponse = {

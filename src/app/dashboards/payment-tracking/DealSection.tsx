@@ -5,6 +5,7 @@ import type { PaymentTrackingDeal } from "@/lib/payment-tracking-types";
 import { StatusPill } from "./StatusPill";
 import { PaidInFullIndicator } from "./PaidInFullIndicator";
 import { StagePill } from "./StagePill";
+import { InvoiceLink } from "./InvoiceLink";
 
 function fmt(n: number | null): string {
   if (n === null) return "—";
@@ -247,20 +248,26 @@ export function DealSection({
                     </td>
                     <td className="px-2 py-1.5">
                       <StatusPill status={d.daStatus} />
+                      <InvoiceLink invoice={d.invoices?.da} />
                     </td>
                     <td className="px-2 py-1.5 text-right text-muted">{fmt(d.daAmount)}</td>
                     <td className="px-2 py-1.5 text-muted">{d.daPaidDate ?? "—"}</td>
                     <td className="px-2 py-1.5">
                       <StatusPill status={d.ccStatus} />
+                      <InvoiceLink invoice={d.invoices?.cc} />
                     </td>
                     <td className="px-2 py-1.5 text-right text-muted">{fmt(d.ccAmount)}</td>
                     <td className="px-2 py-1.5 text-muted">{d.ccPaidDate ?? "—"}</td>
                     <td className="px-2 py-1.5">
                       <StatusPill status={d.ptoStatus} />
+                      <InvoiceLink invoice={d.invoices?.pto} />
                     </td>
                     <td className="px-2 py-1.5">
                       {d.isPE ? (
-                        <StatusPill status={d.peM1Status} />
+                        <>
+                          <StatusPill status={d.peM1Status} />
+                          <InvoiceLink invoice={d.invoices?.peM1} />
+                        </>
                       ) : (
                         <span className="text-muted">—</span>
                       )}
@@ -270,7 +277,10 @@ export function DealSection({
                     </td>
                     <td className="px-2 py-1.5">
                       {d.isPE ? (
-                        <StatusPill status={d.peM2Status} />
+                        <>
+                          <StatusPill status={d.peM2Status} />
+                          <InvoiceLink invoice={d.invoices?.peM2} />
+                        </>
                       ) : (
                         <span className="text-muted">—</span>
                       )}

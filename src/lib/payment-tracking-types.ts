@@ -77,6 +77,32 @@ export interface PaymentTrackingDeal {
   paidInFullFlag: boolean | null;
 
   hubspotUrl: string;
+
+  /** Invoice records associated with this deal, keyed by milestone. Undefined
+   *  when the deal has no associated invoice records yet (older deals or
+   *  pre-invoice phase). */
+  invoices?: {
+    da?: InvoiceSummary;
+    cc?: InvoiceSummary;
+    pto?: InvoiceSummary;
+    peM1?: InvoiceSummary;
+    peM2?: InvoiceSummary;
+  };
+}
+
+/** Summary of a HubSpot invoice associated with a deal milestone. */
+export interface InvoiceSummary {
+  invoiceId: string;
+  number: string | null; // hs_number, e.g. "INV-00010737"
+  status: string | null; // hs_invoice_status: paid / sent / draft / voided / etc.
+  amountBilled: number | null;
+  amountPaid: number | null;
+  balanceDue: number | null;
+  invoiceDate: string | null; // ISO date
+  dueDate: string | null;
+  paymentDate: string | null;
+  daysOverdue: number | null;
+  hubspotUrl: string;
 }
 
 export interface PaymentTrackingSummary {
