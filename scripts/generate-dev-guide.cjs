@@ -1,5 +1,5 @@
 /**
- * PB Operations Suite — Developer Guide Generator
+ * PB Tech Ops Suite — Developer Guide Generator
  *
  * Generates a comprehensive .docx developer guide covering:
  *   - System architecture & integrations
@@ -166,7 +166,7 @@ function buildTitlePage() {
     new Paragraph({ spacing: { before: 3000 }, children: [] }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      children: [new TextRun({ text: "PB Operations Suite", size: 56, bold: true, color: COLORS.primary })],
+      children: [new TextRun({ text: "PB Tech Ops Suite", size: 56, bold: true, color: COLORS.primary })],
     }),
     new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -197,7 +197,7 @@ function buildTOC() {
 function buildIntroduction() {
   return [
     heading(HeadingLevel.HEADING_1, "1. Introduction"),
-    para("PB Operations Suite is the internal operations platform for Photon Brothers, a residential and commercial solar installation company operating across 5 locations in Colorado and California (Westminster, Centennial, Colorado Springs, San Luis Obispo, Camarillo)."),
+    para("PB Tech Ops Suite is the internal operations platform for Photon Brothers, a residential and commercial solar installation company operating across 5 locations in Colorado and California (Westminster, Centennial, Colorado Springs, San Luis Obispo, Camarillo)."),
     para("The platform manages the full project lifecycle from sales through installation and service, integrating with HubSpot (CRM), Zuper (field service), Zoho Inventory (products and sales orders), Google Calendar (scheduling), and multiple AI providers."),
     spacer(),
 
@@ -258,7 +258,7 @@ function buildArchitecture() {
         |                               |
         v                               v
   +------------------------------------------+
-  |       PB Operations Suite (Next.js)      |
+  |       PB Tech Ops Suite (Next.js)      |
   |                                          |
   |  Prisma DB  <-->  API Routes  <-->  UI   |
   |     (Neon)        (34+ groups)   (70+ pg)|
@@ -893,7 +893,7 @@ async function main() {
             alignment: AlignmentType.RIGHT,
             border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: COLORS.primary, space: 4 } },
             children: [
-              new TextRun({ text: "PB Operations Suite ", bold: true, size: 18, color: COLORS.primary }),
+              new TextRun({ text: "PB Tech Ops Suite ", bold: true, size: 18, color: COLORS.primary }),
               new TextRun({ text: "Developer Guide", size: 18, color: "666666" }),
             ],
           })],

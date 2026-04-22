@@ -48,7 +48,7 @@ export function generateIcal(opts: IcalOpts): string {
   const lines: string[] = [];
   lines.push("BEGIN:VCALENDAR");
   lines.push("VERSION:2.0");
-  lines.push("PRODID:-//PB Operations Suite//On-Call Rotations//EN");
+  lines.push("PRODID:-//PB Tech Ops Suite//On-Call Rotations//EN");
   lines.push("CALSCALE:GREGORIAN");
   lines.push("METHOD:PUBLISH");
   lines.push(`X-WR-CALNAME:${escapeICalText(`On-Call — ${opts.poolName}`)}`);

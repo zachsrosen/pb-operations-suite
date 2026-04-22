@@ -30,7 +30,7 @@ export function EmailShell({
         <Container style={{ ...container, maxWidth }}>
           {/* Header */}
           <Section style={header}>
-            <Text style={logoText}>PB Operations Suite</Text>
+            <Text style={logoText}>PB Tech Ops Suite</Text>
             {subtitle && <Text style={subtitleText}>{subtitle}</Text>}
           </Section>
 
@@ -38,7 +38,7 @@ export function EmailShell({
           {children}
 
           {/* Footer */}
-          <Text style={footer}>Photon Brothers Operations Suite</Text>
+          <Text style={footer}>Photon Brothers Tech Ops Suite</Text>
         </Container>
       </Body>
     </Html>

@@ -1,6 +1,6 @@
 # Catalog & Product Sync System
 
-Developer reference for how products are created, approved, and synced across systems in PB Operations Suite.
+Developer reference for how products are created, approved, and synced across systems in PB Tech Ops Suite.
 
 ---
 

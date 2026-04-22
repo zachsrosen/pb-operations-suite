@@ -550,7 +550,7 @@ const SERVICE_RMA = `
 
 <h2>Vendor Portal Integration (Planned)</h2>
 
-<p>Future integration will connect vendor portals (Tesla Energy Service Portal, SolarEdge, etc.) with PB Operations Suite and Zoho:</p>
+<p>Future integration will connect vendor portals (Tesla Energy Service Portal, SolarEdge, etc.) with PB Tech Ops Suite and Zoho:</p>
 <ul>
 <li>Automatically pull tracking numbers and case information</li>
 <li>Reduce manual sales order creation for service tickets</li>

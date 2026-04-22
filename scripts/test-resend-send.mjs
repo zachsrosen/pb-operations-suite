@@ -28,8 +28,8 @@ try {
     from,
     to: ["delivered@resend.dev"],
     subject: "PB Ops - Site Survey Notification Test",
-    text: "This is a test scheduling notification from PB Operations Suite.",
-    html: "<h2>Site Survey Scheduled</h2><p>This is a test scheduling notification from PB Operations Suite.</p>",
+    text: "This is a test scheduling notification from PB Tech Ops Suite.",
+    html: "<h2>Site Survey Scheduled</h2><p>This is a test scheduling notification from PB Tech Ops Suite.</p>",
   });
 
   if (result.error) {

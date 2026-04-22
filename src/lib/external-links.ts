@@ -39,7 +39,7 @@ export function getHubSpotDealUrl(dealId: string): string {
 }
 
 /**
- * Internal PB Operations Suite deal detail page.
+ * Internal PB Tech Ops Suite deal detail page.
  *
  * The `/dashboards/deals/[pipeline]/[dealId]` route accepts either the
  * internal cuid or the HubSpot deal ID and redirects to canonical, so

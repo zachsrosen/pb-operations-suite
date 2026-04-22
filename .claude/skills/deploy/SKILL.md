@@ -11,7 +11,7 @@ disable-model-invocation: true
 
 ## Deploy Workflow
 
-Deploy the PB Operations Suite to Vercel production.
+Deploy the PB Tech Ops Suite to Vercel production.
 
 1. **Check for uncommitted changes**
    - If there are uncommitted changes, warn the user and ask if they want to commit first

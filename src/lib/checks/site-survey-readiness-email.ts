@@ -166,7 +166,7 @@ export function buildReadinessEmailHtml(report: SurveyReadinessReport): string {
 
     <!-- Footer -->
     <div style="margin-top:24px;padding-top:12px;border-top:1px solid #2a2a3a;font-size:11px;color:#71717a;">
-      Triggered by design status → Initial Review · PB Operations Suite
+      Triggered by design status → Initial Review · PB Tech Ops Suite
     </div>
   </div>
 </body>
@@ -206,7 +206,7 @@ export function buildReadinessEmailText(report: SurveyReadinessReport): string {
     }
   }
 
-  lines.push("", "---", "Triggered by design status → Initial Review · PB Operations Suite");
+  lines.push("", "---", "Triggered by design status → Initial Review · PB Tech Ops Suite");
   return lines.join("\n");
 }
 
@@ -291,7 +291,7 @@ export function buildFdrEmailHtml(
 
     <!-- Footer -->
     <div style="margin-top:24px;padding-top:12px;border-top:1px solid #2a2a3a;font-size:11px;color:#71717a;">
-      Triggered by design status → DA Approved · PB Operations Suite
+      Triggered by design status → DA Approved · PB Tech Ops Suite
     </div>
   </div>
 </body>
@@ -321,6 +321,6 @@ export function buildFdrEmailText(
     lines.push("All design review checks passed — project is ready to proceed.");
   }
 
-  lines.push("", "---", "Triggered by design status → DA Approved · PB Operations Suite");
+  lines.push("", "---", "Triggered by design status → DA Approved · PB Tech Ops Suite");
   return lines.join("\n");
 }

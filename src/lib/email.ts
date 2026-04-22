@@ -906,7 +906,7 @@ export async function sendCancellationNotification(
           <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background-color: #0a0a0f; color: #ffffff; padding: 40px 20px; margin: 0;">
             <div style="max-width: 500px; margin: 0 auto; background-color: #12121a; border: 1px solid #1e1e2e; border-radius: 12px; padding: 32px;">
               <h1 style="font-size: 24px; font-weight: bold; background: linear-gradient(to right, #f97316, #fb923c); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin: 0 0 8px 0; text-align: center;">
-                PB Operations Suite
+                PB Tech Ops Suite
               </h1>
               <p style="color: #71717a; font-size: 14px; text-align: center; margin: 0 0 32px 0;">
                 Appointment Cancelled
@@ -969,7 +969,7 @@ export async function sendCancellationNotification(
             </div>
 
             <p style="color: #3f3f46; font-size: 11px; text-align: center; margin-top: 24px;">
-              Photon Brothers Operations Suite
+              Photon Brothers Tech Ops Suite
             </p>
           </body>
         </html>
@@ -1932,7 +1932,7 @@ export async function sendPipelineNotification(params: {
     htmlParts.push(`<p style="margin:8px 0;color:#6b7280;font-size:13px">See an error? Open the <a href="${escapeHtml(params.snapshotUrl)}" style="color:#2563eb">BOM Snapshot</a> and use the &ldquo;&#x2191; Submit to Claude&rdquo; button to report extraction issues.</p>`);
   }
   htmlParts.push(`<hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0"/>`);
-  htmlParts.push(`<p style="color:#9ca3af;font-size:12px;margin:0">Automated BOM Pipeline &mdash; PB Operations Suite</p>`);
+  htmlParts.push(`<p style="color:#9ca3af;font-size:12px;margin:0">Automated BOM Pipeline &mdash; PB Tech Ops Suite</p>`);
   htmlParts.push(`</div>`);
 
   const html = htmlParts.join("\n");

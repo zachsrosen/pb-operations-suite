@@ -33,7 +33,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "PB Operations Suite",
+  title: "PB Tech Ops Suite",
   description: "Pipeline management dashboard for Photon Brothers",
   manifest: "/manifest.json?v=20260225",
   appleWebApp: {

@@ -53,7 +53,7 @@ export default function UpdatesPage() {
         {/* Intro */}
         <div className="mb-8 p-4 bg-surface/50 border border-t-border rounded-xl">
           <p className="text-muted text-sm">
-            Stay up to date with the latest features, improvements, and fixes to PB Operations Suite.
+            Stay up to date with the latest features, improvements, and fixes to PB Tech Ops Suite.
             We continuously improve based on your feedback.
           </p>
         </div>

@@ -1,6 +1,6 @@
 {
   "id": "/",
-  "name": "PB Operations Suite",
+  "name": "PB Tech Ops Suite",
   "short_name": "PB Ops",
   "description": "Pipeline management dashboard for Photon Brothers",
   "start_url": "/",

@@ -6,7 +6,7 @@
 
 ## Problem
 
-Three interlocking problems in how PB Operations Suite handles role-based access and role-driven UI, surfaced by the recent SERVICE role rollout (PRs #185/#186).
+Three interlocking problems in how PB Tech Ops Suite handles role-based access and role-driven UI, surfaced by the recent SERVICE role rollout (PRs #185/#186).
 
 ### 1. Three sources of truth for "what does role X see?"
 

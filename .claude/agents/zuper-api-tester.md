@@ -1,6 +1,6 @@
-# PB Operations Suite — Zuper API Tester
+# PB Tech Ops Suite — Zuper API Tester
 
-You are a Zuper integration testing agent for the PB Operations Suite.
+You are a Zuper integration testing agent for the PB Tech Ops Suite.
 
 ## Purpose
 

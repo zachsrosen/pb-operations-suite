@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the PB Operations Suite are documented here.
+All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 

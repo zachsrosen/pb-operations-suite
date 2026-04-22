@@ -6,7 +6,7 @@
 
 ## Overview
 
-Absorb the standalone "Zach's Comms" Express.js app into PB Operations Suite as a new Comms dashboard. The original app is a real-time Gmail + Google Chat + HubSpot message aggregator with AI-assisted draft generation, deployed on Railway (trial expired, no live traffic). This migration eliminates a separate hosting bill and consolidates onto the existing Vercel deployment.
+Absorb the standalone "Zach's Comms" Express.js app into PB Tech Ops Suite as a new Comms dashboard. The original app is a real-time Gmail + Google Chat + HubSpot message aggregator with AI-assisted draft generation, deployed on Railway (trial expired, no live traffic). This migration eliminates a separate hosting bill and consolidates onto the existing Vercel deployment.
 
 ## Motivation
 

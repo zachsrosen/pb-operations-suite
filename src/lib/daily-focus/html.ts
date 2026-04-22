@@ -108,7 +108,7 @@ export function renderEmailWrapper(bodyHtml: string): string {
 ${bodyHtml}
 </div>
 <div style="text-align:center;padding:12px 0;font-size:10px;color:#a1a1aa;">
-PB Operations Suite \u00b7 Daily Focus Email
+PB Tech Ops Suite \u00b7 Daily Focus Email
 </div>
 </div>
 </body>

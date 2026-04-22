@@ -8,7 +8,7 @@
 
 ## Problem
 
-PB Operations Suite has three role-based skills (design-reviewer, engineering-reviewer, sales-advisor) defined as SKILL.md instruction documents. These work in Claude Code terminal for Zach but are inaccessible to the broader team (designers, PMs, salespeople). There is no way to:
+PB Tech Ops Suite has three role-based skills (design-reviewer, engineering-reviewer, sales-advisor) defined as SKILL.md instruction documents. These work in Claude Code terminal for Zach but are inaccessible to the broader team (designers, PMs, salespeople). There is no way to:
 
 1. Run a design review from the dashboard without terminal access
 2. Automatically gate pipeline stage transitions with quality checks

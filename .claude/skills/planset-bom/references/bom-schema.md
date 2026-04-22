@@ -2,7 +2,7 @@
 
 ## Overview
 
-The BOM output maps to the existing PB Operations Suite `InternalProduct` schema so it can be imported directly into the inventory system via `/api/inventory/sync-products`.
+The BOM output maps to the existing PB Tech Ops Suite `InternalProduct` schema so it can be imported directly into the inventory system via `/api/inventory/sync-products`.
 
 ---
 

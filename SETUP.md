@@ -1,4 +1,4 @@
-# PB Operations Suite - Setup Guide
+# PB Tech Ops Suite - Setup Guide
 
 ## Quick Start (Local Development)
 
@@ -121,7 +121,7 @@ Subject: API Credentials Needed — Zoho Inventory, OpenSolar, QuickBooks
 
 Hi [IT],
 
-We’re connecting PB Operations Suite to three external systems for product catalog sync, purchase order creation, and sales order creation. Please provide these credentials for environment variables:
+We’re connecting PB Tech Ops Suite to three external systems for product catalog sync, purchase order creation, and sales order creation. Please provide these credentials for environment variables:
 
 Zoho Inventory
 - ZOHO_INVENTORY_ORG_ID

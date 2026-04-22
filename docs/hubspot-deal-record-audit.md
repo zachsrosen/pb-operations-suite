@@ -993,7 +993,7 @@ Integration-synced activities from Zuper field service:
 33. **Date Stamp workflows are pervasive** — 7+ different date stamp workflows auto-populate date fields on stage transitions. This is the mechanism behind the date properties in the left sidebar
 34. **Tray.io integration creates notes** — "Accepted Proposal" note was created via Tray.io, suggesting proposal acceptance triggers come from PandaDoc → Tray.io → HubSpot
 35. **ZRS suffix on all automated tasks** — likely stands for a queue routing system (possibly Zuper Routing System or similar). All automated tasks end with "– ZRS"
-36. **Bot Hooks fire on key milestones** — "Bot Hook | Inspection" and "Bot Hook | PTO" are custom triggers that likely kick off external automations (possibly the PB Operations Suite webhooks)
+36. **Bot Hooks fire on key milestones** — "Bot Hook | Inspection" and "Bot Hook | PTO" are custom triggers that likely kick off external automations (possibly the PB Tech Ops Suite webhooks)
 37. **Email tracking shows high engagement** — outbound emails show 16-25 opens each, indicating customers actively read communications
 38. **Zuper ↔ HubSpot sync is bidirectional** — Zuper status changes appear as activities in HubSpot, and HubSpot stage changes trigger Zuper syncs via workflows
 39. **Activity filter shows 18/32** — 14 activities are hidden by the default filter. The filter is set to "Activity" type which excludes raw property change logs. The full unfiltered feed would show every property edit
