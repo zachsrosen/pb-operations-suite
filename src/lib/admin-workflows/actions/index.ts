@@ -12,14 +12,17 @@
 
 import type { AdminWorkflowAction } from "@/lib/admin-workflows/types";
 
+import { addHubspotContactNoteAction } from "./add-hubspot-contact-note";
 import { addHubspotNoteAction } from "./add-hubspot-note";
 import { aiComposeAction } from "./ai-compose";
 import { createHubspotTaskAction } from "./create-hubspot-task";
+import { fetchHubspotDealAction } from "./fetch-hubspot-deal";
 import { logActivityAction } from "./log-activity";
 import { runBomPipelineAction } from "./run-bom-pipeline";
 import { sendEmailAction } from "./send-email";
 import { updateHubSpotPropertyAction } from "./update-hubspot-property";
 import { updateHubspotContactPropertyAction } from "./update-hubspot-contact-property";
+import { updateHubspotTicketPropertyAction } from "./update-hubspot-ticket-property";
 import { updateZuperPropertyAction } from "./update-zuper-property";
 
 export const ACTIONS: AdminWorkflowAction[] = [
@@ -27,10 +30,14 @@ export const ACTIONS: AdminWorkflowAction[] = [
   sendEmailAction,
   // AI
   aiComposeAction,
-  // HubSpot
+  // HubSpot — reads
+  fetchHubspotDealAction,
+  // HubSpot — writes
   updateHubSpotPropertyAction,
   updateHubspotContactPropertyAction,
+  updateHubspotTicketPropertyAction,
   addHubspotNoteAction,
+  addHubspotContactNoteAction,
   createHubspotTaskAction,
   // Zuper
   updateZuperPropertyAction,
