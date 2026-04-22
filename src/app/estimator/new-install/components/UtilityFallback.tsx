@@ -89,7 +89,7 @@ export default function UtilityFallback({ address, location, onBack }: Props) {
             type="button"
             onClick={submit}
             disabled={submitting}
-            className="rounded-lg bg-orange-500 px-5 py-2.5 text-sm font-medium text-white shadow-card transition hover:bg-orange-600 disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white shadow-card transition hover:-translate-y-0.5 hover:bg-orange-600 hover:shadow-card-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
           >
             {submitting ? "Sending…" : "Request quote"}
           </button>
@@ -102,13 +102,15 @@ export default function UtilityFallback({ address, location, onBack }: Props) {
         <Field label="Last name" value={lastName} onChange={setLastName} />
         <Field label="Email" type="email" value={email} onChange={setEmail} />
         <Field label="Phone" type="tel" value={phone} onChange={setPhone} />
-        <label className="flex flex-col gap-1 sm:col-span-2">
-          <span className="text-sm font-medium">Anything else we should know? (optional)</span>
+        <label className="flex flex-col gap-1.5 sm:col-span-2">
+          <span className="text-sm font-medium">
+            Anything else we should know? <span className="font-normal text-muted">(optional)</span>
+          </span>
           <textarea
             rows={3}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            className="w-full rounded-lg border border-t-border bg-surface-2 px-4 py-2.5 text-sm outline-none focus:border-orange-500"
+            className="w-full rounded-xl border border-t-border bg-surface-2 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:bg-surface-elevated focus:ring-2 focus:ring-orange-500/20"
           />
         </label>
       </div>
@@ -128,13 +130,13 @@ function Field({
   type?: string;
 }) {
   return (
-    <label className="flex flex-col gap-1">
+    <label className="flex flex-col gap-1.5">
       <span className="text-sm font-medium">{label}</span>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-t-border bg-surface-2 px-4 py-2.5 text-sm outline-none focus:border-orange-500"
+        className="w-full rounded-xl border border-t-border bg-surface-2 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:bg-surface-elevated focus:ring-2 focus:ring-orange-500/20"
       />
     </label>
   );

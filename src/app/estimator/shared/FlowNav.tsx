@@ -36,8 +36,8 @@ export default function FlowNav() {
   if (pathname.startsWith("/estimator/out-of-area")) return null;
 
   return (
-    <nav aria-label="Quote types" className="border-b border-t-border bg-surface-2">
-      <div className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-4 py-2 sm:px-6">
+    <nav aria-label="Quote types" className="border-b border-t-border bg-surface-2/60 backdrop-blur">
+      <div className="mx-auto flex max-w-5xl gap-1 overflow-x-auto px-4 py-2.5 sm:px-6">
         {FLOWS.map((flow) => {
           const active = flow.match.test(pathname);
           return (
@@ -46,9 +46,9 @@ export default function FlowNav() {
               href={`${flow.href}${embedSuffix}`}
               aria-current={active ? "page" : undefined}
               className={
-                "group inline-flex shrink-0 items-center gap-2 rounded-md px-3 py-1.5 text-sm transition " +
+                "group inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium transition " +
                 (active
-                  ? "bg-orange-500/10 text-orange-500"
+                  ? "bg-orange-500/15 text-orange-500 ring-1 ring-inset ring-orange-500/25"
                   : "text-muted hover:bg-surface-elevated hover:text-foreground")
               }
             >

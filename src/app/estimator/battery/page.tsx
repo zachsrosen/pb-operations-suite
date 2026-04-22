@@ -176,7 +176,7 @@ function Inner() {
                 type="button"
                 onClick={() => goToStep("count")}
                 disabled={!state.utilityId}
-                className="rounded-lg bg-orange-500 px-5 py-2.5 text-sm font-medium text-white shadow-card transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white shadow-card transition hover:-translate-y-0.5 hover:bg-orange-600 hover:shadow-card-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
               >
                 Continue
               </button>
@@ -190,7 +190,7 @@ function Inner() {
                 id="utility"
                 value={state.utilityId ?? ""}
                 onChange={(e) => dispatch({ type: "setUtility", utilityId: e.target.value })}
-                className="w-full rounded-lg border border-t-border bg-surface-2 px-4 py-2.5 text-sm outline-none focus:border-orange-500"
+                className="w-full rounded-xl border border-t-border bg-surface-2 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:bg-surface-elevated focus:ring-2 focus:ring-orange-500/20"
               >
                 <option value="" disabled>
                   Select your utility…
@@ -213,7 +213,7 @@ function Inner() {
               <button
                 type="button"
                 onClick={() => goToStep("contact")}
-                className="rounded-lg bg-orange-500 px-5 py-2.5 text-sm font-medium text-white shadow-card transition hover:bg-orange-600"
+                className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white shadow-card transition hover:-translate-y-0.5 hover:bg-orange-600 hover:shadow-card-lg"
               >
                 Continue
               </button>

@@ -1,16 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 /**
  * Reliably loads the Google Maps JS + Places library and attaches
- * Places Autocomplete to the given input. Returns `ready` state so
- * callers know when autocomplete is attached.
+ * Places Autocomplete to a text input via a ref callback.
  *
- * Replaces Next.js <Script> + onLoad, which didn't fire reliably on
- * SPA client-side navigation when the script was already cached.
+ * Usage:
+ *   const { attach, error } = useGooglePlacesAutocomplete((place) => { ... });
+ *   return <input ref={attach} ... />;
  *
- * Callback fires each time the user picks a place.
+ * Ref-callback pattern (not useEffect) — ref callbacks fire synchronously
+ * when the DOM node mounts/unmounts, which avoids timing issues where a
+ * useEffect runs before `ref.current` is populated, or fires on a stale
+ * element after conditional re-render.
  */
 type PlaceResult = {
   address_components?: Array<{ long_name: string; short_name: string; types: string[] }>;
@@ -49,10 +52,7 @@ function loadGooglePlaces(apiKey: string): Promise<void> {
   if (isPlacesReady()) return Promise.resolve();
 
   const existing = document.getElementById(SCRIPT_ID) as HTMLScriptElement | null;
-  if (existing) {
-    // Another mount started the load; just poll.
-    return pollUntilReady();
-  }
+  if (existing) return pollUntilReady();
 
   return new Promise((resolve, reject) => {
     const script = document.createElement("script");
@@ -61,10 +61,7 @@ function loadGooglePlaces(apiKey: string): Promise<void> {
     script.async = true;
     script.defer = true;
     script.onerror = () => reject(new Error("Failed to load Google Maps script"));
-    script.onload = () => {
-      // onload fires before async libraries have resolved — poll for readiness.
-      pollUntilReady().then(resolve, reject);
-    };
+    script.onload = () => pollUntilReady().then(resolve, reject);
     document.head.appendChild(script);
   });
 }
@@ -83,67 +80,72 @@ function pollUntilReady(timeoutMs = 8000, intervalMs = 100): Promise<void> {
   });
 }
 
+export interface UseGooglePlacesReturn {
+  /** Ref callback to pass to <input ref={attach} />. */
+  attach: (el: HTMLInputElement | null) => void;
+  error: string | null;
+}
+
 export function useGooglePlacesAutocomplete(
-  inputRef: React.RefObject<HTMLInputElement | null>,
   onPlaceChanged: (place: PlaceResult) => void,
   options?: { skip?: boolean },
-): { ready: boolean; error: string | null } {
-  const [ready, setReady] = useState(false);
+): UseGooglePlacesReturn {
   const [error, setError] = useState<string | null>(null);
+  const acRef = useRef<AutocompleteInstance | null>(null);
+  const elRef = useRef<HTMLInputElement | null>(null);
+  // Latest callback without re-binding the Places listener.
+  const callbackRef = useRef(onPlaceChanged);
+  callbackRef.current = onPlaceChanged;
 
-  useEffect(() => {
-    if (options?.skip) return;
-    if (!inputRef.current) return;
+  const attach = useCallback(
+    (el: HTMLInputElement | null) => {
+      if (!el) {
+        elRef.current = null;
+        acRef.current = null;
+        return;
+      }
+      if (elRef.current === el && acRef.current) return;
+      elRef.current = el;
 
-    const apiKey =
-      process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY ||
-      process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+      if (options?.skip) return;
 
-    if (!apiKey) {
-      setError("No Google Maps API key configured");
-      return;
-    }
+      const apiKey =
+        process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY ||
+        process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+      if (!apiKey) {
+        setError("No Google Maps API key configured");
+        return;
+      }
 
-    let cancelled = false;
-    let autocomplete: AutocompleteInstance | null = null;
-
-    loadGooglePlaces(apiKey)
-      .then(() => {
-        if (cancelled || !inputRef.current) return;
-        const g = getWindowGoogle();
-        if (!g?.maps?.places?.Autocomplete) {
-          setError("Places library unavailable");
-          return;
-        }
-        autocomplete = new g.maps.places.Autocomplete(inputRef.current, {
-          types: ["address"],
-          componentRestrictions: { country: "us" },
-          fields: ["address_components", "formatted_address", "geometry"],
-        });
-        autocomplete.addListener("place_changed", () => {
-          if (!autocomplete) return;
-          const place = autocomplete.getPlace();
-          if (place && place.address_components) {
-            onPlaceChanged(place);
+      loadGooglePlaces(apiKey)
+        .then(() => {
+          if (elRef.current !== el) return;
+          const g = getWindowGoogle();
+          if (!g?.maps?.places?.Autocomplete) {
+            setError("Places library unavailable");
+            return;
           }
+          const ac = new g.maps.places.Autocomplete(el, {
+            types: ["address"],
+            componentRestrictions: { country: "us" },
+            fields: ["address_components", "formatted_address", "geometry"],
+          });
+          acRef.current = ac;
+          ac.addListener("place_changed", () => {
+            const place = ac.getPlace();
+            if (place && place.address_components) {
+              callbackRef.current(place);
+            }
+          });
+          setError(null);
+        })
+        .catch((err: Error) => {
+          console.warn("[estimator] google places load failed", err);
+          setError(err.message);
         });
-        setReady(true);
-      })
-      .catch((err: Error) => {
-        if (cancelled) return;
-        console.warn("[estimator] google places load failed", err);
-        setError(err.message);
-      });
+    },
+    [options?.skip],
+  );
 
-    return () => {
-      cancelled = true;
-      // Autocomplete has no explicit dispose; GC picks it up when the
-      // input element is removed.
-    };
-    // onPlaceChanged is deliberately excluded — the autocomplete binds once
-    // per mount and we don't want to re-bind on parent re-renders.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inputRef, options?.skip]);
-
-  return { ready, error };
+  return { attach, error };
 }
