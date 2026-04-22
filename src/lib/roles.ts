@@ -65,6 +65,7 @@ const ADMIN: RoleDefinition = {
     "/suites/dnr-roofing",
     "/suites/executive",
     "/suites/accounting",
+    "/suites/sales-marketing",
   ],
   allowedRoutes: ["*"],
   landingCards: [],
@@ -97,6 +98,7 @@ const EXECUTIVE: RoleDefinition = {
     "/suites/dnr-roofing",
     "/suites/executive",
     "/suites/accounting",
+    "/suites/sales-marketing",
   ],
   allowedRoutes: ["*"],
   landingCards: [],
@@ -1063,10 +1065,10 @@ const MARKETING: RoleDefinition = {
 
 const SALES_MANAGER: RoleDefinition = {
   label: "Sales Manager",
-  description: "Sales team oversight — Accounting Suite access for pipeline visibility",
+  description: "Sales team oversight — pipeline visibility + accounting access",
   normalizesTo: "SALES_MANAGER",
   visibleInPicker: true,
-  suites: ["/suites/accounting"],
+  suites: ["/suites/accounting", "/suites/sales-marketing"],
   allowedRoutes: [
     "/",
     "/suites/operations",
@@ -1137,12 +1139,13 @@ const SALES_MANAGER: RoleDefinition = {
 
 const SALES: RoleDefinition = {
   label: "Sales",
-  description: "Only access to Site Survey Schedule",
+  description: "Access to Sales & Marketing Suite + Site Survey Schedule",
   normalizesTo: "SALES",
   visibleInPicker: true,
-  suites: [],
+  suites: ["/suites/sales-marketing"],
   allowedRoutes: [
     "/",
+    "/suites/sales-marketing",
     "/dashboards/site-survey-scheduler",
     "/dashboards/sales",
     "/dashboards/deals",
