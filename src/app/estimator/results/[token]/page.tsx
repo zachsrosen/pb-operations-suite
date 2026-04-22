@@ -52,7 +52,7 @@ export default async function ResultsPage({
   if (!payload) {
     return (
       <div className="mx-auto max-w-xl px-4 py-16 sm:px-6">
-        <section className="rounded-2xl border border-t-border bg-surface p-8 shadow-card">
+        <section className="rounded-3xl border border-t-border bg-surface p-8 shadow-card">
           <h1 className="text-2xl font-semibold tracking-tight">
             {errorStatus === 410 ? "This link has expired" : "We couldn't find that estimate"}
           </h1>
@@ -61,7 +61,7 @@ export default async function ResultsPage({
           </p>
           <a
             href="/estimator"
-            className="mt-6 inline-flex rounded-lg bg-orange-500 px-5 py-2.5 text-sm font-medium text-white shadow-card hover:bg-orange-600"
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white shadow-card transition hover:-translate-y-0.5 hover:bg-orange-600 hover:shadow-card-lg"
           >
             Start a new estimate
           </a>
@@ -73,7 +73,7 @@ export default async function ResultsPage({
   if (payload.outOfArea || payload.manualQuoteRequest || !payload.result) {
     return (
       <div className="mx-auto max-w-xl px-4 py-16 sm:px-6">
-        <section className="rounded-2xl border border-t-border bg-surface p-8 shadow-card">
+        <section className="rounded-3xl border border-t-border bg-surface p-8 shadow-card">
           <h1 className="text-2xl font-semibold tracking-tight">
             Thanks{payload.firstName ? `, ${payload.firstName}` : ""} — we&apos;ll be in touch
           </h1>
@@ -84,7 +84,7 @@ export default async function ResultsPage({
           </p>
           <a
             href="https://www.photonbrothers.com"
-            className="mt-6 inline-flex rounded-lg bg-orange-500 px-5 py-2.5 text-sm font-medium text-white shadow-card hover:bg-orange-600"
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white shadow-card transition hover:-translate-y-0.5 hover:bg-orange-600 hover:shadow-card-lg"
           >
             Back to photonbrothers.com
           </a>

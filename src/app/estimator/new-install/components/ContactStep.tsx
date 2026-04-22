@@ -128,8 +128,9 @@ export default function ContactStep({ state, dispatch, onBack }: Props) {
         />
       )}
       <StepLayout
-        title="Where should we send your estimate?"
-        subtitle="We'll email your results and follow up to schedule a consult."
+        eyebrow="Almost there"
+        title="Where should we send it?"
+        subtitle="We'll email your estimate in seconds and a Photon Brothers advisor will follow up to refine the numbers."
         onBack={onBack}
         footer={
           <>
@@ -137,9 +138,10 @@ export default function ContactStep({ state, dispatch, onBack }: Props) {
               type="button"
               onClick={submit}
               disabled={submitting}
-              className="rounded-lg bg-orange-500 px-5 py-2.5 text-sm font-medium text-white shadow-card transition hover:bg-orange-600 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white shadow-card transition hover:-translate-y-0.5 hover:bg-orange-600 hover:shadow-card-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
             >
               {submitting ? "Building your estimate…" : "See my estimate"}
+              {!submitting && <span aria-hidden>→</span>}
             </button>
             {error && <span className="text-sm text-red-500">{error}</span>}
           </>
@@ -173,17 +175,35 @@ export default function ContactStep({ state, dispatch, onBack }: Props) {
             value={contact.referredBy}
             onChange={(v) => setContact({ referredBy: v })}
           />
-          <label className="flex flex-col gap-1 sm:col-span-2">
-            <span className="text-sm font-medium">Project notes (optional)</span>
+          <label className="flex flex-col gap-1.5 sm:col-span-2">
+            <span className="text-sm font-medium">
+              Project notes <span className="font-normal text-muted">(optional)</span>
+            </span>
             <textarea
               rows={3}
+              placeholder="Anything we should know? Garage roof, specific panel count, timing…"
               value={contact.notes}
               onChange={(e) => setContact({ notes: e.target.value })}
-              className="w-full rounded-lg border border-t-border bg-surface-2 px-4 py-2.5 text-sm outline-none focus:border-orange-500"
+              className="w-full rounded-xl border border-t-border bg-surface-2 px-4 py-3 text-sm outline-none transition placeholder:text-muted/70 focus:border-orange-500 focus:bg-surface-elevated focus:ring-2 focus:ring-orange-500/20"
             />
           </label>
         </div>
-        <p className="mt-4 text-xs text-muted">
+        <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-t-border bg-surface-2 p-4 sm:flex-row sm:items-center sm:gap-4">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-500">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6l8-4z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4" />
+            </svg>
+          </div>
+          <div className="flex-1 text-sm">
+            <p className="font-semibold">No spam, ever.</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-muted">
+              We&apos;ll use your info only to build and deliver your estimate. You control any
+              future contact.
+            </p>
+          </div>
+        </div>
+        <p className="mt-4 text-xs leading-relaxed text-muted">
           By submitting, you agree to be contacted by Photon Brothers about your estimate. This site
           is protected by reCAPTCHA and the Google{" "}
           <a
@@ -218,13 +238,13 @@ function Field({
   type?: string;
 }) {
   return (
-    <label className="flex flex-col gap-1">
+    <label className="flex flex-col gap-1.5">
       <span className="text-sm font-medium">{label}</span>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-t-border bg-surface-2 px-4 py-2.5 text-sm outline-none focus:border-orange-500"
+        className="w-full rounded-xl border border-t-border bg-surface-2 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:bg-surface-elevated focus:ring-2 focus:ring-orange-500/20"
       />
     </label>
   );
