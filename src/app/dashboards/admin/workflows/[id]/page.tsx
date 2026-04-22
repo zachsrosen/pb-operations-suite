@@ -257,6 +257,17 @@ export default function AdminWorkflowEditor({
     });
   }
 
+  function moveStep(stepIdx: number, direction: -1 | 1) {
+    setWorkflow((prev) => {
+      if (!prev) return prev;
+      const steps = [...prev.definition.steps];
+      const target = stepIdx + direction;
+      if (target < 0 || target >= steps.length) return prev;
+      [steps[stepIdx], steps[target]] = [steps[target], steps[stepIdx]];
+      return { ...prev, definition: { steps } };
+    });
+  }
+
   function addStep(kind: string) {
     setWorkflow((prev) => {
       if (!prev) return prev;
@@ -394,12 +405,30 @@ export default function AdminWorkflowEditor({
                         </p>
                         <p className="text-xs text-muted mt-0.5">{action?.description}</p>
                       </div>
-                      <button
-                        onClick={() => removeStep(idx)}
-                        className="text-xs text-red-400 hover:text-red-300"
-                      >
-                        Remove
-                      </button>
+                      <div className="flex items-center gap-3 text-xs">
+                        <button
+                          onClick={() => moveStep(idx, -1)}
+                          disabled={idx === 0}
+                          className="text-muted hover:text-foreground disabled:opacity-30"
+                          title="Move up"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          onClick={() => moveStep(idx, 1)}
+                          disabled={idx === workflow.definition.steps.length - 1}
+                          className="text-muted hover:text-foreground disabled:opacity-30"
+                          title="Move down"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          onClick={() => removeStep(idx)}
+                          className="text-red-400 hover:text-red-300"
+                        >
+                          Remove
+                        </button>
+                      </div>
                     </div>
                     {action?.fields.map((f) => (
                       <FieldInput
