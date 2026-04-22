@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Script from "next/script";
 import { useState, type Dispatch } from "react";
 
@@ -22,6 +22,8 @@ type Grecaptcha = {
 
 export default function ContactStep({ state, dispatch, onBack }: Props) {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const embedSuffix = searchParams?.get("embed") === "1" ? "?embed=1" : "";
   const siteKey = process.env.NEXT_PUBLIC_RECAPTCHA_SITE_KEY;
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -108,7 +110,7 @@ export default function ContactStep({ state, dispatch, onBack }: Props) {
       }
       const data = (await res.json()) as { token: string };
       clearDraft();
-      router.push(`/estimator/results/${data.token}`);
+      router.push(`/estimator/results/${data.token}${embedSuffix}`);
     } catch (err) {
       console.error(err);
       setError("Network error. Please try again.");

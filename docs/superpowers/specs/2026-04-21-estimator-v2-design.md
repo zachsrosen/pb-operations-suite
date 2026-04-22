@@ -337,22 +337,13 @@ These deal + contact properties must be created in HubSpot admin **before** `/ap
 
 **Deal properties** (pipeline: `HUBSPOT_PIPELINE_SALES`):
 
+Slim 3-property set so it fits portals near their custom-property cap. Numeric detail is packed into `estimator_summary`; ops pulls the full snapshot via `estimator_results_token`.
+
 | Property | Type | Group |
 |---|---|---|
-| `estimator_system_size_kw` | Number | Estimator |
-| `estimator_panel_count` | Number | Estimator |
-| `estimator_annual_production_kwh` | Number | Estimator |
-| `estimator_offset_percent` | Number | Estimator |
-| `estimator_retail_usd` | Number | Estimator |
-| `estimator_incentives_usd` | Number | Estimator |
-| `estimator_final_usd` | Number | Estimator |
-| `estimator_monthly_payment_usd` | Number | Estimator |
-| `estimator_has_ev` | Checkbox | Estimator |
-| `estimator_has_panel_upgrade` | Checkbox | Estimator |
-| `estimator_considers_battery` | Checkbox | Estimator |
-| `estimator_considers_new_roof` | Checkbox | Estimator |
-| `estimator_results_token` | Single-line text | Estimator |
 | `estimator_source` | Single-line text | Estimator |
+| `estimator_results_token` | Single-line text | Estimator |
+| `estimator_summary` | Multi-line text | Estimator |
 
 **Contact properties** (for out-of-area waitlist leads):
 

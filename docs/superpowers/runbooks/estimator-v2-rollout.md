@@ -34,22 +34,13 @@ Create these properties **before** flipping the flag. They must exist or the sub
 
 Group: **Estimator** (create the group too).
 
+Slim 3-property set (down from 14) so it fits portals near their custom-property cap. Numeric detail is packed into `estimator_summary`; ops can pull the full snapshot via `estimator_results_token` → `https://pbtechops.com/estimator/results/{token}`.
+
 | Property internal name | Type | Field type |
 |---|---|---|
-| `estimator_system_size_kw` | Number | Decimal |
-| `estimator_panel_count` | Number | Integer |
-| `estimator_annual_production_kwh` | Number | Integer |
-| `estimator_offset_percent` | Number | Decimal |
-| `estimator_retail_usd` | Number | Integer |
-| `estimator_incentives_usd` | Number | Integer |
-| `estimator_final_usd` | Number | Integer |
-| `estimator_monthly_payment_usd` | Number | Integer |
-| `estimator_has_ev` | Boolean | Checkbox |
-| `estimator_has_panel_upgrade` | Boolean | Checkbox |
-| `estimator_considers_battery` | Boolean | Checkbox |
-| `estimator_considers_new_roof` | Boolean | Checkbox |
-| `estimator_results_token` | Text | Single-line |
 | `estimator_source` | Text | Single-line |
+| `estimator_results_token` | Text | Single-line |
+| `estimator_summary` | Text | Multi-line |
 
 ### Contact properties
 
