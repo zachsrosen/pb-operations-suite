@@ -100,6 +100,14 @@ const LINKS: SuitePageCard[] = [
     section: "Tools",
   },
   {
+    href: "/dashboards/tsrf-calculator",
+    title: "TSRF Peak Power Calculator",
+    description: "Estimate peak power output from TSRF, module specs, and site conditions.",
+    tag: "TOOL",
+    icon: "⚡",
+    section: "Tools",
+  },
+  {
     href: "/dashboards/idr-meeting",
     title: "Design & Ops Meeting Hub",
     description: "Design/ops meeting review queue with auto-populated projects, inline editing, and HubSpot sync",
