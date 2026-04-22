@@ -193,11 +193,15 @@ export function MilestoneStrip({ deal }: { deal: PaymentTrackingDeal }) {
             title={tooltip(d)}
           />
         );
-        // Wrap in invoice link when one exists.
-        return d.invoice ? (
+        // Click any dot to open the parent DEAL in HubSpot. The deal page
+        // shows associated invoices — that's a reliable URL we know works,
+        // unlike the per-invoice URL patterns which kept breaking. Tooltip
+        // still shows invoice number + amounts so the user knows what they
+        // were clicking.
+        return (
           <a
             key={d.label}
-            href={d.invoice.hubspotUrl}
+            href={deal.hubspotUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="hover:opacity-70"
@@ -205,8 +209,6 @@ export function MilestoneStrip({ deal }: { deal: PaymentTrackingDeal }) {
           >
             {dot}
           </a>
-        ) : (
-          <span key={d.label}>{dot}</span>
         );
       })}
     </div>
