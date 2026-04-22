@@ -5,9 +5,17 @@ import { getCurrentUser } from "@/lib/auth-utils";
 const LINKS: SuitePageCard[] = [
   // ── Tools ──
   {
+    href: "/dashboards/payment-action-queue",
+    title: "Payment Action Queue",
+    description: "Rejected invoices, overdue payments, and ready-to-invoice work milestones.",
+    tag: "ACCOUNTING",
+    icon: "🚨",
+    section: "Tools",
+  },
+  {
     href: "/dashboards/payment-tracking",
     title: "Payment Tracking",
-    description: "Per-project payment progress across DA, CC, PTO, and PE milestones.",
+    description: "Per-project payment status: not yet paid, partially paid, fully paid.",
     tag: "ACCOUNTING",
     icon: "💵",
     section: "Tools",

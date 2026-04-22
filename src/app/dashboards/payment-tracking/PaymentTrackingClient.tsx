@@ -22,6 +22,8 @@ function fmt(n: number): string {
   });
 }
 
+// Status-only groupings. Action items (Issues, Ready to Invoice) live on
+// the separate /dashboards/payment-action-queue page.
 const GROUPS: {
   key: PaymentStatusGroup;
   title: string;
@@ -30,8 +32,6 @@ const GROUPS: {
   rowLimit?: number;
   showWhy?: boolean;
 }[] = [
-  { key: "issues", title: "🚨 Issues", accent: "red", showWhy: true },
-  { key: "ready_to_invoice", title: "💰 Ready to Invoice", accent: "amber", showWhy: true },
   { key: "partially_paid", title: "⏳ Partially Paid", accent: "blue" },
   { key: "not_started", title: "📋 Not Yet Paid", accent: "blue" },
   {
@@ -135,6 +135,12 @@ export default function PaymentTrackingClient() {
     [filtered]
   );
 
+  // Issues + Ready-to-Invoice counts to surface as a link to the action queue.
+  const actionCount = useMemo(() => {
+    const deals = data?.deals ?? [];
+    return deals.filter((d) => d.statusGroup === "issues" || d.statusGroup === "ready_to_invoice").length;
+  }, [data?.deals]);
+
   return (
     <DashboardShell
       title="Payment Tracking"
@@ -142,6 +148,16 @@ export default function PaymentTrackingClient() {
       lastUpdated={data?.lastUpdated}
       exportData={{ data: csvRows, filename: "payment-tracking.csv" }}
       fullWidth
+      headerRight={
+        actionCount > 0 ? (
+          <a
+            href="/dashboards/payment-action-queue"
+            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-red-500/15 border border-red-500/40 text-red-300 hover:bg-red-500/25 text-xs font-medium transition-colors"
+          >
+            🚨 {actionCount} need{actionCount === 1 ? "s" : ""} action →
+          </a>
+        ) : undefined
+      }
     >
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <StatCard

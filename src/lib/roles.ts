@@ -836,6 +836,7 @@ const ACCOUNTING: RoleDefinition = {
     "/",
     "/suites/accounting",
     "/dashboards/payment-tracking",
+    "/dashboards/payment-action-queue",
     "/dashboards/pe-deals",
     "/dashboards/pe",
     "/dashboards/pricing-calculator",
