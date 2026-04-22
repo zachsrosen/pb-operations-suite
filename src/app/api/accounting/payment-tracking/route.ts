@@ -21,22 +21,32 @@ initPaymentTrackingCascade();
 
 const ALLOWED_ROLES = new Set(["ADMIN", "EXECUTIVE", "ACCOUNTING"]);
 
-// Terminal stage IDs per pipeline. HubSpot's search API has been observed to
-// silently return empty results when combining `pipeline IN […]` with
-// `dealstage NOT_IN […]`, so we query each pipeline separately with `Eq` on
-// pipeline (mirroring the pattern in service/priority-queue and pe-deals).
-const TERMINAL_STAGES_BY_PIPELINE: Record<string, string[]> = {
-  // Sales pipeline: HubSpot's default pipeline uses string stage IDs
-  default: ["closedlost"],
-  // Project pipeline (6900017): numeric stage IDs
-  "6900017": ["68229433" /* Cancelled */],
+// Stages excluded from the payment-tracking view. "Active" deals are
+// post-RTB / mid-construction / post-PTO but NOT yet wound down. Old
+// (2021-era) Sales-pipeline-won deals and Project-pipeline-complete deals
+// add too much noise — accounting cares about money still in motion.
+//
+// Per-pipeline because HubSpot uses different stage ID formats:
+//   - Sales pipeline ("default"): string IDs ("closedlost", "closedwon")
+//   - Project pipeline ("6900017"): numeric IDs
+const EXCLUDED_STAGES_BY_PIPELINE: Record<string, string[]> = {
+  default: [
+    "closedlost",
+    "closedwon", // won deals migrate to Project pipeline; Sales-side won is stale
+  ],
+  "6900017": [
+    "68229433", // Cancelled
+    "20440344", // On Hold
+    "20461935", // Project Rejected - Needs Review
+    "20440343", // Project Complete
+  ],
 };
 
 type SearchBody = Parameters<typeof searchWithRetry>[0];
 type SearchFilter = { propertyName: string; operator: FilterOperatorEnum; value?: string; values?: string[] };
 
 async function fetchPipelineDeals(pipelineId: string): Promise<HubSpotDealPaymentProps[]> {
-  const terminal = TERMINAL_STAGES_BY_PIPELINE[pipelineId] ?? [];
+  const excluded = EXCLUDED_STAGES_BY_PIPELINE[pipelineId] ?? [];
   const props: HubSpotDealPaymentProps[] = [];
 
   let after: string | undefined;
@@ -44,11 +54,11 @@ async function fetchPipelineDeals(pipelineId: string): Promise<HubSpotDealPaymen
     const filters: SearchFilter[] = [
       { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: pipelineId } as SearchFilter,
     ];
-    if (terminal.length > 0) {
+    if (excluded.length > 0) {
       filters.push({
         propertyName: "dealstage",
         operator: FilterOperatorEnum.NotIn,
-        values: terminal,
+        values: excluded,
       } as SearchFilter);
     }
 

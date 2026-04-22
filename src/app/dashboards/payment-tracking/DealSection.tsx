@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { PaymentTrackingDeal } from "@/lib/payment-tracking-types";
 import { StatusPill } from "./StatusPill";
 import { PaidInFullIndicator } from "./PaidInFullIndicator";
+import { StagePill } from "./StagePill";
 
 function fmt(n: number | null): string {
   if (n === null) return "—";
@@ -222,8 +223,8 @@ export function DealSection({
                     <td className="px-2 py-1.5 text-muted" title={d.pbLocation}>
                       {shortLocation(d.pbLocation)}
                     </td>
-                    <td className="px-2 py-1.5 text-muted" title={d.dealStageLabel}>
-                      {truncate(d.dealStageLabel, 14)}
+                    <td className="px-2 py-1.5">
+                      <StagePill stageId={d.dealStage} label={d.dealStageLabel} />
                     </td>
                     <td className="px-2 py-1.5 text-center">
                       {d.isPE ? (
