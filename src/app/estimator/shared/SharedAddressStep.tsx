@@ -79,9 +79,11 @@ export default function SharedAddressStep({
     { skip: mode !== "auto" },
   );
 
-  const canSubmit = Boolean(
+  const hasStructured = Boolean(
     addressInput.street && addressInput.city && addressInput.state && addressInput.zip,
   );
+  const hasFormatted = Boolean((addressInput.formatted ?? "").trim().length >= 3);
+  const canSubmit = mode === "auto" ? hasStructured || hasFormatted : hasStructured;
 
   async function handleContinue(): Promise<void> {
     if (!canSubmit) {
@@ -91,16 +93,19 @@ export default function SharedAddressStep({
     setError(null);
     setLoading(true);
     try {
+      const requestBody = hasStructured
+        ? {
+            street: addressInput.street,
+            unit: addressInput.unit || undefined,
+            city: addressInput.city,
+            state: addressInput.state,
+            zip: addressInput.zip,
+          }
+        : { query: (addressInput.formatted ?? "").trim() };
       const res = await fetch("/api/estimator/address-validate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          street: addressInput.street,
-          unit: addressInput.unit || undefined,
-          city: addressInput.city,
-          state: addressInput.state,
-          zip: addressInput.zip,
-        }),
+        body: JSON.stringify(requestBody),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };

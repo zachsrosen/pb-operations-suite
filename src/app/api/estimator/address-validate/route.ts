@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
-import { geocodeAddress } from "@/lib/geocode";
+import { geocodeAddress, geocodeFreeform } from "@/lib/geocode";
 import {
   AddressPartsSchema,
   resolveLocationFromZip,
@@ -10,6 +11,17 @@ import { checkRateLimit, extractIp, hashIp, rateLimitKey } from "@/lib/estimator
 
 const RATE_LIMIT_COUNT = 20;
 const RATE_LIMIT_WINDOW_MS = 60_000;
+
+/**
+ * Accept either structured AddressParts or a single freeform query string.
+ * The client's Google Places autocomplete populates structured fields when
+ * it works, but falls back to just the formatted string (via `query`) when
+ * place_changed doesn't fire reliably.
+ */
+const RequestSchema = z.union([
+  AddressPartsSchema,
+  z.object({ query: z.string().min(3).max(500) }),
+]);
 
 export async function POST(request: Request) {
   const ipHash = hashIp(extractIp(request));
@@ -29,42 +41,55 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const parsed = AddressPartsSchema.safeParse(body);
+  const parsed = RequestSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid address", details: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid address", details: parsed.error.flatten() },
+      { status: 400 },
+    );
   }
-  const input = parsed.data;
+
+  const data = parsed.data;
+  const isFreeform = "query" in data;
 
   let geocoded: Awaited<ReturnType<typeof geocodeAddress>> = null;
   try {
-    geocoded = await geocodeAddress({
-      street: input.street,
-      unit: input.unit ?? null,
-      city: input.city,
-      state: input.state,
-      zip: input.zip,
-    });
+    if (isFreeform) {
+      geocoded = await geocodeFreeform(data.query);
+    } else {
+      geocoded = await geocodeAddress({
+        street: data.street,
+        unit: data.unit ?? null,
+        city: data.city,
+        state: data.state,
+        zip: data.zip,
+      });
+    }
   } catch (err) {
     console.error("[estimator] geocode failed", err);
     return NextResponse.json({ error: "Geocoding failed" }, { status: 502 });
   }
 
-  const normalized = geocoded
-    ? {
-        street: geocoded.streetAddress || input.street,
-        city: geocoded.city || input.city,
-        state: geocoded.state || input.state,
-        zip: geocoded.zip || input.zip,
-        lat: geocoded.latitude,
-        lng: geocoded.longitude,
-        formatted: geocoded.formattedAddress,
-      }
-    : {
-        street: input.street,
-        city: input.city,
-        state: input.state,
-        zip: input.zip,
-      };
+  if (!geocoded || !geocoded.zip) {
+    return NextResponse.json(
+      {
+        error:
+          "We couldn't find that address. Please check the spelling or enter it manually.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const normalized = {
+    street: geocoded.streetAddress || (isFreeform ? "" : data.street),
+    city: geocoded.city || (isFreeform ? "" : data.city),
+    state: geocoded.state || (isFreeform ? "" : data.state),
+    zip: geocoded.zip,
+    lat: geocoded.latitude,
+    lng: geocoded.longitude,
+    formatted: geocoded.formattedAddress,
+    unit: !isFreeform ? data.unit : undefined,
+  };
 
   const location = resolveLocationFromZip(normalized.zip);
   const inServiceArea = location !== null;
