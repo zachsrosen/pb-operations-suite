@@ -8,7 +8,7 @@ export type ParsedAppliesTo = {
 };
 
 const LHS_IDENTIFIERS = new Set(["shop", "deal.dealType", "deal.valueCents", "now"]);
-const OPS: Op[] = ["<=", ">=", "!=", "==", "<", ">", "in", "not in"];
+const OPS: Op[] = ["<=", ">=", "!=", "==", "<", ">", "not in", "in"];
 
 /** Phase 1 parser: single predicate, no combinators. */
 export function parseAppliesTo(input: string): ParsedAppliesTo {
@@ -64,7 +64,9 @@ function parseRhs(raw: string, lhs: string, op: Op): ParsedAppliesTo["rhs"] {
   if (op === "in" || op === "not in") {
     const m = raw.match(/^\[\s*(.*?)\s*\]$/);
     if (!m) throw new Error(`expected list literal for '${op}'`);
-    return m[1].split(",").map((s) => stripQuotes(s.trim()));
+    const inner = m[1].trim();
+    if (inner === "") return [];
+    return inner.split(",").map((s) => stripQuotes(s.trim()));
   }
   // String literal
   if (raw.startsWith("'") && raw.endsWith("'")) {
@@ -98,7 +100,7 @@ export function evaluateAppliesTo(
 
   switch (parsed.op) {
     case "==":
-      return lhsValue === parsed.rhs || sameDay(lhsValue, parsed.rhs);
+      return lhsValue === parsed.rhs || exactDateEq(lhsValue, parsed.rhs);
     case "!=":
       return lhsValue !== parsed.rhs;
     case "<":
@@ -130,6 +132,6 @@ function compare(a: unknown, b: unknown): number {
   return String(a).localeCompare(String(b));
 }
 
-function sameDay(a: unknown, b: unknown): boolean {
+function exactDateEq(a: unknown, b: unknown): boolean {
   return a instanceof Date && b instanceof Date && a.getTime() === b.getTime();
 }
