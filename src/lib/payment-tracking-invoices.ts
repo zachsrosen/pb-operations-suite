@@ -334,15 +334,17 @@ function reconcileMoneyWithInvoices(deal: PaymentTrackingDeal): void {
   const ccPaid =
     deal.invoices?.cc?.amountPaid ??
     (deal.ccStatus === "Paid In Full" ? deal.ccAmount ?? 0 : 0);
-  const ptoPaid = deal.invoices?.pto?.amountPaid ?? 0;
+  // PTO only counts for non-PE deals (PE deals don't have a PTO milestone).
+  const ptoPaid = deal.isPE ? 0 : deal.invoices?.pto?.amountPaid ?? 0;
 
   // If change orders bumped the customer-side invoiced total above the deal
   // contract, use the invoiced total. (Change orders are billed via the same
-  // milestone invoices; deal.amount may not reflect them.)
+  // milestone invoices; deal.amount may not reflect them.) For PE deals,
+  // exclude PTO from this calc since PTO isn't part of the contract.
   const customerInvoicedTotal =
     (deal.invoices?.da?.amountBilled ?? 0) +
     (deal.invoices?.cc?.amountBilled ?? 0) +
-    (deal.invoices?.pto?.amountBilled ?? 0);
+    (deal.isPE ? 0 : deal.invoices?.pto?.amountBilled ?? 0);
   if (customerInvoicedTotal > deal.customerContractTotal) {
     deal.customerContractTotal = customerInvoicedTotal;
   }
