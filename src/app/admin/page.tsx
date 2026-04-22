@@ -17,6 +17,12 @@ const ADMIN_DASHBOARDS: Array<{ href: string; title: string; description: string
     icon: "⚙️",
   },
   {
+    href: "/dashboards/adders",
+    title: "Adder Catalog",
+    description: "Governed list of system adders — MPU, trenching, steep roof, ground mount, etc. Manage definitions, prices, shop overrides, and triage questions.",
+    icon: "➕",
+  },
+  {
     href: "/dashboards/zuper-status-comparison",
     title: "Zuper Status Comparison",
     description: "Compare Zuper job statuses against HubSpot.",
