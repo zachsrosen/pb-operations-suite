@@ -61,8 +61,12 @@ export default function PaymentTrackingClient() {
   const [stageFilter, setStageFilter] = useState<string[]>([]);
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [search, setSearch] = useState("");
-  const [closeDateFrom, setCloseDateFrom] = useState("");
-  const [closeDateTo, setCloseDateTo] = useState("");
+  // Date filter: pick a field (close / design approved / construction
+  // complete / inspection / PTO) and a preset window. Default = no filter.
+  const [dateField, setDateField] = useState<
+    "none" | "closeDate" | "designApprovalDate" | "constructionCompleteDate" | "inspectionPassedDate" | "ptoGrantedDate"
+  >("none");
+  const [dateWindow, setDateWindow] = useState<"7" | "14" | "30" | "60" | "90" | "180" | "365">("30");
 
   const allLocations = useMemo(
     () =>
@@ -77,8 +81,10 @@ export default function PaymentTrackingClient() {
 
   const filtered = useMemo(() => {
     const deals = data?.deals ?? [];
-    const fromTs = closeDateFrom ? new Date(closeDateFrom).getTime() : null;
-    const toTs = closeDateTo ? new Date(closeDateTo).getTime() : null;
+    const cutoffMs =
+      dateField === "none"
+        ? null
+        : Date.now() - parseInt(dateWindow, 10) * 86_400_000;
     return deals.filter((d) => {
       if (locationFilter.length && !locationFilter.includes(d.pbLocation)) return false;
       if (typeFilter === "pe" && !d.isPE) return false;
@@ -89,15 +95,15 @@ export default function PaymentTrackingClient() {
         const q = search.toLowerCase();
         if (!d.dealName.toLowerCase().includes(q) && !d.dealId.includes(q)) return false;
       }
-      if (fromTs || toTs) {
-        if (!d.closeDate) return false;
-        const cd = new Date(d.closeDate).getTime();
-        if (fromTs && cd < fromTs) return false;
-        if (toTs && cd > toTs) return false;
+      if (cutoffMs !== null && dateField !== "none") {
+        const dateStr = d[dateField];
+        if (!dateStr || typeof dateStr !== "string") return false;
+        const ts = new Date(dateStr).getTime();
+        if (!Number.isFinite(ts) || ts < cutoffMs) return false;
       }
       return true;
     });
-  }, [data?.deals, locationFilter, typeFilter, stageFilter, statusFilter, search, closeDateFrom, closeDateTo]);
+  }, [data?.deals, locationFilter, typeFilter, stageFilter, statusFilter, search, dateField, dateWindow]);
 
   const byGroup = useMemo(() => {
     const out: Record<PaymentStatusGroup, PaymentTrackingDeal[]> = {
@@ -246,35 +252,40 @@ export default function PaymentTrackingClient() {
           />
         </div>
 
-        <div className="flex flex-wrap gap-3 items-center">
-          <label className="flex items-center gap-1 text-xs text-muted">
-            Close from
-            <input
-              type="date"
-              value={closeDateFrom}
-              onChange={(e) => setCloseDateFrom(e.target.value)}
-              className="bg-surface-2 border border-border rounded px-2 py-1 text-xs text-foreground"
-            />
-          </label>
-          <label className="flex items-center gap-1 text-xs text-muted">
-            to
-            <input
-              type="date"
-              value={closeDateTo}
-              onChange={(e) => setCloseDateTo(e.target.value)}
-              className="bg-surface-2 border border-border rounded px-2 py-1 text-xs text-foreground"
-            />
-          </label>
-          {(closeDateFrom || closeDateTo) && (
-            <button
-              onClick={() => {
-                setCloseDateFrom("");
-                setCloseDateTo("");
-              }}
-              className="text-[10px] text-muted hover:text-foreground"
-            >
-              clear dates
-            </button>
+        {/* Date filter — pick which date field, then preset window */}
+        <div className="flex flex-wrap gap-3 items-center text-xs">
+          <span className="text-muted">Filter by date:</span>
+          <select
+            value={dateField}
+            onChange={(e) => setDateField(e.target.value as typeof dateField)}
+            className="bg-surface-2 border border-border rounded px-2 py-1 text-foreground"
+          >
+            <option value="none">— off —</option>
+            <option value="closeDate">Close date</option>
+            <option value="designApprovalDate">Design approval</option>
+            <option value="constructionCompleteDate">Construction complete</option>
+            <option value="inspectionPassedDate">Inspection passed</option>
+            <option value="ptoGrantedDate">PTO granted</option>
+          </select>
+          {dateField !== "none" && (
+            <>
+              <span className="text-muted">in last</span>
+              <div className="flex items-center gap-1">
+                {(["7", "14", "30", "60", "90", "180", "365"] as const).map((w) => (
+                  <button
+                    key={w}
+                    onClick={() => setDateWindow(w)}
+                    className={`px-2 py-0.5 rounded border ${
+                      dateWindow === w
+                        ? "bg-surface-elevated border-border text-foreground"
+                        : "border-transparent text-muted hover:text-foreground"
+                    }`}
+                  >
+                    {w === "365" ? "1y" : w === "180" ? "6mo" : `${w}d`}
+                  </button>
+                ))}
+              </div>
+            </>
           )}
         </div>
 
