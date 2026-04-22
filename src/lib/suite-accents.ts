@@ -12,6 +12,7 @@ export const SUITE_ACCENT_COLORS: Record<string, SuiteAccent> = {
   "/suites/intelligence":               { color: "#3b82f6", light: "#60a5fa" },
   "/suites/executive":                  { color: "#f59e0b", light: "#fbbf24" },
   "/suites/accounting":               { color: "#10b981", light: "#34d399" },
+  "/suites/sales-marketing":            { color: "#ec4899", light: "#f472b6" },
   "/admin":                             { color: "#f97316", light: "#fb923c" },
 };
 

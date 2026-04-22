@@ -58,6 +58,12 @@ export const SUITE_NAV_ENTRIES: SuiteNavEntry[] = [
     description: "PE deal payments, pricing tools, and financial tracking.",
   },
   {
+    href: "/suites/sales-marketing",
+    title: "Sales & Marketing Suite",
+    shortLabel: "Sales & Marketing",
+    description: "Pipeline visibility, revenue tracking, forecasting, and marketing analytics.",
+  },
+  {
     href: "/admin",
     title: "Admin",
     shortLabel: "Admin",

@@ -49,6 +49,11 @@ const BADGE_COLOR_CLASSES: Record<string, string> = {
   purple: "bg-purple-500/20 text-purple-400 border-purple-500/30",
   zinc: "bg-zinc-500/20 text-zinc-400 border-zinc-500/30",
   slate: "bg-slate-500/20 text-slate-400 border-slate-500/30",
+  fuchsia: "bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/30",
+  sky: "bg-sky-500/20 text-sky-400 border-sky-500/30",
+  violet: "bg-violet-500/20 text-violet-400 border-violet-500/30",
+  rose: "bg-rose-500/20 text-rose-400 border-rose-500/30",
+  pink: "bg-pink-500/20 text-pink-400 border-pink-500/30",
 };
 
 function badgeClass(color: string) {
