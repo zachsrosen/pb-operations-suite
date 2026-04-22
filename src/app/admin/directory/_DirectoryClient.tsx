@@ -29,6 +29,11 @@ const BADGE_CLASSES_BY_COLOR: Record<string, string> = {
   yellow: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
   cyan: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
   zinc: "bg-zinc-500/20 text-zinc-300 border-zinc-500/30",
+  fuchsia: "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/30",
+  sky: "bg-sky-500/20 text-sky-300 border-sky-500/30",
+  violet: "bg-violet-500/20 text-violet-300 border-violet-500/30",
+  rose: "bg-rose-500/20 text-rose-300 border-rose-500/30",
+  pink: "bg-pink-500/20 text-pink-300 border-pink-500/30",
 };
 
 function badgeClasses(role: UserRole): string {
