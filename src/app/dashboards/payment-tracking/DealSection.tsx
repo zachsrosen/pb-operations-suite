@@ -59,7 +59,7 @@ function compareDeals(a: PaymentTrackingDeal, b: PaymentTrackingDeal, k: SortKey
 
 interface Props {
   title: string;
-  accent: "red" | "amber" | "emerald";
+  accent: "red" | "amber" | "blue" | "emerald";
   deals: PaymentTrackingDeal[];
   defaultCollapsed?: boolean;
   rowLimit?: number;
@@ -69,6 +69,7 @@ interface Props {
 const ACCENT_BORDER: Record<Props["accent"], string> = {
   red: "border-l-red-400",
   amber: "border-l-amber-400",
+  blue: "border-l-blue-400",
   emerald: "border-l-emerald-400",
 };
 

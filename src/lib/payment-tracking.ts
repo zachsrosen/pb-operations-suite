@@ -8,6 +8,7 @@ import type {
   DaStatus,
   HubSpotDealPaymentProps,
   PaymentBucket,
+  PaymentStatusGroup,
   PaymentTrackingDeal,
   PaymentTrackingSummary,
   PeStatus,
@@ -270,6 +271,25 @@ export function transformDeal(
   const collectedPct =
     customerContractTotal > 0 ? (totalCollected / customerContractTotal) * 100 : 0;
 
+  // Count applicable milestones for the status-group calc. PTO is non-PE only.
+  const applicableMilestones: boolean[] = [
+    daStatus === "Paid In Full",
+    ccStatus === "Paid In Full",
+  ];
+  if (!isPE) {
+    applicableMilestones.push(ptoStatus === "Paid In Full");
+  } else {
+    applicableMilestones.push(peM1Status === "Paid");
+    applicableMilestones.push(peM2Status === "Paid");
+  }
+  const allPaid = applicableMilestones.every((p) => p);
+  const somePaid = applicableMilestones.some((p) => p);
+  const baseStatusGroup: PaymentStatusGroup = allPaid
+    ? "fully_paid"
+    : somePaid
+    ? "partially_paid"
+    : "not_started";
+
   const { bucket, attentionReasons } = computeBucket({
     daStatus,
     ccStatus,
@@ -333,6 +353,16 @@ export function transformDeal(
     totalPBRevenue,
     collectedPct,
     bucket,
+    // Top-level status group: attention always wins. Otherwise: if work
+    // milestone is hit but nothing's paid, that's "ready to invoice".
+    // Else: fully paid / partially paid / not started.
+    statusGroup:
+      attentionReasons.length > 0
+        ? "issues"
+        : !somePaid &&
+          (isDesignApproved || isConstructionComplete || isPtoGranted || isInspectionPassed)
+        ? "ready_to_invoice"
+        : baseStatusGroup,
     attentionReasons,
 
     paidInFullFlag: parsePaidInFull(props.paid_in_full),
