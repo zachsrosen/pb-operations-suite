@@ -369,7 +369,21 @@ function reconcileMoneyWithInvoices(deal: PaymentTrackingDeal): void {
 
   deal.customerCollected = daPaid + ccPaid + ptoPaid;
 
+  // Customer-side OUTSTANDING = sum of unpaid balance on attached customer
+  // invoices. Milestones with no invoice yet are NOT outstanding — they're
+  // "not yet invoiced" (tracked separately). This matches accounting's
+  // mental model: outstanding = money we've billed and are waiting to be paid.
+  const customerInvoicedBilled =
+    (deal.invoices?.da?.amountBilled ?? 0) +
+    (deal.invoices?.cc?.amountBilled ?? 0) +
+    (deal.invoices?.pto?.amountBilled ?? 0);
+  const customerInvoicedBalance =
+    Math.max(0, deal.invoices?.da?.balanceDue ?? 0) +
+    Math.max(0, deal.invoices?.cc?.balanceDue ?? 0) +
+    Math.max(0, deal.invoices?.pto?.balanceDue ?? 0);
+
   // PE-side: PE pays a portion of the same contract (NOT additional revenue).
+  let peInvoicedBalance = 0;
   if (deal.isPE) {
     const m1Paid =
       deal.invoices?.peM1?.amountPaid ??
@@ -382,23 +396,26 @@ function reconcileMoneyWithInvoices(deal: PaymentTrackingDeal): void {
       (deal.invoices?.peM2?.amountBilled ?? deal.peM2Amount ?? 0);
     deal.peBonusTotal = peBilled;
     deal.peBonusCollected = m1Paid + m2Paid;
+    peInvoicedBalance =
+      Math.max(0, deal.invoices?.peM1?.balanceDue ?? 0) +
+      Math.max(0, deal.invoices?.peM2?.balanceDue ?? 0);
   }
 
-  // Outstanding for the deal = contract minus EVERYTHING collected (customer
-  // side AND PE side).
-  const totalCollected = deal.customerCollected + (deal.peBonusCollected ?? 0);
-  deal.customerOutstanding = Math.max(0, deal.customerContractTotal - totalCollected);
-  deal.peBonusOutstanding = deal.isPE ? deal.customerOutstanding : null;
+  deal.customerOutstanding = customerInvoicedBalance;
+  deal.peBonusOutstanding = deal.isPE ? peInvoicedBalance : null;
 
-  // Total PB revenue is the deal contract (PE doesn't add to it).
+  // Not yet invoiced = contract - everything billed so far (customer side).
+  // PE invoices are extra revenue beyond contract for the markup portion;
+  // they don't count against the contract billing.
+  deal.notYetInvoiced = Math.max(0, deal.customerContractTotal - customerInvoicedBilled);
+
   deal.totalPBRevenue = deal.customerContractTotal;
 
-  // Cap at 100%. Real PE invoices include a "Participate Energy Markup"
-  // line item that PE pays in addition to the contract — that inflates
-  // total paid above deal.amount. We display the % capped so accounting
-  // doesn't see misleading 105% values.
+  // % collected = total paid / contract. NOT capped — PE markup legitimately
+  // pushes some PE deals over 100% and that's expected/desired visibility.
+  const totalCollected = deal.customerCollected + (deal.peBonusCollected ?? 0);
   deal.collectedPct =
     deal.customerContractTotal > 0
-      ? Math.min(100, (totalCollected / deal.customerContractTotal) * 100)
+      ? (totalCollected / deal.customerContractTotal) * 100
       : 0;
 }

@@ -49,7 +49,15 @@ export interface PaymentTrackingDeal {
 
   customerContractTotal: number;
   customerCollected: number;
+  /** Money the customer has been INVOICED for that hasn't been paid yet
+   *  (sum of invoice.balanceDue across DA/CC/PTO invoices). Does NOT
+   *  include milestones that haven't been invoiced yet — those are in
+   *  `notYetInvoiced`. */
   customerOutstanding: number;
+  /** Money still to be invoiced — contract amount minus everything
+   *  collected and everything currently sitting in unpaid invoices.
+   *  Surfaces milestones we haven't billed yet. */
+  notYetInvoiced: number;
 
   daStatus: DaStatus | null;
   daAmount: number | null;
@@ -137,9 +145,14 @@ export interface InvoiceSummary {
 export interface PaymentTrackingSummary {
   customerContractTotal: number;
   customerCollected: number;
+  /** Sum of unpaid invoice balances on customer-side invoices (DA/CC/PTO).
+   *  Money currently sitting in sent/draft invoices awaiting payment. */
   customerOutstanding: number;
+  /** Sum of contract value not yet invoiced across all deals. */
+  notYetInvoiced: number;
   peBonusTotal: number;
   peBonusCollected: number;
+  /** Sum of unpaid invoice balances on PE-side invoices (PE M1/M2). */
   peBonusOutstanding: number;
   totalPBRevenue: number;
   collectedPct: number;

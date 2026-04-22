@@ -245,11 +245,14 @@ export function transformDeal(
       (peM2Status === "Paid" ? peM2Amount ?? 0 : 0)
     : null;
 
-  // Outstanding for the deal = contract total minus everything paid (customer
-  // side AND PE side). PE payments collect against the same contract.
+  // Initial outstanding values — invoice-aware values are filled in by
+  // reconcileMoneyWithInvoices after invoice attachment. Pre-attach,
+  // outstanding/notYetInvoiced default to "everything not collected" /
+  // "everything not billed via deal-property amount".
   const totalCollected = customerCollected + (peBonusCollected ?? 0);
-  const customerOutstanding = Math.max(0, customerContractTotal - totalCollected);
-  const peBonusOutstanding = isPE ? customerOutstanding : null;
+  const customerOutstanding = 0; // refilled by reconcileMoneyWithInvoices
+  const peBonusOutstanding = isPE ? 0 : null;
+  const notYetInvoiced = Math.max(0, customerContractTotal - totalCollected);
 
   // Total revenue PB receives = the deal contract. For PE deals this still
   // equals deal.amount because PE pays a portion (not extra) of the same
@@ -313,6 +316,7 @@ export function transformDeal(
     customerContractTotal,
     customerCollected,
     customerOutstanding,
+    notYetInvoiced,
 
     daStatus,
     daAmount,
@@ -373,35 +377,35 @@ export function transformDeal(
 export function computeSummary(deals: PaymentTrackingDeal[]): PaymentTrackingSummary {
   let customerContractTotal = 0;
   let customerCollected = 0;
+  let customerOutstanding = 0;
+  let notYetInvoiced = 0;
   let peBonusTotal = 0;
   let peBonusCollected = 0;
+  let peBonusOutstanding = 0;
   let totalPBRevenue = 0;
 
   for (const d of deals) {
     customerContractTotal += d.customerContractTotal;
     customerCollected += d.customerCollected;
+    customerOutstanding += d.customerOutstanding;
+    notYetInvoiced += d.notYetInvoiced;
     peBonusTotal += d.peBonusTotal ?? 0;
     peBonusCollected += d.peBonusCollected ?? 0;
+    peBonusOutstanding += d.peBonusOutstanding ?? 0;
     totalPBRevenue += d.totalPBRevenue;
   }
 
-  // PE collects against the SAME contract as the customer side (PE pays a
-  // portion, not extra). Outstanding = contract total minus everything paid.
   const totalCollected = customerCollected + peBonusCollected;
-  const customerOutstanding = Math.max(0, customerContractTotal - totalCollected);
-  const peBonusOutstanding = Math.max(0, peBonusTotal - peBonusCollected);
-  const totalCollectable = customerContractTotal;
-  // Cap at 100% — see reconcileMoneyWithInvoices for context (PE markup
-  // line items can push total paid above deal.amount).
+  // % collected NOT capped — PE markup can legitimately push individual
+  // deals above 100% and the user wants that visibility.
   const collectedPct =
-    totalCollectable > 0
-      ? Math.min(100, (totalCollected / totalCollectable) * 100)
-      : 0;
+    customerContractTotal > 0 ? (totalCollected / customerContractTotal) * 100 : 0;
 
   return {
     customerContractTotal,
     customerCollected,
     customerOutstanding,
+    notYetInvoiced,
     peBonusTotal,
     peBonusCollected,
     peBonusOutstanding,

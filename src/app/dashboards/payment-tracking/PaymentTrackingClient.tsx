@@ -159,7 +159,7 @@ export default function PaymentTrackingClient() {
         ) : undefined
       }
     >
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
         <StatCard
           label="Total Contract Value"
           value={summary ? fmt(summary.customerContractTotal) : null}
@@ -167,21 +167,35 @@ export default function PaymentTrackingClient() {
           color="orange"
         />
         <StatCard
-          label="Collected from Customer"
-          value={summary ? fmt(summary.customerCollected) : null}
-          subtitle="DA + CC + PTO invoices"
+          label="Collected"
+          value={summary ? fmt(summary.customerCollected + summary.peBonusCollected) : null}
+          subtitle={
+            summary
+              ? `Customer ${fmt(summary.customerCollected)} · PE ${fmt(summary.peBonusCollected)}`
+              : null
+          }
           color="emerald"
         />
         <StatCard
-          label="Collected from PE"
-          value={summary ? fmt(summary.peBonusCollected) : null}
-          subtitle={summary ? `Out of ${fmt(summary.peBonusTotal)} (PE only)` : null}
-          color="cyan"
+          label="Outstanding (invoiced)"
+          value={summary ? fmt(summary.customerOutstanding + summary.peBonusOutstanding) : null}
+          subtitle="Sent / partial — awaiting payment"
+          color="amber"
+        />
+        <StatCard
+          label="Not Yet Invoiced"
+          value={summary ? fmt(summary.notYetInvoiced) : null}
+          subtitle="Contract value not yet billed"
+          color="blue"
         />
         <StatCard
           label="% Collected"
           value={summary ? `${summary.collectedPct.toFixed(0)}%` : null}
-          subtitle={summary ? `${fmt(summary.customerOutstanding)} outstanding` : null}
+          subtitle={
+            summary && summary.collectedPct > 100
+              ? "Includes PE markup"
+              : "of total contract"
+          }
           color="emerald"
         />
       </div>

@@ -137,8 +137,18 @@ export default function PaymentActionQueueClient() {
     return { rejected, overdue, ready };
   }, [actionDeals]);
 
-  const totalOutstanding = useMemo(
+  // Two related but distinct dollar buckets on action items:
+  //   - awaiting payment = sum of unpaid invoice balances (we billed it, no payment)
+  //   - ready to invoice = sum of contract value not yet billed where work is complete
+  const totalAwaitingPayment = useMemo(
     () => actionDeals.reduce((sum, d) => sum + d.customerOutstanding + (d.peBonusOutstanding ?? 0), 0),
+    [actionDeals]
+  );
+  const totalReadyToInvoice = useMemo(
+    () =>
+      actionDeals
+        .filter((d) => d.statusGroup === "ready_to_invoice")
+        .reduce((sum, d) => sum + d.notYetInvoiced, 0),
     [actionDeals]
   );
 
@@ -179,26 +189,26 @@ export default function PaymentActionQueueClient() {
         <StatCard
           label="Action Items"
           value={actionDeals.length.toString()}
-          subtitle="Issues + Ready to Invoice"
+          subtitle={`${grouped.overdue.length} overdue · ${grouped.ready.length} ready · ${grouped.rejected.length} rejected`}
           color="red"
         />
         <StatCard
-          label="Rejected"
-          value={grouped.rejected.length.toString()}
-          subtitle="PE rejected our docs"
-          color="red"
-        />
-        <StatCard
-          label="Overdue / Stuck"
-          value={grouped.overdue.length.toString()}
-          subtitle=">30 days past close OR stuck post-install"
+          label="Awaiting Payment"
+          value={fmt(totalAwaitingPayment)}
+          subtitle="Invoiced — sent / partial"
           color="amber"
         />
         <StatCard
-          label="$ Outstanding"
-          value={fmt(totalOutstanding)}
-          subtitle="Across action items only"
+          label="Ready to Invoice"
+          value={fmt(totalReadyToInvoice)}
+          subtitle="Work complete — invoice not yet sent"
           color="orange"
+        />
+        <StatCard
+          label="Total at Stake"
+          value={fmt(totalAwaitingPayment + totalReadyToInvoice)}
+          subtitle="Awaiting + ready combined"
+          color="red"
         />
       </div>
 
