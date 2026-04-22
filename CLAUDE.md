@@ -350,10 +350,10 @@ Suite switcher visibility (from `suite-nav.ts`):
 | Design & Engineering | ADMIN, OWNER, PM, TECH_OPS, DESIGN |
 | Permitting & Interconnection | ADMIN, OWNER, PM, TECH_OPS, PERMIT, INTERCONNECT |
 | Service | ADMIN, OWNER, PM, OPS_MGR, OPS, SERVICE |
-| D&R + Roofing | ADMIN, OWNER, PM, OPS_MGR, OPS, ROOFING |
+| D&R + Roofing | ADMIN, OWNER, PM, OPS_MGR, ROOFING |
 | Intelligence | ADMIN, OWNER, PM, OPS_MGR, INTELLIGENCE |
 | Executive | ADMIN, OWNER |
-| Accounting | ADMIN, OWNER, PM, OPS_MGR, OPS, SALES_MANAGER, ACCOUNTING |
+| Accounting | ADMIN, OWNER, ACCOUNTING |
 | Sales & Marketing | ADMIN, OWNER, SALES_MANAGER, SALES, MARKETING |
 | Admin | ADMIN only |
 

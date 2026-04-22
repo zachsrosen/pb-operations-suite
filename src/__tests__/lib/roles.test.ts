@@ -92,3 +92,69 @@ describe("scoped suite roles (Phase 1)", () => {
     expect(ROLES.SALES_MANAGER.suites).toContain("/suites/sales-marketing");
   });
 });
+
+describe("accounting suite tightening", () => {
+  it.each([
+    "OPERATIONS",
+    "OPERATIONS_MANAGER",
+    "PROJECT_MANAGER",
+    "TECH_OPS",
+    "SALES_MANAGER",
+    "SALES",
+    "SERVICE",
+    "DESIGN",
+    "PERMIT",
+    "INTERCONNECT",
+    "INTELLIGENCE",
+    "ROOFING",
+    "MARKETING",
+    "VIEWER",
+  ] as const)("%s cannot access /suites/accounting", (role) => {
+    const def = ROLES[role as UserRole];
+    expect(def.suites).not.toContain("/suites/accounting");
+    expect(def.allowedRoutes).not.toContain("/suites/accounting");
+  });
+
+  it.each([
+    "OPERATIONS",
+    "OPERATIONS_MANAGER",
+    "PROJECT_MANAGER",
+    "TECH_OPS",
+    "SALES_MANAGER",
+  ] as const)("%s does not have accounting-only dashboard routes", (role) => {
+    const def = ROLES[role as UserRole];
+    expect(def.allowedRoutes).not.toContain("/dashboards/pe-deals");
+    expect(def.allowedRoutes).not.toContain("/dashboards/pe");
+    expect(def.allowedRoutes).not.toContain("/api/accounting");
+    expect(def.allowedRoutes).not.toContain("/dashboards/payment-tracking");
+    expect(def.allowedRoutes).not.toContain("/dashboards/payment-action-queue");
+  });
+
+  it("only ADMIN, EXECUTIVE, and ACCOUNTING (and OWNER-legacy-mirror) have /suites/accounting", () => {
+    const rolesWithAccounting = (Object.entries(ROLES) as Array<[UserRole, (typeof ROLES)[UserRole]]>)
+      .filter(([, def]) => def.suites.includes("/suites/accounting"))
+      .map(([role]) => role)
+      .sort();
+    // OWNER is a legacy role that mirrors EXECUTIVE's suites, so it also shows here.
+    expect(rolesWithAccounting).toEqual(["ACCOUNTING", "ADMIN", "EXECUTIVE", "OWNER"]);
+  });
+});
+
+describe("OPERATIONS role narrowing", () => {
+  it("OPERATIONS does not access D&R + Roofing suite", () => {
+    expect(ROLES.OPERATIONS.suites).not.toContain("/suites/dnr-roofing");
+    expect(ROLES.OPERATIONS.allowedRoutes).not.toContain("/suites/dnr-roofing");
+  });
+
+  it("OPERATIONS does not have D&R or Roofing dashboard routes", () => {
+    const routes = ROLES.OPERATIONS.allowedRoutes;
+    expect(routes).not.toContain("/dashboards/dnr");
+    expect(routes).not.toContain("/dashboards/dnr-scheduler");
+    expect(routes).not.toContain("/dashboards/roofing");
+    expect(routes).not.toContain("/dashboards/roofing-scheduler");
+  });
+
+  it("OPERATIONS keeps Operations + Service suite access", () => {
+    expect(ROLES.OPERATIONS.suites).toEqual(["/suites/operations", "/suites/service"]);
+  });
+});
