@@ -424,27 +424,27 @@ export default function PeDealsPage() {
   const allDeals = unpaid;
 
   // Summary stats (active deals only, exclude fully paid)
-  const totalEPC = allDeals.reduce((s, d) => s + (d.epcPrice ?? 0), 0);
-  const totalPEReceivable = allDeals.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
-  const totalRevenue = allDeals.reduce((s, d) => s + (d.totalPBRevenue ?? 0), 0);
+  // Hero-card stats use the FULL filtered PE deal set (paid + approved +
+  // unpaid). NOT `allDeals` — that's the leftover bucket after subtracting
+  // deals shown in other table sections. Hero cards should reflect the
+  // whole visible PE pipeline, including paid + approved deals.
+  const totalEPC = filtered.reduce((s, d) => s + (d.epcPrice ?? 0), 0);
+  const totalPEReceivable = filtered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
+  const totalRevenue = filtered.reduce((s, d) => s + (d.totalPBRevenue ?? 0), 0);
 
   // Ready-to-invoice: PE has approved our docs but we haven't been paid.
-  // "Approved" status means PE signed off — we can issue the invoice. "Paid"
-  // means money already in. Anything earlier is upstream (waiting on us
-  // or waiting on PE).
-  const m1ReadyDeals = allDeals.filter((d) => d.peM1Status === "Approved");
-  const m2ReadyDeals = allDeals.filter((d) => d.peM2Status === "Approved");
+  const m1ReadyDeals = filtered.filter((d) => d.peM1Status === "Approved");
+  const m2ReadyDeals = filtered.filter((d) => d.peM2Status === "Approved");
   const readyToInvoiceCount = m1ReadyDeals.length + m2ReadyDeals.length;
   const readyToInvoiceValue =
     m1ReadyDeals.reduce((s, d) => s + (d.pePaymentIC ?? 0), 0) +
     m2ReadyDeals.reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
 
-  // Already-paid totals so we can show collected vs receivable on the
-  // PE Receivable card.
-  const m1PaidValue = allDeals
+  // Already-paid PE totals across the full filtered set.
+  const m1PaidValue = filtered
     .filter((d) => d.peM1Status === "Paid")
     .reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
-  const m2PaidValue = allDeals
+  const m2PaidValue = filtered
     .filter((d) => d.peM2Status === "Paid")
     .reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
   const totalPECollected = m1PaidValue + m2PaidValue;
@@ -493,9 +493,9 @@ export default function PeDealsPage() {
       {/* Hero Stats */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 stagger-grid">
         <StatCard
-          key={`deals-${allDeals.length}`}
-          label="Active PE Deals"
-          value={String(allDeals.length)}
+          key={`deals-${filtered.length}`}
+          label="All PE Deals"
+          value={String(filtered.length)}
           subtitle={`Total EPC ${fmt(totalEPC)}`}
           color="orange"
         />
