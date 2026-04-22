@@ -135,6 +135,20 @@ export default function AdminWorkflowsPage() {
     await load();
   }
 
+  async function duplicateOne(id: string) {
+    try {
+      const res = await fetch(`/api/admin/workflows/${id}/duplicate`, { method: "POST" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      router.push(`/dashboards/admin/workflows/${data.workflow.id}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
   async function deleteOne(id: string) {
     if (!confirm("Delete this workflow permanently? This also deletes its run history.")) return;
     await fetch(`/api/admin/workflows/${id}`, { method: "DELETE" });
@@ -228,6 +242,13 @@ export default function AdminWorkflowsPage() {
                       >
                         Edit
                       </Link>
+                      <button
+                        onClick={() => duplicateOne(w.id)}
+                        className="text-zinc-400 hover:text-zinc-300"
+                        title="Duplicate as new DRAFT"
+                      >
+                        Clone
+                      </button>
                       {w.status !== "ARCHIVED" && (
                         <button
                           onClick={() => archiveOne(w.id)}
