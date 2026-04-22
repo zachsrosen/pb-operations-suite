@@ -77,13 +77,15 @@ function tooltip(d: DotInfo): string {
 }
 
 export function MilestoneStrip({ deal }: { deal: PaymentTrackingDeal }) {
+  // Prefer invoice amount/date when an invoice is attached; deal-property
+  // values are sometimes null even when the milestone is paid.
   const dots: DotInfo[] = [
     {
       label: "DA",
       state: dotForDa(deal.daStatus, deal.isDesignApproved && deal.daStatus !== "Paid In Full"),
       status: deal.daStatus,
-      amount: deal.daAmount,
-      paidDate: deal.daPaidDate,
+      amount: deal.invoices?.da?.amountBilled ?? deal.daAmount,
+      paidDate: deal.invoices?.da?.paymentDate ?? deal.daPaidDate,
       invoice: deal.invoices?.da,
     },
     {
@@ -93,8 +95,8 @@ export function MilestoneStrip({ deal }: { deal: PaymentTrackingDeal }) {
         deal.isConstructionComplete && deal.ccStatus !== "Paid In Full"
       ),
       status: deal.ccStatus,
-      amount: deal.ccAmount,
-      paidDate: deal.ccPaidDate,
+      amount: deal.invoices?.cc?.amountBilled ?? deal.ccAmount,
+      paidDate: deal.invoices?.cc?.paymentDate ?? deal.ccPaidDate,
       invoice: deal.invoices?.cc,
     },
     {
@@ -118,8 +120,8 @@ export function MilestoneStrip({ deal }: { deal: PaymentTrackingDeal }) {
         deal.isInspectionPassed && deal.peM1Status === "Approved"
       ),
       status: deal.peM1Status,
-      amount: deal.peM1Amount,
-      paidDate: deal.peM1ApprovalDate,
+      amount: deal.invoices?.peM1?.amountBilled ?? deal.peM1Amount,
+      paidDate: deal.invoices?.peM1?.paymentDate ?? deal.peM1ApprovalDate,
       invoice: deal.invoices?.peM1,
     });
     dots.push({
@@ -129,8 +131,8 @@ export function MilestoneStrip({ deal }: { deal: PaymentTrackingDeal }) {
         deal.isPtoGranted && deal.peM2Status === "Approved"
       ),
       status: deal.peM2Status,
-      amount: deal.peM2Amount,
-      paidDate: deal.peM2ApprovalDate,
+      amount: deal.invoices?.peM2?.amountBilled ?? deal.peM2Amount,
+      paidDate: deal.invoices?.peM2?.paymentDate ?? deal.peM2ApprovalDate,
       invoice: deal.invoices?.peM2,
     });
   }

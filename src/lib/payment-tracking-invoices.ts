@@ -298,6 +298,9 @@ export async function attachInvoicesToDeals(
     if (Object.keys(dealInvoices).length > 0) {
       deal.invoices = dealInvoices;
       attachedCount++;
+      // Re-derive money fields using invoice amounts (truer than deal-property
+      // amounts, which are sometimes null even when the milestone is paid).
+      reconcileMoneyWithInvoices(deal);
     }
   }
 
@@ -305,4 +308,61 @@ export async function attachInvoicesToDeals(
     `[payment-tracking-invoices] attached invoices to ${attachedCount}/${deals.length} deals ` +
     `(${allInvoiceIds.length} invoices, ${allLineItemIds.length} line items)`
   );
+}
+
+/**
+ * After invoices are attached, recompute customerCollected / customerOutstanding
+ * / peBonusCollected / peBonusOutstanding / collectedPct using invoice amounts.
+ *
+ * Why: the original transformDeal calculation used deal-property amounts
+ * (da_invoice_amount, cc_invoice_amount, pe_payment_ic, pe_payment_pc). For
+ * deals where the deal-property amount is null but the invoice amount is real,
+ * the % collected was computing as 0 even though the milestone was paid.
+ *
+ * Strategy per milestone:
+ *   - If invoice attached AND has amountPaid > 0 → use invoice.amountPaid
+ *   - Else if deal-property status is "Paid In Full" / "Paid" → use deal-property amount
+ *   - Else → counts as 0
+ */
+function reconcileMoneyWithInvoices(deal: PaymentTrackingDeal): void {
+  // Customer-side (DA + CC). PTO is amount-rare; treat as $0 unless invoice present.
+  const daPaid =
+    deal.invoices?.da?.amountPaid ??
+    (deal.daStatus === "Paid In Full" ? deal.daAmount ?? 0 : 0);
+  const ccPaid =
+    deal.invoices?.cc?.amountPaid ??
+    (deal.ccStatus === "Paid In Full" ? deal.ccAmount ?? 0 : 0);
+  const ptoPaid = deal.invoices?.pto?.amountPaid ?? 0;
+
+  // Customer billed total (denominator). Prefer the deal contract amount; if
+  // invoices add up to more (e.g., change orders bumped contract), use that.
+  const invoicedTotal =
+    (deal.invoices?.da?.amountBilled ?? 0) +
+    (deal.invoices?.cc?.amountBilled ?? 0) +
+    (deal.invoices?.pto?.amountBilled ?? 0);
+  const customerBilled = Math.max(deal.customerContractTotal, invoicedTotal);
+
+  deal.customerContractTotal = customerBilled;
+  deal.customerCollected = daPaid + ccPaid + ptoPaid;
+  deal.customerOutstanding = Math.max(0, customerBilled - deal.customerCollected);
+
+  // PE-side
+  if (deal.isPE) {
+    const m1Paid =
+      deal.invoices?.peM1?.amountPaid ??
+      (deal.peM1Status === "Paid" ? deal.peM1Amount ?? 0 : 0);
+    const m2Paid =
+      deal.invoices?.peM2?.amountPaid ??
+      (deal.peM2Status === "Paid" ? deal.peM2Amount ?? 0 : 0);
+    const peBilled =
+      (deal.invoices?.peM1?.amountBilled ?? deal.peM1Amount ?? 0) +
+      (deal.invoices?.peM2?.amountBilled ?? deal.peM2Amount ?? 0);
+    deal.peBonusTotal = peBilled;
+    deal.peBonusCollected = m1Paid + m2Paid;
+    deal.peBonusOutstanding = Math.max(0, peBilled - (m1Paid + m2Paid));
+  }
+
+  const totalCollectable = deal.customerContractTotal + (deal.peBonusTotal ?? 0);
+  const totalCollected = deal.customerCollected + (deal.peBonusCollected ?? 0);
+  deal.collectedPct = totalCollectable > 0 ? (totalCollected / totalCollectable) * 100 : 0;
 }
