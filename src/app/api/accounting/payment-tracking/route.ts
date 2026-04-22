@@ -115,11 +115,16 @@ export async function GET(request: Request) {
     `[payment-tracking] fetched ${salesProps.length} sales + ${projectProps.length} project deals`
   );
 
+  // getStageMaps returns maps keyed by pipeline KEY (sales/project/dnr/etc),
+  // NOT by pipeline ID. Look up by key, not by env-var ID.
   const maps = await getStageMaps().catch(() => ({} as Record<string, Record<string, string>>));
   const mergedStageMap: Record<string, string> = {
-    ...(maps[salesPipeline] ?? {}),
-    ...(maps[projectPipeline] ?? {}),
+    ...(maps.sales ?? {}),
+    ...(maps.project ?? {}),
   };
+  console.log(
+    `[payment-tracking] stage map size: ${Object.keys(mergedStageMap).length} entries`
+  );
 
   const asOf = new Date();
   const deals = props.map((p) =>

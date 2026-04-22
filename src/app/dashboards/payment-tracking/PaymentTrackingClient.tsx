@@ -228,7 +228,25 @@ export default function PaymentTrackingClient() {
         </div>
       </div>
 
-      {/* Sections */}
+      {/* All-PE section: every PE-tagged deal, regardless of milestone bucket.
+          Only renders when the user hasn't already filtered to PE-only (would be
+          redundant with the bucket sections below). */}
+      {typeFilter !== "pe" && (() => {
+        const peDeals = filtered.filter(
+          (d) => d.isPE && (!outstandingOnly || d.bucket !== "fully_collected")
+        );
+        if (peDeals.length === 0) return null;
+        return (
+          <DealSection
+            key="all-pe"
+            title="⚡ All PE Deals"
+            accent="blue"
+            deals={peDeals}
+          />
+        );
+      })()}
+
+      {/* Sections by milestone bucket */}
       {BUCKET_META.map((meta) => {
         const deals = byBucket[meta.key];
         if (outstandingOnly && meta.key === "fully_collected") return null;

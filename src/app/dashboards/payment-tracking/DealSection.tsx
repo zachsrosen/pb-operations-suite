@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { PaymentTrackingDeal } from "@/lib/payment-tracking-types";
 import { StatusPill } from "./StatusPill";
 import { PaidInFullIndicator } from "./PaidInFullIndicator";
@@ -28,6 +28,59 @@ function truncate(s: string, n = 22) {
   return s.length > n ? s.slice(0, n) + "…" : s;
 }
 
+// Sortable column keys correspond to deal fields or computed accessors.
+type SortKey =
+  | "dealName"
+  | "pbLocation"
+  | "dealStageLabel"
+  | "isPE"
+  | "closeDate"
+  | "customerContractTotal"
+  | "daStatus"
+  | "daAmount"
+  | "daPaidDate"
+  | "ccStatus"
+  | "ccAmount"
+  | "ccPaidDate"
+  | "ptoStatus"
+  | "peM1Status"
+  | "peM1Amount"
+  | "peM2Status"
+  | "peM2Amount"
+  | "totalPBRevenue"
+  | "outstanding"
+  | "collectedPct"
+  | "paidInFullFlag";
+
+type SortDir = "asc" | "desc";
+
+function getSortValue(d: PaymentTrackingDeal, key: SortKey): string | number | null {
+  switch (key) {
+    case "outstanding":
+      return d.customerOutstanding + (d.peBonusOutstanding ?? 0);
+    case "isPE":
+      return d.isPE ? 1 : 0;
+    case "paidInFullFlag":
+      return d.paidInFullFlag === null ? -1 : d.paidInFullFlag ? 1 : 0;
+    default:
+      return (d[key as keyof PaymentTrackingDeal] as string | number | null) ?? null;
+  }
+}
+
+function compareDeals(a: PaymentTrackingDeal, b: PaymentTrackingDeal, key: SortKey, dir: SortDir): number {
+  const av = getSortValue(a, key);
+  const bv = getSortValue(b, key);
+  if (av === null && bv === null) return 0;
+  if (av === null) return 1;
+  if (bv === null) return -1;
+  if (typeof av === "number" && typeof bv === "number") {
+    return dir === "asc" ? av - bv : bv - av;
+  }
+  return dir === "asc"
+    ? String(av).localeCompare(String(bv))
+    : String(bv).localeCompare(String(av));
+}
+
 interface Props {
   title: string;
   accent: "red" | "amber" | "blue" | "cyan" | "emerald";
@@ -44,6 +97,36 @@ const ACCENT_BORDER: Record<Props["accent"], string> = {
   emerald: "border-l-emerald-400",
 };
 
+const COLUMNS: { key: SortKey; label: string; align?: "left" | "right" | "center" }[] = [
+  { key: "dealName", label: "Deal" },
+  { key: "pbLocation", label: "Loc" },
+  { key: "dealStageLabel", label: "Stage" },
+  { key: "isPE", label: "Type", align: "center" },
+  { key: "closeDate", label: "Close" },
+  { key: "customerContractTotal", label: "Contract", align: "right" },
+  { key: "daStatus", label: "DA" },
+  { key: "daAmount", label: "DA $", align: "right" },
+  { key: "daPaidDate", label: "DA Paid" },
+  { key: "ccStatus", label: "CC" },
+  { key: "ccAmount", label: "CC $", align: "right" },
+  { key: "ccPaidDate", label: "CC Paid" },
+  { key: "ptoStatus", label: "PTO" },
+  { key: "peM1Status", label: "PE M1" },
+  { key: "peM1Amount", label: "PE M1 $", align: "right" },
+  { key: "peM2Status", label: "PE M2" },
+  { key: "peM2Amount", label: "PE M2 $", align: "right" },
+  { key: "totalPBRevenue", label: "Total Rev", align: "right" },
+  { key: "outstanding", label: "Outstanding", align: "right" },
+  { key: "collectedPct", label: "%", align: "right" },
+  { key: "paidInFullFlag", label: "Paid?", align: "center" },
+];
+
+const ALIGN_CLASS = {
+  left: "text-left",
+  right: "text-right",
+  center: "text-center",
+};
+
 export function DealSection({
   title,
   accent,
@@ -53,8 +136,29 @@ export function DealSection({
 }: Props) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [showAll, setShowAll] = useState(false);
-  const effectiveDeals = rowLimit && !showAll ? deals.slice(0, rowLimit) : deals;
-  const hidden = deals.length - effectiveDeals.length;
+  const [sortKey, setSortKey] = useState<SortKey>("closeDate");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  const sortedDeals = useMemo(() => {
+    return [...deals].sort((a, b) => compareDeals(a, b, sortKey, sortDir));
+  }, [deals, sortKey, sortDir]);
+
+  const effectiveDeals = rowLimit && !showAll ? sortedDeals.slice(0, rowLimit) : sortedDeals;
+  const hidden = sortedDeals.length - effectiveDeals.length;
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
+
+  const sortArrow = (key: SortKey) => {
+    if (sortKey !== key) return "";
+    return sortDir === "asc" ? " ↑" : " ↓";
+  };
 
   return (
     <div className="mb-6">
@@ -74,33 +178,22 @@ export function DealSection({
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-border">
-                <th className="px-2 py-1.5 text-left font-medium text-muted">Deal</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted">Loc</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted">Stage</th>
-                <th className="px-2 py-1.5 text-center font-medium text-muted">Type</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted">Close</th>
-                <th className="px-2 py-1.5 text-right font-medium text-muted">Contract</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted">DA</th>
-                <th className="px-2 py-1.5 text-right font-medium text-muted">DA $</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted">DA Paid</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted">CC</th>
-                <th className="px-2 py-1.5 text-right font-medium text-muted">CC $</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted">CC Paid</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted">PTO</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted">PE M1</th>
-                <th className="px-2 py-1.5 text-right font-medium text-muted">PE M1 $</th>
-                <th className="px-2 py-1.5 text-left font-medium text-muted">PE M2</th>
-                <th className="px-2 py-1.5 text-right font-medium text-muted">PE M2 $</th>
-                <th className="px-2 py-1.5 text-right font-medium text-muted">Total Rev</th>
-                <th className="px-2 py-1.5 text-right font-medium text-muted">Outstanding</th>
-                <th className="px-2 py-1.5 text-right font-medium text-muted">%</th>
-                <th className="px-2 py-1.5 text-center font-medium text-muted">Paid?</th>
+                {COLUMNS.map((col) => (
+                  <th
+                    key={col.key}
+                    onClick={() => toggleSort(col.key)}
+                    className={`px-2 py-1.5 font-medium text-muted whitespace-nowrap cursor-pointer hover:text-foreground select-none ${ALIGN_CLASS[col.align ?? "left"]}`}
+                  >
+                    {col.label}
+                    {sortArrow(col.key)}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {effectiveDeals.length === 0 ? (
                 <tr>
-                  <td colSpan={21} className="px-3 py-6 text-center text-muted">
+                  <td colSpan={COLUMNS.length} className="px-3 py-6 text-center text-muted">
                     No deals
                   </td>
                 </tr>
@@ -130,7 +223,7 @@ export function DealSection({
                       {shortLocation(d.pbLocation)}
                     </td>
                     <td className="px-2 py-1.5 text-muted" title={d.dealStageLabel}>
-                      {truncate(d.dealStageLabel, 12)}
+                      {truncate(d.dealStageLabel, 14)}
                     </td>
                     <td className="px-2 py-1.5 text-center">
                       {d.isPE ? (
