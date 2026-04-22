@@ -35,8 +35,28 @@ export const bomDesignCompleteRequested = eventType(
   },
 );
 
+// ---------------------------------------------------------------------------
+// Admin Workflows (Phase 1)
+// ---------------------------------------------------------------------------
+
+export const adminWorkflowRunRequested = eventType(
+  "admin-workflow/run.requested",
+  {
+    schema: z.object({
+      runId: z.string(),
+      workflowId: z.string(),
+      triggeredByEmail: z.string(),
+      triggerContext: z.record(z.string(), z.unknown()),
+    }),
+  },
+);
+
 export const inngest = new Inngest({ id: "pb-tech-ops" });
 
 export function isInngestBomEnabled(): boolean {
   return process.env.INNGEST_BOM_ENABLED === "true";
+}
+
+export function isAdminWorkflowsEnabled(): boolean {
+  return process.env.ADMIN_WORKFLOWS_ENABLED === "true";
 }
