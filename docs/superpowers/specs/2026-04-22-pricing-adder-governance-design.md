@@ -16,8 +16,9 @@ The downstream effects:
 - **Margin leakage.** Missed adders show up as unfunded labor at install.
 - **No feedback loop.** The BOM pipeline already extracts what designers drew from plansets, and we already have HubSpot deal + Zoho SO data. But there's no layer that reconciles *what was sold* against *what was designed / installed*, so we can't answer "was this deal priced correctly?" at scale.
 - **Customer trust.** CO conversations that could have been priced up front feel like surprises because they arrive after contract signature.
+- **Internal drift between pricing systems.** PB already has an in-house pricing calculator (`src/lib/pricing-calculator.ts`) reverse-engineered from OpenSolar's "Costing Scheme Itemized" (ID 10059), plus an IDR Meeting adder-tracking system (boolean columns on `IdrEscalationQueue`). Both hold adder data today, they disagree, and the IDR columns (trenching, ground mount, MPU, EV charger) are tracked for context but are **never priced** by the calculator — they have zero dollar value in the engine.
 
-OpenSolar is where reps live and it owns the quote-facing UX well. It cannot own reconciliation — it doesn't see the planset BOM, the Zoho SO, install photos, or the final invoice. PB Ops Suite is the only place in the stack that already touches all of those systems.
+OpenSolar is where reps live and it owns the quote-facing UX well. It cannot own reconciliation — it doesn't see the planset BOM, the Zoho SO, install photos, or the final invoice. PB Ops Suite is the only place in the stack that already touches all of those systems, and it's also the place that already contains the pricing math — just without a governed source for the inputs.
 
 ## Solution
 
@@ -352,6 +353,29 @@ enum SyncTrigger {
 - Credentials: new env vars `OPENSOLAR_API_TOKEN` and `OPENSOLAR_ORG_ID`. Must be added to Vercel production env **before** cutover (verify with `vercel env ls production`).
 - **Kill switch:** env var `ADDER_SYNC_ENABLED` — when false, writes go to the DB but nothing pushes to OpenSolar. Safe default for staging and for emergency stop.
 
+### Pricing Calculator Integration
+
+PB already has an in-house pricing calculator at [src/lib/pricing-calculator.ts](src/lib/pricing-calculator.ts) — a pure-function `calcPrice()` reverse-engineered from OpenSolar's "Costing Scheme Itemized" (ID 10059) and verified against 8+ sold projects. It's sound math. It also holds three sets of hardcoded adder constants (`ROOF_TYPES`, `STOREY_ADDERS`, `PITCH_ADDERS`, `ORG_ADDERS`), and it's disconnected from the IDR Meeting adder-tracking system (boolean columns on `IdrEscalationQueue`: `adderTrenching`, `adderGroundMount`, `adderMpuUpgrade`, `adderEvCharger`, `adderSteepPitch`, `adderTwoStorey`, `adderTileRoof` + a `customAdders` JSON array).
+
+Today:
+- The pricing calculator knows how to price roof type, storey, and pitch but **cannot price trenching, ground mount, MPU, or EV charger** — those are tracked in IDR with no dollar amount and are silently ignored by `calcPrice()`.
+- The IDR Meeting checkbox UI is effectively an ad-hoc triage checklist already in use, but its outputs don't flow into the pricing math.
+- The calculator's `customFixedAdder` input is a single scalar number, while the IDR `customAdders` column is an array of `{name, amount}` objects. Audit trail is lost at the boundary.
+
+**Phase 1 scope — the Adder Catalog becomes the source of truth for these constants:**
+
+1. **Replace hardcoded constants with DB-backed lookups.** `ROOF_TYPES`, `STOREY_ADDERS`, `PITCH_ADDERS`, and `ORG_ADDERS` move out of `pricing-calculator.ts` and into seeded `Adder` rows with category tags (`ROOFING`, `STRUCTURAL`, `ORG`). A new helper `lib/adders/pricing.ts::resolveAddersForCalc(shop, context)` returns the catalog rows needed by `calcPrice()`. The calculator stays pure — the helper does the I/O and passes resolved values in.
+2. **Unify IDR booleans with the catalog.** The seven `adder*` boolean columns on `IdrEscalationQueue` stay (no destructive migration), but each maps 1:1 to an `Adder.code`. The IDR meeting view reads amounts from the catalog at render time via the existing `PricingBreakdown` component. Previously-zero adders (trenching, ground mount, MPU, EV charger) now carry catalog prices.
+3. **`customFixedAdder` becomes an array.** `CalcInput.customAdders: Array<{ code?: string, name: string, amount: number, source: "catalog" | "adhoc" }>` replaces the single-number field. Catalog-sourced entries reference an `Adder.code`; ad-hoc entries are explicitly labeled so Phase 3 reconciliation can measure how often reps override the catalog.
+4. **TriageRun writes to the calculator, not just HubSpot.** On triage submit, the `selectedAdders` set is passed to `calcPrice()` as `customAdders` plus the catalog-sourced roof/storey/pitch rows, producing a deal-level price breakdown that also lands on the deal. HubSpot line items remain the customer-visible record; the calculator breakdown is the internal margin view.
+5. **Fix the latent bugs while we're in here** (all small, all blocking correct catalog behavior):
+   - `calcPrice()` loops over `type !== "fixed"` at roughly [pricing-calculator.ts:589](src/lib/pricing-calculator.ts) — percentage adders other than PE are silently ignored today. Generalize to handle any `type: "percentage"` adder.
+   - Typo `peEnergyCommunnity` (double `n`) in `CalcBreakdown` interface and return object — rename.
+   - `DC_QUALIFYING_MODULE_BRANDS` is an empty array today (so PE DC bonus never triggers). Either seed it from Phase 0 data or flag as an open question.
+6. **Out of scope for Phase 1:** reverse-engineering additional OpenSolar costing scheme line items beyond what the calculator already covers, or changing the calc's markup/base-$/W math. Only the adder inputs migrate.
+
+This integration is the backbone of Phase 3's margin dashboard — once adders flow from catalog → triage → calculator → HubSpot consistently, the calc output becomes the as-sold margin record we can later reconcile against actual install cost.
+
 ---
 
 ## Rollout & Cutover
@@ -372,6 +396,8 @@ enum SyncTrigger {
 | Owner becomes a bottleneck | Delegate via `canManageAdders` permission — grant to 2–3 trusted leads, not just one person. |
 | Triage writes line items to HubSpot that conflict with OpenSolar-originated items | Phase 1: use a distinct `pb_source=triage` marker on the line item (or naming convention) so downstream systems can distinguish. Document the reconciliation rule in the implementation plan. |
 | Phase 0 audit stalls | Timebox to 2 weeks; if incomplete, ship Phase 1 with the partial canonical list and treat the remainder as ongoing cleanup. |
+| Pricing calculator refactor breaks existing UI | `calcPrice()` has unit tests against 8+ verified sold projects; extend that suite to cover catalog-sourced adder inputs before flipping over. Keep `customFixedAdder` as a deprecated alias that falls back to a single-entry array for one release, then remove. |
+| IDR adder booleans fall out of sync with catalog codes | Seed catalog with exact `Adder.code` values matching the seven existing IDR columns; add a lint/test that fails if any `IdrEscalationQueue.adder*` column lacks a matching catalog row. |
 
 ## Open Questions
 
@@ -379,6 +405,7 @@ enum SyncTrigger {
 2. **OpenSolar Pre-Phase Discovery outcomes** — lockdown capability, shop-aware pricing, write API shape. Must be answered before implementation plan locks.
 3. **Deal-state rule for triage:** can triage only be run on open/pre-contract deals, or also on closed deals (e.g., during site survey before install)? Leaning: Phase 1 allows any open deal; Phase 2 formalizes "re-triage at site survey" as the CO trigger.
 4. **Historical tail:** deals already quoted with the old library remain as-is; Phase 1 governs new quotes only. Phases 2 and 3 handle the historical tail.
+5. **DC bonus qualification data:** `DC_QUALIFYING_MODULE_BRANDS` in the pricing calculator is empty today, so the PE solar DC bonus never triggers. Is this an oversight (should be seeded from ops knowledge as part of Phase 0) or intentional (handled outside the calculator)? Needed before Phase 1 ships so the catalog + calc output is correct.
 
 ## Success Metrics
 
