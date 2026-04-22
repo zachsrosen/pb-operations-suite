@@ -144,6 +144,7 @@ The triage surface is the primary user-visible artifact of Phase 1 — it is wha
 - Engine loads all `active` adders whose `triageQuestion` is non-null.
 - Questions are grouped by category and shown in a fixed, owner-defined order.
 - Each answer is evaluated against `triggerLogic` via `lib/adders/triage.ts` (pure function). A match means "this adder is needed."
+- **`triggerLogic` JSON shape (Phase 1):** `{ op: "lt" | "lte" | "eq" | "gte" | "gt" | "contains" | "truthy", value?: number | string | boolean, qtyFrom?: "answer" | "constant", qtyConstant?: number }`. The authoring UI renders a simple predicate builder that writes this shape; `lib/adders/triage.ts` evaluates it. Composite predicates (`and`/`or`) are explicitly out of scope for Phase 1.
 - Matched adders appear in a review panel with quantity fields (auto-populated from the answer when possible, e.g., trench linear feet from a numeric question).
 - `photosRequired` adders block submit until a photo is attached.
 - On submit:
@@ -229,13 +230,14 @@ model AdderSyncRun {
 
 model TriageRun {
   id                 String   @id @default(cuid())
-  dealId             String                      // HubSpot deal ID
+  dealId             String?                     // HubSpot deal ID; null for pre-deal (address-only) entry
+  prelimAddress      Json?                       // { street, unit, city, state, zip } when dealId is null
   runBy              String                      // user.id
   runAt              DateTime @default(now())
   answers            Json                        // { [adderId]: {question, answer, unit} }
   recommendedAdders  Json                        // [{ adderId, code, qty, price }] computed at submit time
   selectedAdders     Json                        // rep-confirmed subset written to HubSpot
-  photos             Json?                       // [{ adderId, url, uploadedAt }]
+  photos             Json?                       // [{ adderId, storageKey, url, uploadedAt }]
   submitted          Boolean  @default(false)
   submittedAt        DateTime?
   hubspotLineItemIds Json?                       // [{ adderId, lineItemId }] for rollback on partial failure
@@ -307,7 +309,7 @@ enum SyncTrigger {
 - Mobile-first single-column layout; large touch targets.
 - Deal lookup step (by ID, address, or customer name).
 - Stepper: one question per screen, with progress indicator. Category groupings visible.
-- Photo capture uses the browser File API; compressed client-side before upload.
+- Photo capture uses the browser File API; compressed client-side before upload. Storage target: the existing `/api/upload` pattern used for BOM planset uploads (S3-backed via signed URL). `TriageRun.photos` stores `{ storageKey, url, uploadedAt }` per photo.
 - Review screen lists recommended adders with quantity/price; rep can uncheck any with a mandatory `notes` reason for audit (Phase 3 reconciliation uses this to detect common opt-outs).
 - Submit shows success state + link back to the deal.
 
@@ -324,7 +326,7 @@ enum SyncTrigger {
 | `/api/adders/sync` | POST | Trigger sync to OpenSolar | `canManageAdders` |
 | `/api/cron/adders-sync` | POST | Nightly sync (cron-secret gated) | cron secret |
 | `/api/triage/runs` | POST | Create a draft `TriageRun` for a deal | authenticated |
-| `/api/triage/runs/[id]` | GET, PATCH | Load / update draft answers | authenticated (run owner or manager) |
+| `/api/triage/runs/[id]` | GET, PATCH | Load / update draft answers | authenticated; write requires `runBy` match or `canManageAdders` |
 | `/api/triage/runs/[id]/submit` | POST | Finalize, write HubSpot line items | authenticated |
 | `/api/triage/recommend` | POST | Pure-function endpoint: given answers, return recommended adders | authenticated |
 
@@ -384,6 +386,6 @@ enum SyncTrigger {
 - **Phase 1 exit:**
   - 100% of OpenSolar adders sync from PB Ops Suite.
   - Rep-created free-form adder count drops to ~0 within 30 days of cutover.
-  - ≥ 80% of new deals have a completed `TriageRun` before contract signature within 60 days of cutover.
+  - ≥ 80% of new deals have a `TriageRun` with `submitted=true` and at least one `selectedAdders` entry reviewed before contract signature, within 60 days of cutover.
   - Median adders-per-deal at contract signature increases (indicator that we're catching adders earlier, not missing them).
 - **Longer term (Phase 3 milestone):** change-order rate per deal trends down; margin variance per adder category trends down QoQ as the library is tuned against install cost.
