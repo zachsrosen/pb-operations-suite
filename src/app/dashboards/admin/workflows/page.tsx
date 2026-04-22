@@ -25,6 +25,15 @@ interface WorkflowListItem {
   _count: { runs: number };
 }
 
+interface TemplateItem {
+  slug: string;
+  name: string;
+  summary: string;
+  useCase: string;
+  triggerType: string;
+  stepCount: number;
+}
+
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: "bg-zinc-500/20 text-zinc-300",
   ACTIVE: "bg-green-500/20 text-green-300",
@@ -36,6 +45,8 @@ export default function AdminWorkflowsPage() {
   const [workflows, setWorkflows] = useState<WorkflowListItem[] | null>(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [templates, setTemplates] = useState<TemplateItem[] | null>(null);
 
   async function load() {
     setError(null);
@@ -81,6 +92,39 @@ export default function AdminWorkflowsPage() {
     }
   }
 
+  async function openTemplates() {
+    setTemplatesOpen(true);
+    if (templates) return;
+    try {
+      const res = await fetch("/api/admin/workflows/templates");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setTemplates(data.templates);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function createFromTemplate(slug: string) {
+    setCreating(true);
+    try {
+      const res = await fetch("/api/admin/workflows/templates", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ slug }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      router.push(`/dashboards/admin/workflows/${data.workflow.id}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setCreating(false);
+    }
+  }
+
   async function archiveOne(id: string) {
     if (!confirm("Archive this workflow? It will stop receiving trigger events.")) return;
     await fetch(`/api/admin/workflows/${id}`, {
@@ -104,13 +148,21 @@ export default function AdminWorkflowsPage() {
           <p className="text-sm text-muted">
             Compose workflows from existing integrations. Triggers fire on HubSpot / Zuper events or on manual runs.
           </p>
-          <button
-            onClick={createNew}
-            disabled={creating}
-            className="rounded-md bg-purple-600 hover:bg-purple-500 disabled:opacity-50 px-4 py-2 text-sm text-white font-medium transition"
-          >
-            {creating ? "Creating..." : "+ New workflow"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={openTemplates}
+              className="rounded-md border border-t-border bg-surface hover:bg-surface-2 px-4 py-2 text-sm font-medium transition"
+            >
+              Start from template
+            </button>
+            <button
+              onClick={createNew}
+              disabled={creating}
+              className="rounded-md bg-purple-600 hover:bg-purple-500 disabled:opacity-50 px-4 py-2 text-sm text-white font-medium transition"
+            >
+              {creating ? "Creating..." : "+ Blank workflow"}
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -189,6 +241,54 @@ export default function AdminWorkflowsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+
+        {templatesOpen && (
+          <div
+            className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+            onClick={() => setTemplatesOpen(false)}
+          >
+            <div
+              className="bg-surface border border-t-border rounded-lg max-w-3xl w-full max-h-[80vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-t-border px-6 py-4">
+                <h3 className="text-lg font-semibold">Start from template</h3>
+                <button
+                  onClick={() => setTemplatesOpen(false)}
+                  className="text-muted hover:text-foreground text-xl leading-none"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="p-6 space-y-3">
+                {templates == null ? (
+                  <p className="text-muted text-sm">Loading templates…</p>
+                ) : templates.length === 0 ? (
+                  <p className="text-muted text-sm">No templates available.</p>
+                ) : (
+                  templates.map((t) => (
+                    <button
+                      key={t.slug}
+                      onClick={() => createFromTemplate(t.slug)}
+                      disabled={creating}
+                      className="w-full text-left rounded-md border border-t-border bg-surface-2 hover:bg-surface-elevated disabled:opacity-50 px-4 py-3 transition"
+                    >
+                      <div className="flex items-center justify-between gap-4">
+                        <p className="text-sm font-medium text-foreground">{t.name}</p>
+                        <div className="flex items-center gap-2 text-xs text-muted shrink-0">
+                          <span className="px-2 py-0.5 rounded bg-surface-elevated">{t.triggerType}</span>
+                          <span>{t.stepCount} step{t.stepCount === 1 ? "" : "s"}</span>
+                        </div>
+                      </div>
+                      <p className="text-xs text-muted mt-1">{t.summary}</p>
+                      <p className="text-xs text-zinc-500 mt-1 italic">{t.useCase}</p>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>
