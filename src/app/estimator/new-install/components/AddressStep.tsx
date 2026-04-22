@@ -49,7 +49,11 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const embedSuffix = searchParams?.get("embed") === "1" ? "&embed=1" : "";
-  const apiKey = process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY;
+  // Prefer a dedicated Places key if one is configured; otherwise fall back
+  // to the shared Google Maps key (Places API enabled on that project).
+  const apiKey =
+    process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY ||
+    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const [mode, setMode] = useState<"auto" | "manual">("auto");
   const [googleReady, setGoogleReady] = useState(false);
   const [loading, setLoading] = useState(false);
