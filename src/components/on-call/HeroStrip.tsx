@@ -9,10 +9,12 @@ type Pool = {
   shiftEnd: string;
   date: string;
   crewMember: { id: string; name: string; email: string | null } | null;
+  source: string | null;
 };
 
 const POOL_THEMES: Record<string, { grad: string; border: string; text: string; icon: string }> = {
   California: { grad: "from-orange-500/15 to-orange-500/5", border: "border-orange-500/30", text: "text-orange-400", icon: "🌴" },
+  Colorado: { grad: "from-blue-500/15 to-blue-500/5", border: "border-blue-500/30", text: "text-blue-400", icon: "🏔" },
   Denver: { grad: "from-blue-500/15 to-blue-500/5", border: "border-blue-500/30", text: "text-blue-400", icon: "🏔" },
   "Southern CO": { grad: "from-emerald-500/15 to-emerald-500/5", border: "border-emerald-500/30", text: "text-emerald-400", icon: "⛰" },
 };
@@ -37,6 +39,7 @@ export function HeroStrip({ pools }: { pools: Pool[] }) {
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
       {pools.map((p) => {
         const theme = themeFor(p.poolName);
+        const preStart = p.source === "pre-start";
         return (
           <div
             key={p.poolId}
@@ -46,7 +49,11 @@ export function HeroStrip({ pools }: { pools: Pool[] }) {
               {theme.icon} {p.poolName}
             </div>
             <div className="text-2xl font-bold mb-1 text-foreground">
-              {p.crewMember?.name ?? <span className="text-muted italic">Unassigned</span>}
+              {preStart ? (
+                <span className="text-muted italic">Schedule starts May 4</span>
+              ) : (
+                p.crewMember?.name ?? <span className="text-muted italic">Unassigned</span>
+              )}
             </div>
             <div className="text-xs text-muted mb-4">
               {formatShiftWindow(p.shiftStart, p.shiftEnd, p.timezone)}

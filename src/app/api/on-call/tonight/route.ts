@@ -51,6 +51,21 @@ export async function GET() {
 
   for (const pool of activePools) {
     const date = todayInTz(pool.timezone);
+    // Pool's schedule starts on pool.startDate — show nothing before that.
+    if (date < pool.startDate) {
+      out.push({
+        poolId: pool.id,
+        poolName: pool.name,
+        region: pool.region,
+        timezone: pool.timezone,
+        shiftStart: pool.shiftStart,
+        shiftEnd: pool.shiftEnd,
+        date,
+        crewMember: null,
+        source: "pre-start",
+      });
+      continue;
+    }
     const existing = await prisma.onCallAssignment.findUnique({
       where: { poolId_date: { poolId: pool.id, date } },
       include: { crewMember: true },
