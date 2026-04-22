@@ -51,6 +51,14 @@ const LINKS: SuitePageCard[] = [
     icon: "🎯",
     section: "Pipeline & Forecasting",
   },
+  {
+    href: "/dashboards/pricing-calculator",
+    title: "Pricing Calculator",
+    description: "Price solar + battery systems with PE lease value calculator and COGS breakdown.",
+    tag: "PRICING",
+    icon: "💲",
+    section: "Tools",
+  },
 ];
 
 export default async function SalesMarketingSuitePage() {
