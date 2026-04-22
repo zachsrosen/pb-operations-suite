@@ -22,46 +22,34 @@ initPaymentTrackingCascade();
 
 const ALLOWED_ROLES = new Set(["ADMIN", "EXECUTIVE", "ACCOUNTING"]);
 
-// Stages excluded from the payment-tracking view. "Active" deals are
-// post-RTB / mid-construction / post-PTO but NOT yet wound down. Old
-// (2021-era) Sales-pipeline-won deals and Project-pipeline-complete deals
-// add too much noise — accounting cares about money still in motion.
-//
-// Per-pipeline because HubSpot uses different stage ID formats:
-//   - Sales pipeline ("default"): string IDs ("closedlost", "closedwon")
-//   - Project pipeline ("6900017"): numeric IDs
-const EXCLUDED_STAGES_BY_PIPELINE: Record<string, string[]> = {
-  default: [
-    "closedlost",
-    "closedwon", // won deals migrate to Project pipeline; Sales-side won is stale
-  ],
-  "6900017": [
-    "68229433", // Cancelled
-    "20440344", // On Hold
-    "20461935", // Project Rejected - Needs Review
-    "20440343", // Project Complete
-  ],
-};
+// Project pipeline stages excluded from the payment-tracking view. Active
+// deals are post-RTB / mid-construction / post-PTO but NOT yet wound down.
+// We do NOT fetch the Sales pipeline at all — it's the entire sales funnel
+// (~4,700 leads) with no payment activity. Won sales deals migrate to
+// Project pipeline within hours.
+const EXCLUDED_PROJECT_STAGES = [
+  "68229433", // Cancelled
+  "20440344", // On Hold
+  "20461935", // Project Rejected - Needs Review
+  "20440343", // Project Complete
+];
 
 type SearchBody = Parameters<typeof searchWithRetry>[0];
 type SearchFilter = { propertyName: string; operator: FilterOperatorEnum; value?: string; values?: string[] };
 
-async function fetchPipelineDeals(pipelineId: string): Promise<HubSpotDealPaymentProps[]> {
-  const excluded = EXCLUDED_STAGES_BY_PIPELINE[pipelineId] ?? [];
+async function fetchProjectPipelineDeals(pipelineId: string): Promise<HubSpotDealPaymentProps[]> {
   const props: HubSpotDealPaymentProps[] = [];
 
   let after: string | undefined;
   for (let page = 0; page < 50; page++) {
     const filters: SearchFilter[] = [
       { propertyName: "pipeline", operator: FilterOperatorEnum.Eq, value: pipelineId } as SearchFilter,
-    ];
-    if (excluded.length > 0) {
-      filters.push({
+      {
         propertyName: "dealstage",
         operator: FilterOperatorEnum.NotIn,
-        values: excluded,
-      } as SearchFilter);
-    }
+        values: EXCLUDED_PROJECT_STAGES,
+      } as SearchFilter,
+    ];
 
     const response = await searchWithRetry({
       filterGroups: [{ filters }],
@@ -107,32 +95,19 @@ export async function GET(request: Request) {
     return NextResponse.json(cached.data);
   }
 
-  const salesPipeline = process.env.HUBSPOT_PIPELINE_SALES ?? "default";
   const projectPipeline = process.env.HUBSPOT_PIPELINE_PROJECT ?? "6900017";
 
-  console.log(
-    `[payment-tracking] cache miss; pipelines sales=${salesPipeline} project=${projectPipeline}`
-  );
+  console.log(`[payment-tracking] cache miss; project pipeline=${projectPipeline}`);
 
-  // Fetch each pipeline in parallel.
-  const [salesProps, projectProps] = await Promise.all([
-    fetchPipelineDeals(salesPipeline),
-    fetchPipelineDeals(projectPipeline),
-  ]);
+  // Project pipeline only — Sales pipeline is the entire pre-sale funnel
+  // (~4,700 leads) with no payment activity. Won deals migrate to Project
+  // pipeline within hours.
+  const props = await fetchProjectPipelineDeals(projectPipeline);
 
-  const props = [...salesProps, ...projectProps];
+  console.log(`[payment-tracking] fetched ${props.length} project deals`);
 
-  console.log(
-    `[payment-tracking] fetched ${salesProps.length} sales + ${projectProps.length} project deals`
-  );
-
-  // getStageMaps returns maps keyed by pipeline KEY (sales/project/dnr/etc),
-  // NOT by pipeline ID. Look up by key, not by env-var ID.
   const maps = await getStageMaps().catch(() => ({} as Record<string, Record<string, string>>));
-  const mergedStageMap: Record<string, string> = {
-    ...(maps.sales ?? {}),
-    ...(maps.project ?? {}),
-  };
+  const mergedStageMap: Record<string, string> = maps.project ?? {};
   console.log(
     `[payment-tracking] stage map size: ${Object.keys(mergedStageMap).length} entries`
   );
