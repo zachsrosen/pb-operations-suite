@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { createAdder, listAdders } from "@/lib/adders/catalog";
 import { CreateAdderSchema } from "@/lib/adders/zod-schemas";
-import { AdderCategory } from "@/generated/prisma";
+import { AdderCategory } from "@/generated/prisma/enums";
 
 export async function GET(req: NextRequest) {
   const session = await auth();
