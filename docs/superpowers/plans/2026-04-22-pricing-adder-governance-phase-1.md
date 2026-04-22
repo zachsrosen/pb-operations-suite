@@ -48,20 +48,24 @@ Chunk 1 — Foundation:
 
 Chunk 2 — Catalog UI:
 - `src/app/dashboards/adders/page.tsx`
+- `src/app/dashboards/adders/AddersClient.tsx` — client list + filters + React Query
 - `src/app/dashboards/adders/AdderEditForm.tsx`
 - `src/app/dashboards/adders/AdderRevisionsDrawer.tsx`
-- `src/app/dashboards/adders/SyncStatusBadge.tsx` (renders placeholder until Chunk 6)
+- `src/app/dashboards/adders/SyncStatusBadge.tsx` (placeholder until Chunk 6)
 - `src/app/dashboards/adders/TriggerLogicBuilder.tsx` — predicate UI
 - `src/app/dashboards/adders/ShopOverrideGrid.tsx`
 
 Chunk 3 — Triage API:
 - `src/lib/adders/triage.ts` — pure-function predicate evaluator
+- `src/lib/adders/triage-runs.ts` — TriageRun CRUD helpers
+- `src/lib/adders/triage-submit.ts` — submit with HubSpot rollback
 - `src/app/api/triage/recommend/route.ts`
 - `src/app/api/triage/runs/route.ts`
 - `src/app/api/triage/runs/[id]/route.ts`
 - `src/app/api/triage/runs/[id]/submit/route.ts`
 - `src/app/api/triage/upload/route.ts`
 - `src/__tests__/adders/triage.test.ts`
+- `src/__tests__/adders/triage-runs.test.ts`
 - `src/__tests__/adders/triage-submit.test.ts`
 
 Chunk 4 — Triage UI:
@@ -77,18 +81,23 @@ Chunk 5 — Calculator Refactor:
 
 Chunk 6 — Sync:
 - `src/lib/adders/sync.ts`
+- `src/lib/adders/opensolar-client.ts` — thin OpenSolar API client
 - `src/app/api/adders/sync/route.ts`
+- `src/app/api/adders/sync/status/route.ts` — last-run telemetry for badge
 - `src/app/api/cron/adders-sync/route.ts`
 - `src/__tests__/adders/sync.test.ts`
+- `docs/superpowers/followups/2026-04-22-opensolar-api-discovery.md`
 - `docs/superpowers/runbooks/adder-catalog-cutover.md`
 
 **Modified files:**
-- `prisma/schema.prisma` — add 5 models + 6 enums (Chunk 1)
-- `src/lib/roles.ts` — add `canManageAdders` permission + per-role defaults + new API routes in allowedRoutes (Chunk 1 for catalog routes; Chunks 3 & 6 extend for triage + sync routes)
+- `prisma/schema.prisma` — add 5 models + 6 enums + `canManageAdders` bool (Chunk 1)
+- `src/lib/roles.ts` — add `canManageAdders` permission + per-role defaults + new route allowlist entries at each chunk that introduces routes (Chunks 1, 2, 3, 4, 6)
 - `src/middleware.ts` — add `/api/cron/adders-sync` to cron-authenticated path list (Chunk 6)
+- `src/lib/adders/catalog.ts` — Chunk 6 adds fire-and-forget sync calls on create/update/retire
 - `src/lib/pricing-calculator.ts` — remove hardcoded constants, accept resolved adders, `customAdders` array, fix percentage-loop bug, fix `peEnergyCommunnity` typo (Chunk 5)
 - `src/app/dashboards/idr-meeting/PricingBreakdown.tsx` — read from catalog (Chunk 5)
 - `src/__tests__/pricing-calculator.test.ts` — extend existing regression suite (Chunk 5)
+- `vercel.json` — add nightly cron for `/api/cron/adders-sync` (Chunk 6)
 
 ---
 
@@ -1545,6 +1554,13 @@ export default async function AddersPage() {
 
 - [ ] **Step 3:** Wire "New Adder" button that opens the edit form drawer (the drawer lives in Task 2.2).
 
+- [ ] **Step 3a:** Add `/dashboards/adders` to the `allowedRoutes` for every role that should have catalog access (per Task 1.9 Step 4c table). Without this, middleware silently 403s the page.
+
+```bash
+# Confirm the page path shows up in every applicable role entry:
+rg "'/dashboards/adders'" src/lib/roles.ts
+```
+
 - [ ] **Step 4:** Verify at `/dashboards/adders` in dev; confirm filter narrows results and row click opens detail drawer (stub for now).
 
 Run: `npm run dev` → visit page.
@@ -1568,9 +1584,38 @@ git commit -m "feat(adders): catalog list page with filters"
 
 - [ ] **Step 2:** `TriggerLogicBuilder.tsx` — simple predicate UI: `<select op>` (lt/lte/eq/gte/gt/contains/truthy) + `<input value>` + `qtyFrom` selector. Preview the resulting JSON for the user. Disabled when `triageQuestion` is empty.
 
-- [ ] **Step 3:** `ShopOverrideGrid.tsx` — 5-row grid (one per `VALID_SHOPS` entry). Each row: shop name, numeric `priceDelta`, active toggle. Persists via a separate `PATCH /api/adders/[id]` with the overrides array.
+- [ ] **Step 3:** `ShopOverrideGrid.tsx` — 5-row grid (one per `VALID_SHOPS` entry). Each row: shop name, numeric `priceDelta`, active toggle. Persists via `PATCH /api/adders/[id]` with the overrides array.
 
-  Note: the spec didn't explicitly break out override PATCH as a separate route. Add `overrides` handling to the existing `UpdateAdderSchema` and PATCH handler as part of Chunk 1's extension — if that's not already in place, add it here in Task 2.2 Step 3 (minor Chunk 1 amendment). Required fields in the schema: `overrides?: Array<{ shop: string; priceDelta: number; active: boolean }>`. Handler replaces the existing override set for the adder (deleteMany + createMany in a transaction) when the key is present.
+- [ ] **Step 3a (REQUIRED — extends Chunk 1 files):** Add `overrides` handling to `UpdateAdderSchema` in `src/lib/adders/zod-schemas.ts`:
+
+```typescript
+// Append to UpdateAdderSchema.extend(...)
+overrides: z
+  .array(z.object({
+    shop: z.string().min(1),
+    priceDelta: z.number(),
+    active: z.boolean().default(true),
+  }))
+  .optional(),
+```
+
+Then extend the PATCH handler in `src/app/api/adders/[id]/route.ts` to process `overrides` when present:
+
+```typescript
+// After parsed.data extracted, if parsed.data.overrides:
+//   in a tx: deleteMany({adderId: id}) then createMany({data: overrides with adderId})
+```
+
+Move the transaction wrapping into `updateAdder` in `src/lib/adders/catalog.ts` for consistency with revision tracking. Validate each `shop` against `VALID_SHOPS`; reject if invalid.
+
+Tests: extend `src/__tests__/adders/catalog.test.ts` with a `updateAdder` + overrides round-trip test.
+
+- [ ] **Step 3b:** Commit Chunk 1 extension as a separate commit (clarifies history).
+
+```bash
+git add src/lib/adders/zod-schemas.ts src/lib/adders/catalog.ts src/app/api/adders/[id]/route.ts src/__tests__/adders/catalog.test.ts
+git commit -m "feat(adders): PATCH handles shop override writes (extends Chunk 1)"
+```
 
 - [ ] **Step 4:** Test: fill in a new adder end-to-end in dev; confirm it persists, appears in list, and editing rewrites without duplicating revisions unnecessarily (should create exactly one revision per save).
 
@@ -1759,7 +1804,7 @@ git commit -m "feat(triage): POST /api/triage/recommend"
 
 - [ ] **Step 3:** Implement routes matching the spec's route table.
 
-- [ ] **Step 4:** Add paths to role allowlist.
+- [ ] **Step 4:** Add paths to `allowedRoutes` in `src/lib/roles.ts` for roles: ADMIN, OWNER, PROJECT_MANAGER, OPERATIONS_MANAGER, OPERATIONS, TECH_OPS, DESIGN, PERMIT, INTERCONNECT, SALES_MANAGER, SALES, SERVICE. Paths: `/api/triage/runs`, `/api/triage/runs/[id]`, `/api/triage/runs/[id]/submit`.
 
 - [ ] **Step 5:** Run tests + typecheck; commit.
 
@@ -1846,9 +1891,16 @@ Expected: green.
 
 - [ ] **Step 3:** `useOfflineDraft.ts` — hook that mirrors draft state to `localStorage` keyed by run ID; on mount, reads any stored draft. On `/api/triage/runs/[id]/submit` success, clears the draft.
 
-- [ ] **Step 4:** Smoke test in dev.
+- [ ] **Step 4:** Add `/triage` to `allowedRoutes` in `src/lib/roles.ts` for the same roles as the triage API routes (ADMIN, OWNER, PROJECT_MANAGER, OPERATIONS_MANAGER, OPERATIONS, TECH_OPS, DESIGN, PERMIT, INTERCONNECT, SALES_MANAGER, SALES, SERVICE). Without this, middleware silently 403s the page per `feedback_api_route_role_allowlist`.
 
-- [ ] **Step 5:** Commit.
+- [ ] **Step 5:** Smoke test in dev.
+
+- [ ] **Step 6:** Commit.
+
+```bash
+git add src/app/triage/ src/lib/roles.ts
+git commit -m "feat(triage): mobile stepper shell with offline draft hook"
+```
 
 ### Task 4.2: Photo capture + review + submit
 
@@ -1864,6 +1916,11 @@ Expected: green.
 
 - [ ] **Step 4:** Commit.
 
+```bash
+git add src/app/triage/TriagePhotoCapture.tsx src/app/triage/TriageReview.tsx
+git commit -m "feat(triage): photo capture + review + submit"
+```
+
 ### Task 4.3: Deal-detail embed
 
 **Files:**
@@ -1872,9 +1929,20 @@ Expected: green.
 
 - [ ] **Step 1:** `<TriageButton dealId={...}>` opens `/triage?dealId=...` in a modal or new view. Reuses same `TriageStepper`.
 
-- [ ] **Step 2:** Register section in deal detail layout.
+- [ ] **Step 2:** Register section in deal detail layout. Locate the registration pattern:
+
+```bash
+rg -n "section-registry|DealDetailSection|QuickActionsCard" src/components/deal-detail/ src/app/dashboards/ | head -20
+```
+
+Follow the pattern that returns — it's likely `src/components/deal-detail/section-registry.ts` based on spec context, but confirm against the actual file.
 
 - [ ] **Step 3:** Commit.
+
+```bash
+git add src/components/deal-detail/TriageButton.tsx src/components/deal-detail/section-registry.ts
+git commit -m "feat(triage): deal-detail embed button"
+```
 
 ### Task 4.4: Chunk 4 verification
 
@@ -2047,9 +2115,22 @@ If any hard blocker is found, surface to the user with a recommendation to escal
 
 - [ ] **Step 3:** Middleware change for public route. Verify with `rg "cron/property-reconcile" src/middleware.ts -n` and follow the same pattern.
 
-- [ ] **Step 4:** Cron schedule: nightly 3 AM Mountain (matches existing cron patterns).
+- [ ] **Step 4:** Cron schedule: nightly 3 AM Mountain. Locate existing cron config:
+
+```bash
+rg -n '"crons"' vercel.json
+# If no vercel.json match, check for other cron config:
+rg -n "property-reconcile|audit-digest" vercel.json
+```
+
+Add a new cron entry matching the existing pattern (path + schedule).
 
 - [ ] **Step 5:** Commit.
+
+```bash
+git add src/app/api/adders/sync/ src/app/api/cron/adders-sync/ src/middleware.ts src/lib/roles.ts vercel.json
+git commit -m "feat(adders): sync + cron + middleware + allowlist"
+```
 
 ### Task 6.4: Sync status badge wired up
 
@@ -2057,13 +2138,18 @@ If any hard blocker is found, surface to the user with a recommendation to escal
 - Modify: `src/app/dashboards/adders/SyncStatusBadge.tsx`
 - Create: `src/app/api/adders/sync/status/route.ts`
 
-- [ ] **Step 1:** GET endpoint returns `{ lastRun: AdderSyncRun | null, lastSuccess: AdderSyncRun | null }`.
+- [ ] **Step 1:** Create `src/app/api/adders/sync/status/route.ts` with a GET that returns `{ lastRun: AdderSyncRun | null, lastSuccess: AdderSyncRun | null }`. Add the path `/api/adders/sync/status` to `allowedRoutes` for all roles that can view `/dashboards/adders` (same list as Task 2.1 Step 3a).
 
 - [ ] **Step 2:** Badge shows last success age ("12 min ago"), status color, manual "Sync now" button.
 
 - [ ] **Step 3:** Alert styling (amber) when `now - lastSuccess > 24h` per spec risk mitigation.
 
 - [ ] **Step 4:** Commit.
+
+```bash
+git add src/app/api/adders/sync/status/ src/app/dashboards/adders/SyncStatusBadge.tsx src/lib/roles.ts
+git commit -m "feat(adders): sync status badge wired to live telemetry"
+```
 
 ### Task 6.5: Env vars + Vercel sync
 
