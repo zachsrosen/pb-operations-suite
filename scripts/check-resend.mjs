@@ -69,8 +69,8 @@ try {
     from,
     to: ["delivered@resend.dev"], // Resend's test address — always succeeds if from is valid
     subject: "PB Ops Notification Test",
-    text: "This is a test email from PB Operations Suite to verify Resend is working.",
-    html: "<p>This is a test email from PB Operations Suite to verify Resend is working.</p>",
+    text: "This is a test email from PB Tech Ops Suite to verify Resend is working.",
+    html: "<p>This is a test email from PB Tech Ops Suite to verify Resend is working.</p>",
   });
 
   if (result.error) {

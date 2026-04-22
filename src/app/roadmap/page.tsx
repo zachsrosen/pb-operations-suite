@@ -282,7 +282,7 @@ export default function RoadmapPage() {
         {/* Intro */}
         <div className="mb-8 p-4 bg-gradient-to-br from-orange-500/10 to-orange-500/5 border border-orange-500/30 rounded-xl">
           <p className="text-foreground/80">
-            Help shape the future of PB Operations Suite! Vote on features you want to see,
+            Help shape the future of PB Tech Ops Suite! Vote on features you want to see,
             or submit your own ideas. The most popular requests help us prioritize what to build next.
           </p>
         </div>

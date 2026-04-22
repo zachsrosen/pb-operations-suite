@@ -2,7 +2,7 @@
 
 ## Overview
 
-Replace the standalone Solar Surveyor V12 HTML tool and the partially-built native Solar Surveyor in PB Ops with a single, unified **Solar Designer** tool. Built natively in React inside the PB Operations Suite, accessible from any suite (Service, Design & Engineering, etc.). Uses Jacob Campbell's V12 calculation engine as the source of truth, ported to typed TypeScript modules.
+Replace the standalone Solar Surveyor V12 HTML tool and the partially-built native Solar Surveyor in PB Ops with a single, unified **Solar Designer** tool. Built natively in React inside the PB Tech Ops Suite, accessible from any suite (Service, Design & Engineering, etc.). Uses Jacob Campbell's V12 calculation engine as the source of truth, ported to typed TypeScript modules.
 
 **Problem:** The service team needs to diagnose production issues on existing installs (flagged at 180 days / 1 year). The design team needs to analyze stringing, shading, and clipping pre-construction. Both need to compare results against the production guarantee. Currently the tool exists only as a local HTML file on Jacob's machine, with manual DXF/JSON/CSV file uploads. The service team has no access to the design data.
 

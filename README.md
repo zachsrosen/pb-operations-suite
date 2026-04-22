@@ -1,4 +1,4 @@
-# PB Operations Suite
+# PB Tech Ops Suite
 
 Operational dashboards and admin tooling for Photon Brothers workflows (HubSpot + Zuper + Google Workspace).
 

@@ -9,7 +9,7 @@ export default function GuidePage() {
       <header className="border-b border-t-border px-6 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <Link href="/" className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent hover:opacity-80 transition-opacity">
-            PB Operations Suite
+            PB Tech Ops Suite
           </Link>
           <div className="flex items-center gap-4">
             <kbd className="hidden sm:inline-flex text-xs text-muted border border-t-border rounded px-2 py-1">
@@ -25,7 +25,7 @@ export default function GuidePage() {
 
       <main className="max-w-4xl mx-auto px-6 py-8">
         <h1 className="text-3xl font-bold mb-2">Dashboard Guide</h1>
-        <p className="text-muted mb-8">Learn how to use each dashboard in the PB Operations Suite</p>
+        <p className="text-muted mb-8">Learn how to use each dashboard in the PB Tech Ops Suite</p>
 
         {/* Global Navigation */}
         <section className="bg-gradient-to-br from-orange-500/10 to-orange-500/5 border border-orange-500/30 rounded-xl p-6 mb-8">
@@ -838,7 +838,7 @@ export default function GuidePage() {
 
         {/* Footer */}
         <footer className="mt-12 pt-6 border-t border-t-border text-center text-muted text-sm">
-          <p>PB Operations Suite | Photon Brothers</p>
+          <p>PB Tech Ops Suite | Photon Brothers</p>
           <p className="mt-1">Data refreshes automatically every 5 minutes from HubSpot</p>
         </footer>
       </main>

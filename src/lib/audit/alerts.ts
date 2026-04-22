@@ -120,7 +120,7 @@ function buildImmediateAlertHtml(
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
       <div style="border-left: 4px solid ${borderColor}; padding: 16px; margin-bottom: 16px;">
         <h2 style="margin: 0 0 4px 0; color: ${labelColor};">${alertLevel} Risk Session Detected</h2>
-        <p style="margin: 0; color: #6b7280; font-size: 14px;">PB Operations Suite Audit System</p>
+        <p style="margin: 0; color: #6b7280; font-size: 14px;">PB Tech Ops Suite Audit System</p>
       </div>
       <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
         <tr style="border-bottom: 1px solid #e5e7eb;">
@@ -374,7 +374,7 @@ export async function sendCronHealthAlert(
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
       <div style="border-left: 4px solid #dc2626; padding: 16px; margin-bottom: 16px;">
         <h2 style="margin: 0 0 4px 0; color: #b91c1c;">Cron Health Alert</h2>
-        <p style="margin: 0; color: #6b7280; font-size: 14px;">PB Operations Suite</p>
+        <p style="margin: 0; color: #6b7280; font-size: 14px;">PB Tech Ops Suite</p>
       </div>
       <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
         <tr style="border-bottom: 1px solid #e5e7eb;">
@@ -437,7 +437,7 @@ function buildDigestHtml(
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 600px; margin: 0 auto;">
       <div style="border-left: 4px solid #3b82f6; padding: 16px; margin-bottom: 16px;">
         <h2 style="margin: 0 0 4px 0; color: #1d4ed8;">Daily Audit Digest</h2>
-        <p style="margin: 0; color: #6b7280; font-size: 14px;">PB Operations Suite — Last 24 Hours</p>
+        <p style="margin: 0; color: #6b7280; font-size: 14px;">PB Tech Ops Suite — Last 24 Hours</p>
       </div>
       <table style="width: 100%; border-collapse: collapse; font-size: 14px; margin-bottom: 16px;">
         <tr style="border-bottom: 1px solid #e5e7eb;">
@@ -505,7 +505,7 @@ function buildDigestHtml(
       <div style="margin-top: 20px;">
         <a href="${DASHBOARD_URL}" style="display: inline-block; padding: 10px 20px; background: #3b82f6; color: #fff; text-decoration: none; border-radius: 6px; font-weight: 600;">View Audit Dashboard</a>
       </div>
-      <p style="margin-top: 16px; color: #9ca3af; font-size: 12px;">This is an automated daily digest from the PB Operations Suite audit system.</p>
+      <p style="margin-top: 16px; color: #9ca3af; font-size: 12px;">This is an automated daily digest from the PB Tech Ops Suite audit system.</p>
     </div>
   `;
 }

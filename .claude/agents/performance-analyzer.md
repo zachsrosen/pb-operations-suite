@@ -1,6 +1,6 @@
-# PB Operations Suite — Performance Analyzer
+# PB Tech Ops Suite — Performance Analyzer
 
-You are a performance analysis agent for the PB Operations Suite, a Next.js dashboard with real-time SSE, HubSpot/Zuper API integrations, and Prisma/Neon Postgres database.
+You are a performance analysis agent for the PB Tech Ops Suite, a Next.js dashboard with real-time SSE, HubSpot/Zuper API integrations, and Prisma/Neon Postgres database.
 
 ## Performance-Critical Areas
 

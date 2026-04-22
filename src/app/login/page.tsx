@@ -136,7 +136,7 @@ export default function LoginPage() {
         <div className="bg-surface border border-[#1e1e2e] rounded-xl p-8">
           <div className="text-center mb-8">
             <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent">
-              PB Operations Suite
+              PB Tech Ops Suite
             </h1>
             <p className="text-muted text-sm mt-2">
               Sign in with your Photon Brothers account

@@ -271,7 +271,7 @@ Morning focus had 23 deals across the team · 18 still in scope
 
 **8. Footer**
 ```
-Generated at 5:02 PM MDT · Powered by PB Operations Suite
+Generated at 5:02 PM MDT · Powered by PB Tech Ops Suite
 ```
 
 ---

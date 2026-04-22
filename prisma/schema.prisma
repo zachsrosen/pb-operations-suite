@@ -1,4 +1,4 @@
-// PB Operations Suite - Database Schema
+// PB Tech Ops Suite - Database Schema
 // Using Prisma with PostgreSQL (Neon)
 
 generator client {

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-PB Operations Suite — Planset BOM Exporter
+PB Tech Ops Suite — Planset BOM Exporter
 Exports a BOM dict (produced by Claude from a planset) to CSV, JSON, and Markdown.
 
 Usage:

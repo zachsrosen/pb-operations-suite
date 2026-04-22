@@ -121,7 +121,7 @@ export const UPDATES: UpdateEntry[] = [
     version: "1.61.0",
     date: "2026-03-07",
     title: "Solar Surveyor V12 — Full Platform Launch",
-    description: "Solar Surveyor is now fully integrated into PB Operations Suite as a same-origin application with cloud project management, team collaboration, real-time weather data, and professional-grade energy simulation. This release brings the tool from standalone prototype to a production platform with Google OAuth, version-controlled project storage, and 8 equipment manufacturers in the built-in catalog.",
+    description: "Solar Surveyor is now fully integrated into PB Tech Ops Suite as a same-origin application with cloud project management, team collaboration, real-time weather data, and professional-grade energy simulation. This release brings the tool from standalone prototype to a production platform with Google OAuth, version-controlled project storage, and 8 equipment manufacturers in the built-in catalog.",
     changes: [
       { type: "feature", text: "Cloud project management — create, save, load, and archive solar projects with automatic version tracking and conflict detection" },
       { type: "feature", text: "Team collaboration with role-based sharing (TEAM, PRIVATE, READ, EDIT) and per-project visibility controls" },
@@ -142,7 +142,7 @@ export const UPDATES: UpdateEntry[] = [
       { type: "feature", text: "30-minute timeseries charts with interactive navigation, split battery view, and per-inverter production breakdowns" },
       { type: "feature", text: "Home consumption configuration with customizable load profiles for self-consumption analysis" },
       { type: "improvement", text: "Migrated from cross-origin iframe to same-origin static serving — eliminates CORS complexity, postMessage relay, and cross-site cookie issues" },
-      { type: "improvement", text: "Google OAuth sign-in integrated via PB Operations Suite — single sign-on with existing Photon Brothers accounts" },
+      { type: "improvement", text: "Google OAuth sign-in integrated via PB Tech Ops Suite — single sign-on with existing Photon Brothers accounts" },
       { type: "improvement", text: "CSRF protection with double-submit cookie pattern on all mutation endpoints and beacon Origin validation" },
       { type: "improvement", text: "Role-based access expanded to OPERATIONS, OPS_MANAGER, PM, TECH_OPS, DESIGNER, PERMITTING, VIEWER, and SALES roles" },
       { type: "fix", text: "Resolved login loop caused by unhandled session endpoint crash — added graceful error handling with server error banner instead of redirect loop" },
@@ -1000,7 +1000,7 @@ export const UPDATES: UpdateEntry[] = [
     title: "PWA Support & Dark/Light Theme",
     description: "Install the app on your phone or desktop, plus a new dark/light theme toggle.",
     changes: [
-      { type: "feature", text: "Progressive Web App (PWA) - install PB Operations Suite on iOS, Android, and desktop" },
+      { type: "feature", text: "Progressive Web App (PWA) - install PB Tech Ops Suite on iOS, Android, and desktop" },
       { type: "feature", text: "Dark/light theme toggle with localStorage persistence" },
       { type: "feature", text: "Mobile-responsive scheduler views - all schedulers optimized for phone screens" },
       { type: "improvement", text: "Runtime CSS injection for theme support (bypasses Tailwind v4 PostCSS limitations)" },
@@ -1223,7 +1223,7 @@ export const UPDATES: UpdateEntry[] = [
     version: "1.0.0",
     date: "2026-01-20",
     title: "Initial Launch",
-    description: "First release of PB Operations Suite with core dashboards.",
+    description: "First release of PB Tech Ops Suite with core dashboards.",
     changes: [
       { type: "feature", text: "Home page with dashboard navigation and favorites" },
       { type: "feature", text: "Department dashboards - Site Survey, Design, Permitting, Construction" },

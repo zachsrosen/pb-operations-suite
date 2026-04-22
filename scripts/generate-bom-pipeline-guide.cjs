@@ -249,7 +249,7 @@ const doc = new Document({
         spacer(200),
         new Paragraph({
           alignment: AlignmentType.CENTER,
-          children: [new TextRun({ text: "PB Operations Suite", font: "Arial", size: 24, color: LIGHT })],
+          children: [new TextRun({ text: "PB Tech Ops Suite", font: "Arial", size: 24, color: LIGHT })],
         }),
         new Paragraph({
           alignment: AlignmentType.CENTER,

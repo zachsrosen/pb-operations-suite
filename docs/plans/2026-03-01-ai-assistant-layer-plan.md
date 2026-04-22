@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Build a hybrid AI assistant layer — deterministic check engine for automated reviews and pipeline gates, Claude chat for conversational questions — integrated into the PB Operations Suite dashboard.
+**Goal:** Build a hybrid AI assistant layer — deterministic check engine for automated reviews and pipeline gates, Claude chat for conversational questions — integrated into the PB Tech Ops Suite dashboard.
 
 **Architecture:** Three pillars sharing one data layer. (1) Check engine: pure TypeScript functions per skill that evaluate HubSpot deal data and return structured findings, exposed via `/api/reviews/*` routes. (2) Claude chat: `/api/chat` route using Anthropic SDK with tool-use for project Q&A, streamed to a slide-out widget. (3) Pipeline webhooks: HubSpot stage-change webhooks trigger the check engine, create tasks + Gmail notifications on failure. New Prisma models `ProjectReview` and `ChatMessage` persist results.
 

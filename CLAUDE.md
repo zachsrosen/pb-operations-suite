@@ -1,4 +1,4 @@
-# PB Operations Suite
+# PB Tech Ops Suite
 
 Solar operations platform for Photon Brothers — HubSpot CRM, Zuper field service, Zoho Inventory, scheduling, BOM automation, service tickets, and real-time metrics across 5 Colorado + California locations.
 

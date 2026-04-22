@@ -437,7 +437,7 @@ export function buildEodEmail(data: EodEmailData): { html: string; text: string 
     hour12: true,
     timeZoneName: "short",
   });
-  parts.push(`<div style="margin-top:20px;text-align:center;font-size:10px;color:#52525b;">Generated at ${esc(timeStr)} \u00b7 Powered by PB Operations Suite</div>`);
+  parts.push(`<div style="margin-top:20px;text-align:center;font-size:10px;color:#52525b;">Generated at ${esc(timeStr)} \u00b7 Powered by PB Tech Ops Suite</div>`);
 
   const html = `<!DOCTYPE html>
 <html>

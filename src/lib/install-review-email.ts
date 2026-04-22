@@ -170,7 +170,7 @@ export function buildInstallReviewEmailHtml(report: InstallReviewReport): string
 
     <!-- Footer -->
     <div style="margin-top:24px;padding-top:12px;border-top:1px solid #2a2a3a;font-size:11px;color:#71717a;">
-      Triggered at Inspection stage \u00b7 PB Operations Suite
+      Triggered at Inspection stage \u00b7 PB Tech Ops Suite
     </div>
   </div>
 </body>
@@ -211,6 +211,6 @@ export function buildInstallReviewEmailText(report: InstallReviewReport): string
     }
   }
 
-  lines.push("---", "Triggered at Inspection stage \u00b7 PB Operations Suite");
+  lines.push("---", "Triggered at Inspection stage \u00b7 PB Tech Ops Suite");
   return lines.join("\n");
 }

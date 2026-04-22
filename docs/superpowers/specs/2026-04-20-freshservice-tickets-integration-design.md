@@ -6,7 +6,7 @@
 
 ## Problem
 
-Zach, Patrick, and Caleb are the only PB Operations Suite users who file Freshservice tickets. Today, to see the status of an IT ticket they filed, they have to leave the suite and log into `photonbrothers.freshservice.com` separately. There is no at-a-glance signal ("do I have open tickets?") and no list view inside the suite.
+Zach, Patrick, and Caleb are the only PB Tech Ops Suite users who file Freshservice tickets. Today, to see the status of an IT ticket they filed, they have to leave the suite and log into `photonbrothers.freshservice.com` separately. There is no at-a-glance signal ("do I have open tickets?") and no list view inside the suite.
 
 ## Goal
 

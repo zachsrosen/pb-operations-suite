@@ -306,7 +306,7 @@ HubSpot batch-read limit is 100 IDs per call. If result set exceeds 100 contacts
 
 ### Bug Fix A: Zuper Jobs Not Appearing in Customer History
 
-**Root Cause**: The `ZuperJobCache` table is **partially populated** — the `cacheZuperJob()` function in `lib/db.ts` is called when jobs are created or rescheduled through the PB Operations Suite scheduling UI (4 call sites: schedule, confirm, book, reschedule routes). However, jobs created directly in Zuper (not via the suite) are never cached. For service jobs — which are often created in Zuper directly — this means most service jobs are missing from the cache.
+**Root Cause**: The `ZuperJobCache` table is **partially populated** — the `cacheZuperJob()` function in `lib/db.ts` is called when jobs are created or rescheduled through the PB Tech Ops Suite scheduling UI (4 call sites: schedule, confirm, book, reschedule routes). However, jobs created directly in Zuper (not via the suite) are never cached. For service jobs — which are often created in Zuper directly — this means most service jobs are missing from the cache.
 
 **Fix**:
 1. Create a full Zuper job sync function in `lib/zuper-sync.ts` (or extend existing `lib/zuper.ts`)

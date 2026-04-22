@@ -40,7 +40,7 @@ async function createHubSpotProperty() {
         type: "string",
         fieldType: "text",
         groupName: "productinformation",
-        description: "UUID linking this product to the PB Operations Suite internal product catalog",
+        description: "UUID linking this product to the PB Tech Ops Suite internal product catalog",
       }),
     }
   );
@@ -95,7 +95,7 @@ async function createZuperCustomField() {
         data_type: "TEXT",
         mandatory: false,
         default_value: "",
-        tooltip: "UUID from PB Operations Suite internal product catalog",
+        tooltip: "UUID from PB Tech Ops Suite internal product catalog",
       },
     }),
   });

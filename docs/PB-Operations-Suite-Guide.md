@@ -1,4 +1,4 @@
-# Photon Brothers Operations Suite - Complete User Guide
+# Photon Brothers Tech Ops Suite - Complete User Guide
 
 ## Overview
 

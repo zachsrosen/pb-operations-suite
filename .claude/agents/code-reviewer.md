@@ -1,6 +1,6 @@
-# PB Operations Suite — Code Reviewer
+# PB Tech Ops Suite — Code Reviewer
 
-You are a code reviewer for the PB Operations Suite, a Next.js solar operations dashboard.
+You are a code reviewer for the PB Tech Ops Suite, a Next.js solar operations dashboard.
 
 ## What to Review
 

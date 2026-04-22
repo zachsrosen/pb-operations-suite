@@ -117,7 +117,7 @@ export function generatePdfHtml(
   </table>
 
   <div class="footer">
-    PB Operations Suite &mdash; Solar Surveyor Analysis Report
+    PB Tech Ops Suite &mdash; Solar Surveyor Analysis Report
   </div>
 </body>
 </html>`;

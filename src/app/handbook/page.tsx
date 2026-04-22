@@ -455,7 +455,7 @@ export default function HandbookPage() {
             href="/"
             className="text-xl font-bold bg-gradient-to-r from-orange-500 to-orange-400 bg-clip-text text-transparent hover:opacity-80 transition-opacity print:text-orange-600"
           >
-            PB Operations Suite
+            PB Tech Ops Suite
           </Link>
           <div className="flex items-center gap-4 print:hidden">
             <button
@@ -477,7 +477,7 @@ export default function HandbookPage() {
       <main className="max-w-5xl mx-auto px-6 py-8">
         <h1 className="text-3xl font-bold mb-2">PB Tech Ops Handbook</h1>
         <p className="text-muted mb-2 print:text-muted/70">
-          Comprehensive guide to every dashboard in the PB Operations Suite
+          Comprehensive guide to every dashboard in the PB Tech Ops Suite
         </p>
         <p className="text-xs text-muted mb-8 print:text-muted">
           Last updated: {new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}
@@ -749,7 +749,7 @@ export default function HandbookPage() {
 
         {/* Footer */}
         <div className="mt-12 pt-6 border-t border-t-border text-center text-xs text-muted print:border-t-border">
-          <p>PB Operations Suite &middot; Photon Brothers &middot; pbtechops.com</p>
+          <p>PB Tech Ops Suite &middot; Photon Brothers &middot; pbtechops.com</p>
         </div>
       </main>
     </div>

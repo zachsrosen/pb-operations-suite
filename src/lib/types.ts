@@ -1,4 +1,4 @@
-// Shared type definitions for the PB Operations Suite
+// Shared type definitions for the PB Tech Ops Suite
 // Extracted from at-risk, executive, locations, timeline, pe pages
 
 export interface RawProject {

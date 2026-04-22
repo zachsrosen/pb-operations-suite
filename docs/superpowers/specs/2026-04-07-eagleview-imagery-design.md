@@ -6,7 +6,7 @@
 
 ## Overview
 
-Integrate EagleView's Imagery API into PB Operations Suite to provide aerial ortho imagery for solar project workflows. Phase A is on-demand (user-triggered); Phase B (future) adds automatic fetching at stage transitions.
+Integrate EagleView's Imagery API into PB Tech Ops Suite to provide aerial ortho imagery for solar project workflows. Phase A is on-demand (user-triggered); Phase B (future) adds automatic fetching at stage transitions.
 
 ### Use Cases
 

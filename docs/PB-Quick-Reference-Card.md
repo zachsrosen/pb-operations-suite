@@ -1,4 +1,4 @@
-# Photon Brothers Operations Suite - Quick Reference Card
+# Photon Brothers Tech Ops Suite - Quick Reference Card
 
 ## Which Tool Should I Use?
 
@@ -165,4 +165,4 @@ All files in your **Downloads** folder:
 
 ---
 
-*Quick Reference Card - Photon Brothers Operations Suite - January 2026*
+*Quick Reference Card - Photon Brothers Tech Ops Suite - January 2026*
