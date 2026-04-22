@@ -15,11 +15,12 @@ import { serve } from "inngest/next";
 
 import { inngest } from "@/lib/inngest-client";
 import { bomDesignCompletePipeline } from "@/inngest/functions/bom-design-complete";
+import { adminWorkflowExecutor } from "@/inngest/functions/admin-workflow-executor";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
 export const { GET, POST, PUT } = serve({
   client: inngest,
-  functions: [bomDesignCompletePipeline],
+  functions: [bomDesignCompletePipeline, adminWorkflowExecutor],
 });
