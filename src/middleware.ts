@@ -46,6 +46,7 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/adders-sync", // Adder catalog → OpenSolar sync — CRON_SECRET validated in route
   "/api/inngest", // Inngest Cloud → app handshake; signing-key validated by the serve handler
   "/api/webhooks/zuper/admin-workflows", // Zuper webhook → admin workflow fan-out; bearer-validated in route
+  "/api/cron/admin-workflow-cleanup", // Mark stale admin-workflow runs as FAILED — CRON_SECRET validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed", "/api/install-review", "/api/zuper/sync-cache"] as const;
 

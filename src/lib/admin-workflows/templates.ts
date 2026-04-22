@@ -147,6 +147,91 @@ export const TEMPLATES: WorkflowTemplate[] = [
     },
   },
   {
+    slug: "deal-stage-fetch-and-notify",
+    name: "Deal stage → fetch details → AI email",
+    summary:
+      "Fetch full deal context when stage changes, then generate a tailored email using AI.",
+    useCase:
+      "3-step chain demonstrating fetch → compose → notify. Swap the email recipient based on pb_location.",
+    triggerType: "HUBSPOT_PROPERTY_CHANGE",
+    triggerConfig: {
+      objectType: "deal",
+      propertyName: "dealstage",
+      propertyValuesIn: [],
+    },
+    definition: {
+      steps: [
+        {
+          id: "fetch",
+          kind: "fetch-hubspot-deal",
+          inputs: {
+            dealId: "{{trigger.objectId}}",
+            propertyNames: "dealname, pb_location, system_size_kw, amount, project_number",
+          },
+        },
+        {
+          id: "compose",
+          kind: "ai-compose",
+          inputs: {
+            prompt:
+              "Write a 3-sentence ops kickoff for deal {{previous.fetch.properties.dealname}} " +
+              "(project {{previous.fetch.properties.project_number}}, " +
+              "{{previous.fetch.properties.system_size_kw}} kW, " +
+              "{{previous.fetch.properties.pb_location}}). " +
+              "Stage just changed to {{trigger.propertyValue}}. Include a clear next action for the install crew.",
+            maxTokens: "400",
+          },
+        },
+        {
+          id: "notify",
+          kind: "send-email",
+          inputs: {
+            to: "ops@photonbrothers.com",
+            subject: "Kickoff: {{previous.fetch.properties.dealname}} ({{previous.fetch.properties.pb_location}})",
+            body: "<p>{{previous.compose.text}}</p><hr><p>Deal: https://app.hubspot.com/contacts/21710069/record/0-3/{{trigger.objectId}}</p>",
+          },
+        },
+      ],
+    },
+  },
+  {
+    slug: "ticket-stuck-escalation",
+    name: "Ticket stuck → update property + notify",
+    summary:
+      "When a service ticket's hs_pipeline_stage changes to a 'waiting' state, bump priority and add an audit note.",
+    useCase:
+      "Pattern for multi-step ticket automation. Customize the trigger's propertyValuesIn to match your stuck-state IDs.",
+    triggerType: "HUBSPOT_PROPERTY_CHANGE",
+    triggerConfig: {
+      objectType: "ticket",
+      propertyName: "hs_pipeline_stage",
+      propertyValuesIn: [],
+    },
+    definition: {
+      steps: [
+        {
+          id: "bump-priority",
+          kind: "update-hubspot-ticket-property",
+          inputs: {
+            ticketId: "{{trigger.objectId}}",
+            propertyName: "hs_ticket_priority",
+            propertyValue: "HIGH",
+          },
+        },
+        {
+          id: "log",
+          kind: "log-activity",
+          inputs: {
+            description: "Ticket {{trigger.objectId}} priority bumped to HIGH by admin workflow",
+            entityType: "ticket",
+            entityId: "{{trigger.objectId}}",
+            metadata: "",
+          },
+        },
+      ],
+    },
+  },
+  {
     slug: "manual-test-send-email",
     name: "Manual → send test email",
     summary: "Simplest possible workflow — useful for smoke-testing the plumbing.",

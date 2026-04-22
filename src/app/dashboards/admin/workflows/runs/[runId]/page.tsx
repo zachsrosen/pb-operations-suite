@@ -117,6 +117,18 @@ export default function RunDetailPage({
             <span className="text-muted">
               {run.durationMs != null ? `${(run.durationMs / 1000).toFixed(1)}s` : "—"}
             </span>
+            {run.status === "RUNNING" && (
+              <button
+                onClick={async () => {
+                  if (!confirm("Mark this run as FAILED? Use this for runs stuck after a known Inngest issue.")) return;
+                  await fetch(`/api/admin/workflows/runs/${runId}/mark-failed`, { method: "POST" });
+                  window.location.reload();
+                }}
+                className="text-xs text-amber-400 hover:text-amber-300 border border-amber-500/40 rounded px-2 py-1"
+              >
+                Mark FAILED
+              </button>
+            )}
           </div>
         </div>
 
