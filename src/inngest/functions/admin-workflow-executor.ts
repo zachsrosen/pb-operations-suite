@@ -24,6 +24,12 @@ import {
 } from "@/lib/inngest-client";
 import { prisma } from "@/lib/db";
 import { getActionByKind } from "@/lib/admin-workflows/actions";
+import {
+  delayInputsSchema,
+  evaluateStopIf,
+  isControlFlowKind,
+  stopIfInputsSchema,
+} from "@/lib/admin-workflows/control-flow";
 
 interface WorkflowDefinition {
   steps: Array<{
@@ -126,16 +132,47 @@ export const adminWorkflowExecutor = inngest.createFunction(
 
     const previousOutputs: Record<string, unknown> = {};
     const startedAt = Date.now();
+    let stoppedEarly: { byStepId: string; reason: string } | null = null;
 
     // ── Execute steps in order ──
     for (const stepDef of definition.steps) {
+      // Resolve template expressions (needs outputs captured so far)
+      const resolvedInputs = resolveInputs(stepDef.inputs, triggerContext, previousOutputs);
+
+      // ── Control-flow kinds are handled specially ──
+      if (isControlFlowKind(stepDef.kind)) {
+        if (stepDef.kind === "delay") {
+          const delayInputs = delayInputsSchema.parse(resolvedInputs);
+          const seconds = Math.max(0, Math.min(86400, parseInt(delayInputs.seconds, 10) || 0));
+          // step.sleep must be called at Inngest-step top level; it is here
+          await step.sleep(`${stepDef.id}:delay`, `${seconds}s`);
+          previousOutputs[stepDef.id] = { delayedSeconds: seconds };
+          continue;
+        }
+        if (stepDef.kind === "stop-if") {
+          const stopInputs = stopIfInputsSchema.parse(resolvedInputs);
+          const shouldStop = await step.run(`${stepDef.id}:stop-if`, async () =>
+            evaluateStopIf(stopInputs),
+          );
+          if (shouldStop) {
+            stoppedEarly = {
+              byStepId: stepDef.id,
+              reason: `stop-if matched: ${stopInputs.left} ${stopInputs.operator} ${stopInputs.right ?? ""}`,
+            };
+            previousOutputs[stepDef.id] = { stopped: true, ...stopInputs };
+            break;
+          }
+          previousOutputs[stepDef.id] = { stopped: false, ...stopInputs };
+          continue;
+        }
+        throw new Error(`Unhandled control-flow kind: ${stepDef.kind}`);
+      }
+
+      // ── Regular actions ──
       const action = getActionByKind(stepDef.kind);
       if (!action) {
         throw new Error(`Unknown action kind: ${stepDef.kind}`);
       }
-
-      // Resolve template expressions (needs outputs captured so far)
-      const resolvedInputs = resolveInputs(stepDef.inputs, triggerContext, previousOutputs);
       const parsedInputs = action.inputsSchema.parse(resolvedInputs);
 
       const output = await step.run(`${stepDef.id}:${stepDef.kind}`, () =>
@@ -157,11 +194,15 @@ export const adminWorkflowExecutor = inngest.createFunction(
     // ── Mark run succeeded ──
     const durationMs = Date.now() - startedAt;
     await step.run("mark-succeeded", async () => {
+      const resultPayload: Record<string, unknown> = {
+        outputs: previousOutputs,
+        ...(stoppedEarly ? { stoppedEarly } : {}),
+      };
       return prisma!.adminWorkflowRun.update({
         where: { id: runId },
         data: {
           status: "SUCCEEDED",
-          result: previousOutputs as object,
+          result: resultPayload as object,
           durationMs,
           completedAt: new Date(),
         },
@@ -169,12 +210,13 @@ export const adminWorkflowExecutor = inngest.createFunction(
     });
 
     return {
-      status: "succeeded",
+      status: stoppedEarly ? "stopped-early" : "succeeded",
       workflowId,
       workflowName: workflow.name,
       runId,
       stepCount: definition.steps.length,
       durationMs,
+      ...(stoppedEarly ? { stoppedEarly } : {}),
     };
   },
 );

@@ -24,6 +24,7 @@ import { isAdminWorkflowsEnabled } from "@/lib/inngest-client";
 import {
   getActionByKind,
 } from "@/lib/admin-workflows/actions";
+import { isControlFlowKind } from "@/lib/admin-workflows/control-flow";
 import {
   getTriggerByKind,
 } from "@/lib/admin-workflows/triggers";
@@ -96,9 +97,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  // Validate each step's action kind exists
+  // Validate each step's action kind exists (regular actions OR control-flow)
   for (const stepDef of body.definition.steps) {
-    if (!getActionByKind(stepDef.kind)) {
+    if (!getActionByKind(stepDef.kind) && !isControlFlowKind(stepDef.kind)) {
       return NextResponse.json(
         { error: `Unknown action kind: ${stepDef.kind}` },
         { status: 400 },

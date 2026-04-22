@@ -15,6 +15,8 @@ import type { AdminWorkflowAction } from "@/lib/admin-workflows/types";
 import { addHubspotNoteAction } from "./add-hubspot-note";
 import { aiComposeAction } from "./ai-compose";
 import { createHubspotTaskAction } from "./create-hubspot-task";
+import { logActivityAction } from "./log-activity";
+import { runBomPipelineAction } from "./run-bom-pipeline";
 import { sendEmailAction } from "./send-email";
 import { updateHubSpotPropertyAction } from "./update-hubspot-property";
 import { updateHubspotContactPropertyAction } from "./update-hubspot-contact-property";
@@ -32,6 +34,9 @@ export const ACTIONS: AdminWorkflowAction[] = [
   createHubspotTaskAction,
   // Zuper
   updateZuperPropertyAction,
+  // PB Ops
+  runBomPipelineAction,
+  logActivityAction,
 ] as AdminWorkflowAction[];
 
 export function getActionByKind(kind: string): AdminWorkflowAction | undefined {
