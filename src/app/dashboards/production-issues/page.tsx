@@ -260,16 +260,26 @@ export default function ProductionIssuesPage() {
 
   const byEquipment = useMemo(() => {
     if (equipTab === "inverter") {
-      return topByKey(filteredFlagged, (r) => equipmentLabel(r.project.equipment?.inverter), 10);
+      return topByKey(filteredFlagged, (r) => {
+        const eq = r.project.equipment?.inverter;
+        if (!eq?.brand && !eq?.model) return null;
+        return equipmentLabel(eq);
+      }, 10);
     }
     if (equipTab === "module") {
-      return topByKey(filteredFlagged, (r) => equipmentLabel(r.project.equipment?.modules), 10);
+      return topByKey(filteredFlagged, (r) => {
+        const eq = r.project.equipment?.modules;
+        if (!eq?.brand && !eq?.model) return null;
+        return equipmentLabel(eq);
+      }, 10);
     }
     return topByKey(
       filteredFlagged,
       (r) => {
         if (r.project.equipment?.battery?.count === 0) return "No battery";
-        return equipmentLabel(r.project.equipment?.battery);
+        const eq = r.project.equipment?.battery;
+        if (!eq?.brand && !eq?.model) return null;
+        return equipmentLabel(eq);
       },
       10
     );
@@ -487,7 +497,6 @@ export default function ProductionIssuesPage() {
         </div>
       )}
 
-      {/* TODO(Task 7): breakdown cards */}
     </DashboardShell>
   );
 }
