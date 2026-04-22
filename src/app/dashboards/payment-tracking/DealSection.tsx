@@ -34,6 +34,7 @@ type SortKey =
   | "isPE"
   | "customerContractTotal"
   | "outstanding"
+  | "notYetInvoiced"
   | "collectedPct"
   | "attentionReasons";
 type SortDir = "asc" | "desc";
@@ -79,6 +80,7 @@ const COLUMNS: { key: SortKey; label: string; align?: "left" | "right" | "center
   { key: "customerContractTotal", label: "Contract", align: "right" },
   // Milestones column (not sortable; just visual). Special-cased in render.
   { key: "outstanding", label: "Outstanding", align: "right" },
+  { key: "notYetInvoiced", label: "Not Invoiced", align: "right" },
   { key: "collectedPct", label: "%", align: "right" },
 ];
 
@@ -199,7 +201,18 @@ export function DealSection({
                       <td className="px-3 py-2">
                         <MilestoneStrip deal={d} />
                       </td>
-                      <td className="px-3 py-2 text-right text-muted">{fmt(outstanding)}</td>
+                      <td
+                        className="px-3 py-2 text-right text-muted"
+                        title="Invoiced and not yet paid"
+                      >
+                        {fmt(outstanding)}
+                      </td>
+                      <td
+                        className="px-3 py-2 text-right text-muted"
+                        title="Contract value not yet billed (no invoice issued)"
+                      >
+                        {fmt(d.notYetInvoiced)}
+                      </td>
                       <td className="px-3 py-2 text-right text-muted">{d.collectedPct.toFixed(0)}%</td>
                       {showWhy && (
                         <td className="px-3 py-2 text-amber-300/90 text-[11px]" title={d.attentionReasons.join("\n")}>
