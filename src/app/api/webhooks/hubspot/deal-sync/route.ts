@@ -3,6 +3,7 @@ import { waitUntil } from "@vercel/functions";
 import { prisma } from "@/lib/db";
 import { syncSingleDeal } from "@/lib/deal-sync";
 import { validateHubSpotWebhook } from "@/lib/hubspot-webhook-auth";
+import { fanoutAdminWorkflows } from "@/lib/admin-workflows/fanout";
 
 export const maxDuration = 60;
 
@@ -90,6 +91,28 @@ async function processEvents(events: HubSpotWebhookEvent[]) {
       } else {
         // deal.creation, deal.propertyChange
         await syncSingleDeal(objectId, "WEBHOOK");
+      }
+
+      // ── Admin Workflow fan-out ──
+      // Additive: after the primary sync succeeds, fire any admin workflows
+      // configured for this property change. Gated on its own flag so we
+      // can roll out independently of the core sync.
+      if (event.subscriptionType === "deal.propertyChange") {
+        try {
+          await fanoutAdminWorkflows("HUBSPOT_PROPERTY_CHANGE", {
+            subscriptionType: event.subscriptionType,
+            objectId,
+            propertyName: event.propertyName,
+            propertyValue: event.propertyValue,
+          });
+        } catch (fanoutErr) {
+          // Fan-out errors are non-fatal to the primary sync
+          console.error(
+            "[deal-sync-webhook] Admin workflow fan-out failed (non-fatal) for deal %s:",
+            objectId,
+            fanoutErr,
+          );
+        }
       }
 
       // Record idempotency key
