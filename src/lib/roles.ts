@@ -223,6 +223,7 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/api/on-call",
     // Adder catalog (read-only for this role; write verbs gated at handler by canManageAdders)
     "/api/adders",
+    "/dashboards/tsrf-calculator",
   ],
   landingCards: [
     { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
@@ -331,6 +332,7 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/dashboards/de-metrics",
     "/api/hubspot/da-rework-flags",
     "/dashboards/clipping-analytics",
+    "/dashboards/production-issues",
     "/dashboards/ahj-requirements",
     "/dashboards/utility-design-requirements",
     "/dashboards/solar-surveyor",
@@ -381,6 +383,7 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/dashboards/on-call",
     "/api/on-call",
     "/api/adders",
+    "/dashboards/tsrf-calculator",
   ],
   landingCards: [
     { href: "/dashboards/pipeline", title: "Pipeline Overview", description: "Full pipeline with filters and milestone tracking.", tag: "PIPELINE", tagColor: "green" },
@@ -474,6 +477,7 @@ const OPERATIONS: RoleDefinition = {
     "/dashboards/on-call",
     "/api/on-call",
     "/api/adders",
+    "/dashboards/tsrf-calculator",
   ],
   landingCards: [
     { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
@@ -543,6 +547,7 @@ const SERVICE: RoleDefinition = {
     "/dashboards/my-tickets",
     "/api/freshservice/my-tickets",
     "/api/adders",
+    "/dashboards/tsrf-calculator",
   ],
   landingCards: [
     { href: "/dashboards/service-overview", title: "Service Overview", description: "Priority queue command center — see what needs attention now.", tag: "OVERVIEW", tagColor: "orange" },
@@ -618,6 +623,7 @@ const TECH_OPS: RoleDefinition = {
     "/dashboards/de-metrics",
     "/api/hubspot/da-rework-flags",
     "/dashboards/clipping-analytics",
+    "/dashboards/production-issues",
     "/dashboards/ahj-requirements",
     "/dashboards/utility-design-requirements",
     "/dashboards/solar-surveyor",
@@ -671,6 +677,7 @@ const TECH_OPS: RoleDefinition = {
     "/dashboards/on-call",
     "/api/on-call",
     "/api/adders",
+    "/dashboards/tsrf-calculator",
   ],
   landingCards: [
     { href: "/dashboards/site-survey", title: "Site Survey", description: "Site survey scheduling and status tracking.", tag: "SURVEY", tagColor: "green" },
@@ -711,6 +718,7 @@ const DESIGN: RoleDefinition = {
     "/dashboards/de-metrics",
     "/dashboards/design-pipeline-funnel",
     "/dashboards/clipping-analytics",
+    "/dashboards/production-issues",
     "/dashboards/ahj-requirements",
     "/dashboards/utility-design-requirements",
     "/dashboards/solar-surveyor",
@@ -745,6 +753,7 @@ const DESIGN: RoleDefinition = {
     "/dashboards/on-call",
     "/api/on-call",
     "/api/adders",
+    "/dashboards/tsrf-calculator",
   ],
   landingCards: [
     { href: "/dashboards/design", title: "Design & Engineering", description: "Design progress, engineering approvals, and plan sets.", tag: "DESIGN", tagColor: "emerald" },
@@ -913,6 +922,7 @@ const INTELLIGENCE: RoleDefinition = {
     "/dashboards/office-performance",
     "/dashboards/preconstruction-metrics",
     "/dashboards/clipping-analytics",
+    "/dashboards/production-issues",
     "/dashboards/timeline",
     "/dashboards/deals",
     "/api/projects",

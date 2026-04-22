@@ -2735,6 +2735,9 @@ model OnCallPool {
   timezone      String
   startDate     String
   horizonMonths Int     @default(3)
+  /// Rotation cadence: "daily" or "weekly". New pools default to "weekly".
+  /// Weekly anchors on the Monday of startDate.
+  rotationUnit  String  @default("weekly")
   isActive      Boolean @default(true)
 
   lastPublishedAt      DateTime?

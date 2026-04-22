@@ -62,6 +62,7 @@ export const APP_PAGE_ROUTES = [
   "/dashboards/pipeline",
   "/dashboards/plan-review",
   "/dashboards/product-comparison",
+  "/dashboards/production-issues",
   "/dashboards/project-management",
   "/dashboards/qc",
   "/dashboards/revenue",

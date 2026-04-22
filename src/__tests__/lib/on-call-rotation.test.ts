@@ -247,3 +247,50 @@ describe("rankReplacements", () => {
     expect(charlie?.reason).toBe("pto");
   });
 });
+
+describe("weekly rotation", () => {
+  const WEEKLY_OPTS = (from: string, to: string) => ({
+    startDate: "2026-05-04", // Monday
+    fromDate: from,
+    toDate: to,
+    members: CA_MEMBERS,
+    rotationUnit: "weekly" as const,
+  });
+
+  it("assigns all 7 days of a week to the same member", () => {
+    const out = generateAssignments(WEEKLY_OPTS("2026-05-04", "2026-05-10"));
+    const unique = new Set(out.map((a) => a.crewMemberId));
+    expect(unique.size).toBe(1);
+    expect(out[0].crewMemberId).toBe("nick");
+    expect(out).toHaveLength(7);
+  });
+
+  it("cycles to the next member at Monday boundary", () => {
+    const out = generateAssignments(WEEKLY_OPTS("2026-05-04", "2026-05-17"));
+    // Week 1 (May 4-10) = nick, Week 2 (May 11-17) = lucas.
+    expect(out[0].crewMemberId).toBe("nick");
+    expect(out[6].crewMemberId).toBe("nick"); // Sun
+    expect(out[7].crewMemberId).toBe("lucas"); // Mon
+    expect(out[13].crewMemberId).toBe("lucas");
+  });
+
+  it("wraps through 4-member pool in 4 weeks and restarts", () => {
+    const out = generateAssignments(WEEKLY_OPTS("2026-05-04", "2026-06-07"));
+    // Weeks: nick, lucas, charlie, ruben, nick.
+    const byMonday = [0, 7, 14, 21, 28].map((i) => out[i].crewMemberId);
+    expect(byMonday).toEqual(["nick", "lucas", "charlie", "ruben", "nick"]);
+  });
+
+  it("aligns to Monday even when pool startDate is mid-week", () => {
+    const out = generateAssignments({
+      startDate: "2026-05-06", // Wednesday
+      fromDate: "2026-05-04",  // Monday of same week
+      toDate:   "2026-05-17",
+      members: CA_MEMBERS,
+      rotationUnit: "weekly",
+    });
+    // anchor Monday = 2026-05-04. Week 1 = nick, Week 2 = lucas.
+    expect(out[0].crewMemberId).toBe("nick");
+    expect(out[7].crewMemberId).toBe("lucas");
+  });
+});

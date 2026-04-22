@@ -38,7 +38,9 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: "Pool has no active members" }, { status: 409 });
     }
 
-    const from = todayInTz(pool.timezone);
+    const today = todayInTz(pool.timezone);
+    // Never generate assignments before pool.startDate — rotation begins there.
+    const from = today >= pool.startDate ? today : pool.startDate;
     const to = addDays(from, pool.horizonMonths * 30);
 
     const generated = generateAssignments({
@@ -46,6 +48,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       fromDate: from,
       toDate: to,
       members,
+      rotationUnit: (pool.rotationUnit as "daily" | "weekly") ?? "weekly",
     });
 
     // Existing rows in range keyed by date — used to partition into net-new

@@ -1,28 +1,41 @@
 import Link from "next/link";
 
+type NavKey = "dashboard" | "me" | "month" | "activity" | "setup";
+
 type Props = {
-  current: "dashboard" | "month" | "setup";
+  current: NavKey;
+  /** ADMIN / EXECUTIVE — can edit pools + publish. */
   isAdmin?: boolean;
+  /** ADMIN / EXECUTIVE / OPERATIONS_MANAGER — can approve/deny swaps + PTO. */
+  isApprover?: boolean;
 };
 
 type NavLink = {
-  key: "dashboard" | "month" | "setup";
+  key: NavKey;
   href: string;
   label: string;
-  adminOnly?: boolean;
+  visible?: (p: Required<Omit<Props, "current">>) => boolean;
 };
 
 const LINKS: NavLink[] = [
   { key: "dashboard", href: "/dashboards/on-call", label: "Dashboard" },
+  { key: "me", href: "/dashboards/on-call/me", label: "My Shifts" },
   { key: "month", href: "/dashboards/on-call/month", label: "Month" },
-  { key: "setup", href: "/dashboards/on-call/setup", label: "Setup", adminOnly: true },
+  {
+    key: "activity",
+    href: "/dashboards/on-call/activity",
+    label: "Activity",
+    visible: (p) => p.isApprover || p.isAdmin,
+  },
+  { key: "setup", href: "/dashboards/on-call/setup", label: "Setup", visible: (p) => p.isAdmin },
 ];
 
-export function OnCallNav({ current, isAdmin = false }: Props) {
+export function OnCallNav({ current, isAdmin = false, isApprover = false }: Props) {
+  const gates = { isAdmin, isApprover: isApprover || isAdmin };
   return (
     <div className="flex items-center gap-1">
       {LINKS.map((link) => {
-        if (link.adminOnly && !isAdmin) return null;
+        if (link.visible && !link.visible(gates)) return null;
         const active = link.key === current;
         return (
           <Link
