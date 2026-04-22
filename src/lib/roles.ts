@@ -27,6 +27,7 @@ export interface RoleDefinition {
     canSyncZuper: boolean;
     canManageUsers: boolean;
     canManageAvailability: boolean;
+    canManageAdders: boolean;
     canEditDesign: boolean;
     canEditPermitting: boolean;
     canViewAllLocations: boolean;
@@ -78,6 +79,7 @@ const ADMIN: RoleDefinition = {
     canSyncZuper: true,
     canManageUsers: true,
     canManageAvailability: true,
+    canManageAdders: true,
     canEditDesign: true,
     canEditPermitting: true,
     canViewAllLocations: true,
@@ -111,6 +113,7 @@ const EXECUTIVE: RoleDefinition = {
     canSyncZuper: true,
     canManageUsers: false,
     canManageAvailability: true,
+    canManageAdders: false,
     canEditDesign: true,
     canEditPermitting: true,
     canViewAllLocations: true,
@@ -218,6 +221,8 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
     "/dashboards/on-call",
     "/api/on-call",
+    // Adder catalog (read-only for this role; write verbs gated at handler by canManageAdders)
+    "/api/adders",
     "/dashboards/tsrf-calculator",
   ],
   landingCards: [
@@ -237,6 +242,7 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     canSyncZuper: true,
     canManageUsers: false,
     canManageAvailability: true,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: true,
@@ -376,6 +382,7 @@ const PROJECT_MANAGER: RoleDefinition = {
     // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
     "/dashboards/on-call",
     "/api/on-call",
+    "/api/adders",
     "/dashboards/tsrf-calculator",
   ],
   landingCards: [
@@ -394,6 +401,7 @@ const PROJECT_MANAGER: RoleDefinition = {
     canSyncZuper: true,
     canManageUsers: false,
     canManageAvailability: false,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: true,
@@ -468,6 +476,7 @@ const OPERATIONS: RoleDefinition = {
     // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
     "/dashboards/on-call",
     "/api/on-call",
+    "/api/adders",
     "/dashboards/tsrf-calculator",
   ],
   landingCards: [
@@ -488,6 +497,7 @@ const OPERATIONS: RoleDefinition = {
     canSyncZuper: true,
     canManageUsers: false,
     canManageAvailability: true,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: true,
@@ -536,6 +546,7 @@ const SERVICE: RoleDefinition = {
     "/api/hubspot/tasks",
     "/dashboards/my-tickets",
     "/api/freshservice/my-tickets",
+    "/api/adders",
     "/dashboards/tsrf-calculator",
   ],
   landingCards: [
@@ -552,6 +563,7 @@ const SERVICE: RoleDefinition = {
     canSyncZuper: true,
     canManageUsers: false,
     canManageAvailability: false,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: true,
@@ -664,6 +676,7 @@ const TECH_OPS: RoleDefinition = {
     // On-Call Electrician Rotations (viewing). Approval paths gated at handler level.
     "/dashboards/on-call",
     "/api/on-call",
+    "/api/adders",
     "/dashboards/tsrf-calculator",
   ],
   landingCards: [
@@ -681,6 +694,7 @@ const TECH_OPS: RoleDefinition = {
     canSyncZuper: false,
     canManageUsers: false,
     canManageAvailability: true,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: false,
@@ -738,6 +752,7 @@ const DESIGN: RoleDefinition = {
     "/api/comms",
     "/dashboards/on-call",
     "/api/on-call",
+    "/api/adders",
     "/dashboards/tsrf-calculator",
   ],
   landingCards: [
@@ -754,6 +769,7 @@ const DESIGN: RoleDefinition = {
     canSyncZuper: false,
     canManageUsers: false,
     canManageAvailability: false,
+    canManageAdders: false,
     canEditDesign: true,
     canEditPermitting: false,
     canViewAllLocations: false,
@@ -799,6 +815,7 @@ const PERMIT: RoleDefinition = {
     "/api/comms",
     "/dashboards/on-call",
     "/api/on-call",
+    "/api/adders",
   ],
   landingCards: [
     { href: "/dashboards/permitting", title: "Permitting", description: "Permit pipeline, action queue, and status tracking.", tag: "PERMIT", tagColor: "sky" },
@@ -814,6 +831,7 @@ const PERMIT: RoleDefinition = {
     canSyncZuper: false,
     canManageUsers: false,
     canManageAvailability: false,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: true,
     canViewAllLocations: false,
@@ -859,6 +877,7 @@ const INTERCONNECT: RoleDefinition = {
     "/api/comms",
     "/dashboards/on-call",
     "/api/on-call",
+    "/api/adders",
   ],
   landingCards: [
     { href: "/dashboards/interconnection", title: "Interconnection", description: "Utility interconnection status and revisions.", tag: "IC", tagColor: "violet" },
@@ -874,6 +893,7 @@ const INTERCONNECT: RoleDefinition = {
     canSyncZuper: false,
     canManageUsers: false,
     canManageAvailability: false,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: true,
     canViewAllLocations: false,
@@ -923,6 +943,7 @@ const INTELLIGENCE: RoleDefinition = {
     "/dashboards/my-tickets",
     "/api/freshservice/my-tickets",
     "/api/comms",
+    "/api/adders",
   ],
   landingCards: [
     { href: "/dashboards/qc", title: "QC Metrics", description: "Time-between-stages analytics by office and utility.", tag: "QC", tagColor: "fuchsia" },
@@ -938,6 +959,7 @@ const INTELLIGENCE: RoleDefinition = {
     canSyncZuper: false,
     canManageUsers: false,
     canManageAvailability: false,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: true,
@@ -976,6 +998,7 @@ const ROOFING: RoleDefinition = {
     "/api/comms",
     "/dashboards/on-call",
     "/api/on-call",
+    "/api/adders",
   ],
   landingCards: [
     { href: "/dashboards/roofing", title: "Roofing", description: "Roofing job pipeline and scheduling.", tag: "ROOFING", tagColor: "rose" },
@@ -991,6 +1014,7 @@ const ROOFING: RoleDefinition = {
     canSyncZuper: true,
     canManageUsers: false,
     canManageAvailability: false,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: true,
@@ -1048,6 +1072,7 @@ const MARKETING: RoleDefinition = {
     canSyncZuper: false,
     canManageUsers: false,
     canManageAvailability: false,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: true,
@@ -1108,6 +1133,7 @@ const SALES_MANAGER: RoleDefinition = {
     "/dashboards/my-tickets",
     "/api/freshservice/my-tickets",
     "/api/comms",
+    "/api/adders",
   ],
   landingCards: [],
   scope: "global",
@@ -1119,6 +1145,7 @@ const SALES_MANAGER: RoleDefinition = {
     canSyncZuper: true,
     canManageUsers: false,
     canManageAvailability: false,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: true,
@@ -1156,6 +1183,7 @@ const SALES: RoleDefinition = {
     "/dashboards/my-tickets",
     "/api/freshservice/my-tickets",
     "/api/comms",
+    "/api/adders",
   ],
   landingCards: [
     { href: "/dashboards/sales", title: "Sales Pipeline", description: "Active deals, funnel visualization, and proposal tracking.", tag: "SALES", tagColor: "cyan" },
@@ -1171,6 +1199,7 @@ const SALES: RoleDefinition = {
     canSyncZuper: true,
     canManageUsers: false,
     canManageAvailability: false,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: false,
@@ -1199,6 +1228,7 @@ const ACCOUNTING: RoleDefinition = {
     "/api/stream",
     "/api/user/me",
     "/api/activity/log",
+    "/api/adders",
   ],
   landingCards: [],
   scope: "global",
@@ -1210,6 +1240,7 @@ const ACCOUNTING: RoleDefinition = {
     canSyncZuper: false,
     canManageUsers: false,
     canManageAvailability: false,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: true,
@@ -1252,6 +1283,7 @@ const VIEWER: RoleDefinition = {
     canSyncZuper: false,
     canManageUsers: false,
     canManageAvailability: false,
+    canManageAdders: false,
     canEditDesign: false,
     canEditPermitting: false,
     canViewAllLocations: true,
@@ -1272,7 +1304,8 @@ const OWNER: RoleDefinition = {
   landingCards: EXECUTIVE.landingCards,
   scope: EXECUTIVE.scope,
   badge: { color: "amber", abbrev: "EXECUTIVE" },
-  defaultCapabilities: EXECUTIVE.defaultCapabilities,
+  // OWNER gets canManageAdders per pricing-adder-governance spec; otherwise mirrors EXECUTIVE.
+  defaultCapabilities: { ...EXECUTIVE.defaultCapabilities, canManageAdders: true },
 };
 
 const MANAGER: RoleDefinition = {

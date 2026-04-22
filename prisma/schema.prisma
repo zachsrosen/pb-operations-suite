@@ -54,6 +54,7 @@ model User {
   canSyncToZuper        Boolean @default(false)
   canManageUsers        Boolean @default(false)
   canManageAvailability Boolean @default(false)
+  canManageAdders       Boolean @default(false)
 
   // Per-user route overrides — extras added to / subtracted from the role
   // union. Denied wins over allowed within the same user. Admin-editable via
@@ -2879,4 +2880,145 @@ model EstimatorRun {
   @@index([hubspotDealId])
   @@index([expiresAt])
   @@index([normalizedAddressHash])
+}
+
+enum AdderCategory {
+  ELECTRICAL
+  ROOFING
+  STRUCTURAL
+  SITEWORK
+  LOGISTICS
+  DESIGN
+  PERMITTING
+  REMOVAL
+  ORG
+  MISC
+}
+
+enum AdderUnit {
+  FLAT
+  PER_MODULE
+  PER_KW
+  PER_LINEAR_FT
+  PER_HOUR
+  TIERED
+}
+
+enum AdderType {
+  FIXED
+  PERCENTAGE
+}
+
+enum AdderDirection {
+  ADD
+  DISCOUNT
+}
+
+enum TriageAnswerType {
+  BOOLEAN
+  NUMERIC
+  CHOICE
+  MEASUREMENT
+}
+
+enum AdderSyncRunStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+enum AdderSyncTrigger {
+  ON_SAVE
+  CRON
+  MANUAL
+}
+
+model Adder {
+  id               String            @id @default(cuid())
+  code             String            @unique
+  name             String
+  category         AdderCategory
+  type             AdderType         @default(FIXED)
+  direction        AdderDirection    @default(ADD)
+  autoApply        Boolean           @default(false)
+  appliesTo        String?
+  triggerCondition String?
+  triageQuestion   String?
+  triageAnswerType TriageAnswerType?
+  triageChoices    Json?
+  triggerLogic     Json?
+  photosRequired   Boolean           @default(false)
+  unit             AdderUnit
+  basePrice        Decimal
+  baseCost         Decimal
+  marginTarget     Decimal?
+  active           Boolean           @default(true)
+  notes            String?
+  openSolarId      String?
+  createdBy        String
+  updatedBy        String
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  overrides AdderShopOverride[]
+  revisions AdderRevision[]
+
+  @@index([category, active])
+}
+
+model AdderShopOverride {
+  id         String   @id @default(cuid())
+  adderId    String
+  shop       String
+  priceDelta Decimal
+  active     Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  adder Adder @relation(fields: [adderId], references: [id], onDelete: Cascade)
+
+  @@unique([adderId, shop])
+}
+
+model AdderRevision {
+  id         String   @id @default(cuid())
+  adderId    String
+  snapshot   Json
+  changedBy  String
+  changedAt  DateTime @default(now())
+  changeNote String?
+
+  adder Adder @relation(fields: [adderId], references: [id], onDelete: Cascade)
+
+  @@index([adderId, changedAt])
+}
+
+model AdderSyncRun {
+  id           String             @id @default(cuid())
+  startedAt    DateTime           @default(now())
+  finishedAt   DateTime?
+  status       AdderSyncRunStatus
+  trigger      AdderSyncTrigger
+  addersPushed Int                @default(0)
+  addersFailed Int                @default(0)
+  errorLog     Json?
+}
+
+model TriageRun {
+  id                 String    @id @default(cuid())
+  dealId             String?
+  prelimAddress      Json?
+  runBy              String
+  runAt              DateTime  @default(now())
+  answers            Json
+  recommendedAdders  Json
+  selectedAdders     Json
+  photos             Json?
+  submitted          Boolean   @default(false)
+  submittedAt        DateTime?
+  hubspotLineItemIds Json?
+  notes              String?
+
+  @@index([dealId, runAt])
 }

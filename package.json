@@ -76,6 +76,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19",
     "cheerio": "^1.2.0",
+    "csv-parse": "^6.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.2.1",
     "jest": "^30.3.0",
