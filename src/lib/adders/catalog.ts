@@ -68,9 +68,18 @@ export async function updateAdder(
         changeNote: changeNote ?? "updated",
       },
     });
+    // Prisma rejects `null` for Json fields in update — it wants
+    // `Prisma.JsonNull` or `undefined`. Phase 1 doesn't support clearing
+    // Json fields to null (no UI affordance); treat null as no-op.
+    const { triggerLogic, triageChoices, ...scalarRest } = rest;
     const updated = await tx.adder.update({
       where: { id },
-      data: { ...rest, updatedBy: auth.userId },
+      data: {
+        ...scalarRest,
+        updatedBy: auth.userId,
+        ...(triggerLogic != null ? { triggerLogic } : {}),
+        ...(triageChoices != null ? { triageChoices } : {}),
+      },
     });
     if (overrides) {
       await tx.adderShopOverride.deleteMany({ where: { adderId: id } });
