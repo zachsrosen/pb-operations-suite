@@ -340,19 +340,21 @@ Note: ATTOM-sourced fields (yearBuilt, squareFootage, roofMaterial, etc.) are nu
 
 ### 11. Suite Navigation (`lib/suite-nav.ts`)
 
-8 departmental suites with role-based visibility:
+Departmental suites with role-based visibility. Full list: `grep "href:" src/lib/suite-nav.ts`.
 
 Suite switcher visibility (from `suite-nav.ts`):
 
 | Suite | Roles in Switcher |
 |-------|------------------|
 | Operations | ADMIN, OWNER, PM, OPS_MGR, OPS, TECH_OPS |
-| Design & Engineering | ADMIN, OWNER, PM, TECH_OPS |
-| Permitting & Interconnection | ADMIN, OWNER, PM, TECH_OPS |
-| Service | ADMIN, OWNER, PM, OPS_MGR, OPS |
-| D&R + Roofing | ADMIN, OWNER, PM, OPS_MGR, OPS |
-| Intelligence | ADMIN, OWNER, PM, OPS_MGR |
+| Design & Engineering | ADMIN, OWNER, PM, TECH_OPS, DESIGN |
+| Permitting & Interconnection | ADMIN, OWNER, PM, TECH_OPS, PERMIT, INTERCONNECT |
+| Service | ADMIN, OWNER, PM, OPS_MGR, OPS, SERVICE |
+| D&R + Roofing | ADMIN, OWNER, PM, OPS_MGR, OPS, ROOFING |
+| Intelligence | ADMIN, OWNER, PM, OPS_MGR, INTELLIGENCE |
 | Executive | ADMIN, OWNER |
+| Accounting | ADMIN, OWNER, PM, OPS_MGR, OPS, SALES_MANAGER, ACCOUNTING |
+| Sales & Marketing | ADMIN, OWNER, SALES_MANAGER, SALES, MARKETING |
 | Admin | ADMIN only |
 
 **Note**: `roles.ts` grants PM and OPS_MGR direct route access to executive dashboards, but `suite-nav.ts` hides Executive from the suite switcher for those roles. Direct URL access works; the switcher doesn't show it.
@@ -442,7 +444,7 @@ Handles:
 
 ### User Roles
 
-11 roles defined in Prisma schema (`User.roles: UserRole[]` — multi-role, Phase 2 complete). Legacy roles auto-normalize:
+Multi-role system (`User.roles: UserRole[]` — Phase 2 complete). Full enum: `grep "^  [A-Z]" prisma/schema.prisma` under `enum UserRole`. Legacy roles auto-normalize:
 - `MANAGER` → `PROJECT_MANAGER`
 - `DESIGNER` → `TECH_OPS`
 - `PERMITTING` → `TECH_OPS`
@@ -454,8 +456,17 @@ Handles:
 | PROJECT_MANAGER | Full ops/D&E/P&I/intelligence/service/D&R (executive via direct URL, not in suite switcher) |
 | OPERATIONS_MANAGER | Ops/service/D&R + intelligence (executive via direct URL, not in suite switcher) |
 | OPERATIONS | Ops/service/D&R only |
-| TECH_OPS | D&E/P&I/ops only |
-| SALES | Sales scheduler + survey availability |
+| TECH_OPS | D&E/P&I/ops only — **deprecated**, being replaced by DESIGN + PERMIT + INTERCONNECT |
+| DESIGN | D&E suite only |
+| PERMIT | P&I suite (permitting portion) |
+| INTERCONNECT | P&I suite (interconnection portion) |
+| INTELLIGENCE | Intelligence suite only |
+| ROOFING | D&R + Roofing suite only |
+| MARKETING | Sales & Marketing suite only (read-only) |
+| SALES_MANAGER | Sales & Marketing + Accounting suites |
+| SALES | Sales & Marketing suite + Site Survey Schedule |
+| ACCOUNTING | Accounting suite only |
+| SERVICE | Service suite only |
 | VIEWER | Minimal dashboard/API access (new user default) |
 
 Permission booleans override role defaults: `canScheduleSurveys`, `canScheduleInstalls`, `canScheduleInspections`, `canSyncZuper`, `canManageUsers`, `canManageAvailability`, `canEditDesign`, `canEditPermitting`, `canViewAllLocations`.
