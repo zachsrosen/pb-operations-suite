@@ -95,7 +95,7 @@ describe("transformDeal — non-PE", () => {
 });
 
 describe("transformDeal — attention bucket", () => {
-  it("lands in attention when any PE status is Rejected", () => {
+  it("does NOT flag PE M1 Rejected as attention (rejection = ops issue, not accounting)", () => {
     const deal = transformDeal(
       {
         ...BASE,
@@ -105,8 +105,9 @@ describe("transformDeal — attention bucket", () => {
       },
       new Date("2026-03-15")
     );
-    expect(deal.bucket).toBe("attention");
-    expect(deal.attentionReasons).toContain("PE M1 Rejected");
+    expect(deal.attentionReasons).not.toContain("PE M1 Rejected");
+    // Customer side complete + PE M1 not Paid → falls into awaiting_pe_m1
+    expect(deal.bucket).toBe("awaiting_pe_m1");
   });
 
   it("lands in attention when CC is Open >30 days past close", () => {

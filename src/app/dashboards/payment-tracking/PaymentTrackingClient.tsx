@@ -266,23 +266,24 @@ export default function PaymentTrackingClient() {
 
         <div className="flex flex-wrap gap-3 text-[10px] text-muted">
           <span className="flex items-center gap-1">
-            <span className="inline-block w-2.5 h-2.5 rounded-full border border-zinc-700" /> not started
+            <span className="inline-block w-2.5 h-2.5 rounded-full border border-zinc-700" /> not yet ready
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block w-2.5 h-2.5 rounded-full border bg-zinc-500 border-zinc-500" /> pending
+            <span className="inline-block w-2.5 h-2.5 rounded-full border bg-amber-500 border-amber-300 ring-2 ring-amber-400/60" /> ready to invoice
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block w-2.5 h-2.5 rounded-full border bg-amber-500 border-amber-500" /> open
+            <span className="inline-block w-2.5 h-2.5 rounded-full border bg-zinc-500 border-zinc-400 ring-1 ring-zinc-300/40" /> draft
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block w-2.5 h-2.5 rounded-full border bg-amber-500 border-amber-300 ring-2 ring-amber-400/50" /> ready (work done, not paid)
+            <span className="inline-block w-2.5 h-2.5 rounded-full border bg-amber-500 border-amber-500" /> sent
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-2.5 h-2.5 rounded-full border bg-amber-500 border-amber-300 ring-1 ring-emerald-400/40" /> partial
           </span>
           <span className="flex items-center gap-1">
             <span className="inline-block w-2.5 h-2.5 rounded-full border bg-emerald-500 border-emerald-500" /> paid
           </span>
-          <span className="flex items-center gap-1">
-            <span className="inline-block w-2.5 h-2.5 rounded-full border bg-red-500 border-red-500" /> rejected
-          </span>
+          <span>· hover for amounts · click to open invoice</span>
         </div>
       </div>
 
