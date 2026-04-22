@@ -1,4 +1,5 @@
-import type { AdderWithOverrides } from "./types";
+import type { AdderWithOverrides, AppliesToContext, ResolvedAdder } from "./types";
+import { evaluateAppliesTo } from "./applies-to";
 
 /** Canonical shop list — matches existing `CrewMember.location` strings. */
 export const VALID_SHOPS = [
@@ -21,4 +22,55 @@ export function resolveShopPrice(adder: AdderWithOverrides, shop: string): numbe
   const base = Number(adder.basePrice);
   const override = adder.overrides.find((o) => o.shop === shop && o.active);
   return base + (override ? Number(override.priceDelta) : 0);
+}
+
+/**
+ * Pure resolver: given a set of adders + context, return the auto-apply
+ * matches as ResolvedAdder[]. Has no DB dependency — easy to unit-test.
+ *
+ * For each adder:
+ *   - must be autoApply
+ *   - must pass evaluateAppliesTo(appliesTo, context)
+ *   - unit price is base + active shop override
+ *   - qty defaults to 1 (percentage math handled downstream by the caller)
+ *   - amount is signed: negative when direction=DISCOUNT
+ */
+export function resolveAddersFromList(
+  adders: AdderWithOverrides[],
+  context: { shop: string } & AppliesToContext
+): ResolvedAdder[] {
+  const matches: ResolvedAdder[] = [];
+  for (const a of adders) {
+    if (!a.autoApply) continue;
+    if (!evaluateAppliesTo(a.appliesTo, context)) continue;
+    const unitPrice = resolveShopPrice(a, context.shop);
+    const qty = 1;
+    const sign = a.direction === "DISCOUNT" ? -1 : 1;
+    matches.push({
+      code: a.code,
+      name: a.name,
+      category: a.category,
+      type: a.type,
+      direction: a.direction,
+      unit: a.unit,
+      unitPrice,
+      qty,
+      amount: sign * unitPrice * qty,
+    });
+  }
+  return matches;
+}
+
+/**
+ * DB-aware wrapper around `resolveAddersFromList`.
+ * Loads all active adders from the catalog and filters via auto-apply + appliesTo.
+ */
+export async function resolveAddersForCalc(
+  context: { shop: string } & AppliesToContext
+): Promise<ResolvedAdder[]> {
+  // Dynamic import to avoid loading the prisma client in pure unit tests
+  // that only use `resolveAddersFromList`.
+  const { listAdders } = await import("./catalog");
+  const adders = await listAdders({ active: true });
+  return resolveAddersFromList(adders, context);
 }
