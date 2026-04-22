@@ -52,6 +52,7 @@ export async function GET(req: Request) {
         fromDate: from,
         toDate: to,
         members,
+        rotationUnit: (pool.rotationUnit as "daily" | "weekly") ?? "weekly",
       });
     } catch {
       gen = [];
