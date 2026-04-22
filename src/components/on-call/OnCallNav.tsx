@@ -1,12 +1,14 @@
 import Link from "next/link";
 
+type NavKey = "dashboard" | "me" | "month" | "setup";
+
 type Props = {
-  current: "dashboard" | "month" | "setup";
+  current: NavKey;
   isAdmin?: boolean;
 };
 
 type NavLink = {
-  key: "dashboard" | "month" | "setup";
+  key: NavKey;
   href: string;
   label: string;
   adminOnly?: boolean;
@@ -14,6 +16,7 @@ type NavLink = {
 
 const LINKS: NavLink[] = [
   { key: "dashboard", href: "/dashboards/on-call", label: "Dashboard" },
+  { key: "me", href: "/dashboards/on-call/me", label: "My Shifts" },
   { key: "month", href: "/dashboards/on-call/month", label: "Month" },
   { key: "setup", href: "/dashboards/on-call/setup", label: "Setup", adminOnly: true },
 ];
