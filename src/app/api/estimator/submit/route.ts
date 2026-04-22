@@ -103,6 +103,14 @@ async function handleSubmission(ctx: {
   if (submission.kind === "out_of_area") {
     return handleOutOfArea({ submission, token, expiresAt, ipHash, recaptchaScore, flaggedForReview });
   }
+  if (
+    submission.kind === "ev_charger" ||
+    submission.kind === "battery" ||
+    submission.kind === "system_expansion" ||
+    submission.kind === "detach_reset"
+  ) {
+    return handleOtherQuoteType({ submission, token, expiresAt, ipHash, recaptchaScore, flaggedForReview });
+  }
   return handleManualQuote({ submission, token, expiresAt, ipHash, recaptchaScore, flaggedForReview });
 }
 
@@ -344,6 +352,255 @@ async function handleManualQuote(ctx: {
   await logActivity("ESTIMATOR_SUBMISSION", { runId: run.id, outOfArea: false, manualQuoteRequest: true });
 
   return NextResponse.json({ token, manualQuoteRequest: true });
+}
+
+// --- Other quote types: EV charger, battery, system expansion, detach & reset ---
+
+type OtherSubmission = Extract<
+  SubmitRequest,
+  { kind: "ev_charger" | "battery" | "system_expansion" | "detach_reset" }
+>;
+
+async function handleOtherQuoteType(ctx: {
+  submission: OtherSubmission;
+  token: string;
+  expiresAt: Date;
+  ipHash: string;
+  recaptchaScore: number | null;
+  flaggedForReview: boolean;
+}): Promise<NextResponse> {
+  const { submission, token, expiresAt, ipHash, recaptchaScore, flaggedForReview } = ctx;
+  const { contact } = submission;
+  const { loadPricing, loadUtilityById } = await import("@/lib/estimator");
+  const { computeEvChargerQuote, computeBatteryQuote, computeSystemExpansionQuote } = await import(
+    "@/lib/estimator"
+  );
+
+  const pricing = loadPricing();
+  let resultSummary: Record<string, unknown> | null = null;
+  let finalUsd = 0;
+  let inputSnapshot: Record<string, unknown> = { submission };
+  let address = "";
+  let normalizedHash: string | null = null;
+  let location: string | null = null;
+
+  // Compute address hash where an address is provided so we can dedupe and
+  // tie to HubSpotPropertyCache later.
+  const maybeHashAddress = (
+    addr: { street?: string; unit?: string | null; city?: string; state?: string; zip?: string } | undefined | null,
+  ): { formatted: string; hash: string | null } => {
+    if (!addr) return { formatted: "", hash: null };
+    const formatted = [addr.street, addr.unit, addr.city, `${addr.state ?? ""} ${addr.zip ?? ""}`.trim()]
+      .filter(Boolean)
+      .join(", ");
+    if (!addr.street || !addr.city || !addr.state || !addr.zip) return { formatted, hash: null };
+    const hash = addressHash({
+      street: addr.street,
+      unit: addr.unit ?? null,
+      city: addr.city,
+      state: addr.state,
+      zip: addr.zip,
+    });
+    return { formatted, hash };
+  };
+
+  if (submission.kind === "ev_charger") {
+    const q = submission.quote;
+    const r = computeEvChargerQuote({ pricing, extraConduitFeet: q.extraConduitFeet });
+    resultSummary = { retailUsd: r.retailUsd, finalUsd: r.finalUsd, monthlyPaymentUsd: r.monthlyPaymentUsd, lineItems: r.lineItems };
+    finalUsd = r.finalUsd;
+    inputSnapshot = { ...q };
+    const addrInfo = maybeHashAddress(q.address);
+    address = addrInfo.formatted;
+    normalizedHash = addrInfo.hash;
+    location = q.location;
+  } else if (submission.kind === "battery") {
+    const q = submission.quote;
+    const utility = loadUtilityById(q.utilityId);
+    if (!utility) return NextResponse.json({ error: "Unknown utility" }, { status: 400 });
+    const r = computeBatteryQuote({ pricing, utility, batteryCount: q.batteryCount });
+    resultSummary = {
+      retailUsd: r.retailUsd,
+      discountUsd: r.discountUsd,
+      batteryRebateUsd: r.batteryRebateUsd,
+      finalUsd: r.finalUsd,
+      monthlyPaymentUsd: r.monthlyPaymentUsd,
+      lineItems: r.lineItems,
+    };
+    finalUsd = r.finalUsd;
+    inputSnapshot = { ...q };
+    const addrInfo = maybeHashAddress(q.address);
+    address = addrInfo.formatted;
+    normalizedHash = addrInfo.hash;
+    location = q.location;
+  } else if (submission.kind === "system_expansion") {
+    const q = submission.quote;
+    const r = computeSystemExpansionQuote({ pricing, addedPanelCount: q.addedPanelCount });
+    resultSummary = {
+      retailUsd: r.retailUsd,
+      discountUsd: r.discountUsd,
+      finalUsd: r.finalUsd,
+      monthlyPaymentUsd: r.monthlyPaymentUsd,
+      panelCount: r.panelCount,
+      systemKwDcAdded: r.systemKwDcAdded,
+      lineItems: r.lineItems,
+    };
+    finalUsd = r.finalUsd;
+    inputSnapshot = { ...q };
+    const addrInfo = maybeHashAddress(q.address);
+    address = addrInfo.formatted;
+    normalizedHash = addrInfo.hash;
+    location = q.location;
+  } else {
+    // detach_reset — no instant number; treat like a manual quote request.
+    inputSnapshot = { ...submission };
+    const addrInfo = maybeHashAddress(submission.toAddress);
+    address = addrInfo.formatted;
+    normalizedHash = addrInfo.hash;
+  }
+
+  const run = await prisma.estimatorRun.create({
+    data: {
+      token,
+      quoteType: submission.kind,
+      inputSnapshot: inputSnapshot as unknown as Prisma.InputJsonValue,
+      resultSnapshot: (resultSummary ?? Prisma.JsonNull) as unknown as Prisma.InputJsonValue,
+      contactSnapshot: contact as unknown as Prisma.InputJsonValue,
+      firstName: contact.firstName,
+      lastName: contact.lastName,
+      email: contact.email.toLowerCase(),
+      address,
+      normalizedAddressHash: normalizedHash,
+      location,
+      expiresAt,
+      ipHash,
+      outOfArea: false,
+      manualQuoteRequest: submission.kind === "detach_reset",
+      recaptchaScore,
+      flaggedForReview,
+    },
+  });
+
+  // HubSpot: create contact + deal with the summary packed into estimator_summary.
+  await syncOtherQuoteToHubSpot({
+    runId: run.id,
+    kind: submission.kind,
+    contact,
+    finalUsd,
+    resultsToken: token,
+    summaryText: buildOtherSummaryText(submission, resultSummary),
+    address: (submission.kind === "detach_reset" ? submission.toAddress : (submission as { quote: { address: unknown } }).quote.address) as EstimatorInput["address"],
+  });
+
+  await sendManualQuoteEmail(contact).catch((err) => {
+    console.warn("[estimator] other-quote email failed (non-fatal)", err);
+  });
+
+  await logActivity("ESTIMATOR_SUBMISSION", { runId: run.id, kind: submission.kind });
+
+  return NextResponse.json({ token, quoteType: submission.kind });
+}
+
+async function syncOtherQuoteToHubSpot(input: {
+  runId: string;
+  kind: OtherSubmission["kind"];
+  contact: { firstName: string; lastName: string; email: string; phone?: string };
+  finalUsd: number;
+  resultsToken: string;
+  summaryText: string;
+  address: EstimatorInput["address"];
+}) {
+  try {
+    const { contactId } = await upsertEstimatorContact({
+      email: input.contact.email,
+      firstName: input.contact.firstName,
+      lastName: input.contact.lastName,
+      phone: input.contact.phone,
+      address: input.address,
+      lifecyclestage: "lead",
+    });
+    await prisma.estimatorRun.update({
+      where: { id: input.runId },
+      data: { hubspotContactId: contactId },
+    });
+
+    const label: Record<typeof input.kind, string> = {
+      ev_charger: "EV Charger",
+      battery: "Home Backup Battery",
+      system_expansion: "System Expansion",
+      detach_reset: "Detach & Reset",
+    };
+    const dealName = `${input.contact.firstName} ${input.contact.lastName} — ${label[input.kind]}`;
+    const { dealId } = await createEstimatorDeal({
+      contactId,
+      dealName,
+      pipelineId: SALES_PIPELINE_ID,
+      stageId: SALES_FIRST_STAGE_ID,
+      amount: input.finalUsd,
+      source: ESTIMATOR_SOURCE_STANDARD,
+      resultsToken: input.resultsToken,
+      // For non-new-install flows, the summaryText is the full picture;
+      // we overload `result` with a minimal shape so the downstream packer
+      // doesn't need per-kind branching.
+      result: undefined,
+      summaryOverride: input.summaryText,
+      considerations: { planningEv: false, needsPanelUpgrade: false, mayNeedNewRoof: false },
+      addOns: { evCharger: false, panelUpgrade: false },
+    });
+    await prisma.estimatorRun.update({
+      where: { id: input.runId },
+      data: { hubspotDealId: dealId },
+    });
+  } catch (err) {
+    console.warn("[estimator] HubSpot sync (other-quote) failed (reconcile cron will retry)", err);
+  }
+}
+
+function buildOtherSummaryText(submission: OtherSubmission, result: Record<string, unknown> | null): string {
+  const lines: string[] = [];
+  const kindLabel: Record<OtherSubmission["kind"], string> = {
+    ev_charger: "EV Charger",
+    battery: "Home Backup Battery",
+    system_expansion: "System Expansion",
+    detach_reset: "Detach & Reset",
+  };
+  lines.push(`Quote type: ${kindLabel[submission.kind]}`);
+
+  if (submission.kind === "ev_charger") {
+    lines.push(`Extra conduit: ${submission.quote.extraConduitFeet} ft`);
+  } else if (submission.kind === "battery") {
+    lines.push(`Battery count: ${submission.quote.batteryCount}`);
+    lines.push(`Utility: ${submission.quote.utilityId}`);
+  } else if (submission.kind === "system_expansion") {
+    lines.push(`Current system: ${submission.quote.currentSystemKwDc} kW DC`);
+    lines.push(`Added panels: ${submission.quote.addedPanelCount}`);
+  } else {
+    lines.push(`Current system: ${submission.currentSystemKwDc ?? "unknown"} kW DC`);
+    lines.push(`From: ${summarizeAddress(submission.fromAddress)}`);
+    lines.push(`To: ${summarizeAddress(submission.toAddress)}`);
+    if (submission.message) lines.push(`Note: ${submission.message}`);
+  }
+
+  if (result) {
+    if (typeof result.retailUsd === "number")
+      lines.push(`Retail: $${Math.round(result.retailUsd as number).toLocaleString()}`);
+    if (typeof result.discountUsd === "number")
+      lines.push(`Discount: -$${Math.round(result.discountUsd as number).toLocaleString()}`);
+    if (typeof result.batteryRebateUsd === "number" && (result.batteryRebateUsd as number) > 0)
+      lines.push(`Battery rebate: -$${Math.round(result.batteryRebateUsd as number).toLocaleString()}`);
+    if (typeof result.finalUsd === "number")
+      lines.push(`Final: $${Math.round(result.finalUsd as number).toLocaleString()}`);
+    if (typeof result.monthlyPaymentUsd === "number")
+      lines.push(`Monthly payment: $${Math.round(result.monthlyPaymentUsd as number).toLocaleString()}/mo`);
+  } else if (submission.kind === "detach_reset") {
+    lines.push("(Pricing TBD — ops will reach out with a manual quote.)");
+  }
+
+  return lines.join("\n");
+}
+
+function summarizeAddress(a: { street?: string; city?: string; state?: string; zip?: string }): string {
+  return [a.street, a.city, `${a.state ?? ""} ${a.zip ?? ""}`.trim()].filter(Boolean).join(", ");
 }
 
 // -- Helpers --
