@@ -74,18 +74,34 @@ async function fetchPipelineDeals(pipelineId: string): Promise<HubSpotDealPaymen
   return props;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!user.roles.some((r: string) => ALLOWED_ROLES.has(r))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const url = new URL(request.url);
+  const skipCache = url.searchParams.get("fresh") === "1";
+  if (skipCache) {
+    appCache.invalidate(CACHE_KEYS.PAYMENT_TRACKING);
+    console.log(`[payment-tracking] cache invalidated by ?fresh=1`);
+  }
+
   const cached = appCache.get<PaymentTrackingResponse>(CACHE_KEYS.PAYMENT_TRACKING);
-  if (cached) return NextResponse.json(cached);
+  if (cached.hit && cached.data) {
+    console.log(
+      `[payment-tracking] served from cache: ${cached.data.deals.length} deals (stale=${cached.stale})`
+    );
+    return NextResponse.json(cached.data);
+  }
 
   const salesPipeline = process.env.HUBSPOT_PIPELINE_SALES ?? "default";
   const projectPipeline = process.env.HUBSPOT_PIPELINE_PROJECT ?? "6900017";
+
+  console.log(
+    `[payment-tracking] cache miss; pipelines sales=${salesPipeline} project=${projectPipeline}`
+  );
 
   // Fetch each pipeline in parallel.
   const [salesProps, projectProps] = await Promise.all([

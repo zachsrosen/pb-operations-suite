@@ -15,7 +15,7 @@ jest.mock("@/lib/cache", () => {
   return {
     ...actual,
     appCache: {
-      get: jest.fn().mockReturnValue(undefined),
+      get: jest.fn().mockReturnValue({ data: null, stale: false, hit: false, age: 0 }),
       set: jest.fn(),
       invalidate: jest.fn(),
       subscribe: jest.fn(),
@@ -31,31 +31,31 @@ describe("/api/accounting/payment-tracking GET — auth", () => {
 
   it("401 when no session", async () => {
     (getCurrentUser as jest.Mock).mockResolvedValue(null);
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/accounting/payment-tracking"));
     expect(res.status).toBe(401);
   });
 
   it("403 for VIEWER", async () => {
     (getCurrentUser as jest.Mock).mockResolvedValue({ email: "v@p.com", roles: ["VIEWER"] });
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/accounting/payment-tracking"));
     expect(res.status).toBe(403);
   });
 
   it("200 for ACCOUNTING", async () => {
     (getCurrentUser as jest.Mock).mockResolvedValue({ email: "a@p.com", roles: ["ACCOUNTING"] });
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/accounting/payment-tracking"));
     expect(res.status).toBe(200);
   });
 
   it("200 for ADMIN", async () => {
     (getCurrentUser as jest.Mock).mockResolvedValue({ email: "admin@p.com", roles: ["ADMIN"] });
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/accounting/payment-tracking"));
     expect(res.status).toBe(200);
   });
 
   it("200 for EXECUTIVE", async () => {
     (getCurrentUser as jest.Mock).mockResolvedValue({ email: "e@p.com", roles: ["EXECUTIVE"] });
-    const res = await GET();
+    const res = await GET(new Request("http://localhost/api/accounting/payment-tracking"));
     expect(res.status).toBe(200);
   });
 });
