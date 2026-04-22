@@ -2877,3 +2877,55 @@ model EstimatorRun {
   @@index([expiresAt])
   @@index([normalizedAddressHash])
 }
+
+enum AdderCategory {
+  ELECTRICAL
+  ROOFING
+  STRUCTURAL
+  SITEWORK
+  LOGISTICS
+  DESIGN
+  PERMITTING
+  REMOVAL
+  ORG
+  MISC
+}
+
+enum AdderUnit {
+  FLAT
+  PER_MODULE
+  PER_KW
+  PER_LINEAR_FT
+  PER_HOUR
+  TIERED
+}
+
+enum AdderType {
+  FIXED
+  PERCENTAGE
+}
+
+enum AdderDirection {
+  ADD
+  DISCOUNT
+}
+
+enum TriageAnswerType {
+  BOOLEAN
+  NUMERIC
+  CHOICE
+  MEASUREMENT
+}
+
+enum AdderSyncRunStatus {
+  RUNNING
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+enum AdderSyncTrigger {
+  ON_SAVE
+  CRON
+  MANUAL
+}
