@@ -1,3 +1,5 @@
+import type { ResolvedAdder } from "@/lib/adders/types";
+
 /**
  * OpenSolar Pricing Calculator
  *
@@ -7,6 +9,25 @@
  * Formula: Component Costs + Cost Scheme Overhead + Battery Labour + Adders
  *   → Total COGS → COGS × (1 + markup%) = Base Price
  *   → Fixed Adders → PE Percentage = Final Price
+ *
+ * -----------------------------------------------------------------------
+ * Pricing & Adder Governance — Phase 1 refactor notes
+ * -----------------------------------------------------------------------
+ * The hardcoded ROOF_TYPES / STOREY_ADDERS / PITCH_ADDERS / ORG_ADDERS
+ * constants remain the source of truth for production calculations. A
+ * DB-backed parallel path has been added behind an opt-in option:
+ *
+ *   calcPrice(input, { resolvedAdders })
+ *
+ * When `options.resolvedAdders` is provided, the calculator replaces the
+ * ORG_ADDERS iteration with the caller-supplied set (resolved from the
+ * DB-backed `Adder` catalog via `resolveAddersForCalc`). This lets us
+ * run old-vs-new comparisons on real deals before cutting over. Callers
+ * that don't pass the option get the exact existing behavior.
+ *
+ * Consumers still on the scalar `CalcInput.customFixedAdder` field
+ * continue to work via a deprecated backward-compat shim. New callers
+ * should use `CalcInput.customAdders: { name, amount, source }[]`.
  */
 
 // ---------------------------------------------------------------------------
@@ -267,6 +288,10 @@ export const PE_LEASE = {
   noBonusPenalty: -0.0952381, // adjustment when no DC and no EC
 } as const;
 
+// TODO(pricing-phase-1): DC_QUALIFYING_MODULE_BRANDS is empty, so the PE
+// solar DC bonus never triggers. This is an open question for Phase 0
+// data seeding — confirm whether DC bonus should be handled here or
+// elsewhere. Tracked in the pricing spec as open question #5.
 /** Brands whose modules meet IRA domestic content threshold (50% for solar). Currently none qualify. */
 export const DC_QUALIFYING_MODULE_BRANDS: string[] = [];
 
@@ -414,8 +439,25 @@ export interface CalcInput {
   /** Active org-level adder IDs */
   activeAdderIds: string[];
 
-  /** Custom fixed adder amount (e.g. -500 for a one-off discount) */
-  customFixedAdder: number;
+  /**
+   * Custom / ad-hoc fixed adders applied to this deal.
+   * Each entry is a signed dollar amount (negative for discounts).
+   * Takes precedence over the deprecated `customFixedAdder` alias below.
+   */
+  customAdders?: Array<{
+    code?: string;
+    name: string;
+    amount: number; // signed; negative for discounts
+    source: "catalog" | "adhoc";
+  }>;
+
+  /**
+   * @deprecated Use `customAdders` instead. Kept as a scalar alias for
+   * backward compatibility with existing callers (IDR escalation DB rows,
+   * pricing-calculator dashboard form). Ignored when `customAdders` is
+   * non-empty.
+   */
+  customFixedAdder?: number;
 
   /** PE: Is the project in an IRA Energy Community? */
   energyCommunity?: boolean;
@@ -473,7 +515,7 @@ export interface CalcBreakdown {
   peSystemType: PeSystemType | null;
   peSolarDC: boolean;
   peBatteryDC: boolean;
-  peEnergyCommunnity: boolean;
+  peEnergyCommunity: boolean;
   peLeaseFactor: number;
   peLeaseAdjustment: number;
   peLeaseCustomerAmount: number; // PE's calculated customer share (EPC ÷ leaseFactor)
@@ -497,7 +539,48 @@ function findEquipment(code: string): EquipmentItem | undefined {
   return EQUIPMENT_CATALOG.find((e) => e.code === code);
 }
 
-export function calcPrice(input: CalcInput): CalcBreakdown {
+/**
+ * Resolve custom ad-hoc adders from either the new `customAdders` array
+ * or the deprecated `customFixedAdder` scalar alias. The array form takes
+ * precedence when non-empty. Returns a `{ label, amount }[]` matching the
+ * existing `fixedAdderDetails` shape.
+ */
+function resolveCustomAdders(input: CalcInput): { label: string; amount: number }[] {
+  if (input.customAdders && input.customAdders.length > 0) {
+    return input.customAdders
+      .filter((a) => typeof a.amount === "number" && a.amount !== 0)
+      .map((a) => ({ label: a.name, amount: a.amount }));
+  }
+  if (typeof input.customFixedAdder === "number" && input.customFixedAdder !== 0) {
+    warnOnceAboutDeprecatedCustomFixedAdder();
+    return [{ label: "Custom Adder", amount: input.customFixedAdder }];
+  }
+  return [];
+}
+
+let _warnedCustomFixedAdder = false;
+function warnOnceAboutDeprecatedCustomFixedAdder(): void {
+  if (_warnedCustomFixedAdder) return;
+  _warnedCustomFixedAdder = true;
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[pricing-calculator] CalcInput.customFixedAdder is deprecated — use customAdders: {name, amount, source}[]"
+  );
+}
+
+export interface CalcOptions {
+  /**
+   * When provided, REPLACES the hardcoded ORG_ADDERS iteration with a
+   * caller-supplied set resolved from the DB-backed `Adder` catalog.
+   * `ROOF_TYPES` / `STOREY_ADDERS` / `PITCH_ADDERS` iteration is NOT
+   * replaced — those remain hardcoded until Phase 2+.
+   *
+   * When absent (the default), existing behavior is preserved exactly.
+   */
+  resolvedAdders?: ResolvedAdder[];
+}
+
+export function calcPrice(input: CalcInput, options?: CalcOptions): CalcBreakdown {
   const scheme = PRICING_SCHEMES.find((s) => s.id === input.pricingSchemeId) ?? PRICING_SCHEMES[0];
   const roofType = ROOF_TYPES.find((r) => r.id === input.roofTypeId) ?? ROOF_TYPES[0];
   const storey = STOREY_ADDERS.find((s) => s.id === input.storeyId) ?? STOREY_ADDERS[0];
@@ -584,22 +667,64 @@ export function calcPrice(input: CalcInput): CalcBreakdown {
   const basePrice = totalCosts * (1 + markupPct / 100);
 
   // --- Adders ---
+  // Fixed-amount adders (signed; negative for discounts).
   const fixedAdderDetails: { label: string; amount: number }[] = [];
+  // Non-PE percentage adders applied AFTER the fixed-adder sum.
+  // Stored as decimal multiplier deltas; e.g. a 5% discount = -0.05.
+  // PE's flat -30% discount is a special case handled below and is NOT
+  // included here (to preserve existing sold-deal regression values).
+  const pctAdderMultipliers: { label: string; pct: number }[] = [];
 
-  for (const adderId of input.activeAdderIds) {
-    const adder = ORG_ADDERS.find((a) => a.id === adderId);
-    if (!adder || adder.type !== "fixed") continue;
-    fixedAdderDetails.push({ label: adder.label, amount: adder.value });
+  if (options?.resolvedAdders) {
+    // DB-backed path: caller has pre-resolved the adders. Treat them as
+    // org-level adders. Percentages have unit=PERCENT; fixed have unit=FLAT
+    // or PER_KW / PER_PANEL (Phase 1: only FLAT is fully supported — any
+    // non-FLAT fixed adder contributes its `amount` as a pre-computed dollar
+    // total from the caller).
+    for (const r of options.resolvedAdders) {
+      if (r.type === "PERCENTAGE") {
+        // `unitPrice` is the percentage value (e.g. 5 for 5%).
+        // `amount` is already signed for discount/add.
+        // Build a multiplier delta: -5% → -0.05; +3% → +0.03.
+        const signed = (r.direction === "DISCOUNT" ? -1 : 1) * r.unitPrice;
+        pctAdderMultipliers.push({ label: r.name, pct: signed / 100 });
+      } else {
+        fixedAdderDetails.push({ label: r.name, amount: r.amount });
+      }
+    }
+  } else {
+    // Hardcoded path (default): iterate ORG_ADDERS.
+    // Bug fix A: handle percentage adders uniformly instead of only
+    // special-casing PE. The existing PE behavior (flat -30% applied via
+    // `epcPrice * 0.7`) is preserved below — we therefore exclude PE from
+    // the generic percentage loop.
+    for (const adderId of input.activeAdderIds) {
+      const adder = ORG_ADDERS.find((a) => a.id === adderId);
+      if (!adder) continue;
+      if (adder.type === "fixed") {
+        fixedAdderDetails.push({ label: adder.label, amount: adder.value });
+      } else if (adder.type === "percentage" && adder.id !== "pe") {
+        // adder.value is signed percent (e.g. -5 → -5%); convert to multiplier delta.
+        pctAdderMultipliers.push({ label: adder.label, pct: adder.value / 100 });
+      }
+    }
   }
 
-  if (input.customFixedAdder !== 0) {
-    fixedAdderDetails.push({ label: "Custom Adder", amount: input.customFixedAdder });
+  // Custom / ad-hoc adders from the caller (new array form, or legacy scalar alias).
+  for (const c of resolveCustomAdders(input)) {
+    fixedAdderDetails.push(c);
   }
 
   const fixedAdderTotal = fixedAdderDetails.reduce((sum, a) => sum + a.amount, 0);
-  const priceAfterFixed = basePrice + fixedAdderTotal;
+  let priceAfterFixed = basePrice + fixedAdderTotal;
+  // Apply non-PE percentage adders as multipliers on the post-fixed price.
+  for (const m of pctAdderMultipliers) {
+    priceAfterFixed = priceAfterFixed * (1 + m.pct);
+  }
 
   // --- PE Lease Factor ---
+  // PE is still driven by the hardcoded activeAdderIds check so sold-deal
+  // regression values stay exact. Phase 2+ can migrate PE to resolvedAdders.
   const peActive = input.activeAdderIds.includes("pe");
 
   // Auto-derive DC qualifications from selected equipment
@@ -614,7 +739,7 @@ export function calcPrice(input: CalcInput): CalcBreakdown {
   const peBatteryDC =
     selectedBatteryItems.length > 0 &&
     selectedBatteryItems.every((e) => e!.dcQualified);
-  const peEnergyCommunnity = input.energyCommunity ?? false;
+  const peEnergyCommunity = input.energyCommunity ?? false;
 
   const peSystemType: PeSystemType | null =
     totalPanels > 0 && totalBatteries > 0
@@ -628,7 +753,7 @@ export function calcPrice(input: CalcInput): CalcBreakdown {
   let peLeaseFactor = PE_LEASE.baselineFactor;
   let peLeaseAdjustment = 0;
   if (peActive && peSystemType) {
-    peLeaseAdjustment = calcLeaseFactorAdjustment(peSystemType, peSolarDC, peBatteryDC, peEnergyCommunnity);
+    peLeaseAdjustment = calcLeaseFactorAdjustment(peSystemType, peSolarDC, peBatteryDC, peEnergyCommunity);
     peLeaseFactor = PE_LEASE.baselineFactor + peLeaseAdjustment;
   }
 
@@ -680,7 +805,7 @@ export function calcPrice(input: CalcInput): CalcBreakdown {
     peSystemType,
     peSolarDC,
     peBatteryDC,
-    peEnergyCommunnity,
+    peEnergyCommunity,
     peLeaseFactor,
     peLeaseAdjustment,
     peLeaseCustomerAmount,

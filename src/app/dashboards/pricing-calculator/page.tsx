@@ -1059,8 +1059,8 @@ export default function PricingCalculatorPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted">Energy Community</span>
-                  <span className={result.peEnergyCommunnity ? "text-emerald-400" : "text-muted"}>
-                    {result.peEnergyCommunnity ? "Yes" : "No"}
+                  <span className={result.peEnergyCommunity ? "text-emerald-400" : "text-muted"}>
+                    {result.peEnergyCommunity ? "Yes" : "No"}
                   </span>
                 </div>
 
