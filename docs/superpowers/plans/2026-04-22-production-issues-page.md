@@ -395,7 +395,7 @@ export default function ProductionIssuesPage() {
   });
   const safeProjects = projects ?? [];
 
-  const { filters, clearFilters } = useProductionIssuesFilters();
+  const { filters, setFilters, clearFilters } = useProductionIssuesFilters();
 
   // Flagged subset — canonical source for every calc on this page.
   const flagged = useMemo(
@@ -415,7 +415,7 @@ export default function ProductionIssuesPage() {
   useEffect(() => {
     if (!loading && !hasTrackedView.current) {
       hasTrackedView.current = true;
-      trackDashboardView("production-issues", { flaggedCount: flagged.length });
+      trackDashboardView("production-issues", { projectCount: flagged.length });
     }
   }, [loading, flagged.length, trackDashboardView]);
 
@@ -599,11 +599,9 @@ function equipmentLabel(eq?: { brand?: string; model?: string }): string {
 
 - [ ] **Step 3: Replace the `// TODO(Task 6)` with filters + rows + table**
 
-Inside the component (replace `const filteredFlagged = flagged;` and the TODO comment), add filter state and derived rows:
+Inside the component (replace `const filteredFlagged = flagged;` and the TODO comment), add filter state and derived rows. The `useProductionIssuesFilters` call was already destructured in Task 5 (`filters, setFilters, clearFilters`) — do NOT re-declare it here; just use the existing destructured values:
 
 ```tsx
-  const { filters, setFilters, clearFilters } = useProductionIssuesFilters();
-
   // Precompute per-row metadata once — used by filters, breakdowns, table.
   const flaggedWithMeta = useMemo(
     () =>
@@ -650,11 +648,13 @@ Inside the component (replace `const filteredFlagged = flagged;` and the TODO co
     { value: "unknown", label: "Unknown (no equipment data)" },
   ];
 
+  // Note: spec §3 originally listed an Address column, but RawProject has no
+  // address field — drop that column here. If an address field is added later
+  // (via the Property object rollup) re-introduce both table column and export field.
   const exportRows = useMemo(
     () =>
       filteredFlagged.map(({ project, risk, bucket }) => ({
         project: project.name,
-        address: "", // TODO if RawProject gains address field; omit otherwise
         location: project.pbLocation ?? "",
         stage: project.stage,
         bucket,
@@ -829,7 +829,7 @@ function BarCard({ title, rows }: { title: string; rows: { key: string; count: n
   const max = Math.max(1, ...rows.map((r) => r.count));
   return (
     <div className="rounded-xl border border-t-border bg-surface p-4">
-      <div className="text-sm font-medium text-foreground mb-3">{title}</div>
+      {title && <div className="text-sm font-medium text-foreground mb-3">{title}</div>}
       {rows.length === 0 ? (
         <div className="text-xs text-muted">No data.</div>
       ) : (
