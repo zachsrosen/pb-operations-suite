@@ -2,27 +2,41 @@
  * HubSpot Invoices integration for payment-tracking.
  *
  * Each deal can have up to 5 milestone invoices (DA, CC, PTO, PE M1, PE M2).
- * Identifying which invoice represents which milestone:
+ * Each milestone is identified by the LINE ITEM NAME on the invoice. Verified
+ * against PROJ-8979, PROJ-9456, PROJ-8724, PROJ-8476, PROJ-6860 on 2026-04-21:
  *
- *   - DA: line item product = "Layout Approval Invoice" (id 2421119808 / SKU INST_PV_3)
- *   - CC: line item product = "Construction Complete Invoice" (id 2416872282 / SKU INST_PV_2)
- *   - PE M1: hs_amount_billed === deal.pe_payment_ic (PE invoices have no
- *     identifying line item product, but the amount is auto-calculated and
- *     unique per deal)
- *   - PE M2: hs_amount_billed === deal.pe_payment_pc
- *   - PTO: not yet observed as a separate invoice record in sampled data;
- *     falls back to deal property pto_invoice_status
+ *   - DA:    line item name contains "Layout Approval Invoice"
+ *   - CC:    line item name contains "Construction Complete Invoice"
+ *   - PTO:   line item name contains "Permission to Operate"
+ *   - PE M1: line item name contains "Participate Energy - M1"
+ *   - PE M2: line item name contains "Participate Energy - M2"
  *
- * Verified against PROJ-8979, PROJ-9456, PROJ-8724 on 2026-04-21.
+ * One invoice may contain multiple line items — e.g., a PE invoice typically
+ * has both "Participate Energy - M1" AND "Participate Energy Markup" line
+ * items totaling hs_amount_billed. The milestone is identified by the M1/M2
+ * line item; markup/change-order line items are part of the same invoice's
+ * total.
+ *
+ * Line items WITHOUT a product reference (PTO, PE M1, PE M2, change orders)
+ * still have their `name` field populated, so name-based matching covers all
+ * cases.
  */
 
 import { hubspotClient } from "@/lib/hubspot";
 import type { InvoiceSummary, PaymentTrackingDeal } from "@/lib/payment-tracking-types";
 
-// HubSpot product IDs that identify the milestone an invoice represents.
-// Discovered via probe on 2026-04-21.
-const PRODUCT_DA = "2421119808"; // Layout Approval Invoice
-const PRODUCT_CC = "2416872282"; // Construction Complete Invoice
+// Milestone keys; matches PaymentTrackingDeal.invoices keys.
+type MilestoneKey = "da" | "cc" | "pto" | "peM1" | "peM2";
+
+// Line-item-name patterns that identify each milestone. Substring matching
+// (case-insensitive) so PB can rename the prefix later without breaking us.
+const MILESTONE_PATTERNS: Array<[MilestoneKey, RegExp]> = [
+  ["da", /layout approval/i],
+  ["cc", /construction complete/i],
+  ["pto", /permission to operate/i],
+  ["peM1", /participate energy.*m1\b/i],
+  ["peM2", /participate energy.*m2\b/i],
+];
 
 const PORTAL_ID = process.env.HUBSPOT_PORTAL_ID ?? "";
 
@@ -48,10 +62,22 @@ interface RawInvoice {
 
 interface RawLineItem {
   id: string;
-  properties: { hs_product_id?: string | null; amount?: string | null };
+  properties: {
+    name?: string | null;
+    hs_product_id?: string | null;
+    amount?: string | null;
+  };
   associations?: {
     invoices?: { results?: { id: string }[] };
   };
+}
+
+function classifyLineItemName(name: string | null | undefined): MilestoneKey | null {
+  if (!name) return null;
+  for (const [key, pattern] of MILESTONE_PATTERNS) {
+    if (pattern.test(name)) return key;
+  }
+  return null;
 }
 
 const INVOICE_PROPS = [
@@ -204,7 +230,7 @@ export async function attachInvoicesToDeals(
     try {
       const resp = await hubspotClient.crm.lineItems.batchApi.read({
         inputs: chunk.map((id) => ({ id })),
-        properties: ["hs_product_id", "amount"],
+        properties: ["name", "hs_product_id", "amount"],
         propertiesWithHistory: [],
       });
       for (const r of resp.results ?? []) {
@@ -227,25 +253,31 @@ export async function attachInvoicesToDeals(
       const inv = invoiceById.get(invId);
       if (!inv) continue;
 
-      // Try line item product matching first (DA, CC).
+      // Match by line item name. An invoice may contain multiple line items
+      // (e.g., PE invoices have both "Participate Energy - M1" and
+      // "Participate Energy Markup"). The first milestone-tagged line item
+      // wins — markup / change order line items don't tag a milestone.
       const liIds = invoiceToLineItems.get(invId) ?? [];
-      const productIds = liIds
-        .map((id) => lineItemById.get(id)?.properties.hs_product_id)
-        .filter(Boolean);
-
-      let assigned = false;
-      if (productIds.includes(PRODUCT_DA)) {
-        dealInvoices.da = toSummary(inv);
-        assigned = true;
-      } else if (productIds.includes(PRODUCT_CC)) {
-        dealInvoices.cc = toSummary(inv);
-        assigned = true;
+      let matched: MilestoneKey | null = null;
+      for (const liId of liIds) {
+        const li = lineItemById.get(liId);
+        const key = classifyLineItemName(li?.properties.name);
+        if (key) {
+          matched = key;
+          break;
+        }
       }
-      if (assigned) continue;
 
-      // Fall back to amount-matching against PE payment fields. PE invoices
-      // don't have a recognizable line item product; their amount equals the
-      // auto-computed pe_payment_ic / pe_payment_pc on the deal.
+      if (matched) {
+        dealInvoices[matched] = toSummary(inv);
+        continue;
+      }
+
+      // Defense-in-depth fallback: if no line item name matched (perhaps the
+      // line items had no name, or PB renames the prefix), try matching the
+      // invoice billed amount against PE payment fields. Drops in priority
+      // because PE invoices already match by name above; this only catches
+      // edge cases.
       const billed = parseNum(inv.properties.hs_amount_billed);
       if (deal.peM1Amount !== null && moneyEqual(billed, deal.peM1Amount)) {
         dealInvoices.peM1 = toSummary(inv);
@@ -256,9 +288,8 @@ export async function attachInvoicesToDeals(
         continue;
       }
 
-      // Unmatched invoice. Most likely a PTO invoice (rare) or a custom
-      // billing record. We don't expose it in v1 (would clutter the row);
-      // could add an "other" bucket in a future iteration.
+      // Truly unmatched invoice — a custom billing record we don't recognize.
+      // Skip silently in v1.
     }
 
     if (Object.keys(dealInvoices).length > 0) {
