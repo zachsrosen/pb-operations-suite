@@ -327,6 +327,95 @@ describe("transformDeal — edge cases", () => {
   });
 });
 
+describe("transformDeal — ready-to-invoice triggers", () => {
+  it("flags 'design approved but DA not paid' as attention", () => {
+    const deal = transformDeal(
+      {
+        ...BASE,
+        layout_approved: "true",
+        layout_approval_date: "2026-04-01",
+        da_invoice_status: "Pending Approval",
+      },
+      new Date("2026-04-21")
+    );
+    expect(deal.bucket).toBe("attention");
+    expect(deal.attentionReasons).toContain("Design approved — DA invoice not paid");
+    expect(deal.isDesignApproved).toBe(true);
+  });
+
+  it("flags 'construction complete but CC not paid' as attention", () => {
+    const deal = transformDeal(
+      {
+        ...BASE,
+        is_construction_complete_: "true",
+        da_invoice_status: "Paid In Full",
+        cc_invoice_status: "Open",
+      },
+      new Date("2026-04-21")
+    );
+    expect(deal.attentionReasons).toContain("Construction complete — CC invoice not paid");
+  });
+
+  it("flags 'PTO granted but PTO not paid'", () => {
+    const deal = transformDeal(
+      {
+        ...BASE,
+        is_pto_granted_: "true",
+        da_invoice_status: "Paid In Full",
+        cc_invoice_status: "Paid In Full",
+        pto_invoice_status: "Open",
+      },
+      new Date("2026-04-21")
+    );
+    expect(deal.attentionReasons).toContain("PTO granted — PTO invoice not paid");
+  });
+
+  it("flags 'inspection passed + PE approved M1' for PE deal", () => {
+    const deal = transformDeal(
+      {
+        ...BASE,
+        is_inspection_passed_: "true",
+        pe_m1_status: "Approved",
+        da_invoice_status: "Paid In Full",
+        cc_invoice_status: "Paid In Full",
+      },
+      new Date("2026-04-21")
+    );
+    expect(deal.bucket).toBe("attention");
+    expect(deal.attentionReasons).toContain("Inspection passed + PE approved M1 — M1 not paid");
+  });
+
+  it("does NOT fire PE M1 ready when PE M1 is just Submitted (not Approved)", () => {
+    const deal = transformDeal(
+      {
+        ...BASE,
+        is_inspection_passed_: "true",
+        pe_m1_status: "Submitted",
+        da_invoice_status: "Paid In Full",
+        cc_invoice_status: "Paid In Full",
+        pto_invoice_status: "Paid In Full",
+      },
+      new Date("2026-04-21")
+    );
+    expect(deal.attentionReasons).not.toContain("Inspection passed + PE approved M1 — M1 not paid");
+  });
+
+  it("does NOT fire when no triggers met (just plain awaiting_m1)", () => {
+    const deal = transformDeal({ ...BASE, da_invoice_status: "Open" }, new Date("2026-03-15"));
+    expect(deal.attentionReasons.length).toBe(0);
+    expect(deal.bucket).toBe("awaiting_m1");
+  });
+
+  it("parses booleans correctly (true/false/missing)", () => {
+    const a = transformDeal({ ...BASE, layout_approved: "true" }, new Date("2026-04-21"));
+    expect(a.isDesignApproved).toBe(true);
+    const b = transformDeal({ ...BASE, layout_approved: "false" }, new Date("2026-04-21"));
+    expect(b.isDesignApproved).toBe(false);
+    const c = transformDeal(BASE, new Date("2026-04-21"));
+    expect(c.isDesignApproved).toBe(false);
+  });
+});
+
 describe("computeBucket — disjointness", () => {
   it("first-match-wins — attention beats milestone buckets", () => {
     const bucket = computeBucket({

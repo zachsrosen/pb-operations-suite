@@ -76,6 +76,22 @@ export interface PaymentTrackingDeal {
   /** HubSpot `paid_in_full` string property, parsed. Display-only — not used for bucketing. */
   paidInFullFlag: boolean | null;
 
+  // Project-progress booleans + dates. Used to compute "ready to invoice"
+  // attention signals for each milestone:
+  //   - DA  ready when isDesignApproved
+  //   - CC  ready when isConstructionComplete
+  //   - PTO ready when isPtoGranted
+  //   - PE M1 ready when isInspectionPassed AND peM1Status === "Approved"
+  //   - PE M2 ready when isPtoGranted AND peM2Status === "Approved"
+  isDesignApproved: boolean;
+  designApprovalDate: string | null;
+  isConstructionComplete: boolean;
+  constructionCompleteDate: string | null;
+  isInspectionPassed: boolean;
+  inspectionPassedDate: string | null;
+  isPtoGranted: boolean;
+  ptoGrantedDate: string | null;
+
   hubspotUrl: string;
 
   /** Invoice records associated with this deal, keyed by milestone. Undefined
@@ -157,4 +173,13 @@ export interface HubSpotDealPaymentProps {
   pe_total_pb_revenue?: string | null;
 
   paid_in_full?: string | null;
+
+  layout_approved?: string | null; // "Is Design Approved?" — boolean as string
+  layout_approval_date?: string | null;
+  is_construction_complete_?: string | null;
+  construction_complete_date?: string | null;
+  is_inspection_passed_?: string | null;
+  inspections_completion_date?: string | null;
+  is_pto_granted_?: string | null;
+  pto_completion_date?: string | null;
 }

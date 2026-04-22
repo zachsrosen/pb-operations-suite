@@ -64,6 +64,12 @@ function parsePaidInFull(v: string | null | undefined): boolean | null {
   return null;
 }
 
+/** HubSpot booleans come back as strings. Treat anything other than the
+ *  literal "true" as false (incl. null/undefined/empty). */
+function parseBool(v: string | null | undefined): boolean {
+  return v === "true";
+}
+
 function daysBetween(a: Date, b: Date): number {
   const ms = Math.abs(a.getTime() - b.getTime());
   return ms / (1000 * 60 * 60 * 24);
@@ -94,6 +100,11 @@ export function computeBucket(args: {
   dealStage: string | null;
   peM1ApprovalDate: string | null;
   asOf: Date;
+  // Project-progress signals — used to flag "ready to invoice" attention.
+  isDesignApproved?: boolean;
+  isConstructionComplete?: boolean;
+  isInspectionPassed?: boolean;
+  isPtoGranted?: boolean;
 }): { bucket: PaymentBucket; attentionReasons: string[] } {
   const reasons: string[] = [];
   const close = args.closeDate ? new Date(args.closeDate) : null;
@@ -128,6 +139,28 @@ export function computeBucket(args: {
     if (approval && daysBetween(args.asOf, approval) > 14) {
       reasons.push("PE M1 Paid >14 days, M2 not submitted");
     }
+  }
+
+  // "Ready to invoice but not invoiced" — work milestone has been hit but
+  // accounting hasn't issued the invoice yet (status not Paid In Full / Paid).
+  // These are the most actionable signals on the page: someone needs to bill.
+  if (args.isDesignApproved && args.daStatus !== "Paid In Full") {
+    reasons.push("Design approved — DA invoice not paid");
+  }
+  if (args.isConstructionComplete && args.ccStatus !== "Paid In Full") {
+    reasons.push("Construction complete — CC invoice not paid");
+  }
+  if (args.isPtoGranted && args.ptoStatus !== "Paid In Full") {
+    reasons.push("PTO granted — PTO invoice not paid");
+  }
+  // PE statuses: "Approved" means PE has signed off on our docs but we
+  // haven't been paid. "Paid" means money has arrived. Anything else is
+  // upstream (Submitted / Resubmitted) so not yet ready to invoice.
+  if (args.isPE && args.isInspectionPassed && args.peM1Status === "Approved") {
+    reasons.push("Inspection passed + PE approved M1 — M1 not paid");
+  }
+  if (args.isPE && args.isPtoGranted && args.peM2Status === "Approved") {
+    reasons.push("PTO granted + PE approved M2 — M2 not paid");
   }
 
   if (reasons.length > 0) return { bucket: "attention", attentionReasons: reasons };
@@ -194,6 +227,15 @@ export function transformDeal(
 
   const isPE = peM1Status !== null || peM2Status !== null;
 
+  const isDesignApproved = parseBool(props.layout_approved);
+  const designApprovalDate = props.layout_approval_date || null;
+  const isConstructionComplete = parseBool(props.is_construction_complete_);
+  const constructionCompleteDate = props.construction_complete_date || null;
+  const isInspectionPassed = parseBool(props.is_inspection_passed_);
+  const inspectionPassedDate = props.inspections_completion_date || null;
+  const isPtoGranted = parseBool(props.is_pto_granted_);
+  const ptoGrantedDate = props.pto_completion_date || null;
+
   const customerCollected =
     (daStatus === "Paid In Full" ? daAmount ?? 0 : 0) +
     (ccStatus === "Paid In Full" ? ccAmount ?? 0 : 0);
@@ -228,6 +270,10 @@ export function transformDeal(
     dealStage: props.dealstage ?? null,
     peM1ApprovalDate,
     asOf,
+    isDesignApproved,
+    isConstructionComplete,
+    isInspectionPassed,
+    isPtoGranted,
   });
 
   const hubspotUrl = PORTAL_ID_ENV
@@ -279,6 +325,15 @@ export function transformDeal(
     attentionReasons,
 
     paidInFullFlag: parsePaidInFull(props.paid_in_full),
+
+    isDesignApproved,
+    designApprovalDate,
+    isConstructionComplete,
+    constructionCompleteDate,
+    isInspectionPassed,
+    inspectionPassedDate,
+    isPtoGranted,
+    ptoGrantedDate,
 
     hubspotUrl,
   };
@@ -347,4 +402,13 @@ export const PAYMENT_TRACKING_PROPERTIES: string[] = [
   "pe_m2_submission_date",
   "pe_total_pb_revenue",
   "paid_in_full",
+  // Project-progress booleans + dates (drives ready-to-invoice attention).
+  "layout_approved",
+  "layout_approval_date",
+  "is_construction_complete_",
+  "construction_complete_date",
+  "is_inspection_passed_",
+  "inspections_completion_date",
+  "is_pto_granted_",
+  "pto_completion_date",
 ];
