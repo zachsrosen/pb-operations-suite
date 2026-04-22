@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, type Dispatch } from "react";
+import { flushSync } from "react-dom";
 
 import type { AddressParts } from "@/lib/estimator";
 
@@ -107,12 +108,18 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
         router.push(`/estimator/out-of-area?zip=${encodeURIComponent(data.normalized.zip)}${embedSuffix}`);
         return;
       }
-      dispatch({
-        type: "setValidatedAddress",
-        address: data.normalized,
-        location: data.location,
-        inServiceArea: true,
-        utilities: data.utilities,
+      // flushSync forces the reducer commit to happen before the router.push
+      // inside onContinue — otherwise the URL can update with the new step
+      // BEFORE state.normalizedAddress is set, and the step guard bounces
+      // the user back to step=address.
+      flushSync(() => {
+        dispatch({
+          type: "setValidatedAddress",
+          address: data.normalized,
+          location: data.location,
+          inServiceArea: true,
+          utilities: data.utilities,
+        });
       });
       onContinue();
     } catch (err) {

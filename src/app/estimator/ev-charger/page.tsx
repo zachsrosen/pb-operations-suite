@@ -72,6 +72,7 @@ function Inner() {
   }, [router, embedSuffix]);
 
   useEffect(() => {
+    if (!hydratedRef.current) return;
     if (step === "details" && !state.normalizedAddress) {
       router.replace(`/estimator/ev-charger?step=address${embedSuffix}`);
       return;

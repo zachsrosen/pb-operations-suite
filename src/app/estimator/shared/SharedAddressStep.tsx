@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { flushSync } from "react-dom";
 
 import { useGooglePlacesAutocomplete } from "./useGooglePlaces";
 
@@ -117,7 +118,12 @@ export default function SharedAddressStep({
         onOutOfArea(data.normalized.zip);
         return;
       }
-      onValidated(data);
+      // flushSync so the parent's dispatch inside onValidated commits before
+      // any router.push it also performs — otherwise the step guard races
+      // and bounces the user back to step=address.
+      flushSync(() => {
+        onValidated(data);
+      });
     } catch (err) {
       console.error(err);
       setError("Network error. Please try again.");

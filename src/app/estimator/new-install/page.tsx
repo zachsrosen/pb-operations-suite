@@ -71,8 +71,11 @@ function WizardInner() {
     router.push(`/estimator/new-install?step=address${embedSuffix}`);
   }, [router]);
 
-  // Guard: don't let users jump ahead without prerequisites.
+  // Guard: don't let users deep-link to a step without prerequisites.
+  // Waits until after hydration so we don't race an in-flight sessionStorage
+  // load and bounce the user off their own data.
   useEffect(() => {
+    if (!hydratedRef.current) return;
     if (step === "roof" && !state.normalizedAddress) {
       router.replace(`/estimator/new-install?step=address${embedSuffix}`);
       return;

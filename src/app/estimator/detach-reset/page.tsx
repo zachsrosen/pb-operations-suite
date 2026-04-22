@@ -72,6 +72,7 @@ function Inner() {
   }, [router, embedSuffix]);
 
   useEffect(() => {
+    if (!hydratedRef.current) return;
     if ((step === "to-address" || step === "existing" || step === "contact") && !state.fromAddress) {
       router.replace(`/estimator/detach-reset?step=from-address${embedSuffix}`);
       return;
