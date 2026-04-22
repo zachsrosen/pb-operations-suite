@@ -61,16 +61,7 @@ export function resolveAddersFromList(
   return matches;
 }
 
-/**
- * DB-aware wrapper around `resolveAddersFromList`.
- * Loads all active adders from the catalog and filters via auto-apply + appliesTo.
- */
-export async function resolveAddersForCalc(
-  context: { shop: string } & AppliesToContext
-): Promise<ResolvedAdder[]> {
-  // Dynamic import to avoid loading the prisma client in pure unit tests
-  // that only use `resolveAddersFromList`.
-  const { listAdders } = await import("./catalog");
-  const adders = await listAdders({ active: true });
-  return resolveAddersFromList(adders, context);
-}
+// Note: `resolveAddersForCalc` (the DB-aware wrapper around
+// `resolveAddersFromList`) lives in `./resolve-for-calc.ts`. Keeping it
+// out of this file preserves `pricing.ts` as client-safe (no prisma /
+// node:module imports via `./catalog`).
