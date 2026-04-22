@@ -12,7 +12,7 @@ import type {
 export type UtilityOption = {
   id: string;
   displayName: string;
-  avgBlendedRateUsdPerKwh: number;
+  kwhRate: number;
 };
 
 export type WizardState = {

@@ -7,11 +7,7 @@ import {
   SubmitRequestSchema,
   runEstimator,
   loadUtilityById,
-  loadKwhPerKwYear,
-  loadPricePerWatt,
-  loadAddOnPricing,
-  loadFinancingDefaults,
-  loadApplicableIncentives,
+  loadPricing,
   FALLBACK_PANEL_WATTAGE,
   addressHash,
   ESTIMATOR_SOURCE_STANDARD,
@@ -123,26 +119,18 @@ async function handleQuoteKind(ctx: {
   const utility = loadUtilityById(quote.utilityId);
   if (!utility) return NextResponse.json({ error: "Unknown utility" }, { status: 400 });
 
-  const panelWattage = await resolveDefaultPanelWattage();
+  const basePricing = loadPricing();
+  const panelOutput = await resolveDefaultPanelWattage(basePricing.panelOutput);
   const engineInput: EstimatorInput = {
     quoteType: "new_install",
     address: quote.address,
     location: quote.location,
-    utility: { id: utility.id, avgBlendedRateUsdPerKwh: utility.avgBlendedRateUsdPerKwh },
+    utility,
     usage: quote.usage,
     home: quote.home,
     considerations: quote.considerations,
     addOns: quote.addOns,
-    panelWattage,
-    pricePerWatt: loadPricePerWatt(quote.location),
-    kWhPerKwYear: loadKwhPerKwYear(quote.address.state, quote.home.shade),
-    incentives: loadApplicableIncentives({
-      state: quote.address.state,
-      zip: quote.address.zip,
-      utilityId: utility.id,
-    }),
-    addOnPricing: loadAddOnPricing(),
-    financing: loadFinancingDefaults(),
+    pricing: { ...basePricing, panelOutput },
   };
   const result = runEstimator(engineInput);
 
@@ -407,7 +395,7 @@ async function syncToHubSpot(input: {
   }
 }
 
-async function resolveDefaultPanelWattage(): Promise<number> {
+async function resolveDefaultPanelWattage(configDefault: number): Promise<number> {
   try {
     const found = await prisma.internalProduct.findFirst({
       where: { category: "MODULE", defaultForEstimator: true, isActive: true },
@@ -418,7 +406,7 @@ async function resolveDefaultPanelWattage(): Promise<number> {
   } catch (err) {
     console.warn("[estimator] default panel lookup failed", err);
   }
-  return FALLBACK_PANEL_WATTAGE;
+  return configDefault || FALLBACK_PANEL_WATTAGE;
 }
 
 function formatAddress(a: EstimatorInput["address"]): string {

@@ -195,7 +195,7 @@ export default function UsageStep({ state, dispatch, onBack, onContinue }: Props
               <p className="text-xs text-muted">
                 We&apos;ll estimate your kWh using
                 {selectedUtility
-                  ? ` ${selectedUtility.displayName}'s avg blended rate of $${selectedUtility.avgBlendedRateUsdPerKwh.toFixed(2)}/kWh.`
+                  ? ` ${selectedUtility.displayName}'s avg blended rate of $${selectedUtility.kwhRate.toFixed(2)}/kWh.`
                   : " your utility's average blended rate."}
               </p>
             </div>

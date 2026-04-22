@@ -16,8 +16,8 @@ export async function GET(request: Request) {
   }
   const utilities = loadUtilitiesForState(state, zip).map((u) => ({
     id: u.id,
-    displayName: u.displayName,
-    avgBlendedRateUsdPerKwh: u.avgBlendedRateUsdPerKwh,
+    displayName: u.label,
+    kwhRate: u.kwhRate,
   }));
   return NextResponse.json({ utilities });
 }

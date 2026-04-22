@@ -1,17 +1,15 @@
 {
-  "basePricePerWatt": {
-    "DTC": 3.00,
-    "WESTY": 3.00,
-    "COSP": 2.95,
-    "CA": 3.50,
-    "CAMARILLO": 3.50
-  },
-  "addOns": {
-    "evCharger": 1800,
-    "panelUpgrade": 3500
-  },
-  "financing": {
-    "defaultApr": 0.07,
-    "defaultTermMonths": 300
-  }
+  "panelOutput": 440,
+  "maxSystemSizeWatts": 30000,
+  "base": 3700,
+  "perPanel": 1020,
+  "panelUpgrade": 4200,
+  "evWallConnector": 650,
+  "evInstall": 1600,
+  "battery": 13500,
+  "expansion": 9500,
+  "additionalConduit": 30,
+  "discountMultiplier": 0.7,
+  "apr": 0.07,
+  "termMonths": 300
 }
