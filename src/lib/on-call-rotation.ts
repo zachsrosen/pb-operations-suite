@@ -63,15 +63,30 @@ function mod(a: number, n: number): number {
   return ((a % n) + n) % n;
 }
 
+// Monday of the week containing dateStr. ISO week start.
+export function mondayOf(dateStr: string): string {
+  const dow = dayOfWeek(dateStr); // 0=Sun,1=Mon,...,6=Sat
+  const offset = dow === 0 ? -6 : 1 - dow;
+  return addDays(dateStr, offset);
+}
+
+export type RotationUnit = "daily" | "weekly";
+
 export type GenerateOpts = {
   startDate: string;
   fromDate: string;
   toDate: string;
   members: RotationMember[];
+  rotationUnit?: RotationUnit; // defaults to "daily" for backwards-compat with existing callers
 };
 
 /**
- * Strict round-robin rotation. Day N's assignment = activeMembers[(anchorOffset + N) % length].
+ * Strict round-robin rotation.
+ * - Daily: day N's assignment = activeMembers[(anchorOffset + N) % length].
+ * - Weekly: the rotation index advances once per week (Monday boundary).
+ *   All 7 days in a week share the same assignee. Anchors on the Monday
+ *   of startDate so e.g. a pool starting mid-week still produces clean
+ *   Mon→Sun groupings.
  * Inactive members are skipped entirely. Throws when no members are active.
  */
 export function generateAssignments(opts: GenerateOpts): GeneratedAssignment[] {
@@ -83,18 +98,31 @@ export function generateAssignments(opts: GenerateOpts): GeneratedAssignment[] {
     throw new Error("Cannot generate rotation: no active members in pool");
   }
 
-  const anchorOffset = daysBetween(opts.startDate, opts.fromDate);
   const totalDays = daysBetween(opts.fromDate, opts.toDate) + 1;
-
   if (totalDays <= 0) return [];
 
+  const unit = opts.rotationUnit ?? "daily";
+
   const out: GeneratedAssignment[] = [];
-  for (let i = 0; i < totalDays; i++) {
-    const memberIdx = mod(anchorOffset + i, active.length);
-    out.push({
-      date: addDays(opts.fromDate, i),
-      crewMemberId: active[memberIdx].crewMemberId,
-    });
+  if (unit === "daily") {
+    const anchorOffset = daysBetween(opts.startDate, opts.fromDate);
+    for (let i = 0; i < totalDays; i++) {
+      const memberIdx = mod(anchorOffset + i, active.length);
+      out.push({
+        date: addDays(opts.fromDate, i),
+        crewMemberId: active[memberIdx].crewMemberId,
+      });
+    }
+  } else {
+    // Weekly: align to Monday of startDate.
+    const anchorMonday = mondayOf(opts.startDate);
+    for (let i = 0; i < totalDays; i++) {
+      const date = addDays(opts.fromDate, i);
+      const daysFromAnchor = daysBetween(anchorMonday, date);
+      const weekOffset = Math.floor(daysFromAnchor / 7);
+      const memberIdx = mod(weekOffset, active.length);
+      out.push({ date, crewMemberId: active[memberIdx].crewMemberId });
+    }
   }
   return out;
 }

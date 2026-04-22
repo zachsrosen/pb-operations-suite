@@ -46,6 +46,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       fromDate: from,
       toDate: to,
       members,
+      rotationUnit: (pool.rotationUnit as "daily" | "weekly") ?? "weekly",
     });
 
     // Existing rows in range keyed by date — used to partition into net-new

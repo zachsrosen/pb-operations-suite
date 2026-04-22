@@ -76,6 +76,7 @@ export async function GET() {
             fromDate: date,
             toDate: date,
             members,
+            rotationUnit: (pool.rotationUnit as "daily" | "weekly") ?? "weekly",
           });
           if (gen.length > 0) {
             const cm = await prisma.crewMember.findUnique({
