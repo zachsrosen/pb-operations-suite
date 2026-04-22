@@ -36,17 +36,21 @@ Phase 2 multi-role support shipped already, so any one user can hold multiple ro
 | Enum | Label | Badge | Default suite(s) |
 |---|---|---|---|
 | `DESIGN` | Design | emerald / `DESIGN` | `/suites/design-engineering` |
-| `PERMITTING` | Permitting | sky / `PERMIT` | `/suites/permitting-interconnection` |
-| `INTERCONNECTION` | Interconnection | violet / `IC` | `/suites/permitting-interconnection` |
+| `PERMIT` | Permitting | sky / `PERMIT` | `/suites/permitting-interconnection` |
+| `INTERCONNECT` | Interconnection | violet / `IC` | `/suites/permitting-interconnection` |
+| `INTELLIGENCE` | Intelligence | fuchsia / `INTEL` | `/suites/intelligence` |
+| `ROOFING` | Roofing / D&R | rose / `ROOFING` | `/suites/dnr-roofing` |
 
-Note: `DESIGNER` and `PERMITTING` exist today as *legacy* values that normalize into `TECH_OPS`. This spec re-promotes them to canonical — with one rename: `DESIGNER` → `DESIGN` (the active verb matches the suite name "Design & Engineering", not the job title "Designer"). We'll add `INTERCONNECTION` fresh.
+All five are strictly scoped to their primary suite — no Operations bundled in. The existing TECH_OPS role's cross-suite superset behavior is preserved only during migration, not replicated in the new roles. Anyone who needs additional suites stacks roles (e.g., a roofing manager who also schedules solar installs gets `ROOFING` + `OPERATIONS`).
 
-Route allowlists derive by partitioning TECH_OPS's current routes:
+Route allowlists:
 
-- **DESIGN** — D&E suite, design revisions, plan review, DA rework flags, clipping analytics, AHJ *requirements* (design-facing), solar designer/surveyor, utility design requirements, pending approval, BOM tools, catalog
-- **PERMITTING** — P&I suite chrome, permit action queue, permit revisions, AHJ *tracker* (tracking-facing, not requirements), PI timeline + overview
-- **INTERCONNECTION** — P&I suite chrome, IC action queue, IC revisions, utility tracker, PI timeline + overview
-- **Shared baseline** across all three (deduplicated) — `/`, deals, projects, SOP, comms, my-tasks, my-tickets, idr-meeting, activity log, bugs, on-call viewing
+- **DESIGN** — D&E suite, design revisions, plan review, DA rework flags, clipping analytics, AHJ *requirements* (design-facing), solar designer/surveyor, utility design requirements, pending approval, BOM tools, catalog (partitioned from TECH_OPS)
+- **PERMIT** — P&I suite chrome, permit action queue, permit revisions, AHJ *tracker* (tracking-facing, not requirements), PI timeline + overview (partitioned from TECH_OPS)
+- **INTERCONNECT** — P&I suite chrome, IC action queue, IC revisions, utility tracker, PI timeline + overview (partitioned from TECH_OPS)
+- **INTELLIGENCE** — Intelligence suite chrome, `/dashboards/qc`, `/dashboards/at-risk`, `/dashboards/alerts`, `/dashboards/pipeline`, `/dashboards/optimizer`, `/dashboards/forecast-*`, `/dashboards/design-pipeline-funnel`, `/dashboards/territory-map`, `/dashboards/office-performance`, `/dashboards/preconstruction-metrics` (partitioned from PROJECT_MANAGER/OPERATIONS_MANAGER)
+- **ROOFING** — D&R+Roofing suite chrome, `/dashboards/dnr`, `/dashboards/roofing`, `/dashboards/roofing-scheduler`, `/dashboards/dnr-scheduler` (partitioned from OPERATIONS)
+- **Shared baseline** across all five (deduplicated) — `/`, deals, projects, SOP, comms, my-tasks, my-tickets, idr-meeting, activity log, bugs, on-call viewing
 
 Suites default to only their primary area — **no Operations suite access from any of the three new roles.** Someone who does both permitting and IC gets both roles and sees the full P&I suite dashboard set. Someone who does all three (what TECH_OPS is today) gets all three roles. Anyone who also needs Operations suite access (scheduling, construction) gets the `OPERATIONS` role added alongside.
 
@@ -55,8 +59,10 @@ Suites default to only their primary area — **no Operations suite access from 
 Each new role gets 2–3 focused landing cards for its primary suite:
 
 - DESIGN → `/dashboards/design`, `/dashboards/plan-review`, `/dashboards/design-revisions`
-- PERMITTING → `/dashboards/permitting`, `/dashboards/pi-permit-action-queue`, `/dashboards/ahj-tracker`
-- INTERCONNECTION → `/dashboards/interconnection`, `/dashboards/pi-ic-action-queue`, `/dashboards/utility-tracker`
+- PERMIT → `/dashboards/permitting`, `/dashboards/pi-permit-action-queue`, `/dashboards/ahj-tracker`
+- INTERCONNECT → `/dashboards/interconnection`, `/dashboards/pi-ic-action-queue`, `/dashboards/utility-tracker`
+- INTELLIGENCE → `/dashboards/qc`, `/dashboards/at-risk`, `/dashboards/pipeline`
+- ROOFING → `/dashboards/roofing`, `/dashboards/roofing-scheduler`, `/dashboards/dnr`
 
 ### TECH_OPS treatment during migration
 
@@ -86,9 +92,12 @@ Each new role gets 2–3 focused landing cards for its primary suite:
 - Email affected users: "Your access hasn't changed. Your role list now lists the specific functions you have access to."
 - Gate: Phase 3 waits until there's a 1–2 week observation window with zero "I lost access" reports.
 
-**Phase 3 — Per-user pruning.** (Manual, rolling, admin-driven)
-- Admin reviews each multi-role-TECH_OPS user against their actual job function (e.g., Vishtik designer = DESIGN only; Sean = PERMITTING + INTERCONNECTION; PMs keep all three).
+**Phase 3 — Per-user pruning + access tightening.** (Manual, rolling, admin-driven)
+- Admin reviews each multi-role-TECH_OPS user against their actual job function (e.g., Vishtik designer = `DESIGN` only; Sean = `PERMIT` + `INTERCONNECT`; PMs keep all three).
 - Removes roles they don't need. TECH_OPS stays on every user's list during this phase as a safety net.
+- **Tighten existing roles:** separately, admin reviews who *today* has access to Intelligence + D&R/Roofing via manager/OPS role bundling. Users who should NOT have that access get the broader role removed and replaced with the new scoped role if needed. Examples:
+  - An `OPERATIONS` user who only does roofing → swap for `ROOFING` alone.
+  - A `PROJECT_MANAGER` who shouldn't see Intelligence dashboards → consider removing `/suites/intelligence` from `PROJECT_MANAGER`'s default suite list (schema change, separate micro-migration).
 
 **Phase 4 — Drop TECH_OPS.** (Future, paired with Phase 4 DB rename on 2026-03-23 timeline — note from memory, verify date)
 - Remove `TECH_OPS`, `DESIGNER`, `PERMITTING` legacy values from enum.
@@ -97,7 +106,7 @@ Each new role gets 2–3 focused landing cards for its primary suite:
 
 ### Schema change
 
-Single Prisma migration in Phase 1:
+Single Prisma migration in Phase 1 adds five enum values:
 
 ```prisma
 enum UserRole {
@@ -112,21 +121,22 @@ enum UserRole {
   SALES_MANAGER
   TECH_OPS
   DESIGN            // NEW
-  PERMITTING        // NEW — collides with legacy; use PERMIT to avoid
-  INTERCONNECTION   // NEW
+  PERMIT            // NEW
+  INTERCONNECT      // NEW
+  INTELLIGENCE      // NEW
+  ROOFING           // NEW
   DESIGNER          // legacy — normalizes to TECH_OPS (unchanged)
-  PERMITTING        // legacy — already exists (collision!)
+  PERMITTING        // legacy — normalizes to TECH_OPS (unchanged)
   VIEWER
   SALES
   ACCOUNTING
 }
 ```
 
-**Collision caveat:** `PERMITTING` is already a legacy enum value. We can't re-declare. **Resolution:** name the new role `PERMIT` to avoid the collision, or handle it as a Prisma enum rename (hazardous).
-
-**Decision:** Use `DESIGN`, `PERMIT`, `INTERCONNECT` for the three new canonical enum values. Labels can still read "Design", "Permitting", "Interconnection" in the UI — the enum identifier doesn't leak to end users.
-
-Final enum additions: `DESIGN`, `PERMIT`, `INTERCONNECT`. Legacy `DESIGNER`, `PERMITTING` stay as-is (deprecated, normalize to `TECH_OPS`).
+**Naming notes:**
+- `PERMIT` (not `PERMITTING`) to avoid collision with the existing legacy `PERMITTING` enum value. Labels can still read "Permitting" in the UI — the enum identifier doesn't leak to end users.
+- `INTERCONNECT` (not `INTERCONNECTION`) for consistency with `PERMIT` (short verb form) and to keep all three new P&I/D&E enum values at ≤12 chars.
+- Legacy `DESIGNER`, `PERMITTING` stay as-is (deprecated, still normalize to `TECH_OPS`) and get dropped in Phase 4.
 
 ### Files touched (Phase 1)
 
@@ -157,9 +167,9 @@ Final enum additions: `DESIGN`, `PERMIT`, `INTERCONNECT`. Legacy `DESIGNER`, `PE
 
 ## Resolved design decisions
 
-- **Keep the 3-role split.** Permitting and Interconnection are sometimes separate at PB — keeping them as distinct roles means a permit-only person doesn't get IC access and vice versa.
-- **`DESIGN` does NOT get Operations suite access by default.** Strictly D&E suite. Rationale: leaves room to grant D&E access to a non-designer (e.g., a QA reviewer, executive stakeholder) without also giving them Operations. Anyone who needs both adds the `OPERATIONS` role alongside.
-- **Same rule for `PERMIT` and `INTERCONNECT`** — strictly P&I suite. Add `OPERATIONS` on top if needed.
+- **Keep the 3-role P&I/D&E split.** Permitting and Interconnection are sometimes separate at PB — keeping them as distinct roles means a permit-only person doesn't get IC access and vice versa.
+- **Add `INTELLIGENCE` and `ROOFING` roles.** Today those suites are only reachable through broader manager/OPS roles, which grants access to people who shouldn't have it. Dedicated scoped roles let admin right-size.
+- **None of the new roles get Operations suite access by default.** Strictly their primary suite. Rationale: leaves room to grant D&E / P&I / Intelligence / Roofing access to someone without also giving them scheduling or full ops. Anyone who needs more adds additional roles.
 
 ## Success criteria
 
