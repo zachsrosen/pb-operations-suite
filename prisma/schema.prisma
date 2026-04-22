@@ -54,6 +54,7 @@ model User {
   canSyncToZuper        Boolean @default(false)
   canManageUsers        Boolean @default(false)
   canManageAvailability Boolean @default(false)
+  canManageAdders       Boolean @default(false)
 
   // Per-user route overrides — extras added to / subtracted from the role
   // union. Denied wins over allowed within the same user. Admin-editable via

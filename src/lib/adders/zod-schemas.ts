@@ -71,6 +71,9 @@ export const ShopOverrideSchema = z.object({
 });
 
 export const UpdateAdderSchema = CreateAdderSchema.partial().extend({
+  // `active` is only settable on update (create defaults to true in DB).
+  // retireAdder uses this to flip the row to inactive.
+  active: z.boolean().optional(),
   changeNote: z.string().optional(),
   overrides: z.array(ShopOverrideSchema).optional(),
 });
