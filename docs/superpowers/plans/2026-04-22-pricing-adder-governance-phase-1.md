@@ -305,12 +305,10 @@ Expected: new directory `prisma/migrations/<timestamp>_adder_catalog/` with `mig
 Run: `cat prisma/migrations/<latest>_adder_catalog/migration.sql | head -200`
 Expected: `CREATE TYPE "AdderCategory"`, `CREATE TABLE "Adder"`, `CREATE TABLE "AdderShopOverride"`, `CREATE UNIQUE INDEX` on `(adderId, shop)`, `CREATE INDEX` on `(category, active)`, and similar for the other models.
 
-- [ ] **Step 3:** Apply migration locally to smoke test (dev DB only).
+- [ ] **Step 3:** **MANUAL USER STEP — do not execute as a subagent.** Per user feedback in memory (`feedback_subagents_no_migrations.md`), subagents must not invoke `prisma migrate dev`/`deploy`/`db execute`. Surface to the user: "I've generated the migration at `prisma/migrations/<timestamp>_adder_catalog/migration.sql`. Please run `npx prisma migrate dev` locally to apply it to your dev DB and regenerate the Prisma client, then confirm before I continue."
 
-Run: `npx prisma migrate dev`
-Expected: migration applies cleanly to local dev DB; `prisma generate` runs; client reflects new models.
-
-- [ ] **Step 4:** Verify generated client types.
+Only after user confirmation:
+- [ ] **Step 4:** Verify generated client types (typecheck only — no migration invoked).
 
 Run: `npx tsc --noEmit`
 Expected: compiles (no type errors from new Prisma types).
@@ -645,6 +643,12 @@ import {
 } from "@/generated/prisma";
 import { parseAppliesTo } from "./applies-to";
 
+// Validates the SHAPE of the triggerLogic JSON at the API boundary per spec.
+// Semantic validity (that the predicate actually evaluates against the
+// triageAnswerType) is enforced at triage recommendation time in Chunk 3
+// — a shape-valid predicate with a mismatched answer type returns no match
+// rather than a 500. This is intentional: shape validation here is cheap;
+// semantic checks need the answer context.
 export const TriggerLogicSchema = z.object({
   op: z.enum(["lt", "lte", "eq", "gte", "gt", "contains", "truthy"]),
   value: z.union([z.number(), z.string(), z.boolean()]).optional(),
@@ -1068,34 +1072,43 @@ git commit -m "feat(adders): catalog CRUD helpers with revision audit trail"
 Run: `rg 'canScheduleSurveys' prisma/schema.prisma -n`
 Expected: one or two matches on the `User` model — add the new field right after.
 
-- [ ] **Step 2:** Generate a follow-up migration.
+- [ ] **Step 2:** Generate a follow-up migration (create-only; do not apply).
 
 Run: `npx prisma migrate dev --create-only --name adder_can_manage_permission`
 Expected: new migration dir with `ALTER TABLE "User" ADD COLUMN "canManageAdders" BOOLEAN NOT NULL DEFAULT false`.
 
-- [ ] **Step 3:** Apply locally.
+- [ ] **Step 3:** **MANUAL USER STEP — do not execute as a subagent.** Surface to user: "Please run `npx prisma migrate dev` locally to apply the new migration to your dev DB and regenerate the client, then confirm."
 
-Run: `npx prisma migrate dev`
-Expected: migration applies; client regen succeeds.
+- [ ] **Step 4:** Modify `src/lib/roles.ts` — three distinct changes:
 
-- [ ] **Step 4:** Modify `src/lib/roles.ts`.
+**4a. Update the `RoleDefinition` (or similarly-named) TypeScript interface.** Locate the interface definition near the top of the file (around line 20–30 where `canScheduleSurveys: boolean;` is declared). Add:
 
-Locate the role-to-permission defaults table (search: `rg 'canScheduleSurveys' src/lib/roles.ts -n`). For each role, add a `canManageAdders` field:
-- `ADMIN`: `true`
-- `OWNER`: `true`
-- all other roles: `false`
+```typescript
+canManageAdders: boolean;
+```
 
-Then locate the per-role `allowedRoutes` arrays and add the new API paths:
-- All roles (read-only catalog access): `"/api/adders"`, `"/api/adders/[id]"`, `"/api/adders/[id]/revisions"` — ADD to every role's `allowedRoutes` except VIEWER (which should also get them — confirm with CLAUDE.md convention).
-- Catalog dashboard page: `"/dashboards/adders"` — add to same roles.
-- Writer-only routes (enforced inside handler via `canManageAdders` check): `"/api/adders"` POST, `"/api/adders/[id]"` PATCH, `"/api/adders/[id]/retire"` — the path itself must be in `allowedRoutes`; the handler gates the verb.
+Without this, every role default literal will fail typecheck.
 
-Per feedback in memory [feedback_api_route_role_allowlist.md], missing this causes silent 403s.
+**4b. Update every role default object.** Every role entry sets all permission booleans. Search for each `canScheduleSurveys:` occurrence and add `canManageAdders:` on a line below it with the role-appropriate value:
+
+| Role | `canManageAdders` |
+|------|-------------------|
+| ADMIN | `true` |
+| OWNER | `true` |
+| All other roles | `false` |
+
+**4c. Add new paths to `allowedRoutes` for each role.** Per memory feedback [feedback_api_route_role_allowlist.md], missing this silently 403s. Resolve ambiguity from spec's Role Access table as follows:
+
+| Roles with read-only catalog access (GET `/api/adders`, `/api/adders/[id]`, `/api/adders/[id]/revisions`, `/dashboards/adders`) | Roles with write access (also POST / PATCH / retire — path in allowlist; handler enforces `canManageAdders`) |
+|---|---|
+| ADMIN, OWNER, PROJECT_MANAGER, OPERATIONS_MANAGER, OPERATIONS, TECH_OPS, DESIGN, PERMIT, INTERCONNECT, SALES_MANAGER, SALES, SERVICE, ACCOUNTING, INTELLIGENCE, ROOFING | ADMIN, OWNER (any other role with `canManageAdders=true` works via handler check) |
+
+VIEWER and MARKETING do NOT receive catalog route access in their `allowedRoutes`.
 
 - [ ] **Step 5:** Typecheck.
 
 Run: `npx tsc --noEmit`
-Expected: no errors.
+Expected: no errors. If errors reference missing `canManageAdders` on a role definition, you missed a role in 4b.
 
 - [ ] **Step 6:** Commit.
 
