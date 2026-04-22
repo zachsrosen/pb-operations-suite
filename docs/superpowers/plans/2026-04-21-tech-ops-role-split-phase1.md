@@ -646,33 +646,57 @@ const ROLE_BADGE_BY_COLOR: Record<string, string> = {
 };
 ```
 
-- [ ] **Step 3.2: Check for other badge-color maps in the codebase**
+- [ ] **Step 3.2: Apply the same colors to every other role-badge map**
 
-Run: `grep -rn "bg-red-500/20 text-red-400" src/ --include="*.tsx" --include="*.ts"`
-Expected: Zero or a small number of files. Any other file with a similar pattern needs the same update. Likely candidates: `src/app/admin/directory/page.tsx`, `src/components/UserMenu.tsx`.
+Per plan-review findings, the codebase has THREE additional files with similar (but differently-named) role-badge color maps. Each needs the same five new entries:
 
-For each additional file found, apply the same color additions.
+- `src/app/admin/users/_UserDetailDrawer.tsx` (around line 56) — same `ROLE_BADGE_BY_COLOR` structure as users/page.tsx
+- `src/app/admin/roles/page.tsx` (around line 40) — named `BADGE_COLOR_CLASSES`
+- `src/app/admin/directory/_DirectoryClient.tsx` (around line 22) — named `BADGE_CLASSES_BY_COLOR`, uses `text-*-300` variants (NOT `-400`) for readability on dark backgrounds
 
-- [ ] **Step 3.3: Verify Tailwind safelisting (if configured)**
+For `_DirectoryClient.tsx`, use `text-*-300` to match existing convention:
 
-Run: `grep -n "safelist" tailwind.config.* 2>/dev/null | head -5`
-If a `safelist` exists and includes specific `bg-*-500/20` patterns, the five new colors may need to be added there too. If no safelist, Tailwind v4 JIT handles this automatically via the string constants above.
+```typescript
+  fuchsia: "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/30",
+  sky: "bg-sky-500/20 text-sky-300 border-sky-500/30",
+  violet: "bg-violet-500/20 text-violet-300 border-violet-500/30",
+  rose: "bg-rose-500/20 text-rose-300 border-rose-500/30",
+  pink: "bg-pink-500/20 text-pink-300 border-pink-500/30",
+```
+
+For the other two files, use `text-*-400` matching their existing pattern.
+
+**Do NOT touch `src/components/UserMenu.tsx`** — it has no badge-color map; it uses inline ternaries.
+
+- [ ] **Step 3.3: Tailwind v4 — no safelist to worry about**
+
+This project uses Tailwind v4 (CSS-based config, no `tailwind.config.*` file). The JIT picks up the new class strings automatically. Skip any safelist concerns.
 
 - [ ] **Step 3.4: Typecheck + lint**
 
-Run: `npx tsc --noEmit 2>&1 | head -10 && npx eslint src/app/admin/users/page.tsx`
+Run:
+```bash
+npx tsc --noEmit 2>&1 | head -10
+npx eslint src/app/admin/users/page.tsx src/app/admin/users/_UserDetailDrawer.tsx src/app/admin/roles/page.tsx src/app/admin/directory/_DirectoryClient.tsx
+```
 Expected: No errors.
 
 - [ ] **Step 3.5: Commit**
 
 ```bash
-git add src/app/admin/users/page.tsx src/app/admin/directory/page.tsx src/components/UserMenu.tsx 2>/dev/null
+git add src/app/admin/users/page.tsx \
+        src/app/admin/users/_UserDetailDrawer.tsx \
+        src/app/admin/roles/page.tsx \
+        src/app/admin/directory/_DirectoryClient.tsx
 git commit -m "feat(admin): add badge colors for 6 new scoped roles
 
-Adds fuchsia, sky, violet, rose, and pink to ROLE_BADGE_BY_COLOR so new
-role badges (INTELLIGENCE, PERMIT, INTERCONNECT, ROOFING, MARKETING)
-render with their intended Tailwind classes instead of falling back to
-zinc.
+Adds fuchsia, sky, violet, rose, and pink to the four role-badge color
+maps (users, users drawer, roles page, directory client) so new role
+badges (INTELLIGENCE, PERMIT, INTERCONNECT, ROOFING, MARKETING) render
+with their intended Tailwind classes instead of falling back to zinc.
+
+Directory client uses text-*-300 variants for dark-bg readability; the
+other three use text-*-400 matching their existing convention.
 
 Part of role-split spec (Phase 1, task 3 of 7).
 
@@ -684,16 +708,27 @@ Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>"
 ## Task 4: Create Sales & Marketing suite landing page
 
 **Files:**
+- Modify: `src/lib/suite-accents.ts` (add new suite entry)
 - Create: `src/app/suites/sales-marketing/page.tsx`
 
-Mirror the structure of `src/app/suites/intelligence/page.tsx` exactly — that page is the closest analog (read-only analytics suite, no scheduling).
+**Correction from plan review:** `SuitePageShell` takes `currentSuiteHref`, `title`, `subtitle`, `cards`, `roles`, `columnsClassName` — NOT `accentColor` or `description`. Accent color is derived from `SUITE_ACCENT_COLORS` keyed by `currentSuiteHref`, so the new suite needs an entry there first.
 
-- [ ] **Step 4.1: Read the reference page**
+- [ ] **Step 4.1: Add the new suite to `SUITE_ACCENT_COLORS`**
+
+Edit `src/lib/suite-accents.ts`. Add one line to the `SUITE_ACCENT_COLORS` map — pink to match the MARKETING role badge:
+
+```typescript
+  "/suites/sales-marketing":            { color: "#ec4899", light: "#f472b6" },
+```
+
+Insert above the `/admin` entry for alphabetical-ish grouping with the other content suites.
+
+- [ ] **Step 4.2: Read the reference page**
 
 Run: `cat src/app/suites/intelligence/page.tsx`
-Notice: it imports `SuitePageShell` and `SuitePageCard`, gets the current user, and returns the shell with an array of cards.
+Notice: prop contract is `currentSuiteHref`, `title`, `subtitle`, `cards`, `roles`, `columnsClassName`. It also has an in-page allowed-roles check that redirects to `/` — copy that pattern.
 
-- [ ] **Step 4.2: Create the new page**
+- [ ] **Step 4.3: Create the new page**
 
 Write `src/app/suites/sales-marketing/page.tsx`:
 
@@ -709,7 +744,7 @@ const LINKS: SuitePageCard[] = [
     description: "Full pipeline with filters, priority scoring, and milestone tracking.",
     tag: "PIPELINE",
     icon: "📊",
-    section: "Pipeline",
+    section: "Pipeline & Forecasting",
   },
   {
     href: "/dashboards/sales",
@@ -717,7 +752,7 @@ const LINKS: SuitePageCard[] = [
     description: "Active deals, funnel visualization, and proposal tracking.",
     tag: "SALES",
     icon: "💼",
-    section: "Pipeline",
+    section: "Pipeline & Forecasting",
   },
   {
     href: "/dashboards/deals",
@@ -725,7 +760,7 @@ const LINKS: SuitePageCard[] = [
     description: "All active deals across pipelines.",
     tag: "DEALS",
     icon: "🤝",
-    section: "Pipeline",
+    section: "Pipeline & Forecasting",
   },
   {
     href: "/dashboards/revenue",
@@ -733,7 +768,7 @@ const LINKS: SuitePageCard[] = [
     description: "Revenue trends and goal tracking.",
     tag: "REVENUE",
     icon: "💰",
-    section: "Performance",
+    section: "Pipeline & Forecasting",
   },
   {
     href: "/dashboards/forecast-timeline",
@@ -741,7 +776,7 @@ const LINKS: SuitePageCard[] = [
     description: "Forward-looking pipeline projections.",
     tag: "FORECAST",
     icon: "📈",
-    section: "Performance",
+    section: "Pipeline & Forecasting",
   },
   {
     href: "/dashboards/forecast-accuracy",
@@ -749,48 +784,48 @@ const LINKS: SuitePageCard[] = [
     description: "Historical forecast vs actual performance.",
     tag: "ACCURACY",
     icon: "🎯",
-    section: "Performance",
+    section: "Pipeline & Forecasting",
   },
 ];
 
 export default async function SalesMarketingSuitePage() {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) redirect("/login?callbackUrl=/suites/sales-marketing");
+
+  const allowed = ["ADMIN", "EXECUTIVE", "SALES_MANAGER", "SALES", "MARKETING"];
+  if (!user.roles.some((r) => allowed.includes(r))) redirect("/");
 
   return (
     <SuitePageShell
+      currentSuiteHref="/suites/sales-marketing"
       title="Sales & Marketing Suite"
-      description="Pipeline visibility, revenue tracking, forecasting, and marketing analytics."
-      accentColor="pink"
-      roles={user.roles}
+      subtitle="Pipeline visibility, revenue tracking, forecasting, and marketing analytics."
       cards={LINKS}
+      roles={user.roles}
+      columnsClassName="grid grid-cols-1 md:grid-cols-3 gap-4"
     />
   );
 }
 ```
 
-- [ ] **Step 4.3: Verify `SuitePageShell` accepts `accentColor="pink"`**
-
-Run: `grep -n "accentColor" src/components/SuitePageShell.tsx | head -5`
-Expected output will show the accentColor prop type. If it's typed as a literal union that doesn't include `"pink"`, you must either add `"pink"` to the union in `SuitePageShell.tsx` or choose an existing accent color. Pink should work — but verify.
-
-If `accentColor` type needs updating, add `"pink"` to the allowed literals in `SuitePageShell.tsx`.
+All cards use `Pipeline & Forecasting` section (existing in `SECTION_COLORS`) to avoid introducing a new section color. Can be regrouped later.
 
 - [ ] **Step 4.4: Typecheck**
 
 Run: `npx tsc --noEmit 2>&1 | head -20`
-Expected: No errors.
+Expected: No errors. `SuitePageShell` prop contract is satisfied and `SUITE_ACCENT_COLORS` has the new key.
 
 - [ ] **Step 4.5: Commit**
 
 ```bash
-git add src/app/suites/sales-marketing/page.tsx src/components/SuitePageShell.tsx 2>/dev/null
+git add src/lib/suite-accents.ts src/app/suites/sales-marketing/page.tsx
 git commit -m "feat(suites): add Sales & Marketing suite landing page
 
 New 9th suite at /suites/sales-marketing, mirrors Intelligence suite
-structure (read-only analytics suite). Populated with existing sales,
-pipeline, revenue, and forecast dashboards. Marketing-specific dashboards
-ship in follow-ups.
+structure (read-only analytics suite with in-page allowed-role check).
+Populated with existing sales, pipeline, revenue, and forecast dashboards.
+Adds a pink accent (#ec4899) to SUITE_ACCENT_COLORS. Marketing-specific
+dashboards ship in follow-ups.
 
 Part of role-split spec (Phase 1, task 4 of 7).
 
