@@ -40,8 +40,9 @@ Phase 2 multi-role support shipped already, so any one user can hold multiple ro
 | `INTERCONNECT` | Interconnection | violet / `IC` | `/suites/permitting-interconnection` |
 | `INTELLIGENCE` | Intelligence | fuchsia / `INTEL` | `/suites/intelligence` |
 | `ROOFING` | Roofing / D&R | rose / `ROOFING` | `/suites/dnr-roofing` |
+| `MARKETING` | Marketing | pink / `MKTG` | `/suites/sales-marketing` (NEW suite — see below) |
 
-All five are strictly scoped to their primary suite — no Operations bundled in. The existing TECH_OPS role's cross-suite superset behavior is preserved only during migration, not replicated in the new roles. Anyone who needs additional suites stacks roles (e.g., a roofing manager who also schedules solar installs gets `ROOFING` + `OPERATIONS`).
+All six are strictly scoped to their primary suite — no Operations bundled in. The existing TECH_OPS role's cross-suite superset behavior is preserved only during migration, not replicated in the new roles. Anyone who needs additional suites stacks roles (e.g., a roofing manager who also schedules solar installs gets `ROOFING` + `OPERATIONS`).
 
 Route allowlists:
 
@@ -50,7 +51,8 @@ Route allowlists:
 - **INTERCONNECT** — P&I suite chrome, IC action queue, IC revisions, utility tracker, PI timeline + overview (partitioned from TECH_OPS)
 - **INTELLIGENCE** — Intelligence suite chrome, `/dashboards/qc`, `/dashboards/at-risk`, `/dashboards/alerts`, `/dashboards/pipeline`, `/dashboards/optimizer`, `/dashboards/forecast-*`, `/dashboards/design-pipeline-funnel`, `/dashboards/territory-map`, `/dashboards/office-performance`, `/dashboards/preconstruction-metrics` (partitioned from PROJECT_MANAGER/OPERATIONS_MANAGER)
 - **ROOFING** — D&R+Roofing suite chrome, `/dashboards/dnr`, `/dashboards/roofing`, `/dashboards/roofing-scheduler`, `/dashboards/dnr-scheduler` (partitioned from OPERATIONS)
-- **Shared baseline** across all five (deduplicated) — `/`, deals, projects, SOP, comms, my-tasks, my-tickets, idr-meeting, activity log, bugs, on-call viewing
+- **MARKETING** — Sales & Marketing suite chrome, `/dashboards/sales`, `/dashboards/pipeline`, `/dashboards/deals`, `/dashboards/revenue`, `/dashboards/forecast-timeline`, `/dashboards/forecast-accuracy`, `/api/deals`, `/api/projects`, `/api/forecasting`, `/api/revenue-goals`. Read-only (no scheduling, no Zuper sync).
+- **Shared baseline** across all six (deduplicated) — `/`, deals, projects, SOP, comms, my-tasks, my-tickets, idr-meeting, activity log, bugs, on-call viewing
 
 Suites default to only their primary area — **no Operations suite access from any of the three new roles.** Someone who does both permitting and IC gets both roles and sees the full P&I suite dashboard set. Someone who does all three (what TECH_OPS is today) gets all three roles. Anyone who also needs Operations suite access (scheduling, construction) gets the `OPERATIONS` role added alongside.
 
@@ -63,6 +65,22 @@ Each new role gets 2–3 focused landing cards for its primary suite:
 - INTERCONNECT → `/dashboards/interconnection`, `/dashboards/pi-ic-action-queue`, `/dashboards/utility-tracker`
 - INTELLIGENCE → `/dashboards/qc`, `/dashboards/at-risk`, `/dashboards/pipeline`
 - ROOFING → `/dashboards/roofing`, `/dashboards/roofing-scheduler`, `/dashboards/dnr`
+- MARKETING → `/dashboards/pipeline`, `/dashboards/revenue`, `/dashboards/forecast-timeline`
+
+### New suite: Sales & Marketing
+
+Adds a 9th suite at `/suites/sales-marketing` (10th with Admin). Renders existing sales dashboards as suite cards initially — marketing-specific dashboards (lead-source attribution, campaign tracking, etc.) ship in follow-ups as they're built. Accessible to:
+
+- `MARKETING` (new, scoped to this suite)
+- `SALES` (existing — re-scoped to have this as primary landing suite; retains site-survey-scheduler access)
+- `SALES_MANAGER` (existing — add this suite to its visible list alongside current access)
+- `ADMIN`, `EXECUTIVE` (add this suite)
+
+Files created:
+- `src/app/suites/sales-marketing/page.tsx` — suite landing page (mirror the structure of existing `/src/app/suites/intelligence/page.tsx`)
+- Suite nav entry in `src/lib/suite-nav.ts`
+
+The suite is purposefully lightweight in Phase 1: suite chrome + cards linking to existing `/dashboards/sales`, `/dashboards/pipeline`, `/dashboards/revenue`, `/dashboards/forecast-*`. No new dashboards.
 
 ### TECH_OPS treatment during migration
 
@@ -106,7 +124,7 @@ Each new role gets 2–3 focused landing cards for its primary suite:
 
 ### Schema change
 
-Single Prisma migration in Phase 1 adds five enum values:
+Single Prisma migration in Phase 1 adds six enum values:
 
 ```prisma
 enum UserRole {
@@ -125,6 +143,7 @@ enum UserRole {
   INTERCONNECT      // NEW
   INTELLIGENCE      // NEW
   ROOFING           // NEW
+  MARKETING         // NEW
   DESIGNER          // legacy — normalizes to TECH_OPS (unchanged)
   PERMITTING        // legacy — normalizes to TECH_OPS (unchanged)
   VIEWER
@@ -142,15 +161,16 @@ enum UserRole {
 
 | File | Change |
 |---|---|
-| `prisma/schema.prisma` | Add `DESIGN`, `PERMIT`, `INTERCONNECT` to `UserRole` enum; migration file |
-| `src/lib/roles.ts` | Add three `RoleDefinition`s with partitioned allowlists, register in `ROLES` export |
+| `prisma/schema.prisma` | Add `DESIGN`, `PERMIT`, `INTERCONNECT`, `INTELLIGENCE`, `ROOFING`, `MARKETING` to `UserRole` enum; migration file |
+| `src/lib/roles.ts` | Add six `RoleDefinition`s; update `SALES` + `SALES_MANAGER` + `ADMIN` + `EXECUTIVE` `suites` lists to include `/suites/sales-marketing`; register in `ROLES` export |
+| `src/lib/suite-nav.ts` | Add `Sales & Marketing` entry to `SUITE_NAV_ENTRIES` |
+| `src/app/suites/sales-marketing/page.tsx` | NEW — suite landing page (mirror `/suites/intelligence/page.tsx` structure) |
 | `src/lib/user-access.ts` | No change (resolver already handles multi-role union) |
-| `src/lib/suite-nav.ts` | No change (driven by `roles.ts`) |
 | `src/lib/role-resolution.ts` | No change (normalization already handles new canonical values by default) |
 | `src/middleware.ts` | No change (route allowlist derives from `roles.ts`) |
-| `src/app/admin/users/page.tsx` | Add three new picker options with descriptions |
-| `src/app/admin/directory/page.tsx` | Badge abbrev colors |
-| `CLAUDE.md` | Update suite-switcher visibility table + role enum summary |
+| `src/app/admin/users/page.tsx` | Add six new picker options with descriptions |
+| `src/app/admin/directory/page.tsx` | Badge abbrev colors for six new roles |
+| `CLAUDE.md` | Update suite-switcher visibility table + role enum summary; bump suite count from 8 to 9 |
 
 **Subsequent phase scripts:**
 
@@ -169,7 +189,8 @@ enum UserRole {
 
 - **Keep the 3-role P&I/D&E split.** Permitting and Interconnection are sometimes separate at PB — keeping them as distinct roles means a permit-only person doesn't get IC access and vice versa.
 - **Add `INTELLIGENCE` and `ROOFING` roles.** Today those suites are only reachable through broader manager/OPS roles, which grants access to people who shouldn't have it. Dedicated scoped roles let admin right-size.
-- **None of the new roles get Operations suite access by default.** Strictly their primary suite. Rationale: leaves room to grant D&E / P&I / Intelligence / Roofing access to someone without also giving them scheduling or full ops. Anyone who needs more adds additional roles.
+- **Add `MARKETING` role + Sales & Marketing Suite.** New 9th suite with full pipeline visibility for the role (read-only — no scheduling/Zuper). Starts with existing sales dashboards; marketing-specific dashboards ship in follow-ups.
+- **None of the new roles get Operations suite access by default.** Strictly their primary suite. Rationale: leaves room to grant scoped access to someone without also giving them scheduling or full ops. Anyone who needs more adds additional roles.
 
 ## Success criteria
 
