@@ -232,6 +232,33 @@ export const TEMPLATES: WorkflowTemplate[] = [
     },
   },
   {
+    slug: "weekly-monday-status-email",
+    name: "Monday → weekly status email",
+    summary:
+      "Every Monday at 9am UTC, send a reminder to the ops team.",
+    useCase:
+      "Simplest possible CRON-triggered workflow. Edit the subject/body or replace with an ai-compose step for dynamic content.",
+    triggerType: "CRON",
+    triggerConfig: {
+      expression: "0 9 * * 1",
+    },
+    definition: {
+      steps: [
+        {
+          id: "notify",
+          kind: "send-email",
+          inputs: {
+            to: "ops@photonbrothers.com",
+            subject: "Weekly ops reminder — Monday {{trigger.firedAt}}",
+            body:
+              "<p>Reminder: kick off the week with a pipeline sync.</p>" +
+              "<p>Fired at {{trigger.firedAt}} via admin workflow cron.</p>",
+          },
+        },
+      ],
+    },
+  },
+  {
     slug: "manual-test-send-email",
     name: "Manual → send test email",
     summary: "Simplest possible workflow — useful for smoke-testing the plumbing.",

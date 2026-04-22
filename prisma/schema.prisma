@@ -2902,6 +2902,7 @@ enum AdminWorkflowTriggerType {
   MANUAL
   HUBSPOT_PROPERTY_CHANGE
   ZUPER_PROPERTY_CHANGE
+  CRON
 }
 
 enum AdminWorkflowRunStatus {

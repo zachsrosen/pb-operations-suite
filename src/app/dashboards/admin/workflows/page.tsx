@@ -18,7 +18,7 @@ interface WorkflowListItem {
   name: string;
   description: string | null;
   status: "DRAFT" | "ACTIVE" | "ARCHIVED";
-  triggerType: "MANUAL" | "HUBSPOT_PROPERTY_CHANGE" | "ZUPER_PROPERTY_CHANGE";
+  triggerType: "MANUAL" | "HUBSPOT_PROPERTY_CHANGE" | "ZUPER_PROPERTY_CHANGE" | "CRON";
   createdAt: string;
   updatedAt: string;
   createdBy: { email: string; name: string | null };

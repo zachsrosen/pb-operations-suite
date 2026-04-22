@@ -36,7 +36,7 @@ interface ActionMeta {
 }
 
 interface TriggerMeta {
-  kind: "MANUAL" | "HUBSPOT_PROPERTY_CHANGE" | "ZUPER_PROPERTY_CHANGE";
+  kind: "MANUAL" | "HUBSPOT_PROPERTY_CHANGE" | "ZUPER_PROPERTY_CHANGE" | "CRON";
   name: string;
   description: string;
   fields: FormField[];
@@ -68,7 +68,7 @@ interface Workflow {
   name: string;
   description: string | null;
   status: "DRAFT" | "ACTIVE" | "ARCHIVED";
-  triggerType: "MANUAL" | "HUBSPOT_PROPERTY_CHANGE" | "ZUPER_PROPERTY_CHANGE";
+  triggerType: "MANUAL" | "HUBSPOT_PROPERTY_CHANGE" | "ZUPER_PROPERTY_CHANGE" | "CRON";
   triggerConfig: Record<string, unknown>;
   definition: { steps: Step[] };
   createdBy: { email: string; name: string | null };
