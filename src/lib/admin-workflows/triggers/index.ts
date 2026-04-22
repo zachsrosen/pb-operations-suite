@@ -127,6 +127,38 @@ export const zuperPropertyTrigger: AdminWorkflowTrigger<z.infer<typeof zuperProp
 };
 
 // ---------------------------------------------------------------------------
+// Cron
+// ---------------------------------------------------------------------------
+
+const cronConfigSchema = z.object({
+  /** Standard 5-field cron expression in UTC. Minute-level precision. */
+  expression: z.string().min(3),
+});
+
+export const cronTrigger: AdminWorkflowTrigger<z.infer<typeof cronConfigSchema>> = {
+  kind: "CRON",
+  name: "Scheduled (cron)",
+  description: "Fire on a cron schedule (UTC). Minute-level precision.",
+  fields: [
+    {
+      key: "expression",
+      label: "Cron expression (UTC)",
+      kind: "text",
+      placeholder: "0 9 * * 1-5",
+      help:
+        "5 fields: minute hour day month day-of-week. Examples: '0 * * * *' = every hour; '0 9 * * 1-5' = 9am UTC weekdays; '*/15 * * * *' = every 15m.",
+      required: true,
+    },
+  ],
+  configSchema: cronConfigSchema,
+  match: ({ rawEvent }) => {
+    // The cron dispatcher pre-filters by schedule match, so this just
+    // returns the rawEvent (containing firedAt) as triggerContext.
+    return rawEvent;
+  },
+};
+
+// ---------------------------------------------------------------------------
 // Registry
 // ---------------------------------------------------------------------------
 
@@ -134,6 +166,7 @@ export const TRIGGERS: AdminWorkflowTrigger[] = [
   manualTrigger,
   hubspotPropertyTrigger,
   zuperPropertyTrigger,
+  cronTrigger,
 ] as AdminWorkflowTrigger[];
 
 export function getTriggerByKind(

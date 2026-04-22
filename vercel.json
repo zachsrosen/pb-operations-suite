@@ -63,6 +63,10 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/cron/admin-workflow-cron-dispatch",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/audit-digest",
       "schedule": "0 14 * * *"
     },

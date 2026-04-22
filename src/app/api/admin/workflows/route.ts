@@ -37,6 +37,7 @@ const createSchema = z.object({
     "MANUAL",
     "HUBSPOT_PROPERTY_CHANGE",
     "ZUPER_PROPERTY_CHANGE",
+    "CRON",
   ] as const satisfies readonly AdminWorkflowTriggerType[]),
   triggerConfig: z.record(z.string(), z.unknown()),
   definition: z.object({
