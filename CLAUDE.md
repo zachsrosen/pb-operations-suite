@@ -338,7 +338,53 @@ Contact address change (HubSpot webhook)
 
 Note: ATTOM-sourced fields (yearBuilt, squareFootage, roofMaterial, etc.) are null until ATTOM integration ships (follow-up spec). Current implementation populates only HubSpot-derivable + Google-geocoded fields.
 
-### 11. Suite Navigation (`lib/suite-nav.ts`)
+### 11. Admin Workflow Builder (`lib/admin-workflows/`, `app/dashboards/admin/workflows/`)
+
+Visual workflow builder that admins use to compose existing + new actions into automated sequences. Runtime is Inngest (same engine as BOM pipeline spike). See `docs/superpowers/specs/2026-04-22-admin-workflow-builder.md`.
+
+**Architecture:**
+```
+Admin saves workflow → AdminWorkflow row (definition JSON + trigger config)
+                         │
+Manual run → POST /api/admin/workflows/[id]/run → Inngest event
+Webhook event → HubSpot deal-sync webhook OR Zuper /api/webhooks/zuper/admin-workflows
+              → fanoutAdminWorkflows() finds matching ACTIVE workflows → Inngest events
+                         │
+Inngest → admin-workflow-executor function
+           │ walks definition.steps
+           ├─ Control-flow kinds (delay, stop-if) handled specially
+           ├─ Regular action.handler called inside step.run
+           └─ Writes AdminWorkflowRun row (outputs, errors, duration)
+```
+
+**Actions** (`src/lib/admin-workflows/actions/`): registry pattern — one file per action, each exports an `AdminWorkflowAction` with `kind`, `name`, `category`, `fields[]` (form schema), `inputsSchema` (Zod), and `handler`. Append to `ACTIONS[]` in `actions/index.ts` to publish.
+
+Current palette (10 actions + 2 control-flow):
+- Messaging: `send-email`
+- AI: `ai-compose`
+- HubSpot: `update-hubspot-property`, `update-hubspot-contact-property`, `add-hubspot-note`, `create-hubspot-task`
+- Zuper: `update-zuper-property`
+- PB Ops: `run-bom-pipeline`, `log-activity`
+- Control flow: `delay`, `stop-if`
+
+**Triggers** (`src/lib/admin-workflows/triggers/`): `MANUAL`, `HUBSPOT_PROPERTY_CHANGE`, `ZUPER_PROPERTY_CHANGE`. Each exports a `match()` function that a webhook handler calls to decide whether to fire.
+
+**Template expressions**: step inputs support `{{trigger.X}}` (from triggerContext) and `{{previous.stepId.field}}` (from prior step outputs).
+
+**Templates** (`src/lib/admin-workflows/templates.ts`): code-defined starter workflows. Admins click "Start from template" in the UI to clone.
+
+**Feature flags:**
+- `ADMIN_WORKFLOWS_ENABLED` — editor + API + manual runs
+- `ADMIN_WORKFLOWS_FANOUT_ENABLED` — webhook → workflow events
+
+**Routes:**
+- UI: `/dashboards/admin/workflows` (list), `/[id]` (editor), `/runs` (cross-workflow history), `/runs/[runId]` (per-run detail)
+- API: `/api/admin/workflows` (list/create), `/[id]` (GET/PATCH/DELETE), `/[id]/run` (trigger), `/palette`, `/templates`, `/runs`, `/runs/[runId]`
+- Webhooks: Zuper at `/api/webhooks/zuper/admin-workflows`. HubSpot fan-out is piggybacked on the existing `deal-sync` webhook.
+
+All routes are `/api/admin/*` → covered by the existing `ADMIN_ONLY_ROUTES` prefix check.
+
+### 12. Suite Navigation (`lib/suite-nav.ts`)
 
 Departmental suites with role-based visibility. Full list: `grep "href:" src/lib/suite-nav.ts`.
 
