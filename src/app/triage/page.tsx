@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { getHubSpotDealUrl } from "@/lib/external-links";
 import type { SerializedAdder } from "@/app/dashboards/adders/types";
@@ -27,7 +27,17 @@ type DealCtx = { id: string; name: string; shop: string };
  * Deal can be pre-populated via `?dealId=…` — in that case we skip the
  * lookup step and fetch the deal to resolve the shop.
  */
+// Next.js 15+ requires useSearchParams to be inside a Suspense boundary,
+// otherwise prerender fails. Wrap the main logic.
 export default function TriagePage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <TriagePageInner />
+    </Suspense>
+  );
+}
+
+function TriagePageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const prefilledDealId = searchParams.get("dealId");
