@@ -11,6 +11,7 @@ import { auth } from "@/auth";
 import { getUserByEmail } from "@/lib/db";
 import { isAdminWorkflowsEnabled } from "@/lib/inngest-client";
 import { ACTIONS } from "@/lib/admin-workflows/actions";
+import { CONTROL_FLOW_PALETTE } from "@/lib/admin-workflows/control-flow";
 import { TRIGGERS } from "@/lib/admin-workflows/triggers";
 
 export async function GET() {
@@ -28,13 +29,22 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    actions: ACTIONS.map((a) => ({
-      kind: a.kind,
-      name: a.name,
-      description: a.description,
-      category: a.category,
-      fields: a.fields,
-    })),
+    actions: [
+      ...ACTIONS.map((a) => ({
+        kind: a.kind,
+        name: a.name,
+        description: a.description,
+        category: a.category,
+        fields: a.fields,
+      })),
+      ...CONTROL_FLOW_PALETTE.map((p) => ({
+        kind: p.kind,
+        name: p.name,
+        description: p.description,
+        category: p.category,
+        fields: p.fields,
+      })),
+    ],
     triggers: TRIGGERS.map((t) => ({
       kind: t.kind,
       name: t.name,

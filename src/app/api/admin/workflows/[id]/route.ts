@@ -13,6 +13,7 @@ import { auth } from "@/auth";
 import { prisma, getUserByEmail } from "@/lib/db";
 import { isAdminWorkflowsEnabled } from "@/lib/inngest-client";
 import { getActionByKind } from "@/lib/admin-workflows/actions";
+import { isControlFlowKind } from "@/lib/admin-workflows/control-flow";
 import { getTriggerByKind } from "@/lib/admin-workflows/triggers";
 
 async function requireAdmin() {
@@ -102,10 +103,10 @@ export async function PATCH(
     );
   }
 
-  // Validate definition.steps if present
+  // Validate definition.steps if present (regular actions OR control-flow)
   if (body.definition) {
     for (const step of body.definition.steps) {
-      if (!getActionByKind(step.kind)) {
+      if (!getActionByKind(step.kind) && !isControlFlowKind(step.kind)) {
         return NextResponse.json(
           { error: `Unknown action kind: ${step.kind}` },
           { status: 400 },
