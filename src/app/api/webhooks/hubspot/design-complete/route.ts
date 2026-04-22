@@ -318,10 +318,10 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         // Inngest send failed — fall back to in-process execution so we
         // never lose a pipeline run due to transport issues.
-        console.error(`[design-complete] inngest.send failed, falling back to waitUntil for deal ${dealId}:`, err);
+        console.error("[design-complete] inngest.send failed, falling back to waitUntil for deal", dealId, err);
         waitUntil(
           runDesignCompletePipeline(runId, dealId, trigger).catch((pipelineErr) => {
-            console.error(`[design-complete] Unhandled pipeline error for deal ${dealId}:`, pipelineErr);
+            console.error("[design-complete] Unhandled pipeline error for deal", dealId, pipelineErr);
           }),
         );
         triggered.push(`${dealId}:started_fallback`);
@@ -329,7 +329,7 @@ export async function POST(req: NextRequest) {
     } else {
       waitUntil(
         runDesignCompletePipeline(runId, dealId, trigger).catch((err) => {
-          console.error(`[design-complete] Unhandled pipeline error for deal ${dealId}:`, err);
+          console.error("[design-complete] Unhandled pipeline error for deal", dealId, err);
         }),
       );
       triggered.push(`${dealId}:started`);
