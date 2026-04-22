@@ -76,9 +76,11 @@ describe("canAccessRoute - new suite structure", () => {
     expect(canAccessRoute("SALES", "/dashboards/site-survey-scheduler")).toBe(true);
   });
 
-  // D&R routes
-  it("allows OPERATIONS to access D&R pipeline", () => {
-    expect(canAccessRoute("OPERATIONS", "/dashboards/dnr")).toBe(true);
+  // D&R routes — OPERATIONS no longer has D&R access (narrowed 2026-04-22)
+  it("blocks OPERATIONS from D&R pipeline; OPS_MGR and PM still have it", () => {
+    expect(canAccessRoute("OPERATIONS", "/dashboards/dnr")).toBe(false);
+    expect(canAccessRoute("OPERATIONS_MANAGER", "/dashboards/dnr")).toBe(true);
+    expect(canAccessRoute("PROJECT_MANAGER", "/dashboards/dnr")).toBe(true);
   });
 
   // Forecasting API for scheduler ghost events
