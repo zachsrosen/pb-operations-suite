@@ -135,7 +135,12 @@ export default function AdminWorkflowRunsPage() {
                       {r.durationMs != null ? `${(r.durationMs / 1000).toFixed(1)}s` : "—"}
                     </td>
                     <td className="px-4 py-3 text-xs text-muted truncate max-w-md">
-                      {r.errorMessage ?? "—"}
+                      <Link
+                        href={`/dashboards/admin/workflows/runs/${r.id}`}
+                        className="text-purple-400 hover:text-purple-300"
+                      >
+                        {r.errorMessage ? r.errorMessage.slice(0, 60) : "View detail"}
+                      </Link>
                     </td>
                   </tr>
                 ))}

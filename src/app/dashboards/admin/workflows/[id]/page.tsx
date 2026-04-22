@@ -505,9 +505,10 @@ export default function AdminWorkflowEditor({
           ) : (
             <div className="space-y-2 text-xs">
               {workflow.runs.map((run) => (
-                <div
+                <Link
                   key={run.id}
-                  className="flex items-center justify-between rounded-md bg-surface-2 px-3 py-2"
+                  href={`/dashboards/admin/workflows/runs/${run.id}`}
+                  className="flex items-center justify-between rounded-md bg-surface-2 hover:bg-surface-elevated px-3 py-2 transition"
                 >
                   <div className="flex items-center gap-3 min-w-0">
                     <span className={`font-medium ${RUN_STATUS_COLORS[run.status]}`}>{run.status}</span>
@@ -521,7 +522,7 @@ export default function AdminWorkflowEditor({
                   <span className="text-muted text-right">
                     {run.durationMs != null ? `${(run.durationMs / 1000).toFixed(1)}s` : "—"}
                   </span>
-                </div>
+                </Link>
               ))}
             </div>
           )}
