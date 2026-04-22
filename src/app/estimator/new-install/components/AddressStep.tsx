@@ -108,7 +108,7 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
         normalized: AddressParts;
         inServiceArea: boolean;
         location: import("@/lib/estimator").Location | null;
-        utilities: Array<{ id: string; displayName: string; avgBlendedRateUsdPerKwh: number }>;
+        utilities: Array<{ id: string; displayName: string; kwhRate: number }>;
       };
       if (!data.inServiceArea) {
         router.push(`/estimator/out-of-area?zip=${encodeURIComponent(data.normalized.zip)}`);

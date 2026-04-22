@@ -21,8 +21,10 @@ export default function ResultsView({ firstName, initialInput, initialResult }: 
   const [repricing, setRepricing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const panelWattage = initialInput.panelWattage;
-  const pricePerWatt = initialInput.pricePerWatt;
+  const panelWattage = initialInput.pricing.panelOutput;
+  const perPanel = initialInput.pricing.perPanel;
+  const baseFixed = initialInput.pricing.base;
+  const discountMultiplier = initialInput.pricing.discountMultiplier;
 
   const quoteRequestFromInput = useMemo<QuoteRequest>(
     () => ({
@@ -76,13 +78,9 @@ export default function ResultsView({ firstName, initialInput, initialResult }: 
   // Client-side panel +/- produces a rough price delta (labeled as an adjustment).
   const adjustedPanelCount = Math.max(4, result.panelCount + panelDelta);
   const adjustedKwDc = (adjustedPanelCount * panelWattage) / 1000;
-  const baseRetail = adjustedKwDc * 1000 * pricePerWatt + (result.pricing.addOnsUsd ?? 0);
-  const incentivesPct =
-    result.pricing.retailUsd > 0
-      ? result.pricing.incentivesUsd / result.pricing.retailUsd
-      : 0;
-  const adjustedIncentives = baseRetail * incentivesPct;
-  const adjustedFinal = Math.max(0, baseRetail - adjustedIncentives);
+  const adjustedRetail = baseFixed + perPanel * adjustedPanelCount + (result.pricing.addOnsUsd ?? 0);
+  const adjustedFinal = Math.max(0, adjustedRetail * discountMultiplier);
+  const adjustedDiscount = adjustedRetail - adjustedFinal;
   const monthlyProxy = estimateMonthlyPayment(adjustedFinal, result.pricing.finalUsd, result.pricing.monthlyPaymentUsd);
   const productionRatio = result.panelCount > 0 ? adjustedPanelCount / result.panelCount : 1;
   const adjustedAnnualKwh = result.annualProductionKwh * productionRatio;
@@ -144,17 +142,15 @@ export default function ResultsView({ firstName, initialInput, initialResult }: 
       <section className="mt-6 rounded-2xl border border-t-border bg-surface p-6 shadow-card sm:p-8">
         <h2 className="text-lg font-semibold">Pricing</h2>
         <dl className="mt-4 flex flex-col gap-2 text-sm">
-          <Row label="Retail system price" value={formatUsd(baseRetail)} />
-          {result.pricing.breakdown.appliedIncentives.map((inc) => (
-            <Row
-              key={inc.id}
-              label={inc.label}
-              value={`− ${formatUsd((inc.amountUsd * (baseRetail / result.pricing.retailUsd)) || 0)}`}
-              muted
-              tooltip={inc.id}
-            />
+          <Row label="Retail system price" value={formatUsd(adjustedRetail)} />
+          {result.pricing.breakdown.lineItems.map((li) => (
+            <Row key={li.label} label={li.label} value={`+ ${formatUsd(li.amountUsd)}`} muted />
           ))}
-          <Row label="Estimated incentives total" value={`− ${formatUsd(adjustedIncentives)}`} muted />
+          <Row
+            label="Incentives & discounts applied"
+            value={`− ${formatUsd(adjustedDiscount)}`}
+            muted
+          />
           <div className="my-1 border-t border-t-border" />
           <Row label="Estimated final price" value={formatUsd(adjustedFinal)} bold />
           <Row

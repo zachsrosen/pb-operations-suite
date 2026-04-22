@@ -71,8 +71,8 @@ export async function POST(request: Request) {
   const utilities = inServiceArea
     ? loadUtilitiesForState(normalized.state, normalized.zip).map((u) => ({
         id: u.id,
-        displayName: u.displayName,
-        avgBlendedRateUsdPerKwh: u.avgBlendedRateUsdPerKwh,
+        displayName: u.label,
+        kwhRate: u.kwhRate,
       }))
     : [];
 

@@ -1,7 +1,6 @@
 import type { EstimatorInput, EstimatorResult } from "./types";
 import { computeAnnualKwh, computeTargetKwh, sizeSystem } from "./sizing";
-import { computeRetail } from "./pricing";
-import { applyIncentives } from "./incentives";
+import { computePricing } from "./pricing";
 import { amortize } from "./financing";
 
 const ASSUMPTIONS: string[] = [
@@ -14,57 +13,46 @@ const ASSUMPTIONS: string[] = [
 ];
 
 export function runEstimator(input: EstimatorInput): EstimatorResult {
-  const annualKwh = computeAnnualKwh(input.usage, input.utility.avgBlendedRateUsdPerKwh);
+  const annualKwh = computeAnnualKwh(input.usage, input.utility.kwhRate);
   const targetKwh = computeTargetKwh(annualKwh, input.considerations);
+
   const { panelCount, systemKwDc, annualProductionKwh } = sizeSystem({
     targetKwh,
-    kWhPerKwYear: input.kWhPerKwYear,
-    panelWattage: input.panelWattage,
+    utility: input.utility,
+    panelWattage: input.pricing.panelOutput,
+    maxSystemSizeWatts: input.pricing.maxSystemSizeWatts,
   });
+
   const offsetPercent = annualKwh > 0 ? Math.min(100, (annualProductionKwh / annualKwh) * 100) : 0;
 
-  const { baseSystemUsd, addOnsUsd, retailUsd } = computeRetail({
-    finalKwDc: systemKwDc,
-    pricePerWatt: input.pricePerWatt,
+  const pricing = computePricing({
+    panelCount,
     addOns: input.addOns,
-    addOnPricing: input.addOnPricing,
+    pricing: input.pricing,
+    utility: input.utility,
+    includeBattery: false,
   });
 
-  const { applied: appliedIncentives, totalUsd: incentivesUsd } = applyIncentives({
-    incentives: input.incentives,
-    retailUsd,
-    finalKwDc: systemKwDc,
-  });
-
-  const finalUsd = Math.max(0, retailUsd - incentivesUsd);
-  const monthlyPaymentUsd = amortize(finalUsd, input.financing.apr, input.financing.termMonths);
-
-  const lineItems: Array<{ label: string; amountUsd: number }> = [];
-  if (input.addOns.evCharger) {
-    lineItems.push({ label: "EV Charger + install", amountUsd: input.addOnPricing.evCharger });
-  }
-  if (input.addOns.panelUpgrade) {
-    lineItems.push({ label: "Main electrical panel upgrade", amountUsd: input.addOnPricing.panelUpgrade });
-  }
+  const monthlyPaymentUsd = amortize(
+    pricing.finalUsd,
+    input.pricing.apr,
+    input.pricing.termMonths,
+  );
 
   return {
     systemKwDc,
     panelCount,
-    panelWattage: input.panelWattage,
+    panelWattage: input.pricing.panelOutput,
     annualProductionKwh,
     annualConsumptionKwh: annualKwh,
     offsetPercent,
     pricing: {
-      retailUsd,
-      addOnsUsd,
-      incentivesUsd,
-      finalUsd,
+      retailUsd: pricing.retailUsd,
+      addOnsUsd: pricing.addOnsUsd,
+      discountUsd: pricing.discountUsd,
+      finalUsd: pricing.finalUsd,
       monthlyPaymentUsd,
-      breakdown: {
-        baseSystemUsd,
-        lineItems,
-        appliedIncentives,
-      },
+      breakdown: pricing.breakdown,
     },
     assumptions: ASSUMPTIONS,
   };

@@ -1,50 +1,82 @@
-import { computeRetail } from "@/lib/estimator/pricing";
+import { computePricing } from "@/lib/estimator/pricing";
+import type { PricingConfig } from "@/lib/estimator/types";
 
-const DEFAULT_ADD_ON_PRICING = { evCharger: 1800, panelUpgrade: 3500 };
+const PRICING: PricingConfig = {
+  panelOutput: 440,
+  maxSystemSizeWatts: 30000,
+  base: 3700,
+  perPanel: 1020,
+  panelUpgrade: 4200,
+  evWallConnector: 650,
+  evInstall: 1600,
+  battery: 13500,
+  expansion: 9500,
+  additionalConduit: 30,
+  discountMultiplier: 0.7,
+  apr: 0.07,
+  termMonths: 300,
+};
 
-describe("pricing.computeRetail", () => {
-  it("computes base system price with no add-ons", () => {
-    const r = computeRetail({
-      finalKwDc: 8.8,
-      pricePerWatt: 3.0,
+const NO_REBATE = { batteryRebate: 0 };
+
+describe("pricing.computePricing — base + perPanel model", () => {
+  it("computes base system with 20 panels and no add-ons", () => {
+    const r = computePricing({
+      panelCount: 20,
       addOns: { evCharger: false, panelUpgrade: false },
-      addOnPricing: DEFAULT_ADD_ON_PRICING,
+      pricing: PRICING,
+      utility: NO_REBATE,
     });
-    expect(r.baseSystemUsd).toBeCloseTo(26400, 5);
+    expect(r.retailUsd).toBe(24100);
     expect(r.addOnsUsd).toBe(0);
-    expect(r.retailUsd).toBeCloseTo(26400, 5);
+    expect(r.finalUsd).toBeCloseTo(16870, 2);
+    expect(r.discountUsd).toBeCloseTo(7230, 2);
   });
 
-  it("includes EV charger add-on", () => {
-    const r = computeRetail({
-      finalKwDc: 8.8,
-      pricePerWatt: 3.0,
+  it("includes EV charger (wall connector + install)", () => {
+    const r = computePricing({
+      panelCount: 20,
       addOns: { evCharger: true, panelUpgrade: false },
-      addOnPricing: DEFAULT_ADD_ON_PRICING,
+      pricing: PRICING,
+      utility: NO_REBATE,
     });
-    expect(r.addOnsUsd).toBe(1800);
-    expect(r.retailUsd).toBeCloseTo(28200, 5);
+    expect(r.addOnsUsd).toBe(2250);
+    expect(r.retailUsd).toBe(26350);
+    expect(r.finalUsd).toBeCloseTo(18445, 2);
   });
 
-  it("includes panel upgrade add-on", () => {
-    const r = computeRetail({
-      finalKwDc: 8.8,
-      pricePerWatt: 3.0,
+  it("includes panel upgrade", () => {
+    const r = computePricing({
+      panelCount: 20,
       addOns: { evCharger: false, panelUpgrade: true },
-      addOnPricing: DEFAULT_ADD_ON_PRICING,
+      pricing: PRICING,
+      utility: NO_REBATE,
     });
-    expect(r.addOnsUsd).toBe(3500);
-    expect(r.retailUsd).toBeCloseTo(29900, 5);
+    expect(r.addOnsUsd).toBe(4200);
+    expect(r.finalUsd).toBeCloseTo(19810, 2);
   });
 
-  it("includes both add-ons when both selected", () => {
-    const r = computeRetail({
-      finalKwDc: 8.8,
-      pricePerWatt: 3.0,
-      addOns: { evCharger: true, panelUpgrade: true },
-      addOnPricing: DEFAULT_ADD_ON_PRICING,
+  it("applies CA battery rebate when battery is included", () => {
+    const r = computePricing({
+      panelCount: 20,
+      addOns: { evCharger: false, panelUpgrade: false },
+      pricing: PRICING,
+      utility: { batteryRebate: 3800 },
+      includeBattery: true,
     });
-    expect(r.addOnsUsd).toBe(5300);
-    expect(r.retailUsd).toBeCloseTo(31700, 5);
+    expect(r.retailUsd).toBe(37600);
+    expect(r.batteryRebateUsd).toBe(3800);
+    expect(r.finalUsd).toBeCloseTo(22520, 2);
+  });
+
+  it("skips battery rebate when battery is not included", () => {
+    const r = computePricing({
+      panelCount: 20,
+      addOns: { evCharger: false, panelUpgrade: false },
+      pricing: PRICING,
+      utility: { batteryRebate: 3800 },
+      includeBattery: false,
+    });
+    expect(r.batteryRebateUsd).toBe(0);
   });
 });

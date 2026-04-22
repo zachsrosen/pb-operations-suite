@@ -52,7 +52,7 @@ export const QuoteRequestSchema = z.object({
   usage: UsageSchema,
   home: z.object({
     roofType: RoofTypeSchema,
-    shade: ShadeBucketSchema,
+    shade: ShadeBucketSchema.optional(),
     heatPump: z.boolean(),
   }),
   considerations: ConsiderationsSchema,

@@ -1,5 +1,6 @@
-import type { Considerations, Usage } from "./types";
+import type { Considerations, Usage, Utility } from "./types";
 import { EV_ADD_KWH_PER_YEAR, HOT_TUB_ADD_KWH_PER_YEAR } from "./constants";
+import { effectiveKwhPerKwYear } from "./data-loader";
 
 export function computeAnnualKwh(usage: Usage, utilityRateUsdPerKwh: number): number {
   if (usage.kind === "bill") {
@@ -18,8 +19,9 @@ export function computeTargetKwh(annualKwh: number, considerations: Consideratio
 
 export interface SizingInput {
   targetKwh: number;
-  kWhPerKwYear: number;
+  utility: Pick<Utility, "annualProductionFactor" | "productionMultiplier">;
   panelWattage: number;
+  maxSystemSizeWatts: number;
 }
 
 export interface SizingResult {
@@ -29,13 +31,15 @@ export interface SizingResult {
 }
 
 export function sizeSystem(input: SizingInput): SizingResult {
-  const { targetKwh, kWhPerKwYear, panelWattage } = input;
-  if (targetKwh <= 0 || kWhPerKwYear <= 0 || panelWattage <= 0) {
+  const kwhPerKwYear = effectiveKwhPerKwYear(input.utility);
+  if (input.targetKwh <= 0 || kwhPerKwYear <= 0 || input.panelWattage <= 0) {
     return { panelCount: 0, systemKwDc: 0, annualProductionKwh: 0 };
   }
-  const systemKwDcTarget = targetKwh / kWhPerKwYear;
-  const panelCount = Math.ceil((systemKwDcTarget * 1000) / panelWattage);
-  const systemKwDc = (panelCount * panelWattage) / 1000;
-  const annualProductionKwh = systemKwDc * kWhPerKwYear;
+  const systemKwDcTarget = input.targetKwh / kwhPerKwYear;
+  const uncapped = Math.ceil((systemKwDcTarget * 1000) / input.panelWattage);
+  const maxPanelCount = Math.floor(input.maxSystemSizeWatts / input.panelWattage);
+  const panelCount = Math.min(uncapped, maxPanelCount);
+  const systemKwDc = (panelCount * input.panelWattage) / 1000;
+  const annualProductionKwh = systemKwDc * kwhPerKwYear;
   return { panelCount, systemKwDc, annualProductionKwh };
 }

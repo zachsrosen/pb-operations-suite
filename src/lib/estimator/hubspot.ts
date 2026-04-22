@@ -123,7 +123,7 @@ export async function createEstimatorDeal(input: EstimatorDealInput): Promise<{ 
     properties.estimator_annual_production_kwh = String(Math.round(input.result.annualProductionKwh));
     properties.estimator_offset_percent = String(input.result.offsetPercent);
     properties.estimator_retail_usd = String(Math.round(input.result.pricing.retailUsd));
-    properties.estimator_incentives_usd = String(Math.round(input.result.pricing.incentivesUsd));
+    properties.estimator_incentives_usd = String(Math.round(input.result.pricing.discountUsd));
     properties.estimator_final_usd = String(Math.round(input.result.pricing.finalUsd));
     properties.estimator_monthly_payment_usd = String(Math.round(input.result.pricing.monthlyPaymentUsd));
   }

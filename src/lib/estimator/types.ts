@@ -1,10 +1,10 @@
 export type QuoteType = "new_install";
 
-export type ShadeBucket = "light" | "moderate" | "heavy";
-
 export type RoofType = "asphalt_shingle" | "tile" | "metal" | "flat_tpo" | "other";
 
 export type Location = "DTC" | "WESTY" | "COSP" | "CA" | "CAMARILLO";
+
+export type ShadeBucket = "light" | "moderate" | "heavy";
 
 export interface AddressParts {
   street: string;
@@ -42,63 +42,77 @@ export interface AddOnSelections {
   panelUpgrade: boolean;
 }
 
-export interface AddOnPricing {
-  evCharger: number;
-  panelUpgrade: number;
+/**
+ * Utility config ported from the original photonbrothers.com estimator.
+ * Each utility carries its own production factor and territory-wide
+ * derate multiplier (captures regional shade/orientation assumptions).
+ */
+export interface Utility {
+  id: string;
+  name: string;
+  label: string;
+  state: string;
+  /** Blended retail rate — used to back-convert monthly bill to kWh. */
+  kwhRate: number;
+  /** Baseline annual production per 1 kW DC (pre-multiplier). */
+  annualProductionFactor: number;
+  /** Territory-wide derate; final production = factor × multiplier. */
+  productionMultiplier: number;
+  /** Flat per-system battery rebate ($0 CO, $3800 for CA PG&E/SCE). */
+  batteryRebate: number;
+  /** Zips served by this utility. */
+  zips: string[];
 }
 
-export interface FinancingConfig {
+/**
+ * Pricing + financing config. `discountMultiplier` is a single blended
+ * discount (federal ITC + ops-level adjustment) baked in by sales ops.
+ */
+export interface PricingConfig {
+  panelOutput: number;
+  maxSystemSizeWatts: number;
+  base: number;
+  perPanel: number;
+  panelUpgrade: number;
+  evWallConnector: number;
+  evInstall: number;
+  battery: number;
+  expansion: number;
+  additionalConduit: number;
+  discountMultiplier: number;
   apr: number;
   termMonths: number;
-}
-
-export interface IncentiveRecord {
-  id: string;
-  scope: "federal" | "state" | "utility" | "local";
-  type: "percent" | "fixed" | "perWatt";
-  value: number;
-  cap?: number;
-  label: string;
-  disclosure?: string;
-}
-
-export interface UtilityRef {
-  id: string;
-  avgBlendedRateUsdPerKwh: number;
 }
 
 export interface EstimatorInput {
   quoteType: QuoteType;
   address: AddressParts;
   location: Location;
-  utility: UtilityRef;
+  utility: Utility;
   usage: Usage;
   home: {
     roofType: RoofType;
-    shade: ShadeBucket;
     heatPump: boolean;
+    /** Optional metadata, not used in math. */
+    shade?: ShadeBucket;
   };
   considerations: Considerations;
   addOns: AddOnSelections;
-  // Engine-internal: the caller resolves these from JSON data files before calling runEstimator.
-  panelWattage: number;
-  pricePerWatt: number;
-  kWhPerKwYear: number;
-  incentives: IncentiveRecord[];
-  addOnPricing: AddOnPricing;
-  financing: FinancingConfig;
+  pricing: PricingConfig;
 }
 
-export interface AppliedIncentive {
-  id: string;
+export interface LineItem {
   label: string;
   amountUsd: number;
 }
 
 export interface PricingBreakdown {
   baseSystemUsd: number;
-  lineItems: Array<{ label: string; amountUsd: number }>;
-  appliedIncentives: AppliedIncentive[];
+  panelsUsd: number;
+  lineItems: LineItem[];
+  retailUsd: number;
+  discountUsd: number;
+  batteryRebateUsd: number;
 }
 
 export interface EstimatorResult {
@@ -111,7 +125,7 @@ export interface EstimatorResult {
   pricing: {
     retailUsd: number;
     addOnsUsd: number;
-    incentivesUsd: number;
+    discountUsd: number;
     finalUsd: number;
     monthlyPaymentUsd: number;
     breakdown: PricingBreakdown;

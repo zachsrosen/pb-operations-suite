@@ -5,11 +5,7 @@ import {
   QuoteRequestSchema,
   runEstimator,
   loadUtilityById,
-  loadKwhPerKwYear,
-  loadPricePerWatt,
-  loadAddOnPricing,
-  loadFinancingDefaults,
-  loadApplicableIncentives,
+  loadPricing,
   FALLBACK_PANEL_WATTAGE,
 } from "@/lib/estimator";
 import { checkRateLimit, extractIp, hashIp, rateLimitKey } from "@/lib/estimator/rate-limit";
@@ -28,7 +24,10 @@ export async function POST(request: Request) {
 
   const parsed = QuoteRequestSchema.safeParse(body);
   if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid input", details: parsed.error.flatten() },
+      { status: 400 },
+    );
   }
   const q = parsed.data;
 
@@ -37,39 +36,28 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unknown utility" }, { status: 400 });
   }
 
-  // Resolve panel wattage from InternalProduct flag (fallback to constant).
-  const panelWattage = await resolveDefaultPanelWattage();
-  const pricePerWatt = loadPricePerWatt(q.location);
-  const kWhPerKwYear = loadKwhPerKwYear(q.address.state, q.home.shade);
-  const addOnPricing = loadAddOnPricing();
-  const financing = loadFinancingDefaults();
-  const incentives = loadApplicableIncentives({
-    state: q.address.state,
-    zip: q.address.zip,
-    utilityId: utility.id,
-  });
+  const basePricing = loadPricing();
+  // Let InternalProduct.defaultForEstimator override panelOutput at runtime
+  // so catalog changes flow through without a code deploy.
+  const panelOutput = await resolveDefaultPanelWattage(basePricing.panelOutput);
+  const pricing = { ...basePricing, panelOutput };
 
   const result = runEstimator({
     quoteType: "new_install",
     address: q.address,
     location: q.location,
-    utility: { id: utility.id, avgBlendedRateUsdPerKwh: utility.avgBlendedRateUsdPerKwh },
+    utility,
     usage: q.usage,
     home: q.home,
     considerations: q.considerations,
     addOns: q.addOns,
-    panelWattage,
-    pricePerWatt,
-    kWhPerKwYear,
-    incentives,
-    addOnPricing,
-    financing,
+    pricing,
   });
 
   return NextResponse.json({ result });
 }
 
-async function resolveDefaultPanelWattage(): Promise<number> {
+async function resolveDefaultPanelWattage(configDefault: number): Promise<number> {
   try {
     const found = await prisma.internalProduct.findFirst({
       where: { category: "MODULE", defaultForEstimator: true, isActive: true },
@@ -80,5 +68,5 @@ async function resolveDefaultPanelWattage(): Promise<number> {
   } catch (err) {
     console.warn("[estimator] default panel lookup failed", err);
   }
-  return FALLBACK_PANEL_WATTAGE;
+  return configDefault || FALLBACK_PANEL_WATTAGE;
 }
