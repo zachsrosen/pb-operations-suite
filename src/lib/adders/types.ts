@@ -2,12 +2,14 @@ import type {
   Adder,
   AdderShopOverride,
   AdderRevision,
+} from "@/generated/prisma/client";
+import {
   AdderCategory,
   AdderUnit,
   AdderType,
   AdderDirection,
   TriageAnswerType,
-} from "@/generated/prisma";
+} from "@/generated/prisma/enums";
 
 export type { Adder, AdderShopOverride, AdderRevision };
 export {

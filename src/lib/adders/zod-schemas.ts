@@ -5,7 +5,7 @@ import {
   AdderType,
   AdderDirection,
   TriageAnswerType,
-} from "@/generated/prisma";
+} from "@/generated/prisma/enums";
 import { parseAppliesTo } from "./applies-to";
 
 // Validates the SHAPE of the triggerLogic JSON at the API boundary per spec.
