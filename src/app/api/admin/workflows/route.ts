@@ -15,7 +15,7 @@
  * Phase 1 scope: create only. List / update / delete ship with the UI PR.
  */
 
-import { NextRequest, NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { auth } from "@/auth";
@@ -119,4 +119,43 @@ export async function POST(request: NextRequest) {
   });
 
   return NextResponse.json({ workflow: created });
+}
+
+/**
+ * GET /api/admin/workflows — List all workflows (ADMIN only).
+ * Simple, no pagination (expect <100 workflows).
+ */
+export async function GET() {
+  if (!isAdminWorkflowsEnabled()) {
+    return NextResponse.json({ error: "Feature disabled" }, { status: 503 });
+  }
+
+  const session = await auth();
+  if (!session?.user?.email) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  }
+  const user = await getUserByEmail(session.user.email);
+  if (!user?.roles.includes("ADMIN")) {
+    return NextResponse.json({ error: "Admin required" }, { status: 403 });
+  }
+  if (!prisma) {
+    return NextResponse.json({ error: "Database not configured" }, { status: 503 });
+  }
+
+  const workflows = await prisma.adminWorkflow.findMany({
+    orderBy: { updatedAt: "desc" },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      status: true,
+      triggerType: true,
+      createdAt: true,
+      updatedAt: true,
+      createdBy: { select: { email: true, name: true } },
+      _count: { select: { runs: true } },
+    },
+  });
+
+  return NextResponse.json({ workflows });
 }

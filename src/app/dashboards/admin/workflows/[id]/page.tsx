@@ -1,0 +1,540 @@
+"use client";
+
+/**
+ * Admin Workflows — editor page.
+ *
+ * Form-based editor for a single workflow: name/description, trigger
+ * configuration, step list (add/remove actions and fill their inputs),
+ * status control, run-now button, and recent run history.
+ *
+ * Visual graph editor using @inngest/workflow-kit is a Phase 3 follow-up.
+ */
+
+import { use, useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+
+import DashboardShell from "@/components/DashboardShell";
+
+type FieldKind = "text" | "textarea" | "email";
+
+interface FormField {
+  key: string;
+  label: string;
+  kind: FieldKind;
+  placeholder?: string;
+  help?: string;
+  required?: boolean;
+}
+
+interface ActionMeta {
+  kind: string;
+  name: string;
+  description: string;
+  category: string;
+  fields: FormField[];
+}
+
+interface TriggerMeta {
+  kind: "MANUAL" | "HUBSPOT_PROPERTY_CHANGE" | "ZUPER_PROPERTY_CHANGE";
+  name: string;
+  description: string;
+  fields: FormField[];
+}
+
+interface Palette {
+  actions: ActionMeta[];
+  triggers: TriggerMeta[];
+}
+
+interface Step {
+  id: string;
+  kind: string;
+  inputs: Record<string, string>;
+}
+
+interface WorkflowRun {
+  id: string;
+  status: "RUNNING" | "SUCCEEDED" | "FAILED";
+  triggeredByEmail: string;
+  durationMs: number | null;
+  startedAt: string;
+  completedAt: string | null;
+  errorMessage: string | null;
+}
+
+interface Workflow {
+  id: string;
+  name: string;
+  description: string | null;
+  status: "DRAFT" | "ACTIVE" | "ARCHIVED";
+  triggerType: "MANUAL" | "HUBSPOT_PROPERTY_CHANGE" | "ZUPER_PROPERTY_CHANGE";
+  triggerConfig: Record<string, unknown>;
+  definition: { steps: Step[] };
+  createdBy: { email: string; name: string | null };
+  runs: WorkflowRun[];
+}
+
+const RUN_STATUS_COLORS: Record<string, string> = {
+  RUNNING: "text-blue-400",
+  SUCCEEDED: "text-green-400",
+  FAILED: "text-red-400",
+};
+
+export default function AdminWorkflowEditor({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = use(params);
+  const router = useRouter();
+
+  const [workflow, setWorkflow] = useState<Workflow | null>(null);
+  const [palette, setPalette] = useState<Palette | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const [wfRes, palRes] = await Promise.all([
+        fetch(`/api/admin/workflows/${id}`),
+        fetch(`/api/admin/workflows/palette`),
+      ]);
+      if (!wfRes.ok) throw new Error(`Workflow load ${wfRes.status}`);
+      if (!palRes.ok) throw new Error(`Palette load ${palRes.status}`);
+      const wfData = await wfRes.json();
+      const palData = await palRes.json();
+      setWorkflow(wfData.workflow);
+      setPalette(palData);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }, [id]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  if (error) {
+    return (
+      <DashboardShell title="Admin Workflows" accentColor="purple">
+        <div className="max-w-3xl mx-auto px-4 py-6">
+          <div className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            {error}
+          </div>
+          <div className="mt-4">
+            <Link href="/dashboards/admin/workflows" className="text-purple-400 hover:underline text-sm">
+              ← Back to list
+            </Link>
+          </div>
+        </div>
+      </DashboardShell>
+    );
+  }
+
+  if (!workflow || !palette) {
+    return (
+      <DashboardShell title="Admin Workflows" accentColor="purple">
+        <div className="max-w-3xl mx-auto px-4 py-6 text-muted text-sm">Loading…</div>
+      </DashboardShell>
+    );
+  }
+
+  async function save() {
+    if (!workflow) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/admin/workflows/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: workflow.name,
+          description: workflow.description,
+          triggerConfig: workflow.triggerConfig,
+          definition: workflow.definition,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail ?? body.error ?? `HTTP ${res.status}`);
+      }
+      setToast("Saved");
+      setTimeout(() => setToast(null), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setStatus(status: Workflow["status"]) {
+    if (!workflow) return;
+    try {
+      const res = await fetch(`/api/admin/workflows/${id}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      setWorkflow((prev) => (prev ? { ...prev, status } : prev));
+      setToast(`Workflow ${status.toLowerCase()}`);
+      setTimeout(() => setToast(null), 2000);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async function runNow() {
+    if (!workflow) return;
+    setRunning(true);
+    setError(null);
+    try {
+      // For non-MANUAL triggers, allow the admin to pass test context
+      let triggerContext: Record<string, unknown> = {};
+      if (workflow.triggerType !== "MANUAL") {
+        const raw = prompt(
+          "Enter test trigger context (JSON). Example: {\"objectId\":\"123\",\"propertyName\":\"dealstage\",\"propertyValue\":\"456\"}",
+          "{}",
+        );
+        if (raw == null) {
+          setRunning(false);
+          return;
+        }
+        try {
+          triggerContext = JSON.parse(raw);
+        } catch {
+          setError("Invalid JSON in trigger context");
+          setRunning(false);
+          return;
+        }
+      }
+
+      const res = await fetch(`/api/admin/workflows/${id}/run`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ triggerContext }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      const body = await res.json();
+      setToast(`Run queued: ${body.runId}`);
+      setTimeout(() => setToast(null), 3000);
+      // Refresh after a short delay so the run appears in history
+      setTimeout(load, 1500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  async function deleteWorkflow() {
+    if (!confirm("Delete this workflow permanently? This also deletes its run history.")) return;
+    await fetch(`/api/admin/workflows/${id}`, { method: "DELETE" });
+    router.push("/dashboards/admin/workflows");
+  }
+
+  function updateStep(stepIdx: number, next: Step) {
+    setWorkflow((prev) => {
+      if (!prev) return prev;
+      const steps = [...prev.definition.steps];
+      steps[stepIdx] = next;
+      return { ...prev, definition: { steps } };
+    });
+  }
+
+  function removeStep(stepIdx: number) {
+    setWorkflow((prev) => {
+      if (!prev) return prev;
+      const steps = prev.definition.steps.filter((_, i) => i !== stepIdx);
+      return { ...prev, definition: { steps } };
+    });
+  }
+
+  function addStep(kind: string) {
+    setWorkflow((prev) => {
+      if (!prev) return prev;
+      const action = palette?.actions.find((a) => a.kind === kind);
+      if (!action) return prev;
+      const stepId = `step${prev.definition.steps.length + 1}`;
+      const inputs: Record<string, string> = {};
+      for (const field of action.fields) inputs[field.key] = "";
+      return {
+        ...prev,
+        definition: {
+          steps: [...prev.definition.steps, { id: stepId, kind, inputs }],
+        },
+      };
+    });
+  }
+
+  const currentTriggerMeta = palette.triggers.find((t) => t.kind === workflow.triggerType);
+
+  return (
+    <DashboardShell title={workflow.name} accentColor="purple">
+      <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
+        {/* Header actions */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Link href="/dashboards/admin/workflows" className="text-sm text-muted hover:text-foreground">
+            ← Back to list
+          </Link>
+          <div className="flex items-center gap-2 text-sm">
+            <span className={`px-2 py-1 rounded text-xs ${
+              workflow.status === "ACTIVE" ? "bg-green-500/20 text-green-300"
+              : workflow.status === "DRAFT" ? "bg-zinc-500/20 text-zinc-300"
+              : "bg-amber-500/20 text-amber-300"
+            }`}>
+              {workflow.status}
+            </span>
+            {workflow.status !== "ACTIVE" && (
+              <button onClick={() => setStatus("ACTIVE")} className="text-green-400 hover:text-green-300 px-2 py-1">
+                Activate
+              </button>
+            )}
+            {workflow.status === "ACTIVE" && (
+              <button onClick={() => setStatus("DRAFT")} className="text-zinc-400 hover:text-zinc-300 px-2 py-1">
+                Pause (back to DRAFT)
+              </button>
+            )}
+            {workflow.status !== "ARCHIVED" && (
+              <button onClick={() => setStatus("ARCHIVED")} className="text-amber-400 hover:text-amber-300 px-2 py-1">
+                Archive
+              </button>
+            )}
+            <button onClick={deleteWorkflow} className="text-red-400 hover:text-red-300 px-2 py-1">
+              Delete
+            </button>
+          </div>
+        </div>
+
+        {error && (
+          <div className="rounded-md border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-300">{error}</div>
+        )}
+        {toast && (
+          <div className="rounded-md border border-green-500/40 bg-green-500/10 px-4 py-3 text-sm text-green-300">{toast}</div>
+        )}
+
+        {/* Basics */}
+        <section className="rounded-md border border-t-border bg-surface p-6 space-y-4">
+          <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">Basics</h2>
+          <div>
+            <label className="block text-xs text-muted mb-1">Name</label>
+            <input
+              type="text"
+              value={workflow.name}
+              onChange={(e) => setWorkflow((w) => (w ? { ...w, name: e.target.value } : w))}
+              className="w-full rounded-md bg-surface-2 border border-t-border px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-muted mb-1">Description</label>
+            <textarea
+              value={workflow.description ?? ""}
+              onChange={(e) => setWorkflow((w) => (w ? { ...w, description: e.target.value || null } : w))}
+              rows={2}
+              className="w-full rounded-md bg-surface-2 border border-t-border px-3 py-2 text-sm"
+            />
+          </div>
+        </section>
+
+        {/* Trigger */}
+        <section className="rounded-md border border-t-border bg-surface p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">Trigger</h2>
+            <span className="text-xs text-muted">{workflow.triggerType}</span>
+          </div>
+          {currentTriggerMeta && (
+            <p className="text-xs text-muted">{currentTriggerMeta.description}</p>
+          )}
+          {(currentTriggerMeta?.fields ?? []).length === 0 ? (
+            <p className="text-xs text-muted italic">No configuration required.</p>
+          ) : (
+            <div className="space-y-3">
+              {currentTriggerMeta!.fields.map((f) => (
+                <FieldInput
+                  key={f.key}
+                  field={f}
+                  value={String(workflow.triggerConfig[f.key] ?? "")}
+                  onChange={(v) =>
+                    setWorkflow((w) => {
+                      if (!w) return w;
+                      return {
+                        ...w,
+                        triggerConfig: { ...w.triggerConfig, [f.key]: v },
+                      };
+                    })
+                  }
+                />
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* Steps */}
+        <section className="rounded-md border border-t-border bg-surface p-6 space-y-4">
+          <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">Steps</h2>
+          {workflow.definition.steps.length === 0 ? (
+            <p className="text-xs text-muted italic">No steps yet. Add one below.</p>
+          ) : (
+            <div className="space-y-4">
+              {workflow.definition.steps.map((step, idx) => {
+                const action = palette.actions.find((a) => a.kind === step.kind);
+                return (
+                  <div key={idx} className="rounded-md border border-t-border bg-surface-2 p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">
+                          {idx + 1}. {action?.name ?? step.kind}
+                        </p>
+                        <p className="text-xs text-muted mt-0.5">{action?.description}</p>
+                      </div>
+                      <button
+                        onClick={() => removeStep(idx)}
+                        className="text-xs text-red-400 hover:text-red-300"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    {action?.fields.map((f) => (
+                      <FieldInput
+                        key={f.key}
+                        field={f}
+                        value={step.inputs[f.key] ?? ""}
+                        onChange={(v) => {
+                          const next: Step = { ...step, inputs: { ...step.inputs, [f.key]: v } };
+                          updateStep(idx, next);
+                        }}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Add step dropdown */}
+          <div className="pt-2">
+            <label className="text-xs text-muted">Add step:</label>
+            <select
+              className="ml-2 rounded-md bg-surface-2 border border-t-border px-2 py-1 text-sm"
+              defaultValue=""
+              onChange={(e) => {
+                if (e.target.value) {
+                  addStep(e.target.value);
+                  e.target.value = "";
+                }
+              }}
+            >
+              <option value="">Choose an action…</option>
+              {Array.from(new Set(palette.actions.map((a) => a.category))).map((cat) => (
+                <optgroup key={cat} label={cat}>
+                  {palette.actions
+                    .filter((a) => a.category === cat)
+                    .map((a) => (
+                      <option key={a.kind} value={a.kind}>
+                        {a.name}
+                      </option>
+                    ))}
+                </optgroup>
+              ))}
+            </select>
+          </div>
+        </section>
+
+        {/* Save / Run */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="rounded-md bg-purple-600 hover:bg-purple-500 disabled:opacity-50 px-4 py-2 text-sm text-white font-medium transition"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+          <button
+            onClick={runNow}
+            disabled={running || workflow.status !== "ACTIVE"}
+            className="rounded-md bg-green-600 hover:bg-green-500 disabled:opacity-40 px-4 py-2 text-sm text-white font-medium transition"
+            title={workflow.status !== "ACTIVE" ? "Activate first" : "Trigger a manual run"}
+          >
+            {running ? "Queueing…" : "Run now"}
+          </button>
+        </div>
+
+        {/* Recent runs */}
+        <section className="rounded-md border border-t-border bg-surface p-6 space-y-3">
+          <h2 className="text-sm font-semibold text-foreground uppercase tracking-wide">
+            Recent runs ({workflow.runs.length})
+          </h2>
+          {workflow.runs.length === 0 ? (
+            <p className="text-xs text-muted italic">No runs yet.</p>
+          ) : (
+            <div className="space-y-2 text-xs">
+              {workflow.runs.map((run) => (
+                <div
+                  key={run.id}
+                  className="flex items-center justify-between rounded-md bg-surface-2 px-3 py-2"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`font-medium ${RUN_STATUS_COLORS[run.status]}`}>{run.status}</span>
+                    <span className="text-muted truncate">
+                      {new Date(run.startedAt).toLocaleString()} · by {run.triggeredByEmail}
+                    </span>
+                    {run.errorMessage && (
+                      <span className="text-red-300 truncate">· {run.errorMessage}</span>
+                    )}
+                  </div>
+                  <span className="text-muted text-right">
+                    {run.durationMs != null ? `${(run.durationMs / 1000).toFixed(1)}s` : "—"}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+    </DashboardShell>
+  );
+}
+
+function FieldInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: FormField;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const cls = "w-full rounded-md bg-surface-2 border border-t-border px-3 py-2 text-sm";
+  return (
+    <div>
+      <label className="block text-xs text-muted mb-1">
+        {field.label} {field.required ? <span className="text-red-400">*</span> : null}
+      </label>
+      {field.kind === "textarea" ? (
+        <textarea
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={field.placeholder}
+          rows={4}
+          className={cls}
+        />
+      ) : (
+        <input
+          type={field.kind === "email" ? "text" : "text"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={field.placeholder}
+          className={cls}
+        />
+      )}
+      {field.help && <p className="mt-1 text-xs text-muted">{field.help}</p>}
+    </div>
+  );
+}

@@ -27,6 +27,7 @@ export const manualTrigger: AdminWorkflowTrigger<z.infer<typeof manualConfigSche
   kind: "MANUAL",
   name: "Manual run",
   description: "Admin clicks 'Run now' from the workflow editor.",
+  fields: [],
   configSchema: manualConfigSchema,
   match: ({ rawEvent }) => rawEvent,
 };
@@ -51,6 +52,11 @@ export const hubspotPropertyTrigger: AdminWorkflowTrigger<z.infer<typeof hubspot
   kind: "HUBSPOT_PROPERTY_CHANGE",
   name: "HubSpot property change",
   description: "Fires when a configured property on a HubSpot deal/contact/ticket changes.",
+  fields: [
+    { key: "objectType", label: "HubSpot object", kind: "text", placeholder: "deal | contact | ticket", required: true },
+    { key: "propertyName", label: "Property to watch", kind: "text", placeholder: "dealstage", required: true },
+    { key: "propertyValuesIn", label: "Only fire when value is one of (comma-separated)", kind: "text", help: "Leave blank to fire on any change." },
+  ],
   configSchema: hubspotPropertyConfigSchema,
   match: ({ config, rawEvent }) => {
     // Incoming shape from HubSpot webhook: { subscriptionType, objectTypeId?, propertyName, propertyValue, objectId }
@@ -89,6 +95,11 @@ export const zuperPropertyTrigger: AdminWorkflowTrigger<z.infer<typeof zuperProp
   kind: "ZUPER_PROPERTY_CHANGE",
   name: "Zuper property change",
   description: "Fires when a configured property on a Zuper job changes.",
+  fields: [
+    { key: "objectType", label: "Zuper object", kind: "text", placeholder: "job", required: true },
+    { key: "propertyName", label: "Property to watch", kind: "text", placeholder: "status", required: true },
+    { key: "propertyValuesIn", label: "Only fire when value is one of (comma-separated)", kind: "text", help: "Leave blank to fire on any change." },
+  ],
   configSchema: zuperPropertyConfigSchema,
   match: ({ config, rawEvent }) => {
     // Zuper webhook payload shape varies by event type. We expect the fan-out
