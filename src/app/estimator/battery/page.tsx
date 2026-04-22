@@ -72,6 +72,7 @@ function Inner() {
   }, [router, embedSuffix]);
 
   useEffect(() => {
+    if (!hydratedRef.current) return;
     if (step !== "address" && !state.normalizedAddress) {
       router.replace(`/estimator/battery?step=address${embedSuffix}`);
       return;
