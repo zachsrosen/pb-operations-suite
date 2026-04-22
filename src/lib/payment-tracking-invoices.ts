@@ -52,6 +52,7 @@ interface RawInvoice {
     hs_due_date?: string | null;
     hs_payment_date?: string | null;
     hs_days_overdue?: string | null;
+    hs_invoice_link?: string | null;
   };
   associations?: {
     "line items"?: { results?: { id: string }[] };
@@ -90,6 +91,7 @@ const INVOICE_PROPS = [
   "hs_due_date",
   "hs_payment_date",
   "hs_days_overdue",
+  "hs_invoice_link", // public sent link (when invoice was emailed via HubSpot)
 ];
 
 function parseNum(v: string | null | undefined): number | null {
@@ -103,13 +105,14 @@ function moneyEqual(a: number | null, b: number | null, tolerance = 0.5): boolea
   return Math.abs(a - b) < tolerance;
 }
 
-function invoiceUrl(invoiceId: string): string {
-  // HubSpot Commerce Invoices live at /payments/{portalId}/invoices/{id}
-  // (NOT /contacts/.../record/0-53/...; that pattern is for some other types
-  // and was returning 404s for the Accounting team).
+function invoiceUrl(invoiceId: string, hsInvoiceLink?: string | null): string {
+  // Prefer the public sent-invoice link when available (HubSpot only sets
+  // this when the invoice has been emailed via HubSpot). Otherwise link to
+  // the canonical record page.
+  if (hsInvoiceLink) return hsInvoiceLink;
   return PORTAL_ID
-    ? `https://app.hubspot.com/payments/${PORTAL_ID}/invoices/${invoiceId}`
-    : `https://app.hubspot.com/payments/_/invoices/${invoiceId}`;
+    ? `https://app.hubspot.com/contacts/${PORTAL_ID}/record/0-53/${invoiceId}`
+    : `https://app.hubspot.com/contacts/_/record/0-53/${invoiceId}`;
 }
 
 function toSummary(inv: RawInvoice): InvoiceSummary {
@@ -124,7 +127,7 @@ function toSummary(inv: RawInvoice): InvoiceSummary {
     dueDate: inv.properties.hs_due_date ?? null,
     paymentDate: inv.properties.hs_payment_date ?? null,
     daysOverdue: parseNum(inv.properties.hs_days_overdue),
-    hubspotUrl: invoiceUrl(inv.id),
+    hubspotUrl: invoiceUrl(inv.id, inv.properties.hs_invoice_link),
   };
 }
 
@@ -252,14 +255,12 @@ export async function attachInvoicesToDeals(
 
     const dealInvoices: NonNullable<PaymentTrackingDeal["invoices"]> = {};
 
+    // First pass: match by line item name (covers most invoices).
+    const unmatched: typeof invIds = [];
     for (const invId of invIds) {
       const inv = invoiceById.get(invId);
       if (!inv) continue;
 
-      // Match by line item name. An invoice may contain multiple line items
-      // (e.g., PE invoices have both "Participate Energy - M1" and
-      // "Participate Energy Markup"). The first milestone-tagged line item
-      // wins — markup / change order line items don't tag a milestone.
       const liIds = invoiceToLineItems.get(invId) ?? [];
       let matched: MilestoneKey | null = null;
       for (const liId of liIds) {
@@ -276,11 +277,8 @@ export async function attachInvoicesToDeals(
         continue;
       }
 
-      // Defense-in-depth fallback: if no line item name matched (perhaps the
-      // line items had no name, or PB renames the prefix), try matching the
-      // invoice billed amount against PE payment fields. Drops in priority
-      // because PE invoices already match by name above; this only catches
-      // edge cases.
+      // Try amount-matching against PE payment fields (PE invoices may have
+      // line items with no recognizable name).
       const billed = parseNum(inv.properties.hs_amount_billed);
       if (deal.peM1Amount !== null && moneyEqual(billed, deal.peM1Amount)) {
         dealInvoices.peM1 = toSummary(inv);
@@ -291,8 +289,28 @@ export async function attachInvoicesToDeals(
         continue;
       }
 
-      // Truly unmatched invoice — a custom billing record we don't recognize.
-      // Skip silently in v1.
+      unmatched.push(invId);
+    }
+
+    // Second pass: fallback for invoices with NO line items (HubSpot data
+    // quality issue — observed on PROJ-9456's CC invoice). Sort by invoice
+    // date and fill the next empty milestone slot in customer-side order
+    // (DA → CC → PTO for non-PE; DA → CC for PE).
+    if (unmatched.length > 0) {
+      const customerSlots: MilestoneKey[] = deal.isPE ? ["da", "cc"] : ["da", "cc", "pto"];
+      const sortedUnmatched = unmatched
+        .map((id) => invoiceById.get(id))
+        .filter((inv): inv is RawInvoice => !!inv)
+        .sort((a, b) => {
+          const ad = a.properties.hs_invoice_date ?? "";
+          const bd = b.properties.hs_invoice_date ?? "";
+          return ad.localeCompare(bd);
+        });
+      for (const inv of sortedUnmatched) {
+        const slot = customerSlots.find((k) => !dealInvoices[k]);
+        if (!slot) break; // no empty customer slot left; skip
+        dealInvoices[slot] = toSummary(inv);
+      }
     }
 
     if (Object.keys(dealInvoices).length > 0) {
@@ -375,8 +393,12 @@ function reconcileMoneyWithInvoices(deal: PaymentTrackingDeal): void {
   // Total PB revenue is the deal contract (PE doesn't add to it).
   deal.totalPBRevenue = deal.customerContractTotal;
 
+  // Cap at 100%. Real PE invoices include a "Participate Energy Markup"
+  // line item that PE pays in addition to the contract — that inflates
+  // total paid above deal.amount. We display the % capped so accounting
+  // doesn't see misleading 105% values.
   deal.collectedPct =
     deal.customerContractTotal > 0
-      ? (totalCollected / deal.customerContractTotal) * 100
+      ? Math.min(100, (totalCollected / deal.customerContractTotal) * 100)
       : 0;
 }

@@ -111,9 +111,9 @@ export function computeBucket(args: {
   const close = args.closeDate ? new Date(args.closeDate) : null;
   const daysSinceClose = close ? daysBetween(args.asOf, close) : 0;
 
-  // Rule 1: attention
-  if (args.peM1Status === "Rejected") reasons.push("PE M1 Rejected");
-  if (args.peM2Status === "Rejected") reasons.push("PE M2 Rejected");
+  // Rule 1: attention. PE M1/M2 "Rejected" means PE rejected our DOCUMENTS
+  // — that's an ops/turnover issue, NOT an accounting issue. Accounting
+  // only cares about invoice paid/unpaid status. Skip those signals here.
   if (close && daysSinceClose > 30) {
     if (args.daStatus === "Open") reasons.push("DA Open >30 days past close");
     if (args.ccStatus === "Open") reasons.push("CC Open >30 days past close");
@@ -129,18 +129,8 @@ export function computeBucket(args: {
   ) {
     reasons.push("Post-install, CC not paid");
   }
-  // PE M1 Paid but PE M2 still pre-submit for >14 days
-  if (
-    args.isPE &&
-    args.peM1Status === "Paid" &&
-    (args.peM2Status === "Ready to Submit" ||
-      args.peM2Status === "Waiting on Information")
-  ) {
-    const approval = args.peM1ApprovalDate ? new Date(args.peM1ApprovalDate) : null;
-    if (approval && daysBetween(args.asOf, approval) > 14) {
-      reasons.push("PE M1 Paid >14 days, M2 not submitted");
-    }
-  }
+  // (Removed: "PE M1 Paid >14 days, M2 not submitted" — that's an ops
+  // workflow issue, not an accounting payment-collection concern.)
 
   // "Ready to invoice but not invoiced" — work milestone has been hit but
   // accounting hasn't issued the invoice yet (status not Paid In Full / Paid).
@@ -401,7 +391,12 @@ export function computeSummary(deals: PaymentTrackingDeal[]): PaymentTrackingSum
   const customerOutstanding = Math.max(0, customerContractTotal - totalCollected);
   const peBonusOutstanding = Math.max(0, peBonusTotal - peBonusCollected);
   const totalCollectable = customerContractTotal;
-  const collectedPct = totalCollectable > 0 ? (totalCollected / totalCollectable) * 100 : 0;
+  // Cap at 100% — see reconcileMoneyWithInvoices for context (PE markup
+  // line items can push total paid above deal.amount).
+  const collectedPct =
+    totalCollectable > 0
+      ? Math.min(100, (totalCollected / totalCollectable) * 100)
+      : 0;
 
   return {
     customerContractTotal,
