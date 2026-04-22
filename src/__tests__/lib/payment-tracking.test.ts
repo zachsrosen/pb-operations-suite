@@ -31,7 +31,10 @@ describe("transformDeal — non-PE", () => {
     expect(deal.isPE).toBe(false);
     expect(deal.customerContractTotal).toBe(10000);
     expect(deal.customerCollected).toBe(5000);
-    expect(deal.customerOutstanding).toBe(5000);
+    // Outstanding = unpaid invoice balances (filled in by reconcileMoneyWithInvoices).
+    // Without invoice attachment, gap shows as notYetInvoiced.
+    expect(deal.customerOutstanding).toBe(0);
+    expect(deal.notYetInvoiced).toBe(5000);
     expect(deal.daStatus).toBe("Paid In Full");
     expect(deal.daAmount).toBe(5000);
     expect(deal.daPaidDate).toBe("2026-03-10");
@@ -95,7 +98,7 @@ describe("transformDeal — non-PE", () => {
 });
 
 describe("transformDeal — attention bucket", () => {
-  it("lands in attention when any PE status is Rejected", () => {
+  it("does NOT flag PE M1 Rejected as attention (rejection = ops issue, not accounting)", () => {
     const deal = transformDeal(
       {
         ...BASE,
@@ -105,8 +108,9 @@ describe("transformDeal — attention bucket", () => {
       },
       new Date("2026-03-15")
     );
-    expect(deal.bucket).toBe("attention");
-    expect(deal.attentionReasons).toContain("PE M1 Rejected");
+    expect(deal.attentionReasons).not.toContain("PE M1 Rejected");
+    // Customer side complete + PE M1 not Paid → falls into awaiting_pe_m1
+    expect(deal.bucket).toBe("awaiting_pe_m1");
   });
 
   it("lands in attention when CC is Open >30 days past close", () => {
@@ -287,8 +291,10 @@ describe("computeSummary", () => {
     expect(summary.customerCollected).toBe(26000); // 5k + 21k
     expect(summary.peBonusCollected).toBe(9000); // PE deal #2 only
     expect(summary.peBonusTotal).toBe(9000);
-    // Outstanding = total contract - everything collected (customer + PE)
-    expect(summary.customerOutstanding).toBe(5000); // 40k - (26k + 9k) = 5k
+    // Outstanding = sum of unpaid invoice balances (filled by reconcile).
+    // Without invoice attachment, outstanding=0 and gap is in notYetInvoiced.
+    expect(summary.customerOutstanding).toBe(0);
+    expect(summary.notYetInvoiced).toBe(5000); // deal #1's $5k unbilled half
     // Total PB revenue = deal contract (PE doesn't add to it)
     expect(summary.totalPBRevenue).toBe(40000);
     expect(summary.dealCount).toBe(2);

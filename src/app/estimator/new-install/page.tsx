@@ -3,6 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useReducer, useRef } from "react";
 
+import ProgressBar from "../shared/ProgressBar";
 import AddressStep from "./components/AddressStep";
 import ContactStep from "./components/ContactStep";
 import RoofConfirmStep from "./components/RoofConfirmStep";
@@ -70,8 +71,11 @@ function WizardInner() {
     router.push(`/estimator/new-install?step=address${embedSuffix}`);
   }, [router]);
 
-  // Guard: don't let users jump ahead without prerequisites.
+  // Guard: don't let users deep-link to a step without prerequisites.
+  // Waits until after hydration so we don't race an in-flight sessionStorage
+  // load and bounce the user off their own data.
   useEffect(() => {
+    if (!hydratedRef.current) return;
     if (step === "roof" && !state.normalizedAddress) {
       router.replace(`/estimator/new-install?step=address${embedSuffix}`);
       return;
@@ -89,20 +93,8 @@ function WizardInner() {
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-8 sm:px-6 sm:py-12">
-      <div className="mb-6 flex items-center justify-between">
-        <div className="text-xs uppercase tracking-wide text-muted">
-          Step {currentIndex + 1} of {STEPS.length}
-        </div>
-        <button
-          type="button"
-          onClick={onStartOver}
-          className="text-xs text-muted underline hover:text-foreground"
-        >
-          Start over
-        </button>
-      </div>
-      <ProgressBar currentIndex={currentIndex} total={STEPS.length} />
-      <div className="mt-6">
+      <ProgressBar currentIndex={currentIndex} total={STEPS.length} onStartOver={onStartOver} />
+      <div className="mt-8">
         {step === "address" && (
           <AddressStep state={state} dispatch={dispatch} onContinue={() => goToStep("roof")} />
         )}
@@ -129,14 +121,3 @@ function WizardInner() {
   );
 }
 
-function ProgressBar({ currentIndex, total }: { currentIndex: number; total: number }) {
-  const pct = Math.min(100, ((currentIndex + 1) / total) * 100);
-  return (
-    <div className="h-1 w-full overflow-hidden rounded-full bg-surface-2">
-      <div
-        className="h-full bg-[color:var(--accent,theme(colors.orange.500))] transition-all"
-        style={{ width: `${pct}%`, backgroundColor: "rgb(249 115 22)" }}
-      />
-    </div>
-  );
-}

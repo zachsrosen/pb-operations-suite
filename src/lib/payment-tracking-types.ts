@@ -28,6 +28,16 @@ export type PaymentBucket =
   | "awaiting_pe_m2"
   | "fully_collected";
 
+/** High-level payment-status grouping (shown as page sections). Independent
+ *  of `PaymentBucket` — buckets describe the next milestone, status describes
+ *  overall payment state. */
+export type PaymentStatusGroup =
+  | "issues" // attention reasons (rejected / overdue / stuck)
+  | "ready_to_invoice" // work milestone hit, invoice not yet paid
+  | "partially_paid" // at least one milestone paid, others still open
+  | "not_started" // no milestones paid yet
+  | "fully_paid"; // everything paid
+
 export interface PaymentTrackingDeal {
   dealId: string;
   dealName: string;
@@ -39,7 +49,15 @@ export interface PaymentTrackingDeal {
 
   customerContractTotal: number;
   customerCollected: number;
+  /** Money the customer has been INVOICED for that hasn't been paid yet
+   *  (sum of invoice.balanceDue across DA/CC/PTO invoices). Does NOT
+   *  include milestones that haven't been invoiced yet — those are in
+   *  `notYetInvoiced`. */
   customerOutstanding: number;
+  /** Money still to be invoiced — contract amount minus everything
+   *  collected and everything currently sitting in unpaid invoices.
+   *  Surfaces milestones we haven't billed yet. */
+  notYetInvoiced: number;
 
   daStatus: DaStatus | null;
   daAmount: number | null;
@@ -71,6 +89,9 @@ export interface PaymentTrackingDeal {
   totalPBRevenue: number;
   collectedPct: number;
   bucket: PaymentBucket;
+  /** Coarser top-level grouping for page sections; computed from milestone
+   *  statuses + attention reasons. */
+  statusGroup: PaymentStatusGroup;
   attentionReasons: string[];
 
   /** HubSpot `paid_in_full` string property, parsed. Display-only — not used for bucketing. */
@@ -124,9 +145,14 @@ export interface InvoiceSummary {
 export interface PaymentTrackingSummary {
   customerContractTotal: number;
   customerCollected: number;
+  /** Sum of unpaid invoice balances on customer-side invoices (DA/CC/PTO).
+   *  Money currently sitting in sent/draft invoices awaiting payment. */
   customerOutstanding: number;
+  /** Sum of contract value not yet invoiced across all deals. */
+  notYetInvoiced: number;
   peBonusTotal: number;
   peBonusCollected: number;
+  /** Sum of unpaid invoice balances on PE-side invoices (PE M1/M2). */
   peBonusOutstanding: number;
   totalPBRevenue: number;
   collectedPct: number;

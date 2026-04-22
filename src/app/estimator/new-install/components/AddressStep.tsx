@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useRef, useState, type Dispatch } from "react";
+import { useState, type Dispatch } from "react";
+import { flushSync } from "react-dom";
 
 import type { AddressParts } from "@/lib/estimator";
 
@@ -49,17 +50,13 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const embedSuffix = searchParams?.get("embed") === "1" ? "&embed=1" : "";
-  // Prefer a dedicated Places key if one is configured; otherwise fall back
-  // to the shared Google Maps key (Places API enabled on that project).
   const [mode, setMode] = useState<"auto" | "manual">("auto");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
 
-  // Reliable Places loader — replaces prior next/script + onLoad, which didn't
-  // fire on SPA client-nav when the script was already cached.
-  const { error: googleError } = useGooglePlacesAutocomplete(
-    inputRef,
+  // Ref-callback-based Places loader — fires reliably when the input mounts,
+  // unlike a useEffect gate which raced with the ref assignment.
+  const { attach: placesRef, error: googleError } = useGooglePlacesAutocomplete(
     (place) => {
       const parts = extractAddressFromPlace(place as PlaceResult);
       dispatch({ type: "setAddressInput", value: parts });
@@ -68,10 +65,11 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
   );
 
   const input = state.addressInput;
-  const canSubmit =
-    mode === "auto"
-      ? Boolean(input.street && input.city && input.state && input.zip)
-      : Boolean(input.street && input.city && input.state && input.zip);
+  const hasStructured = Boolean(input.street && input.city && input.state && input.zip);
+  const hasFormatted = Boolean((input.formatted ?? "").trim().length >= 3);
+  // Manual mode requires structured fields; auto mode can geocode from the
+  // typed/selected text even if Places `place_changed` didn't fire.
+  const canSubmit = mode === "auto" ? hasStructured || hasFormatted : hasStructured;
 
   async function handleContinue(): Promise<void> {
     if (!canSubmit) {
@@ -81,16 +79,19 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
     setError(null);
     setLoading(true);
     try {
+      const requestBody = hasStructured
+        ? {
+            street: input.street,
+            unit: input.unit || undefined,
+            city: input.city,
+            state: input.state,
+            zip: input.zip,
+          }
+        : { query: (input.formatted ?? "").trim() };
       const res = await fetch("/api/estimator/address-validate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          street: input.street,
-          unit: input.unit || undefined,
-          city: input.city,
-          state: input.state,
-          zip: input.zip,
-        }),
+        body: JSON.stringify(requestBody),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -107,12 +108,18 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
         router.push(`/estimator/out-of-area?zip=${encodeURIComponent(data.normalized.zip)}${embedSuffix}`);
         return;
       }
-      dispatch({
-        type: "setValidatedAddress",
-        address: data.normalized,
-        location: data.location,
-        inServiceArea: true,
-        utilities: data.utilities,
+      // flushSync forces the reducer commit to happen before the router.push
+      // inside onContinue — otherwise the URL can update with the new step
+      // BEFORE state.normalizedAddress is set, and the step guard bounces
+      // the user back to step=address.
+      flushSync(() => {
+        dispatch({
+          type: "setValidatedAddress",
+          address: data.normalized,
+          location: data.location,
+          inServiceArea: true,
+          utilities: data.utilities,
+        });
       });
       onContinue();
     } catch (err) {
@@ -126,58 +133,71 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
   return (
     <>
       <StepLayout
-        title="What's your home address?"
-        subtitle="We use this to pull satellite imagery and check utility coverage."
+        eyebrow="Let's get started"
+        title="Where's home?"
+        subtitle="We'll pull satellite imagery of your roof and check which utility serves you. This takes about a minute."
         footer={
           <>
             <button
               type="button"
               onClick={handleContinue}
               disabled={loading || !canSubmit}
-              className="rounded-lg bg-orange-500 px-5 py-2.5 text-sm font-medium text-white shadow-card transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white shadow-card transition hover:-translate-y-0.5 hover:bg-orange-600 hover:shadow-card-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
             >
               {loading ? "Checking…" : "Continue"}
+              {!loading && <span aria-hidden>→</span>}
             </button>
             {error && <span className="text-sm text-red-500">{error}</span>}
           </>
         }
       >
         {mode === "auto" ? (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             <label htmlFor="address" className="text-sm font-medium">
-              Address
+              Street address
             </label>
-            <input
-              id="address"
-              ref={inputRef}
-              type="text"
-              autoComplete="off"
-              placeholder="Start typing your address…"
-              defaultValue={input.formatted ?? ""}
-              className="w-full rounded-lg border border-t-border bg-surface-2 px-4 py-2.5 text-sm outline-none focus:border-orange-500"
-              onChange={(e) => {
-                // If user types manually, mirror to street field so submission still works.
-                dispatch({ type: "setAddressInput", value: { formatted: e.target.value } });
-              }}
-            />
+            <div className="group relative">
+              <span
+                aria-hidden
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted transition group-focus-within:text-orange-500"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s-7-6.5-7-12a7 7 0 0 1 14 0c0 5.5-7 12-7 12z" />
+                  <circle cx="12" cy="9" r="2.5" />
+                </svg>
+              </span>
+              <input
+                id="address"
+                ref={placesRef}
+                type="text"
+                autoComplete="off"
+                placeholder="123 Main Street, Denver, CO"
+                defaultValue={input.formatted ?? ""}
+                className="w-full rounded-xl border border-t-border bg-surface-2 py-3.5 pl-11 pr-4 text-base outline-none ring-0 transition placeholder:text-muted/70 focus:border-orange-500 focus:bg-surface-elevated focus:ring-2 focus:ring-orange-500/20"
+                onChange={(e) => {
+                  dispatch({ type: "setAddressInput", value: { formatted: e.target.value } });
+                }}
+              />
+            </div>
             <div className="mt-2 flex flex-col gap-2">
               <label htmlFor="unit" className="text-sm font-medium">
-                Unit / Apt (optional)
+                Unit or apt <span className="font-normal text-muted">(optional)</span>
               </label>
               <input
                 id="unit"
                 type="text"
+                placeholder="Apt 4B"
                 value={input.unit ?? ""}
                 onChange={(e) =>
                   dispatch({ type: "setAddressInput", value: { unit: e.target.value } })
                 }
-                className="w-full rounded-lg border border-t-border bg-surface-2 px-4 py-2.5 text-sm outline-none focus:border-orange-500"
+                className="w-full rounded-xl border border-t-border bg-surface-2 px-4 py-3 text-sm outline-none transition placeholder:text-muted/70 focus:border-orange-500 focus:bg-surface-elevated focus:ring-2 focus:ring-orange-500/20"
               />
             </div>
             <button
               type="button"
               onClick={() => setMode("manual")}
-              className="mt-1 self-start text-xs text-muted underline hover:text-foreground"
+              className="mt-1 self-start text-xs font-medium text-muted underline-offset-4 hover:text-foreground hover:underline"
             >
               Enter address manually
             </button>
@@ -240,13 +260,13 @@ function Field({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="flex flex-col gap-1">
+    <label className="flex flex-col gap-1.5">
       <span className="text-sm font-medium">{label}</span>
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-t-border bg-surface-2 px-4 py-2.5 text-sm outline-none focus:border-orange-500"
+        className="w-full rounded-xl border border-t-border bg-surface-2 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:bg-surface-elevated focus:ring-2 focus:ring-orange-500/20"
       />
     </label>
   );

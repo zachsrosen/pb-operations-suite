@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
+import { flushSync } from "react-dom";
 
 import { useGooglePlacesAutocomplete } from "./useGooglePlaces";
 
@@ -70,10 +71,8 @@ export default function SharedAddressStep({
   const [mode, setMode] = useState<"auto" | "manual">("auto");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const { error: googleError } = useGooglePlacesAutocomplete(
-    inputRef,
+  const { attach: placesRef, error: googleError } = useGooglePlacesAutocomplete(
     (place) => {
       const parts = extractAddressFromPlace(place as PlaceResult);
       setAddressInput(parts);
@@ -81,9 +80,11 @@ export default function SharedAddressStep({
     { skip: mode !== "auto" },
   );
 
-  const canSubmit = Boolean(
+  const hasStructured = Boolean(
     addressInput.street && addressInput.city && addressInput.state && addressInput.zip,
   );
+  const hasFormatted = Boolean((addressInput.formatted ?? "").trim().length >= 3);
+  const canSubmit = mode === "auto" ? hasStructured || hasFormatted : hasStructured;
 
   async function handleContinue(): Promise<void> {
     if (!canSubmit) {
@@ -93,16 +94,19 @@ export default function SharedAddressStep({
     setError(null);
     setLoading(true);
     try {
+      const requestBody = hasStructured
+        ? {
+            street: addressInput.street,
+            unit: addressInput.unit || undefined,
+            city: addressInput.city,
+            state: addressInput.state,
+            zip: addressInput.zip,
+          }
+        : { query: (addressInput.formatted ?? "").trim() };
       const res = await fetch("/api/estimator/address-validate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          street: addressInput.street,
-          unit: addressInput.unit || undefined,
-          city: addressInput.city,
-          state: addressInput.state,
-          zip: addressInput.zip,
-        }),
+        body: JSON.stringify(requestBody),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
@@ -114,7 +118,12 @@ export default function SharedAddressStep({
         onOutOfArea(data.normalized.zip);
         return;
       }
-      onValidated(data);
+      // flushSync so the parent's dispatch inside onValidated commits before
+      // any router.push it also performs — otherwise the step guard races
+      // and bounces the user back to step=address.
+      flushSync(() => {
+        onValidated(data);
+      });
     } catch (err) {
       console.error(err);
       setError("Network error. Please try again.");
@@ -126,6 +135,7 @@ export default function SharedAddressStep({
   return (
     <>
       <StepLayout
+        eyebrow="Let's get started"
         title={title}
         subtitle={subtitle}
         onBack={onBack}
@@ -135,47 +145,60 @@ export default function SharedAddressStep({
               type="button"
               onClick={handleContinue}
               disabled={loading || !canSubmit}
-              className="rounded-lg bg-orange-500 px-5 py-2.5 text-sm font-medium text-white shadow-card transition hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white shadow-card transition hover:-translate-y-0.5 hover:bg-orange-600 hover:shadow-card-lg disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0"
             >
               {loading ? "Checking…" : continueLabel ?? "Continue"}
+              {!loading && <span aria-hidden>→</span>}
             </button>
             {error && <span className="text-sm text-red-500">{error}</span>}
           </>
         }
       >
         {mode === "auto" ? (
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             <label htmlFor="address" className="text-sm font-medium">
-              Address
+              Street address
             </label>
-            <input
-              id="address"
-              ref={inputRef}
-              type="text"
-              autoComplete="off"
-              placeholder="Start typing your address…"
-              defaultValue={addressInput.formatted ?? ""}
-              className="w-full rounded-lg border border-t-border bg-surface-2 px-4 py-2.5 text-sm outline-none focus:border-orange-500"
-              onChange={(e) => {
-                setAddressInput({ formatted: e.target.value });
-              }}
-            />
+            <div className="group relative">
+              <span
+                aria-hidden
+                className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted transition group-focus-within:text-orange-500"
+              >
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-5 w-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 21s-7-6.5-7-12a7 7 0 0 1 14 0c0 5.5-7 12-7 12z" />
+                  <circle cx="12" cy="9" r="2.5" />
+                </svg>
+              </span>
+              <input
+                id="address"
+                ref={placesRef}
+                type="text"
+                autoComplete="off"
+                placeholder="123 Main Street, Denver, CO"
+                defaultValue={addressInput.formatted ?? ""}
+                className="w-full rounded-xl border border-t-border bg-surface-2 py-3.5 pl-11 pr-4 text-base outline-none transition placeholder:text-muted/70 focus:border-orange-500 focus:bg-surface-elevated focus:ring-2 focus:ring-orange-500/20"
+                onChange={(e) => {
+                  setAddressInput({ formatted: e.target.value });
+                }}
+              />
+            </div>
             <div className="mt-2 flex flex-col gap-2">
               <label htmlFor="unit" className="text-sm font-medium">
-                Unit / Apt (optional)
+                Unit or apt <span className="font-normal text-muted">(optional)</span>
               </label>
               <input
                 id="unit"
                 type="text"
+                placeholder="Apt 4B"
                 value={addressInput.unit ?? ""}
                 onChange={(e) => setAddressInput({ unit: e.target.value })}
-                className="w-full rounded-lg border border-t-border bg-surface-2 px-4 py-2.5 text-sm outline-none focus:border-orange-500"
+                className="w-full rounded-xl border border-t-border bg-surface-2 px-4 py-3 text-sm outline-none transition placeholder:text-muted/70 focus:border-orange-500 focus:bg-surface-elevated focus:ring-2 focus:ring-orange-500/20"
               />
             </div>
             <button
               type="button"
               onClick={() => setMode("manual")}
-              className="mt-1 self-start text-xs text-muted underline hover:text-foreground"
+              className="mt-1 self-start text-xs font-medium text-muted underline-offset-4 hover:text-foreground hover:underline"
             >
               Enter address manually
             </button>
@@ -254,13 +277,13 @@ function Field({
   onChange: (v: string) => void;
 }) {
   return (
-    <label className="flex flex-col gap-1">
+    <label className="flex flex-col gap-1.5">
       <span className="text-sm font-medium">{label}</span>
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-lg border border-t-border bg-surface-2 px-4 py-2.5 text-sm outline-none focus:border-orange-500"
+        className="w-full rounded-xl border border-t-border bg-surface-2 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:bg-surface-elevated focus:ring-2 focus:ring-orange-500/20"
       />
     </label>
   );

@@ -72,6 +72,7 @@ function Inner() {
   }, [router, embedSuffix]);
 
   useEffect(() => {
+    if (!hydratedRef.current) return;
     if ((step === "to-address" || step === "existing" || step === "contact") && !state.fromAddress) {
       router.replace(`/estimator/detach-reset?step=from-address${embedSuffix}`);
       return;
@@ -173,7 +174,7 @@ function Inner() {
               <button
                 type="button"
                 onClick={() => goToStep("contact")}
-                className="rounded-lg bg-orange-500 px-5 py-2.5 text-sm font-medium text-white shadow-card transition hover:bg-orange-600"
+                className="inline-flex items-center gap-2 rounded-xl bg-orange-500 px-6 py-3 text-sm font-semibold text-white shadow-card transition hover:-translate-y-0.5 hover:bg-orange-600 hover:shadow-card-lg"
               >
                 Continue
               </button>
@@ -198,7 +199,7 @@ function Inner() {
                     value: Number.isFinite(n) ? Math.max(0, Math.min(50, n)) : 0,
                   });
                 }}
-                className="w-full rounded-lg border border-t-border bg-surface-2 px-4 py-2.5 text-sm outline-none focus:border-orange-500"
+                className="w-full rounded-xl border border-t-border bg-surface-2 px-4 py-3 text-sm outline-none transition focus:border-orange-500 focus:bg-surface-elevated focus:ring-2 focus:ring-orange-500/20"
               />
               <p className="text-xs text-muted">
                 Skip this if you&apos;re not sure — we&apos;ll confirm during the site walk.

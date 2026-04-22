@@ -8,6 +8,7 @@ import type {
   DaStatus,
   HubSpotDealPaymentProps,
   PaymentBucket,
+  PaymentStatusGroup,
   PaymentTrackingDeal,
   PaymentTrackingSummary,
   PeStatus,
@@ -110,9 +111,9 @@ export function computeBucket(args: {
   const close = args.closeDate ? new Date(args.closeDate) : null;
   const daysSinceClose = close ? daysBetween(args.asOf, close) : 0;
 
-  // Rule 1: attention
-  if (args.peM1Status === "Rejected") reasons.push("PE M1 Rejected");
-  if (args.peM2Status === "Rejected") reasons.push("PE M2 Rejected");
+  // Rule 1: attention. PE M1/M2 "Rejected" means PE rejected our DOCUMENTS
+  // — that's an ops/turnover issue, NOT an accounting issue. Accounting
+  // only cares about invoice paid/unpaid status. Skip those signals here.
   if (close && daysSinceClose > 30) {
     if (args.daStatus === "Open") reasons.push("DA Open >30 days past close");
     if (args.ccStatus === "Open") reasons.push("CC Open >30 days past close");
@@ -128,18 +129,8 @@ export function computeBucket(args: {
   ) {
     reasons.push("Post-install, CC not paid");
   }
-  // PE M1 Paid but PE M2 still pre-submit for >14 days
-  if (
-    args.isPE &&
-    args.peM1Status === "Paid" &&
-    (args.peM2Status === "Ready to Submit" ||
-      args.peM2Status === "Waiting on Information")
-  ) {
-    const approval = args.peM1ApprovalDate ? new Date(args.peM1ApprovalDate) : null;
-    if (approval && daysBetween(args.asOf, approval) > 14) {
-      reasons.push("PE M1 Paid >14 days, M2 not submitted");
-    }
-  }
+  // (Removed: "PE M1 Paid >14 days, M2 not submitted" — that's an ops
+  // workflow issue, not an accounting payment-collection concern.)
 
   // "Ready to invoice but not invoiced" — work milestone has been hit but
   // accounting hasn't issued the invoice yet (status not Paid In Full / Paid).
@@ -254,11 +245,14 @@ export function transformDeal(
       (peM2Status === "Paid" ? peM2Amount ?? 0 : 0)
     : null;
 
-  // Outstanding for the deal = contract total minus everything paid (customer
-  // side AND PE side). PE payments collect against the same contract.
+  // Initial outstanding values — invoice-aware values are filled in by
+  // reconcileMoneyWithInvoices after invoice attachment. Pre-attach,
+  // outstanding/notYetInvoiced default to "everything not collected" /
+  // "everything not billed via deal-property amount".
   const totalCollected = customerCollected + (peBonusCollected ?? 0);
-  const customerOutstanding = Math.max(0, customerContractTotal - totalCollected);
-  const peBonusOutstanding = isPE ? customerOutstanding : null;
+  const customerOutstanding = 0; // refilled by reconcileMoneyWithInvoices
+  const peBonusOutstanding = isPE ? 0 : null;
+  const notYetInvoiced = Math.max(0, customerContractTotal - totalCollected);
 
   // Total revenue PB receives = the deal contract. For PE deals this still
   // equals deal.amount because PE pays a portion (not extra) of the same
@@ -269,6 +263,25 @@ export function transformDeal(
 
   const collectedPct =
     customerContractTotal > 0 ? (totalCollected / customerContractTotal) * 100 : 0;
+
+  // Count applicable milestones for the status-group calc. PTO is non-PE only.
+  const applicableMilestones: boolean[] = [
+    daStatus === "Paid In Full",
+    ccStatus === "Paid In Full",
+  ];
+  if (!isPE) {
+    applicableMilestones.push(ptoStatus === "Paid In Full");
+  } else {
+    applicableMilestones.push(peM1Status === "Paid");
+    applicableMilestones.push(peM2Status === "Paid");
+  }
+  const allPaid = applicableMilestones.every((p) => p);
+  const somePaid = applicableMilestones.some((p) => p);
+  const baseStatusGroup: PaymentStatusGroup = allPaid
+    ? "fully_paid"
+    : somePaid
+    ? "partially_paid"
+    : "not_started";
 
   const { bucket, attentionReasons } = computeBucket({
     daStatus,
@@ -303,6 +316,7 @@ export function transformDeal(
     customerContractTotal,
     customerCollected,
     customerOutstanding,
+    notYetInvoiced,
 
     daStatus,
     daAmount,
@@ -333,6 +347,16 @@ export function transformDeal(
     totalPBRevenue,
     collectedPct,
     bucket,
+    // Top-level status group: attention always wins. Otherwise: if work
+    // milestone is hit but nothing's paid, that's "ready to invoice".
+    // Else: fully paid / partially paid / not started.
+    statusGroup:
+      attentionReasons.length > 0
+        ? "issues"
+        : !somePaid &&
+          (isDesignApproved || isConstructionComplete || isPtoGranted || isInspectionPassed)
+        ? "ready_to_invoice"
+        : baseStatusGroup,
     attentionReasons,
 
     paidInFullFlag: parsePaidInFull(props.paid_in_full),
@@ -353,30 +377,35 @@ export function transformDeal(
 export function computeSummary(deals: PaymentTrackingDeal[]): PaymentTrackingSummary {
   let customerContractTotal = 0;
   let customerCollected = 0;
+  let customerOutstanding = 0;
+  let notYetInvoiced = 0;
   let peBonusTotal = 0;
   let peBonusCollected = 0;
+  let peBonusOutstanding = 0;
   let totalPBRevenue = 0;
 
   for (const d of deals) {
     customerContractTotal += d.customerContractTotal;
     customerCollected += d.customerCollected;
+    customerOutstanding += d.customerOutstanding;
+    notYetInvoiced += d.notYetInvoiced;
     peBonusTotal += d.peBonusTotal ?? 0;
     peBonusCollected += d.peBonusCollected ?? 0;
+    peBonusOutstanding += d.peBonusOutstanding ?? 0;
     totalPBRevenue += d.totalPBRevenue;
   }
 
-  // PE collects against the SAME contract as the customer side (PE pays a
-  // portion, not extra). Outstanding = contract total minus everything paid.
   const totalCollected = customerCollected + peBonusCollected;
-  const customerOutstanding = Math.max(0, customerContractTotal - totalCollected);
-  const peBonusOutstanding = Math.max(0, peBonusTotal - peBonusCollected);
-  const totalCollectable = customerContractTotal;
-  const collectedPct = totalCollectable > 0 ? (totalCollected / totalCollectable) * 100 : 0;
+  // % collected NOT capped — PE markup can legitimately push individual
+  // deals above 100% and the user wants that visibility.
+  const collectedPct =
+    customerContractTotal > 0 ? (totalCollected / customerContractTotal) * 100 : 0;
 
   return {
     customerContractTotal,
     customerCollected,
     customerOutstanding,
+    notYetInvoiced,
     peBonusTotal,
     peBonusCollected,
     peBonusOutstanding,

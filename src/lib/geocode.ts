@@ -38,8 +38,22 @@ export async function geocodeAddress(input: GeocodeInput): Promise<GeocodeResult
     .join(", ")
     .trim();
 
+  return geocodeFreeform(fullAddress);
+}
+
+/**
+ * Geocode a single-line address string. Useful when the client has a
+ * Google Places-formatted address but wasn't able to extract structured
+ * components (e.g. Places `place_changed` didn't fire reliably).
+ */
+export async function geocodeFreeform(query: string): Promise<GeocodeResult | null> {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_MAPS_API_KEY is not set");
+  const trimmed = String(query ?? "").trim();
+  if (!trimmed) return null;
+
   const url = new URL("https://maps.googleapis.com/maps/api/geocode/json");
-  url.searchParams.set("address", fullAddress);
+  url.searchParams.set("address", trimmed);
   url.searchParams.set("key", apiKey);
 
   const res = await fetch(url);
