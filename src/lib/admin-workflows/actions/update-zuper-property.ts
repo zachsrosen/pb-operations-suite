@@ -56,6 +56,11 @@ export const updateZuperPropertyAction: AdminWorkflowAction<
   name: "Update Zuper custom field",
   description: "Update a custom field on a Zuper job.",
   category: "Zuper",
+  fields: [
+    { key: "jobId", label: "Zuper job UID", kind: "text", placeholder: "{{trigger.objectId}}", required: true },
+    { key: "customFieldName", label: "Custom field name", kind: "text", required: true },
+    { key: "value", label: "New value", kind: "text", required: true },
+  ],
   inputsSchema,
   handler: async ({ inputs }) => {
     await zuperUpdateCustomField(inputs.jobId, inputs.customFieldName, inputs.value);

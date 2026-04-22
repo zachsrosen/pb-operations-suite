@@ -32,6 +32,11 @@ export const updateHubSpotPropertyAction: AdminWorkflowAction<
   name: "Update HubSpot property",
   description: "Update a single property on a HubSpot deal.",
   category: "HubSpot",
+  fields: [
+    { key: "dealId", label: "Deal ID", kind: "text", placeholder: "{{trigger.objectId}}", help: "HubSpot deal ID. Usually {{trigger.objectId}} for property-change triggers.", required: true },
+    { key: "propertyName", label: "Property name", kind: "text", placeholder: "dealstage", required: true },
+    { key: "propertyValue", label: "New value", kind: "text", help: "Supports templates.", required: true },
+  ],
   inputsSchema,
   handler: async ({ inputs }) => {
     const ok = await updateDealProperty(inputs.dealId, {

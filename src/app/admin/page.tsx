@@ -11,6 +11,12 @@ import type { ActivityType } from "@/generated/prisma/enums";
  */
 const ADMIN_DASHBOARDS: Array<{ href: string; title: string; description: string; icon: string }> = [
   {
+    href: "/dashboards/admin/workflows",
+    title: "Admin Workflows",
+    description: "Build workflows that run on HubSpot / Zuper property changes or on demand.",
+    icon: "⚙️",
+  },
+  {
     href: "/dashboards/zuper-status-comparison",
     title: "Zuper Status Comparison",
     description: "Compare Zuper job statuses against HubSpot.",

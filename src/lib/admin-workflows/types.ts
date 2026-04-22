@@ -41,6 +41,17 @@ export interface AdminActionHandlerContext {
   triggeredByEmail: string;
 }
 
+/** Form field descriptor for the editor UI. */
+export interface AdminFormField {
+  key: string;
+  label: string;
+  /** "text" = single-line; "textarea" = multi-line; "email" = email validation hint */
+  kind: "text" | "textarea" | "email";
+  placeholder?: string;
+  help?: string;
+  required?: boolean;
+}
+
 export interface AdminWorkflowAction<TInput = unknown, TOutput = unknown> {
   /** Stable identifier; maps to workflow-kit `action.kind`. */
   kind: string;
@@ -50,6 +61,8 @@ export interface AdminWorkflowAction<TInput = unknown, TOutput = unknown> {
   description: string;
   /** Category for grouping in the palette (e.g. "Messaging", "HubSpot"). */
   category: string;
+  /** Form fields the admin fills in for this action. */
+  fields: AdminFormField[];
   /** Zod schema for the action's user-configurable inputs. */
   inputsSchema: z.ZodSchema<TInput>;
   /** Handler run inside an Inngest step. Must be idempotent where possible. */
@@ -72,6 +85,8 @@ export interface AdminWorkflowTrigger<TConfig = unknown> {
   kind: AdminWorkflowTriggerType;
   name: string;
   description: string;
+  /** Form fields the admin fills in when configuring this trigger. */
+  fields: AdminFormField[];
   /** Zod schema for trigger config stored on the workflow. */
   configSchema: z.ZodSchema<TConfig>;
   /**

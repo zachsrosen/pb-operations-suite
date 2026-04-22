@@ -27,6 +27,11 @@ export const sendEmailAction: AdminWorkflowAction<
   name: "Send email",
   description: "Send an email via Google Workspace (fallback: Resend).",
   category: "Messaging",
+  fields: [
+    { key: "to", label: "Recipient(s)", kind: "email", placeholder: "ops@photonbrothers.com, lead@photonbrothers.com", help: "Comma-separated. Supports {{trigger.X}} templates.", required: true },
+    { key: "subject", label: "Subject", kind: "text", required: true },
+    { key: "body", label: "Body (HTML)", kind: "textarea", help: "HTML allowed. Supports {{trigger.X}} and {{previous.stepId.field}} templates.", required: true },
+  ],
   inputsSchema,
   handler: async ({ inputs, context }) => {
     // `to` can be a comma-separated list.
