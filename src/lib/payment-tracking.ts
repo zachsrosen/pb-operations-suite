@@ -150,7 +150,8 @@ export function computeBucket(args: {
   if (args.isConstructionComplete && args.ccStatus !== "Paid In Full") {
     reasons.push("Construction complete — CC invoice not paid");
   }
-  if (args.isPtoGranted && args.ptoStatus !== "Paid In Full") {
+  // PTO only applies to non-PE deals.
+  if (!args.isPE && args.isPtoGranted && args.ptoStatus !== "Paid In Full") {
     reasons.push("PTO granted — PTO invoice not paid");
   }
   // PE statuses: "Approved" means PE has signed off on our docs but we
@@ -173,19 +174,13 @@ export function computeBucket(args: {
   if (args.ccStatus !== "Paid In Full") {
     return { bucket: "awaiting_m2", attentionReasons: [] };
   }
-  // Rule 4: customer side complete. PE buckets take precedence only if PE
-  // progress is meaningful.
-  if (args.ptoStatus !== "Paid In Full") {
-    if (!args.isPE) return { bucket: "awaiting_pto", attentionReasons: [] };
-    // PE deal with PE progress started → skip to PE buckets
-    if (args.peM1Status && args.peM1Status !== "Ready to Submit") {
-      // fall through to PE bucket
-    } else {
+  // Rule 4: PTO closeout (NON-PE only). PE deals don't have a PTO milestone.
+  if (!args.isPE) {
+    if (args.ptoStatus !== "Paid In Full") {
       return { bucket: "awaiting_pto", attentionReasons: [] };
     }
-  }
-  // Rule 5/6: PE only
-  if (args.isPE) {
+  } else {
+    // PE deals: customer side is complete after DA + CC. PE M1/M2 follow.
     if (args.peM1Status !== "Paid") {
       return { bucket: "awaiting_pe_m1", attentionReasons: [] };
     }
@@ -237,16 +232,18 @@ export function transformDeal(
   const ptoGrantedDate = props.pto_completion_date || null;
 
   // ── Money model ──
-  // For ALL deals: deal.amount (customerContractTotal) is the TOTAL contract.
-  // For non-PE deals: customer pays 100% of deal.amount via DA + CC + PTO.
-  // For PE deals:    customer pays ~70% via DA + CC + PTO; PE program pays
-  //                  the other ~30% via PE M1 + PE M2.
-  // Either way, the TOTAL collected against deal.amount is:
-  //   (DA paid + CC paid + PTO paid) + (PE M1 paid + PE M2 paid)
-  // and that total should sum to deal.amount when fully collected.
+  // deal.amount (customerContractTotal) is the TOTAL contract for both PE
+  // and non-PE deals.
   //
-  // peBonus* fields are kept for backwards compat but they represent the
-  // PE PORTION of the deal, NOT additional revenue beyond the contract.
+  // Non-PE: customer pays 100% via DA + CC + PTO.
+  // PE:     customer pays ~70% via DA + CC ONLY (PTO does NOT apply); PE
+  //         program pays the other ~30% via PE M1 + PE M2.
+  //
+  // peBonus* fields are kept for backwards compat but represent PE's
+  // PORTION of the deal, NOT additional revenue beyond the contract.
+  // Customer-side starting point. PTO is added in reconcileMoneyWithInvoices
+  // (non-PE only) when the invoice is attached — the deal property
+  // `pto_invoice_amount` is almost always $0 so we don't read it here.
   const customerCollected =
     (daStatus === "Paid In Full" ? daAmount ?? 0 : 0) +
     (ccStatus === "Paid In Full" ? ccAmount ?? 0 : 0);

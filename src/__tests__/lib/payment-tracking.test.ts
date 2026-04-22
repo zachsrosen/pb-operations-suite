@@ -336,6 +336,59 @@ describe("transformDeal — edge cases", () => {
   });
 });
 
+describe("transformDeal — PE deals don't have PTO milestone", () => {
+  it("PE deal with PTO granted does NOT fire 'PTO not paid' attention", () => {
+    const deal = transformDeal(
+      {
+        ...BASE,
+        is_pto_granted_: "true",
+        da_invoice_status: "Paid In Full",
+        cc_invoice_status: "Paid In Full",
+        pto_invoice_status: "Open", // would normally fire, but PE excludes PTO
+        pe_m1_status: "Paid",
+        pe_m2_status: "Paid",
+        pe_payment_ic: "6000",
+        pe_payment_pc: "3000",
+      },
+      new Date("2026-04-21")
+    );
+    expect(deal.isPE).toBe(true);
+    expect(deal.attentionReasons).not.toContain("PTO granted — PTO invoice not paid");
+  });
+
+  it("non-PE deal with PTO granted DOES fire 'PTO not paid' attention", () => {
+    const deal = transformDeal(
+      {
+        ...BASE,
+        is_pto_granted_: "true",
+        da_invoice_status: "Paid In Full",
+        cc_invoice_status: "Paid In Full",
+        pto_invoice_status: "Open",
+      },
+      new Date("2026-04-21")
+    );
+    expect(deal.isPE).toBe(false);
+    expect(deal.attentionReasons).toContain("PTO granted — PTO invoice not paid");
+  });
+
+  it("PE deal goes straight to PE buckets after DA + CC paid (skips PTO)", () => {
+    const deal = transformDeal(
+      {
+        ...BASE,
+        da_invoice_status: "Paid In Full",
+        cc_invoice_status: "Paid In Full",
+        // pto_invoice_status intentionally omitted — irrelevant for PE
+        pe_m1_status: "Submitted",
+        pe_m2_status: "Ready to Submit",
+        pe_payment_ic: "6000",
+        pe_payment_pc: "3000",
+      },
+      new Date("2026-04-21")
+    );
+    expect(deal.bucket).toBe("awaiting_pe_m1");
+  });
+});
+
 describe("transformDeal — ready-to-invoice triggers", () => {
   it("flags 'design approved but DA not paid' as attention", () => {
     const deal = transformDeal(

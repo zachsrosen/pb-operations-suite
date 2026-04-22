@@ -79,6 +79,10 @@ function tooltip(d: DotInfo): string {
 export function MilestoneStrip({ deal }: { deal: PaymentTrackingDeal }) {
   // Prefer invoice amount/date when an invoice is attached; deal-property
   // values are sometimes null even when the milestone is paid.
+  //
+  // Milestone strip composition:
+  //   Non-PE: DA + CC + PTO   (3 dots — customer pays 100% across all 3)
+  //   PE:     DA + CC + PE M1 + PE M2  (4 dots — no PTO; PE replaces it)
   const dots: DotInfo[] = [
     {
       label: "DA",
@@ -99,7 +103,11 @@ export function MilestoneStrip({ deal }: { deal: PaymentTrackingDeal }) {
       paidDate: deal.invoices?.cc?.paymentDate ?? deal.ccPaidDate,
       invoice: deal.invoices?.cc,
     },
-    {
+  ];
+
+  // PTO is non-PE only.
+  if (!deal.isPE) {
+    dots.push({
       label: "PTO",
       state: dotForDa(
         deal.ptoStatus,
@@ -109,8 +117,8 @@ export function MilestoneStrip({ deal }: { deal: PaymentTrackingDeal }) {
       amount: deal.invoices?.pto?.amountBilled ?? null,
       paidDate: deal.invoices?.pto?.paymentDate ?? null,
       invoice: deal.invoices?.pto,
-    },
-  ];
+    });
+  }
 
   if (deal.isPE) {
     dots.push({
