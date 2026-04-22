@@ -2,6 +2,7 @@
 
 import type { SerializedDeal } from "./types";
 import { getZuperJobUrl, getHubSpotDealUrl } from "@/lib/external-links";
+import TriageButton from "./TriageButton";
 
 interface QuickActionsCardProps {
   deal: SerializedDeal;
@@ -76,6 +77,7 @@ export default function QuickActionsCard({
           variant="primary"
         />
         <ActionButton icon="↗" label="Open in HubSpot" href={hubspotUrl} />
+        <TriageButton dealId={deal.hubspotDealId} />
         {zuperUrl && (
           <ActionButton icon="🔧" label="Open in Zuper" href={zuperUrl} />
         )}
