@@ -105,7 +105,7 @@ export default function ProductionIssuesPage() {
     params: { context: "executive" },
     transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
-  const safeProjects = projects ?? [];
+  const safeProjects = useMemo(() => projects ?? [], [projects]);
 
   const { filters, setFilters, clearFilters } = useProductionIssuesFilters();
   const [equipTab, setEquipTab] = useState<"inverter" | "module" | "battery">("inverter");
@@ -189,7 +189,7 @@ export default function ProductionIssuesPage() {
   }, [loading, flagged.length, trackDashboardView]);
 
   // Hero computations
-  const now = new Date();
+  const now = useMemo(() => new Date(), []);
   const totalFlagged = filteredFlagged.length;
 
   const totalPtod = useMemo(() => {

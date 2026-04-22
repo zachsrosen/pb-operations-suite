@@ -60,6 +60,14 @@ const LINKS: SuitePageCard[] = [
     section: "Analytics",
   },
   {
+    href: "/dashboards/production-issues",
+    title: "Production Issues",
+    description: "Every project currently flagged for production review, grouped by location, stage, risk, owner, and equipment.",
+    tag: "FLAGGED",
+    icon: "🚩",
+    section: "Analytics",
+  },
+  {
     href: "/dashboards/design-engineering",
     title: "D&E Dept Analytics",
     description: "Cross-state design analytics, status breakdowns, and ops clarification queue.",
