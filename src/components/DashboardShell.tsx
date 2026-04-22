@@ -45,6 +45,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/design-revisions": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/de-metrics": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/clipping-analytics": { href: "/suites/design-engineering", label: "D&E" },
+  "/dashboards/production-issues": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/ahj-requirements": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/utility-design-requirements": { href: "/suites/design-engineering", label: "D&E" },
   // solar-surveyor: breadcrumb handled via ?suite= param in SolarSurveyorShell (linked from both D&E and Service)
