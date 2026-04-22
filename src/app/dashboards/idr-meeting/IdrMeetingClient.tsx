@@ -142,8 +142,10 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEscalationDialog, setShowEscalationDialog] = useState(false);
-  const [initialized, setInitialized] = useState(false);
   const [mode, setMode] = useState<"prep" | "meeting" | "search">("prep");
+  // Set when the user explicitly returns to prep from a meeting — suppresses
+  // auto-join so we don't yank them back into the session they just left.
+  const skipAutoJoinRef = useRef(false);
 
   const isPreview = mode === "prep";
   const isSearch = mode === "search";
@@ -156,6 +158,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
   const goToPrep = () => {
     setSessionId(null);
     setMode("prep");
+    skipAutoJoinRef.current = true;
   };
 
   // ── Real-time sync via SSE ──
@@ -165,6 +168,9 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
   useSSE(
     () => {
       if (dirtyRef.current) return; // local edits pending — skip refetch
+      // Always refresh the sessions list so clients discover a session that
+      // someone else just started (enables auto-join into the active meeting).
+      queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.sessions() });
       if (sessionId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(sessionId) });
       } else {
@@ -270,13 +276,18 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "Failed to create session");
       }
-      return res.json() as Promise<{ session: { id: string } }>;
+      return res.json() as Promise<{ session: { id: string }; reused?: boolean }>;
     },
     onSuccess: (data) => {
       selectSession(data.session.id);
       queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.sessions() });
       queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(data.session.id) });
-      addToast({ type: "success", title: "Session started — prep data carried over" });
+      addToast({
+        type: data.reused ? "info" : "success",
+        title: data.reused
+          ? "Joined active session"
+          : "Session started — prep data carried over",
+      });
     },
     onError: (err: Error) => {
       addToast({ type: "error", title: "Failed to create session", message: err.message });
@@ -317,10 +328,15 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
     },
   });
 
-  // ── Auto-init ──
+  // ── Auto-join today's active session ──
+  // Runs on initial load AND on subsequent sessions-list updates, so a user
+  // sitting in prep drops into a session that someone else just started.
+  // Suppressed after an explicit goToPrep().
   useEffect(() => {
-    if (initialized || !sessionsQuery.data) return;
-    setInitialized(true);
+    if (skipAutoJoinRef.current) return;
+    if (mode !== "prep") return;
+    if (sessionId) return;
+    if (!sessionsQuery.data) return;
 
     const sessions = sessionsQuery.data.sessions;
     if (sessions.length === 0) return;
@@ -331,7 +347,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
     );
 
     if (todaySession) selectSession(todaySession.id);
-  }, [sessionsQuery.data, initialized]);
+  }, [sessionsQuery.data, mode, sessionId]);
 
   useEffect(() => {
     if (!sessionId || !sessionQuery.data) return;
