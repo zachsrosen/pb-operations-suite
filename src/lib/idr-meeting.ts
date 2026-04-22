@@ -16,12 +16,6 @@ import {
 // Constants
 // ---------------------------------------------------------------------------
 
-const IDR_ALLOWED_ROLES = [
-  "ADMIN", "OWNER", "EXECUTIVE", "PROJECT_MANAGER", "TECH_OPS",
-  "OPERATIONS_MANAGER", "OPERATIONS", "SALES", "SALES_MANAGER",
-  "VIEWER", "MANAGER", "DESIGNER", "PERMITTING",
-] as const;
-
 const PROJECT_PIPELINE_ID = process.env.HUBSPOT_PIPELINE_PROJECT || "6900017";
 
 /** Properties fetched for each deal during session creation / snapshot refresh. */
@@ -48,8 +42,8 @@ export const SNAPSHOT_PROPERTIES = [
 // Role check
 // ---------------------------------------------------------------------------
 
-export function isIdrAllowedRole(role: string): boolean {
-  return (IDR_ALLOWED_ROLES as readonly string[]).includes(role);
+export function isIdrAllowedRole(_role: string): boolean {
+  return true;
 }
 
 // ---------------------------------------------------------------------------
