@@ -1,7 +1,8 @@
 "use client";
 
-import Script from "next/script";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
+
+import { useGooglePlacesAutocomplete } from "./useGooglePlaces";
 
 import type { AddressParts, Location } from "@/lib/estimator";
 
@@ -66,49 +67,19 @@ export default function SharedAddressStep({
   onBack,
   continueLabel,
 }: Props) {
-  const apiKey =
-    process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY ||
-    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const [mode, setMode] = useState<"auto" | "manual">("auto");
-  const [googleReady, setGoogleReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const autoRef = useRef<unknown>(null);
 
-  useEffect(() => {
-    if (mode !== "auto" || !googleReady || !inputRef.current) return;
-    const g = (
-      window as unknown as {
-        google?: {
-          maps?: {
-            places?: {
-              Autocomplete: new (
-                el: HTMLInputElement,
-                opts: object,
-              ) => {
-                addListener: (evt: string, cb: () => void) => void;
-                getPlace: () => PlaceResult;
-              };
-            };
-          };
-        };
-      }
-    ).google;
-    if (!g?.maps?.places) return;
-    const ac = new g.maps.places.Autocomplete(inputRef.current, {
-      types: ["address"],
-      componentRestrictions: { country: "us" },
-      fields: ["address_components", "formatted_address", "geometry"],
-    });
-    autoRef.current = ac;
-    ac.addListener("place_changed", () => {
-      const place = ac.getPlace();
-      if (!place || !place.address_components) return;
-      const parts = extractAddressFromPlace(place);
+  const { error: googleError } = useGooglePlacesAutocomplete(
+    inputRef,
+    (place) => {
+      const parts = extractAddressFromPlace(place as PlaceResult);
       setAddressInput(parts);
-    });
-  }, [mode, googleReady, setAddressInput]);
+    },
+    { skip: mode !== "auto" },
+  );
 
   const canSubmit = Boolean(
     addressInput.street && addressInput.city && addressInput.state && addressInput.zip,
@@ -154,14 +125,6 @@ export default function SharedAddressStep({
 
   return (
     <>
-      {apiKey && mode === "auto" && (
-        <Script
-          src={`https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`}
-          strategy="afterInteractive"
-          onReady={() => setGoogleReady(true)}
-          onLoad={() => setGoogleReady(true)}
-        />
-      )}
       <StepLayout
         title={title}
         subtitle={subtitle}
@@ -216,7 +179,7 @@ export default function SharedAddressStep({
             >
               Enter address manually
             </button>
-            {!apiKey && (
+            {googleError && (
               <p className="text-xs text-muted">
                 Autocomplete unavailable — use manual entry below.
               </p>

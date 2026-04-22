@@ -1,11 +1,11 @@
 "use client";
 
-import Script from "next/script";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useRef, useState, type Dispatch } from "react";
+import { useRef, useState, type Dispatch } from "react";
 
 import type { AddressParts } from "@/lib/estimator";
 
+import { useGooglePlacesAutocomplete } from "@/app/estimator/shared/useGooglePlaces";
 import type { WizardAction, WizardState } from "../state";
 import StepLayout from "./StepLayout";
 
@@ -51,34 +51,21 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
   const embedSuffix = searchParams?.get("embed") === "1" ? "&embed=1" : "";
   // Prefer a dedicated Places key if one is configured; otherwise fall back
   // to the shared Google Maps key (Places API enabled on that project).
-  const apiKey =
-    process.env.NEXT_PUBLIC_GOOGLE_PLACES_API_KEY ||
-    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
   const [mode, setMode] = useState<"auto" | "manual">("auto");
-  const [googleReady, setGoogleReady] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
-  const autoRef = useRef<unknown>(null);
 
-  // Attach Google autocomplete once the script loads.
-  useEffect(() => {
-    if (mode !== "auto" || !googleReady || !inputRef.current) return;
-    const g = (window as unknown as { google?: { maps?: { places?: { Autocomplete: new (el: HTMLInputElement, opts: object) => { addListener: (evt: string, cb: () => void) => void; getPlace: () => PlaceResult } } } } }).google;
-    if (!g?.maps?.places) return;
-    const ac = new g.maps.places.Autocomplete(inputRef.current, {
-      types: ["address"],
-      componentRestrictions: { country: "us" },
-      fields: ["address_components", "formatted_address", "geometry"],
-    });
-    autoRef.current = ac;
-    ac.addListener("place_changed", () => {
-      const place = ac.getPlace();
-      if (!place || !place.address_components) return;
-      const parts = extractAddressFromPlace(place);
+  // Reliable Places loader — replaces prior next/script + onLoad, which didn't
+  // fire on SPA client-nav when the script was already cached.
+  const { error: googleError } = useGooglePlacesAutocomplete(
+    inputRef,
+    (place) => {
+      const parts = extractAddressFromPlace(place as PlaceResult);
       dispatch({ type: "setAddressInput", value: parts });
-    });
-  }, [mode, googleReady, dispatch]);
+    },
+    { skip: mode !== "auto" },
+  );
 
   const input = state.addressInput;
   const canSubmit =
@@ -138,14 +125,6 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
 
   return (
     <>
-      {apiKey && mode === "auto" && (
-        <Script
-          src={`https://maps.googleapis.com/maps/api/js?key=${apiKey}&libraries=places&loading=async`}
-          strategy="afterInteractive"
-          onReady={() => setGoogleReady(true)}
-          onLoad={() => setGoogleReady(true)}
-        />
-      )}
       <StepLayout
         title="What's your home address?"
         subtitle="We use this to pull satellite imagery and check utility coverage."
@@ -202,7 +181,7 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
             >
               Enter address manually
             </button>
-            {!apiKey && (
+            {googleError && (
               <p className="text-xs text-muted">
                 Autocomplete unavailable — use manual entry below.
               </p>
