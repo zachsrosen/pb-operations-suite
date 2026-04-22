@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 
 import type { EstimatorInput, EstimatorResult } from "@/lib/estimator";
 
+import OtherQuoteResultsView, { type OtherQuoteResult } from "./OtherQuoteResultsView";
 import ResultsView from "./ResultsView";
 
 type ResultPayload = {
@@ -89,6 +90,22 @@ export default async function ResultsPage({
           </a>
         </section>
       </div>
+    );
+  }
+
+  // Dispatch to simpler view for EV charger / battery / system expansion.
+  if (
+    payload.quoteType === "ev_charger" ||
+    payload.quoteType === "battery" ||
+    payload.quoteType === "system_expansion"
+  ) {
+    const result = (payload.result ?? {}) as OtherQuoteResult;
+    return (
+      <OtherQuoteResultsView
+        firstName={payload.firstName}
+        quoteType={payload.quoteType}
+        result={result}
+      />
     );
   }
 

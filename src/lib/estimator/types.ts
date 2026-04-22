@@ -1,4 +1,9 @@
-export type QuoteType = "new_install";
+export type QuoteType =
+  | "new_install"
+  | "ev_charger"
+  | "battery"
+  | "system_expansion"
+  | "detach_reset";
 
 export type RoofType = "asphalt_shingle" | "tile" | "metal" | "flat_tpo" | "other";
 

@@ -15,7 +15,13 @@ export const AddressPartsSchema = z.object({
 export const ShadeBucketSchema = z.enum(["light", "moderate", "heavy"]);
 export const RoofTypeSchema = z.enum(["asphalt_shingle", "tile", "metal", "flat_tpo", "other"]);
 export const LocationSchema = z.enum(["DTC", "WESTY", "COSP", "CA", "CAMARILLO"]);
-export const QuoteTypeSchema = z.enum(["new_install"]);
+export const QuoteTypeSchema = z.enum([
+  "new_install",
+  "ev_charger",
+  "battery",
+  "system_expansion",
+  "detach_reset",
+]);
 
 export const UsageSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("bill"), avgMonthlyBillUsd: z.number().positive().max(100000) }),
@@ -86,10 +92,71 @@ export const ManualQuoteRequestSubmitSchema = z.object({
   recaptchaToken: z.string().min(1).optional(),
 });
 
+// --- Other quote types (EV, Battery, Expansion, Detach & Reset) ---
+
+export const EvChargerQuoteRequestSchema = z.object({
+  quoteType: z.literal("ev_charger"),
+  address: AddressPartsSchema,
+  location: LocationSchema,
+  extraConduitFeet: z.number().int().min(0).max(500),
+});
+
+export const EvChargerSubmitSchema = z.object({
+  kind: z.literal("ev_charger"),
+  quote: EvChargerQuoteRequestSchema,
+  contact: ContactInfoSchema,
+  recaptchaToken: z.string().min(1).optional(),
+});
+
+export const BatteryQuoteRequestSchema = z.object({
+  quoteType: z.literal("battery"),
+  address: AddressPartsSchema,
+  location: LocationSchema,
+  utilityId: z.string().min(1),
+  batteryCount: z.number().int().min(1).max(6),
+});
+
+export const BatterySubmitSchema = z.object({
+  kind: z.literal("battery"),
+  quote: BatteryQuoteRequestSchema,
+  contact: ContactInfoSchema,
+  recaptchaToken: z.string().min(1).optional(),
+});
+
+export const SystemExpansionQuoteRequestSchema = z.object({
+  quoteType: z.literal("system_expansion"),
+  address: AddressPartsSchema,
+  location: LocationSchema,
+  currentSystemKwDc: z.number().positive().max(50),
+  addedPanelCount: z.number().int().min(1).max(60),
+});
+
+export const SystemExpansionSubmitSchema = z.object({
+  kind: z.literal("system_expansion"),
+  quote: SystemExpansionQuoteRequestSchema,
+  contact: ContactInfoSchema,
+  recaptchaToken: z.string().min(1).optional(),
+});
+
+// Detach & Reset is request-only (no instant number); collects two addresses.
+export const DetachResetSubmitSchema = z.object({
+  kind: z.literal("detach_reset"),
+  fromAddress: AddressPartsSchema,
+  toAddress: AddressPartsSchema,
+  currentSystemKwDc: z.number().positive().max(50).optional(),
+  contact: ContactInfoSchema,
+  message: z.string().max(2000).optional(),
+  recaptchaToken: z.string().min(1).optional(),
+});
+
 export const SubmitRequestSchema = z.discriminatedUnion("kind", [
   QuoteSubmitSchema,
   OutOfAreaSubmitSchema,
   ManualQuoteRequestSubmitSchema,
+  EvChargerSubmitSchema,
+  BatterySubmitSchema,
+  SystemExpansionSubmitSchema,
+  DetachResetSubmitSchema,
 ]);
 
 export type SubmitRequest = z.infer<typeof SubmitRequestSchema>;

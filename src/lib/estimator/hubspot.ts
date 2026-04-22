@@ -91,6 +91,12 @@ export interface EstimatorDealInput {
   source: string;
   resultsToken: string;
   result?: EstimatorResult;
+  /**
+   * When set, used verbatim as the estimator_summary body. For non-new-install
+   * quote types (EV, Battery, Expansion, D&R) that don't share the new-install
+   * EstimatorResult shape.
+   */
+  summaryOverride?: string;
   considerations: {
     planningEv: boolean;
     needsPanelUpgrade: boolean;
@@ -114,7 +120,7 @@ export async function createEstimatorDeal(input: EstimatorDealInput): Promise<{ 
     amount: String(input.amount),
     estimator_source: input.source,
     estimator_results_token: input.resultsToken,
-    estimator_summary: buildSummary(input),
+    estimator_summary: input.summaryOverride ?? buildSummary(input),
   };
 
   const deal = await hubspotFetch<{ id: string }>("/crm/v3/objects/deals", {
