@@ -48,7 +48,7 @@ Route allowlists derive by partitioning TECH_OPS's current routes:
 - **INTERCONNECTION** — P&I suite chrome, IC action queue, IC revisions, utility tracker, PI timeline + overview
 - **Shared baseline** across all three (deduplicated) — `/`, deals, projects, SOP, comms, my-tasks, my-tickets, idr-meeting, activity log, bugs, on-call viewing
 
-Suites default to only their primary area. Someone who does both permitting and IC gets both roles and sees the full P&I suite dashboard set. Someone who does all three (what TECH_OPS is today) gets all three roles.
+Suites default to only their primary area — **no Operations suite access from any of the three new roles.** Someone who does both permitting and IC gets both roles and sees the full P&I suite dashboard set. Someone who does all three (what TECH_OPS is today) gets all three roles. Anyone who also needs Operations suite access (scheduling, construction) gets the `OPERATIONS` role added alongside.
 
 ### Landing cards
 
@@ -155,12 +155,11 @@ Final enum additions: `DESIGN`, `PERMIT`, `INTERCONNECT`. Legacy `DESIGNER`, `PE
 | Multi-role resolver performance regression | Resolver already handles multi-role; no change needed. Spot-check `resolveEffectiveRole` with 4-role user at start of Phase 2. |
 | Naming drift — "Design" vs "Designer" vs "DESIGN" | Pick one (label: "Design"; enum: `DESIGN`) and document at top of `roles.ts`. |
 
-## Open questions
+## Resolved design decisions
 
-None blocking Phase 1. Items to validate before Phase 2:
-
-- Do we actually have users who need only Permitting OR only Interconnection, or is it always paired? (Check Vishtik + ops team org chart.) If always paired, collapse to a single `P_AND_I` role and skip the IC split.
-- Should `DESIGN` get Operations suite access by default? Today TECH_OPS has it. If designers never actually use Operations scheduling, the answer is no — strictly D&E suite.
+- **Keep the 3-role split.** Permitting and Interconnection are sometimes separate at PB — keeping them as distinct roles means a permit-only person doesn't get IC access and vice versa.
+- **`DESIGN` does NOT get Operations suite access by default.** Strictly D&E suite. Rationale: leaves room to grant D&E access to a non-designer (e.g., a QA reviewer, executive stakeholder) without also giving them Operations. Anyone who needs both adds the `OPERATIONS` role alongside.
+- **Same rule for `PERMIT` and `INTERCONNECT`** — strictly P&I suite. Add `OPERATIONS` on top if needed.
 
 ## Success criteria
 
