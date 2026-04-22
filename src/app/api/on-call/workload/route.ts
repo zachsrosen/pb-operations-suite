@@ -30,17 +30,22 @@ export async function GET(req: Request) {
   // Merge persisted + generated (so forecast-month workload is visible before Publish).
   const persisted = await listAssignmentsInRange(poolId, from, to);
   const members = await getActiveMembersForRotation(poolId);
+
+  // Clamp to pool.startDate — no workload counted for dates before the pool starts.
+  const effectiveFrom = from >= pool.startDate ? from : pool.startDate;
   let gen: { date: string; crewMemberId: string }[] = [];
-  try {
-    gen = generateAssignments({
-      startDate: pool.startDate,
-      fromDate: from,
-      toDate: to,
-      members,
-      rotationUnit: (pool.rotationUnit as "daily" | "weekly") ?? "weekly",
-    });
-  } catch {
-    gen = [];
+  if (effectiveFrom <= to) {
+    try {
+      gen = generateAssignments({
+        startDate: pool.startDate,
+        fromDate: effectiveFrom,
+        toDate: to,
+        members,
+        rotationUnit: (pool.rotationUnit as "daily" | "weekly") ?? "weekly",
+      });
+    } catch {
+      gen = [];
+    }
   }
 
   const persistedByDate = new Map(persisted.map((p) => [p.date, p]));

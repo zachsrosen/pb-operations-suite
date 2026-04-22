@@ -45,11 +45,17 @@ export async function GET(req: Request) {
     const poolName = pool.name;
     const members = await getActiveMembersForRotation(pool.id);
 
+    // Clamp fromDate up to pool.startDate — no scheduling before the pool's
+    // startDate, and skip this pool entirely if the whole requested window
+    // is pre-startDate.
+    const effectiveFrom = from >= pool.startDate ? from : pool.startDate;
+    if (effectiveFrom > to) continue;
+
     let gen: { date: string; crewMemberId: string }[] = [];
     try {
       gen = generateAssignments({
         startDate: pool.startDate,
-        fromDate: from,
+        fromDate: effectiveFrom,
         toDate: to,
         members,
         rotationUnit: (pool.rotationUnit as "daily" | "weekly") ?? "weekly",
