@@ -1,0 +1,4 @@
+code,name,category,type,direction,autoApply,appliesTo,triggerCondition,triageQuestion,triageAnswerType,triggerLogic,photosRequired,unit,basePrice,baseCost,marginTarget,notes,override_Westminster,override_DTC,override_Colorado Springs,override_SLO,override_Camarillo
+MPU_200A,Main Panel Upgrade to 200A,ELECTRICAL,FIXED,ADD,false,,main panel < 200A,What is the main panel amp rating?,NUMERIC,"{""op"":""lt"",""value"":200,""qtyFrom"":""constant"",""qtyConstant"":1}",true,FLAT,2500,1800,0.28,Includes permit + inspection,,,,,
+ROOF_STEEP_8_12,Steep Roof (8/12+),ROOFING,FIXED,ADD,false,,roof pitch >= 8/12,What is the steepest roof pitch?,NUMERIC,"{""op"":""gte"",""value"":8,""qtyFrom"":""constant"",""qtyConstant"":1}",true,PER_KW,50,30,0.4,Measured in rise over 12 run,,,,,
+PE_DISCOUNT_30,PE Customer Discount,ORG,PERCENTAGE,DISCOUNT,true,deal.dealType == 'PE',,,,false,FLAT,30,0,,Flat 30% discount on PE deals,,,,,
