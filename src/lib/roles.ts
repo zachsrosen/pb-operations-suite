@@ -989,7 +989,7 @@ const ROOFING: RoleDefinition = {
 
 const MARKETING: RoleDefinition = {
   label: "Marketing",
-  description: "Read-only pipeline visibility via Sales & Marketing Suite",
+  description: "Sales & Marketing Suite — pipeline, pricing, estimator, survey scheduling",
   normalizesTo: "MARKETING",
   visibleInPicker: true,
   suites: ["/suites/sales-marketing"],
@@ -1003,6 +1003,10 @@ const MARKETING: RoleDefinition = {
     "/dashboards/forecast-timeline",
     "/dashboards/forecast-accuracy",
     "/dashboards/pricing-calculator",
+    "/dashboards/site-survey-scheduler",
+    "/api/zuper/availability",
+    "/api/zuper/status",
+    "/api/zuper/jobs/lookup",
     "/api/deals",
     "/api/projects",
     "/api/forecasting",
