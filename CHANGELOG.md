@@ -4,6 +4,62 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-04-22
+
+### Accounting Suite & Payment Tracking (Major)
+- New Payment Tracking dashboard with per-project DA / CC / PTO + PE M1 / PE M2 milestone progress
+- New ACCOUNTING user role scoped to the Accounting Suite (migration + allowlist)
+- Split into two dedicated pages: Payment Tracking (status) and Payment Action Queue (what to invoice next)
+- HubSpot invoices attached to payment rows, matched to milestones by line item name (incl. PTO + PE)
+- Ready-to-Invoice attention signals derived from project-stage triggers
+- 5-section groupings with filters restored; sortable columns; stage-phase pill
+- Active-only filter + per-pipeline `Eq` filtering (replaces incorrect `In` behavior)
+- PE deals hero cards refresh: Ready to Invoice, collected / outstanding subtitles
+- Outstanding = invoiced-but-unpaid only; % collected uncapped for over-collection visibility
+- PE treated as a portion of `deal.amount`, not additional revenue; PTO milestone is non-PE only
+- Bug fixes: appCache wrapper unwrap, % collected showing 0 when fully paid, tooltip amounts, stage labels
+
+### Customer-Facing Solar Estimator v2 (Major)
+- Phase 1 rebuild: shared pure-function pricing/production engine + public New Install flow
+- Five quote-type flows: Solar, EV, Battery, Battery Expansion, D&R
+- Ported pricing + production config from the original estimator
+- Iframe embed mode with customer-facing page title; internal widgets suppressed
+- Slimmed HubSpot property writes from 14 → 3
+- Google Places autocomplete reliability: fallback to `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY`, typed-address fallback when `place_changed` misses, cross-flow nav fixes
+- Continue-button race resolved via `flushSync` + hydrated gate; visual polish pass
+
+### My Tasks & Freshservice Integration (Major)
+- New `/dashboards/my-tickets` page for non-IT staff showing tickets they filed as requester
+- My Tasks: snooze, inline create, completed-this-week view, bulk mark-done
+- Inline status + queue edit, keyboard shortcuts, URL state sync, count badge
+- Typeahead lookups + "New Task" from deal panel; autofocus first row; admin-managed queue names
+- Freshservice: show tickets assigned to current user (not filed by), name-lookup fallback when email mismatch
+- Include Closed tickets + Closed filter chip; hide overdue on Resolved/Closed
+- Keyboard-focused row visibility + `useSearchParams` Suspense wrap
+
+### Roles Phase 1 — Scoped Suite Roles
+- Added 6 scoped suite roles: DESIGN, PERMIT, INTERCONNECT, INTELLIGENCE, ROOFING, MARKETING
+- New Sales & Marketing suite
+- 4-phase migration plan from monolithic TECH_OPS → split DESIGN / PERMIT / INTERCONNECT
+- Post-Phase-2 admin cleanup: legacy users pruned, admin section split, followups doc added
+
+### Scheduler & IDR Meeting
+- Scheduler day-cell availability count now filtered by project location
+- CA site-survey availability revised with cross-office block support
+- IDR meeting view: survey Zuper link, design approval status, tag fix
+
+### UI, Branding & Home
+- Rebranded "PB Operations Suite" → "PB Tech Ops Suite"
+- Home page stripped of curated dashboard stack; suite cards only
+- HubSpot portal labels now rendered for `design_status` and `layout_status`
+
+### Bug Fixes
+- Bug report email: added optional `type?` to `SendBugReportEmailParams` (unstuck prod build)
+- Audit: userId attribution on activity events; feedback form adds "feature request" option
+- Executive suite link restored
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
