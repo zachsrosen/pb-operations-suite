@@ -81,7 +81,16 @@ Four stats, left to right. **All hero stats respect the currently applied filter
 Each card: title + small horizontal bar chart + count legend. All counts are computed from the current filtered view (filters from section 3 apply).
 
 1. **By Location** — DTC / Westminster / COSP / California / Camarillo (derived from `pbLocation`). Colors match existing location color convention from Clipping Analytics.
-2. **By Current Stage** — grouped to a coarse bucket: `service`, `active`, `pto`, `other`. The existing stage-normalization helper lives at `src/lib/forecast-ghosts.ts:94` exported as `mapStage(stageRaw)` and returns fine-grained buckets (`survey`, `rtb`, `design`, `permitting`, `construction`, `inspection`, etc.). The new `src/lib/production-issues-stage.ts` helper imports `mapStage` and maps its output plus any PTO/service stage strings into the four coarse buckets. Unknown stages fall through to `other`, which is visible (not silent) on the chart.
+2. **By Current Stage** — grouped to a coarse bucket: `service`, `active`, `pto`, `other`. The bucketing is done by `bucketStage(stageRaw)` in `src/lib/production-issues-aggregations.ts` (defined in this spec). It does its own case-insensitive substring matching rather than piggybacking on `mapStage` from `src/lib/forecast-ghosts.ts`, because `mapStage` does not recognize PTO or service-pipeline stage names (they fall through to `other` there). Rules, applied in order — first match wins:
+
+   | Input substring (case-insensitive) | Bucket |
+   |---|---|
+   | `"pto"`, `"permission to operate"`, `"operating"`, `"complete"` | `pto` |
+   | `"service"`, `"ticket"`, `"open"`, `"in progress"` (service-pipeline labels) | `service` |
+   | `"survey"`, `"rtb"`, `"design"`, `"permit"`, `"interconnect"`, `"construction"`, `"inspection"`, `"install"`, `"blocked"` | `active` |
+   | everything else, or empty/null | `other` |
+
+   Unknown stages fall through to `other` — visible on the chart, not silently dropped. During implementation, verify the exact stage label strings that appear in the live dataset (run one pass over the flagged set and confirm every `stage` lands in a non-`other` bucket, or widen the substring set). Write the test cases against those real strings.
 3. **By Clipping Risk** — high / moderate / low / none. Reuses `analyzeClipping()` from `lib/clipping.ts`. Projects without equipment data (null analysis) go into a separate "unknown" bar.
 4. **By Deal Owner** — top 10 owners by flagged count, `dealOwner` string. "Unassigned" bucket when empty.
 5. **By Equipment** — tabbed component: `Inverter | Module | Battery`. Each tab shows top 10 brand+model combinations among flagged projects. Battery tab includes a "no battery" bar for projects without batteries.
@@ -165,7 +174,7 @@ Reuse `useActivityTracking` → `trackDashboardView("production-issues", { flagg
 |------|------------|
 | Confusion with Clipping Analytics — two pages that both show flagged projects | The breakdown grid is deliberately list-of-flagged-only; Clipping Analytics remains the only place to toggle the flag. We add a small inline "Flag is set from the Clipping Analytics page" note at the top of the table to prevent user frustration looking for an action. |
 | Performance on large datasets (if flagged set grows) | Same dataset as Clipping Analytics, which already filters thousands of projects client-side. Flagged subset will always be smaller. No server-side pagination needed. |
-| Coarse stage mapping drifts from `forecasting.ts` mapping | The bucketing helper reuses `forecasting.ts` exports where they exist, and is covered by a unit test. Any stage-name drift surfaces as "other" — visible, not silent. |
+| Coarse stage mapping drifts from `forecast-ghosts.ts` mapping | Intentional — `bucketStage` is standalone because `mapStage` in `forecast-ghosts.ts` doesn't cover PTO or service pipelines. Both helpers are covered by unit tests and any stage-name drift surfaces as `"other"` on the chart (visible, not silent). If PTO/service stage labels change in HubSpot, the failing test + the visible `"other"` bar catches it. |
 | Future "workqueue" scope (option B) creeps in during implementation | Spec explicitly marks it non-goal. Any per-row action request during implementation gets deferred to a follow-up spec. |
 
 ## Future work (explicitly not in this spec)
