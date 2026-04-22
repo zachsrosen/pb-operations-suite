@@ -2,7 +2,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { OnCallMeClient } from "@/components/on-call/OnCallMeClient";
 import { OnCallNav } from "@/components/on-call/OnCallNav";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { canAdminOnCall } from "@/lib/on-call-auth";
+import { canAdminOnCall, canApproveOnCall } from "@/lib/on-call-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +13,7 @@ export default async function OnCallMePage() {
       title="My On-Call"
       subtitle="Your upcoming shifts and swap inbox"
       accentColor="orange"
-      headerRight={<OnCallNav current="me" isAdmin={canAdminOnCall(user)} />}
+      headerRight={<OnCallNav current="me" isAdmin={canAdminOnCall(user)} isApprover={canApproveOnCall(user)} />}
     >
       <OnCallMeClient />
     </DashboardShell>
