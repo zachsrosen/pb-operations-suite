@@ -60,7 +60,7 @@ Sequencing rationale: Phase 0 is a prerequisite — you cannot build a governed 
    - `category` — one of: ELECTRICAL, ROOFING, STRUCTURAL, SITEWORK, LOGISTICS, DESIGN, PERMITTING, REMOVAL, MISC
    - `trigger_condition` — plain-English rule (e.g., "roof pitch > 8/12", "run length > 50 ft")
    - `triage_question` — rep-facing question asked at point of sale (e.g., "What is the main panel amp rating?", "What is the steepest roof pitch?")
-   - `triage_answer_type` — `boolean` | `numeric` | `choice` | `measurement`
+   - `triage_answer_type` — `boolean` | `numeric` | `choice` | `measurement` (lowercase in CSV; the import script uppercases to match the `TriageAnswerType` Prisma enum)
    - `trigger_logic` — structured predicate mapping answer to adder-needed (e.g., `answer < 200` for MPU, `answer >= 8` for steep roof). JSON-expressible in Phase 1.
    - `photos_required` — whether rep/surveyor must upload a photo when this adder is selected
    - `unit` — one of: `flat`, `per_module`, `per_kw`, `per_linear_ft`, `per_hour`, `tiered`
@@ -68,7 +68,7 @@ Sequencing rationale: Phase 0 is a prerequisite — you cannot build a governed 
    - `base_cost` — internal cost (labor + materials) for margin tracking
    - `margin_target` — target gross margin %
    - `active` — true/false
-   - `shop_overrides` — optional per-location price delta (DTC / WESTY / COSP / CA / CAMARILLO)
+   - `shop_overrides` — optional per-location price delta. Shop values match existing `CrewMember.location` strings: `"Westminster"`, `"DTC"`, `"Colorado Springs"`, `"SLO"`, `"Camarillo"`. (SLO and Camarillo share an install calendar but are distinct shops for pricing.) CSV encoding: one column per shop, blank = no override.
    - `notes` — definition, edge cases
 
 ### Process
@@ -145,7 +145,7 @@ The triage surface is the primary user-visible artifact of Phase 1 — it is wha
 - Engine loads all `active` adders whose `triageQuestion` is non-null.
 - Questions are grouped by category and shown in a fixed, owner-defined order.
 - Each answer is evaluated against `triggerLogic` via `lib/adders/triage.ts` (pure function). A match means "this adder is needed."
-- **`triggerLogic` JSON shape (Phase 1):** `{ op: "lt" | "lte" | "eq" | "gte" | "gt" | "contains" | "truthy", value?: number | string | boolean, qtyFrom?: "answer" | "constant", qtyConstant?: number }`. The authoring UI renders a simple predicate builder that writes this shape; `lib/adders/triage.ts` evaluates it. Composite predicates (`and`/`or`) are explicitly out of scope for Phase 1.
+- **`triggerLogic` JSON shape (Phase 1):** `{ op: "lt" | "lte" | "eq" | "gte" | "gt" | "contains" | "truthy", value?: number | string | boolean, qtyFrom?: "answer" | "constant", qtyConstant?: number }`. The authoring UI renders a simple predicate builder that writes this shape; `lib/adders/triage.ts` evaluates it. **Validation:** enforced by a zod schema at the `/api/adders` POST/PATCH boundary — invalid shapes return 400 and never hit the DB. Composite predicates (`and`/`or`) are explicitly out of scope for Phase 1.
 - Matched adders appear in a review panel with quantity fields (auto-populated from the answer when possible, e.g., trench linear feet from a numeric question).
 - `photosRequired` adders block submit until a photo is attached.
 - On submit:
@@ -167,14 +167,18 @@ model Adder {
   code               String   @unique            // stable identifier, e.g., "MPU_200A"
   name               String                      // display name
   category           AdderCategory
+  type               AdderType   @default(FIXED) // FIXED | PERCENTAGE
+  direction          AdderDirection @default(ADD) // ADD (adds to price) | DISCOUNT (subtracts)
+  autoApply          Boolean  @default(false)    // applied without rep selection (e.g., PE -30%)
+  appliesTo          String?                     // scope rule, e.g., "deal.dealType=='PE'" (parsed by pricing engine)
   triggerCondition   String?                     // plain-English rule for rep guidance
   triageQuestion     String?                     // rep-facing question at point of sale
   triageAnswerType   TriageAnswerType?
   triageChoices      Json?                       // for CHOICE: array of {label, value}
-  triggerLogic       Json?                       // predicate evaluated against answer → adder-needed
+  triggerLogic       Json?                       // predicate evaluated against answer → adder-needed (zod-validated on write)
   photosRequired     Boolean  @default(false)
-  unit               AdderUnit
-  basePrice          Decimal                     // customer-facing
+  unit               AdderUnit                   // interpreted with `type`: PERCENTAGE + FLAT means "flat percentage of subtotal"
+  basePrice          Decimal                     // customer-facing. Always positive; `direction` expresses sign.
   baseCost           Decimal                     // internal
   marginTarget       Decimal?                    // target GM %
   active             Boolean  @default(true)
@@ -235,14 +239,14 @@ model TriageRun {
   prelimAddress      Json?                       // { street, unit, city, state, zip } when dealId is null
   runBy              String                      // user.id
   runAt              DateTime @default(now())
-  answers            Json                        // { [adderId]: {question, answer, unit} }
+  answers            Json                        // { [adderId]: { question, answer, unit } } — question text captured at run-time for point-in-time reconstruction, same rationale as AdderRevision.snapshot
   recommendedAdders  Json                        // [{ adderId, code, qty, price }] computed at submit time
   selectedAdders     Json                        // rep-confirmed subset written to HubSpot
   photos             Json?                       // [{ adderId, storageKey, url, uploadedAt }]
   submitted          Boolean  @default(false)
   submittedAt        DateTime?
   hubspotLineItemIds Json?                       // [{ adderId, lineItemId }] for rollback on partial failure
-  notes              String?
+  notes              String?                     // free-text rep notes — surfaced on the deal detail page; never sent to the customer
 
   @@index([dealId, runAt])
 }
@@ -256,6 +260,7 @@ enum AdderCategory {
   DESIGN
   PERMITTING
   REMOVAL
+  ORG                                              // org-level promotions, regional discounts, PE adjustments
   MISC
 }
 
@@ -266,6 +271,16 @@ enum AdderUnit {
   PER_LINEAR_FT
   PER_HOUR
   TIERED
+}
+
+enum AdderType {
+  FIXED
+  PERCENTAGE
+}
+
+enum AdderDirection {
+  ADD
+  DISCOUNT
 }
 
 enum TriageAnswerType {
@@ -291,7 +306,7 @@ enum SyncTrigger {
 
 **Schema convention notes:**
 
-- `AdderShopOverride.shop` is `String`, not an enum, to match existing conventions (e.g., `CrewMember.location`). Validated against an allowlist in `lib/adders/pricing.ts`. Creating a canonical `Shop` enum is a separate cleanup effort, out of scope here.
+- `AdderShopOverride.shop` is `String`, not an enum, to match existing conventions (e.g., `CrewMember.location`). Allowlist lives in `lib/adders/pricing.ts` as `export const VALID_SHOPS = ["Westminster", "DTC", "Colorado Springs", "SLO", "Camarillo"] as const;` — imported wherever shop is validated so the CSV, sync, UI, and migration seed all share one list. Creating a canonical `Shop` enum is a separate cleanup effort, out of scope here.
 - `Decimal` columns use no explicit precision to match the rest of `prisma/schema.prisma` house style.
 - `AdderRevision.snapshot` captures the full `Adder` row **plus its overrides** at time of change so Phase 3 reconciliation can answer "what did this adder cost at this shop on this date?" without history joins.
 - `TriageRun.hubspotLineItemIds` enables rollback if the HubSpot write partially fails mid-submit.
@@ -310,7 +325,7 @@ enum SyncTrigger {
 - Mobile-first single-column layout; large touch targets.
 - Deal lookup step (by ID, address, or customer name).
 - Stepper: one question per screen, with progress indicator. Category groupings visible.
-- Photo capture uses the browser File API; compressed client-side before upload. Storage target: the existing `/api/upload` pattern used for BOM planset uploads (S3-backed via signed URL). `TriageRun.photos` stores `{ storageKey, url, uploadedAt }` per photo.
+- Photo capture uses the browser File API; compressed client-side before upload. Storage target: new endpoint `/api/triage/upload` following the presigned-S3-URL pattern used by [/api/catalog/upload-photo](src/app/api/catalog/upload-photo) and [/api/bom/upload](src/app/api/bom/upload) (no generic `/api/upload` exists in this repo). `TriageRun.photos` stores `{ storageKey, url, uploadedAt }` per photo.
 - Review screen lists recommended adders with quantity/price; rep can uncheck any with a mandatory `notes` reason for audit (Phase 3 reconciliation uses this to detect common opt-outs).
 - Submit shows success state + link back to the deal.
 
@@ -327,14 +342,26 @@ enum SyncTrigger {
 | `/api/adders/sync` | POST | Trigger sync to OpenSolar | `canManageAdders` |
 | `/api/cron/adders-sync` | POST | Nightly sync (cron-secret gated) | cron secret |
 | `/api/triage/runs` | POST | Create a draft `TriageRun` for a deal | authenticated |
-| `/api/triage/runs/[id]` | GET, PATCH | Load / update draft answers | authenticated; write requires `runBy` match or `canManageAdders` |
+| `/api/triage/runs/[id]` | GET, PATCH | Load / update draft answers | authenticated; writer must be the `runBy` user, or hold `canManageAdders` |
 | `/api/triage/runs/[id]/submit` | POST | Finalize, write HubSpot line items | authenticated |
 | `/api/triage/recommend` | POST | Pure-function endpoint: given answers, return recommended adders | authenticated |
+| `/api/triage/upload` | POST | Presigned S3 URL for photo upload (pattern: `/api/catalog/upload-photo`) | authenticated |
 
 **Required middleware changes:**
 
 - All new `/api/*` paths must be added to every role's `allowedRoutes` in `src/lib/roles.ts` or middleware returns 403 silently.
 - `/api/cron/adders-sync` must be added to `PUBLIC_API_ROUTES` / cron-authenticated path list in `src/middleware.ts` (pattern: existing cron endpoints).
+
+### Testing
+
+Required test coverage shipping with Phase 1:
+
+- **`lib/adders/triage.ts` predicate evaluator** — unit tests covering every `op` variant, nullable/missing answers, type coercion (numeric strings → numbers), and the "truthy" special case. Must include table-driven tests with the seed catalog's real triggerLogic values.
+- **`lib/adders/pricing.ts::resolveAddersForCalc`** — unit tests for shop override resolution, inactive adder exclusion, auto-apply filtering by `appliesTo` predicate, and `direction: DISCOUNT` sign handling.
+- **`calcPrice()` regression suite** — extend the existing 8+ sold-project fixture tests to run with DB-sourced adders AND the deprecated `customFixedAdder` scalar path, proving both produce identical output during the migration window.
+- **OpenSolar sync idempotency** — integration tests using a mocked OS API: repeated pushes of the same `Adder` row emit zero writes on the second call; retire flips to archived; resurrection of an archived adder reuses `openSolarId`.
+- **Triage submit rollback** — when a HubSpot line-item write fails partway through, the stored `hubspotLineItemIds` enables a clean rollback and the run stays `submitted=false`.
+- **Seed integrity** — a test that fails if any `IdrEscalationQueue.adder*` boolean column lacks a matching `Adder.code` in the seeded catalog.
 
 ### Role Access
 
@@ -349,6 +376,7 @@ enum SyncTrigger {
 
 - OpenSolar adders are keyed by `openSolarId` once created; `Adder.openSolarId` stores the external ID for idempotent updates.
 - On save, push mutations are diffed: only changed fields sync.
+- **Retire behavior:** when `active` flips to `false`, sync pushes an archive/disable mutation to OpenSolar so the adder disappears from the rep picker. Exact mutation shape depends on Pre-Phase Discovery finding — if OpenSolar supports a boolean "archived" flag, use that; otherwise delete and re-create on reactivation. Retired adders are never deleted from the PB catalog (revision history depends on them).
 - If a sync fails mid-batch, `AdderSyncRun` logs partial failures and the next run retries failed rows. Never block the UI save on sync success.
 - Credentials: new env vars `OPENSOLAR_API_TOKEN` and `OPENSOLAR_ORG_ID`. Must be added to Vercel production env **before** cutover (verify with `vercel env ls production`).
 - **Kill switch:** env var `ADDER_SYNC_ENABLED` — when false, writes go to the DB but nothing pushes to OpenSolar. Safe default for staging and for emergency stop.
@@ -364,7 +392,13 @@ Today:
 
 **Phase 1 scope — the Adder Catalog becomes the source of truth for these constants:**
 
-1. **Replace hardcoded constants with DB-backed lookups.** `ROOF_TYPES`, `STOREY_ADDERS`, `PITCH_ADDERS`, and `ORG_ADDERS` move out of `pricing-calculator.ts` and into seeded `Adder` rows with category tags (`ROOFING`, `STRUCTURAL`, `ORG`). A new helper `lib/adders/pricing.ts::resolveAddersForCalc(shop, context)` returns the catalog rows needed by `calcPrice()`. The calculator stays pure — the helper does the I/O and passes resolved values in.
+1. **Replace hardcoded constants with DB-backed lookups.** `ROOF_TYPES`, `STOREY_ADDERS`, `PITCH_ADDERS`, and `ORG_ADDERS` move out of `pricing-calculator.ts` and into seeded `Adder` rows:
+   - Roof/storey/pitch → `category: ROOFING | STRUCTURAL`, `type: FIXED`, `direction: ADD`, `unit: FLAT | PER_KW | PER_MODULE`
+   - PE -30% discount → `category: ORG`, `type: PERCENTAGE`, `direction: DISCOUNT`, `basePrice: 30`, `autoApply: true`, `appliesTo: "deal.dealType=='PE'"`
+   - Q1-2026 promo → `category: ORG`, `type: FIXED`, `direction: DISCOUNT`, `basePrice: 1000`, `autoApply: true`, `appliesTo: "now < '2026-04-01'"` (or similar date predicate)
+   - SoCo regional discount → `category: ORG`, `type: FIXED`, `direction: DISCOUNT`, `basePrice: 1500`, `autoApply: true`, `appliesTo: "shop=='SLO' || shop=='Camarillo'"`
+
+   A new helper `lib/adders/pricing.ts::resolveAddersForCalc(shop, context)` returns the catalog rows needed by `calcPrice()`, filtering by `autoApply` + `appliesTo` evaluation. The calculator stays pure — the helper does the I/O and passes resolved values in. `appliesTo` predicate syntax is intentionally narrow in Phase 1 (single condition per expression); a DSL is explicitly out of scope.
 2. **Unify IDR booleans with the catalog.** The seven `adder*` boolean columns on `IdrEscalationQueue` stay (no destructive migration), but each maps 1:1 to an `Adder.code`. The IDR meeting view reads amounts from the catalog at render time via the existing `PricingBreakdown` component. Previously-zero adders (trenching, ground mount, MPU, EV charger) now carry catalog prices.
 3. **`customFixedAdder` becomes an array.** `CalcInput.customAdders: Array<{ code?: string, name: string, amount: number, source: "catalog" | "adhoc" }>` replaces the single-number field. Catalog-sourced entries reference an `Adder.code`; ad-hoc entries are explicitly labeled so Phase 3 reconciliation can measure how often reps override the catalog.
 4. **TriageRun writes to the calculator, not just HubSpot.** On triage submit, the `selectedAdders` set is passed to `calcPrice()` as `customAdders` plus the catalog-sourced roof/storey/pitch rows, producing a deal-level price breakdown that also lands on the deal. HubSpot line items remain the customer-visible record; the calculator breakdown is the internal margin view.
@@ -384,7 +418,7 @@ This integration is the backbone of Phase 3's margin dashboard — once adders f
 2. Flip `ADDER_SYNC_ENABLED=true` in staging; verify OpenSolar mirror matches for a sample of adders.
 3. Soft-launch triage to 2–3 pilot reps for one week. Collect feedback; fix bugs; tune question wording.
 4. Coordinate cutover window with OpenSolar admin: in the same change window, (a) flip sync to true in prod, (b) lock down OpenSolar so reps can no longer create free-form adders, (c) require triage completion as part of the sales-to-ops handoff SOP, (d) announce to sales.
-5. Monitor `AdderSyncRun` and `TriageRun` for 2 weeks; triage (ha) any issues.
+5. Monitor `AdderSyncRun` and `TriageRun` for 2 weeks; address any issues.
 
 ## Risks & Mitigations
 
@@ -392,7 +426,7 @@ This integration is the backbone of Phase 3's margin dashboard — once adders f
 |------|------------|
 | OpenSolar API can't fully lock reps out of free-form items | Verified in Pre-Phase Discovery. If unsupported, publish monthly report of line items whose text doesn't match a catalog adder; flag offending reps for coaching. |
 | Sync fails silently, OS and PB drift | `AdderSyncRun` visible in UI; alert if last successful run > 24h ago. |
-| Reps skip triage on mobile because UX is clunky | Pilot with 2–3 reps before cutover; iterate on wording/flow. Measure: adders-per-deal before vs. after. |
+| Reps skip triage on mobile because UX is clunky | Pilot with 2–3 reps before cutover; iterate on wording/flow. **Post-cutover:** weekly `TriageRun` submission rate report for 90 days; if <60% of new deals have a submitted run after the first 30 days, pause scale-up and iterate. Measure adders-per-deal before vs. after. |
 | Owner becomes a bottleneck | Delegate via `canManageAdders` permission — grant to 2–3 trusted leads, not just one person. |
 | Triage writes line items to HubSpot that conflict with OpenSolar-originated items | Phase 1: use a distinct `pb_source=triage` marker on the line item (or naming convention) so downstream systems can distinguish. Document the reconciliation rule in the implementation plan. |
 | Phase 0 audit stalls | Timebox to 2 weeks; if incomplete, ship Phase 1 with the partial canonical list and treat the remainder as ongoing cleanup. |
