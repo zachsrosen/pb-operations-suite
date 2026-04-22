@@ -1512,3 +1512,614 @@ git status
 ---
 
 *Chunks 2–6 follow below. Each chunk is self-contained and independently testable.*
+
+## Chunk 2: Catalog UI
+
+**Goal:** Owner-facing `/dashboards/adders` page that lists, filters, creates, edits, and retires adders — with shop-override grid, triage authoring panel, revision history drawer, and a placeholder sync status badge (wired up in Chunk 6). Consumes Chunk 1's API; no new backend code.
+
+**Pattern reference:** `src/app/dashboards/catalog/page.tsx` (cyan-accented list + drawer pattern) and `src/components/catalog/` for wizard-style form structure. Use `DashboardShell` with `accentColor="green"`, `MultiSelectFilter` for category/shop filters, and the existing `BomHistoryDrawer` pattern for revisions.
+
+### Task 2.1: List page skeleton
+
+**Files:**
+- Create: `src/app/dashboards/adders/page.tsx`
+
+- [ ] **Step 1:** Create server component that fetches via `listAdders()` and renders a shell with placeholder table.
+
+```tsx
+import DashboardShell from "@/components/DashboardShell";
+import { listAdders } from "@/lib/adders/catalog";
+import { AddersClient } from "./AddersClient";
+
+export default async function AddersPage() {
+  const initialAdders = await listAdders({ active: true });
+  return (
+    <DashboardShell title="Adder Catalog" accentColor="green">
+      <AddersClient initialAdders={initialAdders} />
+    </DashboardShell>
+  );
+}
+```
+
+- [ ] **Step 2:** Create `AddersClient.tsx` with React Query integration + filter state + a table that renders code, name, category, unit, base price, active-toggle. Use `MultiSelectFilter` from `@/components/ui/MultiSelectFilter`.
+
+- [ ] **Step 3:** Wire "New Adder" button that opens the edit form drawer (the drawer lives in Task 2.2).
+
+- [ ] **Step 4:** Verify at `/dashboards/adders` in dev; confirm filter narrows results and row click opens detail drawer (stub for now).
+
+Run: `npm run dev` → visit page.
+Expected: list renders, filters work.
+
+- [ ] **Step 5:** Commit.
+
+```bash
+git add src/app/dashboards/adders/
+git commit -m "feat(adders): catalog list page with filters"
+```
+
+### Task 2.2: Edit form component
+
+**Files:**
+- Create: `src/app/dashboards/adders/AdderEditForm.tsx`
+- Create: `src/app/dashboards/adders/TriggerLogicBuilder.tsx`
+- Create: `src/app/dashboards/adders/ShopOverrideGrid.tsx`
+
+- [ ] **Step 1:** `AdderEditForm.tsx` — React Hook Form + zod resolver using `CreateAdderSchema` / `UpdateAdderSchema` from Chunk 1. Fields grouped into sections: **Basics** (code, name, category, type, direction, unit, basePrice, baseCost, marginTarget), **Scope** (autoApply, appliesTo), **Triage** (question, answerType, triageChoices, triggerLogic via `TriggerLogicBuilder`, photosRequired), **Notes**. Submits to `POST /api/adders` (new) or `PATCH /api/adders/[id]` (edit), with `changeNote` prompt on edit.
+
+- [ ] **Step 2:** `TriggerLogicBuilder.tsx` — simple predicate UI: `<select op>` (lt/lte/eq/gte/gt/contains/truthy) + `<input value>` + `qtyFrom` selector. Preview the resulting JSON for the user. Disabled when `triageQuestion` is empty.
+
+- [ ] **Step 3:** `ShopOverrideGrid.tsx` — 5-row grid (one per `VALID_SHOPS` entry). Each row: shop name, numeric `priceDelta`, active toggle. Persists via a separate `PATCH /api/adders/[id]` with the overrides array.
+
+  Note: the spec didn't explicitly break out override PATCH as a separate route. Add `overrides` handling to the existing `UpdateAdderSchema` and PATCH handler as part of Chunk 1's extension — if that's not already in place, add it here in Task 2.2 Step 3 (minor Chunk 1 amendment). Required fields in the schema: `overrides?: Array<{ shop: string; priceDelta: number; active: boolean }>`. Handler replaces the existing override set for the adder (deleteMany + createMany in a transaction) when the key is present.
+
+- [ ] **Step 4:** Test: fill in a new adder end-to-end in dev; confirm it persists, appears in list, and editing rewrites without duplicating revisions unnecessarily (should create exactly one revision per save).
+
+- [ ] **Step 5:** Commit.
+
+```bash
+git add src/app/dashboards/adders/
+git commit -m "feat(adders): catalog edit form with trigger logic + shop overrides"
+```
+
+### Task 2.3: Revision history drawer
+
+**Files:**
+- Create: `src/app/dashboards/adders/AdderRevisionsDrawer.tsx`
+
+- [ ] **Step 1:** Model after `src/components/BomHistoryDrawer.tsx` — slide-in panel listing revisions newest-first, each with `changedBy`, `changedAt`, `changeNote`, and a diff against the prior snapshot (stringified JSON diff is fine for Phase 1 — a proper diff UI is out of scope).
+
+- [ ] **Step 2:** Wire "History" button on the edit form header to open the drawer.
+
+- [ ] **Step 3:** Smoke test: edit an adder twice, open history, confirm two revisions visible with correct change notes.
+
+- [ ] **Step 4:** Commit.
+
+```bash
+git add src/app/dashboards/adders/AdderRevisionsDrawer.tsx
+git commit -m "feat(adders): revision history drawer"
+```
+
+### Task 2.4: Retire action + sync status badge placeholder
+
+**Files:**
+- Modify: `src/app/dashboards/adders/AdderEditForm.tsx`
+- Create: `src/app/dashboards/adders/SyncStatusBadge.tsx`
+
+- [ ] **Step 1:** Add "Retire" button to edit form (owner-only, visible when `canManageAdders`). On click, `ConfirmDialog` → `POST /api/adders/[id]/retire` with reason. On success, refresh list and close drawer.
+
+- [ ] **Step 2:** `SyncStatusBadge.tsx` — stub component that renders "Sync: pending (Chunk 6)" for now. Lands in the page header next to the "New Adder" button. Will wire to `AdderSyncRun` in Chunk 6.
+
+- [ ] **Step 3:** Commit.
+
+```bash
+git add src/app/dashboards/adders/
+git commit -m "feat(adders): retire action + sync status badge placeholder"
+```
+
+### Task 2.5: Chunk 2 verification
+
+- [ ] **Step 1:** Run lint + type + dev server smoke.
+
+Run: `npm run lint && npx tsc --noEmit`
+Expected: no errors.
+
+- [ ] **Step 2:** Manual smoke: create → filter → edit → shop override → retire → history — all round-trip.
+
+- [ ] **Step 3:** Commit any trailing fixes.
+
+**Chunk 2 exit criteria:**
+- `/dashboards/adders` renders for authorized roles
+- Create / edit / retire flow works end-to-end
+- Shop override grid persists
+- Revision history visible
+- Sync status badge placeholder rendered (not wired)
+
+---
+
+## Chunk 3: Triage Recommendation Engine + API
+
+**Goal:** Ship the pure-function triage recommendation engine and the `/api/triage/*` routes (runs CRUD, submit, recommend, upload). No UI yet — the mobile page comes in Chunk 4. At chunk end, an HTTP client can POST answers to `/api/triage/recommend` and get back a list of recommended adders, and a full `TriageRun` lifecycle (create draft → PATCH answers → submit → HubSpot line items) works via API.
+
+### Task 3.1: Triage predicate evaluator (TDD)
+
+**Files:**
+- Test: `src/__tests__/adders/triage.test.ts`
+- Create: `src/lib/adders/triage.ts`
+
+- [ ] **Step 1:** Write failing tests.
+
+```typescript
+import { evaluateTriggerLogic, recommendAdders } from "@/lib/adders/triage";
+import type { AdderWithOverrides } from "@/lib/adders/types";
+
+describe("evaluateTriggerLogic", () => {
+  test.each([
+    [{ op: "lt", value: 200 }, 150, true],
+    [{ op: "lt", value: 200 }, 200, false],
+    [{ op: "lte", value: 200 }, 200, true],
+    [{ op: "eq", value: "tile" }, "tile", true],
+    [{ op: "gte", value: 8 }, 8, true],
+    [{ op: "gt", value: 8 }, 8, false],
+    [{ op: "contains", value: "MPU" }, "needs MPU", true],
+    [{ op: "truthy" }, true, true],
+    [{ op: "truthy" }, false, false],
+  ])("op %j against %j → %j", (logic, answer, expected) => {
+    expect(evaluateTriggerLogic(logic as never, answer)).toBe(expected);
+  });
+
+  test("numeric-string answer is coerced to number", () => {
+    expect(evaluateTriggerLogic({ op: "lt", value: 200 }, "150")).toBe(true);
+  });
+
+  test("null answer returns false (does not throw)", () => {
+    expect(evaluateTriggerLogic({ op: "lt", value: 200 }, null)).toBe(false);
+  });
+});
+
+describe("recommendAdders", () => {
+  const mpu: AdderWithOverrides = {
+    id: "a1", code: "MPU_200A", triageQuestion: "panel amps?",
+    triggerLogic: { op: "lt", value: 200, qtyFrom: "constant", qtyConstant: 1 },
+    active: true, overrides: [], basePrice: 2500,
+  } as unknown as AdderWithOverrides;
+
+  test("returns matching adder with qty from qtyConstant", () => {
+    const result = recommendAdders({ answers: { a1: 150 }, adders: [mpu], shop: "DTC" });
+    expect(result).toEqual([expect.objectContaining({ code: "MPU_200A", qty: 1, unitPrice: 2500 })]);
+  });
+
+  test("qtyFrom=answer uses numeric answer as qty", () => {
+    const trench = { ...mpu, id: "a2", code: "TRENCH_LF", triggerLogic: { op: "gt", value: 0, qtyFrom: "answer" } } as AdderWithOverrides;
+    const result = recommendAdders({ answers: { a2: 75 }, adders: [trench], shop: "DTC" });
+    expect(result[0].qty).toBe(75);
+  });
+
+  test("no match returns empty array", () => {
+    const result = recommendAdders({ answers: { a1: 200 }, adders: [mpu], shop: "DTC" });
+    expect(result).toEqual([]);
+  });
+
+  test("inactive adder skipped", () => {
+    const inactive = { ...mpu, active: false } as AdderWithOverrides;
+    expect(recommendAdders({ answers: { a1: 150 }, adders: [inactive], shop: "DTC" })).toEqual([]);
+  });
+
+  test("auto-apply adder evaluated via appliesTo, not triggerLogic", () => {
+    const pe = { ...mpu, id: "a3", code: "PE_30", autoApply: true, appliesTo: "deal.dealType == 'PE'", triggerLogic: null, direction: "DISCOUNT", basePrice: 30, type: "PERCENTAGE" } as AdderWithOverrides;
+    const result = recommendAdders({
+      answers: {}, adders: [pe], shop: "DTC", dealContext: { dealType: "PE" },
+    });
+    expect(result.map(r => r.code)).toContain("PE_30");
+  });
+});
+```
+
+- [ ] **Step 2:** Run; confirm failure.
+
+Run: `npm test -- src/__tests__/adders/triage.test.ts`
+Expected: module not found.
+
+- [ ] **Step 3:** Implement `src/lib/adders/triage.ts` with `evaluateTriggerLogic` (switch on op) and `recommendAdders(input)` that iterates adders, splits into `autoApply` (uses `evaluateAppliesTo` from Task 1.5) vs. triage-driven (uses `evaluateTriggerLogic`), computes qty + unit price via `resolveShopPrice`, returns `ResolvedAdder[]`.
+
+- [ ] **Step 4:** Run tests; confirm pass.
+
+- [ ] **Step 5:** Commit.
+
+```bash
+git add src/lib/adders/triage.ts src/__tests__/adders/triage.test.ts
+git commit -m "feat(adders): triage recommendation engine"
+```
+
+### Task 3.2: `/api/triage/recommend` endpoint
+
+**Files:**
+- Create: `src/app/api/triage/recommend/route.ts`
+
+- [ ] **Step 1:** POST handler accepts `{ shop: string, answers: Record<string, unknown>, dealContext?: { dealType?, valueCents? } }`. Loads active adders via `listAdders({ active: true })`. Calls `recommendAdders()`. Returns `{ recommendations: ResolvedAdder[] }`.
+
+- [ ] **Step 2:** Add route to role allowlist in `src/lib/roles.ts` for roles that can run triage (SALES, SALES_MANAGER, OPS_MGR, PM, ADMIN, OWNER, SERVICE, TECH_OPS, DESIGN, PERMIT, INTERCONNECT, OPERATIONS).
+
+- [ ] **Step 3:** Commit.
+
+```bash
+git add src/app/api/triage/recommend/route.ts src/lib/roles.ts
+git commit -m "feat(triage): POST /api/triage/recommend"
+```
+
+### Task 3.3: `TriageRun` CRUD routes
+
+**Files:**
+- Create: `src/app/api/triage/runs/route.ts` — POST create draft
+- Create: `src/app/api/triage/runs/[id]/route.ts` — GET + PATCH
+- Create: `src/lib/adders/triage-runs.ts` — helpers
+
+- [ ] **Step 1:** `triage-runs.ts` — helpers `createTriageRun`, `getTriageRun`, `updateTriageRun`. Validate at the route layer with zod; PATCH enforces "runBy or canManageAdders" auth.
+
+- [ ] **Step 2:** Write minimal integration tests in `src/__tests__/adders/triage-runs.test.ts` — create, update answers, authorization boundary.
+
+- [ ] **Step 3:** Implement routes matching the spec's route table.
+
+- [ ] **Step 4:** Add paths to role allowlist.
+
+- [ ] **Step 5:** Run tests + typecheck; commit.
+
+```bash
+git add src/lib/adders/triage-runs.ts src/app/api/triage/runs/ src/__tests__/adders/triage-runs.test.ts src/lib/roles.ts
+git commit -m "feat(triage): TriageRun CRUD + auth"
+```
+
+### Task 3.4: Triage submit with HubSpot line-item rollback (TDD)
+
+**Files:**
+- Create: `src/app/api/triage/runs/[id]/submit/route.ts`
+- Create: `src/lib/adders/triage-submit.ts`
+- Test: `src/__tests__/adders/triage-submit.test.ts`
+
+- [ ] **Step 1:** Write failing test — submit happy path writes line items to HubSpot and sets `submitted=true`.
+
+- [ ] **Step 2:** Write failing test — mid-submit HubSpot failure triggers rollback; `submitted=false`, `hubspotLineItemIds` reflects only successfully-created items, those items are deleted.
+
+Mock `lib/hubspot.ts` line-item create/delete primitives.
+
+- [ ] **Step 3:** Implement `triage-submit.ts` with rollback logic:
+  - Load `TriageRun` + selected adders
+  - For each selected adder, create HubSpot line item (collect IDs)
+  - On any failure, delete all previously-created items and throw
+  - On full success, persist `hubspotLineItemIds`, set `submitted=true`
+
+- [ ] **Step 4:** Implement route. Enforce `photosRequired` adders have at least one photo before allowing submit (return 400 if not).
+
+- [ ] **Step 5:** Run tests; confirm pass.
+
+- [ ] **Step 6:** Commit.
+
+```bash
+git add src/lib/adders/triage-submit.ts src/app/api/triage/runs/ src/__tests__/adders/triage-submit.test.ts
+git commit -m "feat(triage): submit with HubSpot line-item rollback on failure"
+```
+
+### Task 3.5: Photo upload endpoint
+
+**Files:**
+- Create: `src/app/api/triage/upload/route.ts`
+
+- [ ] **Step 1:** Clone the pattern from `src/app/api/catalog/upload-photo/route.ts`. Returns presigned S3 URL + final storage key. Client PUTs the photo directly to S3, then PATCHes the `TriageRun.photos` array with `{ adderId, storageKey, url }`.
+
+- [ ] **Step 2:** Add to role allowlist (same roles as `/api/triage/runs`).
+
+- [ ] **Step 3:** Commit.
+
+```bash
+git add src/app/api/triage/upload/route.ts src/lib/roles.ts
+git commit -m "feat(triage): photo upload endpoint"
+```
+
+### Task 3.6: Chunk 3 verification
+
+- [ ] **Step 1:** Lint + typecheck + all adders tests.
+
+Run: `npm run lint && npx tsc --noEmit && npm test -- src/__tests__/adders/`
+Expected: green.
+
+**Chunk 3 exit criteria:**
+- Triage recommendation engine unit-tested against every `op` + auto-apply path
+- 5 triage API routes live with auth + allowlist entries
+- Submit has verified rollback path
+- Photo upload works via presigned S3
+
+---
+
+## Chunk 4: Triage Mobile UI + Deal-Detail Embed
+
+**Goal:** Ship the rep-facing `/triage` page and a `<TriageButton>` embed for the deal detail surface. Mobile-first, offline-tolerant via `localStorage` drafts, photo capture via browser File API + `/api/triage/upload`.
+
+### Task 4.1: Mobile stepper shell
+
+**Files:**
+- Create: `src/app/triage/page.tsx`
+- Create: `src/app/triage/TriageStepper.tsx`
+- Create: `src/app/triage/useOfflineDraft.ts`
+
+- [ ] **Step 1:** Page: no `DashboardShell` wrap — full-bleed mobile layout (pattern: `src/app/dashboards/mobile/page.tsx`). Deal lookup step (id | address | customer name), then hands off to `TriageStepper`.
+
+- [ ] **Step 2:** `TriageStepper.tsx` — fetches active adders via `GET /api/adders?active=true`, groups by category, renders one-question-per-screen with progress indicator. Each step persists answer to local draft state and calls `PATCH /api/triage/runs/[id]` on step forward (debounced 500ms).
+
+- [ ] **Step 3:** `useOfflineDraft.ts` — hook that mirrors draft state to `localStorage` keyed by run ID; on mount, reads any stored draft. On `/api/triage/runs/[id]/submit` success, clears the draft.
+
+- [ ] **Step 4:** Smoke test in dev.
+
+- [ ] **Step 5:** Commit.
+
+### Task 4.2: Photo capture + review + submit
+
+**Files:**
+- Create: `src/app/triage/TriagePhotoCapture.tsx`
+- Create: `src/app/triage/TriageReview.tsx`
+
+- [ ] **Step 1:** `TriagePhotoCapture.tsx` — `<input type="file" capture="environment" accept="image/*">`, compress client-side via `canvas` (max 1600px longest dim, JPEG 0.8), PUT to presigned URL, PATCH `TriageRun.photos`. Block proceed when `photosRequired` adder lacks photo.
+
+- [ ] **Step 2:** `TriageReview.tsx` — calls `/api/triage/recommend` with final answers, shows recommendations with qty + price. Each row has an "uncheck with reason" action (mandatory notes per spec §UI Triage review screen). Submit button calls `POST /api/triage/runs/[id]/submit`.
+
+- [ ] **Step 3:** Success screen with link back to the deal.
+
+- [ ] **Step 4:** Commit.
+
+### Task 4.3: Deal-detail embed
+
+**Files:**
+- Create: `src/components/deal-detail/TriageButton.tsx`
+- Modify: `src/components/deal-detail/section-registry.ts` (or equivalent — search repo for where other deal-detail sections register)
+
+- [ ] **Step 1:** `<TriageButton dealId={...}>` opens `/triage?dealId=...` in a modal or new view. Reuses same `TriageStepper`.
+
+- [ ] **Step 2:** Register section in deal detail layout.
+
+- [ ] **Step 3:** Commit.
+
+### Task 4.4: Chunk 4 verification
+
+- [ ] **Step 1:** Mobile viewport smoke test at 375px width; keyboard + one-handed reachability OK.
+- [ ] **Step 2:** Offline tolerance: simulate network failure mid-answer; reload; draft restores.
+- [ ] **Step 3:** Lint + typecheck.
+
+**Chunk 4 exit criteria:**
+- Rep can walk through the full triage flow on mobile and submit
+- Draft restores after network drop
+- Photo upload round-trips
+- Deal-detail button opens the same flow with dealId pre-set
+
+---
+
+## Chunk 5: Pricing Calculator Refactor + IDR Integration
+
+**Goal:** Move hardcoded adder constants from `src/lib/pricing-calculator.ts` into DB-sourced catalog rows; change `CalcInput.customFixedAdder` from scalar to array; unify IDR boolean columns with catalog lookup; fix percentage-loop bug, `peEnergyCommunnity` typo, and flag the `DC_QUALIFYING_MODULE_BRANDS` empty-array issue.
+
+### Task 5.1: Add `resolveAddersForCalc` to `lib/adders/pricing.ts` (TDD)
+
+**Files:**
+- Test: `src/__tests__/adders/pricing-resolve.test.ts`
+- Modify: `src/lib/adders/pricing.ts`
+
+- [ ] **Step 1:** Test `resolveAddersForCalc({ shop, context })` — loads active adders where `autoApply=true` and `evaluateAppliesTo(appliesTo, context)` matches; returns `ResolvedAdder[]` with correct `amount` sign from `direction`.
+
+- [ ] **Step 2:** Implement. Pure query helper around `listAdders` + `evaluateAppliesTo` + `resolveShopPrice`.
+
+- [ ] **Step 3:** Commit.
+
+```bash
+git add src/lib/adders/pricing.ts src/__tests__/adders/pricing-resolve.test.ts
+git commit -m "feat(adders): resolveAddersForCalc for auto-apply catalog lookup"
+```
+
+### Task 5.2: Change `CalcInput.customFixedAdder` → `customAdders` array
+
+**Files:**
+- Modify: `src/lib/pricing-calculator.ts`
+- Modify: `src/__tests__/pricing-calculator.test.ts`
+
+- [ ] **Step 1:** Add `customAdders: Array<{ code?: string; name: string; amount: number; source: "catalog" | "adhoc" }>` to `CalcInput`. Keep `customFixedAdder: number | undefined` as deprecated — if present AND `customAdders` empty, synthesize a single `{name: "custom", amount: customFixedAdder, source: "adhoc"}`. Emit a `console.warn` noting deprecation. Document this in a JSDoc comment.
+
+- [ ] **Step 2:** Update the existing regression test suite to pass an array OR the scalar; both must produce identical `CalcBreakdown`. This is the spec's "Pricing calculator refactor breaks existing UI" mitigation.
+
+- [ ] **Step 3:** Run regression: `npm test -- src/__tests__/pricing-calculator.test.ts`.
+Expected: all 8+ fixture tests still pass.
+
+- [ ] **Step 4:** Commit.
+
+```bash
+git add src/lib/pricing-calculator.ts src/__tests__/pricing-calculator.test.ts
+git commit -m "refactor(pricing-calc): customFixedAdder scalar → customAdders array (deprecated alias retained)"
+```
+
+### Task 5.3: Fix percentage-loop bug + typo + DC list flag
+
+**Files:**
+- Modify: `src/lib/pricing-calculator.ts`
+
+- [ ] **Step 1:** Locate the loop around line 589 that iterates `ORG_ADDERS` filtering `type !== "fixed"`. Rewrite to handle all `type: "percentage"` adders uniformly (not just PE as a special case). Add a test that exercises a second percentage adder (e.g., synthetic 5% discount) to confirm the fix.
+
+- [ ] **Step 2:** Rename `peEnergyCommunnity` → `peEnergyCommunity` everywhere in the file and in `CalcBreakdown` interface. Grep for all consumers: `rg "peEnergyCommunnity" src/` and fix each.
+
+- [ ] **Step 3:** Add a top-of-file TODO comment near `DC_QUALIFYING_MODULE_BRANDS`: `// TODO(phase-1): seed from Phase 0 ops data OR confirm DC bonus is handled outside this calculator. See open question #5 in the spec.` Do not auto-populate — this is an open question the user must answer.
+
+- [ ] **Step 4:** Run regression tests.
+
+- [ ] **Step 5:** Commit.
+
+```bash
+git add src/lib/pricing-calculator.ts src/__tests__/pricing-calculator.test.ts
+git commit -m "fix(pricing-calc): percentage-loop handling, peEnergyCommunity typo"
+```
+
+### Task 5.4: Migrate hardcoded constants to DB-sourced lookups
+
+**Files:**
+- Modify: `src/lib/pricing-calculator.ts`
+- Modify: `src/app/dashboards/idr-meeting/PricingBreakdown.tsx`
+- Modify: `scripts/seed-adders.ts` (extend to seed from `ROOF_TYPES`, `STOREY_ADDERS`, `PITCH_ADDERS`, `ORG_ADDERS` if the CSV doesn't already cover them)
+
+- [ ] **Step 1:** `calcPrice()` accepts a new optional `resolvedAdders?: ResolvedAdder[]` parameter. When provided, it replaces the hardcoded `ROOF_TYPES` / `STOREY_ADDERS` / `PITCH_ADDERS` / `ORG_ADDERS` iterations. When absent, old behavior (for backward compat during migration window).
+
+- [ ] **Step 2:** `PricingBreakdown.tsx` — import `resolveAddersForCalc` and pass the resolved set into `calcPrice`.
+
+- [ ] **Step 3:** Extend seed script to write corresponding `Adder` rows for each roof type, storey adder, pitch adder, and org adder — using the spec's category/type/direction mappings. The seed must be idempotent (Task 1.12 already upserts by code).
+
+- [ ] **Step 4:** IDR booleans integration: in `PricingBreakdown.tsx`, map each `IdrEscalationQueue.adder*` boolean to the corresponding `Adder.code` (see seed-integrity test list). Look up the catalog row, resolve shop price, pass into `calcPrice` as `customAdders` entries with `source: "catalog"`.
+
+- [ ] **Step 5:** Run the seed integrity test from Task 1.13; now it should pass fully against the extended seed.
+
+- [ ] **Step 6:** Regression test suite — update fixtures where needed to reflect the now-priced trenching/MPU/etc. adders (which previously had zero dollar value).
+
+- [ ] **Step 7:** Commit.
+
+```bash
+git add src/lib/pricing-calculator.ts src/app/dashboards/idr-meeting/PricingBreakdown.tsx scripts/seed-adders.ts src/__tests__/
+git commit -m "refactor(pricing-calc): DB-sourced adders via resolveAddersForCalc; IDR booleans unified"
+```
+
+### Task 5.5: Chunk 5 verification
+
+- [ ] **Step 1:** Full regression pass.
+Run: `npm test -- src/__tests__/pricing-calculator.test.ts src/__tests__/adders/`
+Expected: all green; seed integrity covers all 7 IDR codes.
+
+**Chunk 5 exit criteria:**
+- No hardcoded adder arrays remain in `pricing-calculator.ts` (except as deprecated fallback for backward compat)
+- IDR Meeting Pricing Breakdown uses catalog-sourced prices
+- Latent bugs fixed, DC list flagged with TODO
+- Regression suite still passes against verified sold-project fixtures
+
+---
+
+## Chunk 6: OpenSolar Sync + Rollout
+
+**Goal:** One-way sync PB → OpenSolar so reps see a locked library. Includes Pre-Phase Discovery gate, `lib/adders/sync.ts`, sync APIs + cron, kill switch, and a cutover runbook.
+
+### Task 6.1: Pre-Phase Discovery gate
+
+**Files:**
+- Create: `docs/superpowers/followups/2026-04-22-opensolar-api-discovery.md`
+
+- [ ] **Step 1:** **MANUAL USER STEP.** Before any code in this chunk: open an ADR/doc capturing findings from OpenSolar support on:
+  - Lockdown capability (can reps be barred from free-form line items?)
+  - Per-shop pricing (one adder → N variants or single record with shop-aware price?)
+  - Write API endpoints + rate limits + idempotency key support
+  - Retire/archive flag existence
+
+If any hard blocker is found, surface to the user with a recommendation to escalate to brainstorming before coding Chunk 6.
+
+- [ ] **Step 2:** Capture final decisions in the followup doc. Commit.
+
+### Task 6.2: `lib/adders/sync.ts` (TDD with mocked OS API)
+
+**Files:**
+- Create: `src/lib/adders/sync.ts`
+- Create: `src/lib/adders/opensolar-client.ts` — thin API client
+- Test: `src/__tests__/adders/sync.test.ts`
+
+- [ ] **Step 1:** Write tests:
+  - `pushAdder(adder)` creates when `openSolarId` is null, updates when present
+  - Idempotent: repeated push with no diff emits zero writes
+  - `retireAdder(adder)` flips OS-side archived flag
+  - Partial failure: `syncAll()` continues past one failed adder, logs into `AdderSyncRun.errorLog`
+
+- [ ] **Step 2:** Implement `opensolar-client.ts` with env-backed token (`OPENSOLAR_API_TOKEN`) + org ID (`OPENSOLAR_ORG_ID`). Rate-limit retry with exponential backoff (mirror `searchWithRetry` in `lib/hubspot.ts`).
+
+- [ ] **Step 3:** Implement `sync.ts` with `pushAdder`, `archiveAdder`, `syncAll`. Diff current OS state against catalog row; only emit writes when fields changed. Honor `ADDER_SYNC_ENABLED=false` kill switch — short-circuit to a no-op `AdderSyncRun` with `status: SUCCESS, addersPushed: 0`.
+
+- [ ] **Step 4:** Wire into `catalog.ts` — `createAdder`, `updateAdder`, `retireAdder` call the sync on success (fire-and-forget via a background promise, log failures; must NOT block the UI save per spec).
+
+- [ ] **Step 5:** Run tests; confirm pass.
+
+- [ ] **Step 6:** Commit.
+
+### Task 6.3: Sync API + cron + middleware
+
+**Files:**
+- Create: `src/app/api/adders/sync/route.ts`
+- Create: `src/app/api/cron/adders-sync/route.ts`
+- Modify: `src/middleware.ts` — add `/api/cron/adders-sync` to cron-authenticated path list (pattern: existing cron endpoints)
+- Modify: `vercel.json` or equivalent cron config to schedule nightly run
+
+- [ ] **Step 1:** `/api/adders/sync` POST triggers `syncAll({ trigger: MANUAL })`. `canManageAdders` required.
+
+- [ ] **Step 2:** `/api/cron/adders-sync` POST — cron-secret gated, triggers `syncAll({ trigger: CRON })`.
+
+- [ ] **Step 3:** Middleware change for public route. Verify with `rg "cron/property-reconcile" src/middleware.ts -n` and follow the same pattern.
+
+- [ ] **Step 4:** Cron schedule: nightly 3 AM Mountain (matches existing cron patterns).
+
+- [ ] **Step 5:** Commit.
+
+### Task 6.4: Sync status badge wired up
+
+**Files:**
+- Modify: `src/app/dashboards/adders/SyncStatusBadge.tsx`
+- Create: `src/app/api/adders/sync/status/route.ts`
+
+- [ ] **Step 1:** GET endpoint returns `{ lastRun: AdderSyncRun | null, lastSuccess: AdderSyncRun | null }`.
+
+- [ ] **Step 2:** Badge shows last success age ("12 min ago"), status color, manual "Sync now" button.
+
+- [ ] **Step 3:** Alert styling (amber) when `now - lastSuccess > 24h` per spec risk mitigation.
+
+- [ ] **Step 4:** Commit.
+
+### Task 6.5: Env vars + Vercel sync
+
+**Files:**
+- Modify: `.env.example` — add `OPENSOLAR_API_TOKEN`, `OPENSOLAR_ORG_ID`, `ADDER_SYNC_ENABLED`
+
+- [ ] **Step 1:** Add entries to `.env.example`.
+
+- [ ] **Step 2:** **MANUAL USER STEP.** Surface to user: "Please add `OPENSOLAR_API_TOKEN`, `OPENSOLAR_ORG_ID`, `ADDER_SYNC_ENABLED=false` to Vercel production env. Verify with `vercel env ls production`."
+
+Per memory feedback [feedback_vercel_env_sync.md], prod env vars must be set before cutover.
+
+- [ ] **Step 3:** Commit `.env.example`.
+
+### Task 6.6: Cutover runbook
+
+**Files:**
+- Create: `docs/superpowers/runbooks/adder-catalog-cutover.md`
+
+- [ ] **Step 1:** Document the rollout sequence from spec §Rollout & Cutover:
+  1. Migrations deployed to prod (manual user step)
+  2. Phase 0 CSV loaded via seed (`npx tsx scripts/seed-adders.ts scripts/data/adders-seed.csv`)
+  3. Flip `ADDER_SYNC_ENABLED=true` in staging, verify mirror
+  4. Soft-launch triage to 2–3 pilot reps for one week
+  5. Cutover window: flip prod sync, lock down OpenSolar, update SOP, announce
+  6. 2-week monitoring of `AdderSyncRun` + `TriageRun` metrics
+
+- [ ] **Step 2:** Include rollback procedure: flip `ADDER_SYNC_ENABLED=false`, manually re-enable free-form adders in OpenSolar, announce pause.
+
+- [ ] **Step 3:** Commit.
+
+### Task 6.7: Chunk 6 verification
+
+- [ ] **Step 1:** Lint + typecheck + sync test suite.
+Run: `npm run lint && npx tsc --noEmit && npm test -- src/__tests__/adders/sync.test.ts`
+
+- [ ] **Step 2:** Smoke test sync in dev with `ADDER_SYNC_ENABLED=false` — confirm no OS calls happen; `AdderSyncRun` row records `addersPushed: 0`.
+
+- [ ] **Step 3:** **MANUAL USER STEP.** With Pre-Phase Discovery outputs in hand, flip `ADDER_SYNC_ENABLED=true` in a dev environment pointed at OS sandbox; verify idempotency on repeat push.
+
+**Chunk 6 exit criteria:**
+- Pre-Phase Discovery documented
+- Sync library tested against mocked OS API
+- Manual sync endpoint + cron + kill switch all live
+- Sync status badge shows last-run telemetry
+- Prod env vars set in Vercel
+- Cutover runbook committed
+- Phase 1 ready for rollout
+
+---
+
+## Post-Chunk Follow-Ups (tracked, not part of this plan)
+
+Create separate follow-up docs for:
+- Phase 2 spec: governed Change Order workflow + site-survey re-triage (spec §Solution, Phase 2 row)
+- Phase 3 spec: BOM-vs-sold reconciliation + margin dashboard (spec §Solution, Phase 3 row)
+- OpenSolar account cleanup: retire-orphans scan (any adders that exist in OS but never existed in the catalog)
+- Triage adoption monitoring dashboard (spec success metric: 80% submission rate)
+- DC bonus qualification data backfill (open question #5)
