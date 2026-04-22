@@ -311,21 +311,23 @@ export async function attachInvoicesToDeals(
 }
 
 /**
- * After invoices are attached, recompute customerCollected / customerOutstanding
- * / peBonusCollected / peBonusOutstanding / collectedPct using invoice amounts.
+ * After invoices are attached, recompute money fields using invoice amounts.
  *
- * Why: the original transformDeal calculation used deal-property amounts
- * (da_invoice_amount, cc_invoice_amount, pe_payment_ic, pe_payment_pc). For
- * deals where the deal-property amount is null but the invoice amount is real,
- * the % collected was computing as 0 even though the milestone was paid.
+ * Money model (unified across PE and non-PE):
+ *   deal.amount = total contract value (customerContractTotal)
+ *   For non-PE: customer pays 100% via DA + CC + PTO invoices
+ *   For PE:     customer pays ~70% via DA + CC + PTO,
+ *               PE program pays the other ~30% via PE M1 + PE M2 invoices
+ *   Either way, all 5 milestones collect against the SAME deal.amount.
  *
- * Strategy per milestone:
- *   - If invoice attached AND has amountPaid > 0 → use invoice.amountPaid
- *   - Else if deal-property status is "Paid In Full" / "Paid" → use deal-property amount
- *   - Else → counts as 0
+ * Why this matters: deal-property amounts (da_invoice_amount etc.) are
+ * sometimes null even when the milestone is paid. Invoice records have the
+ * real numbers. Without this reconcile, % collected was reading as 0 on paid
+ * deals.
  */
 function reconcileMoneyWithInvoices(deal: PaymentTrackingDeal): void {
-  // Customer-side (DA + CC). PTO is amount-rare; treat as $0 unless invoice present.
+  // Per-milestone paid amount: invoice.amountPaid, falling back to deal
+  // property when no invoice attached.
   const daPaid =
     deal.invoices?.da?.amountPaid ??
     (deal.daStatus === "Paid In Full" ? deal.daAmount ?? 0 : 0);
@@ -334,19 +336,20 @@ function reconcileMoneyWithInvoices(deal: PaymentTrackingDeal): void {
     (deal.ccStatus === "Paid In Full" ? deal.ccAmount ?? 0 : 0);
   const ptoPaid = deal.invoices?.pto?.amountPaid ?? 0;
 
-  // Customer billed total (denominator). Prefer the deal contract amount; if
-  // invoices add up to more (e.g., change orders bumped contract), use that.
-  const invoicedTotal =
+  // If change orders bumped the customer-side invoiced total above the deal
+  // contract, use the invoiced total. (Change orders are billed via the same
+  // milestone invoices; deal.amount may not reflect them.)
+  const customerInvoicedTotal =
     (deal.invoices?.da?.amountBilled ?? 0) +
     (deal.invoices?.cc?.amountBilled ?? 0) +
     (deal.invoices?.pto?.amountBilled ?? 0);
-  const customerBilled = Math.max(deal.customerContractTotal, invoicedTotal);
+  if (customerInvoicedTotal > deal.customerContractTotal) {
+    deal.customerContractTotal = customerInvoicedTotal;
+  }
 
-  deal.customerContractTotal = customerBilled;
   deal.customerCollected = daPaid + ccPaid + ptoPaid;
-  deal.customerOutstanding = Math.max(0, customerBilled - deal.customerCollected);
 
-  // PE-side
+  // PE-side: PE pays a portion of the same contract (NOT additional revenue).
   if (deal.isPE) {
     const m1Paid =
       deal.invoices?.peM1?.amountPaid ??
@@ -359,10 +362,19 @@ function reconcileMoneyWithInvoices(deal: PaymentTrackingDeal): void {
       (deal.invoices?.peM2?.amountBilled ?? deal.peM2Amount ?? 0);
     deal.peBonusTotal = peBilled;
     deal.peBonusCollected = m1Paid + m2Paid;
-    deal.peBonusOutstanding = Math.max(0, peBilled - (m1Paid + m2Paid));
   }
 
-  const totalCollectable = deal.customerContractTotal + (deal.peBonusTotal ?? 0);
+  // Outstanding for the deal = contract minus EVERYTHING collected (customer
+  // side AND PE side).
   const totalCollected = deal.customerCollected + (deal.peBonusCollected ?? 0);
-  deal.collectedPct = totalCollectable > 0 ? (totalCollected / totalCollectable) * 100 : 0;
+  deal.customerOutstanding = Math.max(0, deal.customerContractTotal - totalCollected);
+  deal.peBonusOutstanding = deal.isPE ? deal.customerOutstanding : null;
+
+  // Total PB revenue is the deal contract (PE doesn't add to it).
+  deal.totalPBRevenue = deal.customerContractTotal;
+
+  deal.collectedPct =
+    deal.customerContractTotal > 0
+      ? (totalCollected / deal.customerContractTotal) * 100
+      : 0;
 }

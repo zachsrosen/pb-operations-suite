@@ -98,32 +98,31 @@ export default function PaymentTrackingClient() {
       exportData={{ data: csvRows, filename: "payment-tracking.csv" }}
       fullWidth
     >
-      {/* Summary strip — slimmer, 3 cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+      {/* Summary strip — 4 cards reflecting the unified money model:
+          deal.amount = total contract; customer + PE collections sum against it. */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         <StatCard
-          label="Customer Contracts"
+          label="Total Contract Value"
           value={summary ? fmt(summary.customerContractTotal) : null}
-          subtitle={
-            summary
-              ? `Collected ${fmt(summary.customerCollected)} · Outstanding ${fmt(summary.customerOutstanding)}`
-              : null
-          }
+          subtitle={summary ? `${summary.dealCount} active deals` : null}
           color="orange"
         />
         <StatCard
-          label="PE Bonus (additional)"
-          value={summary ? fmt(summary.peBonusTotal) : null}
-          subtitle={
-            summary
-              ? `Collected ${fmt(summary.peBonusCollected)} · Outstanding ${fmt(summary.peBonusOutstanding)}`
-              : null
-          }
+          label="Collected from Customer"
+          value={summary ? fmt(summary.customerCollected) : null}
+          subtitle="DA + CC + PTO invoices"
+          color="emerald"
+        />
+        <StatCard
+          label="Collected from PE"
+          value={summary ? fmt(summary.peBonusCollected) : null}
+          subtitle={summary ? `Out of ${fmt(summary.peBonusTotal)} expected (PE only)` : null}
           color="cyan"
         />
         <StatCard
           label="% Collected"
           value={summary ? `${summary.collectedPct.toFixed(0)}%` : null}
-          subtitle={summary ? `${summary.dealCount} active deals` : null}
+          subtitle={summary ? `${fmt(summary.customerOutstanding)} outstanding` : null}
           color="emerald"
         />
       </div>
