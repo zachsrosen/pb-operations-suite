@@ -223,6 +223,7 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/api/on-call",
     // Adder catalog (read-only for this role; write verbs gated at handler by canManageAdders)
     "/api/adders",
+    "/dashboards/adders",
     "/dashboards/tsrf-calculator",
   ],
   landingCards: [
@@ -383,6 +384,7 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/dashboards/on-call",
     "/api/on-call",
     "/api/adders",
+    "/dashboards/adders",
     "/dashboards/tsrf-calculator",
   ],
   landingCards: [
@@ -477,6 +479,7 @@ const OPERATIONS: RoleDefinition = {
     "/dashboards/on-call",
     "/api/on-call",
     "/api/adders",
+    "/dashboards/adders",
     "/dashboards/tsrf-calculator",
   ],
   landingCards: [
@@ -547,6 +550,7 @@ const SERVICE: RoleDefinition = {
     "/dashboards/my-tickets",
     "/api/freshservice/my-tickets",
     "/api/adders",
+    "/dashboards/adders",
     "/dashboards/tsrf-calculator",
   ],
   landingCards: [
@@ -677,6 +681,7 @@ const TECH_OPS: RoleDefinition = {
     "/dashboards/on-call",
     "/api/on-call",
     "/api/adders",
+    "/dashboards/adders",
     "/dashboards/tsrf-calculator",
   ],
   landingCards: [
@@ -753,6 +758,7 @@ const DESIGN: RoleDefinition = {
     "/dashboards/on-call",
     "/api/on-call",
     "/api/adders",
+    "/dashboards/adders",
     "/dashboards/tsrf-calculator",
   ],
   landingCards: [
@@ -816,6 +822,7 @@ const PERMIT: RoleDefinition = {
     "/dashboards/on-call",
     "/api/on-call",
     "/api/adders",
+    "/dashboards/adders",
   ],
   landingCards: [
     { href: "/dashboards/permitting", title: "Permitting", description: "Permit pipeline, action queue, and status tracking.", tag: "PERMIT", tagColor: "sky" },
@@ -878,6 +885,7 @@ const INTERCONNECT: RoleDefinition = {
     "/dashboards/on-call",
     "/api/on-call",
     "/api/adders",
+    "/dashboards/adders",
   ],
   landingCards: [
     { href: "/dashboards/interconnection", title: "Interconnection", description: "Utility interconnection status and revisions.", tag: "IC", tagColor: "violet" },
@@ -944,6 +952,7 @@ const INTELLIGENCE: RoleDefinition = {
     "/api/freshservice/my-tickets",
     "/api/comms",
     "/api/adders",
+    "/dashboards/adders",
   ],
   landingCards: [
     { href: "/dashboards/qc", title: "QC Metrics", description: "Time-between-stages analytics by office and utility.", tag: "QC", tagColor: "fuchsia" },
@@ -999,6 +1008,7 @@ const ROOFING: RoleDefinition = {
     "/dashboards/on-call",
     "/api/on-call",
     "/api/adders",
+    "/dashboards/adders",
   ],
   landingCards: [
     { href: "/dashboards/roofing", title: "Roofing", description: "Roofing job pipeline and scheduling.", tag: "ROOFING", tagColor: "rose" },
@@ -1134,6 +1144,7 @@ const SALES_MANAGER: RoleDefinition = {
     "/api/freshservice/my-tickets",
     "/api/comms",
     "/api/adders",
+    "/dashboards/adders",
   ],
   landingCards: [],
   scope: "global",
@@ -1184,6 +1195,7 @@ const SALES: RoleDefinition = {
     "/api/freshservice/my-tickets",
     "/api/comms",
     "/api/adders",
+    "/dashboards/adders",
   ],
   landingCards: [
     { href: "/dashboards/sales", title: "Sales Pipeline", description: "Active deals, funnel visualization, and proposal tracking.", tag: "SALES", tagColor: "cyan" },
@@ -1229,6 +1241,7 @@ const ACCOUNTING: RoleDefinition = {
     "/api/user/me",
     "/api/activity/log",
     "/api/adders",
+    "/dashboards/adders",
   ],
   landingCards: [],
   scope: "global",
