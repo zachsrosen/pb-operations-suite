@@ -53,9 +53,16 @@ export interface RawProject {
   daysSinceClose?: number;
   equipment?: {
     systemSizeKwdc?: number;
-    modules?: { count?: number };
-    inverter?: { count?: number };
-    battery?: { count?: number; expansionCount?: number; brand?: string };
+    systemSizeKwac?: number;
+    modules?: { count?: number; brand?: string; model?: string; wattage?: number };
+    inverter?: { count?: number; brand?: string; model?: string; sizeKwac?: number };
+    battery?: {
+      count?: number;
+      expansionCount?: number;
+      brand?: string;
+      model?: string;
+      sizeKwh?: number;
+    };
     evCount?: number;
   };
 

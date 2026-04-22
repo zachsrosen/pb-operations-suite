@@ -294,6 +294,35 @@ export function useClippingAnalyticsFilters() {
   };
 }
 
+// ===== Production Issues filters =====
+
+export interface ProductionIssuesFilters {
+  locations: string[];
+  stages: string[]; // coarse buckets: "pto" | "service" | "active" | "other"
+  dealOwners: string[];
+  clippingRisks: string[]; // "none" | "low" | "moderate" | "high" | "unknown"
+}
+
+const defaultProductionIssuesFilters: ProductionIssuesFilters = {
+  locations: [],
+  stages: [],
+  dealOwners: [],
+  clippingRisks: [],
+};
+
+export function useProductionIssuesFilters() {
+  const raw = useDashboardFilters(
+    (s) => s.filters["production-issues"]
+  ) as ProductionIssuesFilters | undefined;
+  const setFilters = useDashboardFilters((s) => s.setFilters);
+  return {
+    filters: raw ?? defaultProductionIssuesFilters,
+    setFilters: (f: ProductionIssuesFilters) => setFilters("production-issues", f),
+    clearFilters: () =>
+      useDashboardFilters.getState().clearFilters("production-issues"),
+  };
+}
+
 // ===== Preconstruction Metrics filters =====
 
 export interface PreconstMetricsFilters {
