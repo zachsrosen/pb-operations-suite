@@ -64,14 +64,15 @@ export const CreateAdderSchema = z.object({
 
 export type CreateAdderInput = z.infer<typeof CreateAdderSchema>;
 
-export const UpdateAdderSchema = CreateAdderSchema.partial().extend({
-  changeNote: z.string().optional(),
-});
-
-export type UpdateAdderInput = z.infer<typeof UpdateAdderSchema>;
-
 export const ShopOverrideSchema = z.object({
   shop: z.string().min(1),
   priceDelta: z.number(),
   active: z.boolean().default(true),
 });
+
+export const UpdateAdderSchema = CreateAdderSchema.partial().extend({
+  changeNote: z.string().optional(),
+  overrides: z.array(ShopOverrideSchema).optional(),
+});
+
+export type UpdateAdderInput = z.infer<typeof UpdateAdderSchema>;
