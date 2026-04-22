@@ -101,8 +101,11 @@ export default function ProductionIssuesPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
+  // Dedicated endpoint — returns flagged deals across ALL stages, not just active.
+  // The generic /api/projects?context=executive excludes PTO'd/closed deals (where
+  // most production issues actually live), so this page has its own read path.
   const { data: projects, loading, lastUpdated } = useProjectData<RawProject[]>({
-    params: { context: "executive" },
+    endpoint: "/api/projects/flagged",
     transform: (raw: unknown) => (raw as { projects: RawProject[] }).projects,
   });
   const safeProjects = useMemo(() => projects ?? [], [projects]);
@@ -192,20 +195,13 @@ export default function ProductionIssuesPage() {
   const now = useMemo(() => new Date(), []);
   const totalFlagged = filteredFlagged.length;
 
-  const totalPtod = useMemo(() => {
-    // Denominator is always full dataset — see spec.
-    return safeProjects.filter((p) => {
-      const s = (p.stage || "").toLowerCase();
-      return (
-        s.includes("pto") ||
-        s.includes("permission to operate") ||
-        s.includes("operating") ||
-        s.includes("complete")
-      );
-    }).length;
-  }, [safeProjects]);
-
-  const pctOfPtod = totalPtod > 0 ? Math.round((totalFlagged / totalPtod) * 100) : null;
+  // Share of flagged projects that are already PTO'd (post-install issues)
+  // vs. still in pipeline (design concerns). Useful triage signal.
+  const pctPostPto = useMemo(() => {
+    if (filteredFlagged.length === 0) return null;
+    const postPto = filteredFlagged.filter(({ bucket }) => bucket === "pto").length;
+    return Math.round((postPto / filteredFlagged.length) * 100);
+  }, [filteredFlagged]);
 
   const monthsSinceClose = useMemo(
     () =>
@@ -316,8 +312,8 @@ export default function ProductionIssuesPage() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <MiniStat label="Total flagged" value={loading ? null : totalFlagged} />
         <MiniStat
-          label="% of PTO'd fleet"
-          value={loading ? null : pctOfPtod !== null ? `${pctOfPtod}%` : "—"}
+          label="% post-PTO"
+          value={loading ? null : pctPostPto !== null ? `${pctPostPto}%` : "—"}
         />
         <MiniStat
           label="Median months since close"

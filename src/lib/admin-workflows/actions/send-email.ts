@@ -5,6 +5,7 @@
  * primary, Resend fallback. Preserves all existing audit/BCC behavior.
  */
 
+import sanitizeHtml from "sanitize-html";
 import { z } from "zod";
 
 import { sendEmailMessage } from "@/lib/email";
@@ -38,7 +39,7 @@ export const sendEmailAction: AdminWorkflowAction<
       to: recipients,
       subject: inputs.subject,
       html: inputs.body,
-      text: inputs.body.replace(/<[^>]+>/g, ""),
+      text: sanitizeHtml(inputs.body, { allowedTags: [], allowedAttributes: {} }),
       debugFallbackTitle: `AdminWorkflow ${context.workflowId}`,
       debugFallbackBody: `Run ${context.runId} triggered by ${context.triggeredByEmail}`,
     });
