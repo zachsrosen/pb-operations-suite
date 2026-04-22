@@ -4,6 +4,7 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 import EstimatorEmbedBody from "./EstimatorEmbedBody";
+import FlowNav from "./shared/FlowNav";
 
 export const metadata: Metadata = {
   title: "Solar Estimator | Photon Brothers",
@@ -15,26 +16,29 @@ export default function EstimatorLayout({ children }: { children: ReactNode }) {
   return (
     <EstimatorEmbedBody
       header={
-        <header className="border-b border-t-border bg-surface">
-          <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
-            <Link href="/estimator" className="flex items-center gap-2">
-              <Image
-                src="/branding/photon-brothers-logo-mixed-white.svg"
-                alt="Photon Brothers"
-                width={160}
-                height={32}
-                priority
-                className="h-8 w-auto"
-              />
-            </Link>
-            <a
-              href="https://www.photonbrothers.com"
-              className="text-sm text-muted hover:text-foreground"
-            >
-              Return to photonbrothers.com
-            </a>
-          </div>
-        </header>
+        <>
+          <header className="border-b border-t-border bg-surface">
+            <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
+              <Link href="/estimator" className="flex items-center gap-2">
+                <Image
+                  src="/branding/photon-brothers-logo-mixed-white.svg"
+                  alt="Photon Brothers"
+                  width={160}
+                  height={32}
+                  priority
+                  className="h-8 w-auto"
+                />
+              </Link>
+              <a
+                href="https://www.photonbrothers.com"
+                className="text-sm text-muted hover:text-foreground"
+              >
+                Return to photonbrothers.com
+              </a>
+            </div>
+          </header>
+          <FlowNav />
+        </>
       }
       footer={
         <footer className="border-t border-t-border bg-surface">
