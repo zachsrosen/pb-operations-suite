@@ -236,28 +236,42 @@ export function transformDeal(
   const isPtoGranted = parseBool(props.is_pto_granted_);
   const ptoGrantedDate = props.pto_completion_date || null;
 
+  // ── Money model ──
+  // For ALL deals: deal.amount (customerContractTotal) is the TOTAL contract.
+  // For non-PE deals: customer pays 100% of deal.amount via DA + CC + PTO.
+  // For PE deals:    customer pays ~70% via DA + CC + PTO; PE program pays
+  //                  the other ~30% via PE M1 + PE M2.
+  // Either way, the TOTAL collected against deal.amount is:
+  //   (DA paid + CC paid + PTO paid) + (PE M1 paid + PE M2 paid)
+  // and that total should sum to deal.amount when fully collected.
+  //
+  // peBonus* fields are kept for backwards compat but they represent the
+  // PE PORTION of the deal, NOT additional revenue beyond the contract.
   const customerCollected =
     (daStatus === "Paid In Full" ? daAmount ?? 0 : 0) +
     (ccStatus === "Paid In Full" ? ccAmount ?? 0 : 0);
-  const customerOutstanding = Math.max(0, customerContractTotal - customerCollected);
 
   const peBonusTotal = isPE ? (peM1Amount ?? 0) + (peM2Amount ?? 0) : null;
   const peBonusCollected = isPE
     ? (peM1Status === "Paid" ? peM1Amount ?? 0 : 0) +
       (peM2Status === "Paid" ? peM2Amount ?? 0 : 0)
     : null;
-  const peBonusOutstanding =
-    peBonusTotal !== null && peBonusCollected !== null
-      ? Math.max(0, peBonusTotal - peBonusCollected)
-      : null;
 
+  // Outstanding for the deal = contract total minus everything paid (customer
+  // side AND PE side). PE payments collect against the same contract.
+  const totalCollected = customerCollected + (peBonusCollected ?? 0);
+  const customerOutstanding = Math.max(0, customerContractTotal - totalCollected);
+  const peBonusOutstanding = isPE ? customerOutstanding : null;
+
+  // Total revenue PB receives = the deal contract. For PE deals this still
+  // equals deal.amount because PE pays a portion (not extra) of the same
+  // contract. Use pe_total_pb_revenue when present (HubSpot's own calc).
   const totalPBRevenue = isPE
-    ? parseNumber(props.pe_total_pb_revenue) ?? customerContractTotal + (peBonusTotal ?? 0)
+    ? parseNumber(props.pe_total_pb_revenue) ?? customerContractTotal
     : customerContractTotal;
 
-  const totalCollectable = customerContractTotal + (peBonusTotal ?? 0);
-  const totalCollected = customerCollected + (peBonusCollected ?? 0);
-  const collectedPct = totalCollectable > 0 ? (totalCollected / totalCollectable) * 100 : 0;
+  const collectedPct =
+    customerContractTotal > 0 ? (totalCollected / customerContractTotal) * 100 : 0;
 
   const { bucket, attentionReasons } = computeBucket({
     daStatus,
@@ -354,10 +368,12 @@ export function computeSummary(deals: PaymentTrackingDeal[]): PaymentTrackingSum
     totalPBRevenue += d.totalPBRevenue;
   }
 
-  const customerOutstanding = Math.max(0, customerContractTotal - customerCollected);
-  const peBonusOutstanding = Math.max(0, peBonusTotal - peBonusCollected);
-  const totalCollectable = customerContractTotal + peBonusTotal;
+  // PE collects against the SAME contract as the customer side (PE pays a
+  // portion, not extra). Outstanding = contract total minus everything paid.
   const totalCollected = customerCollected + peBonusCollected;
+  const customerOutstanding = Math.max(0, customerContractTotal - totalCollected);
+  const peBonusOutstanding = Math.max(0, peBonusTotal - peBonusCollected);
+  const totalCollectable = customerContractTotal;
   const collectedPct = totalCollectable > 0 ? (totalCollected / totalCollectable) * 100 : 0;
 
   return {

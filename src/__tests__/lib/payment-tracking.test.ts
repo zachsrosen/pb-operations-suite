@@ -242,12 +242,18 @@ describe("transformDeal — property canonicalization", () => {
 });
 
 describe("computeSummary", () => {
-  it("sums customer and PE revenue separately", () => {
+  // Money model:
+  //   deal.amount is the TOTAL contract for both PE and non-PE deals.
+  //   For PE deals, customer pays ~70% via DA+CC+PTO and PE pays ~30% via
+  //   PE M1+PE M2 — both portions sum back to deal.amount.
+  it("sums correctly under the unified contract model (PE = portion, not bonus)", () => {
     const deals = [
+      // Non-PE deal: $10k contract, customer paid half ($5k), other half open
       transformDeal(
         {
           ...BASE,
           hs_object_id: "1",
+          amount: "10000",
           da_invoice_status: "Paid In Full",
           da_invoice_amount: "5000",
           cc_invoice_status: "Open",
@@ -255,33 +261,36 @@ describe("computeSummary", () => {
         },
         new Date("2026-03-15")
       ),
+      // PE deal: $30k contract = $21k customer (70%) + $9k PE (30%)
       transformDeal(
         {
           ...BASE,
           hs_object_id: "2",
-          amount: "20000",
+          amount: "30000",
           da_invoice_status: "Paid In Full",
-          da_invoice_amount: "10000",
+          da_invoice_amount: "10500",
           cc_invoice_status: "Paid In Full",
-          cc_invoice_amount: "10000",
+          cc_invoice_amount: "10500",
           pto_invoice_status: "Paid In Full",
           pe_m1_status: "Paid",
           pe_m2_status: "Paid",
           pe_payment_ic: "6000",
           pe_payment_pc: "3000",
-          pe_total_pb_revenue: "29000",
+          pe_total_pb_revenue: "30000",
         },
         new Date("2026-04-21")
       ),
     ];
 
     const summary = computeSummary(deals);
-    expect(summary.customerContractTotal).toBe(30000);
-    expect(summary.customerCollected).toBe(25000); // 5k + 10k + 10k
-    expect(summary.customerOutstanding).toBe(5000);
+    expect(summary.customerContractTotal).toBe(40000); // 10k + 30k
+    expect(summary.customerCollected).toBe(26000); // 5k + 21k
+    expect(summary.peBonusCollected).toBe(9000); // PE deal #2 only
     expect(summary.peBonusTotal).toBe(9000);
-    expect(summary.peBonusCollected).toBe(9000);
-    expect(summary.totalPBRevenue).toBe(39000); // 10k customer deal #1 + 29k PE deal #2
+    // Outstanding = total contract - everything collected (customer + PE)
+    expect(summary.customerOutstanding).toBe(5000); // 40k - (26k + 9k) = 5k
+    // Total PB revenue = deal contract (PE doesn't add to it)
+    expect(summary.totalPBRevenue).toBe(40000);
     expect(summary.dealCount).toBe(2);
   });
 });
