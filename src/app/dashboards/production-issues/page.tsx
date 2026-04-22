@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import DashboardShell from "@/components/DashboardShell";
 import { MiniStat } from "@/components/ui/MetricCard";
 import { MultiSelectFilter, FilterOption } from "@/components/ui/MultiSelectFilter";
@@ -9,7 +9,7 @@ import { useProjectData } from "@/hooks/useProjectData";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { useProductionIssuesFilters } from "@/stores/dashboard-filters";
 import { analyzeClipping } from "@/lib/clipping";
-import { bucketStage } from "@/lib/production-issues-aggregations";
+import { bucketStage, topByKey } from "@/lib/production-issues-aggregations";
 
 const RISK_COLORS: Record<string, string> = {
   high: "bg-red-500/20 text-red-400 border-red-500/30",
@@ -58,6 +58,45 @@ function equipmentLabel(eq?: { brand?: string; model?: string }): string {
   return `${eq.brand ?? ""} ${eq.model ?? ""}`.trim();
 }
 
+function BarCard({
+  title,
+  rows,
+}: {
+  title: string;
+  rows: { key: string; count: number }[];
+}) {
+  const max = Math.max(1, ...rows.map((r) => r.count));
+  return (
+    <div className="rounded-xl border border-t-border bg-surface p-4">
+      {title && (
+        <div className="text-sm font-medium text-foreground mb-3">{title}</div>
+      )}
+      {rows.length === 0 ? (
+        <div className="text-xs text-muted">No data.</div>
+      ) : (
+        <div className="space-y-1.5">
+          {rows.map((r) => (
+            <div key={r.key} className="flex items-center gap-2 text-xs">
+              <div className="w-28 truncate text-muted" title={r.key}>
+                {r.key}
+              </div>
+              <div className="flex-1 h-2 rounded bg-surface-2 overflow-hidden">
+                <div
+                  className="h-full bg-orange-500/60"
+                  style={{ width: `${(r.count / max) * 100}%` }}
+                />
+              </div>
+              <div className="w-8 text-right text-foreground tabular-nums">
+                {r.count}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ProductionIssuesPage() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
@@ -69,6 +108,7 @@ export default function ProductionIssuesPage() {
   const safeProjects = projects ?? [];
 
   const { filters, setFilters, clearFilters } = useProductionIssuesFilters();
+  const [equipTab, setEquipTab] = useState<"inverter" | "module" | "battery">("inverter");
 
   // Flagged subset — canonical source for every calc on this page.
   const flagged = useMemo(
@@ -190,6 +230,51 @@ export default function ProductionIssuesPage() {
     return bestProject ? { project: bestProject, months: bestMonths } : null;
   }, [filteredFlagged, now]);
 
+  const byLocation = useMemo(
+    () => topByKey(filteredFlagged, (r) => r.project.pbLocation, 10),
+    [filteredFlagged]
+  );
+
+  const byBucket = useMemo(() => {
+    const rows = topByKey(filteredFlagged, (r) => r.bucket, 10);
+    const labelFor = (k: string) =>
+      k === "pto"
+        ? "PTO'd"
+        : k === "service"
+        ? "Service"
+        : k === "active"
+        ? "Active"
+        : "Other";
+    return rows.map((r) => ({ ...r, key: labelFor(r.key) }));
+  }, [filteredFlagged]);
+
+  const byRisk = useMemo(
+    () => topByKey(filteredFlagged, (r) => r.risk, 10),
+    [filteredFlagged]
+  );
+
+  const byOwner = useMemo(
+    () => topByKey(filteredFlagged, (r) => r.project.dealOwner, 10),
+    [filteredFlagged]
+  );
+
+  const byEquipment = useMemo(() => {
+    if (equipTab === "inverter") {
+      return topByKey(filteredFlagged, (r) => equipmentLabel(r.project.equipment?.inverter), 10);
+    }
+    if (equipTab === "module") {
+      return topByKey(filteredFlagged, (r) => equipmentLabel(r.project.equipment?.modules), 10);
+    }
+    return topByKey(
+      filteredFlagged,
+      (r) => {
+        if (r.project.equipment?.battery?.count === 0) return "No battery";
+        return equipmentLabel(r.project.equipment?.battery);
+      },
+      10
+    );
+  }, [filteredFlagged, equipTab]);
+
   const exportRows = useMemo(
     () =>
       filteredFlagged.map(({ project, risk, bucket }) => ({
@@ -301,6 +386,39 @@ export default function ProductionIssuesPage() {
               Clear filters
             </button>
           )}
+        </div>
+      )}
+
+      {/* Breakdown grid */}
+      {!loading && filteredFlagged.length > 0 && (
+        <div className="stagger-grid grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+          <BarCard title="By location" rows={byLocation} />
+          <BarCard title="By stage" rows={byBucket} />
+          <BarCard title="By clipping risk" rows={byRisk} />
+          <BarCard title="By deal owner (top 10)" rows={byOwner} />
+          <div className="rounded-xl border border-t-border bg-surface p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm font-medium text-foreground">
+                By equipment (top 10)
+              </div>
+              <div className="flex gap-1 text-xs">
+                {(["inverter", "module", "battery"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setEquipTab(tab)}
+                    className={`px-2 py-0.5 rounded capitalize ${
+                      equipTab === tab
+                        ? "bg-orange-500/20 text-orange-400"
+                        : "text-muted hover:text-foreground"
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <BarCard title="" rows={byEquipment} />
+          </div>
         </div>
       )}
 
