@@ -1,0 +1,2304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TSRF Solar Peak Power Calculator</title>
+<script src="/vendor/chart.umd.min.js"></script>
+<style>
+:root {
+  --amber:      #f59e0b;
+  --amber-lt:   #fcd34d;
+  --amber-dk:   #b45309;
+  --sky:        #38bdf8;
+  --red:        #ef4444;
+  --green:      #22c55e;
+  --green-dk:   #15803d;
+  --bg:         #070d1a;
+  --bg2:        #0f172a;
+  --bg3:        #1e293b;
+  --bg4:        #263245;
+  --border:     #2d3f55;
+  --text:       #f1f5f9;
+  --text2:      #cbd5e1;
+  --muted:      #64748b;
+  --muted2:     #94a3b8;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.5;
+}
+
+/* ── HEADER ─────────────────────────────────────────── */
+header {
+  background: linear-gradient(160deg, #070d1a 0%, #0d1b35 55%, #0a1220 100%);
+  border-bottom: 1px solid rgba(245,158,11,.35);
+  padding: 22px 32px 18px;
+  position: relative;
+  overflow: hidden;
+}
+header::before {
+  content: '';
+  position: absolute; top: -120px; right: -80px;
+  width: 340px; height: 340px;
+  background: radial-gradient(circle, rgba(245,158,11,.12) 0%, transparent 70%);
+  pointer-events: none;
+}
+header::after {
+  content: '';
+  position: absolute; bottom: -40px; left: 120px;
+  width: 200px; height: 200px;
+  background: radial-gradient(circle, rgba(56,189,248,.05) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hdr {
+  max-width: 1240px; margin: 0 auto;
+  display: flex; align-items: center; gap: 18px;
+}
+.hdr-icon {
+  font-size: 52px;
+  filter: drop-shadow(0 0 18px rgba(245,158,11,.9));
+  animation: solarglow 4s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes solarglow {
+  0%,100% { filter: drop-shadow(0 0 18px rgba(245,158,11,.9)); }
+  50%      { filter: drop-shadow(0 0 36px rgba(245,158,11,1.0)) brightness(1.15); }
+}
+.hdr-text h1 {
+  font-size: 26px; font-weight: 800;
+  background: linear-gradient(135deg, var(--amber-lt), var(--amber));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: -.3px;
+}
+.hdr-text p { color: var(--muted2); font-size: 13px; margin-top: 3px; }
+.hdr-badge {
+  margin-left: auto; flex-shrink: 0;
+  background: rgba(245,158,11,.1); border: 1px solid rgba(245,158,11,.3);
+  border-radius: 6px; padding: 5px 12px;
+  font-size: 11px; font-weight: 700; color: var(--amber);
+  letter-spacing: .05em; text-transform: uppercase;
+}
+
+/* ── LAYOUT ─────────────────────────────────────────── */
+main { max-width: 1240px; margin: 0 auto; padding: 28px 20px 60px; }
+
+/* ── CARDS ─────────────────────────────────────────── */
+.card {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 14px; padding: 20px 22px;
+}
+.card-title {
+  font-size: 13px; font-weight: 700; color: var(--amber);
+  letter-spacing: .04em; text-transform: uppercase;
+  margin-bottom: 16px; display: flex; align-items: center; gap: 8px;
+}
+
+/* ── INPUT GRID ─────────────────────────────────────── */
+.input-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 16px; margin-bottom: 18px;
+}
+@media (max-width: 900px) { .input-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .input-grid { grid-template-columns: 1fr; } }
+
+.field { margin-bottom: 12px; }
+.field:last-child { margin-bottom: 0; }
+label {
+  display: block; font-size: 11px; font-weight: 600; color: var(--muted2);
+  text-transform: uppercase; letter-spacing: .06em; margin-bottom: 5px;
+}
+.field-hint { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+input[type="text"], input[type="number"] {
+  width: 100%; background: var(--bg2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px 12px; color: var(--text); font-size: 14px;
+  transition: border-color .2s, box-shadow .2s;
+}
+input:focus {
+  outline: none; border-color: var(--amber);
+  box-shadow: 0 0 0 3px rgba(245,158,11,.12);
+}
+input::placeholder { color: var(--muted); }
+.input-row { display: flex; gap: 8px; }
+.input-row input { flex: 1; min-width: 0; }
+
+/* ── BUTTONS ─────────────────────────────────────────── */
+.btn {
+  padding: 8px 14px; border-radius: 8px; border: none;
+  cursor: pointer; font-size: 13px; font-weight: 600;
+  transition: all .18s; white-space: nowrap;
+}
+.btn-ghost {
+  background: var(--bg2); border: 1px solid var(--border); color: var(--muted2);
+}
+.btn-ghost:hover { border-color: var(--amber); color: var(--amber); }
+.btn-ghost:disabled { opacity: .45; cursor: default; }
+
+.btn-calc {
+  display: block; width: 100%;
+  background: linear-gradient(135deg, #b45309, #f59e0b, #fcd34d);
+  color: #000; font-size: 16px; font-weight: 800;
+  padding: 15px 32px; border-radius: 12px; border: none;
+  cursor: pointer; letter-spacing: .02em;
+  box-shadow: 0 4px 24px rgba(245,158,11,.3); transition: all .2s;
+  margin-top: 4px;
+}
+.btn-calc:hover { box-shadow: 0 6px 36px rgba(245,158,11,.5); transform: translateY(-2px); }
+.btn-calc:active { transform: translateY(0); }
+
+/* ── GEOCODE STATUS ─────────────────────────────────── */
+#geo-status { min-height: 22px; margin-top: 5px; }
+.status-ok     { font-size: 12px; color: var(--green); display:flex;align-items:center;gap:5px; }
+.status-err    { font-size: 12px; color: var(--red); }
+.status-loading{ font-size: 12px; color: var(--muted2); display:flex;align-items:center;gap:6px; }
+.spinner {
+  width: 13px; height: 13px; border: 2px solid var(--border);
+  border-top-color: var(--amber); border-radius: 50%;
+  animation: spin .7s linear infinite; flex-shrink: 0;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── COMPASS ─────────────────────────────────────────── */
+.compass-wrap { display: flex; align-items: center; gap: 14px; }
+.compass {
+  position: relative; width: 72px; height: 72px; flex-shrink: 0;
+  border: 1.5px solid var(--border); border-radius: 50%;
+  background: radial-gradient(circle, var(--bg2) 0%, var(--bg) 100%);
+}
+.compass::after {
+  content: '·'; position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 22px;
+}
+.c-lbl { position: absolute; font-size: 9px; color: var(--muted); font-weight: 700; }
+.c-N { top: 3px; left: 50%; transform: translateX(-50%); }
+.c-S { bottom: 3px; left: 50%; transform: translateX(-50%); }
+.c-E { right: 5px; top: 50%; transform: translateY(-50%); }
+.c-W { left: 5px; top: 50%; transform: translateY(-50%); }
+.compass-needle {
+  position: absolute; bottom: 50%; left: 50%;
+  width: 3px; height: 28px; margin-left: -1.5px;
+  background: linear-gradient(to top, transparent, var(--amber));
+  border-radius: 2px 2px 0 0; transform-origin: bottom center;
+  transition: transform .35s cubic-bezier(.34,1.56,.64,1);
+}
+.compass-dot {
+  position: absolute; top: 50%; left: 50%;
+  width: 6px; height: 6px; margin: -3px 0 0 -3px;
+  background: var(--amber); border-radius: 50%;
+  box-shadow: 0 0 6px var(--amber);
+}
+
+/* ── RESULTS ─────────────────────────────────────────── */
+#results { display: none; }
+.section-title {
+  font-size: 18px; font-weight: 700; color: var(--text);
+  margin-bottom: 16px; display: flex; align-items: center; gap: 10px;
+}
+
+/* Summary stat bar */
+.stats-bar {
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 12px; margin-bottom: 20px;
+}
+@media (max-width: 900px) { .stats-bar { grid-template-columns: repeat(3,1fr); } }
+@media (max-width: 560px) { .stats-bar { grid-template-columns: repeat(2,1fr); } }
+
+.stat-card {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 12px; padding: 14px 12px; text-align: center;
+  position: relative; overflow: hidden;
+}
+.stat-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0;
+  height: 2px; border-radius: 2px 2px 0 0;
+}
+.stat-card.sum::before  { background: linear-gradient(90deg, var(--amber-dk), var(--amber-lt)); }
+.stat-card.win::before  { background: linear-gradient(90deg, var(--sky), #818cf8); }
+.stat-card.clip::before { background: linear-gradient(90deg, var(--red), #f97316); }
+.stat-card.ilr::before  { background: linear-gradient(90deg, var(--green-dk), var(--green)); }
+.stat-card.loc::before  { background: linear-gradient(90deg, #7c3aed, #a78bfa); }
+
+.stat-lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted2); margin-bottom: 5px; }
+.stat-val { font-size: 22px; font-weight: 800; }
+.stat-val.amber  { color: var(--amber); }
+.stat-val.sky    { color: var(--sky); }
+.stat-val.red    { color: var(--red); }
+.stat-val.green  { color: var(--green); }
+.stat-val.purple { color: #a78bfa; }
+.stat-sub { font-size: 11px; color: var(--muted); margin-top: 3px; }
+
+/* Charts grid */
+.charts-2col {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 16px; margin-bottom: 16px;
+}
+@media (max-width: 760px) { .charts-2col { grid-template-columns: 1fr; } }
+
+.chart-card {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 14px; padding: 18px 20px;
+}
+.chart-card-title { font-size: 13px; font-weight: 700; color: var(--text2); margin-bottom: 4px; display: flex; align-items: center; gap: 7px; }
+.chart-card-sub   { font-size: 11px; color: var(--muted); margin-bottom: 14px; }
+.chart-wrap { position: relative; height: 210px; }
+
+/* Monthly chart */
+.monthly-card {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 14px; padding: 18px 20px; margin-bottom: 16px;
+}
+.monthly-wrap { position: relative; height: 200px; }
+
+/* Analysis grid */
+.analysis-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 16px; margin-bottom: 16px;
+}
+@media (max-width: 760px) { .analysis-grid { grid-template-columns: 1fr; } }
+
+/* Clipping card */
+.clip-card {
+  background: var(--bg3); border: 1px solid rgba(239,68,68,.3);
+  border-radius: 14px; padding: 20px;
+}
+.clip-title {
+  font-size: 13px; font-weight: 700; color: var(--red);
+  text-transform: uppercase; letter-spacing: .05em;
+  margin-bottom: 14px; display: flex; align-items: center; gap: 7px;
+}
+
+/* TSRF table */
+.tsrf-card {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 14px; padding: 20px;
+}
+.tsrf-title {
+  font-size: 13px; font-weight: 700; color: var(--muted2);
+  text-transform: uppercase; letter-spacing: .05em;
+  margin-bottom: 14px; display: flex; align-items: center; gap: 7px;
+}
+table { width: 100%; border-collapse: collapse; }
+th {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .07em; color: var(--muted);
+  padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border);
+}
+td { padding: 9px 10px; font-size: 13px; border-bottom: 1px solid rgba(45,63,85,.6); }
+tr:last-child td { border-bottom: none; }
+
+.metric-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 0; border-bottom: 1px solid rgba(45,63,85,.6);
+}
+.metric-row:last-child { border-bottom: none; padding-bottom: 0; }
+.metric-lbl { font-size: 13px; color: var(--muted2); }
+.metric-val { font-size: 14px; font-weight: 700; }
+
+/* Progress bar */
+.pbar-wrap { margin-top: 4px; }
+.pbar { height: 4px; background: var(--bg2); border-radius: 2px; overflow: hidden; }
+.pbar-fill {
+  height: 100%; border-radius: 2px;
+  background: linear-gradient(90deg, var(--amber-dk), var(--amber-lt));
+  transition: width .6s ease;
+}
+.pbar-fill.sky   { background: linear-gradient(90deg, var(--sky), #818cf8); }
+.pbar-fill.red   { background: linear-gradient(90deg, #b91c1c, var(--red)); }
+.pbar-fill.green { background: linear-gradient(90deg, var(--green-dk), var(--green)); }
+.pbar-fill.grey  { background: linear-gradient(90deg, var(--muted), var(--muted2)); }
+
+/* Badge */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 5px; font-size: 11px; font-weight: 700;
+}
+.badge-red   { background: rgba(239,68,68,.15);  color: var(--red); }
+.badge-amber { background: rgba(245,158,11,.15); color: var(--amber); }
+.badge-green { background: rgba(34,197,94,.15);  color: var(--green); }
+.badge-blue  { background: rgba(56,189,248,.15); color: var(--sky); }
+
+/* Severity gauge */
+.gauge-wrap  { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.gauge-track { flex: 1; height: 8px; background: var(--bg2); border-radius: 4px; overflow: hidden; }
+.gauge-fill  {
+  height: 100%; border-radius: 4px;
+  background: linear-gradient(90deg, #22c55e, #f59e0b, #ef4444);
+  transition: width .6s ease;
+}
+.gauge-pct { font-size: 12px; font-weight: 700; min-width: 36px; text-align: right; }
+
+/* Info note */
+.info-note {
+  background: rgba(56,189,248,.07); border: 1px solid rgba(56,189,248,.2);
+  border-radius: 8px; padding: 10px 13px; font-size: 12px; color: var(--muted2);
+  margin-top: 16px; line-height: 1.55;
+}
+.info-note strong { color: var(--sky); }
+
+.divider { height: 1px; background: var(--border); margin: 20px 0; }
+
+/* Footer */
+footer {
+  text-align: center; padding: 20px; font-size: 11px;
+  color: var(--muted); border-top: 1px solid var(--border);
+}
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* ── MODE TABS ─────────────────────────────────────────── */
+.mode-tabs {
+  display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap;
+}
+.mode-tab {
+  padding: 9px 22px; border-radius: 8px;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--muted2); font-size: 13px; font-weight: 600;
+  cursor: pointer; transition: all .15s;
+}
+.mode-tab:hover { border-color: var(--amber); color: var(--text); }
+.mode-tab.active {
+  background: rgba(245,158,11,.15); border-color: var(--amber);
+  color: var(--amber);
+}
+
+/* ── MULTI ARRAY ROW ────────────────────────────────────── */
+.array-row {
+  background: var(--bg4); border: 1px solid var(--border);
+  border-radius: 10px; padding: 14px 16px; margin-bottom: 10px;
+}
+.array-row-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px;
+}
+.array-row-label { font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.array-row-fields {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+.array-row-fields .field-wide { grid-column: span 2; }
+.btn-remove {
+  background: rgba(239,68,68,.1); border: 1px solid rgba(239,68,68,.3);
+  color: var(--red); border-radius: 6px; padding: 3px 10px;
+  font-size: 11px; cursor: pointer; flex-shrink: 0; transition: background .15s;
+}
+.btn-remove:hover { background: rgba(239,68,68,.25); }
+
+/* ── MULTI RESULTS STATS BAR ────────────────────────────── */
+.m-stats-bar { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+.m-stat {
+  flex: 1; min-width: 120px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 14px; text-align: center;
+}
+.m-stat-lbl { font-size: 11px; color: var(--muted2); margin-bottom: 4px; }
+.m-stat-val { font-size: 22px; font-weight: 800; line-height: 1.1; }
+.m-stat-sub { font-size: 10px; color: var(--muted); margin-top: 3px; }
+
+/* ── ARRAY SUMMARY TABLE ────────────────────────────────── */
+.array-summary-table {
+  width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px;
+}
+.array-summary-table th {
+  text-align: left; padding: 6px 10px;
+  color: var(--muted2); border-bottom: 1px solid var(--border);
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  white-space: nowrap;
+}
+.array-summary-table td {
+  padding: 7px 10px; border-bottom: 1px solid rgba(45,63,85,.5); color: var(--text2);
+  white-space: nowrap;
+}
+.array-summary-table tr:last-child td { border-bottom: none; }
+.td-num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── EXPORT BUTTON ──────────────────────────────────────── */
+.btn-export {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 7px 16px; border-radius: 8px; cursor: pointer;
+  background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.4);
+  color: var(--amber); font-size: 12px; font-weight: 600;
+  transition: background .15s, border-color .15s;
+  float: right; margin-top: -2px;
+}
+.btn-export:hover { background: rgba(245,158,11,.22); border-color: var(--amber); }
+</style>
+</head>
+<body>
+
+<!-- ══════════════════  HEADER  ══════════════════ -->
+<header>
+  <div class="hdr">
+    <div class="hdr-icon">☀️</div>
+    <div class="hdr-text">
+      <h1>TSRF Solar Peak Power Calculator</h1>
+      <p>Seasonal DC output · Inverter clipping analysis · Summer / Winter TSRF estimates</p>
+    </div>
+    <div class="hdr-badge">v1.0</div>
+  </div>
+</header>
+
+<!-- ══════════════════  MAIN  ══════════════════ -->
+<main>
+
+  <!-- ── MODE TABS ── -->
+  <div class="mode-tabs">
+    <button class="mode-tab active" id="tab-single" onclick="switchTab('single')">⚡ Single Array</button>
+    <button class="mode-tab" id="tab-multi" onclick="switchTab('multi')">🔲 Multi-Array System</button>
+  </div>
+
+  <!-- ══════  SINGLE ARRAY PANEL  ══════ -->
+  <div id="panel-single">
+
+  <!-- ── INPUTS ── -->
+  <div class="input-grid">
+
+    <!-- Location -->
+    <div class="card">
+      <div class="card-title">📍 Location</div>
+      <div class="field">
+        <label>Street Address or City</label>
+        <div class="input-row">
+          <input type="text" id="address" placeholder="e.g. 123 Main St, Phoenix AZ">
+          <button class="btn btn-ghost" id="geo-btn" onclick="geocodeAddress()">Lookup</button>
+        </div>
+        <div id="geo-status"></div>
+      </div>
+      <div class="input-row" style="gap:10px">
+        <div class="field" style="flex:1">
+          <label>Latitude °</label>
+          <input type="number" id="lat" placeholder="33.45" step="0.0001" min="-90" max="90">
+        </div>
+        <div class="field" style="flex:1">
+          <label>Longitude °</label>
+          <input type="number" id="lon" placeholder="-112.07" step="0.0001" min="-180" max="180">
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px">Lat/Lon auto-fills from address lookup, or enter manually.</div>
+    </div>
+
+    <!-- System Specs -->
+    <div class="card">
+      <div class="card-title">⚡ System Specifications</div>
+      <div class="field">
+        <label>Array DC Size (kW)</label>
+        <input type="number" id="array_kw" value="8.8" step="0.1" min="0.5" max="500">
+        <div class="field-hint">Total nameplate STC DC capacity</div>
+      </div>
+      <div class="field">
+        <label>Inverter AC Size (kW)</label>
+        <input type="number" id="inverter_kw" value="7.6" step="0.1" min="0.5" max="500">
+        <div class="field-hint">Inverter continuous AC output rating</div>
+      </div>
+      <div class="field">
+        <label>Annual TSRF (%) — from OpenSolar</label>
+        <input type="number" id="tsrf" value="80" step="0.5" min="1" max="100">
+        <div class="field-hint">Total Solar Resource Fraction · avg across all modules</div>
+      </div>
+    </div>
+
+    <!-- Array Orientation -->
+    <div class="card">
+      <div class="card-title">🔲 Array Orientation</div>
+      <div class="field">
+        <label>Azimuth (° from North, clockwise)</label>
+        <div class="compass-wrap">
+          <div class="compass" id="compassDial">
+            <span class="c-lbl c-N">N</span>
+            <span class="c-lbl c-S">S</span>
+            <span class="c-lbl c-E">E</span>
+            <span class="c-lbl c-W">W</span>
+            <div class="compass-needle" id="compassNeedle"></div>
+            <div class="compass-dot"></div>
+          </div>
+          <div style="flex:1">
+            <input type="number" id="azimuth" value="180" step="1" min="0" max="360"
+                   oninput="updateCompass(this.value)">
+            <div class="field-hint">180° = South · 270° = West · 90° = East</div>
+          </div>
+        </div>
+      </div>
+      <div class="field" style="margin-top:10px">
+        <label>Pitch / Tilt (° from horizontal)</label>
+        <input type="number" id="pitch" value="22" step="1" min="0" max="90">
+        <div class="field-hint">0° = flat · 30° = typical resi · 90° = vertical</div>
+      </div>
+      <div class="field">
+        <label>Module Temp Coefficient (%/°C)</label>
+        <input type="number" id="temp_coeff" value="-0.40" step="0.01" min="-0.7" max="0">
+        <div class="field-hint">Mono-PERC typical: −0.35 to −0.45 %/°C</div>
+      </div>
+    </div>
+
+  </div><!-- /input-grid -->
+
+  <button class="btn-calc" onclick="calculate()">⚡ Calculate Peak Power &amp; Clipping Report</button>
+
+  <!-- ── RESULTS ── -->
+  <div id="results">
+    <div class="divider"></div>
+
+    <div class="section-title">📊 Results Summary
+      <button class="btn-export" onclick="exportSinglePDF()">⬇ Export PDF</button>
+    </div>
+    <div class="stats-bar">
+      <div class="stat-card sum">
+        <div class="stat-lbl">☀️ Summer Peak DC</div>
+        <div class="stat-val amber" id="r-sum-peak">—</div>
+        <div class="stat-sub">kW · TSRF-adjusted · June Solstice</div>
+      </div>
+      <div class="stat-card win">
+        <div class="stat-lbl">❄️ Winter Peak DC</div>
+        <div class="stat-val sky" id="r-win-peak">—</div>
+        <div class="stat-sub">kW · TSRF-adjusted · Dec Solstice</div>
+      </div>
+      <div class="stat-card clip">
+        <div class="stat-lbl">✂️ Clip Hours / Day</div>
+        <div class="stat-val red" id="r-clip-hrs">—</div>
+        <div class="stat-sub" id="r-clip-sub">summer solstice</div>
+      </div>
+      <div class="stat-card ilr">
+        <div class="stat-lbl">📐 DC:AC Ratio</div>
+        <div class="stat-val green" id="r-ilr">—</div>
+        <div class="stat-sub" id="r-ilr-sub">ILR</div>
+      </div>
+      <div class="stat-card loc">
+        <div class="stat-lbl">🌍 Latitude</div>
+        <div class="stat-val purple" id="r-lat">—</div>
+        <div class="stat-sub" id="r-loc-sub">optimal tilt</div>
+      </div>
+    </div>
+
+    <!-- Day power charts -->
+    <div class="charts-2col">
+      <div class="chart-card">
+        <div class="chart-card-title">☀️ Summer Solstice — DC Power Profile</div>
+        <div class="chart-card-sub">June 21 · Clear-sky POA × annual TSRF × temp derating · Solar time · Red zone = inverter clipping</div>
+        <div class="chart-wrap"><canvas id="chart-summer"></canvas></div>
+      </div>
+      <div class="chart-card">
+        <div class="chart-card-title">❄️ Winter Solstice — DC Power Profile</div>
+        <div class="chart-card-sub">December 21 · Clear sky · Solar time</div>
+        <div class="chart-wrap"><canvas id="chart-winter"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Monthly chart -->
+    <div class="monthly-card">
+      <div class="chart-card-title" style="margin-bottom:3px">📅 Monthly Peak DC Power</div>
+      <div class="chart-card-sub" style="margin-bottom:12px">Clear-sky noon peak × annual TSRF × temperature derating · Red bars exceed inverter limit</div>
+      <div class="monthly-wrap"><canvas id="chart-monthly"></canvas></div>
+    </div>
+
+    <!-- Analysis grid -->
+    <div class="analysis-grid">
+      <div class="clip-card">
+        <div class="clip-title">✂️ Inverter Clipping Analysis — Summer</div>
+        <div id="clip-body"></div>
+      </div>
+      <div class="tsrf-card">
+        <div class="tsrf-title">📐 Seasonal TSRF Breakdown</div>
+        <table>
+          <thead>
+            <tr>
+              <th>Season</th>
+              <th>Est. TSRF</th>
+              <th>Peak POA</th>
+              <th>Peak DC</th>
+            </tr>
+          </thead>
+          <tbody id="tsrf-tbody"></tbody>
+        </table>
+        <div class="info-note">
+          <strong>How to read this table:</strong> All DC output uses your annual TSRF applied
+          uniformly — the orientation (azimuth/pitch) drives seasonal variation through solar
+          geometry, not through TSRF adjustment.  The <em>Est. TSRF</em> column shows what
+          fraction of optimal-site radiation this orientation captures each season.
+          Peak DC reflects clear-sky POA × annual TSRF × temperature derating.
+          For precise seasonal TSRF values, export monthly TSRF from OpenSolar directly.
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer note -->
+    <div class="info-note">
+      <strong>Methodology:</strong> Clear-sky GHI → Haurwitz model. DNI/DHI decomposition →
+      Erbs model. Tilted-surface irradiance → isotropic sky transposition.
+      Module temperature → NOCT model (NOCT = 45 °C, STC = 25 °C).
+      Half-hour resolution, 04:00–20:00 solar time.
+      <strong>DC(t) = array_kW × (POA(t)/1000) × annualTSRF × tempDerate(t).</strong>
+      Annual TSRF is applied uniformly to every hour — the correct treatment of a
+      single composite annual metric that bundles orientation + shading + soiling.
+      Seasonal variation in output is driven entirely by solar geometry (POA
+      calculation), which is inherently azimuth/pitch/latitude-dependent.
+      Adjusting TSRF further by season/orientation would double-count the
+      orientation component and inflate off-axis orientations.
+    </div>
+  </div><!-- /results -->
+
+  </div><!-- /panel-single -->
+
+  <!-- ══════  MULTI-ARRAY PANEL  ══════ -->
+  <div id="panel-multi" style="display:none">
+
+    <!-- Location -->
+    <div class="input-grid" style="margin-bottom:0">
+      <div class="card" style="grid-column:1/-1">
+        <div class="card-title">📍 Location</div>
+        <div class="field">
+          <label>Street Address or City</label>
+          <div class="input-row">
+            <input type="text" id="m-address" placeholder="e.g. 123 Main St, Phoenix AZ">
+            <button class="btn btn-ghost" id="m-geo-btn" onclick="mGeocode()">Lookup</button>
+          </div>
+          <div id="m-geo-status"></div>
+        </div>
+        <div class="input-row" style="gap:10px">
+          <div class="field" style="flex:1">
+            <label>Latitude °</label>
+            <input type="number" id="m-lat" placeholder="33.45" step="0.0001" min="-90" max="90">
+          </div>
+          <div class="field" style="flex:1">
+            <label>Longitude °</label>
+            <input type="number" id="m-lon" placeholder="-112.07" step="0.0001" min="-180" max="180">
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:4px">Lat/Lon auto-fills from address lookup, or enter manually.</div>
+      </div>
+    </div>
+
+    <!-- Inverter + Arrays in a 2-col grid -->
+    <div class="input-grid" style="margin-top:12px;margin-bottom:0">
+
+      <!-- System Inverter card -->
+      <div class="card">
+        <div class="card-title">🔌 System Inverter</div>
+        <div class="field">
+          <label>Inverter Model</label>
+          <select id="m-inv-model" onchange="updateInverterAC()" style="width:100%;padding:8px 10px;background:var(--bg4);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:13px">
+            <!-- populated by JS -->
+          </select>
+        </div>
+        <div class="input-row" style="gap:10px;margin-top:6px">
+          <div class="field" style="flex:0 0 90px">
+            <label>Qty</label>
+            <input type="number" id="m-inv-qty" value="1" min="1" max="100" step="1" oninput="updateInverterAC()">
+          </div>
+          <div class="field" style="flex:1">
+            <label>Total AC Capacity (kW) <span style="color:var(--muted);font-weight:400;font-size:10px">— derived</span></label>
+            <input type="number" id="m-inv-kw" step="0.1" min="0.1" max="2000">
+          </div>
+        </div>
+        <div id="m-inv-hint" class="field-hint" style="margin-top:6px"></div>
+      </div>
+
+    </div><!-- /input-grid for inverter -->
+
+    <!-- Arrays list -->
+    <div class="card" style="margin-top:12px">
+      <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+        <span>🔲 Arrays</span>
+        <button class="btn btn-ghost" onclick="addMultiArray()" style="font-size:12px;padding:5px 14px">＋ Add Array</button>
+      </div>
+      <div id="m-arrays-list" style="margin-top:10px">
+        <!-- rendered by JS -->
+      </div>
+    </div>
+
+    <button class="btn-calc" onclick="calculateMulti()" style="margin-top:16px">⚡ Calculate Multi-Array System</button>
+
+    <!-- Multi results (populated by JS) -->
+    <div id="m-results" style="display:none"></div>
+
+  </div><!-- /panel-multi -->
+
+</main>
+
+<footer>
+  TSRF Solar Peak Calculator &nbsp;·&nbsp; Solar geometry engine built in vanilla JS
+  &nbsp;·&nbsp; Charts by <a href="https://www.chartjs.org" style="color:var(--amber)">Chart.js</a>
+  &nbsp;·&nbsp; Geocoding via <a href="https://nominatim.openstreetmap.org" style="color:var(--amber)">OpenStreetMap Nominatim</a>
+</footer>
+
+<!-- ══════════════════  JAVASCRIPT  ══════════════════ -->
+<script>
+"use strict";
+
+// ── Chart instances ──────────────────────────────────────────────
+let cSummer = null, cWinter = null, cMonthly = null;
+
+// ── Constants ────────────────────────────────────────────────────
+const DEG = Math.PI / 180;
+const I0  = 1367;       // Solar constant W/m²
+const ALBEDO = 0.20;
+const NOCT   = 45;      // °C
+
+// Monthly representative days (Klein 1977)
+const MONTH_DOY   = [17,47,75,105,135,162,198,228,258,288,318,344];
+const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTH_LEN   = [31,28,31,30,31,30,31,31,30,31,30,31];
+
+const DOY_SUMMER = 172;   // June 21
+const DOY_WINTER = 355;   // Dec 21
+
+// ── Seasonal ambient temperature (rough global lat-band model) ───
+function ambientTemp(lat, doy) {
+  const absLat = Math.abs(lat);
+  // Simple sinusoidal model: warm in summer, cool in winter for N hemisphere
+  // Peak summer ~day 196, peak winter ~day 16
+  const offset = lat >= 0 ? 0 : Math.PI; // flip for southern hemisphere
+  // cos() = +1 at doy 196 (peak summer N hemi), −1 at peak winter
+  // so: T = base + amplitude × seasonal  →  warm in summer, cold in winter ✓
+  const seasonal = Math.cos(DEG * (doy - 196) * (360/365) + offset);
+  let base, amplitude;
+  if (absLat < 20)       { base = 28; amplitude = 4;  }
+  else if (absLat < 35)  { base = 20; amplitude = 10; }
+  else if (absLat < 50)  { base = 12; amplitude = 14; }
+  else if (absLat < 65)  { base = 4;  amplitude = 16; }
+  else                   { base = -5; amplitude = 18; }
+  return base + amplitude * seasonal;   // was "base - amplitude" → inverted seasons
+}
+
+// ── Solar geometry ───────────────────────────────────────────────
+function declination(doy) {
+  // Spencer formula (more accurate than simple formula)
+  const B = (2*Math.PI/365)*(doy - 1);
+  return (
+    0.006918 - 0.399912*Math.cos(B) + 0.070257*Math.sin(B)
+    - 0.006758*Math.cos(2*B) + 0.000907*Math.sin(2*B)
+    - 0.002697*Math.cos(3*B) + 0.001480*Math.sin(3*B)
+  ) / DEG;
+}
+
+function solarPosition(lat_deg, doy, solarHour) {
+  // solarHour: 0–24 in true solar time (solar noon = 12.0)
+  const decl = declination(doy) * DEG;
+  const latR  = lat_deg * DEG;
+  const ha    = (solarHour - 12.0) * 15.0 * DEG; // hour angle
+
+  const sinAlt = Math.sin(latR)*Math.sin(decl) + Math.cos(latR)*Math.cos(decl)*Math.cos(ha);
+  const alt = Math.asin(Math.max(-1, Math.min(1, sinAlt)));
+  if (alt <= 0) return { alt: 0, az: 180, up: false };
+
+  // Azimuth from North, clockwise (0=N, 90=E, 180=S, 270=W)
+  let cosAz = (Math.sin(decl) - Math.sin(latR)*Math.sin(alt)) / (Math.cos(latR)*Math.cos(alt));
+  cosAz = Math.max(-1, Math.min(1, cosAz));
+  let az = Math.acos(cosAz) / DEG;  // 0–180 degrees from north
+  if (solarHour > 12.0) az = 360.0 - az; // afternoon → west side
+
+  return { alt: alt / DEG, az, up: true };
+}
+
+// ── Clear-sky irradiance ─────────────────────────────────────────
+function clearSkyGHI(alt_deg) {
+  if (alt_deg <= 0.5) return 0;
+  const s = Math.sin(alt_deg * DEG);
+  // Haurwitz model
+  return Math.max(0, 1098.0 * s * Math.exp(-0.057 / s));
+}
+
+// Erbs model: GHI → DNI, DHI
+function erbsDecomp(GHI, alt_deg) {
+  if (GHI <= 0 || alt_deg <= 0.5) return { DNI: 0, DHI: 0 };
+  const sinA = Math.sin(alt_deg * DEG);
+  const kt = GHI / (I0 * sinA);
+  let Df;
+  if      (kt <= 0.22) Df = 1.0 - 0.09*kt;
+  else if (kt <= 0.80) Df = 0.9511 - 0.1604*kt + 4.388*kt*kt - 16.638*kt*kt*kt + 12.336*kt*kt*kt*kt;
+  else                 Df = 0.165;
+  Df = Math.max(0.05, Math.min(0.97, Df));
+  const DHI = Df * GHI;
+  const DNI = Math.max(0, (GHI - DHI) / sinA);
+  return { DNI, DHI };
+}
+
+// ── POA irradiance (isotropic sky model) ─────────────────────────
+function poaIrradiance(GHI, DNI, DHI, solar_alt, solar_az, tilt_deg, panel_az_deg) {
+  const tiltR  = tilt_deg   * DEG;
+  const dAzR   = (solar_az - panel_az_deg) * DEG;
+  const altR   = solar_alt  * DEG;
+  const cosAOI = Math.sin(altR)*Math.cos(tiltR) + Math.cos(altR)*Math.sin(tiltR)*Math.cos(dAzR);
+  const beam      = DNI * Math.max(0, cosAOI);
+  const diffuse   = DHI * (1 + Math.cos(tiltR)) / 2;
+  const reflected = GHI * ALBEDO * (1 - Math.cos(tiltR)) / 2;
+  return Math.max(0, beam + diffuse + reflected);
+}
+
+// ── Temperature derate ───────────────────────────────────────────
+function tempDerate(POA, T_amb, tempCoeffPct) {
+  const T_mod = T_amb + ((NOCT - 20.0) / 800.0) * POA;
+  const derate = 1.0 + (tempCoeffPct / 100.0) * (T_mod - 25.0);
+  return { T_mod, derate: Math.max(0.60, Math.min(1.10, derate)) };
+}
+
+// ── Simulate one day (half-hourly, 04:00–20:00 solar time) ───────
+function simulateDay(lat, doy, tilt, panelAz, array_kw, tsrf, T_amb, tempCoeffPct) {
+  const labels=[], poa=[], dc=[];
+  for (let h = 4.0; h <= 20.0; h += 0.5) {
+    const pos = solarPosition(lat, doy, h);
+    const GHI = clearSkyGHI(pos.alt);
+    const {DNI, DHI} = erbsDecomp(GHI, pos.alt);
+    const P = poaIrradiance(GHI, DNI, DHI, pos.alt, pos.az, tilt, panelAz);
+    const {derate} = tempDerate(P, T_amb, tempCoeffPct);
+    const dcVal = array_kw * (P / 1000.0) * tsrf * derate;
+    labels.push(fmtHour(h));
+    poa.push(+P.toFixed(1));
+    dc.push(+Math.max(0, dcVal).toFixed(3));
+  }
+  return { labels, poa, dc };
+}
+
+// ── Annual POA for a given orientation (Wh/m²/yr) ────────────────
+function computeAnnualPOA(lat, tilt, panelAz) {
+  let total = 0;
+  for (let m = 0; m < 12; m++) {
+    const doy = MONTH_DOY[m];
+    for (let h = 4.0; h <= 20.0; h += 0.5) {
+      const pos = solarPosition(lat, doy, h);
+      const GHI = clearSkyGHI(pos.alt);
+      const {DNI, DHI} = erbsDecomp(GHI, pos.alt);
+      const P = poaIrradiance(GHI, DNI, DHI, pos.alt, pos.az, tilt, panelAz);
+      total += P * 0.5 * MONTH_LEN[m]; // Wh/m²
+    }
+  }
+  return total;
+}
+
+// Seasonal POA: summer = months 3–8 (Apr–Sep), winter = 9–2 (Oct–Mar)
+function computeSeasonPOA(lat, tilt, panelAz, isSummer) {
+  const months = isSummer ? [3,4,5,6,7,8] : [9,10,11,0,1,2];
+  let total = 0;
+  for (const m of months) {
+    const doy = MONTH_DOY[m];
+    for (let h = 4.0; h <= 20.0; h += 0.5) {
+      const pos = solarPosition(lat, doy, h);
+      const GHI = clearSkyGHI(pos.alt);
+      const {DNI, DHI} = erbsDecomp(GHI, pos.alt);
+      const P = poaIrradiance(GHI, DNI, DHI, pos.alt, pos.az, tilt, panelAz);
+      total += P * 0.5 * MONTH_LEN[m];
+    }
+  }
+  return total;
+}
+
+// ── Monthly peak DC (for bar chart) ──────────────────────────────
+// Uses annual TSRF applied uniformly — same model as solstice simulation.
+function monthlyPeaksDC(lat, tilt, panelAz, array_kw, annualTSRF_frac, tempCoeffPct) {
+  return MONTH_DOY.map((doy, m) => {
+    const T_amb = ambientTemp(lat, doy);
+    let best = 0;
+    for (let h = 6.0; h <= 18.0; h += 0.25) {
+      const pos = solarPosition(lat, doy, h);
+      const GHI = clearSkyGHI(pos.alt);
+      const {DNI, DHI} = erbsDecomp(GHI, pos.alt);
+      const P = poaIrradiance(GHI, DNI, DHI, pos.alt, pos.az, tilt, panelAz);
+      const {derate} = tempDerate(P, T_amb, tempCoeffPct);
+      const dc = array_kw * (P / 1000.0) * annualTSRF_frac * derate;
+      if (dc > best) best = dc;
+    }
+    return +best.toFixed(2);
+  });
+}
+
+// ── Clipping analysis ─────────────────────────────────────────────
+function analyzeClipping(dc_arr, inv_kw) {
+  let clippedKwh = 0, clipHours = 0, peakOverKw = 0;
+  let startIdx = -1, endIdx = -1;
+  for (let i = 0; i < dc_arr.length; i++) {
+    const excess = dc_arr[i] - inv_kw;
+    if (excess > 0) {
+      clippedKwh += excess * 0.5; // 30-min steps
+      clipHours  += 0.5;
+      if (excess > peakOverKw) peakOverKw = excess;
+      if (startIdx < 0) startIdx = i;
+      endIdx = i;
+    }
+  }
+  const peakRatioPct = (peakOverKw / inv_kw) * 100;
+  return { clippedKwh, clipHours, peakRatioPct, startIdx, endIdx };
+}
+
+// ── Helpers ───────────────────────────────────────────────────────
+function fmtHour(h) {
+  const hh = Math.floor(h);
+  const mm = (h % 1 === 0.5) ? '30' : '00';
+  return `${hh}:${mm}`;
+}
+
+// ── Compass UI ────────────────────────────────────────────────────
+function updateCompass(val) {
+  const needle = document.getElementById('compassNeedle');
+  if (needle) needle.style.transform = `rotate(${parseFloat(val)||0}deg)`;
+}
+window.addEventListener('load', () => updateCompass(180));
+
+// ── Geocoding ─────────────────────────────────────────────────────
+async function geocodeAddress() {
+  const addr = document.getElementById('address').value.trim();
+  if (!addr) return;
+  const btn  = document.getElementById('geo-btn');
+  const stat = document.getElementById('geo-status');
+  btn.disabled = true;
+  stat.innerHTML = '<div class="status-loading"><div class="spinner"></div> Looking up coordinates…</div>';
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addr)}&format=json&limit=1`;
+    const res  = await fetch(url, { headers: {'Accept':'application/json'} });
+    const data = await res.json();
+    if (!data.length) throw new Error('Address not found — try city, state or zip');
+    const { lat, lon, display_name } = data[0];
+    document.getElementById('lat').value = parseFloat(lat).toFixed(4);
+    document.getElementById('lon').value = parseFloat(lon).toFixed(4);
+    const short = display_name.split(',').slice(0, 3).join(', ');
+    stat.innerHTML = `<div class="status-ok">✅ ${short}</div>`;
+  } catch(e) {
+    stat.innerHTML = `<div class="status-err">⚠️ ${e.message}</div>`;
+  }
+  btn.disabled = false;
+}
+
+// ── MAIN CALCULATE ────────────────────────────────────────────────
+function calculate() {
+  const lat        = parseFloat(document.getElementById('lat').value);
+  const array_kw   = parseFloat(document.getElementById('array_kw').value);
+  const inv_kw     = parseFloat(document.getElementById('inverter_kw').value);
+  const annualTSRF = parseFloat(document.getElementById('tsrf').value);   // percent
+  const azimuth    = parseFloat(document.getElementById('azimuth').value);
+  const pitch      = parseFloat(document.getElementById('pitch').value);
+  const tempCoeff  = parseFloat(document.getElementById('temp_coeff').value);
+
+  if (isNaN(lat) || lat < -90 || lat > 90) {
+    alert('Please enter a valid latitude (−90 to +90°).'); return;
+  }
+  if ([array_kw, inv_kw, annualTSRF, azimuth, pitch, tempCoeff].some(isNaN)) {
+    alert('Please fill in all system fields.'); return;
+  }
+
+  // ── Orientation efficiency for seasonal TSRF table (informational) ─
+  // Optimal orientation: tilt = |lat|, azimuth = 180° (N hemi) or 0° (S hemi)
+  const optTilt = Math.abs(lat);
+  const optAz   = lat >= 0 ? 180 : 0;
+
+  const annPOA_act  = computeAnnualPOA(lat, pitch, azimuth);
+  const annPOA_opt  = computeAnnualPOA(lat, optTilt, optAz);
+  const sumPOA_act  = computeSeasonPOA(lat, pitch, azimuth, true);
+  const sumPOA_opt  = computeSeasonPOA(lat, optTilt, optAz, true);
+  const winPOA_act  = computeSeasonPOA(lat, pitch, azimuth, false);
+  const winPOA_opt  = computeSeasonPOA(lat, optTilt, optAz, false);
+
+  const annOE  = annPOA_act / Math.max(1, annPOA_opt);
+  const sumOE  = sumPOA_act / Math.max(1, sumPOA_opt);
+  const winOE  = winPOA_act / Math.max(1, winPOA_opt);
+
+  const annualFrac = annualTSRF / 100;
+  // Cap nonOF at 1.0 — prevents back-calculation inflation for off-axis orientations.
+  // When annOE < annualFrac, the model would otherwise infer a non-physical
+  // "negative shading loss" that inflates seasonal TSRF estimates.
+  const nonOF = Math.min(1.0, annualFrac / Math.max(0.01, annOE));
+
+  // Seasonal TSRFs — used ONLY for the informational TSRF breakdown table.
+  // They are NOT applied to peak-power or clipping calculations (see below).
+  const sumTSRF = Math.min(1.0, sumOE * nonOF);
+  const winTSRF = Math.min(1.0, winOE * nonOF);
+
+  // ── Simulate solstice days — nonOF (shading+soiling only) applied ─
+  // Correct model:  DC(t) = array_kW × (POA_actual(t)/1000) × nonOF × tempDerate(t)
+  //
+  // WHY nonOF instead of annualFrac?
+  //   annualTSRF = annOE × nonOF  (orientation efficiency × shading+soiling)
+  //   POA_actual(t) is already computed for the actual azimuth/pitch via the
+  //   Haurwitz → Erbs → isotropic transposition model — orientation is fully
+  //   captured there.  Applying annualTSRF on top would multiply orientation in
+  //   twice (once in POA geometry, once in TSRF), suppressing the summer peak.
+  //
+  //   Stripping out annOE leaves only the non-geometry losses (shading, soiling,
+  //   wiring, etc.) which ARE constant year-round.  Solar geometry then drives
+  //   the full seasonal swing:
+  //     • Summer: higher sun → higher POA_actual → higher DC → clipping possible
+  //     • Winter: lower sun → lower POA_actual → lower DC
+  //
+  // nonOF is already computed above as: min(1.0, annualFrac / annOE)
+  const T_sum = ambientTemp(lat, DOY_SUMMER);
+  const T_win = ambientTemp(lat, DOY_WINTER);
+
+  const sumDay = simulateDay(lat, DOY_SUMMER, pitch, azimuth, array_kw, nonOF, T_sum, tempCoeff);
+  const winDay = simulateDay(lat, DOY_WINTER, pitch, azimuth, array_kw, nonOF, T_win, tempCoeff);
+
+  // ── Key metrics ───────────────────────────────────────────────
+  const sumPeak    = Math.max(...sumDay.dc);
+  const winPeak    = Math.max(...winDay.dc);
+  const sumPeakPOA = Math.max(...sumDay.poa);
+  const winPeakPOA = Math.max(...winDay.poa);
+  const ilr        = array_kw / inv_kw;
+  const clip       = analyzeClipping(sumDay.dc, inv_kw);
+  const monthPeaks = monthlyPeaksDC(lat, pitch, azimuth, array_kw, nonOF, tempCoeff);
+
+  // ── Stats bar ──────────────────────────────────────────────────
+  document.getElementById('r-sum-peak').textContent  = sumPeak.toFixed(2);
+  document.getElementById('r-win-peak').textContent  = winPeak.toFixed(2);
+  document.getElementById('r-clip-hrs').textContent  = clip.clipHours > 0 ? clip.clipHours.toFixed(1) : '0';
+  document.getElementById('r-clip-sub').textContent  = clip.clipHours > 0
+    ? `hrs/day · ${clip.peakRatioPct.toFixed(1)}% over limit`
+    : 'No clipping on solstice day';
+  document.getElementById('r-ilr').textContent       = ilr.toFixed(3);
+  document.getElementById('r-ilr-sub').textContent   = ilr > 1.4 ? '⚠️ High — heavy clipping likely'
+    : ilr > 1.2 ? '✓ Moderate — typical residential'
+    : ilr > 1.0 ? '✓ Conservative — minimal clipping'
+    : '⚠️ Array undersized vs inverter';
+  document.getElementById('r-lat').textContent       = `${lat.toFixed(2)}°`;
+  document.getElementById('r-loc-sub').textContent   = `${lat>=0?'N':'S'} · opt tilt ${optTilt.toFixed(0)}°`;
+
+  // ── Day charts ────────────────────────────────────────────────
+  buildDayChart('chart-summer', sumDay, inv_kw, true);
+  buildDayChart('chart-winter', winDay, inv_kw, false);
+  buildMonthlyChart('chart-monthly', monthPeaks, inv_kw);
+
+  // ── Clipping report HTML ──────────────────────────────────────
+  const clipDiv = document.getElementById('clip-body');
+  if (clip.clipHours === 0) {
+    clipDiv.innerHTML = `
+      <div class="metric-row">
+        <span class="metric-lbl">Clipping status</span>
+        <span class="badge badge-green">✅ No Clipping Detected</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-lbl">Summer peak DC</span>
+        <span class="metric-val" style="color:var(--amber)">${sumPeak.toFixed(2)} kW</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-lbl">Inverter AC capacity</span>
+        <span class="metric-val">${inv_kw.toFixed(1)} kW AC</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-lbl">Headroom below inverter limit</span>
+        <span class="metric-val" style="color:var(--green)">+${(inv_kw - sumPeak).toFixed(2)} kW</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-lbl">Summer TSRF</span>
+        <span class="metric-val" style="color:var(--muted2)">${(sumTSRF*100).toFixed(1)}%</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-lbl">DC:AC Ratio (ILR)</span>
+        <span class="metric-val">${ilr.toFixed(3)}</span>
+      </div>
+      <div class="info-note" style="margin-top:12px">
+        No clipping on a perfect clear-sky day.  The TSRF-adjusted peak accounts
+        for typical shading &amp; soiling losses. Check the monthly chart — bars
+        closest to the red line are months most at risk on unusually clear days.
+      </div>`;
+  } else {
+    const startLbl = sumDay.labels[clip.startIdx];
+    const endLbl   = sumDay.labels[clip.endIdx];
+    const sev = clip.peakRatioPct;
+    const sevClass = sev < 5  ? 'badge-green'
+                   : sev < 15 ? 'badge-amber'
+                   : 'badge-red';
+    const sevWord  = sev < 5  ? 'Mild (< 5%)'
+                   : sev < 15 ? 'Moderate'
+                   : sev < 30 ? 'Significant'
+                   : 'Heavy';
+    const totalDC  = sumDay.dc.reduce((a,v) => a + v*0.5, 0);
+    const clipPct  = totalDC > 0 ? (clip.clippedKwh / totalDC * 100) : 0;
+
+    clipDiv.innerHTML = `
+      <div class="metric-row">
+        <span class="metric-lbl">Clipping severity</span>
+        <span class="badge ${sevClass}">${sevWord} · ${sev.toFixed(1)}% over limit</span>
+      </div>
+      <div style="margin:6px 0 12px">
+        <div class="gauge-wrap">
+          <div class="gauge-track">
+            <div class="gauge-fill" style="width:${Math.min(100, sev * 2.5)}%"></div>
+          </div>
+          <div class="gauge-pct" style="color:${sev<5?'var(--green)':sev<15?'var(--amber)':'var(--red)'}">${sev.toFixed(1)}%</div>
+        </div>
+      </div>
+      <div class="metric-row">
+        <span class="metric-lbl">⏰ Clipping window (solar time)</span>
+        <span class="metric-val" style="color:var(--red)">${startLbl} → ${endLbl}</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-lbl">Duration per day (June 21)</span>
+        <span class="metric-val">${clip.clipHours.toFixed(1)} hrs</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-lbl">Energy clipped per day</span>
+        <span class="metric-val" style="color:var(--red)">${clip.clippedKwh.toFixed(2)} kWh</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-lbl">Clipped as % of potential DC</span>
+        <span class="metric-val">${clipPct.toFixed(1)}%</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-lbl">Clear-sky peak DC (before clip)</span>
+        <span class="metric-val" style="color:var(--amber)">${sumPeak.toFixed(2)} kW</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-lbl">Summer TSRF</span>
+        <span class="metric-val" style="color:var(--muted2)">${(sumTSRF*100).toFixed(1)}%</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-lbl">Inverter hard limit</span>
+        <span class="metric-val">${inv_kw.toFixed(1)} kW AC</span>
+      </div>
+      <div class="metric-row">
+        <span class="metric-lbl">DC:AC Ratio (ILR)</span>
+        <span class="metric-val">${ilr.toFixed(3)}</span>
+      </div>`;
+  }
+
+  // ── TSRF table ────────────────────────────────────────────────
+  // Peak DC = simulation output (annual TSRF applied uniformly).
+  // Est. TSRF = orientation efficiency × inferred non-orientation loss (informational).
+  const seasons = [
+    { name:'Summer', icon:'☀️', tsrf:sumTSRF, poa:sumPeakPOA, dc:sumPeak, cls:'' },
+    { name:'Annual avg', icon:'📅', tsrf:annualFrac, poa:null,      dc:null,    cls:'grey' },
+    { name:'Winter', icon:'❄️', tsrf:winTSRF, poa:winPeakPOA, dc:winPeak, cls:'sky' },
+  ];
+  document.getElementById('tsrf-tbody').innerHTML = seasons.map(s => {
+    const pct = (s.tsrf * 100).toFixed(1);
+    const dcCell = s.dc != null
+      ? `<strong>${s.dc.toFixed(2)}</strong> kW`
+      : '—';
+    return `<tr>
+      <td>${s.icon} ${s.name}</td>
+      <td>
+        <strong>${pct}%</strong>
+        <div class="pbar-wrap">
+          <div class="pbar"><div class="pbar-fill ${s.cls}" style="width:${pct}%"></div></div>
+        </div>
+      </td>
+      <td>${s.poa ? s.poa.toFixed(0)+' W/m²' : '—'}</td>
+      <td>${dcCell}</td>
+    </tr>`;
+  }).join('');
+
+  // Show results
+  const resultsEl = document.getElementById('results');
+  resultsEl.style.display = 'block';
+  setTimeout(() => resultsEl.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+}
+
+// ── Day chart ─────────────────────────────────────────────────────
+function buildDayChart(id, dayData, inv_kw, isSummer) {
+  const ctx = document.getElementById(id).getContext('2d');
+  if (isSummer ? cSummer : cWinter) { (isSummer ? cSummer : cWinter).destroy(); }
+
+  const delivered = dayData.dc.map(v => +Math.min(v, inv_kw).toFixed(3));
+  const clipping  = dayData.dc.map(v => +Math.max(0, v - inv_kw).toFixed(3));
+  const hasClip   = clipping.some(v => v > 0);
+  const invLine   = dayData.labels.map(() => inv_kw);
+
+  const mainColor = isSummer ? 'rgba(245,158,11,' : 'rgba(56,189,248,';
+  const datasets = [
+    {
+      label: 'Delivered to Inverter (kW)',
+      data: delivered,
+      backgroundColor: mainColor+'0.22)',
+      borderColor: mainColor+'0.9)',
+      borderWidth: 2,
+      fill: 'origin',
+      tension: 0.4,
+      pointRadius: 0,
+      pointHoverRadius: 5,
+      order: 2,
+    }
+  ];
+  if (hasClip) {
+    datasets.push({
+      label: 'Clipped Energy (kW)',
+      data: clipping,
+      backgroundColor: 'rgba(239,68,68,0.32)',
+      borderColor: 'rgba(239,68,68,0.9)',
+      borderWidth: 2,
+      fill: '-1',
+      tension: 0.4,
+      pointRadius: 0,
+      pointHoverRadius: 5,
+      order: 1,
+    });
+  }
+  datasets.push({
+    label: `Inverter limit (${inv_kw} kW)`,
+    data: invLine,
+    borderColor: 'rgba(239,68,68,0.65)',
+    borderWidth: 1.5,
+    borderDash: [5,4],
+    fill: false,
+    tension: 0,
+    pointRadius: 0,
+    pointHoverRadius: 0,
+    order: 0,
+  });
+
+  const chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels: dayData.labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 500 },
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#94a3b8', font: { size: 10 }, boxWidth: 12, padding: 8 } },
+        tooltip: {
+          backgroundColor: '#1e293b', borderColor: '#2d3f55', borderWidth: 1,
+          titleColor: '#f1f5f9', bodyColor: '#94a3b8',
+          callbacks: { label: c => ` ${c.dataset.label}: ${c.parsed.y.toFixed(2)} kW` }
+        }
+      },
+      scales: {
+        x: { ticks: { color:'#64748b', font:{size:9}, maxTicksLimit:9 }, grid: { color:'rgba(45,63,85,.5)' } },
+        y: {
+          min: 0,
+          title: { display:true, text:'DC Power (kW)', color:'#64748b', font:{size:10} },
+          ticks: { color:'#64748b', font:{size:9} },
+          grid: { color:'rgba(45,63,85,.5)' }
+        }
+      }
+    }
+  });
+  if (isSummer) cSummer = chart; else cWinter = chart;
+}
+
+// ── Monthly bar chart ──────────────────────────────────────────────
+// Split each bar into "delivered" (≤ invKw) + "clipped" (> invKw) so the
+// red overflow sits visually above the dashed inverter limit line.
+function buildMonthlyChart(id, peaks, inv_kw) {
+  const ctx = document.getElementById(id).getContext('2d');
+  if (cMonthly) cMonthly.destroy();
+
+  const hasClip = peaks.some(v => v > inv_kw);
+
+  // Delivered portion — capped at invKw, color-coded by proximity to limit
+  const delivered = peaks.map(v => +Math.min(v, inv_kw).toFixed(3));
+  const bgDel = peaks.map((v,i) =>
+    v > inv_kw          ? 'rgba(239,68,68,0.60)'   // clipping month
+    : v > inv_kw * 0.92 ? 'rgba(245,158,11,0.70)'  // within 8% — amber warning
+    : (i>=3&&i<=8)      ? 'rgba(245,158,11,0.50)'  // summer months
+    :                     'rgba(56,189,248,0.50)'   // winter months
+  );
+  const bdDel = peaks.map((v,i) =>
+    v > inv_kw          ? '#ef4444'
+    : v > inv_kw * 0.92 ? '#f59e0b'
+    : (i>=3&&i<=8)      ? 'rgba(245,158,11,0.9)'
+    :                     'rgba(56,189,248,0.9)'
+  );
+
+  // Clipped overflow portion — sits above the dashed line
+  const clipped = peaks.map(v => +Math.max(0, v - inv_kw).toFixed(3));
+
+  const datasets = [
+    {
+      label: 'Peak DC Delivered (kW)',
+      data: delivered,
+      backgroundColor: bgDel,
+      borderColor: bdDel,
+      borderWidth: 1.5,
+      borderRadius: hasClip ? 0 : 4,
+      stack: 'monthly',
+      order: 2,
+    }
+  ];
+
+  if (hasClip) {
+    datasets.push({
+      label: '✂️ Clipped Energy (kW)',
+      data: clipped,
+      backgroundColor: 'rgba(239,68,68,0.45)',
+      borderColor: '#ef4444',
+      borderWidth: 1.5,
+      borderRadius: 4,
+      stack: 'monthly',
+      order: 1,
+    });
+  }
+
+  datasets.push({
+    label: `Inverter limit (${inv_kw} kW)`,
+    data: MONTH_NAMES.map(() => inv_kw),
+    type: 'line',
+    borderColor: 'rgba(239,68,68,0.75)',
+    borderWidth: 2,
+    borderDash: [5,4],
+    pointRadius: 0,
+    fill: false,
+    stack: undefined,
+    order: 0,
+  });
+
+  cMonthly = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: MONTH_NAMES, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 600 },
+      plugins: {
+        legend: { labels: { color:'#94a3b8', font:{size:10}, boxWidth:12, padding:8 } },
+        tooltip: {
+          backgroundColor: '#1e293b', borderColor:'#2d3f55', borderWidth:1,
+          titleColor:'#f1f5f9', bodyColor:'#94a3b8',
+          callbacks: {
+            label: c => {
+              if (c.dataset.type === 'line') return ` Inverter limit: ${inv_kw} kW`;
+              const total = peaks[c.dataIndex];
+              if (c.dataset.label.includes('Clipped'))
+                return ` Clipped: ${c.parsed.y.toFixed(2)} kW ⚠️`;
+              return ` Peak DC: ${total.toFixed(2)} kW${total > inv_kw ? ' — CLIPPING' : ''}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { stacked:true, ticks:{ color:'#64748b', font:{size:10} }, grid:{ color:'rgba(45,63,85,.5)' } },
+        y: {
+          stacked: true, min: 0,
+          title:{ display:true, text:'Peak DC Power (kW)', color:'#64748b', font:{size:10} },
+          ticks:{ color:'#64748b', font:{size:9} },
+          grid:{ color:'rgba(45,63,85,.5)' }
+        }
+      }
+    }
+  });
+}
+
+// ── Allow Enter on address field ──────────────────────────────────
+document.getElementById('address').addEventListener('keydown', e => {
+  if (e.key === 'Enter') geocodeAddress();
+});
+
+// ══════════════════════════════════════════════════════════════════
+//  MULTI-ARRAY SYSTEM CALCULATOR
+// ══════════════════════════════════════════════════════════════════
+
+// ── Equipment library (mirrors Solar Surveyor V12) ────────────────
+const EQUIPMENT = {
+  panels: {
+    "REC_Alpha_Pure_440":   { name:"REC Alpha Pure 440W",        watts:440, tempCo:-0.26 },
+    "REC_Alpha_Pure_RX_460":{ name:"REC Alpha Pure RX 460W",     watts:460, tempCo:-0.26 },
+    "SEG_430_BTD_BG":       { name:"SEG 430 BTD BG Bifacial",    watts:430, tempCo:-0.34 },
+    "Hyundai_HIN_T440NF":   { name:"Hyundai HIN-T440NF(BK)",     watts:440, tempCo:-0.29 },
+    "QCells_QPeak_420":     { name:"Q.CELLS Q.PEAK DUO 420W",    watts:420, tempCo:-0.34 },
+    "Canadian_HiHero_445":  { name:"Canadian HiHero 445W",       watts:445, tempCo:-0.29 },
+    "Trina_Vertex_S_435":   { name:"Trina Vertex S+ 435W",       watts:435, tempCo:-0.30 },
+    "Jinko_Tiger_Neo_445":  { name:"Jinko Tiger Neo 445W",       watts:445, tempCo:-0.29 },
+  },
+  inverters: {
+    "Tesla_PW3_Inverter": { name:"Tesla Powerwall 3 (11.5 kW)",  acKw:11.5,  isMicro:false },
+    "Tesla_Inverter_3_8": { name:"Tesla Inverter 3.8 kW",        acKw:3.8,   isMicro:false },
+    "Tesla_Inverter_5_0": { name:"Tesla Inverter 5.0 kW",        acKw:5.0,   isMicro:false },
+    "Tesla_Inverter_7_6": { name:"Tesla Inverter 7.6 kW",        acKw:7.6,   isMicro:false },
+    "Enphase_IQ8A":       { name:"Enphase IQ8A Micro (366 W)",   acKw:0.366, isMicro:true  },
+    "Enphase_IQ8M":       { name:"Enphase IQ8M Micro (330 W)",   acKw:0.330, isMicro:true  },
+    "Enphase_IQ8P":       { name:"Enphase IQ8P Micro (400 W)",   acKw:0.400, isMicro:true  },
+    "SolarEdge_SE7600H":  { name:"SolarEdge SE7600H (7.6 kW)",   acKw:7.6,   isMicro:false },
+    "Generac_PWRcell":    { name:"Generac PWRcell 7.6 kW",       acKw:7.6,   isMicro:false },
+  }
+};
+
+// ── Multi-array state ─────────────────────────────────────────────
+let multiArrays = [];
+let _arrId = 0;
+const ARRAY_COLORS = ['#38bdf8','#34d399','#fb923c','#a78bfa','#f472b6','#facc15','#22d3ee','#84cc16'];
+let cMultiSummer = null, cMultiMonthly = null;
+
+// ── Tab switching ─────────────────────────────────────────────────
+function switchTab(mode) {
+  document.getElementById('panel-single').style.display = mode === 'single' ? '' : 'none';
+  document.getElementById('panel-multi').style.display  = mode === 'multi'  ? '' : 'none';
+  document.getElementById('tab-single').classList.toggle('active', mode === 'single');
+  document.getElementById('tab-multi').classList.toggle('active', mode === 'multi');
+}
+
+// ── Populate equipment dropdowns on load ──────────────────────────
+function initMultiPanel() {
+  const sel = document.getElementById('m-inv-model');
+  sel.innerHTML = Object.entries(EQUIPMENT.inverters)
+    .map(([k,v]) => `<option value="${k}">${v.name}</option>`).join('');
+  updateInverterAC();
+  if (multiArrays.length === 0) addMultiArray();
+}
+
+// ── Inverter derived AC update ────────────────────────────────────
+function updateInverterAC() {
+  const key  = document.getElementById('m-inv-model').value;
+  const qty  = Math.max(1, parseInt(document.getElementById('m-inv-qty').value) || 1);
+  const spec = EQUIPMENT.inverters[key];
+  if (!spec) return;
+  const totalAC = +(spec.acKw * qty).toFixed(3);
+  document.getElementById('m-inv-kw').value = totalAC;
+  const hint = document.getElementById('m-inv-hint');
+  hint.textContent = spec.isMicro
+    ? `Microinverter system — Qty should equal total module count (1 micro per module). Total AC: ${totalAC} kW`
+    : `${qty} × ${spec.acKw} kW = ${totalAC} kW AC capacity`;
+}
+
+// ── Array management ──────────────────────────────────────────────
+function addMultiArray() {
+  _arrId++;
+  multiArrays.push({ id:_arrId, moduleKey:'REC_Alpha_Pure_440', count:20,
+                     azimuth:180, pitch:22, tsrf:80, dcOverride:null });
+  renderArrayRows();
+}
+
+function removeMultiArray(id) {
+  if (multiArrays.length <= 1) { alert('System must have at least one array.'); return; }
+  multiArrays = multiArrays.filter(a => a.id !== id);
+  renderArrayRows();
+}
+
+function getArrayDC(arr) {
+  if (arr.dcOverride !== null && !isNaN(arr.dcOverride)) return arr.dcOverride;
+  const mod = EQUIPMENT.panels[arr.moduleKey];
+  return mod ? +(mod.watts * arr.count / 1000).toFixed(3) : 0;
+}
+
+function renderArrayRows() {
+  const container = document.getElementById('m-arrays-list');
+  if (!container) return;
+  container.innerHTML = multiArrays.map((arr, idx) => {
+    const color = ARRAY_COLORS[idx % ARRAY_COLORS.length];
+    const dc    = getArrayDC(arr);
+    const panelOpts = Object.entries(EQUIPMENT.panels)
+      .map(([k,v]) => `<option value="${k}"${k===arr.moduleKey?' selected':''}>${v.name}</option>`)
+      .join('');
+    return `
+<div class="array-row" style="border-left:3px solid ${color}">
+  <div class="array-row-header">
+    <span class="array-row-label" style="color:${color}">▊ Array ${idx+1}</span>
+    <button class="btn-remove" onclick="removeMultiArray(${arr.id})">✕ Remove</button>
+  </div>
+  <div class="array-row-fields">
+    <div class="field field-wide">
+      <label>Module Model</label>
+      <select id="arm-${arr.id}" onchange="onArrMod(${arr.id})"
+              style="width:100%;padding:7px 10px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-size:12px">
+        ${panelOpts}
+      </select>
+    </div>
+    <div class="field">
+      <label>Module Count</label>
+      <input type="number" id="arc-${arr.id}" value="${arr.count}" min="1" max="2000" step="1"
+             oninput="onArrCount(${arr.id})">
+    </div>
+    <div class="field">
+      <label>DC Size (kW) <span style="color:var(--muted);font-size:10px;font-weight:400">derived</span></label>
+      <input type="number" id="ard-${arr.id}" value="${dc}" step="0.01" min="0.1"
+             oninput="onArrDC(${arr.id},this.value)">
+    </div>
+    <div class="field">
+      <label>Azimuth °</label>
+      <input type="number" id="ara-${arr.id}" value="${arr.azimuth}" min="0" max="360" step="1"
+             oninput="onArrF(${arr.id},'azimuth',this.value)">
+      <div class="field-hint">180 = South</div>
+    </div>
+    <div class="field">
+      <label>Pitch °</label>
+      <input type="number" id="arp-${arr.id}" value="${arr.pitch}" min="0" max="90" step="1"
+             oninput="onArrF(${arr.id},'pitch',this.value)">
+      <div class="field-hint">0 = flat · 30 = typical</div>
+    </div>
+    <div class="field">
+      <label>OpenSolar TSRF %</label>
+      <input type="number" id="art-${arr.id}" value="${arr.tsrf}" min="1" max="100" step="0.5"
+             oninput="onArrF(${arr.id},'tsrf',this.value)">
+      <div class="field-hint">Annual composite from OS</div>
+    </div>
+  </div>
+</div>`;
+  }).join('');
+}
+
+// ── Array field change handlers ───────────────────────────────────
+function onArrMod(id) {
+  const arr = multiArrays.find(a => a.id===id); if(!arr) return;
+  arr.moduleKey  = document.getElementById(`arm-${id}`).value;
+  arr.dcOverride = null;
+  document.getElementById(`ard-${id}`).value = getArrayDC(arr);
+}
+function onArrCount(id) {
+  const arr = multiArrays.find(a => a.id===id); if(!arr) return;
+  arr.count = parseInt(document.getElementById(`arc-${id}`).value) || 1;
+  if (arr.dcOverride === null) document.getElementById(`ard-${id}`).value = getArrayDC(arr);
+}
+function onArrDC(id, val) {
+  const arr = multiArrays.find(a => a.id===id); if(!arr) return;
+  arr.dcOverride = parseFloat(val);
+}
+function onArrF(id, field, val) {
+  const arr = multiArrays.find(a => a.id===id); if(!arr) return;
+  arr[field] = parseFloat(val);
+}
+
+// ── Derive nonOF for one array ────────────────────────────────────
+function arrayNonOF(lat, tsrfPct, pitch, azimuth) {
+  const optTilt = Math.abs(lat);
+  const optAz   = lat >= 0 ? 180 : 0;
+  const annOE   = computeAnnualPOA(lat, pitch, azimuth) / Math.max(1, computeAnnualPOA(lat, optTilt, optAz));
+  return Math.min(1.0, (tsrfPct/100) / Math.max(0.01, annOE));
+}
+
+// ── Compute estimated summer TSRF for display ─────────────────────
+function arraySumTSRF(lat, tsrfPct, pitch, azimuth) {
+  const optTilt = Math.abs(lat);
+  const optAz   = lat >= 0 ? 180 : 0;
+  const annOE   = computeAnnualPOA(lat, pitch, azimuth) / Math.max(1, computeAnnualPOA(lat, optTilt, optAz));
+  const sumOE   = computeSeasonPOA(lat, pitch, azimuth, true) / Math.max(1, computeSeasonPOA(lat, optTilt, optAz, true));
+  const nonOF   = Math.min(1.0, (tsrfPct/100) / Math.max(0.01, annOE));
+  return Math.min(1.0, sumOE * nonOF);
+}
+
+// ── Multi-array geocode ───────────────────────────────────────────
+async function mGeocode() {
+  const addr = document.getElementById('m-address').value.trim();
+  if (!addr) return;
+  const btn  = document.getElementById('m-geo-btn');
+  const stat = document.getElementById('m-geo-status');
+  btn.disabled = true;
+  stat.innerHTML = '<div class="status-loading"><div class="spinner"></div> Looking up coordinates…</div>';
+  try {
+    const url  = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(addr)}&format=json&limit=1`;
+    const data = await (await fetch(url, {headers:{'Accept':'application/json'}})).json();
+    if (!data.length) throw new Error('Address not found — try city, state or zip');
+    const { lat, lon, display_name } = data[0];
+    document.getElementById('m-lat').value = parseFloat(lat).toFixed(4);
+    document.getElementById('m-lon').value = parseFloat(lon).toFixed(4);
+    stat.innerHTML = `<div class="status-ok">✅ ${display_name.split(',').slice(0,3).join(', ')}</div>`;
+  } catch(e) {
+    stat.innerHTML = `<div class="status-err">⚠️ ${e.message}</div>`;
+  }
+  btn.disabled = false;
+}
+
+// ── Main multi-array calculation ──────────────────────────────────
+function calculateMulti() {
+  const lat   = parseFloat(document.getElementById('m-lat').value);
+  const invKw = parseFloat(document.getElementById('m-inv-kw').value);
+
+  if (isNaN(lat)||lat<-90||lat>90) { alert('Please enter a valid latitude.'); return; }
+  if (isNaN(invKw)||invKw<=0)      { alert('Please enter a valid inverter AC capacity.'); return; }
+  if (!multiArrays.length)         { alert('Please add at least one array.'); return; }
+
+  for (const arr of multiArrays) {
+    if (isNaN(arr.azimuth)||isNaN(arr.pitch)||isNaN(arr.tsrf))
+      { alert('Please fill in all array fields.'); return; }
+  }
+
+  const T_sum = ambientTemp(lat, DOY_SUMMER);
+  const T_win = ambientTemp(lat, DOY_WINTER);
+
+  // Simulate each array independently
+  const arrRes = multiArrays.map((arr, idx) => {
+    const dcKw   = getArrayDC(arr);
+    const nonOF  = arrayNonOF(lat, arr.tsrf, arr.pitch, arr.azimuth);
+    const mod    = EQUIPMENT.panels[arr.moduleKey];
+    const tco    = mod ? mod.tempCo : -0.30;
+    const sumDay = simulateDay(lat, DOY_SUMMER, arr.pitch, arr.azimuth, dcKw, nonOF, T_sum, tco);
+    const winDay = simulateDay(lat, DOY_WINTER, arr.pitch, arr.azimuth, dcKw, nonOF, T_win, tco);
+    const estSumTSRF = arraySumTSRF(lat, arr.tsrf, arr.pitch, arr.azimuth);
+
+    // Per-array monthly peaks
+    const monthPk = MONTH_DOY.map((doy, m) => {
+      const Ta = ambientTemp(lat, doy);
+      let best = 0;
+      for (let h=6;h<=18;h+=0.25) {
+        const pos = solarPosition(lat, doy, h);
+        const GHI = clearSkyGHI(pos.alt);
+        const {DNI,DHI} = erbsDecomp(GHI, pos.alt);
+        const P = poaIrradiance(GHI,DNI,DHI,pos.alt,pos.az,arr.pitch,arr.azimuth);
+        const {derate} = tempDerate(P, Ta, tco);
+        const dc = dcKw * (P/1000) * nonOF * derate;
+        if (dc>best) best=dc;
+      }
+      return +best.toFixed(3);
+    });
+
+    return {
+      idx, arr, dcKw, nonOF, tco, sumDay, winDay,
+      sumPeak: Math.max(...sumDay.dc),
+      winPeak: Math.max(...winDay.dc),
+      estSumTSRF,
+      monthPk,
+      modName: mod ? mod.name : arr.moduleKey,
+      color: ARRAY_COLORS[idx % ARRAY_COLORS.length]
+    };
+  });
+
+  // System time-series: sum DC at every half-hour slot
+  const labels   = arrRes[0].sumDay.labels;
+  const sysDC    = labels.map((_,i) => +arrRes.reduce((s,r)=>s+r.sumDay.dc[i],0).toFixed(3));
+  const sysWinDC = labels.map((_,i) => +arrRes.reduce((s,r)=>s+r.winDay.dc[i],0).toFixed(3));
+  const sysMonth = MONTH_DOY.map((_,m) => +arrRes.reduce((s,r)=>s+r.monthPk[m],0).toFixed(3));
+
+  const totalDC     = +arrRes.reduce((s,r)=>s+r.dcKw,0).toFixed(3);
+  const sysSumPeak  = Math.max(...sysDC);
+  const sysWinPeak  = Math.max(...sysWinDC);
+  const ilr         = totalDC / invKw;
+  const clip        = analyzeClipping(sysDC, invKw);
+
+  renderMultiResults({ arrRes, labels, sysDC, sysWinDC, sysMonth,
+                       totalDC, invKw, sysSumPeak, sysWinPeak, ilr, clip });
+}
+
+// ── Render multi results ──────────────────────────────────────────
+function renderMultiResults(d) {
+  const {arrRes,labels,sysDC,sysWinDC,sysMonth,
+         totalDC,invKw,sysSumPeak,sysWinPeak,ilr,clip} = d;
+
+  const ilrColor = ilr>1.4?'var(--red)':ilr>1.2?'var(--amber)':'var(--green)';
+  const ilrNote  = ilr>1.4?'⚠️ High — heavy clipping likely'
+                 : ilr>1.2?'Moderate — typical residential'
+                 : ilr>1.0?'Conservative — minimal clipping'
+                 : '⚠️ Array undersized';
+
+  // Per-array table
+  const rows = arrRes.map((r,i) => `<tr>
+    <td><span style="color:${r.color};font-weight:700">▊ Array ${i+1}</span></td>
+    <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis">${r.modName}</td>
+    <td class="td-num">${r.arr.count}</td>
+    <td class="td-num">${r.dcKw.toFixed(2)}</td>
+    <td class="td-num">${r.arr.tsrf.toFixed(1)}%</td>
+    <td class="td-num">${(r.estSumTSRF*100).toFixed(1)}%</td>
+    <td class="td-num">${r.arr.azimuth}° / ${r.arr.pitch}°</td>
+    <td class="td-num" style="color:var(--amber)">${r.sumPeak.toFixed(2)}</td>
+    <td class="td-num" style="color:var(--sky)">${r.winPeak.toFixed(2)}</td>
+  </tr>`).join('');
+
+  // Clipping detail
+  let clipHtml;
+  if (clip.clipHours===0) {
+    clipHtml=`
+<div class="metric-row"><span class="metric-lbl">Status</span><span class="badge badge-green">✅ No Clipping on Solstice Day</span></div>
+<div class="metric-row"><span class="metric-lbl">System summer peak DC</span><span class="metric-val" style="color:var(--amber)">${sysSumPeak.toFixed(2)} kW</span></div>
+<div class="metric-row"><span class="metric-lbl">Inverter AC capacity</span><span class="metric-val">${invKw.toFixed(2)} kW</span></div>
+<div class="metric-row"><span class="metric-lbl">Headroom below limit</span><span class="metric-val" style="color:var(--green)">+${(invKw-sysSumPeak).toFixed(2)} kW</span></div>
+<div class="metric-row"><span class="metric-lbl">DC:AC Ratio (ILR)</span><span class="metric-val">${ilr.toFixed(3)}</span></div>`;
+  } else {
+    const sev=clip.peakRatioPct;
+    const sc=sev<5?'badge-green':sev<15?'badge-amber':'badge-red';
+    const sw=sev<5?'Mild (<5%)':sev<15?'Moderate':sev<30?'Significant':'Heavy';
+    const totE=sysDC.reduce((a,v)=>a+v*0.5,0);
+    const cpct=totE>0?(clip.clippedKwh/totE*100):0;
+    clipHtml=`
+<div class="metric-row"><span class="metric-lbl">Severity</span><span class="badge ${sc}">${sw} · ${sev.toFixed(1)}% over limit</span></div>
+<div style="margin:6px 0 12px"><div class="gauge-wrap"><div class="gauge-track"><div class="gauge-fill" style="width:${Math.min(100,sev*2.5)}%"></div></div><div class="gauge-pct" style="color:${sev<5?'var(--green)':sev<15?'var(--amber)':'var(--red)'}">${sev.toFixed(1)}%</div></div></div>
+<div class="metric-row"><span class="metric-lbl">⏰ Clipping window</span><span class="metric-val" style="color:var(--red)">${labels[clip.startIdx]} → ${labels[clip.endIdx]}</span></div>
+<div class="metric-row"><span class="metric-lbl">Duration (June 21)</span><span class="metric-val">${clip.clipHours.toFixed(1)} hrs</span></div>
+<div class="metric-row"><span class="metric-lbl">Energy clipped/day</span><span class="metric-val" style="color:var(--red)">${clip.clippedKwh.toFixed(2)} kWh</span></div>
+<div class="metric-row"><span class="metric-lbl">Clipped % of potential</span><span class="metric-val">${cpct.toFixed(1)}%</span></div>
+<div class="metric-row"><span class="metric-lbl">System peak DC</span><span class="metric-val" style="color:var(--amber)">${sysSumPeak.toFixed(2)} kW</span></div>
+<div class="metric-row"><span class="metric-lbl">Inverter limit</span><span class="metric-val">${invKw.toFixed(2)} kW AC</span></div>
+<div class="metric-row"><span class="metric-lbl">DC:AC Ratio (ILR)</span><span class="metric-val">${ilr.toFixed(3)}</span></div>`;
+  }
+
+  const res = document.getElementById('m-results');
+  res.style.display='';
+  res.innerHTML=`
+<div class="divider"></div>
+<div class="section-title">📊 System Results — ${arrRes.length} ${arrRes.length===1?'Array':'Arrays'}
+  <button class="btn-export" onclick="exportMultiPDF()">⬇ Export PDF</button>
+</div>
+
+<div class="m-stats-bar">
+  <div class="m-stat">
+    <div class="m-stat-lbl">Total System DC</div>
+    <div class="m-stat-val amber">${totalDC.toFixed(2)}</div>
+    <div class="m-stat-sub">kW DC nameplate</div>
+  </div>
+  <div class="m-stat">
+    <div class="m-stat-lbl">Inverter AC</div>
+    <div class="m-stat-val sky">${invKw.toFixed(2)}</div>
+    <div class="m-stat-sub">kW AC capacity</div>
+  </div>
+  <div class="m-stat">
+    <div class="m-stat-lbl">DC:AC Ratio</div>
+    <div class="m-stat-val" style="color:${ilrColor}">${ilr.toFixed(3)}</div>
+    <div class="m-stat-sub">${ilrNote}</div>
+  </div>
+  <div class="m-stat">
+    <div class="m-stat-lbl">☀️ Summer Peak DC</div>
+    <div class="m-stat-val amber">${sysSumPeak.toFixed(2)}</div>
+    <div class="m-stat-sub">kW · June 21</div>
+  </div>
+  <div class="m-stat">
+    <div class="m-stat-lbl">❄️ Winter Peak DC</div>
+    <div class="m-stat-val sky">${sysWinPeak.toFixed(2)}</div>
+    <div class="m-stat-sub">kW · Dec 21</div>
+  </div>
+  <div class="m-stat">
+    <div class="m-stat-lbl">✂️ Clipping</div>
+    <div class="m-stat-val" style="color:${clip.clipHours>0?'var(--red)':'var(--green)'}">${clip.clipHours>0?clip.clipHours.toFixed(1)+' h':'None'}</div>
+    <div class="m-stat-sub">${clip.clipHours>0?clip.peakRatioPct.toFixed(1)+'% over limit':'solstice day'}</div>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:16px">
+  <div class="card-title">🔲 Per-Array Breakdown</div>
+  <div style="overflow-x:auto">
+    <table class="array-summary-table">
+      <thead><tr>
+        <th>Array</th><th>Module</th><th class="td-num">Modules</th>
+        <th class="td-num">DC kW</th><th class="td-num">Ann TSRF</th>
+        <th class="td-num">Est Sum TSRF</th><th class="td-num">AZI / Pitch</th>
+        <th class="td-num">Sum Peak kW</th><th class="td-num">Win Peak kW</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>
+</div>
+
+<div class="charts-2col" style="margin-bottom:16px">
+  <div class="chart-card">
+    <div class="chart-card-title">☀️ Summer Solstice — System DC Profile</div>
+    <div class="chart-card-sub">June 21 · Stacked by array · Red dashed = inverter limit</div>
+    <div class="chart-wrap"><canvas id="m-chart-summer"></canvas></div>
+  </div>
+  <div class="chart-card">
+    <div class="chart-card-title">✂️ Clipping Analysis — Summer Solstice</div>
+    <div class="chart-card-sub">System total vs inverter limit · June 21</div>
+    <div class="chart-wrap" style="overflow-y:auto;display:flex;align-items:flex-start">
+      <div id="m-clip-body" style="padding:6px 2px;width:100%">${clipHtml}</div>
+    </div>
+  </div>
+</div>
+
+<div class="monthly-card">
+  <div class="chart-card-title" style="margin-bottom:3px">📅 Monthly System Peak DC — Stacked by Array</div>
+  <div class="chart-card-sub" style="margin-bottom:12px">Clear-sky noon peak · Stacked arrays · Red = inverter limit</div>
+  <div class="monthly-wrap"><canvas id="m-chart-monthly"></canvas></div>
+</div>`;
+
+  // Destroy stale charts
+  if (cMultiSummer)  { cMultiSummer.destroy();  cMultiSummer=null;  }
+  if (cMultiMonthly) { cMultiMonthly.destroy(); cMultiMonthly=null; }
+
+  cMultiSummer  = buildStackedDayChart('m-chart-summer',  arrRes, labels, sysDC, invKw);
+  cMultiMonthly = buildStackedMonthlyChart('m-chart-monthly', arrRes, sysMonth, invKw);
+}
+
+// ── Stacked summer day chart ──────────────────────────────────────
+function buildStackedDayChart(canvasId, arrRes, labels, sysDC, invKw) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return null;
+
+  // Scale each array's contribution proportionally so they sum to
+  // min(sysDC, invKw).  The "Clipped" band then sits exactly above
+  // the red dashed inverter-limit line — not mixed into the stack.
+  const scaledData = arrRes.map(r =>
+    labels.map((_, i) => {
+      const sys = sysDC[i];
+      const scale = sys > invKw ? invKw / sys : 1.0;
+      return +(r.sumDay.dc[i] * scale).toFixed(3);
+    })
+  );
+
+  const clipped = sysDC.map(v => +(Math.max(0, v - invKw)).toFixed(3));
+  const hasClip = clipped.some(v => v > 0);
+
+  const datasets = arrRes.map((r, idx) => ({
+    label: `Array ${r.idx+1} — ${r.arr.azimuth}°/${r.arr.pitch}°`,
+    data: scaledData[idx],
+    backgroundColor: r.color + '66',
+    borderColor: r.color,
+    borderWidth: 1.5,
+    fill: true,
+    tension: 0.3,
+    stack: 'sys',
+    order: arrRes.length - idx
+  }));
+
+  // Clipped overflow — rendered above the dashed limit line
+  if (hasClip) {
+    datasets.push({
+      label: '✂️ Clipped Energy (over limit)',
+      data: clipped,
+      backgroundColor: 'rgba(239,68,68,.42)',
+      borderColor: 'rgba(239,68,68,.85)',
+      borderWidth: 1.5,
+      fill: true,
+      tension: 0.3,
+      stack: 'sys',
+      order: 0
+    });
+  }
+
+  // Inverter limit line — sits exactly at the array/clipped boundary
+  datasets.push({
+    label: `Inverter limit (${invKw} kW)`,
+    data: labels.map(()=>invKw),
+    type: 'line',
+    borderColor: 'rgba(239,68,68,.9)',
+    borderWidth: 2,
+    borderDash: [6,4],
+    pointRadius: 0,
+    fill: false,
+    stack: undefined,
+    order: -1
+  });
+
+  return new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      animation:{duration:400},
+      plugins:{
+        legend:{labels:{color:'#94a3b8',font:{size:10},boxWidth:12,padding:6}},
+        tooltip:{
+          backgroundColor:'#1e293b',borderColor:'#2d3f55',borderWidth:1,
+          titleColor:'#f1f5f9',bodyColor:'#94a3b8',
+          callbacks:{
+            label: c => {
+              if (c.dataset.type === 'line') return ` Inverter limit: ${invKw} kW`;
+              if (c.dataset.label.includes('Clipped'))
+                return ` Clipped: ${c.parsed.y.toFixed(2)} kW ⚠️`;
+              // Un-scale tooltip to show real array contribution
+              const sys = sysDC[c.dataIndex];
+              const scale = sys > invKw ? invKw / sys : 1.0;
+              const real = scale > 0 ? (c.parsed.y / scale) : c.parsed.y;
+              return ` ${c.dataset.label}: ${real.toFixed(2)} kW`;
+            }
+          }
+        }
+      },
+      scales:{
+        x:{stacked:true,ticks:{color:'#64748b',font:{size:9},maxTicksLimit:9},grid:{color:'rgba(45,63,85,.4)'}},
+        y:{stacked:true,min:0,
+           title:{display:true,text:'DC Power (kW)',color:'#64748b',font:{size:10}},
+           ticks:{color:'#64748b',font:{size:9}},grid:{color:'rgba(45,63,85,.4)'}}
+      }
+    }
+  });
+}
+
+// ── Stacked monthly chart ─────────────────────────────────────────
+// Per-month: scale arrays to min(sysMonth, invKw), add red clipped
+// overflow band above the dashed limit line for months that clip.
+function buildStackedMonthlyChart(canvasId, arrRes, sysMonth, invKw) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return null;
+
+  // Per-month scale factors
+  const scales = sysMonth.map(v => v > invKw ? invKw / v : 1.0);
+
+  // Scale each array's monthly peaks proportionally
+  const scaledMonthly = arrRes.map(r =>
+    r.monthPk.map((pk, m) => +(pk * scales[m]).toFixed(3))
+  );
+
+  const clippedMonthly = sysMonth.map(v => +(Math.max(0, v - invKw)).toFixed(3));
+  const hasClip = clippedMonthly.some(v => v > 0);
+
+  // Color-tint array bands on clipping months for extra visibility
+  const datasets = arrRes.map((r, idx) => ({
+    label: `Array ${idx+1}`,
+    data: scaledMonthly[idx],
+    // Slightly desaturate non-clipping month bars; keep full color on clipping months
+    backgroundColor: sysMonth.map((v, m) =>
+      v > invKw ? r.color + 'dd' : r.color + '99'
+    ),
+    borderColor: sysMonth.map(v => v > invKw ? r.color : r.color + 'aa'),
+    borderWidth: sysMonth.map(v => v > invKw ? 2 : 1),
+    stack: 'monthly',
+    order: arrRes.length - idx
+  }));
+
+  // Red clipped overflow — sits above the dashed line on clipping months
+  if (hasClip) {
+    datasets.push({
+      label: '✂️ Clipped',
+      data: clippedMonthly,
+      backgroundColor: 'rgba(239,68,68,.48)',
+      borderColor: 'rgba(239,68,68,.85)',
+      borderWidth: 1.5,
+      stack: 'monthly',
+      order: 0
+    });
+  }
+
+  // Inverter limit line
+  datasets.push({
+    label: `Inverter limit (${invKw} kW)`,
+    data: MONTH_NAMES.map(()=>invKw),
+    type: 'line',
+    borderColor: 'rgba(239,68,68,.8)',
+    borderWidth: 2,
+    borderDash: [5,4],
+    pointRadius: 0,
+    fill: false,
+    stack: undefined,
+    order: -1
+  });
+
+  return new Chart(ctx, {
+    type: 'bar',
+    data: {labels:MONTH_NAMES, datasets},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      animation:{duration:600},
+      plugins:{
+        legend:{labels:{color:'#94a3b8',font:{size:10},boxWidth:12,padding:8}},
+        tooltip:{
+          backgroundColor:'#1e293b',borderColor:'#2d3f55',borderWidth:1,
+          titleColor:'#f1f5f9',bodyColor:'#94a3b8',
+          callbacks:{
+            label: c => {
+              if (c.dataset.type === 'line') return ` Inverter limit: ${invKw} kW`;
+              if (c.dataset.label.includes('Clipped'))
+                return ` Clipped: ${c.parsed.y.toFixed(2)} kW ⚠️`;
+              const sys = sysMonth[c.dataIndex];
+              const sc  = scales[c.dataIndex];
+              const real = sc > 0 ? (c.parsed.y / sc) : c.parsed.y;
+              return ` ${c.dataset.label}: ${real.toFixed(2)} kW${sys > invKw ? ' ⚠️ clipping' : ''}`;
+            }
+          }
+        }
+      },
+      scales:{
+        x:{stacked:true,ticks:{color:'#64748b',font:{size:10}},grid:{color:'rgba(45,63,85,.5)'}},
+        y:{stacked:true,min:0,
+           title:{display:true,text:'Peak DC (kW)',color:'#64748b',font:{size:10}},
+           ticks:{color:'#64748b',font:{size:9}},grid:{color:'rgba(45,63,85,.5)'}}
+      }
+    }
+  });
+}
+
+// Initialize multi panel when DOM is ready
+window.addEventListener('load', () => { initMultiPanel(); });
+
+// ══════════════════════════════════════════════════════════════════
+//  PDF EXPORT
+// ══════════════════════════════════════════════════════════════════
+
+function captureChart(id) {
+  const c = document.getElementById(id);
+  return c ? c.toDataURL('image/png') : '';
+}
+
+function openPrintWindow(html) {
+  const win = window.open('', '_blank', 'width=1020,height=800');
+  if (!win) { alert('Please allow pop-ups for this page to export PDF.'); return; }
+  win.document.write(html);
+  win.document.close();
+  win.addEventListener('load', () => setTimeout(() => { win.focus(); win.print(); }, 450));
+}
+
+function aziLabel(a) {
+  if (a<=22.5||a>337.5) return 'N';
+  if (a<=67.5)  return 'NE';
+  if (a<=112.5) return 'E';
+  if (a<=157.5) return 'SE';
+  if (a<=202.5) return 'S';
+  if (a<=247.5) return 'SW';
+  if (a<=292.5) return 'W';
+  return 'NW';
+}
+
+function reportCSS() { return `<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+     background:#fff;color:#1e293b;font-size:12px;line-height:1.5;padding:32px 40px}
+h2{font-size:12px;font-weight:700;color:#0369a1;margin:18px 0 8px;
+   text-transform:uppercase;letter-spacing:.05em;border-bottom:2px solid #e2e8f0;padding-bottom:4px}
+.rpt-header{display:flex;justify-content:space-between;align-items:flex-start;
+            padding-bottom:14px;border-bottom:3px solid #f59e0b;margin-bottom:20px}
+.rpt-logo{font-size:30px;margin-right:12px}
+.rpt-title{font-size:19px;font-weight:800;color:#1e293b}
+.rpt-sub{font-size:11px;color:#64748b;margin-top:2px}
+.rpt-meta{text-align:right;font-size:11px;color:#64748b;line-height:1.7}
+.rpt-meta strong{color:#1e293b}
+.metrics-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:10px;margin-bottom:16px}
+.mbox{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;text-align:center}
+.mbox-lbl{font-size:10px;color:#64748b;margin-bottom:3px}
+.mbox-val{font-size:20px;font-weight:800;color:#0f172a;line-height:1.1}
+.mbox-sub{font-size:9px;color:#94a3b8;margin-top:2px}
+.c-amb{color:#d97706!important}.c-sky{color:#0284c7!important}
+.c-red{color:#dc2626!important}.c-grn{color:#16a34a!important}
+.cfg-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px}
+.cfg-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px 14px}
+.cfg-box h3{font-size:10px;font-weight:700;color:#475569;text-transform:uppercase;
+            letter-spacing:.04em;margin-bottom:8px;border-bottom:1px solid #e2e8f0;padding-bottom:4px}
+.kv{display:flex;justify-content:space-between;padding:3px 0;font-size:11px;
+    border-bottom:1px dotted #f1f5f9}
+.kv:last-child{border-bottom:none}
+.kk{color:#64748b}.kv-v{font-weight:600;color:#1e293b}
+table{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:14px}
+th{text-align:left;padding:5px 8px;background:#f1f5f9;color:#475569;
+   font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;
+   border-bottom:2px solid #e2e8f0;white-space:nowrap}
+td{padding:6px 8px;border-bottom:1px solid #f1f5f9;color:#334155;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+.tr{text-align:right}.td-clip{color:#dc2626;font-weight:600}.td-ok{color:#16a34a;font-weight:600}
+.chart-wrap{margin-bottom:14px}
+.chart-lbl{font-size:10px;color:#64748b;font-weight:700;text-transform:uppercase;
+           letter-spacing:.04em;margin-bottom:5px}
+.chart-img{width:100%;border:1px solid #e2e8f0;border-radius:6px;display:block}
+.charts-2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.clip-ok{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;
+         padding:8px 12px;color:#15803d;font-weight:600;font-size:11px;margin-bottom:10px}
+.clip-bad{background:#fef2f2;border:1px solid #fecaca;border-radius:6px;
+          padding:8px 12px;color:#dc2626;font-weight:600;font-size:11px;margin-bottom:10px}
+.kv-block .kv{display:flex;justify-content:space-between;padding:4px 0;font-size:11px;
+              border-bottom:1px dotted #f1f5f9}
+.kv-block .kv:last-child{border-bottom:none}
+.meth{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;
+      padding:10px 12px;font-size:10px;color:#64748b;margin-top:16px;line-height:1.6}
+.meth strong{color:#475569}
+@page{margin:16mm}
+@media print{body{padding:0}.no-print{display:none}}
+</style>`; }
+
+// ── Single-array PDF ──────────────────────────────────────────────
+function exportSinglePDF() {
+  if (document.getElementById('r-sum-peak').textContent === '—') {
+    alert('Please run the calculation first.'); return;
+  }
+
+  // Inputs
+  const addr   = document.getElementById('address').value   || '—';
+  const lat    = document.getElementById('lat').value        || '—';
+  const lon    = document.getElementById('lon').value        || '—';
+  const arrKw  = document.getElementById('array_kw').value;
+  const invKw  = document.getElementById('inverter_kw').value;
+  const tsrf   = document.getElementById('tsrf').value;
+  const azi    = parseFloat(document.getElementById('azimuth').value);
+  const pitch  = document.getElementById('pitch').value;
+  const tcoeff = document.getElementById('temp_coeff').value;
+
+  // Results
+  const sumPeak = document.getElementById('r-sum-peak').textContent;
+  const winPeak = document.getElementById('r-win-peak').textContent;
+  const clipHrs = document.getElementById('r-clip-hrs').textContent;
+  const clipSub = document.getElementById('r-clip-sub').textContent;
+  const ilr     = document.getElementById('r-ilr').textContent;
+  const ilrSub  = document.getElementById('r-ilr-sub').textContent.replace(/[⚠️✓]/g,'').trim();
+  const latDisp = document.getElementById('r-lat').textContent;
+  const locSub  = document.getElementById('r-loc-sub').textContent;
+
+  const isClip = parseFloat(clipHrs) > 0;
+
+  // TSRF table — grab the rendered rows but strip progress-bar HTML for print
+  const tsrfRows = (() => {
+    const rows = document.querySelectorAll('#tsrf-tbody tr');
+    return Array.from(rows).map(tr => {
+      const cells = tr.querySelectorAll('td');
+      if (cells.length < 4) return '';
+      // cells: season, tsrf%, poa, dc
+      return `<tr><td>${cells[0].textContent}</td><td class="tr">${cells[1].textContent.replace(/[\n\r]/g,'').trim().split('\n')[0]}</td><td class="tr">${cells[2].textContent}</td><td class="tr">${cells[3].textContent}</td></tr>`;
+    }).join('');
+  })();
+
+  // Clipping data — read metric rows from clip-body
+  const clipRows = (() => {
+    const rows = document.querySelectorAll('#clip-body .metric-row');
+    return Array.from(rows).map(r => {
+      const lbl = r.querySelector('.metric-lbl')?.textContent || '';
+      const val = r.querySelector('.metric-val, .badge')?.textContent || '';
+      return `<div class="kv"><span class="kk">${lbl}</span><span class="kv-v">${val}</span></div>`;
+    }).join('');
+  })();
+
+  const imgSum = captureChart('chart-summer');
+  const imgWin = captureChart('chart-winter');
+  const imgMon = captureChart('chart-monthly');
+  const date   = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>TSRF Single Array Report — ${addr}</title>${reportCSS()}</head><body>
+
+<div class="rpt-header">
+  <div style="display:flex;align-items:center">
+    <div class="rpt-logo">☀️</div>
+    <div>
+      <div class="rpt-title">TSRF Solar Peak Power Analysis</div>
+      <div class="rpt-sub">Single Array &nbsp;·&nbsp; Clear-Sky Simulation &nbsp;·&nbsp; Clipping Report</div>
+    </div>
+  </div>
+  <div class="rpt-meta">
+    <div><strong>Generated:</strong> ${date}</div>
+    <div><strong>Location:</strong> ${addr}</div>
+    <div><strong>Lat / Lon:</strong> ${lat}° / ${lon}°</div>
+  </div>
+</div>
+
+<div class="cfg-grid">
+  <div class="cfg-box">
+    <h3>System</h3>
+    <div class="kv"><span class="kk">Array DC Size</span><span class="kv-v">${arrKw} kW</span></div>
+    <div class="kv"><span class="kk">Inverter AC Size</span><span class="kv-v">${invKw} kW</span></div>
+    <div class="kv"><span class="kk">DC:AC Ratio (ILR)</span><span class="kv-v">${ilr}</span></div>
+    <div class="kv"><span class="kk">Annual TSRF</span><span class="kv-v">${tsrf}%</span></div>
+  </div>
+  <div class="cfg-box">
+    <h3>Orientation</h3>
+    <div class="kv"><span class="kk">Azimuth</span><span class="kv-v">${azi}° (${aziLabel(azi)})</span></div>
+    <div class="kv"><span class="kk">Pitch / Tilt</span><span class="kv-v">${pitch}°</span></div>
+    <div class="kv"><span class="kk">Temp Coefficient</span><span class="kv-v">${tcoeff} %/°C</span></div>
+    <div class="kv"><span class="kk">Latitude</span><span class="kv-v">${latDisp} · ${locSub}</span></div>
+  </div>
+</div>
+
+<h2>Key Results</h2>
+<div class="metrics-grid">
+  <div class="mbox"><div class="mbox-lbl">☀️ Summer Peak DC</div><div class="mbox-val c-amb">${sumPeak}</div><div class="mbox-sub">kW · June 21</div></div>
+  <div class="mbox"><div class="mbox-lbl">❄️ Winter Peak DC</div><div class="mbox-val c-sky">${winPeak}</div><div class="mbox-sub">kW · Dec 21</div></div>
+  <div class="mbox"><div class="mbox-lbl">✂️ Clip Hours/Day</div><div class="mbox-val ${isClip?'c-red':'c-grn'}">${clipHrs}</div><div class="mbox-sub">${clipSub}</div></div>
+  <div class="mbox"><div class="mbox-lbl">📐 DC:AC Ratio</div><div class="mbox-val">${ilr}</div><div class="mbox-sub">${ilrSub}</div></div>
+</div>
+
+<h2>Daily Power Profiles</h2>
+<div class="charts-2">
+  ${imgSum?`<div><div class="chart-lbl">☀️ Summer Solstice (June 21)</div><img class="chart-img" src="${imgSum}"></div>`:''}
+  ${imgWin?`<div><div class="chart-lbl">❄️ Winter Solstice (Dec 21)</div><img class="chart-img" src="${imgWin}"></div>`:''}
+</div>
+
+<h2>Monthly Peak DC</h2>
+${imgMon?`<div class="chart-wrap"><div class="chart-lbl">Clear-sky noon peak · Red band = inverter clipping</div><img class="chart-img" src="${imgMon}"></div>`:''}
+
+<h2>Seasonal TSRF Breakdown</h2>
+<table>
+  <thead><tr><th>Season</th><th class="tr">Est. TSRF</th><th class="tr">Peak POA (W/m²)</th><th class="tr">Peak DC (kW)</th></tr></thead>
+  <tbody>${tsrfRows}</tbody>
+</table>
+
+<h2>Inverter Clipping Analysis — Summer Solstice</h2>
+<div class="${isClip?'clip-bad':'clip-ok'}">${isClip?'⚠️ Clipping detected on June 21 clear-sky day':'✅ No clipping on June 21 clear-sky day'}</div>
+<div class="kv-block">${clipRows}</div>
+
+<div class="meth"><strong>Methodology:</strong> Clear-sky GHI → Haurwitz model &nbsp;·&nbsp;
+DNI/DHI → Erbs decomposition &nbsp;·&nbsp; Tilted irradiance → Isotropic sky transposition &nbsp;·&nbsp;
+Module temperature → NOCT model (45°C, STC 25°C) &nbsp;·&nbsp; Half-hour resolution 04:00–20:00 solar time.
+DC(t) = array_kW × (POA(t)/1000) × nonOF × tempDerate(t) &nbsp;·&nbsp;
+nonOF = annualTSRF ÷ orientationEfficiency (separates shading/soiling losses from geometry).</div>
+
+</body></html>`;
+  openPrintWindow(html);
+}
+
+// ── Multi-array PDF ───────────────────────────────────────────────
+function exportMultiPDF() {
+  const mres = document.getElementById('m-results');
+  if (!mres || mres.style.display === 'none') {
+    alert('Please run the multi-array calculation first.'); return;
+  }
+
+  const addr    = document.getElementById('m-address').value || '—';
+  const lat     = document.getElementById('m-lat').value     || '—';
+  const lon     = document.getElementById('m-lon').value     || '—';
+  const invKey  = document.getElementById('m-inv-model').value;
+  const invSpec = EQUIPMENT.inverters[invKey] || {};
+  const invQty  = document.getElementById('m-inv-qty').value;
+  const invKwV  = document.getElementById('m-inv-kw').value;
+
+  // Array config rows
+  const arrConfigRows = multiArrays.map((arr, i) => {
+    const mod = EQUIPMENT.panels[arr.moduleKey];
+    return `<tr>
+      <td>Array ${i+1}</td>
+      <td>${mod ? mod.name : arr.moduleKey}</td>
+      <td class="tr">${arr.count}</td>
+      <td class="tr">${getArrayDC(arr).toFixed(2)} kW</td>
+      <td class="tr">${arr.azimuth}° (${aziLabel(arr.azimuth)})</td>
+      <td class="tr">${arr.pitch}°</td>
+      <td class="tr">${arr.tsrf.toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+
+  // Summary stats from DOM
+  const statsHTML = Array.from(document.querySelectorAll('#m-results .m-stat')).map(el => {
+    const lbl = el.querySelector('.m-stat-lbl')?.textContent || '';
+    const val = el.querySelector('.m-stat-val')?.textContent || '';
+    const sub = el.querySelector('.m-stat-sub')?.textContent || '';
+    return `<div class="mbox"><div class="mbox-lbl">${lbl}</div><div class="mbox-val">${val}</div><div class="mbox-sub">${sub}</div></div>`;
+  }).join('');
+
+  // Per-array breakdown table — clean copy
+  const arrTableEl = document.querySelector('#m-results .array-summary-table');
+  const arrTableHTML = arrTableEl ? arrTableEl.outerHTML : '';
+
+  // Clipping metric rows
+  const clipRows = Array.from(document.querySelectorAll('#m-clip-body .metric-row')).map(r => {
+    const lbl = r.querySelector('.metric-lbl')?.textContent || '';
+    const val = r.querySelector('.metric-val, .badge')?.textContent || '';
+    return `<div class="kv"><span class="kk">${lbl}</span><span class="kv-v">${val}</span></div>`;
+  }).join('');
+
+  const isClip = document.querySelector('#m-clip-body .badge-red') !== null;
+
+  const imgSum = captureChart('m-chart-summer');
+  const imgMon = captureChart('m-chart-monthly');
+  const date   = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>TSRF Multi-Array Report — ${addr}</title>${reportCSS()}</head><body>
+
+<div class="rpt-header">
+  <div style="display:flex;align-items:center">
+    <div class="rpt-logo">☀️</div>
+    <div>
+      <div class="rpt-title">TSRF Solar Peak Power Analysis</div>
+      <div class="rpt-sub">Multi-Array System &nbsp;·&nbsp; Clear-Sky Simulation &nbsp;·&nbsp; Clipping Report</div>
+    </div>
+  </div>
+  <div class="rpt-meta">
+    <div><strong>Generated:</strong> ${date}</div>
+    <div><strong>Location:</strong> ${addr}</div>
+    <div><strong>Lat / Lon:</strong> ${lat}° / ${lon}°</div>
+  </div>
+</div>
+
+<div class="cfg-grid">
+  <div class="cfg-box">
+    <h3>System Inverter</h3>
+    <div class="kv"><span class="kk">Model</span><span class="kv-v">${invSpec.name||invKey}</span></div>
+    <div class="kv"><span class="kk">Quantity</span><span class="kv-v">${invQty}</span></div>
+    <div class="kv"><span class="kk">Total AC Capacity</span><span class="kv-v">${invKwV} kW</span></div>
+    <div class="kv"><span class="kk">Arrays</span><span class="kv-v">${multiArrays.length}</span></div>
+  </div>
+</div>
+
+<h2>Array Configuration</h2>
+<table>
+  <thead><tr><th>Array</th><th>Module</th><th class="tr">Count</th>
+    <th class="tr">DC kW</th><th class="tr">Azimuth</th><th class="tr">Pitch</th><th class="tr">TSRF</th></tr></thead>
+  <tbody>${arrConfigRows}</tbody>
+</table>
+
+<h2>System Results</h2>
+<div class="metrics-grid">${statsHTML}</div>
+
+<h2>Per-Array Breakdown</h2>
+${arrTableHTML}
+
+<h2>Summer Solstice — System DC Profile (June 21)</h2>
+${imgSum?`<div class="chart-wrap"><div class="chart-lbl">Stacked by array · Red band = clipped energy above inverter limit</div><img class="chart-img" src="${imgSum}"></div>`:''}
+
+<h2>Monthly System Peak DC</h2>
+${imgMon?`<div class="chart-wrap"><div class="chart-lbl">Stacked by array · Red band = months where clipping occurs</div><img class="chart-img" src="${imgMon}"></div>`:''}
+
+<h2>Inverter Clipping Analysis — Summer Solstice</h2>
+<div class="${isClip?'clip-bad':'clip-ok'}">${isClip?'⚠️ Clipping detected on June 21 clear-sky day':'✅ No clipping on June 21 clear-sky day'}</div>
+<div class="kv-block">${clipRows}</div>
+
+<div class="meth"><strong>Methodology:</strong> Clear-sky GHI → Haurwitz model &nbsp;·&nbsp;
+DNI/DHI → Erbs decomposition &nbsp;·&nbsp; Tilted irradiance → Isotropic sky transposition &nbsp;·&nbsp;
+Module temperature → NOCT model (45°C, STC 25°C) &nbsp;·&nbsp; Half-hour resolution 04:00–20:00 solar time.
+Each array simulated independently; system DC = sum across arrays at every half-hour step.
+DC(t) = array_kW × (POA(t)/1000) × nonOF × tempDerate(t) &nbsp;·&nbsp;
+nonOF = annualTSRF ÷ orientationEfficiency.</div>
+
+</body></html>`;
+  openPrintWindow(html);
+}
+</script>
+</body>
+</html>

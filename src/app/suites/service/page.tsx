@@ -70,6 +70,14 @@ const LINKS: SuitePageCard[] = [
     icon: "☀️",
     section: "Tools",
   },
+  {
+    href: "/dashboards/tsrf-calculator",
+    title: "TSRF Peak Power Calculator",
+    description: "Estimate peak power output from TSRF, module specs, and site conditions.",
+    tag: "TOOL",
+    icon: "⚡",
+    section: "Tools",
+  },
 ];
 
 export default async function ServiceDRSuitePage() {
