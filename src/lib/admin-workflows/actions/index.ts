@@ -18,6 +18,8 @@ import { aiComposeAction } from "./ai-compose";
 import { createHubspotTaskAction } from "./create-hubspot-task";
 import { fetchHubspotDealAction } from "./fetch-hubspot-deal";
 import { fetchZuperJobAction } from "./fetch-zuper-job";
+import { findHubspotContactAction } from "./find-hubspot-contact";
+import { httpRequestAction } from "./http-request";
 import { logActivityAction } from "./log-activity";
 import { runBomPipelineAction } from "./run-bom-pipeline";
 import { sendEmailAction } from "./send-email";
@@ -33,6 +35,7 @@ export const ACTIONS: AdminWorkflowAction[] = [
   aiComposeAction,
   // HubSpot — reads
   fetchHubspotDealAction,
+  findHubspotContactAction,
   // HubSpot — writes
   updateHubSpotPropertyAction,
   updateHubspotContactPropertyAction,
@@ -46,6 +49,8 @@ export const ACTIONS: AdminWorkflowAction[] = [
   // PB Ops
   runBomPipelineAction,
   logActivityAction,
+  // Integration
+  httpRequestAction,
 ] as AdminWorkflowAction[];
 
 export function getActionByKind(kind: string): AdminWorkflowAction | undefined {
