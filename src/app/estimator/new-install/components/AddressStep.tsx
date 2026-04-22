@@ -64,10 +64,11 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
   );
 
   const input = state.addressInput;
-  const canSubmit =
-    mode === "auto"
-      ? Boolean(input.street && input.city && input.state && input.zip)
-      : Boolean(input.street && input.city && input.state && input.zip);
+  const hasStructured = Boolean(input.street && input.city && input.state && input.zip);
+  const hasFormatted = Boolean((input.formatted ?? "").trim().length >= 3);
+  // Manual mode requires structured fields; auto mode can geocode from the
+  // typed/selected text even if Places `place_changed` didn't fire.
+  const canSubmit = mode === "auto" ? hasStructured || hasFormatted : hasStructured;
 
   async function handleContinue(): Promise<void> {
     if (!canSubmit) {
@@ -77,16 +78,19 @@ export default function AddressStep({ state, dispatch, onContinue }: Props) {
     setError(null);
     setLoading(true);
     try {
+      const requestBody = hasStructured
+        ? {
+            street: input.street,
+            unit: input.unit || undefined,
+            city: input.city,
+            state: input.state,
+            zip: input.zip,
+          }
+        : { query: (input.formatted ?? "").trim() };
       const res = await fetch("/api/estimator/address-validate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          street: input.street,
-          unit: input.unit || undefined,
-          city: input.city,
-          state: input.state,
-          zip: input.zip,
-        }),
+        body: JSON.stringify(requestBody),
       });
       if (!res.ok) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
