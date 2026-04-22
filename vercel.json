@@ -109,6 +109,10 @@
     {
       "path": "/api/cron/estimator-hubspot-reconcile",
       "schedule": "*/20 * * * *"
+    },
+    {
+      "path": "/api/cron/adders-sync",
+      "schedule": "0 10 * * *"
     }
   ],
   "redirects": [

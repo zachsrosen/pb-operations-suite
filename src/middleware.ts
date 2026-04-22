@@ -43,6 +43,7 @@ const PUBLIC_API_ROUTES = [
   "/api/estimator", // Public customer-facing estimator v2
   "/api/cron/estimator-cleanup", // Estimator TTL cleanup — CRON_SECRET validated in route
   "/api/cron/estimator-hubspot-reconcile", // Estimator HubSpot retry — CRON_SECRET validated in route
+  "/api/cron/adders-sync", // Adder catalog → OpenSolar sync — CRON_SECRET validated in route
   "/api/inngest", // Inngest Cloud → app handshake; signing-key validated by the serve handler
   "/api/webhooks/zuper/admin-workflows", // Zuper webhook → admin workflow fan-out; bearer-validated in route
 ];
