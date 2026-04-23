@@ -13,7 +13,7 @@ import { z } from "zod";
 
 import type { AdminFormField } from "@/lib/admin-workflows/types";
 
-export const CONTROL_FLOW_KINDS = new Set(["delay", "stop-if", "parallel"]);
+export const CONTROL_FLOW_KINDS = new Set(["delay", "stop-if", "parallel", "for-each"]);
 
 export function isControlFlowKind(kind: string): boolean {
   return CONTROL_FLOW_KINDS.has(kind);
@@ -194,4 +194,63 @@ export function parseParallelChildren(childrenJson: string): ParallelChildStep[]
   return children;
 }
 
-export const CONTROL_FLOW_PALETTE = [delayPaletteEntry, stopIfPaletteEntry, parallelPaletteEntry];
+// ---------------------------------------------------------------------------
+// for-each
+// ---------------------------------------------------------------------------
+
+/**
+ * Iterate a body of child steps N times, once per item in an input array.
+ *
+ * Input: `arrayPath` — a template expression resolving to a JSON array
+ *   (e.g. `{{previous.fetch.items}}`). MUST resolve to a JSON array
+ *   string; the executor parses it. If it doesn't resolve to an array,
+ *   the loop is skipped.
+ *
+ * Input: `childrenJson` — same shape as parallel's childrenJson.
+ *   Children run SEQUENTIALLY per iteration. The loop variable is
+ *   accessible in child input templates via {{loop.item}} and
+ *   {{loop.index}}.
+ *
+ * Max iterations: 100 (safety cap). Longer loops should be broken
+ * into batches or rearchitected.
+ */
+export const forEachInputsSchema = z.object({
+  arrayPath: z.string().min(1),
+  childrenJson: z.string().min(2),
+});
+
+export const forEachPaletteEntry = {
+  kind: "for-each",
+  name: "For each (iterate array)",
+  description:
+    "Run a set of actions once per item in an array. Input must resolve to a JSON array. Capped at 100 iterations for safety.",
+  category: "Control flow",
+  fields: [
+    {
+      key: "arrayPath",
+      label: "Array (template expression)",
+      kind: "text" as const,
+      placeholder: "{{previous.fetch.lineItems}}",
+      help: "Must resolve to a JSON array. Typically comes from a prior fetch/ai-compose step.",
+      required: true,
+    },
+    {
+      key: "childrenJson",
+      label: "Child steps per iteration (JSON array)",
+      kind: "textarea" as const,
+      placeholder:
+        '[{"id":"note","kind":"add-hubspot-note","inputs":{"dealId":"{{trigger.objectId}}","body":"Item: {{loop.item}}"}}]',
+      help: "Children run sequentially per iteration. Use {{loop.item}} for the current item, {{loop.index}} for 0-based position.",
+      required: true,
+    },
+  ] satisfies AdminFormField[],
+};
+
+export const FOR_EACH_MAX_ITERATIONS = 100;
+
+export const CONTROL_FLOW_PALETTE = [
+  delayPaletteEntry,
+  stopIfPaletteEntry,
+  parallelPaletteEntry,
+  forEachPaletteEntry,
+];

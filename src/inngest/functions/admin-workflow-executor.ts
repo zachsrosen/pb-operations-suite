@@ -28,6 +28,8 @@ import { getActionByKind } from "@/lib/admin-workflows/actions";
 import {
   delayInputsSchema,
   evaluateStopIf,
+  FOR_EACH_MAX_ITERATIONS,
+  forEachInputsSchema,
   isControlFlowKind,
   parallelInputsSchema,
   parseParallelChildren,
@@ -53,11 +55,12 @@ interface WorkflowDefinition {
   }>;
 }
 
-/** Resolve {{trigger.foo}} / {{previous.stepId.field}} expressions. */
+/** Resolve {{trigger.foo}} / {{previous.stepId.field}} / {{loop.item}} expressions. */
 function resolveTemplate(
   value: string,
   triggerContext: Record<string, unknown>,
   previousOutputs: Record<string, unknown>,
+  loopScope?: { item: unknown; index: number },
 ): string {
   return value.replace(/\{\{\s*([^}]+?)\s*\}\}/g, (_, expr: string) => {
     const parts = expr.split(".").map((p) => p.trim());
@@ -79,6 +82,22 @@ function resolveTemplate(
       }
       return cur == null ? "" : String(cur);
     }
+    if (parts[0] === "loop" && loopScope) {
+      if (parts[1] === "index") return String(loopScope.index);
+      if (parts[1] === "item") {
+        // Item can be primitive or object. Descend with remaining parts.
+        let cur: unknown = loopScope.item;
+        for (let i = 2; i < parts.length; i++) {
+          const field = parts[i];
+          if (cur && typeof cur === "object" && field in (cur as Record<string, unknown>)) {
+            cur = (cur as Record<string, unknown>)[field];
+          } else {
+            return "";
+          }
+        }
+        return cur == null ? "" : String(cur);
+      }
+    }
     return "";
   });
 }
@@ -87,10 +106,11 @@ function resolveInputs(
   inputs: Record<string, string>,
   triggerContext: Record<string, unknown>,
   previousOutputs: Record<string, unknown>,
+  loopScope?: { item: unknown; index: number },
 ): Record<string, string> {
   const resolved: Record<string, string> = {};
   for (const [k, v] of Object.entries(inputs)) {
-    resolved[k] = resolveTemplate(v, triggerContext, previousOutputs);
+    resolved[k] = resolveTemplate(v, triggerContext, previousOutputs, loopScope);
   }
   return resolved;
 }
@@ -250,6 +270,71 @@ export const adminWorkflowExecutor = inngest.createFunction(
           // step.sleep must be called at Inngest-step top level; it is here
           await step.sleep(`${stepDef.id}:delay`, `${seconds}s`);
           previousOutputs[stepDef.id] = { delayedSeconds: seconds };
+          await checkpoint(stepDef.id);
+          continue;
+        }
+        if (stepDef.kind === "for-each") {
+          const forInputs = forEachInputsSchema.parse(resolvedInputs);
+          // Parse the resolved arrayPath as a JSON array
+          let items: unknown[];
+          try {
+            const parsed = JSON.parse(forInputs.arrayPath);
+            if (!Array.isArray(parsed)) throw new Error("not an array");
+            items = parsed;
+          } catch {
+            // arrayPath didn't resolve to a JSON array — record skip + continue.
+            previousOutputs[stepDef.id] = { skipped: true, reason: "arrayPath did not resolve to a JSON array" };
+            await checkpoint(stepDef.id);
+            continue;
+          }
+
+          if (items.length > FOR_EACH_MAX_ITERATIONS) {
+            throw new Error(
+              `for-each: ${items.length} items exceeds max ${FOR_EACH_MAX_ITERATIONS}`,
+            );
+          }
+
+          const children = parseParallelChildren(forInputs.childrenJson);
+          for (const c of children) {
+            if (isControlFlowKind(c.kind)) {
+              throw new Error(`for-each: child ${c.id} cannot be a control-flow kind`);
+            }
+            if (!getActionByKind(c.kind)) {
+              throw new Error(`for-each: unknown action kind in child ${c.id}: ${c.kind}`);
+            }
+          }
+
+          const iterations: Array<Record<string, unknown>> = [];
+          for (let i = 0; i < items.length; i++) {
+            const item = items[i];
+            const loopScope = { item, index: i };
+            const iterOutputs: Record<string, unknown> = {};
+            for (const c of children) {
+              const resolved = resolveInputs(c.inputs, triggerContext, previousOutputs, loopScope);
+              if (isDryRun) {
+                iterOutputs[c.id] = { __dryRun: true, kind: c.kind, resolvedInputs: resolved };
+                continue;
+              }
+              const action = getActionByKind(c.kind)!;
+              const parsed = action.inputsSchema.parse(resolved);
+              const out = await step.run(`${stepDef.id}:iter${i}:${c.id}:${c.kind}`, () =>
+                action.handler({
+                  inputs: parsed,
+                  context: {
+                    runId,
+                    workflowId,
+                    stepId: `${stepDef.id}:${i}:${c.id}`,
+                    triggerContext,
+                    previousOutputs,
+                    triggeredByEmail,
+                  },
+                }),
+              );
+              iterOutputs[c.id] = out;
+            }
+            iterations.push(iterOutputs);
+          }
+          previousOutputs[stepDef.id] = { iterations, count: items.length };
           await checkpoint(stepDef.id);
           continue;
         }
