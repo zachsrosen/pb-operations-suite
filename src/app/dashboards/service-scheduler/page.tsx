@@ -53,6 +53,72 @@ const CATEGORY_TEXT_COLORS: Record<string, string> = {
   "Service Revisit": "text-amber-400",
 };
 
+/* ------------------------------------------------------------------ */
+/*  Status colors (per ticket #359 — consistent across categories)    */
+/* ------------------------------------------------------------------ */
+/* Single source of truth: status drives FILL color.                   */
+/* Category is conveyed via the left border stripe on each tile.       */
+
+interface StatusColorTokens {
+  bg: string;
+  border: string;
+  text: string;
+}
+
+const STATUS_COLORS: Record<string, StatusColorTokens> = {
+  // Pre-work
+  "new":         { bg: "bg-blue-500/20",    border: "border-blue-500/30",    text: "text-blue-300" },
+  "unscheduled": { bg: "bg-slate-500/20",   border: "border-slate-500/30",   text: "text-slate-300" },
+  // Dispatch
+  "scheduled":   { bg: "bg-cyan-500/20",    border: "border-cyan-500/30",    text: "text-cyan-300" },
+  "dispatched":  { bg: "bg-cyan-500/20",    border: "border-cyan-500/30",    text: "text-cyan-300" },
+  // Active
+  "started":     { bg: "bg-purple-500/20",  border: "border-purple-500/30",  text: "text-purple-300" },
+  "in progress": { bg: "bg-purple-500/20",  border: "border-purple-500/30",  text: "text-purple-300" },
+  "in_progress": { bg: "bg-purple-500/20",  border: "border-purple-500/30",  text: "text-purple-300" },
+  "on the way":  { bg: "bg-fuchsia-500/20", border: "border-fuchsia-500/30", text: "text-fuchsia-300" },
+  "enroute":     { bg: "bg-fuchsia-500/20", border: "border-fuchsia-500/30", text: "text-fuchsia-300" },
+  // Paused / blocked
+  "on hold":     { bg: "bg-amber-500/20",   border: "border-amber-500/30",   text: "text-amber-300" },
+  "hold":        { bg: "bg-amber-500/20",   border: "border-amber-500/30",   text: "text-amber-300" },
+  "incomplete":  { bg: "bg-orange-500/20",  border: "border-orange-500/30",  text: "text-orange-300" },
+  "return visit required": { bg: "bg-amber-500/20", border: "border-amber-500/30", text: "text-amber-300" },
+  // Done
+  "completed":   { bg: "bg-emerald-500/20", border: "border-emerald-500/30", text: "text-emerald-300" },
+  "complete":    { bg: "bg-emerald-500/20", border: "border-emerald-500/30", text: "text-emerald-300" },
+  "closed":      { bg: "bg-emerald-500/20", border: "border-emerald-500/30", text: "text-emerald-300" },
+  // Killed
+  "cancelled":   { bg: "bg-zinc-500/20",    border: "border-zinc-500/30",    text: "text-zinc-300" },
+  "canceled":    { bg: "bg-zinc-500/20",    border: "border-zinc-500/30",    text: "text-zinc-300" },
+};
+
+const DEFAULT_STATUS_COLOR: StatusColorTokens = {
+  bg: "bg-surface-2",
+  border: "border-t-border",
+  text: "text-foreground/80",
+};
+
+const OVERDUE_STATUS_COLOR: StatusColorTokens = {
+  bg: "bg-red-500/20",
+  border: "border-red-500/40",
+  text: "text-red-300",
+};
+
+function getStatusColor(statusName: string | null | undefined): StatusColorTokens {
+  const key = (statusName || "").toLowerCase().trim();
+  return STATUS_COLORS[key] ?? DEFAULT_STATUS_COLOR;
+}
+
+/** Left-edge stripe color identifying the job category. */
+const CATEGORY_STRIPE: Record<string, string> = {
+  "Service Visit": "border-l-emerald-500",
+  "Service Revisit": "border-l-amber-500",
+};
+
+function getCategoryStripe(categoryName: string): string {
+  return CATEGORY_STRIPE[categoryName] ?? "border-l-slate-500";
+}
+
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -779,7 +845,7 @@ export default function ServiceSchedulerPage() {
                     }`}>
                       {j.categoryName}
                     </span>
-                    <span className="text-[0.5rem] px-1 py-0.5 rounded bg-surface-2 text-muted">
+                    <span className={`text-[0.5rem] px-1 py-0.5 rounded ${getStatusColor(j.statusName).bg} ${getStatusColor(j.statusName).text}`}>
                       {j.statusName}
                     </span>
                     {j.teamName && (
@@ -921,17 +987,13 @@ export default function ServiceSchedulerPage() {
                           const state = jobStateByUid[j.jobUid];
                           const isOverdue = state === "overdue";
                           const isCompleted = state === "completed";
+                          const colors = isOverdue ? OVERDUE_STATUS_COLOR : getStatusColor(j.statusName);
+                          const stripe = getCategoryStripe(j.categoryName);
                           return (
                           <div
                             key={j.jobUid}
                             onClick={(e) => { e.stopPropagation(); setSelectedJob(j); }}
-                            className={`text-[0.6rem] p-1 rounded cursor-pointer transition-colors ${
-                              isOverdue
-                                ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
-                                : j.categoryName === "Service Revisit"
-                                  ? "bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30"
-                                  : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
-                            } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""} ${isCompleted ? "opacity-60" : ""}`}
+                            className={`text-[0.6rem] p-1 rounded border-l-4 ${stripe} ${colors.bg} ${colors.text} cursor-pointer transition hover:brightness-125 ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-foreground/40" : ""} ${isCompleted ? "opacity-60" : ""}`}
                             title={`${j.title}\n${j.statusName}\n${getAssignees(j).join(", ") || "Unassigned"}${j.scheduledStart ? "\n" + formatTime(j.scheduledStart) : ""}${isOverdue ? "\n⚠ Overdue" : ""}`}
                           >
                             <div className="flex items-center gap-1">
@@ -1005,17 +1067,13 @@ export default function ServiceSchedulerPage() {
                             const state = jobStateByUid[j.jobUid];
                             const isOverdue = state === "overdue";
                             const isCompleted = state === "completed";
+                            const colors = isOverdue ? OVERDUE_STATUS_COLOR : getStatusColor(j.statusName);
+                            const stripe = getCategoryStripe(j.categoryName);
                             return (
                             <div
                               key={j.jobUid}
                               onClick={() => setSelectedJob(j)}
-                              className={`text-[0.65rem] p-1.5 rounded cursor-pointer transition-colors ${
-                                isOverdue
-                                  ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
-                                  : j.categoryName === "Service Revisit"
-                                    ? "bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30"
-                                    : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
-                              } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""} ${isCompleted ? "opacity-60" : ""}`}
+                              className={`text-[0.65rem] p-1.5 rounded border-l-4 ${stripe} ${colors.bg} ${colors.text} cursor-pointer transition hover:brightness-125 ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-foreground/40" : ""} ${isCompleted ? "opacity-60" : ""}`}
                               title={`${j.title}\n${j.statusName}\n${getAssignees(j).join(", ") || "Unassigned"}${isOverdue ? "\n⚠ Overdue" : ""}`}
                             >
                               <div className="flex items-center justify-between gap-1 mb-0.5">
@@ -1073,17 +1131,13 @@ export default function ServiceSchedulerPage() {
                             const state = jobStateByUid[j.jobUid];
                             const isOverdue = state === "overdue";
                             const isCompleted = state === "completed";
+                            const colors = isOverdue ? OVERDUE_STATUS_COLOR : getStatusColor(j.statusName);
+                            const stripe = getCategoryStripe(j.categoryName);
                             return (
                             <div
                               key={j.jobUid}
                               onClick={() => setSelectedJob(j)}
-                              className={`text-[0.7rem] p-2 rounded cursor-pointer ${
-                                isOverdue
-                                  ? "bg-red-500/20 border border-red-500/40 text-red-300"
-                                  : j.categoryName === "Service Revisit"
-                                    ? "bg-amber-500/20 border border-amber-500/30 text-amber-300"
-                                    : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300"
-                              } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""} ${isCompleted ? "opacity-60" : ""}`}
+                              className={`text-[0.7rem] p-2 rounded border-l-4 ${stripe} ${colors.bg} ${colors.text} cursor-pointer transition hover:brightness-125 ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-foreground/40" : ""} ${isCompleted ? "opacity-60" : ""}`}
                             >
                               <div className="flex items-center gap-1">
                                 <TypeBadge type={objectTypes[j.hubspotDealId]} size="sm" objectId={j.hubspotDealId} portalId={hubspotPortalId} />
@@ -1118,17 +1172,13 @@ export default function ServiceSchedulerPage() {
                                 const state = jobStateByUid[j.jobUid];
                                 const isOverdue = state === "overdue";
                                 const isCompleted = state === "completed";
+                                const colors = isOverdue ? OVERDUE_STATUS_COLOR : getStatusColor(j.statusName);
+                                const stripe = getCategoryStripe(j.categoryName);
                                 return (
                                 <div
                                   key={j.jobUid}
                                   onClick={() => setSelectedJob(j)}
-                                  className={`text-[0.7rem] p-2 rounded cursor-pointer ${
-                                    isOverdue
-                                      ? "bg-red-500/20 border border-red-500/40 text-red-300 hover:bg-red-500/30"
-                                      : j.categoryName === "Service Revisit"
-                                        ? "bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:bg-amber-500/30"
-                                        : "bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/30"
-                                  } ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-emerald-400" : ""} ${isCompleted ? "opacity-60" : ""}`}
+                                  className={`text-[0.7rem] p-2 rounded border-l-4 ${stripe} ${colors.bg} ${colors.text} cursor-pointer transition hover:brightness-125 ${selectedJob?.jobUid === j.jobUid ? "ring-2 ring-foreground/40" : ""} ${isCompleted ? "opacity-60" : ""}`}
                                 >
                                   <div className="flex justify-between gap-2">
                                     <div className="flex items-center gap-1 min-w-0">
@@ -1206,7 +1256,9 @@ export default function ServiceSchedulerPage() {
                 </div>
                 <div>
                   <div className="text-muted text-[0.6rem] mb-0.5">Status</div>
-                  <span className="text-foreground">{selectedJob.statusName}</span>
+                  <span className={`px-2 py-0.5 rounded text-[0.65rem] font-medium ${getStatusColor(selectedJob.statusName).bg} ${getStatusColor(selectedJob.statusName).text}`}>
+                    {selectedJob.statusName}
+                  </span>
                 </div>
                 <div>
                   <div className="text-muted text-[0.6rem] mb-0.5">Location / Team</div>
