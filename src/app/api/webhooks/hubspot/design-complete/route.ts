@@ -285,8 +285,17 @@ export async function POST(req: NextRequest) {
   for (const event of events) {
     // Guard: only deal property changes on a known property
     if (event.subscriptionType !== "deal.propertyChange") continue;
-    const propName = event.propertyName ?? "";
-    if (propName !== "dealstage" && propName !== "design_status") continue;
+    // Narrow to a literal union so downstream string interpolation can't be
+    // tainted with arbitrary user input from event.propertyName (CodeQL
+    // js/tainted-format-string).
+    let propName: "dealstage" | "design_status";
+    if (event.propertyName === "design_status") {
+      propName = "design_status";
+    } else if (event.propertyName === "dealstage") {
+      propName = "dealstage";
+    } else {
+      continue;
+    }
 
     // Skip property changes for which we have no config
     if (propName === "dealstage" && stageConfig.size === 0) continue;
