@@ -328,6 +328,13 @@ export default function AdminWorkflowEditor({
                 Archive
               </button>
             )}
+            <a
+              href={`/api/admin/workflows/${id}/export`}
+              className="text-zinc-400 hover:text-zinc-300 px-2 py-1"
+              title="Download workflow JSON"
+            >
+              Export
+            </a>
             <button onClick={deleteWorkflow} className="text-red-400 hover:text-red-300 px-2 py-1">
               Delete
             </button>
