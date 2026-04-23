@@ -34,9 +34,19 @@ export interface PriorityScore {
   overridden?: boolean;
 }
 
+/**
+ * Whole days from `dateStr` to `now`, floored at the calc site so display
+ * and scoring stay in sync (display previously used Math.floor on a value
+ * that scoring compared as a raw decimal — caused off-by-one drift around
+ * midnight).
+ *
+ * Returns NaN for missing/invalid input; callers must guard.
+ */
 function daysBetween(dateStr: string, now: Date): number {
-  const date = new Date(dateStr);
-  return (now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24);
+  if (!dateStr) return NaN;
+  const ms = new Date(dateStr).getTime();
+  if (!Number.isFinite(ms)) return NaN;
+  return Math.floor((now.getTime() - ms) / (1000 * 60 * 60 * 24));
 }
 
 function tierFromScore(score: number): PriorityTier {
@@ -54,7 +64,9 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
   // 1. Warranty expiry urgency
   if (item.warrantyExpiry) {
     const daysToExpiry = -daysBetween(item.warrantyExpiry, now); // negative = future
-    if (daysToExpiry <= 0) {
+    if (Number.isNaN(daysToExpiry)) {
+      // skip — invalid timestamp shouldn't add points or noisy reasons
+    } else if (daysToExpiry <= 0) {
       // Already expired
       score += 30;
       reasons.push("Warranty expired");
@@ -73,15 +85,19 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
   // 2. Last contact recency
   if (item.lastContactDate) {
     const daysSinceContact = daysBetween(item.lastContactDate, now);
-    if (daysSinceContact > 7) {
+    // daysSinceContact is already floored at the calc site; safe to compare
+    // and display the same value (no off-by-one drift around midnight).
+    if (Number.isNaN(daysSinceContact)) {
+      // skip — bad timestamp shouldn't penalize the deal or fabricate reasons
+    } else if (daysSinceContact >= 7) {
       score += 35;
-      reasons.push(`No contact in ${Math.floor(daysSinceContact)} days`);
+      reasons.push(`No contact in ${daysSinceContact} days`);
       categories.add("no_contact");
-    } else if (daysSinceContact > 3) {
+    } else if (daysSinceContact >= 3) {
       score += 25;
-      reasons.push(`Last contact ${Math.floor(daysSinceContact)} days ago`);
+      reasons.push(`Last contact ${daysSinceContact} days ago`);
       categories.add("no_contact");
-    } else if (daysSinceContact > 1) {
+    } else if (daysSinceContact >= 1) {
       score += 5;
       categories.add("no_contact");
     }
@@ -89,13 +105,14 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
 
   // 3. Stage duration (time stuck)
   const daysSinceModified = daysBetween(item.lastModified, now);
-  if (daysSinceModified > 7) {
+  const daysSinceModifiedValid = !Number.isNaN(daysSinceModified);
+  if (daysSinceModifiedValid && daysSinceModified >= 7) {
     score += 20;
-    reasons.push(`Stuck in "${item.stage}" for ${Math.floor(daysSinceModified)} days`);
+    reasons.push(`Stuck in "${item.stage}" for ${daysSinceModified} days`);
     categories.add("stuck_in_stage");
-  } else if (daysSinceModified > 3) {
+  } else if (daysSinceModifiedValid && daysSinceModified >= 3) {
     score += 10;
-    reasons.push(`In "${item.stage}" for ${Math.floor(daysSinceModified)} days`);
+    reasons.push(`In "${item.stage}" for ${daysSinceModified} days`);
     categories.add("stuck_in_stage");
   }
 
@@ -116,7 +133,7 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
     score += 5;
     categories.add("stage_urgency");
   }
-  if (activeStages.includes(item.stage) && daysSinceModified > 5) {
+  if (activeStages.includes(item.stage) && daysSinceModifiedValid && daysSinceModified >= 5) {
     score += 10;
     reasons.push(`"${item.stage}" overdue`);
     categories.add("stage_urgency");
