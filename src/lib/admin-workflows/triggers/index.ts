@@ -68,9 +68,32 @@ export const hubspotPropertyTrigger: AdminWorkflowTrigger<z.infer<typeof hubspot
   name: "HubSpot property change",
   description: "Fires when a configured property on a HubSpot deal/contact/ticket changes.",
   fields: [
-    { key: "objectType", label: "HubSpot object", kind: "text", placeholder: "deal | contact | ticket", required: true },
-    { key: "propertyName", label: "Property to watch", kind: "text", placeholder: "dealstage", required: true },
-    { key: "propertyValuesIn", label: "Only fire when value is one of (comma-separated)", kind: "text", help: "Leave blank to fire on any change." },
+    {
+      key: "objectType",
+      label: "HubSpot object",
+      kind: "select",
+      required: true,
+      options: [
+        { value: "deal", label: "Deal" },
+        { value: "contact", label: "Contact" },
+        { value: "ticket", label: "Ticket" },
+      ],
+    },
+    {
+      key: "propertyName",
+      label: "Property to watch",
+      kind: "text",
+      placeholder: "dealstage",
+      required: true,
+      help: "Property name (e.g. dealstage, pb_location, hs_pipeline_stage). Case-sensitive.",
+    },
+    {
+      key: "propertyValuesIn",
+      label: "Only fire when value is one of",
+      kind: "multiselect",
+      help: "Leave blank to fire on any change. When property is 'dealstage' or 'hs_pipeline_stage', pick from real HubSpot pipelines below.",
+      optionsFrom: "/api/admin/workflows/hubspot-pipelines?objectType=deal",
+    },
   ],
   configSchema: hubspotPropertyConfigSchema,
   match: ({ config, rawEvent }) => {
@@ -111,9 +134,27 @@ export const zuperPropertyTrigger: AdminWorkflowTrigger<z.infer<typeof zuperProp
   name: "Zuper property change",
   description: "Fires when a configured property on a Zuper job changes.",
   fields: [
-    { key: "objectType", label: "Zuper object", kind: "text", placeholder: "job", required: true },
-    { key: "propertyName", label: "Property to watch", kind: "text", placeholder: "status", required: true },
-    { key: "propertyValuesIn", label: "Only fire when value is one of (comma-separated)", kind: "text", help: "Leave blank to fire on any change." },
+    {
+      key: "objectType",
+      label: "Zuper object",
+      kind: "select",
+      required: true,
+      options: [{ value: "job", label: "Job" }],
+    },
+    {
+      key: "propertyName",
+      label: "Property to watch",
+      kind: "text",
+      placeholder: "status",
+      required: true,
+      help: "Zuper custom field name or core property (e.g. status, category, assigned_to).",
+    },
+    {
+      key: "propertyValuesIn",
+      label: "Only fire when value is one of (comma-separated)",
+      kind: "text",
+      help: "Leave blank to fire on any change. Enter Zuper values as they appear in webhooks.",
+    },
   ],
   configSchema: zuperPropertyConfigSchema,
   match: ({ config, rawEvent }) => {
