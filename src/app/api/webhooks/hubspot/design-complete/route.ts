@@ -1,12 +1,21 @@
 /**
- * HubSpot Deal Stage Change Webhook — BOM Pipeline Trigger
+ * HubSpot Deal Property Change Webhook — BOM Pipeline Trigger
  *
  * POST /api/webhooks/hubspot/design-complete
  *
- * Triggered by HubSpot workflows when a deal changes stage. Supports multiple
- * trigger points via PIPELINE_STAGE_CONFIG env var:
- *   - design_complete → WEBHOOK_DESIGN_COMPLETE (original trigger)
- *   - ready_to_build  → WEBHOOK_READY_TO_BUILD  (unconditional re-run)
+ * Triggered by HubSpot workflows on a deal property change. Supports two
+ * property triggers, configured by env var:
+ *
+ *   - dealstage changes → mapped via PIPELINE_STAGE_CONFIG
+ *       Format: "stageId1:design_complete,stageId2:ready_to_build"
+ *       Used by the sales/project pipelines that have explicit
+ *       "Design Complete" / "Ready to Build" stages.
+ *
+ *   - design_status changes → mapped via DESIGN_STATUS_CONFIG
+ *       Format: "Complete:design_complete,Approved:design_complete"
+ *       Used by the service pipeline (and any other) where the design
+ *       lifecycle is tracked on the design_status custom property
+ *       rather than via a dedicated stage.
  *
  * Validates the HubSpot webhook signature, deduplicates against in-flight
  * pipeline runs, then runs the full BOM pipeline in the background via
@@ -108,6 +117,48 @@ function getStageConfig(): Map<string, BomPipelineTrigger> {
   return map;
 }
 
+/**
+ * Parse DESIGN_STATUS_CONFIG into a Map<statusValue, BomPipelineTrigger>.
+ *
+ * Format: "Complete:design_complete,Approved:design_complete"
+ * (case-insensitive on the status-value side; values are lowercased internally)
+ *
+ * Used to fire the BOM pipeline when a HubSpot workflow flips the
+ * `design_status` property to one of these values — primarily for the service
+ * pipeline, which doesn't have a dedicated "Design Complete" stage.
+ *
+ * Returns an empty map if the env var is unset/empty (the design_status
+ * trigger is opt-in and silently disabled when not configured).
+ */
+function getDesignStatusConfig(): Map<string, BomPipelineTrigger> {
+  const rawConfig = (process.env.DESIGN_STATUS_CONFIG ?? "").trim();
+  const map = new Map<string, BomPipelineTrigger>();
+  if (!rawConfig) return map;
+
+  const entries = rawConfig.split(",").map((s) => s.trim()).filter(Boolean);
+  for (const entry of entries) {
+    const parts = entry.split(":");
+    if (parts.length !== 2) {
+      console.warn(`[design-complete] Malformed DESIGN_STATUS_CONFIG entry (skipping): "${entry}"`);
+      continue;
+    }
+    const [statusValue, typeLabel] = parts.map((p) => p.trim());
+    const trigger = VALID_TRIGGER_TYPES[typeLabel];
+    if (!trigger) {
+      console.warn(`[design-complete] Unknown trigger type in DESIGN_STATUS_CONFIG (skipping): "${typeLabel}" in entry "${entry}"`);
+      continue;
+    }
+    map.set(statusValue.toLowerCase(), trigger);
+  }
+
+  if (map.size > 0) {
+    console.log(`[design-complete] Design status config resolved: ${[...map.entries()].map(([k, v]) => `${k}→${v}`).join(", ")}`);
+  } else if (rawConfig) {
+    console.error(`[design-complete] DESIGN_STATUS_CONFIG is set but all entries are malformed`);
+  }
+  return map;
+}
+
 // ---------------------------------------------------------------------------
 // HubSpot webhook event shape
 // ---------------------------------------------------------------------------
@@ -165,7 +216,9 @@ export async function POST(req: NextRequest) {
   // ── 4. Parse payload ──
   // Supports two formats:
   //   a) App-scope: [{eventId, subscriptionType, propertyName, propertyValue, objectId}]
-  //   b) Workflow/Tray: {objectId, properties:{dealstage:"..."}} or {dealId, stage}
+  //   b) Workflow/Tray: {objectId, propertyName, propertyValue} OR
+  //      {objectId, properties:{dealstage|design_status:"..."}} OR
+  //      {dealId, stage}
   let events: HubSpotWebhookEvent[];
   try {
     const parsed = JSON.parse(rawBody);
@@ -174,24 +227,43 @@ export async function POST(req: NextRequest) {
       events = parsed;
     } else if (parsed && typeof parsed === "object") {
       const objectId = parsed.objectId ?? parsed.hs_object_id ?? parsed.dealId ?? parsed.vid;
-      const stage =
-        parsed.propertyValue ??
-        parsed.properties?.dealstage ??
-        parsed.stage ??
-        parsed.dealstage;
 
       if (!objectId) {
         return NextResponse.json({ error: "Missing objectId or dealId" }, { status: 400 });
       }
 
+      // Decide which property the workflow is asking about.
+      // Honor an explicit propertyName first; otherwise infer from the
+      // properties block (dealstage takes precedence for backward compat).
+      let propertyName: string;
+      let propertyValue: string | undefined;
+
+      if (typeof parsed.propertyName === "string" && parsed.propertyName.length > 0) {
+        propertyName = parsed.propertyName;
+        propertyValue =
+          parsed.propertyValue ??
+          parsed.properties?.[propertyName] ??
+          undefined;
+      } else if (parsed.properties?.design_status !== undefined) {
+        propertyName = "design_status";
+        propertyValue = parsed.properties.design_status;
+      } else {
+        propertyName = "dealstage";
+        propertyValue =
+          parsed.propertyValue ??
+          parsed.properties?.dealstage ??
+          parsed.stage ??
+          parsed.dealstage;
+      }
+
       events = [{
         eventId: Date.now(),
         subscriptionType: "deal.propertyChange",
-        propertyName: "dealstage",
-        propertyValue: stage || undefined,
+        propertyName,
+        propertyValue: propertyValue || undefined,
         objectId: Number(objectId),
       }];
-      console.log(`[design-complete] Normalized workflow payload: deal ${objectId}, stage ${stage || "(will fetch)"}`);
+      console.log(`[design-complete] Normalized workflow payload: deal ${objectId}, ${propertyName}=${propertyValue || "(will fetch)"}`);
     } else {
       return NextResponse.json({ error: "Invalid JSON payload" }, { status: 400 });
     }
@@ -202,58 +274,71 @@ export async function POST(req: NextRequest) {
   // ── 5. Process each event ──
   const triggered: string[] = [];
   const stageConfig = getStageConfig();
+  const designStatusConfig = getDesignStatusConfig();
 
-  // Guard: if no stages are configured, skip all events (safe default)
-  if (stageConfig.size === 0) {
-    console.warn("[design-complete] No stage config found — skipping all events");
+  // Guard: if neither config has anything, skip all events (safe default)
+  if (stageConfig.size === 0 && designStatusConfig.size === 0) {
+    console.warn("[design-complete] No stage or design-status config found — skipping all events");
     return NextResponse.json({ status: "ok", triggered: [] });
   }
 
   for (const event of events) {
-    // Guard: only deal property changes on dealstage
+    // Guard: only deal property changes on a known property
     if (event.subscriptionType !== "deal.propertyChange") continue;
-    if (event.propertyName !== "dealstage") continue;
+    const propName = event.propertyName ?? "";
+    if (propName !== "dealstage" && propName !== "design_status") continue;
+
+    // Skip property changes for which we have no config
+    if (propName === "dealstage" && stageConfig.size === 0) continue;
+    if (propName === "design_status" && designStatusConfig.size === 0) continue;
 
     const dealId = String(event.objectId);
+    const isStatusEvent = propName === "design_status";
 
-    // ── 5a. Determine trigger from webhook's reported stage ──
-    // For workflow/Tray payloads without a stage, fetch live stage from HubSpot.
-    let webhookStage = event.propertyValue ?? "";
+    // ── 5a. Determine trigger from webhook's reported value ──
+    // For workflow/Tray payloads without a value, fetch live from HubSpot.
+    let webhookValue = event.propertyValue ?? "";
 
-    if (!webhookStage) {
+    if (!webhookValue) {
       try {
-        const dealProps = await getDealProperties(dealId, ["dealstage"]);
-        webhookStage = dealProps?.dealstage ?? "";
-        if (webhookStage) {
-          console.log(`[design-complete] Deal ${dealId}: no stage in payload, fetched live stage ${webhookStage}`);
+        const dealProps = await getDealProperties(dealId, [propName]);
+        webhookValue = dealProps?.[propName] ?? "";
+        if (webhookValue) {
+          console.log(`[design-complete] Deal ${dealId}: no ${propName} in payload, fetched live value ${webhookValue}`);
         }
       } catch (err) {
-        console.warn(`[design-complete] Deal ${dealId}: no stage in payload and failed to fetch — skipping`, err);
+        console.warn(`[design-complete] Deal ${dealId}: no ${propName} in payload and failed to fetch — skipping`, err);
         continue;
       }
     }
 
-    if (!webhookStage || !stageConfig.has(webhookStage)) {
-      if (webhookStage) {
-        console.log(`[design-complete] Deal ${dealId} stage ${webhookStage} not in config — skipping`);
+    // Look up trigger from the right config map (case-insensitive for design_status)
+    const lookupKey = isStatusEvent ? webhookValue.toLowerCase() : webhookValue;
+    const activeConfig = isStatusEvent ? designStatusConfig : stageConfig;
+
+    if (!webhookValue || !activeConfig.has(lookupKey)) {
+      if (webhookValue) {
+        console.log(`[design-complete] Deal ${dealId} ${propName}=${webhookValue} not in config — skipping`);
       } else {
-        console.warn(`[design-complete] Deal ${dealId} has no stage — skipping`);
+        console.warn(`[design-complete] Deal ${dealId} has no ${propName} — skipping`);
       }
       continue;
     }
 
-    const trigger: BomPipelineTrigger = stageConfig.get(webhookStage)!;
+    const trigger: BomPipelineTrigger = activeConfig.get(lookupKey)!;
+    // Preserve the variable name webhookStage downstream — used in logs/metadata
+    const webhookStage = webhookValue;
 
-    // Log if live stage differs (informational only)
+    // Log if live value differs (informational only)
     if (event.propertyValue) {
       try {
-        const dealProps = await getDealProperties(dealId, ["dealstage"]);
-        const actualStage = dealProps?.dealstage ?? null;
-        if (actualStage && actualStage !== webhookStage) {
-          console.log(`[design-complete] Deal ${dealId}: webhook stage ${webhookStage} but live stage is ${actualStage} (race expected, using webhook value)`);
+        const dealProps = await getDealProperties(dealId, [propName]);
+        const actualValue = dealProps?.[propName] ?? null;
+        if (actualValue && actualValue !== webhookValue) {
+          console.log(`[design-complete] Deal ${dealId}: webhook ${propName}=${webhookValue} but live value is ${actualValue} (race expected, using webhook value)`);
         }
       } catch (err) {
-        console.warn(`[design-complete] Could not fetch live stage for deal ${dealId} — proceeding with webhook value`, err);
+        console.warn(`[design-complete] Could not fetch live ${propName} for deal ${dealId} — proceeding with webhook value`, err);
       }
     }
 
