@@ -2169,26 +2169,28 @@ async function sendCrewNotification(
     }
 
     const sendStandardSchedulingNotifications = async () => {
-      for (const recipient of recipientTargets) {
-        await sendSchedulingNotification({
-          to: recipient.email,
-          crewMemberName: recipient.name || schedule.assignedUser || "Team Member",
-          scheduledByName: schedulerName,
-          scheduledByEmail: schedulerEmail,
-          dealOwnerName,
-          projectManagerName,
-          appointmentType: schedule.type as ScheduleType,
-          customerName,
-          customerAddress,
-          scheduledDate: schedule.date,
-          scheduledStart: schedule.startTime,
-          scheduledEnd: schedule.endTime,
-          projectId: project.id,
-          zuperJobUid,
-          googleCalendarEventUrl,
-          notes: schedule.notes,
-        });
-      }
+      if (recipientTargets.length === 0) return;
+      const crewGreeting = recipientTargets.map((r) => r.name).filter(Boolean).join(", ")
+        || schedule.assignedUser
+        || "Team";
+      await sendSchedulingNotification({
+        to: recipientTargets.map((r) => r.email),
+        crewMemberName: crewGreeting,
+        scheduledByName: schedulerName,
+        scheduledByEmail: schedulerEmail,
+        dealOwnerName,
+        projectManagerName,
+        appointmentType: schedule.type as ScheduleType,
+        customerName,
+        customerAddress,
+        scheduledDate: schedule.date,
+        scheduledStart: schedule.startTime,
+        scheduledEnd: schedule.endTime,
+        projectId: project.id,
+        zuperJobUid,
+        googleCalendarEventUrl,
+        notes: schedule.notes,
+      });
     };
 
     const currentSurveyor: SurveyorInfo = {

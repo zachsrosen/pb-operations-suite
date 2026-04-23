@@ -568,7 +568,7 @@ export async function sendVerificationEmail({
  * Send scheduling notification to assigned crew member
  */
 interface SendSchedulingNotificationParams {
-  to: string; // Crew member email
+  to: string | string[]; // Crew member email (or emails, for multi-crew jobs)
   bcc?: string | string[];
   crewMemberName: string;
   scheduledByName: string;
