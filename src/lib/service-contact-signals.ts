@@ -28,20 +28,35 @@ export interface ZuperJobLike {
 }
 
 /**
- * Most recent customer-interaction timestamp across the deal's Zuper jobs.
+ * Most recent past customer-interaction timestamp across the deal's Zuper jobs.
  *
  * Uses cached `ZuperJobCache` data — no extra Zuper API calls. Picks the
- * MAX of (completedDate, scheduledStart) across all jobs.
+ * MAX of (completedDate, scheduledStart) across all jobs, BUT discards any
+ * timestamp in the future. `scheduledStart` is the planned visit datetime,
+ * so for a future-scheduled job it would otherwise produce a future
+ * "lastContactDate" that downstream scoring (`daysSinceContact >= N`)
+ * silently rejects, suppressing the no-contact warning entirely.
  *
- * Returns null when there are no jobs or none have either timestamp.
+ * Returns null when there are no jobs or none have either timestamp in the
+ * past.
  */
-export function deriveZuperLastActivity(jobs: ZuperJobLike[]): string | null {
+export function deriveZuperLastActivity(
+  jobs: ZuperJobLike[],
+  now: Date = new Date(),
+): string | null {
+  const nowMs = now.getTime();
   let best: number | null = null;
   for (const j of jobs) {
     for (const raw of [j.completedDate, j.scheduledStart]) {
       if (!raw) continue;
       const t = raw instanceof Date ? raw.getTime() : new Date(raw).getTime();
-      if (Number.isFinite(t) && (best === null || t > best)) best = t;
+      if (
+        Number.isFinite(t) &&
+        t <= nowMs &&
+        (best === null || t > best)
+      ) {
+        best = t;
+      }
     }
   }
   return best === null ? null : new Date(best).toISOString();

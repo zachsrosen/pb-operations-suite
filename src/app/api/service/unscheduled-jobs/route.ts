@@ -17,6 +17,26 @@ interface CustomerAddress {
   zip_code?: string;
 }
 
+/** Subset of Zuper's raw job payload we read for created_at. */
+interface ZuperRawJob {
+  created_at?: string | null;
+}
+
+/**
+ * Extract the Zuper job's original creation timestamp from the cached raw
+ * payload. Falls back to the cache row's `lastSyncedAt` when the field is
+ * missing — `lastSyncedAt` updates on every cache refresh so it's a poor
+ * age proxy, but it's better than dropping the row entirely.
+ */
+function getJobCreatedAt(rawData: unknown, fallback: Date): Date {
+  const raw = (rawData as ZuperRawJob | null)?.created_at;
+  if (raw) {
+    const ms = new Date(raw).getTime();
+    if (Number.isFinite(ms)) return new Date(ms);
+  }
+  return fallback;
+}
+
 export interface UnscheduledJob {
   jobUid: string;
   jobTitle: string;
@@ -66,7 +86,12 @@ export async function GET() {
       const users = Array.isArray(r.assignedUsers)
         ? (r.assignedUsers as AssignedUser[])
         : [];
-      const ageMs = now - r.lastSyncedAt.getTime();
+      // Age = days since the Zuper job was originally created. Falls back to
+      // lastSyncedAt only when rawData.created_at is missing (rare). Using
+      // lastSyncedAt as the primary source produced ageDays ~= 0 for every
+      // row because the cache refreshes constantly.
+      const createdAt = getJobCreatedAt(r.rawData, r.lastSyncedAt);
+      const ageMs = now - createdAt.getTime();
       const ageDays = Math.max(0, Math.floor(ageMs / (1000 * 60 * 60 * 24)));
 
       return {
