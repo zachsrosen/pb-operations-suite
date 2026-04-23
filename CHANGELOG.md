@@ -4,6 +4,64 @@ All notable changes to the PB Operations Suite are documented here.
 
 ---
 
+## 2026-04-21
+
+### My Tasks Dashboard (Major)
+- New `/dashboards/my-tasks` page — every logged-in user with a matching HubSpot owner sees their open tasks, bucketed by Overdue/Today/This week/Later/No due date
+- Mark complete, bulk done, snooze, "Completed this week" view, new-task creation, and inline status + queue editing
+- Keyboard shortcuts, URL-synced filters, autofocus first row, count badge in UserMenu
+- Typeahead lookups for deal/ticket/contact + "New Task" action from deal detail panel
+- Admin-managed queue name overrides; explicit HubSpot owner link per user
+- Owner resolution hardening: full-list match, fallback to `first.last@domain` when login is an alias, diagnostic endpoint for scanning zach-like owners
+- Sunday-boundary bucket fix + Sentry dedupe (1x/hr) for `MISSING_HUBSPOT_OWNER`
+
+### Role Management Overhaul (Major)
+- Per-role capability overrides via `/admin/roles` (Option B)
+- Per-user extra route grants (Option D)
+- Runtime-editable role definitions — routes, landing cards, and suites now stored in DB (not hardcoded)
+- Dropped the legacy `User.role` single-role column; all code now reads `user.roles[]` (Option E)
+- New `/admin/users/bulk-role` endpoint
+- Post-Phase-2 cleanup: legacy users pass, `adminSection` split, followups doc
+
+### Super-Admin Break-Glass Safeguard (Major)
+- Super-admin role grants full access even if role assignments get corrupted
+- SUPER badge in UserMenu, drawer note, and `/admin/users` user rows
+- Middleware withholds super-admin email during impersonation to prevent privilege leakage
+- Covers `zach@` and `zach.rosen@` email aliases
+
+### Admin Shell & Information Architecture (Major)
+- Unified `AdminShell` with single `/admin` landing + in-shell search (phase 1 IA)
+- Consolidated `/suites/admin` into `/admin` — one admin entry point
+- Admin shell primitives batch 1: Table, FilterBar, DetailDrawer
+- Admin shell primitives batch 2: BulkActionBar, Form, KV Grid, DetailHeader
+- Exit affordances: back-to-home link + UserMenu in shell
+- Refactored to primitives: `/admin/activity`, `/admin/tickets`, `/admin/directory`, `/admin/audit`, `/admin/security`, `/admin/crew-availability`, `/admin/roles` (folds `[role]` into drawer), `/admin/users` (3 modals → tabbed drawer)
+
+### On-Call Electrician Rotations V1 (Major)
+- New `/dashboards/on-call` with three daily rotations (California, Denver, Southern CO)
+- 5 new Prisma models: `OnCallPool`, `OnCallPoolMember`, `OnCallAssignment`, `OnCallSwapRequest`, `OnCallPtoRequest` + 15 `ActivityType` values
+- Pure rotation library with swap/PTO proposals, admin approval queue, workload tracking
+- Per-pool timezone awareness for "tonight" logic; shift date = start date semantics
+- Public iCal feed with token auth; Publish (not Regenerate) as sole write verb
+- Feature-flagged; migration exists but not auto-applied (requires manual `npm run db:migrate`)
+- Shared nav across all 3 pages; publish path handles large member pools and surfaces JSON errors
+
+### Freshservice Integration
+- Admin-facing Freshservice page + UserMenu badge for user's own tickets
+- User-facing `/dashboards/my-tickets` view
+- Shows tickets assigned to me (not filed by me)
+- Fall-back name lookup when login email doesn't match Freshservice user
+- Include Closed tickets with dedicated filter chip
+- Don't flag Resolved/Closed tickets as overdue
+
+### Bug Fixes
+- Nav: reconcile `SUITE_MAP` with actual dashboards, accept `/admin` as parent
+- UI: clarify "Mark done" label, unstick home header dropdown
+- My Tasks: dropdown z-index, `useSearchParams` wrapped in Suspense, keyboard-focused row visibility
+- Catalog: photo upload works against private Blob store
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
