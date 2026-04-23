@@ -139,6 +139,15 @@ export interface MapMarkersResponse {
   lastUpdated: string;           // ISO
   droppedCount: number;          // markers with unresolvable coords
   partialFailures?: string[];    // e.g. ["zuper: timeout", "hubspot: rate-limit fallback"]
+  unplaced?: UnplacedMarker[];   // populated only when ?include=unplaced is passed
+}
+
+export interface UnplacedMarker {
+  id: string;
+  kind: JobMarkerKind;
+  title: string;
+  address: { street: string; city: string; state: string; zip: string };
+  reason: "no-cache" | "geocode-failed" | "missing-address";
 }
 ```
 
@@ -146,7 +155,7 @@ export interface MapMarkersResponse {
 
 - **Server**: 60s in-memory TTL via `lib/cache.ts`, keyed by `map:markers:${mode}:${date}:${typesHash}`. Shields underlying APIs.
 - **Client**: React Query, `staleTime: 30_000`, `refetchOnWindowFocus: true`.
-- **Real-time invalidation**: SSE cascade — when `deals:*`, `service-tickets:*`, `zuper:*`, or `crew:*` fire, invalidate `map:markers` with 500ms debounce to match the service-priority-cache pattern in `lib/service-priority-cache.ts`.
+- **Real-time invalidation**: SSE cascade — when `deals:*`, `serviceTickets:*`, or `zuper:*` fire (keys defined in `lib/query-keys.ts`), invalidate `map:markers` with 500ms debounce to match the service-priority-cache pattern in `lib/service-priority-cache.ts`. No dedicated `crew:*` key exists today; crew assignment changes flow through the upstream `deals:*` / `zuper:*` keys, which is sufficient for Phase 1.
 
 ### Proximity computation
 
@@ -203,6 +212,8 @@ Defaults: `maxMiles = 10`, `limit = 5`. Haversine is Euclidean-on-sphere — acc
 | Cluster medium (10–49) | Orange opaque, 52px |
 | Cluster large (50+) | Warmer red tint, 60px |
 
+**Color palette exception**: Map markers render on a Google Maps canvas and cannot use CSS variable tokens — the Maps JS API requires concrete color strings. All hex values listed above are centralized in `src/lib/map-colors.ts` as the single source of truth; map code imports from there rather than inlining literals. This is the only place in the app where hardcoded colors are acceptable.
+
 Clustering via `supercluster` integrated with `@vis.gl/react-google-maps`. Individual markers render above zoom 13; below that, supercluster rolls up.
 
 ### Detail panel
@@ -212,7 +223,7 @@ Right-side slide-out, triggered by marker click. Sections scale by marker kind:
 **Scheduled install** panel:
 1. Header — kind pin + project name + PROJ-XXXX + status chip
 2. Schedule — when, crew, status chip
-3. Location — street + city + AHJ
+3. Location — street + city + county
 4. System — size kW DC, batteries, AHJ
 5. Nearby open work — top 5 within 10 mi (distance-sorted)
 6. Action buttons — Open in HubSpot · Scheduler · Zuper job
@@ -290,6 +301,7 @@ This keeps Phase 1 migration-free per `feedback_migration_ordering.md`.
   - Drops markers with unresolvable coords, increments `droppedCount`
   - One source failing doesn't fail the whole response (`partialFailures` populated)
   - Geocoding priority order: cache → in-memory → live call
+  - Geocoding fallback cascade: `HubSpotPropertyCache` miss → `travel-time` in-memory miss → live `geocodeAddress()` fails → marker goes to `unplaced[]` with `reason: "geocode-failed"`
 - `src/__tests__/map-proximity.test.ts`:
   - Haversine distance correct for known coord pairs (Denver → Boulder ≈ 26 mi)
   - `nearbyMarkers` respects `maxMiles`, `limit`, `excludeId`
@@ -349,6 +361,7 @@ New files:
 - `src/lib/map-types.ts`
 - `src/lib/map-aggregator.ts`
 - `src/lib/map-proximity.ts`
+- `src/lib/map-colors.ts`
 - `src/__tests__/map-aggregator.test.ts`
 - `src/__tests__/map-proximity.test.ts`
 - `src/__tests__/FilterBar.test.tsx`
