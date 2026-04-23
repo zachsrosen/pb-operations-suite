@@ -1,7 +1,8 @@
 // src/lib/map-aggregator.ts
 import { prisma } from "@/lib/db";
 import { geocodeAddress as liveGeocode } from "@/lib/travel-time";
-import type { JobMarkerAddress } from "./map-types";
+import type { Project } from "@/lib/hubspot";
+import type { JobMarker, JobMarkerAddress, UnplacedMarker } from "./map-types";
 
 export interface ResolvedCoords {
   lat: number;
@@ -47,4 +48,79 @@ export async function resolveAddressCoords(
   if (point) return { lat: point.lat, lng: point.lng, source: "live" };
 
   return null;
+}
+
+export interface BuildResult {
+  markers: JobMarker[];
+  unplaced: UnplacedMarker[];
+}
+
+function isInstallScheduled(project: Project): boolean {
+  return !!project.constructionScheduleDate;
+}
+
+function projectAddress(p: Project) {
+  return {
+    street: p.address ?? "",
+    city: p.city ?? "",
+    state: p.state ?? "",
+    zip: p.postalCode ?? "",
+  };
+}
+
+export async function buildInstallMarkers(
+  projects: Project[],
+  _opts: { today: Date }
+): Promise<BuildResult> {
+  const markers: JobMarker[] = [];
+  const unplaced: UnplacedMarker[] = [];
+
+  for (const p of projects) {
+    const address = projectAddress(p);
+    const id = `install:${p.id}`;
+    const title = p.name || `Project ${p.id}`;
+
+    if (!address.street || !address.city || !address.state || !address.zip) {
+      unplaced.push({
+        id, kind: "install", title, address, reason: "missing-address",
+      });
+      continue;
+    }
+
+    const coords = await resolveAddressCoords(address);
+    if (!coords) {
+      unplaced.push({
+        id, kind: "install", title, address, reason: "geocode-failed",
+      });
+      continue;
+    }
+
+    const scheduled = isInstallScheduled(p);
+    markers.push({
+      id,
+      kind: "install",
+      scheduled,
+      lat: coords.lat,
+      lng: coords.lng,
+      address,
+      title,
+      subtitle: scheduled ? formatInstallSubtitle(p) : "Ready to schedule",
+      status: p.stage ?? undefined,
+      scheduledAt: scheduled ? p.constructionScheduleDate ?? undefined : undefined,
+      dealId: String(p.id),
+      rawStage: p.stage ?? undefined,
+    });
+  }
+
+  return { markers, unplaced };
+}
+
+function formatInstallSubtitle(p: Project): string {
+  const when = p.constructionScheduleDate
+    ? new Date(p.constructionScheduleDate).toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "";
+  return when;
 }

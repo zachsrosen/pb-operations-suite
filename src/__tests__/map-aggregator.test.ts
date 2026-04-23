@@ -70,3 +70,83 @@ describe("resolveAddressCoords", () => {
     expect(mockLiveGeocode).not.toHaveBeenCalled();
   });
 });
+
+import { buildInstallMarkers } from "@/lib/map-aggregator";
+import type { Project } from "@/lib/hubspot";
+
+describe("buildInstallMarkers", () => {
+  beforeEach(() => {
+    mockFindFirst.mockReset();
+    mockLiveGeocode.mockReset();
+  });
+
+  const sampleProject = {
+    id: 8241,
+    name: "Jenkins Residence",
+    address: "4820 Gunbarrel Ave",
+    city: "Boulder",
+    state: "CO",
+    postalCode: "80301",
+    stage: "Construction Scheduled",
+    constructionScheduleDate: "2026-04-23T16:00:00.000Z",
+    readyToBuildDate: null,
+  } as unknown as Project;
+
+  it("normalizes a scheduled project into a JobMarker", async () => {
+    mockFindFirst.mockResolvedValue({ latitude: 40.01, longitude: -105.25 });
+    const { markers, unplaced } = await buildInstallMarkers(
+      [sampleProject],
+      { today: new Date("2026-04-23") }
+    );
+    expect(unplaced).toHaveLength(0);
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({
+      id: "install:8241",
+      kind: "install",
+      scheduled: true,
+      lat: 40.01,
+      lng: -105.25,
+      title: "Jenkins Residence",
+      dealId: "8241",
+    });
+    expect(markers[0].scheduledAt).toBeDefined();
+  });
+
+  it("marks RTB projects as unscheduled", async () => {
+    mockFindFirst.mockResolvedValue({ latitude: 40.01, longitude: -105.25 });
+    const rtb = {
+      ...sampleProject,
+      stage: "Ready to Build",
+      constructionScheduleDate: null,
+      readyToBuildDate: "2026-04-20T00:00:00.000Z",
+    } as unknown as Project;
+    const { markers } = await buildInstallMarkers(
+      [rtb],
+      { today: new Date("2026-04-23") }
+    );
+    expect(markers[0].scheduled).toBe(false);
+    expect(markers[0].scheduledAt).toBeUndefined();
+  });
+
+  it("adds to unplaced[] when geocoding fails", async () => {
+    mockFindFirst.mockResolvedValue(null);
+    mockLiveGeocode.mockResolvedValue(null);
+    const { markers, unplaced } = await buildInstallMarkers(
+      [sampleProject],
+      { today: new Date("2026-04-23") }
+    );
+    expect(markers).toHaveLength(0);
+    expect(unplaced).toHaveLength(1);
+    expect(unplaced[0].reason).toBe("geocode-failed");
+  });
+
+  it("adds missing-address unplaced entry when fields are empty", async () => {
+    const bad = { ...sampleProject, address: "" } as unknown as Project;
+    const { markers, unplaced } = await buildInstallMarkers(
+      [bad],
+      { today: new Date("2026-04-23") }
+    );
+    expect(markers).toHaveLength(0);
+    expect(unplaced[0].reason).toBe("missing-address");
+  });
+});
