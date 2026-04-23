@@ -29,6 +29,8 @@ import {
   delayInputsSchema,
   evaluateStopIf,
   isControlFlowKind,
+  parallelInputsSchema,
+  parseParallelChildren,
   stopIfInputsSchema,
 } from "@/lib/admin-workflows/control-flow";
 
@@ -248,6 +250,60 @@ export const adminWorkflowExecutor = inngest.createFunction(
           // step.sleep must be called at Inngest-step top level; it is here
           await step.sleep(`${stepDef.id}:delay`, `${seconds}s`);
           previousOutputs[stepDef.id] = { delayedSeconds: seconds };
+          await checkpoint(stepDef.id);
+          continue;
+        }
+        if (stepDef.kind === "parallel") {
+          const parallelInputs = parallelInputsSchema.parse(resolvedInputs);
+          const children = parseParallelChildren(parallelInputs.childrenJson);
+
+          // Validate all child kinds up front so we fail fast
+          for (const c of children) {
+            if (isControlFlowKind(c.kind)) {
+              throw new Error(`parallel: child ${c.id} cannot be a control-flow kind`);
+            }
+            if (!getActionByKind(c.kind)) {
+              throw new Error(`parallel: unknown action kind in child ${c.id}: ${c.kind}`);
+            }
+          }
+
+          if (isDryRun) {
+            const childOutputs: Record<string, unknown> = {};
+            for (const c of children) {
+              const resolved = resolveInputs(c.inputs, triggerContext, previousOutputs);
+              childOutputs[c.id] = { __dryRun: true, kind: c.kind, resolvedInputs: resolved };
+            }
+            previousOutputs[stepDef.id] = { __dryRun: true, children: childOutputs };
+            await checkpoint(stepDef.id);
+            continue;
+          }
+
+          // Run children concurrently. Each is its own step.run so
+          // Inngest caches + retries them independently.
+          const results = await Promise.all(
+            children.map(async (c) => {
+              const action = getActionByKind(c.kind)!;
+              const resolved = resolveInputs(c.inputs, triggerContext, previousOutputs);
+              const parsed = action.inputsSchema.parse(resolved);
+              const out = await step.run(`${stepDef.id}:parallel:${c.id}:${c.kind}`, () =>
+                action.handler({
+                  inputs: parsed,
+                  context: {
+                    runId,
+                    workflowId,
+                    stepId: `${stepDef.id}:${c.id}`,
+                    triggerContext,
+                    previousOutputs,
+                    triggeredByEmail,
+                  },
+                }),
+              );
+              return [c.id, out] as const;
+            }),
+          );
+          const childOutputs: Record<string, unknown> = {};
+          for (const [id, out] of results) childOutputs[id] = out;
+          previousOutputs[stepDef.id] = { children: childOutputs };
           await checkpoint(stepDef.id);
           continue;
         }

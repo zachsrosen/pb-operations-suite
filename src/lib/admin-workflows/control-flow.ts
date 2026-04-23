@@ -13,7 +13,7 @@ import { z } from "zod";
 
 import type { AdminFormField } from "@/lib/admin-workflows/types";
 
-export const CONTROL_FLOW_KINDS = new Set(["delay", "stop-if"]);
+export const CONTROL_FLOW_KINDS = new Set(["delay", "stop-if", "parallel"]);
 
 export function isControlFlowKind(kind: string): boolean {
   return CONTROL_FLOW_KINDS.has(kind);
@@ -111,4 +111,87 @@ export function evaluateStopIf(inputs: z.infer<typeof stopIfInputsSchema>): bool
   }
 }
 
-export const CONTROL_FLOW_PALETTE = [delayPaletteEntry, stopIfPaletteEntry];
+// ---------------------------------------------------------------------------
+// parallel
+// ---------------------------------------------------------------------------
+
+/**
+ * Parallel executes multiple child steps concurrently. Admin provides a
+ * JSON array of child step descriptors: [{id, kind, inputs}, ...].
+ * Each child runs as its own Inngest step.run so they parallelize.
+ *
+ * Child steps can't be control-flow (no nested parallel / delay / stop-if)
+ * and can't reference each other's outputs (siblings run concurrently).
+ * They CAN reference outer-scope previousOutputs + triggerContext.
+ */
+export const parallelInputsSchema = z.object({
+  childrenJson: z.string().min(2), // JSON array string
+});
+
+export const parallelPaletteEntry = {
+  kind: "parallel",
+  name: "Parallel (run children concurrently)",
+  description:
+    "Run multiple actions in parallel. Inputs is a JSON array of child step descriptors. Children can't reference each other's outputs.",
+  category: "Control flow",
+  fields: [
+    {
+      key: "childrenJson",
+      label: "Child steps (JSON array)",
+      kind: "textarea" as const,
+      placeholder:
+        '[{"id":"a","kind":"send-email","inputs":{"to":"...","subject":"...","body":"..."}},{"id":"b","kind":"add-hubspot-note","inputs":{"dealId":"{{trigger.objectId}}","body":"..."}}]',
+      help:
+        "Each child needs id, kind (regular action kind), inputs. Children run concurrently; use stop-if before parallel if you need conditional execution.",
+      required: true,
+    },
+  ] satisfies AdminFormField[],
+};
+
+export interface ParallelChildStep {
+  id: string;
+  kind: string;
+  inputs: Record<string, string>;
+}
+
+/**
+ * Validate + parse the childrenJson string to child step descriptors.
+ * Throws with a useful message if the JSON is malformed or shapes are off.
+ */
+export function parseParallelChildren(childrenJson: string): ParallelChildStep[] {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(childrenJson);
+  } catch (err) {
+    throw new Error(
+      `parallel.childrenJson is not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (!Array.isArray(raw)) {
+    throw new Error("parallel.childrenJson must be a JSON array");
+  }
+  const children: ParallelChildStep[] = [];
+  for (const [i, item] of raw.entries()) {
+    if (!item || typeof item !== "object") {
+      throw new Error(`parallel.childrenJson[${i}] must be an object`);
+    }
+    const c = item as Record<string, unknown>;
+    if (typeof c.id !== "string" || !c.id) {
+      throw new Error(`parallel.childrenJson[${i}].id must be a non-empty string`);
+    }
+    if (typeof c.kind !== "string" || !c.kind) {
+      throw new Error(`parallel.childrenJson[${i}].kind must be a non-empty string`);
+    }
+    if (!c.inputs || typeof c.inputs !== "object" || Array.isArray(c.inputs)) {
+      throw new Error(`parallel.childrenJson[${i}].inputs must be an object`);
+    }
+    const inputs: Record<string, string> = {};
+    for (const [k, v] of Object.entries(c.inputs as Record<string, unknown>)) {
+      inputs[k] = v == null ? "" : String(v);
+    }
+    children.push({ id: c.id, kind: c.kind, inputs });
+  }
+  return children;
+}
+
+export const CONTROL_FLOW_PALETTE = [delayPaletteEntry, stopIfPaletteEntry, parallelPaletteEntry];
