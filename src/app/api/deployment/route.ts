@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
+import { waitUntil } from "@vercel/functions";
+import { triggerInngestSync } from "@/lib/inngest-sync";
 
 /**
  * POST /api/deployment
@@ -96,6 +98,30 @@ export async function POST(request: NextRequest) {
         user: body.payload?.user?.username,
         timestamp: new Date(body.createdAt).toISOString(),
       });
+
+      // On successful production deploy, tell Inngest Cloud to re-read our
+      // /api/inngest endpoint. The Vercel-Inngest integration targets the
+      // deployment URL (behind Vercel auth) which fails — we sync against
+      // the canonical public URL so new/changed Inngest functions register
+      // automatically.
+      if (
+        (body.type === "deployment.succeeded" || body.type === "deployment-ready") &&
+        body.payload?.deployment?.state === "READY"
+      ) {
+        waitUntil(
+          triggerInngestSync().then((r) => {
+            if (r.ok) {
+              console.log("[Deployment] Inngest sync succeeded", { status: r.status });
+            } else {
+              console.error("[Deployment] Inngest sync failed", {
+                status: r.status,
+                body: r.body.slice(0, 200),
+                skippedReason: r.skippedReason,
+              });
+            }
+          }),
+        );
+      }
 
       return NextResponse.json({
         received: true,
