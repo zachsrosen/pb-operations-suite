@@ -7,6 +7,7 @@
 
 import { prisma } from "@/lib/db";
 import { hubspotClient, searchWithRetry, resolveHubSpotOwnerContact } from "@/lib/hubspot";
+import { normalizeLocation, type CanonicalLocation } from "@/lib/locations";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import {
   AssociationSpecAssociationCategoryEnum,
@@ -17,6 +18,39 @@ import {
 // ---------------------------------------------------------------------------
 
 const PROJECT_PIPELINE_ID = process.env.HUBSPOT_PIPELINE_PROJECT || "6900017";
+
+// Region buckets — canonical pb_location values grouped by how the team meets.
+// CO and CA meetings are held separately; each session is scoped to one bucket.
+// Sourced from src/lib/locations.ts so a new shop flows through automatically.
+export const COLORADO_LOCATIONS: readonly CanonicalLocation[] = [
+  "Westminster", "Centennial", "Colorado Springs",
+] as const;
+export const CALIFORNIA_LOCATIONS: readonly CanonicalLocation[] = [
+  "San Luis Obispo", "Camarillo",
+] as const;
+
+export type LocationBucket = "colorado" | "california" | "all";
+
+/** Concrete canonical locations the bucket includes.
+ *  `all` returns an empty array, meaning "no filter — include every location". */
+export function locationsForBucket(bucket: LocationBucket): CanonicalLocation[] {
+  if (bucket === "colorado") return [...COLORADO_LOCATIONS];
+  if (bucket === "california") return [...CALIFORNIA_LOCATIONS];
+  return [];
+}
+
+/** Does a raw HubSpot pb_location value (or any variant like "DTC", "WESTY", "COSP")
+ *  belong to the requested bucket? Normalizes aliases before comparing. */
+export function locationInBucket(
+  pbLocation: string | null | undefined,
+  bucket: LocationBucket,
+): boolean {
+  if (bucket === "all") return true;
+  const canonical = normalizeLocation(pbLocation);
+  if (!canonical) return false;
+  const bucketSet = bucket === "colorado" ? COLORADO_LOCATIONS : CALIFORNIA_LOCATIONS;
+  return (bucketSet as readonly string[]).includes(canonical);
+}
 
 /** Properties fetched for each deal during session creation / snapshot refresh. */
 export const SNAPSHOT_PROPERTIES = [

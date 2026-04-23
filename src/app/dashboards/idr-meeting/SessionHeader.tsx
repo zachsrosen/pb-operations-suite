@@ -18,7 +18,7 @@ interface Props {
   session: IdrSession | null;
   sessions: SessionListItem[];
   onSelectSession: (id: string) => void;
-  onNewSession: () => void;
+  onNewSession: (bucket?: "all" | "colorado" | "california") => void;
   onOpenAddDialog: () => void;
   onViewPreview: () => void;
   onSessionEnded: () => void;
@@ -175,13 +175,34 @@ export function SessionHeader({
                 + Add Project
               </button>
 
-              <button
-                className="rounded-lg bg-orange-500 px-4 py-1.5 text-sm font-semibold text-white hover:bg-orange-600 transition-colors disabled:opacity-50"
-                onClick={onNewSession}
-                disabled={creating}
-              >
-                {creating ? "Starting..." : "Start Meeting"}
-              </button>
+              <div className="flex items-stretch overflow-hidden rounded-lg border border-orange-600/30 bg-orange-500 text-sm font-semibold text-white shadow-sm">
+                <button
+                  className="px-3 py-1.5 hover:bg-orange-600 transition-colors disabled:opacity-50"
+                  onClick={() => onNewSession("colorado")}
+                  disabled={creating}
+                  title="Start a meeting that includes only Westminster, Centennial, and Colorado Springs"
+                >
+                  {creating ? "Starting..." : "Start CO"}
+                </button>
+                <span className="w-px bg-orange-600/40" aria-hidden="true" />
+                <button
+                  className="px-3 py-1.5 hover:bg-orange-600 transition-colors disabled:opacity-50"
+                  onClick={() => onNewSession("california")}
+                  disabled={creating}
+                  title="Start a meeting that includes only San Luis Obispo and Camarillo"
+                >
+                  Start CA
+                </button>
+                <span className="w-px bg-orange-600/40" aria-hidden="true" />
+                <button
+                  className="px-3 py-1.5 hover:bg-orange-600 transition-colors disabled:opacity-50"
+                  onClick={() => onNewSession("all")}
+                  disabled={creating}
+                  title="Start a meeting that includes every location"
+                >
+                  All
+                </button>
+              </div>
             </div>
           </div>
         </div>

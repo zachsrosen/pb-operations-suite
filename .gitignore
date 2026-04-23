@@ -66,3 +66,4 @@ scripts/4x10-analysis-data.json
 reports/4x10-crew-rotation-analysis.xlsx
 reports/4x10-crew-rotation-playground.html
 .logs/
+.claude/scheduled_tasks.lock
