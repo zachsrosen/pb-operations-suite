@@ -13,7 +13,6 @@ interface Props {
  * DA Status Actions — toggles that change the HubSpot layout_status on sync:
  *  - Sales Change Requested → "Pending Sales Changes" + sales_communication_reason
  *  - Needs Survey Info → "Pending Ops Changes" + ops_communication_reason
- *  - Needs Resurvey → "Pending Resurvey" + ops_communication_reason
  */
 export function StatusActionsForm({ item, onChange, readOnly }: Props) {
   const handleToggle = useCallback(
@@ -31,13 +30,11 @@ export function StatusActionsForm({ item, onChange, readOnly }: Props) {
   );
 
   // Determine which status will be set on sync
-  const activeStatus = item.needsResurvey
-    ? "Pending Resurvey"
-    : item.needsSurveyInfo
-      ? "Pending Ops Changes"
-      : item.salesChangeRequested
-        ? "Pending Sales Changes"
-        : null;
+  const activeStatus = item.needsSurveyInfo
+    ? "Pending Ops Changes"
+    : item.salesChangeRequested
+      ? "Pending Sales Changes"
+      : null;
 
   return (
     <div className="space-y-2">
@@ -83,26 +80,6 @@ export function StatusActionsForm({ item, onChange, readOnly }: Props) {
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">Needs Survey Info</span>
           </div>
           {item.needsSurveyInfo && (
-            <CompactTextarea
-              value={item.opsChangeNotes ?? ""}
-              onChange={(val) => handleText("opsChangeNotes", val)}
-              readOnly={readOnly}
-              placeholder="Ops communication reason (required)..."
-            />
-          )}
-        </div>
-
-        {/* Needs Resurvey */}
-        <div>
-          <div className="flex items-center gap-2">
-            <ToggleSwitch
-              checked={!!item.needsResurvey}
-              onChange={() => handleToggle("needsResurvey")}
-              disabled={readOnly}
-            />
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">Needs Resurvey</span>
-          </div>
-          {item.needsResurvey && (
             <CompactTextarea
               value={item.opsChangeNotes ?? ""}
               onChange={(val) => handleText("opsChangeNotes", val)}

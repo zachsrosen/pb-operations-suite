@@ -17,7 +17,7 @@ const PREP_FIELDS = [
   "electricianDays", "discoReco", "interiorAccess",
   "needsSurveyInfo", "needsResurvey", "salesChangeRequested",
   "salesChangeNotes", "opsChangeNotes",
-  "customerNotes", "operationsNotes", "designNotes", "conclusion",
+  "customerNotes", "customerNotesCreateTask", "operationsNotes", "designNotes", "conclusion",
   // Adders
   "adderTileRoof", "adderMetalRoof", "adderFlatFoamRoof", "adderShakeRoof",
   "adderSteepPitch", "adderTwoStorey", "adderTrenching", "adderGroundMount",

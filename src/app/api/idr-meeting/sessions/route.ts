@@ -167,6 +167,7 @@ export async function POST(req: NextRequest) {
       ...(q.salesChangeNotes ? { salesChangeNotes: q.salesChangeNotes } : {}),
       ...(q.opsChangeNotes ? { opsChangeNotes: q.opsChangeNotes } : {}),
       ...(q.customerNotes ? { customerNotes: q.customerNotes } : {}),
+      ...(q.customerNotesCreateTask ? { customerNotesCreateTask: true } : {}),
       ...(q.operationsNotes ? { operationsNotes: q.operationsNotes } : {}),
       ...(q.designNotes ? { designNotes: q.designNotes } : {}),
       ...(q.conclusion ? { conclusion: q.conclusion } : {}),

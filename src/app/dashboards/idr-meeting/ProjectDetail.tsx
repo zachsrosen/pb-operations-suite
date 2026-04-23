@@ -223,11 +223,40 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
           />
           {item.designFolderUrl && <QuickLink href={item.designFolderUrl} label="Design" />}
           {item.surveyFolderUrl && <QuickLink href={item.surveyFolderUrl} label="Survey" />}
+          {item.salesFolderUrl && <QuickLink href={item.salesFolderUrl} label="Sales" />}
           {item.surveyJobUid && (
             <QuickLink href={getZuperJobUrl(item.surveyJobUid)!} label="Zuper Survey Job" />
           )}
           {item.openSolarUrl && <QuickLink href={item.openSolarUrl} label="OpenSolar" />}
           {item.driveFolderUrl && <QuickLink href={item.driveFolderUrl} label="Drive" />}
+          {(() => {
+            const allLinks: string[] = [
+              getInternalDealUrl(item.dealId),
+              `https://app.hubspot.com/contacts/${HUBSPOT_PORTAL_ID}/deal/${item.dealId}`,
+              item.designFolderUrl ?? "",
+              item.surveyFolderUrl ?? "",
+              item.salesFolderUrl ?? "",
+              item.surveyJobUid ? (getZuperJobUrl(item.surveyJobUid) ?? "") : "",
+              item.openSolarUrl ?? "",
+              item.driveFolderUrl ?? "",
+            ].filter(Boolean);
+            if (allLinks.length <= 1) return null;
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  for (const url of allLinks) {
+                    window.open(url, "_blank", "noopener,noreferrer");
+                  }
+                }}
+                title={`Open all ${allLinks.length} links in new tabs`}
+                className="inline-flex items-center gap-0.5 rounded border border-orange-500/40 bg-orange-500/10 px-2 py-0.5 text-[11px] font-semibold text-orange-300 hover:bg-orange-500/20 transition-colors"
+              >
+                Open all ({allLinks.length})
+                <span className="text-orange-300/70">&#8599;</span>
+              </button>
+            );
+          })()}
         </div>
 
         {/* ── Two-column body ── */}

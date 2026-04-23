@@ -2194,6 +2194,7 @@ model IdrMeetingItem {
   ahj                    String?
   utilityCompany         String?
   openSolarUrl           String?
+  salesFolderUrl         String? // HubSpot `sales_documents` — Drive folder link
   surveyCompleted        Boolean  @default(false)
   tags                   String[] @default([])
   // Read-only HubSpot notes (snapshot)
@@ -2205,22 +2206,23 @@ model IdrMeetingItem {
   snapshotUpdatedAt      DateTime @default(now())
 
   // Editable fields
-  difficulty           Int?
-  installerCount       Int?
-  installerDays        Int?
-  electricianCount     Int?
-  electricianDays      Int?
-  discoReco            Boolean?
-  interiorAccess       Boolean?
-  needsSurveyInfo      Boolean? // Flag: needs info from site surveyor → DA status "Pending Ops Changes"
-  needsResurvey        Boolean? // Flag: requires resurvey → DA status "Pending Resurvey"
-  salesChangeRequested Boolean? // Flag: trigger sales change → DA status "Pending Sales Changes"
-  salesChangeNotes     String? // Reason for sales change → HubSpot sales_communication_reason
-  opsChangeNotes       String? // Reason for ops/survey change → HubSpot ops_communication_reason
-  customerNotes        String?
-  operationsNotes      String?
-  designNotes          String?
-  conclusion           String?
+  difficulty              Int?
+  installerCount          Int?
+  installerDays           Int?
+  electricianCount        Int?
+  electricianDays         Int?
+  discoReco               Boolean?
+  interiorAccess          Boolean?
+  needsSurveyInfo         Boolean? // Flag: needs info from site surveyor → DA status "Pending Ops Changes"
+  needsResurvey           Boolean? // Deprecated — retained for historical session data; no UI surface
+  salesChangeRequested    Boolean? // Flag: trigger sales change → DA status "Pending Sales Changes"
+  salesChangeNotes        String? // Reason for sales change → HubSpot sales_communication_reason
+  opsChangeNotes          String? // Reason for ops/survey change → HubSpot ops_communication_reason
+  customerNotes           String?
+  customerNotesCreateTask Boolean  @default(false) // When synced, create a HubSpot task on the deal with customerNotes assigned to the PM
+  operationsNotes         String?
+  designNotes             String?
+  conclusion              String?
 
   // Escalation
   escalationReason String?
@@ -2290,22 +2292,23 @@ model IdrEscalationQueue {
   consumedBySession String? // session ID that consumed this item
 
   // Prefilled fields — carried into the session item on consume
-  difficulty           Int?
-  installerCount       Int?
-  installerDays        Int?
-  electricianCount     Int?
-  electricianDays      Int?
-  discoReco            Boolean?
-  interiorAccess       Boolean?
-  needsSurveyInfo      Boolean?
-  needsResurvey        Boolean?
-  salesChangeRequested Boolean?
-  salesChangeNotes     String?
-  opsChangeNotes       String?
-  customerNotes        String?
-  operationsNotes      String?
-  designNotes          String?
-  conclusion           String?
+  difficulty              Int?
+  installerCount          Int?
+  installerDays           Int?
+  electricianCount        Int?
+  electricianDays         Int?
+  discoReco               Boolean?
+  interiorAccess          Boolean?
+  needsSurveyInfo         Boolean?
+  needsResurvey           Boolean? // Deprecated — retained for historical queue rows
+  salesChangeRequested    Boolean?
+  salesChangeNotes        String?
+  opsChangeNotes          String?
+  customerNotes           String?
+  customerNotesCreateTask Boolean  @default(false)
+  operationsNotes         String?
+  designNotes             String?
+  conclusion              String?
 
   // Adder checkboxes (carried over from prep/skip)
   adderTileRoof     Boolean @default(false)

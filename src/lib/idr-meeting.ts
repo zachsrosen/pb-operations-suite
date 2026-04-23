@@ -58,7 +58,7 @@ export const SNAPSHOT_PROPERTIES = [
   "amount",
   "calculated_system_size__kwdc_", "site_survey_status", "site_survey_date",
   "design_status", "layout_status", "design_draft_completion_date", "is_site_survey_completed_",
-  "all_document_parent_folder_id", "site_survey_documents", "design_documents",
+  "all_document_parent_folder_id", "site_survey_documents", "design_documents", "sales_documents",
   "module_brand", "module_model", "module_count",
   "inverter_brand", "inverter_model", "inverter_qty",
   "battery_brand", "battery_model", "battery_count",
@@ -134,6 +134,7 @@ export type SnapshotFields = {
   driveFolderUrl: string | null;
   surveyFolderUrl: string | null;
   designFolderUrl: string | null;
+  salesFolderUrl: string | null;
   ahj: string | null;
   utilityCompany: string | null;
   openSolarUrl: string | null;
@@ -188,6 +189,7 @@ export function snapshotDealProperties(
       : null,
     surveyFolderUrl: p.site_survey_documents ?? null,
     designFolderUrl: p.design_documents ?? null,
+    salesFolderUrl: p.sales_documents ?? null,
     ahj: p.ahj ?? null,
     utilityCompany: p.utility_company ?? null,
     // link_to_opensolar is a "Yes"/"No" flag, not a URL — use os_project_link for the actual URL
@@ -299,7 +301,6 @@ export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string): strin
   if (fields.salesChangeNotes) lines.push(`<strong>Sales Communication Reason:</strong> ${esc(fields.salesChangeNotes)}`);
   if (fields.needsSurveyInfo) lines.push(`<strong>Needs Survey Info:</strong> Yes`);
   if (fields.opsChangeNotes) lines.push(`<strong>Ops Communication Reason:</strong> ${esc(fields.opsChangeNotes)}`);
-  if (fields.needsResurvey) lines.push(`<strong>Needs Resurvey:</strong> Yes`);
   if (fields.adderSummary) lines.push(`<strong>Adders:</strong> ${esc(fields.adderSummary)}`);
   if (fields.designNotes) lines.push(`<strong>Design Notes:</strong> ${esc(fields.designNotes)}`);
   if (fields.conclusion) lines.push(`<strong>Conclusion:</strong> ${esc(fields.conclusion)}`);
@@ -348,10 +349,8 @@ export function buildHubSpotPropertyUpdates(
   updates.interior_access = fields.interiorAccess ? "true" : "false";
   if (fields.operationsNotes != null) updates.notes_for_install = fields.operationsNotes;
 
-  // DA status flags — priority: resurvey > survey info > sales change
-  if (fields.needsResurvey) {
-    updates.layout_status = "Pending Resurvey";
-  } else if (fields.needsSurveyInfo) {
+  // DA status flags — priority: survey info > sales change
+  if (fields.needsSurveyInfo) {
     updates.layout_status = "Pending Ops Changes";
   } else if (fields.salesChangeRequested) {
     updates.layout_status = "Pending Sales Changes";
@@ -502,6 +501,76 @@ export async function createDealTimelineNote(
       },
     ],
   });
+}
+
+/**
+ * Create a HubSpot TODO task on the given deal, optionally assigned to an owner.
+ * Used by IDR sync when "Create task for PM on sync" is toggled on a customer-notes item.
+ * Throws on failure — caller decides whether to fail-fast or continue.
+ */
+export async function createDealTask(
+  dealId: string,
+  subject: string,
+  body: string,
+  ownerId?: string | null,
+): Promise<{ taskId: string }> {
+  const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!accessToken) throw new Error("HUBSPOT_ACCESS_TOKEN not configured");
+
+  const properties: Record<string, string> = {
+    hs_task_subject: subject,
+    hs_task_body: body,
+    hs_task_status: "NOT_STARTED",
+    hs_task_priority: "MEDIUM",
+    hs_task_type: "TODO",
+    hs_timestamp: String(Date.now()),
+  };
+  if (ownerId) properties.hubspot_owner_id = ownerId;
+
+  const res = await fetch("https://api.hubapi.com/crm/v3/objects/tasks", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      properties,
+      associations: [
+        {
+          to: { id: dealId },
+          // HubSpot standard deal → task association type id
+          types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 216 }],
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`HubSpot create-task failed: ${res.status} ${errBody.slice(0, 200)}`);
+  }
+  const data = (await res.json()) as { id: string };
+  return { taskId: data.id };
+}
+
+/**
+ * Look up the HubSpot owner ID for a deal's project_manager property
+ * (falls back to hubspot_owner_id). Used to target IDR customer-notes tasks
+ * at the project manager.
+ */
+export async function resolvePmOwnerIdForDeal(dealId: string): Promise<string | null> {
+  try {
+    const deal = await hubspotClient.crm.deals.basicApi.getById(
+      dealId,
+      ["project_manager", "hubspot_owner_id"],
+    );
+    const pm = deal.properties?.project_manager as string | null | undefined;
+    const owner = deal.properties?.hubspot_owner_id as string | null | undefined;
+    return pm || owner || null;
+  } catch (err) {
+    console.error(`[idr-meeting] Failed to resolve PM owner for deal ${dealId}:`, err);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

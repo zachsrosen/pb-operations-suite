@@ -38,13 +38,33 @@ export function MeetingNotesForm({ item, onChange, readOnly }: Props) {
 
       <div className="grid grid-cols-2 gap-2">
         {NOTE_FIELDS.map(({ key, label }) => (
-          <LocalTextarea
-            key={`${item.id}-${key}`}
-            label={label}
-            externalValue={(item[key] as string | null) ?? ""}
-            onChange={(val) => handleChange(key, val)}
-            readOnly={readOnly}
-          />
+          <div key={`${item.id}-${key}`}>
+            <LocalTextarea
+              label={label}
+              externalValue={(item[key] as string | null) ?? ""}
+              onChange={(val) => handleChange(key, val)}
+              readOnly={readOnly}
+            />
+            {key === "customerNotes" && item.customerNotes && item.customerNotes.trim() && (
+              <label className="mt-1 flex items-center gap-1.5 text-[10px] text-muted cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={item.customerNotesCreateTask}
+                  onChange={(e) =>
+                    onChange({ customerNotesCreateTask: e.target.checked })
+                  }
+                  disabled={readOnly}
+                  className="h-3 w-3 accent-orange-500"
+                />
+                <span>
+                  Create task for PM on sync
+                  {item.customerNotesCreateTask && (
+                    <span className="ml-1 text-orange-500">· enabled</span>
+                  )}
+                </span>
+              </label>
+            )}
+          </div>
         ))}
       </div>
     </div>
