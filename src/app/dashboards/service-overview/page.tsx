@@ -270,6 +270,20 @@ export default function ServiceOverviewPage() {
     low: preTierFiltered.filter(i => i.tier === "low").length,
   }), [preTierFiltered]);
 
+  // Unassigned tickets — independent of current filters so the KPI is a stable
+  // organizational signal (per FS #359 Jessica: "need a way to catch these").
+  const unassignedTickets = useMemo(
+    () => (data?.queue ?? []).filter(
+      (e) => e.item.type === "ticket" && !e.item.ownerId
+    ).length,
+    [data?.queue]
+  );
+  const isUnassignedFilterActive =
+    filterTypes.length === 1 &&
+    filterTypes[0] === "ticket" &&
+    filterOwners.length === 1 &&
+    filterOwners[0] === "__unassigned__";
+
   // Type counts — computed from the location+owner subset so counts reflect the
   // other filters but NOT the type filter itself (stable toggle badges).
   const typeCounts = useMemo(() => {
@@ -379,7 +393,7 @@ export default function ServiceOverviewPage() {
       headerRight={headerRight}
     >
       {/* KPI Strip */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 stagger-grid">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6 stagger-grid">
         <button
           type="button"
           onClick={() => {
@@ -420,6 +434,31 @@ export default function ServiceOverviewPage() {
             label="Open Tickets"
             value={data?.queue.filter(i => i.item.type === "ticket").length ?? 0}
             color="cyan"
+          />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            if (isUnassignedFilterActive) {
+              setFilterTypes([]);
+              setFilterOwners([]);
+            } else {
+              setFilterTypes(["ticket"]);
+              setFilterOwners(["__unassigned__"]);
+            }
+          }}
+          className={`text-left rounded-xl transition-all ${
+            isUnassignedFilterActive
+              ? "ring-2 ring-amber-400/60 ring-offset-2 ring-offset-background"
+              : "hover:brightness-110"
+          }`}
+          aria-pressed={isUnassignedFilterActive}
+          title="Click to filter queue to unassigned tickets"
+        >
+          <StatCard
+            label="Unassigned Tickets"
+            value={unassignedTickets}
+            color={unassignedTickets > 0 ? "yellow" : "green"}
           />
         </button>
         <StatCard
