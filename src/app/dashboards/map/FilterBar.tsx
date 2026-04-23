@@ -11,10 +11,10 @@ interface FilterBarProps {
   onTypeToggle: (kind: JobMarkerKind) => void;
 }
 
-const MODES: Array<{ id: MapMode; label: string }> = [
-  { id: "today", label: "Today" },
-  { id: "week", label: "Week" },
-  { id: "backlog", label: "Backlog" },
+const MODES: Array<{ id: MapMode; label: string; enabled: boolean }> = [
+  { id: "today", label: "Today", enabled: true },
+  { id: "week", label: "Week", enabled: false },
+  { id: "backlog", label: "Backlog", enabled: false },
 ];
 
 export function FilterBar({
@@ -30,15 +30,19 @@ export function FilterBar({
       <div role="tablist" className="inline-flex rounded-md bg-surface-2 p-0.5">
         {MODES.map((m) => {
           const active = m.id === mode;
+          const disabled = !m.enabled;
           return (
             <button
               key={m.id}
               role="tab"
               aria-pressed={active}
-              onClick={() => onModeChange(m.id)}
+              aria-disabled={disabled}
+              disabled={disabled}
+              title={disabled ? "Coming in Phase 2" : undefined}
+              onClick={() => !disabled && onModeChange(m.id)}
               className={`px-3 py-1 text-sm rounded ${
                 active ? "bg-orange-500 text-white" : "text-foreground"
-              }`}
+              } ${disabled ? "opacity-40 cursor-not-allowed" : ""}`}
             >
               {m.label}
             </button>

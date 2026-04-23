@@ -61,7 +61,22 @@ export function MapClient({ googleMapsApiKey }: MapClientProps) {
       />
 
       <div className="flex-1 relative">
-        {googleMapsApiKey ? (
+        {query.isError ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="bg-surface-2 border border-t-border rounded-lg p-6 text-center max-w-sm">
+              <div className="text-foreground font-semibold mb-1">Failed to load map data</div>
+              <div className="text-xs text-muted mb-4">
+                {query.error instanceof Error ? query.error.message : "Unknown error"}
+              </div>
+              <button
+                onClick={() => query.refetch()}
+                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded text-sm font-semibold"
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        ) : googleMapsApiKey ? (
           <JobMapCanvas
             markers={markers}
             crews={crews}

@@ -38,6 +38,9 @@ export async function GET(req: NextRequest) {
 
   const dateStr = url.searchParams.get("date");
   const date = dateStr ? new Date(dateStr) : new Date();
+  if (dateStr && Number.isNaN(date.getTime())) {
+    return NextResponse.json({ error: "invalid date" }, { status: 400 });
+  }
 
   // Debug variant bypasses cache
   if (includeUnplaced) {
