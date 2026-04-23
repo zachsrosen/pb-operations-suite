@@ -78,6 +78,7 @@ interface Workflow {
   status: "DRAFT" | "ACTIVE" | "ARCHIVED";
   triggerType: "MANUAL" | "HUBSPOT_PROPERTY_CHANGE" | "ZUPER_PROPERTY_CHANGE" | "CRON";
   triggerConfig: Record<string, unknown>;
+  maxRunsPerHour: number;
   definition: { steps: Step[] };
   createdBy: { email: string; name: string | null };
   runs: WorkflowRun[];
@@ -163,6 +164,7 @@ export default function AdminWorkflowEditor({
           name: workflow.name,
           description: workflow.description,
           triggerConfig: workflow.triggerConfig,
+          maxRunsPerHour: workflow.maxRunsPerHour,
           definition: workflow.definition,
         }),
       });
@@ -359,6 +361,24 @@ export default function AdminWorkflowEditor({
               rows={2}
               className="w-full rounded-md bg-surface-2 border border-t-border px-3 py-2 text-sm"
             />
+          </div>
+          <div>
+            <label className="block text-xs text-muted mb-1">Max runs per hour</label>
+            <input
+              type="number"
+              min={0}
+              max={100000}
+              value={workflow.maxRunsPerHour}
+              onChange={(e) => {
+                const v = Math.max(0, Math.min(100_000, parseInt(e.target.value, 10) || 0));
+                setWorkflow((w) => (w ? { ...w, maxRunsPerHour: v } : w));
+              }}
+              className="w-full rounded-md bg-surface-2 border border-t-border px-3 py-2 text-sm max-w-xs"
+            />
+            <p className="mt-1 text-xs text-muted">
+              Safety cap — runs beyond this in a rolling 60m window are rejected. 0 = unlimited. Default 60.
+              Dry-runs are exempt.
+            </p>
           </div>
         </section>
 

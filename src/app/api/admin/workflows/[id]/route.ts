@@ -69,6 +69,7 @@ const patchSchema = z.object({
   description: z.string().max(1000).nullable().optional(),
   status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
   triggerConfig: z.record(z.string(), z.unknown()).optional(),
+  maxRunsPerHour: z.number().int().min(0).max(100_000).optional(),
   definition: z.object({
     steps: z.array(
       z.object({
@@ -148,6 +149,7 @@ export async function PATCH(
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.description !== undefined ? { description: body.description } : {}),
       ...(body.status !== undefined ? { status: body.status } : {}),
+      ...(body.maxRunsPerHour !== undefined ? { maxRunsPerHour: body.maxRunsPerHour } : {}),
       ...(normalizedTriggerConfig !== undefined ? { triggerConfig: normalizedTriggerConfig } : {}),
       ...(body.definition !== undefined ? { definition: body.definition as object } : {}),
     },
