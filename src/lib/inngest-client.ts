@@ -47,6 +47,13 @@ export const adminWorkflowRunRequested = eventType(
       workflowId: z.string(),
       triggeredByEmail: z.string(),
       triggerContext: z.record(z.string(), z.unknown()),
+      /**
+       * When true, the executor skips the real action handlers and records
+       * the resolved inputs + a stub output. No external side effects fire.
+       * Control-flow kinds (stop-if, delay) still evaluate so conditional
+       * logic is testable — delay returns without sleeping.
+       */
+      dryRun: z.boolean().optional(),
     }),
   },
 );

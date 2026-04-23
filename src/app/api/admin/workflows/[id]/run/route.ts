@@ -23,6 +23,8 @@ import {
 
 const runSchema = z.object({
   triggerContext: z.record(z.string(), z.unknown()).optional(),
+  /** When true, the executor skips external side effects. */
+  dryRun: z.boolean().optional(),
 });
 
 export async function POST(
@@ -88,21 +90,20 @@ export async function POST(
     },
   });
 
-  // For DRAFT workflows, the executor would skip them — allow manual testing
-  // by temporarily bumping to ACTIVE if admin passed a dry-run flag? No —
-  // keep it strict for Phase 1. Admin must set status=ACTIVE to test.
-  if (workflow.status !== "ACTIVE") {
+  // ACTIVE required for real runs. DRY RUN bypasses this so admins can
+  // test DRAFT workflows safely before flipping to ACTIVE.
+  if (workflow.status !== "ACTIVE" && !body.dryRun) {
     await prisma.adminWorkflowRun.update({
       where: { id: run.id },
       data: {
         status: "FAILED",
-        errorMessage: `Workflow is ${workflow.status}; set status=ACTIVE to run`,
+        errorMessage: `Workflow is ${workflow.status}; set status=ACTIVE to run (or use Dry run)`,
         completedAt: new Date(),
       },
     });
     return NextResponse.json(
       {
-        error: `Workflow is ${workflow.status}; set status=ACTIVE to run`,
+        error: `Workflow is ${workflow.status}; set status=ACTIVE to run (or use Dry run)`,
         runId: run.id,
       },
       { status: 400 },
@@ -115,6 +116,7 @@ export async function POST(
       workflowId: id,
       triggeredByEmail: session.user.email,
       triggerContext,
+      ...(body.dryRun ? { dryRun: true } : {}),
     }),
   );
 

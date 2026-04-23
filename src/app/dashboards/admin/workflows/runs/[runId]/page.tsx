@@ -90,8 +90,10 @@ export default function RunDetailPage({
   const resultObj = (run.result ?? {}) as {
     outputs?: Record<string, unknown>;
     stoppedEarly?: { byStepId: string; reason: string };
+    dryRun?: boolean;
   };
   const outputs = resultObj.outputs ?? {};
+  const isDryRun = resultObj.dryRun === true;
 
   return (
     <DashboardShell title={`Run: ${run.workflow.name}`} accentColor="purple">
@@ -113,6 +115,11 @@ export default function RunDetailPage({
             </Link>
           </div>
           <div className="flex items-center gap-3 text-sm">
+            {isDryRun && (
+              <span className="px-2 py-0.5 rounded text-xs bg-zinc-700 text-zinc-200 uppercase tracking-wide">
+                Dry Run
+              </span>
+            )}
             <span className={`font-medium ${STATUS_COLORS[run.status]}`}>{run.status}</span>
             <span className="text-muted">
               {run.durationMs != null ? `${(run.durationMs / 1000).toFixed(1)}s` : "—"}

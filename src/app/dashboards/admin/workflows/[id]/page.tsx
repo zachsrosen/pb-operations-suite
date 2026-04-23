@@ -196,7 +196,7 @@ export default function AdminWorkflowEditor({
     }
   }
 
-  async function runNow() {
+  async function runNow(dryRun: boolean = false) {
     if (!workflow) return;
     setRunning(true);
     setError(null);
@@ -224,14 +224,14 @@ export default function AdminWorkflowEditor({
       const res = await fetch(`/api/admin/workflows/${id}/run`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ triggerContext }),
+        body: JSON.stringify({ triggerContext, ...(dryRun ? { dryRun: true } : {}) }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `HTTP ${res.status}`);
       }
       const body = await res.json();
-      setToast(`Run queued: ${body.runId}`);
+      setToast(`${dryRun ? "Dry run" : "Run"} queued: ${body.runId}`);
       setTimeout(() => setToast(null), 3000);
       // Refresh after a short delay so the run appears in history
       setTimeout(load, 1500);
@@ -496,12 +496,20 @@ export default function AdminWorkflowEditor({
             {saving ? "Saving…" : "Save"}
           </button>
           <button
-            onClick={runNow}
+            onClick={() => runNow(false)}
             disabled={running || workflow.status !== "ACTIVE"}
             className="rounded-md bg-green-600 hover:bg-green-500 disabled:opacity-40 px-4 py-2 text-sm text-white font-medium transition"
-            title={workflow.status !== "ACTIVE" ? "Activate first" : "Trigger a manual run"}
+            title={workflow.status !== "ACTIVE" ? "Activate first" : "Trigger a real run (side effects WILL fire)"}
           >
             {running ? "Queueing…" : "Run now"}
+          </button>
+          <button
+            onClick={() => runNow(true)}
+            disabled={running}
+            className="rounded-md bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 px-4 py-2 text-sm text-white font-medium transition"
+            title="Dry run: resolve template variables + record what would run, WITHOUT firing external actions"
+          >
+            {running ? "Queueing…" : "Dry run"}
           </button>
         </div>
 
