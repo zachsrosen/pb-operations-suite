@@ -91,8 +91,12 @@ export const hubspotPropertyTrigger: AdminWorkflowTrigger<z.infer<typeof hubspot
       key: "propertyValuesIn",
       label: "Only fire when value is one of",
       kind: "multiselect",
-      help: "Leave blank to fire on any change. When property is 'dealstage' or 'hs_pipeline_stage', pick from real HubSpot pipelines below.",
-      optionsFrom: "/api/admin/workflows/hubspot-pipelines?objectType=deal",
+      help:
+        "Leave blank to fire on any change. Pick from real HubSpot values where known " +
+        "(deal+dealstage, ticket+hs_pipeline_stage, ticket+hs_ticket_priority, " +
+        "contact+lifecyclestage/hs_lead_status). For other properties, use 'Add custom value'.",
+      optionsFrom:
+        "/api/admin/workflows/hubspot-property-options?objectType={{objectType}}&propertyName={{propertyName}}",
     },
   ],
   configSchema: hubspotPropertyConfigSchema,
