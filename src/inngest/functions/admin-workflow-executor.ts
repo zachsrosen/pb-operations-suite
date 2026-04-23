@@ -122,6 +122,34 @@ export const adminWorkflowExecutor = inngest.createFunction(
       });
     });
 
+    // ── Load existing run state for idempotent resume ──
+    // If this function has been invoked for the same runId before (e.g. the
+    // previous invocation crashed after succeeding a few steps), we restore
+    // the outputs captured so far and skip those steps on this pass.
+    // Inngest's own step.run cache handles retries within a single
+    // invocation; this checkpoint handles cross-invocation re-entry.
+    const existingRun = await step.run("load-existing-state", async () => {
+      return prisma!.adminWorkflowRun.findUnique({
+        where: { id: runId },
+        select: { status: true, result: true },
+      });
+    });
+    const resumedOutputs: Record<string, unknown> =
+      existingRun?.result && typeof existingRun.result === "object" && !Array.isArray(existingRun.result)
+        ? ((existingRun.result as { outputs?: Record<string, unknown> }).outputs ?? {})
+        : {};
+    const resumedStepIds = new Set(Object.keys(resumedOutputs));
+
+    // If the run was already marked SUCCEEDED or FAILED by a previous
+    // invocation, don't re-execute — just acknowledge.
+    if (existingRun?.status === "SUCCEEDED" || existingRun?.status === "FAILED") {
+      return {
+        status: "already-terminal",
+        runId,
+        priorStatus: existingRun.status,
+      };
+    }
+
     if (workflow.status !== "ACTIVE") {
       // Workflow was archived or moved to draft between trigger emit and
       // execution — mark the run as failed with a clear reason.
@@ -143,9 +171,21 @@ export const adminWorkflowExecutor = inngest.createFunction(
       throw new Error(`Workflow ${workflowId} has no steps`);
     }
 
-    const previousOutputs: Record<string, unknown> = {};
+    const previousOutputs: Record<string, unknown> = { ...resumedOutputs };
     const startedAt = Date.now();
     let stoppedEarly: { byStepId: string; reason: string } | null = null;
+
+    /** Persist current state so a later invocation can resume from here. */
+    const checkpoint = async (checkpointId: string) => {
+      await step.run(`checkpoint:${checkpointId}`, async () => {
+        return prisma!.adminWorkflowRun.update({
+          where: { id: runId },
+          data: {
+            result: { outputs: previousOutputs, ...(isDryRun ? { dryRun: true } : {}) } as object,
+          },
+        });
+      });
+    };
     let failedStep: string | null = null;
     let failureError: string | null = null;
 
@@ -154,6 +194,12 @@ export const adminWorkflowExecutor = inngest.createFunction(
     // before the exception bubbles up to Inngest for retry/final-fail.
     try {
     for (const stepDef of definition.steps) {
+      // Skip steps already completed by a previous invocation for this runId.
+      // Their output is already in previousOutputs via resumedOutputs.
+      if (resumedStepIds.has(stepDef.id)) {
+        continue;
+      }
+
       // Resolve template expressions (needs outputs captured so far)
       const resolvedInputs = resolveInputs(stepDef.inputs, triggerContext, previousOutputs);
       failedStep = stepDef.id;
@@ -172,6 +218,7 @@ export const adminWorkflowExecutor = inngest.createFunction(
           // step.sleep must be called at Inngest-step top level; it is here
           await step.sleep(`${stepDef.id}:delay`, `${seconds}s`);
           previousOutputs[stepDef.id] = { delayedSeconds: seconds };
+          await checkpoint(stepDef.id);
           continue;
         }
         if (stepDef.kind === "stop-if") {
@@ -185,9 +232,11 @@ export const adminWorkflowExecutor = inngest.createFunction(
               reason: `stop-if matched: ${stopInputs.left} ${stopInputs.operator} ${stopInputs.right ?? ""}`,
             };
             previousOutputs[stepDef.id] = { stopped: true, ...stopInputs };
+            await checkpoint(stepDef.id);
             break;
           }
           previousOutputs[stepDef.id] = { stopped: false, ...stopInputs };
+          await checkpoint(stepDef.id);
           continue;
         }
         throw new Error(`Unhandled control-flow kind: ${stepDef.kind}`);
@@ -228,6 +277,8 @@ export const adminWorkflowExecutor = inngest.createFunction(
       );
 
       previousOutputs[stepDef.id] = output;
+      // Checkpoint after each step so a re-invocation can resume from here.
+      await checkpoint(stepDef.id);
     }
     failedStep = null;
     } catch (err) {
