@@ -89,8 +89,9 @@ export async function POST(request: NextRequest) {
   if (!trigger) {
     return NextResponse.json({ error: `Unknown triggerType: ${body.triggerType}` }, { status: 400 });
   }
+  let normalizedTriggerConfig: object;
   try {
-    trigger.configSchema.parse(body.triggerConfig);
+    normalizedTriggerConfig = trigger.configSchema.parse(body.triggerConfig) as object;
   } catch (e) {
     return NextResponse.json(
       { error: "Invalid trigger config", detail: e instanceof Error ? e.message : String(e) },
@@ -113,7 +114,7 @@ export async function POST(request: NextRequest) {
       name: body.name,
       description: body.description ?? null,
       triggerType: body.triggerType,
-      triggerConfig: body.triggerConfig as object,
+      triggerConfig: normalizedTriggerConfig,
       definition: body.definition as object,
       createdById: user.id,
       status: "DRAFT",

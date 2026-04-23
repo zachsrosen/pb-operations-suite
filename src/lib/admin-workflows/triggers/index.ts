@@ -17,6 +17,21 @@ import { z } from "zod";
 
 import type { AdminWorkflowTrigger } from "@/lib/admin-workflows/types";
 
+/**
+ * Preprocess helper: accept either an array of strings OR a comma-separated
+ * string (from the form UI) and coerce to `string[]`. Empty strings and
+ * nullish inputs become an empty array. Whitespace is trimmed, blanks dropped.
+ */
+const commaSeparatedStringsOrArray = z.preprocess((value) => {
+  if (value == null) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    if (value.trim().length === 0) return [];
+    return value.split(",").map((s) => s.trim()).filter(Boolean);
+  }
+  return value;
+}, z.array(z.string()).optional());
+
 // ---------------------------------------------------------------------------
 // Manual
 // ---------------------------------------------------------------------------
@@ -45,7 +60,7 @@ const hubspotPropertyConfigSchema = z.object({
    * Optional — if set, only fire when `propertyValue` matches one of these.
    * Leave empty to fire on any change to the named property.
    */
-  propertyValuesIn: z.array(z.string()).optional(),
+  propertyValuesIn: commaSeparatedStringsOrArray,
 });
 
 export const hubspotPropertyTrigger: AdminWorkflowTrigger<z.infer<typeof hubspotPropertyConfigSchema>> = {
@@ -88,7 +103,7 @@ export const hubspotPropertyTrigger: AdminWorkflowTrigger<z.infer<typeof hubspot
 const zuperPropertyConfigSchema = z.object({
   objectType: z.enum(["job"]),
   propertyName: z.string().min(1),
-  propertyValuesIn: z.array(z.string()).optional(),
+  propertyValuesIn: commaSeparatedStringsOrArray,
 });
 
 export const zuperPropertyTrigger: AdminWorkflowTrigger<z.infer<typeof zuperPropertyConfigSchema>> = {
