@@ -18,6 +18,21 @@ import {
 
 const PROJECT_PIPELINE_ID = process.env.HUBSPOT_PIPELINE_PROJECT || "6900017";
 
+// Region buckets — HubSpot pb_location values grouped by how the team meets.
+// CO and CA meetings are held separately; each session is scoped to one bucket.
+export const COLORADO_LOCATIONS = ["Westminster", "Centennial", "Colorado Springs"] as const;
+export const CALIFORNIA_LOCATIONS = ["San Luis Obispo", "Camarillo"] as const;
+
+export type LocationBucket = "colorado" | "california" | "all";
+
+/** Resolve a LocationBucket key to the concrete pb_location values it includes.
+ * `all` returns an empty array, meaning "no filter — include every location". */
+export function locationsForBucket(bucket: LocationBucket): string[] {
+  if (bucket === "colorado") return [...COLORADO_LOCATIONS];
+  if (bucket === "california") return [...CALIFORNIA_LOCATIONS];
+  return [];
+}
+
 /** Properties fetched for each deal during session creation / snapshot refresh. */
 export const SNAPSHOT_PROPERTIES = [
   "dealname", "pb_location", "project_type", "address_line_1", "city", "state",

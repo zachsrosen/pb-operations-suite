@@ -9,7 +9,9 @@ import {
   computeReadinessBadge,
   getReturningDealIds,
   buildOwnerMap,
+  locationsForBucket,
   SNAPSHOT_PROPERTIES,
+  type LocationBucket,
 } from "@/lib/idr-meeting";
 import { hubspotClient } from "@/lib/hubspot";
 
@@ -48,9 +50,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  // If a non-COMPLETED session already exists for today (UTC), rejoin it
-  // instead of creating a duplicate. Prevents two people clicking Start from
-  // producing two sessions and splitting queued escalations across them.
+  // Parse optional location bucket. Defaults to "all" (pre-existing behavior).
+  const body = await req.json().catch(() => ({})) as { bucket?: LocationBucket };
+  const bucket: LocationBucket = body.bucket ?? "all";
+  const bucketLocations = locationsForBucket(bucket); // [] when bucket === "all"
+  const matchesBucket = (pbLocation: string | null | undefined): boolean => {
+    if (bucketLocations.length === 0) return true; // no filter
+    return pbLocation != null && bucketLocations.includes(pbLocation);
+  };
+
+  // Fetch deals early so dedupe can inspect in-region overlap with any
+  // existing today session. Also used below if we fall through to create.
+  const allDeals = await fetchInitialReviewDeals();
+  const deals = allDeals.filter((d) => matchesBucket(d.properties.pb_location));
+
+  // If a non-COMPLETED session already exists for today (UTC), rejoin it —
+  // but only when its items overlap with the requested bucket. A CO session
+  // left open shouldn't trap a CA start: in that case we create a new one.
   const now = new Date();
   const startOfDayUtc = new Date(Date.UTC(
     now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 0, 0, 0, 0,
@@ -64,9 +80,18 @@ export async function POST(req: NextRequest) {
       status: { not: "COMPLETED" },
     },
     orderBy: { date: "desc" },
+    include: { items: { select: { region: true } } },
   });
   if (existingToday) {
-    return NextResponse.json({ session: existingToday, reused: true }, { status: 200 });
+    const overlapsBucket = bucketLocations.length === 0
+      || existingToday.items.some((i) => bucketLocations.includes(i.region));
+    if (overlapsBucket) {
+      // strip items before returning (keep the response shape lean)
+      const { items: _ignore, ...sessionRow } = existingToday;
+      void _ignore;
+      return NextResponse.json({ session: sessionRow, reused: true }, { status: 200 });
+    }
+    // no overlap → intentionally fall through to create a fresh session
   }
 
   // Create session
@@ -79,8 +104,7 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  // Fetch deals from HubSpot + resolve owner names
-  const deals = await fetchInitialReviewDeals();
+  // Resolve owner names (deals already fetched + filtered above)
   const [returningDealIds, ownerMap] = await Promise.all([
     getReturningDealIds(session.date),
     buildOwnerMap(deals),
@@ -120,10 +144,13 @@ export async function POST(req: NextRequest) {
   }
 
   // ── Consume queued items (escalations + prep edits) ──
-  const queuedItems = await prisma.idrEscalationQueue.findMany({
+  // When a bucket is active, only consume in-region items — leave others
+  // QUEUED so the opposite-region session can pick them up.
+  const allQueued = await prisma.idrEscalationQueue.findMany({
     where: { status: "QUEUED" },
     orderBy: { createdAt: "asc" },
   });
+  const queuedItems = allQueued.filter((q) => matchesBucket(q.region));
 
   if (queuedItems.length > 0) {
     const existingDealIds = new Set(items.map((i) => i.dealId));

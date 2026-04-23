@@ -270,8 +270,12 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
 
   // ── Mutations ──
   const createSession = useMutation({
-    mutationFn: async () => {
-      const res = await fetch("/api/idr-meeting/sessions", { method: "POST" });
+    mutationFn: async (bucket: "all" | "colorado" | "california" = "all") => {
+      const res = await fetch("/api/idr-meeting/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ bucket }),
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? "Failed to create session");
@@ -487,7 +491,7 @@ export function IdrMeetingClient({ userEmail }: { userEmail: string }) {
         session={isPreview ? null : (sessionQuery.data ?? null)}
         sessions={sessionsQuery.data?.sessions ?? []}
         onSelectSession={selectSession}
-        onNewSession={() => createSession.mutate()}
+        onNewSession={(bucket) => createSession.mutate(bucket ?? "all")}
         onOpenAddDialog={() => {
           if (isPreview) {
             setShowEscalationDialog(true);
