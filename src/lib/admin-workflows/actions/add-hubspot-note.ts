@@ -11,6 +11,7 @@
 
 import { z } from "zod";
 
+import { withActionIdempotency } from "@/lib/admin-workflows/idempotency";
 import type { AdminWorkflowAction } from "@/lib/admin-workflows/types";
 
 const inputsSchema = z.object({
@@ -69,8 +70,13 @@ export const addHubspotNoteAction: AdminWorkflowAction<
     { key: "body", label: "Note body (HTML)", kind: "textarea", help: "HTML allowed. Supports templates.", required: true },
   ],
   inputsSchema,
-  handler: async ({ inputs }) => {
-    const noteId = await createHubspotNote(inputs.dealId, inputs.body);
-    return { noteId, dealId: inputs.dealId };
+  handler: async ({ inputs, context }) => {
+    return withActionIdempotency(
+      { runId: context.runId, stepId: context.stepId, scope: "add-hubspot-note" },
+      async () => {
+        const noteId = await createHubspotNote(inputs.dealId, inputs.body);
+        return { noteId, dealId: inputs.dealId };
+      },
+    );
   },
 };

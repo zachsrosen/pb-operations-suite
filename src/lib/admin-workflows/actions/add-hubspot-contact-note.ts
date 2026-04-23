@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 
+import { withActionIdempotency } from "@/lib/admin-workflows/idempotency";
 import type { AdminWorkflowAction } from "@/lib/admin-workflows/types";
 
 const inputsSchema = z.object({
@@ -30,7 +31,10 @@ export const addHubspotContactNoteAction: AdminWorkflowAction<
     { key: "body", label: "Note body (HTML)", kind: "textarea", help: "HTML allowed. Supports templates.", required: true },
   ],
   inputsSchema,
-  handler: async ({ inputs }) => {
+  handler: async ({ inputs, context }) => {
+    return withActionIdempotency(
+      { runId: context.runId, stepId: context.stepId, scope: "add-hubspot-contact-note" },
+      async () => {
     const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
     if (!accessToken) throw new Error("HUBSPOT_ACCESS_TOKEN not configured");
 
@@ -66,5 +70,7 @@ export const addHubspotContactNoteAction: AdminWorkflowAction<
 
     const data = (await res.json()) as { id: string };
     return { noteId: data.id, contactId: inputs.contactId };
+      },
+    );
   },
 };

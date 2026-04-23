@@ -299,6 +299,7 @@ export const adminWorkflowExecutor = inngest.createFunction(
           context: {
             runId,
             workflowId,
+            stepId: stepDef.id,
             triggerContext,
             previousOutputs,
             triggeredByEmail,

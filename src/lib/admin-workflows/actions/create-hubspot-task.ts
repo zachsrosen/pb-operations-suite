@@ -10,6 +10,7 @@
 
 import { z } from "zod";
 
+import { withActionIdempotency } from "@/lib/admin-workflows/idempotency";
 import type { AdminWorkflowAction } from "@/lib/admin-workflows/types";
 
 const inputsSchema = z.object({
@@ -39,7 +40,10 @@ export const createHubspotTaskAction: AdminWorkflowAction<
     { key: "priority", label: "Priority", kind: "text", placeholder: "LOW | MEDIUM | HIGH" },
   ],
   inputsSchema,
-  handler: async ({ inputs }) => {
+  handler: async ({ inputs, context }) => {
+    return withActionIdempotency(
+      { runId: context.runId, stepId: context.stepId, scope: "create-hubspot-task" },
+      async () => {
     const accessToken = process.env.HUBSPOT_ACCESS_TOKEN;
     if (!accessToken) throw new Error("HUBSPOT_ACCESS_TOKEN not configured");
 
@@ -78,5 +82,7 @@ export const createHubspotTaskAction: AdminWorkflowAction<
 
     const data = (await res.json()) as { id: string };
     return { taskId: data.id, dealId: inputs.dealId };
+      },
+    );
   },
 };

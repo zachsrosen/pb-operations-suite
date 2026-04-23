@@ -9,6 +9,7 @@ import sanitizeHtml from "sanitize-html";
 import { z } from "zod";
 
 import { sendEmailMessage } from "@/lib/email";
+import { withActionIdempotency } from "@/lib/admin-workflows/idempotency";
 import type { AdminWorkflowAction } from "@/lib/admin-workflows/types";
 
 const inputsSchema = z.object({
@@ -34,25 +35,30 @@ export const sendEmailAction: AdminWorkflowAction<
   ],
   inputsSchema,
   handler: async ({ inputs, context }) => {
-    // `to` can be a comma-separated list.
-    const recipients = inputs.to
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    return withActionIdempotency(
+      { runId: context.runId, stepId: context.stepId, scope: "send-email" },
+      async () => {
+        // `to` can be a comma-separated list.
+        const recipients = inputs.to
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
 
-    const result = await sendEmailMessage({
-      to: recipients,
-      subject: inputs.subject,
-      html: inputs.body,
-      text: sanitizeHtml(inputs.body, { allowedTags: [], allowedAttributes: {} }),
-      debugFallbackTitle: `AdminWorkflow ${context.workflowId}`,
-      debugFallbackBody: `Run ${context.runId} triggered by ${context.triggeredByEmail}`,
-    });
+        const result = await sendEmailMessage({
+          to: recipients,
+          subject: inputs.subject,
+          html: inputs.body,
+          text: sanitizeHtml(inputs.body, { allowedTags: [], allowedAttributes: {} }),
+          debugFallbackTitle: `AdminWorkflow ${context.workflowId}`,
+          debugFallbackBody: `Run ${context.runId} triggered by ${context.triggeredByEmail}`,
+        });
 
-    if (!result.success) {
-      throw new Error(`Email send failed: ${result.error ?? "unknown error"}`);
-    }
+        if (!result.success) {
+          throw new Error(`Email send failed: ${result.error ?? "unknown error"}`);
+        }
 
-    return { sent: true, recipients };
+        return { sent: true, recipients };
+      },
+    );
   },
 };
