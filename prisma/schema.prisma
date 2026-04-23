@@ -2919,6 +2919,7 @@ model AdminWorkflow {
   triggerType   AdminWorkflowTriggerType
   triggerConfig Json // e.g. {"dealStageIds": ["123", "456"]}
   definition    Json // workflow-kit's serialized workflow (nodes + edges + action configs)
+  maxRunsPerHour Int                     @default(60) // 0 = unlimited; otherwise skip if hourly rate exceeded
   createdById   String
   createdBy     User                     @relation("AdminWorkflowCreatedBy", fields: [createdById], references: [id])
   createdAt     DateTime                 @default(now())

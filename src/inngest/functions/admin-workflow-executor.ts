@@ -118,9 +118,39 @@ export const adminWorkflowExecutor = inngest.createFunction(
     const workflow = await step.run("load-workflow", async () => {
       return prisma!.adminWorkflow.findUniqueOrThrow({
         where: { id: workflowId },
-        select: { id: true, name: true, status: true, definition: true },
+        select: { id: true, name: true, status: true, definition: true, maxRunsPerHour: true },
       });
     });
+
+    // ── Rate limit check ──
+    // maxRunsPerHour = 0 → unlimited. Otherwise skip if too many runs in the
+    // last hour. Dry-runs are always allowed (they exist for testing).
+    if (!isDryRun && workflow.maxRunsPerHour > 0) {
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      const recentRuns = await step.run("check-rate-limit", async () => {
+        return prisma!.adminWorkflowRun.count({
+          where: {
+            workflowId,
+            startedAt: { gte: oneHourAgo },
+            // Exclude the current run row (created before event dispatch).
+            id: { not: runId },
+          },
+        });
+      });
+      if (recentRuns >= workflow.maxRunsPerHour) {
+        await step.run("mark-rate-limited", async () => {
+          return prisma!.adminWorkflowRun.update({
+            where: { id: runId },
+            data: {
+              status: "FAILED",
+              errorMessage: `Rate limit hit: ${recentRuns} runs in the last hour (limit ${workflow.maxRunsPerHour}). Raise maxRunsPerHour or set 0 to disable.`,
+              completedAt: new Date(),
+            },
+          });
+        });
+        return { status: "rate-limited", workflowId, recentRuns, limit: workflow.maxRunsPerHour };
+      }
+    }
 
     // ── Load existing run state for idempotent resume ──
     // If this function has been invoked for the same runId before (e.g. the
