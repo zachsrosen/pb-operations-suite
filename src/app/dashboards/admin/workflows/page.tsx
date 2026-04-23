@@ -169,6 +169,40 @@ export default function AdminWorkflowsPage() {
             >
               View all runs
             </Link>
+            <label
+              className="rounded-md border border-t-border bg-surface hover:bg-surface-2 px-4 py-2 text-sm font-medium transition cursor-pointer"
+              title="Upload a workflow JSON exported from this or another environment"
+            >
+              Import JSON
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  try {
+                    const text = await file.text();
+                    const parsed = JSON.parse(text);
+                    const res = await fetch("/api/admin/workflows/import", {
+                      method: "POST",
+                      headers: { "content-type": "application/json" },
+                      body: JSON.stringify(parsed),
+                    });
+                    if (!res.ok) {
+                      const body = await res.json().catch(() => ({}));
+                      throw new Error(body.detail ?? body.error ?? `HTTP ${res.status}`);
+                    }
+                    const data = await res.json();
+                    router.push(`/dashboards/admin/workflows/${data.workflow.id}`);
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : String(err));
+                  } finally {
+                    e.target.value = "";
+                  }
+                }}
+              />
+            </label>
             <button
               onClick={openTemplates}
               className="rounded-md border border-t-border bg-surface hover:bg-surface-2 px-4 py-2 text-sm font-medium transition"
