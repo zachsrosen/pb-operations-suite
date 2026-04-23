@@ -213,3 +213,61 @@ describe("buildServiceMarkers", () => {
     expect(unplaced[0].reason).toBe("missing-address");
   });
 });
+
+import { buildCrewPins } from "@/lib/map-aggregator";
+import type { JobMarker } from "@/lib/map-types";
+
+describe("buildCrewPins", () => {
+  // Prisma CrewMember fields: `isActive` (not `active`), `locations: String[]` (not `location`)
+  const crewMembers = [
+    {
+      id: "crew-1",
+      name: "Alex P.",
+      locations: ["dtc"],
+      isActive: true,
+    },
+    {
+      id: "crew-2",
+      name: "Marco R.",
+      locations: ["westy"],
+      isActive: true,
+    },
+  ];
+
+  it("assigns current position from earliest today's stop", () => {
+    const markers: JobMarker[] = [
+      {
+        id: "install:A",
+        kind: "install",
+        scheduled: true,
+        scheduledAt: "2026-04-23T09:00:00Z",
+        lat: 39.75,
+        lng: -104.99,
+        crewId: "crew-1",
+        address: { street: "x", city: "x", state: "CO", zip: "0" },
+        title: "Stop 1",
+      },
+      {
+        id: "install:B",
+        kind: "install",
+        scheduled: true,
+        scheduledAt: "2026-04-23T15:00:00Z",
+        lat: 39.80,
+        lng: -104.95,
+        crewId: "crew-1",
+        address: { street: "x", city: "x", state: "CO", zip: "0" },
+        title: "Stop 2",
+      },
+    ];
+    const pins = buildCrewPins(crewMembers as any, markers);
+    const alex = pins.find(p => p.id === "crew-1")!;
+    expect(alex.working).toBe(true);
+    expect(alex.currentLat).toBe(39.75);
+    expect(alex.routeStops).toHaveLength(2);
+  });
+
+  it("marks crew without today's stops as not working", () => {
+    const pins = buildCrewPins(crewMembers as any, []);
+    expect(pins.find(p => p.id === "crew-1")?.working).toBe(false);
+  });
+});

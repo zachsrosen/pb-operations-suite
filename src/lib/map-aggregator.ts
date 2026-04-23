@@ -2,7 +2,13 @@
 import { prisma } from "@/lib/db";
 import { geocodeAddress as liveGeocode } from "@/lib/travel-time";
 import type { Project } from "@/lib/hubspot";
-import type { JobMarker, JobMarkerAddress, UnplacedMarker } from "./map-types";
+import type {
+  CrewPin,
+  CrewShopId,
+  JobMarker,
+  JobMarkerAddress,
+  UnplacedMarker,
+} from "./map-types";
 
 export interface ResolvedCoords {
   lat: number;
@@ -191,4 +197,57 @@ export async function buildServiceMarkers(
   }
 
   return { markers, unplaced };
+}
+
+export interface CrewMemberInput {
+  id: string;
+  name: string;
+  locations: string[];
+  isActive: boolean;
+}
+
+const SHOP_MAP: Record<string, CrewShopId> = {
+  dtc: "dtc",
+  westy: "westy",
+  cosp: "cosp",
+  ca: "ca",
+  camarillo: "camarillo",
+  slo: "ca", // SLO shares California bucket
+};
+
+function pickShopId(locations: string[]): CrewShopId {
+  for (const loc of locations) {
+    const mapped = SHOP_MAP[loc.toLowerCase()];
+    if (mapped) return mapped;
+  }
+  return "dtc";
+}
+
+export function buildCrewPins(
+  crews: CrewMemberInput[],
+  markers: JobMarker[]
+): CrewPin[] {
+  return crews
+    .filter((c) => c.isActive)
+    .map((c) => {
+      const stops = markers
+        .filter((m) => m.crewId === c.id && m.scheduled && m.scheduledAt)
+        .sort((a, b) => (a.scheduledAt! < b.scheduledAt! ? -1 : 1));
+      const first = stops[0];
+      return {
+        id: c.id,
+        name: c.name,
+        shopId: pickShopId(c.locations ?? []),
+        currentLat: first?.lat,
+        currentLng: first?.lng,
+        routeStops: stops.map((s) => ({
+          lat: s.lat,
+          lng: s.lng,
+          time: s.scheduledAt!,
+          title: s.title,
+          kind: s.kind,
+        })),
+        working: stops.length > 0,
+      };
+    });
 }
