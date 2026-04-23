@@ -15,6 +15,7 @@ import { isAdminWorkflowsEnabled } from "@/lib/inngest-client";
 import { getActionByKind } from "@/lib/admin-workflows/actions";
 import { isControlFlowKind } from "@/lib/admin-workflows/control-flow";
 import { getTriggerByKind } from "@/lib/admin-workflows/triggers";
+import { snapshotWorkflow } from "@/lib/admin-workflows/versioning";
 
 async function requireAdmin() {
   const session = await auth();
@@ -154,6 +155,31 @@ export async function PATCH(
       ...(body.definition !== undefined ? { definition: body.definition as object } : {}),
     },
   });
+
+  // Snapshot the new state as a version — but only if editable content
+  // actually changed (name, description, triggerConfig, definition,
+  // maxRunsPerHour). Status-only changes don't create a version.
+  const editableChanged =
+    body.name !== undefined ||
+    body.description !== undefined ||
+    body.triggerConfig !== undefined ||
+    body.definition !== undefined ||
+    body.maxRunsPerHour !== undefined;
+
+  if (editableChanged) {
+    await snapshotWorkflow({
+      workflowId: id,
+      savedByEmail: authResult.session.user!.email!,
+      snapshot: {
+        name: updated.name,
+        description: updated.description,
+        triggerType: updated.triggerType,
+        triggerConfig: updated.triggerConfig,
+        definition: updated.definition,
+        maxRunsPerHour: updated.maxRunsPerHour,
+      },
+    });
+  }
 
   return NextResponse.json({ workflow: updated });
 }
