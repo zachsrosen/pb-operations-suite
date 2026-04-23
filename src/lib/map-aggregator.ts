@@ -1,12 +1,16 @@
 // src/lib/map-aggregator.ts
 import { prisma } from "@/lib/db";
 import { geocodeAddress as liveGeocode } from "@/lib/travel-time";
-import type { Project } from "@/lib/hubspot";
+import { fetchAllProjects, type Project } from "@/lib/hubspot";
+import { fetchTodaysServiceJobs } from "@/lib/zuper";
 import type {
   CrewPin,
   CrewShopId,
   JobMarker,
   JobMarkerAddress,
+  JobMarkerKind,
+  MapMarkersResponse,
+  MapMode,
   UnplacedMarker,
 } from "./map-types";
 
@@ -250,4 +254,102 @@ export function buildCrewPins(
         working: stops.length > 0,
       };
     });
+}
+
+export interface AggregateOptions {
+  mode: MapMode;
+  types: JobMarkerKind[];
+  date?: Date;
+  includeUnplaced?: boolean;
+}
+
+export async function aggregateMapMarkers(
+  opts: AggregateOptions
+): Promise<MapMarkersResponse> {
+  const today = opts.date ?? new Date();
+  const partialFailures: string[] = [];
+  const allMarkers: JobMarker[] = [];
+  const allUnplaced: UnplacedMarker[] = [];
+
+  const wantInstalls = opts.types.includes("install");
+  const wantService = opts.types.includes("service");
+
+  const [projectsResult, jobsResult] = await Promise.allSettled([
+    wantInstalls ? fetchAllProjects({ activeOnly: true }) : Promise.resolve([]),
+    wantService ? fetchTodaysServiceJobs() : Promise.resolve([]),
+  ]);
+
+  let projects: Project[] = [];
+  if (projectsResult.status === "fulfilled") {
+    projects = projectsResult.value as Project[];
+  } else {
+    partialFailures.push(`hubspot-projects: ${projectsResult.reason?.message ?? "unknown"}`);
+  }
+
+  let jobs: ZuperJobInput[] = [];
+  if (jobsResult.status === "fulfilled") {
+    jobs = jobsResult.value as ZuperJobInput[];
+  } else {
+    partialFailures.push(`zuper: ${jobsResult.reason?.message ?? "unknown"}`);
+  }
+
+  if (wantInstalls) {
+    const scopedProjects = filterProjectsByMode(projects, opts.mode, today);
+    const { markers, unplaced } = await buildInstallMarkers(scopedProjects, { today });
+    allMarkers.push(...markers);
+    allUnplaced.push(...unplaced);
+  }
+
+  if (wantService) {
+    const { markers, unplaced } = await buildServiceMarkers(jobs, { today });
+    allMarkers.push(...markers);
+    allUnplaced.push(...unplaced);
+  }
+
+  // Crews — select Prisma-correct fields: isActive, locations
+  let crews: CrewPin[] = [];
+  try {
+    const crewMembers = await prisma.crewMember.findMany({
+      where: { isActive: true },
+      select: { id: true, name: true, locations: true, isActive: true },
+    });
+    crews = buildCrewPins(crewMembers, allMarkers);
+  } catch (e) {
+    partialFailures.push(`crews: ${(e as Error).message}`);
+  }
+
+  const response: MapMarkersResponse = {
+    markers: allMarkers,
+    crews,
+    lastUpdated: new Date().toISOString(),
+    droppedCount: allUnplaced.length,
+  };
+  if (partialFailures.length > 0) response.partialFailures = partialFailures;
+  if (opts.includeUnplaced) response.unplaced = allUnplaced;
+  return response;
+}
+
+function filterProjectsByMode(
+  projects: Project[],
+  mode: MapMode,
+  today: Date
+): Project[] {
+  const dayStart = new Date(today);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+
+  if (mode === "today") {
+    // Scheduled today OR RTB (ready-to-schedule)
+    return projects.filter((p) => {
+      if (p.constructionScheduleDate) {
+        const d = new Date(p.constructionScheduleDate);
+        if (d >= dayStart && d < dayEnd) return true;
+      }
+      const stage = (p.stage ?? "").toLowerCase();
+      return stage.includes("ready to build") || stage === "rtb";
+    });
+  }
+  // Phase 1 only implements today mode; week/backlog fall through.
+  return projects.filter((p) => !!p.constructionScheduleDate);
 }

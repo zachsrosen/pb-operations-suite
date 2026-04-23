@@ -271,3 +271,49 @@ describe("buildCrewPins", () => {
     expect(pins.find(p => p.id === "crew-1")?.working).toBe(false);
   });
 });
+
+import { aggregateMapMarkers } from "@/lib/map-aggregator";
+
+jest.mock("@/lib/hubspot", () => ({
+  fetchAllProjects: jest.fn(),
+}));
+
+jest.mock("@/lib/zuper", () => ({
+  fetchTodaysServiceJobs: jest.fn(),
+}));
+
+import { fetchAllProjects } from "@/lib/hubspot";
+import { fetchTodaysServiceJobs } from "@/lib/zuper";
+
+describe("aggregateMapMarkers", () => {
+  beforeEach(() => {
+    (fetchAllProjects as jest.Mock).mockReset();
+    (fetchTodaysServiceJobs as jest.Mock).mockReset();
+    (prisma.crewMember.findMany as jest.Mock).mockResolvedValue([]);
+    mockFindFirst.mockResolvedValue({ latitude: 40, longitude: -105 });
+  });
+
+  it("assembles response with all sources succeeding", async () => {
+    (fetchAllProjects as jest.Mock).mockResolvedValue([]);
+    (fetchTodaysServiceJobs as jest.Mock).mockResolvedValue([]);
+    const res = await aggregateMapMarkers({ mode: "today", types: ["install", "service"] });
+    expect(res.markers).toEqual([]);
+    expect(res.crews).toEqual([]);
+    expect(res.partialFailures ?? []).toEqual([]);
+    expect(res.droppedCount).toBe(0);
+  });
+
+  it("surfaces partialFailures when one source throws", async () => {
+    (fetchAllProjects as jest.Mock).mockRejectedValue(new Error("hubspot down"));
+    (fetchTodaysServiceJobs as jest.Mock).mockResolvedValue([]);
+    const res = await aggregateMapMarkers({ mode: "today", types: ["install", "service"] });
+    expect(res.partialFailures).toEqual(expect.arrayContaining([expect.stringContaining("hubspot")]));
+  });
+
+  it("excludes service sources when types filter omits service", async () => {
+    (fetchAllProjects as jest.Mock).mockResolvedValue([]);
+    const res = await aggregateMapMarkers({ mode: "today", types: ["install"] });
+    expect(fetchTodaysServiceJobs).not.toHaveBeenCalled();
+    expect(res).toBeDefined();
+  });
+});
