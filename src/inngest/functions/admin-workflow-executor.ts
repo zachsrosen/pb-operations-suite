@@ -107,7 +107,8 @@ export const adminWorkflowExecutor = inngest.createFunction(
     retries: 1,
   },
   async ({ event, step }) => {
-    const { runId, workflowId, triggeredByEmail, triggerContext } = event.data;
+    const { runId, workflowId, triggeredByEmail, triggerContext, dryRun } = event.data;
+    const isDryRun = dryRun === true;
 
     if (!prisma) {
       throw new Error("Database not configured");
@@ -162,6 +163,12 @@ export const adminWorkflowExecutor = inngest.createFunction(
         if (stepDef.kind === "delay") {
           const delayInputs = delayInputsSchema.parse(resolvedInputs);
           const seconds = Math.max(0, Math.min(86400, parseInt(delayInputs.seconds, 10) || 0));
+          if (isDryRun) {
+            // Skip the actual sleep in dry-run — admins don't want to
+            // wait hours for a test run.
+            previousOutputs[stepDef.id] = { delayedSeconds: seconds, __dryRun: true };
+            continue;
+          }
           // step.sleep must be called at Inngest-step top level; it is here
           await step.sleep(`${stepDef.id}:delay`, `${seconds}s`);
           previousOutputs[stepDef.id] = { delayedSeconds: seconds };
@@ -192,6 +199,20 @@ export const adminWorkflowExecutor = inngest.createFunction(
         throw new Error(`Unknown action kind: ${stepDef.kind}`);
       }
       const parsedInputs = action.inputsSchema.parse(resolvedInputs);
+
+      if (isDryRun) {
+        // Record resolved inputs + a stub output; do NOT invoke handler.
+        // This gives admins a safe preview of what would run without any
+        // external side effects (emails, HubSpot writes, Zuper writes, etc.).
+        const stub = {
+          __dryRun: true,
+          kind: stepDef.kind,
+          resolvedInputs: parsedInputs as Record<string, unknown>,
+        };
+        await step.run(`${stepDef.id}:${stepDef.kind}:dryrun`, async () => stub);
+        previousOutputs[stepDef.id] = stub;
+        continue;
+      }
 
       const output = await step.run(`${stepDef.id}:${stepDef.kind}`, () =>
         action.handler({
@@ -231,7 +252,8 @@ export const adminWorkflowExecutor = inngest.createFunction(
       // attempt count — getting one email per attempt is acceptable and
       // simpler than juggling Inngest's retry state here. Admins can mute
       // by setting ADMIN_WORKFLOWS_FAILURE_ALERT_EMAIL="" to disable.
-      if (FAILURE_ALERT_RECIPIENT) {
+      // Skip alerts entirely on dry-runs.
+      if (FAILURE_ALERT_RECIPIENT && !isDryRun) {
         await step.run("send-failure-alert", async () => {
           const subject = `[Admin Workflow] ${workflow.name} failed at step ${failedStep ?? "?"}`;
           const body = [
@@ -270,6 +292,7 @@ export const adminWorkflowExecutor = inngest.createFunction(
       const resultPayload: Record<string, unknown> = {
         outputs: previousOutputs,
         ...(stoppedEarly ? { stoppedEarly } : {}),
+        ...(isDryRun ? { dryRun: true } : {}),
       };
       return prisma!.adminWorkflowRun.update({
         where: { id: runId },
