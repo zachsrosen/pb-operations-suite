@@ -2929,10 +2929,25 @@ model AdminWorkflow {
   createdAt     DateTime                 @default(now())
   updatedAt     DateTime                 @updatedAt
   runs          AdminWorkflowRun[]
+  versions      AdminWorkflowVersion[]
 
   @@index([status])
   @@index([triggerType])
   @@index([createdById])
+}
+
+model AdminWorkflowVersion {
+  id           String        @id @default(cuid())
+  workflowId   String
+  workflow     AdminWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  version      Int // monotonic, 1-based
+  snapshot     Json // full workflow snapshot (name, desc, triggerType, triggerConfig, definition, maxRunsPerHour)
+  savedByEmail String
+  note         String?
+  createdAt    DateTime      @default(now())
+
+  @@unique([workflowId, version])
+  @@index([workflowId, createdAt(sort: Desc)])
 }
 
 model AdminWorkflowRun {

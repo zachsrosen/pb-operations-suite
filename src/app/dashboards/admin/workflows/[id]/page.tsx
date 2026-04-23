@@ -104,6 +104,14 @@ export default function AdminWorkflowEditor({
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [versions, setVersions] = useState<Array<{
+    id: string;
+    version: number;
+    savedByEmail: string;
+    note: string | null;
+    createdAt: string;
+  }> | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -328,6 +336,13 @@ export default function AdminWorkflowEditor({
                 Archive
               </button>
             )}
+            <button
+              onClick={() => setVersionsOpen(true)}
+              className="text-zinc-400 hover:text-zinc-300 px-2 py-1"
+              title="Browse edit history + roll back"
+            >
+              History
+            </button>
             <a
               href={`/api/admin/workflows/${id}/export`}
               className="text-zinc-400 hover:text-zinc-300 px-2 py-1"
@@ -572,8 +587,130 @@ export default function AdminWorkflowEditor({
             </div>
           )}
         </section>
+
+        {versionsOpen && (
+          <div
+            className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
+            onClick={() => setVersionsOpen(false)}
+          >
+            <div
+              className="bg-surface border border-t-border rounded-lg max-w-3xl w-full max-h-[80vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-t-border px-6 py-4">
+                <h3 className="text-lg font-semibold">Version history</h3>
+                <button
+                  onClick={() => setVersionsOpen(false)}
+                  className="text-muted hover:text-foreground text-xl leading-none"
+                >
+                  ×
+                </button>
+              </div>
+              <VersionHistory
+                workflowId={id}
+                versions={versions}
+                setVersions={setVersions}
+                onRestore={async () => {
+                  setVersionsOpen(false);
+                  await load();
+                  setToast("Restored from version");
+                  setTimeout(() => setToast(null), 3000);
+                }}
+                onError={(msg) => setError(msg)}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </DashboardShell>
+  );
+}
+
+function VersionHistory({
+  workflowId,
+  versions,
+  setVersions,
+  onRestore,
+  onError,
+}: {
+  workflowId: string;
+  versions: Array<{
+    id: string;
+    version: number;
+    savedByEmail: string;
+    note: string | null;
+    createdAt: string;
+  }> | null;
+  setVersions: (v: Array<{
+    id: string;
+    version: number;
+    savedByEmail: string;
+    note: string | null;
+    createdAt: string;
+  }>) => void;
+  onRestore: () => void;
+  onError: (msg: string) => void;
+}) {
+  useEffect(() => {
+    if (versions != null) return;
+    fetch(`/api/admin/workflows/${workflowId}/versions`)
+      .then((r) => r.json())
+      .then((d) => setVersions(d.versions ?? []))
+      .catch((e) => onError(e instanceof Error ? e.message : String(e)));
+  }, [workflowId, versions, setVersions, onError]);
+
+  async function restore(version: number) {
+    if (!confirm(`Restore version ${version}? This creates a new DRAFT — you'll need to re-activate.`)) return;
+    try {
+      const res = await fetch(
+        `/api/admin/workflows/${workflowId}/versions/${version}/restore`,
+        { method: "POST" },
+      );
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? `HTTP ${res.status}`);
+      }
+      onRestore();
+    } catch (e) {
+      onError(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  if (versions == null) {
+    return <div className="p-6 text-muted text-sm">Loading…</div>;
+  }
+  if (versions.length === 0) {
+    return (
+      <div className="p-6 text-muted text-sm">
+        No versions yet. Versions are saved automatically on every content edit.
+      </div>
+    );
+  }
+  return (
+    <div className="p-6 space-y-2">
+      {versions.map((v) => (
+        <div
+          key={v.id}
+          className="flex items-center justify-between rounded-md border border-t-border bg-surface-2 px-4 py-3"
+        >
+          <div className="min-w-0">
+            <p className="text-sm">
+              <strong>v{v.version}</strong>
+              <span className="text-muted ml-2">
+                {new Date(v.createdAt).toLocaleString()} · by {v.savedByEmail}
+              </span>
+            </p>
+            {v.note && <p className="text-xs text-zinc-500 italic mt-1">{v.note}</p>}
+          </div>
+          <button
+            onClick={() => restore(v.version)}
+            className="text-xs text-purple-400 hover:text-purple-300 shrink-0 ml-4"
+          >
+            Restore
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
 
