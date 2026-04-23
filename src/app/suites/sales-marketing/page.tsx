@@ -20,6 +20,22 @@ const LINKS: SuitePageCard[] = [
     section: "Tools",
   },
   {
+    href: "/dashboards/adders",
+    title: "Adder Catalog 🚧",
+    description: "In progress — not yet ready for reps. Governed list of system adders (MPU, trenching, steep roof, etc.) with prices, shop overrides, and point-of-sale triage questions. Preview only while we complete Phase 0 inventory and OpenSolar sync.",
+    tag: "IN PROGRESS",
+    icon: "➕",
+    section: "Tools",
+  },
+  {
+    href: "/triage",
+    title: "Adder Triage 🚧",
+    description: "In progress — not yet ready for reps. Mobile questionnaire that captures system conditions at point of sale so adders land on the quote before contract. Preview only.",
+    tag: "IN PROGRESS",
+    icon: "📱",
+    section: "Tools",
+  },
+  {
     href: "/estimator",
     title: "Estimator",
     description: "Customer-facing quote estimator — solar, battery, EV, and D&R.",
