@@ -115,7 +115,10 @@ export async function PATCH(
     }
   }
 
-  // If changing triggerConfig, validate it against the existing trigger's schema
+  // If changing triggerConfig, validate it against the existing trigger's schema.
+  // Keep the PARSED version — it may have coerced types (e.g. comma-separated
+  // string → string[]) so the stored data always matches the schema.
+  let normalizedTriggerConfig: object | undefined;
   if (body.triggerConfig) {
     const existing = await prisma.adminWorkflow.findUnique({
       where: { id },
@@ -127,13 +130,15 @@ export async function PATCH(
     const trigger = getTriggerByKind(existing.triggerType);
     if (trigger) {
       try {
-        trigger.configSchema.parse(body.triggerConfig);
+        normalizedTriggerConfig = trigger.configSchema.parse(body.triggerConfig) as object;
       } catch (e) {
         return NextResponse.json(
           { error: "Invalid trigger config", detail: e instanceof Error ? e.message : String(e) },
           { status: 400 },
         );
       }
+    } else {
+      normalizedTriggerConfig = body.triggerConfig as object;
     }
   }
 
@@ -143,7 +148,7 @@ export async function PATCH(
       ...(body.name !== undefined ? { name: body.name } : {}),
       ...(body.description !== undefined ? { description: body.description } : {}),
       ...(body.status !== undefined ? { status: body.status } : {}),
-      ...(body.triggerConfig !== undefined ? { triggerConfig: body.triggerConfig as object } : {}),
+      ...(normalizedTriggerConfig !== undefined ? { triggerConfig: normalizedTriggerConfig } : {}),
       ...(body.definition !== undefined ? { definition: body.definition as object } : {}),
     },
   });
