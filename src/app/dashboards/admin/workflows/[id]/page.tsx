@@ -380,6 +380,7 @@ export default function AdminWorkflowEditor({
                   key={f.key}
                   field={f}
                   value={String(workflow.triggerConfig[f.key] ?? "")}
+                  siblingValues={workflow.triggerConfig}
                   onChange={(v) =>
                     setWorkflow((w) => {
                       if (!w) return w;
@@ -443,6 +444,7 @@ export default function AdminWorkflowEditor({
                         key={f.key}
                         field={f}
                         value={step.inputs[f.key] ?? ""}
+                        siblingValues={step.inputs}
                         onChange={(v) => {
                           const next: Step = { ...step, inputs: { ...step.inputs, [f.key]: v } };
                           updateStep(idx, next);
@@ -542,33 +544,66 @@ export default function AdminWorkflowEditor({
 
 /**
  * Module-scoped cache for options loaded via `optionsFrom` URLs.
- * Avoids re-fetching the same endpoint every time the editor renders.
+ * Keyed by the fully-resolved URL (after template substitution).
  */
 const optionsCache = new Map<string, Promise<FieldOption[]>>();
 
-function loadOptions(url: string): Promise<FieldOption[]> {
-  const cached = optionsCache.get(url);
+function loadOptions(resolvedUrl: string): Promise<FieldOption[]> {
+  const cached = optionsCache.get(resolvedUrl);
   if (cached) return cached;
-  const promise = fetch(url)
+  const promise = fetch(resolvedUrl)
     .then((r) => r.json())
     .then((d: { options?: FieldOption[] }) => d.options ?? [])
     .catch(() => []);
-  optionsCache.set(url, promise);
+  optionsCache.set(resolvedUrl, promise);
   return promise;
 }
 
-function useDynamicOptions(field: FormField): FieldOption[] {
+/**
+ * Resolve `{{fieldKey}}` tokens in `optionsFrom` against the current form
+ * state. Returns null if any token resolves to empty — caller should skip
+ * fetching (the multiselect will show "no options" and admin can still
+ * type a custom value).
+ */
+function resolveOptionsFromUrl(
+  template: string,
+  values: Record<string, unknown>,
+): string | null {
+  let allResolved = true;
+  const resolved = template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => {
+    const v = values[key];
+    if (v == null || v === "") {
+      allResolved = false;
+      return "";
+    }
+    return encodeURIComponent(String(v));
+  });
+  return allResolved ? resolved : null;
+}
+
+function useDynamicOptions(
+  field: FormField,
+  siblingValues: Record<string, unknown>,
+): FieldOption[] {
   const [dynamic, setDynamic] = useState<FieldOption[]>([]);
+  const resolvedUrl = field.optionsFrom
+    ? resolveOptionsFromUrl(field.optionsFrom, siblingValues)
+    : null;
+
   useEffect(() => {
-    if (!field.optionsFrom) return;
+    if (!resolvedUrl) {
+      setDynamic([]);
+      return;
+    }
     let cancelled = false;
-    loadOptions(field.optionsFrom).then((opts) => {
+    loadOptions(resolvedUrl).then((opts) => {
       if (!cancelled) setDynamic(opts);
     });
     return () => {
       cancelled = true;
     };
-  }, [field.optionsFrom]);
+  }, [resolvedUrl]);
+
   return field.optionsFrom ? dynamic : (field.options ?? []);
 }
 
@@ -576,13 +611,21 @@ function FieldInput({
   field,
   value,
   onChange,
+  siblingValues,
 }: {
   field: FormField;
   value: string;
   onChange: (v: string) => void;
+  /**
+   * Values of sibling fields in the same form section (trigger config OR
+   * a single step's inputs). Used to resolve `{{fieldKey}}` template tokens
+   * in `optionsFrom` URLs — e.g. the propertyValuesIn multiselect re-fetches
+   * when objectType or propertyName change.
+   */
+  siblingValues?: Record<string, unknown>;
 }) {
   const cls = "w-full rounded-md bg-surface-2 border border-t-border px-3 py-2 text-sm";
-  const options = useDynamicOptions(field);
+  const options = useDynamicOptions(field, siblingValues ?? {});
 
   return (
     <div>
