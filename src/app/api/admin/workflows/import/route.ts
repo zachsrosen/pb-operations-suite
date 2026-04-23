@@ -32,6 +32,7 @@ const importSchema = z.object({
       "HUBSPOT_PROPERTY_CHANGE",
       "ZUPER_PROPERTY_CHANGE",
       "CRON",
+      "CUSTOM_EVENT",
     ]),
     triggerConfig: z.record(z.string(), z.unknown()),
     definition: z.object({
