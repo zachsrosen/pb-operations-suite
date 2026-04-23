@@ -36,6 +36,8 @@ export interface AdminWorkflowRunEventData {
 export interface AdminActionHandlerContext {
   runId: string;
   workflowId: string;
+  /** The user-defined step id from the workflow definition (e.g. "notify", "compose"). Used as an idempotency discriminator. */
+  stepId: string;
   triggerContext: Record<string, unknown>;
   previousOutputs: Record<string, unknown>;
   triggeredByEmail: string;
