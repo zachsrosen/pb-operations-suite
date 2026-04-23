@@ -336,6 +336,13 @@ export default function AdminWorkflowEditor({
                 Archive
               </button>
             )}
+            <Link
+              href={`/dashboards/admin/workflows/${id}/canvas`}
+              className="text-zinc-400 hover:text-zinc-300 px-2 py-1"
+              title="Visual canvas preview"
+            >
+              Canvas
+            </Link>
             <button
               onClick={() => setVersionsOpen(true)}
               className="text-zinc-400 hover:text-zinc-300 px-2 py-1"
