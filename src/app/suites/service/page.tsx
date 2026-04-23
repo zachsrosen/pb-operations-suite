@@ -28,6 +28,14 @@ const LINKS: SuitePageCard[] = [
     icon: "📅",
     section: "Daily Operations",
   },
+  {
+    href: "/dashboards/service-unscheduled",
+    title: "Unscheduled Jobs",
+    description: "List of every Zuper job awaiting a scheduled date, with age-based urgency flags.",
+    tag: "BACKLOG",
+    icon: "⏳",
+    section: "Daily Operations",
+  },
   // Customer & Equipment — research/lookup surface for customer history and equipment context
   {
     href: "/dashboards/service-customers",
