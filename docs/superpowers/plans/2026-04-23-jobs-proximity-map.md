@@ -435,6 +435,9 @@ jest.mock("@/lib/db", () => ({
     hubSpotPropertyCache: {
       findFirst: jest.fn(),
     },
+    crewMember: {
+      findMany: jest.fn(),
+    },
   },
 }));
 
@@ -507,6 +510,12 @@ Expected: Module not found.
 
 - [ ] **Step 3: Implement resolver**
 
+**IMPORTANT** — There are TWO `geocodeAddress` exports in the codebase with different signatures:
+- `src/lib/geocode.ts` exports `geocodeAddress(input: GeocodeInput)` (structured input)
+- `src/lib/travel-time.ts` exports `geocodeAddress(address: string)` (freeform string, with 24h in-memory cache)
+
+We use the `travel-time.ts` version because it has the in-memory cache. Verified Prisma field names on `HubSpotPropertyCache`: `streetAddress`, `city`, `state`, `zip`, `latitude`, `longitude`.
+
 ```ts
 // src/lib/map-aggregator.ts
 import { prisma } from "@/lib/db";
@@ -521,7 +530,7 @@ export interface ResolvedCoords {
 
 /**
  * Resolve an address to lat/lng via cascade:
- *   1. HubSpotPropertyCache exact-address match
+ *   1. HubSpotPropertyCache exact-address match (streetAddress + city + state + zip)
  *   2. Live Google geocode (cached in travel-time.ts for 24h)
  *
  * Returns null when the address is incomplete or geocoding fails.
@@ -533,11 +542,11 @@ export async function resolveAddressCoords(
     return null;
   }
 
-  // 1. Property cache
+  // 1. Property cache (use streetAddress — Prisma field name)
   try {
     const cached = await prisma.hubSpotPropertyCache.findFirst({
       where: {
-        street: addr.street,
+        streetAddress: addr.street,
         city: addr.city,
         state: addr.state,
         zip: addr.zip,
@@ -583,13 +592,17 @@ git commit -m "feat(map): address → coords resolver (cache → live cascade)"
 - Modify: `src/lib/map-aggregator.ts`
 - Modify: `src/__tests__/map-aggregator.test.ts`
 
+**Verified `Project` shape** (from `src/lib/hubspot.ts:254`): uses `id: number`, `name`, `address`, `city`, `state`, `postalCode` (not `zip`), `constructionScheduleDate`, `stage`, `stageId`, `readyToBuildDate`. The spec uses camelCase throughout; this task uses `Project` from `@/lib/hubspot` (NOT `TransformedProject` from `@/lib/types`).
+
+Per memory `feedback_project_id_is_number.md`, `Project.id` is `number` at runtime — cast to string only when building the marker ID.
+
 - [ ] **Step 1: Add failing test for `buildInstallMarkers`**
 
 Append to `src/__tests__/map-aggregator.test.ts`:
 
 ```ts
 import { buildInstallMarkers } from "@/lib/map-aggregator";
-import type { TransformedProject } from "@/lib/types";
+import type { Project } from "@/lib/hubspot";
 
 describe("buildInstallMarkers", () => {
   beforeEach(() => {
@@ -597,34 +610,34 @@ describe("buildInstallMarkers", () => {
     mockLiveGeocode.mockReset();
   });
 
-  const sampleProject: Partial<TransformedProject> = {
-    id: "PROJ-8241",
-    project_name: "Jenkins Residence",
-    street_address: "4820 Gunbarrel Ave",
+  const sampleProject = {
+    id: 8241,
+    name: "Jenkins Residence",
+    address: "4820 Gunbarrel Ave",
     city: "Boulder",
     state: "CO",
-    zip: "80301",
-    pipeline_stage: "Construction Scheduled",
-    construction_schedule_date: "2026-04-23T16:00:00.000Z",
-    system_size_kw_dc: 9.6,
-  };
+    postalCode: "80301",
+    stage: "Construction Scheduled",
+    constructionScheduleDate: "2026-04-23T16:00:00.000Z",
+    readyToBuildDate: null,
+  } as unknown as Project;
 
   it("normalizes a scheduled project into a JobMarker", async () => {
     mockFindFirst.mockResolvedValue({ latitude: 40.01, longitude: -105.25 });
     const { markers, unplaced } = await buildInstallMarkers(
-      [sampleProject as TransformedProject],
+      [sampleProject],
       { today: new Date("2026-04-23") }
     );
     expect(unplaced).toHaveLength(0);
     expect(markers).toHaveLength(1);
     expect(markers[0]).toMatchObject({
-      id: "install:PROJ-8241",
+      id: "install:8241",
       kind: "install",
       scheduled: true,
       lat: 40.01,
       lng: -105.25,
       title: "Jenkins Residence",
-      dealId: "PROJ-8241",
+      dealId: "8241",
     });
     expect(markers[0].scheduledAt).toBeDefined();
   });
@@ -633,11 +646,12 @@ describe("buildInstallMarkers", () => {
     mockFindFirst.mockResolvedValue({ latitude: 40.01, longitude: -105.25 });
     const rtb = {
       ...sampleProject,
-      pipeline_stage: "Ready to Build",
-      construction_schedule_date: undefined,
-    };
+      stage: "Ready to Build",
+      constructionScheduleDate: null,
+      readyToBuildDate: "2026-04-20T00:00:00.000Z",
+    } as unknown as Project;
     const { markers } = await buildInstallMarkers(
-      [rtb as TransformedProject],
+      [rtb],
       { today: new Date("2026-04-23") }
     );
     expect(markers[0].scheduled).toBe(false);
@@ -648,7 +662,7 @@ describe("buildInstallMarkers", () => {
     mockFindFirst.mockResolvedValue(null);
     mockLiveGeocode.mockResolvedValue(null);
     const { markers, unplaced } = await buildInstallMarkers(
-      [sampleProject as TransformedProject],
+      [sampleProject],
       { today: new Date("2026-04-23") }
     );
     expect(markers).toHaveLength(0);
@@ -657,9 +671,9 @@ describe("buildInstallMarkers", () => {
   });
 
   it("adds missing-address unplaced entry when fields are empty", async () => {
-    const bad = { ...sampleProject, street_address: "" };
+    const bad = { ...sampleProject, address: "" } as unknown as Project;
     const { markers, unplaced } = await buildInstallMarkers(
-      [bad as TransformedProject],
+      [bad],
       { today: new Date("2026-04-23") }
     );
     expect(markers).toHaveLength(0);
@@ -675,7 +689,7 @@ describe("buildInstallMarkers", () => {
 Append to `src/lib/map-aggregator.ts`:
 
 ```ts
-import type { TransformedProject } from "@/lib/types";
+import type { Project } from "@/lib/hubspot";
 import type { JobMarker, UnplacedMarker } from "./map-types";
 
 export interface BuildResult {
@@ -683,21 +697,21 @@ export interface BuildResult {
   unplaced: UnplacedMarker[];
 }
 
-function isInstallScheduled(project: TransformedProject): boolean {
-  return !!project.construction_schedule_date;
+function isInstallScheduled(project: Project): boolean {
+  return !!project.constructionScheduleDate;
 }
 
-function projectAddress(p: TransformedProject) {
+function projectAddress(p: Project) {
   return {
-    street: p.street_address ?? "",
+    street: p.address ?? "",
     city: p.city ?? "",
     state: p.state ?? "",
-    zip: p.zip ?? "",
+    zip: p.postalCode ?? "",
   };
 }
 
 export async function buildInstallMarkers(
-  projects: TransformedProject[],
+  projects: Project[],
   _opts: { today: Date }
 ): Promise<BuildResult> {
   const markers: JobMarker[] = [];
@@ -706,7 +720,7 @@ export async function buildInstallMarkers(
   for (const p of projects) {
     const address = projectAddress(p);
     const id = `install:${p.id}`;
-    const title = p.project_name || `Project ${p.id}`;
+    const title = p.name || `Project ${p.id}`;
 
     if (!address.street || !address.city || !address.state || !address.zip) {
       unplaced.push({
@@ -733,25 +747,24 @@ export async function buildInstallMarkers(
       address,
       title,
       subtitle: scheduled ? formatInstallSubtitle(p) : "Ready to schedule",
-      status: p.pipeline_stage ?? undefined,
-      scheduledAt: scheduled ? p.construction_schedule_date ?? undefined : undefined,
+      status: p.stage ?? undefined,
+      scheduledAt: scheduled ? p.constructionScheduleDate ?? undefined : undefined,
       dealId: String(p.id),
-      rawStage: p.pipeline_stage ?? undefined,
+      rawStage: p.stage ?? undefined,
     });
   }
 
   return { markers, unplaced };
 }
 
-function formatInstallSubtitle(p: TransformedProject): string {
-  const when = p.construction_schedule_date
-    ? new Date(p.construction_schedule_date).toLocaleTimeString("en-US", {
+function formatInstallSubtitle(p: Project): string {
+  const when = p.constructionScheduleDate
+    ? new Date(p.constructionScheduleDate).toLocaleTimeString("en-US", {
         hour: "numeric",
         minute: "2-digit",
       })
     : "";
-  const size = p.system_size_kw_dc ? `${p.system_size_kw_dc} kW` : "";
-  return [when, size].filter(Boolean).join(" · ");
+  return when;
 }
 ```
 
@@ -770,11 +783,15 @@ git commit -m "feat(map): normalize HubSpot install projects into JobMarker"
 
 ---
 
-### Task 6: Aggregator — service ticket + Zuper job markers (TDD)
+### Task 6: Aggregator — Zuper service job markers (TDD)
 
 **Files:**
 - Modify: `src/lib/map-aggregator.ts`
 - Modify: `src/__tests__/map-aggregator.test.ts`
+
+**Phase 1 scope narrowing**: The `EnrichedTicketItem` type in `lib/hubspot-tickets.ts` does NOT carry structured address fields (`streetAddress`, `city`, etc.) — only a derived `location: string | null` (pb_location). Resolving ticket address requires chasing through the associated deal. That's a meaningful lift and out of scope for Phase 1.
+
+**Phase 1 decision**: Render only **Zuper service jobs** (scheduled service) on the map. Unscheduled ticket markers are deferred to Phase 2, which will add address enrichment in `fetchServiceTickets`. This matches the spec's "installs + service" scope since scheduled service = Zuper jobs.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -788,18 +805,6 @@ describe("buildServiceMarkers", () => {
     mockFindFirst.mockReset();
     mockLiveGeocode.mockReset();
   });
-
-  const sampleTicket = {
-    id: "3114",
-    subject: "Monitoring offline — Patel system",
-    address_line_1: "1127 Elder Pl",
-    city: "Boulder",
-    state: "CO",
-    zip: "80304",
-    stage_label: "Needs Dispatch",
-    priorityScore: 68,
-    hs_pipeline_stage: "stage-xyz",
-  };
 
   const sampleZuperJob = {
     job_uid: "zuper-abc",
@@ -817,28 +822,9 @@ describe("buildServiceMarkers", () => {
     assigned_to: [{ user_uid: "user-1" }],
   };
 
-  it("normalizes open ticket as unscheduled service marker", async () => {
-    mockFindFirst.mockResolvedValue({ latitude: 40.02, longitude: -105.27 });
-    const { markers } = await buildServiceMarkers(
-      [sampleTicket as any],
-      [],
-      { today: new Date("2026-04-23") }
-    );
-    expect(markers).toHaveLength(1);
-    expect(markers[0]).toMatchObject({
-      id: "ticket:3114",
-      kind: "service",
-      scheduled: false,
-      title: "Monitoring offline — Patel system",
-      priorityScore: 68,
-      ticketId: "3114",
-    });
-  });
-
   it("normalizes scheduled Zuper job as scheduled service marker", async () => {
     mockFindFirst.mockResolvedValue({ latitude: 40.01, longitude: -105.25 });
     const { markers } = await buildServiceMarkers(
-      [],
       [sampleZuperJob as any],
       { today: new Date("2026-04-23") }
     );
@@ -852,17 +838,26 @@ describe("buildServiceMarkers", () => {
     });
   });
 
-  it("deduplicates ticket whose Zuper job is already listed", async () => {
-    mockFindFirst.mockResolvedValue({ latitude: 40.01, longitude: -105.25 });
-    const ticketWithJob = { ...sampleTicket, linkedZuperJobUid: "zuper-abc" };
-    const { markers } = await buildServiceMarkers(
-      [ticketWithJob as any],
+  it("drops Zuper job with unresolvable address", async () => {
+    mockFindFirst.mockResolvedValue(null);
+    mockLiveGeocode.mockResolvedValue(null);
+    const { markers, unplaced } = await buildServiceMarkers(
       [sampleZuperJob as any],
       { today: new Date("2026-04-23") }
     );
-    // Only the Zuper job shows — the ticket is suppressed (already scheduled)
-    expect(markers).toHaveLength(1);
-    expect(markers[0].id).toBe("zuperjob:zuper-abc");
+    expect(markers).toHaveLength(0);
+    expect(unplaced).toHaveLength(1);
+    expect(unplaced[0].reason).toBe("geocode-failed");
+  });
+
+  it("handles Zuper job with missing customer address", async () => {
+    const noAddress = { ...sampleZuperJob, customer: {} };
+    const { markers, unplaced } = await buildServiceMarkers(
+      [noAddress as any],
+      { today: new Date("2026-04-23") }
+    );
+    expect(markers).toHaveLength(0);
+    expect(unplaced[0].reason).toBe("missing-address");
   });
 });
 ```
@@ -874,20 +869,6 @@ describe("buildServiceMarkers", () => {
 Append to `src/lib/map-aggregator.ts`:
 
 ```ts
-// Types kept loose — aggregator receives already-fetched records from callers
-// that typed them against HubSpot/Zuper shapes. We only read a narrow slice.
-export interface ServiceTicketInput {
-  id: string;
-  subject?: string;
-  address_line_1?: string;
-  city?: string;
-  state?: string;
-  zip?: string;
-  stage_label?: string;
-  priorityScore?: number;
-  linkedZuperJobUid?: string;
-}
-
 export interface ZuperJobInput {
   job_uid: string;
   job_title?: string;
@@ -905,15 +886,13 @@ export interface ZuperJobInput {
 }
 
 export async function buildServiceMarkers(
-  tickets: ServiceTicketInput[],
   jobs: ZuperJobInput[],
   _opts: { today: Date }
 ): Promise<BuildResult> {
   const markers: JobMarker[] = [];
   const unplaced: UnplacedMarker[] = [];
-  const scheduledJobUids = new Set(jobs.map((j) => j.job_uid));
 
-  // Zuper jobs = scheduled service markers
+  // Zuper jobs = scheduled service markers (Phase 1 scope)
   for (const job of jobs) {
     const ca = job.customer?.customer_address;
     const address = {
@@ -955,44 +934,6 @@ export async function buildServiceMarkers(
     });
   }
 
-  // Tickets without linked Zuper job = unscheduled service markers
-  for (const ticket of tickets) {
-    if (ticket.linkedZuperJobUid && scheduledJobUids.has(ticket.linkedZuperJobUid)) {
-      continue; // suppress — the Zuper job marker is already in the list
-    }
-    const address = {
-      street: ticket.address_line_1 ?? "",
-      city: ticket.city ?? "",
-      state: ticket.state ?? "",
-      zip: ticket.zip ?? "",
-    };
-    const id = `ticket:${ticket.id}`;
-    const title = ticket.subject || `Ticket ${ticket.id}`;
-
-    if (!address.street || !address.city || !address.state || !address.zip) {
-      unplaced.push({ id, kind: "service", title, address, reason: "missing-address" });
-      continue;
-    }
-    const coords = await resolveAddressCoords(address);
-    if (!coords) {
-      unplaced.push({ id, kind: "service", title, address, reason: "geocode-failed" });
-      continue;
-    }
-    markers.push({
-      id,
-      kind: "service",
-      scheduled: false,
-      lat: coords.lat,
-      lng: coords.lng,
-      address,
-      title,
-      subtitle: ticket.stage_label,
-      status: ticket.stage_label,
-      priorityScore: ticket.priorityScore,
-      ticketId: ticket.id,
-    });
-  }
-
   return { markers, unplaced };
 }
 ```
@@ -1027,18 +968,19 @@ import { buildCrewPins } from "@/lib/map-aggregator";
 import type { JobMarker } from "@/lib/map-types";
 
 describe("buildCrewPins", () => {
+  // Prisma CrewMember fields: `isActive` (not `active`), `locations: String[]` (not `location`)
   const crewMembers = [
     {
       id: "crew-1",
       name: "Alex P.",
-      location: "dtc",
-      active: true,
+      locations: ["dtc"],
+      isActive: true,
     },
     {
       id: "crew-2",
       name: "Marco R.",
-      location: "westy",
-      active: true,
+      locations: ["westy"],
+      isActive: true,
     },
   ];
 
@@ -1091,8 +1033,8 @@ Append:
 export interface CrewMemberInput {
   id: string;
   name: string;
-  location: string | null;
-  active: boolean;
+  locations: string[];
+  isActive: boolean;
 }
 
 import type { CrewPin, CrewShopId } from "./map-types";
@@ -1106,12 +1048,20 @@ const SHOP_MAP: Record<string, CrewShopId> = {
   slo: "ca", // SLO shares California bucket
 };
 
+function pickShopId(locations: string[]): CrewShopId {
+  for (const loc of locations) {
+    const mapped = SHOP_MAP[loc.toLowerCase()];
+    if (mapped) return mapped;
+  }
+  return "dtc";
+}
+
 export function buildCrewPins(
   crews: CrewMemberInput[],
   markers: JobMarker[]
 ): CrewPin[] {
   return crews
-    .filter((c) => c.active)
+    .filter((c) => c.isActive)
     .map((c) => {
       const stops = markers
         .filter((m) => m.crewId === c.id && m.scheduled && m.scheduledAt)
@@ -1120,7 +1070,7 @@ export function buildCrewPins(
       return {
         id: c.id,
         name: c.name,
-        shopId: SHOP_MAP[c.location?.toLowerCase() ?? ""] ?? "dtc",
+        shopId: pickShopId(c.locations ?? []),
         currentLat: first?.lat,
         currentLng: first?.lng,
         routeStops: stops.map((s) => ({
@@ -1161,40 +1111,26 @@ Append:
 import { aggregateMapMarkers } from "@/lib/map-aggregator";
 
 jest.mock("@/lib/hubspot", () => ({
-  fetchTransformedProjects: jest.fn(),
-}));
-
-jest.mock("@/lib/hubspot-tickets", () => ({
-  fetchServiceTickets: jest.fn(),
+  fetchAllProjects: jest.fn(),
 }));
 
 jest.mock("@/lib/zuper", () => ({
   fetchTodaysServiceJobs: jest.fn(),
 }));
 
-jest.mock("@/lib/db", () => ({
-  prisma: {
-    hubSpotPropertyCache: { findFirst: jest.fn() },
-    crewMember: { findMany: jest.fn() },
-  },
-}));
-
-import { fetchTransformedProjects } from "@/lib/hubspot";
-import { fetchServiceTickets } from "@/lib/hubspot-tickets";
+import { fetchAllProjects } from "@/lib/hubspot";
 import { fetchTodaysServiceJobs } from "@/lib/zuper";
 
 describe("aggregateMapMarkers", () => {
   beforeEach(() => {
-    (fetchTransformedProjects as jest.Mock).mockReset();
-    (fetchServiceTickets as jest.Mock).mockReset();
+    (fetchAllProjects as jest.Mock).mockReset();
     (fetchTodaysServiceJobs as jest.Mock).mockReset();
     (prisma.crewMember.findMany as jest.Mock).mockResolvedValue([]);
     mockFindFirst.mockResolvedValue({ latitude: 40, longitude: -105 });
   });
 
   it("assembles response with all sources succeeding", async () => {
-    (fetchTransformedProjects as jest.Mock).mockResolvedValue([]);
-    (fetchServiceTickets as jest.Mock).mockResolvedValue([]);
+    (fetchAllProjects as jest.Mock).mockResolvedValue([]);
     (fetchTodaysServiceJobs as jest.Mock).mockResolvedValue([]);
     const res = await aggregateMapMarkers({ mode: "today", types: ["install", "service"] });
     expect(res.markers).toEqual([]);
@@ -1204,17 +1140,15 @@ describe("aggregateMapMarkers", () => {
   });
 
   it("surfaces partialFailures when one source throws", async () => {
-    (fetchTransformedProjects as jest.Mock).mockRejectedValue(new Error("hubspot down"));
-    (fetchServiceTickets as jest.Mock).mockResolvedValue([]);
+    (fetchAllProjects as jest.Mock).mockRejectedValue(new Error("hubspot down"));
     (fetchTodaysServiceJobs as jest.Mock).mockResolvedValue([]);
     const res = await aggregateMapMarkers({ mode: "today", types: ["install", "service"] });
     expect(res.partialFailures).toEqual(expect.arrayContaining([expect.stringContaining("hubspot")]));
   });
 
   it("excludes service sources when types filter omits service", async () => {
-    (fetchTransformedProjects as jest.Mock).mockResolvedValue([]);
+    (fetchAllProjects as jest.Mock).mockResolvedValue([]);
     const res = await aggregateMapMarkers({ mode: "today", types: ["install"] });
-    expect(fetchServiceTickets).not.toHaveBeenCalled();
     expect(fetchTodaysServiceJobs).not.toHaveBeenCalled();
     expect(res).toBeDefined();
   });
@@ -1228,10 +1162,9 @@ describe("aggregateMapMarkers", () => {
 Append to `src/lib/map-aggregator.ts`:
 
 ```ts
-import { fetchTransformedProjects } from "@/lib/hubspot";
-import { fetchServiceTickets } from "@/lib/hubspot-tickets";
+import { fetchAllProjects, type Project } from "@/lib/hubspot";
 import { fetchTodaysServiceJobs } from "@/lib/zuper";
-import type { MapMarkersResponse, MapMode, JobMarkerKind } from "./map-types";
+import type { MapMarkersResponse, MapMode, JobMarkerKind, CrewPin } from "./map-types";
 
 export interface AggregateOptions {
   mode: MapMode;
@@ -1251,42 +1184,44 @@ export async function aggregateMapMarkers(
   const wantInstalls = opts.types.includes("install");
   const wantService = opts.types.includes("service");
 
-  const [projectsResult, ticketsResult, jobsResult] = await Promise.allSettled([
-    wantInstalls ? fetchTransformedProjects() : Promise.resolve([]),
-    wantService ? fetchServiceTickets() : Promise.resolve([]),
+  const [projectsResult, jobsResult] = await Promise.allSettled([
+    wantInstalls ? fetchAllProjects({ activeOnly: true }) : Promise.resolve([]),
     wantService ? fetchTodaysServiceJobs() : Promise.resolve([]),
   ]);
 
-  const projects =
-    projectsResult.status === "fulfilled" ? projectsResult.value : (partialFailures.push(`hubspot-projects: ${projectsResult.reason?.message ?? "unknown"}`), []);
-  const tickets =
-    ticketsResult.status === "fulfilled" ? ticketsResult.value : (partialFailures.push(`hubspot-tickets: ${ticketsResult.reason?.message ?? "unknown"}`), []);
-  const jobs =
-    jobsResult.status === "fulfilled" ? jobsResult.value : (partialFailures.push(`zuper: ${jobsResult.reason?.message ?? "unknown"}`), []);
+  let projects: Project[] = [];
+  if (projectsResult.status === "fulfilled") {
+    projects = projectsResult.value;
+  } else {
+    partialFailures.push(`hubspot-projects: ${projectsResult.reason?.message ?? "unknown"}`);
+  }
+
+  let jobs: ZuperJobInput[] = [];
+  if (jobsResult.status === "fulfilled") {
+    jobs = jobsResult.value as ZuperJobInput[];
+  } else {
+    partialFailures.push(`zuper: ${jobsResult.reason?.message ?? "unknown"}`);
+  }
 
   if (wantInstalls) {
-    const scopedProjects = filterProjectsByMode(projects as TransformedProject[], opts.mode, today);
+    const scopedProjects = filterProjectsByMode(projects, opts.mode, today);
     const { markers, unplaced } = await buildInstallMarkers(scopedProjects, { today });
     allMarkers.push(...markers);
     allUnplaced.push(...unplaced);
   }
 
   if (wantService) {
-    const { markers, unplaced } = await buildServiceMarkers(
-      (tickets as ServiceTicketInput[]) ?? [],
-      (jobs as ZuperJobInput[]) ?? [],
-      { today }
-    );
+    const { markers, unplaced } = await buildServiceMarkers(jobs, { today });
     allMarkers.push(...markers);
     allUnplaced.push(...unplaced);
   }
 
-  // Crews
+  // Crews — select Prisma-correct fields: isActive, locations
   let crews: CrewPin[] = [];
   try {
     const crewMembers = await prisma.crewMember.findMany({
-      where: { active: true },
-      select: { id: true, name: true, location: true, active: true },
+      where: { isActive: true },
+      select: { id: true, name: true, locations: true, isActive: true },
     });
     crews = buildCrewPins(crewMembers, allMarkers);
   } catch (e) {
@@ -1305,10 +1240,10 @@ export async function aggregateMapMarkers(
 }
 
 function filterProjectsByMode(
-  projects: TransformedProject[],
+  projects: Project[],
   mode: MapMode,
   today: Date
-): TransformedProject[] {
+): Project[] {
   const dayStart = new Date(today);
   dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(dayStart);
@@ -1317,52 +1252,43 @@ function filterProjectsByMode(
   if (mode === "today") {
     // Scheduled today OR RTB (ready-to-schedule)
     return projects.filter((p) => {
-      if (p.construction_schedule_date) {
-        const d = new Date(p.construction_schedule_date);
+      if (p.constructionScheduleDate) {
+        const d = new Date(p.constructionScheduleDate);
         if (d >= dayStart && d < dayEnd) return true;
       }
-      const stage = (p.pipeline_stage ?? "").toLowerCase();
+      const stage = (p.stage ?? "").toLowerCase();
       return stage.includes("ready to build") || stage === "rtb";
     });
   }
-  // Phase 1 only implements today mode; week/backlog fall through to today.
-  return projects.filter((p) => !!p.construction_schedule_date);
+  // Phase 1 only implements today mode; week/backlog fall through.
+  return projects.filter((p) => !!p.constructionScheduleDate);
 }
 ```
 
-**Note:** `fetchTodaysServiceJobs` may not exist yet in `src/lib/zuper.ts`. If it doesn't, add a thin wrapper in this task (before implementing the aggregator test):
+- [ ] **Step 3a: Add `fetchTodaysServiceJobs` helper to `src/lib/zuper.ts`**
 
-- [ ] **Step 3a (if needed): Add `fetchTodaysServiceJobs` helper to `src/lib/zuper.ts`**
-
-Check first:
+Verify first:
 
 ```bash
 grep -n "fetchTodaysServiceJobs\|export.*ServiceJobs" src/lib/zuper.ts
 ```
 
-If not present, add near the bottom of `src/lib/zuper.ts`:
+Phase 1 acceptable-stub: return empty array. The aggregator handles empty lists, the UI renders the map without service markers, and Phase 2 will add real Zuper filtering. This keeps the feature shippable without owning the Zuper API surface in this PR.
+
+Add at the bottom of `src/lib/zuper.ts`:
 
 ```ts
 /**
  * Fetch service Zuper jobs scheduled for today.
- * Thin wrapper used by the map aggregator; tests mock this directly.
+ * Phase 1 stub — returns empty array. Phase 2 will implement actual filtering
+ * using the Zuper jobs listing API with date range + service category filter.
  */
 export async function fetchTodaysServiceJobs(): Promise<unknown[]> {
-  const todayStart = new Date();
-  todayStart.setHours(0, 0, 0, 0);
-  const tomorrowStart = new Date(todayStart);
-  tomorrowStart.setDate(tomorrowStart.getDate() + 1);
-
-  const res = await zuper.listJobs({
-    from: todayStart.toISOString(),
-    to: tomorrowStart.toISOString(),
-    category_uid: JOB_CATEGORY_UIDS.service,
-  });
-  return res.data ?? [];
+  return [];
 }
 ```
 
-Verify `zuper.listJobs` signature first — if the actual method is different, adapt to it. If no such listing exists yet, return `[]` and add a `TODO: implement today-job-fetch` — non-blocking for Phase 1 since empty list still renders.
+(The full implementation lives in Phase 2 because the Zuper listing API shape requires its own discovery and testing. Stubbing here unblocks the rest of the plan.)
 
 - [ ] **Step 4: Run tests — expect pass**
 
@@ -1386,12 +1312,14 @@ git commit -m "feat(map): top-level aggregator with partial-failure tolerance"
 
 - [ ] **Step 1: Write the route**
 
+**Verified cache API** (`src/lib/cache.ts`): exports `CacheStore` class and `appCache` singleton (`DEFAULT_TTL = 5 * 60 * 1000`). Use `appCache.getOrFetch(key, fetcher)` for the cache-then-fetch pattern, or a dedicated `CacheStore` instance if we want a shorter TTL. For 60s TTL on map markers, create a local CacheStore.
+
 ```ts
 // src/app/api/map/markers/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { aggregateMapMarkers } from "@/lib/map-aggregator";
-import { getCached, setCached } from "@/lib/cache";
-import type { MapMode, JobMarkerKind } from "@/lib/map-types";
+import { CacheStore } from "@/lib/cache";
+import type { MapMode, JobMarkerKind, MapMarkersResponse } from "@/lib/map-types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -1400,6 +1328,11 @@ const VALID_MODES: MapMode[] = ["today", "week", "backlog"];
 const VALID_KINDS: JobMarkerKind[] = [
   "install", "service", "inspection", "survey", "dnr", "roofing",
 ];
+
+// Dedicated 60s cache for map markers (separate from appCache's 5min default)
+const MAP_TTL_MS = 60 * 1000;
+const MAP_STALE_TTL_MS = 5 * 60 * 1000;
+const mapCache = new CacheStore(MAP_TTL_MS, MAP_STALE_TTL_MS);
 
 export async function GET(req: NextRequest) {
   const url = new URL(req.url);
@@ -1423,35 +1356,26 @@ export async function GET(req: NextRequest) {
   const dateStr = url.searchParams.get("date");
   const date = dateStr ? new Date(dateStr) : new Date();
 
+  // Debug variant bypasses cache
+  if (includeUnplaced) {
+    const result = await aggregateMapMarkers({ mode, types, date, includeUnplaced: true });
+    return NextResponse.json(result, { headers: { "x-cache": "bypass" } });
+  }
+
   const cacheKey = `map:markers:${mode}:${date.toISOString().slice(0, 10)}:${types.sort().join(",")}`;
 
-  // Don't cache the debug variant
-  if (!includeUnplaced) {
-    const cached = getCached(cacheKey);
-    if (cached) {
-      return NextResponse.json(cached, {
-        headers: { "x-cache": "hit" },
-      });
-    }
-  }
+  const { data, cached, stale } = await mapCache.getOrFetch<MapMarkersResponse>(
+    cacheKey,
+    () => aggregateMapMarkers({ mode, types, date })
+  );
 
-  const result = await aggregateMapMarkers({ mode, types, date, includeUnplaced });
-
-  if (!includeUnplaced) {
-    setCached(cacheKey, result, 60_000);
-  }
-
-  return NextResponse.json(result, { headers: { "x-cache": "miss" } });
+  return NextResponse.json(data, {
+    headers: {
+      "x-cache": cached ? (stale ? "stale" : "hit") : "miss",
+    },
+  });
 }
 ```
-
-- [ ] **Step 2: Verify `lib/cache.ts` exports `getCached` / `setCached`**
-
-```bash
-grep -n "export " src/lib/cache.ts | head -20
-```
-
-If the names are different (e.g. `get` / `set`), adjust imports and usage.
 
 - [ ] **Step 3: Smoke test the route locally**
 
@@ -1465,11 +1389,17 @@ Expected: JSON response with `markers`, `crews`, `lastUpdated`, `droppedCount`. 
 
 - [ ] **Step 4: Add route to role allowlists**
 
-Modify `src/lib/roles.ts` — for each of `ADMIN`, `OWNER`, `PROJECT_MANAGER`, `OPERATIONS_MANAGER`, `OPERATIONS`, `SERVICE`, add to `allowedRoutes`:
-- `/dashboards/map`
-- `/api/map`
+Modify `src/lib/roles.ts` — `ADMIN` already has `["*"]` so skip it. For each of the following constant definitions, add both `/dashboards/map` and `/api/map` to the `allowedRoutes` array (preserve existing entries, add alphabetically):
 
-ADMIN already has `["*"]` so skip it. For all others, add both entries preserving the existing array pattern. Grep for each role block, add the two strings.
+- `OWNER` (search for `const OWNER: RoleDefinition`)
+- `PROJECT_MANAGER` (search for `const PROJECT_MANAGER: RoleDefinition`)
+- `OPERATIONS_MANAGER` (search for `const OPERATIONS_MANAGER: RoleDefinition`)
+- `OPERATIONS` (search for `const OPERATIONS: RoleDefinition`)
+- `SERVICE` (search for `const SERVICE: RoleDefinition`)
+
+Use `grep -n "const OWNER: RoleDefinition\|const PROJECT_MANAGER: RoleDefinition\|const OPERATIONS_MANAGER: RoleDefinition\|const OPERATIONS: RoleDefinition\|const SERVICE: RoleDefinition" src/lib/roles.ts` to find starting line numbers, then edit each block's `allowedRoutes` array.
+
+This is critical — per `feedback_api_route_role_allowlist.md`, middleware returns 403 silently for routes not in the allowlist.
 
 - [ ] **Step 5: Commit**
 
@@ -1485,27 +1415,26 @@ git commit -m "feat(map): GET /api/map/markers endpoint + role allowlist"
 **Files:**
 - Modify: `src/lib/query-keys.ts`
 
-- [ ] **Step 1: Add map keys**
+- [ ] **Step 1: Add map keys to `src/lib/query-keys.ts`**
 
-Read current `src/lib/query-keys.ts` to find the pattern. Add a new root block:
+Read current `src/lib/query-keys.ts`. Add a new root block (follow the existing indentation/pattern):
 
 ```ts
 map: {
   root: ["map"] as const,
   markers: (mode: string, types: string[]) =>
-    [...queryKeys.map.root, "markers", mode, types.sort().join(",")] as const,
+    [...queryKeys.map.root, "markers", mode, types.slice().sort().join(",")] as const,
 },
 ```
 
-And update `cacheKeyToQueryKeys` (search for it in the same file) to map the SSE cache key `map:markers` to the root, plus add the upstream cascade: existing `deals:*`, `serviceTickets:*`, `zuper:*` cache-update events should also invalidate `map:markers`. Pattern mirror from `lib/service-priority-cache.ts`.
+- [ ] **Step 2: Wire SSE cascade in `cacheKeyToQueryKeys`**
 
-If `cacheKeyToQueryKeys` uses a switch/lookup table, add an entry:
+Same file. Find the `cacheKeyToQueryKeys` function (exported from `query-keys.ts`, called by `useSSE` in `src/hooks/useSSE.ts`). It maps server cache keys to the React Query keys to invalidate. Add cases so that:
 
-```ts
-"map:markers": [queryKeys.map.root],
-```
+- Incoming cache key `map:markers` → invalidates `queryKeys.map.root`
+- Incoming cache keys that start with `deals:`, `service-tickets:`, or `zuper:` → ALSO invalidate `queryKeys.map.root` (cascade)
 
-And in whatever existing keys cascade into service priority, also cascade into `map:markers`.
+Mirror the pattern from existing entries. If the function uses `startsWith` checks, add a branch; if it uses a switch, add cases. Read the existing shape first — do not guess.
 
 - [ ] **Step 2: Commit**
 
@@ -1936,7 +1865,7 @@ npm install --save-dev @types/supercluster
 ```tsx
 "use client";
 
-import { useMemo, useState, useCallback } from "react";
+import { useMemo, useState, useCallback, useEffect } from "react";
 import {
   APIProvider,
   Map,
@@ -2006,12 +1935,11 @@ function ClusteredMarkers({
     return sc;
   }, [markers]);
 
-  // Re-render on zoom/move
+  // Re-render on zoom/move — MUST come before any early return so hook order is stable
   const onChange = useCallback(() => setVersion((v) => v + 1), []);
   useMapEvent(map, "idle", onChange);
 
   if (!map) return null;
-
   const bounds = map.getBounds();
   if (!bounds) return null;
   const ne = bounds.getNorthEast();
@@ -2100,9 +2028,10 @@ function CrewMarkers({ crews }: { crews: CrewPin[] }) {
   );
 }
 
-// Helper to subscribe to a google.maps.Map event
+// Helper to subscribe to a google.maps.Map event — useEffect (NOT useMemo) so
+// cleanup runs; otherwise listeners leak on every render.
 function useMapEvent(map: google.maps.Map | null, event: string, handler: () => void) {
-  useMemo(() => {
+  useEffect(() => {
     if (!map) return;
     const l = map.addListener(event, handler);
     return () => l.remove();
