@@ -164,6 +164,12 @@ export default function AdminWorkflowsPage() {
           </p>
           <div className="flex items-center gap-2">
             <Link
+              href="/dashboards/admin/workflows/analytics"
+              className="rounded-md border border-t-border bg-surface hover:bg-surface-2 px-4 py-2 text-sm font-medium transition"
+            >
+              Analytics
+            </Link>
+            <Link
               href="/dashboards/admin/workflows/runs"
               className="rounded-md border border-t-border bg-surface hover:bg-surface-2 px-4 py-2 text-sm font-medium transition"
             >
