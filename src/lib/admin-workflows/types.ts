@@ -45,11 +45,24 @@ export interface AdminActionHandlerContext {
 export interface AdminFormField {
   key: string;
   label: string;
-  /** "text" = single-line; "textarea" = multi-line; "email" = email validation hint */
-  kind: "text" | "textarea" | "email";
+  /**
+   * Field UI kind:
+   * - "text" / "textarea" / "email": free text input
+   * - "select": single-choice dropdown; requires `options` OR `optionsFrom`
+   * - "multiselect": multi-choice dropdown; value stored as comma-separated
+   *   string or array. Supports known options + free-form additions.
+   */
+  kind: "text" | "textarea" | "email" | "select" | "multiselect";
   placeholder?: string;
   help?: string;
   required?: boolean;
+  /** Static options (for select/multiselect). */
+  options?: Array<{ value: string; label: string; group?: string }>;
+  /**
+   * URL to fetch options from at editor-load time. Response shape:
+   *   { options: Array<{ value: string; label: string; group?: string }> }
+   */
+  optionsFrom?: string;
 }
 
 export interface AdminWorkflowAction<TInput = unknown, TOutput = unknown> {

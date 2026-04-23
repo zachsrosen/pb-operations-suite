@@ -16,7 +16,13 @@ import Link from "next/link";
 
 import DashboardShell from "@/components/DashboardShell";
 
-type FieldKind = "text" | "textarea" | "email";
+type FieldKind = "text" | "textarea" | "email" | "select" | "multiselect";
+
+interface FieldOption {
+  value: string;
+  label: string;
+  group?: string;
+}
 
 interface FormField {
   key: string;
@@ -25,6 +31,8 @@ interface FormField {
   placeholder?: string;
   help?: string;
   required?: boolean;
+  options?: FieldOption[];
+  optionsFrom?: string;
 }
 
 interface ActionMeta {
@@ -532,6 +540,38 @@ export default function AdminWorkflowEditor({
   );
 }
 
+/**
+ * Module-scoped cache for options loaded via `optionsFrom` URLs.
+ * Avoids re-fetching the same endpoint every time the editor renders.
+ */
+const optionsCache = new Map<string, Promise<FieldOption[]>>();
+
+function loadOptions(url: string): Promise<FieldOption[]> {
+  const cached = optionsCache.get(url);
+  if (cached) return cached;
+  const promise = fetch(url)
+    .then((r) => r.json())
+    .then((d: { options?: FieldOption[] }) => d.options ?? [])
+    .catch(() => []);
+  optionsCache.set(url, promise);
+  return promise;
+}
+
+function useDynamicOptions(field: FormField): FieldOption[] {
+  const [dynamic, setDynamic] = useState<FieldOption[]>([]);
+  useEffect(() => {
+    if (!field.optionsFrom) return;
+    let cancelled = false;
+    loadOptions(field.optionsFrom).then((opts) => {
+      if (!cancelled) setDynamic(opts);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [field.optionsFrom]);
+  return field.optionsFrom ? dynamic : (field.options ?? []);
+}
+
 function FieldInput({
   field,
   value,
@@ -542,12 +582,15 @@ function FieldInput({
   onChange: (v: string) => void;
 }) {
   const cls = "w-full rounded-md bg-surface-2 border border-t-border px-3 py-2 text-sm";
+  const options = useDynamicOptions(field);
+
   return (
     <div>
       <label className="block text-xs text-muted mb-1">
         {field.label} {field.required ? <span className="text-red-400">*</span> : null}
       </label>
-      {field.kind === "textarea" ? (
+
+      {field.kind === "textarea" && (
         <textarea
           value={value}
           onChange={(e) => onChange(e.target.value)}
@@ -555,16 +598,164 @@ function FieldInput({
           rows={4}
           className={cls}
         />
-      ) : (
+      )}
+
+      {field.kind === "select" && (
+        <select
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className={cls}
+        >
+          <option value="">{field.placeholder ?? "— choose —"}</option>
+          {options.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.group ? `${o.group}: ${o.label}` : o.label}
+            </option>
+          ))}
+        </select>
+      )}
+
+      {field.kind === "multiselect" && (
+        <MultiselectInput
+          value={value}
+          options={options}
+          onChange={onChange}
+          placeholder={field.placeholder}
+        />
+      )}
+
+      {(field.kind === "text" || field.kind === "email") && (
         <input
-          type={field.kind === "email" ? "text" : "text"}
+          type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={field.placeholder}
           className={cls}
         />
       )}
+
       {field.help && <p className="mt-1 text-xs text-muted">{field.help}</p>}
+    </div>
+  );
+}
+
+function MultiselectInput({
+  value,
+  options,
+  onChange,
+  placeholder,
+}: {
+  value: string;
+  options: FieldOption[];
+  onChange: (v: string) => void;
+  placeholder?: string;
+}) {
+  // Value is stored as a comma-separated string to match existing schema
+  // behavior. The Zod preprocess on the server splits it to array.
+  const selected = value
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  function toggle(optValue: string) {
+    const set = new Set(selected);
+    if (set.has(optValue)) set.delete(optValue);
+    else set.add(optValue);
+    onChange([...set].join(","));
+  }
+
+  const grouped: Record<string, FieldOption[]> = {};
+  for (const o of options) {
+    const g = o.group ?? "";
+    if (!grouped[g]) grouped[g] = [];
+    grouped[g].push(o);
+  }
+  const groupNames = Object.keys(grouped);
+
+  return (
+    <div className="space-y-2">
+      {/* Selected chips */}
+      <div className="flex flex-wrap gap-1 min-h-[1.75rem]">
+        {selected.length === 0 ? (
+          <span className="text-xs text-muted italic">
+            {placeholder ?? "None selected — fires on any value"}
+          </span>
+        ) : (
+          selected.map((v) => {
+            const opt = options.find((o) => o.value === v);
+            return (
+              <span
+                key={v}
+                className="inline-flex items-center gap-1 rounded bg-purple-500/20 text-purple-200 px-2 py-0.5 text-xs"
+              >
+                {opt ? opt.label : v}
+                <button
+                  type="button"
+                  onClick={() => toggle(v)}
+                  className="text-purple-300 hover:text-purple-100"
+                  aria-label={`Remove ${v}`}
+                >
+                  ×
+                </button>
+              </span>
+            );
+          })
+        )}
+      </div>
+
+      {/* Option list */}
+      {options.length === 0 ? (
+        <p className="text-xs text-muted italic">Loading options…</p>
+      ) : (
+        <div className="rounded-md border border-t-border bg-surface-2 p-2 max-h-48 overflow-y-auto">
+          {groupNames.map((g) => (
+            <div key={g || "_"} className="mb-1 last:mb-0">
+              {g && (
+                <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-1">{g}</p>
+              )}
+              <div className="space-y-1">
+                {grouped[g].map((o) => {
+                  const checked = selected.includes(o.value);
+                  return (
+                    <label
+                      key={o.value}
+                      className="flex items-center gap-2 text-sm cursor-pointer hover:bg-surface-elevated rounded px-1 py-0.5"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggle(o.value)}
+                      />
+                      <span className="flex-1">{o.label}</span>
+                      <span className="text-xs text-zinc-500 font-mono">{o.value}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Free-form add */}
+      <div className="flex items-center gap-2 text-xs">
+        <span className="text-muted">Add custom value:</span>
+        <input
+          type="text"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              const v = (e.target as HTMLInputElement).value.trim();
+              if (v && !selected.includes(v)) {
+                onChange([...selected, v].join(","));
+                (e.target as HTMLInputElement).value = "";
+              }
+              e.preventDefault();
+            }
+          }}
+          placeholder="Type ID, press Enter"
+          className="flex-1 rounded bg-surface-2 border border-t-border px-2 py-1"
+        />
+      </div>
     </div>
   );
 }
