@@ -52,6 +52,7 @@ export interface IdrItem {
   driveFolderUrl: string | null;
   surveyFolderUrl: string | null;
   designFolderUrl: string | null;
+  salesFolderUrl: string | null;
   ahj: string | null;
   utilityCompany: string | null;
   openSolarUrl: string | null;
@@ -76,6 +77,7 @@ export interface IdrItem {
   salesChangeNotes: string | null;
   opsChangeNotes: string | null;
   customerNotes: string | null;
+  customerNotesCreateTask: boolean;
   operationsNotes: string | null;
   designNotes: string | null;
   conclusion: string | null;

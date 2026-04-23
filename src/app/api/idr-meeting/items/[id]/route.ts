@@ -8,7 +8,7 @@ const EDITABLE_FIELDS = [
   "difficulty", "installerCount", "installerDays", "electricianCount",
   "electricianDays", "discoReco", "interiorAccess", "needsSurveyInfo",
   "needsResurvey", "salesChangeRequested", "salesChangeNotes", "opsChangeNotes",
-  "customerNotes",
+  "customerNotes", "customerNotesCreateTask",
   "operationsNotes", "designNotes", "conclusion", "sortOrder",
   "escalationReason", "type", "reviewed", "shitShowFlagged", "shitShowReason",
   // Adders
@@ -138,6 +138,7 @@ export async function DELETE(
           salesChangeNotes: item.salesChangeNotes,
           opsChangeNotes: item.opsChangeNotes,
           customerNotes: item.customerNotes,
+          customerNotesCreateTask: item.customerNotesCreateTask,
           operationsNotes: item.operationsNotes,
           designNotes: item.designNotes,
           conclusion: item.conclusion,

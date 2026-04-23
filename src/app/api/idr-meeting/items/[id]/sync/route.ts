@@ -7,6 +7,8 @@ import {
   buildHubSpotNoteBody,
   pushDealProperties,
   createDealTimelineNote,
+  createDealTask,
+  resolvePmOwnerIdForDeal,
   serializeAdderSummary,
 } from "@/lib/idr-meeting";
 import { appCache } from "@/lib/cache";
@@ -102,7 +104,24 @@ export async function POST(
     noteWarning = "Properties saved but timeline note failed. Retrying later may help.";
   }
 
-  // C) Update sync status
+  // C) Optional PM task with customer notes (best-effort — failure doesn't fail the sync)
+  let taskWarning: string | null = null;
+  if (item.customerNotesCreateTask && item.customerNotes && item.customerNotes.trim()) {
+    try {
+      const pmOwnerId = await resolvePmOwnerIdForDeal(item.dealId);
+      await createDealTask(
+        item.dealId,
+        `IDR: Customer notes — ${item.dealName}`,
+        item.customerNotes,
+        pmOwnerId,
+      );
+    } catch (err) {
+      console.error(`[idr-meeting] PM task create failed for deal ${item.dealId}:`, err);
+      taskWarning = "Synced, but PM task creation failed.";
+    }
+  }
+
+  // D) Update sync status
   await prisma.idrMeetingItem.update({
     where: { id },
     data: {
@@ -117,5 +136,6 @@ export async function POST(
   return NextResponse.json({
     hubspotSyncStatus: "SYNCED",
     noteWarning,
+    taskWarning,
   });
 }
