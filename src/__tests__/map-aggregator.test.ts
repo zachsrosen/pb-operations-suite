@@ -150,3 +150,66 @@ describe("buildInstallMarkers", () => {
     expect(unplaced[0].reason).toBe("missing-address");
   });
 });
+
+import { buildServiceMarkers } from "@/lib/map-aggregator";
+
+describe("buildServiceMarkers", () => {
+  beforeEach(() => {
+    mockFindFirst.mockReset();
+    mockLiveGeocode.mockReset();
+  });
+
+  const sampleZuperJob = {
+    job_uid: "zuper-abc",
+    job_title: "Inverter replacement",
+    scheduled_start_date_time: "2026-04-23T15:00:00.000Z",
+    customer: {
+      customer_address: {
+        street: "4820 Gunbarrel Ave",
+        city: "Boulder",
+        state: "CO",
+        zip_code: "80301",
+      },
+    },
+    current_job_status: { status_name: "In Progress" },
+    assigned_to: [{ user_uid: "user-1" }],
+  };
+
+  it("normalizes scheduled Zuper job as scheduled service marker", async () => {
+    mockFindFirst.mockResolvedValue({ latitude: 40.01, longitude: -105.25 });
+    const { markers } = await buildServiceMarkers(
+      [sampleZuperJob as any],
+      { today: new Date("2026-04-23") }
+    );
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({
+      id: "zuperjob:zuper-abc",
+      kind: "service",
+      scheduled: true,
+      zuperJobUid: "zuper-abc",
+      crewId: "user-1",
+    });
+  });
+
+  it("drops Zuper job with unresolvable address", async () => {
+    mockFindFirst.mockResolvedValue(null);
+    mockLiveGeocode.mockResolvedValue(null);
+    const { markers, unplaced } = await buildServiceMarkers(
+      [sampleZuperJob as any],
+      { today: new Date("2026-04-23") }
+    );
+    expect(markers).toHaveLength(0);
+    expect(unplaced).toHaveLength(1);
+    expect(unplaced[0].reason).toBe("geocode-failed");
+  });
+
+  it("handles Zuper job with missing customer address", async () => {
+    const noAddress = { ...sampleZuperJob, customer: {} };
+    const { markers, unplaced } = await buildServiceMarkers(
+      [noAddress as any],
+      { today: new Date("2026-04-23") }
+    );
+    expect(markers).toHaveLength(0);
+    expect(unplaced[0].reason).toBe("missing-address");
+  });
+});

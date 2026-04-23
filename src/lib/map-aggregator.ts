@@ -124,3 +124,71 @@ function formatInstallSubtitle(p: Project): string {
     : "";
   return when;
 }
+
+export interface ZuperJobInput {
+  job_uid: string;
+  job_title?: string;
+  scheduled_start_date_time?: string;
+  customer?: {
+    customer_address?: {
+      street?: string;
+      city?: string;
+      state?: string;
+      zip_code?: string;
+    };
+  };
+  current_job_status?: { status_name?: string };
+  assigned_to?: Array<{ user_uid?: string }>;
+}
+
+export async function buildServiceMarkers(
+  jobs: ZuperJobInput[],
+  _opts: { today: Date }
+): Promise<BuildResult> {
+  const markers: JobMarker[] = [];
+  const unplaced: UnplacedMarker[] = [];
+
+  // Zuper jobs = scheduled service markers (Phase 1 scope)
+  for (const job of jobs) {
+    const ca = job.customer?.customer_address;
+    const address = {
+      street: ca?.street ?? "",
+      city: ca?.city ?? "",
+      state: ca?.state ?? "",
+      zip: ca?.zip_code ?? "",
+    };
+    const id = `zuperjob:${job.job_uid}`;
+    const title = job.job_title || `Service job ${job.job_uid}`;
+
+    if (!address.street || !address.city || !address.state || !address.zip) {
+      unplaced.push({ id, kind: "service", title, address, reason: "missing-address" });
+      continue;
+    }
+    const coords = await resolveAddressCoords(address);
+    if (!coords) {
+      unplaced.push({ id, kind: "service", title, address, reason: "geocode-failed" });
+      continue;
+    }
+    markers.push({
+      id,
+      kind: "service",
+      scheduled: true,
+      lat: coords.lat,
+      lng: coords.lng,
+      address,
+      title,
+      subtitle: job.scheduled_start_date_time
+        ? new Date(job.scheduled_start_date_time).toLocaleTimeString("en-US", {
+            hour: "numeric",
+            minute: "2-digit",
+          })
+        : undefined,
+      status: job.current_job_status?.status_name,
+      scheduledAt: job.scheduled_start_date_time,
+      crewId: job.assigned_to?.[0]?.user_uid,
+      zuperJobUid: job.job_uid,
+    });
+  }
+
+  return { markers, unplaced };
+}
