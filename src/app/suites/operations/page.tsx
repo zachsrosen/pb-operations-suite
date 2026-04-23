@@ -2,7 +2,7 @@ import SuitePageShell, { type SuitePageCard } from "@/components/SuitePageShell"
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-utils";
 
-const LINKS: SuitePageCard[] = [
+const BASE_LINKS: SuitePageCard[] = [
   // ── Scheduling & Planning ──
   {
     href: "/dashboards/scheduler",
@@ -12,6 +12,14 @@ const LINKS: SuitePageCard[] = [
     icon: "📅",
     section: "Scheduling & Planning",
     hardNavigate: true,
+  },
+  {
+    href: "/dashboards/map",
+    title: "Jobs Map",
+    description: "Map of scheduled and unscheduled work with crew positions and proximity insights.",
+    tag: "MAP",
+    icon: "🗺️",
+    section: "Scheduling & Planning",
   },
   {
     href: "/dashboards/forecast-schedule",
@@ -182,6 +190,10 @@ const LINKS: SuitePageCard[] = [
     section: "Communications",
   },
 ];
+
+const LINKS: SuitePageCard[] = BASE_LINKS.filter(
+  (l) => l.href !== "/dashboards/map" || process.env.NEXT_PUBLIC_UI_MAP_VIEW_ENABLED !== "false",
+);
 
 export default async function OperationsSuitePage() {
   const user = await getCurrentUser();
