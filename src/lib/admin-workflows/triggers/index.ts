@@ -224,11 +224,53 @@ export const cronTrigger: AdminWorkflowTrigger<z.infer<typeof cronConfigSchema>>
 // Registry
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Custom event
+// ---------------------------------------------------------------------------
+
+const customEventConfigSchema = z.object({
+  /**
+   * Name the emitter will use when calling emitAdminWorkflowCustomEvent.
+   * Example: "pb/invoice.overdue"
+   */
+  eventName: z.string().min(1),
+});
+
+export const customEventTrigger: AdminWorkflowTrigger<z.infer<typeof customEventConfigSchema>> = {
+  kind: "CUSTOM_EVENT",
+  name: "Custom event",
+  description:
+    "Fires when app code calls emitAdminWorkflowCustomEvent(name, data). Use for integrating arbitrary internal actions with workflows.",
+  fields: [
+    {
+      key: "eventName",
+      label: "Event name",
+      kind: "text",
+      placeholder: "pb/invoice.overdue",
+      help:
+        "Unique name. Emitters pass this to emitAdminWorkflowCustomEvent(). The event's data becomes triggerContext for actions.",
+      required: true,
+    },
+  ],
+  configSchema: customEventConfigSchema,
+  match: ({ config, rawEvent }) => {
+    const emittedName = String(rawEvent.eventName ?? "");
+    if (emittedName !== config.eventName) return null;
+    const data = (rawEvent.data ?? {}) as Record<string, unknown>;
+    return { ...data, __customEventName: emittedName };
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Registry
+// ---------------------------------------------------------------------------
+
 export const TRIGGERS: AdminWorkflowTrigger[] = [
   manualTrigger,
   hubspotPropertyTrigger,
   zuperPropertyTrigger,
   cronTrigger,
+  customEventTrigger,
 ] as AdminWorkflowTrigger[];
 
 export function getTriggerByKind(
