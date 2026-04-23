@@ -9,7 +9,7 @@ import {
   computeReadinessBadge,
   getReturningDealIds,
   buildOwnerMap,
-  locationsForBucket,
+  locationInBucket,
   SNAPSHOT_PROPERTIES,
   type LocationBucket,
 } from "@/lib/idr-meeting";
@@ -53,11 +53,8 @@ export async function POST(req: NextRequest) {
   // Parse optional location bucket. Defaults to "all" (pre-existing behavior).
   const body = await req.json().catch(() => ({})) as { bucket?: LocationBucket };
   const bucket: LocationBucket = body.bucket ?? "all";
-  const bucketLocations = locationsForBucket(bucket); // [] when bucket === "all"
-  const matchesBucket = (pbLocation: string | null | undefined): boolean => {
-    if (bucketLocations.length === 0) return true; // no filter
-    return pbLocation != null && bucketLocations.includes(pbLocation);
-  };
+  const matchesBucket = (pbLocation: string | null | undefined): boolean =>
+    locationInBucket(pbLocation, bucket);
 
   // Fetch deals early so dedupe can inspect in-region overlap with any
   // existing today session. Also used below if we fall through to create.
@@ -83,8 +80,8 @@ export async function POST(req: NextRequest) {
     include: { items: { select: { region: true } } },
   });
   if (existingToday) {
-    const overlapsBucket = bucketLocations.length === 0
-      || existingToday.items.some((i) => bucketLocations.includes(i.region));
+    const overlapsBucket = bucket === "all"
+      || existingToday.items.some((i) => locationInBucket(i.region, bucket));
     if (overlapsBucket) {
       // strip items before returning (keep the response shape lean)
       const { items: _ignore, ...sessionRow } = existingToday;
