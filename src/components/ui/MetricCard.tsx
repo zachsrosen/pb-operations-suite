@@ -38,7 +38,7 @@ export const StatCard = memo(function StatCard({
       {value === null ? (
         <div className="h-9 w-20 bg-skeleton rounded animate-pulse mb-1" />
       ) : (
-        <div key={String(value)} className="text-4xl font-bold text-foreground mb-1 animate-value-flash">
+        <div key={String(value)} className="text-3xl xl:text-4xl font-bold text-foreground mb-1 tracking-tight tabular-nums animate-value-flash">
           {value}
         </div>
       )}
