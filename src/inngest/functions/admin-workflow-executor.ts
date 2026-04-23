@@ -23,6 +23,7 @@ import {
   inngest,
 } from "@/lib/inngest-client";
 import { prisma } from "@/lib/db";
+import { sendEmailMessage } from "@/lib/email";
 import { getActionByKind } from "@/lib/admin-workflows/actions";
 import {
   delayInputsSchema,
@@ -30,6 +31,17 @@ import {
   isControlFlowKind,
   stopIfInputsSchema,
 } from "@/lib/admin-workflows/control-flow";
+
+const FAILURE_ALERT_RECIPIENT =
+  process.env.ADMIN_WORKFLOWS_FAILURE_ALERT_EMAIL ?? "ops@photonbrothers.com";
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
 interface WorkflowDefinition {
   steps: Array<{
@@ -133,11 +145,17 @@ export const adminWorkflowExecutor = inngest.createFunction(
     const previousOutputs: Record<string, unknown> = {};
     const startedAt = Date.now();
     let stoppedEarly: { byStepId: string; reason: string } | null = null;
+    let failedStep: string | null = null;
+    let failureError: string | null = null;
 
     // ── Execute steps in order ──
+    // Wrap the loop so step failures mark the run FAILED + fire an alert
+    // before the exception bubbles up to Inngest for retry/final-fail.
+    try {
     for (const stepDef of definition.steps) {
       // Resolve template expressions (needs outputs captured so far)
       const resolvedInputs = resolveInputs(stepDef.inputs, triggerContext, previousOutputs);
+      failedStep = stepDef.id;
 
       // ── Control-flow kinds are handled specially ──
       if (isControlFlowKind(stepDef.kind)) {
@@ -189,6 +207,61 @@ export const adminWorkflowExecutor = inngest.createFunction(
       );
 
       previousOutputs[stepDef.id] = output;
+    }
+    failedStep = null;
+    } catch (err) {
+      failureError = err instanceof Error ? err.message : String(err);
+
+      // Persist failure immediately so the run page reflects it even if
+      // Inngest retries (next attempt will overwrite on success or re-fail).
+      await step.run("mark-failed", async () => {
+        return prisma!.adminWorkflowRun.update({
+          where: { id: runId },
+          data: {
+            status: "FAILED",
+            errorMessage: `Step ${failedStep ?? "?"}: ${failureError}`.slice(0, 2000),
+            durationMs: Date.now() - startedAt,
+            completedAt: new Date(),
+            result: { outputs: previousOutputs, failedStep, failureError } as object,
+          },
+        });
+      });
+
+      // Fire a failure alert (best-effort). We deliberately do NOT gate on
+      // attempt count — getting one email per attempt is acceptable and
+      // simpler than juggling Inngest's retry state here. Admins can mute
+      // by setting ADMIN_WORKFLOWS_FAILURE_ALERT_EMAIL="" to disable.
+      if (FAILURE_ALERT_RECIPIENT) {
+        await step.run("send-failure-alert", async () => {
+          const subject = `[Admin Workflow] ${workflow.name} failed at step ${failedStep ?? "?"}`;
+          const body = [
+            `<p><strong>${workflow.name}</strong> failed.</p>`,
+            `<ul>`,
+            `<li>Run: <code>${runId}</code></li>`,
+            `<li>Failed step: <code>${failedStep ?? "?"}</code></li>`,
+            `<li>Triggered by: ${triggeredByEmail}</li>`,
+            `</ul>`,
+            `<p><strong>Error:</strong></p>`,
+            `<pre style="background:#f5f5f5;padding:8px;border-radius:4px;">${escapeHtml(failureError ?? "")}</pre>`,
+            `<p>Run detail: https://www.pbtechops.com/dashboards/admin/workflows/runs/${runId}</p>`,
+          ].join("\n");
+          try {
+            await sendEmailMessage({
+              to: FAILURE_ALERT_RECIPIENT,
+              subject,
+              html: body,
+              text: `${workflow.name} failed at step ${failedStep}: ${failureError}`,
+              debugFallbackTitle: `AdminWorkflow ${workflowId} failure`,
+              debugFallbackBody: `Run ${runId} failed`,
+            });
+          } catch (alertErr) {
+            console.error("[admin-workflow-executor] Alert send failed:", alertErr);
+          }
+          return { alerted: true };
+        });
+      }
+
+      throw err; // let Inngest handle retry / final-fail
     }
 
     // ── Mark run succeeded ──

@@ -155,9 +155,11 @@ export const zuperPropertyTrigger: AdminWorkflowTrigger<z.infer<typeof zuperProp
     },
     {
       key: "propertyValuesIn",
-      label: "Only fire when value is one of (comma-separated)",
-      kind: "text",
-      help: "Leave blank to fire on any change. Enter Zuper values as they appear in webhooks.",
+      label: "Only fire when value is one of",
+      kind: "multiselect",
+      help:
+        "Leave blank to fire on any change. Known Zuper values shown for common fields (status / category / priority). For custom fields, use 'Add custom value'.",
+      optionsFrom: "/api/admin/workflows/zuper-property-options?propertyName={{propertyName}}",
     },
   ],
   configSchema: zuperPropertyConfigSchema,
