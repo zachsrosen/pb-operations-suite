@@ -147,6 +147,14 @@ export const queryKeys = {
       [...queryKeys.permitHub.root, "draft", dealId, actionKind] as const,
     todayCount: () => [...queryKeys.permitHub.root, "today-count"] as const,
   },
+  icHub: {
+    root: ["ic-hub"] as const,
+    queue: () => [...queryKeys.icHub.root, "queue"] as const,
+    project: (dealId: string) => [...queryKeys.icHub.root, "project", dealId] as const,
+    draft: (dealId: string, actionKind: string) =>
+      [...queryKeys.icHub.root, "draft", dealId, actionKind] as const,
+    todayCount: () => [...queryKeys.icHub.root, "today-count"] as const,
+  },
   comms: {
     root: ["comms"] as const,
     messages: (filters?: Record<string, string>) =>
@@ -218,6 +226,8 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("office-performance")) return [queryKeys.officePerformance.root];
   if (serverKey.startsWith("idr-meeting")) return [queryKeys.idrMeeting.root];
   if (serverKey.startsWith("deals:permit")) return [queryKeys.permitHub.root];
+  if (serverKey.startsWith("deals:ic") || serverKey.startsWith("deals:interconnection"))
+    return [queryKeys.icHub.root];
   if (serverKey.startsWith("on-call")) return [queryKeys.onCall.root];
   return [];
 }
