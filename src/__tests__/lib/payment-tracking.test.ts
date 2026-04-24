@@ -774,6 +774,36 @@ describe("deriveReadyToInvoice", () => {
     );
     expect(result.find((r) => r.milestone === "pto")).toBeUndefined();
   });
+
+  it("excludes deal when DA milestone already Paid In Full on deal property (no invoice needed)", () => {
+    const result = deriveReadyToInvoice(
+      [
+        makeDeal({
+          isDesignApproved: true,
+          designApprovalDate: "2026-04-13",
+          daStatus: "Paid In Full",
+        }),
+      ],
+      asOf
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  it("excludes PE M1 when property says Paid even without invoice (data-quality issue, not ready-to-invoice)", () => {
+    const result = deriveReadyToInvoice(
+      [
+        makeDeal({
+          isPE: true,
+          isInspectionPassed: true,
+          inspectionPassedDate: "2026-04-13",
+          peM1Status: "Paid", // already paid per property — not ready-to-invoice
+          peM1Amount: 300,
+        }),
+      ],
+      asOf
+    );
+    expect(result.find((r) => r.milestone === "peM1")).toBeUndefined();
+  });
 });
 
 describe("deriveAccountsReceivable", () => {

@@ -377,11 +377,11 @@ function reconcileMoneyWithInvoices(deal: PaymentTrackingDeal): void {
   const customerInvoicedBilled =
     (deal.invoices?.da?.amountBilled ?? 0) +
     (deal.invoices?.cc?.amountBilled ?? 0) +
-    (deal.invoices?.pto?.amountBilled ?? 0);
+    (deal.isPE ? 0 : deal.invoices?.pto?.amountBilled ?? 0);
   const customerInvoicedBalance =
     Math.max(0, deal.invoices?.da?.balanceDue ?? 0) +
     Math.max(0, deal.invoices?.cc?.balanceDue ?? 0) +
-    Math.max(0, deal.invoices?.pto?.balanceDue ?? 0);
+    (deal.isPE ? 0 : Math.max(0, deal.invoices?.pto?.balanceDue ?? 0));
 
   // PE-side: PE pays a portion of the same contract (NOT additional revenue).
   let peInvoicedBalance = 0;

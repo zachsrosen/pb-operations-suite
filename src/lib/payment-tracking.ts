@@ -510,12 +510,15 @@ function entryBase(deal: PaymentTrackingDeal) {
 }
 
 /**
- * Derive "Ready to Invoice" entries — milestones whose work trigger is met
- * AND no invoice is attached yet. One entry per (deal, milestone).
+ * Derive "Ready to Invoice" entries — milestones whose work trigger is met,
+ * NOT already marked paid on the deal property, AND no invoice attached yet.
  *
  * PE deals do NOT include PTO (PE pays via M1/M2 instead).
  * PE M1/M2 require `pe_m?_status ∈ {Approved, Paid}` — a Submitted/Rejected
  * milestone is an ops issue, not an accounting-ready-to-invoice signal.
+ * If PE M1/M2 is already "Paid" on the deal property without an invoice,
+ * that's a data-quality issue (surfaces in derivePaymentDataMismatch), not a
+ * ready-to-invoice signal.
  */
 export function deriveReadyToInvoice(
   deals: PaymentTrackingDeal[],
@@ -528,7 +531,11 @@ export function deriveReadyToInvoice(
       dealStage: deal.dealStage,
       dealStageLabel: deal.dealStageLabel,
     };
-    if (deal.isDesignApproved && !deal.invoices?.da) {
+    if (
+      deal.isDesignApproved &&
+      !deal.invoices?.da &&
+      deal.daStatus !== "Paid In Full"
+    ) {
       out.push({
         ...base,
         milestone: "da",
@@ -537,7 +544,11 @@ export function deriveReadyToInvoice(
         expectedAmount: deal.daAmount,
       });
     }
-    if (deal.isConstructionComplete && !deal.invoices?.cc) {
+    if (
+      deal.isConstructionComplete &&
+      !deal.invoices?.cc &&
+      deal.ccStatus !== "Paid In Full"
+    ) {
       out.push({
         ...base,
         milestone: "cc",
@@ -546,7 +557,12 @@ export function deriveReadyToInvoice(
         expectedAmount: deal.ccAmount,
       });
     }
-    if (!deal.isPE && deal.isPtoGranted && !deal.invoices?.pto) {
+    if (
+      !deal.isPE &&
+      deal.isPtoGranted &&
+      !deal.invoices?.pto &&
+      deal.ptoStatus !== "Paid In Full"
+    ) {
       out.push({
         ...base,
         milestone: "pto",
@@ -558,7 +574,7 @@ export function deriveReadyToInvoice(
     if (
       deal.isPE &&
       deal.isInspectionPassed &&
-      (deal.peM1Status === "Approved" || deal.peM1Status === "Paid") &&
+      deal.peM1Status === "Approved" && // Paid excluded — that's not "ready to invoice"
       !deal.invoices?.peM1
     ) {
       out.push({
@@ -572,7 +588,7 @@ export function deriveReadyToInvoice(
     if (
       deal.isPE &&
       deal.isPtoGranted &&
-      (deal.peM2Status === "Approved" || deal.peM2Status === "Paid") &&
+      deal.peM2Status === "Approved" &&
       !deal.invoices?.peM2
     ) {
       out.push({
