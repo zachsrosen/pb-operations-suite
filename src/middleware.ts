@@ -51,6 +51,7 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/compliance-shadow-cleanup", // Compliance v2 shadow table TTL cleanup — CRON_SECRET validated in route
   "/api/cron/permit-hub-drafts-cleanup", // Permit Hub draft TTL cleanup — CRON_SECRET validated in route
   "/api/cron/permit-hub-inbox-probe", // On-demand shared-inbox diagnostic — CRON_SECRET validated in route
+  "/api/admin/shared-inbox/callback", // Google OAuth callback — state-HMAC validated in route (not session-authed)
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed", "/api/install-review", "/api/zuper/sync-cache"] as const;
 
