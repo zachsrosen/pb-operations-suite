@@ -31,9 +31,15 @@ import {
   INCLUDED_PIPELINES,
   PI_LEADS,
 } from "@/lib/daily-focus/config";
-import { buildOwnerMap } from "@/lib/idr-meeting";
+import { buildOwnerMap, locationInBucket } from "@/lib/idr-meeting";
 import { buildStageDisplayMap } from "@/lib/daily-focus/format";
 import { getHubSpotDealUrl } from "@/lib/external-links";
+import {
+  buildGmailThreadQuery,
+  fetchSharedInboxThreads,
+  getSharedInboxAddress,
+  type SharedInboxThread,
+} from "@/lib/gmail-shared-inbox";
 
 /**
  * HubSpot owner ID → permit lead name.
@@ -164,6 +170,12 @@ export interface PermitProjectDetail {
   /** @deprecated use deal.designFolderUrl instead (kept for planset tab backcompat) */
   plansetFolderUrl: string | null;
   correspondenceSearchUrl: string | null;
+  /** Recent threads from the region's shared permit inbox — empty when
+   *  not configured, service account misconfigured, or no matching threads. */
+  correspondenceThreads: SharedInboxThread[];
+  /** Which shared inbox the threads came from — shown to Peter so he knows
+   *  which mailbox was searched. Null when no thread fetch was attempted. */
+  correspondenceInbox: string | null;
   statusHistory: Array<{
     property: string;
     value: string | null;
@@ -393,6 +405,35 @@ export async function fetchPermitProjectDetail(
   const correspondenceSearchUrl =
     ahjEmail && fullAddress ? buildGmailSearchUrl(ahjEmail, fullAddress) : null;
 
+  // Region routing for the shared permit inbox fetch. Bucket uses the
+  // same CO/CA definition idr-meeting uses (Westminster/Centennial/COSP
+  // → CO; SLO/Camarillo → CA). Deals in an unrecognized location get
+  // no thread fetch (correspondenceInbox = null).
+  let correspondenceInbox: string | null = null;
+  let correspondenceThreads: SharedInboxThread[] = [];
+  if (ahjEmail || props.address_line_1) {
+    const pbLoc = props.pb_location;
+    let region: "co" | "ca" | null = null;
+    if (locationInBucket(pbLoc, "colorado")) region = "co";
+    else if (locationInBucket(pbLoc, "california")) region = "ca";
+
+    if (region) {
+      const mailbox = getSharedInboxAddress("permit", region);
+      if (mailbox) {
+        correspondenceInbox = mailbox;
+        correspondenceThreads = await fetchSharedInboxThreads({
+          mailbox,
+          query: buildGmailThreadQuery({
+            ahjEmail,
+            address: props.address_line_1,
+            lookbackDays: 90,
+          }),
+          maxThreads: 10,
+        });
+      }
+    }
+  }
+
   const designFolderUrl =
     props.design_documents ??
     props.design_folder_url ??
@@ -439,6 +480,8 @@ export async function fetchPermitProjectDetail(
     ahj,
     plansetFolderUrl,
     correspondenceSearchUrl,
+    correspondenceThreads,
+    correspondenceInbox,
     statusHistory,
     activity,
   };
