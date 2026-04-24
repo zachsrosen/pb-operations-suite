@@ -7,6 +7,7 @@
 import type {
   DaStatus,
   HubSpotDealPaymentProps,
+  InvoiceSummary,
   PaymentBucket,
   PaymentStatusGroup,
   PaymentTrackingDeal,
@@ -76,6 +77,40 @@ function daysBetween(a: Date, b: Date): number {
   return ms / (1000 * 60 * 60 * 24);
 }
 
+/** Effective paid status for a milestone — invoice-first, deal-property fallback.
+ *
+ * "customer" milestones use DA/CC/PTO status enum ("Paid In Full").
+ * "pe" milestones use PE status enum ("Paid").
+ *
+ * Returns:
+ *   "paid"            — invoice.balanceDue === 0 AND invoice.status indicates paid,
+ *                       OR no invoice + deal property says paid
+ *   "invoiced_unpaid" — invoice attached, balanceDue > 0, status active
+ *   "not_invoiced"    — no invoice AND deal property does not say paid,
+ *                       OR invoice attached with voided/cancelled/draft status
+ */
+export type EffectivePaidStatus = "paid" | "invoiced_unpaid" | "not_invoiced";
+
+export const PAID_INVOICE_STATUSES = new Set(["paid"]);
+export const IGNORED_INVOICE_STATUSES = new Set(["voided", "cancelled", "draft"]);
+
+export function effectivePaidStatus(
+  side: "customer" | "pe",
+  invoice: InvoiceSummary | undefined,
+  propertyStatus: string | null
+): EffectivePaidStatus {
+  if (invoice) {
+    const status = (invoice.status ?? "").toLowerCase();
+    if (IGNORED_INVOICE_STATUSES.has(status)) return "not_invoiced";
+    if (invoice.balanceDue === 0 && PAID_INVOICE_STATUSES.has(status)) return "paid";
+    return "invoiced_unpaid";
+  }
+  if (side === "customer") {
+    return propertyStatus === "Paid In Full" ? "paid" : "not_invoiced";
+  }
+  return propertyStatus === "Paid" ? "paid" : "not_invoiced";
+}
+
 /**
  * Bucketing core. Exported separately so tests can exercise it without a full
  * deal fixture, and so the transform can call it with derived fields.
@@ -106,78 +141,72 @@ export function computeBucket(args: {
   isConstructionComplete?: boolean;
   isInspectionPassed?: boolean;
   isPtoGranted?: boolean;
+  // Attached invoice records — invoice-first bucketing. Falls back to deal
+  // property when a milestone has no invoice attached.
+  invoices?: PaymentTrackingDeal["invoices"];
 }): { bucket: PaymentBucket; attentionReasons: string[] } {
   const reasons: string[] = [];
   const close = args.closeDate ? new Date(args.closeDate) : null;
   const daysSinceClose = close ? daysBetween(args.asOf, close) : 0;
 
+  // Invoice-first effective statuses (falls back to deal property when no invoice).
+  const daEff = effectivePaidStatus("customer", args.invoices?.da, args.daStatus);
+  const ccEff = effectivePaidStatus("customer", args.invoices?.cc, args.ccStatus);
+  const ptoEff = effectivePaidStatus("customer", args.invoices?.pto, args.ptoStatus);
+  const peM1Eff = effectivePaidStatus("pe", args.invoices?.peM1, args.peM1Status);
+  const peM2Eff = effectivePaidStatus("pe", args.invoices?.peM2, args.peM2Status);
+
   // Rule 1: attention. PE M1/M2 "Rejected" means PE rejected our DOCUMENTS
   // — that's an ops/turnover issue, NOT an accounting issue. Accounting
   // only cares about invoice paid/unpaid status. Skip those signals here.
   if (close && daysSinceClose > 30) {
-    if (args.daStatus === "Open") reasons.push("DA Open >30 days past close");
-    if (args.ccStatus === "Open") reasons.push("CC Open >30 days past close");
-    if (args.ptoStatus === "Open") reasons.push("PTO Open >30 days past close");
+    if (daEff !== "paid" && args.daStatus === "Open") reasons.push("DA Open >30 days past close");
+    if (ccEff !== "paid" && args.ccStatus === "Open") reasons.push("CC Open >30 days past close");
+    if (ptoEff !== "paid" && args.ptoStatus === "Open") reasons.push("PTO Open >30 days past close");
   }
   // Post-install and CC not paid (not already covered by >30 day rule)
   if (
     args.dealStage &&
     POST_INSTALL_STAGES.has(args.dealStage) &&
-    args.ccStatus !== "Paid In Full" &&
-    args.daStatus === "Paid In Full" &&
+    ccEff !== "paid" &&
+    daEff === "paid" &&
     !reasons.some((r) => r.startsWith("CC Open"))
   ) {
     reasons.push("Post-install, CC not paid");
   }
-  // (Removed: "PE M1 Paid >14 days, M2 not submitted" — that's an ops
-  // workflow issue, not an accounting payment-collection concern.)
 
   // "Ready to invoice but not invoiced" — work milestone has been hit but
-  // accounting hasn't issued the invoice yet (status not Paid In Full / Paid).
-  // These are the most actionable signals on the page: someone needs to bill.
-  if (args.isDesignApproved && args.daStatus !== "Paid In Full") {
+  // accounting hasn't issued the invoice yet.
+  if (args.isDesignApproved && daEff !== "paid") {
     reasons.push("Design approved — DA invoice not paid");
   }
-  if (args.isConstructionComplete && args.ccStatus !== "Paid In Full") {
+  if (args.isConstructionComplete && ccEff !== "paid") {
     reasons.push("Construction complete — CC invoice not paid");
   }
   // PTO only applies to non-PE deals.
-  if (!args.isPE && args.isPtoGranted && args.ptoStatus !== "Paid In Full") {
+  if (!args.isPE && args.isPtoGranted && ptoEff !== "paid") {
     reasons.push("PTO granted — PTO invoice not paid");
   }
   // PE statuses: "Approved" means PE has signed off on our docs but we
   // haven't been paid. "Paid" means money has arrived. Anything else is
   // upstream (Submitted / Resubmitted) so not yet ready to invoice.
-  if (args.isPE && args.isInspectionPassed && args.peM1Status === "Approved") {
+  if (args.isPE && args.isInspectionPassed && args.peM1Status === "Approved" && peM1Eff !== "paid") {
     reasons.push("Inspection passed + PE approved M1 — M1 not paid");
   }
-  if (args.isPE && args.isPtoGranted && args.peM2Status === "Approved") {
+  if (args.isPE && args.isPtoGranted && args.peM2Status === "Approved" && peM2Eff !== "paid") {
     reasons.push("PTO granted + PE approved M2 — M2 not paid");
   }
 
   if (reasons.length > 0) return { bucket: "attention", attentionReasons: reasons };
 
-  // Rule 2
-  if (args.daStatus !== "Paid In Full") {
-    return { bucket: "awaiting_m1", attentionReasons: [] };
-  }
-  // Rule 3
-  if (args.ccStatus !== "Paid In Full") {
-    return { bucket: "awaiting_m2", attentionReasons: [] };
-  }
-  // Rule 4: PTO closeout (NON-PE only). PE deals don't have a PTO milestone.
+  // Bucket ladder — invoice-first.
+  if (daEff !== "paid") return { bucket: "awaiting_m1", attentionReasons: [] };
+  if (ccEff !== "paid") return { bucket: "awaiting_m2", attentionReasons: [] };
   if (!args.isPE) {
-    if (args.ptoStatus !== "Paid In Full") {
-      return { bucket: "awaiting_pto", attentionReasons: [] };
-    }
+    if (ptoEff !== "paid") return { bucket: "awaiting_pto", attentionReasons: [] };
   } else {
-    // PE deals: customer side is complete after DA + CC. PE M1/M2 follow.
-    if (args.peM1Status !== "Paid") {
-      return { bucket: "awaiting_pe_m1", attentionReasons: [] };
-    }
-    if (args.peM2Status !== "Paid") {
-      return { bucket: "awaiting_pe_m2", attentionReasons: [] };
-    }
+    if (peM1Eff !== "paid") return { bucket: "awaiting_pe_m1", attentionReasons: [] };
+    if (peM2Eff !== "paid") return { bucket: "awaiting_pe_m2", attentionReasons: [] };
   }
   return { bucket: "fully_collected", attentionReasons: [] };
 }
