@@ -532,6 +532,37 @@ model ZuperJobCache {
 }
 
 // ===========================================
+// COMPLIANCE SCORE SHADOW (v1 vs v2 compare)
+// ===========================================
+
+model ComplianceScoreShadow {
+  id String @id @default(cuid())
+
+  computedAt DateTime @default(now())
+
+  userUid   String
+  userName  String
+  location  String // e.g. "Westminster", "San Luis Obispo"
+  category  String // e.g. "Construction", "Site Survey", "Inspection"
+
+  windowDays Int
+
+  v1Score Float
+  v1Grade String
+  v2Score Float
+  v2Grade String
+
+  v1TotalJobs           Int
+  v2TasksFractional     Float
+  v2DistinctParentJobs  Int
+  emptyCreditSetJobs    Int
+
+  @@index([computedAt])
+  @@index([userUid])
+  @@index([location])
+}
+
+// ===========================================
 // HUBSPOT PROJECT CACHE
 // ===========================================
 
