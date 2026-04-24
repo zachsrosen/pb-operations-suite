@@ -7,9 +7,10 @@ import RequestProductClient from "./RequestProductClient";
 export const dynamic = "force-dynamic";
 
 export default async function RequestProductPage() {
-  if (process.env.SALES_PRODUCT_REQUESTS_ENABLED !== "true") {
-    redirect("/");
-  }
+  // Feature-flag gating happens via the suite card visibility (see
+  // src/app/suites/sales-marketing/page.tsx) — no server-side redirect here.
+  // Next.js sometimes inlines process.env string-literal reads at build time
+  // even with force-dynamic, which caused a stuck redirect bug in prod.
   const user = await getCurrentUser();
   if (!user) redirect("/login?callbackUrl=/dashboards/request-product");
 
