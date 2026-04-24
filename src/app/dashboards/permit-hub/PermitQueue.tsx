@@ -48,9 +48,13 @@ function groupForActionKind(kind: PermitActionKind | null): GroupKey {
   }
 }
 
+/** Sentinel value representing unassigned permits in the lead filter. */
+const UNASSIGNED = "__unassigned__";
+
 export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
   const [search, setSearch] = useState("");
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
+  const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
 
   const locationOptions: FilterOption[] = useMemo(() => {
     const s = new Set<string>();
@@ -62,11 +66,33 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
       .map((loc) => ({ value: loc, label: loc }));
   }, [items]);
 
+  const leadOptions: FilterOption[] = useMemo(() => {
+    const named = new Set<string>();
+    let hasUnassigned = false;
+    items.forEach((i) => {
+      if (i.permitLead) named.add(i.permitLead);
+      else hasUnassigned = true;
+    });
+    const opts: FilterOption[] = Array.from(named)
+      .sort()
+      .map((name) => ({ value: name, label: name }));
+    if (hasUnassigned) {
+      opts.push({ value: UNASSIGNED, label: "Unassigned" });
+    }
+    return opts;
+  }, [items]);
+
   const filtered = useMemo(() => {
     let list = items;
     if (selectedLocations.length > 0) {
       const set = new Set(selectedLocations);
       list = list.filter((i) => i.pbLocation && set.has(i.pbLocation));
+    }
+    if (selectedLeads.length > 0) {
+      const set = new Set(selectedLeads);
+      list = list.filter((i) =>
+        i.permitLead ? set.has(i.permitLead) : set.has(UNASSIGNED),
+      );
     }
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -79,7 +105,7 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
       );
     }
     return list;
-  }, [items, search, selectedLocations]);
+  }, [items, search, selectedLocations, selectedLeads]);
 
   const groups = useMemo(() => {
     const map: Record<GroupKey, PermitQueueItem[]> = {
@@ -95,22 +121,32 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-t-border px-4 py-3">
+      <div className="flex flex-col gap-2 border-b border-t-border px-4 py-3">
         <input
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search project, address, lead..."
-          className="border-t-border bg-surface-2 flex-1 rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="border-t-border bg-surface-2 w-full rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-        <MultiSelectFilter
-          label="Location"
-          options={locationOptions}
-          selected={selectedLocations}
-          onChange={setSelectedLocations}
-          placeholder="All locations"
-          accentColor="blue"
-        />
+        <div className="flex flex-wrap gap-2">
+          <MultiSelectFilter
+            label="Location"
+            options={locationOptions}
+            selected={selectedLocations}
+            onChange={setSelectedLocations}
+            placeholder="All locations"
+            accentColor="blue"
+          />
+          <MultiSelectFilter
+            label="Permit Lead"
+            options={leadOptions}
+            selected={selectedLeads}
+            onChange={setSelectedLeads}
+            placeholder="All leads"
+            accentColor="blue"
+          />
+        </div>
       </div>
       <div className="text-muted flex items-center justify-between border-b border-t-border px-4 py-2 text-xs">
         <span>

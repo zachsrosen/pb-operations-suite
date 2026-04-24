@@ -25,7 +25,32 @@ import {
   PI_QUERY_DEFS,
   EXCLUDED_STAGES,
   INCLUDED_PIPELINES,
+  PI_LEADS,
 } from "@/lib/daily-focus/config";
+
+/**
+ * HubSpot owner ID → permit lead name.
+ * Sourced from PI_LEADS so adding a new lead in daily-focus/config.ts
+ * automatically populates here too.
+ */
+const PERMIT_LEAD_BY_OWNER_ID: Record<string, string> = Object.fromEntries(
+  PI_LEADS.filter((l) => l.roles.includes("permit_tech")).map((l) => [
+    l.hubspotOwnerId,
+    l.name,
+  ]),
+);
+
+function resolvePermitLeadName(props: Record<string, string | null>): string | null {
+  // Prefer an explicit per-deal name if HubSpot has it, otherwise resolve
+  // the permit_tech owner-id field against the PI_LEADS roster. Unassigned
+  // deals (no permit_tech) fall through to null.
+  if (props.permit_lead_name) return props.permit_lead_name;
+  const ownerId = props.permit_tech;
+  if (ownerId && PERMIT_LEAD_BY_OWNER_ID[ownerId]) {
+    return PERMIT_LEAD_BY_OWNER_ID[ownerId];
+  }
+  return null;
+}
 import type { ActivityType } from "@/generated/prisma/enums";
 
 /**
@@ -95,6 +120,9 @@ export interface PermitQueueItem {
   daysInStatus: number;
   isStale: boolean;
   permitLead: string | null;
+  /** HubSpot owner ID on permit_tech — exposed so the client can filter
+   *  unassigned (null) as a pseudo-option alongside named leads. */
+  permitLeadOwnerId: string | null;
   pm: string | null;
   amount: number | null;
 }
@@ -179,6 +207,7 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
       "hubspot_owner_id",
       "project_manager",
       "permit_lead_name",
+      "permit_tech",
       "calculated_system_size__kwdc_",
     ],
     limit: 200,
@@ -206,7 +235,8 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
       actionKind: actionKindForStatus(status),
       daysInStatus,
       isStale: daysInStatus > STALE_THRESHOLD_DAYS,
-      permitLead: props.permit_lead_name ?? null,
+      permitLead: resolvePermitLeadName(props),
+      permitLeadOwnerId: props.permit_tech ?? null,
       pm: props.project_manager ?? null,
       amount: props.amount ? Number(props.amount) : null,
     });
@@ -234,6 +264,7 @@ export async function fetchPermitProjectDetail(
       "pb_location",
       "amount",
       "permit_lead_name",
+      "permit_tech",
       "project_manager",
       "permitting_status",
       "dealstage",
@@ -278,7 +309,7 @@ export async function fetchPermitProjectDetail(
       address: fullAddress,
       amount: props.amount ? Number(props.amount) : null,
       pbLocation: props.pb_location ?? null,
-      permitLead: props.permit_lead_name ?? null,
+      permitLead: resolvePermitLeadName(props),
       pm: props.project_manager ?? null,
       permittingStatus,
       actionKind: resolvedKind,
