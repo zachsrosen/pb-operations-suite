@@ -178,7 +178,7 @@ export function MapClient({ googleMapsApiKey, userPbLocation }: MapClientProps) 
         )}
 
         {query.data?.droppedCount ? (
-          <div className="absolute bottom-4 right-4 text-xs bg-surface-2 text-muted px-3 py-1.5 rounded border border-t-border z-10">
+          <div className="absolute top-2 right-2 text-xs bg-surface-2 text-muted px-3 py-1.5 rounded border border-t-border z-10">
             {query.data.droppedCount} job{query.data.droppedCount === 1 ? "" : "s"} could not be placed
           </div>
         ) : null}
