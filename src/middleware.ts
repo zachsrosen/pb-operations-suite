@@ -273,6 +273,14 @@ export default auth((req) => {
       return nextWithRequestId(requestId, req, { "x-api-token-authenticated": "1" });
     }
 
+    // IT team read-only export token — scoped strictly to /api/it/* so the
+    // key can be rotated independently of API_SECRET_TOKEN and cannot write
+    // to BOM/Zuper endpoints.
+    const itExportToken = process.env.IT_EXPORT_TOKEN;
+    if (itExportToken && authHeader === `Bearer ${itExportToken}` && pathname.startsWith("/api/it/")) {
+      return nextWithRequestId(requestId, req, { "x-it-export-authenticated": "1" });
+    }
+
     // For other API routes, require authentication
     if (!isLoggedIn) {
       const response = NextResponse.json(
