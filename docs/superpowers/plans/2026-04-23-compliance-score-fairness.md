@@ -43,10 +43,12 @@
 | `src/__tests__/compliance-v2/task-timestamp.test.ts` | Pure unit tests for "earliest of" timestamp logic |
 | `src/app/dashboards/office-performance/[location]/__tests__/ComplianceBlock.test.tsx` | Snapshot tests for new UI states |
 | `src/app/api/cron/compliance-shadow-cleanup/route.ts` | Daily cron to prune rows > 60 days from ComplianceScoreShadow |
+| `scripts/snapshot-compliance-baseline.ts` | PRE-CHANGE one-shot: capture v1 scores to markdown before any code lands (user request 2026-04-23) |
 | `scripts/enumerate-service-task-titles.ts` | Throwaway: enumerate all distinct task titles for 90d (spec §8.2) |
 | `scripts/enumerate-service-task-statuses.ts` | Throwaway: enumerate all distinct task statuses for 90d (spec §8.3) |
 | `scripts/compliance-shadow-compare.ts` | One-shot: compute v1 + v2 for 30d, insert into ComplianceScoreShadow |
 | `scripts/lucas-compliance-diff.ts` | One-shot: Lucas + CA crew v1 vs v2 analysis, writes markdown (spec §8.4) |
+| `docs/superpowers/analyses/2026-04-23-compliance-baseline.md` | Immutable v1 baseline snapshot captured before any code changes |
 | `docs/superpowers/analyses/2026-04-XX-lucas-compliance-diff.md` | Output of the sanity-check script; reviewed before flag flip |
 
 ### Modified files
@@ -65,9 +67,101 @@ Chunks must be completed in order — later chunks depend on earlier modules.
 
 ---
 
-## Chunk 1: First-day enumerations & shadow table
+## Chunk 1: Baseline snapshot, enumerations, shadow table
 
-**Why first:** The task classification constant (`TASK_TITLE_CLASSIFICATION`) in Chunk 2 depends on knowing what titles actually exist. The shadow table must exist before scoring code can write to it.
+**Why first:** We need an immutable baseline of v1 scores captured before any code lands, so v2 comparison is against "what scores actually were at the time of the user complaint" — not a moving target. Task classification for Chunk 2 also depends on enumeration output.
+
+### Task 1.0: Snapshot current (v1) scores BEFORE any code changes
+
+**Files:**
+- Create: `scripts/snapshot-compliance-baseline.ts`
+- Create: `docs/superpowers/analyses/2026-04-23-compliance-baseline.md` (output)
+
+Rationale: even if the shadow-compare script later runs v1 alongside v2, underlying Zuper data may have shifted by then. This baseline locks in what scores actually read today, so post-rollout comparisons reference a stable truth.
+
+- [ ] **Step 1: Write the snapshot script**
+
+Create `scripts/snapshot-compliance-baseline.ts`:
+
+```ts
+/**
+ * ONE-SHOT: snapshot today's v1 compliance scores to a markdown file.
+ * Runs BEFORE any Chunk 1.1+ changes land, so the baseline is immutable.
+ *
+ * Output: docs/superpowers/analyses/<today>-compliance-baseline.md
+ */
+import { PrismaClient } from "../src/generated/prisma/client";
+import { PrismaNeon } from "@prisma/adapter-neon";
+import { config as dotenv } from "dotenv";
+import { computeLocationCompliance } from "../src/lib/compliance-compute";
+import fs from "node:fs";
+import path from "node:path";
+
+dotenv({ path: ".env" });
+dotenv({ path: ".env.local", override: false });
+
+const LOCATIONS = ["Westminster", "Centennial", "Colorado Springs", "San Luis Obispo", "Camarillo"];
+const CATEGORIES = ["Site Survey", "Construction", "Inspection"];
+
+async function main() {
+  // Ensure v1 path (should be default but be explicit)
+  delete process.env.COMPLIANCE_V2_ENABLED;
+
+  const prisma = new PrismaClient({ adapter: new PrismaNeon({ connectionString: process.env.DATABASE_URL! }) });
+
+  const windowDays = 30;
+  const rows: string[] = [
+    `# Compliance v1 baseline — ${new Date().toISOString().split("T")[0]}`,
+    ``,
+    `**Captured:** ${new Date().toISOString()}`,
+    `**Window:** last ${windowDays} days`,
+    `**Flag state:** COMPLIANCE_V2_ENABLED is off (v1 path)`,
+    ``,
+    `| Location | Category | Employee | Grade | Score | On-time% | Jobs | Stuck | NS |`,
+    `|---|---|---|---|---|---|---|---|---|`,
+  ];
+
+  for (const location of LOCATIONS) {
+    for (const category of CATEGORIES) {
+      const result = await computeLocationCompliance(category, location, windowDays);
+      if (!result) continue;
+      for (const e of result.byEmployee) {
+        rows.push(
+          `| ${location} | ${category} | ${e.name} | ${e.grade} | ${e.complianceScore} | ${e.onTimePercent} | ${e.totalJobs} | ${e.stuckCount} | ${e.neverStartedCount} |`
+        );
+      }
+    }
+  }
+
+  rows.push(``, `## Raw JSON`, ``, "```json", JSON.stringify({ capturedAt: new Date().toISOString(), windowDays }, null, 2), "```");
+
+  const outDir = path.join(process.cwd(), "docs/superpowers/analyses");
+  fs.mkdirSync(outDir, { recursive: true });
+  const today = new Date().toISOString().split("T")[0];
+  const outFile = path.join(outDir, `${today}-compliance-baseline.md`);
+  fs.writeFileSync(outFile, rows.join("\n"));
+  console.log(`Wrote ${outFile}`);
+  await prisma.$disconnect();
+}
+main().catch((e) => { console.error(e); process.exit(1); });
+```
+
+- [ ] **Step 2: Run the snapshot**
+
+```bash
+set -a && source ../../../.env && set +a && npx tsx scripts/snapshot-compliance-baseline.ts
+```
+
+Expected: markdown file with rows for every (location × category × employee) that has data today.
+
+- [ ] **Step 3: Commit both the script and the generated baseline**
+
+```bash
+git add scripts/snapshot-compliance-baseline.ts docs/superpowers/analyses/
+git commit -m "chore(compliance-v2): pre-change v1 baseline snapshot"
+```
+
+After this task, the baseline exists on disk and in git history. Any subsequent v1 re-computation is a sanity check, but the *source of truth* for "what scores looked like before" is this committed file.
 
 ### Task 1.1: Add `COMPLIANCE_V2_ENABLED` env var + feature-flag helper
 
@@ -1621,6 +1715,51 @@ export function buildExcludedStatusFixture(): FixtureBundle {
   };
 }
 
+// === Fixture K: Central fairness scenario — PV completed, Electrical stuck on same parent ===
+// PV tech does their work on time; Electrical team is stuck (in progress past scheduledEnd).
+// PV tech MUST NOT receive any stuck penalty. Electrical tech gets stuck 1/N.
+export function buildPvCompletedElectricalStuckFixture(): FixtureBundle {
+  const job: FixtureJob = {
+    job_uid: "pvok-elecstuck",
+    job_title: "PROJ-fair | PV ok, Electrical stuck",
+    job_category: { category_uid: CONSTRUCTION_UID },
+    // Parent status is "Started" (stuck if past scheduledEnd). Electrical is still in progress.
+    current_job_status: { status_name: "Started" },
+    scheduled_start_time: "2026-04-01T15:00:00Z",
+    scheduled_end_time: "2026-04-03T23:00:00Z", // parent scheduledEnd
+    assigned_to: [
+      mkAssignee("u-pv", "Tyler Guerra"),
+      mkAssignee("u-elec", "Chris Kahl"),
+    ],
+    assigned_to_team: [{ team: { team_uid: "t-cent", team_name: "Centennial" } }],
+    job_status: [{ status_name: "Started", created_at: "2026-04-01T16:00:00Z" }],
+  };
+  const pvTask: ServiceTaskRaw = {
+    service_task_uid: "pv",
+    service_task_title: "PV Install - Colorado",
+    service_task_status: "COMPLETED", // PV done
+    assigned_to: [mkAssignee("u-pv", "Tyler Guerra")],
+    asset_inspection_submission_uid: null,
+    actual_end_time: "2026-04-01T23:00:00Z", // on-time
+  };
+  const elecTask: ServiceTaskRaw = {
+    service_task_uid: "elec",
+    service_task_title: "Electrical Install - Colorado",
+    service_task_status: "IN_PROGRESS", // stuck
+    assigned_to: [mkAssignee("u-elec", "Chris Kahl")],
+    asset_inspection_submission_uid: null,
+    actual_end_time: null,
+    actual_start_time: "2026-04-02T16:00:00Z",
+  };
+  return {
+    job,
+    taskBundle: {
+      tasks: [pvTask, elecTask],
+      formByTaskUid: new Map([["pv", null], ["elec", null]]),
+    },
+  };
+}
+
 // === Fixture J: Timestamp tie-break — form later than actual_end ===
 export function buildTimestampTieBreakFixture(): FixtureBundle {
   const job: FixtureJob = {
@@ -1702,6 +1841,7 @@ import {
   buildFailedFixture,
   buildExcludedStatusFixture,
   buildTimestampTieBreakFixture,
+  buildPvCompletedElectricalStuckFixture,
   type FixtureBundle,
 } from "./fixtures/jobs";
 
@@ -1804,6 +1944,23 @@ describe("computeLocationComplianceV2", () => {
     const emp = result!.byEmployee[0];
     expect(emp.lowVolume).toBe(true);
     expect(emp.grade).toBe("—");
+  });
+
+  it("CENTRAL FAIRNESS: PV completed on time, Electrical stuck on same parent → PV tech gets no stuck penalty", async () => {
+    const result = await compute([buildPvCompletedElectricalStuckFixture()]);
+    const pv = result!.byEmployee.find((e) => e.userUid === "u-pv")!;
+    const elec = result!.byEmployee.find((e) => e.userUid === "u-elec")!;
+
+    // PV: completed on time, NO stuck penalty (task is completed-full)
+    expect(pv).toBeDefined();
+    expect(pv.onTimePercent).toBe(100);
+    expect(pv.stuckCount).toBe(0);
+
+    // Electrical: stuck 1/1
+    expect(elec).toBeDefined();
+    expect(elec.stuckCount).toBeCloseTo(1, 5);
+    // Electrical has no completion → measurable is 0, onTimePercent is -1
+    expect(elec.onTimePercent).toBe(-1);
   });
 });
 ```
@@ -2086,7 +2243,9 @@ git commit -m "feat(compliance-v2): per-service-task scoring engine with fractio
 - Modify: `src/__tests__/compliance-compute.test.ts`
 - Modify: `src/lib/office-performance-types.ts`
 
-- [ ] **Step 1: Extend `EmployeeCompliance` type with optional v2 fields**
+- [ ] **Step 1: Extend both employee types with optional v2 fields**
+
+V1 route uses `EmployeeComplianceFull` (declared in `src/lib/compliance-compute.ts`), and UI uses `EmployeeCompliance` (declared in `src/lib/office-performance-types.ts`). Both need the new optional fields so the adapter in Step 4 typechecks.
 
 In `src/lib/office-performance-types.ts`, append to `EmployeeCompliance`:
 
@@ -2102,7 +2261,11 @@ In `src/lib/office-performance-types.ts`, append to `EmployeeCompliance`:
   hasFollowUp?: boolean;
   /** True when tasksFractional < MIN_TASKS_THRESHOLD. Present only in v2. */
   lowVolume?: boolean;
+  /** Stable identifier for v2 tooling (score breakdown, shadow compare). Present only in v2. */
+  userUid?: string;
 ```
+
+In `src/lib/compliance-compute.ts`, append the same block to `EmployeeComplianceFull`. Keep both in sync — if you add a field to one, add it to the other.
 
 - [ ] **Step 2: Write regression test for v1 path**
 
@@ -2131,14 +2294,28 @@ describe("flag gating (COMPLIANCE_V2_ENABLED=false)", () => {
 Run: `npm test -- compliance-compute.test.ts`
 Expected: PASS.
 
-- [ ] **Step 4: Add flag gate at top of `computeLocationCompliance`**
+- [ ] **Step 4: Add flag gate at top of `computeLocationCompliance` with test-injection option**
 
-Modify `src/lib/compliance-compute.ts`. At the top of the function (after the `if (!categoryUid) return null;` line), add:
+`computeLocationCompliance` needs to accept the same `ComputeV2Options` so tests (and any caller wanting to control fetching) can pass through to v2.
+
+First, update the function signature in `src/lib/compliance-compute.ts`:
+
+```ts
+export async function computeLocationCompliance(
+  categoryName: string,
+  location: string,
+  days: number = 30,
+  locationDealIds?: Set<string>,
+  v2Options?: import("@/lib/compliance-v2/scoring").ComputeV2Options
+): Promise<LocationComplianceResult | null> {
+```
+
+At the top of the function (after the `if (!categoryUid) return null;` line), add:
 
 ```ts
   // === Flag gate: delegate to v2 if enabled ===
   if (isComplianceV2Enabled()) {
-    const v2 = await computeLocationComplianceV2(categoryName, location, days);
+    const v2 = await computeLocationComplianceV2(categoryName, location, days, v2Options);
     if (!v2) return null;
     return adaptV2ToV1Shape(v2);
   }
@@ -2146,7 +2323,7 @@ Modify `src/lib/compliance-compute.ts`. At the top of the function (after the `i
 
 Add imports at top:
 ```ts
-import { computeLocationComplianceV2 } from "@/lib/compliance-v2/scoring";
+import { computeLocationComplianceV2, type ComputeV2Options } from "@/lib/compliance-v2/scoring";
 import { isComplianceV2Enabled } from "@/lib/compliance-v2/feature-flag";
 import type { LocationComplianceV2Result } from "@/lib/compliance-v2/types";
 ```
@@ -2218,18 +2395,45 @@ function adaptV2ToV1Shape(v2: LocationComplianceV2Result): LocationComplianceRes
 }
 ```
 
-- [ ] **Step 5: Write flag-ON integration test**
+- [ ] **Step 5: Write flag-ON integration test (with injected fetcher — no real API calls)**
 
 Append to `src/__tests__/compliance-compute.test.ts`:
 
 ```ts
 describe("flag gating (COMPLIANCE_V2_ENABLED=true)", () => {
-  it("delegates to v2 when flag is on", async () => {
+  it("delegates to v2 when flag is on — uses injected fetcher, no real API", async () => {
     const origFlag = process.env.COMPLIANCE_V2_ENABLED;
     process.env.COMPLIANCE_V2_ENABLED = "true";
 
-    mockFetchJobsForCategory.mockResolvedValueOnce([makeZuperJob()]);
-    const result = await computeLocationCompliance("Construction", "Westminster", 30);
+    // Build a v2 fixture from existing helpers
+    const v2Job = {
+      ...makeZuperJob(),
+      assigned_to: [
+        { user: { user_uid: "u1", first_name: "Mike", last_name: "Torres", is_active: true } },
+      ],
+    };
+    mockFetchJobsForCategory.mockResolvedValueOnce([v2Job]);
+
+    // Inject a fetcher that returns a single PV task for this job
+    const injectedFetcher = () => ({
+      async fetchBundle(_jobUid: string) {
+        return {
+          tasks: [{
+            service_task_uid: "t1",
+            service_task_title: "PV Install - Colorado",
+            service_task_status: "COMPLETED",
+            assigned_to: [{ user: { user_uid: "u1", first_name: "Mike", last_name: "Torres", is_active: true } }],
+            asset_inspection_submission_uid: null,
+            actual_end_time: v2Job.scheduled_end_time!,
+          }],
+          formByTaskUid: new Map([["t1", null]]),
+        };
+      },
+    });
+
+    const result = await computeLocationCompliance("Construction", "Westminster", 30, undefined, {
+      createFetcher: injectedFetcher,
+    });
 
     // v2 path: employee row carries tasksFractional
     expect(result!.byEmployee[0]?.tasksFractional).toBeDefined();
@@ -2777,9 +2981,21 @@ Read current vercel.json; append to `crons` array:
 { "path": "/api/cron/compliance-shadow-cleanup", "schedule": "0 6 * * *" }
 ```
 
-- [ ] **Step 3: Add route to `ADMIN_ONLY_ROUTES` or cron allowlist**
+- [ ] **Step 3: Add route to middleware PUBLIC_API_ROUTES allowlist**
 
-Check `src/middleware.ts` for how other cron routes are allowed (likely a `PUBLIC_CRON_ROUTES` set). Add the new path there.
+Location verified: `src/middleware.ts` defines `PUBLIC_API_ROUTES` at the top (~line 21-51). Every cron route is listed there with a `// CRON_SECRET validated in route` comment.
+
+Add the new route to that array (keep alphabetical/grouping with other `/api/cron/*` entries):
+
+```ts
+  "/api/cron/compliance-shadow-cleanup", // Compliance v2 shadow table TTL cleanup — CRON_SECRET validated in route
+```
+
+Verify before moving on:
+```bash
+grep -n "compliance-shadow-cleanup" src/middleware.ts
+```
+Expected: one hit inside the `PUBLIC_API_ROUTES` array.
 
 - [ ] **Step 4: Commit**
 
