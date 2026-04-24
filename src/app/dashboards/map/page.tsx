@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import { getCurrentUser } from "@/lib/auth-utils";
+import { prisma } from "@/lib/db";
 import { MapClient } from "./MapClient";
 
 export const dynamic = "force-dynamic";
@@ -22,9 +23,23 @@ export default async function JobsMapPage() {
     );
   }
 
+  // Auto-detect user's home office from allowedLocations[0]. Fail-open to null.
+  let userPbLocation: string | null = null;
+  try {
+    const dbUser = await prisma.user.findUnique({
+      where: { email: user.email },
+      select: { allowedLocations: true },
+    });
+    if (dbUser?.allowedLocations?.length) {
+      userPbLocation = dbUser.allowedLocations[0];
+    }
+  } catch {
+    // Best-effort — the UI falls back to a picker.
+  }
+
   return (
     <DashboardShell title="Jobs Map" accentColor="blue" fullWidth>
-      <MapClient googleMapsApiKey={apiKey} />
+      <MapClient googleMapsApiKey={apiKey} userPbLocation={userPbLocation} />
     </DashboardShell>
   );
 }

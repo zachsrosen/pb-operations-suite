@@ -10,20 +10,26 @@ import { DetailPanel } from "./DetailPanel";
 import { JobMapCanvas } from "./JobMapCanvas";
 import { JobMarkerTable } from "./JobMarkerTable";
 import { MapLegend } from "./MapLegend";
+import { MorningBriefing } from "./MorningBriefing";
+import { OfficePicker } from "./OfficePicker";
 import { downloadMarkersCsv } from "./exportMarkers";
+import { useOfficePreferences } from "./useOfficePreferences";
 
 const ALL_TYPES: JobMarkerKind[] = ["install", "service", "inspection", "survey", "dnr", "roofing"];
 const DEFAULT_TYPES: JobMarkerKind[] = ["install", "service", "inspection", "survey", "dnr", "roofing"];
 
 interface MapClientProps {
   googleMapsApiKey: string | null;
+  userPbLocation?: string | null;
 }
 
-export function MapClient({ googleMapsApiKey }: MapClientProps) {
+export function MapClient({ googleMapsApiKey, userPbLocation }: MapClientProps) {
   const [mode, setMode] = useState<MapMode>("today");
   const [enabledTypes, setEnabledTypes] = useState<JobMarkerKind[]>([...DEFAULT_TYPES]);
   const [enabledLocations, setEnabledLocations] = useState<string[]>([]);
   const [selectedMarker, setSelectedMarker] = useState<JobMarker | null>(null);
+  const { office, radiusMiles, setOfficeId, setRadiusMiles } = useOfficePreferences(userPbLocation);
+  const [officePickerOpenSignal, setOfficePickerOpenSignal] = useState(0);
 
   const typesKey = useMemo(() => enabledTypes.slice().sort().join(","), [enabledTypes]);
 
@@ -95,6 +101,20 @@ export function MapClient({ googleMapsApiKey }: MapClientProps) {
         onExport={() => downloadMarkersCsv(markers, `map-jobs-${mode}-${new Date().toISOString().slice(0, 10)}.csv`)}
       />
 
+      {/* Office picker is a stand-alone row so it has its own dropdown layer. */}
+      <div className="flex items-center gap-2 px-3 sm:px-4 py-1.5 border-b border-t-border bg-surface">
+        <OfficePicker
+          key={officePickerOpenSignal /* force-open via remount when briefing "Change" clicked */}
+          office={office}
+          radiusMiles={radiusMiles}
+          onOfficeChange={setOfficeId}
+          onRadiusChange={setRadiusMiles}
+        />
+        <span className="text-[10px] text-muted">
+          {office ? `Viewing from ${office.label} · ${radiusMiles} mi radius` : "Set your office to highlight nearby ready work"}
+        </span>
+      </div>
+
       <div className="flex-1 relative">
         {query.isError ? (
           <div className="absolute inset-0 flex items-center justify-center">
@@ -117,9 +137,21 @@ export function MapClient({ googleMapsApiKey }: MapClientProps) {
             crews={crews}
             apiKey={googleMapsApiKey}
             onMarkerClick={onMarkerClick}
+            office={office}
+            nearRadiusMiles={radiusMiles}
           />
         ) : (
           <JobMarkerTable markers={markers} onMarkerClick={onMarkerClick} />
+        )}
+
+        {office && !query.isError && query.data && mode === "today" && (
+          <MorningBriefing
+            office={office}
+            markers={markers}
+            radiusMiles={radiusMiles}
+            onMarkerClick={onMarkerClick}
+            onChangeOffice={() => setOfficePickerOpenSignal((n) => n + 1)}
+          />
         )}
 
         {!query.isError && query.data && (
