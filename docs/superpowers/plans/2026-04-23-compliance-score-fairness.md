@@ -2353,6 +2353,7 @@ function adaptV2ToV1Shape(v2: LocationComplianceV2Result): LocationComplianceRes
     complianceScore: e.complianceScore,
     grade: e.grade,
     // v2-only fields ride along
+    userUid: e.userUid,
     tasksFractional: e.tasksFractional,
     distinctParentJobs: e.distinctParentJobs,
     passRate: e.passRate,
