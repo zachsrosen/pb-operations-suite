@@ -94,6 +94,23 @@ export function MapClient({ googleMapsApiKey, userPbLocation, meAssigneeId }: Ma
   const scheduledCount = markers.filter((m) => m.scheduled).length;
   const unscheduledCount = markers.length - scheduledCount;
   const workingCrewCount = crews.filter((c) => c.working).length;
+  // Per-kind breakdown for the legend — so "1 scheduled / 20 ready" is traceable
+  // to which specific work types contributed.
+  const breakdown = useMemo(() => {
+    const out: Record<JobMarkerKind, { scheduled: number; ready: number }> = {
+      install: { scheduled: 0, ready: 0 },
+      service: { scheduled: 0, ready: 0 },
+      inspection: { scheduled: 0, ready: 0 },
+      survey: { scheduled: 0, ready: 0 },
+      dnr: { scheduled: 0, ready: 0 },
+      roofing: { scheduled: 0, ready: 0 },
+    };
+    for (const m of markers) {
+      if (m.scheduled) out[m.kind].scheduled++;
+      else out[m.kind].ready++;
+    }
+    return out;
+  }, [markers]);
 
   const onTypeToggle = (k: JobMarkerKind) => {
     setEnabledTypes((prev) =>
@@ -205,6 +222,7 @@ export function MapClient({ googleMapsApiKey, userPbLocation, meAssigneeId }: Ma
             scheduledCount={scheduledCount}
             unscheduledCount={unscheduledCount}
             workingCrewCount={workingCrewCount}
+            breakdown={breakdown}
           />
         )}
 

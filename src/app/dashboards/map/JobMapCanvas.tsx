@@ -140,24 +140,31 @@ function ClusteredMarkers({
   // Split markers: scheduled-today markers ALWAYS render individually (never
   // cluster) so the dispatcher can see today's slate exactly. Everything else
   // (ready-to-schedule / backlog) still clusters to keep the map readable.
+  //
+  // Uses YYYY-MM-DD string comparison to avoid timezone issues: date-only
+  // values like "2026-04-24" parse as UTC midnight via `new Date()`, which
+  // silently drops today's jobs on servers in non-UTC timezones.
   const { scheduledToday, clusterable } = useMemo(() => {
     const now = new Date();
-    const dayStart = new Date(now);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(dayStart);
-    dayEnd.setDate(dayEnd.getDate() + 1);
+    const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+    const ymd = (at: string | undefined): string | null => {
+      if (!at) return null;
+      const match = at.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (match) return match[1];
+      const d = new Date(at);
+      if (Number.isNaN(d.getTime())) return null;
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    };
 
     const scheduledToday: JobMarker[] = [];
     const clusterable: JobMarker[] = [];
     for (const m of markers) {
-      if (m.scheduled && m.scheduledAt) {
-        const at = new Date(m.scheduledAt);
-        if (at >= dayStart && at < dayEnd) {
-          scheduledToday.push(m);
-          continue;
-        }
+      if (m.scheduled && ymd(m.scheduledAt) === todayYmd) {
+        scheduledToday.push(m);
+      } else {
+        clusterable.push(m);
       }
-      clusterable.push(m);
     }
     return { scheduledToday, clusterable };
   }, [markers]);
