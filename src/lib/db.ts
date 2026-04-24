@@ -19,6 +19,7 @@ import type { RolePermissions } from "./role-permissions";
 export { ROLE_PERMISSIONS, normalizeRole, canAccessRoute, canScheduleType, canSchedule, canSyncZuper } from "./role-permissions";
 export type { RolePermissions } from "./role-permissions";
 import type { RoleDefinitionOverridePayload } from "@/lib/role-override-types";
+import { logScheduleEventIfChanged } from "./schedule-event-log";
 
 // Re-export types
 export { ActivityType, SurveyInviteStatus };
@@ -575,6 +576,15 @@ export async function cacheZuperJob(job: {
       job.assignedUsers !== undefined
         ? { assignedUsers: JSON.parse(JSON.stringify(job.assignedUsers)) }
         : {};
+
+    // === ScheduleEventLog capture (append-only history) ===
+    // Before we overwrite the cache, compare incoming schedule/crew fields
+    // against what's there. If this is a new job, log an "initial" baseline.
+    // If schedule or crew changed, log a "changed" event. Best-effort —
+    // never block the cache write on a log failure.
+    await logScheduleEventIfChanged(prisma, job).catch((err) => {
+      console.warn("[ScheduleEventLog] append failed:", err);
+    });
 
     return await prisma.zuperJobCache.upsert({
       where: { jobUid: job.jobUid },
