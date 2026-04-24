@@ -6,11 +6,36 @@ import { hubspotClient } from "@/lib/hubspot";
 import { getCachedZuperJobsByDealIds } from "@/lib/db";
 import { chunk } from "@/lib/utils";
 import { getZuperJobUrl } from "@/lib/external-links";
+import {
+  deriveZuperLastActivity,
+  getDealEngagementsLastTimestamp,
+} from "@/lib/service-contact-signals";
+
+/**
+ * Where the freshest "last contact" timestamp came from.
+ *
+ *   engagement — HubSpot Engagements API (calls/notes/meetings/emails on the
+ *                deal or its contacts; catches manually-logged activity)
+ *   zuper      — Zuper job activity (scheduledStart or completedDate)
+ *   contact    — `hs_last_sales_activity_timestamp` on an associated contact
+ *   deal       — `notes_last_contacted` on the deal
+ *   ticket     — `notes_last_contacted` on the ticket
+ *
+ * The first three are richer than the legacy `contact`/`deal`/`ticket` fields,
+ * which only update when activity is logged inside HubSpot.
+ */
+export type LastContactSource =
+  | "engagement"
+  | "zuper"
+  | "contact"
+  | "deal"
+  | "ticket"
+  | null;
 
 export interface ServiceEnrichment {
   serviceType: string | null;
   lastContactDate: string | null;
-  lastContactSource: "contact" | "deal" | "ticket" | null;
+  lastContactSource: LastContactSource;
   lineItems: ServiceLineItem[] | null;
   zuperJobs: ServiceZuperJob[] | null;
 }
@@ -63,33 +88,71 @@ export interface EnrichmentInput {
 export interface EnrichmentOptions {
   includeLineItems?: boolean;
   includeZuperJobs?: boolean;
+  /**
+   * When true, fetches per-deal richer "last contact" signals:
+   *   - HubSpot Engagements API (manually-logged calls/notes/meetings/emails)
+   *   - Zuper job activity (scheduledStart, completedDate from cache)
+   *
+   * Pays one extra HubSpot API call per deal (cached 5min). Use for surfaces
+   * that display or score by contact recency (priority queue, overview).
+   *
+   * Implies includeZuperJobs internally — Zuper signal needs the cache rows.
+   */
+  includeContactSignals?: boolean;
 }
 
 /**
- * Pure function: resolve the best "last contact" timestamp from available sources.
- * Priority: contact-level > deal-level > ticket-level > null
+ * Pure function: pick the freshest "last contact" timestamp across all
+ * available sources, returning the source attribution.
+ *
+ * Unlike a strict fallback chain, this takes the MAX across sources — so a
+ * one-day-old engagement always beats a 360-day-old `notes_last_contacted`,
+ * regardless of which "tier" the source belongs to. Source attribution lets
+ * the UI explain why a deal shows what it shows (and which signals are stale).
+ *
+ * Sources considered (any/all may be null):
+ *   - engagementTs   : latest HubSpot engagement (call/note/meeting/email)
+ *   - zuperTs        : latest Zuper job activity (scheduled/completed)
+ *   - contact tier   : `hs_last_sales_activity_timestamp` per associated contact
+ *   - dealFallback   : `notes_last_contacted` on the deal
+ *   - ticketFallback : `notes_last_contacted` on the ticket
  */
 export function resolveLastContact(
   contactTimestamps: Record<string, string | null | undefined>,
   contactIds: string[],
   dealFallback: string | null | undefined,
   ticketFallback?: string | null | undefined,
-): { lastContactDate: string | null; lastContactSource: "contact" | "deal" | "ticket" | null } {
-  // 1. Try contact-level timestamps — pick most recent
-  let best: string | null = null;
+  engagementTs?: string | null | undefined,
+  zuperTs?: string | null | undefined,
+): { lastContactDate: string | null; lastContactSource: LastContactSource } {
+  const candidates: Array<{ ts: string; source: NonNullable<LastContactSource> }> = [];
+
+  if (engagementTs) candidates.push({ ts: engagementTs, source: "engagement" });
+  if (zuperTs) candidates.push({ ts: zuperTs, source: "zuper" });
+
+  // Best contact-level timestamp across all associated contacts
+  let bestContact: string | null = null;
   for (const cid of contactIds) {
     const ts = contactTimestamps[cid];
-    if (ts && (!best || ts > best)) best = ts;
+    if (ts && (!bestContact || ts > bestContact)) bestContact = ts;
   }
-  if (best) return { lastContactDate: best, lastContactSource: "contact" };
+  if (bestContact) candidates.push({ ts: bestContact, source: "contact" });
 
-  // 2. Deal-level fallback
-  if (dealFallback) return { lastContactDate: dealFallback, lastContactSource: "deal" };
+  if (dealFallback) candidates.push({ ts: dealFallback, source: "deal" });
+  if (ticketFallback) candidates.push({ ts: ticketFallback, source: "ticket" });
 
-  // 3. Ticket-level fallback
-  if (ticketFallback) return { lastContactDate: ticketFallback, lastContactSource: "ticket" };
+  if (candidates.length === 0) {
+    return { lastContactDate: null, lastContactSource: null };
+  }
 
-  return { lastContactDate: null, lastContactSource: null };
+  // Pick the most recent across all sources. Tie-breaks favor the order the
+  // sources were pushed (engagement > zuper > contact > deal > ticket) — the
+  // richer sources win when timestamps are equal.
+  let best = candidates[0];
+  for (let i = 1; i < candidates.length; i++) {
+    if (candidates[i].ts > best.ts) best = candidates[i];
+  }
+  return { lastContactDate: best.ts, lastContactSource: best.source };
 }
 
 const HUBSPOT_BATCH_LIMIT = 100;
@@ -105,7 +168,13 @@ export async function enrichServiceItems(
   const result = new Map<string, ServiceEnrichment>();
   if (items.length === 0) return result;
 
-  const { includeLineItems = false, includeZuperJobs = false } = options;
+  const {
+    includeLineItems = false,
+    includeContactSignals = false,
+  } = options;
+  // Contact signals require the Zuper job cache rows to derive activity
+  // timestamps — implicitly enable Zuper fetch when signals are requested.
+  const includeZuperJobs = options.includeZuperJobs || includeContactSignals;
 
   // Collect unique contact IDs and deal IDs for batch operations
   const allContactIds = [...new Set(items.flatMap(i => i.contactIds))];
@@ -218,13 +287,53 @@ export async function enrichServiceItems(
     }
   }
 
-  // 4. Assemble per-item enrichment
+  // 4. Per-deal Zuper activity timestamps (free — derived from cached jobs)
+  const dealZuperLastActivity = new Map<string, string | null>();
+  if (includeContactSignals) {
+    for (const [dealId, jobs] of dealZuperJobs) {
+      // Map ServiceZuperJob (which uses string ISO dates) into the shape the
+      // helper expects.
+      const ts = deriveZuperLastActivity(
+        jobs.map((j) => ({
+          scheduledStart: j.scheduledDate,
+          completedDate: j.completedDate,
+        })),
+      );
+      dealZuperLastActivity.set(dealId, ts);
+    }
+  }
+
+  // 5. Per-deal latest engagement timestamp (HubSpot Engagements, cached 5min)
+  const dealEngagementTs = new Map<string, string | null>();
+  if (includeContactSignals && dealIds.length > 0) {
+    const results = await Promise.allSettled(
+      dealIds.map(async (dealId) => {
+        const ts = await getDealEngagementsLastTimestamp(dealId);
+        return { dealId, ts };
+      }),
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled") dealEngagementTs.set(r.value.dealId, r.value.ts);
+    }
+  }
+
+  // 6. Assemble per-item enrichment
   for (const item of items) {
+    // Engagement + Zuper signals only apply to deals (tickets don't carry
+    // their own engagement history; their parent deal's signals would be
+    // ambiguous to attribute).
+    const engagementTs =
+      item.itemType === "deal" ? dealEngagementTs.get(item.itemId) ?? null : null;
+    const zuperTs =
+      item.itemType === "deal" ? dealZuperLastActivity.get(item.itemId) ?? null : null;
+
     const { lastContactDate, lastContactSource } = resolveLastContact(
       contactTimestamps,
       item.contactIds,
       item.dealLastContacted,
       item.ticketLastContacted,
+      engagementTs,
+      zuperTs,
     );
 
     result.set(item.itemId, {

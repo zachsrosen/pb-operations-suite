@@ -29,6 +29,14 @@ const BASE_LINKS: SuitePageCard[] = [
     section: "Daily Operations",
   },
   {
+    href: "/dashboards/service-unscheduled",
+    title: "Unscheduled Jobs",
+    description: "List of every Zuper job awaiting a scheduled date, with age-based urgency flags.",
+    tag: "BACKLOG",
+    icon: "⏳",
+    section: "Daily Operations",
+  },
+  {
     href: "/dashboards/map?types=service",
     title: "Jobs Map",
     description: "Map of scheduled and unscheduled work with crew positions and proximity insights.",
