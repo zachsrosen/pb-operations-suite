@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { MapMode, JobMarkerKind } from "@/lib/map-types";
 import { MARKER_COLORS } from "@/lib/map-colors";
 
@@ -7,8 +8,12 @@ interface FilterBarProps {
   mode: MapMode;
   types: readonly JobMarkerKind[];        // all available types
   enabledTypes: readonly JobMarkerKind[]; // currently selected
+  availableLocations: readonly string[];  // union of pbLocation values present in data
+  enabledLocations: readonly string[];    // currently selected — empty = all
   onModeChange: (mode: MapMode) => void;
   onTypeToggle: (kind: JobMarkerKind) => void;
+  onLocationToggle: (location: string) => void;
+  onLocationsReset: () => void;
   onExport?: () => void;
   exportDisabled?: boolean;
 }
@@ -23,12 +28,24 @@ export function FilterBar({
   mode,
   types,
   enabledTypes,
+  availableLocations,
+  enabledLocations,
   onModeChange,
   onTypeToggle,
+  onLocationToggle,
+  onLocationsReset,
   onExport,
   exportDisabled,
 }: FilterBarProps) {
   const enabledSet = new Set(enabledTypes);
+  const locationSet = new Set(enabledLocations);
+  const [locationOpen, setLocationOpen] = useState(false);
+  const locationLabel =
+    locationSet.size === 0 || locationSet.size === availableLocations.length
+      ? "All shops"
+      : locationSet.size === 1
+      ? Array.from(locationSet)[0]
+      : `${locationSet.size} shops`;
   return (
     <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 bg-surface border-b border-t-border">
       <div role="tablist" className="inline-flex rounded-md bg-surface-2 p-0.5">
@@ -77,6 +94,56 @@ export function FilterBar({
           );
         })}
       </div>
+
+      {availableLocations.length > 0 && (
+        <div className="relative">
+          <button
+            onClick={() => setLocationOpen((o) => !o)}
+            className="px-3 py-1 text-xs rounded border border-t-border bg-surface-2 text-foreground hover:bg-surface-elevated flex items-center gap-1"
+            aria-haspopup="true"
+            aria-expanded={locationOpen}
+            title="Filter by PB shop location"
+          >
+            <span>📍 {locationLabel}</span>
+            <span className="text-muted">▾</span>
+          </button>
+          {locationOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setLocationOpen(false)} aria-hidden />
+              <div className="absolute top-full mt-1 right-0 z-20 bg-surface border border-t-border rounded-lg shadow-xl p-2 min-w-[180px]">
+                <div className="flex items-center justify-between mb-1 px-1">
+                  <div className="text-[10px] uppercase tracking-wider text-muted font-semibold">
+                    Shops
+                  </div>
+                  <button
+                    onClick={() => { onLocationsReset(); }}
+                    className="text-[10px] text-orange-400 hover:text-orange-300"
+                  >
+                    All
+                  </button>
+                </div>
+                {availableLocations.map((loc) => {
+                  const on = locationSet.has(loc);
+                  return (
+                    <label
+                      key={loc}
+                      className="flex items-center gap-2 px-2 py-1 hover:bg-surface-2 rounded cursor-pointer text-xs"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={() => onLocationToggle(loc)}
+                        className="accent-orange-500"
+                      />
+                      <span className="text-foreground">{loc}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {onExport && (
         <button

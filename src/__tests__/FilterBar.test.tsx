@@ -6,8 +6,12 @@ describe("FilterBar", () => {
     mode: "today" as const,
     types: ["install", "service"] as const,
     enabledTypes: ["install", "service"] as const,
+    availableLocations: [] as const,
+    enabledLocations: [] as const,
     onModeChange: jest.fn(),
     onTypeToggle: jest.fn(),
+    onLocationToggle: jest.fn(),
+    onLocationsReset: jest.fn(),
   };
 
   it("renders all three mode toggles with Today active", () => {
@@ -31,5 +35,21 @@ describe("FilterBar", () => {
     render(<FilterBar {...defaultProps} onTypeToggle={onTypeToggle} />);
     fireEvent.click(screen.getByRole("button", { name: /^install$/i }));
     expect(onTypeToggle).toHaveBeenCalledWith("install");
+  });
+
+  it("shows the locations dropdown when locations are available", () => {
+    const onLocationToggle = jest.fn();
+    render(
+      <FilterBar
+        {...defaultProps}
+        availableLocations={["DTC", "Westminster"] as const}
+        onLocationToggle={onLocationToggle}
+      />
+    );
+    const shopBtn = screen.getByRole("button", { name: /all shops/i });
+    fireEvent.click(shopBtn);
+    const dtcCheckbox = screen.getByRole("checkbox", { name: /dtc/i });
+    fireEvent.click(dtcCheckbox);
+    expect(onLocationToggle).toHaveBeenCalledWith("DTC");
   });
 });

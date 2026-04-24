@@ -20,7 +20,7 @@ export interface JobMarkerAddress {
 }
 
 export interface JobMarker {
-  id: string; // stable: "install:PROJ-8241", "ticket:3114", "zuperjob:<uid>"
+  id: string; // stable: "install:<hsid>", "ticket:<id>", "zuperjob:<uid>"
   kind: JobMarkerKind;
   scheduled: boolean;
   lat: number;
@@ -32,10 +32,27 @@ export interface JobMarker {
   priorityScore?: number;
   scheduledAt?: string;
   crewId?: string;
-  dealId?: string;
+  dealId?: string;           // HubSpot internal object ID (for deep-link URLs)
   ticketId?: string;
   zuperJobUid?: string;
   rawStage?: string;
+  // Job-specific enrichment (populated for project-pipeline marker kinds)
+  projectNumber?: string;    // Human-readable project number shown on other schedulers
+  pbLocation?: string;       // DTC / Westminster / Colorado Springs / Camarillo / SLO
+  systemSizeKwDc?: number;
+  batteryCount?: number;
+  batterySizeKwh?: number;
+  evCount?: number;
+  ahj?: string;
+  utility?: string;
+  installCrew?: string;      // Crew name as stored on the deal
+  projectManager?: string;
+  dealOwner?: string;
+  amount?: number;
+  hubspotUrl?: string;       // Direct HubSpot deal URL
+  expectedDaysForInstall?: number;
+  daysForElectricians?: number;
+  projectType?: string;      // Solar / Solar + Battery / D&R / Roofing
 }
 
 export interface CrewRouteStop {
