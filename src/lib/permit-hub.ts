@@ -10,6 +10,8 @@
 import { prisma } from "@/lib/db";
 import { hubspotClient, searchWithRetry } from "@/lib/hubspot";
 import { createDealNote } from "@/lib/hubspot-engagements";
+import { updateTask } from "@/lib/hubspot-tasks";
+import { withHubSpotRetry } from "@/lib/bulk-sync-confirmation";
 import { fetchAHJsForDeal, type AHJRecord } from "@/lib/hubspot-custom-objects";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import {
@@ -25,11 +27,12 @@ import type { ActivityType } from "@/generated/prisma/enums";
 // Permission + flag helpers
 // ---------------------------------------------------------------------------
 
+// Keep this list tight to the spec (PERMIT, TECH_OPS, ADMIN, EXECUTIVE).
+// PMs can view the page via allowedRoutes if/when added to PROJECT_MANAGER's
+// block in roles.ts, but action writes stay scoped to the permitting team.
 export const PERMIT_HUB_ROLES = [
   "ADMIN",
   "EXECUTIVE",
-  "OWNER",
-  "PROJECT_MANAGER",
   "PERMIT",
   "TECH_OPS",
 ] as const;
@@ -334,49 +337,51 @@ export async function completePermitTask(opts: {
   let taskId: string | undefined;
 
   if (!forceFallback) {
-    try {
-      const taskSearchResp = await hubspotClient.crm.objects.tasks.searchApi.doSearch({
-        filterGroups: [
-          {
-            filters: [
-              {
-                propertyName: "associations.deal",
-                operator: FilterOperatorEnum.Eq,
-                value: dealId,
-              },
-              {
-                propertyName: "hs_task_status",
-                operator: FilterOperatorEnum.Neq,
-                value: "COMPLETED",
-              },
-            ],
-          },
-        ],
-        properties: ["hs_task_subject", "hs_task_status"],
-        limit: 100,
-      });
+    const searchResult = await withHubSpotRetry(
+      () =>
+        hubspotClient.crm.objects.tasks.searchApi.doSearch({
+          filterGroups: [
+            {
+              filters: [
+                {
+                  propertyName: "associations.deal",
+                  operator: FilterOperatorEnum.Eq,
+                  value: dealId,
+                },
+                {
+                  propertyName: "hs_task_status",
+                  operator: FilterOperatorEnum.Neq,
+                  value: "COMPLETED",
+                },
+              ],
+            },
+          ],
+          properties: ["hs_task_subject", "hs_task_status"],
+          limit: 100,
+        }),
+      "permit-hub.completePermitTask.search",
+    );
 
-      const openMatch = (taskSearchResp.results ?? []).find((t) => {
-        const subject = String(
-          (t.properties as Record<string, string | null>)?.hs_task_subject ?? "",
-        ).toLowerCase();
-        return subjectPatterns.some((p) => subject.includes(p.toLowerCase()));
-      });
+    if (!searchResult.ok) {
+      // Rate-limit or HubSpot outage — surface to caller so the UI can retry
+      // rather than silently falling through to the deal-property escape hatch.
+      throw new Error(`HubSpot task search failed: ${searchResult.error}`);
+    }
 
-      if (openMatch) {
-        taskId = openMatch.id;
-        await hubspotClient.crm.objects.tasks.basicApi.update(openMatch.id, {
-          properties: {
-            hs_task_status: "COMPLETED",
-            hs_task_completion_date: String(Date.now()),
-            hs_task_body: noteBody,
-          },
-        });
-        taskCompleted = true;
-      }
-    } catch (err) {
-      // Log but don't fail — let fallback + note proceed.
-      console.error("[permit-hub] task search/completion failed", err);
+    const openMatch = (searchResult.data.results ?? []).find((t) => {
+      const subject = String(
+        (t.properties as Record<string, string | null>)?.hs_task_subject ?? "",
+      ).toLowerCase();
+      return subjectPatterns.some((p) => subject.includes(p.toLowerCase()));
+    });
+
+    if (openMatch) {
+      taskId = openMatch.id;
+      // updateTask wraps the call in withHubSpotRetry internally. HubSpot sets
+      // hs_task_completion_date automatically when status becomes COMPLETED —
+      // don't pass a timestamp property here.
+      await updateTask(openMatch.id, { status: "COMPLETED", body: noteBody });
+      taskCompleted = true;
     }
   }
 

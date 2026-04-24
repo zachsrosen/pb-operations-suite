@@ -354,8 +354,6 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/dashboards/pi-ic-action-queue",
     "/dashboards/pi-permit-revisions",
     "/dashboards/pi-ic-revisions",
-    "/dashboards/permit-hub",
-    "/api/permit-hub",
     "/dashboards/ahj-tracker",
     "/dashboards/utility-tracker",
     "/dashboards/pi-timeline",
