@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
@@ -48,6 +48,11 @@ export function SessionHeader({
   const queryClient = useQueryClient();
   const { addToast } = useToast();
   const [showEndConfirm, setShowEndConfirm] = useState(false);
+  // Two-click confirm for the "End without syncing" accidental-hit guard.
+  // When true, the next click on that button actually fires the mutation.
+  const [skipSyncArmed, setSkipSyncArmed] = useState(false);
+  // Re-sync state tracking for completed-session recovery path.
+  const [resyncing, setResyncing] = useState(false);
 
   const updateStatus = useMutation({
     mutationFn: async ({ status: newStatus, skipSync }: { status: string; skipSync?: boolean }) => {
@@ -89,6 +94,51 @@ export function SessionHeader({
       addToast({ type: "error", title: "Failed to update meeting status" });
     },
   });
+
+  // Re-sync unsynced items — the recovery path for sessions that were ended
+  // without syncing, or where individual items failed during sync.
+  const resyncUnsynced = useMutation({
+    mutationFn: async () => {
+      if (!session) return;
+      setResyncing(true);
+      const res = await fetch(`/api/idr-meeting/sessions/${session.id}/sync-unsynced`, {
+        method: "POST",
+      });
+      if (!res.ok) throw new Error("Re-sync failed");
+      return res.json() as Promise<{ total: number; synced: number; failed: number }>;
+    },
+    onSettled: () => setResyncing(false),
+    onSuccess: (data) => {
+      if (session) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.idrMeeting.session(session.id) });
+      }
+      if (!data) return;
+      if (data.total === 0) {
+        addToast({ type: "info", title: "Nothing to re-sync" });
+      } else if (data.failed === 0) {
+        addToast({
+          type: "success",
+          title: `Re-synced ${data.synced} item${data.synced === 1 ? "" : "s"} to HubSpot`,
+        });
+      } else {
+        addToast({
+          type: "warning",
+          title: `Re-sync complete: ${data.synced} ok, ${data.failed} failed`,
+        });
+      }
+    },
+    onError: () => {
+      addToast({ type: "error", title: "Re-sync failed" });
+    },
+  });
+
+  // Disarm the skip-sync confirm after 3s so the user can't accidentally
+  // click it a second time long after the first click.
+  useEffect(() => {
+    if (!skipSyncArmed) return;
+    const t = setTimeout(() => setSkipSyncArmed(false), 3000);
+    return () => clearTimeout(t);
+  }, [skipSyncArmed]);
 
   const items = session?.items ?? [];
   const regionCounts = new Map<string, number>();
@@ -291,25 +341,53 @@ export function SessionHeader({
                         {updateStatus.isPending ? "Syncing & ending..." : "End & Sync All"}
                       </button>
                       <button
-                        className="rounded-lg border border-t-border bg-surface-2 px-3 py-1.5 text-xs font-medium text-muted hover:text-foreground transition-colors disabled:opacity-50"
+                        className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
+                          skipSyncArmed
+                            ? "border-amber-500 bg-amber-500/20 text-amber-500 hover:bg-amber-500/30"
+                            : "border-t-border bg-surface-2 text-muted hover:text-foreground"
+                        }`}
                         onClick={() => {
+                          if (!skipSyncArmed) {
+                            setSkipSyncArmed(true);
+                            return;
+                          }
                           updateStatus.mutate({ status: "COMPLETED", skipSync: true });
+                          setSkipSyncArmed(false);
                           setShowEndConfirm(false);
                         }}
                         disabled={updateStatus.isPending}
-                        title="End the meeting without pushing anything to HubSpot — use for accidental or test meetings"
+                        title="End the meeting without pushing anything to HubSpot — use for accidental or test meetings. Click twice to confirm."
                       >
-                        End without syncing
+                        {skipSyncArmed
+                          ? "Click again to confirm — nothing syncs"
+                          : "End without syncing"}
                       </button>
                       <button
                         className="text-xs text-muted hover:text-foreground"
-                        onClick={() => setShowEndConfirm(false)}
+                        onClick={() => {
+                          setShowEndConfirm(false);
+                          setSkipSyncArmed(false);
+                        }}
                       >
                         Cancel
                       </button>
                     </div>
                   )}
                 </>
+              )}
+
+              {/* Completed-session recovery: re-sync any still-unsynced items. */}
+              {session?.status === "COMPLETED" && unsyncedCount > 0 && (
+                <button
+                  className="rounded-lg border border-orange-500/30 bg-orange-500/10 px-3 py-1.5 text-xs font-medium text-orange-500 hover:bg-orange-500/20 transition-colors disabled:opacity-50"
+                  onClick={() => resyncUnsynced.mutate()}
+                  disabled={resyncing}
+                  title={`${unsyncedCount} item${unsyncedCount === 1 ? "" : "s"} in this session never reached HubSpot. Push them now.`}
+                >
+                  {resyncing
+                    ? "Re-syncing..."
+                    : `Re-sync ${unsyncedCount} unsynced to HubSpot`}
+                </button>
               )}
             </div>
           </div>
