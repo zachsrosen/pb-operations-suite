@@ -32,6 +32,8 @@ import {
   buildTimestampTieBreakFixture,
   buildPvCompletedElectricalStuckFixture,
   buildCrossLocationFixture,
+  buildImportedCrewFixture,
+  buildDispatcherLagFixture,
   type FixtureBundle,
 } from "./fixtures/jobs";
 
@@ -151,6 +153,36 @@ describe("computeLocationComplianceV2", () => {
       createFetcher: mkFetcher([buildCrossLocationFixture()]),
     });
     expect(slo!.byEmployee.map((e) => e.userUid).sort()).toEqual(["u-slo"]);
+  });
+
+  it("Imported crew: CO tech on pure-SLO job IS scored for SLO", async () => {
+    // Parent job exclusively tagged SLO; tech's task-team tag is Centennial.
+    // Under the imported-crew rule the tech should appear in SLO scoring,
+    // even though their own team tag points to CO.
+    mockFetchJobsForCategory.mockResolvedValueOnce([buildImportedCrewFixture().job]);
+    const slo = await computeLocationComplianceV2("Construction", "San Luis Obispo", 30, {
+      createFetcher: mkFetcher([buildImportedCrewFixture()]),
+    });
+    expect(slo!.byEmployee.map((e) => e.userUid)).toEqual(["u-co"]);
+    // NOTE: the same tech will also appear in Centennial scoring because
+    // their team tag matches. This mirrors v1's team-filter behavior —
+    // we don't de-duplicate across locations. Worth documenting but not
+    // fixing here, since v1 has the same characteristic and aggregate
+    // computation is explicitly unchanged (spec §1 non-goal).
+  });
+
+  it("Dispatcher lag: uses earliest completion status (Loose Ends Remaining) over later Construction Complete entry", async () => {
+    // Real scenario from PROJ-8846 Lau (Lucas Scarpellino on 2026-04-24):
+    // Crew finished 2026-04-09 22:21 (Loose Ends Remaining, within scheduled
+    // 23:00 deadline). Dispatcher didn't enter "Construction Complete" until
+    // 2026-04-17 — 8 days later. Under the pre-fix code, v2 picked the late
+    // timestamp and marked the tech as LATE. After the fix v2 uses the
+    // earliest completion signal (22:21 Apr 9) → on-time.
+    const result = await compute([buildDispatcherLagFixture()]);
+    const emp = result!.byEmployee.find((e) => e.userUid === "u-crew")!;
+    expect(emp).toBeDefined();
+    expect(emp.onTimePercent).toBe(100); // NOT 0 — the bug we fixed
+    expect(emp.lateCount).toBe(0);
   });
 
   it("CENTRAL FAIRNESS: PV completed on time, Electrical stuck on same parent → PV tech gets no stuck penalty", async () => {

@@ -35,7 +35,7 @@ async function main() {
   const jobs = await prisma.zuperJobCache.findMany({
     where: {
       lastSyncedAt: { gte: since },
-      jobCategory: { in: ["Construction", "Additional Visit", "Service Visit", "Service Revisit"] },
+      jobCategory: { in: ["Construction", "Additional Visit", "Service Visit", "Service Revisit", "Site Survey", "Inspection"] },
     },
     select: { jobUid: true, jobCategory: true },
     take: 300, // sample, not exhaustive — enough to see all title variants
