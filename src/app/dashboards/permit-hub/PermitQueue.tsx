@@ -1,7 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import {
+  MultiSelectFilter,
+  type FilterOption,
+} from "@/components/ui/MultiSelectFilter";
 import type { PermitQueueItem } from "@/lib/permit-hub";
+import type { PermitActionKind } from "@/lib/pi-statuses";
 
 interface Props {
   items: PermitQueueItem[];
@@ -10,22 +15,58 @@ interface Props {
   onSelect: (dealId: string) => void;
 }
 
+/**
+ * Queue groups map the internal action kinds to the three work buckets Peter
+ * thinks in: "Ready to Submit" (new work going out), "Resubmit" (responses
+ * to AHJ rejections / returned from design), and "Waiting / Follow Up"
+ * (submitted, awaiting utility/AHJ decision — chase if stale).
+ */
+const GROUP_ORDER = ["ready", "resubmit", "follow_up"] as const;
+type GroupKey = (typeof GROUP_ORDER)[number];
+
+const GROUP_LABELS: Record<GroupKey, string> = {
+  ready: "Ready to Submit",
+  resubmit: "Resubmit",
+  follow_up: "Waiting / Follow Up",
+};
+
+function groupForActionKind(kind: PermitActionKind | null): GroupKey {
+  switch (kind) {
+    case "SUBMIT_TO_AHJ":
+    case "SUBMIT_SOLARAPP":
+      return "ready";
+    case "RESUBMIT_TO_AHJ":
+    case "REVIEW_REJECTION":
+    case "COMPLETE_REVISION":
+    case "START_AS_BUILT_REVISION":
+    case "COMPLETE_AS_BUILT":
+      return "resubmit";
+    case "FOLLOW_UP":
+    case "MARK_PERMIT_ISSUED":
+    default:
+      return "follow_up";
+  }
+}
+
 export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Props) {
   const [search, setSearch] = useState("");
-  const [locationFilter, setLocationFilter] = useState<string>("all");
+  const [selectedLocations, setSelectedLocations] = useState<string[]>([]);
 
-  const locations = useMemo(() => {
+  const locationOptions: FilterOption[] = useMemo(() => {
     const s = new Set<string>();
     items.forEach((i) => {
       if (i.pbLocation) s.add(i.pbLocation);
     });
-    return Array.from(s).sort();
+    return Array.from(s)
+      .sort()
+      .map((loc) => ({ value: loc, label: loc }));
   }, [items]);
 
   const filtered = useMemo(() => {
     let list = items;
-    if (locationFilter !== "all") {
-      list = list.filter((i) => i.pbLocation === locationFilter);
+    if (selectedLocations.length > 0) {
+      const set = new Set(selectedLocations);
+      list = list.filter((i) => i.pbLocation && set.has(i.pbLocation));
     }
     if (search.trim()) {
       const q = search.toLowerCase();
@@ -38,7 +79,19 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
       );
     }
     return list;
-  }, [items, search, locationFilter]);
+  }, [items, search, selectedLocations]);
+
+  const groups = useMemo(() => {
+    const map: Record<GroupKey, PermitQueueItem[]> = {
+      ready: [],
+      resubmit: [],
+      follow_up: [],
+    };
+    for (const item of filtered) {
+      map[groupForActionKind(item.actionKind)].push(item);
+    }
+    return map;
+  }, [filtered]);
 
   return (
     <div className="flex h-full flex-col">
@@ -50,22 +103,18 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
           placeholder="Search project, address, lead..."
           className="border-t-border bg-surface-2 flex-1 rounded-md border px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-        <select
-          value={locationFilter}
-          onChange={(e) => setLocationFilter(e.target.value)}
-          className="border-t-border bg-surface-2 rounded-md border px-2 py-1.5 text-sm"
-        >
-          <option value="all">All</option>
-          {locations.map((loc) => (
-            <option key={loc} value={loc}>
-              {loc}
-            </option>
-          ))}
-        </select>
+        <MultiSelectFilter
+          label="Location"
+          options={locationOptions}
+          selected={selectedLocations}
+          onChange={setSelectedLocations}
+          placeholder="All locations"
+          accentColor="blue"
+        />
       </div>
       <div className="text-muted flex items-center justify-between border-b border-t-border px-4 py-2 text-xs">
         <span>
-          {filtered.length} of {items.length} · stalest first
+          {filtered.length} of {items.length} · grouped by action, stalest first
         </span>
       </div>
       <div className="flex-1 overflow-y-auto">
@@ -83,45 +132,61 @@ export function PermitQueue({ items, isLoading, selectedDealId, onSelect }: Prop
             No action items in queue
           </div>
         ) : (
-          <ul className="divide-t-border divide-y">
-            {filtered.map((item) => {
-              const selected = item.dealId === selectedDealId;
+          <div>
+            {GROUP_ORDER.map((key) => {
+              const groupItems = groups[key];
+              if (groupItems.length === 0) return null;
               return (
-                <li key={item.dealId}>
-                  <button
-                    type="button"
-                    onClick={() => onSelect(item.dealId)}
-                    className={`w-full px-4 py-3 text-left transition-colors ${
-                      selected ? "bg-blue-500/10" : "hover:bg-surface-2"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate font-medium">{item.name}</div>
-                        <div className="text-muted truncate text-xs">
-                          {item.address ?? "—"} · {item.pbLocation ?? "—"}
-                        </div>
-                      </div>
-                      {item.isStale && (
-                        <span className="shrink-0 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-semibold text-red-600 dark:text-red-400">
-                          Stale
-                        </span>
-                      )}
-                    </div>
-                    <div className="mt-1 flex items-center justify-between text-xs">
-                      <span className="text-muted">{item.status}</span>
-                      <span className="font-medium text-blue-600 dark:text-blue-400">
-                        {item.actionLabel}
-                      </span>
-                    </div>
-                    <div className="text-muted mt-1 text-xs">
-                      {item.daysInStatus}d · {item.permitLead ?? "Unassigned"}
-                    </div>
-                  </button>
-                </li>
+                <section key={key}>
+                  <header className="bg-surface-2/60 text-muted sticky top-0 z-10 flex items-center justify-between border-y border-t-border px-4 py-1.5 text-xs font-semibold uppercase tracking-wide backdrop-blur">
+                    <span>{GROUP_LABELS[key]}</span>
+                    <span className="font-normal normal-case tracking-normal">
+                      {groupItems.length}
+                    </span>
+                  </header>
+                  <ul className="divide-t-border divide-y">
+                    {groupItems.map((item) => {
+                      const selected = item.dealId === selectedDealId;
+                      return (
+                        <li key={item.dealId}>
+                          <button
+                            type="button"
+                            onClick={() => onSelect(item.dealId)}
+                            className={`w-full px-4 py-3 text-left transition-colors ${
+                              selected ? "bg-blue-500/10" : "hover:bg-surface-2"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="truncate font-medium">{item.name}</div>
+                                <div className="text-muted truncate text-xs">
+                                  {item.address ?? "—"} · {item.pbLocation ?? "—"}
+                                </div>
+                              </div>
+                              {item.isStale && (
+                                <span className="shrink-0 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-semibold text-red-600 dark:text-red-400">
+                                  Stale
+                                </span>
+                              )}
+                            </div>
+                            <div className="mt-1 flex items-center justify-between text-xs">
+                              <span className="text-muted">{item.status}</span>
+                              <span className="font-medium text-blue-600 dark:text-blue-400">
+                                {item.actionLabel}
+                              </span>
+                            </div>
+                            <div className="text-muted mt-1 text-xs">
+                              {item.daysInStatus}d · {item.permitLead ?? "Unassigned"}
+                            </div>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
               );
             })}
-          </ul>
+          </div>
         )}
       </div>
     </div>
