@@ -154,6 +154,10 @@ export async function probeSharedInboxToken(
   return getReadonlyTokenVerbose(impersonateEmail);
 }
 
+// Note: kept thin typed wrapper only for future callers that don't want
+// the verbose diagnostic shape. Currently unused internally — every call
+// site uses the verbose variant so errors get logged.
+
 // ---------------------------------------------------------------------------
 // Thread fetch
 // ---------------------------------------------------------------------------
