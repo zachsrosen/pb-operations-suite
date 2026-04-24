@@ -566,6 +566,58 @@ model ZuperJobCache {
 }
 
 // ===========================================
+// ZUPER SCHEDULE EVENT LOG
+// ===========================================
+// Append-only record of every observed schedule-time or crew change on a
+// Zuper job. Captures the "original commitment" that Zuper's own API doesn't
+// expose — each time cacheZuperJob sees a changed scheduledStart/End or a
+// changed crew list, a new row is appended.
+//
+// Used by compliance-v2 scoring to attribute jobs to the ORIGINAL crew
+// against the ORIGINAL scheduled date, not the current value after any
+// reschedules. Query the earliest row per zuperJobUid for the original
+// commitment; the full ordered series is the reschedule history.
+//
+// Context: 2026-04-24 investigation — scripts/check-reschedules.ts showed
+// half of CA Construction jobs in the 30-day window were rescheduled, but
+// Zuper's API only exposes the current scheduled_end_time. ScheduleRecord
+// captures UI-scheduled events but misses jobs scheduled directly in Zuper
+// (observed: 5 of 6 of Lucas Scarpellino's construction jobs had no
+// ScheduleRecord row at all). This table closes that gap going forward.
+
+model ScheduleEventLog {
+  id String @id @default(cuid())
+
+  zuperJobUid String
+
+  // When we observed this state
+  observedAt DateTime @default(now())
+
+  // Snapshot of schedule fields at observation time
+  scheduledStart DateTime?
+  scheduledEnd   DateTime?
+
+  // Snapshot of assignment (user_uid list + team uid) at observation time
+  crewUserUids String[] @default([])
+  crewTeamUid  String?
+
+  // Why this row was written
+  //   "initial"   — first time we cached this job (baseline)
+  //   "changed"   — scheduledStart/End or crew differed from prior cache state
+  //   "webhook"   — Zuper webhook delivered a schedule change (future use)
+  //   "manual"    — manually logged via the Photon scheduler UI
+  source String
+
+  // Debug: what we saw change
+  previousScheduledStart DateTime?
+  previousScheduledEnd   DateTime?
+  previousCrewUserUids   String[] @default([])
+
+  @@index([zuperJobUid])
+  @@index([observedAt])
+}
+
+// ===========================================
 // COMPLIANCE SCORE SHADOW (v1 vs v2 compare)
 // ===========================================
 
