@@ -1,9 +1,12 @@
 import type { LatLng } from "./map-proximity";
 
 /**
- * Known office locations for Photon Brothers. Coordinates are approximate (street
- * addresses from public records geocoded once — hardcoded here so the feature
- * works without depending on any live geocode call.
+ * Photon Brothers office locations.
+ *
+ * Hardcoded — there are only 5 and they don't change often. Addresses match
+ * the HubSpot Location custom object. If a shop moves, update this list.
+ * Coordinates geocoded from the street addresses (approximate, accurate to
+ * the block — fine for a "where's the shop" pin).
  */
 export interface OfficeLocation {
   id: string;
@@ -17,53 +20,56 @@ export interface OfficeLocation {
 export const OFFICES: OfficeLocation[] = [
   {
     id: "dtc",
-    label: "DTC",
-    pbLocation: "DTC",
-    lat: 39.5965,
-    lng: -104.8847,
-    address: "6300 S Syracuse Way, Centennial, CO",
+    label: "DTC / Centennial",
+    pbLocation: "Centennial",
+    lat: 39.602,
+    lng: -104.8591,
+    address: "9869 E Easter Ave, Centennial, CO 80112",
   },
   {
     id: "westminster",
     label: "Westminster",
     pbLocation: "Westminster",
-    lat: 39.8367,
-    lng: -105.0372,
-    address: "Westminster, CO",
+    lat: 39.8868,
+    lng: -105.0849,
+    address: "7705 W 108th Ave, Broomfield, CO 80021",
   },
   {
     id: "cosp",
     label: "Colorado Springs",
     pbLocation: "Colorado Springs",
-    lat: 38.8339,
-    lng: -104.8214,
-    address: "Colorado Springs, CO",
+    lat: 38.8587,
+    lng: -104.7362,
+    address: "752 Clark Pl, Colorado Springs, CO 80915",
   },
   {
     id: "slo",
     label: "San Luis Obispo",
     pbLocation: "San Luis Obispo",
-    lat: 35.2828,
-    lng: -120.6596,
-    address: "San Luis Obispo, CA",
+    lat: 35.2501,
+    lng: -120.6782,
+    address: "3566 S Higuera St, Ste 310, San Luis Obispo, CA 93401",
   },
   {
     id: "camarillo",
     label: "Camarillo",
     pbLocation: "Camarillo",
-    lat: 34.2164,
-    lng: -119.0376,
-    address: "Camarillo, CA",
+    lat: 34.2277,
+    lng: -118.9795,
+    address: "758 Calle Plano, Camarillo, CA 93012",
   },
 ];
 
+/**
+ * Lookup an office by its pbLocation (what HubSpot / CrewMember use).
+ * DTC and Centennial are the same shop — fuzzy-aliased.
+ */
 export function getOfficeByPbLocation(pbLocation: string | null | undefined): OfficeLocation | null {
   if (!pbLocation) return null;
   const target = pbLocation.toLowerCase();
   return (
     OFFICES.find((o) => o.pbLocation.toLowerCase() === target) ??
-    // Fuzzy alias — Centennial lives at the DTC shop
-    (target === "centennial" ? OFFICES.find((o) => o.id === "dtc") ?? null : null) ??
+    (target === "dtc" ? OFFICES.find((o) => o.id === "dtc") ?? null : null) ??
     null
   );
 }
