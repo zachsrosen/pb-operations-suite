@@ -262,7 +262,7 @@ function buildText(input: {
   if (hsOverdue.length > 0) {
     lines.push("OVERDUE HUBSPOT TASKS:");
     for (const t of hsOverdue) {
-      lines.push(`  • ${t.subject}${t.dueAtMs ? ` (${formatRelative(t.dueAtMs)})` : ""}${t.associatedDealName ? ` — ${t.associatedDealName}` : ""}`);
+      lines.push(`  • ${t.subject}${t.dueAtMs ? ` (${formatRelativeText(t.dueAtMs)})` : ""}${t.associatedDealName ? ` — ${t.associatedDealName}` : ""}`);
     }
     lines.push("");
   }
@@ -275,15 +275,25 @@ function buildText(input: {
   return lines.join("\n");
 }
 
-function formatRelative(ms: number): string {
+function formatRelativeText(ms: number): string {
   const now = Date.now();
   const diffMs = ms - now;
   const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
-  if (diffDays < -1) return `<span style="color:#dc2626;">${Math.abs(diffDays)} days overdue</span>`;
-  if (diffDays === -1) return `<span style="color:#dc2626;">1 day overdue</span>`;
-  if (diffDays === 0) return `<span style="color:#ea580c;">due today</span>`;
+  if (diffDays < -1) return `${Math.abs(diffDays)} days overdue`;
+  if (diffDays === -1) return `1 day overdue`;
+  if (diffDays === 0) return `due today`;
   if (diffDays === 1) return `due tomorrow`;
   return `due in ${diffDays} days`;
+}
+
+function formatRelative(ms: number): string {
+  const text = formatRelativeText(ms);
+  const now = Date.now();
+  const diffMs = ms - now;
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return `<span style="color:#dc2626;">${text}</span>`;
+  if (diffDays === 0) return `<span style="color:#ea580c;">${text}</span>`;
+  return text;
 }
 
 function escapeHtml(s: string): string {
