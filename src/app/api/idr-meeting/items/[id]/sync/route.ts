@@ -1,16 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
-import {
-  isIdrAllowedRole,
-  buildHubSpotPropertyUpdates,
-  buildHubSpotNoteBody,
-  pushDealProperties,
-  createDealTimelineNote,
-  createDealTask,
-  resolvePmOwnerIdForDeal,
-  serializeAdderSummary,
-} from "@/lib/idr-meeting";
+import { isIdrAllowedRole, syncItemToHubSpot } from "@/lib/idr-meeting";
 import { appCache } from "@/lib/cache";
 
 export async function POST(
@@ -26,116 +17,30 @@ export async function POST(
   const { id } = await params;
   const item = await prisma.idrMeetingItem.findUnique({
     where: { id },
-    include: { session: { select: { date: true, status: true } } },
+    include: { session: { select: { date: true } } },
   });
 
   if (!item) {
     return NextResponse.json({ error: "Item not found" }, { status: 404 });
   }
 
-  // Guard: reject sync on completed sessions
-  if (item.session.status === "COMPLETED") {
-    return NextResponse.json({ error: "Cannot sync items in a completed session" }, { status: 400 });
-  }
+  // Note: no longer blocks on session.status === COMPLETED. This lets the team
+  // recover items missed when someone accidentally hit "End without syncing".
 
-  // A) Push property updates
-  const properties = buildHubSpotPropertyUpdates({
-    difficulty: item.difficulty,
-    installerCount: item.installerCount,
-    installerDays: item.installerDays,
-    electricianCount: item.electricianCount,
-    electricianDays: item.electricianDays,
-    discoReco: item.discoReco,
-    interiorAccess: item.interiorAccess,
-    operationsNotes: item.operationsNotes,
-    needsSurveyInfo: item.needsSurveyInfo,
-    needsResurvey: item.needsResurvey,
-    salesChangeRequested: item.salesChangeRequested,
-    salesChangeNotes: item.salesChangeNotes,
-    opsChangeNotes: item.opsChangeNotes,
-    adderSummary: serializeAdderSummary(item),
-  });
+  const result = await syncItemToHubSpot(item, item.session.date);
 
-  try {
-    if (Object.keys(properties).length > 0) {
-      console.log(`[idr-meeting] Syncing deal ${item.dealId} properties:`, JSON.stringify(properties));
-      await pushDealProperties(item.dealId, properties);
-    }
-  } catch (err: unknown) {
-    const errBody = (err as { body?: unknown })?.body ?? (err as { message?: string })?.message ?? err;
-    console.error(`[idr-meeting] Property sync failed for deal ${item.dealId}:`, JSON.stringify(errBody, null, 2));
-    await prisma.idrMeetingItem.update({
-      where: { id },
-      data: { hubspotSyncStatus: "FAILED" },
-    });
-    const detail = typeof errBody === "object" && errBody !== null ? JSON.stringify(errBody) : String(errBody);
-    return NextResponse.json({ error: "Property sync failed", detail, hubspotSyncStatus: "FAILED" }, { status: 502 });
-  }
-
-  // B) Create timeline note
-  let noteWarning: string | null = null;
-  const noteBody = buildHubSpotNoteBody(
-    {
-      difficulty: item.difficulty,
-      installerCount: item.installerCount,
-      installerDays: item.installerDays,
-      electricianCount: item.electricianCount,
-      electricianDays: item.electricianDays,
-      discoReco: item.discoReco,
-      interiorAccess: item.interiorAccess,
-      customerNotes: item.customerNotes,
-      operationsNotes: item.operationsNotes,
-      designNotes: item.designNotes,
-      conclusion: item.conclusion,
-      salesChangeRequested: item.salesChangeRequested,
-      salesChangeNotes: item.salesChangeNotes,
-      needsSurveyInfo: item.needsSurveyInfo,
-      opsChangeNotes: item.opsChangeNotes,
-      needsResurvey: item.needsResurvey,
-      adderSummary: serializeAdderSummary(item),
-    },
-    item.session.date.toISOString(),
-  );
-
-  try {
-    await createDealTimelineNote(item.dealId, noteBody);
-  } catch (err) {
-    console.error(`[idr-meeting] Timeline note failed for deal ${item.dealId}:`, err);
-    noteWarning = "Properties saved but timeline note failed. Retrying later may help.";
-  }
-
-  // C) Optional PM task with customer notes (best-effort — failure doesn't fail the sync)
-  let taskWarning: string | null = null;
-  if (item.customerNotesCreateTask && item.customerNotes && item.customerNotes.trim()) {
-    try {
-      const pmOwnerId = await resolvePmOwnerIdForDeal(item.dealId);
-      await createDealTask(
-        item.dealId,
-        `IDR: Customer notes — ${item.dealName}`,
-        item.customerNotes,
-        pmOwnerId,
-      );
-    } catch (err) {
-      console.error(`[idr-meeting] PM task create failed for deal ${item.dealId}:`, err);
-      taskWarning = "Synced, but PM task creation failed.";
-    }
-  }
-
-  // D) Update sync status
-  await prisma.idrMeetingItem.update({
-    where: { id },
-    data: {
-      hubspotSyncStatus: "SYNCED",
-      hubspotSyncedAt: new Date(),
-    },
-  });
-
-  // Broadcast so other clients see the sync status update
   appCache.invalidate(`idr-meeting:session:${item.sessionId}`);
+
+  if (!result.ok) {
+    return NextResponse.json(
+      { error: "Sync failed", detail: result.error, hubspotSyncStatus: "FAILED" },
+      { status: 502 },
+    );
+  }
 
   return NextResponse.json({
     hubspotSyncStatus: "SYNCED",
-    noteWarning,
-    taskWarning,
+    noteWarning: result.noteWarning ?? null,
+    taskWarning: result.taskWarning ?? null,
   });
 }

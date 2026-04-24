@@ -574,6 +574,140 @@ export async function resolvePmOwnerIdForDeal(dealId: string): Promise<string | 
 }
 
 // ---------------------------------------------------------------------------
+// Per-item sync helper — shared by End & Sync, manual sync, and re-sync.
+// ---------------------------------------------------------------------------
+
+/**
+ * Push one IDR item to HubSpot: deal properties, timeline note, and optional
+ * PM task. Idempotent on properties (updates), but note/task are additive —
+ * callers must gate on hubspotSyncStatus to avoid duplicate notes/tasks.
+ *
+ * Updates item.hubspotSyncStatus to SYNCED or FAILED. The function never
+ * throws — it reports success via the return value so callers can summarize.
+ */
+export async function syncItemToHubSpot(
+  item: {
+    id: string;
+    dealId: string;
+    dealName: string;
+    difficulty: number | null;
+    installerCount: number | null;
+    installerDays: number | null;
+    electricianCount: number | null;
+    electricianDays: number | null;
+    discoReco: boolean | null;
+    interiorAccess: boolean | null;
+    operationsNotes: string | null;
+    needsSurveyInfo: boolean | null;
+    needsResurvey: boolean | null;
+    salesChangeRequested: boolean | null;
+    salesChangeNotes: string | null;
+    opsChangeNotes: string | null;
+    customerNotes: string | null;
+    customerNotesCreateTask: boolean;
+    designNotes: string | null;
+    conclusion: string | null;
+    adderTileRoof: boolean;
+    adderMetalRoof: boolean;
+    adderFlatFoamRoof: boolean;
+    adderShakeRoof: boolean;
+    adderSteepPitch: boolean;
+    adderTwoStorey: boolean;
+    adderTrenching: boolean;
+    adderGroundMount: boolean;
+    adderMpuUpgrade: boolean;
+    adderEvCharger: boolean;
+    customAdders: unknown;
+  },
+  sessionDate: Date,
+): Promise<{ ok: boolean; noteWarning?: string; taskWarning?: string; error?: string }> {
+  try {
+    const properties = buildHubSpotPropertyUpdates({
+      difficulty: item.difficulty,
+      installerCount: item.installerCount,
+      installerDays: item.installerDays,
+      electricianCount: item.electricianCount,
+      electricianDays: item.electricianDays,
+      discoReco: item.discoReco,
+      interiorAccess: item.interiorAccess,
+      operationsNotes: item.operationsNotes,
+      needsSurveyInfo: item.needsSurveyInfo,
+      needsResurvey: item.needsResurvey,
+      salesChangeRequested: item.salesChangeRequested,
+      salesChangeNotes: item.salesChangeNotes,
+      opsChangeNotes: item.opsChangeNotes,
+      adderSummary: serializeAdderSummary(item),
+    });
+
+    if (Object.keys(properties).length > 0) {
+      await pushDealProperties(item.dealId, properties);
+    }
+
+    let noteWarning: string | undefined;
+    try {
+      const noteBody = buildHubSpotNoteBody(
+        {
+          difficulty: item.difficulty,
+          installerCount: item.installerCount,
+          installerDays: item.installerDays,
+          electricianCount: item.electricianCount,
+          electricianDays: item.electricianDays,
+          discoReco: item.discoReco,
+          interiorAccess: item.interiorAccess,
+          customerNotes: item.customerNotes,
+          operationsNotes: item.operationsNotes,
+          designNotes: item.designNotes,
+          conclusion: item.conclusion,
+          salesChangeRequested: item.salesChangeRequested,
+          salesChangeNotes: item.salesChangeNotes,
+          needsSurveyInfo: item.needsSurveyInfo,
+          opsChangeNotes: item.opsChangeNotes,
+          needsResurvey: item.needsResurvey,
+          adderSummary: serializeAdderSummary(item),
+        },
+        sessionDate.toISOString(),
+      );
+      await createDealTimelineNote(item.dealId, noteBody);
+    } catch (err) {
+      console.error(`[idr-meeting] Timeline note failed for deal ${item.dealId}:`, err);
+      noteWarning = "Properties saved but timeline note failed.";
+    }
+
+    let taskWarning: string | undefined;
+    if (item.customerNotesCreateTask && item.customerNotes && item.customerNotes.trim()) {
+      try {
+        const pmOwnerId = await resolvePmOwnerIdForDeal(item.dealId);
+        await createDealTask(
+          item.dealId,
+          `IDR: Customer notes — ${item.dealName}`,
+          item.customerNotes,
+          pmOwnerId,
+        );
+      } catch (err) {
+        console.error(`[idr-meeting] PM task failed for deal ${item.dealId}:`, err);
+        taskWarning = "Synced, but PM task creation failed.";
+      }
+    }
+
+    await prisma.idrMeetingItem.update({
+      where: { id: item.id },
+      data: { hubspotSyncStatus: "SYNCED", hubspotSyncedAt: new Date() },
+    });
+
+    return { ok: true, noteWarning, taskWarning };
+  } catch (err) {
+    console.error(`[idr-meeting] Sync failed for item ${item.id} (deal ${item.dealId}):`, err);
+    await prisma.idrMeetingItem.update({
+      where: { id: item.id },
+      data: { hubspotSyncStatus: "FAILED" },
+    }).catch(() => {});
+    const errBody = (err as { body?: unknown })?.body ?? (err as { message?: string })?.message ?? String(err);
+    const detail = typeof errBody === "object" && errBody !== null ? JSON.stringify(errBody) : String(errBody);
+    return { ok: false, error: detail };
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Archive search
 // ---------------------------------------------------------------------------
 
