@@ -1,7 +1,7 @@
 // src/lib/map-aggregator.ts
 import { prisma } from "@/lib/db";
 import { geocodeAddress as liveGeocode } from "@/lib/travel-time";
-import { fetchAllProjects, type Project } from "@/lib/hubspot";
+import { fetchAllProjects, filterProjectsForContext, type Project } from "@/lib/hubspot";
 import { fetchTodaysServiceJobs, fetchTodaysDnrJobs, fetchTodaysRoofingJobs } from "@/lib/zuper";
 import { fetchServiceTickets, resolveTicketAddresses } from "@/lib/hubspot-tickets";
 import type {
@@ -180,23 +180,26 @@ export const PROJECT_MARKER_SPECS: Record<ProjectMarkerSpec["kind"], ProjectMark
   install: {
     kind: "install",
     getScheduledAt: (p) => p.constructionScheduleDate,
-    isReadyToSchedule: (p) => {
-      const s = (p.stage ?? "").toLowerCase();
-      return s.includes("ready to build") || s === "rtb";
-    },
+    // Match construction-scheduler's queue: isSchedulable covers stages
+    // ["Site Survey", "Ready To Build", "RTB - Blocked", "Construction",
+    // "Inspection"] per SCHEDULABLE_STAGES in hubspot.ts. Exclude projects
+    // already scheduled so they don't double-appear as "ready."
+    isReadyToSchedule: (p) => p.isSchedulable && !p.constructionScheduleDate,
     subtitleWhenReady: "Ready to build",
   },
   inspection: {
     kind: "inspection",
     getScheduledAt: (p) => p.inspectionScheduleDate,
+    // Match inspection-scheduler: projects signalled as ready for inspection
+    // that don't yet have an inspection scheduled date.
     isReadyToSchedule: (p) => !!p.readyForInspection && !p.inspectionScheduleDate,
     subtitleWhenReady: "Ready for inspection",
   },
   survey: {
     kind: "survey",
     getScheduledAt: (p) => p.siteSurveyScheduleDate,
+    // Match site-survey-scheduler: closed-won deals without a survey yet.
     isReadyToSchedule: (p) => {
-      // Close-won in sales pipeline + no survey yet = ready-to-schedule survey
       return !p.siteSurveyScheduleDate && !p.isSiteSurveyCompleted && !!p.closeDate;
     },
     subtitleWhenReady: "Ready to schedule",
@@ -623,9 +626,14 @@ export async function aggregateMapMarkers(
   if (wantInspection) projectKinds.push("inspection");
   if (wantSurvey) projectKinds.push("survey");
 
+  // Apply the scheduler-context filter BEFORE kind-specific mode filtering so
+  // the universe of eligible projects matches what the schedulers show
+  // (isSchedulable + in-progress construction/inspection + recently completed).
+  const schedulingProjects = filterProjectsForContext(projects, "scheduling");
+
   for (const kind of projectKinds) {
     const spec = PROJECT_MARKER_SPECS[kind];
-    const scopedProjects = filterProjectsByMode(projects, opts.mode, today, spec);
+    const scopedProjects = filterProjectsByMode(schedulingProjects, opts.mode, today, spec);
     const { markers, unplaced } = await buildProjectMarkers(scopedProjects, spec, { today });
     allMarkers.push(...markers);
     allUnplaced.push(...unplaced);

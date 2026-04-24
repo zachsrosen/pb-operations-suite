@@ -309,6 +309,9 @@ import { aggregateMapMarkers } from "@/lib/map-aggregator";
 
 jest.mock("@/lib/hubspot", () => ({
   fetchAllProjects: jest.fn(),
+  // Pass-through: keeps the existing project fixtures visible so tests don't
+  // need to spell out every field the real scheduling-context filter reads.
+  filterProjectsForContext: jest.fn((projects) => projects),
 }));
 
 jest.mock("@/lib/zuper", () => ({
@@ -432,5 +435,33 @@ describe("filterProjectsByMode", () => {
     expect(ids).toContain("install:10");
     expect(ids).toContain("install:11");
     expect(ids).not.toContain("install:12");
+  });
+
+  it("install Today mode includes isSchedulable projects (matches construction-scheduler)", async () => {
+    const today = new Date("2026-04-23T00:00:00Z");
+    const rtbBlocked = {
+      ...baseProject,
+      id: 20,
+      stage: "RTB - Blocked",
+      isSchedulable: true,
+      constructionScheduleDate: null,
+    };
+    const siteSurvey = {
+      ...baseProject,
+      id: 21,
+      stage: "Site Survey",
+      isSchedulable: true,
+      constructionScheduleDate: null,
+    };
+    (fetchAllProjects as jest.Mock).mockResolvedValue([rtbBlocked, siteSurvey]);
+    const res = await (await import("@/lib/map-aggregator")).aggregateMapMarkers({
+      mode: "today", types: ["install"], date: today,
+    });
+    const ids = res.markers.map((m) => m.id);
+    // Both count as "ready-to-schedule" per the scheduler's isSchedulable
+    // definition (SCHEDULABLE_STAGES: Site Survey, RTB, RTB-Blocked,
+    // Construction, Inspection).
+    expect(ids).toContain("install:20");
+    expect(ids).toContain("install:21");
   });
 });
