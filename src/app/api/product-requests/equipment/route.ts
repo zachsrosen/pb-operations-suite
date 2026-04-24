@@ -44,6 +44,15 @@ export async function POST(req: NextRequest) {
     payload.extractedMetadata && typeof payload.extractedMetadata === "object"
       ? (payload.extractedMetadata as Record<string, unknown>)
       : null;
+  const estimatedCost =
+    typeof payload.estimatedCost === "number"
+      ? payload.estimatedCost
+      : typeof payload.estimatedCost === "string" && payload.estimatedCost.trim()
+        ? Number(payload.estimatedCost)
+        : null;
+  if (estimatedCost !== null && !Number.isFinite(estimatedCost)) {
+    return NextResponse.json({ error: "estimatedCost must be a number" }, { status: 400 });
+  }
 
   const missing: string[] = [];
   if (!category) missing.push("category");
@@ -92,6 +101,7 @@ export async function POST(req: NextRequest) {
       requestedBy,
       dealId,
       salesRequestNote,
+      unitCost: estimatedCost,
       metadata:
         Object.keys(metadataJson).length > 0
           ? (metadataJson as unknown as import("@/generated/prisma/client").Prisma.InputJsonValue)

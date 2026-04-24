@@ -48,6 +48,12 @@ export async function POST(req: NextRequest) {
       : typeof payload.estimatedPrice === "string" && payload.estimatedPrice.trim()
         ? Number(payload.estimatedPrice)
         : null;
+  const estimatedCost =
+    typeof payload.estimatedCost === "number"
+      ? payload.estimatedCost
+      : typeof payload.estimatedCost === "string" && payload.estimatedCost.trim()
+        ? Number(payload.estimatedCost)
+        : null;
 
   const missing: string[] = [];
   if (!category) missing.push("category");
@@ -68,6 +74,9 @@ export async function POST(req: NextRequest) {
   }
   if (estimatedPrice !== null && !Number.isFinite(estimatedPrice)) {
     return NextResponse.json({ error: "estimatedPrice must be a number" }, { status: 400 });
+  }
+  if (estimatedCost !== null && !Number.isFinite(estimatedCost)) {
+    return NextResponse.json({ error: "estimatedCost must be a number" }, { status: 400 });
   }
 
   const duplicate = await findAdderDuplicate(name);
@@ -91,6 +100,7 @@ export async function POST(req: NextRequest) {
       unit: unit as AdderUnit,
       name,
       estimatedPrice,
+      estimatedCost,
       description,
       salesRequestNote,
       requestedBy,

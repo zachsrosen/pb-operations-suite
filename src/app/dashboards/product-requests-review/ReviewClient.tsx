@@ -153,6 +153,7 @@ export default function ReviewClient() {
       {selected && selected.type === "ADDER" && (
         <AdderRequestDrawer
           requestId={selected.id}
+          row={selected}
           onClose={() => setSelected(null)}
           onResolved={handleResolved}
         />

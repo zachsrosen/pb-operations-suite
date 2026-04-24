@@ -29,4 +29,7 @@ export type MergedRequestRow = {
   createdAt: string;
   dealId: string | null;
   salesRequestNote: string | null;
+  // Rep-entered estimates surfaced to the reviewer to pre-fill approval forms.
+  estimatedPrice: number | null;
+  estimatedCost: number | null;
 };

@@ -2,20 +2,27 @@
 
 import { useState } from "react";
 import { AdderType, AdderDirection } from "@/generated/prisma/enums";
+import type { MergedRequestRow } from "@/lib/product-requests/types";
 
 export default function AdderRequestDrawer({
   requestId,
+  row,
   onClose,
   onResolved,
 }: {
   requestId: string;
+  row?: MergedRequestRow;
   onClose: () => void;
   onResolved: () => void;
 }) {
   const [code, setCode] = useState("");
-  const [name, setName] = useState("");
-  const [basePrice, setBasePrice] = useState("");
-  const [baseCost, setBaseCost] = useState("");
+  const [name, setName] = useState(row?.title || "");
+  const [basePrice, setBasePrice] = useState(
+    row?.estimatedPrice != null ? String(row.estimatedPrice) : "",
+  );
+  const [baseCost, setBaseCost] = useState(
+    row?.estimatedCost != null ? String(row.estimatedCost) : "",
+  );
   const [type, setType] = useState<string>(AdderType.FIXED);
   const [direction, setDirection] = useState<string>(AdderDirection.ADD);
   const [reviewerNote, setReviewerNote] = useState("");
@@ -96,6 +103,19 @@ export default function AdderRequestDrawer({
             ✕
           </button>
         </div>
+
+        {row?.salesRequestNote && (
+          <div className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 p-3 text-sm">
+            <div className="text-xs font-medium uppercase tracking-wide text-cyan-300 mb-1">
+              Sales request
+            </div>
+            <div className="text-foreground">{row.salesRequestNote}</div>
+            <div className="text-xs text-muted mt-2">
+              From {row.requestedBy}
+              {row.dealId ? ` · Deal ${row.dealId}` : ""}
+            </div>
+          </div>
+        )}
 
         {!mode && (
           <div className="space-y-3">

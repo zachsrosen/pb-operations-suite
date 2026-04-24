@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { FORM_CATEGORIES } from "@/lib/catalog-fields";
+import DealSearchField from "./DealSearchField";
 
 const CATEGORY_LABELS: Record<string, string> = {
   MODULE: "Solar Module",
@@ -36,6 +37,7 @@ export default function EquipmentRequestForm({
   const [datasheetUrl, setDatasheetUrl] = useState("");
   const [salesRequestNote, setSalesRequestNote] = useState("");
   const [dealId, setDealId] = useState<string>(dealIdInitial || "");
+  const [estimatedCost, setEstimatedCost] = useState("");
   const [datasheetFile, setDatasheetFile] = useState<File | null>(null);
   const [extractedMetadata, setExtractedMetadata] = useState<Record<string, unknown> | null>(null);
   const [extracting, setExtracting] = useState(false);
@@ -96,6 +98,7 @@ export default function EquipmentRequestForm({
           datasheetUrl: datasheetUrl.trim() || null,
           salesRequestNote: salesRequestNote.trim(),
           dealId: dealId.trim() || null,
+          estimatedCost: estimatedCost.trim() ? Number(estimatedCost.trim()) : null,
           extractedMetadata,
         }),
       });
@@ -145,16 +148,15 @@ export default function EquipmentRequestForm({
           </select>
         </label>
 
-        <label className="block">
-          <span className="block text-xs font-medium text-muted mb-1.5">Deal ID (optional)</span>
-          <input
-            type="text"
+        <div className="block">
+          <span className="block text-xs font-medium text-muted mb-1.5">
+            Deal (optional)
+          </span>
+          <DealSearchField
             value={dealId}
-            onChange={(e) => setDealId(e.target.value)}
-            placeholder="HubSpot deal ID"
-            className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground"
+            onChange={(id) => setDealId(id)}
           />
-        </label>
+        </div>
 
         <label className="block">
           <span className="block text-xs font-medium text-muted mb-1.5">Brand *</span>
@@ -174,6 +176,20 @@ export default function EquipmentRequestForm({
             value={model}
             onChange={(e) => setModel(e.target.value)}
             placeholder="e.g. Alpha Pure-R 410W"
+            className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground"
+          />
+        </label>
+
+        <label className="block md:col-span-2">
+          <span className="block text-xs font-medium text-muted mb-1.5">
+            Estimated cost per unit (optional)
+          </span>
+          <input
+            type="number"
+            step="0.01"
+            value={estimatedCost}
+            onChange={(e) => setEstimatedCost(e.target.value)}
+            placeholder="Our cost (not retail) — helps Tech Ops price it faster"
             className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground"
           />
         </label>
