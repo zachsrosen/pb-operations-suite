@@ -4,6 +4,75 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-04-24
+
+### Admin Workflow Builder (Major)
+Visual no-code automation from Phase 5 through Phase 16 — runtime on Inngest, editor at `/dashboards/admin/workflows`.
+
+- **Triggers**: `MANUAL`, `HUBSPOT_PROPERTY_CHANGE`, `ZUPER_PROPERTY_CHANGE`, `CRON` (scheduled), `CUSTOM_EVENT` (emit helper). Webhook fan-out for HubSpot (piggybacked on `deal-sync`) and Zuper (`/api/webhooks/zuper/admin-workflows`)
+- **Actions palette**: `send-email`, `ai-compose`, `update-hubspot-property`, `update-hubspot-contact-property`, `add-hubspot-note`, `create-hubspot-task`, `find-hubspot-contact`, `update-zuper-property`, `fetch-zuper-job`, `http-request`, `run-bom-pipeline`, `log-activity`
+- **Control flow**: `delay`, `stop-if`, `parallel`, `for-each` loops
+- **Editor UX**: visual canvas preview, drag-to-reorder steps, select/multiselect dropdowns with dynamic option re-fetch, unified property options, export/import workflow JSON
+- **Operational**: versioning (snapshot on save + rollback), analytics dashboard, per-run detail page with step output drill-in, cross-workflow run history, dry-run mode, failure alerts, per-workflow rate limiting, best-effort idempotency via DB checkpoints, action-level idempotency for create-actions
+- **Platform**: Inngest auto-sync on deploy + manual resync button, dispatcher cron for CRON triggers, cron cleanup for stale runs, Zuper property discovery helper
+- Feature flags: `ADMIN_WORKFLOWS_ENABLED` (editor + API + manual), `ADMIN_WORKFLOWS_FANOUT_ENABLED` (webhook → workflow)
+- Docs: CLAUDE.md system entry, ops runbook, Phase 13 / 15 / 16 state + closeout reports
+
+### Pricing & Adders (Major)
+Phase 1 Chunks 3–6 of the pricing & adder governance overhaul.
+
+- **Triage engine** (`/api/triage/*`): pure-function recommendation engine with predicate evaluator. Splits adders into `autoApply` (via `appliesTo`) vs. triage-driven (via `triggerLogic` against answers). Returns shop-resolved pricing with signed amounts
+- **TriageRun** CRUD with owner-or-admin PATCH, submitted runs are terminal. Submit writes `pb_triage_adders` JSON + `pb_triage_submitted_at` to the deal (Phase 1 interim — no HubSpot product mirror yet)
+- **Rep-facing mobile UI** at `/triage`: deal lookup → per-question stepper with localStorage draft, debounced server sync, photo capture (compressed to 1600px/JPEG 0.8 via canvas), review screen with per-row reasons for unchecked recommendations, shop-prompt fallback when deal has no `pb_location`
+- **Pricing calculator** DB-backed adder path (opt-in via `CalcOptions.resolvedAdders`). `CalcInput.customFixedAdder` (scalar) → `customAdders[]` with backward-compat alias. Three latent bugs fixed: non-PE percentage adders dropped by type filter; `peEnergyCommunnity` typo → `peEnergyCommunity`; empty `DC_QUALIFYING_MODULE_BRANDS` flagged
+- **OpenSolar sync scaffold** behind `ADDER_SYNC_ENABLED=false` kill switch. Client abstraction, `AdderSyncRun` telemetry, manual trigger + nightly 10am UTC cron, `SyncStatusBadge` with 30s poll. Real endpoints deferred until Pre-Phase Discovery fills 6 blocking questions
+- Cards moved to Sales & Marketing suite with IN PROGRESS flag
+
+### Jobs Proximity Map (Major)
+New `/dashboards/map` — unified map of scheduled/unscheduled jobs for dispatcher reassignment decisions.
+
+- **Phase 1**: installs + service + crews, Today mode, scheduled vs ready-to-schedule marker styles (filled circle vs. hollow ring), `MapLegend` with live counts, `DetailPanel` slide-out
+- **Phase 2–3**: Week / Backlog modes, service tickets, inspection + survey markers. Uses `getScheduledJobsForDateRange` over mode-scoped date range, fail-open on Zuper errors
+- **Rich detail**: uses canonical `project_number` (not deal object ID), system size, crew, PM, AHJ, utility, shop; D&R + roofing markers; shop filter
+- **Phase 4A (Dispatcher office)**: cyan 🏢 office pin with radius circle at the five known PB shops. Auto-detects from `User.allowedLocations[0]`. Morning briefing banner shows N ready-to-schedule jobs within X mi + 6 nearest, clickable to open detail
+
+### Service Suite — Jessica Meeting Followups
+- **Scheduler colors**: status-driven tile fill (New blue, Scheduled cyan, In Progress purple, Completed emerald, Cancelled zinc, Overdue red) with a 4px left-edge stripe for category. Applied across month/week/day-untimed/day-timed/sidebar/modal
+- **Unassigned Tickets KPI** on service overview: yellow when > 0, green at zero. Click toggles drill-through to priority queue filtered by `__unassigned__`. KPI grid bumped to 5-up
+- **New `/dashboards/service-unscheduled`**: Zuper jobs awaiting a scheduled date, with age tiers (red/orange/amber), category/status/state/search filters, CSV export
+- **Contact recency fix**: `resolveLastContact()` now picks freshest signal across HubSpot Engagements (manual calls/notes/meetings), Zuper job activity (MAX scheduledStart + completedDate, capped to past), and legacy fields. Fixes "no contact in 70 days" warnings on customers we talked to yesterday. `daysBetween` off-by-one + NaN guard
+- **BOM design_status trigger**: new `DESIGN_STATUS_CONFIG` env var mirrors `PIPELINE_STAGE_CONFIG` for service deals that don't go through dealstage transitions. Same HubSpot webhook → Inngest path
+- `service-unscheduled` ageDays fix — pull from `rawData.created_at`, not `lastSyncedAt` (which updates every sync)
+
+### IDR Meeting
+- **Scoped starts**: three-way split Start CO / Start CA / All. Bucket filters HubSpot deals and queued escalations by `pb_location`; dedupe checks region overlap so CO ↔ CA meetings don't trap each other
+- **Recovery from accidental end**: new POST `/api/idr-meeting/sessions/[id]/sync-unsynced` re-runs sync for any item where `hubspotSyncStatus !== SYNCED`, including on COMPLETED sessions. Per-item sync endpoint no longer rejects completed sessions
+- **Two-click confirm** on "End without syncing"
+- Sales folder, PM task on sync, open-all links; dropped needs-resurvey UI
+- `syncItemToHubSpot()` helper extracted to `lib/idr-meeting.ts`, reused across three endpoints
+
+### Accounting
+- **Invoice-first bucketing** in payment-tracking: `effectivePaidStatus` helper trusts the attached invoice record over the deal-property status. PE deals where the CC invoice is actually paid no longer lead with "Post-install, CC not paid" in the Payment Action Queue
+- Three new accounting pages
+- `computeBucket` rules + ladder rewritten to use effective statuses
+
+### Compliance V2 (flag-gated)
+- Per-service-task scoring behind `COMPLIANCE_V2_ENABLED`: attributes credit per Zuper service task (PV Install, Electrical Install, Loose Ends) rather than per parent job, so PV crew isn't penalized for battery/electrical delays on the same job
+- Credit set = union of `service_task.assigned_to[]` + form submission `created_by` with 1/N fractional attribution
+- Status bucket coverage: added Return Visit Required, Loose Ends Remaining, Completed - AV, On My Way variants; excluded stale Ready To Forecast
+
+### BOM Pipeline
+- `bom-so-create` now merges `items + suggestedAdditions` when building Zoho SO line items. Post-processor Rule 5 auto-adds (Powerwall expansion harness/wall-mount kit, snow dogs, T-bolt bonding, critter guards) were landing in the snapshot but missing from the generated SO. Caught on PROJ-9681
+
+### Bug Fixes
+- Scheduling: multi-crew install emails collapsed into one send (was duplicating per assignee)
+- UI: `StatCard` values shrink on md/lg so 5-up hero grids fit
+- Admin Workflows: coerce `propertyValuesIn` string → array in trigger config
+- Adders seed: `PE_DISCOUNT_30` row had 21 columns, not 22
+- Webhook route: CodeQL `js/tainted-format-string` fix — pass `propName` as `console.warn` data arg with `%s` substitution
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
