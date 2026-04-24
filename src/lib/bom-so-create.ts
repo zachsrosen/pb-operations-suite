@@ -132,13 +132,25 @@ export async function createSalesOrder(params: {
     };
   }
 
-  // 3. Build line items — look up zohoItemId per BOM item
+  // 3. Build line items — look up zohoItemId per BOM item.
+  //
+  // We merge `items` (extracted from planset) with `suggestedAdditions`
+  // (auto-added by the BOM post-processor — e.g. PW3 expansion harness +
+  // wall-mount kit, snow dogs, T-bolt bonding hardware, critter guards,
+  // etc). Without this merge, post-processor suggestions sit in the
+  // snapshot unused and the resulting Zoho SO is incomplete — observed
+  // on PROJ-9681 where extraction produced just the expansion unit and
+  // the harness/kit suggestions never reached the SO.
   const bomData = snapshot.bomData as {
     project?: BomProject & { address?: string };
     items?: BomItem[];
+    suggestedAdditions?: BomItem[];
   };
 
-  const bomItems = Array.isArray(bomData?.items) ? bomData.items : [];
+  const bomItems: BomItem[] = [
+    ...(Array.isArray(bomData?.items) ? bomData.items : []),
+    ...(Array.isArray(bomData?.suggestedAdditions) ? bomData.suggestedAdditions : []),
+  ];
 
   const enablePostProcess = process.env.ENABLE_SO_POST_PROCESS === "true";
   const wantDebug = enablePostProcess && (debug ?? false);
