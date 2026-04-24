@@ -139,6 +139,14 @@ export const queryKeys = {
     meetingSearch: (q: string, from?: string, to?: string) =>
       [...queryKeys.idrMeeting.root, "meeting-search", q, from ?? "", to ?? ""] as const,
   },
+  permitHub: {
+    root: ["permit-hub"] as const,
+    queue: () => [...queryKeys.permitHub.root, "queue"] as const,
+    project: (dealId: string) => [...queryKeys.permitHub.root, "project", dealId] as const,
+    draft: (dealId: string, actionKind: string) =>
+      [...queryKeys.permitHub.root, "draft", dealId, actionKind] as const,
+    todayCount: () => [...queryKeys.permitHub.root, "today-count"] as const,
+  },
   comms: {
     root: ["comms"] as const,
     messages: (filters?: Record<string, string>) =>
@@ -209,6 +217,7 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("territory-map")) return [queryKeys.territoryMap.root];
   if (serverKey.startsWith("office-performance")) return [queryKeys.officePerformance.root];
   if (serverKey.startsWith("idr-meeting")) return [queryKeys.idrMeeting.root];
+  if (serverKey.startsWith("deals:permit")) return [queryKeys.permitHub.root];
   if (serverKey.startsWith("on-call")) return [queryKeys.onCall.root];
   return [];
 }

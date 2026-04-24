@@ -75,6 +75,10 @@
       "schedule": "0 5 * * 0"
     },
     {
+      "path": "/api/cron/permit-hub-drafts-cleanup",
+      "schedule": "0 4 * * *"
+    },
+    {
       "path": "/api/solar/cron/cleanup-pending",
       "schedule": "0 13 * * *"
     },

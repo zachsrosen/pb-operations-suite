@@ -2,7 +2,22 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-utils";
 import SuitePageShell, { type SuitePageCard } from "@/components/SuitePageShell";
 
+const PERMIT_HUB_ENABLED = process.env.NEXT_PUBLIC_PERMIT_HUB_ENABLED === "true";
+
 const LINKS: SuitePageCard[] = [
+  ...(PERMIT_HUB_ENABLED
+    ? [
+        {
+          href: "/dashboards/permit-hub",
+          title: "Permit Hub",
+          description:
+            "Workspace for working open permit action items — aggregated AHJ context and task-based writeback.",
+          tag: "HUB",
+          icon: "🏛️",
+          section: "Pipeline",
+        } as SuitePageCard,
+      ]
+    : []),
   {
     href: "/dashboards/pi-overview",
     title: "P&I Overview",
