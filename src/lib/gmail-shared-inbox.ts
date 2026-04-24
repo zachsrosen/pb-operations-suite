@@ -143,9 +143,16 @@ async function getReadonlyTokenVerbose(
   return { ok: true, token: body.access_token };
 }
 
-// Note: kept thin typed wrapper only for future callers that don't want
-// the verbose diagnostic shape. Currently unused internally — every call
-// site uses the verbose variant so errors get logged.
+/**
+ * Exposed for diagnostic endpoints — callers can surface the structured
+ * failure reason in HTTP responses when debugging (Vercel's log viewer
+ * truncates message bodies at ~80 chars).
+ */
+export async function probeSharedInboxToken(
+  impersonateEmail: string,
+): Promise<TokenResult> {
+  return getReadonlyTokenVerbose(impersonateEmail);
+}
 
 // ---------------------------------------------------------------------------
 // Thread fetch
