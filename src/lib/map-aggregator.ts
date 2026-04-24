@@ -173,6 +173,13 @@ export interface ProjectMarkerSpec {
   kind: "install" | "inspection" | "survey";
   getScheduledAt: (p: Project) => string | null | undefined;
   isReadyToSchedule: (p: Project) => boolean;
+  /**
+   * When true, the project is considered "done" for this marker kind and
+   * should be removed from the map entirely — no pin, no ring, no clutter.
+   * filterProjectsForContext keeps completed projects on the calendar for
+   * historical context, but on a live ops map they're noise.
+   */
+  isCompleted: (p: Project) => boolean;
   subtitleWhenReady: string;
 }
 
@@ -185,6 +192,9 @@ export const PROJECT_MARKER_SPECS: Record<ProjectMarkerSpec["kind"], ProjectMark
     // "Inspection"] per SCHEDULABLE_STAGES in hubspot.ts. Exclude projects
     // already scheduled so they don't double-appear as "ready."
     isReadyToSchedule: (p) => p.isSchedulable && !p.constructionScheduleDate,
+    // Install is done when the construction complete date is set OR the
+    // project has moved past construction (PTO granted / inactive).
+    isCompleted: (p) => !!p.constructionCompleteDate || !!p.ptoGrantedDate || !p.isActive,
     subtitleWhenReady: "Ready to build",
   },
   inspection: {
@@ -193,6 +203,8 @@ export const PROJECT_MARKER_SPECS: Record<ProjectMarkerSpec["kind"], ProjectMark
     // Match inspection-scheduler: projects signalled as ready for inspection
     // that don't yet have an inspection scheduled date.
     isReadyToSchedule: (p) => !!p.readyForInspection && !p.inspectionScheduleDate,
+    // Inspection is done when pass date is set or project is inactive.
+    isCompleted: (p) => !!p.inspectionPassDate || !p.isActive,
     subtitleWhenReady: "Ready for inspection",
   },
   survey: {
@@ -202,6 +214,8 @@ export const PROJECT_MARKER_SPECS: Record<ProjectMarkerSpec["kind"], ProjectMark
     isReadyToSchedule: (p) => {
       return !p.siteSurveyScheduleDate && !p.isSiteSurveyCompleted && !!p.closeDate;
     },
+    // Survey is done when explicitly completed.
+    isCompleted: (p) => p.isSiteSurveyCompleted || !p.isActive,
     subtitleWhenReady: "Ready to schedule",
   },
 };
@@ -316,6 +330,29 @@ export interface ZuperJobInput {
  * Build markers from Zuper jobs. Works for any Zuper-sourced kind
  * (service, dnr, roofing) — the kind is attached uniformly.
  */
+/**
+ * Zuper status names that mean the job is done / no longer actionable.
+ * Matched case-insensitively via substring so minor per-customer status
+ * renames don't leak completed jobs onto the map.
+ */
+const ZUPER_TERMINAL_STATUSES = [
+  "complete",
+  "completed",
+  "closed",
+  "cancel",
+  "cancelled",
+  "canceled",
+  "invoiced",
+  "paid",
+  "done",
+];
+
+function isZuperJobTerminal(job: ZuperJobInput): boolean {
+  const name = (job.current_job_status?.status_name ?? "").toLowerCase();
+  if (!name) return false;
+  return ZUPER_TERMINAL_STATUSES.some((t) => name.includes(t));
+}
+
 export async function buildZuperJobMarkers(
   jobs: ZuperJobInput[],
   kind: "service" | "dnr" | "roofing",
@@ -324,9 +361,11 @@ export async function buildZuperJobMarkers(
   const markers: JobMarker[] = [];
   const unplaced: UnplacedMarker[] = [];
 
-  // Pre-compute normalized addresses for each job, then batch-resolve
+  // Pre-compute normalized addresses for each job, then batch-resolve.
+  // Drop jobs in a terminal status — they're scheduled today but no longer
+  // actionable, so they'd just clutter the map.
   const prepared = jobs
-    .filter((job) => !!job.job_uid)
+    .filter((job) => !!job.job_uid && !isZuperJobTerminal(job))
     .map((job) => {
       const ca = job.customer_address ?? job.customer?.customer_address;
       return {
@@ -724,8 +763,13 @@ function filterProjectsByMode(
   const weekEnd = new Date(dayStart);
   weekEnd.setDate(weekEnd.getDate() + 7);
 
+  // Strip completed jobs first — they're noise on a live ops map regardless of
+  // mode. (filterProjectsForContext keeps them for the scheduler's historical
+  // calendar view.)
+  const candidates = projects.filter((p) => !spec.isCompleted(p));
+
   if (mode === "today") {
-    return projects.filter((p) => {
+    return candidates.filter((p) => {
       const at = spec.getScheduledAt(p);
       if (at) {
         const d = new Date(at);
@@ -736,7 +780,7 @@ function filterProjectsByMode(
   }
 
   if (mode === "week") {
-    return projects.filter((p) => {
+    return candidates.filter((p) => {
       const at = spec.getScheduledAt(p);
       if (at) {
         const d = new Date(at);
@@ -750,7 +794,7 @@ function filterProjectsByMode(
   // any pre-construction stage candidate. Install uses the broad stage
   // allowlist; inspection/survey just use the kind's own readiness signal
   // since those have a narrower set of "ready" states.
-  return projects.filter((p) => {
+  return candidates.filter((p) => {
     if (spec.getScheduledAt(p)) return true;
     if (spec.isReadyToSchedule(p)) return true;
     if (spec.kind === "install") return stageMatchesBacklog(p.stage ?? "");
