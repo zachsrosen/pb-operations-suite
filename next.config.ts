@@ -19,6 +19,22 @@ const nextConfig: NextConfig = {
 
   // Cache static assets aggressively
   headers: async () => [
+    // Dashboards that do server-side auth/flag/role redirects MUST opt out of the
+    // public CDN cache below — otherwise a single user's redirect response gets
+    // cached publicly and served to everyone for up to an hour (even on
+    // ctrl+shift+r, since Vercel's edge cache ignores that). List them here.
+    {
+      source: "/dashboards/request-product",
+      headers: [
+        { key: "Cache-Control", value: "private, no-cache, no-store, must-revalidate" },
+      ],
+    },
+    {
+      source: "/dashboards/product-requests-review",
+      headers: [
+        { key: "Cache-Control", value: "private, no-cache, no-store, must-revalidate" },
+      ],
+    },
     {
       source: "/dashboards/:path*",
       headers: [
