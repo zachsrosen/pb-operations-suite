@@ -259,6 +259,11 @@ enum ActivityType {
   PERMIT_SOLARAPP_SUBMITTED
   PERMIT_HUB_DRAFT_SAVED
   PERMIT_HUB_DRAFT_DISCARDED
+
+  // Sales product requests
+  SALES_PRODUCT_REQUEST_SUBMITTED
+  SALES_PRODUCT_REQUEST_APPROVED
+  SALES_PRODUCT_REQUEST_DECLINED
 }
 
 enum ClientType {
@@ -557,10 +562,10 @@ model ComplianceScoreShadow {
 
   computedAt DateTime @default(now())
 
-  userUid   String
-  userName  String
-  location  String // e.g. "Westminster", "San Luis Obispo"
-  category  String // e.g. "Construction", "Site Survey", "Inspection"
+  userUid  String
+  userName String
+  location String // e.g. "Westminster", "San Luis Obispo"
+  category String // e.g. "Construction", "Site Survey", "Inspection"
 
   windowDays Int
 
@@ -569,10 +574,10 @@ model ComplianceScoreShadow {
   v2Score Float
   v2Grade String
 
-  v1TotalJobs           Int
-  v2TasksFractional     Float
-  v2DistinctParentJobs  Int
-  emptyCreditSetJobs    Int
+  v1TotalJobs          Int
+  v2TasksFractional    Float
+  v2DistinctParentJobs Int
+  emptyCreditSetJobs   Int
 
   @@index([computedAt])
   @@index([userUid])
@@ -1507,6 +1512,9 @@ model PendingCatalogPush {
   reviewReason     String?
   expiresAt        DateTime?
   zohoVendorId     String?
+  // Sales request additions (2026-04-24)
+  openSolarId      String?
+  salesRequestNote String?
 
   createdAt  DateTime  @default(now())
   resolvedAt DateTime?
@@ -2964,20 +2972,20 @@ enum AdminWorkflowRunStatus {
 }
 
 model AdminWorkflow {
-  id            String                   @id @default(cuid())
-  name          String
-  description   String?
-  status        AdminWorkflowStatus      @default(DRAFT)
-  triggerType   AdminWorkflowTriggerType
-  triggerConfig Json // e.g. {"dealStageIds": ["123", "456"]}
-  definition    Json // workflow-kit's serialized workflow (nodes + edges + action configs)
-  maxRunsPerHour Int                     @default(60) // 0 = unlimited; otherwise skip if hourly rate exceeded
-  createdById   String
-  createdBy     User                     @relation("AdminWorkflowCreatedBy", fields: [createdById], references: [id])
-  createdAt     DateTime                 @default(now())
-  updatedAt     DateTime                 @updatedAt
-  runs          AdminWorkflowRun[]
-  versions      AdminWorkflowVersion[]
+  id             String                   @id @default(cuid())
+  name           String
+  description    String?
+  status         AdminWorkflowStatus      @default(DRAFT)
+  triggerType    AdminWorkflowTriggerType
+  triggerConfig  Json // e.g. {"dealStageIds": ["123", "456"]}
+  definition     Json // workflow-kit's serialized workflow (nodes + edges + action configs)
+  maxRunsPerHour Int                      @default(60) // 0 = unlimited; otherwise skip if hourly rate exceeded
+  createdById    String
+  createdBy      User                     @relation("AdminWorkflowCreatedBy", fields: [createdById], references: [id])
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  runs           AdminWorkflowRun[]
+  versions       AdminWorkflowVersion[]
 
   @@index([status])
   @@index([triggerType])
@@ -3140,6 +3148,34 @@ model AdderSyncRun {
   addersPushed Int                @default(0)
   addersFailed Int                @default(0)
   errorLog     Json?
+}
+
+enum AdderRequestStatus {
+  PENDING
+  ADDED
+  DECLINED
+}
+
+model AdderRequest {
+  id               String             @id @default(cuid())
+  status           AdderRequestStatus @default(PENDING)
+  category         AdderCategory
+  unit             AdderUnit          @default(FLAT)
+  name             String
+  estimatedPrice   Float?
+  description      String?
+  salesRequestNote String?
+  requestedBy      String
+  dealId           String?
+  openSolarId      String?
+  reviewerNote     String?
+  adderCatalogId   String?
+  createdAt        DateTime           @default(now())
+  resolvedAt       DateTime?
+
+  @@index([status])
+  @@index([requestedBy])
+  @@index([dealId])
 }
 
 model TriageRun {

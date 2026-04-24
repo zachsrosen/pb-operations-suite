@@ -2,7 +2,22 @@ import { redirect } from "next/navigation";
 import SuitePageShell, { type SuitePageCard } from "@/components/SuitePageShell";
 import { getCurrentUser } from "@/lib/auth-utils";
 
+const salesProductRequestsEnabled = process.env.SALES_PRODUCT_REQUESTS_ENABLED === "true";
+
 const LINKS: SuitePageCard[] = [
+  ...(salesProductRequestsEnabled
+    ? ([
+        {
+          href: "/dashboards/request-product",
+          title: "Request a Product",
+          description:
+            "Can't find a panel, inverter, battery, or adder in OpenSolar? Request it here.",
+          tag: "REQUEST",
+          icon: "📦",
+          section: "Tools",
+        },
+      ] as const satisfies readonly SuitePageCard[])
+    : []),
   {
     href: "/dashboards/sales",
     title: "Sales Pipeline",

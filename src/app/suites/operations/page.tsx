@@ -164,6 +164,14 @@ const BASE_LINKS: SuitePageCard[] = [
     section: "Catalog & Inventory",
   },
   {
+    href: "/dashboards/product-requests-review",
+    title: "Product Request Queue",
+    description: "Review sales rep requests for products + adders to add to OpenSolar.",
+    tag: "REVIEW",
+    icon: "📥",
+    section: "Catalog & Inventory",
+  },
+  {
     href: "/dashboards/product-comparison",
     title: "Product Catalog Comparison",
     description: "Match and link Internal, HubSpot, Zuper, and Zoho products.",
