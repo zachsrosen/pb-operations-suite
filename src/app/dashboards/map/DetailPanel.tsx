@@ -25,21 +25,35 @@ export function DetailPanel({ marker, markers, crews, onClose }: DetailPanelProp
 
   return (
     <aside
-      className="fixed right-0 top-0 bottom-0 w-[380px] bg-surface border-l border-t-border overflow-y-auto z-20"
+      className="absolute z-20 bg-surface overflow-y-auto shadow-xl
+        right-0 bottom-0 left-0 top-1/2 border-t border-t-border
+        sm:top-0 sm:left-auto sm:w-[380px] sm:border-t-0 sm:border-l sm:border-l-t-border"
       aria-label="Job detail panel"
     >
       <header className="flex items-start gap-2 p-4 border-b border-t-border">
-        <span
-          className="inline-block w-3.5 h-3.5 rounded-full mt-1 flex-shrink-0"
-          style={{
-            background: marker.scheduled ? MARKER_COLORS[marker.kind] : "transparent",
-            border: `2px ${marker.scheduled ? "solid" : "dashed"} ${MARKER_COLORS[marker.kind]}`,
-          }}
-        />
+        {marker.scheduled ? (
+          <span
+            className="inline-block w-3.5 h-3.5 rounded-full mt-1 flex-shrink-0"
+            style={{
+              background: MARKER_COLORS[marker.kind],
+              border: "2px solid #0b1220",
+            }}
+          />
+        ) : (
+          <span
+            className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full mt-1 flex-shrink-0"
+            style={{
+              background: "white",
+              border: `2.5px solid ${MARKER_COLORS[marker.kind]}`,
+            }}
+          >
+            <span className="w-1 h-1 rounded-full" style={{ background: MARKER_COLORS[marker.kind] }} />
+          </span>
+        )}
         <div className="flex-1">
           <h2 className="text-foreground font-semibold">{marker.title}</h2>
           <div className="text-xs text-muted">
-            {marker.dealId ? `PROJ-${marker.dealId}` : marker.ticketId ? `TICKET-${marker.ticketId}` : ""} · {capitalize(marker.kind)} · {marker.scheduled ? "Scheduled" : "Unscheduled"}
+            {marker.dealId ? `PROJ-${marker.dealId}` : marker.ticketId ? `TICKET-${marker.ticketId}` : ""} · {capitalize(marker.kind)} · {marker.scheduled ? "Scheduled" : "Ready to schedule"}
           </div>
         </div>
         <button onClick={onClose} aria-label="Close" className="text-muted hover:text-foreground">×</button>
@@ -81,14 +95,27 @@ export function DetailPanel({ marker, markers, crews, onClose }: DetailPanelProp
         <Section label="Nearby open work">
           {nearby.map((m) => (
             <div key={m.id} className="flex items-center gap-2 py-1 text-xs">
-              <span
-                className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                style={{
-                  background: m.scheduled ? MARKER_COLORS[m.kind] : "transparent",
-                  border: `2px ${m.scheduled ? "solid" : "dashed"} ${MARKER_COLORS[m.kind]}`,
-                }}
-              />
-              <span className="text-foreground flex-1 truncate">{m.title}</span>
+              {m.scheduled ? (
+                <span
+                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  style={{
+                    background: MARKER_COLORS[m.kind],
+                    border: "1.5px solid #0b1220",
+                  }}
+                />
+              ) : (
+                <span
+                  className="w-2.5 h-2.5 rounded-full flex-shrink-0"
+                  style={{
+                    background: "white",
+                    border: `2px solid ${MARKER_COLORS[m.kind]}`,
+                  }}
+                />
+              )}
+              <span className="text-foreground flex-1 truncate">
+                {m.title}
+                {!m.scheduled && <span className="text-muted ml-1">· ready</span>}
+              </span>
               <span className="text-blue-400 font-semibold">{m.distanceMiles.toFixed(1)} mi</span>
             </div>
           ))}

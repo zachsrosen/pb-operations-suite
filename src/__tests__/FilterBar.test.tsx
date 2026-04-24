@@ -17,23 +17,13 @@ describe("FilterBar", () => {
     expect(screen.getByRole("tab", { name: /week/i })).toHaveAttribute("aria-pressed", "false");
   });
 
-  it("calls onModeChange when the enabled Today tab is clicked", () => {
-    const onModeChange = jest.fn();
-    render(<FilterBar {...defaultProps} mode={"today"} onModeChange={onModeChange} />);
-    fireEvent.click(screen.getByRole("tab", { name: /today/i }));
-    expect(onModeChange).toHaveBeenCalledWith("today");
-  });
-
-  it("disables Week and Backlog tabs in Phase 1", () => {
+  it("calls onModeChange when any mode tab is clicked", () => {
     const onModeChange = jest.fn();
     render(<FilterBar {...defaultProps} onModeChange={onModeChange} />);
-    const weekBtn = screen.getByRole("tab", { name: /week/i });
-    const backlogBtn = screen.getByRole("tab", { name: /backlog/i });
-    expect(weekBtn).toBeDisabled();
-    expect(backlogBtn).toBeDisabled();
-    fireEvent.click(weekBtn);
-    fireEvent.click(backlogBtn);
-    expect(onModeChange).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: /week/i }));
+    expect(onModeChange).toHaveBeenCalledWith("week");
+    fireEvent.click(screen.getByRole("tab", { name: /backlog/i }));
+    expect(onModeChange).toHaveBeenCalledWith("backlog");
   });
 
   it("renders type chips and toggles via onTypeToggle", () => {

@@ -6,6 +6,7 @@ jest.mock("@/lib/db", () => ({
   prisma: {
     hubSpotPropertyCache: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
     },
     crewMember: {
       findMany: jest.fn(),
@@ -17,16 +18,44 @@ jest.mock("@/lib/travel-time", () => ({
   geocodeAddress: jest.fn(),
 }));
 
+jest.mock("@/lib/hubspot-tickets", () => ({
+  fetchServiceTickets: jest.fn().mockResolvedValue([]),
+  resolveTicketAddresses: jest.fn().mockResolvedValue(new Map()),
+}));
+
 import { prisma } from "@/lib/db";
 import { geocodeAddress as liveGeocode } from "@/lib/travel-time";
 
 const mockFindFirst = prisma.hubSpotPropertyCache.findFirst as jest.Mock;
+const mockFindMany = prisma.hubSpotPropertyCache.findMany as jest.Mock;
 const mockLiveGeocode = liveGeocode as jest.Mock;
+
+// Helper: convert a `findFirst`-style mock value into a `findMany` row array
+// so existing tests can keep using mockFindFirst.mockResolvedValue(...) while
+// the batch path gets the same answer for every address.
+function mirrorFindFirstIntoFindMany() {
+  mockFindMany.mockImplementation(async ({ where }: { where: { OR: Array<{ streetAddress: string; city: string; state: string; zip: string }> } }) => {
+    const cached = await mockFindFirst();
+    if (!cached) return [];
+    // Return one row per OR clause, with the same lat/lng but address copied
+    // from the input. Enough to make the batch resolver find each key.
+    return where.OR.map((a) => ({
+      streetAddress: a.streetAddress,
+      city: a.city,
+      state: a.state,
+      zip: a.zip,
+      latitude: cached.latitude,
+      longitude: cached.longitude,
+    }));
+  });
+}
 
 describe("resolveAddressCoords", () => {
   beforeEach(() => {
     mockFindFirst.mockReset();
+    mockFindMany.mockReset();
     mockLiveGeocode.mockReset();
+    mirrorFindFirstIntoFindMany();
   });
 
   const addr = {
@@ -77,7 +106,9 @@ import type { Project } from "@/lib/hubspot";
 describe("buildInstallMarkers", () => {
   beforeEach(() => {
     mockFindFirst.mockReset();
+    mockFindMany.mockReset();
     mockLiveGeocode.mockReset();
+    mirrorFindFirstIntoFindMany();
   });
 
   const sampleProject = {
@@ -156,7 +187,9 @@ import { buildServiceMarkers } from "@/lib/map-aggregator";
 describe("buildServiceMarkers", () => {
   beforeEach(() => {
     mockFindFirst.mockReset();
+    mockFindMany.mockReset();
     mockLiveGeocode.mockReset();
+    mirrorFindFirstIntoFindMany();
   });
 
   const sampleZuperJob = {
@@ -315,5 +348,89 @@ describe("aggregateMapMarkers", () => {
     const res = await aggregateMapMarkers({ mode: "today", types: ["install"] });
     expect(fetchTodaysServiceJobs).not.toHaveBeenCalled();
     expect(res).toBeDefined();
+  });
+});
+
+describe("buildServiceMarkers — real Zuper GET shape", () => {
+  beforeEach(() => {
+    mockFindFirst.mockReset();
+    mockFindMany.mockReset();
+    mockLiveGeocode.mockReset();
+    mirrorFindFirstIntoFindMany();
+  });
+
+  it("handles top-level customer_address (real API shape)", async () => {
+    mockFindFirst.mockResolvedValue({ latitude: 39.75, longitude: -104.99 });
+    const { buildServiceMarkers } = await import("@/lib/map-aggregator");
+    const realShape = {
+      job_uid: "zuper-real",
+      job_title: "Inverter replacement",
+      scheduled_start_time: "2026-04-23T15:00:00.000Z",
+      customer_address: {
+        street: "1127 Elder Pl",
+        city: "Boulder",
+        state: "CO",
+        zip_code: "80304",
+      },
+      current_job_status: { status_name: "In Progress" },
+      assigned_to: [{ user: { user_uid: "user-from-get" } }],
+    };
+    const { markers } = await buildServiceMarkers(
+      [realShape as any],
+      { today: new Date("2026-04-23") }
+    );
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toMatchObject({
+      id: "zuperjob:zuper-real",
+      scheduled: true,
+      crewId: "user-from-get",
+    });
+  });
+});
+
+describe("filterProjectsByMode", () => {
+  beforeEach(() => {
+    (fetchAllProjects as jest.Mock).mockReset();
+    (fetchTodaysServiceJobs as jest.Mock).mockResolvedValue([]);
+    (prisma.crewMember.findMany as jest.Mock).mockResolvedValue([]);
+    mockFindFirst.mockResolvedValue({ latitude: 40, longitude: -105 });
+  });
+
+  const baseProject = {
+    id: 1,
+    name: "Test",
+    address: "123 Main",
+    city: "Boulder",
+    state: "CO",
+    postalCode: "80301",
+    stage: "",
+  };
+
+  it("week mode includes projects scheduled within next 7 days", async () => {
+    const today = new Date("2026-04-23T00:00:00Z");
+    const inWeek = { ...baseProject, id: 1, constructionScheduleDate: "2026-04-26T10:00:00Z", stage: "Scheduled" };
+    const beyondWeek = { ...baseProject, id: 2, constructionScheduleDate: "2026-05-15T10:00:00Z", stage: "Scheduled" };
+    (fetchAllProjects as jest.Mock).mockResolvedValue([inWeek, beyondWeek]);
+    const res = await (await import("@/lib/map-aggregator")).aggregateMapMarkers({
+      mode: "week", types: ["install"], date: today,
+    });
+    const ids = res.markers.map((m) => m.id);
+    expect(ids).toContain("install:1");
+    expect(ids).not.toContain("install:2");
+  });
+
+  it("backlog mode includes pre-construction stages even without scheduled date", async () => {
+    const today = new Date("2026-04-23T00:00:00Z");
+    const rtb = { ...baseProject, id: 10, stage: "Ready to Build", constructionScheduleDate: null };
+    const permit = { ...baseProject, id: 11, stage: "Permitting", constructionScheduleDate: null };
+    const early = { ...baseProject, id: 12, stage: "Lead", constructionScheduleDate: null };
+    (fetchAllProjects as jest.Mock).mockResolvedValue([rtb, permit, early]);
+    const res = await (await import("@/lib/map-aggregator")).aggregateMapMarkers({
+      mode: "backlog", types: ["install"], date: today,
+    });
+    const ids = res.markers.map((m) => m.id);
+    expect(ids).toContain("install:10");
+    expect(ids).toContain("install:11");
+    expect(ids).not.toContain("install:12");
   });
 });
