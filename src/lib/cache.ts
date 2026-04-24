@@ -153,7 +153,7 @@ export class CacheStore {
         this.set(key, data);
       })
       .catch((err) => {
-        console.error(`Background refresh failed for cache key "${key}":`, err);
+        console.error("Background refresh failed for cache key %s:", key, err);
       })
       .finally(() => {
         this.inflight.delete(key);

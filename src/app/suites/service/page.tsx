@@ -2,7 +2,7 @@ import SuitePageShell, { type SuitePageCard } from "@/components/SuitePageShell"
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth-utils";
 
-const LINKS: SuitePageCard[] = [
+const BASE_LINKS: SuitePageCard[] = [
   // Daily Operations — the triage/dispatch surface a service coordinator lives in
   {
     href: "/dashboards/service-overview",
@@ -34,6 +34,14 @@ const LINKS: SuitePageCard[] = [
     description: "List of every Zuper job awaiting a scheduled date, with age-based urgency flags.",
     tag: "BACKLOG",
     icon: "⏳",
+    section: "Daily Operations",
+  },
+  {
+    href: "/dashboards/map?types=service",
+    title: "Jobs Map",
+    description: "Map of scheduled and unscheduled work with crew positions and proximity insights.",
+    tag: "MAP",
+    icon: "🗺️",
     section: "Daily Operations",
   },
   // Customer & Equipment — research/lookup surface for customer history and equipment context
@@ -87,6 +95,10 @@ const LINKS: SuitePageCard[] = [
     section: "Tools",
   },
 ];
+
+const LINKS: SuitePageCard[] = BASE_LINKS.filter(
+  (l) => !l.href.startsWith("/dashboards/map") || process.env.NEXT_PUBLIC_UI_MAP_VIEW_ENABLED !== "false",
+);
 
 export default async function ServiceDRSuitePage() {
   const user = await getCurrentUser();

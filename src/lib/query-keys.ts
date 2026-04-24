@@ -164,6 +164,11 @@ export const queryKeys = {
     root: ["paymentTracking"] as const,
     list: () => ["paymentTracking", "list"] as const,
   },
+  map: {
+    root: ["map"] as const,
+    markers: (mode: string, types: string[]) =>
+      [...queryKeys.map.root, "markers", mode, types.slice().sort().join(",")] as const,
+  },
 } as const;
 
 /**
@@ -176,13 +181,21 @@ export const queryKeys = {
 export function cacheKeyToQueryKeys(
   serverKey: string
 ): readonly (readonly unknown[])[] {
-  if (serverKey.startsWith("projects")) return [queryKeys.projects.root];
+  if (serverKey.startsWith("map:markers")) return [queryKeys.map.root];
+  if (serverKey.startsWith("projects"))
+    return [queryKeys.projects.root, queryKeys.map.root];
   if (serverKey.startsWith("deals"))
-    return [queryKeys.deals.root, queryKeys.dealTimeline.root, queryKeys.dealCommunications.root];
+    return [
+      queryKeys.deals.root,
+      queryKeys.dealTimeline.root,
+      queryKeys.dealCommunications.root,
+      queryKeys.map.root,
+    ];
   if (serverKey.startsWith("stats")) return [queryKeys.stats.root];
-  if (serverKey.startsWith("zuper")) return [queryKeys.zuper.root];
+  if (serverKey.startsWith("zuper")) return [queryKeys.zuper.root, queryKeys.map.root];
   if (serverKey.startsWith("forecast")) return [queryKeys.forecasting.root];
-  if (serverKey.startsWith("service-tickets")) return [queryKeys.serviceTickets.root];
+  if (serverKey.startsWith("service-tickets"))
+    return [queryKeys.serviceTickets.root, queryKeys.map.root];
   if (serverKey.startsWith("service:priority")) return [queryKeys.servicePriority.root];
   if (serverKey.startsWith("service:customers")) return [queryKeys.serviceCustomers.root];
   if (serverKey.startsWith("accounting:payment-tracking"))

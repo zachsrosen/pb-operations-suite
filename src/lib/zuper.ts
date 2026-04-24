@@ -2041,3 +2041,12 @@ export async function getJobStatusForProject(
     },
   };
 }
+
+/**
+ * Fetch service Zuper jobs scheduled for today.
+ * Phase 1 stub — returns empty array. Phase 2 will implement actual filtering
+ * using the Zuper jobs listing API with date range + service category filter.
+ */
+export async function fetchTodaysServiceJobs(): Promise<unknown[]> {
+  return [];
+}
