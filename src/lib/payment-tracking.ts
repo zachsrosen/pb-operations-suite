@@ -5,14 +5,20 @@
  */
 
 import type {
+  AccountsReceivableEntry,
+  AgingBucket,
   DaStatus,
   HubSpotDealPaymentProps,
   InvoiceSummary,
+  Milestone,
+  MismatchType,
   PaymentBucket,
+  PaymentDataMismatchEntry,
   PaymentStatusGroup,
   PaymentTrackingDeal,
   PaymentTrackingSummary,
   PeStatus,
+  ReadyToInvoiceEntry,
 } from "@/lib/payment-tracking-types";
 
 const PORTAL_ID_ENV = process.env.HUBSPOT_PORTAL_ID ?? "";
@@ -483,3 +489,195 @@ export const PAYMENT_TRACKING_PROPERTIES: string[] = [
   "is_pto_granted_",
   "pto_completion_date",
 ];
+
+// ── Derived entry helpers ─────────────────────────────────────────────────
+
+function daysBetweenDates(a: Date, b: string | null): number | null {
+  if (!b) return null;
+  const bd = new Date(b);
+  if (!Number.isFinite(bd.getTime())) return null;
+  return Math.floor((a.getTime() - bd.getTime()) / 86_400_000);
+}
+
+function entryBase(deal: PaymentTrackingDeal) {
+  return {
+    dealId: deal.dealId,
+    dealName: deal.dealName,
+    pbLocation: deal.pbLocation,
+    isPE: deal.isPE,
+    hubspotUrl: deal.hubspotUrl,
+  };
+}
+
+/**
+ * Derive "Ready to Invoice" entries — milestones whose work trigger is met
+ * AND no invoice is attached yet. One entry per (deal, milestone).
+ *
+ * PE deals do NOT include PTO (PE pays via M1/M2 instead).
+ * PE M1/M2 require `pe_m?_status ∈ {Approved, Paid}` — a Submitted/Rejected
+ * milestone is an ops issue, not an accounting-ready-to-invoice signal.
+ */
+export function deriveReadyToInvoice(
+  deals: PaymentTrackingDeal[],
+  asOf: Date = new Date()
+): ReadyToInvoiceEntry[] {
+  const out: ReadyToInvoiceEntry[] = [];
+  for (const deal of deals) {
+    const base = {
+      ...entryBase(deal),
+      dealStage: deal.dealStage,
+      dealStageLabel: deal.dealStageLabel,
+    };
+    if (deal.isDesignApproved && !deal.invoices?.da) {
+      out.push({
+        ...base,
+        milestone: "da",
+        triggerDate: deal.designApprovalDate,
+        daysReady: daysBetweenDates(asOf, deal.designApprovalDate),
+        expectedAmount: deal.daAmount,
+      });
+    }
+    if (deal.isConstructionComplete && !deal.invoices?.cc) {
+      out.push({
+        ...base,
+        milestone: "cc",
+        triggerDate: deal.constructionCompleteDate,
+        daysReady: daysBetweenDates(asOf, deal.constructionCompleteDate),
+        expectedAmount: deal.ccAmount,
+      });
+    }
+    if (!deal.isPE && deal.isPtoGranted && !deal.invoices?.pto) {
+      out.push({
+        ...base,
+        milestone: "pto",
+        triggerDate: deal.ptoGrantedDate,
+        daysReady: daysBetweenDates(asOf, deal.ptoGrantedDate),
+        expectedAmount: null, // PTO invoice amount is typically $0
+      });
+    }
+    if (
+      deal.isPE &&
+      deal.isInspectionPassed &&
+      (deal.peM1Status === "Approved" || deal.peM1Status === "Paid") &&
+      !deal.invoices?.peM1
+    ) {
+      out.push({
+        ...base,
+        milestone: "peM1",
+        triggerDate: deal.inspectionPassedDate,
+        daysReady: daysBetweenDates(asOf, deal.inspectionPassedDate),
+        expectedAmount: deal.peM1Amount,
+      });
+    }
+    if (
+      deal.isPE &&
+      deal.isPtoGranted &&
+      (deal.peM2Status === "Approved" || deal.peM2Status === "Paid") &&
+      !deal.invoices?.peM2
+    ) {
+      out.push({
+        ...base,
+        milestone: "peM2",
+        triggerDate: deal.ptoGrantedDate,
+        daysReady: daysBetweenDates(asOf, deal.ptoGrantedDate),
+        expectedAmount: deal.peM2Amount,
+      });
+    }
+  }
+  return out;
+}
+
+function computeAgingBucket(daysOverdue: number): AgingBucket {
+  if (daysOverdue >= 90) return "90+";
+  if (daysOverdue >= 61) return "61-90";
+  if (daysOverdue >= 31) return "31-60";
+  return "0-30";
+}
+
+const AR_IGNORE_STATUSES = new Set(["draft", "voided", "cancelled", "paid"]);
+
+/**
+ * Derive Accounts Receivable entries — invoices attached with balanceDue > 0
+ * and status not in {draft, voided, cancelled, paid}. Grouped by aging
+ * bucket via `hs_days_overdue` (clamped to 0 for not-yet-due invoices).
+ */
+export function deriveAccountsReceivable(
+  deals: PaymentTrackingDeal[]
+): AccountsReceivableEntry[] {
+  const out: AccountsReceivableEntry[] = [];
+  const milestones: Milestone[] = ["da", "cc", "pto", "peM1", "peM2"];
+  for (const deal of deals) {
+    if (!deal.invoices) continue;
+    for (const m of milestones) {
+      const inv = deal.invoices[m];
+      if (!inv) continue;
+      if ((inv.balanceDue ?? 0) <= 0) continue;
+      const status = (inv.status ?? "").toLowerCase();
+      if (AR_IGNORE_STATUSES.has(status)) continue;
+      const daysOverdue = Math.max(0, inv.daysOverdue ?? 0);
+      out.push({
+        ...entryBase(deal),
+        milestone: m,
+        invoice: inv,
+        agingBucket: computeAgingBucket(daysOverdue),
+        daysOverdue,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Derive payment-data mismatches — deals where the deal-property status
+ * disagrees with the attached invoice record. Diagnostic; no business logic.
+ */
+export function derivePaymentDataMismatch(
+  deals: PaymentTrackingDeal[]
+): PaymentDataMismatchEntry[] {
+  const out: PaymentDataMismatchEntry[] = [];
+  const customerChecks: Array<{ m: Milestone; prop: "daStatus" | "ccStatus" | "ptoStatus" }> = [
+    { m: "da", prop: "daStatus" },
+    { m: "cc", prop: "ccStatus" },
+    { m: "pto", prop: "ptoStatus" },
+  ];
+  const peChecks: Array<{ m: Milestone; prop: "peM1Status" | "peM2Status" }> = [
+    { m: "peM1", prop: "peM1Status" },
+    { m: "peM2", prop: "peM2Status" },
+  ];
+
+  const classify = (
+    deal: PaymentTrackingDeal,
+    milestone: Milestone,
+    side: "customer" | "pe",
+    propertyStatus: string | null
+  ) => {
+    const inv = deal.invoices?.[milestone];
+    if (!inv) return;
+    const status = (inv.status ?? "").toLowerCase();
+    if (IGNORED_INVOICE_STATUSES.has(status)) return;
+    const invPaid = inv.balanceDue === 0 && PAID_INVOICE_STATUSES.has(status);
+    const propPaid =
+      side === "customer" ? propertyStatus === "Paid In Full" : propertyStatus === "Paid";
+
+    let type: MismatchType | null = null;
+    if (!propertyStatus && invPaid) type = "property_missing_invoice_present";
+    else if (!propPaid && invPaid) type = "property_says_unpaid_invoice_paid";
+    else if (propPaid && !invPaid) type = "property_says_paid_invoice_unpaid";
+
+    if (type) {
+      out.push({
+        ...entryBase(deal),
+        milestone,
+        mismatchType: type,
+        dealPropertyStatus: propertyStatus,
+        invoice: inv,
+      });
+    }
+  };
+
+  for (const deal of deals) {
+    for (const { m, prop } of customerChecks) classify(deal, m, "customer", deal[prop]);
+    for (const { m, prop } of peChecks) classify(deal, m, "pe", deal[prop]);
+  }
+  return out;
+}

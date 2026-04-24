@@ -159,10 +159,60 @@ export interface PaymentTrackingSummary {
   dealCount: number;
 }
 
+export type Milestone = "da" | "cc" | "pto" | "peM1" | "peM2";
+
+export interface ReadyToInvoiceEntry {
+  dealId: string;
+  dealName: string;
+  pbLocation: string;
+  dealStage: string;
+  dealStageLabel: string;
+  isPE: boolean;
+  milestone: Milestone;
+  triggerDate: string | null;
+  daysReady: number | null;
+  expectedAmount: number | null;
+  hubspotUrl: string;
+}
+
+export type AgingBucket = "0-30" | "31-60" | "61-90" | "90+";
+
+export interface AccountsReceivableEntry {
+  dealId: string;
+  dealName: string;
+  pbLocation: string;
+  isPE: boolean;
+  milestone: Milestone;
+  invoice: InvoiceSummary;
+  agingBucket: AgingBucket;
+  daysOverdue: number;
+  hubspotUrl: string;
+}
+
+export type MismatchType =
+  | "property_says_unpaid_invoice_paid"
+  | "property_says_paid_invoice_unpaid"
+  | "property_missing_invoice_present";
+
+export interface PaymentDataMismatchEntry {
+  dealId: string;
+  dealName: string;
+  pbLocation: string;
+  isPE: boolean;
+  milestone: Milestone;
+  mismatchType: MismatchType;
+  dealPropertyStatus: string | null;
+  invoice: InvoiceSummary;
+  hubspotUrl: string;
+}
+
 export interface PaymentTrackingResponse {
   lastUpdated: string;
   summary: PaymentTrackingSummary;
   deals: PaymentTrackingDeal[];
+  readyToInvoice: ReadyToInvoiceEntry[];
+  accountsReceivable: AccountsReceivableEntry[];
+  paymentDataMismatch: PaymentDataMismatchEntry[];
 }
 
 /** Raw HubSpot property shape (all strings/nulls as HubSpot returns them). */
