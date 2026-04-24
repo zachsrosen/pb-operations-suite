@@ -83,11 +83,10 @@ export function ProjectDetail({ dealId }: { dealId: string }) {
         ))}
       </div>
 
-      {/* Single scroll container combining tab content and action panel.
-          Sticky action panel pins to the bottom while user scrolls through
-          tab content, and collapses inline when content is short. This
-          avoids the prior overlap issue when the action panel alone
-          exceeded the space left by the flex-1 scroll area. */}
+      {/* Single natural-flow scroll container: tab content, then action panel
+          inline at the bottom. No sticky/absolute positioning — the panel
+          scrolls with the content so submit buttons are always reachable
+          and nothing overlaps tab content. */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="p-6">
           {tab === "overview" && <OverviewTab detail={detail} />}
@@ -101,7 +100,7 @@ export function ProjectDetail({ dealId }: { dealId: string }) {
         </div>
 
         {detail.deal.actionKind && (
-          <div className="bg-surface-2/95 sticky bottom-0 border-t border-t-border p-4 backdrop-blur">
+          <div className="bg-surface-2 border-t border-t-border p-6">
             <ActionPanel dealId={dealId} actionKind={detail.deal.actionKind} />
           </div>
         )}
