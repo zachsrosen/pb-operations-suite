@@ -13,8 +13,8 @@ interface FilterBarProps {
 
 const MODES: Array<{ id: MapMode; label: string; enabled: boolean }> = [
   { id: "today", label: "Today", enabled: true },
-  { id: "week", label: "Week", enabled: false },
-  { id: "backlog", label: "Backlog", enabled: false },
+  { id: "week", label: "Week", enabled: true },
+  { id: "backlog", label: "Backlog", enabled: true },
 ];
 
 export function FilterBar({

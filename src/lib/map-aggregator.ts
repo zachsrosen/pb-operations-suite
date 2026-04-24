@@ -136,9 +136,19 @@ function formatInstallSubtitle(p: Project): string {
 }
 
 export interface ZuperJobInput {
-  job_uid: string;
+  job_uid?: string;
   job_title?: string;
-  scheduled_start_date_time?: string;
+  // Real Zuper job fields — `customer_address` is at the top level of ZuperJob,
+  // `scheduled_start_time` is the GET response field (not `scheduled_start_date_time`).
+  scheduled_start_time?: string;
+  scheduled_start_time_dt?: string | null;
+  customer_address?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    zip_code?: string;
+  };
+  // Test fixtures may use a legacy nested shape — keep it accepted for back-compat.
   customer?: {
     customer_address?: {
       street?: string;
@@ -148,7 +158,8 @@ export interface ZuperJobInput {
     };
   };
   current_job_status?: { status_name?: string };
-  assigned_to?: Array<{ user_uid?: string }>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  assigned_to?: Array<{ user_uid?: string } | { user?: any; team?: any }>;
 }
 
 export async function buildServiceMarkers(
@@ -158,9 +169,11 @@ export async function buildServiceMarkers(
   const markers: JobMarker[] = [];
   const unplaced: UnplacedMarker[] = [];
 
-  // Zuper jobs = scheduled service markers (Phase 1 scope)
+  // Zuper jobs = scheduled service markers
   for (const job of jobs) {
-    const ca = job.customer?.customer_address;
+    if (!job.job_uid) continue; // defensive
+    // Prefer top-level customer_address (real Zuper shape), fall back to nested (legacy/tests)
+    const ca = job.customer_address ?? job.customer?.customer_address;
     const address = {
       street: ca?.street ?? "",
       city: ca?.city ?? "",
@@ -169,6 +182,22 @@ export async function buildServiceMarkers(
     };
     const id = `zuperjob:${job.job_uid}`;
     const title = job.job_title || `Service job ${job.job_uid}`;
+    // Accept either scheduled_start_time (real GET response) or scheduled_start_date_time (legacy)
+    const scheduledAt =
+      job.scheduled_start_time_dt ||
+      job.scheduled_start_time ||
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (job as any).scheduled_start_date_time ||
+      undefined;
+
+    // Extract a crewId from the assigned_to array — handles both POST and GET shapes.
+    let crewId: string | undefined;
+    if (job.assigned_to?.[0]) {
+      const a = job.assigned_to[0];
+      if ("user_uid" in a && a.user_uid) crewId = a.user_uid;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      else if ("user" in a && (a as any).user?.user_uid) crewId = (a as any).user.user_uid;
+    }
 
     if (!address.street || !address.city || !address.state || !address.zip) {
       unplaced.push({ id, kind: "service", title, address, reason: "missing-address" });
@@ -187,15 +216,15 @@ export async function buildServiceMarkers(
       lng: coords.lng,
       address,
       title,
-      subtitle: job.scheduled_start_date_time
-        ? new Date(job.scheduled_start_date_time).toLocaleTimeString("en-US", {
+      subtitle: scheduledAt
+        ? new Date(scheduledAt).toLocaleTimeString("en-US", {
             hour: "numeric",
             minute: "2-digit",
           })
         : undefined,
       status: job.current_job_status?.status_name,
-      scheduledAt: job.scheduled_start_date_time,
-      crewId: job.assigned_to?.[0]?.user_uid,
+      scheduledAt: scheduledAt ?? undefined,
+      crewId,
       zuperJobUid: job.job_uid,
     });
   }
@@ -274,9 +303,24 @@ export async function aggregateMapMarkers(
   const wantInstalls = opts.types.includes("install");
   const wantService = opts.types.includes("service");
 
+  // Mode-appropriate date range for service job fetch
+  // Today: today only; Week: next 7 days; Backlog: current day (scheduled-only
+  // signal for the map, unscheduled service tickets are Phase 3 work).
+  const serviceRange = (() => {
+    const start = new Date(today);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    if (opts.mode === "week") {
+      end.setDate(end.getDate() + 7);
+    } else {
+      end.setDate(end.getDate() + 1);
+    }
+    return { from: start, to: end };
+  })();
+
   const [projectsResult, jobsResult] = await Promise.allSettled([
     wantInstalls ? fetchAllProjects({ activeOnly: true }) : Promise.resolve([]),
-    wantService ? fetchTodaysServiceJobs() : Promise.resolve([]),
+    wantService ? fetchTodaysServiceJobs(serviceRange) : Promise.resolve([]),
   ]);
 
   let projects: Project[] = [];
@@ -329,6 +373,28 @@ export async function aggregateMapMarkers(
   return response;
 }
 
+/**
+ * Pre-construction stages considered "ready to schedule" in Backlog mode.
+ * Matches fuzzily (case-insensitive substring) so minor stage-name drift in
+ * HubSpot doesn't break the filter.
+ */
+const BACKLOG_STAGE_PATTERNS = [
+  "ready to build",
+  "rtb",
+  "permit approved",
+  "design complete",
+  "blocked",
+  "survey complete",
+  "design review",
+  "permitting",
+  "interconnection",
+];
+
+function stageMatchesBacklog(stage: string): boolean {
+  const lower = stage.toLowerCase();
+  return BACKLOG_STAGE_PATTERNS.some((p) => lower.includes(p));
+}
+
 function filterProjectsByMode(
   projects: Project[],
   mode: MapMode,
@@ -338,18 +404,38 @@ function filterProjectsByMode(
   dayStart.setHours(0, 0, 0, 0);
   const dayEnd = new Date(dayStart);
   dayEnd.setDate(dayEnd.getDate() + 1);
+  const weekEnd = new Date(dayStart);
+  weekEnd.setDate(weekEnd.getDate() + 7);
 
   if (mode === "today") {
-    // Scheduled today OR RTB (ready-to-schedule)
+    // Scheduled today OR ready-to-schedule
     return projects.filter((p) => {
       if (p.constructionScheduleDate) {
         const d = new Date(p.constructionScheduleDate);
         if (d >= dayStart && d < dayEnd) return true;
       }
-      const stage = (p.stage ?? "").toLowerCase();
-      return stage.includes("ready to build") || stage === "rtb";
+      const stage = p.stage ?? "";
+      return stage.toLowerCase().includes("ready to build") || stage.toLowerCase() === "rtb";
     });
   }
-  // Phase 1 only implements today mode; week/backlog fall through.
-  return projects.filter((p) => !!p.constructionScheduleDate);
+
+  if (mode === "week") {
+    // Scheduled anywhere in the next 7 days OR ready-to-schedule
+    return projects.filter((p) => {
+      if (p.constructionScheduleDate) {
+        const d = new Date(p.constructionScheduleDate);
+        if (d >= dayStart && d < weekEnd) return true;
+      }
+      const stage = p.stage ?? "";
+      return stage.toLowerCase().includes("ready to build") || stage.toLowerCase() === "rtb";
+    });
+  }
+
+  // Backlog: every pre-construction project that's a candidate to schedule.
+  // Scheduled projects (with construction_schedule_date) are also included so
+  // dispatchers see the full geography.
+  return projects.filter((p) => {
+    if (p.constructionScheduleDate) return true;
+    return stageMatchesBacklog(p.stage ?? "");
+  });
 }

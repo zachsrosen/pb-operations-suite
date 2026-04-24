@@ -127,12 +127,34 @@ function ClusteredMarkers({
             key={marker.id}
             position={{ lat, lng }}
             onClick={() => onMarkerClick(marker)}
+            title={`${marker.title} — ${marker.scheduled ? "Scheduled" : "Ready to schedule"}`}
           >
-            <div style={{
-              width: 18, height: 18, borderRadius: "50%",
-              background: marker.scheduled ? color : "transparent",
-              border: `2px ${marker.scheduled ? "solid" : "dashed"} ${marker.scheduled ? "#0b1220" : color}`,
-            }} />
+            {marker.scheduled ? (
+              // Scheduled: solid filled circle with dark outline
+              <div style={{
+                width: 20, height: 20, borderRadius: "50%",
+                background: color,
+                border: "2px solid #0b1220",
+                boxShadow: "0 0 0 1px rgba(255,255,255,0.25), 0 2px 4px rgba(0,0,0,0.3)",
+              }} />
+            ) : (
+              // Unscheduled (ready to schedule): ring marker with hollow center
+              // Outer colored ring + inner white dot makes it obviously distinct at any zoom.
+              <div style={{
+                width: 22, height: 22, borderRadius: "50%",
+                background: "white",
+                border: `3px solid ${color}`,
+                boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}>
+                <div style={{
+                  width: 6, height: 6, borderRadius: "50%",
+                  background: color,
+                }} />
+              </div>
+            )}
           </AdvancedMarker>
         );
       })}

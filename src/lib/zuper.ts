@@ -2047,6 +2047,47 @@ export async function getJobStatusForProject(
  * Phase 1 stub — returns empty array. Phase 2 will implement actual filtering
  * using the Zuper jobs listing API with date range + service category filter.
  */
-export async function fetchTodaysServiceJobs(): Promise<unknown[]> {
-  return [];
+/**
+ * Fetch Zuper service jobs scheduled for a day range (default: today).
+ * Service = SERVICE_VISIT + SERVICE_REVISIT categories.
+ *
+ * Used by the map aggregator. Fail-open: returns [] on error so the map
+ * still renders other marker types.
+ */
+export async function fetchTodaysServiceJobs(params?: {
+  from?: Date;
+  to?: Date;
+}): Promise<unknown[]> {
+  const from = params?.from ?? (() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  })();
+  const to = params?.to ?? (() => {
+    const d = new Date(from);
+    d.setDate(d.getDate() + 1);
+    return d;
+  })();
+
+  try {
+    const [visit, revisit] = await Promise.all([
+      zuper.getScheduledJobsForDateRange({
+        fromDate: from.toISOString().slice(0, 10),
+        toDate: to.toISOString().slice(0, 10),
+        categoryUid: JOB_CATEGORY_UIDS.SERVICE_VISIT,
+      }),
+      zuper.getScheduledJobsForDateRange({
+        fromDate: from.toISOString().slice(0, 10),
+        toDate: to.toISOString().slice(0, 10),
+        categoryUid: JOB_CATEGORY_UIDS.SERVICE_REVISIT,
+      }),
+    ]);
+    const jobs: unknown[] = [];
+    if (visit.type === "success" && visit.data) jobs.push(...visit.data);
+    if (revisit.type === "success" && revisit.data) jobs.push(...revisit.data);
+    return jobs;
+  } catch (err) {
+    console.error("[map] fetchTodaysServiceJobs failed:", err);
+    return [];
+  }
 }

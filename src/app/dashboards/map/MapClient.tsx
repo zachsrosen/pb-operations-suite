@@ -9,6 +9,7 @@ import { FilterBar } from "./FilterBar";
 import { DetailPanel } from "./DetailPanel";
 import { JobMapCanvas } from "./JobMapCanvas";
 import { JobMarkerTable } from "./JobMarkerTable";
+import { MapLegend } from "./MapLegend";
 
 const ALL_TYPES: JobMarkerKind[] = ["install", "service", "inspection", "survey", "dnr", "roofing"];
 const PHASE_1_TYPES: JobMarkerKind[] = ["install", "service"];
@@ -40,6 +41,9 @@ export function MapClient({ googleMapsApiKey }: MapClientProps) {
 
   const markers = query.data?.markers ?? [];
   const crews = query.data?.crews ?? [];
+  const scheduledCount = markers.filter((m) => m.scheduled).length;
+  const unscheduledCount = markers.length - scheduledCount;
+  const workingCrewCount = crews.filter((c) => c.working).length;
 
   const onTypeToggle = (k: JobMarkerKind) => {
     setEnabledTypes((prev) =>
@@ -87,27 +91,36 @@ export function MapClient({ googleMapsApiKey }: MapClientProps) {
           <JobMarkerTable markers={markers} onMarkerClick={onMarkerClick} />
         )}
 
+        {!query.isError && query.data && (
+          <MapLegend
+            enabledTypes={enabledTypes}
+            scheduledCount={scheduledCount}
+            unscheduledCount={unscheduledCount}
+            workingCrewCount={workingCrewCount}
+          />
+        )}
+
         {query.data?.droppedCount ? (
-          <div className="absolute bottom-2 left-2 text-xs bg-surface-2 text-muted px-3 py-1.5 rounded border border-t-border">
+          <div className="absolute bottom-4 right-4 text-xs bg-surface-2 text-muted px-3 py-1.5 rounded border border-t-border z-10">
             {query.data.droppedCount} job{query.data.droppedCount === 1 ? "" : "s"} could not be placed
           </div>
         ) : null}
 
         {query.data?.partialFailures?.length ? (
-          <div className="absolute top-2 right-2 text-xs bg-surface-2 text-yellow-400 px-3 py-1.5 rounded border border-yellow-600">
+          <div className="absolute top-2 left-2 text-xs bg-surface-2 text-yellow-400 px-3 py-1.5 rounded border border-yellow-600 z-10 max-w-sm">
             Partial data: {query.data.partialFailures.join("; ")}
           </div>
         ) : null}
-      </div>
 
-      {selectedMarker && (
-        <DetailPanel
-          marker={selectedMarker}
-          markers={markers}
-          crews={crews}
-          onClose={onClose}
-        />
-      )}
+        {selectedMarker && (
+          <DetailPanel
+            marker={selectedMarker}
+            markers={markers}
+            crews={crews}
+            onClose={onClose}
+          />
+        )}
+      </div>
     </div>
   );
 }
