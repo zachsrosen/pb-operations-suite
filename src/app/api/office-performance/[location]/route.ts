@@ -3,6 +3,7 @@ import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { LOCATION_SLUG_TO_CANONICAL } from "@/lib/locations";
 import { getOfficePerformanceData } from "@/lib/office-performance";
 import type { OfficePerformanceData } from "@/lib/office-performance-types";
+import { complianceVersionTag } from "@/lib/compliance-v2/feature-flag";
 
 export async function GET(
   request: NextRequest,
@@ -20,7 +21,7 @@ export async function GET(
     }
 
     const forceRefresh = request.nextUrl.searchParams.get("refresh") === "true";
-    const cacheKey = CACHE_KEYS.OFFICE_PERFORMANCE(slug);
+    const cacheKey = `${CACHE_KEYS.OFFICE_PERFORMANCE(slug)}:${complianceVersionTag()}`;
 
     const { data, cached, stale, lastUpdated } =
       await appCache.getOrFetch<OfficePerformanceData>(
