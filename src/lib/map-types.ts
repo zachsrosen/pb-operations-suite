@@ -32,6 +32,9 @@ export interface JobMarker {
   priorityScore?: number;
   scheduledAt?: string;
   crewId?: string;
+  /** Human-readable crew/tech name when we can resolve it (Zuper GET response
+   *  includes user.first_name/last_name). Populated best-effort. */
+  crewName?: string;
   dealId?: string;           // HubSpot internal object ID (for deep-link URLs)
   ticketId?: string;
   zuperJobUid?: string;

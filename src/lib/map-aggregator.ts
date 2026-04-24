@@ -187,11 +187,17 @@ export const PROJECT_MARKER_SPECS: Record<ProjectMarkerSpec["kind"], ProjectMark
   install: {
     kind: "install",
     getScheduledAt: (p) => p.constructionScheduleDate,
-    // Match construction-scheduler's queue: isSchedulable covers stages
-    // ["Site Survey", "Ready To Build", "RTB - Blocked", "Construction",
-    // "Inspection"] per SCHEDULABLE_STAGES in hubspot.ts. Exclude projects
-    // already scheduled so they don't double-appear as "ready."
-    isReadyToSchedule: (p) => p.isSchedulable && !p.constructionScheduleDate,
+    // Only strictly "Ready to Build" counts as map-schedulable. RTB-Blocked
+    // projects are intentionally excluded — they're blocked for a reason
+    // (waiting on permit, payment, design revision, etc.) and shouldn't
+    // look like live ops work. Other isSchedulable stages (Site Survey,
+    // Construction, Inspection) are either not yet ready for install or
+    // already in progress.
+    isReadyToSchedule: (p) => {
+      if (p.constructionScheduleDate) return false;
+      const s = (p.stage ?? "").toLowerCase().trim();
+      return s === "ready to build" || s === "rtb";
+    },
     // Install is done when the construction complete date is set OR the
     // project has moved past construction (PTO granted / inactive).
     isCompleted: (p) => !!p.constructionCompleteDate || !!p.ptoGrantedDate || !p.isActive,
@@ -391,11 +397,22 @@ export async function buildZuperJobMarkers(
       undefined;
 
     let crewId: string | undefined;
+    let crewName: string | undefined;
     if (job.assigned_to?.[0]) {
       const a = job.assigned_to[0];
-      if ("user_uid" in a && a.user_uid) crewId = a.user_uid;
+      if ("user_uid" in a && a.user_uid) {
+        crewId = a.user_uid;
+      }
+      // GET response shape: { user: { user_uid, first_name, last_name } }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      else if ("user" in a && (a as any).user?.user_uid) crewId = (a as any).user.user_uid;
+      const userObj = (a as any).user;
+      if (userObj) {
+        if (!crewId && userObj.user_uid) crewId = userObj.user_uid;
+        const first = userObj.first_name ?? "";
+        const last = userObj.last_name ?? "";
+        const full = `${first} ${last}`.trim();
+        if (full) crewName = full;
+      }
     }
 
     if (!address.street || !address.city || !address.state || !address.zip) {
@@ -424,6 +441,7 @@ export async function buildZuperJobMarkers(
       status: job.current_job_status?.status_name,
       scheduledAt: scheduledAt ?? undefined,
       crewId,
+      crewName,
       zuperJobUid: job.job_uid,
     });
   }

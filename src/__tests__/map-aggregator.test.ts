@@ -440,32 +440,38 @@ describe("filterProjectsByMode", () => {
     expect(ids).not.toContain("install:12");
   });
 
-  it("install Today mode includes isSchedulable projects (matches construction-scheduler)", async () => {
+  it("install Today mode: RTB shows, RTB - Blocked does NOT", async () => {
     const today = new Date("2026-04-23T00:00:00Z");
-    const rtbBlocked = {
+    const rtb = {
       ...baseProject,
       id: 20,
+      stage: "Ready to Build",
+      isSchedulable: true,
+      constructionScheduleDate: null,
+    };
+    const rtbBlocked = {
+      ...baseProject,
+      id: 21,
       stage: "RTB - Blocked",
       isSchedulable: true,
       constructionScheduleDate: null,
     };
     const siteSurvey = {
       ...baseProject,
-      id: 21,
+      id: 22,
       stage: "Site Survey",
       isSchedulable: true,
       constructionScheduleDate: null,
     };
-    (fetchAllProjects as jest.Mock).mockResolvedValue([rtbBlocked, siteSurvey]);
+    (fetchAllProjects as jest.Mock).mockResolvedValue([rtb, rtbBlocked, siteSurvey]);
     const res = await (await import("@/lib/map-aggregator")).aggregateMapMarkers({
       mode: "today", types: ["install"], date: today,
     });
     const ids = res.markers.map((m) => m.id);
-    // Both count as "ready-to-schedule" per the scheduler's isSchedulable
-    // definition (SCHEDULABLE_STAGES: Site Survey, RTB, RTB-Blocked,
-    // Construction, Inspection).
+    // Only "Ready to Build" is map-ready; blocked + pre-RTB stages are hidden.
     expect(ids).toContain("install:20");
-    expect(ids).toContain("install:21");
+    expect(ids).not.toContain("install:21");
+    expect(ids).not.toContain("install:22");
   });
 });
 
@@ -591,5 +597,46 @@ describe("timezone-agnostic date comparison", () => {
     expect(res.markers.map((m) => m.id)).toContain("install:500");
     // Scheduled flag is true (has a scheduledAt date)
     expect(res.markers[0].scheduled).toBe(true);
+  });
+});
+
+describe("Zuper assignee names", () => {
+  beforeEach(() => {
+    mockFindFirst.mockReset();
+    mockFindMany.mockReset();
+    mockLiveGeocode.mockReset();
+    mirrorFindFirstIntoFindMany();
+    mockFindFirst.mockResolvedValue({ latitude: 40, longitude: -105 });
+  });
+
+  it("extracts first_name + last_name from the GET assigned_to shape", async () => {
+    const { buildServiceMarkers } = await import("@/lib/map-aggregator");
+    const job = {
+      job_uid: "job-with-user",
+      job_title: "Inverter swap",
+      customer_address: { street: "1 Main", city: "Boulder", state: "CO", zip_code: "80301" },
+      current_job_status: { status_name: "In Progress" },
+      assigned_to: [
+        { user: { user_uid: "zuper-lucas", first_name: "Lucas", last_name: "Scarpellino" } },
+      ],
+    };
+    const { markers } = await buildServiceMarkers([job as any], { today: new Date("2026-04-23") });
+    expect(markers).toHaveLength(1);
+    expect(markers[0].crewId).toBe("zuper-lucas");
+    expect(markers[0].crewName).toBe("Lucas Scarpellino");
+  });
+
+  it("leaves crewName undefined when assignment only has user_uid", async () => {
+    const { buildServiceMarkers } = await import("@/lib/map-aggregator");
+    const job = {
+      job_uid: "job-no-name",
+      job_title: "Diagnostic",
+      customer_address: { street: "1 Main", city: "Boulder", state: "CO", zip_code: "80301" },
+      current_job_status: { status_name: "In Progress" },
+      assigned_to: [{ user_uid: "zuper-anon" }],
+    };
+    const { markers } = await buildServiceMarkers([job as any], { today: new Date("2026-04-23") });
+    expect(markers[0].crewId).toBe("zuper-anon");
+    expect(markers[0].crewName).toBeUndefined();
   });
 });
