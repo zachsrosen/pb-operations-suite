@@ -1,8 +1,8 @@
 // src/lib/map-aggregator.ts
 import { prisma } from "@/lib/db";
 import { geocodeAddress as liveGeocode } from "@/lib/travel-time";
-import { fetchAllProjects, type Project } from "@/lib/hubspot";
-import { fetchTodaysServiceJobs } from "@/lib/zuper";
+import { fetchAllProjects, filterProjectsForContext, type Project } from "@/lib/hubspot";
+import { fetchTodaysServiceJobs, fetchTodaysDnrJobs, fetchTodaysRoofingJobs } from "@/lib/zuper";
 import { fetchServiceTickets, resolveTicketAddresses } from "@/lib/hubspot-tickets";
 import type {
   CrewPin,
@@ -180,23 +180,26 @@ export const PROJECT_MARKER_SPECS: Record<ProjectMarkerSpec["kind"], ProjectMark
   install: {
     kind: "install",
     getScheduledAt: (p) => p.constructionScheduleDate,
-    isReadyToSchedule: (p) => {
-      const s = (p.stage ?? "").toLowerCase();
-      return s.includes("ready to build") || s === "rtb";
-    },
+    // Match construction-scheduler's queue: isSchedulable covers stages
+    // ["Site Survey", "Ready To Build", "RTB - Blocked", "Construction",
+    // "Inspection"] per SCHEDULABLE_STAGES in hubspot.ts. Exclude projects
+    // already scheduled so they don't double-appear as "ready."
+    isReadyToSchedule: (p) => p.isSchedulable && !p.constructionScheduleDate,
     subtitleWhenReady: "Ready to build",
   },
   inspection: {
     kind: "inspection",
     getScheduledAt: (p) => p.inspectionScheduleDate,
+    // Match inspection-scheduler: projects signalled as ready for inspection
+    // that don't yet have an inspection scheduled date.
     isReadyToSchedule: (p) => !!p.readyForInspection && !p.inspectionScheduleDate,
     subtitleWhenReady: "Ready for inspection",
   },
   survey: {
     kind: "survey",
     getScheduledAt: (p) => p.siteSurveyScheduleDate,
+    // Match site-survey-scheduler: closed-won deals without a survey yet.
     isReadyToSchedule: (p) => {
-      // Close-won in sales pipeline + no survey yet = ready-to-schedule survey
       return !p.siteSurveyScheduleDate && !p.isSiteSurveyCompleted && !!p.closeDate;
     },
     subtitleWhenReady: "Ready to schedule",
@@ -248,6 +251,23 @@ export async function buildProjectMarkers(
       scheduledAt: scheduled ? scheduledAt ?? undefined : undefined,
       dealId: String(p.id),
       rawStage: p.stage ?? undefined,
+      // Job-specific enrichment
+      projectNumber: p.projectNumber || undefined,
+      pbLocation: p.pbLocation || undefined,
+      systemSizeKwDc: p.equipment?.systemSizeKwdc || undefined,
+      batteryCount: p.equipment?.battery?.count || undefined,
+      batterySizeKwh: p.equipment?.battery?.sizeKwh || undefined,
+      evCount: p.equipment?.evCount || undefined,
+      ahj: p.ahj || undefined,
+      utility: p.utility || undefined,
+      installCrew: p.installCrew || undefined,
+      projectManager: p.projectManager || undefined,
+      dealOwner: p.dealOwner || undefined,
+      amount: p.amount || undefined,
+      hubspotUrl: p.url || undefined,
+      expectedDaysForInstall: p.expectedDaysForInstall || undefined,
+      daysForElectricians: p.daysForElectricians || undefined,
+      projectType: p.projectType || undefined,
     });
   }
 
@@ -292,8 +312,13 @@ export interface ZuperJobInput {
   assigned_to?: Array<{ user_uid?: string } | { user?: any; team?: any }>;
 }
 
-export async function buildServiceMarkers(
+/**
+ * Build markers from Zuper jobs. Works for any Zuper-sourced kind
+ * (service, dnr, roofing) — the kind is attached uniformly.
+ */
+export async function buildZuperJobMarkers(
   jobs: ZuperJobInput[],
+  kind: "service" | "dnr" | "roofing",
   _opts: { today: Date }
 ): Promise<BuildResult> {
   const markers: JobMarker[] = [];
@@ -335,17 +360,17 @@ export async function buildServiceMarkers(
     }
 
     if (!address.street || !address.city || !address.state || !address.zip) {
-      unplaced.push({ id, kind: "service", title, address, reason: "missing-address" });
+      unplaced.push({ id, kind, title, address, reason: "missing-address" });
       continue;
     }
     const coords = coordsMap.get(addressDedupKey(address));
     if (!coords) {
-      unplaced.push({ id, kind: "service", title, address, reason: "geocode-failed" });
+      unplaced.push({ id, kind, title, address, reason: "geocode-failed" });
       continue;
     }
     markers.push({
       id,
-      kind: "service",
+      kind,
       scheduled: true,
       lat: coords.lat,
       lng: coords.lng,
@@ -365,6 +390,16 @@ export async function buildServiceMarkers(
   }
 
   return { markers, unplaced };
+}
+
+/**
+ * Back-compat wrapper — existing tests still call this with `service` implicitly.
+ */
+export function buildServiceMarkers(
+  jobs: ZuperJobInput[],
+  opts: { today: Date }
+): Promise<BuildResult> {
+  return buildZuperJobMarkers(jobs, "service", opts);
 }
 
 /**
@@ -523,6 +558,8 @@ export async function aggregateMapMarkers(
   const wantService = opts.types.includes("service");
   const wantInspection = opts.types.includes("inspection");
   const wantSurvey = opts.types.includes("survey");
+  const wantDnr = opts.types.includes("dnr");
+  const wantRoofing = opts.types.includes("roofing");
   const wantAnyProjectKind = wantInstalls || wantInspection || wantSurvey;
 
   // Mode-appropriate date range for service job fetch
@@ -540,10 +577,12 @@ export async function aggregateMapMarkers(
     return { from: start, to: end };
   })();
 
-  const [projectsResult, jobsResult, ticketsResult] = await Promise.allSettled([
+  const [projectsResult, jobsResult, ticketsResult, dnrResult, roofingResult] = await Promise.allSettled([
     wantAnyProjectKind ? fetchAllProjects({ activeOnly: true }) : Promise.resolve([]),
     wantService ? fetchTodaysServiceJobs(serviceRange) : Promise.resolve([]),
     wantService ? fetchServiceTicketsWithAddress() : Promise.resolve([]),
+    wantDnr ? fetchTodaysDnrJobs(serviceRange) : Promise.resolve([]),
+    wantRoofing ? fetchTodaysRoofingJobs(serviceRange) : Promise.resolve([]),
   ]);
 
   let projects: Project[] = [];
@@ -567,15 +606,34 @@ export async function aggregateMapMarkers(
     partialFailures.push(`tickets: ${ticketsResult.reason?.message ?? "unknown"}`);
   }
 
+  let dnrJobs: ZuperJobInput[] = [];
+  if (dnrResult.status === "fulfilled") {
+    dnrJobs = dnrResult.value as ZuperJobInput[];
+  } else {
+    partialFailures.push(`zuper-dnr: ${dnrResult.reason?.message ?? "unknown"}`);
+  }
+
+  let roofingJobs: ZuperJobInput[] = [];
+  if (roofingResult.status === "fulfilled") {
+    roofingJobs = roofingResult.value as ZuperJobInput[];
+  } else {
+    partialFailures.push(`zuper-roofing: ${roofingResult.reason?.message ?? "unknown"}`);
+  }
+
   // Project-pipeline marker kinds (install, inspection, survey)
   const projectKinds: ProjectMarkerSpec["kind"][] = [];
   if (wantInstalls) projectKinds.push("install");
   if (wantInspection) projectKinds.push("inspection");
   if (wantSurvey) projectKinds.push("survey");
 
+  // Apply the scheduler-context filter BEFORE kind-specific mode filtering so
+  // the universe of eligible projects matches what the schedulers show
+  // (isSchedulable + in-progress construction/inspection + recently completed).
+  const schedulingProjects = filterProjectsForContext(projects, "scheduling");
+
   for (const kind of projectKinds) {
     const spec = PROJECT_MARKER_SPECS[kind];
-    const scopedProjects = filterProjectsByMode(projects, opts.mode, today, spec);
+    const scopedProjects = filterProjectsByMode(schedulingProjects, opts.mode, today, spec);
     const { markers, unplaced } = await buildProjectMarkers(scopedProjects, spec, { today });
     allMarkers.push(...markers);
     allUnplaced.push(...unplaced);
@@ -594,6 +652,18 @@ export async function aggregateMapMarkers(
     const { markers: ticketMarkers, unplaced: ticketUnplaced } = await buildTicketMarkers(filteredTickets);
     allMarkers.push(...ticketMarkers);
     allUnplaced.push(...ticketUnplaced);
+  }
+
+  if (wantDnr) {
+    const { markers, unplaced } = await buildZuperJobMarkers(dnrJobs, "dnr", { today });
+    allMarkers.push(...markers);
+    allUnplaced.push(...unplaced);
+  }
+
+  if (wantRoofing) {
+    const { markers, unplaced } = await buildZuperJobMarkers(roofingJobs, "roofing", { today });
+    allMarkers.push(...markers);
+    allUnplaced.push(...unplaced);
   }
 
   // Crews — select Prisma-correct fields: isActive, locations

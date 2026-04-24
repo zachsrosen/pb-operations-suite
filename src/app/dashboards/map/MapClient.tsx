@@ -13,7 +13,7 @@ import { MapLegend } from "./MapLegend";
 import { downloadMarkersCsv } from "./exportMarkers";
 
 const ALL_TYPES: JobMarkerKind[] = ["install", "service", "inspection", "survey", "dnr", "roofing"];
-const PHASE_1_TYPES: JobMarkerKind[] = ["install", "service"];
+const DEFAULT_TYPES: JobMarkerKind[] = ["install", "service", "inspection", "survey", "dnr", "roofing"];
 
 interface MapClientProps {
   googleMapsApiKey: string | null;
@@ -21,7 +21,8 @@ interface MapClientProps {
 
 export function MapClient({ googleMapsApiKey }: MapClientProps) {
   const [mode, setMode] = useState<MapMode>("today");
-  const [enabledTypes, setEnabledTypes] = useState<JobMarkerKind[]>([...PHASE_1_TYPES]);
+  const [enabledTypes, setEnabledTypes] = useState<JobMarkerKind[]>([...DEFAULT_TYPES]);
+  const [enabledLocations, setEnabledLocations] = useState<string[]>([]);
   const [selectedMarker, setSelectedMarker] = useState<JobMarker | null>(null);
 
   const typesKey = useMemo(() => enabledTypes.slice().sort().join(","), [enabledTypes]);
@@ -40,8 +41,23 @@ export function MapClient({ googleMapsApiKey }: MapClientProps) {
 
   useSSE(() => query.refetch(), { cacheKeyFilter: "map" });
 
-  const markers = query.data?.markers ?? [];
+  const rawMarkers = query.data?.markers ?? [];
   const crews = query.data?.crews ?? [];
+
+  // Union of pbLocation values present in the current data (sorted).
+  const availableLocations = useMemo(() => {
+    const set = new Set<string>();
+    for (const m of rawMarkers) if (m.pbLocation) set.add(m.pbLocation);
+    return Array.from(set).sort();
+  }, [rawMarkers]);
+
+  // Apply location filter client-side (no refetch needed).
+  const markers = useMemo(() => {
+    if (enabledLocations.length === 0) return rawMarkers;
+    const set = new Set(enabledLocations);
+    return rawMarkers.filter((m) => !m.pbLocation || set.has(m.pbLocation));
+  }, [rawMarkers, enabledLocations]);
+
   const scheduledCount = markers.filter((m) => m.scheduled).length;
   const unscheduledCount = markers.length - scheduledCount;
   const workingCrewCount = crews.filter((c) => c.working).length;
@@ -52,6 +68,14 @@ export function MapClient({ googleMapsApiKey }: MapClientProps) {
     );
   };
 
+  const onLocationToggle = (loc: string) => {
+    setEnabledLocations((prev) =>
+      prev.includes(loc) ? prev.filter((l) => l !== loc) : [...prev, loc]
+    );
+  };
+
+  const onLocationsReset = () => setEnabledLocations([]);
+
   const onMarkerClick = (m: JobMarker) => setSelectedMarker(m);
   const onClose = () => setSelectedMarker(null);
 
@@ -61,8 +85,12 @@ export function MapClient({ googleMapsApiKey }: MapClientProps) {
         mode={mode}
         types={ALL_TYPES}
         enabledTypes={enabledTypes}
+        availableLocations={availableLocations}
+        enabledLocations={enabledLocations}
         onModeChange={setMode}
         onTypeToggle={onTypeToggle}
+        onLocationToggle={onLocationToggle}
+        onLocationsReset={onLocationsReset}
         exportDisabled={markers.length === 0}
         onExport={() => downloadMarkersCsv(markers, `map-jobs-${mode}-${new Date().toISOString().slice(0, 10)}.csv`)}
       />

@@ -2048,16 +2048,15 @@ export async function getJobStatusForProject(
  * using the Zuper jobs listing API with date range + service category filter.
  */
 /**
- * Fetch Zuper service jobs scheduled for a day range (default: today).
- * Service = SERVICE_VISIT + SERVICE_REVISIT categories.
+ * Fetch Zuper jobs across an arbitrary set of category UIDs for a date range.
+ * Generic helper used by the map aggregator.
  *
- * Used by the map aggregator. Fail-open: returns [] on error so the map
- * still renders other marker types.
+ * Fail-open: returns [] on error so the map still renders other marker types.
  */
-export async function fetchTodaysServiceJobs(params?: {
-  from?: Date;
-  to?: Date;
-}): Promise<unknown[]> {
+async function fetchZuperJobsByCategories(
+  categoryUids: string[],
+  params?: { from?: Date; to?: Date }
+): Promise<unknown[]> {
   const from = params?.from ?? (() => {
     const d = new Date();
     d.setHours(0, 0, 0, 0);
@@ -2070,24 +2069,46 @@ export async function fetchTodaysServiceJobs(params?: {
   })();
 
   try {
-    const [visit, revisit] = await Promise.all([
-      zuper.getScheduledJobsForDateRange({
-        fromDate: from.toISOString().slice(0, 10),
-        toDate: to.toISOString().slice(0, 10),
-        categoryUid: JOB_CATEGORY_UIDS.SERVICE_VISIT,
-      }),
-      zuper.getScheduledJobsForDateRange({
-        fromDate: from.toISOString().slice(0, 10),
-        toDate: to.toISOString().slice(0, 10),
-        categoryUid: JOB_CATEGORY_UIDS.SERVICE_REVISIT,
-      }),
-    ]);
+    const results = await Promise.all(
+      categoryUids.map((categoryUid) =>
+        zuper.getScheduledJobsForDateRange({
+          fromDate: from.toISOString().slice(0, 10),
+          toDate: to.toISOString().slice(0, 10),
+          categoryUid,
+        })
+      )
+    );
     const jobs: unknown[] = [];
-    if (visit.type === "success" && visit.data) jobs.push(...visit.data);
-    if (revisit.type === "success" && revisit.data) jobs.push(...revisit.data);
+    for (const r of results) {
+      if (r.type === "success" && r.data) jobs.push(...r.data);
+    }
     return jobs;
   } catch (err) {
-    console.error("[map] fetchTodaysServiceJobs failed:", err);
+    console.error("[map] fetchZuperJobsByCategories failed:", err);
     return [];
   }
+}
+
+/** Service visit + service revisit — used by the Service marker kind. */
+export function fetchTodaysServiceJobs(params?: { from?: Date; to?: Date }) {
+  return fetchZuperJobsByCategories(
+    [JOB_CATEGORY_UIDS.SERVICE_VISIT, JOB_CATEGORY_UIDS.SERVICE_REVISIT],
+    params
+  );
+}
+
+/** Detach + Reset + D&R Inspection — used by the D&R marker kind. */
+export function fetchTodaysDnrJobs(params?: { from?: Date; to?: Date }) {
+  return fetchZuperJobsByCategories(
+    [JOB_CATEGORY_UIDS.DETACH, JOB_CATEGORY_UIDS.RESET, JOB_CATEGORY_UIDS.DNR_INSPECTION],
+    params
+  );
+}
+
+/** Walk Roof + Mid Roof + Roof Final — used by the Roofing marker kind. */
+export function fetchTodaysRoofingJobs(params?: { from?: Date; to?: Date }) {
+  return fetchZuperJobsByCategories(
+    [JOB_CATEGORY_UIDS.WALK_ROOF, JOB_CATEGORY_UIDS.MID_ROOF_INSTALL, JOB_CATEGORY_UIDS.ROOF_FINAL],
+    params
+  );
 }
