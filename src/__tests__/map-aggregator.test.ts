@@ -251,16 +251,18 @@ import { buildCrewPins } from "@/lib/map-aggregator";
 import type { JobMarker } from "@/lib/map-types";
 
 describe("buildCrewPins", () => {
-  // Prisma CrewMember fields: `isActive` (not `active`), `locations: String[]` (not `location`)
+  // CrewPin.id is now zuperUserUid so it matches JobMarker.crewId space.
   const crewMembers = [
     {
-      id: "crew-1",
+      id: "db-crew-1",
+      zuperUserUid: "zuper-alex",
       name: "Alex P.",
       locations: ["dtc"],
       isActive: true,
     },
     {
-      id: "crew-2",
+      id: "db-crew-2",
+      zuperUserUid: "zuper-marco",
       name: "Marco R.",
       locations: ["westy"],
       isActive: true,
@@ -270,30 +272,30 @@ describe("buildCrewPins", () => {
   it("assigns current position from earliest today's stop", () => {
     const markers: JobMarker[] = [
       {
-        id: "install:A",
-        kind: "install",
+        id: "zuperjob:A",
+        kind: "service",
         scheduled: true,
         scheduledAt: "2026-04-23T09:00:00Z",
         lat: 39.75,
         lng: -104.99,
-        crewId: "crew-1",
+        crewId: "zuper-alex",
         address: { street: "x", city: "x", state: "CO", zip: "0" },
         title: "Stop 1",
       },
       {
-        id: "install:B",
-        kind: "install",
+        id: "zuperjob:B",
+        kind: "service",
         scheduled: true,
         scheduledAt: "2026-04-23T15:00:00Z",
         lat: 39.80,
         lng: -104.95,
-        crewId: "crew-1",
+        crewId: "zuper-alex",
         address: { street: "x", city: "x", state: "CO", zip: "0" },
         title: "Stop 2",
       },
     ];
     const pins = buildCrewPins(crewMembers as any, markers);
-    const alex = pins.find(p => p.id === "crew-1")!;
+    const alex = pins.find(p => p.id === "zuper-alex")!;
     expect(alex.working).toBe(true);
     expect(alex.currentLat).toBe(39.75);
     expect(alex.routeStops).toHaveLength(2);
@@ -301,7 +303,7 @@ describe("buildCrewPins", () => {
 
   it("marks crew without today's stops as not working", () => {
     const pins = buildCrewPins(crewMembers as any, []);
-    expect(pins.find(p => p.id === "crew-1")?.working).toBe(false);
+    expect(pins.find(p => p.id === "zuper-alex")?.working).toBe(false);
   });
 });
 

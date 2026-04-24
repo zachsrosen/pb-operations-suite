@@ -25,21 +25,36 @@ export default async function JobsMapPage() {
 
   // Auto-detect user's home office from allowedLocations[0]. Fail-open to null.
   let userPbLocation: string | null = null;
+  let meAssigneeId: string | null = null;
   try {
     const dbUser = await prisma.user.findUnique({
       where: { email: user.email },
-      select: { allowedLocations: true },
+      select: { allowedLocations: true, name: true },
     });
     if (dbUser?.allowedLocations?.length) {
       userPbLocation = dbUser.allowedLocations[0];
     }
+    // Best-effort link user → CrewMember by name or email to resolve their
+    // Zuper user_uid, which is what JobMarker.crewId holds. When there's no
+    // match, the "Me" shortcut is simply hidden from the assignee dropdown.
+    if (dbUser?.name) {
+      const crew = await prisma.crewMember.findFirst({
+        where: { OR: [{ name: dbUser.name }, { email: user.email }] },
+        select: { zuperUserUid: true },
+      });
+      if (crew?.zuperUserUid) meAssigneeId = crew.zuperUserUid;
+    }
   } catch {
-    // Best-effort — the UI falls back to a picker.
+    // Best-effort — the UI falls back to no auto-detect.
   }
 
   return (
     <DashboardShell title="Jobs Map" accentColor="blue" fullWidth>
-      <MapClient googleMapsApiKey={apiKey} userPbLocation={userPbLocation} />
+      <MapClient
+        googleMapsApiKey={apiKey}
+        userPbLocation={userPbLocation}
+        meAssigneeId={meAssigneeId}
+      />
     </DashboardShell>
   );
 }
