@@ -131,14 +131,29 @@ export async function computeLocationComplianceV2(
     const scheduledEnd = job.scheduled_end_time ? new Date(job.scheduled_end_time) : null;
     const parentCompletedTime = getCompletedTimeFromHistory(job);
 
-    // Parent-job-level team — used as a fallback location signal when a
-    // credit-set member has no per-assignment team (e.g. form-filer-only).
+    // Parent-job-level team. Used as a fallback location signal when a
+    // credit-set member has no per-assignment team (form-filer-only) or is
+    // an imported crew whose per-task team tag is a different region.
     const jobTeamNames = Array.isArray(job.assigned_to_team)
       ? (job.assigned_to_team as Array<{ team?: { team_name?: string } }>)
           .map((t) => t.team?.team_name)
           .filter((n): n is string => typeof n === "string")
       : [];
     const jobMatchesLocation = teamMatchesLocation(jobTeamNames, teamFilter);
+    // Exclusive match: job has at least one team matching AND no teams from
+    // other known Photon regions. Prevents cross-location over-counting on
+    // mixed-team jobs (e.g. a job tagged to both Centennial and SLO would
+    // not auto-include CO techs in SLO scoring — but a pure-SLO job would).
+    const jobExclusivelyLocation = jobMatchesLocation && jobTeamNames.every(
+      (n) => {
+        const lower = n.toLowerCase();
+        // Match if any OTHER location's filter also matches this team name.
+        const anotherLocation = Object.entries(LOCATION_TEAM_FILTERS).some(
+          ([loc, filter]) => loc !== location && location !== "Camarillo" && lower.includes(filter) && !lower.includes(teamFilter)
+        );
+        return !anotherLocation;
+      }
+    );
 
     const bundle = await fetcher.fetchBundle(job.job_uid);
     if (!bundle) continue;
@@ -149,16 +164,33 @@ export async function computeLocationComplianceV2(
       const form = bundle.formByTaskUid.get(task.service_task_uid) ?? null;
       const fullCreditSet = computeCreditSet({ task, form });
 
-      // Location filter:
-      //   - If the tech has per-assignment team info, filter by that.
-      //   - If they have no team info (form-filer-only), include them only when
-      //     the parent job itself is scoped to this location. Prevents cross-
-      //     location double-counting while preserving symmetric treatment for
-      //     form-filer-only techs on location-local jobs (spec §2.2).
+      // Location filter: include a credit-set member when EITHER
+      //   1. their own task-assignment team matches this location, OR
+      //   2. the parent job itself is scoped to this location.
+      //
+      // Rationale: Photon's CA crew is tiny and many CA Construction jobs
+      // are staffed by imported CO crews whose per-task team tags are CO
+      // teams. Strictly filtering by the tech's own team would drop them
+      // from CA scoring entirely, leaving CA with no data. Falling back to
+      // parent-job team lets the tech be scored on the location whose job
+      // they actually worked. This mirrors v1's deal-based location
+      // attribution behavior from compliance-compute.ts.
+      //
+      // Cross-location safety: a CO tech on a CO-tagged job is still
+      // excluded from SLO scoring because neither their team nor the job
+      // matches. Only genuinely cross-location work (CO tech on SLO job)
+      // flows into the other location's scoring.
       const locationScopedUids = fullCreditSet.userUids.filter((uid) => {
         const teams = fullCreditSet.teamsByUid.get(uid) ?? [];
-        if (teams.length > 0) return teamMatchesLocation(teams, teamFilter);
-        return jobMatchesLocation;
+        // 1. Tech's own per-task team matches — always include.
+        if (teams.length > 0 && teamMatchesLocation(teams, teamFilter)) return true;
+        // 2. Tech has no team info (form-filer-only) — include if job is this location.
+        if (teams.length === 0 && jobMatchesLocation) return true;
+        // 3. Tech's team is a different location — include only if job is
+        //    EXCLUSIVELY this location (covers imported-crew case without
+        //    double-counting on genuinely mixed-team jobs).
+        if (teams.length > 0 && jobExclusivelyLocation) return true;
+        return false;
       });
 
       if (locationScopedUids.length === 0) {

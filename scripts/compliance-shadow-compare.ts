@@ -42,12 +42,21 @@ async function main() {
         continue;
       }
 
-      // Match v1 and v2 employees by userUid where possible, or by name
+      // Match v1 and v2 employees — prefer userUid (only present on v1 rows
+      // that came through the v2 adapter), fall back to name match. Also
+      // flush v2-only employees so we capture techs who appear in v2 but
+      // not v1 (e.g. form-filer-only).
       const v2ByUid = new Map(v2.byEmployee.map((e) => [e.userUid, e]));
+      const v2ByName = new Map(v2.byEmployee.map((e) => [e.name, e]));
+      const writtenUids = new Set<string>();
 
+      let written = 0;
+
+      // 1. v1 × v2 matches
       for (const v1e of v1.byEmployee) {
-        // v1 doesn't track userUid on EmployeeCompliance (it's by name only), so we approximate by name
-        const v2e = [...v2ByUid.values()].find((x) => x.name === v1e.name);
+        const v2e =
+          (v1e.userUid && v2ByUid.get(v1e.userUid)) ||
+          v2ByName.get(v1e.name);
         if (!v2e) continue;
 
         await prisma.complianceScoreShadow.create({
@@ -67,8 +76,34 @@ async function main() {
             emptyCreditSetJobs: v2.emptyCreditSetJobs,
           },
         });
+        written++;
+        writtenUids.add(v2e.userUid);
       }
-      console.log(`  wrote ${v1.byEmployee.length} rows`);
+
+      // 2. v2-only employees (v1 had 0 for this person — likely form-filer-only)
+      for (const v2e of v2.byEmployee) {
+        if (writtenUids.has(v2e.userUid)) continue;
+        await prisma.complianceScoreShadow.create({
+          data: {
+            userUid: v2e.userUid,
+            userName: v2e.name,
+            location,
+            category,
+            windowDays,
+            v1Score: 0,
+            v1Grade: "—",
+            v2Score: v2e.complianceScore,
+            v2Grade: v2e.grade,
+            v1TotalJobs: 0,
+            v2TasksFractional: v2e.tasksFractional,
+            v2DistinctParentJobs: v2e.distinctParentJobs,
+            emptyCreditSetJobs: v2.emptyCreditSetJobs,
+          },
+        });
+        written++;
+      }
+
+      console.log(`  wrote ${written} rows (v1: ${v1.byEmployee.length}, v2: ${v2.byEmployee.length})`);
     }
   }
 

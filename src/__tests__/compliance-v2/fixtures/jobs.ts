@@ -322,6 +322,40 @@ export function buildExcludedStatusFixture(): FixtureBundle {
   };
 }
 
+// === Fixture M: Imported CO crew on a pure-SLO job ===
+// Real-world case: a CA Construction job is staffed by CO technicians
+// whose per-task team tags are "Centennial". The PARENT job is tagged
+// exclusively "San Luis Obispo". Under the imported-crew rule, the CO
+// tech should be included in SLO scoring (they actually did the CA work).
+export function buildImportedCrewFixture(): FixtureBundle {
+  const job: FixtureJob = {
+    job_uid: "imported",
+    job_title: "PROJ-CA-imported | CO crew doing CA work",
+    job_category: { category_uid: CONSTRUCTION_UID },
+    current_job_status: { status_name: "Completed" },
+    scheduled_start_time: "2026-04-01T15:00:00Z",
+    scheduled_end_time: "2026-04-03T23:00:00Z",
+    assigned_to: [mkAssignee("u-co", "Imported CO Tech")],
+    assigned_to_team: [{ team: { team_uid: "t-slo", team_name: "San Luis Obispo" } }], // pure SLO
+    job_status: [{ status_name: "Completed", created_at: "2026-04-02T23:00:00Z" }],
+  };
+  const task: ServiceTaskRaw = {
+    service_task_uid: "pv",
+    service_task_title: "PV Install - California",
+    service_task_status: "COMPLETED",
+    assigned_to: [mkAssignee("u-co", "Imported CO Tech", true, "Centennial")], // CO team tag
+    asset_inspection_submission_uid: null,
+    actual_end_time: "2026-04-02T22:00:00Z",
+  };
+  return {
+    job,
+    taskBundle: {
+      tasks: [task],
+      formByTaskUid: new Map([["pv", null]]),
+    },
+  };
+}
+
 // === Fixture L: Cross-location — Centennial tech and SLO tech on the same multi-region job ===
 // Same job, two techs with different team tags. When computing for "Centennial",
 // only the Centennial tech should appear. When computing for "San Luis Obispo", only the SLO tech.

@@ -32,6 +32,7 @@ import {
   buildTimestampTieBreakFixture,
   buildPvCompletedElectricalStuckFixture,
   buildCrossLocationFixture,
+  buildImportedCrewFixture,
   type FixtureBundle,
 } from "./fixtures/jobs";
 
@@ -151,6 +152,22 @@ describe("computeLocationComplianceV2", () => {
       createFetcher: mkFetcher([buildCrossLocationFixture()]),
     });
     expect(slo!.byEmployee.map((e) => e.userUid).sort()).toEqual(["u-slo"]);
+  });
+
+  it("Imported crew: CO tech on pure-SLO job IS scored for SLO", async () => {
+    // Parent job exclusively tagged SLO; tech's task-team tag is Centennial.
+    // Under the imported-crew rule the tech should appear in SLO scoring,
+    // even though their own team tag points to CO.
+    mockFetchJobsForCategory.mockResolvedValueOnce([buildImportedCrewFixture().job]);
+    const slo = await computeLocationComplianceV2("Construction", "San Luis Obispo", 30, {
+      createFetcher: mkFetcher([buildImportedCrewFixture()]),
+    });
+    expect(slo!.byEmployee.map((e) => e.userUid)).toEqual(["u-co"]);
+    // NOTE: the same tech will also appear in Centennial scoring because
+    // their team tag matches. This mirrors v1's team-filter behavior —
+    // we don't de-duplicate across locations. Worth documenting but not
+    // fixing here, since v1 has the same characteristic and aggregate
+    // computation is explicitly unchanged (spec §1 non-goal).
   });
 
   it("CENTRAL FAIRNESS: PV completed on time, Electrical stuck on same parent → PV tech gets no stuck penalty", async () => {
