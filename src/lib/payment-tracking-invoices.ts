@@ -23,7 +23,8 @@
  */
 
 import { hubspotClient } from "@/lib/hubspot";
-import type { InvoiceSummary, PaymentTrackingDeal } from "@/lib/payment-tracking-types";
+import { computeBucket, effectivePaidStatus } from "@/lib/payment-tracking";
+import type { InvoiceSummary, PaymentTrackingDeal, PaymentStatusGroup } from "@/lib/payment-tracking-types";
 
 // Milestone keys; matches PaymentTrackingDeal.invoices keys.
 type MilestoneKey = "da" | "cc" | "pto" | "peM1" | "peM2";
@@ -376,11 +377,11 @@ function reconcileMoneyWithInvoices(deal: PaymentTrackingDeal): void {
   const customerInvoicedBilled =
     (deal.invoices?.da?.amountBilled ?? 0) +
     (deal.invoices?.cc?.amountBilled ?? 0) +
-    (deal.invoices?.pto?.amountBilled ?? 0);
+    (deal.isPE ? 0 : deal.invoices?.pto?.amountBilled ?? 0);
   const customerInvoicedBalance =
     Math.max(0, deal.invoices?.da?.balanceDue ?? 0) +
     Math.max(0, deal.invoices?.cc?.balanceDue ?? 0) +
-    Math.max(0, deal.invoices?.pto?.balanceDue ?? 0);
+    (deal.isPE ? 0 : Math.max(0, deal.invoices?.pto?.balanceDue ?? 0));
 
   // PE-side: PE pays a portion of the same contract (NOT additional revenue).
   let peInvoicedBalance = 0;
@@ -418,4 +419,57 @@ function reconcileMoneyWithInvoices(deal: PaymentTrackingDeal): void {
     deal.customerContractTotal > 0
       ? (totalCollected / deal.customerContractTotal) * 100
       : 0;
+
+  // Invoice-first re-bucketing: now that invoices are attached, the
+  // effectivePaidStatus can diverge from the deal-property-based bucket that
+  // transformDeal set. Recompute both bucket and attentionReasons using
+  // invoice data as source of truth.
+  const rebucket = computeBucket({
+    daStatus: deal.daStatus,
+    ccStatus: deal.ccStatus,
+    ptoStatus: deal.ptoStatus,
+    peM1Status: deal.peM1Status,
+    peM2Status: deal.peM2Status,
+    isPE: deal.isPE,
+    closeDate: deal.closeDate,
+    dealStage: deal.dealStage,
+    peM1ApprovalDate: deal.peM1ApprovalDate,
+    asOf: new Date(),
+    isDesignApproved: deal.isDesignApproved,
+    isConstructionComplete: deal.isConstructionComplete,
+    isInspectionPassed: deal.isInspectionPassed,
+    isPtoGranted: deal.isPtoGranted,
+    invoices: deal.invoices,
+  });
+  deal.bucket = rebucket.bucket;
+  deal.attentionReasons = rebucket.attentionReasons;
+
+  // Re-derive statusGroup from invoice-first effective statuses.
+  const daEffPaid = effectivePaidStatus("customer", deal.invoices?.da, deal.daStatus) === "paid";
+  const ccEffPaid = effectivePaidStatus("customer", deal.invoices?.cc, deal.ccStatus) === "paid";
+  const ptoEffPaid = effectivePaidStatus("customer", deal.invoices?.pto, deal.ptoStatus) === "paid";
+  const peM1EffPaid = effectivePaidStatus("pe", deal.invoices?.peM1, deal.peM1Status) === "paid";
+  const peM2EffPaid = effectivePaidStatus("pe", deal.invoices?.peM2, deal.peM2Status) === "paid";
+
+  const applicable = deal.isPE
+    ? [daEffPaid, ccEffPaid, peM1EffPaid, peM2EffPaid]
+    : [daEffPaid, ccEffPaid, ptoEffPaid];
+  const allPaid = applicable.every((p) => p);
+  const somePaid = applicable.some((p) => p);
+  const baseGroup: PaymentStatusGroup = allPaid
+    ? "fully_paid"
+    : somePaid
+    ? "partially_paid"
+    : "not_started";
+
+  deal.statusGroup =
+    rebucket.attentionReasons.length > 0
+      ? "issues"
+      : !somePaid &&
+        (deal.isDesignApproved ||
+          deal.isConstructionComplete ||
+          deal.isPtoGranted ||
+          deal.isInspectionPassed)
+      ? "ready_to_invoice"
+      : baseGroup;
 }

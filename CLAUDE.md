@@ -556,6 +556,7 @@ Pages organized by department (full list: `find src/app/dashboards -name page.ts
 **Executive & BI**: executive, executive-calendar, command-center, capacity, optimizer, pipeline, clipping-analytics, incentives, ai, revenue, qc
 **Project Management**: project-management, reviews/[dealId], timeline, plan-review, at-risk, alerts
 **Compliance**: ahj-requirements, ahj-tracker, zuper-compliance, zuper-status-comparison, utility-tracker, inspections
+**Accounting**: payment-tracking, payment-action-queue, ready-to-invoice, accounts-receivable, payment-data-mismatch (admin-only), pe-deals, pe, pricing-calculator
 **Solar Surveyor**: solar-surveyor, site-survey
 **Other**: locations, mobile
 

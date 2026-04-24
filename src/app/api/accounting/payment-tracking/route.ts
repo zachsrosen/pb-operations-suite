@@ -7,6 +7,9 @@ import { getStageMaps } from "@/lib/deals-pipeline";
 import {
   transformDeal,
   computeSummary,
+  deriveReadyToInvoice,
+  deriveAccountsReceivable,
+  derivePaymentDataMismatch,
   PAYMENT_TRACKING_PROPERTIES,
 } from "@/lib/payment-tracking";
 import { attachInvoicesToDeals } from "@/lib/payment-tracking-invoices";
@@ -127,10 +130,22 @@ export async function GET(request: Request) {
   }
 
   const summary = computeSummary(deals);
+  const readyToInvoice = deriveReadyToInvoice(deals, asOf);
+  const accountsReceivable = deriveAccountsReceivable(deals);
+  const paymentDataMismatch = derivePaymentDataMismatch(deals);
+
+  console.log(
+    `[payment-tracking] derived: ${readyToInvoice.length} ready-to-invoice, ` +
+      `${accountsReceivable.length} AR entries, ${paymentDataMismatch.length} mismatches`
+  );
+
   const response: PaymentTrackingResponse = {
     lastUpdated: asOf.toISOString(),
     summary,
     deals,
+    readyToInvoice,
+    accountsReceivable,
+    paymentDataMismatch,
   };
 
   appCache.set(CACHE_KEYS.PAYMENT_TRACKING, response);

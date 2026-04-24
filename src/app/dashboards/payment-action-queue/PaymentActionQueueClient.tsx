@@ -177,12 +177,26 @@ export default function PaymentActionQueueClient() {
       exportData={{ data: csvRows, filename: "payment-action-queue.csv" }}
       fullWidth
       headerRight={
-        <a
-          href="/dashboards/payment-tracking"
-          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 text-xs font-medium transition-colors"
-        >
-          📊 Payment Tracking →
-        </a>
+        <div className="flex gap-2 flex-wrap">
+          <a
+            href="/dashboards/ready-to-invoice"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20 text-xs font-medium transition-colors"
+          >
+            🧾 Ready to Invoice →
+          </a>
+          <a
+            href="/dashboards/accounts-receivable"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-red-300 hover:bg-red-500/20 text-xs font-medium transition-colors"
+          >
+            ⏳ A/R →
+          </a>
+          <a
+            href="/dashboards/payment-tracking"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-300 hover:bg-blue-500/20 text-xs font-medium transition-colors"
+          >
+            📊 Payment Tracking →
+          </a>
+        </div>
       }
     >
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">

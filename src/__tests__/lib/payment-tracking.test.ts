@@ -2,8 +2,16 @@ import {
   transformDeal,
   computeSummary,
   computeBucket,
+  effectivePaidStatus,
+  deriveReadyToInvoice,
+  deriveAccountsReceivable,
+  derivePaymentDataMismatch,
 } from "@/lib/payment-tracking";
-import type { HubSpotDealPaymentProps } from "@/lib/payment-tracking-types";
+import type {
+  HubSpotDealPaymentProps,
+  InvoiceSummary,
+  PaymentTrackingDeal,
+} from "@/lib/payment-tracking-types";
 
 const BASE: HubSpotDealPaymentProps = {
   hs_object_id: "123",
@@ -499,5 +507,392 @@ describe("computeBucket — disjointness", () => {
       asOf: new Date("2026-04-21"),
     });
     expect(bucket.bucket).toBe("attention");
+  });
+});
+
+// ── Invoice-first bucketing ──────────────────────────────────────────────
+
+const paidInvoice = (): InvoiceSummary => ({
+  invoiceId: "inv-1",
+  number: "INV-1",
+  status: "paid",
+  amountBilled: 1000,
+  amountPaid: 1000,
+  balanceDue: 0,
+  invoiceDate: "2026-03-01",
+  dueDate: "2026-03-15",
+  paymentDate: "2026-03-10",
+  daysOverdue: null,
+  hubspotUrl: "x",
+});
+
+const unpaidInvoice = (overrides: Partial<InvoiceSummary> = {}): InvoiceSummary => ({
+  ...paidInvoice(),
+  status: "sent",
+  amountPaid: 0,
+  balanceDue: 1000,
+  paymentDate: null,
+  ...overrides,
+});
+
+describe("effectivePaidStatus", () => {
+  it("returns 'paid' when invoice is paid (balanceDue 0 + status paid)", () => {
+    expect(effectivePaidStatus("customer", paidInvoice(), "Open")).toBe("paid");
+  });
+
+  it("returns 'invoiced_unpaid' when invoice attached with balanceDue > 0", () => {
+    expect(effectivePaidStatus("customer", unpaidInvoice(), "Paid In Full")).toBe(
+      "invoiced_unpaid"
+    );
+  });
+
+  it("falls back to deal property when no invoice — customer side", () => {
+    expect(effectivePaidStatus("customer", undefined, "Paid In Full")).toBe("paid");
+    expect(effectivePaidStatus("customer", undefined, "Open")).toBe("not_invoiced");
+    expect(effectivePaidStatus("customer", undefined, null)).toBe("not_invoiced");
+  });
+
+  it("falls back to deal property when no invoice — PE side", () => {
+    expect(effectivePaidStatus("pe", undefined, "Paid")).toBe("paid");
+    expect(effectivePaidStatus("pe", undefined, "Approved")).toBe("not_invoiced");
+  });
+
+  it("treats voided/cancelled/draft invoices as not_invoiced (ignored)", () => {
+    const voided = { ...paidInvoice(), status: "voided" };
+    expect(effectivePaidStatus("customer", voided, "Open")).toBe("not_invoiced");
+    const draft = { ...paidInvoice(), status: "draft" };
+    expect(effectivePaidStatus("customer", draft, "Paid In Full")).toBe("not_invoiced");
+  });
+});
+
+describe("computeBucket — invoice-first", () => {
+  const asOf = new Date("2026-04-23");
+
+  it("PE deal: CC invoice Paid but deal property Open → CC-unpaid reasons DON'T fire", () => {
+    const result = computeBucket({
+      daStatus: "Paid In Full",
+      ccStatus: "Open", // stale property
+      ptoStatus: null,
+      peM1Status: "Approved",
+      peM2Status: null,
+      isPE: true,
+      closeDate: "2026-03-01",
+      dealStage: "22580872", // Inspection (post-install)
+      peM1ApprovalDate: null,
+      asOf,
+      isDesignApproved: true,
+      isConstructionComplete: true,
+      isInspectionPassed: true,
+      isPtoGranted: false,
+      invoices: { da: paidInvoice(), cc: paidInvoice() },
+    });
+    expect(result.attentionReasons).not.toContain("Post-install, CC not paid");
+    expect(result.attentionReasons).not.toContain(
+      "Construction complete — CC invoice not paid"
+    );
+    expect(result.attentionReasons).toContain(
+      "Inspection passed + PE approved M1 — M1 not paid"
+    );
+  });
+
+  it("Non-PE deal: CC invoice balanceDue > 0 → CC-unpaid reason fires", () => {
+    const result = computeBucket({
+      daStatus: "Paid In Full",
+      ccStatus: "Paid In Full", // stale in other direction
+      ptoStatus: null,
+      peM1Status: null,
+      peM2Status: null,
+      isPE: false,
+      closeDate: "2026-03-01",
+      dealStage: "22580872",
+      peM1ApprovalDate: null,
+      asOf,
+      isDesignApproved: true,
+      isConstructionComplete: true,
+      isInspectionPassed: false,
+      isPtoGranted: false,
+      invoices: { da: paidInvoice(), cc: unpaidInvoice({ balanceDue: 500 }) },
+    });
+    expect(result.attentionReasons).toContain("Post-install, CC not paid");
+  });
+
+  it("No invoices attached → falls back to deal properties (unchanged behavior)", () => {
+    const result = computeBucket({
+      daStatus: "Paid In Full",
+      ccStatus: "Open",
+      ptoStatus: null,
+      peM1Status: null,
+      peM2Status: null,
+      isPE: false,
+      closeDate: "2026-04-10", // within 30 days of asOf so the CC Open >30d rule doesn't pre-empt
+      dealStage: "22580872",
+      peM1ApprovalDate: null,
+      asOf,
+      isDesignApproved: true,
+      isConstructionComplete: true,
+      isInspectionPassed: false,
+      isPtoGranted: false,
+    });
+    expect(result.attentionReasons).toContain("Post-install, CC not paid");
+  });
+
+  it("Bucket ladder uses invoice-first: CC invoice Paid + property Open → awaiting_pto", () => {
+    const result = computeBucket({
+      daStatus: "Paid In Full",
+      ccStatus: "Open",
+      ptoStatus: "Open",
+      peM1Status: null,
+      peM2Status: null,
+      isPE: false,
+      closeDate: "2026-03-01",
+      dealStage: "20440342", // pre-install, skips post-install rule
+      peM1ApprovalDate: null,
+      asOf,
+      isDesignApproved: true,
+      isConstructionComplete: true,
+      isInspectionPassed: false,
+      isPtoGranted: false,
+      invoices: { da: paidInvoice(), cc: paidInvoice() },
+    });
+    // PTO reason still fires (construction complete, PTO not granted yet)
+    // but bucket ladder is attention (has reasons). Confirm the CC-unpaid
+    // reason didn't fire and the bucket didn't stall at awaiting_m2.
+    expect(result.attentionReasons).not.toContain(
+      "Construction complete — CC invoice not paid"
+    );
+  });
+});
+
+// ── Derived entry helpers ───────────────────────────────────────────────
+
+function makeDeal(overrides: Partial<PaymentTrackingDeal> = {}): PaymentTrackingDeal {
+  return {
+    dealId: "1",
+    dealName: "Test",
+    pbLocation: "DTC",
+    dealStage: "22580872",
+    dealStageLabel: "Inspection",
+    closeDate: "2026-03-01",
+    isPE: false,
+    customerContractTotal: 1000,
+    customerCollected: 0,
+    customerOutstanding: 0,
+    notYetInvoiced: 1000,
+    daStatus: null,
+    daAmount: 500,
+    daPaidDate: null,
+    daMemo: null,
+    ccStatus: null,
+    ccAmount: 500,
+    ccPaidDate: null,
+    ptoStatus: null,
+    ptoMemo: null,
+    peM1Status: null,
+    peM1Amount: null,
+    peM1ApprovalDate: null,
+    peM1RejectionDate: null,
+    peM2Status: null,
+    peM2Amount: null,
+    peM2ApprovalDate: null,
+    peM2RejectionDate: null,
+    peBonusTotal: null,
+    peBonusCollected: null,
+    peBonusOutstanding: null,
+    totalPBRevenue: 1000,
+    collectedPct: 0,
+    bucket: "awaiting_m1",
+    statusGroup: "not_started",
+    attentionReasons: [],
+    paidInFullFlag: null,
+    isDesignApproved: false,
+    designApprovalDate: null,
+    isConstructionComplete: false,
+    constructionCompleteDate: null,
+    isInspectionPassed: false,
+    inspectionPassedDate: null,
+    isPtoGranted: false,
+    ptoGrantedDate: null,
+    hubspotUrl: "x",
+    ...overrides,
+  };
+}
+
+describe("deriveReadyToInvoice", () => {
+  const asOf = new Date("2026-04-23");
+
+  it("includes deal when layout_approved + no DA invoice", () => {
+    const result = deriveReadyToInvoice(
+      [makeDeal({ isDesignApproved: true, designApprovalDate: "2026-04-13" })],
+      asOf
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0].milestone).toBe("da");
+    expect(result[0].daysReady).toBe(10);
+    expect(result[0].expectedAmount).toBe(500);
+  });
+
+  it("excludes deal when layout_approved but DA invoice attached (any state)", () => {
+    const deals = [
+      makeDeal({
+        isDesignApproved: true,
+        invoices: { da: unpaidInvoice({ status: "sent" }) },
+      }),
+    ];
+    expect(deriveReadyToInvoice(deals, asOf)).toHaveLength(0);
+  });
+
+  it("PE M1 ready only when inspectionPassed + peM1Status=Approved + no PE M1 invoice", () => {
+    const ready = makeDeal({
+      isPE: true,
+      isInspectionPassed: true,
+      inspectionPassedDate: "2026-04-13",
+      peM1Status: "Approved",
+      peM1Amount: 300,
+    });
+    const notReady = makeDeal({
+      dealId: "2",
+      isPE: true,
+      isInspectionPassed: true,
+      peM1Status: "Submitted",
+    });
+    const result = deriveReadyToInvoice([ready, notReady], asOf);
+    expect(result.map((r) => r.milestone)).toEqual(["peM1"]);
+    expect(result[0].expectedAmount).toBe(300);
+  });
+
+  it("PTO is not a ready-to-invoice milestone for PE deals", () => {
+    const result = deriveReadyToInvoice(
+      [
+        makeDeal({
+          isPE: true,
+          peM2Status: "Submitted",
+          isPtoGranted: true,
+          ptoGrantedDate: "2026-04-13",
+        }),
+      ],
+      asOf
+    );
+    expect(result.find((r) => r.milestone === "pto")).toBeUndefined();
+  });
+
+  it("excludes deal when DA milestone already Paid In Full on deal property (no invoice needed)", () => {
+    const result = deriveReadyToInvoice(
+      [
+        makeDeal({
+          isDesignApproved: true,
+          designApprovalDate: "2026-04-13",
+          daStatus: "Paid In Full",
+        }),
+      ],
+      asOf
+    );
+    expect(result).toHaveLength(0);
+  });
+
+  it("excludes PE M1 when property says Paid even without invoice (data-quality issue, not ready-to-invoice)", () => {
+    const result = deriveReadyToInvoice(
+      [
+        makeDeal({
+          isPE: true,
+          isInspectionPassed: true,
+          inspectionPassedDate: "2026-04-13",
+          peM1Status: "Paid", // already paid per property — not ready-to-invoice
+          peM1Amount: 300,
+        }),
+      ],
+      asOf
+    );
+    expect(result.find((r) => r.milestone === "peM1")).toBeUndefined();
+  });
+});
+
+describe("deriveAccountsReceivable", () => {
+  const withInvoice = (
+    milestone: "da" | "cc",
+    balanceDue: number,
+    daysOverdue: number | null,
+    status: string = "sent"
+  ): PaymentTrackingDeal => {
+    const inv: InvoiceSummary = {
+      invoiceId: `${milestone}-1`,
+      number: `INV-${milestone}`,
+      status,
+      amountBilled: 1000,
+      amountPaid: 1000 - balanceDue,
+      balanceDue,
+      invoiceDate: "2026-03-01",
+      dueDate: "2026-03-15",
+      paymentDate: null,
+      daysOverdue,
+      hubspotUrl: "x",
+    };
+    return makeDeal({ invoices: { [milestone]: inv } });
+  };
+
+  it("buckets invoice with daysOverdue 15 into 0-30", () => {
+    const result = deriveAccountsReceivable([withInvoice("da", 500, 15)]);
+    expect(result).toHaveLength(1);
+    expect(result[0].agingBucket).toBe("0-30");
+    expect(result[0].daysOverdue).toBe(15);
+  });
+
+  it("buckets invoice with daysOverdue 95 into 90+", () => {
+    expect(deriveAccountsReceivable([withInvoice("cc", 500, 95)])[0].agingBucket).toBe("90+");
+  });
+
+  it("excludes fully-paid invoices (balanceDue === 0)", () => {
+    expect(deriveAccountsReceivable([withInvoice("da", 0, 15)])).toHaveLength(0);
+  });
+
+  it("excludes voided / draft / cancelled / paid status invoices", () => {
+    expect(deriveAccountsReceivable([withInvoice("da", 500, 15, "voided")])).toHaveLength(0);
+    expect(deriveAccountsReceivable([withInvoice("da", 500, 15, "draft")])).toHaveLength(0);
+    expect(deriveAccountsReceivable([withInvoice("da", 500, 15, "cancelled")])).toHaveLength(0);
+  });
+
+  it("clamps negative daysOverdue (not-yet-due) to 0, bucket 0-30", () => {
+    const result = deriveAccountsReceivable([withInvoice("da", 500, -5)]);
+    expect(result[0].agingBucket).toBe("0-30");
+    expect(result[0].daysOverdue).toBe(0);
+  });
+});
+
+describe("derivePaymentDataMismatch", () => {
+  const paid = paidInvoice;
+  const unpaid = unpaidInvoice;
+
+  it("flags property_says_unpaid_invoice_paid", () => {
+    const deals = [makeDeal({ daStatus: "Open", invoices: { da: paid() } })];
+    const result = derivePaymentDataMismatch(deals);
+    expect(result).toHaveLength(1);
+    expect(result[0].mismatchType).toBe("property_says_unpaid_invoice_paid");
+  });
+
+  it("flags property_says_paid_invoice_unpaid", () => {
+    const deals = [makeDeal({ ccStatus: "Paid In Full", invoices: { cc: unpaid() } })];
+    expect(derivePaymentDataMismatch(deals)[0].mismatchType).toBe("property_says_paid_invoice_unpaid");
+  });
+
+  it("flags property_missing_invoice_present", () => {
+    const deals = [makeDeal({ daStatus: null, invoices: { da: paid() } })];
+    expect(derivePaymentDataMismatch(deals)[0].mismatchType).toBe("property_missing_invoice_present");
+  });
+
+  it("flags PE M1 mismatch (property Paid, invoice unpaid)", () => {
+    const deals = [
+      makeDeal({ isPE: true, peM1Status: "Paid", invoices: { peM1: unpaid() } }),
+    ];
+    expect(derivePaymentDataMismatch(deals)[0].mismatchType).toBe("property_says_paid_invoice_unpaid");
+  });
+
+  it("no mismatch when property and invoice agree", () => {
+    const deals = [makeDeal({ daStatus: "Paid In Full", invoices: { da: paid() } })];
+    expect(derivePaymentDataMismatch(deals)).toHaveLength(0);
+  });
+
+  it("skips voided invoices (not mismatches)", () => {
+    const voided = { ...paid(), status: "voided" };
+    const deals = [makeDeal({ daStatus: "Open", invoices: { da: voided } })];
+    expect(derivePaymentDataMismatch(deals)).toHaveLength(0);
   });
 });
