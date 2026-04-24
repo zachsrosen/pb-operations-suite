@@ -31,6 +31,7 @@ import {
   buildExcludedStatusFixture,
   buildTimestampTieBreakFixture,
   buildPvCompletedElectricalStuckFixture,
+  buildCrossLocationFixture,
   type FixtureBundle,
 } from "./fixtures/jobs";
 
@@ -133,6 +134,23 @@ describe("computeLocationComplianceV2", () => {
     const emp = result!.byEmployee[0];
     expect(emp.lowVolume).toBe(true);
     expect(emp.grade).toBe("—");
+  });
+
+  it("Location filter: cross-location job — only the matching-team tech appears per location", async () => {
+    // Computing for "Centennial" should surface u-cent only
+    mockFetchJobsForCategory.mockResolvedValueOnce([buildCrossLocationFixture().job]);
+    const cent = await computeLocationComplianceV2("Construction", "Centennial", 30, {
+      createFetcher: mkFetcher([buildCrossLocationFixture()]),
+    });
+    expect(cent!.byEmployee.map((e) => e.userUid).sort()).toEqual(["u-cent"]);
+    expect(cent!.byEmployee[0].tasksFractional).toBe(1); // 1/1 for the location-scoped credit set
+
+    // Computing for "San Luis Obispo" should surface u-slo only
+    mockFetchJobsForCategory.mockResolvedValueOnce([buildCrossLocationFixture().job]);
+    const slo = await computeLocationComplianceV2("Construction", "San Luis Obispo", 30, {
+      createFetcher: mkFetcher([buildCrossLocationFixture()]),
+    });
+    expect(slo!.byEmployee.map((e) => e.userUid).sort()).toEqual(["u-slo"]);
   });
 
   it("CENTRAL FAIRNESS: PV completed on time, Electrical stuck on same parent → PV tech gets no stuck penalty", async () => {

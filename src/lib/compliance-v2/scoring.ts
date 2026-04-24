@@ -38,6 +38,28 @@ const CATEGORY_NAME_TO_UID: Record<string, string> = {
   Inspection: JOB_CATEGORY_UIDS.INSPECTION,
 };
 
+/**
+ * Map a PB location display name to the case-insensitive team substring used
+ * to filter credit-set members. Mirrors LOCATION_TEAM_FILTERS in v1
+ * compliance-compute.ts so shadow-compare attributes consistently.
+ *
+ * DTC rolls under Centennial; Camarillo rolls under San Luis Obispo.
+ */
+const LOCATION_TEAM_FILTERS: Record<string, string> = {
+  Westminster: "westminster",
+  Centennial: "centennial",
+  DTC: "centennial",
+  "Colorado Springs": "colorado springs",
+  "San Luis Obispo": "san luis obispo",
+  Camarillo: "san luis obispo",
+};
+
+/** True when `teamNames` has at least one entry whose lowercased form contains the location's filter. */
+function teamMatchesLocation(teamNames: string[], teamFilter: string): boolean {
+  if (teamNames.length === 0) return false;
+  return teamNames.some((t) => t.toLowerCase().includes(teamFilter));
+}
+
 export interface ComputeV2Options {
   /** Injection point for tests — defaults to production fetcher factory. */
   createFetcher?: () => ServiceTasksFetcher;
@@ -84,9 +106,9 @@ export async function computeLocationComplianceV2(
   days: number = 30,
   options: ComputeV2Options = {}
 ): Promise<LocationComplianceV2Result | null> {
-  void location;
   const categoryUid = CATEGORY_NAME_TO_UID[categoryName];
   if (!categoryUid) return null;
+  const teamFilter = LOCATION_TEAM_FILTERS[location] ?? location.toLowerCase();
 
   const now = new Date();
   const fromDate = new Date(now);
@@ -109,6 +131,15 @@ export async function computeLocationComplianceV2(
     const scheduledEnd = job.scheduled_end_time ? new Date(job.scheduled_end_time) : null;
     const parentCompletedTime = getCompletedTimeFromHistory(job);
 
+    // Parent-job-level team — used as a fallback location signal when a
+    // credit-set member has no per-assignment team (e.g. form-filer-only).
+    const jobTeamNames = Array.isArray(job.assigned_to_team)
+      ? (job.assigned_to_team as Array<{ team?: { team_name?: string } }>)
+          .map((t) => t.team?.team_name)
+          .filter((n): n is string => typeof n === "string")
+      : [];
+    const jobMatchesLocation = teamMatchesLocation(jobTeamNames, teamFilter);
+
     const bundle = await fetcher.fetchBundle(job.job_uid);
     if (!bundle) continue;
 
@@ -116,9 +147,21 @@ export async function computeLocationComplianceV2(
       if (!isScoredTaskTitle(task.service_task_title)) continue;
 
       const form = bundle.formByTaskUid.get(task.service_task_uid) ?? null;
-      const creditSet = computeCreditSet({ task, form });
+      const fullCreditSet = computeCreditSet({ task, form });
 
-      if (creditSet.userUids.length === 0) {
+      // Location filter:
+      //   - If the tech has per-assignment team info, filter by that.
+      //   - If they have no team info (form-filer-only), include them only when
+      //     the parent job itself is scoped to this location. Prevents cross-
+      //     location double-counting while preserving symmetric treatment for
+      //     form-filer-only techs on location-local jobs (spec §2.2).
+      const locationScopedUids = fullCreditSet.userUids.filter((uid) => {
+        const teams = fullCreditSet.teamsByUid.get(uid) ?? [];
+        if (teams.length > 0) return teamMatchesLocation(teams, teamFilter);
+        return jobMatchesLocation;
+      });
+
+      if (locationScopedUids.length === 0) {
         emptyCreditSetJobs++;
         continue;
       }
@@ -130,7 +173,7 @@ export async function computeLocationComplianceV2(
       });
 
       // Compute metrics for this task×parent combination
-      const weight = 1 / creditSet.userUids.length;
+      const weight = 1 / locationScopedUids.length;
       const taskBucket = classifyTaskStatus(task.service_task_status);
       const isCompleted = parentBucket === "completed-full" || parentBucket === "completed-follow-up" || parentBucket === "completed-failed" || taskBucket === "completed-full";
       const isStuck = parentBucket === "stuck" && taskBucket !== "completed-full";
@@ -146,8 +189,8 @@ export async function computeLocationComplianceV2(
         onTime = true; // no schedule target: count as on-time (consistent with v1 behavior)
       }
 
-      for (const uid of creditSet.userUids) {
-        const name = creditSet.nameByUid.get(uid) ?? "Unknown";
+      for (const uid of locationScopedUids) {
+        const name = fullCreditSet.nameByUid.get(uid) ?? "Unknown";
         const a = ensureAcc(acc, uid, name);
         a.tasksFractional += weight;
         a.distinctParentJobs.add(job.job_uid);

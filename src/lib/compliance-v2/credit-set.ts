@@ -5,7 +5,8 @@
  *   1. service_task.assigned_to[] user_uids (active users only)
  *   2. linked form submission's created_by.user_uid (if form exists)
  *
- * Returns the user_uid list + a best-name lookup for display.
+ * Returns the user_uid list + a best-name lookup for display + team names
+ * per assignee (used for location filtering by the scoring engine).
  *
  * Spec: §2.2
  */
@@ -21,6 +22,10 @@ export interface CreditSetInputs {
         first_name?: string;
         last_name?: string;
         is_active?: boolean;
+      };
+      team?: {
+        team_uid?: string;
+        team_name?: string;
       };
     }>;
     asset_inspection_submission_uid: string | null;
@@ -38,10 +43,13 @@ export interface CreditSetInputs {
 export interface CreditSet {
   userUids: string[];
   nameByUid: Map<string, string>;
+  /** team names known for each uid (empty array if team data missing — e.g. form-filer-only). */
+  teamsByUid: Map<string, string[]>;
 }
 
 export function computeCreditSet(inputs: CreditSetInputs): CreditSet {
   const nameByUid = new Map<string, string>();
+  const teamsByUid = new Map<string, string[]>();
   const uids = new Set<string>();
 
   // 1. Task assignees (active only)
@@ -52,6 +60,14 @@ export function computeCreditSet(inputs: CreditSetInputs): CreditSet {
     uids.add(u.user_uid);
     const name = `${u.first_name ?? ""} ${u.last_name ?? ""}`.trim();
     if (name) nameByUid.set(u.user_uid, name);
+    const teamName = entry?.team?.team_name;
+    if (teamName) {
+      const existing = teamsByUid.get(u.user_uid) ?? [];
+      if (!existing.includes(teamName)) existing.push(teamName);
+      teamsByUid.set(u.user_uid, existing);
+    } else if (!teamsByUid.has(u.user_uid)) {
+      teamsByUid.set(u.user_uid, []);
+    }
   }
 
   // 2. Form submitter — only add if not already in the task-assignee nameByUid
@@ -64,7 +80,9 @@ export function computeCreditSet(inputs: CreditSetInputs): CreditSet {
       const name = `${form.created_by.first_name ?? ""} ${form.created_by.last_name ?? ""}`.trim();
       if (name) nameByUid.set(uid, name);
     }
+    // Form submitters have no team info from the endpoint; leave as empty.
+    if (!teamsByUid.has(uid)) teamsByUid.set(uid, []);
   }
 
-  return { userUids: [...uids], nameByUid };
+  return { userUids: [...uids], nameByUid, teamsByUid };
 }

@@ -22,11 +22,13 @@ export interface FixtureBundle {
 
 export const CONSTRUCTION_UID = "construction-uid";
 
-// Helper for building assignees
-function mkAssignee(uid: string, name: string, active = true) {
+// Helper for building assignees. Default team is Centennial, matching the
+// Centennial-based fixtures below. Override `team` for SLO/CA scenarios.
+function mkAssignee(uid: string, name: string, active = true, teamName = "Centennial") {
   const [first, ...rest] = name.split(" ");
   return {
     user: { user_uid: uid, first_name: first, last_name: rest.join(" "), is_active: active },
+    team: { team_uid: "t-auto", team_name: teamName },
   };
 }
 
@@ -310,6 +312,47 @@ export function buildExcludedStatusFixture(): FixtureBundle {
     assigned_to: [mkAssignee("u-exc", "Excluded Tech")],
     asset_inspection_submission_uid: null,
     actual_end_time: null,
+  };
+  return {
+    job,
+    taskBundle: {
+      tasks: [task],
+      formByTaskUid: new Map([["pv", null]]),
+    },
+  };
+}
+
+// === Fixture L: Cross-location — Centennial tech and SLO tech on the same multi-region job ===
+// Same job, two techs with different team tags. When computing for "Centennial",
+// only the Centennial tech should appear. When computing for "San Luis Obispo", only the SLO tech.
+export function buildCrossLocationFixture(): FixtureBundle {
+  const job: FixtureJob = {
+    job_uid: "crossloc",
+    job_title: "PROJ-cross-location",
+    job_category: { category_uid: CONSTRUCTION_UID },
+    current_job_status: { status_name: "Completed" },
+    scheduled_start_time: "2026-04-01T15:00:00Z",
+    scheduled_end_time: "2026-04-03T23:00:00Z",
+    assigned_to: [
+      mkAssignee("u-cent", "Centennial Tech"),
+      mkAssignee("u-slo", "SLO Tech", true, "San Luis Obispo"),
+    ],
+    assigned_to_team: [
+      { team: { team_uid: "t-cent", team_name: "Centennial" } },
+      { team: { team_uid: "t-slo", team_name: "San Luis Obispo" } },
+    ],
+    job_status: [{ status_name: "Completed", created_at: "2026-04-02T23:00:00Z" }],
+  };
+  const task: ServiceTaskRaw = {
+    service_task_uid: "pv",
+    service_task_title: "PV Install - Colorado",
+    service_task_status: "COMPLETED",
+    assigned_to: [
+      mkAssignee("u-cent", "Centennial Tech"),
+      mkAssignee("u-slo", "SLO Tech", true, "San Luis Obispo"),
+    ],
+    asset_inspection_submission_uid: null,
+    actual_end_time: "2026-04-02T22:00:00Z",
   };
   return {
     job,

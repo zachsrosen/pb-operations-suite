@@ -18,6 +18,11 @@ export interface ServiceTaskRaw {
       last_name?: string;
       is_active?: boolean;
     };
+    /** Zuper-native team metadata on the per-assignment entry. Used for location attribution. */
+    team?: {
+      team_uid?: string;
+      team_name?: string;
+    };
   }>;
   asset_inspection_submission_uid: string | null;
   actual_end_time?: string | null;
