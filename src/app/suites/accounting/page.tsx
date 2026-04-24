@@ -20,6 +20,22 @@ const LINKS: SuitePageCard[] = [
     icon: "💵",
     section: "Tools",
   },
+  {
+    href: "/dashboards/ready-to-invoice",
+    title: "Ready to Invoice",
+    description: "Work milestones hit but no invoice created yet — grouped by milestone.",
+    tag: "ACCOUNTING",
+    icon: "🧾",
+    section: "Tools",
+  },
+  {
+    href: "/dashboards/accounts-receivable",
+    title: "Accounts Receivable",
+    description: "Invoices sent but unpaid, grouped by aging bucket (0-30 / 31-60 / 61-90 / 90+).",
+    tag: "ACCOUNTING",
+    icon: "⏳",
+    section: "Tools",
+  },
 
   // ── Participate Energy ──
   {
