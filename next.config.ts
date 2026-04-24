@@ -41,6 +41,23 @@ const nextConfig: NextConfig = {
         { key: "Cache-Control", value: "public, max-age=3600, stale-while-revalidate=86400" },
       ],
     },
+    // Auth/flag/role-gated dashboards MUST opt out of the public CDN cache
+    // above — otherwise a single user's redirect response gets cached publicly
+    // and served to everyone for up to an hour (ctrl+shift+r bypasses browser
+    // cache but not Vercel's edge cache). Later rules override earlier ones
+    // for the same header name, so these come AFTER the general rule.
+    {
+      source: "/dashboards/request-product",
+      headers: [
+        { key: "Cache-Control", value: "private, no-cache, no-store, must-revalidate" },
+      ],
+    },
+    {
+      source: "/dashboards/product-requests-review",
+      headers: [
+        { key: "Cache-Control", value: "private, no-cache, no-store, must-revalidate" },
+      ],
+    },
     {
       source: "/api/:path*",
       headers: [
