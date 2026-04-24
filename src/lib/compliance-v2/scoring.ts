@@ -28,9 +28,47 @@ import {
   type TaskCreditEntry,
   MIN_TASKS_THRESHOLD,
 } from "./types";
-import { fetchJobsForCategory, getCompletedTimeFromHistory, getStatusName, GRACE_MS } from "@/lib/compliance-helpers";
+import { fetchJobsForCategory, getStatusName, GRACE_MS } from "@/lib/compliance-helpers";
 import { JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { computeGrade } from "@/lib/compliance-helpers";
+import { JOB_BUCKET } from "./status-buckets";
+
+/**
+ * V2-broader completion-time extraction. Unlike v1's `getCompletedTimeFromHistory`
+ * which only matches {completed, construction complete, passed, partial pass,
+ * failed}, this also accepts the follow-up closure statuses (Loose Ends
+ * Remaining, Return Visit Required, Needs Revisit) — the observed real-world
+ * "work done" signals that often land days before a dispatcher/PM finally
+ * moves the job to "Construction Complete". Using this earlier signal
+ * prevents data-entry lag from penalizing crews who finished on time.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function getV2CompletedTime(job: any): Date | null {
+  const direct = job.completed_time || job.completed_at;
+  if (direct) return new Date(direct);
+  const history = job.job_status;
+  if (!Array.isArray(history)) return null;
+
+  // Earliest match wins: once work is "done" (even if called "Loose Ends
+  // Remaining"), that's the moment to measure, not the latest status change
+  // which may reflect admin bookkeeping weeks later.
+  let earliest: Date | null = null;
+  for (const entry of history) {
+    if (!entry) continue;
+    const name = (entry.status_name || entry.name || "").toLowerCase();
+    const isCompletion =
+      JOB_BUCKET.COMPLETED_FULL.has(name) ||
+      JOB_BUCKET.COMPLETED_FOLLOW_UP.has(name) ||
+      JOB_BUCKET.COMPLETED_FAILED.has(name);
+    if (!isCompletion) continue;
+    const ts = entry.created_at || entry.updated_at;
+    if (!ts) continue;
+    const d = new Date(ts);
+    if (Number.isNaN(d.getTime())) continue;
+    if (!earliest || d.getTime() < earliest.getTime()) earliest = d;
+  }
+  return earliest;
+}
 
 const CATEGORY_NAME_TO_UID: Record<string, string> = {
   "Site Survey": JOB_CATEGORY_UIDS.SITE_SURVEY,
@@ -129,7 +167,7 @@ export async function computeLocationComplianceV2(
     if (parentBucket === "excluded") continue;
 
     const scheduledEnd = job.scheduled_end_time ? new Date(job.scheduled_end_time) : null;
-    const parentCompletedTime = getCompletedTimeFromHistory(job);
+    const parentCompletedTime = getV2CompletedTime(job);
 
     // Parent-job-level team. Used as a fallback location signal when a
     // credit-set member has no per-assignment team (form-filer-only) or is

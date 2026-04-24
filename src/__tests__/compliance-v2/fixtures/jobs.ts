@@ -322,6 +322,46 @@ export function buildExcludedStatusFixture(): FixtureBundle {
   };
 }
 
+// === Fixture N: Dispatcher lag — real work hit "Loose Ends Remaining" on
+//     schedule, but "Construction Complete" wasn't entered until 8 days later.
+//     Task has no actual_end_time (common in Zuper when crews skip the field).
+//     v2 should use the EARLIEST completion signal (Loose Ends Remaining) as
+//     the work-done timestamp, not the latest "Construction Complete" entry.
+export function buildDispatcherLagFixture(): FixtureBundle {
+  const job: FixtureJob = {
+    job_uid: "lag",
+    job_title: "PROJ-lag | DispatchLate | Real work on-time",
+    job_category: { category_uid: CONSTRUCTION_UID },
+    current_job_status: { status_name: "Construction Complete" },
+    scheduled_start_time: "2026-04-08T15:00:00Z",
+    scheduled_end_time: "2026-04-09T23:00:00Z",
+    assigned_to: [mkAssignee("u-crew", "Working Tech")],
+    assigned_to_team: [{ team: { team_uid: "t-cent", team_name: "Centennial" } }],
+    job_status: [
+      { status_name: "Started", created_at: "2026-04-08T14:59:00Z" },
+      { status_name: "Loose Ends Remaining", created_at: "2026-04-08T23:04:00Z" },
+      { status_name: "Started", created_at: "2026-04-09T14:19:00Z" },
+      { status_name: "Loose Ends Remaining", created_at: "2026-04-09T22:21:00Z" }, // ← REAL work-done signal (on-time)
+      { status_name: "Construction Complete", created_at: "2026-04-17T19:16:00Z" }, // ← dispatcher moved status 8d later
+    ],
+  };
+  const task: ServiceTaskRaw = {
+    service_task_uid: "electrical",
+    service_task_title: "Electrical Install",
+    service_task_status: "COMPLETED",
+    assigned_to: [mkAssignee("u-crew", "Working Tech")],
+    asset_inspection_submission_uid: null,
+    actual_end_time: null, // ← common Zuper gap: task is closed but timestamp isn't recorded
+  };
+  return {
+    job,
+    taskBundle: {
+      tasks: [task],
+      formByTaskUid: new Map([["electrical", null]]),
+    },
+  };
+}
+
 // === Fixture M: Imported CO crew on a pure-SLO job ===
 // Real-world case: a CA Construction job is staffed by CO technicians
 // whose per-task team tags are "Centennial". The PARENT job is tagged
