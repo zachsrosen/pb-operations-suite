@@ -61,13 +61,25 @@ export function MapClient({ googleMapsApiKey, userPbLocation, meAssigneeId }: Ma
     return Array.from(set).sort();
   }, [rawMarkers]);
 
-  // Union of assignee ids present in the current data, paired with crew names.
+  // Union of assignee ids present in the current data, paired with resolved
+  // names. Name resolution priority:
+  //   1. CrewMember DB record (matched via zuperUserUid in buildCrewPins)
+  //   2. JobMarker.crewName (pulled from Zuper's GET response — covers Zuper
+  //      users who aren't in our CrewMember table, e.g. inactive or
+  //      unprovisioned techs)
+  //   3. Fallback placeholder with the last 6 chars of the uid
   const availableAssignees = useMemo(() => {
-    const nameById = new Map(crews.map((c) => [c.id, c.name]));
+    const nameById = new Map<string, string>();
+    for (const c of crews) if (c.name) nameById.set(c.id, c.name);
+    for (const m of rawMarkers) {
+      if (m.crewId && m.crewName && !nameById.has(m.crewId)) {
+        nameById.set(m.crewId, m.crewName);
+      }
+    }
     const set = new Set<string>();
     for (const m of rawMarkers) if (m.crewId) set.add(m.crewId);
     return Array.from(set)
-      .map((id) => ({ id, label: nameById.get(id) ?? `Crew ${id.slice(0, 6)}` }))
+      .map((id) => ({ id, label: nameById.get(id) ?? `Crew ${id.slice(-6)}` }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [rawMarkers, crews]);
 
