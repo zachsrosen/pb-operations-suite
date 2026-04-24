@@ -138,8 +138,50 @@ export const IC_ACTION_STATUSES: Record<string, string> = {
   "In Design For Revisions": "Complete revision",
   "Revision Returned From Design": "Resubmit to utility",
   "Waiting On Information": "Provide information",
+  "Submitted To Utility": "Follow up with utility",
   "Resubmitted To Utility": "Follow up with utility",
 };
+
+// ---- IC Hub action kinds (internal routing to action forms) ----
+
+export const IC_ACTION_KINDS = [
+  "SUBMIT_TO_UTILITY",
+  "RESUBMIT_TO_UTILITY",
+  "REVIEW_IC_REJECTION",
+  "COMPLETE_IC_REVISION",
+  "PROVIDE_INFORMATION",
+  "FOLLOW_UP_UTILITY",
+  "MARK_IC_APPROVED",
+] as const;
+
+export type IcActionKind = (typeof IC_ACTION_KINDS)[number];
+
+/** Maps a permit-hub-style action kind to HubSpot task subject patterns. */
+export const IC_ACTION_TASK_SUBJECTS: Record<IcActionKind, readonly string[]> = {
+  SUBMIT_TO_UTILITY: ["submit to utility", "submit ic", "submit interconnection"],
+  RESUBMIT_TO_UTILITY: ["resubmit to utility", "resubmit ic", "resubmit interconnection"],
+  REVIEW_IC_REJECTION: ["review rejection", "ic rejected", "interconnection rejected"],
+  COMPLETE_IC_REVISION: ["complete revision", "ic revision complete"],
+  PROVIDE_INFORMATION: ["provide information", "send information", "respond to utility"],
+  FOLLOW_UP_UTILITY: ["follow up with utility", "ic follow up"],
+  MARK_IC_APPROVED: ["ic approved", "interconnection approved"],
+};
+
+export function icActionKindForStatus(status: string): IcActionKind | null {
+  const map: Record<string, IcActionKind> = {
+    "Ready for Interconnection": "SUBMIT_TO_UTILITY",
+    "Signature Acquired By Customer": "SUBMIT_TO_UTILITY",
+    "Rejected": "REVIEW_IC_REJECTION",
+    "Rejected (New)": "REVIEW_IC_REJECTION",
+    "Non-Design Related Rejection": "REVIEW_IC_REJECTION",
+    "In Design For Revisions": "COMPLETE_IC_REVISION",
+    "Revision Returned From Design": "RESUBMIT_TO_UTILITY",
+    "Waiting On Information": "PROVIDE_INFORMATION",
+    "Submitted To Utility": "FOLLOW_UP_UTILITY",
+    "Resubmitted To Utility": "FOLLOW_UP_UTILITY",
+  };
+  return map[status] ?? null;
+}
 
 // ---- PTO ----
 
