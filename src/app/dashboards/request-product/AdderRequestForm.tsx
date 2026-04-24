@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { AdderCategory, AdderUnit } from "@/generated/prisma/enums";
+import DealSearchField from "./DealSearchField";
 
 const CATEGORY_LABELS: Record<string, string> = {
   ELECTRICAL: "Electrical",
@@ -38,6 +39,7 @@ export default function AdderRequestForm({
   const [unit, setUnit] = useState<string>(AdderUnit.FLAT);
   const [name, setName] = useState("");
   const [estimatedPrice, setEstimatedPrice] = useState("");
+  const [estimatedCost, setEstimatedCost] = useState("");
   const [description, setDescription] = useState("");
   const [salesRequestNote, setSalesRequestNote] = useState("");
   const [dealId, setDealId] = useState<string>(dealIdInitial || "");
@@ -61,6 +63,7 @@ export default function AdderRequestForm({
           unit,
           name: name.trim(),
           estimatedPrice: estimatedPrice.trim() ? Number(estimatedPrice.trim()) : null,
+          estimatedCost: estimatedCost.trim() ? Number(estimatedCost.trim()) : null,
           description: description.trim() || null,
           salesRequestNote: salesRequestNote.trim(),
           dealId: dealId.trim() || null,
@@ -140,28 +143,41 @@ export default function AdderRequestForm({
 
         <label className="block">
           <span className="block text-xs font-medium text-muted mb-1.5">
-            Estimated price (optional)
+            Estimated customer price (optional)
           </span>
           <input
             type="number"
             step="0.01"
             value={estimatedPrice}
             onChange={(e) => setEstimatedPrice(e.target.value)}
-            placeholder="1500"
+            placeholder="What we'd charge the customer"
             className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground"
           />
         </label>
 
         <label className="block">
-          <span className="block text-xs font-medium text-muted mb-1.5">Deal ID (optional)</span>
+          <span className="block text-xs font-medium text-muted mb-1.5">
+            Estimated our cost (optional)
+          </span>
           <input
-            type="text"
-            value={dealId}
-            onChange={(e) => setDealId(e.target.value)}
-            placeholder="HubSpot deal ID"
+            type="number"
+            step="0.01"
+            value={estimatedCost}
+            onChange={(e) => setEstimatedCost(e.target.value)}
+            placeholder="What PB pays for it"
             className="w-full rounded-lg border border-t-border bg-surface-2 px-3 py-2 text-sm text-foreground"
           />
         </label>
+
+        <div className="block md:col-span-2">
+          <span className="block text-xs font-medium text-muted mb-1.5">
+            Deal (optional)
+          </span>
+          <DealSearchField
+            value={dealId}
+            onChange={(id) => setDealId(id)}
+          />
+        </div>
 
         <label className="block md:col-span-2">
           <span className="block text-xs font-medium text-muted mb-1.5">

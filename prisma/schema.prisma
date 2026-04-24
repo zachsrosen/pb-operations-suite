@@ -3163,6 +3163,7 @@ model AdderRequest {
   unit             AdderUnit          @default(FLAT)
   name             String
   estimatedPrice   Float?
+  estimatedCost    Float?
   description      String?
   salesRequestNote String?
   requestedBy      String

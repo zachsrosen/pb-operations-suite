@@ -48,6 +48,8 @@ export async function GET(req: NextRequest) {
       createdAt: r.createdAt.toISOString(),
       dealId: r.dealId,
       salesRequestNote: r.salesRequestNote,
+      estimatedPrice: null,
+      estimatedCost: r.unitCost,
     })),
     ...ad.map((r) => ({
       id: `ad_${r.id}`,
@@ -58,6 +60,8 @@ export async function GET(req: NextRequest) {
       createdAt: r.createdAt.toISOString(),
       dealId: r.dealId,
       salesRequestNote: r.salesRequestNote,
+      estimatedPrice: r.estimatedPrice,
+      estimatedCost: r.estimatedCost,
     })),
   ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
 
