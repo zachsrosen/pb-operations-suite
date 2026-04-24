@@ -19,7 +19,7 @@ const config: Config.InitialOptions = {
   setupFiles: ["<rootDir>/jest.polyfills.ts"],
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
   roots: ["<rootDir>/src"],
-  testPathIgnorePatterns: ["/node_modules/", "/.next/", "test-helpers\\.ts$"],
+  testPathIgnorePatterns: ["/node_modules/", "/.next/", "test-helpers\\.ts$", "/__tests__/.*/fixtures/"],
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json"],
   collectCoverageFrom: [
     "src/**/*.{ts,tsx}",

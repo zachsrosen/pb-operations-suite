@@ -7,7 +7,11 @@
  */
 
 jest.mock("@/lib/db", () => ({
-  prisma: null,
+  prisma: {
+    hubSpotProjectCache: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+  },
   getActiveCrewMembers: jest.fn().mockResolvedValue([]),
 }));
 jest.mock("@/lib/zuper", () => ({
@@ -336,5 +340,64 @@ describe("computeLocationCompliance", () => {
       expect(result).not.toBeNull();
     }
     expect(mockFetchJobsForCategory).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("flag gating (COMPLIANCE_V2_ENABLED=false)", () => {
+  it("uses v1 scoring path when flag is off", async () => {
+    const origFlag = process.env.COMPLIANCE_V2_ENABLED;
+    delete process.env.COMPLIANCE_V2_ENABLED;
+
+    mockFetchJobsForCategory.mockResolvedValueOnce([makeZuperJob()]);
+    const result = await computeLocationCompliance("Construction", "Westminster", 30);
+
+    // v1 output shape: byEmployee[].totalJobs is an integer, tasksFractional is undefined
+    expect(result!.byEmployee[0]).toMatchObject({ totalJobs: expect.any(Number) });
+    expect(result!.byEmployee[0].tasksFractional).toBeUndefined();
+
+    if (origFlag !== undefined) process.env.COMPLIANCE_V2_ENABLED = origFlag;
+  });
+});
+
+describe("flag gating (COMPLIANCE_V2_ENABLED=true)", () => {
+  it("delegates to v2 when flag is on — uses injected fetcher, no real API", async () => {
+    const origFlag = process.env.COMPLIANCE_V2_ENABLED;
+    process.env.COMPLIANCE_V2_ENABLED = "true";
+
+    // Build a v2 fixture from existing helpers
+    const v2Job = {
+      ...makeZuperJob(),
+      assigned_to: [
+        { user: { user_uid: "u1", first_name: "Mike", last_name: "Torres", is_active: true } },
+      ],
+    };
+    mockFetchJobsForCategory.mockResolvedValueOnce([v2Job]);
+
+    // Inject a fetcher that returns a single PV task for this job
+    const injectedFetcher = () => ({
+      async fetchBundle(_jobUid: string) {
+        return {
+          tasks: [{
+            service_task_uid: "t1",
+            service_task_title: "PV Install - Colorado",
+            service_task_status: "COMPLETED",
+            assigned_to: [{ user: { user_uid: "u1", first_name: "Mike", last_name: "Torres", is_active: true } }],
+            asset_inspection_submission_uid: null,
+            actual_end_time: v2Job.scheduled_end_time!,
+          }],
+          formByTaskUid: new Map([["t1", null]]),
+        };
+      },
+    });
+
+    const result = await computeLocationCompliance("Construction", "Westminster", 30, undefined, {
+      createFetcher: injectedFetcher,
+    });
+
+    // v2 path: employee row carries tasksFractional
+    expect(result!.byEmployee[0]?.tasksFractional).toBeDefined();
+
+    if (origFlag === undefined) delete process.env.COMPLIANCE_V2_ENABLED;
+    else process.env.COMPLIANCE_V2_ENABLED = origFlag;
   });
 });

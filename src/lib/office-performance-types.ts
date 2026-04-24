@@ -46,6 +46,20 @@ export interface EmployeeCompliance {
   statusUsagePercent: number;
   complianceScore: number;
   grade: string;            // A-F
+
+  // === v2 fields (populated when COMPLIANCE_V2_ENABLED=true) ===
+  /** Fractional task-weighted total. Present only in v2. */
+  tasksFractional?: number;
+  /** Distinct parent jobs touched. Present only in v2. */
+  distinctParentJobs?: number;
+  /** Inspector pass rate (0-100, or -1 if no failed/passed jobs). Present only in v2. */
+  passRate?: number;
+  /** Tech has any "Completed - Follow-up" status (Return Visit / Loose Ends / Needs Revisit) in window. Present only in v2. */
+  hasFollowUp?: boolean;
+  /** True when tasksFractional < MIN_TASKS_THRESHOLD. Present only in v2. */
+  lowVolume?: boolean;
+  /** Stable identifier for v2 tooling (score breakdown, shadow compare). Present only in v2. */
+  userUid?: string;
 }
 
 /** Zuper compliance summary for a job category at a location */
