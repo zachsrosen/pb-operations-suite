@@ -10,6 +10,7 @@ import { DetailPanel } from "./DetailPanel";
 import { JobMapCanvas } from "./JobMapCanvas";
 import { JobMarkerTable } from "./JobMarkerTable";
 import { MapLegend } from "./MapLegend";
+import { downloadMarkersCsv } from "./exportMarkers";
 
 const ALL_TYPES: JobMarkerKind[] = ["install", "service", "inspection", "survey", "dnr", "roofing"];
 const PHASE_1_TYPES: JobMarkerKind[] = ["install", "service"];
@@ -62,6 +63,8 @@ export function MapClient({ googleMapsApiKey }: MapClientProps) {
         enabledTypes={enabledTypes}
         onModeChange={setMode}
         onTypeToggle={onTypeToggle}
+        exportDisabled={markers.length === 0}
+        onExport={() => downloadMarkersCsv(markers, `map-jobs-${mode}-${new Date().toISOString().slice(0, 10)}.csv`)}
       />
 
       <div className="flex-1 relative">
@@ -98,6 +101,20 @@ export function MapClient({ googleMapsApiKey }: MapClientProps) {
             unscheduledCount={unscheduledCount}
             workingCrewCount={workingCrewCount}
           />
+        )}
+
+        {!query.isError && !query.isLoading && query.data && markers.length === 0 && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none z-10">
+            <div className="bg-surface/95 backdrop-blur border border-t-border rounded-lg px-5 py-4 text-center shadow-xl pointer-events-auto max-w-xs">
+              <div className="text-foreground font-semibold mb-1">No jobs for this view</div>
+              <div className="text-xs text-muted mb-3">
+                {mode === "today" && "Nothing is scheduled or ready-to-schedule for today."}
+                {mode === "week" && "No work in the next 7 days matches your filters."}
+                {mode === "backlog" && "No pre-construction work in the backlog matches your filters."}
+              </div>
+              <div className="text-[10px] text-muted">Try toggling more work types or switch modes.</div>
+            </div>
+          </div>
         )}
 
         {query.data?.droppedCount ? (

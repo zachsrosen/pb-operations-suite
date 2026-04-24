@@ -9,6 +9,8 @@ interface FilterBarProps {
   enabledTypes: readonly JobMarkerKind[]; // currently selected
   onModeChange: (mode: MapMode) => void;
   onTypeToggle: (kind: JobMarkerKind) => void;
+  onExport?: () => void;
+  exportDisabled?: boolean;
 }
 
 const MODES: Array<{ id: MapMode; label: string; enabled: boolean }> = [
@@ -23,10 +25,12 @@ export function FilterBar({
   enabledTypes,
   onModeChange,
   onTypeToggle,
+  onExport,
+  exportDisabled,
 }: FilterBarProps) {
   const enabledSet = new Set(enabledTypes);
   return (
-    <div className="flex items-center gap-3 px-4 py-2 bg-surface border-b border-t-border">
+    <div className="flex flex-wrap items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 bg-surface border-b border-t-border">
       <div role="tablist" className="inline-flex rounded-md bg-surface-2 p-0.5">
         {MODES.map((m) => {
           const active = m.id === mode;
@@ -50,7 +54,7 @@ export function FilterBar({
         })}
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-1.5 flex-1">
         {types.map((t) => {
           const on = enabledSet.has(t);
           return (
@@ -73,6 +77,17 @@ export function FilterBar({
           );
         })}
       </div>
+
+      {onExport && (
+        <button
+          onClick={onExport}
+          disabled={exportDisabled}
+          className="px-3 py-1 text-xs rounded border border-t-border bg-surface-2 text-foreground hover:bg-surface-elevated disabled:opacity-40 disabled:cursor-not-allowed"
+          title="Export visible markers to CSV"
+        >
+          Export CSV
+        </button>
+      )}
     </div>
   );
 }

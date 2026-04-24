@@ -25,7 +25,9 @@ export function DetailPanel({ marker, markers, crews, onClose }: DetailPanelProp
 
   return (
     <aside
-      className="absolute right-0 top-0 bottom-0 w-[380px] bg-surface border-l border-t-border overflow-y-auto z-20 shadow-xl"
+      className="absolute z-20 bg-surface overflow-y-auto shadow-xl
+        right-0 bottom-0 left-0 top-1/2 border-t border-t-border
+        sm:top-0 sm:left-auto sm:w-[380px] sm:border-t-0 sm:border-l sm:border-l-t-border"
       aria-label="Job detail panel"
     >
       <header className="flex items-start gap-2 p-4 border-b border-t-border">

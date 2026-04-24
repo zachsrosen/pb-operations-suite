@@ -26,7 +26,13 @@ export function MapLegend({
   unscheduledCount,
   workingCrewCount,
 }: MapLegendProps) {
-  const [open, setOpen] = useState(true);
+  // Collapsed by default on narrow screens, expanded on sm and up.
+  const [open, setOpen] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.matchMedia("(min-width: 640px)").matches;
+    }
+    return true;
+  });
 
   return (
     <div className="absolute bottom-4 left-4 z-10 bg-surface/95 backdrop-blur border border-t-border rounded-lg shadow-lg text-xs overflow-hidden max-w-[240px]">

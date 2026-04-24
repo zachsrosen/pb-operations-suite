@@ -448,6 +448,77 @@ async function resolveTicketLocations(
 }
 
 /**
+ * Resolve ticket → deal → full street address for each ticket ID.
+ * Returns a map of ticketId → { street, city, state, zip } for tickets whose
+ * associated deal has address fields populated. Tickets without an address
+ * (no deal, no deal address) are absent from the map.
+ *
+ * Used by the map aggregator to place unscheduled service tickets on the map.
+ */
+export async function resolveTicketAddresses(
+  ticketIds: string[]
+): Promise<Map<string, { street: string; city: string; state: string; zip: string }>> {
+  const addressMap = new Map<string, { street: string; city: string; state: string; zip: string }>();
+  if (ticketIds.length === 0) return addressMap;
+
+  try {
+    const dealIdsByTicket = new Map<string, string[]>();
+    const allDealIds = new Set<string>();
+
+    for (const batch of chunk(ticketIds, BATCH_SIZE)) {
+      const batchResponse = await hubspotClient.crm.associations.batchApi.read(
+        "tickets",
+        "deals",
+        { inputs: batch.map(id => ({ id })) }
+      );
+      for (const result of batchResponse.results || []) {
+        const ticketId = result._from?.id;
+        if (!ticketId) continue;
+        const dealIds = (result.to || []).map((t: { id: string }) => t.id);
+        if (dealIds.length > 0) {
+          dealIdsByTicket.set(ticketId, dealIds);
+          dealIds.forEach((id: string) => allDealIds.add(id));
+        }
+      }
+    }
+
+    if (allDealIds.size === 0) return addressMap;
+
+    const dealAddresses = new Map<string, { street: string; city: string; state: string; zip: string }>();
+    for (const batch of chunk(Array.from(allDealIds), BATCH_SIZE)) {
+      const batchReadResponse = await hubspotClient.crm.deals.batchApi.read({
+        inputs: batch.map(id => ({ id })),
+        properties: ["address", "city", "state", "zip"],
+        propertiesWithHistory: [],
+      });
+      for (const deal of batchReadResponse.results || []) {
+        const street = deal.properties?.address;
+        const city = deal.properties?.city;
+        const state = deal.properties?.state;
+        const zip = deal.properties?.zip;
+        if (street && city && state && zip) {
+          dealAddresses.set(deal.id, { street, city, state, zip });
+        }
+      }
+    }
+
+    for (const [ticketId, dealIds] of dealIdsByTicket) {
+      for (const dealId of dealIds) {
+        const addr = dealAddresses.get(dealId);
+        if (addr) {
+          addressMap.set(ticketId, addr);
+          break;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[HubSpotTickets] Error resolving ticket addresses:", err);
+  }
+
+  return addressMap;
+}
+
+/**
  * Get a single ticket with full detail + associations.
  */
 export async function getTicketDetail(ticketId: string): Promise<TicketDetail | null> {

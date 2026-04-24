@@ -122,12 +122,19 @@ function ClusteredMarkers({
         }
         const marker = (c.properties as { marker: JobMarker }).marker;
         const color = MARKER_COLORS[marker.kind];
+        const tooltipLines = [
+          marker.title,
+          marker.subtitle,
+          marker.scheduled ? "Scheduled" : "Ready to schedule",
+          `${marker.address.street}, ${marker.address.city}, ${marker.address.state} ${marker.address.zip}`,
+          marker.status ? `Stage: ${marker.status}` : null,
+        ].filter(Boolean);
         return (
           <AdvancedMarker
             key={marker.id}
             position={{ lat, lng }}
             onClick={() => onMarkerClick(marker)}
-            title={`${marker.title} — ${marker.scheduled ? "Scheduled" : "Ready to schedule"}`}
+            title={tooltipLines.join("\n")}
           >
             {marker.scheduled ? (
               // Scheduled: solid filled circle with dark outline
@@ -163,6 +170,8 @@ function ClusteredMarkers({
 }
 
 function CrewMarkers({ crews }: { crews: CrewPin[] }) {
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+
   return (
     <>
       {crews.map((c) => {
@@ -171,18 +180,63 @@ function CrewMarkers({ crews }: { crews: CrewPin[] }) {
           <AdvancedMarker
             key={`crew:${c.id}`}
             position={{ lat: c.currentLat, lng: c.currentLng }}
-            title={c.name}
+            title={`${c.name} — ${c.working ? `${c.routeStops.length} stops today` : "Off today"}`}
           >
-            <div style={{
-              width: 22, height: 22, borderRadius: 5,
-              background: c.working ? CREW_COLOR_WORKING : CREW_COLOR_IDLE,
-              border: "2px solid #0b1220",
-            }} />
+            <div
+              onMouseEnter={() => setHoveredId(c.id)}
+              onMouseLeave={() => setHoveredId((prev) => (prev === c.id ? null : prev))}
+              style={{
+                width: 22, height: 22, borderRadius: 5,
+                background: c.working ? CREW_COLOR_WORKING : CREW_COLOR_IDLE,
+                border: "2px solid #0b1220",
+                boxShadow: hoveredId === c.id ? "0 0 0 3px rgba(56,189,248,0.4)" : "0 2px 4px rgba(0,0,0,0.3)",
+                transition: "box-shadow 120ms",
+              }}
+            />
           </AdvancedMarker>
         );
       })}
+      {hoveredId && <CrewRouteLine crew={crews.find((c) => c.id === hoveredId) ?? null} />}
     </>
   );
+}
+
+/**
+ * Draws a dashed polyline through a crew's scheduled stops for today.
+ * Uses raw google.maps.Polyline because @vis.gl/react-google-maps does not
+ * expose a polyline component.
+ */
+function CrewRouteLine({ crew }: { crew: CrewPin | null }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map || !crew || crew.routeStops.length < 1 || crew.currentLat == null || crew.currentLng == null) {
+      return;
+    }
+    const path: google.maps.LatLngLiteral[] = [
+      { lat: crew.currentLat, lng: crew.currentLng },
+      ...crew.routeStops.map((s) => ({ lat: s.lat, lng: s.lng })),
+    ];
+    const polyline = new google.maps.Polyline({
+      map,
+      path,
+      strokeColor: CREW_COLOR_WORKING,
+      strokeOpacity: 0,
+      strokeWeight: 2,
+      icons: [
+        {
+          icon: { path: "M 0,-1 0,1", strokeOpacity: 1, scale: 3 },
+          offset: "0",
+          repeat: "10px",
+        },
+      ],
+    });
+    return () => {
+      polyline.setMap(null);
+    };
+  }, [map, crew]);
+
+  return null;
 }
 
 // Helper to subscribe to a google.maps.Map event — useEffect (NOT useMemo) so

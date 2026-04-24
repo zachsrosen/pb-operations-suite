@@ -6,6 +6,7 @@ jest.mock("@/lib/db", () => ({
   prisma: {
     hubSpotPropertyCache: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
     },
     crewMember: {
       findMany: jest.fn(),
@@ -17,16 +18,44 @@ jest.mock("@/lib/travel-time", () => ({
   geocodeAddress: jest.fn(),
 }));
 
+jest.mock("@/lib/hubspot-tickets", () => ({
+  fetchServiceTickets: jest.fn().mockResolvedValue([]),
+  resolveTicketAddresses: jest.fn().mockResolvedValue(new Map()),
+}));
+
 import { prisma } from "@/lib/db";
 import { geocodeAddress as liveGeocode } from "@/lib/travel-time";
 
 const mockFindFirst = prisma.hubSpotPropertyCache.findFirst as jest.Mock;
+const mockFindMany = prisma.hubSpotPropertyCache.findMany as jest.Mock;
 const mockLiveGeocode = liveGeocode as jest.Mock;
+
+// Helper: convert a `findFirst`-style mock value into a `findMany` row array
+// so existing tests can keep using mockFindFirst.mockResolvedValue(...) while
+// the batch path gets the same answer for every address.
+function mirrorFindFirstIntoFindMany() {
+  mockFindMany.mockImplementation(async ({ where }: { where: { OR: Array<{ streetAddress: string; city: string; state: string; zip: string }> } }) => {
+    const cached = await mockFindFirst();
+    if (!cached) return [];
+    // Return one row per OR clause, with the same lat/lng but address copied
+    // from the input. Enough to make the batch resolver find each key.
+    return where.OR.map((a) => ({
+      streetAddress: a.streetAddress,
+      city: a.city,
+      state: a.state,
+      zip: a.zip,
+      latitude: cached.latitude,
+      longitude: cached.longitude,
+    }));
+  });
+}
 
 describe("resolveAddressCoords", () => {
   beforeEach(() => {
     mockFindFirst.mockReset();
+    mockFindMany.mockReset();
     mockLiveGeocode.mockReset();
+    mirrorFindFirstIntoFindMany();
   });
 
   const addr = {
@@ -77,7 +106,9 @@ import type { Project } from "@/lib/hubspot";
 describe("buildInstallMarkers", () => {
   beforeEach(() => {
     mockFindFirst.mockReset();
+    mockFindMany.mockReset();
     mockLiveGeocode.mockReset();
+    mirrorFindFirstIntoFindMany();
   });
 
   const sampleProject = {
@@ -156,7 +187,9 @@ import { buildServiceMarkers } from "@/lib/map-aggregator";
 describe("buildServiceMarkers", () => {
   beforeEach(() => {
     mockFindFirst.mockReset();
+    mockFindMany.mockReset();
     mockLiveGeocode.mockReset();
+    mirrorFindFirstIntoFindMany();
   });
 
   const sampleZuperJob = {
@@ -321,7 +354,9 @@ describe("aggregateMapMarkers", () => {
 describe("buildServiceMarkers — real Zuper GET shape", () => {
   beforeEach(() => {
     mockFindFirst.mockReset();
+    mockFindMany.mockReset();
     mockLiveGeocode.mockReset();
+    mirrorFindFirstIntoFindMany();
   });
 
   it("handles top-level customer_address (real API shape)", async () => {
