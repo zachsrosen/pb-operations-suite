@@ -316,7 +316,14 @@ export async function POST(req: NextRequest) {
           console.log(`[design-complete] Deal ${dealId}: no ${propName} in payload, fetched live value ${webhookValue}`);
         }
       } catch (err) {
-        console.warn(`[design-complete] Deal ${dealId}: no ${propName} in payload and failed to fetch — skipping`, err);
+        // propName passed as separate arg (not interpolated into format
+        // string) to satisfy CodeQL js/tainted-format-string.
+        console.warn(
+          "[design-complete] Deal %s: no %s in payload and failed to fetch — skipping",
+          dealId,
+          propName,
+          err,
+        );
         continue;
       }
     }
@@ -347,7 +354,14 @@ export async function POST(req: NextRequest) {
           console.log(`[design-complete] Deal ${dealId}: webhook ${propName}=${webhookValue} but live value is ${actualValue} (race expected, using webhook value)`);
         }
       } catch (err) {
-        console.warn(`[design-complete] Could not fetch live ${propName} for deal ${dealId} — proceeding with webhook value`, err);
+        // propName passed as separate arg (not interpolated into format
+        // string) to satisfy CodeQL js/tainted-format-string.
+        console.warn(
+          "[design-complete] Could not fetch live %s for deal %s — proceeding with webhook value",
+          propName,
+          dealId,
+          err,
+        );
       }
     }
 
