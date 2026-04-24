@@ -42,8 +42,65 @@ export const PERMIT_ACTION_STATUSES: Record<string, string> = {
   "As-Built Ready To Resubmit": "Resubmit as-built",
   "Pending SolarApp": "Submit SolarApp",
   "Submit SolarApp to AHJ": "Submit SolarApp to AHJ",
+  "Submitted to AHJ": "Follow up with AHJ",
   "Resubmitted to AHJ": "Follow up with AHJ",
 };
+
+// ---- Permit Hub action kinds (internal routing to action forms) ----
+
+/** Tuple used for Zod enums and exhaustive switches — keep in sync with the object below. */
+export const PERMIT_ACTION_KINDS = [
+  "SUBMIT_TO_AHJ",
+  "RESUBMIT_TO_AHJ",
+  "REVIEW_REJECTION",
+  "FOLLOW_UP",
+  "COMPLETE_REVISION",
+  "START_AS_BUILT_REVISION",
+  "COMPLETE_AS_BUILT",
+  "SUBMIT_SOLARAPP",
+  "MARK_PERMIT_ISSUED",
+] as const;
+
+export type PermitActionKind = (typeof PERMIT_ACTION_KINDS)[number];
+
+/**
+ * Maps a permit action kind to candidate HubSpot task subject patterns.
+ * When completing an action, the hub looks up an open task on the deal whose
+ * subject matches one of these patterns (case-insensitive, substring match).
+ * If none match, the action route surfaces a warning + "write status field
+ * directly" escape hatch.
+ */
+export const PERMIT_ACTION_TASK_SUBJECTS: Record<PermitActionKind, readonly string[]> = {
+  SUBMIT_TO_AHJ: ["submit to ahj", "submit permit"],
+  RESUBMIT_TO_AHJ: ["resubmit to ahj", "resubmit permit"],
+  REVIEW_REJECTION: ["review rejection", "permit rejected"],
+  FOLLOW_UP: ["follow up with ahj", "permit follow up"],
+  COMPLETE_REVISION: ["complete revision", "revision complete"],
+  START_AS_BUILT_REVISION: ["start as-built", "as-built revision"],
+  COMPLETE_AS_BUILT: ["complete as-built"],
+  SUBMIT_SOLARAPP: ["submit solarapp", "solarapp submission"],
+  MARK_PERMIT_ISSUED: ["permit issued", "permit approved"],
+};
+
+/** Maps a HubSpot `permitting_status` value to the internal action kind. */
+export function actionKindForStatus(status: string): PermitActionKind | null {
+  const map: Record<string, PermitActionKind> = {
+    "Ready For Permitting": "SUBMIT_TO_AHJ",
+    "Customer Signature Acquired": "SUBMIT_TO_AHJ",
+    "Rejected": "REVIEW_REJECTION",
+    "Non-Design Related Rejection": "REVIEW_REJECTION",
+    "In Design For Revision": "COMPLETE_REVISION",
+    "Returned from Design": "RESUBMIT_TO_AHJ",
+    "As-Built Revision Needed": "START_AS_BUILT_REVISION",
+    "As-Built Revision In Progress": "COMPLETE_AS_BUILT",
+    "As-Built Ready To Resubmit": "RESUBMIT_TO_AHJ",
+    "Pending SolarApp": "SUBMIT_SOLARAPP",
+    "Submit SolarApp to AHJ": "SUBMIT_SOLARAPP",
+    "Submitted to AHJ": "FOLLOW_UP",
+    "Resubmitted to AHJ": "FOLLOW_UP",
+  };
+  return map[status] ?? null;
+}
 
 // ---- Interconnection ----
 
