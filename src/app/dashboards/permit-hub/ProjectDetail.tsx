@@ -83,22 +83,29 @@ export function ProjectDetail({ dealId }: { dealId: string }) {
         ))}
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
-        {tab === "overview" && <OverviewTab detail={detail} />}
-        {tab === "ahj" && <AhjTab ahj={detail.ahj} />}
-        {tab === "planset" && <PlansetTab url={detail.plansetFolderUrl} />}
-        {tab === "correspondence" && (
-          <CorrespondenceTab searchUrl={detail.correspondenceSearchUrl} />
-        )}
-        {tab === "history" && <StatusHistoryTab history={detail.statusHistory} />}
-        {tab === "activity" && <ActivityTab activity={detail.activity} />}
-      </div>
-
-      {detail.deal.actionKind && (
-        <div className="bg-surface-2 shrink-0 border-t border-t-border p-4">
-          <ActionPanel dealId={dealId} actionKind={detail.deal.actionKind} />
+      {/* Single scroll container combining tab content and action panel.
+          Sticky action panel pins to the bottom while user scrolls through
+          tab content, and collapses inline when content is short. This
+          avoids the prior overlap issue when the action panel alone
+          exceeded the space left by the flex-1 scroll area. */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="p-6">
+          {tab === "overview" && <OverviewTab detail={detail} />}
+          {tab === "ahj" && <AhjTab ahj={detail.ahj} />}
+          {tab === "planset" && <PlansetTab url={detail.plansetFolderUrl} />}
+          {tab === "correspondence" && (
+            <CorrespondenceTab searchUrl={detail.correspondenceSearchUrl} />
+          )}
+          {tab === "history" && <StatusHistoryTab history={detail.statusHistory} />}
+          {tab === "activity" && <ActivityTab activity={detail.activity} />}
         </div>
-      )}
+
+        {detail.deal.actionKind && (
+          <div className="bg-surface-2/95 sticky bottom-0 border-t border-t-border p-4 backdrop-blur">
+            <ActionPanel dealId={dealId} actionKind={detail.deal.actionKind} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
