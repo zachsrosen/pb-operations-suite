@@ -12,7 +12,11 @@ import { hubspotClient, searchWithRetry } from "@/lib/hubspot";
 import { createDealNote } from "@/lib/hubspot-engagements";
 import { updateTask } from "@/lib/hubspot-tasks";
 import { withHubSpotRetry } from "@/lib/bulk-sync-confirmation";
-import { fetchAHJsForDeal, type AHJRecord } from "@/lib/hubspot-custom-objects";
+import {
+  fetchAHJsForDeal,
+  fetchAllAHJs,
+  type AHJRecord,
+} from "@/lib/hubspot-custom-objects";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import {
   PERMIT_ACTION_STATUSES,
@@ -29,6 +33,7 @@ import {
 } from "@/lib/daily-focus/config";
 import { buildOwnerMap } from "@/lib/idr-meeting";
 import { buildStageDisplayMap } from "@/lib/daily-focus/format";
+import { getHubSpotDealUrl } from "@/lib/external-links";
 
 /**
  * HubSpot owner ID → permit lead name.
@@ -146,8 +151,17 @@ export interface PermitProjectDetail {
     actionLabel: string | null;
     systemSizeKw: number | null;
     dealStage: string | null;
+    hubspotUrl: string;
+    designFolderUrl: string | null;
+    permitFolderUrl: string | null;
+    driveFolderUrl: string | null;
+    /** First associated AHJ's portal link (for header quick-access). */
+    ahjPortalUrl: string | null;
+    /** First associated AHJ's application link. */
+    ahjApplicationUrl: string | null;
   };
   ahj: AHJRecord[];
+  /** @deprecated use deal.designFolderUrl instead (kept for planset tab backcompat) */
   plansetFolderUrl: string | null;
   correspondenceSearchUrl: string | null;
   statusHistory: Array<{
@@ -285,6 +299,7 @@ export async function fetchPermitProjectDetail(
       "state",
       "zip",
       "pb_location",
+      "ahj",                     // deal-level AHJ name — fallback when no association
       "amount",
       "permit_lead_name",
       "permit_tech",
@@ -292,6 +307,12 @@ export async function fetchPermitProjectDetail(
       "permitting_status",
       "dealstage",
       "calculated_system_size__kwdc_",
+      // Google Drive folder URLs — see CLAUDE.md External system links.
+      "design_documents",        // design folder URL
+      "permit_documents",        // permitting folder URL
+      "g_drive",                 // general project folder (fallback)
+      // Legacy / alternative property names — kept as fallbacks since
+      // the HubSpot portal may use different ones on older deals.
       "planset_drive_folder_url",
       "design_folder_url",
       "all_document_folder_url",
@@ -301,11 +322,58 @@ export async function fetchPermitProjectDetail(
   }
 
   const props = (deal.properties ?? {}) as Record<string, string | null>;
-  const [ahj, ownerMap, stageMap] = await Promise.all([
+  const [associatedAhj, ownerMap, stageMap] = await Promise.all([
     fetchAHJsForDeal(dealId),
     buildOwnerMap([{ properties: props }]),
     buildStageDisplayMap(),
   ]);
+
+  // Fallback chain when no explicit HubSpot deal→AHJ association exists
+  // (common in prod — not every deal has the relationship set):
+  //   1. Match the deal's `ahj` property (free-text AHJ name set by sales)
+  //      against AHJ custom-object `record_name` or `ahj_code`.
+  //   2. Fall back to city + state match if the name lookup finds nothing.
+  // Either way, return at most 3 matches so Peter always gets portal +
+  // turnaround stats, even without the formal association.
+  let ahj: AHJRecord[] = associatedAhj;
+  if (ahj.length === 0) {
+    try {
+      const all = await fetchAllAHJs();
+
+      const dealAhjName = (props.ahj ?? "").trim().toLowerCase();
+      if (dealAhjName) {
+        ahj = all
+          .filter((r) => {
+            const p = r.properties as Record<string, string | null>;
+            const name = (p.record_name ?? "").trim().toLowerCase();
+            const code = (p.ahj_code ?? "").trim().toLowerCase();
+            return (
+              (name && (name === dealAhjName || name.includes(dealAhjName))) ||
+              (code && code === dealAhjName)
+            );
+          })
+          .slice(0, 3);
+      }
+
+      if (ahj.length === 0 && props.city) {
+        const dealCity = props.city.trim().toLowerCase();
+        const dealState = (props.state ?? "").trim().toLowerCase();
+        ahj = all
+          .filter((r) => {
+            const p = r.properties as Record<string, string | null>;
+            const city = (p.city ?? "").trim().toLowerCase();
+            const state = (p.state ?? "").trim().toLowerCase();
+            if (!city) return false;
+            if (dealState && state && dealState !== state) return false;
+            return city === dealCity;
+          })
+          .slice(0, 3);
+      }
+    } catch {
+      // fetchAllAHJs failed — leave ahj empty; UI falls back to the
+      // "no AHJ record" message rather than failing the whole request.
+    }
+  }
 
   const permittingStatus = props.permitting_status ?? "";
   const actionLabel = PERMIT_ACTION_STATUSES[permittingStatus] ?? null;
@@ -325,11 +393,16 @@ export async function fetchPermitProjectDetail(
   const correspondenceSearchUrl =
     ahjEmail && fullAddress ? buildGmailSearchUrl(ahjEmail, fullAddress) : null;
 
-  const plansetFolderUrl =
-    props.planset_drive_folder_url ??
+  const designFolderUrl =
+    props.design_documents ??
     props.design_folder_url ??
-    props.all_document_folder_url ??
+    props.planset_drive_folder_url ??
     null;
+  const permitFolderUrl = props.permit_documents ?? null;
+  const driveFolderUrl =
+    props.g_drive ?? props.all_document_folder_url ?? null;
+  // Back-compat: planset tab used a single URL. Prefer the design folder.
+  const plansetFolderUrl = designFolderUrl ?? driveFolderUrl;
 
   const [statusHistory, activity] = await Promise.all([
     fetchPermitStatusHistory(dealId),
@@ -352,6 +425,16 @@ export async function fetchPermitProjectDetail(
         ? Number(props.calculated_system_size__kwdc_)
         : null,
       dealStage: resolvedDealStage,
+      hubspotUrl: getHubSpotDealUrl(dealId),
+      designFolderUrl,
+      permitFolderUrl,
+      driveFolderUrl,
+      ahjPortalUrl:
+        ((ahj[0]?.properties as Record<string, string | null | undefined> | undefined)
+          ?.portal_link as string | null | undefined) ?? null,
+      ahjApplicationUrl:
+        ((ahj[0]?.properties as Record<string, string | null | undefined> | undefined)
+          ?.application_link as string | null | undefined) ?? null,
     },
     ahj,
     plansetFolderUrl,

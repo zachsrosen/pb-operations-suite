@@ -14,6 +14,38 @@ import type { PermitProjectDetail } from "@/lib/permit-hub";
 
 type TabKey = "overview" | "ahj" | "planset" | "correspondence" | "history" | "activity";
 
+function ExternalLinkButton({
+  href,
+  label,
+  tone = "secondary",
+}: {
+  href: string | null;
+  label: string;
+  tone?: "primary" | "secondary";
+}) {
+  const base =
+    "inline-flex items-center gap-1 rounded-md px-3 py-1 text-xs font-medium transition-colors";
+  if (!href) {
+    return (
+      <span
+        className={`${base} text-muted/60 bg-surface-2 cursor-not-allowed`}
+        title={`${label} not available`}
+      >
+        {label}
+      </span>
+    );
+  }
+  const cls =
+    tone === "primary"
+      ? `${base} bg-blue-500 text-white hover:bg-blue-600`
+      : `${base} bg-surface-2 text-foreground hover:bg-surface-2/80`;
+  return (
+    <a href={href} target="_blank" rel="noreferrer" className={cls}>
+      {label} ↗
+    </a>
+  );
+}
+
 const TABS: Array<{ key: TabKey; label: string }> = [
   { key: "overview", label: "Overview" },
   { key: "ahj", label: "AHJ" },
@@ -63,6 +95,37 @@ export function ProjectDetail({ dealId }: { dealId: string }) {
         </div>
         <div className="text-muted mt-1 text-sm">
           {detail.deal.address ?? "—"} · {detail.deal.pbLocation ?? "—"}
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <ExternalLinkButton
+            href={detail.deal.hubspotUrl}
+            label="HubSpot"
+            tone="primary"
+          />
+          <ExternalLinkButton
+            href={detail.deal.ahjPortalUrl}
+            label="AHJ Portal"
+            tone="primary"
+          />
+          <ExternalLinkButton
+            href={detail.deal.ahjApplicationUrl}
+            label="Application"
+          />
+          <ExternalLinkButton
+            href={detail.deal.permitFolderUrl}
+            label="Permit Folder"
+          />
+          <ExternalLinkButton
+            href={detail.deal.designFolderUrl}
+            label="Design Folder"
+          />
+          {detail.deal.driveFolderUrl &&
+            detail.deal.driveFolderUrl !== detail.deal.designFolderUrl && (
+              <ExternalLinkButton
+                href={detail.deal.driveFolderUrl}
+                label="Project Drive"
+              />
+            )}
         </div>
       </div>
 
