@@ -754,18 +754,48 @@ function stageMatchesBacklog(stage: string): boolean {
   return BACKLOG_STAGE_PATTERNS.some((p) => lower.includes(p));
 }
 
+/**
+ * Extract the date portion (YYYY-MM-DD) from any scheduledAt representation.
+ * Handles:
+ *   - "2026-04-24"                        → "2026-04-24"
+ *   - "2026-04-24T14:00:00.000Z"          → "2026-04-24"
+ *   - millisecond timestamps, Date objects → UTC date portion
+ *
+ * Using date-string comparison rather than Date arithmetic sidesteps the
+ * timezone trap: `new Date("2026-04-24")` always parses as UTC midnight,
+ * which on a Mountain-time server compares BEFORE local dayStart and drops
+ * a scheduled-today install silently.
+ */
+function scheduledAtDatePortion(at: string | null | undefined): string | null {
+  if (!at) return null;
+  const s = String(at);
+  const match = s.match(/^(\d{4}-\d{2}-\d{2})/);
+  if (match) return match[1];
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return null;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+}
+
+function localYmd(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function addDaysYmd(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  dt.setDate(dt.getDate() + days);
+  return localYmd(dt);
+}
+
 function filterProjectsByMode(
   projects: Project[],
   mode: MapMode,
   today: Date,
   spec: ProjectMarkerSpec
 ): Project[] {
-  const dayStart = new Date(today);
-  dayStart.setHours(0, 0, 0, 0);
-  const dayEnd = new Date(dayStart);
-  dayEnd.setDate(dayEnd.getDate() + 1);
-  const weekEnd = new Date(dayStart);
-  weekEnd.setDate(weekEnd.getDate() + 7);
+  // YYYY-MM-DD-based bounds — timezone-agnostic compared to Date arithmetic.
+  const todayYmd = localYmd(today);
+  const weekEndYmd = addDaysYmd(todayYmd, 7);
 
   // Strip completed jobs first — they're noise on a live ops map regardless of
   // mode. (filterProjectsForContext keeps them for the scheduler's historical
@@ -774,22 +804,16 @@ function filterProjectsByMode(
 
   if (mode === "today") {
     return candidates.filter((p) => {
-      const at = spec.getScheduledAt(p);
-      if (at) {
-        const d = new Date(at);
-        if (d >= dayStart && d < dayEnd) return true;
-      }
+      const atYmd = scheduledAtDatePortion(spec.getScheduledAt(p));
+      if (atYmd === todayYmd) return true;
       return spec.isReadyToSchedule(p);
     });
   }
 
   if (mode === "week") {
     return candidates.filter((p) => {
-      const at = spec.getScheduledAt(p);
-      if (at) {
-        const d = new Date(at);
-        if (d >= dayStart && d < weekEnd) return true;
-      }
+      const atYmd = scheduledAtDatePortion(spec.getScheduledAt(p));
+      if (atYmd && atYmd >= todayYmd && atYmd < weekEndYmd) return true;
       return spec.isReadyToSchedule(p);
     });
   }

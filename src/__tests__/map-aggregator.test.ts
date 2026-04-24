@@ -553,3 +553,43 @@ describe("completion filtering", () => {
     expect(ids).not.toContain("zuperjob:inv");
   });
 });
+
+describe("timezone-agnostic date comparison", () => {
+  beforeEach(() => {
+    mockFindFirst.mockReset();
+    mockFindMany.mockReset();
+    mockLiveGeocode.mockReset();
+    mirrorFindFirstIntoFindMany();
+    (fetchAllProjects as jest.Mock).mockReset();
+    (fetchTodaysServiceJobs as jest.Mock).mockResolvedValue([]);
+    (prisma.crewMember.findMany as jest.Mock).mockResolvedValue([]);
+    mockFindFirst.mockResolvedValue({ latitude: 40, longitude: -105 });
+  });
+
+  const addr = { address: "1 Main", city: "Boulder", state: "CO", postalCode: "80301" };
+
+  it("install: date-only scheduledAt matches today regardless of server timezone", async () => {
+    // Use today's local date, constructed via getFullYear/getMonth so the
+    // test matches whatever the runner sees as 'today'.
+    const now = new Date();
+    const todayLocalYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+    const scheduledToday = {
+      id: 500,
+      name: "Today's install",
+      ...addr,
+      stage: "Construction",
+      isSchedulable: true,
+      isActive: true,
+      constructionScheduleDate: todayLocalYmd, // date-only, the shape parseDate returns
+      constructionCompleteDate: null,
+    };
+    (fetchAllProjects as jest.Mock).mockResolvedValue([scheduledToday]);
+    const res = await (await import("@/lib/map-aggregator")).aggregateMapMarkers({
+      mode: "today", types: ["install"],
+    });
+    expect(res.markers.map((m) => m.id)).toContain("install:500");
+    // Scheduled flag is true (has a scheduledAt date)
+    expect(res.markers[0].scheduled).toBe(true);
+  });
+});
