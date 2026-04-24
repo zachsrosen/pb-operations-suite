@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { JobMarker, CrewPin } from "@/lib/map-types";
 import { MARKER_COLORS } from "@/lib/map-colors";
 import { nearbyMarkers, closestCrews } from "@/lib/map-proximity";
@@ -14,6 +15,69 @@ interface DetailPanelProps {
 
 export function DetailPanel({ marker, markers, crews, onClose }: DetailPanelProps) {
   const isTicket = marker.kind === "service" && !marker.scheduled;
+  // Quick actions (call + add note) are tracked with local state so the panel
+  // stays responsive without a global store.
+  const [callState, setCallState] = useState<"idle" | "loading" | "error">("idle");
+  const [callError, setCallError] = useState<string | null>(null);
+  const [noteOpen, setNoteOpen] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [noteState, setNoteState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [noteError, setNoteError] = useState<string | null>(null);
+
+  const supportsCall =
+    !!marker.zuperJobUid ||
+    (!!marker.dealId && (marker.kind === "install" || marker.kind === "inspection" || marker.kind === "survey"));
+  const supportsNote = !!marker.zuperJobUid;
+
+  const handleCall = async () => {
+    setCallState("loading");
+    setCallError(null);
+    try {
+      const res = await fetch(`/api/map/markers/${encodeURIComponent(marker.id)}/phone`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as { phone?: string };
+      if (data.phone) {
+        window.location.href = `tel:${data.phone}`;
+        setCallState("idle");
+      } else {
+        throw new Error("no phone returned");
+      }
+    } catch (err) {
+      setCallState("error");
+      setCallError(err instanceof Error ? err.message : "call failed");
+    }
+  };
+
+  const handleAddNote = async () => {
+    const text = noteText.trim();
+    if (!text) return;
+    setNoteState("saving");
+    setNoteError(null);
+    try {
+      const res = await fetch(`/api/map/markers/${encodeURIComponent(marker.id)}/note`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: text }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? `HTTP ${res.status}`);
+      }
+      setNoteState("saved");
+      setNoteText("");
+      setTimeout(() => {
+        setNoteState("idle");
+        setNoteOpen(false);
+      }, 1200);
+    } catch (err) {
+      setNoteState("error");
+      setNoteError(err instanceof Error ? err.message : "save failed");
+    }
+  };
+
   const nearby = nearbyMarkers(
     { lat: marker.lat, lng: marker.lng },
     markers,
@@ -183,6 +247,29 @@ export function DetailPanel({ marker, markers, crews, onClose }: DetailPanelProp
               {marker.scheduled ? "Open in scheduler" : "Schedule this"}
             </Link>
           )}
+          {supportsCall && (
+            <button
+              onClick={handleCall}
+              disabled={callState === "loading"}
+              className="px-3 py-2 rounded text-xs font-semibold bg-surface-2 text-foreground border border-t-border hover:bg-surface-elevated disabled:opacity-60 disabled:cursor-wait"
+              title="Look up customer phone and dial"
+            >
+              {callState === "loading" ? "Looking up…" : "📞 Call"}
+            </button>
+          )}
+          {supportsNote && (
+            <button
+              onClick={() => setNoteOpen((o) => !o)}
+              className={`px-3 py-2 rounded text-xs font-semibold border ${
+                noteOpen
+                  ? "bg-cyan-500/20 border-cyan-500/50 text-cyan-400"
+                  : "bg-surface-2 text-foreground border-t-border hover:bg-surface-elevated"
+              }`}
+              title="Append a note to this Zuper job"
+            >
+              📝 {noteOpen ? "Cancel" : "Add note"}
+            </button>
+          )}
           {marker.hubspotUrl ? (
             <a
               href={marker.hubspotUrl}
@@ -212,6 +299,9 @@ export function DetailPanel({ marker, markers, crews, onClose }: DetailPanelProp
               Open ticket
             </a>
           )}
+          {callState === "error" && callError && (
+            <div className="w-full text-[10px] text-red-400">Couldn&rsquo;t look up phone: {callError}</div>
+          )}
           {marker.zuperJobUid && (
             <a
               href={`https://app.zuperpro.com/jobs/${marker.zuperJobUid}`}
@@ -223,6 +313,33 @@ export function DetailPanel({ marker, markers, crews, onClose }: DetailPanelProp
             </a>
           )}
         </div>
+        {noteOpen && supportsNote && (
+          <div className="mt-3 space-y-2">
+            <textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="Note visible in Zuper — e.g. 'Gate code 1234, dog friendly.'"
+              rows={3}
+              className="w-full text-xs p-2 rounded bg-surface-2 border border-t-border text-foreground focus:outline-none focus:ring-1 focus:ring-cyan-500"
+              autoFocus
+            />
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] text-muted">
+                Stamped with your name and the time. Appends to existing job notes.
+              </div>
+              <button
+                onClick={handleAddNote}
+                disabled={noteState === "saving" || !noteText.trim()}
+                className="px-3 py-1 rounded text-xs font-semibold bg-cyan-500 text-white hover:bg-cyan-600 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {noteState === "saving" ? "Saving…" : noteState === "saved" ? "Saved ✓" : "Save note"}
+              </button>
+            </div>
+            {noteState === "error" && noteError && (
+              <div className="text-[10px] text-red-400">Couldn&rsquo;t save: {noteError}</div>
+            )}
+          </div>
+        )}
       </Section>
     </aside>
   );
