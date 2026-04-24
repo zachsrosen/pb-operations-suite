@@ -35,7 +35,7 @@ export function MapLegend({
   });
 
   return (
-    <div className="absolute bottom-4 left-4 z-10 bg-surface/95 backdrop-blur border border-t-border rounded-lg shadow-lg text-xs overflow-hidden max-w-[240px]">
+    <div className="absolute bottom-4 left-4 sm:bottom-20 sm:left-4 z-10 bg-surface/95 backdrop-blur border border-t-border rounded-lg shadow-lg text-xs overflow-hidden max-w-[240px]">
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between gap-2 px-3 py-2 border-b border-t-border hover:bg-surface-2"

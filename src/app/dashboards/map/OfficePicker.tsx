@@ -36,7 +36,7 @@ export function OfficePicker({
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} aria-hidden />
-          <div className="absolute top-full mt-1 right-0 z-20 bg-surface border border-t-border rounded-lg shadow-xl p-3 min-w-[240px]">
+          <div className="absolute top-full mt-1 left-0 z-20 bg-surface border border-t-border rounded-lg shadow-xl p-3 min-w-[240px] max-w-[calc(100vw-24px)]">
             <div className="text-[10px] uppercase tracking-wider text-muted font-semibold mb-1.5">
               Your office
             </div>
