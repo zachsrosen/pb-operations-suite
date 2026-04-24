@@ -96,15 +96,15 @@ Adders don't fit the equipment schema (basePrice, direction ADD/DISCOUNT, shopOv
 model AdderRequest {
   id               String              @id @default(cuid())
   status           AdderRequestStatus  @default(PENDING)
-  category         String              // "MPU" | "TRENCHING" | "STEEP_ROOF" | "MISC" | ...
+  category         AdderCategory       // Reuse existing enum from Adder model for trivial promotion
+  unit             AdderUnit           // Reuse existing enum; fallback to EACH at rep-submit time
   name             String              // Short display name
-  unit             String              // "each" | "sqft" | "ft" | "hour"
   estimatedPrice   Float?              // Rep's best guess; reviewer sets real price
   description      String?             // What it is, when to use it
   salesRequestNote String?             // "why I need this"
   requestedBy      String              // Rep email
   dealId           String?             // HubSpot deal ID
-  openSolarId      String?             // Populated after OpenSolar push
+  openSolarId      String?             // Populated after OpenSolar push (mirror for visibility)
   reviewerNote     String?             // Rejection reason (surfaced to rep in email)
   adderCatalogId   String?             // FK to promoted Adder row once approved
   createdAt        DateTime            @default(now())
@@ -117,11 +117,12 @@ model AdderRequest {
 
 enum AdderRequestStatus {
   PENDING
-  IN_REVIEW
   ADDED
   DECLINED
 }
 ```
+
+Note: `AdderRequestStatus` intentionally omits `IN_REVIEW` — equipment requests use the existing `PushStatus` (`PENDING|APPROVED|REJECTED|EXPIRED`) which has no `IN_REVIEW` either. Keeping both state machines short and parallel avoids asymmetry in the merged reviewer list. The reviewer UI does not sort on a shared status enum; it merges by `createdAt` and renders each row's status with its own label.
 
 Migration is purely additive (new table + two nullable columns on `PendingCatalogPush`). Safe to apply before code ships.
 
@@ -159,8 +160,19 @@ Migration is purely additive (new table + two nullable columns on `PendingCatalo
 
 **Idempotency / dedup:**
 
-- Submit-time: a check runs for brand+model (equipment) or name (adder) against existing products/adders; if a match exists the rep sees "we already have this — you can use it in OpenSolar" and the form does not submit.
+- Submit-time check for equipment: normalized brand+model is looked up against:
+  1. `InternalProduct` (the live catalog)
+  2. `CatalogProduct` (the legacy catalog mirror)
+  3. `PendingCatalogPush` rows with `status="PENDING"` (open queue)
+  If any match exists the rep sees "this product already exists (or is already pending)" and the form does not submit — avoids flooding the queue with duplicates while a prior request is in review.
+- Submit-time check for adders: normalized name is looked up against `Adder` and `AdderRequest` where `status="PENDING"`.
 - Approve-time dedup on equipment reuses the existing `DedupPanel` / canonical-key logic in the catalog pipeline.
+
+**Datasheet extraction:**
+
+- Endpoint reused: existing `POST /api/catalog/extract-from-datasheet`.
+- Flow: the rep's form calls this endpoint first with the PDF, receives extracted spec JSON, then POSTs the final request with the JSON embedded in `metadata`. Two-step keeps the submit POST fast (Vercel function timeout) and lets the UI show "extracting…" feedback.
+- Failure mode: extraction errors do not block submission; the rep's request is still saved, and the reviewer drawer shows "datasheet attached but extraction failed" with a link to retry extraction server-side.
 
 ### Reviewer UI additions
 
@@ -168,7 +180,7 @@ Changes to `/dashboards/catalog/review`:
 
 - **New filter chip:** `Source: Sales Request` — toggles between existing BOM-originated pushes and the new sales-originated ones.
 - **Type badge:** each row shows `EQUIPMENT` or `ADDER` to disambiguate since they open different drawers.
-- **Equipment detail drawer:** opens the existing catalog wizard pre-filled with rep's input + Claude-extracted specs. Reviewer edits → Approve/Decline.
+- **Equipment detail drawer:** opens the existing catalog wizard pre-filled with rep's input + Claude-extracted specs. Reviewer edits → Approve/Decline. The rep's `salesRequestNote` is surfaced as a top-of-drawer banner (distinct from the existing `note` field which continues to hold the reviewer's rejection message).
 - **Adder detail drawer:** new component `AdderRequestDrawer` — category, code, name, unit, price, cost, direction, shop overrides. Reviewer fills → Approve/Decline.
 - **Badge count:** the existing `/dashboards/catalog/review` header gets a pending-count indicator scoped to sales requests, driven by the existing SSE invalidation pipeline.
 
@@ -193,6 +205,7 @@ Changes to `/dashboards/catalog/review`:
 
 - New `ActivityType` enum values: `SALES_PRODUCT_REQUEST_SUBMITTED`, `SALES_PRODUCT_REQUEST_APPROVED`, `SALES_PRODUCT_REQUEST_DECLINED`.
 - Logged via the existing `useActivityTracking` / server-side activity-log pipeline.
+- Enum additions ship in the **same** additive migration as the `AdderRequest` table and the two `PendingCatalogPush` columns. One migration, not three.
 
 ### API routes
 
@@ -214,7 +227,7 @@ Adder requests and equipment requests are discriminated by a `type` field in the
 Per prior feedback: new routes and new page must be explicitly added to every role's `allowedRoutes`, or middleware silently returns 403.
 
 - Rep-facing page + routes (`/dashboards/request-product`, `/api/product-requests/*` non-admin): add to `ADMIN`, `OWNER`, `SALES_MANAGER`, `SALES`, `MARKETING`.
-- Admin routes (`/api/admin/product-requests/*`): covered by existing `ADMIN_ONLY_ROUTES` prefix check and explicitly allowed for `TECH_OPS`, `DESIGN`, `PERMIT`, `INTERCONNECT` as Tech Ops successors.
+- Admin routes (`/api/admin/product-requests/*`): add to `ADMIN_ONLY_EXCEPTIONS` so they're accessible to `TECH_OPS` (the single reviewer owner chosen during brainstorming). The role successors (`DESIGN`, `PERMIT`, `INTERCONNECT`) inherit access via the existing `normalizesTo: "TECH_OPS"` mapping in `roles.ts` — no per-role duplication needed. Adding additional reviewer roles is a follow-up decision; intentionally out of scope here.
 - No change to suite-switcher visibility — the Sales & Marketing suite already includes the target roles.
 
 ### Feature flags
