@@ -3,6 +3,7 @@ import { getCurrentUser } from "@/lib/auth-utils";
 import SuitePageShell, { type SuitePageCard } from "@/components/SuitePageShell";
 
 const PERMIT_HUB_ENABLED = process.env.NEXT_PUBLIC_PERMIT_HUB_ENABLED === "true";
+const IC_HUB_ENABLED = process.env.NEXT_PUBLIC_IC_HUB_ENABLED === "true";
 
 const LINKS: SuitePageCard[] = [
   ...(PERMIT_HUB_ENABLED
@@ -14,6 +15,19 @@ const LINKS: SuitePageCard[] = [
             "Workspace for working open permit action items — aggregated AHJ context and task-based writeback.",
           tag: "HUB",
           icon: "🏛️",
+          section: "Pipeline",
+        } as SuitePageCard,
+      ]
+    : []),
+  ...(IC_HUB_ENABLED
+    ? [
+        {
+          href: "/dashboards/ic-hub",
+          title: "Interconnection Hub",
+          description:
+            "Workspace for working open IC action items — aggregated utility context, shared inbox, task-based writeback.",
+          tag: "HUB",
+          icon: "⚡",
           section: "Pipeline",
         } as SuitePageCard,
       ]
