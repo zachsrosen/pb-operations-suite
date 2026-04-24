@@ -9,7 +9,7 @@ import {
 } from "@vis.gl/react-google-maps";
 import Supercluster from "supercluster";
 import type { JobMarker, CrewPin } from "@/lib/map-types";
-import { MARKER_COLORS, CREW_COLOR_WORKING, CREW_COLOR_IDLE, CLUSTER_COLORS, CLUSTER_THRESHOLDS } from "@/lib/map-colors";
+import { MARKER_COLORS, CREW_COLOR_WORKING, CREW_COLOR_IDLE } from "@/lib/map-colors";
 import type { OfficeLocation } from "@/lib/map-offices";
 import { haversineMiles } from "@/lib/map-proximity";
 
@@ -137,17 +137,49 @@ function ClusteredMarkers({
   const map = useMap();
   const [, setVersion] = useState(0);
 
+  // Split markers: scheduled-today markers ALWAYS render individually (never
+  // cluster) so the dispatcher can see today's slate exactly. Everything else
+  // (ready-to-schedule / backlog) still clusters to keep the map readable.
+  //
+  // Uses YYYY-MM-DD string comparison to avoid timezone issues: date-only
+  // values like "2026-04-24" parse as UTC midnight via `new Date()`, which
+  // silently drops today's jobs on servers in non-UTC timezones.
+  const { scheduledToday, clusterable } = useMemo(() => {
+    const now = new Date();
+    const todayYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+    const ymd = (at: string | undefined): string | null => {
+      if (!at) return null;
+      const match = at.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (match) return match[1];
+      const d = new Date(at);
+      if (Number.isNaN(d.getTime())) return null;
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
+    };
+
+    const scheduledToday: JobMarker[] = [];
+    const clusterable: JobMarker[] = [];
+    for (const m of markers) {
+      if (m.scheduled && ymd(m.scheduledAt) === todayYmd) {
+        scheduledToday.push(m);
+      } else {
+        clusterable.push(m);
+      }
+    }
+    return { scheduledToday, clusterable };
+  }, [markers]);
+
   const supercluster = useMemo(() => {
     const sc = new Supercluster({ radius: 60, maxZoom: 13 });
     sc.load(
-      markers.map((m) => ({
+      clusterable.map((m) => ({
         type: "Feature" as const,
         geometry: { type: "Point" as const, coordinates: [m.lng, m.lat] },
         properties: { marker: m },
       }))
     );
     return sc;
-  }, [markers]);
+  }, [clusterable]);
 
   // Re-render on zoom/move — MUST come before any early return so hook order is stable
   const onChange = useCallback(() => setVersion((v) => v + 1), []);
@@ -165,19 +197,27 @@ function ClusteredMarkers({
     zoom
   );
 
+  // Renderer shared between the cluster list and the scheduled-today list.
+  const renderMarker = (marker: JobMarker) => renderSingleMarker(
+    marker,
+    office,
+    nearRadiusMiles,
+    onMarkerClick
+  );
+
   return (
     <>
+      {/* Scheduled-today pins — always rendered individually */}
+      {scheduledToday.map(renderMarker)}
+
       {clusters.map((c) => {
         const [lng, lat] = c.geometry.coordinates;
         if (c.properties && "cluster" in c.properties && c.properties.cluster) {
           const count = c.properties.point_count as number;
-          const color =
-            count >= CLUSTER_THRESHOLDS.large
-              ? CLUSTER_COLORS.large
-              : count >= CLUSTER_THRESHOLDS.medium
-              ? CLUSTER_COLORS.medium
-              : CLUSTER_COLORS.small;
-          const size = count >= CLUSTER_THRESHOLDS.large ? 60 : count >= CLUSTER_THRESHOLDS.medium ? 52 : 44;
+          // Sample up to 3 markers inside the cluster to show a preview.
+          const leaves = supercluster.getLeaves(c.id as number, 3) as unknown as Array<{
+            properties: { marker: JobMarker };
+          }>;
           return (
             <AdvancedMarker
               key={`cluster-${c.id}`}
@@ -187,74 +227,113 @@ function ClusteredMarkers({
                 map.setZoom(expZoom);
                 map.panTo({ lat, lng });
               }}
+              title={`${count} ready-to-schedule nearby — click to expand`}
             >
-              <div style={{
-                width: size, height: size, borderRadius: "50%",
-                background: color, color: "white",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontWeight: 700, border: "3px solid #0b1220",
-              }}>
-                {count}
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "3px 8px 3px 5px",
+                  borderRadius: 999,
+                  background: "rgba(15,23,42,0.92)",
+                  border: "1.5px solid rgba(148,163,184,0.55)",
+                  gap: 4,
+                  fontSize: 11,
+                  color: "white",
+                  fontWeight: 600,
+                  boxShadow: "0 2px 6px rgba(0,0,0,0.35)",
+                }}
+              >
+                {leaves.slice(0, 3).map((l, i) => {
+                  const m = l.properties.marker;
+                  const c2 = MARKER_COLORS[m.kind];
+                  return (
+                    <span
+                      key={i}
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: "50%",
+                        background: "white",
+                        border: `2px solid ${c2}`,
+                      }}
+                    />
+                  );
+                })}
+                <span style={{ marginLeft: 2 }}>{count}</span>
               </div>
             </AdvancedMarker>
           );
         }
         const marker = (c.properties as { marker: JobMarker }).marker;
-        const color = MARKER_COLORS[marker.kind];
-        // Highlight ready-to-schedule markers within the office radius.
-        const nearOffice =
-          !!office &&
-          !marker.scheduled &&
-          haversineMiles({ lat: office.lat, lng: office.lng }, { lat: marker.lat, lng: marker.lng }) <=
-            nearRadiusMiles;
-        const tooltipLines = [
-          marker.title,
-          marker.subtitle,
-          marker.scheduled ? "Scheduled" : "Ready to schedule",
-          `${marker.address.street}, ${marker.address.city}, ${marker.address.state} ${marker.address.zip}`,
-          marker.status ? `Stage: ${marker.status}` : null,
-          nearOffice ? `Near ${office?.label ?? "office"} (${nearRadiusMiles} mi)` : null,
-        ].filter(Boolean);
-        return (
-          <AdvancedMarker
-            key={marker.id}
-            position={{ lat, lng }}
-            onClick={() => onMarkerClick(marker)}
-            title={tooltipLines.join("\n")}
-          >
-            {marker.scheduled ? (
-              // Scheduled: solid filled circle with dark outline
-              <div style={{
-                width: 20, height: 20, borderRadius: "50%",
-                background: color,
-                border: "2px solid #0b1220",
-                boxShadow: "0 0 0 1px rgba(255,255,255,0.25), 0 2px 4px rgba(0,0,0,0.3)",
-              }} />
-            ) : (
-              // Unscheduled (ready to schedule): ring marker. Add a cyan halo
-              // + subtle pulse when within the office "nearby" radius.
-              <div style={{
-                width: nearOffice ? 26 : 22, height: nearOffice ? 26 : 22, borderRadius: "50%",
-                background: "white",
-                border: `3px solid ${color}`,
-                boxShadow: nearOffice
-                  ? "0 0 0 4px rgba(56,189,248,0.35), 0 0 0 1px rgba(56,189,248,0.8), 0 2px 6px rgba(0,0,0,0.4)"
-                  : "0 2px 4px rgba(0,0,0,0.3)",
-                animation: nearOffice ? "mapPulse 2s ease-in-out infinite" : undefined,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}>
-                <div style={{
-                  width: 6, height: 6, borderRadius: "50%",
-                  background: color,
-                }} />
-              </div>
-            )}
-          </AdvancedMarker>
-        );
+        return renderMarker(marker);
       })}
     </>
+  );
+}
+
+/**
+ * Render a single JobMarker as an AdvancedMarker. Shared between the
+ * scheduled-today pass (always-individual pins) and the cluster breakout
+ * pass so the two kinds of pins always look identical.
+ */
+function renderSingleMarker(
+  marker: JobMarker,
+  office: OfficeLocation | null,
+  nearRadiusMiles: number,
+  onMarkerClick: (m: JobMarker) => void
+) {
+  const color = MARKER_COLORS[marker.kind];
+  const nearOffice =
+    !!office &&
+    !marker.scheduled &&
+    haversineMiles({ lat: office.lat, lng: office.lng }, { lat: marker.lat, lng: marker.lng }) <=
+      nearRadiusMiles;
+  const tooltipLines = [
+    marker.title,
+    marker.subtitle,
+    marker.scheduled ? "Scheduled" : "Ready to schedule",
+    `${marker.address.street}, ${marker.address.city}, ${marker.address.state} ${marker.address.zip}`,
+    marker.status ? `Stage: ${marker.status}` : null,
+    nearOffice ? `Near ${office?.label ?? "office"} (${nearRadiusMiles} mi)` : null,
+  ].filter(Boolean);
+  return (
+    <AdvancedMarker
+      key={marker.id}
+      position={{ lat: marker.lat, lng: marker.lng }}
+      onClick={() => onMarkerClick(marker)}
+      title={tooltipLines.join("\n")}
+    >
+      {marker.scheduled ? (
+        // Scheduled: solid filled circle with dark outline
+        <div style={{
+          width: 20, height: 20, borderRadius: "50%",
+          background: color,
+          border: "2px solid #0b1220",
+          boxShadow: "0 0 0 1px rgba(255,255,255,0.25), 0 2px 4px rgba(0,0,0,0.3)",
+        }} />
+      ) : (
+        // Ready to schedule: ring marker. Cyan halo + pulse when within
+        // the office "nearby" radius.
+        <div style={{
+          width: nearOffice ? 26 : 22, height: nearOffice ? 26 : 22, borderRadius: "50%",
+          background: "white",
+          border: `3px solid ${color}`,
+          boxShadow: nearOffice
+            ? "0 0 0 4px rgba(56,189,248,0.35), 0 0 0 1px rgba(56,189,248,0.8), 0 2px 6px rgba(0,0,0,0.4)"
+            : "0 2px 4px rgba(0,0,0,0.3)",
+          animation: nearOffice ? "mapPulse 2s ease-in-out infinite" : undefined,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}>
+          <div style={{
+            width: 6, height: 6, borderRadius: "50%",
+            background: color,
+          }} />
+        </div>
+      )}
+    </AdvancedMarker>
   );
 }
 

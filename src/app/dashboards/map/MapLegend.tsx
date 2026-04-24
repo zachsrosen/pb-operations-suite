@@ -9,6 +9,9 @@ interface MapLegendProps {
   scheduledCount: number;
   unscheduledCount: number;
   workingCrewCount: number;
+  /** Per-kind scheduled/ready breakdown — exposed so the user can verify
+   *  the "1 scheduled / 20 ready" total against specific work types. */
+  breakdown?: Record<JobMarkerKind, { scheduled: number; ready: number }>;
 }
 
 const ROW_LABELS: Record<JobMarkerKind, string> = {
@@ -25,6 +28,7 @@ export function MapLegend({
   scheduledCount,
   unscheduledCount,
   workingCrewCount,
+  breakdown,
 }: MapLegendProps) {
   // Collapsed by default on narrow screens, expanded on sm and up.
   const [open, setOpen] = useState(() => {
@@ -35,7 +39,7 @@ export function MapLegend({
   });
 
   return (
-    <div className="absolute bottom-4 left-4 z-10 bg-surface/95 backdrop-blur border border-t-border rounded-lg shadow-lg text-xs overflow-hidden max-w-[240px]">
+    <div className="absolute bottom-4 left-4 sm:bottom-20 sm:left-4 z-10 bg-surface/95 backdrop-blur border border-t-border rounded-lg shadow-lg text-xs overflow-hidden max-w-[240px]">
       <button
         onClick={() => setOpen((o) => !o)}
         className="w-full flex items-center justify-between gap-2 px-3 py-2 border-b border-t-border hover:bg-surface-2"
@@ -88,18 +92,29 @@ export function MapLegend({
             <div className="text-[10px] uppercase tracking-wider text-muted mb-1.5 font-semibold">
               Work type
             </div>
-            {enabledTypes.map((kind) => (
-              <LegendRow
-                key={kind}
-                swatch={
-                  <span
-                    className="inline-block w-3 h-3 rounded-full"
-                    style={{ background: MARKER_COLORS[kind] }}
-                  />
-                }
-                label={ROW_LABELS[kind]}
-              />
-            ))}
+            {enabledTypes.map((kind) => {
+              const b = breakdown?.[kind];
+              const total = b ? b.scheduled + b.ready : undefined;
+              return (
+                <div key={kind} className="py-1">
+                  <div className="flex items-center gap-2">
+                    <span className="flex-shrink-0 flex items-center justify-center w-4">
+                      <span
+                        className="inline-block w-3 h-3 rounded-full"
+                        style={{ background: MARKER_COLORS[kind] }}
+                      />
+                    </span>
+                    <span className="text-foreground flex-1">{ROW_LABELS[kind]}</span>
+                    {total != null && <span className="text-muted">{total}</span>}
+                  </div>
+                  {b && (b.scheduled > 0 || b.ready > 0) && (
+                    <div className="ml-6 text-[10px] text-muted">
+                      {b.scheduled} scheduled · {b.ready} ready
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <div>

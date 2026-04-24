@@ -21,12 +21,16 @@ const DEFAULT_TYPES: JobMarkerKind[] = ["install", "service", "inspection", "sur
 interface MapClientProps {
   googleMapsApiKey: string | null;
   userPbLocation?: string | null;
+  /** Current user's crew id / Zuper user_uid for the "Me" shortcut in the assignee filter. */
+  meAssigneeId?: string | null;
 }
 
-export function MapClient({ googleMapsApiKey, userPbLocation }: MapClientProps) {
+export function MapClient({ googleMapsApiKey, userPbLocation, meAssigneeId }: MapClientProps) {
   const [mode, setMode] = useState<MapMode>("today");
   const [enabledTypes, setEnabledTypes] = useState<JobMarkerKind[]>([...DEFAULT_TYPES]);
   const [enabledLocations, setEnabledLocations] = useState<string[]>([]);
+  const [enabledAssignees, setEnabledAssignees] = useState<string[]>([]);
+  const [showUnassigned, setShowUnassigned] = useState(true);
   const [selectedMarker, setSelectedMarker] = useState<JobMarker | null>(null);
   const { office, radiusMiles, setOfficeId, setRadiusMiles } = useOfficePreferences(userPbLocation);
   const [officePickerOpenSignal, setOfficePickerOpenSignal] = useState(0);
@@ -57,16 +61,56 @@ export function MapClient({ googleMapsApiKey, userPbLocation }: MapClientProps) 
     return Array.from(set).sort();
   }, [rawMarkers]);
 
-  // Apply location filter client-side (no refetch needed).
+  // Union of assignee ids present in the current data, paired with crew names.
+  const availableAssignees = useMemo(() => {
+    const nameById = new Map(crews.map((c) => [c.id, c.name]));
+    const set = new Set<string>();
+    for (const m of rawMarkers) if (m.crewId) set.add(m.crewId);
+    return Array.from(set)
+      .map((id) => ({ id, label: nameById.get(id) ?? `Crew ${id.slice(0, 6)}` }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [rawMarkers, crews]);
+
+  // Apply location + assignee filters client-side (no refetch needed).
   const markers = useMemo(() => {
-    if (enabledLocations.length === 0) return rawMarkers;
-    const set = new Set(enabledLocations);
-    return rawMarkers.filter((m) => !m.pbLocation || set.has(m.pbLocation));
-  }, [rawMarkers, enabledLocations]);
+    let out = rawMarkers;
+    if (enabledLocations.length > 0) {
+      const locSet = new Set(enabledLocations);
+      out = out.filter((m) => !m.pbLocation || locSet.has(m.pbLocation));
+    }
+    // Assignee filter: if any crew ids are selected OR unassigned is toggled off,
+    // filter. Empty selection + showUnassigned = show everything.
+    if (enabledAssignees.length > 0 || !showUnassigned) {
+      const assigneeSet = new Set(enabledAssignees);
+      out = out.filter((m) => {
+        if (!m.crewId) return showUnassigned;
+        // If any crew explicitly selected, only show those; otherwise any crew OK.
+        return enabledAssignees.length === 0 || assigneeSet.has(m.crewId);
+      });
+    }
+    return out;
+  }, [rawMarkers, enabledLocations, enabledAssignees, showUnassigned]);
 
   const scheduledCount = markers.filter((m) => m.scheduled).length;
   const unscheduledCount = markers.length - scheduledCount;
   const workingCrewCount = crews.filter((c) => c.working).length;
+  // Per-kind breakdown for the legend — so "1 scheduled / 20 ready" is traceable
+  // to which specific work types contributed.
+  const breakdown = useMemo(() => {
+    const out: Record<JobMarkerKind, { scheduled: number; ready: number }> = {
+      install: { scheduled: 0, ready: 0 },
+      service: { scheduled: 0, ready: 0 },
+      inspection: { scheduled: 0, ready: 0 },
+      survey: { scheduled: 0, ready: 0 },
+      dnr: { scheduled: 0, ready: 0 },
+      roofing: { scheduled: 0, ready: 0 },
+    };
+    for (const m of markers) {
+      if (m.scheduled) out[m.kind].scheduled++;
+      else out[m.kind].ready++;
+    }
+    return out;
+  }, [markers]);
 
   const onTypeToggle = (k: JobMarkerKind) => {
     setEnabledTypes((prev) =>
@@ -82,6 +126,17 @@ export function MapClient({ googleMapsApiKey, userPbLocation }: MapClientProps) 
 
   const onLocationsReset = () => setEnabledLocations([]);
 
+  const onAssigneeToggle = (id: string) => {
+    setEnabledAssignees((prev) =>
+      prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]
+    );
+  };
+  const onToggleUnassigned = () => setShowUnassigned((v) => !v);
+  const onAssigneesReset = () => {
+    setEnabledAssignees([]);
+    setShowUnassigned(true);
+  };
+
   const onMarkerClick = (m: JobMarker) => setSelectedMarker(m);
   const onClose = () => setSelectedMarker(null);
 
@@ -93,10 +148,17 @@ export function MapClient({ googleMapsApiKey, userPbLocation }: MapClientProps) 
         enabledTypes={enabledTypes}
         availableLocations={availableLocations}
         enabledLocations={enabledLocations}
+        availableAssignees={availableAssignees}
+        enabledAssignees={enabledAssignees}
+        showUnassigned={showUnassigned}
+        meAssigneeId={meAssigneeId}
         onModeChange={setMode}
         onTypeToggle={onTypeToggle}
         onLocationToggle={onLocationToggle}
         onLocationsReset={onLocationsReset}
+        onAssigneeToggle={onAssigneeToggle}
+        onToggleUnassigned={onToggleUnassigned}
+        onAssigneesReset={onAssigneesReset}
         exportDisabled={markers.length === 0}
         onExport={() => downloadMarkersCsv(markers, `map-jobs-${mode}-${new Date().toISOString().slice(0, 10)}.csv`)}
       />
@@ -160,6 +222,7 @@ export function MapClient({ googleMapsApiKey, userPbLocation }: MapClientProps) 
             scheduledCount={scheduledCount}
             unscheduledCount={unscheduledCount}
             workingCrewCount={workingCrewCount}
+            breakdown={breakdown}
           />
         )}
 
@@ -178,7 +241,7 @@ export function MapClient({ googleMapsApiKey, userPbLocation }: MapClientProps) 
         )}
 
         {query.data?.droppedCount ? (
-          <div className="absolute bottom-4 right-4 text-xs bg-surface-2 text-muted px-3 py-1.5 rounded border border-t-border z-10">
+          <div className="absolute top-2 right-2 text-xs bg-surface-2 text-muted px-3 py-1.5 rounded border border-t-border z-10">
             {query.data.droppedCount} job{query.data.droppedCount === 1 ? "" : "s"} could not be placed
           </div>
         ) : null}

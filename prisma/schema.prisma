@@ -102,6 +102,9 @@ model User {
   // Admin Workflows (Phase 1) — user-composed workflows built on Inngest
   adminWorkflowsCreated AdminWorkflow[] @relation("AdminWorkflowCreatedBy")
 
+  // Permit Hub
+  permitHubDrafts PermitHubDraft[]
+
   @@index([email])
   @@index([impersonatingUserId])
 }
@@ -242,6 +245,20 @@ enum ActivityType {
   ON_CALL_PTO_CANCELLED
   ON_CALL_MANUAL_OVERRIDE
   ON_CALL_ICAL_TOKEN_ROTATED
+
+  // Permit Hub
+  PERMIT_SUBMITTED
+  PERMIT_RESUBMITTED
+  PERMIT_REJECTION_LOGGED
+  PERMIT_REVISION_ROUTED
+  PERMIT_REVISION_COMPLETED
+  PERMIT_FOLLOWUP
+  PERMIT_AS_BUILT_STARTED
+  PERMIT_AS_BUILT_COMPLETED
+  PERMIT_ISSUED
+  PERMIT_SOLARAPP_SUBMITTED
+  PERMIT_HUB_DRAFT_SAVED
+  PERMIT_HUB_DRAFT_DISCARDED
 
   // Sales product requests
   SALES_PRODUCT_REQUEST_SUBMITTED
@@ -3177,4 +3194,24 @@ model TriageRun {
   notes              String?
 
   @@index([dealId, runAt])
+}
+
+// ===========================================
+// PERMIT HUB
+// ===========================================
+
+model PermitHubDraft {
+  id         String   @id @default(cuid())
+  userId     String
+  dealId     String
+  actionKind String // e.g. "SUBMIT_TO_AHJ", "REVIEW_REJECTION"
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dealId, actionKind])
+  @@index([userId])
+  @@index([updatedAt])
 }

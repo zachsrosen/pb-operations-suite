@@ -251,16 +251,18 @@ import { buildCrewPins } from "@/lib/map-aggregator";
 import type { JobMarker } from "@/lib/map-types";
 
 describe("buildCrewPins", () => {
-  // Prisma CrewMember fields: `isActive` (not `active`), `locations: String[]` (not `location`)
+  // CrewPin.id is now zuperUserUid so it matches JobMarker.crewId space.
   const crewMembers = [
     {
-      id: "crew-1",
+      id: "db-crew-1",
+      zuperUserUid: "zuper-alex",
       name: "Alex P.",
       locations: ["dtc"],
       isActive: true,
     },
     {
-      id: "crew-2",
+      id: "db-crew-2",
+      zuperUserUid: "zuper-marco",
       name: "Marco R.",
       locations: ["westy"],
       isActive: true,
@@ -270,30 +272,30 @@ describe("buildCrewPins", () => {
   it("assigns current position from earliest today's stop", () => {
     const markers: JobMarker[] = [
       {
-        id: "install:A",
-        kind: "install",
+        id: "zuperjob:A",
+        kind: "service",
         scheduled: true,
         scheduledAt: "2026-04-23T09:00:00Z",
         lat: 39.75,
         lng: -104.99,
-        crewId: "crew-1",
+        crewId: "zuper-alex",
         address: { street: "x", city: "x", state: "CO", zip: "0" },
         title: "Stop 1",
       },
       {
-        id: "install:B",
-        kind: "install",
+        id: "zuperjob:B",
+        kind: "service",
         scheduled: true,
         scheduledAt: "2026-04-23T15:00:00Z",
         lat: 39.80,
         lng: -104.95,
-        crewId: "crew-1",
+        crewId: "zuper-alex",
         address: { street: "x", city: "x", state: "CO", zip: "0" },
         title: "Stop 2",
       },
     ];
     const pins = buildCrewPins(crewMembers as any, markers);
-    const alex = pins.find(p => p.id === "crew-1")!;
+    const alex = pins.find(p => p.id === "zuper-alex")!;
     expect(alex.working).toBe(true);
     expect(alex.currentLat).toBe(39.75);
     expect(alex.routeStops).toHaveLength(2);
@@ -301,7 +303,7 @@ describe("buildCrewPins", () => {
 
   it("marks crew without today's stops as not working", () => {
     const pins = buildCrewPins(crewMembers as any, []);
-    expect(pins.find(p => p.id === "crew-1")?.working).toBe(false);
+    expect(pins.find(p => p.id === "zuper-alex")?.working).toBe(false);
   });
 });
 
@@ -407,6 +409,7 @@ describe("filterProjectsByMode", () => {
     state: "CO",
     postalCode: "80301",
     stage: "",
+    isActive: true,
   };
 
   it("week mode includes projects scheduled within next 7 days", async () => {
@@ -463,5 +466,130 @@ describe("filterProjectsByMode", () => {
     // Construction, Inspection).
     expect(ids).toContain("install:20");
     expect(ids).toContain("install:21");
+  });
+});
+
+describe("completion filtering", () => {
+  beforeEach(() => {
+    mockFindFirst.mockReset();
+    mockFindMany.mockReset();
+    mockLiveGeocode.mockReset();
+    mirrorFindFirstIntoFindMany();
+    (fetchAllProjects as jest.Mock).mockReset();
+    (fetchTodaysServiceJobs as jest.Mock).mockResolvedValue([]);
+    (prisma.crewMember.findMany as jest.Mock).mockResolvedValue([]);
+    mockFindFirst.mockResolvedValue({ latitude: 40, longitude: -105 });
+  });
+
+  const addr = { address: "1 Main", city: "Boulder", state: "CO", postalCode: "80301" };
+
+  it("install: hides completed projects even when isSchedulable is true", async () => {
+    // Avoid timezone-sensitive date math by testing via the ready-to-schedule
+    // path (not a specific calendar day).
+    const completed = {
+      id: 100,
+      name: "Done deal",
+      ...addr,
+      stage: "Close Out",
+      isSchedulable: true,
+      isActive: true,
+      constructionScheduleDate: null,
+      constructionCompleteDate: "2026-04-20T15:00:00Z", // already done
+    };
+    const active = {
+      id: 101,
+      name: "Live install",
+      ...addr,
+      stage: "Ready to Build",
+      isSchedulable: true,
+      isActive: true,
+      constructionScheduleDate: null,
+      constructionCompleteDate: null,
+    };
+    (fetchAllProjects as jest.Mock).mockResolvedValue([completed, active]);
+    const res = await (await import("@/lib/map-aggregator")).aggregateMapMarkers({
+      mode: "today", types: ["install"],
+    });
+    const ids = res.markers.map((m) => m.id);
+    expect(ids).toContain("install:101");
+    expect(ids).not.toContain("install:100");
+  });
+
+  it("inspection: hides projects whose inspection already passed", async () => {
+    const today = new Date("2026-04-23T00:00:00Z");
+    const passed = {
+      id: 200,
+      name: "Inspected",
+      ...addr,
+      stage: "Inspection",
+      isActive: true,
+      inspectionScheduleDate: "2026-04-23T10:00:00Z",
+      inspectionPassDate: "2026-04-23T14:00:00Z",
+    };
+    (fetchAllProjects as jest.Mock).mockResolvedValue([passed]);
+    const res = await (await import("@/lib/map-aggregator")).aggregateMapMarkers({
+      mode: "today", types: ["inspection"], date: today,
+    });
+    expect(res.markers.map((m) => m.id)).not.toContain("inspection:200");
+  });
+
+  it("zuper: drops jobs in terminal status", async () => {
+    const { buildServiceMarkers } = await import("@/lib/map-aggregator");
+    const addressFields = {
+      customer_address: { street: "1 Main", city: "Boulder", state: "CO", zip_code: "80301" },
+    };
+    const active = { job_uid: "live", job_title: "Live", current_job_status: { status_name: "In Progress" }, ...addressFields };
+    const completed = { job_uid: "done", job_title: "Done", current_job_status: { status_name: "Completed" }, ...addressFields };
+    const cancelled = { job_uid: "cx", job_title: "Cx", current_job_status: { status_name: "Cancelled" }, ...addressFields };
+    const invoiced = { job_uid: "inv", job_title: "Inv", current_job_status: { status_name: "Invoiced" }, ...addressFields };
+    const { markers } = await buildServiceMarkers(
+      [active, completed, cancelled, invoiced] as any,
+      { today: new Date("2026-04-23") }
+    );
+    const ids = markers.map((m) => m.id);
+    expect(ids).toContain("zuperjob:live");
+    expect(ids).not.toContain("zuperjob:done");
+    expect(ids).not.toContain("zuperjob:cx");
+    expect(ids).not.toContain("zuperjob:inv");
+  });
+});
+
+describe("timezone-agnostic date comparison", () => {
+  beforeEach(() => {
+    mockFindFirst.mockReset();
+    mockFindMany.mockReset();
+    mockLiveGeocode.mockReset();
+    mirrorFindFirstIntoFindMany();
+    (fetchAllProjects as jest.Mock).mockReset();
+    (fetchTodaysServiceJobs as jest.Mock).mockResolvedValue([]);
+    (prisma.crewMember.findMany as jest.Mock).mockResolvedValue([]);
+    mockFindFirst.mockResolvedValue({ latitude: 40, longitude: -105 });
+  });
+
+  const addr = { address: "1 Main", city: "Boulder", state: "CO", postalCode: "80301" };
+
+  it("install: date-only scheduledAt matches today regardless of server timezone", async () => {
+    // Use today's local date, constructed via getFullYear/getMonth so the
+    // test matches whatever the runner sees as 'today'.
+    const now = new Date();
+    const todayLocalYmd = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+
+    const scheduledToday = {
+      id: 500,
+      name: "Today's install",
+      ...addr,
+      stage: "Construction",
+      isSchedulable: true,
+      isActive: true,
+      constructionScheduleDate: todayLocalYmd, // date-only, the shape parseDate returns
+      constructionCompleteDate: null,
+    };
+    (fetchAllProjects as jest.Mock).mockResolvedValue([scheduledToday]);
+    const res = await (await import("@/lib/map-aggregator")).aggregateMapMarkers({
+      mode: "today", types: ["install"],
+    });
+    expect(res.markers.map((m) => m.id)).toContain("install:500");
+    // Scheduled flag is true (has a scheduledAt date)
+    expect(res.markers[0].scheduled).toBe(true);
   });
 });
