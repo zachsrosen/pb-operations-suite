@@ -168,34 +168,47 @@ function parseFrom(raw: string | null): { name: string | null; email: string | n
 }
 
 /**
- * Build a Gmail search query that matches threads mentioning either the
- * AHJ email address OR the site address. Gmail's search DSL is forgiving
- * with quoted phrases and from:/to: operators.
+ * Build a Gmail search query that matches threads mentioning EITHER the
+ * AHJ/utility email OR the site address. Context clauses are OR'd so a
+ * thread hits if any identifier matches; this is more forgiving than
+ * requiring all of them (Peter often has threads with the AHJ that
+ * don't mention the address verbatim, and vice versa).
+ *
+ * Gmail search DSL notes:
+ *   - `newer_than:90d` is relative
+ *   - `from:` / `to:` are operators
+ *   - Address is searched unquoted so "6323 Galeta Dr" also matches
+ *     "6323 Galeta Drive" etc. — stemming is loose enough that this is
+ *     usually broader than quoting
  */
 export function buildGmailThreadQuery(opts: {
   ahjEmail?: string | null;
   address?: string | null;
   lookbackDays?: number;
 }): string {
-  const clauses: string[] = [];
+  const contextClauses: string[] = [];
   if (opts.ahjEmail) {
-    clauses.push(`(from:${opts.ahjEmail} OR to:${opts.ahjEmail})`);
+    contextClauses.push(`from:${opts.ahjEmail}`);
+    contextClauses.push(`to:${opts.ahjEmail}`);
   }
   if (opts.address) {
-    // Quote the first line only — "123 Main St" is a specific enough match;
-    // including city/state/zip over-constrains and misses threads where the
-    // sender abbreviated.
+    // Use the street number + street name only. City/state/zip rarely
+    // appear verbatim in email bodies and over-constrain the match.
     const firstLine = opts.address.split(",")[0].trim();
     if (firstLine) {
-      // Escape quotes in the address (unlikely but safe).
-      const safe = firstLine.replace(/"/g, '\\"');
-      clauses.push(`"${safe}"`);
+      // Escape any double quotes; Gmail tokenizes the rest without them.
+      contextClauses.push(`"${firstLine.replace(/"/g, '\\"')}"`);
     }
   }
-  if (opts.lookbackDays) {
-    clauses.push(`newer_than:${opts.lookbackDays}d`);
+
+  const outer: string[] = [];
+  if (contextClauses.length > 0) {
+    outer.push(`(${contextClauses.join(" OR ")})`);
   }
-  return clauses.join(" ");
+  if (opts.lookbackDays) {
+    outer.push(`newer_than:${opts.lookbackDays}d`);
+  }
+  return outer.join(" ");
 }
 
 // ---------------------------------------------------------------------------
