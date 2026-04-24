@@ -10,6 +10,8 @@ import {
 import Supercluster from "supercluster";
 import type { JobMarker, CrewPin } from "@/lib/map-types";
 import { MARKER_COLORS, CREW_COLOR_WORKING, CREW_COLOR_IDLE, CLUSTER_COLORS, CLUSTER_THRESHOLDS } from "@/lib/map-colors";
+import type { OfficeLocation } from "@/lib/map-offices";
+import { haversineMiles } from "@/lib/map-proximity";
 
 interface JobMapCanvasProps {
   markers: JobMarker[];
@@ -18,6 +20,8 @@ interface JobMapCanvasProps {
   onMarkerClick: (marker: JobMarker) => void;
   defaultCenter?: { lat: number; lng: number };
   defaultZoom?: number;
+  office?: OfficeLocation | null;
+  nearRadiusMiles?: number;
 }
 
 const DEFAULT_CENTER = { lat: 39.6, lng: -105.3 }; // Rough Colorado center
@@ -30,30 +34,105 @@ export function JobMapCanvas({
   onMarkerClick,
   defaultCenter = DEFAULT_CENTER,
   defaultZoom = DEFAULT_ZOOM,
+  office,
+  nearRadiusMiles = 15,
 }: JobMapCanvasProps) {
+  // When an office is set, center on it and zoom tighter so "nearby" is immediately visible.
+  const center = office ? { lat: office.lat, lng: office.lng } : defaultCenter;
+  const zoom = office ? 9 : defaultZoom;
+
   return (
     <APIProvider apiKey={apiKey}>
       <Map
         mapId="pb-jobs-map"
-        defaultCenter={defaultCenter}
-        defaultZoom={defaultZoom}
+        defaultCenter={center}
+        defaultZoom={zoom}
         gestureHandling="greedy"
         disableDefaultUI={false}
         className="w-full h-full"
       >
-        <ClusteredMarkers markers={markers} onMarkerClick={onMarkerClick} />
+        <ClusteredMarkers
+          markers={markers}
+          onMarkerClick={onMarkerClick}
+          office={office ?? null}
+          nearRadiusMiles={nearRadiusMiles}
+        />
         <CrewMarkers crews={crews} />
+        {office && <OfficeMarker office={office} nearRadiusMiles={nearRadiusMiles} />}
       </Map>
     </APIProvider>
+  );
+}
+
+/**
+ * Big cyan building icon at the dispatcher's shop with a translucent
+ * nearby-radius circle. The circle is imperative google.maps.Circle since
+ * @vis.gl/react-google-maps doesn't expose a Circle component.
+ */
+function OfficeMarker({
+  office,
+  nearRadiusMiles,
+}: {
+  office: OfficeLocation;
+  nearRadiusMiles: number;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!map) return;
+    const circle = new google.maps.Circle({
+      map,
+      center: { lat: office.lat, lng: office.lng },
+      radius: nearRadiusMiles * 1609.34, // miles → meters
+      strokeColor: CREW_COLOR_WORKING,
+      strokeOpacity: 0.55,
+      strokeWeight: 1.5,
+      fillColor: CREW_COLOR_WORKING,
+      fillOpacity: 0.06,
+      clickable: false,
+    });
+    return () => {
+      circle.setMap(null);
+    };
+  }, [map, office, nearRadiusMiles]);
+
+  return (
+    <AdvancedMarker
+      position={{ lat: office.lat, lng: office.lng }}
+      title={`${office.label} — your shop (${nearRadiusMiles} mi radius)`}
+      zIndex={1000}
+    >
+      <div
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 8,
+          background: CREW_COLOR_WORKING,
+          border: "3px solid #0b1220",
+          boxShadow: "0 0 0 2px rgba(56,189,248,0.35), 0 4px 10px rgba(0,0,0,0.4)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          fontSize: 16,
+          color: "white",
+        }}
+      >
+        🏢
+      </div>
+    </AdvancedMarker>
   );
 }
 
 function ClusteredMarkers({
   markers,
   onMarkerClick,
+  office,
+  nearRadiusMiles,
 }: {
   markers: JobMarker[];
   onMarkerClick: (m: JobMarker) => void;
+  office: OfficeLocation | null;
+  nearRadiusMiles: number;
 }) {
   const map = useMap();
   const [, setVersion] = useState(0);
@@ -122,12 +201,19 @@ function ClusteredMarkers({
         }
         const marker = (c.properties as { marker: JobMarker }).marker;
         const color = MARKER_COLORS[marker.kind];
+        // Highlight ready-to-schedule markers within the office radius.
+        const nearOffice =
+          !!office &&
+          !marker.scheduled &&
+          haversineMiles({ lat: office.lat, lng: office.lng }, { lat: marker.lat, lng: marker.lng }) <=
+            nearRadiusMiles;
         const tooltipLines = [
           marker.title,
           marker.subtitle,
           marker.scheduled ? "Scheduled" : "Ready to schedule",
           `${marker.address.street}, ${marker.address.city}, ${marker.address.state} ${marker.address.zip}`,
           marker.status ? `Stage: ${marker.status}` : null,
+          nearOffice ? `Near ${office?.label ?? "office"} (${nearRadiusMiles} mi)` : null,
         ].filter(Boolean);
         return (
           <AdvancedMarker
@@ -145,13 +231,16 @@ function ClusteredMarkers({
                 boxShadow: "0 0 0 1px rgba(255,255,255,0.25), 0 2px 4px rgba(0,0,0,0.3)",
               }} />
             ) : (
-              // Unscheduled (ready to schedule): ring marker with hollow center
-              // Outer colored ring + inner white dot makes it obviously distinct at any zoom.
+              // Unscheduled (ready to schedule): ring marker. Add a cyan halo
+              // + subtle pulse when within the office "nearby" radius.
               <div style={{
-                width: 22, height: 22, borderRadius: "50%",
+                width: nearOffice ? 26 : 22, height: nearOffice ? 26 : 22, borderRadius: "50%",
                 background: "white",
                 border: `3px solid ${color}`,
-                boxShadow: "0 2px 4px rgba(0,0,0,0.3)",
+                boxShadow: nearOffice
+                  ? "0 0 0 4px rgba(56,189,248,0.35), 0 0 0 1px rgba(56,189,248,0.8), 0 2px 6px rgba(0,0,0,0.4)"
+                  : "0 2px 4px rgba(0,0,0,0.3)",
+                animation: nearOffice ? "mapPulse 2s ease-in-out infinite" : undefined,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",

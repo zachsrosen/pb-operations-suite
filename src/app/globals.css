@@ -185,6 +185,15 @@ html.dark body::after {
   }
 }
 
+@keyframes mapPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.35), 0 0 0 1px rgba(56, 189, 248, 0.8), 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 7px rgba(56, 189, 248, 0.2), 0 0 0 1px rgba(56, 189, 248, 0.9), 0 2px 6px rgba(0, 0, 0, 0.4);
+  }
+}
+
 @keyframes valueFlash {
   0% {
     background-color: rgba(249, 115, 22, 0.15);
