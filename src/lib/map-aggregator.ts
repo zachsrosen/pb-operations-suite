@@ -497,7 +497,8 @@ export async function buildTicketMarkers(
 }
 
 export interface CrewMemberInput {
-  id: string;
+  id: string;               // Prisma cuid — DB primary key
+  zuperUserUid: string;     // Zuper user id — the value JobMarker.crewId holds
   name: string;
   locations: string[];
   isActive: boolean;
@@ -527,12 +528,15 @@ export function buildCrewPins(
   return crews
     .filter((c) => c.isActive)
     .map((c) => {
+      // Match by zuperUserUid — that's what JobMarker.crewId holds.
       const stops = markers
-        .filter((m) => m.crewId === c.id && m.scheduled && m.scheduledAt)
+        .filter((m) => m.crewId === c.zuperUserUid && m.scheduled && m.scheduledAt)
         .sort((a, b) => (a.scheduledAt! < b.scheduledAt! ? -1 : 1));
       const first = stops[0];
       return {
-        id: c.id,
+        // Use zuperUserUid so the CrewPin.id is in the same namespace as
+        // JobMarker.crewId (needed for client-side assignee filtering).
+        id: c.zuperUserUid,
         name: c.name,
         shopId: pickShopId(c.locations ?? []),
         currentLat: first?.lat,
@@ -710,7 +714,7 @@ export async function aggregateMapMarkers(
   try {
     const crewMembers = await prisma.crewMember.findMany({
       where: { isActive: true },
-      select: { id: true, name: true, locations: true, isActive: true },
+      select: { id: true, zuperUserUid: true, name: true, locations: true, isActive: true },
     });
     crews = buildCrewPins(crewMembers, allMarkers);
   } catch (e) {
