@@ -69,15 +69,32 @@ function parseServiceAccountPrivateKey(raw: string | undefined): string | null {
   }
 }
 
-async function getReadonlyToken(impersonateEmail: string): Promise<string | null> {
+export interface TokenError {
+  ok: false;
+  reason: string;
+  status?: number;
+  body?: string;
+}
+
+export type TokenResult = { ok: true; token: string } | TokenError;
+
+async function getReadonlyTokenVerbose(
+  impersonateEmail: string,
+): Promise<TokenResult> {
   const cached = tokenCache.get(impersonateEmail);
-  if (cached && cached.expiresAt > Date.now()) return cached.token;
+  if (cached && cached.expiresAt > Date.now())
+    return { ok: true, token: cached.token };
 
   const serviceAccountEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const privateKey = parseServiceAccountPrivateKey(
     process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY,
   );
-  if (!serviceAccountEmail || !privateKey) return null;
+  if (!serviceAccountEmail) {
+    return { ok: false, reason: "GOOGLE_SERVICE_ACCOUNT_EMAIL not set" };
+  }
+  if (!privateKey) {
+    return { ok: false, reason: "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY not set or invalid" };
+  }
 
   const now = Math.floor(Date.now() / 1000);
   const header = { alg: "RS256", typ: "JWT" };
@@ -105,16 +122,30 @@ async function getReadonlyToken(impersonateEmail: string): Promise<string | null
       assertion: jwt,
     }),
   });
-  if (!tokenResp.ok) return null;
+  if (!tokenResp.ok) {
+    const bodyText = await tokenResp.text().catch(() => "");
+    return {
+      ok: false,
+      reason: `Token exchange failed (HTTP ${tokenResp.status})`,
+      status: tokenResp.status,
+      body: bodyText.slice(0, 500),
+    };
+  }
   const body = (await tokenResp.json()) as { access_token?: string };
-  if (!body.access_token) return null;
+  if (!body.access_token) {
+    return { ok: false, reason: "Token response missing access_token" };
+  }
 
   tokenCache.set(impersonateEmail, {
     token: body.access_token,
     expiresAt: Date.now() + TOKEN_CACHE_TTL_MS,
   });
-  return body.access_token;
+  return { ok: true, token: body.access_token };
 }
+
+// Note: kept thin typed wrapper only for future callers that don't want
+// the verbose diagnostic shape. Currently unused internally — every call
+// site uses the verbose variant so errors get logged.
 
 // ---------------------------------------------------------------------------
 // Thread fetch
@@ -255,8 +286,14 @@ export async function fetchSharedInboxThreads(
 ): Promise<SharedInboxThread[]> {
   const { mailbox, query, maxThreads = 10 } = opts;
 
-  const token = await getReadonlyToken(mailbox);
-  if (!token) return [];
+  const tokenResult = await getReadonlyTokenVerbose(mailbox);
+  if (!tokenResult.ok) {
+    console.error(
+      `[gmail-shared-inbox] token exchange failed for ${mailbox}: ${tokenResult.reason}${tokenResult.body ? ` — ${tokenResult.body}` : ""}`,
+    );
+    return [];
+  }
+  const token = tokenResult.token;
 
   try {
     const encodedMailbox = encodeURIComponent(mailbox);
@@ -271,10 +308,21 @@ export async function fetchSharedInboxThreads(
     const listResp = await fetch(listUrl.toString(), {
       headers: { Authorization: `Bearer ${token}` },
     });
-    if (!listResp.ok) return [];
+    if (!listResp.ok) {
+      const body = await listResp.text().catch(() => "");
+      console.error(
+        `[gmail-shared-inbox] threads.list failed for ${mailbox} (HTTP ${listResp.status}): ${body.slice(0, 500)}`,
+      );
+      return [];
+    }
     const listBody = (await listResp.json()) as GmailThreadList;
     const threadIds = (listBody.threads ?? []).map((t) => t.id);
-    if (threadIds.length === 0) return [];
+    if (threadIds.length === 0) {
+      console.log(
+        `[gmail-shared-inbox] 0 threads matched query for ${mailbox}: ${query}`,
+      );
+      return [];
+    }
 
     // 2. For each thread, fetch the latest message's metadata. Using
     //    format=metadata keeps payloads small (no HTML body).
