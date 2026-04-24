@@ -9,14 +9,17 @@
 
 import { prisma } from "@/lib/db";
 import { hubspotClient, searchWithRetry } from "@/lib/hubspot";
+import { createDealNote } from "@/lib/hubspot-engagements";
 import { fetchAHJsForDeal, type AHJRecord } from "@/lib/hubspot-custom-objects";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import {
   PERMIT_ACTION_STATUSES,
+  PERMIT_ACTION_TASK_SUBJECTS,
   STALE_THRESHOLD_DAYS,
   actionKindForStatus,
   type PermitActionKind,
 } from "@/lib/pi-statuses";
+import type { ActivityType } from "@/generated/prisma/enums";
 
 // ---------------------------------------------------------------------------
 // Permission + flag helpers
@@ -295,6 +298,156 @@ async function fetchPermitStatusHistory(
     return [];
   }
 }
+
+// ---------------------------------------------------------------------------
+// Action writeback helpers
+// ---------------------------------------------------------------------------
+
+export interface CompleteTaskResult {
+  taskCompleted: boolean;
+  taskId?: string;
+  /** True when no matching open task was found — caller should surface a warning. */
+  taskNotFound?: boolean;
+}
+
+/**
+ * Completes the HubSpot task on `dealId` whose subject matches one of the
+ * patterns for this action kind, then attaches a note engagement with the
+ * captured payload. Returns `taskNotFound: true` if no matching task found —
+ * caller decides whether to write status fields as an escape hatch.
+ *
+ * SDK paths follow the repo convention (`crm.objects.tasks.*`, not `tasksApi`).
+ */
+export async function completePermitTask(opts: {
+  dealId: string;
+  actionKind: PermitActionKind;
+  noteBody: string;
+  /** Optional — when provided, falls back to updating these deal properties if no task is found. */
+  fallbackProperties?: Record<string, string>;
+  /** Whether to force fallback path even if task is found. Set by the "escape hatch" UI. */
+  forceFallback?: boolean;
+}): Promise<CompleteTaskResult> {
+  const { dealId, actionKind, noteBody, fallbackProperties, forceFallback } = opts;
+  const subjectPatterns = PERMIT_ACTION_TASK_SUBJECTS[actionKind];
+
+  let taskCompleted = false;
+  let taskId: string | undefined;
+
+  if (!forceFallback) {
+    try {
+      const taskSearchResp = await hubspotClient.crm.objects.tasks.searchApi.doSearch({
+        filterGroups: [
+          {
+            filters: [
+              {
+                propertyName: "associations.deal",
+                operator: FilterOperatorEnum.Eq,
+                value: dealId,
+              },
+              {
+                propertyName: "hs_task_status",
+                operator: FilterOperatorEnum.Neq,
+                value: "COMPLETED",
+              },
+            ],
+          },
+        ],
+        properties: ["hs_task_subject", "hs_task_status"],
+        limit: 100,
+      });
+
+      const openMatch = (taskSearchResp.results ?? []).find((t) => {
+        const subject = String(
+          (t.properties as Record<string, string | null>)?.hs_task_subject ?? "",
+        ).toLowerCase();
+        return subjectPatterns.some((p) => subject.includes(p.toLowerCase()));
+      });
+
+      if (openMatch) {
+        taskId = openMatch.id;
+        await hubspotClient.crm.objects.tasks.basicApi.update(openMatch.id, {
+          properties: {
+            hs_task_status: "COMPLETED",
+            hs_task_completion_date: String(Date.now()),
+            hs_task_body: noteBody,
+          },
+        });
+        taskCompleted = true;
+      }
+    } catch (err) {
+      // Log but don't fail — let fallback + note proceed.
+      console.error("[permit-hub] task search/completion failed", err);
+    }
+  }
+
+  // Fallback: if task not found (or force), write the fallback deal properties.
+  if (!taskCompleted && fallbackProperties) {
+    await hubspotClient.crm.deals.basicApi.update(dealId, {
+      properties: fallbackProperties,
+    });
+  }
+
+  // Always create a note engagement summarizing the action.
+  try {
+    await createDealNote(dealId, noteBody);
+  } catch (err) {
+    console.error("[permit-hub] createDealNote failed", err);
+  }
+
+  return {
+    taskCompleted,
+    taskId,
+    taskNotFound: !taskCompleted && !forceFallback,
+  };
+}
+
+/**
+ * Writes a permit-hub ActivityLog entry.
+ *
+ * Schema (prisma/schema.prisma:305): ActivityLog requires `description` and
+ * uses `entityType` + `entityId` (not a `dealId` column). Both `userId` and
+ * `userEmail` may be set — we set both so queries can filter by either.
+ */
+export async function recordPermitActivity(opts: {
+  userEmail: string;
+  userName?: string;
+  userId: string | null;
+  type: ActivityType;
+  dealId: string;
+  description: string;
+  metadata?: unknown;
+  entityName?: string;
+  pbLocation?: string;
+}): Promise<void> {
+  await prisma.activityLog.create({
+    data: {
+      type: opts.type,
+      description: opts.description,
+      userId: opts.userId ?? undefined,
+      userEmail: opts.userEmail,
+      userName: opts.userName,
+      entityType: "deal",
+      entityId: opts.dealId,
+      entityName: opts.entityName,
+      pbLocation: opts.pbLocation,
+      metadata: (opts.metadata ?? {}) as never,
+    },
+  });
+}
+
+export async function deletePermitDraft(opts: {
+  userId: string;
+  dealId: string;
+  actionKind: string;
+}): Promise<void> {
+  await prisma.permitHubDraft.deleteMany({
+    where: { userId: opts.userId, dealId: opts.dealId, actionKind: opts.actionKind },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Existing activity fetch
+// ---------------------------------------------------------------------------
 
 async function fetchPermitActivity(
   dealId: string,
