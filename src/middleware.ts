@@ -48,6 +48,7 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/zuper/admin-workflows", // Zuper webhook → admin workflow fan-out; bearer-validated in route
   "/api/cron/admin-workflow-cleanup", // Mark stale admin-workflow runs as FAILED — CRON_SECRET validated in route
   "/api/cron/admin-workflow-cron-dispatch", // Fire CRON-triggered admin workflows — CRON_SECRET validated in route
+  "/api/cron/compliance-shadow-cleanup", // Compliance v2 shadow table TTL cleanup — CRON_SECRET validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed", "/api/install-review", "/api/zuper/sync-cache"] as const;
 

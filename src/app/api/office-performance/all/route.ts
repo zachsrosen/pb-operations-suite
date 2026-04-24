@@ -7,6 +7,7 @@ import type {
   LocationOverview,
   OfficePerformanceData,
 } from "@/lib/office-performance-types";
+import { complianceVersionTag } from "@/lib/compliance-v2/feature-flag";
 
 function stripToOverview(data: OfficePerformanceData): LocationOverview {
   const surveyCompliance = data.surveys.compliance;
@@ -52,7 +53,7 @@ function stripToOverview(data: OfficePerformanceData): LocationOverview {
 function getFromPerLocationCache(canonicalLocation: string): OfficePerformanceData | null {
   const slug = CANONICAL_TO_LOCATION_SLUG[canonicalLocation as keyof typeof CANONICAL_TO_LOCATION_SLUG];
   if (!slug) return null;
-  const cacheKey = CACHE_KEYS.OFFICE_PERFORMANCE(slug);
+  const cacheKey = `${CACHE_KEYS.OFFICE_PERFORMANCE(slug)}:${complianceVersionTag()}`;
   const cached = appCache.get<OfficePerformanceData>(cacheKey);
   // Skip stale entries so the aggregate route honours the 2-minute TV polling cadence
   return (cached.hit && !cached.stale) ? cached.data : null;
@@ -61,7 +62,7 @@ function getFromPerLocationCache(canonicalLocation: string): OfficePerformanceDa
 export async function GET(request: NextRequest) {
   try {
     const forceRefresh = request.nextUrl.searchParams.get("refresh") === "true";
-    const cacheKey = CACHE_KEYS.OFFICE_PERFORMANCE("all");
+    const cacheKey = `${CACHE_KEYS.OFFICE_PERFORMANCE("all")}:${complianceVersionTag()}`;
 
     const { data, cached, stale, lastUpdated } =
       await appCache.getOrFetch<AllLocationsResponse>(

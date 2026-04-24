@@ -29,6 +29,9 @@ import {
 } from "@/lib/compliance-helpers";
 import { JOB_CATEGORY_UIDS } from "@/lib/zuper";
 import { normalizeLocation } from "@/lib/locations";
+import { computeLocationComplianceV2, type ComputeV2Options } from "@/lib/compliance-v2/scoring";
+import { isComplianceV2Enabled } from "@/lib/compliance-v2/feature-flag";
+import type { LocationComplianceV2Result } from "@/lib/compliance-v2/types";
 
 // ========== Types ==========
 
@@ -50,6 +53,20 @@ export interface EmployeeComplianceFull {
   statusUsagePercent: number;
   complianceScore: number;
   grade: string;
+
+  // === v2 fields (populated when COMPLIANCE_V2_ENABLED=true) ===
+  /** Fractional task-weighted total. Present only in v2. */
+  tasksFractional?: number;
+  /** Distinct parent jobs touched. Present only in v2. */
+  distinctParentJobs?: number;
+  /** Inspector pass rate (0-100, or -1 if no failed/passed jobs). Present only in v2. */
+  passRate?: number;
+  /** Tech has any "Completed - Follow-up" status (Return Visit / Loose Ends / Needs Revisit) in window. Present only in v2. */
+  hasFollowUp?: boolean;
+  /** True when tasksFractional < MIN_TASKS_THRESHOLD. Present only in v2. */
+  lowVolume?: boolean;
+  /** Stable identifier for v2 tooling (score breakdown, shadow compare). Present only in v2. */
+  userUid?: string;
 }
 
 export interface ComplianceSummaryFull {
@@ -111,10 +128,18 @@ export async function computeLocationCompliance(
   categoryName: string,
   location: string,
   days: number = 30,
-  locationDealIds?: Set<string>
+  locationDealIds?: Set<string>,
+  v2Options?: ComputeV2Options
 ): Promise<LocationComplianceResult | null> {
   const categoryUid = CATEGORY_NAME_TO_UID[categoryName];
   if (!categoryUid) return null;
+
+  // === Flag gate: delegate to v2 if enabled ===
+  if (isComplianceV2Enabled()) {
+    const v2 = await computeLocationComplianceV2(categoryName, location, days, v2Options);
+    if (!v2) return null;
+    return adaptV2ToV1Shape(v2);
+  }
 
   const teamFilter = LOCATION_TEAM_FILTERS[location] || location.toLowerCase();
 
@@ -486,4 +511,69 @@ export async function computeLocationCompliance(
   };
 
   return { summary, byEmployee, stuckJobs: stuckJobsList };
+}
+
+/**
+ * Convert v2 result to the v1 LocationComplianceResult shape expected by the
+ * existing API route + UI. Extra v2 fields ride along as optional EmployeeCompliance
+ * props (see office-performance-types.ts).
+ */
+function adaptV2ToV1Shape(v2: LocationComplianceV2Result): LocationComplianceResult {
+  const byEmployee: EmployeeComplianceFull[] = v2.byEmployee.map((e) => ({
+    name: e.name,
+    totalJobs: Math.round(e.tasksFractional), // best-effort int for v1 downstream
+    completedJobs: Math.round(e.onTimeCount + e.lateCount),
+    onTimePercent: e.onTimePercent,
+    measurableCount: Math.round(e.measurableCount),
+    lateCount: Math.round(e.lateCount),
+    stuckCount: Math.round(e.stuckCount),
+    neverStartedCount: Math.round(e.neverStartedCount),
+    avgDaysToComplete: 0, // v2 doesn't compute these; safe to leave 0 for now
+    avgDaysLate: 0,
+    oowUsagePercent: -1, // v2 doesn't compute OOW yet; safe no-op (column renders as "—")
+    oowOnTimePercent: -1,
+    statusUsagePercent: 0,
+    complianceScore: e.complianceScore,
+    grade: e.grade,
+    // v2-only fields ride along
+    userUid: e.userUid,
+    tasksFractional: e.tasksFractional,
+    distinctParentJobs: e.distinctParentJobs,
+    passRate: e.passRate,
+    hasFollowUp: e.hasFollowUp,
+    lowVolume: e.lowVolume,
+  }));
+
+  // Aggregate: recompute from v2 by-employee
+  const totalTasks = v2.byEmployee.reduce((s, e) => s + e.tasksFractional, 0);
+  const totalOnTime = v2.byEmployee.reduce((s, e) => s + e.onTimeCount, 0);
+  const totalLate = v2.byEmployee.reduce((s, e) => s + e.lateCount, 0);
+  const totalStuck = v2.byEmployee.reduce((s, e) => s + e.stuckCount, 0);
+  const totalNeverStarted = v2.byEmployee.reduce((s, e) => s + e.neverStartedCount, 0);
+  const aggOnTimePercent = (totalOnTime + totalLate) > 0 ? Math.round((totalOnTime / (totalOnTime + totalLate)) * 100) : -1;
+  const aggStuckRate = totalTasks > 0 ? totalStuck / totalTasks : 0;
+  const aggNeverStartedRate = totalTasks > 0 ? totalNeverStarted / totalTasks : 0;
+  const aggRawOnTime = aggOnTimePercent >= 0 ? aggOnTimePercent : 0;
+  const aggregateScore = Math.max(
+    0,
+    Math.round((aggRawOnTime - aggStuckRate * 100 - aggNeverStartedRate * 100) * 10) / 10
+  );
+
+  return {
+    summary: {
+      totalJobs: Math.round(totalTasks),
+      completedJobs: Math.round(totalOnTime + totalLate),
+      onTimePercent: aggOnTimePercent,
+      stuckCount: Math.round(totalStuck),
+      neverStartedCount: Math.round(totalNeverStarted),
+      avgDaysToComplete: 0,
+      avgDaysLate: 0,
+      oowUsagePercent: -1,
+      oowOnTimePercent: -1,
+      aggregateScore,
+      aggregateGrade: computeGrade(aggregateScore),
+    },
+    byEmployee,
+    stuckJobs: [],
+  };
 }

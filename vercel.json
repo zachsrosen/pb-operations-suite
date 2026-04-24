@@ -121,6 +121,10 @@
     {
       "path": "/api/cron/adders-sync",
       "schedule": "0 10 * * *"
+    },
+    {
+      "path": "/api/cron/compliance-shadow-cleanup",
+      "schedule": "0 6 * * *"
     }
   ],
   "redirects": [
