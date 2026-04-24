@@ -27,6 +27,8 @@ import {
   INCLUDED_PIPELINES,
   PI_LEADS,
 } from "@/lib/daily-focus/config";
+import { buildOwnerMap } from "@/lib/idr-meeting";
+import { buildStageDisplayMap } from "@/lib/daily-focus/format";
 
 /**
  * HubSpot owner ID → permit lead name.
@@ -40,14 +42,17 @@ const PERMIT_LEAD_BY_OWNER_ID: Record<string, string> = Object.fromEntries(
   ]),
 );
 
-function resolvePermitLeadName(props: Record<string, string | null>): string | null {
-  // Prefer an explicit per-deal name if HubSpot has it, otherwise resolve
-  // the permit_tech owner-id field against the PI_LEADS roster. Unassigned
-  // deals (no permit_tech) fall through to null.
+function resolvePermitLeadName(
+  props: Record<string, string | null>,
+  ownerMap?: Map<string, string>,
+): string | null {
+  // 1. Explicit name field (rarely populated in prod).
   if (props.permit_lead_name) return props.permit_lead_name;
+  // 2. permit_tech owner-id → owner map (full HubSpot owners API).
   const ownerId = props.permit_tech;
-  if (ownerId && PERMIT_LEAD_BY_OWNER_ID[ownerId]) {
-    return PERMIT_LEAD_BY_OWNER_ID[ownerId];
+  if (ownerId) {
+    const resolved = ownerMap?.get(ownerId) ?? PERMIT_LEAD_BY_OWNER_ID[ownerId];
+    if (resolved) return resolved;
   }
   return null;
 }
@@ -214,6 +219,17 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
     sorts: ["hs_lastmodifieddate"],
   } as unknown as Parameters<typeof searchWithRetry>[0]);
 
+  // Resolve owner-id + dealstage-id properties to display names in parallel.
+  // buildOwnerMap batches the owners API so this is ~1 extra HubSpot call
+  // for the whole queue. buildStageDisplayMap is cached via getStageMaps.
+  const rawDeals = (response.results ?? []).map((d) => ({
+    properties: (d.properties ?? {}) as Record<string, string | null>,
+  }));
+  const [ownerMap, stageMap] = await Promise.all([
+    buildOwnerMap(rawDeals),
+    buildStageDisplayMap(),
+  ]);
+
   const items: PermitQueueItem[] = [];
   const now = Date.now();
   for (const deal of response.results ?? []) {
@@ -225,6 +241,9 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
     const daysInStatus = Math.floor((now - lastModified) / (1000 * 60 * 60 * 24));
     const actionLabel = PERMIT_ACTION_STATUSES[status] ?? "";
 
+    const pmId = props.project_manager;
+    const resolvedPm = pmId ? (ownerMap.get(pmId) ?? pmId) : null;
+
     items.push({
       dealId: deal.id,
       name: props.dealname ?? "Untitled",
@@ -235,11 +254,15 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
       actionKind: actionKindForStatus(status),
       daysInStatus,
       isStale: daysInStatus > STALE_THRESHOLD_DAYS,
-      permitLead: resolvePermitLeadName(props),
+      permitLead: resolvePermitLeadName(props, ownerMap),
       permitLeadOwnerId: props.permit_tech ?? null,
-      pm: props.project_manager ?? null,
+      pm: resolvedPm,
       amount: props.amount ? Number(props.amount) : null,
     });
+    // stageMap is also available on detail endpoint; queue items don't
+    // currently display dealStage, but the map is pre-warmed for the
+    // detail fetch's cache.
+    void stageMap;
   }
 
   items.sort((a, b) => b.daysInStatus - a.daysInStatus);
@@ -278,11 +301,22 @@ export async function fetchPermitProjectDetail(
   }
 
   const props = (deal.properties ?? {}) as Record<string, string | null>;
-  const ahj = await fetchAHJsForDeal(dealId);
+  const [ahj, ownerMap, stageMap] = await Promise.all([
+    fetchAHJsForDeal(dealId),
+    buildOwnerMap([{ properties: props }]),
+    buildStageDisplayMap(),
+  ]);
 
   const permittingStatus = props.permitting_status ?? "";
   const actionLabel = PERMIT_ACTION_STATUSES[permittingStatus] ?? null;
   const resolvedKind = actionKindForStatus(permittingStatus);
+
+  const pmId = props.project_manager;
+  const resolvedPm = pmId ? (ownerMap.get(pmId) ?? pmId) : null;
+  const dealStageId = props.dealstage;
+  const resolvedDealStage = dealStageId
+    ? (stageMap[dealStageId] ?? dealStageId)
+    : null;
 
   const fullAddress =
     [props.address_line_1, props.city, props.state].filter(Boolean).join(", ") || null;
@@ -309,15 +343,15 @@ export async function fetchPermitProjectDetail(
       address: fullAddress,
       amount: props.amount ? Number(props.amount) : null,
       pbLocation: props.pb_location ?? null,
-      permitLead: resolvePermitLeadName(props),
-      pm: props.project_manager ?? null,
+      permitLead: resolvePermitLeadName(props, ownerMap),
+      pm: resolvedPm,
       permittingStatus,
       actionKind: resolvedKind,
       actionLabel,
       systemSizeKw: props.calculated_system_size__kwdc_
         ? Number(props.calculated_system_size__kwdc_)
         : null,
-      dealStage: props.dealstage ?? null,
+      dealStage: resolvedDealStage,
     },
     ahj,
     plansetFolderUrl,
