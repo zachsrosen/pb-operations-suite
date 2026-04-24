@@ -143,11 +143,8 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
           {/* Legend: explain metrics and scoring */}
           <div className="text-[9px] text-slate-600 leading-snug mb-2 space-y-0.5">
             <div>
-              <span className="text-slate-500 font-medium">On-time</span> = finished within 24h of scheduled end
-              <span className="mx-1.5 text-slate-700">|</span>
-              <span className="text-slate-500 font-medium">OOW</span> = used On Our Way status (notified customer) / was on-time leaving
-              <span className="mx-1.5 text-slate-700">|</span>
-              <span className="text-slate-500 font-medium">Stuck</span> = past-due, not done
+              Score is computed per service task you were assigned to or submitted.
+              If you worked a job but weren&apos;t assigned to a specific task in Zuper, it won&apos;t count.
             </div>
             <div>
               <span className="text-slate-500 font-medium">Score</span> = On-time%
@@ -160,12 +157,13 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
           </div>
 
           {/* Column headers */}
-          <div className="grid grid-cols-[1fr_40px_48px_72px_48px_48px_48px_80px] gap-1 text-[9px] text-slate-600 font-medium mb-0.5 px-0.5">
+          <div className="grid grid-cols-[1fr_40px_48px_72px_64px_40px_48px_48px_80px] gap-1 text-[9px] text-slate-600 font-medium mb-0.5 px-0.5">
             <span>Name</span>
             <span className="text-center">Grade</span>
             <span className="text-right">On-time</span>
             <span className="text-right">OOW u/p</span>
-            <span className="text-right">Jobs</span>
+            <span className="text-right">Tasks/Jobs</span>
+            <span className="text-right">Pass</span>
             <span className="text-right">Stuck</span>
             <span className="text-right">Avg d</span>
             <span className="text-right">Score</span>
@@ -182,19 +180,36 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
               return (
                 <div
                   key={emp.name}
-                  className="grid grid-cols-[1fr_40px_48px_72px_48px_48px_48px_80px] gap-1 text-xs items-center px-0.5 py-0.5 rounded hover:bg-white/[0.02]"
+                  className="grid grid-cols-[1fr_40px_48px_72px_64px_40px_48px_48px_80px] gap-1 text-xs items-center px-0.5 py-0.5 rounded hover:bg-white/[0.02]"
                 >
                   {/* Name */}
-                  <span className="text-slate-300 font-medium truncate">
+                  <span className="text-slate-300 font-medium truncate flex items-center gap-1">
                     {emp.name}
+                    {emp.hasFollowUp && (
+                      <span
+                        title="Completed with follow-up (Return Visit / Loose Ends / Needs Revisit)"
+                        className="text-[8px] px-1 py-[1px] rounded bg-yellow-900/40 text-yellow-300 font-semibold"
+                      >
+                        FU
+                      </span>
+                    )}
                   </span>
                   {/* Grade */}
-                  <span
-                    className="text-center font-bold text-sm"
-                    style={{ color: gradeColor(emp.grade) }}
-                  >
-                    {emp.grade}
-                  </span>
+                  {emp.lowVolume ? (
+                    <span
+                      className="text-center text-[9px] text-slate-500 font-semibold"
+                      title="Low volume (<5 task credits in window); grade hidden to reduce noise"
+                    >
+                      LV
+                    </span>
+                  ) : (
+                    <span
+                      className="text-center font-bold text-sm"
+                      style={{ color: gradeColor(emp.grade) }}
+                    >
+                      {emp.grade}
+                    </span>
+                  )}
                   {/* On-time % */}
                   {emp.onTimePercent >= 0 ? (
                     <span
@@ -218,10 +233,23 @@ export default function ComplianceBlock({ compliance }: ComplianceBlockProps) {
                   ) : (
                     <span className="text-right text-slate-600">—</span>
                   )}
-                  {/* Jobs completed/total */}
-                  <span className="text-right text-slate-400">
-                    {emp.completedJobs}/{emp.totalJobs}
+                  {/* Jobs completed/total (or v2 Tasks/Jobs) */}
+                  <span className="text-right text-slate-400 whitespace-nowrap">
+                    {emp.tasksFractional !== undefined && emp.distinctParentJobs !== undefined
+                      ? `${emp.tasksFractional.toFixed(1)} / ${emp.distinctParentJobs}`
+                      : `${emp.completedJobs}/${emp.totalJobs}`}
                   </span>
+                  {/* Pass rate (v2 only) */}
+                  {emp.passRate !== undefined && emp.passRate >= 0 ? (
+                    <span
+                      className="text-right font-semibold"
+                      style={{ color: onTimeColor(emp.passRate) }}
+                    >
+                      {emp.passRate}%
+                    </span>
+                  ) : (
+                    <span className="text-right text-slate-600">—</span>
+                  )}
                   {/* Stuck */}
                   {emp.stuckCount > 0 ? (
                     <span
