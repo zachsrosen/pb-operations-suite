@@ -98,6 +98,7 @@ export function actionKindForStatus(status: string): PermitActionKind | null {
     "Submit SolarApp to AHJ": "SUBMIT_SOLARAPP",
     "Submitted to AHJ": "FOLLOW_UP",
     "Resubmitted to AHJ": "FOLLOW_UP",
+    "Awaiting Utility Approval": "FOLLOW_UP",
   };
   return map[status] ?? null;
 }

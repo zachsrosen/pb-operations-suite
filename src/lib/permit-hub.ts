@@ -21,7 +21,28 @@ import {
   actionKindForStatus,
   type PermitActionKind,
 } from "@/lib/pi-statuses";
+import {
+  PI_QUERY_DEFS,
+  EXCLUDED_STAGES,
+  INCLUDED_PIPELINES,
+} from "@/lib/daily-focus/config";
 import type { ActivityType } from "@/generated/prisma/enums";
+
+/**
+ * Permit Hub queue uses the same scoping as the Daily Focus email so the
+ * two surfaces agree on "what does the permitting team need to work on today".
+ * See src/lib/daily-focus/config.ts for the canonical definitions.
+ *
+ * This intentionally narrows the displayed list vs. `PERMIT_ACTION_STATUSES`
+ * in pi-statuses.ts — the older list is kept for other dashboards that want
+ * the full ball-in-our-court view. Here we only surface statuses where a
+ * permit lead should actually act today.
+ */
+const PERMIT_HUB_STATUSES = (() => {
+  const def = PI_QUERY_DEFS.find((d) => d.key === "permits");
+  if (!def) return [] as string[];
+  return [...def.readyStatuses, ...(def.resubmitStatuses ?? [])];
+})();
 
 // ---------------------------------------------------------------------------
 // Permission + flag helpers
@@ -116,26 +137,34 @@ export interface PermitProjectDetail {
 
 /** Returns all deals currently sitting in one of the PERMIT_ACTION_STATUSES. */
 export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
-  const statuses = Object.keys(PERMIT_ACTION_STATUSES);
-  const projectPipelineId = process.env.HUBSPOT_PIPELINE_PROJECT || "6900017";
+  // Scope matches the Daily Focus email (lib/daily-focus/config.ts):
+  //   • permit statuses = Ready ∪ Resubmit buckets only (excludes in-progress,
+  //     rejected-pre-triage, and already-submitted waiting statuses)
+  //   • dealstage NOT IN cancelled/complete/on-hold terminal stages
+  //   • pipeline IN Project / D&R / Service / Roofing
+  // The `values` arrays are cast because the HubSpot SDK's Filter type only
+  // declares `value: string`, but the API (and runtime SDK) accept `values`
+  // for IN / NOT_IN — same pattern used in daily-focus/queries.ts.
+  const filters: Record<string, unknown>[] = [
+    {
+      propertyName: "pipeline",
+      operator: FilterOperatorEnum.In,
+      values: INCLUDED_PIPELINES,
+    },
+    {
+      propertyName: "permitting_status",
+      operator: FilterOperatorEnum.In,
+      values: PERMIT_HUB_STATUSES,
+    },
+    {
+      propertyName: "dealstage",
+      operator: FilterOperatorEnum.NotIn,
+      values: EXCLUDED_STAGES,
+    },
+  ];
 
   const response = await searchWithRetry({
-    filterGroups: [
-      {
-        filters: [
-          {
-            propertyName: "pipeline",
-            operator: FilterOperatorEnum.Eq,
-            value: projectPipelineId,
-          },
-          {
-            propertyName: "permitting_status",
-            operator: FilterOperatorEnum.In,
-            values: statuses,
-          },
-        ],
-      },
-    ],
+    filterGroups: [{ filters }],
     properties: [
       "dealname",
       "address_line_1",
@@ -143,6 +172,8 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
       "state",
       "pb_location",
       "permitting_status",
+      "dealstage",
+      "pipeline",
       "hs_lastmodifieddate",
       "amount",
       "hubspot_owner_id",
@@ -152,7 +183,7 @@ export async function fetchPermitQueue(): Promise<PermitQueueItem[]> {
     ],
     limit: 200,
     sorts: ["hs_lastmodifieddate"],
-  });
+  } as unknown as Parameters<typeof searchWithRetry>[0]);
 
   const items: PermitQueueItem[] = [];
   const now = Date.now();
