@@ -1,6 +1,7 @@
 "use client";
 
-import { ReactNode, useEffect, useRef, useState } from "react";
+import { ReactNode, useCallback, useEffect, useRef, useState } from "react";
+// useRef retained for hydratedFromDraftRef — set inside effects only
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 
@@ -30,8 +31,8 @@ export function FormShell<TPayload extends Record<string, unknown>>({
   const [value, setValue] = useState<Partial<TPayload>>(initialValue);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
-  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const hydratedFromDraft = useRef(false);
+  const [isDirty, setIsDirty] = useState(false);
+  const hydratedFromDraftRef = useRef(false);
 
   const draftQuery = useQuery<{
     draft: { payload: Partial<TPayload> } | null;
@@ -46,29 +47,34 @@ export function FormShell<TPayload extends Record<string, unknown>>({
   });
 
   useEffect(() => {
-    if (!hydratedFromDraft.current && draftQuery.data?.draft?.payload) {
+    if (!hydratedFromDraftRef.current && draftQuery.data?.draft?.payload) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from cached draft
       setValue(draftQuery.data.draft.payload);
-      hydratedFromDraft.current = true;
+      hydratedFromDraftRef.current = true;
     }
   }, [draftQuery.data]);
 
-  function update(patch: Partial<TPayload>) {
-    setValue((v) => {
-      const next = { ...v, ...patch };
-      if (saveTimer.current) clearTimeout(saveTimer.current);
-      setStatus("saving");
-      saveTimer.current = setTimeout(() => {
-        fetch("/api/permit-hub/drafts", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ dealId, actionKind, payload: next }),
-        })
-          .then(() => setStatus("saved"))
-          .catch(() => setStatus("idle"));
-      }, 750);
-      return next;
-    });
-  }
+  // Debounced auto-save driven by value changes.
+  useEffect(() => {
+    if (!isDirty) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- cosmetic "Saving..." indicator
+    setStatus("saving");
+    const handle = setTimeout(() => {
+      fetch("/api/permit-hub/drafts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId, actionKind, payload: value }),
+      })
+        .then(() => setStatus("saved"))
+        .catch(() => setStatus("idle"));
+    }, 750);
+    return () => clearTimeout(handle);
+  }, [value, isDirty, dealId, actionKind]);
+
+  const update = useCallback((patch: Partial<TPayload>) => {
+    setValue((v) => ({ ...v, ...patch }));
+    setIsDirty(true);
+  }, []);
 
   const submitMutation = useMutation({
     mutationFn: async () => {
@@ -84,7 +90,8 @@ export function FormShell<TPayload extends Record<string, unknown>>({
         queryKey: queryKeys.permitHub.draft(dealId, actionKind),
       });
       setValue({});
-      hydratedFromDraft.current = false;
+      setIsDirty(false);
+      hydratedFromDraftRef.current = false;
       setError(null);
     },
     onError: (e) => setError((e as Error).message),
