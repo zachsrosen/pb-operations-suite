@@ -113,6 +113,14 @@ export interface UpdateZohoItemResult {
   httpStatus?: number;
 }
 
+export interface UploadZohoItemImageResult {
+  status: "uploaded" | "failed";
+  zohoItemId: string;
+  imageId?: string;
+  imageName?: string;
+  message: string;
+}
+
 export interface ZohoAddress {
   address?: string;
   city?: string;
@@ -1029,6 +1037,79 @@ export class ZohoInventoryClient {
     }
   }
 
+  /**
+   * Upload (or replace) the image attached to a Zoho Inventory item.
+   *
+   * Endpoint: POST /items/{item_id}/image  (multipart/form-data, field "image")
+   *
+   * The Zoho Inventory public docs only document the DELETE variant, but the
+   * POST endpoint is the documented counterpart used by the web app and
+   * community-confirmed across Zoho Books/Inventory. Reuses handleResponse
+   * for token refresh + rate-limit retry.
+   */
+  async uploadItemImage(
+    itemId: string,
+    imageBytes: Uint8Array,
+    fileName: string,
+    contentType: string,
+  ): Promise<UploadZohoItemImageResult> {
+    const normalizedId = trimOrUndefined(itemId);
+    if (!normalizedId) {
+      return { status: "failed", zohoItemId: itemId, message: "Zoho item ID is required." };
+    }
+    if (!this.organizationId) {
+      return { status: "failed", zohoItemId: normalizedId, message: "ZOHO_INVENTORY_ORG_ID is not configured" };
+    }
+
+    const params = new URLSearchParams();
+    params.set("organization_id", this.organizationId);
+    const url = `${buildUrl(this.configuredBaseUrl, `/items/${encodeURIComponent(normalizedId)}/image`)}?${params.toString()}`;
+
+    const doFetch = async (token: string) => {
+      // Build FormData fresh per attempt — some fetch implementations consume
+      // multipart bodies on first send.
+      const fd = new FormData();
+      // Cast via BlobPart[] — TS types don't accept Uint8Array directly even though
+      // the runtime does. Wrapping in a shared ArrayBuffer copy keeps it strict-safe.
+      const buf = imageBytes.buffer.slice(
+        imageBytes.byteOffset,
+        imageBytes.byteOffset + imageBytes.byteLength,
+      ) as ArrayBuffer;
+      const blob = new Blob([buf], { type: contentType || "application/octet-stream" });
+      fd.append("image", blob, fileName);
+      return withTimeout(
+        fetch(url, {
+          method: "POST",
+          // NOTE: do NOT set Content-Type — fetch derives the multipart boundary from FormData.
+          headers: { Authorization: `Zoho-oauthtoken ${token}` },
+          body: fd,
+          cache: "no-store",
+        }),
+        this.timeoutMs,
+      );
+    };
+
+    try {
+      const response = await this.handleResponse<{
+        code?: number;
+        message?: string;
+        image_id?: string | number;
+        image_name?: string;
+      }>(doFetch);
+      _itemCache = null;
+      return {
+        status: "uploaded",
+        zohoItemId: normalizedId,
+        imageId: response.image_id != null ? String(response.image_id) : undefined,
+        imageName: response.image_name,
+        message: trimOrUndefined(response.message) || "Zoho item image uploaded.",
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Zoho image upload failed";
+      return { status: "failed", zohoItemId: normalizedId, message };
+    }
+  }
+
   async listVendors(): Promise<ZohoVendor[]> {
     return this.listContacts("vendor");
   }
@@ -1551,4 +1632,13 @@ export async function updateZohoItem(
   fields: Record<string, unknown>,
 ): Promise<UpdateZohoItemResult> {
   return zohoInventory.updateItem(itemId, fields);
+}
+
+export async function uploadZohoItemImage(
+  itemId: string,
+  imageBytes: Uint8Array,
+  fileName: string,
+  contentType: string,
+): Promise<UploadZohoItemImageResult> {
+  return zohoInventory.uploadItemImage(itemId, imageBytes, fileName, contentType);
 }
