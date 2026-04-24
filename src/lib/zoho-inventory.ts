@@ -848,12 +848,20 @@ export class ZohoInventoryClient {
     }
 
     if (existingItemId) {
-      // Best-effort update of group, vendor fields on existing items
+      // Best-effort update of fields where the PB form is the source of truth on
+      // existing items. Previously only group_name + vendor fields were sent,
+      // which meant descriptions and part numbers typed in the submit form were
+      // silently dropped whenever the match fell through to an existing Zoho
+      // item (by SKU or name). This intentionally overwrites values edited
+      // directly in Zoho — PB submit wins.
       const groupName = input.category ? getZohoGroupName(input.category) : undefined;
+      const partNumber = vendorPartNumber || model;
       const updatePayload: Record<string, unknown> = {};
       if (groupName) updatePayload.group_name = groupName;
       if (vendorName) updatePayload.vendor_name = vendorName;
       if (zohoVendorId) updatePayload.vendor_id = zohoVendorId;
+      if (description) updatePayload.description = description;
+      if (partNumber) updatePayload.part_number = partNumber;
 
       // Write internal product ID custom field if provided
       const internalProductId = trimOrUndefined(input.internalProductId);
