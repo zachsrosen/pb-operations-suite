@@ -1,8 +1,6 @@
 import {
   classifyJobStatus,
   classifyTaskStatus,
-  JOB_BUCKET,
-  TASK_BUCKET,
 } from "@/lib/compliance-v2/status-buckets";
 
 describe("classifyJobStatus", () => {
