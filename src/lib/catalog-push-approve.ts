@@ -20,10 +20,65 @@ import {
   getZuperCategoryValue,
 } from "@/lib/catalog-fields";
 import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
-import { createOrUpdateZohoItem, zohoInventory } from "@/lib/zoho-inventory";
+import { createOrUpdateZohoItem, uploadZohoItemImage, zohoInventory } from "@/lib/zoho-inventory";
 import { createOrUpdateZuperPart, updateZuperPart, buildZuperProductCustomFields } from "@/lib/zuper-catalog";
 import { notifyAdminsOfApprovalWarnings } from "@/lib/catalog-notify";
 import { buildCanonicalKey, canonicalToken } from "@/lib/canonical";
+
+/**
+ * Extract the blob pathname (e.g. "catalog-photos/foo.png") from the photoUrl
+ * stored in PendingCatalogPush.metadata._photoUrl. The submit form stores an
+ * internal viewer URL like "/api/catalog/photo?path=catalog-photos%2Ffoo.png".
+ * Also accepts a bare pathname for forward-compat.
+ */
+function extractBlobPathname(photoUrl: string): string | null {
+  const trimmed = photoUrl.trim();
+  if (!trimmed) return null;
+  // Viewer URL with query-string pathname
+  if (trimmed.includes("/api/catalog/photo")) {
+    try {
+      const parsed = new URL(trimmed, "http://local");
+      const path = parsed.searchParams.get("path");
+      return path && path.startsWith("catalog-photos/") ? path : null;
+    } catch {
+      return null;
+    }
+  }
+  // Direct Vercel Blob URL
+  if (trimmed.startsWith("http")) {
+    try {
+      const parsed = new URL(trimmed);
+      const path = parsed.pathname.replace(/^\//, "");
+      return path.startsWith("catalog-photos/") ? path : null;
+    } catch {
+      return null;
+    }
+  }
+  // Bare pathname
+  return trimmed.startsWith("catalog-photos/") ? trimmed : null;
+}
+
+async function streamToUint8Array(stream: ReadableStream<Uint8Array>): Promise<Uint8Array> {
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value) {
+      chunks.push(value);
+      total += value.byteLength;
+    }
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
+}
 
 const INTERNAL_CATEGORIES = Object.values(EquipmentCategory) as string[];
 const VALID_SYSTEMS = ["INTERNAL", "ZOHO", "HUBSPOT", "ZUPER"] as const;
@@ -423,6 +478,52 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
       const msg = "Could not write custom field cross-links to Zoho item";
       if (outcomes.ZOHO?.message) {
         outcomes.ZOHO.message += ` (Warning: ${msg})`;
+      }
+    }
+  }
+
+  // Push the product photo (if any) to Zoho Inventory.
+  // The submit form stores an internal viewer URL (/api/catalog/photo?path=…)
+  // on metadata._photoUrl. Fetch the private blob server-side and POST it to
+  // /items/{item_id}/image. Image upload failures are warnings — they don't
+  // fail the overall approval.
+  if (zohoId && push.systems.includes("ZOHO")) {
+    const rawPhotoUrl = (push.metadata as Record<string, unknown> | null)?._photoUrl;
+    if (typeof rawPhotoUrl === "string" && rawPhotoUrl.length > 0) {
+      const pathname = extractBlobPathname(rawPhotoUrl);
+      if (!pathname) {
+        if (outcomes.ZOHO?.message) {
+          outcomes.ZOHO.message += ` (Warning: photo URL not recognized — skipping Zoho image push.)`;
+        }
+      } else {
+        try {
+          // Lazy import: @vercel/blob pulls undici which can fail in jsdom test envs.
+          const { get: getBlob } = await import("@vercel/blob");
+          const blobResult = await getBlob(pathname, { access: "private" });
+          if (!blobResult || blobResult.statusCode !== 200 || !blobResult.stream) {
+            if (outcomes.ZOHO?.message) {
+              outcomes.ZOHO.message += ` (Warning: could not read product photo from Blob — skipping Zoho image push.)`;
+            }
+          } else {
+            const bytes = await streamToUint8Array(blobResult.stream);
+            const contentType = blobResult.blob?.contentType || "image/png";
+            const fileName = pathname.split("/").pop() || "photo";
+            const uploadResult = await uploadZohoItemImage(zohoId, bytes, fileName, contentType);
+            if (uploadResult.status !== "uploaded") {
+              if (outcomes.ZOHO?.message) {
+                outcomes.ZOHO.message += ` (Warning: Zoho image upload failed — ${uploadResult.message})`;
+              }
+            } else if (outcomes.ZOHO?.message) {
+              outcomes.ZOHO.message += ` Image uploaded (${uploadResult.imageName || fileName}).`;
+            }
+          }
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "unknown error";
+          console.error("[catalog] Zoho image upload failed:", msg, err);
+          if (outcomes.ZOHO?.message) {
+            outcomes.ZOHO.message += ` (Warning: Zoho image upload failed — ${msg})`;
+          }
+        }
       }
     }
   }
