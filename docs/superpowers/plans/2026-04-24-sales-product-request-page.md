@@ -63,8 +63,9 @@
 - `src/app/suites/sales-marketing/page.tsx` — add "Request a Product" card (gated on `SALES_PRODUCT_REQUESTS_ENABLED`).
 - `src/lib/roles.ts` — add `/dashboards/request-product` + `/api/product-requests/*` to rep-facing role `allowedRoutes`; add `/api/admin/product-requests` to `ADMIN_ONLY_EXCEPTIONS` pointing to `TECH_OPS`.
 - `src/app/dashboards/catalog/review/page.tsx` — add `Source: Sales Request` filter chip; merge `/api/admin/product-requests` rows into existing list; open `AdderRequestDrawer` for adder rows, existing wizard for equipment rows.
-- `src/lib/catalog-push-approve.ts` — queue OpenSolar push when `systems` contains `OPENSOLAR` and source is `SALES_REQUEST`.
 - `.env.example` — document new env vars.
+
+(No modification to `src/lib/catalog-push-approve.ts` — OpenSolar push lives in the approve route, not the shared approval library.)
 
 ---
 
@@ -434,10 +435,16 @@ git commit -m "feat(product-requests): OpenSolar equipment push stub"
 **Files:**
 - Create: `src/lib/product-requests/notifications.ts`
 
-- [ ] **Step 1: Implement using existing email transport**
+- [ ] **Step 1: Verify email API shape**
+
+Read `src/lib/email.ts` and confirm: exported function is `sendEmailMessage`; accepts `{ to, bcc?, subject, html, text, debugFallbackTitle, debugFallbackBody, attachments? }`; expects **rendered** HTML strings. React Email components must be rendered with `@react-email/render` (already in package.json).
+
+- [ ] **Step 2: Implement**
 
 ```typescript
-import { sendEmail } from "@/lib/email"; // existing dual-provider helper
+import React from "react";
+import { render } from "@react-email/render";
+import { sendEmailMessage } from "@/lib/email";
 import SalesProductRequestNotification from "@/emails/SalesProductRequestNotification";
 import SalesProductRequestApproved from "@/emails/SalesProductRequestApproved";
 import SalesProductRequestDeclined from "@/emails/SalesProductRequestDeclined";
@@ -455,38 +462,66 @@ export async function notifyTechOpsOfNewRequest(args: {
   salesRequestNote: string;
   dealId: string | null;
   reviewUrl: string;
-}) {
+}): Promise<void> {
   const to = techOpsRecipients();
   if (to.length === 0) return;
-  await sendEmail({
+  const html = await render(React.createElement(SalesProductRequestNotification, args));
+  const text = [
+    `New ${args.type.toLowerCase()} request from ${args.requestedBy}`,
+    `Title: ${args.title}`,
+    args.dealId ? `Deal: ${args.dealId}` : "",
+    `Note: ${args.salesRequestNote}`,
+    `Review: ${args.reviewUrl}`,
+  ].filter(Boolean).join("\n");
+  const subject = `[${args.type === "EQUIPMENT" ? "Product" : "Adder"} Request] ${args.title}`;
+  await sendEmailMessage({
     to,
-    subject: `[${args.type === "EQUIPMENT" ? "Product" : "Adder"} Request] ${args.title}`,
-    react: SalesProductRequestNotification(args),
+    subject,
+    html,
+    text,
+    debugFallbackTitle: subject,
+    debugFallbackBody: text,
   });
 }
 
 export async function notifyRepOfApproval(args: {
-  to: string; title: string; dealId: string | null;
-}) {
-  await sendEmail({
+  to: string;
+  title: string;
+  dealId: string | null;
+}): Promise<void> {
+  const html = await render(React.createElement(SalesProductRequestApproved, args));
+  const text = `Your product request "${args.title}" has been added to OpenSolar. It may take a few minutes to appear in the OpenSolar UI.`;
+  const subject = `Your product request was added to OpenSolar: ${args.title}`;
+  await sendEmailMessage({
     to: args.to,
-    subject: `Your product request was added to OpenSolar: ${args.title}`,
-    react: SalesProductRequestApproved(args),
+    subject,
+    html,
+    text,
+    debugFallbackTitle: subject,
+    debugFallbackBody: text,
   });
 }
 
 export async function notifyRepOfDecline(args: {
-  to: string; title: string; reviewerNote: string;
-}) {
-  await sendEmail({
+  to: string;
+  title: string;
+  reviewerNote: string;
+}): Promise<void> {
+  const html = await render(React.createElement(SalesProductRequestDeclined, args));
+  const text = `Your product request "${args.title}" was declined.\n\n${args.reviewerNote}`;
+  const subject = `Your product request was declined: ${args.title}`;
+  await sendEmailMessage({
     to: args.to,
-    subject: `Your product request was declined: ${args.title}`,
-    react: SalesProductRequestDeclined(args),
+    subject,
+    html,
+    text,
+    debugFallbackTitle: subject,
+    debugFallbackBody: text,
   });
 }
 ```
 
-- [ ] **Step 2: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
 git add src/lib/product-requests/notifications.ts
@@ -700,11 +735,118 @@ Cover: creates `Adder` in transaction with request status flip to `ADDED`, write
 
 - [ ] **Step 3: Implement**
 
+Full handler (shortened for clarity):
+
 ```typescript
-// Parse id prefix to route to correct table.
-// "eq_..." → equipment path: call executeCatalogPushApproval, then pushProductToOpenSolar, then set openSolarId
-// "ad_..." → adder path: wrap in prisma.$transaction({ adder.create, adderRequest.update })
+import { NextRequest, NextResponse } from "next/server";
+import { prisma } from "@/lib/db";
+import { auth } from "@/auth";
+import { executeCatalogPushApproval } from "@/lib/catalog-push-approve";
+import { pushProductToOpenSolar } from "@/lib/product-requests/opensolar-push";
+import { notifyRepOfApproval } from "@/lib/product-requests/notifications";
+
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const session = await auth();
+  if (!session?.user?.email) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  if (id.startsWith("eq_")) {
+    const pushId = id.slice(3);
+    // Existing catalog approval (creates InternalProduct + syncs HubSpot/Zoho/Zuper).
+    const result = await executeCatalogPushApproval(pushId);
+    if (result.notFound) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    if (!result.push || result.error) {
+      return NextResponse.json({ error: result.error || "Approval failed" }, { status: 500 });
+    }
+
+    // Sales-request-specific: push to OpenSolar if InternalProduct was created.
+    if (result.push.source === "SALES_REQUEST" && result.push.internalSkuId) {
+      const ip = await prisma.internalProduct.findUnique({
+        where: { id: result.push.internalSkuId },
+        select: { id: true, brand: true, model: true, category: true },
+      });
+      if (ip) {
+        const osResult = await pushProductToOpenSolar(ip);
+        if (osResult.ok && osResult.openSolarId) {
+          await prisma.pendingCatalogPush.update({
+            where: { id: pushId },
+            data: { openSolarId: osResult.openSolarId },
+          });
+        } else {
+          console.error("[opensolar-push] failed", { pushId, error: osResult.error });
+          // Don't fail the whole approval — OpenSolar push is eventually-consistent.
+        }
+      }
+      // Email the rep + log activity.
+      await notifyRepOfApproval({
+        to: result.push.requestedBy,
+        title: `${result.push.brand} ${result.push.model}`,
+        dealId: result.push.dealId,
+      });
+      await prisma.activityLog.create({
+        data: {
+          actorEmail: session.user.email,
+          type: "SALES_PRODUCT_REQUEST_APPROVED",
+          metadata: { pushId, internalSkuId: result.push.internalSkuId },
+        },
+      });
+    }
+    return NextResponse.json({ ok: true, result });
+  }
+
+  if (id.startsWith("ad_")) {
+    const requestId = id.slice(3);
+    const adderPayload = await req.json().catch(() => null) as Record<string, unknown> | null;
+    if (!adderPayload || typeof adderPayload !== "object") {
+      return NextResponse.json({ error: "Adder fields required in body" }, { status: 400 });
+    }
+    // Validate required adder fields server-side (code, name, category, unit, basePrice, baseCost).
+    // ...validation...
+
+    const { adder, request } = await prisma.$transaction(async (tx) => {
+      const reqRow = await tx.adderRequest.findUnique({ where: { id: requestId } });
+      if (!reqRow) throw new Error("NOT_FOUND");
+      const created = await tx.adder.create({
+        data: {
+          code: String(adderPayload.code).trim(),
+          name: String(adderPayload.name).trim(),
+          category: reqRow.category,
+          unit: reqRow.unit,
+          basePrice: Number(adderPayload.basePrice),
+          baseCost: Number(adderPayload.baseCost),
+          // ...rest...
+        },
+      });
+      const updated = await tx.adderRequest.update({
+        where: { id: requestId },
+        data: { status: "ADDED", adderCatalogId: created.id, resolvedAt: new Date() },
+      });
+      return { adder: created, request: updated };
+    });
+
+    await notifyRepOfApproval({
+      to: request.requestedBy,
+      title: request.name,
+      dealId: request.dealId,
+    });
+    await prisma.activityLog.create({
+      data: {
+        actorEmail: session.user.email,
+        type: "SALES_PRODUCT_REQUEST_APPROVED",
+        metadata: { adderRequestId: requestId, adderId: adder.id },
+      },
+    });
+    return NextResponse.json({ ok: true, adder });
+  }
+
+  return NextResponse.json({ error: "Invalid id prefix" }, { status: 400 });
+}
 ```
+
+**Rationale:** OpenSolar push lives in the approve route (not in `catalog-push-approve.ts`) so the shared approval function stays single-purpose. BOM-originated pushes continue to go through `executeCatalogPushApproval` without ever triggering OpenSolar logic.
 
 - [ ] **Step 4: Tests PASS**
 
@@ -802,7 +944,9 @@ Category dropdown (FORM_CATEGORIES), brand, model, datasheet URL, datasheet file
 
 - [ ] **Step 2: Datasheet upload flow**
 
-If file dropped: POST to `/api/catalog/extract-from-datasheet` first, await extracted JSON, show "Extracting…" spinner. On success, hold JSON in component state and include in submit payload as `extractedMetadata`. On failure: show non-blocking warning banner, allow submit without metadata.
+First confirm the endpoint shape: read `src/app/api/catalog/extract-from-datasheet/route.ts`. Expected: accepts `FormData` with a `file` field (or similar) + `category`, returns `{ extracted: Record<string, unknown> }`. If the shape differs, adjust the client code to match before proceeding.
+
+If a file is dropped: POST `FormData` (file + category) to `/api/catalog/extract-from-datasheet`, await the extracted JSON, show an "Extracting…" spinner. On success, hold the JSON in component state and include it in the submit payload as `extractedMetadata`. On failure: show a non-blocking warning banner, allow submit without metadata.
 
 - [ ] **Step 3: Submit handler**
 
@@ -881,56 +1025,69 @@ git add src/components/catalog/AdderRequestDrawer.tsx
 git commit -m "feat(reviewer): adder request drawer"
 ```
 
-### Task 7.2: Review page integration
+### Task 7.2: Review page — fetch + merge
 
 **Files:**
 - Modify: `src/app/dashboards/catalog/review/page.tsx`
 
 - [ ] **Step 1: Add Source filter chip**
 
-New filter state value `source: "ALL" | "BOM" | "SALES_REQUEST"`. When `SALES_REQUEST` (or `ALL`), fetch `/api/admin/product-requests` alongside existing data and merge into list.
+Read `src/app/dashboards/catalog/review/page.tsx` to understand the existing filter state shape. Add a new filter value `source: "ALL" | "BOM" | "SALES_REQUEST"` (default `"ALL"`).
 
-- [ ] **Step 2: Render type badges**
+- [ ] **Step 2: Fetch and merge**
 
-Each row gets an `EQUIPMENT` or `ADDER` badge. Clicking an `ADDER` row opens `AdderRequestDrawer`. Clicking an `EQUIPMENT` row opens the existing catalog wizard with `salesRequestNote` shown as a top banner (pass as prop to existing wizard wrapper; add banner rendering in the drawer component).
+When `source === "SALES_REQUEST"` OR `source === "ALL"`: fetch `/api/admin/product-requests` via React Query with key `["product-requests", "admin"]` and merge rows into the existing list, sorted by `createdAt` desc.
 
-- [ ] **Step 3: Update approve flow**
+- [ ] **Step 3: Row rendering with type badge**
 
-Equipment approves continue to use existing path but must forward `salesRequestNote`-origin rows through the same `/api/admin/product-requests/[id]/approve` endpoint so the OpenSolar push + rep email fire. Non-sales rows continue to use the existing approval endpoint.
+Each merged row shows an `EQUIPMENT` / `ADDER` badge (pill component inline in this file; no new component needed).
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add src/app/dashboards/catalog/review/page.tsx
-git commit -m "feat(reviewer): merge sales product requests into review queue"
+git commit -m "feat(reviewer): fetch and merge sales product requests in review queue"
 ```
 
-### Task 7.3: Extend `executeCatalogPushApproval`
+### Task 7.2b: Review page — row action wiring
 
 **Files:**
-- Modify: `src/lib/catalog-push-approve.ts`
+- Modify: `src/app/dashboards/catalog/review/page.tsx`
+- Modify: `src/components/catalog/AdderRequestDrawer.tsx` (created in 7.1)
 
-- [ ] **Step 1: After InternalProduct created, push to OpenSolar if applicable**
+- [ ] **Step 1: Adder row click handler**
 
-If `systems` includes `"OPENSOLAR"` AND `source === "SALES_REQUEST"`:
-```typescript
-import { pushProductToOpenSolar } from "@/lib/product-requests/opensolar-push";
-// ...after InternalProduct created...
-const result = await pushProductToOpenSolar(internalProduct);
-if (result.ok && result.openSolarId) {
-  await prisma.pendingCatalogPush.update({
-    where: { id: push.id },
-    data: { openSolarId: result.openSolarId },
-  });
-}
+Clicking an `ADDER` merged row opens `<AdderRequestDrawer requestId={id.slice(3)} onClose={...} onResolved={...} />`. `onResolved` invalidates both `["product-requests", "admin"]` and `["product-requests", "mine"]` React Query keys.
+
+- [ ] **Step 2: Equipment row click handler**
+
+Clicking an `EQUIPMENT` merged row opens the existing catalog-review detail modal/drawer. Identify the exact component name in the current file — it's the component the page already renders when clicking a `PendingCatalogPush` row. Pass a new optional prop `salesRequestNote?: string` to that component. The component renders a top banner when the prop is present:
+
+```tsx
+{salesRequestNote ? (
+  <div className="mb-4 rounded-lg border border-cyan-500/40 bg-cyan-500/10 p-3 text-sm">
+    <div className="font-medium text-cyan-300">Sales request</div>
+    <div className="text-muted">{salesRequestNote}</div>
+  </div>
+) : null}
 ```
 
-- [ ] **Step 2: Commit**
+The existing `note` field continues to hold the reviewer's decline reason (unchanged).
+
+- [ ] **Step 3: Approve routing**
+
+For `SALES_REQUEST`-source equipment rows: approve button calls `POST /api/admin/product-requests/eq_${push.id}/approve` (new). For BOM-source rows: approve button continues calling the existing endpoint. Use `push.source` on the row object to decide.
+
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/lib/catalog-push-approve.ts
-git commit -m "feat(catalog): queue OpenSolar push on sales-request approvals"
+git add src/app/dashboards/catalog/review/page.tsx src/components/catalog/AdderRequestDrawer.tsx
+git commit -m "feat(reviewer): wire row actions for sales product requests"
 ```
+
+### Task 7.3: (removed)
+
+OpenSolar push now lives entirely in `/api/admin/product-requests/[id]/approve` (Task 5.2). No changes to `src/lib/catalog-push-approve.ts` — keeps the shared approval function single-purpose.
 
 ---
 
@@ -1071,7 +1228,8 @@ Document in PR description:
 
 ## Risks and pre-empted failure modes
 
-- **`sendEmail` helper shape mismatch.** Open `src/lib/email.ts` early in Chunk 3 to confirm the signature; adjust `notifications.ts` if needed. If the helper expects `.html` strings instead of `.react`, `render()` from `@react-email/render` is already in deps.
-- **`executeCatalogPushApproval` signature.** Confirm the function accepts the full push row and returns the created `InternalProduct`; the OpenSolar push step needs that return value.
+- **Email helper confirmed.** `src/lib/email.ts` exports `sendEmailMessage({ to, subject, html, text, debugFallbackTitle, debugFallbackBody })`. React Email components are rendered with `@react-email/render`. Task 2.4 uses the correct shape.
+- **`ApprovalResult` shape confirmed.** `executeCatalogPushApproval(id)` returns `{ push, outcomes, summary, retryable, error?, notFound?, alreadyResolved? }`. `push` is the updated `PendingCatalogPush` row with `internalSkuId`. Approve route in Task 5.2 fetches the `InternalProduct` by that id before calling OpenSolar.
 - **Deal ID prefill.** Sales & Marketing suite doesn't have a deal-detail page, so the `?dealId=` param is best-effort. If a rep comes from an actual deal, it prefills; otherwise the field is manual. Don't over-engineer a deal search component here; a simple text input is enough for v1.
 - **React Query cache key.** Use `["product-requests", "mine"]` for rep-side and `["product-requests", "admin"]` for reviewer. Invalidate both on submit/approve/decline.
+- **Auth import paths.** `auth()` is exported from `src/auth.ts` (NextAuth v5 pattern). Confirm when wiring routes.
