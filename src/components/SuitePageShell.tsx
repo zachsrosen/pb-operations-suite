@@ -5,6 +5,7 @@ import { canAccessRoute, getDefaultRouteForRole } from "@/lib/user-access";
 import type { UserRole } from "@/generated/prisma/enums";
 import { SUITE_ACCENT_COLORS, DEFAULT_SUITE_ACCENT } from "@/lib/suite-accents";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
+import { UserMenu } from "./UserMenu";
 
 export interface SuitePageCard {
   href: string;
@@ -170,30 +171,33 @@ export default function SuitePageShell({
             <p className="text-sm text-muted">{subtitle}</p>
           </div>
 
-          {/* Right: inline suite switcher */}
-          {visibleSuites.length > 0 && (
-            <div className="flex flex-wrap gap-1.5">
-              {visibleSuites.map((suite) => {
-                const isCurrent = suite.href === currentSuiteHref;
-                return (
-                  <Link
-                    key={suite.href}
-                    href={suite.href}
-                    className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${
-                      isCurrent ? "" : "bg-surface-elevated/50 text-muted hover:text-foreground"
-                    }`}
-                    style={isCurrent ? {
-                      background: `rgba(${hexToRgb(accent.color)}, 0.15)`,
-                      color: accent.color,
-                    } : undefined}
-                    title={suite.description}
-                  >
-                    {suite.shortLabel}
-                  </Link>
-                );
-              })}
-            </div>
-          )}
+          {/* Right: inline suite switcher + user menu */}
+          <div className="flex flex-col items-end gap-2">
+            <UserMenu />
+            {visibleSuites.length > 0 && (
+              <div className="flex flex-wrap justify-end gap-1.5">
+                {visibleSuites.map((suite) => {
+                  const isCurrent = suite.href === currentSuiteHref;
+                  return (
+                    <Link
+                      key={suite.href}
+                      href={suite.href}
+                      className={`text-xs px-2.5 py-1.5 rounded-md transition-colors ${
+                        isCurrent ? "" : "bg-surface-elevated/50 text-muted hover:text-foreground"
+                      }`}
+                      style={isCurrent ? {
+                        background: `rgba(${hexToRgb(accent.color)}, 0.15)`,
+                        color: accent.color,
+                      } : undefined}
+                      title={suite.description}
+                    >
+                      {suite.shortLabel}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
 
         {heroContent && (

@@ -156,7 +156,9 @@ export async function GET(request: NextRequest) {
           ticketLastContacted: item.type === "ticket" ? item.lastContactDate || null : null,
         }));
 
-        const enrichments = await enrichServiceItems(enrichInputs);
+        const enrichments = await enrichServiceItems(enrichInputs, {
+          includeContactSignals: true,
+        });
 
         // Override lastContactDate with enriched version (contact-level when available)
         for (const item of allItems) {
