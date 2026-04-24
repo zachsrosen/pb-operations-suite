@@ -44,6 +44,9 @@ export async function notifyTechOpsOfNewRequest(args: {
     text,
     debugFallbackTitle: subject,
     debugFallbackBody: text,
+    // Send from the rep's address so replies go back to them (matches bug-report flow).
+    fromOverride: args.requestedBy,
+    senderEmailOverride: args.requestedBy,
   });
 }
 

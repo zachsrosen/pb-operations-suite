@@ -3,6 +3,9 @@ import DashboardShell from "@/components/DashboardShell";
 import { getCurrentUser } from "@/lib/auth-utils";
 import RequestProductClient from "./RequestProductClient";
 
+// Ensure the feature flag is evaluated at request time, not baked at build time.
+export const dynamic = "force-dynamic";
+
 export default async function RequestProductPage() {
   if (process.env.SALES_PRODUCT_REQUESTS_ENABLED !== "true") {
     redirect("/");
