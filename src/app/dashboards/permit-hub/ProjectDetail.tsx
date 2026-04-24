@@ -156,7 +156,11 @@ export function ProjectDetail({ dealId }: { dealId: string }) {
           {tab === "ahj" && <AhjTab ahj={detail.ahj} />}
           {tab === "planset" && <PlansetTab url={detail.plansetFolderUrl} />}
           {tab === "correspondence" && (
-            <CorrespondenceTab searchUrl={detail.correspondenceSearchUrl} />
+            <CorrespondenceTab
+              searchUrl={detail.correspondenceSearchUrl}
+              threads={detail.correspondenceThreads}
+              inbox={detail.correspondenceInbox}
+            />
           )}
           {tab === "history" && <StatusHistoryTab history={detail.statusHistory} />}
           {tab === "activity" && <ActivityTab activity={detail.activity} />}
