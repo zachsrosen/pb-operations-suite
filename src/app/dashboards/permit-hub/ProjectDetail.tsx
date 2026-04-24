@@ -83,7 +83,7 @@ export function ProjectDetail({ dealId }: { dealId: string }) {
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="flex min-h-0 flex-1 flex-col overflow-y-auto p-6">
         {tab === "overview" && <OverviewTab detail={detail} />}
         {tab === "ahj" && <AhjTab ahj={detail.ahj} />}
         {tab === "planset" && <PlansetTab url={detail.plansetFolderUrl} />}
@@ -95,7 +95,7 @@ export function ProjectDetail({ dealId }: { dealId: string }) {
       </div>
 
       {detail.deal.actionKind && (
-        <div className="bg-surface-2 border-t border-t-border p-4">
+        <div className="bg-surface-2 shrink-0 border-t border-t-border p-4">
           <ActionPanel dealId={dealId} actionKind={detail.deal.actionKind} />
         </div>
       )}
