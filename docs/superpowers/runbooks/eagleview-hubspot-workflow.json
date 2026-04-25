@@ -1,0 +1,72 @@
+{
+  "name": "EagleView TrueDesign Auto-Order (Day Before Survey)",
+  "description": "For solar deals with a scheduled site survey, fires a webhook to PB Tech Ops Suite the day before the survey to auto-order an EagleView TrueDesign report. Spec: docs/superpowers/specs/2026-04-24-eagleview-truedesign-auto-pull-design.md. Currently disabled — enable after EAGLEVIEW_AUTO_PULL_ENABLED=true in Vercel prod and EV Go-Live is complete.",
+  "type": "DEAL_FLOW",
+  "objectTypeId": "0-3",
+  "isEnabled": false,
+  "enrollmentCriteria": {
+    "shouldReEnroll": true,
+    "reEnrollmentTriggersFiltersList": [
+      [
+        {
+          "filterType": "PROPERTY",
+          "operation": {
+            "operator": "HAS_EVER_BEEN_EQUAL_TO",
+            "operationType": "MULTISTRING",
+            "values": ["Solar"],
+            "includeObjectsWithNoValueSet": false
+          },
+          "property": "project_type"
+        }
+      ]
+    ],
+    "listFilterBranch": {
+      "filterBranchType": "AND",
+      "filterBranchOperator": "AND",
+      "filters": [
+        {
+          "filterType": "PROPERTY",
+          "operation": {
+            "operator": "CONTAINS_ANY_OF",
+            "operationType": "MULTISTRING",
+            "values": ["Solar"],
+            "includeObjectsWithNoValueSet": false
+          },
+          "property": "project_type"
+        },
+        {
+          "filterType": "PROPERTY",
+          "operation": {
+            "operator": "IS_KNOWN",
+            "operationType": "DATETIME",
+            "includeObjectsWithNoValueSet": false
+          },
+          "property": "site_survey_schedule_date"
+        }
+      ]
+    }
+  },
+  "actions": [
+    {
+      "actionId": "1",
+      "type": "DELAY_UNTIL",
+      "fields": {
+        "delay_until_property": "site_survey_schedule_date",
+        "offset_amount": -1,
+        "offset_unit": "DAYS",
+        "execution_time_of_day": "04:00",
+        "execution_time_zone": "America/Denver"
+      }
+    },
+    {
+      "actionId": "2",
+      "type": "WEBHOOK",
+      "fields": {
+        "webhookUrl": "https://www.pbtechops.com/api/webhooks/hubspot/eagleview-tdp-order",
+        "method": "POST",
+        "authType": "HUBSPOT_SIGNATURE_V3"
+      }
+    }
+  ],
+  "startActionId": "1"
+}
