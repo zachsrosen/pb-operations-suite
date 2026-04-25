@@ -1,0 +1,415 @@
+{
+  "pulled_at": "2026-04-25T01:33:36.812Z",
+  "enum_values": [
+    "ChargePoint",
+    "CONNECTDER",
+    "CONXT",
+    "Enphase",
+    "GENER",
+    "Generac",
+    "Hanwha",
+    "Hyundai",
+    "Iron Ridge",
+    "Jinco",
+    "LG",
+    "LG Chem",
+    "Longi",
+    "Neurio",
+    "North American Made",
+    "Panasonic",
+    "Photon",
+    "Photon Service",
+    "REC",
+    "Rell Power",
+    "Sense",
+    "Silfab",
+    "SMA",
+    "SolarEdge",
+    "Solaria",
+    "SONBT",
+    "Sunpower",
+    "Tesla",
+    "Trim-Lock",
+    "Tygo",
+    "URE",
+    "Wallbox"
+  ],
+  "enum_count": 32,
+  "internal_brands": [
+    {
+      "brand": "Generic",
+      "count": 106,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "IronRidge",
+      "count": 32,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Tesla",
+      "count": 28,
+      "in_hubspot_enum": true
+    },
+    {
+      "brand": "Square D",
+      "count": 27,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Siemens",
+      "count": 23,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Enphase",
+      "count": 19,
+      "in_hubspot_enum": true
+    },
+    {
+      "brand": "Pegasus",
+      "count": 13,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "GE",
+      "count": 11,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Eaton",
+      "count": 9,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "SolarEdge",
+      "count": 8,
+      "in_hubspot_enum": true
+    },
+    {
+      "brand": "Alpine",
+      "count": 5,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "SVC",
+      "count": 5,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "REC",
+      "count": 4,
+      "in_hubspot_enum": true
+    },
+    {
+      "brand": "SEG Solar",
+      "count": 4,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "UNIRAC",
+      "count": 4,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "EZ Solar",
+      "count": 3,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "ABB",
+      "count": 3,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Ecolibrium Solar",
+      "count": 3,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "IMO",
+      "count": 3,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Hanwha",
+      "count": 2,
+      "in_hubspot_enum": true
+    },
+    {
+      "brand": "Silfab",
+      "count": 2,
+      "in_hubspot_enum": true
+    },
+    {
+      "brand": "S-5!",
+      "count": 2,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Heyco",
+      "count": 2,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Unirac",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Arlington",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Polaris",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Sense",
+      "count": 1,
+      "in_hubspot_enum": true
+    },
+    {
+      "brand": "Multiple",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "MULTIPLE",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "bussman",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "QuickBolt",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Solis",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Cutler-Hammer",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Rooftech",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "System Sensor",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Midwest",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Cutler Hammer - Eaton",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Buchanan",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Xcel Energy",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "Hyundai",
+      "count": 1,
+      "in_hubspot_enum": true
+    },
+    {
+      "brand": "TestBrand_1776452275719",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "QCell",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "UIBrand_1776452298063",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "UIBrand2_1776452374269",
+      "count": 1,
+      "in_hubspot_enum": false
+    },
+    {
+      "brand": "AP Smart",
+      "count": 1,
+      "in_hubspot_enum": false
+    }
+  ],
+  "missing_brands": [
+    {
+      "brand": "Generic",
+      "count": 106
+    },
+    {
+      "brand": "IronRidge",
+      "count": 32
+    },
+    {
+      "brand": "Square D",
+      "count": 27
+    },
+    {
+      "brand": "Siemens",
+      "count": 23
+    },
+    {
+      "brand": "Pegasus",
+      "count": 13
+    },
+    {
+      "brand": "GE",
+      "count": 11
+    },
+    {
+      "brand": "Eaton",
+      "count": 9
+    },
+    {
+      "brand": "Alpine",
+      "count": 5
+    },
+    {
+      "brand": "SVC",
+      "count": 5
+    },
+    {
+      "brand": "SEG Solar",
+      "count": 4
+    },
+    {
+      "brand": "UNIRAC",
+      "count": 4
+    },
+    {
+      "brand": "EZ Solar",
+      "count": 3
+    },
+    {
+      "brand": "ABB",
+      "count": 3
+    },
+    {
+      "brand": "Ecolibrium Solar",
+      "count": 3
+    },
+    {
+      "brand": "IMO",
+      "count": 3
+    },
+    {
+      "brand": "S-5!",
+      "count": 2
+    },
+    {
+      "brand": "Heyco",
+      "count": 2
+    },
+    {
+      "brand": "Unirac",
+      "count": 1
+    },
+    {
+      "brand": "Arlington",
+      "count": 1
+    },
+    {
+      "brand": "Polaris",
+      "count": 1
+    },
+    {
+      "brand": "Multiple",
+      "count": 1
+    },
+    {
+      "brand": "MULTIPLE",
+      "count": 1
+    },
+    {
+      "brand": "bussman",
+      "count": 1
+    },
+    {
+      "brand": "QuickBolt",
+      "count": 1
+    },
+    {
+      "brand": "Solis",
+      "count": 1
+    },
+    {
+      "brand": "Cutler-Hammer",
+      "count": 1
+    },
+    {
+      "brand": "Rooftech",
+      "count": 1
+    },
+    {
+      "brand": "System Sensor",
+      "count": 1
+    },
+    {
+      "brand": "Midwest",
+      "count": 1
+    },
+    {
+      "brand": "Cutler Hammer - Eaton",
+      "count": 1
+    },
+    {
+      "brand": "Buchanan",
+      "count": 1
+    },
+    {
+      "brand": "Xcel Energy",
+      "count": 1
+    },
+    {
+      "brand": "TestBrand_1776452275719",
+      "count": 1
+    },
+    {
+      "brand": "QCell",
+      "count": 1
+    },
+    {
+      "brand": "UIBrand_1776452298063",
+      "count": 1
+    },
+    {
+      "brand": "UIBrand2_1776452374269",
+      "count": 1
+    },
+    {
+      "brand": "AP Smart",
+      "count": 1
+    }
+  ]
+}

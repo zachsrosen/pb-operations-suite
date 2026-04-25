@@ -1,0 +1,53 @@
+{
+  "pulled_at": "2026-04-25T01:35:27.845Z",
+  "total_products": 340,
+  "distinct_brand_clusters": 43,
+  "duplicate_clusters": [
+    {
+      "canonical_key": "unirac",
+      "raw_brand_variants": [
+        {
+          "raw": "Unirac",
+          "count": 1
+        },
+        {
+          "raw": "UNIRAC",
+          "count": 4
+        }
+      ],
+      "total_products": 5
+    },
+    {
+      "canonical_key": "multiple",
+      "raw_brand_variants": [
+        {
+          "raw": "Multiple",
+          "count": 1
+        },
+        {
+          "raw": "MULTIPLE",
+          "count": 1
+        }
+      ],
+      "total_products": 2
+    }
+  ],
+  "likely_test_brands": [
+    {
+      "id": "cmo39tkke000joj8od6j6e42z",
+      "brand": "TestBrand_1776452275719",
+      "model": "TestModel_Auto"
+    },
+    {
+      "id": "cmo39ufkn000uoj8oh475ail7",
+      "brand": "UIBrand_1776452298063",
+      "model": "UIModel"
+    },
+    {
+      "id": "cmo39vyq2001aoj8osv4z0pxo",
+      "brand": "UIBrand2_1776452374269",
+      "model": "UIModel2"
+    }
+  ],
+  "generic_brand_count": 106
+}
