@@ -22,7 +22,7 @@
  *   DATABASE_URL
  */
 import { createSign, createPrivateKey } from "crypto";
-import { PrismaClient } from "../src/generated/prisma/client.js";
+import { prisma } from "../src/lib/db";
 
 // ============================================================
 // Config
@@ -56,6 +56,8 @@ const args = new Set(process.argv.slice(2));
 const DRY_RUN = args.has("--dry-run");
 const USER_FLAG = process.argv.indexOf("--user");
 const SINGLE_USER = USER_FLAG > -1 ? process.argv[USER_FLAG + 1] : null;
+const JSON_FLAG = process.argv.indexOf("--from-json");
+const FROM_JSON_PATH = JSON_FLAG > -1 ? process.argv[JSON_FLAG + 1] : null;
 
 // ============================================================
 // Types
@@ -137,6 +139,23 @@ async function getDelegatedAccessToken(impersonate: string): Promise<string> {
   });
   if (!res.ok) {
     const body = await res.text();
+    if (body.includes("unauthorized_client")) {
+      throw new Error(
+        `Token exchange failed for ${impersonate}: ${res.status} unauthorized_client.\n` +
+          `\n` +
+          `FIX: The service account's OAuth client ID needs gmail.readonly added\n` +
+          `to its domain-wide delegation scope allowlist.\n` +
+          `\n` +
+          `In admin.google.com → Security → Access and data control → API controls\n` +
+          `→ Manage Domain Wide Delegation → find the client ID for\n` +
+          `${clientEmail} → Edit → ensure these OAuth scopes are listed:\n` +
+          `  - https://www.googleapis.com/auth/gmail.readonly\n` +
+          `\n` +
+          `(The shared-inbox flows already use gmail.readonly for permits@/ic@\n` +
+          `mailboxes, so the scope MAY already be authorized. If so, the\n` +
+          `mailbox ${impersonate} either doesn't exist or hasn't been provisioned.)`,
+      );
+    }
     throw new Error(
       `Token exchange failed for ${impersonate}: ${res.status} ${body.slice(0, 300)}`,
     );
@@ -259,47 +278,66 @@ async function fetchAllHubSpotDeals(): Promise<HsDeal[]> {
   const token = process.env.HUBSPOT_ACCESS_TOKEN;
   if (!token) throw new Error("HUBSPOT_ACCESS_TOKEN not set");
   const all: HsDeal[] = [];
+  // The /search API caps at 10,000 records per query, which won't fit Photon
+  // Brothers' deal volume. Use the list API instead — paginates cleanly past
+  // that limit. Filter in-memory for address presence.
+  const props = [
+    "address_line_1",
+    "city",
+    "state",
+    "postal_code",
+    "site_survey_schedule_date",
+  ].join(",");
   let after: string | undefined;
-  for (let safety = 0; safety < 200; safety++) {
-    const body = {
-      filterGroups: [
-        {
-          filters: [
-            {
-              propertyName: "address_line_1",
-              operator: "HAS_PROPERTY",
-            },
-          ],
-        },
-      ],
-      properties: [
-        "address_line_1",
-        "city",
-        "state",
-        "postal_code",
-        "site_survey_schedule_date",
-      ],
-      limit: 100,
-      after,
-    };
-    const res = await fetch(`${HUBSPOT_API}/crm/v3/objects/deals/search`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      throw new Error(`HubSpot fetch failed: ${res.status}`);
+  for (let safety = 0; safety < 1000; safety++) {
+    const url = new URL(`${HUBSPOT_API}/crm/v3/objects/deals`);
+    url.searchParams.set("limit", "100");
+    url.searchParams.set("properties", props);
+    if (after) url.searchParams.set("after", after);
+
+    // Retry with exponential backoff on 429
+    let res: Response | null = null;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      res = await fetch(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) break;
+      if (res.status === 429 || res.status >= 500) {
+        const wait = 1000 * Math.pow(2, attempt) + Math.random() * 500;
+        console.warn(
+          `HubSpot ${res.status} on page after=${after ?? "(first)"}, retry in ${Math.round(wait)}ms (attempt ${attempt + 1}/6)`,
+        );
+        await new Promise((r) => setTimeout(r, wait));
+        continue;
+      }
+      const errBody = await res.text();
+      throw new Error(
+        `HubSpot fetch failed: ${res.status} ${errBody.slice(0, 200)}`,
+      );
+    }
+    if (!res || !res.ok) {
+      throw new Error(
+        `HubSpot fetch exhausted retries (last status: ${res?.status ?? "no response"})`,
+      );
     }
     const data = (await res.json()) as {
       results: HsDeal[];
       paging?: { next?: { after: string } };
     };
-    all.push(...data.results);
+    // Keep only deals with addresses to keep memory bounded.
+    for (const d of data.results) {
+      if (d.properties.address_line_1 && d.properties.city) {
+        all.push(d);
+      }
+    }
     after = data.paging?.next?.after;
     if (!after) break;
+    if (safety % 10 === 9) {
+      console.log(`  …fetched ${all.length} deals so far`);
+    }
+    // Small delay between pages to be polite
+    await new Promise((r) => setTimeout(r, 100));
   }
   return all;
 }
@@ -382,17 +420,58 @@ function addressHash(parts: {
 // Main
 // ============================================================
 
-async function main() {
-  const prisma = new PrismaClient();
-  const mailboxes = SINGLE_USER ? [SINGLE_USER] : MAILBOXES;
+async function loadOrdersFromJsonFile(path: string): Promise<ParsedOrder[]> {
+  const fs = await import("fs/promises");
+  const raw = await fs.readFile(path, "utf-8");
+  const data = JSON.parse(raw) as Array<{
+    reportId: string;
+    rawAddress: string;
+    productName: string;
+    cost: number;
+    sqft: number;
+    orderedAt: string;
+    sourceMailbox?: string;
+    sourceMessageId?: string;
+  }>;
+  return data.map((d) => {
+    const lower = d.productName.toLowerCase();
+    let productCode: ParsedOrder["productCode"] = "OTHER";
+    if (lower.includes("truedesign for planning")) productCode = "TDP";
+    else if (lower.includes("truedesign for sales")) productCode = "TDS";
+    else if (lower.includes("inform")) productCode = "IA";
+    return {
+      reportId: d.reportId,
+      rawAddress: d.rawAddress,
+      productName: d.productName,
+      productCode,
+      cost: d.cost,
+      sqft: d.sqft,
+      orderedAt: new Date(d.orderedAt),
+      sourceMailbox: d.sourceMailbox ?? "json-import",
+      sourceMessageId: d.sourceMessageId ?? "",
+    };
+  });
+}
 
+async function main() {
   console.log(
-    `\nEagleView Gmail backfill — ${mailboxes.length} mailbox(es), DRY_RUN=${DRY_RUN}\n`,
+    `\nEagleView Gmail backfill — DRY_RUN=${DRY_RUN}` +
+      (FROM_JSON_PATH ? `, source=JSON(${FROM_JSON_PATH})` : ""),
   );
 
   // Pull all orders across mailboxes; dedupe by reportId.
   const orders = new Map<string, ParsedOrder>();
   let parseFailures = 0;
+
+  if (FROM_JSON_PATH) {
+    const list = await loadOrdersFromJsonFile(FROM_JSON_PATH);
+    for (const o of list) {
+      if (!orders.has(o.reportId)) orders.set(o.reportId, o);
+    }
+    console.log(`Loaded ${list.length} orders from JSON, ${orders.size} unique\n`);
+  } else {
+    const mailboxes = SINGLE_USER ? [SINGLE_USER] : MAILBOXES;
+    console.log(`${mailboxes.length} mailbox(es)\n`);
 
   for (const mailbox of mailboxes) {
     let token: string;
@@ -434,6 +513,7 @@ async function main() {
     }
     console.log(`[${mailbox}] ${added} new unique orders parsed`);
   }
+  } // end of else (Gmail fetch)
 
   console.log(
     `\nTotal unique orders: ${orders.size} (parse failures: ${parseFailures})\n`,
@@ -451,7 +531,7 @@ async function main() {
   let inserted = 0;
   let alreadyExisted = 0;
 
-  for (const order of orders.values()) {
+  for (const order of Array.from(orders.values())) {
     const dealId = matchOrderToDeal(order, idx);
     if (!dealId) {
       skipped += 1;
