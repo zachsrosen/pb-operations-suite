@@ -326,18 +326,28 @@ describe("buildCategoryExternalEdges plumbing", () => {
     CATEGORY_CONFIGS.MODULE.fields = originalFields;
   });
 
-  it("produces no Zuper/Zoho conditional edges when no zuperCustomField/zohoCustomField keys are set", () => {
-    // Baseline: current state — FieldDef has no zuperCustomField or zohoCustomField values
+  it("emits Zuper conditional edges from FieldDef.zuperCustomField (Phase B activated)", () => {
+    // Phase B (2026-04-24) populated zuperCustomField labels on MODULE,
+    // INVERTER, BATTERY, EV_CHARGER, and RACKING. We expect the mapping
+    // registry to have produced category-conditional Zuper edges for those.
     _resetEdgeCache();
     const edges = getAllMappingEdges();
     const zuperConditional = edges.filter(
       (e) => e.system === "zuper" && e.condition !== undefined,
     );
+    expect(zuperConditional.length).toBeGreaterThan(0);
+    // Spot-check: MODULE wattage edge exists with category condition
+    const moduleWattageEdge = zuperConditional.find(
+      (e) =>
+        e.condition?.category?.includes("MODULE") &&
+        e.externalField === "Module Wattage (W)",
+    );
+    expect(moduleWattageEdge).toBeDefined();
+
+    // Zoho stays empty until zohoCustomField keys are populated on FieldDefs.
     const zohoConditional = edges.filter(
       (e) => e.system === "zoho" && e.condition !== undefined,
     );
-    // No FieldDef has zuperCustomField or zohoCustomField yet — so no conditional edges
-    expect(zuperConditional).toHaveLength(0);
     expect(zohoConditional).toHaveLength(0);
   });
 });

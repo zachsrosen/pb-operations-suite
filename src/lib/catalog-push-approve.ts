@@ -21,7 +21,11 @@ import {
 } from "@/lib/catalog-fields";
 import { createOrUpdateHubSpotProduct, HubSpotManufacturerEnumError } from "@/lib/hubspot";
 import { createOrUpdateZohoItem, uploadZohoItemImage } from "@/lib/zoho-inventory";
-import { buildZuperCustomFieldsFromMetadata, createOrUpdateZuperPart } from "@/lib/zuper-catalog";
+import {
+  buildZuperProductCustomFields,
+  buildZuperSpecMetaData,
+  createOrUpdateZuperPart,
+} from "@/lib/zuper-catalog";
 import { writeCrossLinkIds } from "@/lib/catalog-cross-link";
 import { notifyAdminsOfApprovalWarnings } from "@/lib/catalog-notify";
 import { buildCanonicalKey, canonicalToken } from "@/lib/canonical";
@@ -436,6 +440,18 @@ export async function executeCatalogPushApproval(
             ? generateZuperSpecification(push.category, metadata)
             : undefined;
 
+        // Cross-link IDs (snake_case keys registered with that exact pattern
+        // long ago — `hubspot_product_id`, `zoho_item_id`,
+        // `internal_product_id`). HubSpot/Zoho IDs may already be set on this
+        // approval if those steps ran first; internalSkuId is set by the
+        // INTERNAL block above. Spec values flow via customMetaData below.
+        const crossLinkIds = buildZuperProductCustomFields({
+          internalProductId: basePush.internalSkuId,
+          hubspotProductId:
+            outcomes.HUBSPOT?.externalId || basePush.hubspotProductId,
+          zohoItemId: outcomes.ZOHO?.externalId || basePush.zohoItemId,
+        });
+
         const zuperResult = await createOrUpdateZuperPart({
           brand: push.brand,
           model: push.model,
@@ -451,7 +467,8 @@ export async function executeCatalogPushApproval(
           length: push.length,
           width: push.width,
           weight: push.weight,
-          customFields: buildZuperCustomFieldsFromMetadata(push.category, metadata),
+          customFields: crossLinkIds || undefined,
+          customMetaData: buildZuperSpecMetaData(push.category, metadata),
         });
 
         await prisma.$transaction(async (tx) => {

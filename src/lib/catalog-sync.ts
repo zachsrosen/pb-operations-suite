@@ -727,9 +727,16 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
     for (const c of preview.changes) {
       planned[c.field] = c.proposedValue;
     }
-    const { createOrUpdateZuperPart, buildZuperCustomFieldsFromMetadata } = await import(
-      "@/lib/zuper-catalog"
-    );
+    const { createOrUpdateZuperPart, buildZuperProductCustomFields, buildZuperSpecMetaData } =
+      await import("@/lib/zuper-catalog");
+
+    // Cross-link IDs available at create time. zuperItemId is the one being
+    // created; the others may already be linked on the internal SKU.
+    const crossLinkIds = buildZuperProductCustomFields({
+      internalProductId: sku.id,
+      hubspotProductId: sku.hubspotProductId,
+      zohoItemId: sku.zohoItemId,
+    });
 
     const linkResult = await createAndLinkExternal({
       internalProductId: sku.id,
@@ -750,7 +757,8 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
           length: sku.length,
           width: sku.width,
           weight: sku.weight,
-          customFields: buildZuperCustomFieldsFromMetadata(sku.category, getSpecData(sku)),
+          customFields: crossLinkIds || undefined,
+          customMetaData: buildZuperSpecMetaData(sku.category, getSpecData(sku)),
         });
         return {
           externalId: r.zuperItemId,

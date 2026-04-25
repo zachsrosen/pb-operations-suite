@@ -67,13 +67,12 @@ jest.mock("@/lib/zoho-inventory", () => ({
 const mockCreateOrUpdateZuperPart = jest.fn();
 const mockUpdateZuperPart = jest.fn();
 const mockBuildZuperProductCustomFields = jest.fn();
-const mockBuildZuperCustomFieldsFromMetadata = jest.fn();
+const mockBuildZuperSpecMetaData = jest.fn();
 jest.mock("@/lib/zuper-catalog", () => ({
   createOrUpdateZuperPart: (...args: unknown[]) => mockCreateOrUpdateZuperPart(...args),
   updateZuperPart: (...args: unknown[]) => mockUpdateZuperPart(...args),
   buildZuperProductCustomFields: (...args: unknown[]) => mockBuildZuperProductCustomFields(...args),
-  buildZuperCustomFieldsFromMetadata: (...args: unknown[]) =>
-    mockBuildZuperCustomFieldsFromMetadata(...args),
+  buildZuperSpecMetaData: (...args: unknown[]) => mockBuildZuperSpecMetaData(...args),
 }));
 
 // ── Catalog notify ──────────────────────────────────────────────────────────────
@@ -237,9 +236,8 @@ beforeEach(() => {
   mockZohoUpdateItem.mockResolvedValue({ status: "updated", message: "ok" });
   mockUpdateZuperPart.mockResolvedValue({ status: "updated", zuperItemId: "zuper_item_1", message: "ok" });
   mockBuildZuperProductCustomFields.mockReturnValue({ hubspot_product_id: "hs_prod_1", zoho_item_id: "zoho_item_1", internal_product_id: "sku_1" });
-  // Default: no spec-derived custom fields (matches current state where no
-  // FieldDef has zuperCustomField populated). Individual tests override.
-  mockBuildZuperCustomFieldsFromMetadata.mockReturnValue(undefined);
+  // Default: no spec-derived meta_data entries. Individual tests override.
+  mockBuildZuperSpecMetaData.mockReturnValue(undefined);
   // Global fetch for HubSpot cross-link PATCH
   global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 }) as jest.Mock;
   process.env.HUBSPOT_ACCESS_TOKEN = "test-token";
@@ -685,12 +683,16 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       });
     });
 
-    it("forwards spec-derived customFields to createOrUpdateZuperPart on ZUPER create (M3.4)", async () => {
-      // Simulate a category whose FieldDef.zuperCustomField is populated
-      // (which is what activation in catalog-fields.ts will look like).
-      mockBuildZuperCustomFieldsFromMetadata.mockReturnValue({
-        pb_module_wattage: 400,
-        pb_module_cell_type: "TOPCon",
+    it("forwards spec-derived customMetaData and cross-link customFields to ZUPER create (M3.4 activated)", async () => {
+      // Spec helper resolves to meta_data entries (Phase B activation).
+      mockBuildZuperSpecMetaData.mockReturnValue([
+        { label: "Module Wattage (W)", value: 400, type: "NUMBER" },
+        { label: "Module Cell Type", value: "TOPCon", type: "DROPDOWN" },
+      ]);
+      // Cross-link helper returns at least the internal_product_id (always
+      // available) plus any external IDs already linked.
+      mockBuildZuperProductCustomFields.mockReturnValue({
+        internal_product_id: "sku_1",
       });
 
       mockFindUnique.mockResolvedValue(
@@ -702,25 +704,27 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
 
       await POST(new NextRequest("http://localhost"), makeParams());
 
-      // Helper called with category + metadata
-      expect(mockBuildZuperCustomFieldsFromMetadata).toHaveBeenCalledWith(
+      // Spec helper called with category + metadata
+      expect(mockBuildZuperSpecMetaData).toHaveBeenCalledWith(
         "MODULE",
         expect.objectContaining({ wattage: 400, cellType: "TOPCon" }),
       );
 
-      // Returned dict threaded into createOrUpdateZuperPart
+      // Both meta_data (spec) and custom_fields (cross-link IDs) threaded in
       expect(mockCreateOrUpdateZuperPart).toHaveBeenCalledWith(
         expect.objectContaining({
-          customFields: {
-            pb_module_wattage: 400,
-            pb_module_cell_type: "TOPCon",
-          },
+          customMetaData: [
+            { label: "Module Wattage (W)", value: 400, type: "NUMBER" },
+            { label: "Module Cell Type", value: "TOPCon", type: "DROPDOWN" },
+          ],
+          customFields: { internal_product_id: "sku_1" },
         }),
       );
     });
 
-    it("passes undefined customFields when no zuperCustomField mappings are populated", async () => {
-      // Default mock returns undefined — matches current pre-activation state.
+    it("passes undefined customMetaData when no zuperCustomField mappings resolve", async () => {
+      // Default mock returns undefined for spec helper.
+      mockBuildZuperProductCustomFields.mockReturnValue(null);
       mockFindUnique.mockResolvedValue(
         makePush({ systems: ["INTERNAL", "ZUPER"], metadata: { wattage: 400 } }),
       );
@@ -728,7 +732,10 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       await POST(new NextRequest("http://localhost"), makeParams());
 
       expect(mockCreateOrUpdateZuperPart).toHaveBeenCalledWith(
-        expect.objectContaining({ customFields: undefined }),
+        expect.objectContaining({
+          customMetaData: undefined,
+          customFields: undefined,
+        }),
       );
     });
   });
