@@ -1,0 +1,6190 @@
+{
+  "pulled_at": "2026-04-25T04:03:58.516Z",
+  "total": 97,
+  "spec_candidates": [
+    {
+      "updatedAt": "2022-09-16T16:05:34.286Z",
+      "createdAt": "2022-09-16T16:05:34.286Z",
+      "name": "capacity__kw_",
+      "label": "Capacity (kW)",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2025-12-11T01:06:19.496Z",
+      "createdAt": "2022-11-30T20:39:24.984Z",
+      "name": "dc_size",
+      "label": "DC Size (Wattage)",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "67486112",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2025-12-12T03:14:50.789Z",
+      "createdAt": "2025-12-12T03:14:50.789Z",
+      "name": "energy_storage_capacity",
+      "label": "Energy Storage Capacity",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "67486112",
+      "updatedUserId": "67486112",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-09-16T16:05:05.271Z",
+      "createdAt": "2022-09-16T16:05:05.271Z",
+      "name": "size__kwh_",
+      "label": "Size (kWh)",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    }
+  ],
+  "by_group": {
+    "productinformation": [
+      {
+        "updatedAt": "2022-11-30T20:39:50.511Z",
+        "createdAt": "2022-11-30T20:39:50.511Z",
+        "name": "ac_size",
+        "label": "AC Size",
+        "type": "number",
+        "fieldType": "number",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "formatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2022-09-16T16:05:34.286Z",
+        "createdAt": "2022-09-16T16:05:34.286Z",
+        "name": "capacity__kw_",
+        "label": "Capacity (kW)",
+        "type": "number",
+        "fieldType": "number",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2023-01-25T20:47:02.924Z",
+        "createdAt": "2022-08-29T17:50:54.034Z",
+        "name": "cc",
+        "label": "SLO",
+        "type": "number",
+        "fieldType": "number",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "formatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-09-05T17:14:04.747Z",
+        "createdAt": "2019-08-06T02:42:48.261Z",
+        "name": "createdate",
+        "label": "Create Date",
+        "type": "datetime",
+        "fieldType": "date",
+        "description": "The date the product was created",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2025-12-11T01:06:19.496Z",
+        "createdAt": "2022-11-30T20:39:24.984Z",
+        "name": "dc_size",
+        "label": "DC Size (Wattage)",
+        "type": "number",
+        "fieldType": "number",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "44289812",
+        "updatedUserId": "67486112",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "formatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2022-08-29T17:50:06.051Z",
+        "createdAt": "2022-08-29T17:50:06.051Z",
+        "name": "den",
+        "label": "DEN",
+        "type": "number",
+        "fieldType": "number",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "formatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-09-05T17:14:04.747Z",
+        "createdAt": "2019-08-06T02:42:48.591Z",
+        "name": "description",
+        "label": "Product description",
+        "type": "string",
+        "fieldType": "textarea",
+        "description": "Full description of product",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2022-08-29T17:50:30.897Z",
+        "createdAt": "2022-08-29T17:50:30.897Z",
+        "name": "dtc",
+        "label": "DTC",
+        "type": "number",
+        "fieldType": "number",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "formatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2025-12-12T03:14:50.789Z",
+        "createdAt": "2025-12-12T03:14:50.789Z",
+        "name": "energy_storage_capacity",
+        "label": "Energy Storage Capacity",
+        "type": "number",
+        "fieldType": "number",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "67486112",
+        "updatedUserId": "67486112",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "formatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2023-04-14T19:28:15.752Z",
+        "createdAt": "2023-04-14T19:28:15.752Z",
+        "name": "hard_to_procure",
+        "label": "Hard To Procure",
+        "type": "enumeration",
+        "fieldType": "booleancheckbox",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [
+          {
+            "label": "Yes",
+            "value": "true",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "No",
+            "value": "false",
+            "displayOrder": 1,
+            "hidden": false
+          }
+        ],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "formatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_all_accessible_team_ids",
+        "label": "All teams",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "The team IDs, including the team hierarchy, of all default and custom owner properties for this record.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_all_assigned_business_unit_ids",
+        "label": "Business units",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "The business units this record is assigned to.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_all_owner_ids",
+        "label": "All owner IDs",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "Values of all default and custom owner properties for this record.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_all_team_ids",
+        "label": "All team IDs",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "The team IDs of all default and custom owner properties for this record.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2022-05-28T01:27:06.884Z",
+        "createdAt": "2019-08-06T02:42:48.431Z",
+        "name": "hs_avatar_filemanager_key",
+        "label": "Avatar FileManager key",
+        "type": "string",
+        "fieldType": "text",
+        "description": "The path in the FileManager CDN for this product's image. Automatically set by HubSpot.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-04-08T19:59:52.168Z",
+        "createdAt": "2025-11-04T18:56:46.806Z",
+        "name": "hs_bundle_grouping_config_id",
+        "label": "Bundle Grouping Config ID",
+        "type": "number",
+        "fieldType": "number",
+        "description": "ID reference to the LineItemGroupConfig that configures the grouping of line items created from this Product bundle",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-04-08T19:59:56.836Z",
+        "createdAt": "2025-05-28T20:19:27.237Z",
+        "name": "hs_bundle_type",
+        "label": "Bundle type",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "Indicates the type of bundling",
+        "groupName": "productinformation",
+        "options": [
+          {
+            "label": "None",
+            "value": "none",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Open",
+            "value": "open",
+            "displayOrder": 1,
+            "hidden": false
+          }
+        ],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_created_by_user_id",
+        "label": "Created by user ID",
+        "type": "number",
+        "fieldType": "number",
+        "description": "The user who created this record. This value is set automatically by HubSpot.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_createdate",
+        "label": "Object create date/time",
+        "type": "datetime",
+        "fieldType": "date",
+        "description": "The date and time at which this object was created. This value is automatically set by HubSpot and may not be modified.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-10-02T14:56:52.611Z",
+        "createdAt": "2023-12-05T16:12:31.601Z",
+        "name": "hs_folder",
+        "label": "Folder",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "The folder containing this product",
+        "groupName": "productinformation",
+        "options": [
+          {
+            "label": "Modules",
+            "value": "Modules (auto_generated_079f6bf2-afd6-4d92-9800-6f05eed004d6)",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Batteries",
+            "value": "Batteries (auto_generated_2f0cf1be-da46-46ee-88dc-33c06622ee08)",
+            "displayOrder": 1,
+            "hidden": false
+          },
+          {
+            "label": "EV Chargers",
+            "value": "EV Chargers (auto_generated_4b9ba9c1-e775-4135-bd47-e63be00a0d3c)",
+            "displayOrder": 2,
+            "hidden": false
+          },
+          {
+            "label": "Gateways",
+            "value": "Gateways",
+            "description": "",
+            "displayOrder": 3,
+            "hidden": false
+          },
+          {
+            "label": "Inverters",
+            "value": "Inverters (auto_generated_1a9bc920-2cb6-4c30-a81c-daf6a838e357)",
+            "displayOrder": 4,
+            "hidden": false
+          },
+          {
+            "label": "Tesla System Components",
+            "value": "Tesla System Components (auto_generated_d1e25c08-5068-46fd-b9aa-0c700fd9266c)",
+            "displayOrder": 5,
+            "hidden": false
+          },
+          {
+            "label": "Optimizers",
+            "value": "Optimizers",
+            "description": "",
+            "displayOrder": 6,
+            "hidden": false
+          },
+          {
+            "label": "Adders",
+            "value": "Adders (auto_generated_09db4aa0-e08d-4425-9254-3aaa166f1ed0)",
+            "displayOrder": 7,
+            "hidden": false
+          },
+          {
+            "label": "D&R",
+            "value": "D&R (auto_generated_02b8cc3e-da9e-421c-b16d-da2799619581)",
+            "displayOrder": 8,
+            "hidden": false
+          },
+          {
+            "label": "Service",
+            "value": "Service (auto_generated_14fe02cb-cd5f-443b-a738-817018948029)",
+            "displayOrder": 9,
+            "hidden": false
+          },
+          {
+            "label": "Other Componentry",
+            "value": "Other Componentry (auto_generated_242f8042-7314-40f4-ac74-701cc3c2c7d4)",
+            "displayOrder": 10,
+            "hidden": false
+          },
+          {
+            "label": "Project Milestones",
+            "value": "Project Milestones (auto_generated_527d6bd7-0121-4ebe-89ac-3615ea422efe)",
+            "displayOrder": 11,
+            "hidden": false
+          }
+        ],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyOptions": false,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-09-05T17:14:04.747Z",
+        "createdAt": "2019-08-06T02:42:49.232Z",
+        "name": "hs_folder_id",
+        "label": "Folder Id",
+        "type": "number",
+        "fieldType": "number",
+        "description": "The ID of the folder that has this product",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2025-01-13T20:42:44.391Z",
+        "createdAt": "2023-08-03T18:05:43.415Z",
+        "name": "hs_folder_name",
+        "label": "Folder name",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Property derived from hs_folder equal to the option's label. Used to provide string-like search functionality as opposed to the enumeration search functionality of hs_folder",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-09-05T17:14:04.747Z",
+        "createdAt": "2020-11-23T22:16:29.502Z",
+        "name": "hs_images",
+        "label": "Image Url",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Product images.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-09-05T17:14:04.747Z",
+        "createdAt": "2019-08-06T02:42:48.342Z",
+        "name": "hs_lastmodifieddate",
+        "label": "Last Modified Date",
+        "type": "datetime",
+        "fieldType": "date",
+        "description": "The date any property on this product was modified",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_merged_object_ids",
+        "label": "Merged record IDs",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "The list of record IDs that have been merged into this record. This value is set automatically by HubSpot.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_object_id",
+        "label": "Record ID",
+        "type": "number",
+        "fieldType": "number",
+        "description": "The unique ID for this record. This value is set automatically by HubSpot.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_object_source",
+        "label": "Record creation source",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Raw internal PropertySource present in the RequestMeta when this record was created.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_object_source_detail_1",
+        "label": "Record source detail 1",
+        "type": "string",
+        "fieldType": "text",
+        "description": "First level of detail on how this record was created.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_object_source_detail_2",
+        "label": "Record source detail 2",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Second level of detail on how this record was created.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_object_source_detail_3",
+        "label": "Record source detail 3",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Third level of detail on how this record was created.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_object_source_id",
+        "label": "Record creation source ID",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Raw internal sourceId present in the RequestMeta when this record was created.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_object_source_label",
+        "label": "Record source",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "How this record was created.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_object_source_user_id",
+        "label": "Record creation source user ID",
+        "type": "number",
+        "fieldType": "number",
+        "description": "Raw internal userId present in the RequestMeta when this record was created.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_owning_teams",
+        "label": "Owning Teams",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "The direct teams associated to this record's owner.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_pinned_engagement_id",
+        "label": "Pinned engagement ID",
+        "type": "number",
+        "fieldType": "number",
+        "description": "The object ID of the current pinned engagement. This will only be shown in the app if there is already an association to the engagement.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-03-05T18:46:25.040Z",
+        "createdAt": "2025-10-14T14:16:59.018Z",
+        "name": "hs_product_classification",
+        "label": "Product Classification",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "The classification of product.Categorizes your product as either Standalone, Variant or Bundle",
+        "groupName": "productinformation",
+        "options": [
+          {
+            "label": "Standalone",
+            "value": "standalone",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Variant",
+            "value": "variant",
+            "displayOrder": 1,
+            "hidden": false
+          },
+          {
+            "label": "Bundle",
+            "value": "bundle",
+            "displayOrder": 2,
+            "hidden": false
+          }
+        ],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyOptions": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2025-08-13T14:19:38.551Z",
+        "createdAt": "2022-03-07T20:14:58.526Z",
+        "name": "hs_product_type",
+        "label": "Product type",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "The type of product. By default, categorize your product as either Inventory, Non-Inventory or Service.",
+        "groupName": "productinformation",
+        "options": [
+          {
+            "label": "Inventory",
+            "value": "inventory",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Non-Inventory",
+            "value": "non_inventory",
+            "displayOrder": 1,
+            "hidden": false
+          },
+          {
+            "label": "Service",
+            "value": "service",
+            "displayOrder": 2,
+            "hidden": false
+          }
+        ],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyOptions": false,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_read_only",
+        "label": "Read only object",
+        "type": "bool",
+        "fieldType": "booleancheckbox",
+        "description": "Determines whether a record can be edited by a user.",
+        "groupName": "productinformation",
+        "options": [
+          {
+            "label": "True",
+            "value": "true",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "False",
+            "value": "false",
+            "displayOrder": 1,
+            "hidden": false
+          }
+        ],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-02-05T21:46:04.618Z",
+        "createdAt": "2025-12-09T15:58:36.357Z",
+        "name": "hs_rich_text_description",
+        "label": "Description",
+        "type": "string",
+        "fieldType": "html",
+        "description": "Full description of product with rich text formatting",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_shared_team_ids",
+        "label": "Shared teams",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "Additional teams whose users can access the record based on their permissions. This can be set manually or through Workflows or APIs.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_shared_user_ids",
+        "label": "Shared users",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "Additional users that can access the record based on their permissions. This can be set manually or through Workflows and APIs.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-09-05T17:14:04.747Z",
+        "createdAt": "2020-03-05T15:05:04.279Z",
+        "name": "hs_sku",
+        "label": "SKU",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Unique product identifier",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": true,
+        "hidden": false,
+        "hubspotDefined": true,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2025-09-03T21:15:50.215Z",
+        "createdAt": "2025-02-05T19:19:57.586Z",
+        "name": "hs_status",
+        "label": "Status",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "Active or inactive status for a product. Determines whether or not the product will appear in search when creating a line item from a product",
+        "groupName": "productinformation",
+        "options": [
+          {
+            "label": "Active",
+            "value": "active",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Inactive",
+            "value": "inactive",
+            "displayOrder": 1,
+            "hidden": false
+          }
+        ],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-04-20T14:58:52.598Z",
+        "createdAt": "2024-08-14T19:42:54.135Z",
+        "name": "hs_tax_category",
+        "label": "Tax Category",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "The tax category used to determine what amount of tax to automatically apply to line items created from this product",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_unique_creation_key",
+        "label": "Unique creation key",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Unique property used for idempotent creates",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": true,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_updated_by_user_id",
+        "label": "Updated by user ID",
+        "type": "number",
+        "fieldType": "number",
+        "description": "The user who last updated this record. This value is set automatically by HubSpot.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-11-01T18:54:01.527Z",
+        "createdAt": "2020-11-23T22:16:37.142Z",
+        "name": "hs_url",
+        "label": "URL",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Product url.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_user_ids_of_all_notification_followers",
+        "label": "User IDs of all notification followers",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "The user IDs of all users that have clicked follow within the object to opt-in to getting follow notifications",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_user_ids_of_all_notification_unfollowers",
+        "label": "User IDs of all notification unfollowers",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "The user IDs of all object owners that have clicked unfollow within the object to opt-out of getting follow notifications",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_user_ids_of_all_owners",
+        "label": "User IDs of all owners",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "The user IDs of all owners of this record.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hs_was_imported",
+        "label": "Performed in an import",
+        "type": "bool",
+        "fieldType": "booleancheckbox",
+        "description": "Object is part of an import",
+        "groupName": "productinformation",
+        "options": [
+          {
+            "label": "True",
+            "value": "true",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "False",
+            "value": "false",
+            "displayOrder": 1,
+            "hidden": false
+          }
+        ],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hubspot_owner_assigneddate",
+        "label": "Owner assigned date",
+        "type": "datetime",
+        "fieldType": "date",
+        "description": "The most recent timestamp of when an owner was assigned to this record. This value is set automatically by HubSpot.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "name": "hubspot_owner_id",
+        "label": "Owner",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "The owner of the object.",
+        "groupName": "productinformation",
+        "options": [],
+        "referencedObjectType": "OWNER",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-11-04T20:39:27.702Z",
+        "createdAt": "2022-10-05T19:28:41.390Z",
+        "name": "hubspot_team_id",
+        "label": "HubSpot Team",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "The primary team of the owner.",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-03-26T03:35:50.211Z",
+        "createdAt": "2026-03-26T03:35:50.211Z",
+        "name": "internal_product_id",
+        "label": "Internal Product ID",
+        "type": "string",
+        "fieldType": "text",
+        "description": "UUID linking this product to the PB Operations Suite internal product catalog",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "67486112",
+        "updatedUserId": "67486112",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2023-01-25T21:58:06.161Z",
+        "createdAt": "2023-01-25T21:58:06.161Z",
+        "name": "length",
+        "label": "Length",
+        "type": "number",
+        "fieldType": "number",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2023-02-06T15:59:33.433Z",
+        "createdAt": "2023-02-06T15:59:33.433Z",
+        "name": "line_item_description",
+        "label": "Line Item Description",
+        "type": "string",
+        "fieldType": "textarea",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "formatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2025-05-21T14:12:12.123Z",
+        "createdAt": "2022-08-30T13:28:31.786Z",
+        "name": "manufacturer",
+        "label": "Manufacturer",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [
+          {
+            "label": "ChargePoint",
+            "value": "ChargePoint",
+            "displayOrder": 1,
+            "hidden": false
+          },
+          {
+            "label": "CONNECTDER",
+            "value": "CONNECTDER",
+            "displayOrder": 2,
+            "hidden": false
+          },
+          {
+            "label": "CONXT",
+            "value": "CONXT",
+            "displayOrder": 3,
+            "hidden": false
+          },
+          {
+            "label": "Enphase",
+            "value": "Enphase",
+            "displayOrder": 4,
+            "hidden": false
+          },
+          {
+            "label": "GENER",
+            "value": "GENER",
+            "displayOrder": 5,
+            "hidden": false
+          },
+          {
+            "label": "Generac",
+            "value": "Generac",
+            "displayOrder": 6,
+            "hidden": false
+          },
+          {
+            "label": "Hanwha",
+            "value": "Hanwha",
+            "displayOrder": 7,
+            "hidden": false
+          },
+          {
+            "label": "Hyundai",
+            "value": "Hyundai",
+            "displayOrder": 8,
+            "hidden": false
+          },
+          {
+            "label": "Iron Ridge",
+            "value": "Iron Ridge",
+            "displayOrder": 9,
+            "hidden": false
+          },
+          {
+            "label": "Jinco",
+            "value": "Jinco",
+            "description": "",
+            "displayOrder": 10,
+            "hidden": false
+          },
+          {
+            "label": "LG",
+            "value": "LG",
+            "displayOrder": 11,
+            "hidden": false
+          },
+          {
+            "label": "LG Chem",
+            "value": "LG Chem",
+            "displayOrder": 12,
+            "hidden": false
+          },
+          {
+            "label": "Longi",
+            "value": "Longi",
+            "displayOrder": 13,
+            "hidden": false
+          },
+          {
+            "label": "Neurio",
+            "value": "Neurio",
+            "displayOrder": 14,
+            "hidden": false
+          },
+          {
+            "label": "North American Made",
+            "value": "North American Made",
+            "displayOrder": 15,
+            "hidden": false
+          },
+          {
+            "label": "Panasonic",
+            "value": "Panasonic",
+            "displayOrder": 16,
+            "hidden": false
+          },
+          {
+            "label": "Photon",
+            "value": "Photon",
+            "displayOrder": 17,
+            "hidden": false
+          },
+          {
+            "label": "Photon Service",
+            "value": "Photon Service",
+            "displayOrder": 18,
+            "hidden": false
+          },
+          {
+            "label": "REC",
+            "value": "REC",
+            "displayOrder": 19,
+            "hidden": false
+          },
+          {
+            "label": "Rell Power",
+            "value": "Rell Power",
+            "displayOrder": 20,
+            "hidden": false
+          },
+          {
+            "label": "Sense",
+            "value": "Sense",
+            "displayOrder": 21,
+            "hidden": false
+          },
+          {
+            "label": "Silfab",
+            "value": "Silfab",
+            "displayOrder": 22,
+            "hidden": false
+          },
+          {
+            "label": "SMA",
+            "value": "SMA",
+            "displayOrder": 23,
+            "hidden": false
+          },
+          {
+            "label": "SolarEdge",
+            "value": "SolarEdge",
+            "displayOrder": 24,
+            "hidden": false
+          },
+          {
+            "label": "Solaria",
+            "value": "Solaria",
+            "displayOrder": 25,
+            "hidden": false
+          },
+          {
+            "label": "SONBT",
+            "value": "SONBT",
+            "displayOrder": 26,
+            "hidden": false
+          },
+          {
+            "label": "Sunpower",
+            "value": "Sunpower",
+            "displayOrder": 27,
+            "hidden": false
+          },
+          {
+            "label": "Tesla",
+            "value": "Tesla",
+            "displayOrder": 28,
+            "hidden": false
+          },
+          {
+            "label": "Trim-Lock",
+            "value": "Trim-Lock",
+            "displayOrder": 29,
+            "hidden": false
+          },
+          {
+            "label": "Tygo",
+            "value": "Tygo",
+            "description": "",
+            "displayOrder": 30,
+            "hidden": false
+          },
+          {
+            "label": "URE",
+            "value": "URE",
+            "displayOrder": 31,
+            "hidden": false
+          },
+          {
+            "label": "Wallbox",
+            "value": "Wallbox",
+            "displayOrder": 32,
+            "hidden": false
+          }
+        ],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-09-05T17:14:04.747Z",
+        "createdAt": "2019-08-06T02:42:48.507Z",
+        "name": "name",
+        "label": "Name",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Product name",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2025-12-23T23:43:14.405Z",
+        "createdAt": "2025-12-23T23:43:14.405Z",
+        "name": "os_name",
+        "label": "OS Name",
+        "type": "string",
+        "fieldType": "text",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "84099731",
+        "updatedUserId": "84099731",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2022-08-29T17:51:06.032Z",
+        "createdAt": "2022-08-29T17:51:06.032Z",
+        "name": "pblo",
+        "label": "PBLO",
+        "type": "number",
+        "fieldType": "number",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "formatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2022-09-02T01:12:14.212Z",
+        "createdAt": "2022-09-02T01:12:14.212Z",
+        "name": "permit_required_for_install",
+        "label": "Permit Required For Install",
+        "type": "enumeration",
+        "fieldType": "booleancheckbox",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [
+          {
+            "label": "Yes",
+            "value": "true",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "No",
+            "value": "false",
+            "displayOrder": 1,
+            "hidden": false
+          }
+        ],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "formatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2025-12-23T05:22:28.246Z",
+        "createdAt": "2022-08-23T16:00:28.269Z",
+        "name": "product_category",
+        "label": "Product Category",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [
+          {
+            "label": "Module",
+            "value": "Module",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Battery",
+            "value": "Battery",
+            "displayOrder": 1,
+            "hidden": false
+          },
+          {
+            "label": "Battery Expansion",
+            "value": "Battery Expansion",
+            "description": "",
+            "displayOrder": 2,
+            "hidden": false
+          },
+          {
+            "label": "Inverter",
+            "value": "Inverter",
+            "displayOrder": 3,
+            "hidden": false
+          },
+          {
+            "label": "Optimizer",
+            "value": "Optimizer",
+            "displayOrder": 4,
+            "hidden": false
+          },
+          {
+            "label": "Gateway",
+            "value": "Gateway",
+            "displayOrder": 5,
+            "hidden": false
+          },
+          {
+            "label": "D&R",
+            "value": "D&R",
+            "displayOrder": 6,
+            "hidden": false
+          },
+          {
+            "label": "Service",
+            "value": "Service",
+            "displayOrder": 7,
+            "hidden": false
+          },
+          {
+            "label": "Adder & Services",
+            "value": "Adder",
+            "displayOrder": 8,
+            "hidden": false
+          },
+          {
+            "label": "EV Charger",
+            "value": "EV Charger",
+            "displayOrder": 9,
+            "hidden": false
+          },
+          {
+            "label": "Tesla System Components",
+            "value": "Tesla System Components",
+            "displayOrder": 10,
+            "hidden": false
+          },
+          {
+            "label": "Project Milestones",
+            "value": "Project Milestones",
+            "displayOrder": 11,
+            "hidden": false
+          },
+          {
+            "label": "Relay Device",
+            "value": "Relay Device",
+            "description": "",
+            "displayOrder": 12,
+            "hidden": false
+          },
+          {
+            "label": "Electrical Hardware",
+            "value": "Electrical Hardware",
+            "description": "",
+            "displayOrder": 13,
+            "hidden": false
+          },
+          {
+            "label": "Mounting Hardware",
+            "value": "Mounting Hardware",
+            "description": "",
+            "displayOrder": 14,
+            "hidden": false
+          }
+        ],
+        "createdUserId": "44289812",
+        "updatedUserId": "67486112",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2022-10-25T13:45:54.977Z",
+        "createdAt": "2022-10-25T13:45:54.977Z",
+        "name": "product_dimensions",
+        "label": "Product Dimensions",
+        "type": "string",
+        "fieldType": "text",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "formatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2022-05-28T01:30:30.678Z",
+        "createdAt": "2020-03-06T16:46:37.468Z",
+        "name": "quantity",
+        "label": "Quantity",
+        "type": "number",
+        "fieldType": "number",
+        "description": "Internal placeholder (to prevent conflicts with line item property of same name)",
+        "groupName": "productinformation",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2022-09-16T16:05:05.271Z",
+        "createdAt": "2022-09-16T16:05:05.271Z",
+        "name": "size__kwh_",
+        "label": "Size (kWh)",
+        "type": "number",
+        "fieldType": "number",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2025-02-05T21:57:35.110Z",
+        "createdAt": "2025-02-05T21:57:35.110Z",
+        "name": "status",
+        "label": "Status",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [
+          {
+            "label": "Active",
+            "value": "Active",
+            "description": "",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Inactive",
+            "value": "Inactive",
+            "description": "",
+            "displayOrder": 1,
+            "hidden": false
+          }
+        ],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2022-08-08T22:58:24.526Z",
+        "createdAt": "2022-08-08T22:58:24.526Z",
+        "name": "synced_to_netsuite",
+        "label": "synced to netsuite",
+        "type": "enumeration",
+        "fieldType": "booleancheckbox",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [
+          {
+            "label": "Yes",
+            "value": "true",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "No",
+            "value": "false",
+            "displayOrder": 1,
+            "hidden": false
+          }
+        ],
+        "createdUserId": "45679325",
+        "updatedUserId": "45679325",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "formatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-03-04T00:07:20.725Z",
+        "createdAt": "2026-03-04T00:07:20.725Z",
+        "name": "unit_label",
+        "label": "Unit Label",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Unit of measurement (W, kWh, A, etc.)",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "67486112",
+        "updatedUserId": "67486112",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-03-04T00:07:19.836Z",
+        "createdAt": "2026-03-04T00:07:19.836Z",
+        "name": "vendor_name",
+        "label": "Vendor Name",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Supplier or vendor name",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "67486112",
+        "updatedUserId": "67486112",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-03-04T00:07:20.254Z",
+        "createdAt": "2026-03-04T00:07:20.254Z",
+        "name": "vendor_part_number",
+        "label": "Vendor Part Number",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Vendor-specific part number or SKU",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "67486112",
+        "updatedUserId": "67486112",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-03-04T00:07:19.357Z",
+        "createdAt": "2026-03-04T00:07:19.357Z",
+        "name": "weight",
+        "label": "Weight (lbs)",
+        "type": "number",
+        "fieldType": "number",
+        "description": "Product weight in pounds",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "67486112",
+        "updatedUserId": "67486112",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2023-01-25T21:58:28.136Z",
+        "createdAt": "2023-01-25T21:58:28.136Z",
+        "name": "width",
+        "label": "Width",
+        "type": "number",
+        "fieldType": "number",
+        "description": "",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "numberDisplayHint": "unformatted",
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-03-26T04:02:06.928Z",
+        "createdAt": "2026-03-26T04:02:06.928Z",
+        "name": "zoho_item_id",
+        "label": "Zoho Item ID",
+        "type": "string",
+        "fieldType": "text",
+        "description": "ID linking this product to Zoho Inventory",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "67486112",
+        "updatedUserId": "67486112",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-03-26T04:02:06.568Z",
+        "createdAt": "2026-03-26T04:02:06.568Z",
+        "name": "zuper_item_id",
+        "label": "Zuper Item ID",
+        "type": "string",
+        "fieldType": "text",
+        "description": "UUID linking this product to Zuper field service catalog",
+        "groupName": "productinformation",
+        "options": [],
+        "createdUserId": "67486112",
+        "updatedUserId": "67486112",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      }
+    ],
+    "price": [
+      {
+        "updatedAt": "2022-05-28T01:26:06.063Z",
+        "createdAt": "2020-03-06T16:32:21.838Z",
+        "name": "amount",
+        "label": "Net price",
+        "type": "number",
+        "fieldType": "number",
+        "description": "Internal placeholder (to prevent conflicts with line item property of same name)",
+        "groupName": "price",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "showCurrencySymbol": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2022-05-28T01:26:51.702Z",
+        "createdAt": "2019-08-06T02:42:48.830Z",
+        "name": "discount",
+        "label": "Unit discount",
+        "type": "number",
+        "fieldType": "number",
+        "description": "The discount amount applied",
+        "groupName": "price",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "showCurrencySymbol": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-09-05T17:14:04.747Z",
+        "createdAt": "2019-08-06T02:42:49.190Z",
+        "name": "hs_cost_of_goods_sold",
+        "label": "Unit cost",
+        "type": "number",
+        "fieldType": "number",
+        "description": "The amount that sold goods cost the HubSpot customer",
+        "groupName": "price",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "showCurrencySymbol": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2022-05-28T01:27:37.268Z",
+        "createdAt": "2019-08-06T02:42:48.894Z",
+        "name": "hs_discount_percentage",
+        "label": "Discount Percentage",
+        "type": "number",
+        "fieldType": "number",
+        "description": "The discount percentage applied",
+        "groupName": "price",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2025-09-03T21:14:54.719Z",
+        "createdAt": "2025-02-18T17:19:29.688Z",
+        "name": "hs_pricing_model",
+        "label": "Pricing model",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "Defines the pricing model as either 'flat' or one of three tiered options",
+        "groupName": "price",
+        "options": [
+          {
+            "label": "Flat",
+            "value": "flat",
+            "description": "Price is multiplied by quantity. Default option when property is null.",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Volume-based",
+            "value": "volume",
+            "description": "All units are priced per unit based on the total quantity.",
+            "displayOrder": 1,
+            "hidden": false
+          },
+          {
+            "label": "Stair-step",
+            "value": "stairstep",
+            "description": "The total cost is a fixed price based on the tier reached, not per unit.",
+            "displayOrder": 2,
+            "hidden": false
+          },
+          {
+            "label": "Graduated",
+            "value": "graduated",
+            "description": "The total cost is the sum of unit prices from each tier reached.",
+            "displayOrder": 3,
+            "hidden": false
+          }
+        ],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-01-28T22:15:43.435Z",
+        "createdAt": "2025-03-12T19:21:00.134Z",
+        "name": "hs_tier_prices",
+        "label": "Tier Prices",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Tier prices",
+        "groupName": "price",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-01-28T22:16:20.275Z",
+        "createdAt": "2025-03-12T19:06:31.471Z",
+        "name": "hs_tier_ranges",
+        "label": "Tier Ranges",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Tier ranges",
+        "groupName": "price",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-09-05T17:14:04.747Z",
+        "createdAt": "2019-08-06T02:42:48.671Z",
+        "name": "price",
+        "label": "Unit price",
+        "type": "number",
+        "fieldType": "number",
+        "description": "Cost of product",
+        "groupName": "price",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "showCurrencySymbol": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-11-01T18:54:01.527Z",
+        "createdAt": "2019-08-06T02:42:48.750Z",
+        "name": "recurringbillingfrequency",
+        "label": "Billing frequency",
+        "type": "enumeration",
+        "fieldType": "select",
+        "description": "How often a product with recurring billing is billed. It informs the pricing calculation for deals and quotes. Products with one-time billing aren’t included.",
+        "groupName": "price",
+        "options": [
+          {
+            "label": "Weekly",
+            "value": "weekly",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "Every two weeks",
+            "value": "biweekly",
+            "displayOrder": 1,
+            "hidden": false
+          },
+          {
+            "label": "Monthly",
+            "value": "monthly",
+            "description": "",
+            "displayOrder": 2,
+            "hidden": false
+          },
+          {
+            "label": "Quarterly",
+            "value": "quarterly",
+            "description": "",
+            "displayOrder": 3,
+            "hidden": false
+          },
+          {
+            "label": "Semi-annually",
+            "value": "per_six_months",
+            "description": "",
+            "displayOrder": 4,
+            "hidden": false
+          },
+          {
+            "label": "Annually",
+            "value": "annually",
+            "description": "",
+            "displayOrder": 5,
+            "hidden": false
+          },
+          {
+            "label": "Every two years",
+            "value": "per_two_years",
+            "description": "",
+            "displayOrder": 6,
+            "hidden": false
+          },
+          {
+            "label": "Every three years",
+            "value": "per_three_years",
+            "description": "",
+            "displayOrder": 7,
+            "hidden": false
+          },
+          {
+            "label": "Every four years",
+            "value": "per_four_years",
+            "displayOrder": 8,
+            "hidden": false
+          },
+          {
+            "label": "Every five years",
+            "value": "per_five_years",
+            "displayOrder": 9,
+            "hidden": false
+          }
+        ],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "showCurrencySymbol": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-09-05T17:14:04.747Z",
+        "createdAt": "2019-08-06T02:42:48.985Z",
+        "name": "tax",
+        "label": "Tax",
+        "type": "number",
+        "fieldType": "number",
+        "description": "The tax amount applied",
+        "groupName": "price",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "showCurrencySymbol": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      }
+    ],
+    "multi_currency_prices": [
+      {
+        "updatedAt": "2026-04-08T20:00:01.436Z",
+        "createdAt": "2025-08-13T15:28:00.661Z",
+        "name": "hs_product_bundle_supported_currencies",
+        "label": "Product bundle supported currencies",
+        "type": "enumeration",
+        "fieldType": "calculation_rollup",
+        "description": "Internal property used to build up hs_supported_currencies. If this is a Product bundle, then this represents the set of currencies supported by all of the associated Bundle Items",
+        "groupName": "multi_currency_prices",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": true,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-04-08T20:00:08.484Z",
+        "createdAt": "2025-07-30T14:46:33.538Z",
+        "name": "hs_product_supported_currencies",
+        "label": "Product supported currencies",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "Internal property used to build up hs_supported_currencies. If this is a simple Product, then this represents the set of currencies supported by the pricing related properties on this Product",
+        "groupName": "multi_currency_prices",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2026-04-08T20:00:13.717Z",
+        "createdAt": "2025-08-14T15:33:18.229Z",
+        "name": "hs_supported_currencies",
+        "label": "Supported currencies",
+        "type": "enumeration",
+        "fieldType": "calculation_equation",
+        "description": "The set of currencies supported by this Product",
+        "groupName": "multi_currency_prices",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": true,
+        "externalOptions": true,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "calculationFormula": "if if is_present(string(hs_bundle_type)) then string(hs_bundle_type) else 'none' equals 'none' then string(hs_product_supported_currencies) else string(hs_product_bundle_supported_currencies)",
+        "dataSensitivity": "non_sensitive"
+      }
+    ],
+    "term": [
+      {
+        "updatedAt": "2024-09-06T15:01:58.346Z",
+        "createdAt": "2019-08-06T02:42:49.048Z",
+        "name": "hs_recurring_billing_period",
+        "label": "Term",
+        "type": "string",
+        "fieldType": "text",
+        "description": "Product recurring billing duration",
+        "groupName": "term",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2022-05-28T01:29:08.298Z",
+        "createdAt": "2019-08-06T02:42:49.123Z",
+        "name": "hs_recurring_billing_start_date",
+        "label": "Start Date",
+        "type": "date",
+        "fieldType": "date",
+        "description": "Recurring billing start date for a line item",
+        "groupName": "term",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "hubspotDefined": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": false
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      }
+    ],
+    "ip__ecomm_bridge__ecomm_bridge": [
+      {
+        "updatedAt": "2023-08-25T22:31:06.901Z",
+        "createdAt": "2023-01-24T18:06:59.435Z",
+        "name": "ip__ecomm_bridge__ecomm_synced",
+        "label": "Ecommerce product",
+        "type": "enumeration",
+        "fieldType": "booleancheckbox",
+        "description": "Is this product being synced with an ecommerce app or integration?",
+        "groupName": "ip__ecomm_bridge__ecomm_bridge",
+        "options": [
+          {
+            "label": "False",
+            "value": "false",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "True",
+            "value": "true",
+            "displayOrder": 1,
+            "hidden": false
+          }
+        ],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyOptions": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2023-01-24T18:06:59.207Z",
+        "createdAt": "2023-01-24T18:06:59.207Z",
+        "name": "ip__ecomm_bridge__image_url",
+        "label": "Image URL",
+        "type": "string",
+        "fieldType": "text",
+        "description": "URL of image of the product.",
+        "groupName": "ip__ecomm_bridge__ecomm_bridge",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2023-08-25T22:31:06.901Z",
+        "createdAt": "2023-01-24T18:06:59.366Z",
+        "name": "ip__ecomm_bridge__source_app_id",
+        "label": "Source app ID",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "The ID of the ecommerce app that created this product.",
+        "groupName": "ip__ecomm_bridge__ecomm_bridge",
+        "options": [
+          {
+            "label": "0",
+            "value": "0",
+            "displayOrder": 0,
+            "hidden": false
+          },
+          {
+            "label": "39761",
+            "value": "39761",
+            "displayOrder": 1,
+            "hidden": false
+          }
+        ],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyOptions": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2023-01-24T18:07:01.146Z",
+        "createdAt": "2023-01-24T18:06:59.294Z",
+        "name": "ip__ecomm_bridge__source_store_id",
+        "label": "Source store",
+        "type": "enumeration",
+        "fieldType": "checkbox",
+        "description": "The name of the store that created this product.",
+        "groupName": "ip__ecomm_bridge__ecomm_bridge",
+        "options": [
+          {
+            "label": "CRM Perks Wordpress Plugin",
+            "value": "39761_default",
+            "displayOrder": -1,
+            "hidden": false
+          }
+        ],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyOptions": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2024-12-18T17:03:13.375Z",
+        "createdAt": "2024-12-18T17:03:13.375Z",
+        "name": "qbo_product_id",
+        "label": "QBO Product ID",
+        "type": "string",
+        "fieldType": "text",
+        "description": "",
+        "groupName": "ip__ecomm_bridge__ecomm_bridge",
+        "options": [],
+        "createdUserId": "44289812",
+        "updatedUserId": "44289812",
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": false,
+          "readOnlyValue": false
+        },
+        "formField": true,
+        "dataSensitivity": "non_sensitive"
+      }
+    ],
+    "ip__sync_extension__sync_extension": [
+      {
+        "updatedAt": "2024-01-22T19:09:08.133Z",
+        "createdAt": "2023-01-24T18:07:02.651Z",
+        "name": "ip__sync_extension__external_source_account_id",
+        "label": "External Sync Source",
+        "type": "enumeration",
+        "fieldType": "text",
+        "description": "The ID of the external account that synced with this product.",
+        "groupName": "ip__sync_extension__sync_extension",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": true,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": false,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      },
+      {
+        "updatedAt": "2023-01-24T18:07:02.576Z",
+        "createdAt": "2023-01-24T18:07:02.576Z",
+        "name": "ip__sync_extension__external_source_app_id",
+        "label": "Source app ID",
+        "type": "string",
+        "fieldType": "text",
+        "description": "The ID of the app that synced with this product.",
+        "groupName": "ip__sync_extension__sync_extension",
+        "options": [],
+        "displayOrder": -1,
+        "calculated": false,
+        "externalOptions": false,
+        "archived": false,
+        "hasUniqueValue": false,
+        "hidden": true,
+        "modificationMetadata": {
+          "archivable": true,
+          "readOnlyDefinition": true,
+          "readOnlyValue": true
+        },
+        "formField": false,
+        "dataSensitivity": "non_sensitive"
+      }
+    ]
+  },
+  "all": [
+    {
+      "updatedAt": "2022-11-30T20:39:50.511Z",
+      "createdAt": "2022-11-30T20:39:50.511Z",
+      "name": "ac_size",
+      "label": "AC Size",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-05-28T01:26:06.063Z",
+      "createdAt": "2020-03-06T16:32:21.838Z",
+      "name": "amount",
+      "label": "Net price",
+      "type": "number",
+      "fieldType": "number",
+      "description": "Internal placeholder (to prevent conflicts with line item property of same name)",
+      "groupName": "price",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "showCurrencySymbol": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-09-16T16:05:34.286Z",
+      "createdAt": "2022-09-16T16:05:34.286Z",
+      "name": "capacity__kw_",
+      "label": "Capacity (kW)",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2023-01-25T20:47:02.924Z",
+      "createdAt": "2022-08-29T17:50:54.034Z",
+      "name": "cc",
+      "label": "SLO",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-09-05T17:14:04.747Z",
+      "createdAt": "2019-08-06T02:42:48.261Z",
+      "name": "createdate",
+      "label": "Create Date",
+      "type": "datetime",
+      "fieldType": "date",
+      "description": "The date the product was created",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2025-12-11T01:06:19.496Z",
+      "createdAt": "2022-11-30T20:39:24.984Z",
+      "name": "dc_size",
+      "label": "DC Size (Wattage)",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "67486112",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-08-29T17:50:06.051Z",
+      "createdAt": "2022-08-29T17:50:06.051Z",
+      "name": "den",
+      "label": "DEN",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-09-05T17:14:04.747Z",
+      "createdAt": "2019-08-06T02:42:48.591Z",
+      "name": "description",
+      "label": "Product description",
+      "type": "string",
+      "fieldType": "textarea",
+      "description": "Full description of product",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-05-28T01:26:51.702Z",
+      "createdAt": "2019-08-06T02:42:48.830Z",
+      "name": "discount",
+      "label": "Unit discount",
+      "type": "number",
+      "fieldType": "number",
+      "description": "The discount amount applied",
+      "groupName": "price",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "showCurrencySymbol": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-08-29T17:50:30.897Z",
+      "createdAt": "2022-08-29T17:50:30.897Z",
+      "name": "dtc",
+      "label": "DTC",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2025-12-12T03:14:50.789Z",
+      "createdAt": "2025-12-12T03:14:50.789Z",
+      "name": "energy_storage_capacity",
+      "label": "Energy Storage Capacity",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "67486112",
+      "updatedUserId": "67486112",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2023-04-14T19:28:15.752Z",
+      "createdAt": "2023-04-14T19:28:15.752Z",
+      "name": "hard_to_procure",
+      "label": "Hard To Procure",
+      "type": "enumeration",
+      "fieldType": "booleancheckbox",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "true",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "No",
+          "value": "false",
+          "displayOrder": 1,
+          "hidden": false
+        }
+      ],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_all_accessible_team_ids",
+      "label": "All teams",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "The team IDs, including the team hierarchy, of all default and custom owner properties for this record.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_all_assigned_business_unit_ids",
+      "label": "Business units",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "The business units this record is assigned to.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_all_owner_ids",
+      "label": "All owner IDs",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "Values of all default and custom owner properties for this record.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_all_team_ids",
+      "label": "All team IDs",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "The team IDs of all default and custom owner properties for this record.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-05-28T01:27:06.884Z",
+      "createdAt": "2019-08-06T02:42:48.431Z",
+      "name": "hs_avatar_filemanager_key",
+      "label": "Avatar FileManager key",
+      "type": "string",
+      "fieldType": "text",
+      "description": "The path in the FileManager CDN for this product's image. Automatically set by HubSpot.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-04-08T19:59:52.168Z",
+      "createdAt": "2025-11-04T18:56:46.806Z",
+      "name": "hs_bundle_grouping_config_id",
+      "label": "Bundle Grouping Config ID",
+      "type": "number",
+      "fieldType": "number",
+      "description": "ID reference to the LineItemGroupConfig that configures the grouping of line items created from this Product bundle",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-04-08T19:59:56.836Z",
+      "createdAt": "2025-05-28T20:19:27.237Z",
+      "name": "hs_bundle_type",
+      "label": "Bundle type",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "Indicates the type of bundling",
+      "groupName": "productinformation",
+      "options": [
+        {
+          "label": "None",
+          "value": "none",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "Open",
+          "value": "open",
+          "displayOrder": 1,
+          "hidden": false
+        }
+      ],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-09-05T17:14:04.747Z",
+      "createdAt": "2019-08-06T02:42:49.190Z",
+      "name": "hs_cost_of_goods_sold",
+      "label": "Unit cost",
+      "type": "number",
+      "fieldType": "number",
+      "description": "The amount that sold goods cost the HubSpot customer",
+      "groupName": "price",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "showCurrencySymbol": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_created_by_user_id",
+      "label": "Created by user ID",
+      "type": "number",
+      "fieldType": "number",
+      "description": "The user who created this record. This value is set automatically by HubSpot.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_createdate",
+      "label": "Object create date/time",
+      "type": "datetime",
+      "fieldType": "date",
+      "description": "The date and time at which this object was created. This value is automatically set by HubSpot and may not be modified.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-05-28T01:27:37.268Z",
+      "createdAt": "2019-08-06T02:42:48.894Z",
+      "name": "hs_discount_percentage",
+      "label": "Discount Percentage",
+      "type": "number",
+      "fieldType": "number",
+      "description": "The discount percentage applied",
+      "groupName": "price",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-10-02T14:56:52.611Z",
+      "createdAt": "2023-12-05T16:12:31.601Z",
+      "name": "hs_folder",
+      "label": "Folder",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "The folder containing this product",
+      "groupName": "productinformation",
+      "options": [
+        {
+          "label": "Modules",
+          "value": "Modules (auto_generated_079f6bf2-afd6-4d92-9800-6f05eed004d6)",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "Batteries",
+          "value": "Batteries (auto_generated_2f0cf1be-da46-46ee-88dc-33c06622ee08)",
+          "displayOrder": 1,
+          "hidden": false
+        },
+        {
+          "label": "EV Chargers",
+          "value": "EV Chargers (auto_generated_4b9ba9c1-e775-4135-bd47-e63be00a0d3c)",
+          "displayOrder": 2,
+          "hidden": false
+        },
+        {
+          "label": "Gateways",
+          "value": "Gateways",
+          "description": "",
+          "displayOrder": 3,
+          "hidden": false
+        },
+        {
+          "label": "Inverters",
+          "value": "Inverters (auto_generated_1a9bc920-2cb6-4c30-a81c-daf6a838e357)",
+          "displayOrder": 4,
+          "hidden": false
+        },
+        {
+          "label": "Tesla System Components",
+          "value": "Tesla System Components (auto_generated_d1e25c08-5068-46fd-b9aa-0c700fd9266c)",
+          "displayOrder": 5,
+          "hidden": false
+        },
+        {
+          "label": "Optimizers",
+          "value": "Optimizers",
+          "description": "",
+          "displayOrder": 6,
+          "hidden": false
+        },
+        {
+          "label": "Adders",
+          "value": "Adders (auto_generated_09db4aa0-e08d-4425-9254-3aaa166f1ed0)",
+          "displayOrder": 7,
+          "hidden": false
+        },
+        {
+          "label": "D&R",
+          "value": "D&R (auto_generated_02b8cc3e-da9e-421c-b16d-da2799619581)",
+          "displayOrder": 8,
+          "hidden": false
+        },
+        {
+          "label": "Service",
+          "value": "Service (auto_generated_14fe02cb-cd5f-443b-a738-817018948029)",
+          "displayOrder": 9,
+          "hidden": false
+        },
+        {
+          "label": "Other Componentry",
+          "value": "Other Componentry (auto_generated_242f8042-7314-40f4-ac74-701cc3c2c7d4)",
+          "displayOrder": 10,
+          "hidden": false
+        },
+        {
+          "label": "Project Milestones",
+          "value": "Project Milestones (auto_generated_527d6bd7-0121-4ebe-89ac-3615ea422efe)",
+          "displayOrder": 11,
+          "hidden": false
+        }
+      ],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyOptions": false,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-09-05T17:14:04.747Z",
+      "createdAt": "2019-08-06T02:42:49.232Z",
+      "name": "hs_folder_id",
+      "label": "Folder Id",
+      "type": "number",
+      "fieldType": "number",
+      "description": "The ID of the folder that has this product",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2025-01-13T20:42:44.391Z",
+      "createdAt": "2023-08-03T18:05:43.415Z",
+      "name": "hs_folder_name",
+      "label": "Folder name",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Property derived from hs_folder equal to the option's label. Used to provide string-like search functionality as opposed to the enumeration search functionality of hs_folder",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-09-05T17:14:04.747Z",
+      "createdAt": "2020-11-23T22:16:29.502Z",
+      "name": "hs_images",
+      "label": "Image Url",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Product images.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-09-05T17:14:04.747Z",
+      "createdAt": "2019-08-06T02:42:48.342Z",
+      "name": "hs_lastmodifieddate",
+      "label": "Last Modified Date",
+      "type": "datetime",
+      "fieldType": "date",
+      "description": "The date any property on this product was modified",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_merged_object_ids",
+      "label": "Merged record IDs",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "The list of record IDs that have been merged into this record. This value is set automatically by HubSpot.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_object_id",
+      "label": "Record ID",
+      "type": "number",
+      "fieldType": "number",
+      "description": "The unique ID for this record. This value is set automatically by HubSpot.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_object_source",
+      "label": "Record creation source",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Raw internal PropertySource present in the RequestMeta when this record was created.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_object_source_detail_1",
+      "label": "Record source detail 1",
+      "type": "string",
+      "fieldType": "text",
+      "description": "First level of detail on how this record was created.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_object_source_detail_2",
+      "label": "Record source detail 2",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Second level of detail on how this record was created.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_object_source_detail_3",
+      "label": "Record source detail 3",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Third level of detail on how this record was created.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_object_source_id",
+      "label": "Record creation source ID",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Raw internal sourceId present in the RequestMeta when this record was created.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_object_source_label",
+      "label": "Record source",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "How this record was created.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_object_source_user_id",
+      "label": "Record creation source user ID",
+      "type": "number",
+      "fieldType": "number",
+      "description": "Raw internal userId present in the RequestMeta when this record was created.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_owning_teams",
+      "label": "Owning Teams",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "The direct teams associated to this record's owner.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_pinned_engagement_id",
+      "label": "Pinned engagement ID",
+      "type": "number",
+      "fieldType": "number",
+      "description": "The object ID of the current pinned engagement. This will only be shown in the app if there is already an association to the engagement.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2025-09-03T21:14:54.719Z",
+      "createdAt": "2025-02-18T17:19:29.688Z",
+      "name": "hs_pricing_model",
+      "label": "Pricing model",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "Defines the pricing model as either 'flat' or one of three tiered options",
+      "groupName": "price",
+      "options": [
+        {
+          "label": "Flat",
+          "value": "flat",
+          "description": "Price is multiplied by quantity. Default option when property is null.",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "Volume-based",
+          "value": "volume",
+          "description": "All units are priced per unit based on the total quantity.",
+          "displayOrder": 1,
+          "hidden": false
+        },
+        {
+          "label": "Stair-step",
+          "value": "stairstep",
+          "description": "The total cost is a fixed price based on the tier reached, not per unit.",
+          "displayOrder": 2,
+          "hidden": false
+        },
+        {
+          "label": "Graduated",
+          "value": "graduated",
+          "description": "The total cost is the sum of unit prices from each tier reached.",
+          "displayOrder": 3,
+          "hidden": false
+        }
+      ],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-04-08T20:00:01.436Z",
+      "createdAt": "2025-08-13T15:28:00.661Z",
+      "name": "hs_product_bundle_supported_currencies",
+      "label": "Product bundle supported currencies",
+      "type": "enumeration",
+      "fieldType": "calculation_rollup",
+      "description": "Internal property used to build up hs_supported_currencies. If this is a Product bundle, then this represents the set of currencies supported by all of the associated Bundle Items",
+      "groupName": "multi_currency_prices",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": true,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-03-05T18:46:25.040Z",
+      "createdAt": "2025-10-14T14:16:59.018Z",
+      "name": "hs_product_classification",
+      "label": "Product Classification",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "The classification of product.Categorizes your product as either Standalone, Variant or Bundle",
+      "groupName": "productinformation",
+      "options": [
+        {
+          "label": "Standalone",
+          "value": "standalone",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "Variant",
+          "value": "variant",
+          "displayOrder": 1,
+          "hidden": false
+        },
+        {
+          "label": "Bundle",
+          "value": "bundle",
+          "displayOrder": 2,
+          "hidden": false
+        }
+      ],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyOptions": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-04-08T20:00:08.484Z",
+      "createdAt": "2025-07-30T14:46:33.538Z",
+      "name": "hs_product_supported_currencies",
+      "label": "Product supported currencies",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "Internal property used to build up hs_supported_currencies. If this is a simple Product, then this represents the set of currencies supported by the pricing related properties on this Product",
+      "groupName": "multi_currency_prices",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2025-08-13T14:19:38.551Z",
+      "createdAt": "2022-03-07T20:14:58.526Z",
+      "name": "hs_product_type",
+      "label": "Product type",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "The type of product. By default, categorize your product as either Inventory, Non-Inventory or Service.",
+      "groupName": "productinformation",
+      "options": [
+        {
+          "label": "Inventory",
+          "value": "inventory",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "Non-Inventory",
+          "value": "non_inventory",
+          "displayOrder": 1,
+          "hidden": false
+        },
+        {
+          "label": "Service",
+          "value": "service",
+          "displayOrder": 2,
+          "hidden": false
+        }
+      ],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyOptions": false,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_read_only",
+      "label": "Read only object",
+      "type": "bool",
+      "fieldType": "booleancheckbox",
+      "description": "Determines whether a record can be edited by a user.",
+      "groupName": "productinformation",
+      "options": [
+        {
+          "label": "True",
+          "value": "true",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "False",
+          "value": "false",
+          "displayOrder": 1,
+          "hidden": false
+        }
+      ],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-09-06T15:01:58.346Z",
+      "createdAt": "2019-08-06T02:42:49.048Z",
+      "name": "hs_recurring_billing_period",
+      "label": "Term",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Product recurring billing duration",
+      "groupName": "term",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-05-28T01:29:08.298Z",
+      "createdAt": "2019-08-06T02:42:49.123Z",
+      "name": "hs_recurring_billing_start_date",
+      "label": "Start Date",
+      "type": "date",
+      "fieldType": "date",
+      "description": "Recurring billing start date for a line item",
+      "groupName": "term",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-02-05T21:46:04.618Z",
+      "createdAt": "2025-12-09T15:58:36.357Z",
+      "name": "hs_rich_text_description",
+      "label": "Description",
+      "type": "string",
+      "fieldType": "html",
+      "description": "Full description of product with rich text formatting",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_shared_team_ids",
+      "label": "Shared teams",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "Additional teams whose users can access the record based on their permissions. This can be set manually or through Workflows or APIs.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_shared_user_ids",
+      "label": "Shared users",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "Additional users that can access the record based on their permissions. This can be set manually or through Workflows and APIs.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-09-05T17:14:04.747Z",
+      "createdAt": "2020-03-05T15:05:04.279Z",
+      "name": "hs_sku",
+      "label": "SKU",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Unique product identifier",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": true,
+      "hidden": false,
+      "hubspotDefined": true,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2025-09-03T21:15:50.215Z",
+      "createdAt": "2025-02-05T19:19:57.586Z",
+      "name": "hs_status",
+      "label": "Status",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "Active or inactive status for a product. Determines whether or not the product will appear in search when creating a line item from a product",
+      "groupName": "productinformation",
+      "options": [
+        {
+          "label": "Active",
+          "value": "active",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "Inactive",
+          "value": "inactive",
+          "displayOrder": 1,
+          "hidden": false
+        }
+      ],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-04-08T20:00:13.717Z",
+      "createdAt": "2025-08-14T15:33:18.229Z",
+      "name": "hs_supported_currencies",
+      "label": "Supported currencies",
+      "type": "enumeration",
+      "fieldType": "calculation_equation",
+      "description": "The set of currencies supported by this Product",
+      "groupName": "multi_currency_prices",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": true,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "calculationFormula": "if if is_present(string(hs_bundle_type)) then string(hs_bundle_type) else 'none' equals 'none' then string(hs_product_supported_currencies) else string(hs_product_bundle_supported_currencies)",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-04-20T14:58:52.598Z",
+      "createdAt": "2024-08-14T19:42:54.135Z",
+      "name": "hs_tax_category",
+      "label": "Tax Category",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "The tax category used to determine what amount of tax to automatically apply to line items created from this product",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-01-28T22:15:43.435Z",
+      "createdAt": "2025-03-12T19:21:00.134Z",
+      "name": "hs_tier_prices",
+      "label": "Tier Prices",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Tier prices",
+      "groupName": "price",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-01-28T22:16:20.275Z",
+      "createdAt": "2025-03-12T19:06:31.471Z",
+      "name": "hs_tier_ranges",
+      "label": "Tier Ranges",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Tier ranges",
+      "groupName": "price",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_unique_creation_key",
+      "label": "Unique creation key",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Unique property used for idempotent creates",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": true,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_updated_by_user_id",
+      "label": "Updated by user ID",
+      "type": "number",
+      "fieldType": "number",
+      "description": "The user who last updated this record. This value is set automatically by HubSpot.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-11-01T18:54:01.527Z",
+      "createdAt": "2020-11-23T22:16:37.142Z",
+      "name": "hs_url",
+      "label": "URL",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Product url.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_user_ids_of_all_notification_followers",
+      "label": "User IDs of all notification followers",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "The user IDs of all users that have clicked follow within the object to opt-in to getting follow notifications",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_user_ids_of_all_notification_unfollowers",
+      "label": "User IDs of all notification unfollowers",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "The user IDs of all object owners that have clicked unfollow within the object to opt-out of getting follow notifications",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_user_ids_of_all_owners",
+      "label": "User IDs of all owners",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "The user IDs of all owners of this record.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hs_was_imported",
+      "label": "Performed in an import",
+      "type": "bool",
+      "fieldType": "booleancheckbox",
+      "description": "Object is part of an import",
+      "groupName": "productinformation",
+      "options": [
+        {
+          "label": "True",
+          "value": "true",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "False",
+          "value": "false",
+          "displayOrder": 1,
+          "hidden": false
+        }
+      ],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hubspot_owner_assigneddate",
+      "label": "Owner assigned date",
+      "type": "datetime",
+      "fieldType": "date",
+      "description": "The most recent timestamp of when an owner was assigned to this record. This value is set automatically by HubSpot.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "name": "hubspot_owner_id",
+      "label": "Owner",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "The owner of the object.",
+      "groupName": "productinformation",
+      "options": [],
+      "referencedObjectType": "OWNER",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-11-04T20:39:27.702Z",
+      "createdAt": "2022-10-05T19:28:41.390Z",
+      "name": "hubspot_team_id",
+      "label": "HubSpot Team",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "The primary team of the owner.",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-03-26T03:35:50.211Z",
+      "createdAt": "2026-03-26T03:35:50.211Z",
+      "name": "internal_product_id",
+      "label": "Internal Product ID",
+      "type": "string",
+      "fieldType": "text",
+      "description": "UUID linking this product to the PB Operations Suite internal product catalog",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "67486112",
+      "updatedUserId": "67486112",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2023-08-25T22:31:06.901Z",
+      "createdAt": "2023-01-24T18:06:59.435Z",
+      "name": "ip__ecomm_bridge__ecomm_synced",
+      "label": "Ecommerce product",
+      "type": "enumeration",
+      "fieldType": "booleancheckbox",
+      "description": "Is this product being synced with an ecommerce app or integration?",
+      "groupName": "ip__ecomm_bridge__ecomm_bridge",
+      "options": [
+        {
+          "label": "False",
+          "value": "false",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "True",
+          "value": "true",
+          "displayOrder": 1,
+          "hidden": false
+        }
+      ],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyOptions": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2023-01-24T18:06:59.207Z",
+      "createdAt": "2023-01-24T18:06:59.207Z",
+      "name": "ip__ecomm_bridge__image_url",
+      "label": "Image URL",
+      "type": "string",
+      "fieldType": "text",
+      "description": "URL of image of the product.",
+      "groupName": "ip__ecomm_bridge__ecomm_bridge",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2023-08-25T22:31:06.901Z",
+      "createdAt": "2023-01-24T18:06:59.366Z",
+      "name": "ip__ecomm_bridge__source_app_id",
+      "label": "Source app ID",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "The ID of the ecommerce app that created this product.",
+      "groupName": "ip__ecomm_bridge__ecomm_bridge",
+      "options": [
+        {
+          "label": "0",
+          "value": "0",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "39761",
+          "value": "39761",
+          "displayOrder": 1,
+          "hidden": false
+        }
+      ],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyOptions": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2023-01-24T18:07:01.146Z",
+      "createdAt": "2023-01-24T18:06:59.294Z",
+      "name": "ip__ecomm_bridge__source_store_id",
+      "label": "Source store",
+      "type": "enumeration",
+      "fieldType": "checkbox",
+      "description": "The name of the store that created this product.",
+      "groupName": "ip__ecomm_bridge__ecomm_bridge",
+      "options": [
+        {
+          "label": "CRM Perks Wordpress Plugin",
+          "value": "39761_default",
+          "displayOrder": -1,
+          "hidden": false
+        }
+      ],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyOptions": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-01-22T19:09:08.133Z",
+      "createdAt": "2023-01-24T18:07:02.651Z",
+      "name": "ip__sync_extension__external_source_account_id",
+      "label": "External Sync Source",
+      "type": "enumeration",
+      "fieldType": "text",
+      "description": "The ID of the external account that synced with this product.",
+      "groupName": "ip__sync_extension__sync_extension",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": true,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2023-01-24T18:07:02.576Z",
+      "createdAt": "2023-01-24T18:07:02.576Z",
+      "name": "ip__sync_extension__external_source_app_id",
+      "label": "Source app ID",
+      "type": "string",
+      "fieldType": "text",
+      "description": "The ID of the app that synced with this product.",
+      "groupName": "ip__sync_extension__sync_extension",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2023-01-25T21:58:06.161Z",
+      "createdAt": "2023-01-25T21:58:06.161Z",
+      "name": "length",
+      "label": "Length",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2023-02-06T15:59:33.433Z",
+      "createdAt": "2023-02-06T15:59:33.433Z",
+      "name": "line_item_description",
+      "label": "Line Item Description",
+      "type": "string",
+      "fieldType": "textarea",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2025-05-21T14:12:12.123Z",
+      "createdAt": "2022-08-30T13:28:31.786Z",
+      "name": "manufacturer",
+      "label": "Manufacturer",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [
+        {
+          "label": "ChargePoint",
+          "value": "ChargePoint",
+          "displayOrder": 1,
+          "hidden": false
+        },
+        {
+          "label": "CONNECTDER",
+          "value": "CONNECTDER",
+          "displayOrder": 2,
+          "hidden": false
+        },
+        {
+          "label": "CONXT",
+          "value": "CONXT",
+          "displayOrder": 3,
+          "hidden": false
+        },
+        {
+          "label": "Enphase",
+          "value": "Enphase",
+          "displayOrder": 4,
+          "hidden": false
+        },
+        {
+          "label": "GENER",
+          "value": "GENER",
+          "displayOrder": 5,
+          "hidden": false
+        },
+        {
+          "label": "Generac",
+          "value": "Generac",
+          "displayOrder": 6,
+          "hidden": false
+        },
+        {
+          "label": "Hanwha",
+          "value": "Hanwha",
+          "displayOrder": 7,
+          "hidden": false
+        },
+        {
+          "label": "Hyundai",
+          "value": "Hyundai",
+          "displayOrder": 8,
+          "hidden": false
+        },
+        {
+          "label": "Iron Ridge",
+          "value": "Iron Ridge",
+          "displayOrder": 9,
+          "hidden": false
+        },
+        {
+          "label": "Jinco",
+          "value": "Jinco",
+          "description": "",
+          "displayOrder": 10,
+          "hidden": false
+        },
+        {
+          "label": "LG",
+          "value": "LG",
+          "displayOrder": 11,
+          "hidden": false
+        },
+        {
+          "label": "LG Chem",
+          "value": "LG Chem",
+          "displayOrder": 12,
+          "hidden": false
+        },
+        {
+          "label": "Longi",
+          "value": "Longi",
+          "displayOrder": 13,
+          "hidden": false
+        },
+        {
+          "label": "Neurio",
+          "value": "Neurio",
+          "displayOrder": 14,
+          "hidden": false
+        },
+        {
+          "label": "North American Made",
+          "value": "North American Made",
+          "displayOrder": 15,
+          "hidden": false
+        },
+        {
+          "label": "Panasonic",
+          "value": "Panasonic",
+          "displayOrder": 16,
+          "hidden": false
+        },
+        {
+          "label": "Photon",
+          "value": "Photon",
+          "displayOrder": 17,
+          "hidden": false
+        },
+        {
+          "label": "Photon Service",
+          "value": "Photon Service",
+          "displayOrder": 18,
+          "hidden": false
+        },
+        {
+          "label": "REC",
+          "value": "REC",
+          "displayOrder": 19,
+          "hidden": false
+        },
+        {
+          "label": "Rell Power",
+          "value": "Rell Power",
+          "displayOrder": 20,
+          "hidden": false
+        },
+        {
+          "label": "Sense",
+          "value": "Sense",
+          "displayOrder": 21,
+          "hidden": false
+        },
+        {
+          "label": "Silfab",
+          "value": "Silfab",
+          "displayOrder": 22,
+          "hidden": false
+        },
+        {
+          "label": "SMA",
+          "value": "SMA",
+          "displayOrder": 23,
+          "hidden": false
+        },
+        {
+          "label": "SolarEdge",
+          "value": "SolarEdge",
+          "displayOrder": 24,
+          "hidden": false
+        },
+        {
+          "label": "Solaria",
+          "value": "Solaria",
+          "displayOrder": 25,
+          "hidden": false
+        },
+        {
+          "label": "SONBT",
+          "value": "SONBT",
+          "displayOrder": 26,
+          "hidden": false
+        },
+        {
+          "label": "Sunpower",
+          "value": "Sunpower",
+          "displayOrder": 27,
+          "hidden": false
+        },
+        {
+          "label": "Tesla",
+          "value": "Tesla",
+          "displayOrder": 28,
+          "hidden": false
+        },
+        {
+          "label": "Trim-Lock",
+          "value": "Trim-Lock",
+          "displayOrder": 29,
+          "hidden": false
+        },
+        {
+          "label": "Tygo",
+          "value": "Tygo",
+          "description": "",
+          "displayOrder": 30,
+          "hidden": false
+        },
+        {
+          "label": "URE",
+          "value": "URE",
+          "displayOrder": 31,
+          "hidden": false
+        },
+        {
+          "label": "Wallbox",
+          "value": "Wallbox",
+          "displayOrder": 32,
+          "hidden": false
+        }
+      ],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-09-05T17:14:04.747Z",
+      "createdAt": "2019-08-06T02:42:48.507Z",
+      "name": "name",
+      "label": "Name",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Product name",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2025-12-23T23:43:14.405Z",
+      "createdAt": "2025-12-23T23:43:14.405Z",
+      "name": "os_name",
+      "label": "OS Name",
+      "type": "string",
+      "fieldType": "text",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "84099731",
+      "updatedUserId": "84099731",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-08-29T17:51:06.032Z",
+      "createdAt": "2022-08-29T17:51:06.032Z",
+      "name": "pblo",
+      "label": "PBLO",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-09-02T01:12:14.212Z",
+      "createdAt": "2022-09-02T01:12:14.212Z",
+      "name": "permit_required_for_install",
+      "label": "Permit Required For Install",
+      "type": "enumeration",
+      "fieldType": "booleancheckbox",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "true",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "No",
+          "value": "false",
+          "displayOrder": 1,
+          "hidden": false
+        }
+      ],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-09-05T17:14:04.747Z",
+      "createdAt": "2019-08-06T02:42:48.671Z",
+      "name": "price",
+      "label": "Unit price",
+      "type": "number",
+      "fieldType": "number",
+      "description": "Cost of product",
+      "groupName": "price",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "showCurrencySymbol": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2025-12-23T05:22:28.246Z",
+      "createdAt": "2022-08-23T16:00:28.269Z",
+      "name": "product_category",
+      "label": "Product Category",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [
+        {
+          "label": "Module",
+          "value": "Module",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "Battery",
+          "value": "Battery",
+          "displayOrder": 1,
+          "hidden": false
+        },
+        {
+          "label": "Battery Expansion",
+          "value": "Battery Expansion",
+          "description": "",
+          "displayOrder": 2,
+          "hidden": false
+        },
+        {
+          "label": "Inverter",
+          "value": "Inverter",
+          "displayOrder": 3,
+          "hidden": false
+        },
+        {
+          "label": "Optimizer",
+          "value": "Optimizer",
+          "displayOrder": 4,
+          "hidden": false
+        },
+        {
+          "label": "Gateway",
+          "value": "Gateway",
+          "displayOrder": 5,
+          "hidden": false
+        },
+        {
+          "label": "D&R",
+          "value": "D&R",
+          "displayOrder": 6,
+          "hidden": false
+        },
+        {
+          "label": "Service",
+          "value": "Service",
+          "displayOrder": 7,
+          "hidden": false
+        },
+        {
+          "label": "Adder & Services",
+          "value": "Adder",
+          "displayOrder": 8,
+          "hidden": false
+        },
+        {
+          "label": "EV Charger",
+          "value": "EV Charger",
+          "displayOrder": 9,
+          "hidden": false
+        },
+        {
+          "label": "Tesla System Components",
+          "value": "Tesla System Components",
+          "displayOrder": 10,
+          "hidden": false
+        },
+        {
+          "label": "Project Milestones",
+          "value": "Project Milestones",
+          "displayOrder": 11,
+          "hidden": false
+        },
+        {
+          "label": "Relay Device",
+          "value": "Relay Device",
+          "description": "",
+          "displayOrder": 12,
+          "hidden": false
+        },
+        {
+          "label": "Electrical Hardware",
+          "value": "Electrical Hardware",
+          "description": "",
+          "displayOrder": 13,
+          "hidden": false
+        },
+        {
+          "label": "Mounting Hardware",
+          "value": "Mounting Hardware",
+          "description": "",
+          "displayOrder": 14,
+          "hidden": false
+        }
+      ],
+      "createdUserId": "44289812",
+      "updatedUserId": "67486112",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-10-25T13:45:54.977Z",
+      "createdAt": "2022-10-25T13:45:54.977Z",
+      "name": "product_dimensions",
+      "label": "Product Dimensions",
+      "type": "string",
+      "fieldType": "text",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-12-18T17:03:13.375Z",
+      "createdAt": "2024-12-18T17:03:13.375Z",
+      "name": "qbo_product_id",
+      "label": "QBO Product ID",
+      "type": "string",
+      "fieldType": "text",
+      "description": "",
+      "groupName": "ip__ecomm_bridge__ecomm_bridge",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-05-28T01:30:30.678Z",
+      "createdAt": "2020-03-06T16:46:37.468Z",
+      "name": "quantity",
+      "label": "Quantity",
+      "type": "number",
+      "fieldType": "number",
+      "description": "Internal placeholder (to prevent conflicts with line item property of same name)",
+      "groupName": "productinformation",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": true
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-11-01T18:54:01.527Z",
+      "createdAt": "2019-08-06T02:42:48.750Z",
+      "name": "recurringbillingfrequency",
+      "label": "Billing frequency",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "How often a product with recurring billing is billed. It informs the pricing calculation for deals and quotes. Products with one-time billing aren’t included.",
+      "groupName": "price",
+      "options": [
+        {
+          "label": "Weekly",
+          "value": "weekly",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "Every two weeks",
+          "value": "biweekly",
+          "displayOrder": 1,
+          "hidden": false
+        },
+        {
+          "label": "Monthly",
+          "value": "monthly",
+          "description": "",
+          "displayOrder": 2,
+          "hidden": false
+        },
+        {
+          "label": "Quarterly",
+          "value": "quarterly",
+          "description": "",
+          "displayOrder": 3,
+          "hidden": false
+        },
+        {
+          "label": "Semi-annually",
+          "value": "per_six_months",
+          "description": "",
+          "displayOrder": 4,
+          "hidden": false
+        },
+        {
+          "label": "Annually",
+          "value": "annually",
+          "description": "",
+          "displayOrder": 5,
+          "hidden": false
+        },
+        {
+          "label": "Every two years",
+          "value": "per_two_years",
+          "description": "",
+          "displayOrder": 6,
+          "hidden": false
+        },
+        {
+          "label": "Every three years",
+          "value": "per_three_years",
+          "description": "",
+          "displayOrder": 7,
+          "hidden": false
+        },
+        {
+          "label": "Every four years",
+          "value": "per_four_years",
+          "displayOrder": 8,
+          "hidden": false
+        },
+        {
+          "label": "Every five years",
+          "value": "per_five_years",
+          "displayOrder": 9,
+          "hidden": false
+        }
+      ],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "hubspotDefined": true,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-09-16T16:05:05.271Z",
+      "createdAt": "2022-09-16T16:05:05.271Z",
+      "name": "size__kwh_",
+      "label": "Size (kWh)",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2025-02-05T21:57:35.110Z",
+      "createdAt": "2025-02-05T21:57:35.110Z",
+      "name": "status",
+      "label": "Status",
+      "type": "enumeration",
+      "fieldType": "select",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [
+        {
+          "label": "Active",
+          "value": "Active",
+          "description": "",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "Inactive",
+          "value": "Inactive",
+          "description": "",
+          "displayOrder": 1,
+          "hidden": false
+        }
+      ],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2022-08-08T22:58:24.526Z",
+      "createdAt": "2022-08-08T22:58:24.526Z",
+      "name": "synced_to_netsuite",
+      "label": "synced to netsuite",
+      "type": "enumeration",
+      "fieldType": "booleancheckbox",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [
+        {
+          "label": "Yes",
+          "value": "true",
+          "displayOrder": 0,
+          "hidden": false
+        },
+        {
+          "label": "No",
+          "value": "false",
+          "displayOrder": 1,
+          "hidden": false
+        }
+      ],
+      "createdUserId": "45679325",
+      "updatedUserId": "45679325",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "formatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2024-09-05T17:14:04.747Z",
+      "createdAt": "2019-08-06T02:42:48.985Z",
+      "name": "tax",
+      "label": "Tax",
+      "type": "number",
+      "fieldType": "number",
+      "description": "The tax amount applied",
+      "groupName": "price",
+      "options": [],
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "hasUniqueValue": false,
+      "hidden": true,
+      "hubspotDefined": true,
+      "showCurrencySymbol": true,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": true,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-03-04T00:07:20.725Z",
+      "createdAt": "2026-03-04T00:07:20.725Z",
+      "name": "unit_label",
+      "label": "Unit Label",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Unit of measurement (W, kWh, A, etc.)",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "67486112",
+      "updatedUserId": "67486112",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-03-04T00:07:19.836Z",
+      "createdAt": "2026-03-04T00:07:19.836Z",
+      "name": "vendor_name",
+      "label": "Vendor Name",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Supplier or vendor name",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "67486112",
+      "updatedUserId": "67486112",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-03-04T00:07:20.254Z",
+      "createdAt": "2026-03-04T00:07:20.254Z",
+      "name": "vendor_part_number",
+      "label": "Vendor Part Number",
+      "type": "string",
+      "fieldType": "text",
+      "description": "Vendor-specific part number or SKU",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "67486112",
+      "updatedUserId": "67486112",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-03-04T00:07:19.357Z",
+      "createdAt": "2026-03-04T00:07:19.357Z",
+      "name": "weight",
+      "label": "Weight (lbs)",
+      "type": "number",
+      "fieldType": "number",
+      "description": "Product weight in pounds",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "67486112",
+      "updatedUserId": "67486112",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2023-01-25T21:58:28.136Z",
+      "createdAt": "2023-01-25T21:58:28.136Z",
+      "name": "width",
+      "label": "Width",
+      "type": "number",
+      "fieldType": "number",
+      "description": "",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "44289812",
+      "updatedUserId": "44289812",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "showCurrencySymbol": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": true,
+      "numberDisplayHint": "unformatted",
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-03-26T04:02:06.928Z",
+      "createdAt": "2026-03-26T04:02:06.928Z",
+      "name": "zoho_item_id",
+      "label": "Zoho Item ID",
+      "type": "string",
+      "fieldType": "text",
+      "description": "ID linking this product to Zoho Inventory",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "67486112",
+      "updatedUserId": "67486112",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    },
+    {
+      "updatedAt": "2026-03-26T04:02:06.568Z",
+      "createdAt": "2026-03-26T04:02:06.568Z",
+      "name": "zuper_item_id",
+      "label": "Zuper Item ID",
+      "type": "string",
+      "fieldType": "text",
+      "description": "UUID linking this product to Zuper field service catalog",
+      "groupName": "productinformation",
+      "options": [],
+      "createdUserId": "67486112",
+      "updatedUserId": "67486112",
+      "displayOrder": -1,
+      "calculated": false,
+      "externalOptions": false,
+      "archived": false,
+      "hasUniqueValue": false,
+      "hidden": false,
+      "modificationMetadata": {
+        "archivable": true,
+        "readOnlyDefinition": false,
+        "readOnlyValue": false
+      },
+      "formField": false,
+      "dataSensitivity": "non_sensitive"
+    }
+  ]
+}
