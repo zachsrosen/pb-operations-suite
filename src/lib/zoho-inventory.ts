@@ -1,5 +1,5 @@
 import * as Sentry from "@sentry/nextjs";
-import { getZohoGroupName } from "./zoho-taxonomy";
+import { getZohoCategory } from "./zoho-taxonomy";
 
 export interface ZohoInventoryLocationStock {
   location_id?: string;
@@ -54,7 +54,7 @@ export interface UpsertZohoItemInput {
   weight?: number | null;
   length?: number | null;
   width?: number | null;
-  /** Internal category enum (e.g. "MODULE", "INVERTER") — mapped to Zoho group_name */
+  /** Internal category enum (e.g. "MODULE", "INVERTER") — mapped to Zoho category_id/category_name */
   category?: string | null;
   /** InternalProduct UUID — written to cf_internal_product_id custom field */
   internalProductId?: string | null;
@@ -854,10 +854,10 @@ export class ZohoInventoryClient {
       // silently dropped whenever the match fell through to an existing Zoho
       // item (by SKU or name). This intentionally overwrites values edited
       // directly in Zoho — PB submit wins.
-      const groupName = input.category ? getZohoGroupName(input.category) : undefined;
+      const zohoCat = input.category ? getZohoCategory(input.category) : {};
       const partNumber = vendorPartNumber || model;
       const updatePayload: Record<string, unknown> = {};
-      if (groupName) updatePayload.group_name = groupName;
+      if (zohoCat.categoryId) updatePayload.category_id = zohoCat.categoryId;
       if (vendorName) updatePayload.vendor_name = vendorName;
       if (zohoVendorId) updatePayload.vendor_id = zohoVendorId;
       if (description) updatePayload.description = description;
@@ -890,14 +890,17 @@ export class ZohoInventoryClient {
     }
 
     const partNumber = vendorPartNumber || model;
-    const groupName = input.category ? getZohoGroupName(input.category) : undefined;
+    const zohoCat = input.category ? getZohoCategory(input.category) : {};
     // Core payload: identity + accounting defaults (must never be dropped on retry)
+    // Send both category_id (stable, what Zoho uses internally) and category_name
+    // (human-readable parity, helpful in API responses + debugging).
     const corePayload: Record<string, unknown> = {
       name,
       ...(sku ? { sku } : {}),
       ...(description ? { description } : {}),
       ...(partNumber ? { part_number: partNumber } : {}),
-      ...(groupName ? { group_name: groupName } : {}),
+      ...(zohoCat.categoryId ? { category_id: zohoCat.categoryId } : {}),
+      ...(zohoCat.categoryName ? { category_name: zohoCat.categoryName } : {}),
       item_type: "inventory",
       tax_preference: "taxable",
       inventory_account_name: "Inventory Asset",
