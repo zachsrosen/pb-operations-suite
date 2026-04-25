@@ -30,14 +30,15 @@ export interface LogCatalogSyncInput {
 
 function summarize(outcomes: Partial<Record<SystemName, SystemOutcome>>) {
   const systemsAttempted = Object.keys(outcomes) as SystemName[];
-  let successCount = 0, failedCount = 0, skippedCount = 0;
+  let successCount = 0, failedCount = 0, skippedCount = 0, notImplementedCount = 0;
   for (const o of Object.values(outcomes)) {
     if (!o) continue;
     if (o.status === "success") successCount++;
     else if (o.status === "failed") failedCount++;
+    else if (o.status === "not_implemented") notImplementedCount++;
     else skippedCount++;
   }
-  return { systemsAttempted, successCount, failedCount, skippedCount };
+  return { systemsAttempted, successCount, failedCount, skippedCount, notImplementedCount };
 }
 
 export async function logCatalogSync(input: LogCatalogSyncInput) {
@@ -96,6 +97,8 @@ export interface LogCatalogProductUpdatedInput {
   internalProductId: string;
   productName: string;
   userEmail: string;
+  userName?: string;
+  source?: CatalogSyncSource;
   changedFields: string[];
 }
 
@@ -104,10 +107,14 @@ export async function logCatalogProductUpdated(input: LogCatalogProductUpdatedIn
     type: "CATALOG_PRODUCT_UPDATED",
     description: `Updated catalog product ${input.productName}: ${input.changedFields.join(", ")}`,
     userEmail: input.userEmail,
+    userName: input.userName,
     entityType: "internal_product",
     entityId: input.internalProductId,
     entityName: input.productName,
-    metadata: { changedFields: input.changedFields },
+    metadata: {
+      changedFields: input.changedFields,
+      ...(input.source ? { source: input.source } : {}),
+    },
     riskLevel: "LOW",
   });
 }

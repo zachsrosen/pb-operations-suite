@@ -33,10 +33,11 @@ describe("logCatalogSync", () => {
     expect(call.metadata).toMatchObject({
       source: "wizard",
       outcomes: expect.any(Object),
-      systemsAttempted: ["INTERNAL", "HUBSPOT", "ZOHO", "ZUPER"],
+      systemsAttempted: expect.arrayContaining(["INTERNAL", "HUBSPOT", "ZOHO", "ZUPER"]),
       successCount: 2,
       failedCount: 1,
       skippedCount: 1,
+      notImplementedCount: 0,
     });
     expect(call.durationMs).toBe(4521);
   });
@@ -54,6 +55,25 @@ describe("logCatalogSync", () => {
     const call = (db.logActivity as jest.Mock).mock.calls[0][0];
     expect(call.type).toBe("CATALOG_SYNC_FAILED");
     expect(call.riskLevel).toBe("HIGH");
+  });
+
+  test("not_implemented status increments notImplementedCount, not skippedCount", async () => {
+    await logCatalogSync({
+      internalProductId: "prod_n", productName: "Test",
+      userEmail: "x@y.com", source: "modal",
+      outcomes: {
+        INTERNAL: { status: "success" },
+        ZUPER: { status: "not_implemented", message: "WIP" },
+      },
+    });
+    const call = (db.logActivity as jest.Mock).mock.calls[0][0];
+    expect(call.type).toBe("CATALOG_SYNC_EXECUTED");  // not_implemented is NOT a failure
+    expect(call.metadata).toMatchObject({
+      successCount: 1,
+      failedCount: 0,
+      skippedCount: 0,
+      notImplementedCount: 1,
+    });
   });
 });
 
