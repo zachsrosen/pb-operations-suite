@@ -36,6 +36,7 @@ import {
 } from "./catalog-sync";
 import { prisma } from "./db";
 import { logCatalogSync, type SystemName, type SystemOutcome } from "./catalog-activity-log";
+import { writeCrossLinkIds } from "./catalog-cross-link";
 
 // ── Snapshot building ──
 
@@ -717,11 +718,36 @@ export async function executePlan(
     durationMs: Date.now() - startedAt,
   }).catch((err) => console.warn("[catalog-sync] activity log write failed:", err));
 
-  // Bump watermark
-  await prisma.internalProduct.update({
+  // Bump watermark and re-fetch post-execute external IDs in one query
+  const updated = await prisma.internalProduct.update({
     where: { id: sku.id },
     data: { lastSyncedAt: new Date(), lastSyncedBy: options.userEmail },
-  }).catch((err) => console.warn("[catalog-sync] watermark update failed:", err));
+    select: { hubspotProductId: true, zohoItemId: true, zuperItemId: true },
+  }).catch((err) => {
+    console.warn("[catalog-sync] watermark update failed:", err);
+    return null;
+  });
+
+  // Write cross-link IDs so newly-created external records are linked back.
+  // Best-effort: warnings surface in outcomes, failures never crash the response.
+  await writeCrossLinkIds({
+    internalProductId: sku.id,
+    hubspotProductId: updated?.hubspotProductId ?? sku.hubspotProductId,
+    zohoItemId: updated?.zohoItemId ?? sku.zohoItemId,
+    zuperItemId: updated?.zuperItemId ?? sku.zuperItemId,
+  }).then((crossLink) => {
+    if (crossLink.warnings.length > 0) {
+      response.outcomes.push({
+        kind: "internal-patch",
+        system: "internal",
+        status: "skipped",
+        message: `Cross-link warnings: ${crossLink.warnings.join("; ")}`,
+        fieldDetails: [],
+      });
+    }
+  }).catch((err) => {
+    console.warn("[catalog-sync] cross-link write failed:", err);
+  });
 
   return response;
 }

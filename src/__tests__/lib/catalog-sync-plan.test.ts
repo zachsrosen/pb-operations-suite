@@ -5,8 +5,18 @@ jest.mock("@/lib/catalog-activity-log", () => ({
   logCatalogSync: jest.fn().mockResolvedValue(null),
 }));
 
+// ── catalog-cross-link ────────────────────────────────────────────────────────
+jest.mock("@/lib/catalog-cross-link", () => ({
+  writeCrossLinkIds: jest.fn().mockResolvedValue({ attempted: [], warnings: [] }),
+}));
+
 // Mock heavy dependencies that pull in Prisma/ESM modules
-const mockInternalProductUpdate = jest.fn().mockResolvedValue({ id: "test-product-1" });
+const mockInternalProductUpdate = jest.fn().mockResolvedValue({
+  id: "test-product-1",
+  hubspotProductId: "hs-456",
+  zohoItemId: "zoho-123",
+  zuperItemId: "zuper-789",
+});
 jest.mock("@/lib/db", () => ({
   prisma: {
     internalProduct: {
@@ -55,6 +65,7 @@ import type {
 } from "@/lib/catalog-sync-types";
 import type { SkuRecord } from "@/lib/catalog-sync";
 import * as activityLog from "@/lib/catalog-activity-log";
+import * as crossLink from "@/lib/catalog-cross-link";
 
 // Minimal SkuRecord for testing
 const baseSku: SkuRecord = {
@@ -223,7 +234,13 @@ describe("derivePlan — create operations", () => {
 describe("executePlan — ActivityLog wiring", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockInternalProductUpdate.mockResolvedValue({ id: "test-product-1" });
+    mockInternalProductUpdate.mockResolvedValue({
+      id: "test-product-1",
+      hubspotProductId: "hs-456",
+      zohoItemId: "zoho-123",
+      zuperItemId: "zuper-789",
+    });
+    (crossLink.writeCrossLinkIds as jest.Mock).mockResolvedValue({ attempted: [], warnings: [] });
   });
 
   it("calls logCatalogSync with source: 'modal' and the supplied userEmail", async () => {
@@ -314,6 +331,90 @@ describe("executePlan — ActivityLog wiring", () => {
     };
 
     const result = await executePlan(baseSku, planFixture, { userEmail: "test@p.com" });
+    expect(result).toMatchObject({ planHash: "hash-def" });
+  });
+
+  it("calls writeCrossLinkIds with post-execute external IDs after execution", async () => {
+    // Arrange: watermark update returns updated IDs (simulates a create that wrote new IDs back)
+    mockInternalProductUpdate.mockResolvedValueOnce({
+      id: baseSku.id,
+      hubspotProductId: "hs-new",
+      zohoItemId: "zoho-123",
+      zuperItemId: "zuper-789",
+    });
+
+    const planFixture = {
+      productId: baseSku.id,
+      basePreviewHash: "hash-abc",
+      planHash: "hash-def",
+      conflicts: [],
+      internalPatch: {},
+      operations: [
+        {
+          kind: "push" as const,
+          system: "hubspot" as ExternalSystem,
+          externalField: "price",
+          value: 305 as string | number | null,
+          source: "manual" as const,
+        },
+      ],
+      summary: { pulls: 0, internalWrites: 0, pushes: 1, creates: 0 },
+    };
+
+    await executePlan(baseSku, planFixture, { userEmail: "test@photonbrothers.com" });
+
+    expect(crossLink.writeCrossLinkIds).toHaveBeenCalledTimes(1);
+    expect(crossLink.writeCrossLinkIds).toHaveBeenCalledWith(
+      expect.objectContaining({
+        internalProductId: baseSku.id,
+        hubspotProductId: "hs-new",
+        zohoItemId: "zoho-123",
+        zuperItemId: "zuper-789",
+      }),
+    );
+  });
+
+  it("appends cross-link warnings to outcomes as system:internal status:skipped", async () => {
+    (crossLink.writeCrossLinkIds as jest.Mock).mockResolvedValueOnce({
+      attempted: ["zoho"],
+      warnings: ["Zoho cross-link returned error: 500"],
+    });
+
+    const planFixture = {
+      productId: baseSku.id,
+      basePreviewHash: "hash-abc",
+      planHash: "hash-def",
+      conflicts: [],
+      internalPatch: {},
+      operations: [],
+      summary: { pulls: 0, internalWrites: 0, pushes: 0, creates: 0 },
+    };
+
+    const result = await executePlan(baseSku, planFixture, { userEmail: "test@photonbrothers.com" });
+
+    const warningOutcome = result.outcomes.find(
+      (o) => o.system === "internal" && o.status === "skipped" &&
+              o.message?.includes("Cross-link warnings"),
+    );
+    expect(warningOutcome).toBeDefined();
+    expect(warningOutcome?.message).toContain("Zoho cross-link returned error: 500");
+  });
+
+  it("does not crash executePlan when writeCrossLinkIds rejects", async () => {
+    (crossLink.writeCrossLinkIds as jest.Mock).mockRejectedValueOnce(new Error("network timeout"));
+
+    const planFixture = {
+      productId: baseSku.id,
+      basePreviewHash: "hash-abc",
+      planHash: "hash-def",
+      conflicts: [],
+      internalPatch: {},
+      operations: [],
+      summary: { pulls: 0, internalWrites: 0, pushes: 0, creates: 0 },
+    };
+
+    const result = await executePlan(baseSku, planFixture, { userEmail: "test@photonbrothers.com" });
+    // Should still return a valid response
     expect(result).toMatchObject({ planHash: "hash-def" });
   });
 });
