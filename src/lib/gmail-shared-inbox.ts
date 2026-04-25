@@ -297,14 +297,30 @@ export async function fetchSharedInboxThreads(
 ): Promise<SharedInboxThread[]> {
   const { mailbox, query, maxThreads = 10 } = opts;
 
-  const tokenResult = await getReadonlyTokenVerbose(mailbox);
-  if (!tokenResult.ok) {
+  // Prefer stored per-inbox OAuth token (workaround for blocked
+  // Workspace domain-wide-delegation). Falls back to service-account
+  // impersonation which still requires DWD gmail.readonly scope.
+  let token: string | null = null;
+  try {
+    const { getStoredSharedInboxToken } = await import("@/lib/shared-inbox-token");
+    token = await getStoredSharedInboxToken(mailbox);
+  } catch (err) {
     console.error(
-      `[gmail-shared-inbox] token exchange failed for ${mailbox}: ${tokenResult.reason}${tokenResult.body ? ` — ${tokenResult.body}` : ""}`,
+      `[gmail-shared-inbox] stored-token lookup failed for ${mailbox}:`,
+      err,
     );
-    return [];
   }
-  const token = tokenResult.token;
+
+  if (!token) {
+    const tokenResult = await getReadonlyTokenVerbose(mailbox);
+    if (!tokenResult.ok) {
+      console.error(
+        `[gmail-shared-inbox] no stored OAuth creds AND service-account token failed for ${mailbox}: ${tokenResult.reason}${tokenResult.body ? ` — ${tokenResult.body}` : ""}`,
+      );
+      return [];
+    }
+    token = tokenResult.token;
+  }
 
   try {
     const encodedMailbox = encodeURIComponent(mailbox);

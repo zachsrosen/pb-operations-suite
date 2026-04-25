@@ -2739,6 +2739,26 @@ model CommsGmailToken {
   updatedAt         DateTime @updatedAt
 }
 
+/// OAuth credentials for shared team mailboxes (permitsdn@, permitting@,
+/// interconnections@, etc.). Distinct from CommsGmailToken which is keyed
+/// per-user — these are keyed per-inbox because any admin can complete
+/// the OAuth consent once, and the resulting tokens serve all users who
+/// read the Permit Hub / IC Hub correspondence tab. Workaround for
+/// Workspace domain-wide-delegation being blocked on super-admin.
+model SharedInboxCredential {
+  id             Int      @id @default(autoincrement())
+  inboxAddress   String   @unique /// e.g. "permitsdn@photonbrothers.com"
+  accessToken    String
+  refreshToken   String
+  tokenExpiry    BigInt   @default(0) /// ms since epoch when access token expires
+  scopes         String   @default("")
+  connectedBy    String /// email of the user who completed the OAuth consent
+  connectedAt    DateTime @default(now())
+  lastRefreshAt  DateTime @default(now())
+  lastRefreshErr String? /// non-null if latest refresh failed; cleared on success
+  updatedAt      DateTime @updatedAt
+}
+
 model CommsAiMemory {
   id        Int      @id @default(autoincrement())
   userId    String
