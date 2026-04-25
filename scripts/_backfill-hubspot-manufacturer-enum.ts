@@ -22,7 +22,10 @@ if (!TOKEN) {
 const DRY_RUN = process.argv.includes("--dry-run");
 
 // Final list per Zach's decisions 2026-04-24
+// "Generic" added 2026-04-25 after Phase B audit found 86 of 106 Generic-brand
+// rows are genuinely commodity hardware with no actual manufacturer.
 const BRANDS_TO_ADD = [
+  "Generic",
   "IronRidge",
   "Square D",
   "Siemens",
