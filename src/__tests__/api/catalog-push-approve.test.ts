@@ -737,7 +737,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       // Approval still succeeds (cross-link is best-effort)
       expect(res.status).toBe(200);
       expect(data.outcomes.ZOHO.status).toBe("success");
-      expect(data.outcomes.ZOHO.message).toMatch(/Zoho cross-link update returned error/);
+      expect(data.outcomes.ZOHO.message).toMatch(/Zoho cross-link returned error/);
       expect(data.outcomes.ZOHO.message).toMatch(/Field not found/);
     });
 
@@ -750,7 +750,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
 
       expect(res.status).toBe(200);
       expect(data.outcomes.ZOHO.status).toBe("success");
-      expect(data.outcomes.ZOHO.message).toMatch(/Could not write custom field cross-links/);
+      expect(data.outcomes.ZOHO.message).toMatch(/Zoho cross-link threw/);
     });
 
     it("surfaces Zuper cross-link warning when updateZuperPart returns failed status", async () => {
@@ -762,7 +762,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
 
       expect(res.status).toBe(200);
       expect(data.outcomes.ZUPER.status).toBe("success");
-      expect(data.outcomes.ZUPER.message).toMatch(/Zuper cross-link update returned failed/);
+      expect(data.outcomes.ZUPER.message).toMatch(/Zuper cross-link returned failed/);
       expect(data.outcomes.ZUPER.message).toMatch(/Endpoint rejected/);
     });
 
@@ -774,7 +774,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(data.outcomes.ZUPER.message).toMatch(/Zuper cross-link update returned not_found/);
+      expect(data.outcomes.ZUPER.message).toMatch(/Zuper cross-link returned not_found/);
     });
 
     it("surfaces Zuper cross-link warning when updateZuperPart throws", async () => {
@@ -786,7 +786,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
 
       expect(res.status).toBe(200);
       expect(data.outcomes.ZUPER.status).toBe("success");
-      expect(data.outcomes.ZUPER.message).toMatch(/Could not write cross-link IDs to Zuper/);
+      expect(data.outcomes.ZUPER.message).toMatch(/Zuper cross-link threw/);
     });
 
     it("surfaces HubSpot cross-link warning when PATCH returns non-2xx", async () => {
@@ -810,7 +810,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
 
       expect(res.status).toBe(200);
       expect(data.outcomes.HUBSPOT.status).toBe("success");
-      expect(data.outcomes.HUBSPOT.message).toMatch(/Could not write cross-link IDs to HubSpot/);
+      expect(data.outcomes.HUBSPOT.message).toMatch(/HubSpot cross-link threw/);
     });
 
     it("does not run cross-links when only INTERNAL system is selected", async () => {

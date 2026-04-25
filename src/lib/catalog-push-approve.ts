@@ -20,8 +20,9 @@ import {
   getZuperCategoryValue,
 } from "@/lib/catalog-fields";
 import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
-import { createOrUpdateZohoItem, uploadZohoItemImage, zohoInventory } from "@/lib/zoho-inventory";
-import { createOrUpdateZuperPart, updateZuperPart, buildZuperProductCustomFields } from "@/lib/zuper-catalog";
+import { createOrUpdateZohoItem, uploadZohoItemImage } from "@/lib/zoho-inventory";
+import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
+import { writeCrossLinkIds } from "@/lib/catalog-cross-link";
 import { notifyAdminsOfApprovalWarnings } from "@/lib/catalog-notify";
 import { buildCanonicalKey, canonicalToken } from "@/lib/canonical";
 import { logCatalogSync, logCatalogProductCreated, CatalogSyncSource } from "@/lib/catalog-activity-log";
@@ -476,30 +477,26 @@ export async function executeCatalogPushApproval(
     }
   }
 
-  // Cross-link: write Zuper, HubSpot, and Internal Product IDs to Zoho item custom fields.
+  // Cross-link: write each system's ID into the others' custom-fields/properties.
   const zohoId = outcomes.ZOHO?.externalId || basePush.zohoItemId;
   const zuperId = outcomes.ZUPER?.externalId || basePush.zuperItemId;
   const hsId = outcomes.HUBSPOT?.externalId || basePush.hubspotProductId;
   const internalSkuId = basePush.internalSkuId;
-  if (zohoId && (zuperId || hsId || internalSkuId)) {
-    try {
-      const customFields: Array<{ api_name: string; value: string }> = [];
-      if (zuperId) customFields.push({ api_name: "cf_zuper_product_id", value: zuperId });
-      if (hsId) customFields.push({ api_name: "cf_hubspot_product_id", value: hsId });
-      if (internalSkuId) customFields.push({ api_name: "cf_internal_product_id", value: internalSkuId });
-      if (customFields.length > 0) {
-        const zohoResult = await zohoInventory.updateItem(zohoId, { custom_fields: customFields });
-        if (zohoResult.status !== "updated") {
-          const msg = `Zoho cross-link update returned ${zohoResult.status}: ${zohoResult.message || "unknown"}`;
-          if (outcomes.ZOHO?.message) outcomes.ZOHO.message += ` (Warning: ${msg})`;
-        }
-      }
-    } catch {
-      const msg = "Could not write custom field cross-links to Zoho item";
-      if (outcomes.ZOHO?.message) {
-        outcomes.ZOHO.message += ` (Warning: ${msg})`;
-      }
-    }
+
+  const crossLink = await writeCrossLinkIds({
+    zohoItemId: zohoId,
+    zuperItemId: zuperId,
+    hubspotProductId: hsId,
+    internalProductId: internalSkuId,
+  });
+
+  // Append cross-link warnings to the originating system's outcome message.
+  for (const warning of crossLink.warnings) {
+    const sys = warning.startsWith("Zoho") ? outcomes.ZOHO
+      : warning.startsWith("Zuper") ? outcomes.ZUPER
+      : warning.startsWith("HubSpot") ? outcomes.HUBSPOT
+      : null;
+    if (sys?.message) sys.message += ` (Warning: ${warning})`;
   }
 
   // Push the product photo (if any) to Zoho Inventory.
@@ -544,58 +541,6 @@ export async function executeCatalogPushApproval(
             outcomes.ZOHO.message += ` (Warning: Zoho image upload failed — ${msg})`;
           }
         }
-      }
-    }
-  }
-
-  if (zuperId && (hsId || zohoId || internalSkuId)) {
-    try {
-      const zuperCustomFields = buildZuperProductCustomFields({
-        hubspotProductId: hsId,
-        zohoItemId: zohoId,
-        internalProductId: internalSkuId,
-      });
-      if (zuperCustomFields) {
-        const zuperResult = await updateZuperPart(zuperId, { custom_fields: zuperCustomFields });
-        if (zuperResult.status !== "updated") {
-          const msg = `Zuper cross-link update returned ${zuperResult.status}: ${zuperResult.message || "unknown"}`;
-          if (outcomes.ZUPER?.message) {
-            outcomes.ZUPER.message += ` (Warning: ${msg})`;
-          }
-        }
-      }
-    } catch {
-      const msg = "Could not write cross-link IDs to Zuper product";
-      if (outcomes.ZUPER?.message) {
-        outcomes.ZUPER.message += ` (Warning: ${msg})`;
-      }
-    }
-  }
-
-  if (hsId && (zuperId || zohoId || internalSkuId)) {
-    try {
-      const hsProps: Record<string, string> = {};
-      if (zuperId) hsProps.zuper_item_id = zuperId;
-      if (zohoId) hsProps.zoho_item_id = zohoId;
-      if (internalSkuId) hsProps.internal_product_id = internalSkuId;
-      if (Object.keys(hsProps).length > 0) {
-        const token = process.env.HUBSPOT_ACCESS_TOKEN;
-        if (token) {
-          const hsRes = await fetch(`https://api.hubapi.com/crm/v3/objects/products/${hsId}`, {
-            method: "PATCH",
-            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ properties: hsProps }),
-          });
-          if (!hsRes.ok) {
-            const msg = `HubSpot cross-link PATCH returned ${hsRes.status}`;
-            if (outcomes.HUBSPOT?.message) outcomes.HUBSPOT.message += ` (Warning: ${msg})`;
-          }
-        }
-      }
-    } catch {
-      const msg = "Could not write cross-link IDs to HubSpot product";
-      if (outcomes.HUBSPOT?.message) {
-        outcomes.HUBSPOT.message += ` (Warning: ${msg})`;
       }
     }
   }
