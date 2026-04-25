@@ -1,6 +1,7 @@
 const mockGetZuperPartById = jest.fn();
 const mockUpdateZuperPart = jest.fn();
 const mockCreateOrUpdateZuperPart = jest.fn();
+const mockBuildZuperCustomFieldsFromMetadata = jest.fn();
 const mockUpdateMany = jest.fn();
 const mockFindUnique = jest.fn();
 
@@ -24,6 +25,8 @@ jest.mock("@/lib/zuper-catalog", () => ({
   getZuperPartById: (...args: unknown[]) => mockGetZuperPartById(...args),
   updateZuperPart: (...args: unknown[]) => mockUpdateZuperPart(...args),
   createOrUpdateZuperPart: (...args: unknown[]) => mockCreateOrUpdateZuperPart(...args),
+  buildZuperCustomFieldsFromMetadata: (...args: unknown[]) =>
+    mockBuildZuperCustomFieldsFromMetadata(...args),
   getZuperHubSpotProductFieldKey: jest.fn(() => "hubspot_product_id"),
   getZuperHubSpotProductFieldLabel: jest.fn(() => "HubSpot Product ID"),
   readZuperCustomFieldValue: jest.fn((customFields: unknown, key: string, additionalLabels?: string[]) => {
@@ -86,6 +89,9 @@ describe("catalog-sync Zuper", () => {
     // Default: no pre-existing external ID (create path not blocked by race guard)
     mockFindUnique.mockResolvedValue({ zuperItemId: null });
     mockUpdateMany.mockResolvedValue({ count: 1 });
+    // Default: no spec-derived custom fields. Matches current state where
+    // catalog-fields.ts has no zuperCustomField keys populated.
+    mockBuildZuperCustomFieldsFromMetadata.mockReturnValue(undefined);
   });
 
   it("parses product_* prefixed fields from Zuper API response", async () => {
@@ -265,6 +271,78 @@ describe("catalog-sync Zuper", () => {
         width: 39,
         weight: 50,
       })
+    );
+  });
+
+  it("forwards spec-derived customFields to createOrUpdateZuperPart on create (M3.4)", async () => {
+    // Simulate FieldDef.zuperCustomField being populated for this category
+    mockBuildZuperCustomFieldsFromMetadata.mockReturnValue({
+      pb_battery_capacity_kwh: 13.5,
+      pb_battery_chemistry: "LFP",
+    });
+
+    const skuWithSpec: SkuRecord = {
+      ...sku,
+      id: "sku_with_spec",
+      zuperItemId: null,
+      batterySpec: { capacityKwh: 13.5, chemistry: "LFP" },
+    };
+
+    mockCreateOrUpdateZuperPart.mockResolvedValue({
+      zuperItemId: "zuper_created_cf",
+      created: true,
+    });
+
+    const preview: SyncPreview = {
+      system: "zuper",
+      externalId: "",
+      linked: false,
+      action: "create",
+      noChanges: false,
+      changes: [],
+    };
+
+    const result = await executeZuperSync(skuWithSpec, preview);
+
+    expect(result.status).toBe("created");
+    // Helper should have been invoked with category + spec data
+    expect(mockBuildZuperCustomFieldsFromMetadata).toHaveBeenCalledWith(
+      "BATTERY",
+      expect.objectContaining({ capacityKwh: 13.5, chemistry: "LFP" }),
+    );
+    // And its return value threaded into the create call
+    expect(mockCreateOrUpdateZuperPart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customFields: {
+          pb_battery_capacity_kwh: 13.5,
+          pb_battery_chemistry: "LFP",
+        },
+      }),
+    );
+  });
+
+  it("passes undefined customFields when no zuperCustomField mappings populated (current state)", async () => {
+    // Default mock returns undefined → matches pre-activation state
+    const skuFresh: SkuRecord = { ...sku, id: "sku_no_cf", zuperItemId: null };
+
+    mockCreateOrUpdateZuperPart.mockResolvedValue({
+      zuperItemId: "zuper_no_cf",
+      created: true,
+    });
+
+    const preview: SyncPreview = {
+      system: "zuper",
+      externalId: "",
+      linked: false,
+      action: "create",
+      noChanges: false,
+      changes: [],
+    };
+
+    await executeZuperSync(skuFresh, preview);
+
+    expect(mockCreateOrUpdateZuperPart).toHaveBeenCalledWith(
+      expect.objectContaining({ customFields: undefined }),
     );
   });
 });

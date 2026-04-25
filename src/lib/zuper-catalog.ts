@@ -1,3 +1,5 @@
+import { getCategoryFields } from "@/lib/catalog-fields";
+
 const DEFAULT_ZUPER_API_URL = "https://us-west-1c.zuperpro.com/api";
 
 type JsonRecord = Record<string, unknown>;
@@ -139,6 +141,15 @@ export interface UpsertZuperPartInput {
   length?: number | null;
   width?: number | null;
   weight?: number | null;
+  /**
+   * Arbitrary Zuper Product custom fields, keyed by the snake_case Zuper
+   * field-key (e.g. `pb_module_wattage`). Zuper's create endpoint translates
+   * these into `meta_data` entries by matching the field-key to the label
+   * configured in Zuper admin. Lives in optionalPayload so the core/optional
+   * retry pattern drops them gracefully if Zuper rejects (e.g. before the
+   * fields are defined in admin).
+   */
+  customFields?: Record<string, unknown>;
 }
 
 export interface UpsertZuperPartResult {
@@ -204,6 +215,35 @@ export function getZuperHubSpotProductFieldKey(): string {
 
 export function getZuperHubSpotProductFieldLabel(): string {
   return ZUPER_HUBSPOT_PRODUCT_FIELD_LABEL;
+}
+
+/**
+ * Build a Zuper `custom_fields` dict from a category's spec metadata by walking
+ * `getCategoryFields(category)` and pulling values for any FieldDef that has
+ * `zuperCustomField` populated. Keys are the snake_case Zuper field-keys
+ * (e.g. `pb_module_wattage`); Zuper's create endpoint maps those to meta_data
+ * labels server-side via the field-key→label config in admin.
+ *
+ * Returns `undefined` (not `{}`) when there are no values to write so the
+ * caller can spread it without producing an empty `custom_fields: {}`.
+ *
+ * Until `zuperCustomField` keys are populated on FieldDef (M3.4 plumbing-only),
+ * this always returns `undefined`.
+ */
+export function buildZuperCustomFieldsFromMetadata(
+  category: string,
+  metadata: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | undefined {
+  if (!metadata) return undefined;
+  const fields = getCategoryFields(category);
+  const out: Record<string, unknown> = {};
+  for (const f of fields) {
+    if (!f.zuperCustomField) continue;
+    const v = metadata[f.key];
+    if (v === null || v === undefined || v === "") continue;
+    out[f.zuperCustomField] = v;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 export function buildZuperProductCustomFields(
@@ -554,6 +594,15 @@ async function getCreateBodyVariants(endpoint: string, payload: JsonRecord): Pro
     const width = isFiniteNumber(payload.width) ? payload.width : undefined;
     const weight = isFiniteNumber(payload.weight) ? payload.weight : undefined;
 
+    // Forward arbitrary custom fields if the caller passed them through
+    // optionalPayload. Zuper's create endpoint accepts `custom_fields` as a
+    // flat object of field-key → value pairs and translates them into
+    // meta_data entries server-side.
+    const customFields =
+      isRecord(payload.custom_fields) && Object.keys(payload.custom_fields).length > 0
+        ? (payload.custom_fields as JsonRecord)
+        : undefined;
+
     // product_no is auto-assigned by Zuper as a sequential integer.
     // Sending a string SKU causes a CastError, so we omit it.
     const productPayload: JsonRecord = {
@@ -569,6 +618,7 @@ async function getCreateBodyVariants(endpoint: string, payload: JsonRecord): Pro
       ...(length !== undefined ? { length } : {}),
       ...(width !== undefined ? { width } : {}),
       ...(weight !== undefined ? { weight } : {}),
+      ...(customFields ? { custom_fields: customFields } : {}),
     };
     return [
       { label: "product", body: { product: productPayload } },
@@ -805,6 +855,12 @@ export async function createOrUpdateZuperPart(
     ...(isFiniteNumber(input.length) ? { length: input.length } : {}),
     ...(isFiniteNumber(input.width) ? { width: input.width } : {}),
     ...(isFiniteNumber(input.weight) ? { weight: input.weight } : {}),
+    // Arbitrary Zuper custom fields. Zuper translates the snake_case keys to
+    // meta_data entries server-side via the field-key→label mapping configured
+    // in admin. Only included when non-empty so we don't send `custom_fields: {}`.
+    ...(input.customFields && Object.keys(input.customFields).length > 0
+      ? { custom_fields: input.customFields }
+      : {}),
   };
 
   const hasOptional = Object.keys(optionalPayload).length > Object.keys(corePayload).length;

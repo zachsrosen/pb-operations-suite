@@ -21,7 +21,7 @@ import {
 } from "@/lib/catalog-fields";
 import { createOrUpdateHubSpotProduct, HubSpotManufacturerEnumError } from "@/lib/hubspot";
 import { createOrUpdateZohoItem, uploadZohoItemImage } from "@/lib/zoho-inventory";
-import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
+import { buildZuperCustomFieldsFromMetadata, createOrUpdateZuperPart } from "@/lib/zuper-catalog";
 import { writeCrossLinkIds } from "@/lib/catalog-cross-link";
 import { notifyAdminsOfApprovalWarnings } from "@/lib/catalog-notify";
 import { buildCanonicalKey, canonicalToken } from "@/lib/canonical";
@@ -451,6 +451,7 @@ export async function executeCatalogPushApproval(
           length: push.length,
           width: push.width,
           weight: push.weight,
+          customFields: buildZuperCustomFieldsFromMetadata(push.category, metadata),
         });
 
         await prisma.$transaction(async (tx) => {

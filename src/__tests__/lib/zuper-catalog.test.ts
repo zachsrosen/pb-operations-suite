@@ -1,4 +1,5 @@
 import {
+  buildZuperCustomFieldsFromMetadata,
   buildZuperProductCustomFields,
   createOrUpdateZuperPart,
   getZuperHubSpotProductFieldKey,
@@ -6,6 +7,7 @@ import {
   readZuperCustomFieldValue,
   _resetCategoryCache,
 } from "@/lib/zuper-catalog";
+import { CATEGORY_CONFIGS } from "@/lib/catalog-fields";
 
 type MockFetch = jest.MockedFunction<typeof fetch>;
 
@@ -306,5 +308,164 @@ describe("zuper-catalog", () => {
         [getZuperHubSpotProductFieldLabel()]
       )
     ).toBe("1591770479");
+  });
+
+  describe("customFields plumbing (M3.4)", () => {
+    /** Capture the create payload sent to Zuper for assertion. */
+    function setupCreateCapture(): { getBody: () => Record<string, unknown> | null } {
+      let captured: Record<string, unknown> | null = null;
+      mockFetch.mockImplementation(async (input, init) => {
+        const url = String(input);
+        const method = String(init?.method || "GET").toUpperCase();
+        if (url.includes("/product_categories")) return CATEGORY_RESPONSE;
+        if (method === "GET") return makeResponse({ type: "success", data: [] });
+        if (method === "POST" && url.includes("/product")) {
+          captured = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>;
+          return makeResponse({
+            type: "success",
+            item: { item_uid: "zuper_cf_1" },
+          });
+        }
+        return makeResponse({ type: "error" }, false, 404);
+      });
+      return { getBody: () => captured };
+    }
+
+    function getInner(body: Record<string, unknown>): Record<string, unknown> {
+      return (body["product"] ?? body["item"] ?? body["part"] ?? body) as Record<string, unknown>;
+    }
+
+    it("includes custom_fields in the create payload when customFields is non-empty", async () => {
+      const cap = setupCreateCapture();
+
+      await createOrUpdateZuperPart({
+        brand: "REC",
+        model: "REC-400AA",
+        sku: "REC400",
+        category: "Module",
+        customFields: { pb_module_wattage: 400, pb_module_cell_type: "TOPCon" },
+      });
+
+      const body = cap.getBody();
+      expect(body).not.toBeNull();
+      const inner = getInner(body!);
+      expect(inner["custom_fields"]).toEqual({
+        pb_module_wattage: 400,
+        pb_module_cell_type: "TOPCon",
+      });
+    });
+
+    it("omits custom_fields when customFields is undefined", async () => {
+      const cap = setupCreateCapture();
+
+      await createOrUpdateZuperPart({
+        brand: "REC",
+        model: "REC-400AA",
+        sku: "REC400",
+        category: "Module",
+      });
+
+      const body = cap.getBody();
+      expect(body).not.toBeNull();
+      const inner = getInner(body!);
+      expect(inner).not.toHaveProperty("custom_fields");
+    });
+
+    it("omits custom_fields when customFields is an empty object", async () => {
+      const cap = setupCreateCapture();
+
+      await createOrUpdateZuperPart({
+        brand: "REC",
+        model: "REC-400AA",
+        sku: "REC400",
+        category: "Module",
+        customFields: {},
+      });
+
+      const body = cap.getBody();
+      expect(body).not.toBeNull();
+      const inner = getInner(body!);
+      expect(inner).not.toHaveProperty("custom_fields");
+    });
+  });
+
+  describe("buildZuperCustomFieldsFromMetadata", () => {
+    it("returns undefined for null metadata", () => {
+      expect(buildZuperCustomFieldsFromMetadata("MODULE", null)).toBeUndefined();
+    });
+
+    it("returns undefined when no FieldDef has zuperCustomField (current state)", () => {
+      // Baseline assertion — M3.4 is plumbing-only; no zuperCustomField keys
+      // are populated yet in catalog-fields.ts. Activation happens later.
+      expect(
+        buildZuperCustomFieldsFromMetadata("MODULE", { wattage: 400, cellType: "TOPCon" }),
+      ).toBeUndefined();
+    });
+
+    it("emits keyed values when a FieldDef has zuperCustomField populated", () => {
+      const original = CATEGORY_CONFIGS.MODULE.fields;
+      try {
+        CATEGORY_CONFIGS.MODULE.fields = [
+          ...original,
+          {
+            key: "wattage",
+            label: "Wattage",
+            type: "number",
+            zuperCustomField: "pb_module_wattage",
+          },
+          {
+            key: "cellType",
+            label: "Cell Type",
+            type: "dropdown",
+            zuperCustomField: "pb_module_cell_type",
+          },
+        ];
+
+        const out = buildZuperCustomFieldsFromMetadata("MODULE", {
+          wattage: 400,
+          cellType: "TOPCon",
+          // efficiency has no zuperCustomField here — should be skipped
+          efficiency: 21.3,
+        });
+
+        expect(out).toEqual({
+          pb_module_wattage: 400,
+          pb_module_cell_type: "TOPCon",
+        });
+      } finally {
+        CATEGORY_CONFIGS.MODULE.fields = original;
+      }
+    });
+
+    it("skips empty/null/undefined values", () => {
+      const original = CATEGORY_CONFIGS.MODULE.fields;
+      try {
+        CATEGORY_CONFIGS.MODULE.fields = [
+          ...original,
+          {
+            key: "wattage",
+            label: "Wattage",
+            type: "number",
+            zuperCustomField: "pb_module_wattage",
+          },
+          {
+            key: "cellType",
+            label: "Cell Type",
+            type: "dropdown",
+            zuperCustomField: "pb_module_cell_type",
+          },
+        ];
+
+        const out = buildZuperCustomFieldsFromMetadata("MODULE", {
+          wattage: null,
+          cellType: "",
+        });
+
+        // All values filtered → no entries → undefined
+        expect(out).toBeUndefined();
+      } finally {
+        CATEGORY_CONFIGS.MODULE.fields = original;
+      }
+    });
   });
 });

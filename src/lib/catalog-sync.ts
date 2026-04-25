@@ -727,7 +727,9 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
     for (const c of preview.changes) {
       planned[c.field] = c.proposedValue;
     }
-    const { createOrUpdateZuperPart } = await import("@/lib/zuper-catalog");
+    const { createOrUpdateZuperPart, buildZuperCustomFieldsFromMetadata } = await import(
+      "@/lib/zuper-catalog"
+    );
 
     const linkResult = await createAndLinkExternal({
       internalProductId: sku.id,
@@ -748,6 +750,7 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
           length: sku.length,
           width: sku.width,
           weight: sku.weight,
+          customFields: buildZuperCustomFieldsFromMetadata(sku.category, getSpecData(sku)),
         });
         return {
           externalId: r.zuperItemId,
@@ -777,6 +780,17 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
   // names, resolve category to UID, and nest dotted keys.
   // Must stay in sync with parseZuperCurrentFields read-back and the create
   // path in createOrUpdateZuperPart.
+  //
+  // TODO(M3.4): Once `zuperCustomField` keys are populated on FieldDef in
+  // catalog-fields.ts, the M3.3 mapping registry will start emitting
+  // category-conditional change edges (system "zuper", externalField =
+  // pb_*) for spec changes. Today those would fall through the
+  // `mapping ?? change.field` branch below and be written as top-level
+  // fields — wrong, since Zuper expects them nested under `custom_fields`.
+  // When activating the schema, route any change.field that matches a
+  // FieldDef.zuperCustomField for sku.category through `fields.custom_fields`
+  // instead. Niche path (most updates change identity/pricing, not specs);
+  // create path is the high-leverage win and is already wired.
   const ZUPER_FIELD_MAP: Record<string, string | string[]> = {
     name: "product_name",
     description: "product_description",
