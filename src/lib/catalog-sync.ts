@@ -2,7 +2,7 @@ import { createHash } from "crypto";
 import { prisma } from "@/lib/db";
 import { zohoInventory } from "@/lib/zoho-inventory";
 import type { UpdateZohoItemResult } from "@/lib/zoho-inventory";
-import { getHubSpotProductById, updateHubSpotProduct } from "@/lib/hubspot";
+import { getHubSpotProductById, updateHubSpotProduct, HubSpotManufacturerEnumError } from "@/lib/hubspot";
 import type { UpdateHubSpotProductResult } from "@/lib/hubspot";
 import { getZuperPartById, updateZuperPart, resolveZuperCategoryUid } from "@/lib/zuper-catalog";
 import type { UpdateZuperPartResult } from "@/lib/zuper-catalog";
@@ -638,30 +638,43 @@ export async function executeHubSpotSync(sku: SkuRecord, preview: SyncPreview): 
       additionalProperties[key] = value;
     }
 
-    const linkResult = await createAndLinkExternal({
-      internalProductId: sku.id,
-      externalIdField: "hubspotProductId",
-      doCreate: async () => {
-        const r = await createOrUpdateHubSpotProduct({
-          name: planned["name"] ?? sku.name,
-          brand: planned["manufacturer"] ?? sku.brand,
-          model: planned["vendor_part_number"] ?? sku.model,
-          description: planned["description"] ?? sku.description,
-          sku: planned["hs_sku"] ?? sku.sku,
-          productCategory: getHubspotCategoryValue(sku.category),
-          sellPrice: planned["price"] != null ? Number(planned["price"]) : sku.sellPrice,
-          unitCost: planned["hs_cost_of_goods_sold"] != null ? Number(planned["hs_cost_of_goods_sold"]) : sku.unitCost,
-          hardToProcure: sku.hardToProcure,
-          length: sku.length,
-          width: sku.width,
-          additionalProperties,
-        });
+    let linkResult;
+    try {
+      linkResult = await createAndLinkExternal({
+        internalProductId: sku.id,
+        externalIdField: "hubspotProductId",
+        doCreate: async () => {
+          const r = await createOrUpdateHubSpotProduct({
+            name: planned["name"] ?? sku.name,
+            brand: planned["manufacturer"] ?? sku.brand,
+            model: planned["vendor_part_number"] ?? sku.model,
+            description: planned["description"] ?? sku.description,
+            sku: planned["hs_sku"] ?? sku.sku,
+            productCategory: getHubspotCategoryValue(sku.category),
+            sellPrice: planned["price"] != null ? Number(planned["price"]) : sku.sellPrice,
+            unitCost: planned["hs_cost_of_goods_sold"] != null ? Number(planned["hs_cost_of_goods_sold"]) : sku.unitCost,
+            hardToProcure: sku.hardToProcure,
+            length: sku.length,
+            width: sku.width,
+            additionalProperties,
+          });
+          return {
+            externalId: r.hubspotProductId,
+            message: r.created ? "Created new HubSpot product." : "Found existing HubSpot product.",
+          };
+        },
+      });
+    } catch (err) {
+      if (err instanceof HubSpotManufacturerEnumError) {
         return {
-          externalId: r.hubspotProductId,
-          message: r.created ? "Created new HubSpot product." : "Found existing HubSpot product.",
+          system: "hubspot",
+          externalId: "",
+          status: "failed",
+          message: `Brand "${err.brand}" is not in HubSpot's manufacturer enum. Add it in HubSpot Settings → Properties → Products → Manufacturer (or correct the brand spelling), then retry.`,
         };
-      },
-    });
+      }
+      throw err;
+    }
 
     if (linkResult.skipped) {
       return {

@@ -49,6 +49,9 @@ jest.mock("@/lib/catalog-fields", () => ({
 // ── HubSpot adapter ────────────────────────────────────────────────────────────
 const mockCreateOrUpdateHubSpotProduct = jest.fn();
 jest.mock("@/lib/hubspot", () => ({
+  // Re-export the real error class so instanceof checks in the approval engine work.
+  HubSpotManufacturerEnumError:
+    jest.requireActual<typeof import("@/lib/hubspot")>("@/lib/hubspot").HubSpotManufacturerEnumError,
   createOrUpdateHubSpotProduct: (...args: unknown[]) => mockCreateOrUpdateHubSpotProduct(...args),
 }));
 

@@ -19,7 +19,7 @@ import {
   getSpecTableName,
   getZuperCategoryValue,
 } from "@/lib/catalog-fields";
-import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
+import { createOrUpdateHubSpotProduct, HubSpotManufacturerEnumError } from "@/lib/hubspot";
 import { createOrUpdateZohoItem, uploadZohoItemImage } from "@/lib/zoho-inventory";
 import { createOrUpdateZuperPart } from "@/lib/zuper-catalog";
 import { writeCrossLinkIds } from "@/lib/catalog-cross-link";
@@ -341,11 +341,18 @@ export async function executeCatalogPushApproval(
             : "Updated existing HubSpot product.") + hubspotWarnings,
         };
       } catch (error) {
-        outcomes.HUBSPOT = {
-          status: "failed",
-          message:
-            error instanceof Error ? error.message : "HubSpot product push failed.",
-        };
+        if (error instanceof HubSpotManufacturerEnumError) {
+          outcomes.HUBSPOT = {
+            status: "failed",
+            message: `Brand "${error.brand}" is not in HubSpot's manufacturer enum. Add it in HubSpot Settings → Properties → Products → Manufacturer (or correct the brand spelling), then retry.`,
+          };
+        } else {
+          outcomes.HUBSPOT = {
+            status: "failed",
+            message:
+              error instanceof Error ? error.message : "HubSpot product push failed.",
+          };
+        }
       }
     }
   }

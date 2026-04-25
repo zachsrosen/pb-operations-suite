@@ -23,7 +23,7 @@ import {
 import type { SkuRecord } from "./catalog-sync";
 import { getSpecData } from "./catalog-sync";
 import { zohoInventory } from "./zoho-inventory";
-import { getHubSpotProductById } from "./hubspot";
+import { getHubSpotProductById, HubSpotManufacturerEnumError } from "./hubspot";
 import { getZuperPartById } from "./zuper-catalog";
 import {
   getHubSpotPropertyNames,
@@ -921,8 +921,18 @@ async function executeSystemWrites(
 
     return await executePushes(system, sku, pushOps, effectiveState, fieldDetails);
   } catch (err) {
+    const failedKind = ops.some((o) => o.kind === "create") ? "create" : "push";
+    if (err instanceof HubSpotManufacturerEnumError) {
+      return {
+        kind: failedKind,
+        system,
+        status: "failed",
+        message: `Brand "${err.brand}" is not in HubSpot's manufacturer enum. Add it in HubSpot Settings → Properties → Products → Manufacturer (or correct the brand spelling), then retry.`,
+        fieldDetails,
+      };
+    }
     return {
-      kind: ops.some((o) => o.kind === "create") ? "create" : "push",
+      kind: failedKind,
       system,
       status: "failed",
       message: err instanceof Error ? err.message : "External write failed",
