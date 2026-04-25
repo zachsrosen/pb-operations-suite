@@ -465,6 +465,75 @@ export function computePreviewHash(previews: SyncPreview[]): string {
 }
 
 // ---------------------------------------------------------------------------
+// Race-safe create-and-link helper
+// ---------------------------------------------------------------------------
+
+type ExternalIdField = "zohoItemId" | "hubspotProductId" | "zuperItemId";
+
+/**
+ * Race-safe create-and-link for a new external record.
+ *
+ * Wraps the create-then-link sequence in a transaction:
+ *   1. Re-fetch the InternalProduct row inside the transaction
+ *   2. If the target external ID column is already non-null, abort BEFORE
+ *      calling the external API — another sync linked first
+ *   3. Otherwise, call the create function, then write the new ID back via
+ *      `updateMany WHERE col IS NULL` inside the same transaction
+ *   4. If the updateMany affects 0 rows after a successful external create,
+ *      we lost a narrow link-back race — the external record exists but is
+ *      orphaned. Logged loudly; residual risk documented in
+ *      docs/superpowers/plans/2026-04-24-catalog-sync-quality-hardening.md
+ *      Task 2.3.
+ */
+export async function createAndLinkExternal<T extends { externalId: string }>(opts: {
+  internalProductId: string;
+  externalIdField: ExternalIdField;
+  doCreate: () => Promise<T>;
+}): Promise<{ skipped: true; reason: string } | { skipped: false; result: T }> {
+  return prisma.$transaction(async (tx) => {
+    const before = await tx.internalProduct.findUnique({
+      where: { id: opts.internalProductId },
+      select: { [opts.externalIdField]: true } as Record<ExternalIdField, true>,
+    });
+
+    if (before && (before as Record<ExternalIdField, string | null>)[opts.externalIdField]) {
+      return {
+        skipped: true as const,
+        reason: `Another sync linked ${opts.externalIdField} first`,
+      };
+    }
+
+    const created = await opts.doCreate();
+
+    const updated = await tx.internalProduct.updateMany({
+      where: {
+        id: opts.internalProductId,
+        [opts.externalIdField]: null,
+      },
+      data: {
+        [opts.externalIdField]: created.externalId,
+      },
+    });
+
+    if (updated.count === 0) {
+      // Created externally but lost link-back race in the narrow window
+      // between findUnique returning null and updateMany running. The
+      // external record now exists but is orphaned (no link-back). Log
+      // explicitly so it can be cleaned up.
+      console.error(
+        `[Sync] Race: created ${opts.externalIdField}=${created.externalId} for InternalProduct ${opts.internalProductId} but lost link-back. Orphan exists in external system.`,
+      );
+      return {
+        skipped: true as const,
+        reason: "Lost link-back race after external create — orphan exists",
+      };
+    }
+
+    return { skipped: false as const, result: created };
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Execute
 // ---------------------------------------------------------------------------
 
@@ -485,34 +554,43 @@ export async function executeZohoSync(sku: SkuRecord, preview: SyncPreview): Pro
       planned[c.field] = c.proposedValue;
     }
     const { createOrUpdateZohoItem } = await import("@/lib/zoho-inventory");
-    const result = await createOrUpdateZohoItem({
-      name: planned["name"] ?? sku.name,
-      brand: planned["brand"] ?? sku.brand,
-      model: planned["part_number"] ?? sku.model,
-      description: planned["description"] ?? sku.description,
-      sku: planned["sku"] ?? sku.sku,
-      unitLabel: planned["unit"] ?? sku.unitLabel,
-      vendorName: planned["vendor_name"] ?? sku.vendorName,
-      sellPrice: planned["rate"] != null ? Number(planned["rate"]) : sku.sellPrice,
-      unitCost: planned["purchase_rate"] != null ? Number(planned["purchase_rate"]) : sku.unitCost,
+
+    const linkResult = await createAndLinkExternal({
+      internalProductId: sku.id,
+      externalIdField: "zohoItemId",
+      doCreate: async () => {
+        const r = await createOrUpdateZohoItem({
+          name: planned["name"] ?? sku.name,
+          brand: planned["brand"] ?? sku.brand,
+          model: planned["part_number"] ?? sku.model,
+          description: planned["description"] ?? sku.description,
+          sku: planned["sku"] ?? sku.sku,
+          unitLabel: planned["unit"] ?? sku.unitLabel,
+          vendorName: planned["vendor_name"] ?? sku.vendorName,
+          sellPrice: planned["rate"] != null ? Number(planned["rate"]) : sku.sellPrice,
+          unitCost: planned["purchase_rate"] != null ? Number(planned["purchase_rate"]) : sku.unitCost,
+        });
+        return {
+          externalId: r.zohoItemId,
+          message: r.created ? "Created new Zoho item." : "Found existing Zoho item.",
+        };
+      },
     });
 
-    // Guarded write: only set zohoItemId if it's still null
-    if (result.zohoItemId) {
-      const updated = await prisma.internalProduct.updateMany({
-        where: { id: sku.id, zohoItemId: null },
-        data: { zohoItemId: result.zohoItemId },
-      });
-      if (updated.count === 0) {
-        console.error(`[Sync] Guarded write: zohoItemId already set for SKU ${sku.id}, skipping link-back`);
-      }
+    if (linkResult.skipped) {
+      return {
+        system: "zoho",
+        externalId: "",
+        status: "skipped",
+        message: linkResult.reason,
+      };
     }
 
     return {
       system: "zoho",
-      externalId: result.zohoItemId,
+      externalId: linkResult.result.externalId,
       status: "created",
-      message: result.created ? "Created new Zoho item." : "Found existing Zoho item.",
+      message: linkResult.result.message,
     };
   }
 
@@ -560,36 +638,45 @@ export async function executeHubSpotSync(sku: SkuRecord, preview: SyncPreview): 
       additionalProperties[key] = value;
     }
 
-    const result = await createOrUpdateHubSpotProduct({
-      name: planned["name"] ?? sku.name,
-      brand: planned["manufacturer"] ?? sku.brand,
-      model: planned["vendor_part_number"] ?? sku.model,
-      description: planned["description"] ?? sku.description,
-      sku: planned["hs_sku"] ?? sku.sku,
-      productCategory: getHubspotCategoryValue(sku.category),
-      sellPrice: planned["price"] != null ? Number(planned["price"]) : sku.sellPrice,
-      unitCost: planned["hs_cost_of_goods_sold"] != null ? Number(planned["hs_cost_of_goods_sold"]) : sku.unitCost,
-      hardToProcure: sku.hardToProcure,
-      length: sku.length,
-      width: sku.width,
-      additionalProperties,
+    const linkResult = await createAndLinkExternal({
+      internalProductId: sku.id,
+      externalIdField: "hubspotProductId",
+      doCreate: async () => {
+        const r = await createOrUpdateHubSpotProduct({
+          name: planned["name"] ?? sku.name,
+          brand: planned["manufacturer"] ?? sku.brand,
+          model: planned["vendor_part_number"] ?? sku.model,
+          description: planned["description"] ?? sku.description,
+          sku: planned["hs_sku"] ?? sku.sku,
+          productCategory: getHubspotCategoryValue(sku.category),
+          sellPrice: planned["price"] != null ? Number(planned["price"]) : sku.sellPrice,
+          unitCost: planned["hs_cost_of_goods_sold"] != null ? Number(planned["hs_cost_of_goods_sold"]) : sku.unitCost,
+          hardToProcure: sku.hardToProcure,
+          length: sku.length,
+          width: sku.width,
+          additionalProperties,
+        });
+        return {
+          externalId: r.hubspotProductId,
+          message: r.created ? "Created new HubSpot product." : "Found existing HubSpot product.",
+        };
+      },
     });
 
-    if (result.hubspotProductId) {
-      const updated = await prisma.internalProduct.updateMany({
-        where: { id: sku.id, hubspotProductId: null },
-        data: { hubspotProductId: result.hubspotProductId },
-      });
-      if (updated.count === 0) {
-        console.error(`[Sync] Guarded write: hubspotProductId already set for SKU ${sku.id}, skipping link-back`);
-      }
+    if (linkResult.skipped) {
+      return {
+        system: "hubspot",
+        externalId: "",
+        status: "skipped",
+        message: linkResult.reason,
+      };
     }
 
     return {
       system: "hubspot",
-      externalId: result.hubspotProductId,
+      externalId: linkResult.result.externalId,
       status: "created",
-      message: result.created ? "Created new HubSpot product." : "Found existing HubSpot product.",
+      message: linkResult.result.message,
     };
   }
 
@@ -628,35 +715,45 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
       planned[c.field] = c.proposedValue;
     }
     const { createOrUpdateZuperPart } = await import("@/lib/zuper-catalog");
-    const result = await createOrUpdateZuperPart({
-      name: planned["name"] ?? sku.name,
-      brand: planned["brand"] ?? sku.brand,
-      model: planned["model"] ?? sku.model,
-      description: planned["description"] ?? sku.description,
-      sku: planned["sku"] ?? sku.sku,
-      unitLabel: planned["uom"] ?? sku.unitLabel,
-      vendorName: planned["vendor_name"] ?? sku.vendorName,
-      vendorPartNumber: sku.vendorPartNumber,
-      sellPrice: planned["price"] != null ? Number(planned["price"]) : sku.sellPrice,
-      unitCost: planned["purchase_price"] != null ? Number(planned["purchase_price"]) : sku.unitCost,
-      category: getZuperCategoryValue(sku.category),
+
+    const linkResult = await createAndLinkExternal({
+      internalProductId: sku.id,
+      externalIdField: "zuperItemId",
+      doCreate: async () => {
+        const r = await createOrUpdateZuperPart({
+          name: planned["name"] ?? sku.name,
+          brand: planned["brand"] ?? sku.brand,
+          model: planned["model"] ?? sku.model,
+          description: planned["description"] ?? sku.description,
+          sku: planned["sku"] ?? sku.sku,
+          unitLabel: planned["uom"] ?? sku.unitLabel,
+          vendorName: planned["vendor_name"] ?? sku.vendorName,
+          vendorPartNumber: sku.vendorPartNumber,
+          sellPrice: planned["price"] != null ? Number(planned["price"]) : sku.sellPrice,
+          unitCost: planned["purchase_price"] != null ? Number(planned["purchase_price"]) : sku.unitCost,
+          category: getZuperCategoryValue(sku.category),
+        });
+        return {
+          externalId: r.zuperItemId,
+          message: r.created ? "Created new Zuper item." : "Found existing Zuper item.",
+        };
+      },
     });
 
-    if (result.zuperItemId) {
-      const updated = await prisma.internalProduct.updateMany({
-        where: { id: sku.id, zuperItemId: null },
-        data: { zuperItemId: result.zuperItemId },
-      });
-      if (updated.count === 0) {
-        console.error(`[Sync] Guarded write: zuperItemId already set for SKU ${sku.id}, skipping link-back`);
-      }
+    if (linkResult.skipped) {
+      return {
+        system: "zuper",
+        externalId: "",
+        status: "skipped",
+        message: linkResult.reason,
+      };
     }
 
     return {
       system: "zuper",
-      externalId: result.zuperItemId,
+      externalId: linkResult.result.externalId,
       status: "created",
-      message: result.created ? "Created new Zuper item." : "Found existing Zuper item.",
+      message: linkResult.result.message,
     };
   }
 
