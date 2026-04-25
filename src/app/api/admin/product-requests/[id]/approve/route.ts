@@ -22,7 +22,7 @@ export async function POST(
 
   if (id.startsWith("eq_")) {
     const pushId = id.slice(3);
-    const result = await executeCatalogPushApproval(pushId);
+    const result = await executeCatalogPushApproval(pushId, { source: "approval_retry", userEmail: reviewer });
     if (result.notFound) return NextResponse.json({ error: "Not found" }, { status: 404 });
     if (!result.push || result.error) {
       return NextResponse.json(

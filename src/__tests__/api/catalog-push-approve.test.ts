@@ -1,5 +1,11 @@
 // src/__tests__/api/catalog-push-approve.test.ts
 
+// ── catalog-activity-log ──────────────────────────────────────────────────────
+jest.mock("@/lib/catalog-activity-log", () => ({
+  logCatalogSync: jest.fn().mockResolvedValue(null),
+  logCatalogProductCreated: jest.fn().mockResolvedValue(null),
+}));
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 const mockRequireApiAuth = jest.fn();
 jest.mock("@/lib/api-auth", () => ({
@@ -81,6 +87,7 @@ jest.mock("@/lib/canonical", () => ({
 const mockFindUnique = jest.fn();
 const mockCatalogFindMany = jest.fn();
 const mockCatalogFindUnique = jest.fn();
+const mockInternalProductFindUnique = jest.fn();
 const mockUpsert = jest.fn();
 const mockUpdate = jest.fn();
 const mockSpecUpsert = jest.fn();
@@ -92,6 +99,7 @@ let pushState: Record<string, unknown>;
 const mockTransaction = jest.fn(async (fn: any) => {
   const txClient = {
     internalProduct: {
+      findUnique: (...args: unknown[]) => mockInternalProductFindUnique(...args),
       upsert: (...args: unknown[]) => mockUpsert(...args),
       update: (...args: unknown[]) => mockEquipmentUpdate(...args),
     },
@@ -109,12 +117,16 @@ jest.mock("@/lib/db", () => ({
       findUnique: (...args: unknown[]) => mockFindUnique(...args),
       update: (...args: unknown[]) => mockUpdate(...args),
     },
+    internalProduct: {
+      update: (...args: unknown[]) => mockEquipmentUpdate(...args),
+    },
     catalogProduct: {
       findMany: (...args: unknown[]) => mockCatalogFindMany(...args),
       findUnique: (...args: unknown[]) => mockCatalogFindUnique(...args),
     },
     $transaction: mockTransaction,
   },
+  logActivity: jest.fn().mockResolvedValue(null),
 }));
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
@@ -142,6 +154,7 @@ jest.mock("@/generated/prisma/enums", () => ({
 // ── Route under test ──────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from "next/server";
 import { POST } from "@/app/api/catalog/push-requests/[id]/approve/route";
+import * as activityLog from "@/lib/catalog-activity-log";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function makePush(overrides: Record<string, unknown> = {}) {
@@ -188,6 +201,8 @@ beforeEach(() => {
     note: null,
   };
   mockRequireApiAuth.mockResolvedValue({ email: "admin@photonbrothers.com", role: "ADMIN" });
+  // Default: product does not exist yet → wasInternalCreate = true
+  mockInternalProductFindUnique.mockResolvedValue(null);
   mockUpsert.mockResolvedValue({ id: "sku_1" });
   mockUpdate.mockImplementation((args: { data?: Record<string, unknown> }) => {
     const nextData = args?.data ?? {};
@@ -560,7 +575,12 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
         return arg?.data?.hubspotProductId === "hs_prod_1";
       });
       expect(hasHubSpotIdWrite).toBe(false);
-      expect(mockEquipmentUpdate).not.toHaveBeenCalled();
+      // The HubSpot product ID must NOT have been written back to the internal product
+      const hasHubSpotIdOnProduct = mockEquipmentUpdate.mock.calls.some((call) => {
+        const arg = call[0] as { data?: Record<string, unknown> };
+        return arg?.data?.hubspotProductId !== undefined;
+      });
+      expect(hasHubSpotIdOnProduct).toBe(false);
       expect(data.outcomes.HUBSPOT.status).toBe("failed");
       expect(data.outcomes.HUBSPOT.message).toMatch(/hubspot unavailable/i);
       expect(data.summary).toEqual({
@@ -686,6 +706,16 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
         skipped: 0,
         notImplemented: 0,
       });
+      // Audit logging: logCatalogSync must be called with the correct shape
+      expect(activityLog.logCatalogSync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          internalProductId: expect.any(String),
+          source: "approval_retry",
+          outcomes: expect.objectContaining({
+            INTERNAL: expect.objectContaining({ status: "success" }),
+          }),
+        })
+      );
     });
   });
 

@@ -24,6 +24,7 @@ import { createOrUpdateZohoItem, uploadZohoItemImage, zohoInventory } from "@/li
 import { createOrUpdateZuperPart, updateZuperPart, buildZuperProductCustomFields } from "@/lib/zuper-catalog";
 import { notifyAdminsOfApprovalWarnings } from "@/lib/catalog-notify";
 import { buildCanonicalKey, canonicalToken } from "@/lib/canonical";
+import { logCatalogSync, logCatalogProductCreated, CatalogSyncSource } from "@/lib/catalog-activity-log";
 
 /**
  * Extract the blob pathname (e.g. "catalog-photos/foo.png") from the photoUrl
@@ -130,7 +131,10 @@ function shouldMarkApproved(summary: ApprovalSummary): boolean {
   return summary.failed === 0 && summary.notImplemented === 0 && summary.skipped === 0;
 }
 
-export async function executeCatalogPushApproval(id: string): Promise<ApprovalResult> {
+export async function executeCatalogPushApproval(
+  id: string,
+  options: { source?: CatalogSyncSource; userEmail?: string } = {}
+): Promise<ApprovalResult> {
   if (!prisma) {
     return {
       push: null,
@@ -161,6 +165,8 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
     };
   }
 
+  const startedAt = Date.now();
+
   const selectedSystems = push.systems.filter((system): system is SystemName =>
     (VALID_SYSTEMS as readonly string[]).includes(system)
   );
@@ -171,6 +177,7 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
 
   // Keep core internal writes atomic; final APPROVED status is set only if all
   // selected systems complete successfully.
+  let wasInternalCreate = false;
   const basePush = await prisma.$transaction(async (tx) => {
     let internalSkuId: string | null = push.internalSkuId;
 
@@ -206,6 +213,19 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
         canonicalModel: cModel || null,
         canonicalKey: cKey,
       };
+
+      // Check existence before upsert so we can distinguish create from update for audit logging.
+      const existing = await tx.internalProduct.findUnique({
+        where: {
+          category_brand_model: {
+            category: push.category as EquipmentCategory,
+            brand: push.brand,
+            model: push.model,
+          },
+        },
+        select: { id: true },
+      });
+      wasInternalCreate = existing === null;
 
       const sku = await tx.internalProduct.upsert({
         where: {
@@ -611,6 +631,53 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
         model: push.model,
         category: push.category,
         systemWarnings,
+      });
+    }
+  }
+
+  // Audit logging: write ActivityLog row and bump sync watermark.
+  if (basePush.internalSkuId) {
+    const effectiveUserEmail = options.userEmail || push.requestedBy;
+    const effectiveSource = options.source || "wizard";
+    const productName = `${push.brand} ${push.model}`.trim();
+
+    // logCatalogSync — fire-and-forget, never fail the overall response
+    logCatalogSync({
+      internalProductId: basePush.internalSkuId,
+      productName,
+      userEmail: effectiveUserEmail,
+      source: effectiveSource,
+      outcomes,
+      durationMs: Date.now() - startedAt,
+      ...(push.dealId ? { dealId: push.dealId } : {}),
+    }).catch((err) => {
+      console.warn("[catalog] logCatalogSync failed (non-fatal):", err);
+    });
+
+    // Bump lastSyncedAt / lastSyncedBy watermark on the InternalProduct row.
+    prisma.internalProduct
+      .update({
+        where: { id: basePush.internalSkuId },
+        data: {
+          lastSyncedAt: new Date(),
+          lastSyncedBy: effectiveUserEmail,
+        },
+      })
+      .catch((err) => {
+        console.warn("[catalog] lastSyncedAt watermark update failed (non-fatal):", err);
+      });
+
+    // logCatalogProductCreated — only when this approval created a new InternalProduct row
+    if (wasInternalCreate) {
+      logCatalogProductCreated({
+        internalProductId: basePush.internalSkuId,
+        category: push.category,
+        brand: push.brand,
+        model: push.model,
+        userEmail: effectiveUserEmail,
+        source: effectiveSource,
+      }).catch((err) => {
+        console.warn("[catalog] logCatalogProductCreated failed (non-fatal):", err);
       });
     }
   }
