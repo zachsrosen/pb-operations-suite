@@ -720,3 +720,62 @@ export async function uploadDriveTextFile(
   const data = (await res.json()) as { id: string; name: string };
   return { id: data.id, name: data.name };
 }
+
+/**
+ * Upload a binary file (PDF, image, ZIP, etc.) to Google Drive using the
+ * multipart upload protocol. Counterpart to `uploadDriveTextFile`.
+ */
+export async function uploadDriveBinaryFile(
+  parentId: string,
+  filename: string,
+  content: ArrayBuffer | Uint8Array | Buffer,
+  mimeType: string,
+): Promise<{ id: string; name: string }> {
+  const token = await getDriveWriteToken();
+
+  const boundary = `pb_drive_boundary_${Date.now()}`;
+  const metadata = JSON.stringify({
+    name: filename,
+    mimeType,
+    parents: [parentId],
+  });
+
+  const bodyParts = [
+    Buffer.from(
+      `--${boundary}\r\n` +
+        `Content-Type: application/json; charset=UTF-8\r\n\r\n` +
+        `${metadata}\r\n` +
+        `--${boundary}\r\n` +
+        `Content-Type: ${mimeType}\r\n\r\n`,
+      "utf-8",
+    ),
+    Buffer.isBuffer(content)
+      ? content
+      : content instanceof Uint8Array
+        ? Buffer.from(content)
+        : Buffer.from(new Uint8Array(content)),
+    Buffer.from(`\r\n--${boundary}--`, "utf-8"),
+  ];
+  const body = Buffer.concat(bodyParts);
+
+  const res = await fetch(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": `multipart/related; boundary=${boundary}`,
+      },
+      body: new Uint8Array(body),
+      cache: "no-store",
+    },
+  );
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Drive binary upload ${res.status}: ${errBody.slice(0, 200)}`);
+  }
+
+  const data = (await res.json()) as { id: string; name: string };
+  return { id: data.id, name: data.name };
+}
