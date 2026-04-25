@@ -101,24 +101,22 @@ export const ZOHO_CATEGORY_MAP: Record<string, ZohoCategoryMapping> = {
     status: "confirmed",
   },
 
-  // ── Unresolved (pending Zoho admin action) ─────────────────────────────────
+  // ── Categories created in Zoho admin via _create-zoho-categories.ts (2026-04-24) ──
   BATTERY: {
-    categoryName: undefined,
-    categoryId: undefined,
-    status: "unresolved",
-    note: "Pending Zoho admin: create new 'Battery' category, then update this entry",
+    categoryName: "Battery",
+    categoryId: "5385454000020010899",
+    status: "confirmed",
   },
   BATTERY_EXPANSION: {
-    categoryName: undefined,
-    categoryId: undefined,
-    status: "unresolved",
-    note: "Same as BATTERY — uses the new Battery category once created",
+    categoryName: "Battery",
+    categoryId: "5385454000020010899",
+    status: "confirmed",
+    note: "Shares Battery category with BATTERY",
   },
   EV_CHARGER: {
-    categoryName: undefined,
-    categoryId: undefined,
-    status: "unresolved",
-    note: "Pending Zoho admin: create new 'EV Charger' category, then update this entry",
+    categoryName: "EV Charger",
+    categoryId: "5385454000019964645",
+    status: "confirmed",
   },
 
   // ── Not applicable (no Zoho category fits — leave items uncategorized) ─────

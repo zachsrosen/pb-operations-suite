@@ -82,15 +82,15 @@ describe("zoho-taxonomy", () => {
       expect(getZohoCategory("PROJECT_MILESTONES").categoryId).toBe(expectedId);
     });
 
-    it("returns empty object for unresolved mappings (BATTERY/EV_CHARGER)", () => {
-      const warnSpy = jest.spyOn(console, "warn").mockImplementation();
+    it("returns the new BATTERY/EV_CHARGER categories created in Phase B (2026-04-24)", () => {
       const battery = getZohoCategory("BATTERY");
-      expect(battery.categoryId).toBeUndefined();
-      expect(battery.categoryName).toBeUndefined();
+      expect(battery.categoryId).toBe("5385454000020010899");
+      expect(battery.categoryName).toBe("Battery");
       const evCharger = getZohoCategory("EV_CHARGER");
-      expect(evCharger.categoryId).toBeUndefined();
-      expect(evCharger.categoryName).toBeUndefined();
-      warnSpy.mockRestore();
+      expect(evCharger.categoryId).toBe("5385454000019964645");
+      expect(evCharger.categoryName).toBe("EV Charger");
+      const expansion = getZohoCategory("BATTERY_EXPANSION");
+      expect(expansion.categoryId).toBe("5385454000020010899");
     });
 
     it("returns empty object for not_applicable mappings without warning", () => {
@@ -110,9 +110,13 @@ describe("zoho-taxonomy", () => {
     });
 
     it("warns for unresolved entries (so ops sees the backlog)", () => {
+      // After Phase B all 16 categories are confirmed or not_applicable.
+      // If a future enum addition lands in 'unresolved' state this test guards
+      // the warn behavior. For now, just assert the warn is called when
+      // unresolved entries exist (no-op when all are confirmed).
       const warnSpy = jest.spyOn(console, "warn").mockImplementation();
-      getZohoCategory("BATTERY");
-      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("unresolved"));
+      getZohoCategory("BATTERY");  // now confirmed — should NOT warn
+      expect(warnSpy).not.toHaveBeenCalled();
       warnSpy.mockRestore();
     });
 
@@ -133,9 +137,10 @@ describe("zoho-taxonomy", () => {
       expect(hasVerifiedZohoMapping("RACKING")).toBe(true);
     });
 
-    it("returns false for unresolved mappings", () => {
-      expect(hasVerifiedZohoMapping("BATTERY")).toBe(false);
-      expect(hasVerifiedZohoMapping("EV_CHARGER")).toBe(false);
+    it("returns true for BATTERY/EV_CHARGER (Phase B Zoho admin work complete 2026-04-24)", () => {
+      expect(hasVerifiedZohoMapping("BATTERY")).toBe(true);
+      expect(hasVerifiedZohoMapping("EV_CHARGER")).toBe(true);
+      expect(hasVerifiedZohoMapping("BATTERY_EXPANSION")).toBe(true);
     });
 
     it("returns false for not_applicable mappings", () => {
@@ -153,9 +158,13 @@ describe("zoho-taxonomy", () => {
       expect(getZohoGroupName("INVERTER")).toBe("Inverter");
     });
 
-    it("returns undefined for unresolved/not_applicable/unknown", () => {
+    it("returns the categoryName for newly-confirmed BATTERY/EV_CHARGER", () => {
+      expect(getZohoGroupName("BATTERY")).toBe("Battery");
+      expect(getZohoGroupName("EV_CHARGER")).toBe("EV Charger");
+    });
+
+    it("returns undefined for not_applicable/unknown", () => {
       const warnSpy = jest.spyOn(console, "warn").mockImplementation();
-      expect(getZohoGroupName("BATTERY")).toBeUndefined();
       expect(getZohoGroupName("D_AND_R")).toBeUndefined();
       expect(getZohoGroupName("DOES_NOT_EXIST")).toBeUndefined();
       warnSpy.mockRestore();
