@@ -1,5 +1,6 @@
 import DashboardShell from "@/components/DashboardShell";
 import ReviewActions from "@/components/ReviewActions";
+import { EagleViewPanel } from "@/components/EagleViewPanel";
 import { prisma } from "@/lib/db";
 import { auth } from "@/auth";
 
@@ -25,6 +26,10 @@ export default async function ReviewHistoryPage({ params }: Props) {
       <div className="space-y-6">
         {/* Run review actions */}
         <ReviewActions dealId={dealId} dealName={projectId} userRole={userRole} />
+
+        {/* EagleView TrueDesign — manual order + status. Auto-orders fire via
+            HubSpot workflow when EAGLEVIEW_AUTO_PULL_ENABLED is true. */}
+        <EagleViewPanel dealId={dealId} />
 
         <div className="grid grid-cols-1 gap-4">
           {["design-review"].map((skill) => {

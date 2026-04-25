@@ -3280,3 +3280,49 @@ model PermitHubDraft {
   @@index([userId])
   @@index([updatedAt])
 }
+
+// ===========================================
+// EAGLEVIEW (TrueDesign auto-pull via Measurement Orders API)
+// See docs/superpowers/specs/2026-04-24-eagleview-truedesign-auto-pull-design.md
+// ===========================================
+
+enum EagleViewProduct {
+  TDP // TrueDesign for Planning (PrimaryProductId 91)
+  TDS // TrueDesign for Sales (PrimaryProductId 90) — reserved, not used in v1
+  IA // Inform Advanced (PrimaryProductId 62) — reserved, not used in v1
+}
+
+enum EagleViewOrderStatus {
+  ORDERED // Submitted to EagleView, waiting for delivery
+  DELIVERED // Files received and saved to Drive
+  FAILED // EagleView returned error, no charge incurred
+  CANCELLED // Manually cancelled
+}
+
+model EagleViewOrder {
+  id                    String               @id @default(cuid())
+  dealId                String
+  productCode           EagleViewProduct     @default(TDP)
+  reportId              String               @unique // EagleView's ReportId from PlaceOrder
+  addressHash           String // SHA-256 of normalized address (for dedup)
+  status                EagleViewOrderStatus
+  triggeredBy           String // "hubspot_workflow" | user email for manual
+  surveyDate            DateTime?
+  orderedAt             DateTime             @default(now())
+  deliveredAt           DateTime?
+  errorMessage          String?
+  estimatedDeliveryAt   DateTime?
+  driveFolderId         String?
+  imageDriveFileId      String?
+  layoutJsonDriveFileId String?
+  shadeJsonDriveFileId  String?
+  reportPdfDriveFileId  String? // bundled measurement report PDF
+  reportXmlDriveFileId  String? // bundled measurement XML
+  cost                  Float? // populated when known
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  @@unique([dealId, productCode, addressHash])
+  @@index([status, orderedAt])
+  @@index([dealId])
+}
