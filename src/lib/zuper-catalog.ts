@@ -136,6 +136,9 @@ export interface UpsertZuperPartInput {
   unitCost?: number | null;
   category?: string | null;
   specification?: string | null;
+  length?: number | null;
+  width?: number | null;
+  weight?: number | null;
 }
 
 export interface UpsertZuperPartResult {
@@ -547,6 +550,10 @@ async function getCreateBodyVariants(endpoint: string, payload: JsonRecord): Pro
       : "PRODUCT";
     const categoryUid = await resolveZuperCategoryUid(productCategory);
 
+    const length = isFiniteNumber(payload.length) ? payload.length : undefined;
+    const width = isFiniteNumber(payload.width) ? payload.width : undefined;
+    const weight = isFiniteNumber(payload.weight) ? payload.weight : undefined;
+
     // product_no is auto-assigned by Zuper as a sequential integer.
     // Sending a string SKU causes a CastError, so we omit it.
     const productPayload: JsonRecord = {
@@ -559,6 +566,9 @@ async function getCreateBodyVariants(endpoint: string, payload: JsonRecord): Pro
       ...(uom ? { uom } : {}),
       ...(price ? { price: Number(price) || undefined } : {}),
       ...(purchasePrice ? { purchase_price: String(purchasePrice) } : {}),
+      ...(length !== undefined ? { length } : {}),
+      ...(width !== undefined ? { width } : {}),
+      ...(weight !== undefined ? { weight } : {}),
     };
     return [
       { label: "product", body: { product: productPayload } },
@@ -792,6 +802,9 @@ export async function createOrUpdateZuperPart(
     ...(isFiniteNumber(input.unitCost)
       ? { cost_price: input.unitCost, purchase_rate: input.unitCost, cost: input.unitCost }
       : {}),
+    ...(isFiniteNumber(input.length) ? { length: input.length } : {}),
+    ...(isFiniteNumber(input.width) ? { width: input.width } : {}),
+    ...(isFiniteNumber(input.weight) ? { weight: input.weight } : {}),
   };
 
   const hasOptional = Object.keys(optionalPayload).length > Object.keys(corePayload).length;

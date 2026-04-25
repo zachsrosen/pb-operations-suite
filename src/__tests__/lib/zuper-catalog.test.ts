@@ -180,6 +180,92 @@ describe("zuper-catalog", () => {
     expect(postCount).toBeGreaterThanOrEqual(1);
   });
 
+  it("includes length, width, and weight in the optional payload sent to Zuper", async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    mockFetch.mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = String(init?.method || "GET").toUpperCase();
+
+      if (url.includes("/product_categories")) {
+        return CATEGORY_RESPONSE;
+      }
+      if (method === "GET") {
+        return makeResponse({ type: "success", data: [] });
+      }
+      if (method === "POST" && url.includes("/product")) {
+        capturedBody = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>;
+        return makeResponse({
+          type: "success",
+          item: { item_uid: "zuper_dims_1" },
+        });
+      }
+      return makeResponse({ type: "error", message: "Unhandled endpoint" }, false, 404);
+    });
+
+    const result = await createOrUpdateZuperPart({
+      brand: "Silfab",
+      model: "SIL-380-BK",
+      sku: "SIL380",
+      category: "Module",
+      length: 78,
+      width: 39,
+      weight: 50,
+    });
+
+    expect(result).toEqual({ zuperItemId: "zuper_dims_1", created: true });
+    expect(capturedBody).not.toBeNull();
+
+    // For the /product endpoint the body is wrapped as { product: { ... } };
+    // for other endpoints it may be flat or wrapped differently.
+    // Flatten one level to find dimensions regardless of wrapping shape.
+    const inner =
+      capturedBody!["product"] ??
+      capturedBody!["item"] ??
+      capturedBody!["part"] ??
+      capturedBody;
+    const innerRecord = inner as Record<string, unknown>;
+    expect(innerRecord["length"]).toBe(78);
+    expect(innerRecord["width"]).toBe(39);
+    expect(innerRecord["weight"]).toBe(50);
+  });
+
+  it("omits dimension fields from payload when values are null or non-finite", async () => {
+    let capturedBody: Record<string, unknown> | null = null;
+    mockFetch.mockImplementation(async (input, init) => {
+      const url = String(input);
+      const method = String(init?.method || "GET").toUpperCase();
+      if (url.includes("/product_categories")) return CATEGORY_RESPONSE;
+      if (method === "GET") return makeResponse({ type: "success", data: [] });
+      if (method === "POST" && url.includes("/product")) {
+        capturedBody = JSON.parse(String(init?.body || "{}")) as Record<string, unknown>;
+        return makeResponse({ type: "success", item: { item_uid: "zuper_nodims_1" } });
+      }
+      return makeResponse({ type: "error" }, false, 404);
+    });
+
+    await createOrUpdateZuperPart({
+      brand: "Silfab",
+      model: "SIL-380-BK",
+      sku: "SIL380",
+      category: "Module",
+      length: null,
+      width: undefined,
+      weight: NaN,
+    });
+
+    expect(capturedBody).not.toBeNull();
+    // Check both top-level and any nested product/item wrapper
+    const innerOmit =
+      capturedBody!["product"] ??
+      capturedBody!["item"] ??
+      capturedBody!["part"] ??
+      capturedBody;
+    const innerOmitRecord = innerOmit as Record<string, unknown>;
+    expect(innerOmitRecord).not.toHaveProperty("length");
+    expect(innerOmitRecord).not.toHaveProperty("width");
+    expect(innerOmitRecord).not.toHaveProperty("weight");
+  });
+
   it("throws when ZUPER_API_KEY is not configured", async () => {
     delete process.env.ZUPER_API_KEY;
 

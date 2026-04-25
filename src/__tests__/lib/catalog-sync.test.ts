@@ -1,18 +1,29 @@
 const mockGetZuperPartById = jest.fn();
 const mockUpdateZuperPart = jest.fn();
+const mockCreateOrUpdateZuperPart = jest.fn();
 const mockUpdateMany = jest.fn();
+const mockFindUnique = jest.fn();
 
 jest.mock("@/lib/db", () => ({
   prisma: {
     internalProduct: {
       updateMany: (...args: unknown[]) => mockUpdateMany(...args),
+      findUnique: (...args: unknown[]) => mockFindUnique(...args),
     },
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        internalProduct: {
+          findUnique: (...args: unknown[]) => mockFindUnique(...args),
+          updateMany: (...args: unknown[]) => mockUpdateMany(...args),
+        },
+      }),
   },
 }));
 
 jest.mock("@/lib/zuper-catalog", () => ({
   getZuperPartById: (...args: unknown[]) => mockGetZuperPartById(...args),
   updateZuperPart: (...args: unknown[]) => mockUpdateZuperPart(...args),
+  createOrUpdateZuperPart: (...args: unknown[]) => mockCreateOrUpdateZuperPart(...args),
   getZuperHubSpotProductFieldKey: jest.fn(() => "hubspot_product_id"),
   getZuperHubSpotProductFieldLabel: jest.fn(() => "HubSpot Product ID"),
   readZuperCustomFieldValue: jest.fn((customFields: unknown, key: string, additionalLabels?: string[]) => {
@@ -72,6 +83,9 @@ describe("catalog-sync Zuper", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default: no pre-existing external ID (create path not blocked by race guard)
+    mockFindUnique.mockResolvedValue({ zuperItemId: null });
+    mockUpdateMany.mockResolvedValue({ count: 1 });
   });
 
   it("parses product_* prefixed fields from Zuper API response", async () => {
@@ -209,10 +223,48 @@ describe("catalog-sync Zuper", () => {
     const result = await executeZuperSync(sku, preview);
 
     expect(mockUpdateZuperPart).toHaveBeenCalledWith("zuper_1", {
-      name: "Tesla 1707000-21-K",
-      description: "Powerwall 3",
+      product_name: "Tesla 1707000-21-K",
+      product_description: "Powerwall 3",
       custom_fields: { hubspot_product_id: "1591770479" },
     });
     expect(result.status).toBe("updated");
+  });
+
+  it("passes dimensions to createOrUpdateZuperPart on create", async () => {
+    const skuWithDims: SkuRecord = {
+      ...sku,
+      id: "sku_dims",
+      zuperItemId: null,
+      length: 78,
+      width: 39,
+      weight: 50,
+    };
+
+    mockCreateOrUpdateZuperPart.mockResolvedValue({
+      zuperItemId: "zuper_created_dims",
+      created: true,
+    });
+
+    const preview: SyncPreview = {
+      system: "zuper",
+      externalId: "",
+      linked: false,
+      action: "create",
+      noChanges: false,
+      changes: [],
+    };
+
+    const result = await executeZuperSync(skuWithDims, preview);
+
+    expect(result.status).toBe("created");
+    expect(result.externalId).toBe("zuper_created_dims");
+
+    expect(mockCreateOrUpdateZuperPart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        length: 78,
+        width: 39,
+        weight: 50,
+      })
+    );
   });
 });

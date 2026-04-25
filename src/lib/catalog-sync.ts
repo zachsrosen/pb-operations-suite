@@ -745,6 +745,9 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
           sellPrice: planned["price"] != null ? Number(planned["price"]) : sku.sellPrice,
           unitCost: planned["purchase_price"] != null ? Number(planned["purchase_price"]) : sku.unitCost,
           category: getZuperCategoryValue(sku.category),
+          length: sku.length,
+          width: sku.width,
+          weight: sku.weight,
         });
         return {
           externalId: r.zuperItemId,

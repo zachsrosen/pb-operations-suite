@@ -448,6 +448,9 @@ export async function executeCatalogPushApproval(
           unitCost: push.unitCost,
           category: getZuperCategoryValue(push.category) || push.category,
           specification: specSummary,
+          length: push.length,
+          width: push.width,
+          weight: push.weight,
         });
 
         await prisma.$transaction(async (tx) => {
