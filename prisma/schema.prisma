@@ -183,6 +183,10 @@ enum ActivityType {
   INVENTORY_ALLOCATED
   INVENTORY_TRANSFERRED
   INVENTORY_SKU_SYNCED
+  CATALOG_PRODUCT_CREATED
+  CATALOG_PRODUCT_UPDATED
+  CATALOG_SYNC_EXECUTED
+  CATALOG_SYNC_FAILED
 
   // Bug Reports
   BUG_REPORTED
@@ -1234,6 +1238,9 @@ model InternalProduct {
   hubspotProductId String?
   zuperItemId      String?
   zohoItemId       String? // Zoho Inventory item_id for PO line item matching
+  // Catalog sync observability — populated by logCatalogSync after each sync
+  lastSyncedAt     DateTime?
+  lastSyncedBy     String? // user email
   canonicalBrand   String?
   canonicalModel   String?
   canonicalKey     String?
@@ -1268,6 +1275,7 @@ model InternalProduct {
   @@index([canonicalBrand, canonicalModel])
   @@index([zohoVendorId])
   @@index([defaultForEstimator, category])
+  @@index([lastSyncedAt])
   @@map("EquipmentSku")
 }
 
