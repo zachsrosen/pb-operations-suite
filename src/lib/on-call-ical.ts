@@ -36,11 +36,26 @@ function addDaysISO(date: string, n: number): string {
   return `${yy}-${mm}-${dd}`;
 }
 
+// Sun=0 ... Sat=6
+function dayOfWeek(dateStr: string): number {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
+
+function isWeekendDay(dateStr: string): boolean {
+  const dow = dayOfWeek(dateStr);
+  return dow === 0 || dow === 6;
+}
+
 export type IcalOpts = {
   poolName: string;
   poolTz: string;
-  shiftStart: string; // HH:mm
-  shiftEnd: string;   // HH:mm
+  /** Weekday (Mon-Fri) shift window, HH:mm. */
+  shiftStart: string;
+  shiftEnd: string;
+  /** Weekend (Sat/Sun) shift window, HH:mm. */
+  weekendShiftStart: string;
+  weekendShiftEnd: string;
   assignments: Array<{ id: string; date: string; crewMemberName: string }>;
 };
 
@@ -55,14 +70,20 @@ export function generateIcal(opts: IcalOpts): string {
   lines.push(`X-WR-TIMEZONE:${opts.poolTz}`);
 
   const dtstamp = nowICalUTC();
-  // Shift crosses midnight when shiftEnd < shiftStart (e.g. "07:00" < "17:00").
-  const crossesMidnight = opts.shiftEnd < opts.shiftStart;
 
   for (const a of opts.assignments) {
+    const weekend = isWeekendDay(a.date);
+    const sStart = weekend ? opts.weekendShiftStart : opts.shiftStart;
+    const sEnd = weekend ? opts.weekendShiftEnd : opts.shiftEnd;
+    // Shift crosses midnight when end < start (legacy 17:00 → 07:00 case).
+    // The May 2026 trial windows (18:00→22:00 and 08:00→12:00) don't, but
+    // keep the guard so admin-edited windows that wrap still work.
+    const crossesMidnight = sEnd < sStart;
+
     const startDate = a.date;
     const endDate = crossesMidnight ? addDaysISO(a.date, 1) : a.date;
-    const dtstart = toICalLocal(startDate, opts.shiftStart);
-    const dtend = toICalLocal(endDate, opts.shiftEnd);
+    const dtstart = toICalLocal(startDate, sStart);
+    const dtend = toICalLocal(endDate, sEnd);
 
     lines.push("BEGIN:VEVENT");
     lines.push(`UID:oncall-${a.id}@pb-ops`);

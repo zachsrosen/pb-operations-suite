@@ -45,6 +45,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ poolId: 
     poolTz: pool.timezone,
     shiftStart: pool.shiftStart,
     shiftEnd: pool.shiftEnd,
+    weekendShiftStart: pool.weekendShiftStart,
+    weekendShiftEnd: pool.weekendShiftEnd,
     assignments: assignments.map((a) => ({
       id: a.id,
       date: a.date,

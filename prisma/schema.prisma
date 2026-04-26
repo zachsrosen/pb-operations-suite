@@ -615,7 +615,7 @@ model ScheduleEventLog {
   // Debug: what we saw change
   previousScheduledStart DateTime?
   previousScheduledEnd   DateTime?
-  previousCrewUserUids   String[] @default([])
+  previousCrewUserUids   String[]  @default([])
 
   @@index([zuperJobUid])
   @@index([observedAt])
@@ -2880,20 +2880,25 @@ model RoleDefinitionOverride {
 // ON-CALL ELECTRICIAN ROTATIONS
 // ===========================================
 
-/// Pool — one per independent rotation. Current pools: California, Denver, Southern CO.
+/// Pool — one per independent rotation. Current pools: California, Colorado.
 model OnCallPool {
-  id            String  @id @default(cuid())
-  name          String  @unique
-  region        String
-  shiftStart    String
-  shiftEnd      String
-  timezone      String
-  startDate     String
-  horizonMonths Int     @default(3)
+  id                String  @id @default(cuid())
+  name              String  @unique
+  region            String
+  /// Weekday shift window (Mon-Fri). HH:mm in the pool's timezone.
+  shiftStart        String
+  shiftEnd          String
+  /// Weekend shift window (Sat/Sun). HH:mm in the pool's timezone.
+  /// Defaults set for the May 2026 trial: 8am-12pm.
+  weekendShiftStart String  @default("08:00")
+  weekendShiftEnd   String  @default("12:00")
+  timezone          String
+  startDate         String
+  horizonMonths     Int     @default(3)
   /// Rotation cadence: "daily" or "weekly". New pools default to "weekly".
-  /// Weekly anchors on the Monday of startDate.
-  rotationUnit  String  @default("weekly")
-  isActive      Boolean @default(true)
+  /// Weekly anchors on the Sunday of startDate (Sun-Sat weeks).
+  rotationUnit      String  @default("weekly")
+  isActive          Boolean @default(true)
 
   lastPublishedAt      DateTime?
   lastPublishedBy      String?
