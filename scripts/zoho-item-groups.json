@@ -1,0 +1,511 @@
+{
+  "pulled_at": "2026-04-25T01:31:27.495Z",
+  "org_id": "858616001",
+  "item_count": 1717,
+  "distinct_groups": [
+    {
+      "group_name": "(unset)",
+      "item_count": 1715,
+      "sample_items": [
+        {
+          "name": "#1 AWG CU THHN -BLUE",
+          "brand": ""
+        },
+        {
+          "name": "#1 AWG CU THHN- BLACK",
+          "brand": ""
+        },
+        {
+          "name": "#1 AWG CU THHN- RED",
+          "brand": ""
+        }
+      ]
+    },
+    {
+      "group_name": "Service",
+      "item_count": 1,
+      "sample_items": [
+        {
+          "name": "REC TwinPeak 3 Mono Black Series",
+          "brand": "REC"
+        }
+      ]
+    },
+    {
+      "group_name": "H2",
+      "item_count": 1,
+      "sample_items": [
+        {
+          "name": "Tesla EV charger J1772",
+          "brand": "Tesla"
+        }
+      ]
+    }
+  ],
+  "distinct_categories": [
+    {
+      "category_name": "(unset)",
+      "item_count": 366
+    },
+    {
+      "category_name": "Electrical Component",
+      "item_count": 235
+    },
+    {
+      "category_name": "Breaker",
+      "item_count": 205
+    },
+    {
+      "category_name": "Solar Component",
+      "item_count": 138
+    },
+    {
+      "category_name": "Wire",
+      "item_count": 80
+    },
+    {
+      "category_name": "Non-inventory",
+      "item_count": 71
+    },
+    {
+      "category_name": "PVC",
+      "item_count": 67
+    },
+    {
+      "category_name": "Tesla",
+      "item_count": 65
+    },
+    {
+      "category_name": "Load Center",
+      "item_count": 57
+    },
+    {
+      "category_name": "Coupling",
+      "item_count": 55
+    },
+    {
+      "category_name": "Module",
+      "item_count": 52
+    },
+    {
+      "category_name": "Nipple",
+      "item_count": 44
+    },
+    {
+      "category_name": "Other",
+      "item_count": 42
+    },
+    {
+      "category_name": "Strap",
+      "item_count": 40
+    },
+    {
+      "category_name": "Bushing",
+      "item_count": 38
+    },
+    {
+      "category_name": "Fastener",
+      "item_count": 37
+    },
+    {
+      "category_name": "Fuse",
+      "item_count": 31
+    },
+    {
+      "category_name": "Locknut",
+      "item_count": 26
+    },
+    {
+      "category_name": "Screw",
+      "item_count": 21
+    },
+    {
+      "category_name": "Inverter",
+      "item_count": 18
+    },
+    {
+      "category_name": "Clamp - Electrical",
+      "item_count": 15
+    },
+    {
+      "category_name": "Clamp - Solar",
+      "item_count": 14
+    }
+  ],
+  "api_categories": [
+    {
+      "created_time": "",
+      "last_modified_time": "",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "rootcategory",
+      "parent_category_id": "-1",
+      "sibling_order": 1,
+      "depth": 0,
+      "category_id": "-1",
+      "has_active_items": false,
+      "name": "ROOT",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-03-20T15:06:02-0600",
+      "last_modified_time": "2026-03-19T07:53:35-0600",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "modules",
+      "parent_category_id": "-1",
+      "sibling_order": 1,
+      "depth": 0,
+      "category_id": "5385454000001229316",
+      "has_active_items": true,
+      "name": "Module",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-03-20T15:06:08-0600",
+      "last_modified_time": "2026-03-26T09:28:27-0600",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "batteries",
+      "parent_category_id": "-1",
+      "sibling_order": 2,
+      "depth": 0,
+      "category_id": "5385454000001229320",
+      "has_active_items": true,
+      "name": "Tesla",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-03-20T15:06:25-0600",
+      "last_modified_time": "2026-04-20T09:20:07-0600",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "wire",
+      "parent_category_id": "-1",
+      "sibling_order": 3,
+      "depth": 0,
+      "category_id": "5385454000001229324",
+      "has_active_items": true,
+      "name": "Electrical Component",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-10-15T16:57:48-0600",
+      "last_modified_time": "2026-02-10T07:56:09-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "pvc",
+      "parent_category_id": "5385454000001229324",
+      "sibling_order": 1,
+      "depth": 1,
+      "category_id": "5385454000009979994",
+      "has_active_items": true,
+      "name": "PVC",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-07-11T07:25:58-0600",
+      "last_modified_time": "2026-03-19T08:43:04-0600",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "wire_1",
+      "parent_category_id": "5385454000001229324",
+      "sibling_order": 2,
+      "depth": 1,
+      "category_id": "5385454000005314281",
+      "has_active_items": true,
+      "name": "Wire",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-07-11T13:43:36-0600",
+      "last_modified_time": "2026-04-03T13:54:26-0600",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "breaker",
+      "parent_category_id": "5385454000001229324",
+      "sibling_order": 3,
+      "depth": 1,
+      "category_id": "5385454000005351734",
+      "has_active_items": true,
+      "name": "Breaker",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-10-15T17:14:49-0600",
+      "last_modified_time": "2026-03-02T13:12:16-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "load_center",
+      "parent_category_id": "5385454000001229324",
+      "sibling_order": 4,
+      "depth": 1,
+      "category_id": "5385454000009988586",
+      "has_active_items": true,
+      "name": "Load Center",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-10-15T17:42:33-0600",
+      "last_modified_time": "2025-12-29T17:56:26-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "fuse",
+      "parent_category_id": "5385454000001229324",
+      "sibling_order": 5,
+      "depth": 1,
+      "category_id": "5385454000009989248",
+      "has_active_items": true,
+      "name": "Fuse",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-10-15T18:16:02-0600",
+      "last_modified_time": "2025-12-29T19:00:29-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "coupling",
+      "parent_category_id": "5385454000001229324",
+      "sibling_order": 6,
+      "depth": 1,
+      "category_id": "5385454000009989976",
+      "has_active_items": true,
+      "name": "Coupling",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-10-15T18:39:52-0600",
+      "last_modified_time": "2025-12-29T19:05:04-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "bushing",
+      "parent_category_id": "5385454000001229324",
+      "sibling_order": 7,
+      "depth": 1,
+      "category_id": "5385454000009990724",
+      "has_active_items": true,
+      "name": "Bushing",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-10-15T18:45:54-0600",
+      "last_modified_time": "2025-12-28T15:46:38-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "strap",
+      "parent_category_id": "5385454000001229324",
+      "sibling_order": 8,
+      "depth": 1,
+      "category_id": "5385454000009990948",
+      "has_active_items": true,
+      "name": "Strap",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-03-20T15:06:34-0600",
+      "last_modified_time": "2026-03-14T00:10:43-0600",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "inverters",
+      "parent_category_id": "-1",
+      "sibling_order": 4,
+      "depth": 0,
+      "category_id": "5385454000001229328",
+      "has_active_items": true,
+      "name": "Inverter",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-03-26T07:35:29-0600",
+      "last_modified_time": "2025-12-29T19:33:50-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "fastener",
+      "parent_category_id": "-1",
+      "sibling_order": 5,
+      "depth": 0,
+      "category_id": "5385454000001289019",
+      "has_active_items": true,
+      "name": "Fastener",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-10-15T17:29:04-0600",
+      "last_modified_time": "2025-12-28T16:06:56-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "nipple",
+      "parent_category_id": "5385454000001289019",
+      "sibling_order": 1,
+      "depth": 1,
+      "category_id": "5385454000009988948",
+      "has_active_items": true,
+      "name": "Nipple",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-10-15T18:24:15-0600",
+      "last_modified_time": "2025-12-28T15:49:15-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "screw",
+      "parent_category_id": "5385454000001289019",
+      "sibling_order": 2,
+      "depth": 1,
+      "category_id": "5385454000009990306",
+      "has_active_items": true,
+      "name": "Screw",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-10-15T18:29:09-0600",
+      "last_modified_time": "2025-12-29T18:05:10-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "clamp",
+      "parent_category_id": "5385454000001289019",
+      "sibling_order": 3,
+      "depth": 1,
+      "category_id": "5385454000009990428",
+      "has_active_items": true,
+      "name": "Clamp - Solar",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-10-15T18:32:06-0600",
+      "last_modified_time": "2025-12-29T19:01:04-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "clamp_electrical",
+      "parent_category_id": "5385454000001289019",
+      "sibling_order": 4,
+      "depth": 1,
+      "category_id": "5385454000009990520",
+      "has_active_items": true,
+      "name": "Clamp - Electrical",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-12-29T18:18:16-0700",
+      "last_modified_time": "2025-12-29T18:54:14-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "locknut",
+      "parent_category_id": "5385454000001289019",
+      "sibling_order": 5,
+      "depth": 1,
+      "category_id": "5385454000014165596",
+      "has_active_items": true,
+      "name": "Locknut",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-03-26T07:36:14-0600",
+      "last_modified_time": "2026-03-09T20:00:47-0600",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "solar_component",
+      "parent_category_id": "-1",
+      "sibling_order": 6,
+      "depth": 0,
+      "category_id": "5385454000001289023",
+      "has_active_items": true,
+      "name": "Solar Component",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-03-26T07:36:20-0600",
+      "last_modified_time": "2026-03-03T21:13:28-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "other",
+      "parent_category_id": "-1",
+      "sibling_order": 7,
+      "depth": 0,
+      "category_id": "5385454000001289027",
+      "has_active_items": true,
+      "name": "Other",
+      "ondc_category_type_formatted": ""
+    },
+    {
+      "created_time": "2025-09-27T11:49:26-0600",
+      "last_modified_time": "2025-12-29T19:36:35-0700",
+      "visibility": true,
+      "documents": [],
+      "show_in_menu": true,
+      "ondc_category_type": "",
+      "document_id": "",
+      "url": "non_inventory",
+      "parent_category_id": "-1",
+      "sibling_order": 8,
+      "depth": 0,
+      "category_id": "5385454000008795730",
+      "has_active_items": true,
+      "name": "Non-inventory",
+      "ondc_category_type_formatted": ""
+    }
+  ]
+}

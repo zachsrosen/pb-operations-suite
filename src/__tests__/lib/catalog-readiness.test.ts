@@ -3,10 +3,10 @@ import { getDownstreamReadiness, type SystemReadiness } from "@/lib/catalog-read
 // Mock zoho-taxonomy so tests don't depend on live mapping data
 jest.mock("@/lib/zoho-taxonomy", () => ({
   hasVerifiedZohoMapping: (cat: string) => cat === "MODULE" || cat === "INVERTER",
-  getZohoGroupName: (cat: string) => {
-    if (cat === "MODULE") return "Module";
-    if (cat === "INVERTER") return "Inverter";
-    return undefined;
+  getZohoCategory: (cat: string) => {
+    if (cat === "MODULE") return { categoryId: "id-mod", categoryName: "Module" };
+    if (cat === "INVERTER") return { categoryId: "id-inv", categoryName: "Inverter" };
+    return {};
   },
 }));
 

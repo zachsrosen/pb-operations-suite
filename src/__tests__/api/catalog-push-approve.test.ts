@@ -1,5 +1,11 @@
 // src/__tests__/api/catalog-push-approve.test.ts
 
+// ── catalog-activity-log ──────────────────────────────────────────────────────
+jest.mock("@/lib/catalog-activity-log", () => ({
+  logCatalogSync: jest.fn().mockResolvedValue(null),
+  logCatalogProductCreated: jest.fn().mockResolvedValue(null),
+}));
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 const mockRequireApiAuth = jest.fn();
 jest.mock("@/lib/api-auth", () => ({
@@ -43,6 +49,9 @@ jest.mock("@/lib/catalog-fields", () => ({
 // ── HubSpot adapter ────────────────────────────────────────────────────────────
 const mockCreateOrUpdateHubSpotProduct = jest.fn();
 jest.mock("@/lib/hubspot", () => ({
+  // Re-export the real error class so instanceof checks in the approval engine work.
+  HubSpotManufacturerEnumError:
+    jest.requireActual<typeof import("@/lib/hubspot")>("@/lib/hubspot").HubSpotManufacturerEnumError,
   createOrUpdateHubSpotProduct: (...args: unknown[]) => mockCreateOrUpdateHubSpotProduct(...args),
 }));
 
@@ -58,10 +67,12 @@ jest.mock("@/lib/zoho-inventory", () => ({
 const mockCreateOrUpdateZuperPart = jest.fn();
 const mockUpdateZuperPart = jest.fn();
 const mockBuildZuperProductCustomFields = jest.fn();
+const mockBuildZuperSpecMetaData = jest.fn();
 jest.mock("@/lib/zuper-catalog", () => ({
   createOrUpdateZuperPart: (...args: unknown[]) => mockCreateOrUpdateZuperPart(...args),
   updateZuperPart: (...args: unknown[]) => mockUpdateZuperPart(...args),
   buildZuperProductCustomFields: (...args: unknown[]) => mockBuildZuperProductCustomFields(...args),
+  buildZuperSpecMetaData: (...args: unknown[]) => mockBuildZuperSpecMetaData(...args),
 }));
 
 // ── Catalog notify ──────────────────────────────────────────────────────────────
@@ -81,6 +92,7 @@ jest.mock("@/lib/canonical", () => ({
 const mockFindUnique = jest.fn();
 const mockCatalogFindMany = jest.fn();
 const mockCatalogFindUnique = jest.fn();
+const mockInternalProductFindUnique = jest.fn();
 const mockUpsert = jest.fn();
 const mockUpdate = jest.fn();
 const mockSpecUpsert = jest.fn();
@@ -92,6 +104,7 @@ let pushState: Record<string, unknown>;
 const mockTransaction = jest.fn(async (fn: any) => {
   const txClient = {
     internalProduct: {
+      findUnique: (...args: unknown[]) => mockInternalProductFindUnique(...args),
       upsert: (...args: unknown[]) => mockUpsert(...args),
       update: (...args: unknown[]) => mockEquipmentUpdate(...args),
     },
@@ -109,12 +122,16 @@ jest.mock("@/lib/db", () => ({
       findUnique: (...args: unknown[]) => mockFindUnique(...args),
       update: (...args: unknown[]) => mockUpdate(...args),
     },
+    internalProduct: {
+      update: (...args: unknown[]) => mockEquipmentUpdate(...args),
+    },
     catalogProduct: {
       findMany: (...args: unknown[]) => mockCatalogFindMany(...args),
       findUnique: (...args: unknown[]) => mockCatalogFindUnique(...args),
     },
     $transaction: mockTransaction,
   },
+  logActivity: jest.fn().mockResolvedValue(null),
 }));
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
@@ -142,6 +159,7 @@ jest.mock("@/generated/prisma/enums", () => ({
 // ── Route under test ──────────────────────────────────────────────────────────
 import { NextRequest, NextResponse } from "next/server";
 import { POST } from "@/app/api/catalog/push-requests/[id]/approve/route";
+import * as activityLog from "@/lib/catalog-activity-log";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function makePush(overrides: Record<string, unknown> = {}) {
@@ -188,6 +206,8 @@ beforeEach(() => {
     note: null,
   };
   mockRequireApiAuth.mockResolvedValue({ email: "admin@photonbrothers.com", role: "ADMIN" });
+  // Default: product does not exist yet → wasInternalCreate = true
+  mockInternalProductFindUnique.mockResolvedValue(null);
   mockUpsert.mockResolvedValue({ id: "sku_1" });
   mockUpdate.mockImplementation((args: { data?: Record<string, unknown> }) => {
     const nextData = args?.data ?? {};
@@ -216,6 +236,8 @@ beforeEach(() => {
   mockZohoUpdateItem.mockResolvedValue({ status: "updated", message: "ok" });
   mockUpdateZuperPart.mockResolvedValue({ status: "updated", zuperItemId: "zuper_item_1", message: "ok" });
   mockBuildZuperProductCustomFields.mockReturnValue({ hubspot_product_id: "hs_prod_1", zoho_item_id: "zoho_item_1", internal_product_id: "sku_1" });
+  // Default: no spec-derived meta_data entries. Individual tests override.
+  mockBuildZuperSpecMetaData.mockReturnValue(undefined);
   // Global fetch for HubSpot cross-link PATCH
   global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 }) as jest.Mock;
   process.env.HUBSPOT_ACCESS_TOKEN = "test-token";
@@ -560,7 +582,12 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
         return arg?.data?.hubspotProductId === "hs_prod_1";
       });
       expect(hasHubSpotIdWrite).toBe(false);
-      expect(mockEquipmentUpdate).not.toHaveBeenCalled();
+      // The HubSpot product ID must NOT have been written back to the internal product
+      const hasHubSpotIdOnProduct = mockEquipmentUpdate.mock.calls.some((call) => {
+        const arg = call[0] as { data?: Record<string, unknown> };
+        return arg?.data?.hubspotProductId !== undefined;
+      });
+      expect(hasHubSpotIdOnProduct).toBe(false);
       expect(data.outcomes.HUBSPOT.status).toBe("failed");
       expect(data.outcomes.HUBSPOT.message).toMatch(/hubspot unavailable/i);
       expect(data.summary).toEqual({
@@ -655,6 +682,62 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
         notImplemented: 0,
       });
     });
+
+    it("forwards spec-derived customMetaData and cross-link customFields to ZUPER create (M3.4 activated)", async () => {
+      // Spec helper resolves to meta_data entries (Phase B activation).
+      mockBuildZuperSpecMetaData.mockReturnValue([
+        { label: "Module Wattage (W)", value: 400, type: "NUMBER" },
+        { label: "Module Cell Type", value: "TOPCon", type: "DROPDOWN" },
+      ]);
+      // Cross-link helper returns at least the internal_product_id (always
+      // available) plus any external IDs already linked.
+      mockBuildZuperProductCustomFields.mockReturnValue({
+        internal_product_id: "sku_1",
+      });
+
+      mockFindUnique.mockResolvedValue(
+        makePush({
+          systems: ["INTERNAL", "ZUPER"],
+          metadata: { wattage: 400, cellType: "TOPCon" },
+        }),
+      );
+
+      await POST(new NextRequest("http://localhost"), makeParams());
+
+      // Spec helper called with category + metadata
+      expect(mockBuildZuperSpecMetaData).toHaveBeenCalledWith(
+        "MODULE",
+        expect.objectContaining({ wattage: 400, cellType: "TOPCon" }),
+      );
+
+      // Both meta_data (spec) and custom_fields (cross-link IDs) threaded in
+      expect(mockCreateOrUpdateZuperPart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customMetaData: [
+            { label: "Module Wattage (W)", value: 400, type: "NUMBER" },
+            { label: "Module Cell Type", value: "TOPCon", type: "DROPDOWN" },
+          ],
+          customFields: { internal_product_id: "sku_1" },
+        }),
+      );
+    });
+
+    it("passes undefined customMetaData when no zuperCustomField mappings resolve", async () => {
+      // Default mock returns undefined for spec helper.
+      mockBuildZuperProductCustomFields.mockReturnValue(null);
+      mockFindUnique.mockResolvedValue(
+        makePush({ systems: ["INTERNAL", "ZUPER"], metadata: { wattage: 400 } }),
+      );
+
+      await POST(new NextRequest("http://localhost"), makeParams());
+
+      expect(mockCreateOrUpdateZuperPart).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customMetaData: undefined,
+          customFields: undefined,
+        }),
+      );
+    });
   });
 
   // ── Response shape ─────────────────────────────────────────────────────
@@ -686,6 +769,16 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
         skipped: 0,
         notImplemented: 0,
       });
+      // Audit logging: logCatalogSync must be called with the correct shape
+      expect(activityLog.logCatalogSync).toHaveBeenCalledWith(
+        expect.objectContaining({
+          internalProductId: expect.any(String),
+          source: "approval_retry",
+          outcomes: expect.objectContaining({
+            INTERNAL: expect.objectContaining({ status: "success" }),
+          }),
+        })
+      );
     });
   });
 
@@ -707,7 +800,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       // Approval still succeeds (cross-link is best-effort)
       expect(res.status).toBe(200);
       expect(data.outcomes.ZOHO.status).toBe("success");
-      expect(data.outcomes.ZOHO.message).toMatch(/Zoho cross-link update returned error/);
+      expect(data.outcomes.ZOHO.message).toMatch(/Zoho cross-link returned error/);
       expect(data.outcomes.ZOHO.message).toMatch(/Field not found/);
     });
 
@@ -720,7 +813,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
 
       expect(res.status).toBe(200);
       expect(data.outcomes.ZOHO.status).toBe("success");
-      expect(data.outcomes.ZOHO.message).toMatch(/Could not write custom field cross-links/);
+      expect(data.outcomes.ZOHO.message).toMatch(/Zoho cross-link threw/);
     });
 
     it("surfaces Zuper cross-link warning when updateZuperPart returns failed status", async () => {
@@ -732,7 +825,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
 
       expect(res.status).toBe(200);
       expect(data.outcomes.ZUPER.status).toBe("success");
-      expect(data.outcomes.ZUPER.message).toMatch(/Zuper cross-link update returned failed/);
+      expect(data.outcomes.ZUPER.message).toMatch(/Zuper cross-link returned failed/);
       expect(data.outcomes.ZUPER.message).toMatch(/Endpoint rejected/);
     });
 
@@ -744,7 +837,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(data.outcomes.ZUPER.message).toMatch(/Zuper cross-link update returned not_found/);
+      expect(data.outcomes.ZUPER.message).toMatch(/Zuper cross-link returned not_found/);
     });
 
     it("surfaces Zuper cross-link warning when updateZuperPart throws", async () => {
@@ -756,7 +849,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
 
       expect(res.status).toBe(200);
       expect(data.outcomes.ZUPER.status).toBe("success");
-      expect(data.outcomes.ZUPER.message).toMatch(/Could not write cross-link IDs to Zuper/);
+      expect(data.outcomes.ZUPER.message).toMatch(/Zuper cross-link threw/);
     });
 
     it("surfaces HubSpot cross-link warning when PATCH returns non-2xx", async () => {
@@ -780,7 +873,7 @@ describe("POST /api/catalog/push-requests/[id]/approve", () => {
 
       expect(res.status).toBe(200);
       expect(data.outcomes.HUBSPOT.status).toBe("success");
-      expect(data.outcomes.HUBSPOT.message).toMatch(/Could not write cross-link IDs to HubSpot/);
+      expect(data.outcomes.HUBSPOT.message).toMatch(/HubSpot cross-link threw/);
     });
 
     it("does not run cross-links when only INTERNAL system is selected", async () => {

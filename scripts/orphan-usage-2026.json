@@ -1,0 +1,445 @@
+{
+  "audited_at": "2026-04-25T21:02:56.613Z",
+  "hubspot": {
+    "total_products": 324,
+    "orphans_total": 230,
+    "orphans_modified_in_2026": 0,
+    "orphans_with_2026_line_items": 0,
+    "orphans_dormant": 230,
+    "active_orphans_top": [],
+    "modified_no_line_items_sample": [],
+    "dormant_sample": [
+      {
+        "id": "1579422988",
+        "name": "SolarEdge P320"
+      },
+      {
+        "id": "1579425151",
+        "name": "Travel over 70 miles"
+      },
+      {
+        "id": "1579425152",
+        "name": "Enlighten"
+      },
+      {
+        "id": "1579425153",
+        "name": "[LEGACY - DO NOT USE] Tesla Wall Charger"
+      },
+      {
+        "id": "1579431465",
+        "name": "Sales Tax CA"
+      },
+      {
+        "id": "1579432564",
+        "name": "SolarEdge P401"
+      },
+      {
+        "id": "1579432565",
+        "name": "SolarEdge P404"
+      },
+      {
+        "id": "1579433604",
+        "name": "Tesla Custom"
+      },
+      {
+        "id": "1579434284",
+        "name": "Add Sub Panel"
+      },
+      {
+        "id": "1579434285",
+        "name": "Overnight"
+      },
+      {
+        "id": "1579434664",
+        "name": "Ground Mount Trench"
+      },
+      {
+        "id": "1579438932",
+        "name": "[LEGACY - DO NOT USE] Level 2 EV J1772 Charger"
+      },
+      {
+        "id": "1591770477",
+        "name": "SVC - SunPower DC Disconnect"
+      },
+      {
+        "id": "1591770478",
+        "name": "SVC - SolarEdge Optimizer RMA (Additional)"
+      },
+      {
+        "id": "1591771679",
+        "name": "SVC - SunPower Truck Roll"
+      },
+      {
+        "id": "1591779844",
+        "name": "Install Fee"
+      },
+      {
+        "id": "1591780382",
+        "name": "SVC - SolarEdge Optimizer"
+      },
+      {
+        "id": "1591780880",
+        "name": "SVC - Miscellaneous Material"
+      },
+      {
+        "id": "1591781779",
+        "name": "SVC - Microinverter Swap"
+      },
+      {
+        "id": "1591782045",
+        "name": "Trip Charge"
+      },
+      {
+        "id": "1591783266",
+        "name": "SVC - Misc. Item"
+      },
+      {
+        "id": "1591785077",
+        "name": "Design Fee"
+      },
+      {
+        "id": "1591785079",
+        "name": "Detach & Reset of Solar Panels for Reroof"
+      },
+      {
+        "id": "1591785080",
+        "name": "Change Order"
+      },
+      {
+        "id": "1591786623",
+        "name": "SVC - SunPower Gen 2 MI Swap"
+      },
+      {
+        "id": "1591786858",
+        "name": "Hardware"
+      },
+      {
+        "id": "1591787409",
+        "name": "Replacement Panel"
+      },
+      {
+        "id": "1591787411",
+        "name": "Solar Electric Panel - Detach & Reset -Mounting Hardware"
+      },
+      {
+        "id": "1591790736",
+        "name": "Disposal Fee"
+      },
+      {
+        "id": "1591791405",
+        "name": "Roof Repair"
+      }
+    ]
+  },
+  "zoho": {
+    "sample_size": 300,
+    "total_active": 1700,
+    "sales_orders_2026": 272,
+    "distinct_items_in_2026_orders": 342,
+    "sampled_with_internal_id": 30,
+    "sampled_orphan_in_use": 71,
+    "sampled_orphan_dormant": 199,
+    "active_orphans_top": [
+      {
+        "id": "5385454000001013047",
+        "name": "#4AWG THHN Black",
+        "usageCount": 2,
+        "lastModified": "2026-04-09T07:50:48-0600"
+      },
+      {
+        "id": "5385454000002499119",
+        "name": "1.25\" SCH 80 PVC",
+        "usageCount": 2,
+        "lastModified": "2026-04-20T09:27:51-0600"
+      },
+      {
+        "id": "5385454000006367196",
+        "name": "1\" PVC 45° Elbow, Schedule 40, Gray, Bell End",
+        "usageCount": 1,
+        "lastModified": "2026-04-20T09:27:51-0600"
+      },
+      {
+        "id": "5385454000001869019",
+        "name": "1.25\" SCH 40 PVC",
+        "usageCount": 1,
+        "lastModified": "2026-04-20T00:01:55-0600"
+      },
+      {
+        "id": "5385454000001869095",
+        "name": "1.25\" Strut Straps",
+        "usageCount": 1,
+        "lastModified": "2026-04-20T09:27:51-0600"
+      },
+      {
+        "id": "5385454000002734115",
+        "name": "1/2\" 1 hole strain relief",
+        "usageCount": 1,
+        "lastModified": "2026-04-23T14:26:00-0600"
+      },
+      {
+        "id": "5385454000007747534",
+        "name": "10\", MILL KIT, FIXED TILT LEG,",
+        "usageCount": 1,
+        "lastModified": "2026-01-26T12:30:56-0700"
+      },
+      {
+        "id": "5385454000008262575",
+        "name": "12X12X4-JCT-BOX-W/CVR",
+        "usageCount": 1,
+        "lastModified": "2026-04-23T07:23:35-0600"
+      },
+      {
+        "id": "5385454000002840209",
+        "name": "15/15 Cutler Hammer Tandem",
+        "usageCount": 1,
+        "lastModified": "2026-04-06T00:02:11-0600"
+      },
+      {
+        "id": "5385454000000477391",
+        "name": "15/15A Twin Square D Single P Breaker",
+        "usageCount": 1,
+        "lastModified": "2026-03-25T18:53:31-0600"
+      },
+      {
+        "id": "5385454000002448192",
+        "name": "2\" PVC 90",
+        "usageCount": 1,
+        "lastModified": "2026-04-09T07:50:48-0600"
+      },
+      {
+        "id": "5385454000001193728",
+        "name": "#6 AWG CU THHN Black",
+        "usageCount": 0,
+        "lastModified": "2026-03-30T16:14:12-0600"
+      },
+      {
+        "id": "5385454000016766009",
+        "name": "1 1/2\" Sealing Lockring",
+        "usageCount": 0,
+        "lastModified": "2026-03-09T21:35:31-0600"
+      },
+      {
+        "id": "5385454000018009868",
+        "name": "1 1/4\" Gal Coupling",
+        "usageCount": 0,
+        "lastModified": "2026-03-30T15:15:11-0600"
+      },
+      {
+        "id": "5385454000002771328",
+        "name": "1\" ALUM FLEX RW",
+        "usageCount": 0,
+        "lastModified": "2026-04-15T15:19:07-0600"
+      },
+      {
+        "id": "5385454000001230940",
+        "name": "1\" EMT 10ft Stick",
+        "usageCount": 0,
+        "lastModified": "2026-04-21T09:51:43-0600"
+      },
+      {
+        "id": "5385454000002728405",
+        "name": "1\" EMT to Flex Coupling",
+        "usageCount": 0,
+        "lastModified": "2026-01-23T07:59:40-0700"
+      },
+      {
+        "id": "5385454000002630103",
+        "name": "1\" Flex connectors",
+        "usageCount": 0,
+        "lastModified": "2026-03-09T21:03:50-0600"
+      },
+      {
+        "id": "5385454000002728519",
+        "name": "1\" Galvanized Coupling",
+        "usageCount": 0,
+        "lastModified": "2026-04-06T08:39:04-0600"
+      },
+      {
+        "id": "5385454000002558973",
+        "name": "1\" ground bushing",
+        "usageCount": 0,
+        "lastModified": "2026-04-06T08:39:04-0600"
+      },
+      {
+        "id": "5385454000002731109",
+        "name": "1\" LB Aluminum Condulet W/Cover & Gasket",
+        "usageCount": 0,
+        "lastModified": "2026-03-19T08:18:24-0600"
+      },
+      {
+        "id": "5385454000016968705",
+        "name": "1\" Lock Ring",
+        "usageCount": 0,
+        "lastModified": "2026-03-09T17:12:20-0600"
+      },
+      {
+        "id": "5385454000002731175",
+        "name": "1\" LR Aluminum Condulet W/Cover & Gasket",
+        "usageCount": 0,
+        "lastModified": "2026-03-19T08:18:24-0600"
+      },
+      {
+        "id": "5385454000019945744",
+        "name": "1\" LT Connector",
+        "usageCount": 0,
+        "lastModified": "2026-04-21T10:46:15-0600"
+      },
+      {
+        "id": "5385454000018012641",
+        "name": "1\" Meter Hub",
+        "usageCount": 0,
+        "lastModified": "2026-03-30T17:14:37-0600"
+      },
+      {
+        "id": "5385454000009462065",
+        "name": "1\" Plastic Ground Bushing",
+        "usageCount": 0,
+        "lastModified": "2026-04-06T08:39:04-0600"
+      },
+      {
+        "id": "5385454000002876845",
+        "name": "1\" RAIN TIGHT COMPRESSION CONN",
+        "usageCount": 0,
+        "lastModified": "2026-03-30T17:07:47-0600"
+      },
+      {
+        "id": "5385454000007436181",
+        "name": "1\" Rigid 1-Hole Strap",
+        "usageCount": 0,
+        "lastModified": "2026-01-30T08:29:32-0700"
+      },
+      {
+        "id": "5385454000014809067",
+        "name": "1\" RT Conn",
+        "usageCount": 0,
+        "lastModified": "2026-01-22T07:12:48-0700"
+      },
+      {
+        "id": "5385454000011413867",
+        "name": "1\" RT Coupling",
+        "usageCount": 0,
+        "lastModified": "2026-04-06T08:39:04-0600"
+      },
+      {
+        "id": "5385454000011413822",
+        "name": "1\" RT XL Conn",
+        "usageCount": 0,
+        "lastModified": "2026-03-09T19:31:48-0600"
+      },
+      {
+        "id": "5385454000006726529",
+        "name": "1\" SCREW-IN FLEX CONN",
+        "usageCount": 0,
+        "lastModified": "2026-04-06T08:39:04-0600"
+      },
+      {
+        "id": "5385454000002728436",
+        "name": "1\" Sealing Locknut Steel",
+        "usageCount": 0,
+        "lastModified": "2026-03-19T08:18:24-0600"
+      },
+      {
+        "id": "5385454000018009821",
+        "name": "1\" T Body- EMT",
+        "usageCount": 0,
+        "lastModified": "2026-03-30T15:15:11-0600"
+      },
+      {
+        "id": "5385454000002728498",
+        "name": "1\" Threaded Conduit Nipple (Close)",
+        "usageCount": 0,
+        "lastModified": "2026-04-06T08:39:04-0600"
+      },
+      {
+        "id": "5385454000009462086",
+        "name": "1\" threaded hub",
+        "usageCount": 0,
+        "lastModified": "2026-03-30T16:03:44-0600"
+      },
+      {
+        "id": "5385454000002728612",
+        "name": "1-1/2\" Grounding Bushing",
+        "usageCount": 0,
+        "lastModified": "2026-03-30T15:15:11-0600"
+      },
+      {
+        "id": "5385454000002732012",
+        "name": "1-1/2\" Raintight EMT Compression Connector",
+        "usageCount": 0,
+        "lastModified": "2026-03-09T21:35:31-0600"
+      },
+      {
+        "id": "5385454000002659136",
+        "name": "1-1/2\" x 4\" Daredevil™ Stubby Length Carbide Spade Bit",
+        "usageCount": 0,
+        "lastModified": "2026-03-25T13:55:15-0600"
+      },
+      {
+        "id": "5385454000002558465",
+        "name": "1-1/4\" Wood Boring Spade Bits",
+        "usageCount": 0,
+        "lastModified": "2026-04-21T12:41:17-0600"
+      },
+      {
+        "id": "5385454000002558519",
+        "name": "1-3/8\" Hole Saw-Bi Metal",
+        "usageCount": 0,
+        "lastModified": "2026-04-21T12:42:01-0600"
+      },
+      {
+        "id": "5385454000000425363",
+        "name": "1/0- THHN BLK",
+        "usageCount": 0,
+        "lastModified": "2026-03-11T20:41:06-0600"
+      },
+      {
+        "id": "5385454000000518124",
+        "name": "1/2 Diecast Locknut",
+        "usageCount": 0,
+        "lastModified": "2026-03-30T15:52:01-0600"
+      },
+      {
+        "id": "5385454000010597780",
+        "name": "1/2IN- 3/4IN - 1IN ROOF BOOT",
+        "usageCount": 0,
+        "lastModified": "2026-04-24T07:20:07-0600"
+      },
+      {
+        "id": "5385454000000167624",
+        "name": "10 AWG; Black THHN STR",
+        "usageCount": 0,
+        "lastModified": "2026-04-06T08:39:04-0600"
+      },
+      {
+        "id": "5385454000000167599",
+        "name": "10 AWG; Green THHN STR",
+        "usageCount": 0,
+        "lastModified": "2026-04-06T08:39:04-0600"
+      },
+      {
+        "id": "5385454000000167574",
+        "name": "10 AWG; Red THHN STR",
+        "usageCount": 0,
+        "lastModified": "2026-04-06T08:39:04-0600"
+      },
+      {
+        "id": "5385454000000481307",
+        "name": "100A Siemens 2P Breaker",
+        "usageCount": 0,
+        "lastModified": "2026-04-06T13:03:05-0600"
+      },
+      {
+        "id": "5385454000002696001",
+        "name": "125A CSR -Main Breaker",
+        "usageCount": 0,
+        "lastModified": "2026-02-10T12:52:07-0700"
+      },
+      {
+        "id": "5385454000019191031",
+        "name": "125amp Fused Disconnect",
+        "usageCount": 0,
+        "lastModified": "2026-04-08T12:18:40-0600"
+      }
+    ]
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "audited_at": "2026-04-25T20:50:57.629Z",
+  "summary": {
+    "total_active_internal_products": 336,
+    "fully_linked": 86,
+    "missing_hubspot": 230,
+    "missing_zuper": 14,
+    "missing_zoho": 20,
+    "no_external_links": 0
+  },
+  "linkage_gaps_by_category": {
+    "MONITORING": {
+      "total": 14,
+      "gappy": 9
+    },
+    "ELECTRICAL_BOS": {
+      "total": 180,
+      "gappy": 162
+    },
+    "RACKING": {
+      "total": 72,
+      "gappy": 40
+    },
+    "ADDER_SERVICES": {
+      "total": 4,
+      "gappy": 4
+    },
+    "INVERTER": {
+      "total": 12,
+      "gappy": 1
+    },
+    "MODULE": {
+      "total": 14,
+      "gappy": 6
+    },
+    "PROJECT_MILESTONES": {
+      "total": 6,
+      "gappy": 6
+    },
+    "BATTERY": {
+      "total": 14,
+      "gappy": 10
+    },
+    "SERVICE": {
+      "total": 5,
+      "gappy": 3
+    },
+    "EV_CHARGER": {
+      "total": 7,
+      "gappy": 4
+    },
+    "GATEWAY": {
+      "total": 2,
+      "gappy": 1
+    },
+    "RAPID_SHUTDOWN": {
+      "total": 5,
+      "gappy": 3
+    },
+    "TESLA_SYSTEM_COMPONENTS": {
+      "total": 1,
+      "gappy": 1
+    }
+  },
+  "broken_external_ids": {
+    "hubspot": [],
+    "zoho": [],
+    "zuper": []
+  },
+  "cross_link_mismatches": [
+    {
+      "id": "cmn6lslz0000p7a8ojgaxywbx",
+      "system": "hubspot",
+      "field": "internal_product_id",
+      "expected": "cmn6lslz0000p7a8ojgaxywbx",
+      "actual": "cmmm8dctv00f904l5ustw5cmj"
+    },
+    {
+      "id": "cmn6lslz0000p7a8ojgaxywbx",
+      "system": "hubspot",
+      "field": "zoho_item_id",
+      "expected": "5385454000000133031",
+      "actual": "5385454000000577686"
+    },
+    {
+      "id": "cmn6lslz0000p7a8ojgaxywbx",
+      "system": "hubspot",
+      "field": "zuper_item_id",
+      "expected": "941cd044-861d-4358-88f6-9df71e0e00b2",
+      "actual": "158256ad-4587-4dd9-ae2f-89bbabd86678"
+    }
+  ],
+  "cross_link_mismatch_summary": {
+    "hubspot.internal_product_id": 1,
+    "hubspot.zoho_item_id": 1,
+    "hubspot.zuper_item_id": 1
+  },
+  "sample_unlinked_internal": []
+}

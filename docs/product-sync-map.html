@@ -1,0 +1,835 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Product Creation & Sync Map — PB Ops Suite</title>
+<style>
+  :root {
+    --bg: #0b0e13;
+    --surface: #131822;
+    --surface-2: #1b2230;
+    --surface-3: #232b3a;
+    --border: #2a3343;
+    --fg: #e6ebf3;
+    --muted: #8a93a4;
+    --orange: #f97316;
+    --emerald: #10b981;
+    --red: #ef4444;
+    --purple: #a855f7;
+    --yellow: #eab308;
+    --blue: #3b82f6;
+    --cyan: #06b6d4;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  body { padding: 32px 40px 80px; max-width: 1480px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 6px; font-weight: 600; }
+  h2 {
+    font-size: 17px; font-weight: 600;
+    margin: 40px 0 14px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+    color: var(--fg);
+  }
+  h2 .num {
+    display: inline-block; width: 26px; height: 26px;
+    background: var(--surface-2); border-radius: 6px;
+    text-align: center; line-height: 26px;
+    margin-right: 10px; color: var(--muted); font-size: 13px;
+  }
+  .lede { color: var(--muted); margin: 0 0 28px; max-width: 880px; }
+  .lede code {
+    background: var(--surface-2);
+    padding: 1px 6px; border-radius: 4px;
+    color: var(--fg); font-size: 12px;
+  }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 14px;
+    background: var(--surface); padding: 12px 16px;
+    border: 1px solid var(--border); border-radius: 8px;
+    margin-bottom: 24px;
+  }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+  .sw-wired { background: rgba(16,185,129,0.25); border: 1px solid rgba(16,185,129,0.6); }
+  .sw-internal { background: rgba(59,130,246,0.25); border: 1px solid rgba(59,130,246,0.6); }
+  .sw-cross { background: rgba(168,85,247,0.25); border: 1px solid rgba(168,85,247,0.6); }
+  .sw-partial { background: rgba(234,179,8,0.18); border: 1px solid rgba(234,179,8,0.55); }
+  .sw-missing { background: rgba(239,68,68,0.18); border: 1px solid rgba(239,68,68,0.5); }
+  .sw-na { background: var(--surface-2); border: 1px solid var(--border); }
+
+  /* ── Flow diagram ── */
+  .flow {
+    background: var(--surface);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px;
+    overflow-x: auto;
+  }
+  .flow-grid {
+    display: grid;
+    grid-template-columns: 200px 60px 220px 60px 280px 60px 240px;
+    align-items: center;
+    gap: 0;
+    min-width: 1180px;
+  }
+  .node {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    font-size: 12px;
+  }
+  .node h4 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+  .node .lines { color: var(--muted); font-size: 11.5px; }
+  .node.entry { border-left: 3px solid var(--cyan); }
+  .node.queue { border-left: 3px solid var(--yellow); }
+  .node.engine { border-left: 3px solid var(--orange); background: var(--surface-3); }
+  .node.target { border-left: 3px solid var(--emerald); }
+  .node.target.hubspot { border-left-color: var(--orange); }
+  .node.target.zoho { border-left-color: var(--red); }
+  .node.target.zuper { border-left-color: var(--purple); }
+  .arrow {
+    text-align: center; color: var(--muted); font-size: 18px;
+    font-family: monospace;
+  }
+  .arrow .label {
+    display: block; font-size: 10px; color: var(--muted);
+    margin-top: 2px;
+  }
+  .stack { display: flex; flex-direction: column; gap: 10px; }
+
+  /* ── Mapping table ── */
+  table { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 12px; }
+  thead th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--surface-3); color: var(--fg);
+    text-align: left; font-weight: 600;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11.5px;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  thead th.col-internal { color: var(--blue); }
+  thead th.col-hubspot { color: var(--orange); }
+  thead th.col-zoho { color: var(--red); }
+  thead th.col-zuper { color: var(--purple); }
+  thead th.col-field { color: var(--muted); }
+  tbody td {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tbody tr:hover td { background: rgba(255,255,255,0.02); }
+  .cat-header td {
+    background: var(--surface-2);
+    color: var(--muted);
+    font-weight: 600; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 8px 12px;
+  }
+  .field-name { font-weight: 500; color: var(--fg); }
+  .field-name code {
+    background: transparent;
+    color: var(--blue);
+    font-size: 12px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+
+  .cell {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+  .cell.wired { background: rgba(16,185,129,0.12); color: #6ee7b7; border: 1px solid rgba(16,185,129,0.35); }
+  .cell.cross { background: rgba(168,85,247,0.12); color: #d8b4fe; border: 1px solid rgba(168,85,247,0.35); }
+  .cell.partial { background: rgba(234,179,8,0.12); color: #fde68a; border: 1px solid rgba(234,179,8,0.4); }
+  .cell.missing { background: rgba(239,68,68,0.10); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+  .cell.na { color: var(--muted); padding-left: 0; padding-right: 0; }
+  .note {
+    display: block;
+    color: var(--muted);
+    font-size: 10.5px;
+    margin-top: 3px;
+    font-family: -apple-system, sans-serif;
+  }
+
+  /* ── Cross-link panel ── */
+  .crosslink {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+  }
+  .clcard {
+    background: var(--surface);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px;
+  }
+  .clcard h4 {
+    margin: 0 0 10px; font-size: 13px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .clcard h4 .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+  }
+  .clcard.hubspot h4 .dot { background: var(--orange); }
+  .clcard.zoho h4 .dot { background: var(--red); }
+  .clcard.zuper h4 .dot { background: var(--purple); }
+  .clcard ul { margin: 0; padding: 0; list-style: none; }
+  .clcard li {
+    padding: 5px 0; color: var(--muted); font-size: 12px;
+    display: flex; gap: 8px; align-items: baseline;
+  }
+  .clcard li code {
+    color: #d8b4fe;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 11.5px;
+    background: rgba(168,85,247,0.08);
+    padding: 1px 5px; border-radius: 3px;
+  }
+  .clcard li .arrow-in { color: var(--muted); font-family: monospace; }
+
+  /* ── Gaps section ── */
+  .gaps {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px;
+  }
+  .gap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--red);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .gap.warn { border-left-color: var(--yellow); }
+  .gap.info { border-left-color: var(--blue); }
+  .gap h4 {
+    margin: 0 0 6px; font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .gap .tag {
+    font-size: 10px; padding: 2px 7px;
+    background: rgba(239,68,68,0.18); color: #fca5a5;
+    border-radius: 4px; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .gap.warn .tag { background: rgba(234,179,8,0.18); color: #fde68a; }
+  .gap.info .tag { background: rgba(59,130,246,0.18); color: #93c5fd; }
+  .gap p { margin: 0; color: var(--muted); font-size: 12px; }
+  .gap p code {
+    background: var(--surface-2);
+    padding: 1px 5px; border-radius: 3px;
+    color: var(--fg); font-size: 11px;
+  }
+
+  /* ── Confirmation matrix ── */
+  .conf table thead th { background: var(--surface-2); }
+  .conf .check { color: var(--emerald); font-weight: 600; }
+  .conf .nope { color: var(--red); font-weight: 600; }
+  .conf .partial { color: var(--yellow); font-weight: 600; }
+
+  .footnote {
+    margin-top: 32px; padding-top: 20px;
+    border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 11px;
+  }
+  .footnote code {
+    color: var(--fg);
+    background: var(--surface-2);
+    padding: 1px 5px; border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Product Creation & Sync Map</h1>
+<p class="lede">
+  How a new product flows from any entry point into <code>InternalProduct</code> and out to HubSpot, Zoho Inventory, and Zuper —
+  plus what fields are wired, what's missing, and where the system tells you it worked.
+</p>
+
+<!-- ── Legend ── -->
+<div class="legend">
+  <div class="legend-item"><span class="swatch sw-wired"></span> Wired (push & pull)</div>
+  <div class="legend-item"><span class="swatch sw-cross"></span> Cross-link ID (custom field)</div>
+  <div class="legend-item"><span class="swatch sw-partial"></span> Partial / conditional</div>
+  <div class="legend-item"><span class="swatch sw-missing"></span> Missing — internal only</div>
+  <div class="legend-item"><span class="swatch sw-na"></span> Not applicable</div>
+</div>
+
+<!-- ──────────────────────────────────────────────────────────────────── -->
+<h2><span class="num">1</span>Flow: from form to four systems</h2>
+
+<div class="flow">
+  <div class="flow-grid">
+
+    <!-- Entry points -->
+    <div class="stack">
+      <div class="node entry">
+        <h4>Submit Wizard</h4>
+        <div class="lines">/dashboards/submit-product<br>any authed user</div>
+      </div>
+      <div class="node entry">
+        <h4>BOM Pipeline</h4>
+        <div class="lines">unmatched item from planset<br>system-driven</div>
+      </div>
+      <div class="node entry">
+        <h4>Datasheet / Clone</h4>
+        <div class="lines">prefills wizard form</div>
+      </div>
+      <div class="node entry">
+        <h4>Sync Modal</h4>
+        <div class="lines">per-row in catalog table<br><strong>ADMIN/EXEC only</strong></div>
+      </div>
+    </div>
+
+    <div class="arrow">→<span class="label">POST</span></div>
+
+    <!-- Queue -->
+    <div class="stack">
+      <div class="node queue">
+        <h4>PendingCatalogPush</h4>
+        <div class="lines">status: PENDING<br>systems: [INTERNAL, HUBSPOT, ZOHO, ZUPER]<br>metadata = spec fields</div>
+      </div>
+      <div class="node queue" style="border-left-color: var(--blue);">
+        <h4>Direct upsert</h4>
+        <div class="lines">/api/inventory/products POST<br>InternalProduct only — no externals</div>
+      </div>
+    </div>
+
+    <div class="arrow">→<span class="label">approve</span></div>
+
+    <!-- Engine -->
+    <div class="node engine">
+      <h4>executeCatalogPushApproval</h4>
+      <div class="lines">
+        <strong>1.</strong> Internal upsert (txn) + spec table<br>
+        <strong>2.</strong> HubSpot create-or-update<br>
+        <strong>3.</strong> Zoho create-or-update<br>
+        <strong>4.</strong> Zuper create-or-update<br>
+        <strong>5.</strong> Cross-link IDs to all 3<br>
+        <strong>6.</strong> Photo → Zoho only<br>
+        <strong>7.</strong> Status = APPROVED iff all clean
+      </div>
+    </div>
+
+    <div class="arrow">→<span class="label">writes</span></div>
+
+    <!-- Targets -->
+    <div class="stack">
+      <div class="node target">
+        <h4>InternalProduct (DB)</h4>
+        <div class="lines">unique on (category, brand, model)<br>+ spec table by category</div>
+      </div>
+      <div class="node target hubspot">
+        <h4>HubSpot Product</h4>
+        <div class="lines">/crm/v3/objects/products<br>matched on hs_sku → name+manufacturer</div>
+      </div>
+      <div class="node target zoho">
+        <h4>Zoho Inventory Item</h4>
+        <div class="lines">/items<br>matched on sku → part_number → name</div>
+      </div>
+      <div class="node target zuper">
+        <h4>Zuper Product</h4>
+        <div class="lines">/product<br>matched via findExistingZuperItemId</div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ──────────────────────────────────────────────────────────────────── -->
+<h2><span class="num">2</span>Field-by-field mapping</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th class="col-field" style="width: 22%;">Internal field</th>
+      <th class="col-internal" style="width: 18%;">InternalProduct</th>
+      <th class="col-hubspot" style="width: 20%;">HubSpot Product</th>
+      <th class="col-zoho" style="width: 20%;">Zoho Inventory</th>
+      <th class="col-zuper" style="width: 20%;">Zuper Product</th>
+    </tr>
+  </thead>
+  <tbody>
+
+    <!-- ── Identity ── -->
+    <tr class="cat-header"><td colspan="5">Identity (universal)</td></tr>
+    <tr>
+      <td class="field-name">Display name <code>name</code><span class="note">computed brand + model</span></td>
+      <td><span class="cell wired">name</span></td>
+      <td><span class="cell wired">name</span></td>
+      <td><span class="cell wired">name</span></td>
+      <td><span class="cell wired">product_name</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Brand <code>brand</code><span class="note">required</span></td>
+      <td><span class="cell wired">brand</span></td>
+      <td><span class="cell partial">manufacturer</span><span class="note">enum, case-insensitive — unknown brand fails the push</span></td>
+      <td><span class="cell wired">brand</span></td>
+      <td><span class="cell wired">brand</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Model <code>model</code><span class="note">required</span></td>
+      <td><span class="cell wired">model</span></td>
+      <td><span class="cell wired">vendor_part_number</span></td>
+      <td><span class="cell wired">part_number</span></td>
+      <td><span class="cell wired">part_number</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">SKU <code>sku</code></td>
+      <td><span class="cell wired">sku</span></td>
+      <td><span class="cell wired">hs_sku</span></td>
+      <td><span class="cell wired">sku</span></td>
+      <td><span class="cell partial">— pull-only</span><span class="note">product_no is auto-assigned by Zuper, can't write</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Description <code>description</code></td>
+      <td><span class="cell wired">description</span></td>
+      <td><span class="cell wired">description</span></td>
+      <td><span class="cell wired">description</span></td>
+      <td><span class="cell wired">product_description</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Category <code>category</code><span class="note">enum (16 values)</span></td>
+      <td><span class="cell wired">category</span></td>
+      <td><span class="cell wired">product_category<br><span class="note" style="color: var(--muted);">push-only — display string</span></span></td>
+      <td><span class="cell partial">group_name</span><span class="note">only MODULE & INVERTER confirmed; 12 categories ship without group</span></td>
+      <td><span class="cell wired">product_category</span><span class="note">resolved to UID; falls back to General</span></td>
+    </tr>
+
+    <!-- ── Vendor ── -->
+    <tr class="cat-header"><td colspan="5">Vendor</td></tr>
+    <tr>
+      <td class="field-name">Vendor name <code>vendorName</code></td>
+      <td><span class="cell wired">vendorName</span></td>
+      <td><span class="cell wired">vendor_name</span></td>
+      <td><span class="cell wired">vendor_name</span><span class="note">paired with vendor_id</span></td>
+      <td><span class="cell wired">vendor_name + vendor</span><span class="note">writes both keys</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Zoho vendor ID <code>zohoVendorId</code></td>
+      <td><span class="cell wired">zohoVendorId</span></td>
+      <td><span class="cell na">—</span></td>
+      <td><span class="cell wired">vendor_id</span></td>
+      <td><span class="cell na">—</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Vendor part # <code>vendorPartNumber</code></td>
+      <td><span class="cell wired">vendorPartNumber</span></td>
+      <td><span class="cell wired">vendor_part_number</span></td>
+      <td><span class="cell wired">part_number</span><span class="note">also driven by model</span></td>
+      <td><span class="cell wired">part_number</span><span class="note">via input.vendorPartNumber</span></td>
+    </tr>
+
+    <!-- ── Pricing & physical ── -->
+    <tr class="cat-header"><td colspan="5">Pricing & physical</td></tr>
+    <tr>
+      <td class="field-name">Sell price <code>sellPrice</code></td>
+      <td><span class="cell wired">sellPrice</span></td>
+      <td><span class="cell wired">price</span></td>
+      <td><span class="cell wired">rate</span></td>
+      <td><span class="cell wired">unit_price + price + rate</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Unit cost <code>unitCost</code></td>
+      <td><span class="cell wired">unitCost</span></td>
+      <td><span class="cell wired">hs_cost_of_goods_sold</span></td>
+      <td><span class="cell wired">purchase_rate</span></td>
+      <td><span class="cell wired">cost_price + purchase_rate + cost</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Unit label <code>unitLabel</code><span class="note">"W", "kW", "kWh"…</span></td>
+      <td><span class="cell wired">unitLabel</span></td>
+      <td><span class="cell wired">unit_label</span></td>
+      <td><span class="cell wired">unit</span></td>
+      <td><span class="cell wired">unit</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Length <code>length</code></td>
+      <td><span class="cell wired">length</span></td>
+      <td><span class="cell wired">length</span><span class="note">+ auto product_dimensions</span></td>
+      <td><span class="cell wired">length</span></td>
+      <td><span class="cell missing">— not synced</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Width <code>width</code></td>
+      <td><span class="cell wired">width</span></td>
+      <td><span class="cell wired">width</span></td>
+      <td><span class="cell wired">width</span></td>
+      <td><span class="cell missing">— not synced</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Weight <code>weight</code></td>
+      <td><span class="cell wired">weight</span></td>
+      <td><span class="cell wired">weight</span></td>
+      <td><span class="cell wired">weight</span></td>
+      <td><span class="cell missing">— not synced</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Hard to procure <code>hardToProcure</code></td>
+      <td><span class="cell wired">hardToProcure</span></td>
+      <td><span class="cell wired">hard_to_procure</span></td>
+      <td><span class="cell missing">— not synced</span></td>
+      <td><span class="cell missing">— not synced</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Photo / image <code>_photoUrl</code><span class="note">stored as Vercel Blob</span></td>
+      <td><span class="cell wired">metadata._photoUrl</span></td>
+      <td><span class="cell missing">— not pushed</span></td>
+      <td><span class="cell partial">/items/{id}/image</span><span class="note">best-effort upload, warning on fail</span></td>
+      <td><span class="cell missing">— not pushed</span></td>
+    </tr>
+
+    <!-- ── Module specs ── -->
+    <tr class="cat-header"><td colspan="5">MODULE category — spec fields</td></tr>
+    <tr>
+      <td class="field-name">Wattage <code>wattage</code><span class="note">required for modules</span></td>
+      <td><span class="cell wired">moduleSpec.wattage</span></td>
+      <td><span class="cell wired">dc_size</span></td>
+      <td><span class="cell partial">via specification string</span><span class="note">part of merged description, not discrete</span></td>
+      <td><span class="cell partial">specification</span><span class="note">"400W Mono PERC"</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Efficiency <code>efficiency</code></td>
+      <td><span class="cell wired">moduleSpec.efficiency</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Cell type <code>cellType</code></td>
+      <td><span class="cell wired">moduleSpec.cellType</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell partial">specification</span><span class="note">included in summary string</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Voc, Isc, Vmp, Imp, tempCoefficient</td>
+      <td><span class="cell wired">moduleSpec.*</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+    </tr>
+
+    <!-- ── Inverter specs ── -->
+    <tr class="cat-header"><td colspan="5">INVERTER category — spec fields</td></tr>
+    <tr>
+      <td class="field-name">AC output <code>acOutputKw</code><span class="note">required for inverters</span></td>
+      <td><span class="cell wired">inverterSpec.acOutputKw</span></td>
+      <td><span class="cell wired">ac_size</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell partial">specification</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Phase <code>phase</code></td>
+      <td><span class="cell wired">inverterSpec.phase</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell partial">specification</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Inverter type <code>inverterType</code></td>
+      <td><span class="cell wired">inverterSpec.inverterType</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell partial">specification</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">maxDcInput, nominalAcVoltage, mpptChannels, maxInputVoltage</td>
+      <td><span class="cell wired">inverterSpec.*</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+    </tr>
+
+    <!-- ── Battery specs ── -->
+    <tr class="cat-header"><td colspan="5">BATTERY / BATTERY_EXPANSION — spec fields</td></tr>
+    <tr>
+      <td class="field-name">Capacity <code>capacityKwh</code><span class="note">required for batteries</span></td>
+      <td><span class="cell wired">batterySpec.capacityKwh</span></td>
+      <td><span class="cell wired">size__kwh_</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell partial">specification</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Energy storage capacity <code>energyStorageCapacity</code></td>
+      <td><span class="cell wired">batterySpec.energyStorageCapacity</span></td>
+      <td><span class="cell wired">energy_storage_capacity</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Continuous power <code>continuousPowerKw</code></td>
+      <td><span class="cell wired">batterySpec.continuousPowerKw</span></td>
+      <td><span class="cell wired">capacity__kw_</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Chemistry <code>chemistry</code></td>
+      <td><span class="cell wired">batterySpec.chemistry</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell partial">specification</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">usableCapacityKwh, peakPowerKw, roundTripEfficiency, nominalVoltage</td>
+      <td><span class="cell wired">batterySpec.*</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+    </tr>
+
+    <!-- ── EV charger ── -->
+    <tr class="cat-header"><td colspan="5">EV_CHARGER — spec fields</td></tr>
+    <tr>
+      <td class="field-name">Charger power <code>powerKw</code><span class="note">required</span></td>
+      <td><span class="cell wired">evChargerSpec.powerKw</span></td>
+      <td><span class="cell wired">capacity__kw_</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell partial">specification</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">Connector type, level <code>connectorType, level</code></td>
+      <td><span class="cell wired">evChargerSpec.*</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell partial">specification</span></td>
+    </tr>
+    <tr>
+      <td class="field-name">amperage, voltage, smartFeatures</td>
+      <td><span class="cell wired">evChargerSpec.*</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+    </tr>
+
+    <!-- ── Racking ── -->
+    <tr class="cat-header"><td colspan="5">RACKING (Mounting Hardware) — spec fields</td></tr>
+    <tr>
+      <td class="field-name">All fields <code>mountType, material, tiltRange, windRating, snowLoad, roofAttachment</code></td>
+      <td><span class="cell wired">mountingHardwareSpec.*</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+    </tr>
+
+    <!-- ── Electrical BOS ── -->
+    <tr class="cat-header"><td colspan="5">ELECTRICAL_BOS — spec fields</td></tr>
+    <tr>
+      <td class="field-name">All fields <code>componentType, gaugeSize, voltageRating, material</code></td>
+      <td><span class="cell wired">electricalHardwareSpec.*</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+    </tr>
+
+    <!-- ── Monitoring ── -->
+    <tr class="cat-header"><td colspan="5">MONITORING (Relay Device) — spec fields</td></tr>
+    <tr>
+      <td class="field-name">All fields <code>deviceType, connectivity, compatibleInverters</code></td>
+      <td><span class="cell wired">relayDeviceSpec.*</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+      <td><span class="cell missing">— not mapped</span></td>
+    </tr>
+
+    <!-- ── Pass-through categories ── -->
+    <tr class="cat-header"><td colspan="5">RAPID_SHUTDOWN, OPTIMIZER, GATEWAY, D&R, SERVICE, ADDER_SERVICES, TESLA_SYSTEM_COMPONENTS, PROJECT_MILESTONES</td></tr>
+    <tr>
+      <td class="field-name">No spec fields defined</td>
+      <td><span class="cell na">universal fields only</span></td>
+      <td><span class="cell na">universal fields only</span></td>
+      <td><span class="cell na">universal fields only</span></td>
+      <td><span class="cell na">universal fields only</span></td>
+    </tr>
+
+  </tbody>
+</table>
+
+<!-- ──────────────────────────────────────────────────────────────────── -->
+<h2><span class="num">3</span>Cross-link IDs (how the four systems find each other)</h2>
+
+<p class="lede">
+  After approval, every system gets stamped with the IDs of the other three so you can pivot from any record to its siblings.
+  <strong>Only the wizard / approval engine writes these</strong> — the per-product Sync Modal does not.
+</p>
+
+<div class="crosslink">
+  <div class="clcard hubspot">
+    <h4><span class="dot"></span>HubSpot Product</h4>
+    <ul>
+      <li><span class="arrow-in">←</span><code>internal_product_id</code></li>
+      <li><span class="arrow-in">←</span><code>zoho_item_id</code></li>
+      <li><span class="arrow-in">←</span><code>zuper_item_id</code></li>
+    </ul>
+  </div>
+  <div class="clcard zoho">
+    <h4><span class="dot"></span>Zoho Inventory item</h4>
+    <ul>
+      <li><span class="arrow-in">←</span><code>cf_internal_product_id</code></li>
+      <li><span class="arrow-in">←</span><code>cf_hubspot_product_id</code></li>
+      <li><span class="arrow-in">←</span><code>cf_zuper_product_id</code></li>
+    </ul>
+  </div>
+  <div class="clcard zuper">
+    <h4><span class="dot"></span>Zuper Product</h4>
+    <ul>
+      <li><span class="arrow-in">←</span><code>internal_product_id</code></li>
+      <li><span class="arrow-in">←</span><code>hubspot_product_id</code></li>
+      <li><span class="arrow-in">←</span><code>zoho_item_id</code></li>
+    </ul>
+  </div>
+</div>
+
+<!-- ──────────────────────────────────────────────────────────────────── -->
+<h2><span class="num">4</span>Confirmation matrix — how do you know it worked?</h2>
+
+<div class="conf">
+<table>
+  <thead>
+    <tr>
+      <th style="width: 24%;">Surface</th>
+      <th>Wizard / BOM approval</th>
+      <th>Sync Modal (per product)</th>
+      <th>Raw POST /api/inventory/products</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="field-name">UI confirmation</td>
+      <td><span class="check">✓</span> Success screen, "Added to Catalog" or "Submitted (admin notified)"</td>
+      <td><span class="check">✓</span> Per-system result cards with status pills</td>
+      <td><span class="nope">✗</span> Just JSON response</td>
+    </tr>
+    <tr>
+      <td class="field-name">External IDs written back to DB</td>
+      <td><span class="check">✓</span> hubspotProductId, zohoItemId, zuperItemId</td>
+      <td><span class="check">✓</span> Same — guarded write only when null</td>
+      <td><span class="check">✓</span> Only what was POSTed</td>
+    </tr>
+    <tr>
+      <td class="field-name">Sync log table</td>
+      <td><span class="partial">~</span> PendingCatalogPush row IS the log (status, note, IDs)</td>
+      <td><span class="nope">✗</span> No dedicated table — results vanish on close</td>
+      <td><span class="nope">✗</span> None</td>
+    </tr>
+    <tr>
+      <td class="field-name">ActivityLog entry</td>
+      <td><span class="nope">✗</span> No catalog-sync activity row written</td>
+      <td><span class="nope">✗</span> None</td>
+      <td><span class="partial">~</span> FEATURE_USED only when external IDs in body</td>
+    </tr>
+    <tr>
+      <td class="field-name">Email notification</td>
+      <td><span class="check">✓</span> Admin email when autoApproved=false or warnings present</td>
+      <td><span class="nope">✗</span> None</td>
+      <td><span class="nope">✗</span> None</td>
+    </tr>
+    <tr>
+      <td class="field-name">Cross-link IDs written</td>
+      <td><span class="check">✓</span> All 3 directions (Zoho cf_*, Zuper cf_*, HubSpot props)</td>
+      <td><span class="nope">✗</span> NOT written — orphaned linkage</td>
+      <td><span class="nope">✗</span> None</td>
+    </tr>
+    <tr>
+      <td class="field-name">syncHealth on read</td>
+      <td><span class="check">✓</span> { internal, zoho, hubspot, zuper, fullySynced }</td>
+      <td><span class="check">✓</span> Same</td>
+      <td><span class="check">✓</span> Same</td>
+    </tr>
+    <tr>
+      <td class="field-name">Sentry capture</td>
+      <td><span class="nope">✗</span> Errors swallowed into outcome strings</td>
+      <td><span class="nope">✗</span> console.error only</td>
+      <td><span class="check">✓</span> 500-path errors captured</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ──────────────────────────────────────────────────────────────────── -->
+<h2><span class="num">5</span>What's missing — the gap inventory</h2>
+
+<div class="gaps">
+
+  <div class="gap">
+    <h4><span class="tag">Missing</span>Spec field coverage in externals</h4>
+    <p>~30 of ~35 spec fields (efficiency, cellType, voc/isc/vmp/imp, tempCoefficient, phase, inverterType, mpptChannels, chemistry, mountType, gaugeSize, deviceType, connectivity, etc.) live in our DB only. None are on HubSpot, Zoho, or as discrete Zuper custom fields. Zuper gets a single concatenated <code>specification</code> string for 4 categories.</p>
+  </div>
+
+  <div class="gap">
+    <h4><span class="tag">Missing</span>Sync log / audit trail</h4>
+    <p>No <code>CatalogSyncLog</code> table exists. BOM has <code>BomHubSpotPushLog</code>; catalog sync has nothing. Sync Modal results disappear when closed. No <code>ActivityLog</code> entries are written by either sync path. For forensics, you can only inspect <code>PendingCatalogPush</code> rows + IDs on <code>InternalProduct</code>.</p>
+  </div>
+
+  <div class="gap warn">
+    <h4><span class="tag">Partial</span>Zoho group_name coverage</h4>
+    <p>Only MODULE and INVERTER are <code>confirmed</code> in <code>zoho-taxonomy.ts</code>. BATTERY, EV_CHARGER, RACKING, MONITORING, GATEWAY, OPTIMIZER, ELECTRICAL_BOS, TESLA_SYSTEM_COMPONENTS, RAPID_SHUTDOWN, D&R, SERVICE, ADDER_SERVICES, PROJECT_MILESTONES → items create in Zoho without a group. Logs a console warning, no UI surfacing.</p>
+  </div>
+
+  <div class="gap">
+    <h4><span class="tag">Missing</span>Sync Modal skips cross-link writes</h4>
+    <p>If you create a Zoho/Zuper/HubSpot record via the per-product Sync Modal (not the wizard), the <code>cf_internal_product_id</code> / <code>internal_product_id</code> / etc. cross-link fields are NEVER written. Only <code>executeCatalogPushApproval</code> stamps cross-links. Result: the new external record is orphaned from the other systems.</p>
+  </div>
+
+  <div class="gap warn">
+    <h4><span class="tag">Partial</span>Photo upload is Zoho-only</h4>
+    <p>HubSpot Product images and Zuper Product images are never written. Zoho upload itself is best-effort — failures append a warning to the outcome message but don't fail the approval.</p>
+  </div>
+
+  <div class="gap warn">
+    <h4><span class="tag">Partial</span>Dimensions don't reach Zuper</h4>
+    <p>length, width, weight flow to Internal + HubSpot + Zoho but are not on the Zuper sync payload. <code>hardToProcure</code> only reaches HubSpot.</p>
+  </div>
+
+  <div class="gap">
+    <h4><span class="tag">Missing</span>HubSpot manufacturer enum dead-end</h4>
+    <p><code>manufacturer</code> is a HubSpot enumeration. If the brand isn't a known enum value, the entire HubSpot push fails with a 400 — no fallback to "manufacturer_other" or auto-creation of a new enum option. The wizard accepts arbitrary brand text, so this can fail silently after the form succeeds.</p>
+  </div>
+
+  <div class="gap warn">
+    <h4><span class="tag">Race</span>Guarded link-back can orphan duplicates</h4>
+    <p>When the Sync Modal creates an external record, the link-back uses <code>updateMany WHERE id=… AND xxxItemId IS NULL</code>. If two admins sync simultaneously, the second push wins in the external system but the InternalProduct still points to the first ID — second external record becomes an orphan, only logged via console.</p>
+  </div>
+
+  <div class="gap info">
+    <h4><span class="tag">Asymmetry</span>Wizard auth vs. Sync Modal auth</h4>
+    <p>Anyone authed can submit through the wizard (auto-approves and creates external records). Sync Modal restricts to ADMIN/EXECUTIVE only. The wizard creates more downstream state with weaker auth than the modal.</p>
+  </div>
+
+  <div class="gap info">
+    <h4><span class="tag">Adjacent</span>Stock not auto-created</h4>
+    <p><code>InventoryStock</code> and <code>StockTransaction</code> tables exist but no part of the create flow populates them. Stock lives in its own /api/inventory/stock path and starts at zero.</p>
+  </div>
+
+  <div class="gap">
+    <h4><span class="tag">Missing</span>QuickBooks / OpenSolar slots exist but unwired</h4>
+    <p>The systems array supports a "QUICKBOOKS" value in code comments, and <code>UpsertHubSpotProductInput</code> accepts <code>qboProductId</code> + writes <code>qbo_product_id</code> on HubSpot — but nothing creates a QBO product. <code>PendingCatalogPush.openSolarId</code> field exists for the sales-request flow but no sync path uses it.</p>
+  </div>
+
+  <div class="gap warn">
+    <h4><span class="tag">Partial</span>Cross-link writes are best-effort</h4>
+    <p>If the Zoho/Zuper/HubSpot cross-link PATCH fails, the message is appended as <code>(Warning: …)</code> to the outcome but the overall status still flips to APPROVED. The Zoho <code>cf_internal_product_id</code> write on a freshly-created Zoho item swallows errors entirely with no warning.</p>
+  </div>
+
+</div>
+
+<div class="footnote">
+  Source files: <code>src/lib/catalog-fields.ts</code> · <code>src/lib/catalog-sync.ts</code> · <code>src/lib/catalog-sync-mappings.ts</code> ·
+  <code>src/lib/catalog-push-approve.ts</code> · <code>src/lib/zoho-inventory.ts</code> · <code>src/lib/zuper-catalog.ts</code> ·
+  <code>src/lib/hubspot.ts</code> (createOrUpdateHubSpotProduct) · <code>src/lib/zoho-taxonomy.ts</code> ·
+  <code>prisma/schema.prisma</code> (InternalProduct, PendingCatalogPush, spec tables).
+</div>
+
+</body>
+</html>

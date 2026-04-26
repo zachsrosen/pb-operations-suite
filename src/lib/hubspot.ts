@@ -2317,6 +2317,52 @@ export async function fetchLineItemsForDeals(
   return results;
 }
 
+// ── HubSpot manufacturer enum enforcement ─────────────────────────────────────
+
+/**
+ * Thrown when HubSpot rejects a product upsert because the `manufacturer`
+ * field value is not in the enum, AND `HUBSPOT_MANUFACTURER_ENFORCEMENT=true`.
+ *
+ * When the flag is off, the same situation is handled silently (drop
+ * `manufacturer`, retry, succeed with a warning).
+ */
+export class HubSpotManufacturerEnumError extends Error {
+  constructor(
+    public readonly brand: string,
+    public readonly hubspotMessage: string,
+  ) {
+    super(`HubSpot rejected manufacturer "${brand}": ${hubspotMessage}`);
+    this.name = "HubSpotManufacturerEnumError";
+  }
+}
+
+/**
+ * Returns true when a HubSpot error message indicates the `manufacturer`
+ * property value was not an allowed enum option.
+ *
+ * HubSpot error message variants observed:
+ *   • `Property "manufacturer" was not one of the allowed options`
+ *   • `PROPERTY_DOESNT_EXIST: manufacturer`  (different path, not enum)
+ *   • `manufacturer ... is not a valid option`
+ * We match broadly enough to catch message rewording.
+ */
+export function isManufacturerEnumRejection(message: string): boolean {
+  const lower = String(message || "").toLowerCase();
+  return (
+    // Explicit enum rejection pattern
+    (lower.includes("manufacturer") &&
+      (lower.includes("was not one of") ||
+        lower.includes("not one of the allowed") ||
+        lower.includes("is not a valid option") ||
+        lower.includes("is not one of the allowed") ||
+        lower.includes("allowed options") ||
+        lower.includes("invalid enum value"))) ||
+    // HubSpot sometimes returns this phrasing
+    (lower.includes('"manufacturer"') && lower.includes("not")) ||
+    (lower.includes("'manufacturer'") && lower.includes("not"))
+  );
+}
+
 function trimOrNull(value: string | null | undefined): string | null {
   const trimmed = String(value || "").trim();
   return trimmed || null;
@@ -2573,6 +2619,32 @@ export async function createOrUpdateHubSpotProduct(
       throw error;
     }
 
+    // Narrow path: manufacturer enum rejection
+    if (brand && isManufacturerEnumRejection(message)) {
+      if (process.env.HUBSPOT_MANUFACTURER_ENFORCEMENT === "true") {
+        // Phase C — hard block. Caller must add the brand to HubSpot's enum first.
+        throw new HubSpotManufacturerEnumError(brand, message);
+      }
+
+      // Phase A/B — drop only `manufacturer` and retry so ops aren't blocked.
+      // The warning message surfaces the rejected brand so it builds up in the
+      // audit log metadata during Phase B data-hygiene work.
+      const withoutManufacturer = { ...withOptional };
+      delete withoutManufacturer["manufacturer"];
+      console.warn(
+        `[HubSpot] Manufacturer enum rejection for brand "${brand}" (enforcement off) — retrying without manufacturer property. ${message}`
+      );
+      const result = await upsertHubSpotProductRecord(token, existingId, withoutManufacturer);
+      return {
+        ...result,
+        warnings: [
+          `Brand "${brand}" was not accepted by HubSpot's manufacturer enum and was omitted. Add "${brand}" via HubSpot Settings → Properties → Products → Manufacturer to persist this field. Original error: ${message}`,
+        ],
+      };
+    }
+
+    // Wide fallback: drop ALL optional properties and retry (existing behavior for
+    // other 400 validation errors such as unknown custom properties).
     const droppedKeys = Object.keys(optionalProperties);
     console.warn(
       `[HubSpot] Retrying product upsert with core properties only after validation failure (dropped: ${droppedKeys.join(", ")}): ${message}`

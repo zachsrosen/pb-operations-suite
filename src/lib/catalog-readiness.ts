@@ -4,7 +4,7 @@
 // Business/sync logic — separate from field config (catalog-fields.ts).
 
 import { getCategoryFields, generateZuperSpecification } from "./catalog-fields";
-import { hasVerifiedZohoMapping, getZohoGroupName } from "./zoho-taxonomy";
+import { hasVerifiedZohoMapping, getZohoCategory } from "./zoho-taxonomy";
 import { isBlank } from "./catalog-form-state";
 
 export interface SystemReadiness {
@@ -31,17 +31,17 @@ function evaluateInternal(): SystemReadiness {
 
 function evaluateZoho(category: string): SystemReadiness {
   if (hasVerifiedZohoMapping(category)) {
-    const groupName = getZohoGroupName(category);
+    const { categoryName } = getZohoCategory(category);
     return {
       system: "ZOHO",
       status: "ready",
-      details: [`Zoho group: ${groupName}`],
+      details: [`Zoho category: ${categoryName}`],
     };
   }
   return {
     system: "ZOHO",
     status: "limited",
-    details: ["No confirmed Zoho group mapping — item created without category group"],
+    details: ["No confirmed Zoho category mapping — item created without category"],
   };
 }
 

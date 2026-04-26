@@ -1,18 +1,34 @@
 const mockGetZuperPartById = jest.fn();
 const mockUpdateZuperPart = jest.fn();
+const mockCreateOrUpdateZuperPart = jest.fn();
+const mockBuildZuperSpecMetaData = jest.fn();
+const mockBuildZuperProductCustomFields = jest.fn();
 const mockUpdateMany = jest.fn();
+const mockFindUnique = jest.fn();
 
 jest.mock("@/lib/db", () => ({
   prisma: {
     internalProduct: {
       updateMany: (...args: unknown[]) => mockUpdateMany(...args),
+      findUnique: (...args: unknown[]) => mockFindUnique(...args),
     },
+    $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+      fn({
+        internalProduct: {
+          findUnique: (...args: unknown[]) => mockFindUnique(...args),
+          updateMany: (...args: unknown[]) => mockUpdateMany(...args),
+        },
+      }),
   },
 }));
 
 jest.mock("@/lib/zuper-catalog", () => ({
   getZuperPartById: (...args: unknown[]) => mockGetZuperPartById(...args),
   updateZuperPart: (...args: unknown[]) => mockUpdateZuperPart(...args),
+  createOrUpdateZuperPart: (...args: unknown[]) => mockCreateOrUpdateZuperPart(...args),
+  buildZuperSpecMetaData: (...args: unknown[]) => mockBuildZuperSpecMetaData(...args),
+  buildZuperProductCustomFields: (...args: unknown[]) =>
+    mockBuildZuperProductCustomFields(...args),
   getZuperHubSpotProductFieldKey: jest.fn(() => "hubspot_product_id"),
   getZuperHubSpotProductFieldLabel: jest.fn(() => "HubSpot Product ID"),
   readZuperCustomFieldValue: jest.fn((customFields: unknown, key: string, additionalLabels?: string[]) => {
@@ -72,6 +88,12 @@ describe("catalog-sync Zuper", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    // Default: no pre-existing external ID (create path not blocked by race guard)
+    mockFindUnique.mockResolvedValue({ zuperItemId: null });
+    mockUpdateMany.mockResolvedValue({ count: 1 });
+    // Default: no spec-derived meta_data and no cross-link IDs.
+    mockBuildZuperSpecMetaData.mockReturnValue(undefined);
+    mockBuildZuperProductCustomFields.mockReturnValue(null);
   });
 
   it("parses product_* prefixed fields from Zuper API response", async () => {
@@ -209,10 +231,145 @@ describe("catalog-sync Zuper", () => {
     const result = await executeZuperSync(sku, preview);
 
     expect(mockUpdateZuperPart).toHaveBeenCalledWith("zuper_1", {
-      name: "Tesla 1707000-21-K",
-      description: "Powerwall 3",
+      product_name: "Tesla 1707000-21-K",
+      product_description: "Powerwall 3",
       custom_fields: { hubspot_product_id: "1591770479" },
     });
     expect(result.status).toBe("updated");
+  });
+
+  it("passes dimensions to createOrUpdateZuperPart on create", async () => {
+    const skuWithDims: SkuRecord = {
+      ...sku,
+      id: "sku_dims",
+      zuperItemId: null,
+      length: 78,
+      width: 39,
+      weight: 50,
+    };
+
+    mockCreateOrUpdateZuperPart.mockResolvedValue({
+      zuperItemId: "zuper_created_dims",
+      created: true,
+    });
+
+    const preview: SyncPreview = {
+      system: "zuper",
+      externalId: "",
+      linked: false,
+      action: "create",
+      noChanges: false,
+      changes: [],
+    };
+
+    const result = await executeZuperSync(skuWithDims, preview);
+
+    expect(result.status).toBe("created");
+    expect(result.externalId).toBe("zuper_created_dims");
+
+    expect(mockCreateOrUpdateZuperPart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        length: 78,
+        width: 39,
+        weight: 50,
+      })
+    );
+  });
+
+  it("forwards spec-derived customMetaData to createOrUpdateZuperPart on create (M3.4 activated)", async () => {
+    // Simulate FieldDef.zuperCustomField labels resolving to meta_data entries
+    mockBuildZuperSpecMetaData.mockReturnValue([
+      { label: "Battery Capacity (kWh)", value: 13.5, type: "NUMBER" },
+      { label: "Battery Chemistry", value: "LFP", type: "DROPDOWN" },
+    ]);
+    mockBuildZuperProductCustomFields.mockReturnValue({
+      hubspot_product_id: "1591770479",
+      internal_product_id: "sku_with_spec",
+    });
+
+    const skuWithSpec: SkuRecord = {
+      ...sku,
+      id: "sku_with_spec",
+      zuperItemId: null,
+      batterySpec: { capacityKwh: 13.5, chemistry: "LFP" },
+    };
+
+    mockCreateOrUpdateZuperPart.mockResolvedValue({
+      zuperItemId: "zuper_created_md",
+      created: true,
+    });
+
+    const preview: SyncPreview = {
+      system: "zuper",
+      externalId: "",
+      linked: false,
+      action: "create",
+      noChanges: false,
+      changes: [],
+    };
+
+    const result = await executeZuperSync(skuWithSpec, preview);
+
+    expect(result.status).toBe("created");
+    // Spec helper invoked with category + spec data
+    expect(mockBuildZuperSpecMetaData).toHaveBeenCalledWith(
+      "BATTERY",
+      expect.objectContaining({ capacityKwh: 13.5, chemistry: "LFP" }),
+    );
+    // Cross-link ID helper invoked with the available IDs at create time
+    expect(mockBuildZuperProductCustomFields).toHaveBeenCalledWith(
+      expect.objectContaining({
+        internalProductId: "sku_with_spec",
+        hubspotProductId: "1591770479",
+      }),
+    );
+    // Both threaded into the create call: spec values via customMetaData,
+    // cross-link IDs via customFields (snake_case keys).
+    expect(mockCreateOrUpdateZuperPart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customMetaData: [
+          { label: "Battery Capacity (kWh)", value: 13.5, type: "NUMBER" },
+          { label: "Battery Chemistry", value: "LFP", type: "DROPDOWN" },
+        ],
+        customFields: {
+          hubspot_product_id: "1591770479",
+          internal_product_id: "sku_with_spec",
+        },
+      }),
+    );
+  });
+
+  it("passes undefined customMetaData when no zuperCustomField mappings resolve", async () => {
+    // Default mocks: spec helper returns undefined, cross-link helper returns null
+    const skuFresh: SkuRecord = {
+      ...sku,
+      id: "sku_no_md",
+      zuperItemId: null,
+      hubspotProductId: null,
+      zohoItemId: null,
+    };
+
+    mockCreateOrUpdateZuperPart.mockResolvedValue({
+      zuperItemId: "zuper_no_md",
+      created: true,
+    });
+
+    const preview: SyncPreview = {
+      system: "zuper",
+      externalId: "",
+      linked: false,
+      action: "create",
+      noChanges: false,
+      changes: [],
+    };
+
+    await executeZuperSync(skuFresh, preview);
+
+    expect(mockCreateOrUpdateZuperPart).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customMetaData: undefined,
+        customFields: undefined,
+      }),
+    );
   });
 });

@@ -23,7 +23,7 @@ import {
 import type { SkuRecord } from "./catalog-sync";
 import { getSpecData } from "./catalog-sync";
 import { zohoInventory } from "./zoho-inventory";
-import { getHubSpotProductById } from "./hubspot";
+import { getHubSpotProductById, HubSpotManufacturerEnumError } from "./hubspot";
 import { getZuperPartById } from "./zuper-catalog";
 import {
   getHubSpotPropertyNames,
@@ -35,6 +35,8 @@ import {
   executeZuperSync,
 } from "./catalog-sync";
 import { prisma } from "./db";
+import { logCatalogSync, type SystemName, type SystemOutcome } from "./catalog-activity-log";
+import { writeCrossLinkIds } from "./catalog-cross-link";
 
 // ── Snapshot building ──
 
@@ -630,11 +632,42 @@ export function computePlanHash(
 
 // ── Plan execution ──
 
+// ── Outcome converter ──
+
+/**
+ * Converts the Sync Modal's per-operation SyncOperationOutcome[] to the
+ * Partial<Record<SystemName, SystemOutcome>> shape expected by logCatalogSync.
+ *
+ * When multiple operations target the same external system, the worst status
+ * wins (failed > skipped > success). Internal operations are skipped since
+ * they aren't external syncs.
+ */
+function convertOutcomesToSystemShape(
+  outcomes: SyncOperationOutcome[],
+): Partial<Record<SystemName, SystemOutcome>> {
+  const result: Partial<Record<SystemName, SystemOutcome>> = {};
+  for (const o of outcomes) {
+    if (o.system === "internal") continue;
+    const sys = o.system.toUpperCase() as SystemName;
+    const existing = result[sys];
+    // Worst status wins: failed > skipped > success
+    if (!existing || (existing.status === "success" && o.status !== "success")) {
+      result[sys] = {
+        status: o.status === "success" ? "success" : o.status === "skipped" ? "skipped" : "failed",
+        message: o.message,
+      };
+    }
+  }
+  return result;
+}
+
 /** Execute a validated sync plan. Called by POST /sync/execute after stale check. */
 export async function executePlan(
   sku: SkuRecord,
   plan: SyncPlan,
+  options: { userEmail: string } = { userEmail: "system" },
 ): Promise<SyncExecuteResponse> {
+  const startedAt = Date.now();
   const outcomes: SyncOperationOutcome[] = [];
 
   // Step 1: Apply internal patch (pass sku for spec-table field detection)
@@ -669,11 +702,54 @@ export async function executePlan(
     (s) => s === "success" || s === "skipped",
   );
 
-  return {
+  const response: SyncExecuteResponse = {
     status: anyFailed ? "partial" : allSuccess ? "success" : "partial",
     planHash: plan.planHash,
     outcomes,
   };
+
+  // Audit trail — one row per executePlan call
+  await logCatalogSync({
+    internalProductId: sku.id,
+    productName: `${sku.brand} ${sku.model}`.trim(),
+    userEmail: options.userEmail,
+    source: "modal",
+    outcomes: convertOutcomesToSystemShape(response.outcomes),
+    durationMs: Date.now() - startedAt,
+  }).catch((err) => console.warn("[catalog-sync] activity log write failed:", err));
+
+  // Bump watermark and re-fetch post-execute external IDs in one query
+  const updated = await prisma.internalProduct.update({
+    where: { id: sku.id },
+    data: { lastSyncedAt: new Date(), lastSyncedBy: options.userEmail },
+    select: { hubspotProductId: true, zohoItemId: true, zuperItemId: true },
+  }).catch((err) => {
+    console.warn("[catalog-sync] watermark update failed:", err);
+    return null;
+  });
+
+  // Write cross-link IDs so newly-created external records are linked back.
+  // Best-effort: warnings surface in outcomes, failures never crash the response.
+  await writeCrossLinkIds({
+    internalProductId: sku.id,
+    hubspotProductId: updated?.hubspotProductId ?? sku.hubspotProductId,
+    zohoItemId: updated?.zohoItemId ?? sku.zohoItemId,
+    zuperItemId: updated?.zuperItemId ?? sku.zuperItemId,
+  }).then((crossLink) => {
+    if (crossLink.warnings.length > 0) {
+      response.outcomes.push({
+        kind: "internal-patch",
+        system: "internal",
+        status: "skipped",
+        message: `Cross-link warnings: ${crossLink.warnings.join("; ")}`,
+        fieldDetails: [],
+      });
+    }
+  }).catch((err) => {
+    console.warn("[catalog-sync] cross-link write failed:", err);
+  });
+
+  return response;
 }
 
 async function applyInternalPatch(
@@ -845,8 +921,18 @@ async function executeSystemWrites(
 
     return await executePushes(system, sku, pushOps, effectiveState, fieldDetails);
   } catch (err) {
+    const failedKind = ops.some((o) => o.kind === "create") ? "create" : "push";
+    if (err instanceof HubSpotManufacturerEnumError) {
+      return {
+        kind: failedKind,
+        system,
+        status: "failed",
+        message: `Brand "${err.brand}" is not in HubSpot's manufacturer enum. Add it in HubSpot Settings → Properties → Products → Manufacturer (or correct the brand spelling), then retry.`,
+        fieldDetails,
+      };
+    }
     return {
-      kind: ops.some((o) => o.kind === "create") ? "create" : "push",
+      kind: failedKind,
       system,
       status: "failed",
       message: err instanceof Error ? err.message : "External write failed",

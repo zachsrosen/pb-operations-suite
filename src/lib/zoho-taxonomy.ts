@@ -1,146 +1,164 @@
 // src/lib/zoho-taxonomy.ts
 //
 // Source-of-truth mapping from internal EquipmentCategory enums to live Zoho
-// Inventory item group names. Values here MUST match what exists in Zoho — do
-// not guess from internal labels.
+// Inventory categories. Values here MUST match what exists in Zoho — do not
+// guess from internal labels.
+//
+// History: this file used to write Zoho `group_name`. A 2026-04-24 audit found
+// that field was unused in our prod org (2 of 1717 items). The real field that
+// drives Zoho's category UI is `category_name` / `category_id`. This registry
+// now writes both the human-readable name and the stable category_id (preferred
+// for writes — resilient to renames in Zoho admin).
 //
 // Status key:
-//   confirmed  — verified against live Zoho Inventory group list; shipped in API calls
-//   likely     — matches user-reported Zoho screenshot; NOT shipped until promoted to confirmed
-//   unresolved — no verified Zoho group; NOT shipped in API calls
+//   confirmed       — verified live category_id; shipped on Zoho writes
+//   likely          — candidate match, NOT shipped until promoted to confirmed
+//   unresolved      — no Zoho category yet (waiting on admin action); NOT shipped
+//   not_applicable  — intentionally has no Zoho category; NOT shipped, no warning
 
-type MappingStatus = "confirmed" | "likely" | "unresolved";
+type MappingStatus = "confirmed" | "likely" | "unresolved" | "not_applicable";
 
 interface ZohoCategoryMapping {
-  /** Exact Zoho Inventory item group name, or undefined if unresolved */
-  groupName: string | undefined;
+  /** Exact Zoho Inventory category name, or undefined if unresolved/not_applicable */
+  categoryName: string | undefined;
+  /** Zoho category_id (preferred for writes — resilient to renames in Zoho admin) */
+  categoryId: string | undefined;
   status: MappingStatus;
   /** Notes for ops review */
   note?: string;
 }
 
 /**
- * Internal category enum → Zoho Inventory item group name.
+ * Internal category enum → Zoho Inventory category.
  *
- * Only `confirmed` entries produce a `group_name` in the Zoho API payload.
- * `likely` entries retain their candidate groupName in the map data (so it
- * isn't lost when ops confirms), but `getZohoGroupName()` treats them the
- * same as `unresolved` — returns `undefined` and logs a warning.
+ * Only `confirmed` entries produce category fields in the Zoho API payload.
+ * `likely` / `unresolved` log a warning so ops can track follow-ups.
+ * `not_applicable` returns empty silently — those categories intentionally
+ * have no Zoho counterpart.
+ *
+ * Live category IDs pulled from prod Zoho org on 2026-04-24.
  */
 export const ZOHO_CATEGORY_MAP: Record<string, ZohoCategoryMapping> = {
   // ── Confirmed ──────────────────────────────────────────────────────────────
   MODULE: {
-    groupName: "Module",
+    categoryName: "Module",
+    categoryId: "5385454000001229316",
     status: "confirmed",
   },
   INVERTER: {
-    groupName: "Inverter",
+    categoryName: "Inverter",
+    categoryId: "5385454000001229328",
+    status: "confirmed",
+  },
+  ELECTRICAL_BOS: {
+    categoryName: "Electrical Component",
+    categoryId: "5385454000001229324",
+    status: "confirmed",
+  },
+  TESLA_SYSTEM_COMPONENTS: {
+    categoryName: "Tesla",
+    categoryId: "5385454000001229320",
+    status: "confirmed",
+  },
+  SERVICE: {
+    categoryName: "Non-inventory",
+    categoryId: "5385454000008795730",
+    status: "confirmed",
+  },
+  ADDER_SERVICES: {
+    categoryName: "Non-inventory",
+    categoryId: "5385454000008795730",
+    status: "confirmed",
+  },
+  PROJECT_MILESTONES: {
+    categoryName: "Non-inventory",
+    categoryId: "5385454000008795730",
+    status: "confirmed",
+  },
+  RACKING: {
+    categoryName: "Solar Component",
+    categoryId: "5385454000001289023",
+    status: "confirmed",
+  },
+  MONITORING: {
+    categoryName: "Solar Component",
+    categoryId: "5385454000001289023",
+    status: "confirmed",
+  },
+  RAPID_SHUTDOWN: {
+    categoryName: "Solar Component",
+    categoryId: "5385454000001289023",
+    status: "confirmed",
+  },
+  OPTIMIZER: {
+    categoryName: "Solar Component",
+    categoryId: "5385454000001289023",
+    status: "confirmed",
+  },
+  GATEWAY: {
+    categoryName: "Solar Component",
+    categoryId: "5385454000001289023",
     status: "confirmed",
   },
 
-  // ── Likely (from Zoho screenshots, pending final verification) ─────────────
-  TESLA_SYSTEM_COMPONENTS: {
-    groupName: "Tesla",
-    status: "likely",
-    note: "Zoho shows top-level 'Tesla' group, not 'Tesla System Components'",
-  },
-  ELECTRICAL_BOS: {
-    groupName: "Electrical Component",
-    status: "likely",
-    note: "Zoho shows 'Electrical Component', not 'Electrical Hardware'",
-  },
-  RAPID_SHUTDOWN: {
-    groupName: "Electrical Component",
-    status: "likely",
-    note: "Shares Zoho group with ELECTRICAL_BOS",
-  },
-
-  // ── Unresolved (need ops decision from full Zoho category tree) ────────────
+  // ── Categories created in Zoho admin via _create-zoho-categories.ts (2026-04-24) ──
   BATTERY: {
-    groupName: undefined,
-    status: "unresolved",
-    note: "Needs verification — could be 'Battery', 'Energy Storage', or another Zoho group",
+    categoryName: "Battery",
+    categoryId: "5385454000020010899",
+    status: "confirmed",
   },
   BATTERY_EXPANSION: {
-    groupName: undefined,
-    status: "unresolved",
-    note: "May share group with BATTERY",
+    categoryName: "Battery",
+    categoryId: "5385454000020010899",
+    status: "confirmed",
+    note: "Shares Battery category with BATTERY",
   },
   EV_CHARGER: {
-    groupName: undefined,
-    status: "unresolved",
-    note: "Needs verification from Zoho group tree",
+    categoryName: "EV Charger",
+    categoryId: "5385454000019964645",
+    status: "confirmed",
   },
-  OPTIMIZER: {
-    groupName: undefined,
-    status: "unresolved",
-    note: "Needs verification from Zoho group tree",
-  },
-  MONITORING: {
-    groupName: undefined,
-    status: "unresolved",
-    note: "Zoho may use 'Relay Device' or 'Monitoring' — needs verification",
-  },
-  GATEWAY: {
-    groupName: undefined,
-    status: "unresolved",
-    note: "May share group with MONITORING — needs verification",
-  },
-  RACKING: {
-    groupName: undefined,
-    status: "unresolved",
-    note: "Could be 'Mounting Hardware', 'Racking', or another Zoho group",
-  },
+
+  // ── Not applicable (no Zoho category fits — leave items uncategorized) ─────
   D_AND_R: {
-    groupName: undefined,
-    status: "unresolved",
-    note: "Needs verification — may not have a Zoho group",
-  },
-  SERVICE: {
-    groupName: undefined,
-    status: "unresolved",
-    note: "Service items may not map to a Zoho inventory group",
-  },
-  ADDER_SERVICES: {
-    groupName: undefined,
-    status: "unresolved",
-    note: "Service items may not map to a Zoho inventory group",
-  },
-  PROJECT_MILESTONES: {
-    groupName: undefined,
-    status: "unresolved",
-    note: "Milestones are not physical inventory — likely no Zoho group",
+    categoryName: undefined,
+    categoryId: undefined,
+    status: "not_applicable",
+    note: "D&R items aren't tracked discretely in Zoho today",
   },
 };
 
 /**
- * Look up the Zoho Inventory `group_name` for an internal category enum.
+ * Look up the Zoho Inventory category for an internal category enum.
  *
- * Returns the exact Zoho group name ONLY for `confirmed` mappings.
- * Returns `undefined` for `likely`, `unresolved`, or unknown categories,
- * and logs a warning so ops can track which mappings still need verification.
+ * Returns IDs/names ONLY for `confirmed` mappings.
+ * Returns `{}` for `unresolved` / `not_applicable` / unknown — callers
+ * should treat that as "leave Zoho item uncategorized".
  */
-export function getZohoGroupName(category: string): string | undefined {
+export function getZohoCategory(category: string): { categoryId?: string; categoryName?: string } {
   const mapping = ZOHO_CATEGORY_MAP[category];
 
   if (!mapping) {
     console.warn(
-      `[zoho-taxonomy] Unknown category "${category}" — no Zoho group_name mapping exists. ` +
+      `[zoho-taxonomy] Unknown category "${category}" — no Zoho category mapping exists. ` +
         `Add it to ZOHO_CATEGORY_MAP in src/lib/zoho-taxonomy.ts.`
     );
-    return undefined;
+    return {};
   }
+
+  // Intentional no-op — these categories have no Zoho counterpart by design.
+  if (mapping.status === "not_applicable") return {};
 
   if (mapping.status === "confirmed") {
-    return mapping.groupName;
+    return { categoryId: mapping.categoryId, categoryName: mapping.categoryName };
   }
 
-  // likely or unresolved — do not ship, log so ops can track
+  // unresolved / likely — log so ops can track
   console.warn(
-    `[zoho-taxonomy] Category "${category}" has no confirmed Zoho group_name mapping (status: ${mapping.status}). ` +
-      `Item will be created without a group. ${mapping.note || ""}`
+    `[zoho-taxonomy] Category "${category}" has no confirmed Zoho category (status: ${mapping.status}). ` +
+      `Item will be created without a category. ${mapping.note || ""}`
   );
-  return undefined;
+  return {};
 }
 
 /**
@@ -149,5 +167,15 @@ export function getZohoGroupName(category: string): string | undefined {
  */
 export function hasVerifiedZohoMapping(category: string): boolean {
   const mapping = ZOHO_CATEGORY_MAP[category];
-  return !!mapping && mapping.status === "confirmed" && !!mapping.groupName;
+  return !!mapping && mapping.status === "confirmed" && !!mapping.categoryId;
+}
+
+/**
+ * @deprecated Use `getZohoCategory()` instead. The Zoho `group_name` field is
+ * effectively unused in our prod org (2 of 1717 items). The real field is
+ * `category_name`/`category_id`. This alias remains so callers that haven't
+ * migrated keep working — it returns the new categoryName.
+ */
+export function getZohoGroupName(category: string): string | undefined {
+  return getZohoCategory(category).categoryName;
 }
