@@ -134,3 +134,73 @@ export function notifyAdminsOfNewCatalogRequest(push: CatalogPushNotification): 
       console.error(`[catalog] Failed to send admin notification: ${err instanceof Error ? err.message : String(err)}`);
     });
 }
+
+// ── TechOps notification: brand auto-added to HubSpot manufacturer enum ────
+
+const TECH_OPS_EMAILS = (process.env.TECH_OPS_REQUESTS_EMAIL || "techops@photonbrothers.com")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
+export interface AutoAddedBrandNotification {
+  brand: string;
+  productName: string | null;
+  productSku: string | null;
+  productCategory: string | null;
+  triggeredAt: string;  // ISO timestamp
+}
+
+/**
+ * Fire-and-forget email to TechOps when a new brand is auto-added to HubSpot's
+ * manufacturer enum (Phase D behavior). Lets ops review additions periodically
+ * to catch typos before they pollute the enum.
+ *
+ * Recipients: TECH_OPS_REQUESTS_EMAIL env var (comma-separated), defaulting
+ * to techops@photonbrothers.com.
+ */
+export function notifyTechOpsOfAutoAddedBrand(data: AutoAddedBrandNotification): void {
+  if (TECH_OPS_EMAILS.length === 0) return;
+
+  const hubspotPropertyUrl = process.env.HUBSPOT_PORTAL_ID
+    ? `https://app.hubspot.com/property-settings/${process.env.HUBSPOT_PORTAL_ID}/properties?type=0-7&action=edit&property=manufacturer`
+    : "https://app.hubspot.com/property-settings";
+
+  const subject = `HubSpot brand auto-added: "${data.brand}"`;
+  const html = `
+    <div style="font-family: sans-serif; max-width: 600px;">
+      <h2 style="margin-bottom: 4px; color: #2563eb;">New brand auto-added to HubSpot manufacturer enum</h2>
+      <p>The brand <strong>${data.brand}</strong> was just added to HubSpot's Products → Manufacturer enum because a product was submitted with it and the value wasn't recognized.</p>
+      <p><strong>Please review</strong> to confirm this isn't a typo. If it is, edit the product to use the correct brand and remove the new enum value via HubSpot Settings.</p>
+      <table style="border-collapse: collapse; width: 100%; margin: 16px 0;">
+        <tr><td style="padding: 6px 12px; font-weight: 600;">Brand added</td><td style="padding: 6px 12px;"><code>${data.brand}</code></td></tr>
+        <tr><td style="padding: 6px 12px; font-weight: 600;">Triggered by product</td><td style="padding: 6px 12px;">${data.productName || "(no name)"}</td></tr>
+        ${data.productSku ? `<tr><td style="padding: 6px 12px; font-weight: 600;">Product SKU</td><td style="padding: 6px 12px;">${data.productSku}</td></tr>` : ""}
+        ${data.productCategory ? `<tr><td style="padding: 6px 12px; font-weight: 600;">Product Category</td><td style="padding: 6px 12px;">${data.productCategory}</td></tr>` : ""}
+        <tr><td style="padding: 6px 12px; font-weight: 600;">When</td><td style="padding: 6px 12px;">${data.triggeredAt}</td></tr>
+      </table>
+      <a href="${hubspotPropertyUrl}" style="display: inline-block; padding: 10px 20px; background: #2563eb; color: white; text-decoration: none; border-radius: 6px;">
+        Review in HubSpot Property Settings
+      </a>
+      <p style="color: #78716c; font-size: 12px; margin-top: 24px;">Sent automatically by the catalog sync — no action needed unless this looks like a typo.</p>
+    </div>
+  `;
+
+  sendEmailMessage({
+    to: TECH_OPS_EMAILS,
+    subject,
+    html,
+    text: `HubSpot brand auto-added: "${data.brand}". Triggered by product "${data.productName || ""}" (${data.productCategory || "?"}). Please review to confirm it's not a typo.`,
+    debugFallbackTitle: "HubSpot brand auto-added",
+    debugFallbackBody: `${data.brand} added to HubSpot manufacturer enum`,
+  })
+    .then((result) => {
+      if (result.success) {
+        console.log(`[catalog] TechOps notified of auto-added brand "${data.brand}" → ${TECH_OPS_EMAILS.join(", ")}`);
+      } else {
+        console.error(`[catalog] Failed to send TechOps brand-add notification: ${result.error}`);
+      }
+    })
+    .catch((err) => {
+      console.error(`[catalog] Failed to send TechOps brand-add notification: ${err instanceof Error ? err.message : String(err)}`);
+    });
+}
