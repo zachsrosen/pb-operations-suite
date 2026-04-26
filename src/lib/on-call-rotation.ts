@@ -63,12 +63,15 @@ function mod(a: number, n: number): number {
   return ((a % n) + n) % n;
 }
 
-// Monday of the week containing dateStr. ISO week start.
-export function mondayOf(dateStr: string): string {
-  const dow = dayOfWeek(dateStr); // 0=Sun,1=Mon,...,6=Sat
-  const offset = dow === 0 ? -6 : 1 - dow;
-  return addDays(dateStr, offset);
+// Sunday of the week containing dateStr. PB on-call weeks run Sun → Sat.
+// Kept exported under both names for back-compat with prior callers; mondayOf
+// is now an alias that points to the Sunday-of helper since we shifted the
+// weekly anchor on 2026-04-22.
+export function sundayOf(dateStr: string): string {
+  const dow = dayOfWeek(dateStr); // 0=Sun, 1=Mon, ..., 6=Sat
+  return addDays(dateStr, -dow);
 }
+export const mondayOf = sundayOf;
 
 export type RotationUnit = "daily" | "weekly";
 

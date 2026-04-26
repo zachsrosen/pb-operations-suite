@@ -12,6 +12,8 @@ type Shift = {
   endDate: string;
   shiftStart: string;
   shiftEnd: string;
+  weekendShiftStart: string;
+  weekendShiftEnd: string;
   timezone: string;
   rotationUnit: string;
 };
@@ -57,15 +59,17 @@ function formatDate(iso: string): string {
   });
 }
 
-function formatShiftWindow(start: string, end: string, tz: string): string {
-  const tzAbbr = tz.includes("Los_Angeles") ? "PT" : "MT";
+function formatShiftWindows(s: Shift): string {
+  const tzAbbr = s.timezone.includes("Los_Angeles") ? "PT" : "MT";
   const fmt = (t: string) => {
     const [h, m] = t.split(":").map(Number);
     const suffix = h >= 12 ? "pm" : "am";
     const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h;
-    return `${h12}${m > 0 ? `:${m}` : ""}${suffix}`;
+    return `${h12}${m > 0 ? `:${String(m).padStart(2, "0")}` : ""}${suffix}`;
   };
-  return `${fmt(start)} → ${fmt(end)} ${tzAbbr}`;
+  const wd = `${fmt(s.shiftStart)}–${fmt(s.shiftEnd)} weekdays`;
+  const we = `${fmt(s.weekendShiftStart)}–${fmt(s.weekendShiftEnd)} weekends`;
+  return `${wd}, ${we} ${tzAbbr}`;
 }
 
 export function OnCallMeClient() {
@@ -229,7 +233,7 @@ export function OnCallMeClient() {
                 <div>
                   <div className="text-sm font-medium">{formatShift(s)}</div>
                   <div className="text-xs text-muted">
-                    {s.poolName} · {formatShiftWindow(s.shiftStart, s.shiftEnd, s.timezone)}
+                    {s.poolName} · {formatShiftWindows(s)}
                     {s.rotationUnit === "weekly" ? " · weekly" : ""}
                   </div>
                 </div>
