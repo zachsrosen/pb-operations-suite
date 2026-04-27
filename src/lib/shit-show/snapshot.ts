@@ -2,7 +2,10 @@
  * Shit Show — snapshot helpers
  *
  * - snapshotFlaggedDeals(sessionId): pulls every deal where pb_shit_show_flagged=true
- *   from HubSpot and creates one ShitShowSessionItem per deal.
+ *   from HubSpot and creates one ShitShowSessionItem per deal. Reuses IDR's
+ *   SNAPSHOT_PROPERTIES + snapshotDealProperties + buildOwnerMap so display
+ *   fields (owners-as-names, equipment summary, address composition, statuses)
+ *   match the IDR meeting hub exactly.
  * - readShitShowFlagsBatch(dealIds): batched property read for known dealIds; used
  *   by the IDR preview route to hydrate the flag without per-deal fetches.
  */
@@ -10,6 +13,11 @@
 import { prisma } from "@/lib/db";
 import { hubspotClient } from "@/lib/hubspot";
 import { SHIT_SHOW_PROPS } from "@/lib/shit-show/hubspot-flag";
+import {
+  SNAPSHOT_PROPERTIES,
+  snapshotDealProperties,
+  buildOwnerMap,
+} from "@/lib/idr-meeting";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 
 export type FlagBatchEntry = { flagged: boolean; reason: string | null };
@@ -50,27 +58,28 @@ export async function readShitShowFlagsBatch(
 /**
  * Snapshot every deal currently flagged in HubSpot into the given session.
  *
- * Idempotent: re-running against the same session skips deals already snapshotted
- * (relies on the @@unique([sessionId, dealId]) constraint).
+ * - First-time deals → INSERT a new ShitShowSessionItem.
+ * - Existing deals (re-snapshot via "↻ Refresh from HubSpot" or repeated
+ *   session-start) → UPDATE the snapshot fields only. Meeting-time fields
+ *   (decision, meeting notes, assignments, sync IDs) stay untouched.
+ *
+ * Display fields use the same shape IDR uses (owner names resolved, equipment
+ * one-liner built from module/inverter/battery brand+model+qty, address composed
+ * from address_line_1 + city + state, etc.).
  */
 export async function snapshotFlaggedDeals(sessionId: string): Promise<{
   created: number;
-  skipped: number;
+  refreshed: number;
 }> {
   const properties = [
-    "dealname", "amount", "system_size_kw", "dealstage", "hubspot_owner_id",
-    SHIT_SHOW_PROPS.REASON, SHIT_SHOW_PROPS.FLAGGED_SINCE,
-    "address", "project_type", "equipment_summary", "pb_location",
-    "survey_status", "survey_date", "design_status", "layout_status",
-    "planset_date", "ahj", "utility_company",
-    "project_manager", "operations_manager", "site_surveyor",
-    "drive_folder_url", "survey_folder_url", "design_folder_url",
-    "sales_documents", "open_solar_url",
+    ...SNAPSHOT_PROPERTIES,
+    "dealstage",
+    SHIT_SHOW_PROPS.REASON,
+    SHIT_SHOW_PROPS.FLAGGED_SINCE,
   ];
 
-  let created = 0;
-  let skipped = 0;
   let after: string | undefined;
+  const allDeals: Array<{ id: string; properties: Record<string, string | null> }> = [];
 
   do {
     const results = await hubspotClient.crm.deals.searchApi.doSearch({
@@ -85,59 +94,83 @@ export async function snapshotFlaggedDeals(sessionId: string): Promise<{
       limit: 100,
       ...(after ? { after } : {}),
     });
-
     for (const deal of results.results) {
-      const p = (deal.properties ?? {}) as Record<string, string | null | undefined>;
-      try {
-        await prisma.shitShowSessionItem.create({
-          data: {
-            sessionId,
-            dealId: deal.id,
-            region: p.pb_location ?? "Unknown",
-            dealName: p.dealname ?? "(no name)",
-            dealAmount: p.amount ? Number(p.amount) : null,
-            systemSizeKw: p.system_size_kw ? Number(p.system_size_kw) : null,
-            stage: p.dealstage ?? null,
-            dealOwner: p.hubspot_owner_id ?? null,
-            reasonSnapshot: p[SHIT_SHOW_PROPS.REASON] ?? null,
-            flaggedSince: p[SHIT_SHOW_PROPS.FLAGGED_SINCE]
-              ? new Date(p[SHIT_SHOW_PROPS.FLAGGED_SINCE]!)
-              : null,
-            address: p.address ?? null,
-            projectType: p.project_type ?? null,
-            equipmentSummary: p.equipment_summary ?? null,
-            surveyStatus: p.survey_status ?? null,
-            surveyDate: p.survey_date ?? null,
-            designStatus: p.design_status ?? null,
-            designApprovalStatus: p.layout_status ?? null,
-            plansetDate: p.planset_date ?? null,
-            ahj: p.ahj ?? null,
-            utilityCompany: p.utility_company ?? null,
-            projectManager: p.project_manager ?? null,
-            operationsManager: p.operations_manager ?? null,
-            siteSurveyor: p.site_surveyor ?? null,
-            driveFolderUrl: p.drive_folder_url ?? null,
-            surveyFolderUrl: p.survey_folder_url ?? null,
-            designFolderUrl: p.design_folder_url ?? null,
-            salesFolderUrl: p.sales_documents ?? null,
-            openSolarUrl: p.open_solar_url ?? null,
-            addedBy: "SYSTEM",
-          },
-        });
-        created += 1;
-      } catch (e) {
-        // P2002 = unique constraint = already snapshotted in this session.
-        if (e instanceof Error && e.message.includes("P2002")) {
-          skipped += 1;
-        } else {
-          throw e;
-        }
-      }
+      allDeals.push({
+        id: deal.id,
+        properties: (deal.properties ?? {}) as Record<string, string | null>,
+      });
     }
-
-    // Pagination
     after = (results.paging?.next?.after as string | undefined) ?? undefined;
   } while (after);
 
-  return { created, skipped };
+  // Resolve owner IDs → names in one batched lookup.
+  const ownerMap = await buildOwnerMap(
+    allDeals.map((d) => ({ properties: d.properties })),
+  );
+
+  let created = 0;
+  let refreshed = 0;
+
+  for (const deal of allDeals) {
+    const p = deal.properties;
+    const snap = snapshotDealProperties(p, ownerMap);
+
+    // Snapshot fields refresh on every re-snapshot. Meeting-time fields stay.
+    const snapshotData = {
+      region: snap.region,
+      dealName: snap.dealName,
+      dealAmount: snap.dealAmount,
+      systemSizeKw: snap.systemSizeKw,
+      stage: p.dealstage ?? null,
+      dealOwner: snap.dealOwner,
+      reasonSnapshot: p[SHIT_SHOW_PROPS.REASON] ?? null,
+      flaggedSince: p[SHIT_SHOW_PROPS.FLAGGED_SINCE]
+        ? new Date(p[SHIT_SHOW_PROPS.FLAGGED_SINCE]!)
+        : null,
+      address: snap.address,
+      projectType: snap.projectType,
+      equipmentSummary: snap.equipmentSummary,
+      surveyStatus: snap.surveyStatus,
+      surveyDate: snap.surveyDate,
+      designStatus: snap.designStatus,
+      designApprovalStatus: snap.designApprovalStatus,
+      plansetDate: snap.plansetDate,
+      ahj: snap.ahj,
+      utilityCompany: snap.utilityCompany,
+      projectManager: snap.projectManager,
+      operationsManager: snap.operationsManager,
+      siteSurveyor: snap.siteSurveyor,
+      driveFolderUrl: snap.driveFolderUrl,
+      surveyFolderUrl: snap.surveyFolderUrl,
+      designFolderUrl: snap.designFolderUrl,
+      salesFolderUrl: snap.salesFolderUrl,
+      openSolarUrl: snap.openSolarUrl,
+      snapshotUpdatedAt: new Date(),
+    };
+
+    const existing = await prisma.shitShowSessionItem.findUnique({
+      where: { sessionId_dealId: { sessionId, dealId: deal.id } },
+      select: { id: true },
+    });
+
+    if (existing) {
+      await prisma.shitShowSessionItem.update({
+        where: { id: existing.id },
+        data: snapshotData,
+      });
+      refreshed += 1;
+    } else {
+      await prisma.shitShowSessionItem.create({
+        data: {
+          sessionId,
+          dealId: deal.id,
+          ...snapshotData,
+          addedBy: "SYSTEM",
+        },
+      });
+      created += 1;
+    }
+  }
+
+  return { created, refreshed };
 }
