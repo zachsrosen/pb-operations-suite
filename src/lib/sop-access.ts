@@ -11,8 +11,7 @@
  *      listed role gets access (multi-role union).
  *   4. SECTION_ROLE_GATES restrict specific sections within otherwise-
  *      visible tabs. ADMIN_ONLY_SECTIONS is a back-compat shortcut.
- *   5. Special legacy gates: PM Guide tab is name-gated; role-de is
- *      TECH_OPS only.
+ *   5. Special legacy gate: PM Guide tab is name-gated.
  *
  * Multi-role users: pass `roles` as an array; access is granted if ANY
  * role passes the check. Single-string `role` argument is supported for
@@ -93,6 +92,12 @@ const TAB_ROLE_GATES: Record<string, ReadonlyArray<string>> = {
   "sales-marketing-sop": ["SALES", "SALES_MANAGER", "MARKETING"],
   // Executive SOP — intentionally NOT listed here. Admin/owner/executive
   // bypass all gates already, and unknown tabs are admin-only by default.
+
+  // Role-specific SOP tabs — legacy TECH_OPS keeps access to all three so
+  // existing tech-ops users don't lose anything during the role split.
+  "role-de": ["DESIGN", "TECH_OPS"],
+  "role-permit": ["PERMIT", "TECH_OPS"],
+  "role-ic": ["INTERCONNECT", "TECH_OPS"],
 };
 
 /** PM Guide — gated by first name (legacy) */
@@ -203,11 +208,6 @@ export function canAccessTab(
 
   // PM Guide — name-gated.
   if (tabId === "pm") return PM_NAMES.has(firstName);
-
-  // Tech Ops tab.
-  if (tabId === "role-de") {
-    return normalizeRoles(roles).includes("TECH_OPS");
-  }
 
   // Unknown / shelved tabs (other, role-ops, etc.) — denied.
   return false;
