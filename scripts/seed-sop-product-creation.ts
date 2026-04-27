@@ -1,5 +1,5 @@
 /**
- * Seed the "Submitting a New Product" SOP section into the `zoho-inventory` tab.
+ * Seed the Catalog SOP tab and its initial "Submitting a New Product" section.
  *
  * Usage:
  *   source .env && npx tsx scripts/seed-sop-product-creation.ts
@@ -7,10 +7,11 @@
  * Idempotent: skips if the section already exists.
  * To rewrite content, pass --force.
  *
- * Migration: if a prior section exists at id `ops-product-creation` (in the
- * `ops` tab from an earlier seed run), it is removed before the new row is
- * created. The `ops` tab is labeled "Project Pipeline" in the UI and is not
- * the right home for catalog content.
+ * Migration: cleans up earlier placements (the original `ops-product-creation`
+ * row in the `ops`/Project Pipeline tab, and the intermediate
+ * `zi-product-creation` row in the `zoho-inventory` tab). Catalog deserves
+ * its own SOP tab — it's a distinct workflow from inventory operations and
+ * has room to grow (editing products, deduping, vendor management, etc.).
  */
 
 import { PrismaClient } from "../src/generated/prisma/client";
@@ -27,11 +28,14 @@ const prisma = new PrismaClient({
 
 const FORCE = process.argv.includes("--force");
 
-const TAB_ID = "zoho-inventory";
-const SECTION_ID = "zi-product-creation";
-const LEGACY_SECTION_ID = "ops-product-creation";
+const TAB_ID = "catalog";
+const TAB_LABEL = "Catalog";
+const TAB_SORT = 8; // After zoho-inventory (7)
+
+const SECTION_ID = "cat-submit-new-product";
+const LEGACY_SECTION_IDS = ["ops-product-creation", "zi-product-creation"];
 const SECTION_TITLE = "Submitting a New Product";
-const SIDEBAR_GROUP = "Catalog";
+const SIDEBAR_GROUP = "Adding Products";
 const DOT_COLOR = "cyan";
 
 // ─── Section content ──────────────────────────────────────────────
@@ -219,21 +223,24 @@ const SECTION = {
 };
 
 async function main() {
-  // Confirm the parent tab exists.
-  const tab = await prisma.sopTab.findUnique({ where: { id: TAB_ID } });
-  if (!tab) {
-    console.error(`ERROR: Tab "${TAB_ID}" does not exist. Run scripts/seed-sop.ts first.`);
-    process.exit(1);
+  // Create the Catalog tab if it doesn't exist yet.
+  const existingTab = await prisma.sopTab.findUnique({ where: { id: TAB_ID } });
+  if (!existingTab) {
+    await prisma.sopTab.create({
+      data: { id: TAB_ID, label: TAB_LABEL, sortOrder: TAB_SORT },
+    });
+    console.log(`Created tab: ${TAB_ID} (${TAB_LABEL})`);
   }
 
-  // Migrate from legacy id (`ops-product-creation` in the `ops` tab).
-  // First seed run placed the section in the wrong tab — clean up before recreating.
-  const legacy = await prisma.sopSection.findUnique({ where: { id: LEGACY_SECTION_ID } });
-  if (legacy) {
-    await prisma.sopRevision.deleteMany({ where: { sectionId: LEGACY_SECTION_ID } });
-    await prisma.sopSuggestion.deleteMany({ where: { sectionId: LEGACY_SECTION_ID } });
-    await prisma.sopSection.delete({ where: { id: LEGACY_SECTION_ID } });
-    console.log(`Removed legacy section "${LEGACY_SECTION_ID}" from tab "${legacy.tabId}".`);
+  // Migrate from prior placements (ops/Project Pipeline, then zoho-inventory).
+  for (const legacyId of LEGACY_SECTION_IDS) {
+    const legacy = await prisma.sopSection.findUnique({ where: { id: legacyId } });
+    if (legacy) {
+      await prisma.sopRevision.deleteMany({ where: { sectionId: legacyId } });
+      await prisma.sopSuggestion.deleteMany({ where: { sectionId: legacyId } });
+      await prisma.sopSection.delete({ where: { id: legacyId } });
+      console.log(`Removed legacy section "${legacyId}" from tab "${legacy.tabId}".`);
+    }
   }
 
   // Resolve sortOrder collisions by bumping to next free slot.
