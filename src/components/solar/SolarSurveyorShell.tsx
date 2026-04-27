@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
+import { EagleViewPanel } from "@/components/EagleViewPanel";
 import ProjectBrowser from "./ProjectBrowser";
 import ClassicWorkspace from "./ClassicWorkspace";
 import SetupWizard from "./SetupWizard";
@@ -71,6 +72,14 @@ export default function SolarSurveyorShell({
     const from = searchParams.get("suite");
     const parent = from ? SUITE_BREADCRUMBS[from] : null;
     return parent ? [parent] : undefined;
+  }, [searchParams]);
+
+  // Optional HubSpot deal link via ?dealId= URL param. When set, renders the
+  // EagleView panel above the workspace so surveyors/designers can pull
+  // TrueDesign files without leaving Solar Surveyor.
+  const linkedDealId = useMemo(() => {
+    const v = searchParams.get("dealId");
+    return v && /^[0-9]+$/.test(v) ? v : null;
   }, [searchParams]);
 
   // CSRF bootstrap — call /api/solar/session to set csrf_token cookie
@@ -190,6 +199,12 @@ export default function SolarSurveyorShell({
       headerRight={headerRight}
       breadcrumbs={breadcrumbs}
     >
+      {linkedDealId && (
+        <div className="mb-4">
+          <EagleViewPanel dealId={linkedDealId} />
+        </div>
+      )}
+
       {activeView === "native" && (
         <ProjectBrowser
           onOpenClassic={handleOpenInClassic}

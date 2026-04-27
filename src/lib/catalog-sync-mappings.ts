@@ -135,21 +135,31 @@ const STATIC_EDGES: FieldMappingEdge[] = [
 ];
 
 // ── Category-conditional edges ──
-// Derived from CATEGORY_CONFIGS hubspotProperty definitions.
+// Derived from per-system keys on FieldDef (hubspotProperty, zuperCustomField, zohoCustomField).
 
-function buildCategoryHubSpotEdges(): FieldMappingEdge[] {
+const SYSTEM_KEY_MAP: Record<ExternalSystem, keyof FieldDef> = {
+  hubspot: "hubspotProperty",
+  zuper: "zuperCustomField",
+  zoho: "zohoCustomField",
+};
+
+function buildCategoryExternalEdges(): FieldMappingEdge[] {
   const edges: FieldMappingEdge[] = [];
   for (const [category, config] of Object.entries(CATEGORY_CONFIGS)) {
     if (!config.fields) continue;
     for (const field of config.fields as FieldDef[]) {
-      if (!field.hubspotProperty) continue;
-      edges.push({
-        system: "hubspot",
-        externalField: field.hubspotProperty,
-        internalField: field.key,
-        normalizeWith: field.type === "number" ? "number" : "trimmed-string",
-        condition: { category: [category] },
-      });
+      for (const system of Object.keys(SYSTEM_KEY_MAP) as ExternalSystem[]) {
+        const externalKey = SYSTEM_KEY_MAP[system];
+        const externalField = field[externalKey];
+        if (typeof externalField !== "string") continue;
+        edges.push({
+          system,
+          externalField,
+          internalField: field.key,
+          normalizeWith: field.type === "number" ? "number" : "trimmed-string",
+          condition: { category: [category] },
+        });
+      }
     }
   }
   // Merge edges with same system+externalField+internalField but different categories
@@ -170,9 +180,14 @@ function buildCategoryHubSpotEdges(): FieldMappingEdge[] {
 
 let _allEdges: FieldMappingEdge[] | null = null;
 
+/** Reset the cached edge list. Intended for tests that monkey-patch CATEGORY_CONFIGS. */
+export function _resetEdgeCache(): void {
+  _allEdges = null;
+}
+
 export function getAllMappingEdges(): FieldMappingEdge[] {
   if (!_allEdges) {
-    _allEdges = [...STATIC_EDGES, ...buildCategoryHubSpotEdges()];
+    _allEdges = [...STATIC_EDGES, ...buildCategoryExternalEdges()];
   }
   return _allEdges;
 }

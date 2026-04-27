@@ -1,3 +1,5 @@
+import { getCategoryFields, type FieldDef } from "@/lib/catalog-fields";
+
 const DEFAULT_ZUPER_API_URL = "https://us-west-1c.zuperpro.com/api";
 
 type JsonRecord = Record<string, unknown>;
@@ -136,6 +138,48 @@ export interface UpsertZuperPartInput {
   unitCost?: number | null;
   category?: string | null;
   specification?: string | null;
+  length?: number | null;
+  width?: number | null;
+  weight?: number | null;
+  /**
+   * Cross-link ID custom fields, keyed by the snake_case Zuper field-key
+   * (`hubspot_product_id`, `zoho_item_id`, `internal_product_id`). These
+   * specific keys were registered with that exact snake_case pattern long ago,
+   * so Zuper's create endpoint correctly maps them to the corresponding
+   * `meta_data` entries server-side. DO NOT use this for spec fields — pass
+   * them via `customMetaData` instead.
+   */
+  customFields?: Record<string, unknown>;
+  /**
+   * Spec field values written via Zuper `meta_data`. Each entry must include
+   * the EXACT label registered in Zuper (e.g. "Module Wattage (W)"), the
+   * value, and a `type` (e.g. "NUMBER", "DROPDOWN", "SINGLE_LINE"). For
+   * DROPDOWN type, callers should also include `options: [{label, value}]`.
+   *
+   * The create-path forwards these to Zuper's `/product` POST as
+   * `meta_data: [...]`. The update path (executeZuperSync in catalog-sync.ts)
+   * fetches the existing meta_data array, merges spec entries by label, and
+   * PUTs the full merged array — Zuper writes are not deltas, so unrelated
+   * entries (e.g. cross-link IDs registered as meta_data labels) must be
+   * preserved.
+   */
+  customMetaData?: ZuperMetaDataEntry[];
+}
+
+export interface ZuperMetaDataOption {
+  label: string;
+  value: string;
+}
+
+export interface ZuperMetaDataEntry {
+  label: string;
+  value: unknown;
+  /** Zuper data type: "NUMBER", "DROPDOWN", "SINGLE_LINE", "MULTI_LINE", "BOOLEAN", etc. */
+  type: string;
+  hide_field?: boolean;
+  hide_to_fe?: boolean;
+  module_name?: string;
+  options?: ZuperMetaDataOption[];
 }
 
 export interface UpsertZuperPartResult {
@@ -201,6 +245,151 @@ export function getZuperHubSpotProductFieldKey(): string {
 
 export function getZuperHubSpotProductFieldLabel(): string {
   return ZUPER_HUBSPOT_PRODUCT_FIELD_LABEL;
+}
+
+/**
+ * Build a Zuper `meta_data` array from a category's spec metadata by walking
+ * `getCategoryFields(category)` and pulling values for any FieldDef that has
+ * `zuperCustomField` populated.
+ *
+ * `FieldDef.zuperCustomField` is interpreted as the EXACT Zuper-registered
+ * label (e.g. "Module Wattage (W)") — verified working against an anchor
+ * product write (Phase B, 2026-04-24). Spec fields registered via meta_data
+ * (rather than the legacy snake_case `custom_fields:` shape used for
+ * cross-link IDs like `hubspot_product_id`) only update reliably when sent
+ * back as meta_data entries with the same label.
+ *
+ * Returns `undefined` (not `[]`) when there are no values to write so the
+ * caller can spread it without producing an empty `meta_data: []`.
+ *
+ * Each entry includes a Zuper-compatible `type` derived from the FieldDef:
+ *   - `number` → `"NUMBER"`
+ *   - `dropdown` → `"DROPDOWN"` (and includes `options: [{label, value}]`)
+ *   - `text` → `"SINGLE_LINE"`
+ *   - `toggle` → `"BOOLEAN"`
+ */
+export function buildZuperSpecMetaData(
+  category: string,
+  metadata: Record<string, unknown> | null | undefined,
+): ZuperMetaDataEntry[] | undefined {
+  if (!metadata) return undefined;
+  const fields = getCategoryFields(category);
+  const out: ZuperMetaDataEntry[] = [];
+  for (const f of fields) {
+    if (!f.zuperCustomField) continue;
+    const v = metadata[f.key];
+    if (v === null || v === undefined || v === "") continue;
+    out.push(buildZuperMetaDataEntry(f, v));
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+/**
+ * Build a single Zuper meta_data entry from a FieldDef and a value. Used by
+ * both the create path (via `buildZuperSpecMetaData`) and the update path
+ * (catalog-sync.ts → `executeZuperSync`) so the entry shape stays consistent.
+ *
+ * Caller is responsible for skipping null/undefined/empty values; this helper
+ * always emits an entry with whatever value it's given.
+ */
+export function buildZuperMetaDataEntry(
+  field: FieldDef,
+  value: unknown,
+): ZuperMetaDataEntry {
+  let type: string;
+  switch (field.type) {
+    case "number":
+      type = "NUMBER";
+      break;
+    case "dropdown":
+      type = "DROPDOWN";
+      break;
+    case "toggle":
+      type = "BOOLEAN";
+      break;
+    case "text":
+    default:
+      type = "SINGLE_LINE";
+  }
+
+  if (!field.zuperCustomField) {
+    throw new Error(
+      `buildZuperMetaDataEntry called with a FieldDef that has no zuperCustomField (key=${field.key})`,
+    );
+  }
+
+  const entry: ZuperMetaDataEntry = {
+    label: field.zuperCustomField,
+    value,
+    type,
+    hide_field: false,
+    hide_to_fe: false,
+    module_name: "PRODUCT",
+  };
+
+  if (field.type === "dropdown" && Array.isArray(field.options)) {
+    entry.options = field.options.map((opt) => ({ label: opt, value: opt }));
+  }
+
+  return entry;
+}
+
+/**
+ * Merge spec-field updates into an existing Zuper meta_data array.
+ *
+ * Zuper requires the FULL meta_data array on every PUT — partial writes
+ * silently drop omitted entries, so cross-link IDs and other unrelated spec
+ * values must be preserved. This helper:
+ *   - replaces existing entries that share a label with an update
+ *   - appends updates whose label isn't present
+ *   - leaves all other existing entries (and their order) untouched
+ */
+export function mergeZuperMetaData(
+  existing: unknown,
+  updates: ZuperMetaDataEntry[],
+): ZuperMetaDataEntry[] {
+  const safeExisting: ZuperMetaDataEntry[] = Array.isArray(existing)
+    ? (existing.filter((e) => e && typeof e === "object") as ZuperMetaDataEntry[])
+    : [];
+
+  const updateByLabel = new Map<string, ZuperMetaDataEntry>();
+  for (const u of updates) updateByLabel.set(u.label, u);
+
+  const merged: ZuperMetaDataEntry[] = [];
+  const consumed = new Set<string>();
+
+  for (const entry of safeExisting) {
+    const label = typeof entry?.label === "string" ? entry.label : null;
+    if (label && updateByLabel.has(label)) {
+      merged.push(updateByLabel.get(label)!);
+      consumed.add(label);
+    } else {
+      merged.push(entry);
+    }
+  }
+
+  for (const u of updates) {
+    if (!consumed.has(u.label)) merged.push(u);
+  }
+
+  return merged;
+}
+
+/**
+ * @deprecated Use `buildZuperSpecMetaData` instead. The legacy
+ * `custom_fields: { snake_case_key: value }` write shape is a silent no-op for
+ * fields registered via meta_data labels (which is how new spec fields are
+ * created — see Phase B Zuper field-creation, 2026-04-24). Kept as an alias
+ * returning `undefined` so any straggler callers don't accidentally write
+ * stale spec data via the wrong path; cross-link IDs continue to flow through
+ * `buildZuperProductCustomFields` (snake_case) — that path is unchanged
+ * because those keys are registered with snake_case names.
+ */
+export function buildZuperCustomFieldsFromMetadata(
+  _category: string,
+  _metadata: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | undefined {
+  return undefined;
 }
 
 export function buildZuperProductCustomFields(
@@ -547,6 +736,28 @@ async function getCreateBodyVariants(endpoint: string, payload: JsonRecord): Pro
       : "PRODUCT";
     const categoryUid = await resolveZuperCategoryUid(productCategory);
 
+    const length = isFiniteNumber(payload.length) ? payload.length : undefined;
+    const width = isFiniteNumber(payload.width) ? payload.width : undefined;
+    const weight = isFiniteNumber(payload.weight) ? payload.weight : undefined;
+
+    // Forward cross-link ID custom fields if the caller passed them through
+    // optionalPayload. Zuper's create endpoint accepts `custom_fields` as a
+    // flat object of field-key → value pairs and translates them into
+    // meta_data entries server-side. ONLY snake_case keys registered with
+    // that exact pattern (e.g. `hubspot_product_id`) work via this path; spec
+    // fields registered by label must be sent via `meta_data` instead.
+    const customFields =
+      isRecord(payload.custom_fields) && Object.keys(payload.custom_fields).length > 0
+        ? (payload.custom_fields as JsonRecord)
+        : undefined;
+
+    // Forward meta_data spec entries through to the /product create body.
+    // Each entry must include label/value/type and (for DROPDOWN) options.
+    const metaData =
+      Array.isArray(payload.meta_data) && payload.meta_data.length > 0
+        ? (payload.meta_data as unknown[])
+        : undefined;
+
     // product_no is auto-assigned by Zuper as a sequential integer.
     // Sending a string SKU causes a CastError, so we omit it.
     const productPayload: JsonRecord = {
@@ -559,6 +770,11 @@ async function getCreateBodyVariants(endpoint: string, payload: JsonRecord): Pro
       ...(uom ? { uom } : {}),
       ...(price ? { price: Number(price) || undefined } : {}),
       ...(purchasePrice ? { purchase_price: String(purchasePrice) } : {}),
+      ...(length !== undefined ? { length } : {}),
+      ...(width !== undefined ? { width } : {}),
+      ...(weight !== undefined ? { weight } : {}),
+      ...(customFields ? { custom_fields: customFields } : {}),
+      ...(metaData ? { meta_data: metaData } : {}),
     };
     return [
       { label: "product", body: { product: productPayload } },
@@ -791,6 +1007,24 @@ export async function createOrUpdateZuperPart(
       : {}),
     ...(isFiniteNumber(input.unitCost)
       ? { cost_price: input.unitCost, purchase_rate: input.unitCost, cost: input.unitCost }
+      : {}),
+    ...(isFiniteNumber(input.length) ? { length: input.length } : {}),
+    ...(isFiniteNumber(input.width) ? { width: input.width } : {}),
+    ...(isFiniteNumber(input.weight) ? { weight: input.weight } : {}),
+    // Cross-link ID custom fields (snake_case keys: `hubspot_product_id`,
+    // `zoho_item_id`, `internal_product_id`). These specific keys were
+    // registered with that exact pattern long ago, so Zuper's create endpoint
+    // maps them to the corresponding meta_data entries server-side. Spec
+    // fields use `meta_data` directly (see customMetaData below). Only
+    // included when non-empty so we don't send `custom_fields: {}`.
+    ...(input.customFields && Object.keys(input.customFields).length > 0
+      ? { custom_fields: input.customFields }
+      : {}),
+    // Spec field custom values written via Zuper's `meta_data` array. Required
+    // for fields registered by label (no snake_case `field_key`) — the legacy
+    // `custom_fields: { ... }` shape is a silent no-op for those.
+    ...(input.customMetaData && input.customMetaData.length > 0
+      ? { meta_data: input.customMetaData }
       : {}),
   };
 

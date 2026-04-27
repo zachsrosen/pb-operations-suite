@@ -19,11 +19,17 @@ import {
   getSpecTableName,
   getZuperCategoryValue,
 } from "@/lib/catalog-fields";
-import { createOrUpdateHubSpotProduct } from "@/lib/hubspot";
-import { createOrUpdateZohoItem, uploadZohoItemImage, zohoInventory } from "@/lib/zoho-inventory";
-import { createOrUpdateZuperPart, updateZuperPart, buildZuperProductCustomFields } from "@/lib/zuper-catalog";
+import { createOrUpdateHubSpotProduct, HubSpotManufacturerEnumError } from "@/lib/hubspot";
+import { createOrUpdateZohoItem, uploadZohoItemImage } from "@/lib/zoho-inventory";
+import {
+  buildZuperProductCustomFields,
+  buildZuperSpecMetaData,
+  createOrUpdateZuperPart,
+} from "@/lib/zuper-catalog";
+import { writeCrossLinkIds } from "@/lib/catalog-cross-link";
 import { notifyAdminsOfApprovalWarnings } from "@/lib/catalog-notify";
 import { buildCanonicalKey, canonicalToken } from "@/lib/canonical";
+import { logCatalogSync, logCatalogProductCreated, CatalogSyncSource } from "@/lib/catalog-activity-log";
 
 /**
  * Extract the blob pathname (e.g. "catalog-photos/foo.png") from the photoUrl
@@ -130,7 +136,10 @@ function shouldMarkApproved(summary: ApprovalSummary): boolean {
   return summary.failed === 0 && summary.notImplemented === 0 && summary.skipped === 0;
 }
 
-export async function executeCatalogPushApproval(id: string): Promise<ApprovalResult> {
+export async function executeCatalogPushApproval(
+  id: string,
+  options: { source?: CatalogSyncSource; userEmail?: string } = {}
+): Promise<ApprovalResult> {
   if (!prisma) {
     return {
       push: null,
@@ -161,6 +170,8 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
     };
   }
 
+  const startedAt = Date.now();
+
   const selectedSystems = push.systems.filter((system): system is SystemName =>
     (VALID_SYSTEMS as readonly string[]).includes(system)
   );
@@ -171,6 +182,7 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
 
   // Keep core internal writes atomic; final APPROVED status is set only if all
   // selected systems complete successfully.
+  let wasInternalCreate = false;
   const basePush = await prisma.$transaction(async (tx) => {
     let internalSkuId: string | null = push.internalSkuId;
 
@@ -206,6 +218,19 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
         canonicalModel: cModel || null,
         canonicalKey: cKey,
       };
+
+      // Check existence before upsert so we can distinguish create from update for audit logging.
+      const existing = await tx.internalProduct.findUnique({
+        where: {
+          category_brand_model: {
+            category: push.category as EquipmentCategory,
+            brand: push.brand,
+            model: push.model,
+          },
+        },
+        select: { id: true },
+      });
+      wasInternalCreate = existing === null;
 
       const sku = await tx.internalProduct.upsert({
         where: {
@@ -320,11 +345,18 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
             : "Updated existing HubSpot product.") + hubspotWarnings,
         };
       } catch (error) {
-        outcomes.HUBSPOT = {
-          status: "failed",
-          message:
-            error instanceof Error ? error.message : "HubSpot product push failed.",
-        };
+        if (error instanceof HubSpotManufacturerEnumError) {
+          outcomes.HUBSPOT = {
+            status: "failed",
+            message: `Brand "${error.brand}" is not in HubSpot's manufacturer enum. Add it in HubSpot Settings → Properties → Products → Manufacturer (or correct the brand spelling), then retry.`,
+          };
+        } else {
+          outcomes.HUBSPOT = {
+            status: "failed",
+            message:
+              error instanceof Error ? error.message : "HubSpot product push failed.",
+          };
+        }
       }
     }
   }
@@ -408,6 +440,18 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
             ? generateZuperSpecification(push.category, metadata)
             : undefined;
 
+        // Cross-link IDs (snake_case keys registered with that exact pattern
+        // long ago — `hubspot_product_id`, `zoho_item_id`,
+        // `internal_product_id`). HubSpot/Zoho IDs may already be set on this
+        // approval if those steps ran first; internalSkuId is set by the
+        // INTERNAL block above. Spec values flow via customMetaData below.
+        const crossLinkIds = buildZuperProductCustomFields({
+          internalProductId: basePush.internalSkuId,
+          hubspotProductId:
+            outcomes.HUBSPOT?.externalId || basePush.hubspotProductId,
+          zohoItemId: outcomes.ZOHO?.externalId || basePush.zohoItemId,
+        });
+
         const zuperResult = await createOrUpdateZuperPart({
           brand: push.brand,
           model: push.model,
@@ -420,6 +464,11 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
           unitCost: push.unitCost,
           category: getZuperCategoryValue(push.category) || push.category,
           specification: specSummary,
+          length: push.length,
+          width: push.width,
+          weight: push.weight,
+          customFields: crossLinkIds || undefined,
+          customMetaData: buildZuperSpecMetaData(push.category, metadata),
         });
 
         await prisma.$transaction(async (tx) => {
@@ -456,30 +505,26 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
     }
   }
 
-  // Cross-link: write Zuper, HubSpot, and Internal Product IDs to Zoho item custom fields.
+  // Cross-link: write each system's ID into the others' custom-fields/properties.
   const zohoId = outcomes.ZOHO?.externalId || basePush.zohoItemId;
   const zuperId = outcomes.ZUPER?.externalId || basePush.zuperItemId;
   const hsId = outcomes.HUBSPOT?.externalId || basePush.hubspotProductId;
   const internalSkuId = basePush.internalSkuId;
-  if (zohoId && (zuperId || hsId || internalSkuId)) {
-    try {
-      const customFields: Array<{ api_name: string; value: string }> = [];
-      if (zuperId) customFields.push({ api_name: "cf_zuper_product_id", value: zuperId });
-      if (hsId) customFields.push({ api_name: "cf_hubspot_product_id", value: hsId });
-      if (internalSkuId) customFields.push({ api_name: "cf_internal_product_id", value: internalSkuId });
-      if (customFields.length > 0) {
-        const zohoResult = await zohoInventory.updateItem(zohoId, { custom_fields: customFields });
-        if (zohoResult.status !== "updated") {
-          const msg = `Zoho cross-link update returned ${zohoResult.status}: ${zohoResult.message || "unknown"}`;
-          if (outcomes.ZOHO?.message) outcomes.ZOHO.message += ` (Warning: ${msg})`;
-        }
-      }
-    } catch {
-      const msg = "Could not write custom field cross-links to Zoho item";
-      if (outcomes.ZOHO?.message) {
-        outcomes.ZOHO.message += ` (Warning: ${msg})`;
-      }
-    }
+
+  const crossLink = await writeCrossLinkIds({
+    zohoItemId: zohoId,
+    zuperItemId: zuperId,
+    hubspotProductId: hsId,
+    internalProductId: internalSkuId,
+  });
+
+  // Append cross-link warnings to the originating system's outcome message.
+  for (const warning of crossLink.warnings) {
+    const sys = warning.startsWith("Zoho") ? outcomes.ZOHO
+      : warning.startsWith("Zuper") ? outcomes.ZUPER
+      : warning.startsWith("HubSpot") ? outcomes.HUBSPOT
+      : null;
+    if (sys?.message) sys.message += ` (Warning: ${warning})`;
   }
 
   // Push the product photo (if any) to Zoho Inventory.
@@ -528,58 +573,6 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
     }
   }
 
-  if (zuperId && (hsId || zohoId || internalSkuId)) {
-    try {
-      const zuperCustomFields = buildZuperProductCustomFields({
-        hubspotProductId: hsId,
-        zohoItemId: zohoId,
-        internalProductId: internalSkuId,
-      });
-      if (zuperCustomFields) {
-        const zuperResult = await updateZuperPart(zuperId, { custom_fields: zuperCustomFields });
-        if (zuperResult.status !== "updated") {
-          const msg = `Zuper cross-link update returned ${zuperResult.status}: ${zuperResult.message || "unknown"}`;
-          if (outcomes.ZUPER?.message) {
-            outcomes.ZUPER.message += ` (Warning: ${msg})`;
-          }
-        }
-      }
-    } catch {
-      const msg = "Could not write cross-link IDs to Zuper product";
-      if (outcomes.ZUPER?.message) {
-        outcomes.ZUPER.message += ` (Warning: ${msg})`;
-      }
-    }
-  }
-
-  if (hsId && (zuperId || zohoId || internalSkuId)) {
-    try {
-      const hsProps: Record<string, string> = {};
-      if (zuperId) hsProps.zuper_item_id = zuperId;
-      if (zohoId) hsProps.zoho_item_id = zohoId;
-      if (internalSkuId) hsProps.internal_product_id = internalSkuId;
-      if (Object.keys(hsProps).length > 0) {
-        const token = process.env.HUBSPOT_ACCESS_TOKEN;
-        if (token) {
-          const hsRes = await fetch(`https://api.hubapi.com/crm/v3/objects/products/${hsId}`, {
-            method: "PATCH",
-            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-            body: JSON.stringify({ properties: hsProps }),
-          });
-          if (!hsRes.ok) {
-            const msg = `HubSpot cross-link PATCH returned ${hsRes.status}`;
-            if (outcomes.HUBSPOT?.message) outcomes.HUBSPOT.message += ` (Warning: ${msg})`;
-          }
-        }
-      }
-    } catch {
-      const msg = "Could not write cross-link IDs to HubSpot product";
-      if (outcomes.HUBSPOT?.message) {
-        outcomes.HUBSPOT.message += ` (Warning: ${msg})`;
-      }
-    }
-  }
-
   const summary = makeSummary(outcomes);
   const finalizeApproved = shouldMarkApproved(summary);
 
@@ -611,6 +604,53 @@ export async function executeCatalogPushApproval(id: string): Promise<ApprovalRe
         model: push.model,
         category: push.category,
         systemWarnings,
+      });
+    }
+  }
+
+  // Audit logging: write ActivityLog row and bump sync watermark.
+  if (basePush.internalSkuId) {
+    const effectiveUserEmail = options.userEmail || push.requestedBy;
+    const effectiveSource = options.source || "wizard";
+    const productName = `${push.brand} ${push.model}`.trim();
+
+    // logCatalogSync — fire-and-forget, never fail the overall response
+    logCatalogSync({
+      internalProductId: basePush.internalSkuId,
+      productName,
+      userEmail: effectiveUserEmail,
+      source: effectiveSource,
+      outcomes,
+      durationMs: Date.now() - startedAt,
+      ...(push.dealId ? { dealId: push.dealId } : {}),
+    }).catch((err) => {
+      console.warn("[catalog] logCatalogSync failed (non-fatal):", err);
+    });
+
+    // Bump lastSyncedAt / lastSyncedBy watermark on the InternalProduct row.
+    prisma.internalProduct
+      .update({
+        where: { id: basePush.internalSkuId },
+        data: {
+          lastSyncedAt: new Date(),
+          lastSyncedBy: effectiveUserEmail,
+        },
+      })
+      .catch((err) => {
+        console.warn("[catalog] lastSyncedAt watermark update failed (non-fatal):", err);
+      });
+
+    // logCatalogProductCreated — only when this approval created a new InternalProduct row
+    if (wasInternalCreate) {
+      logCatalogProductCreated({
+        internalProductId: basePush.internalSkuId,
+        category: push.category,
+        brand: push.brand,
+        model: push.model,
+        userEmail: effectiveUserEmail,
+        source: effectiveSource,
+      }).catch((err) => {
+        console.warn("[catalog] logCatalogProductCreated failed (non-fatal):", err);
       });
     }
   }

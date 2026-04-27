@@ -19,7 +19,10 @@ import {
   getActiveMappings,
   getPullableMappings,
   validateMappings,
+  getSystemMappings,
+  _resetEdgeCache,
 } from "@/lib/catalog-sync-mappings";
+import { CATEGORY_CONFIGS } from "@/lib/catalog-fields";
 
 describe("normalizers", () => {
   describe("number", () => {
@@ -263,5 +266,88 @@ describe("extended mapping edges", () => {
     );
     expect(zohoUnit).toBeDefined();
     expect(zohoUnit!.direction).toBeUndefined();
+  });
+});
+
+describe("buildCategoryExternalEdges plumbing", () => {
+  afterEach(() => {
+    // Always restore cache after each test in this suite
+    _resetEdgeCache();
+  });
+
+  it("emits Zuper category-conditional edge when zuperCustomField is set on a FieldDef", () => {
+    const originalFields = CATEGORY_CONFIGS.MODULE.fields;
+    CATEGORY_CONFIGS.MODULE.fields = [
+      ...originalFields,
+      { key: "testField", label: "Test", type: "text", zuperCustomField: "test_zuper" },
+    ];
+    _resetEdgeCache();
+
+    const edges = getSystemMappings("zuper", "MODULE");
+    expect(edges.find((e) => e.externalField === "test_zuper")).toBeDefined();
+
+    // Restore
+    CATEGORY_CONFIGS.MODULE.fields = originalFields;
+  });
+
+  it("emits Zoho category-conditional edge when zohoCustomField is set on a FieldDef", () => {
+    const originalFields = CATEGORY_CONFIGS.MODULE.fields;
+    CATEGORY_CONFIGS.MODULE.fields = [
+      ...originalFields,
+      { key: "testField2", label: "Test2", type: "number", zohoCustomField: "test_zoho_field" },
+    ];
+    _resetEdgeCache();
+
+    const edges = getSystemMappings("zoho", "MODULE");
+    const edge = edges.find((e) => e.externalField === "test_zoho_field");
+    expect(edge).toBeDefined();
+    expect(edge!.normalizeWith).toBe("number");
+    expect(edge!.condition?.category).toContain("MODULE");
+
+    // Restore
+    CATEGORY_CONFIGS.MODULE.fields = originalFields;
+  });
+
+  it("does not emit edges for systems whose key is absent from a FieldDef", () => {
+    const originalFields = CATEGORY_CONFIGS.MODULE.fields;
+    CATEGORY_CONFIGS.MODULE.fields = [
+      ...originalFields,
+      { key: "testField3", label: "Test3", type: "text", zuperCustomField: "zuper_only_field" },
+    ];
+    _resetEdgeCache();
+
+    const zohoEdges = getSystemMappings("zoho", "MODULE");
+    expect(zohoEdges.find((e) => e.externalField === "zuper_only_field")).toBeUndefined();
+
+    const hubspotEdges = getSystemMappings("hubspot", "MODULE");
+    expect(hubspotEdges.find((e) => e.externalField === "zuper_only_field")).toBeUndefined();
+
+    // Restore
+    CATEGORY_CONFIGS.MODULE.fields = originalFields;
+  });
+
+  it("emits Zuper conditional edges from FieldDef.zuperCustomField (Phase B activated)", () => {
+    // Phase B (2026-04-24) populated zuperCustomField labels on MODULE,
+    // INVERTER, BATTERY, EV_CHARGER, and RACKING. We expect the mapping
+    // registry to have produced category-conditional Zuper edges for those.
+    _resetEdgeCache();
+    const edges = getAllMappingEdges();
+    const zuperConditional = edges.filter(
+      (e) => e.system === "zuper" && e.condition !== undefined,
+    );
+    expect(zuperConditional.length).toBeGreaterThan(0);
+    // Spot-check: MODULE wattage edge exists with category condition
+    const moduleWattageEdge = zuperConditional.find(
+      (e) =>
+        e.condition?.category?.includes("MODULE") &&
+        e.externalField === "Module Wattage (W)",
+    );
+    expect(moduleWattageEdge).toBeDefined();
+
+    // Zoho stays empty until zohoCustomField keys are populated on FieldDefs.
+    const zohoConditional = edges.filter(
+      (e) => e.system === "zoho" && e.condition !== undefined,
+    );
+    expect(zohoConditional).toHaveLength(0);
   });
 });

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getCurrentUser } from "@/lib/auth-utils";
-import { canAccessTab, ADMIN_ONLY_SECTIONS } from "@/lib/sop-access";
+import { canAccessTab, canAccessSection } from "@/lib/sop-access";
 import type { UserRole } from "@/generated/prisma/enums";
 import { ROLES } from "@/lib/roles";
 
@@ -23,8 +23,12 @@ export async function GET() {
     }
 
     const firstName = (user.name || "").split(" ")[0].toLowerCase();
-    const role = (ROLES[(user.roles?.[0] ?? "VIEWER") as UserRole]?.normalizesTo ?? ((user.roles?.[0] ?? "VIEWER") as UserRole));
-    const isAdmin = role === "ADMIN" || role === "EXECUTIVE";
+    // Multi-role union — normalize each role to its canonical form, then check
+    // tab + section access against the full set.
+    const userRoles = (user.roles ?? ["VIEWER"]).map((r) => {
+      const normalized = ROLES[r as UserRole]?.normalizesTo;
+      return (normalized ?? r) as string;
+    });
 
     const allTabs = await prisma.sopTab.findMany({
       orderBy: { sortOrder: "asc" },
@@ -45,15 +49,14 @@ export async function GET() {
       },
     });
 
-    // Filter tabs the user can access
+    // Filter tabs the user can access, then filter sections by per-section gates.
     const tabs = allTabs
-      .filter((tab) => canAccessTab(tab.id, role, firstName))
+      .filter((tab) => canAccessTab(tab.id, userRoles, firstName))
       .map((tab) => ({
         ...tab,
-        // Strip admin-only sections for non-admins
-        sections: isAdmin
-          ? tab.sections
-          : tab.sections.filter((s) => !ADMIN_ONLY_SECTIONS.includes(s.id)),
+        sections: tab.sections.filter((s) =>
+          canAccessSection(s.id, tab.id, userRoles, firstName),
+        ),
       }));
 
     return NextResponse.json({ tabs });

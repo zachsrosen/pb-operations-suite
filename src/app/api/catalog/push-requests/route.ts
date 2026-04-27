@@ -134,7 +134,7 @@ export async function POST(request: NextRequest) {
 
   // Auto-approve: submissions go straight into INTERNAL + selected external systems.
   // Partial failures leave the row PENDING with a note so an admin can retry.
-  const approval = await executeCatalogPushApproval(push.id).catch((err) => {
+  const approval = await executeCatalogPushApproval(push.id, { source: "wizard", userEmail: authResult.email }).catch((err) => {
     console.error("[catalog/push-requests] Auto-approval failed:", err);
     return null;
   });

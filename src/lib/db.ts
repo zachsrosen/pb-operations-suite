@@ -482,15 +482,27 @@ export async function getRecentActivities(options?: {
  * Get all distinct activity types that exist in the database
  */
 export async function getActivityTypes() {
-  if (!prisma) return [];
+  // Return the union of (a) all valid ActivityType enum values and (b) any
+  // distinct types present in the activity log table. This way newly-added
+  // enum values appear in admin filter dropdowns immediately, without
+  // waiting for the first row of that type to be written.
+  const enumTypes = Object.values(ActivityType) as string[];
 
-  const result = await prisma.activityLog.findMany({
+  if (!prisma) {
+    return [...enumTypes].sort();
+  }
+
+  const present = await prisma.activityLog.findMany({
     select: { type: true },
     distinct: ["type"],
     orderBy: { type: "asc" },
   });
 
-  return result.map((r) => r.type);
+  const union = new Set<string>(enumTypes);
+  for (const row of present) {
+    if (row.type) union.add(row.type as string);
+  }
+  return [...union].sort();
 }
 
 // ==========================================

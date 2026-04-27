@@ -37,15 +37,38 @@ describe("canAccessTab", () => {
     expect(canAccessTab("pm", "OPERATIONS", "alexis")).toBe(true); // name match regardless of role
   });
 
-  // Tech Ops tab
-  it("allows TECH_OPS role to access role-de tab", () => {
+  // Role-specific tabs (modern split: DESIGN / PERMIT / INTERCONNECT,
+  // with TECH_OPS retained as a legacy umbrella).
+  it("allows DESIGN and TECH_OPS to access role-de tab", () => {
+    expect(canAccessTab("role-de", "DESIGN", "anyone")).toBe(true);
     expect(canAccessTab("role-de", "TECH_OPS", "anyone")).toBe(true);
   });
 
-  it("blocks non-TECH_OPS from role-de tab", () => {
-    expect(canAccessTab("role-de", "OPERATIONS", "anyone")).toBe(false);
-    expect(canAccessTab("role-de", "PROJECT_MANAGER", "anyone")).toBe(false);
-    expect(canAccessTab("role-de", "VIEWER", "anyone")).toBe(false);
+  it("allows PERMIT and TECH_OPS to access role-permit tab", () => {
+    expect(canAccessTab("role-permit", "PERMIT", "anyone")).toBe(true);
+    expect(canAccessTab("role-permit", "TECH_OPS", "anyone")).toBe(true);
+  });
+
+  it("allows INTERCONNECT and TECH_OPS to access role-ic tab", () => {
+    expect(canAccessTab("role-ic", "INTERCONNECT", "anyone")).toBe(true);
+    expect(canAccessTab("role-ic", "TECH_OPS", "anyone")).toBe(true);
+  });
+
+  it("blocks cross-role access between role-de / role-permit / role-ic", () => {
+    expect(canAccessTab("role-de", "PERMIT", "anyone")).toBe(false);
+    expect(canAccessTab("role-de", "INTERCONNECT", "anyone")).toBe(false);
+    expect(canAccessTab("role-permit", "DESIGN", "anyone")).toBe(false);
+    expect(canAccessTab("role-permit", "INTERCONNECT", "anyone")).toBe(false);
+    expect(canAccessTab("role-ic", "DESIGN", "anyone")).toBe(false);
+    expect(canAccessTab("role-ic", "PERMIT", "anyone")).toBe(false);
+  });
+
+  it("blocks unrelated roles from role-de / role-permit / role-ic", () => {
+    for (const tab of ["role-de", "role-permit", "role-ic"]) {
+      expect(canAccessTab(tab, "OPERATIONS", "anyone")).toBe(false);
+      expect(canAccessTab(tab, "PROJECT_MANAGER", "anyone")).toBe(false);
+      expect(canAccessTab(tab, "VIEWER", "anyone")).toBe(false);
+    }
   });
 
   // Unknown / shelved tabs
@@ -103,9 +126,55 @@ describe("canAccessSection", () => {
 });
 
 describe("ADMIN_ONLY_SECTIONS", () => {
-  it("contains the expected section IDs", () => {
+  it("contains the legacy admin-only section IDs", () => {
     expect(ADMIN_ONLY_SECTIONS).toContain("ref-user-roles");
     expect(ADMIN_ONLY_SECTIONS).toContain("ref-system");
-    expect(ADMIN_ONLY_SECTIONS).toHaveLength(2);
+  });
+
+  it("includes admin-only sections derived from SECTION_ROLE_GATES with empty allowlists", () => {
+    expect(ADMIN_ONLY_SECTIONS).toContain("tools-workflow-builder");
+    expect(ADMIN_ONLY_SECTIONS).toContain("suites-executive");
+    expect(ADMIN_ONLY_SECTIONS).toContain("suites-admin");
+  });
+});
+
+describe("multi-role access", () => {
+  it("grants tab access when ANY role in the array matches", () => {
+    expect(canAccessTab("service", ["SALES", "SERVICE"], "anyone")).toBe(true);
+    expect(canAccessTab("service", ["SALES"], "anyone")).toBe(false);
+    expect(canAccessTab("forecast", ["INTELLIGENCE", "VIEWER"], "anyone")).toBe(true);
+  });
+
+  it("denies role-gated tabs to users without any matching role", () => {
+    expect(canAccessTab("service", ["SALES"], "anyone")).toBe(false);
+    expect(canAccessTab("forecast", ["SALES"], "anyone")).toBe(false);
+    expect(canAccessTab("queues", ["SERVICE"], "anyone")).toBe(false);
+  });
+
+  it("admin role in any position grants access", () => {
+    expect(canAccessTab("service", ["VIEWER", "ADMIN"], "anyone")).toBe(true);
+    expect(canAccessTab("forecast", ["OWNER"], "anyone")).toBe(true);
+  });
+});
+
+describe("section-level role gates", () => {
+  it("blocks tools-workflow-builder for non-admins even with tools tab access", () => {
+    expect(canAccessSection("tools-workflow-builder", "tools", ["TECH_OPS"], "anyone")).toBe(false);
+    expect(canAccessSection("tools-workflow-builder", "tools", ["ADMIN"], "anyone")).toBe(true);
+  });
+
+  it("gates pricing calculator to sales/accounting/PM", () => {
+    expect(canAccessSection("tools-pricing-calculator", "tools", ["SALES"], "anyone")).toBe(true);
+    expect(canAccessSection("tools-pricing-calculator", "tools", ["TECH_OPS"], "anyone")).toBe(false);
+  });
+
+  it("gates customer history to service/ops/PM (PII access)", () => {
+    expect(canAccessSection("service-customer-history", "service", ["SERVICE"], "anyone")).toBe(true);
+    expect(canAccessSection("service-customer-history", "service", ["SALES"], "anyone")).toBe(false);
+  });
+
+  it("gates D&E queues to design/techops/PM only", () => {
+    expect(canAccessSection("queues-plan-review", "queues", ["DESIGN"], "anyone")).toBe(true);
+    expect(canAccessSection("queues-plan-review", "queues", ["PERMIT"], "anyone")).toBe(false);
   });
 });

@@ -45,9 +45,11 @@ export async function GET(
       return NextResponse.json({ error: "Section not found" }, { status: 404 });
     }
 
-    // Check access against parent tab and section-level restrictions
+    // Check access against parent tab and section-level restrictions.
+    // Pass the full role array so multi-role users get the union of permissions.
     const firstName = (user.name || "").split(" ")[0].toLowerCase();
-    if (!canAccessSection(section.id, section.tabId, user.roles?.[0] ?? "VIEWER", firstName)) {
+    const userRoles = user.roles ?? ["VIEWER"];
+    if (!canAccessSection(section.id, section.tabId, userRoles, firstName)) {
       return NextResponse.json({ error: "Access denied" }, { status: 403 });
     }
 

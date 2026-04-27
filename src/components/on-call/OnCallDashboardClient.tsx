@@ -13,6 +13,8 @@ type TonightResp = {
     timezone: string;
     shiftStart: string;
     shiftEnd: string;
+    weekendShiftStart: string;
+    weekendShiftEnd: string;
     date: string;
     crewMember: { id: string; name: string; email: string | null } | null;
     source: string | null;

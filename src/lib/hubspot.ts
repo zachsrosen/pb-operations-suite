@@ -2317,9 +2317,144 @@ export async function fetchLineItemsForDeals(
   return results;
 }
 
+// ── HubSpot manufacturer enum enforcement ─────────────────────────────────────
+
+/**
+ * Thrown when HubSpot rejects a product upsert because the `manufacturer`
+ * field value is not in the enum AND we couldn't auto-add it (Phase D).
+ *
+ * Behavior matrix (gated by `HUBSPOT_MANUFACTURER_ENFORCEMENT` env var):
+ *   • Flag OFF (default): drop `manufacturer`, retry, succeed with warning.
+ *   • Flag ON: try to auto-add the brand to HubSpot's enum. On success,
+ *     retry the create with the brand intact and notify TechOps. On failure
+ *     (e.g., missing scope), throw this typed error so the caller blocks
+ *     the submission with an actionable message.
+ */
+export class HubSpotManufacturerEnumError extends Error {
+  constructor(
+    public readonly brand: string,
+    public readonly hubspotMessage: string,
+  ) {
+    super(`HubSpot rejected manufacturer "${brand}": ${hubspotMessage}`);
+    this.name = "HubSpotManufacturerEnumError";
+  }
+}
+
+/**
+ * Returns true when a HubSpot error message indicates the `manufacturer`
+ * property value was not an allowed enum option.
+ *
+ * HubSpot error message variants observed:
+ *   • `Property "manufacturer" was not one of the allowed options`
+ *   • `PROPERTY_DOESNT_EXIST: manufacturer`  (different path, not enum)
+ *   • `manufacturer ... is not a valid option`
+ * We match broadly enough to catch message rewording.
+ */
+export function isManufacturerEnumRejection(message: string): boolean {
+  const lower = String(message || "").toLowerCase();
+  return (
+    // Explicit enum rejection pattern
+    (lower.includes("manufacturer") &&
+      (lower.includes("was not one of") ||
+        lower.includes("not one of the allowed") ||
+        lower.includes("is not a valid option") ||
+        lower.includes("is not one of the allowed") ||
+        lower.includes("allowed options") ||
+        lower.includes("invalid enum value"))) ||
+    // HubSpot sometimes returns this phrasing
+    (lower.includes('"manufacturer"') && lower.includes("not")) ||
+    (lower.includes("'manufacturer'") && lower.includes("not"))
+  );
+}
+
 function trimOrNull(value: string | null | undefined): string | null {
   const trimmed = String(value || "").trim();
   return trimmed || null;
+}
+
+// ── Manufacturer enum auto-add (Phase D) ──────────────────────────────────────
+
+/** Result of attempting to add a brand to HubSpot's manufacturer enum. */
+export interface AddBrandToEnumResult {
+  /** True when the brand is now present in the enum (added or already there). */
+  ok: boolean;
+  /** True when this call was the one that added it (vs. already present). */
+  added: boolean;
+  /** Error message when ok is false. */
+  message?: string;
+}
+
+/**
+ * Add a brand to the HubSpot Products `manufacturer` enum if it isn't already
+ * present. Idempotent — checks the current options first and only PATCHes
+ * when the value is missing (case-insensitive match).
+ *
+ * Used by `createOrUpdateHubSpotProduct` when an unknown-brand 400 is detected
+ * and `HUBSPOT_MANUFACTURER_ENFORCEMENT` is on. Adding the brand allows the
+ * upsert retry to succeed instead of failing the whole HubSpot push.
+ *
+ * Requires the access token to have `crm.schemas.products.write` scope.
+ */
+export async function addBrandToHubSpotManufacturerEnum(
+  brand: string,
+): Promise<AddBrandToEnumResult> {
+  const trimmed = String(brand || "").trim();
+  if (!trimmed) return { ok: false, added: false, message: "brand is empty" };
+
+  const token = process.env.HUBSPOT_ACCESS_TOKEN;
+  if (!token) return { ok: false, added: false, message: "HUBSPOT_ACCESS_TOKEN not configured" };
+
+  const url = `https://api.hubapi.com/crm/v3/properties/products/manufacturer`;
+  let getRes: Response;
+  try {
+    getRes = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  } catch (err) {
+    return { ok: false, added: false, message: `GET threw: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  if (!getRes.ok) {
+    return { ok: false, added: false, message: `GET ${getRes.status}: ${(await getRes.text()).slice(0, 200)}` };
+  }
+  const prop = (await getRes.json()) as {
+    options?: Array<{ label?: string; value?: string; displayOrder?: number; hidden?: boolean }>;
+  };
+  const existing = prop.options || [];
+
+  // Case-insensitive presence check
+  const lower = trimmed.toLowerCase();
+  if (existing.some((o) => (o.value || "").trim().toLowerCase() === lower)) {
+    return { ok: true, added: false };
+  }
+
+  // Append + PATCH the full options array (HubSpot replaces the list)
+  const merged = [
+    ...existing.map((o) => ({
+      label: o.label ?? o.value ?? "",
+      value: o.value ?? "",
+      displayOrder: typeof o.displayOrder === "number" ? o.displayOrder : 0,
+      hidden: o.hidden ?? false,
+    })),
+    {
+      label: trimmed,
+      value: trimmed,
+      displayOrder: existing.length,
+      hidden: false,
+    },
+  ].map((o, i) => ({ ...o, displayOrder: i }));
+
+  let patchRes: Response;
+  try {
+    patchRes = await fetch(url, {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ options: merged }),
+    });
+  } catch (err) {
+    return { ok: false, added: false, message: `PATCH threw: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  if (!patchRes.ok) {
+    return { ok: false, added: false, message: `PATCH ${patchRes.status}: ${(await patchRes.text()).slice(0, 200)}` };
+  }
+  return { ok: true, added: true };
 }
 
 function toHubSpotPropertyValue(value: string | number | boolean): string {
@@ -2573,6 +2708,66 @@ export async function createOrUpdateHubSpotProduct(
       throw error;
     }
 
+    // Narrow path: manufacturer enum rejection
+    if (brand && isManufacturerEnumRejection(message)) {
+      if (process.env.HUBSPOT_MANUFACTURER_ENFORCEMENT === "true") {
+        // Phase D — auto-add the brand to HubSpot's manufacturer enum, then
+        // retry the create with the brand intact. Notify TechOps so they can
+        // review additions periodically (catches typos that would otherwise
+        // pollute the enum forever).
+        const addResult = await addBrandToHubSpotManufacturerEnum(brand);
+        if (addResult.ok) {
+          console.warn(
+            `[HubSpot] Manufacturer enum auto-added "${brand}" (added=${addResult.added}); retrying create.`,
+          );
+          // Fire-and-forget notification + audit log (only when we actually added something).
+          if (addResult.added) {
+            try {
+              const { notifyTechOpsOfAutoAddedBrand } = await import("@/lib/catalog-notify");
+              notifyTechOpsOfAutoAddedBrand({
+                brand,
+                productName: name,
+                productSku: sku,
+                productCategory,
+                triggeredAt: new Date().toISOString(),
+              });
+            } catch (err) {
+              console.warn(`[HubSpot] notifyTechOpsOfAutoAddedBrand failed: ${err instanceof Error ? err.message : err}`);
+            }
+          }
+          // Retry the original create with manufacturer included
+          const retryResult = await upsertHubSpotProductRecord(token, existingId, withOptional);
+          return {
+            ...retryResult,
+            warnings: addResult.added
+              ? [`Brand "${brand}" was auto-added to HubSpot's manufacturer enum. TechOps notified for review.`]
+              : retryResult.warnings,
+          };
+        }
+        // Auto-add failed (likely a scope issue) — fall through to typed throw
+        // so the caller produces the actionable error message.
+        console.error(`[HubSpot] addBrandToHubSpotManufacturerEnum failed for "${brand}": ${addResult.message}. Falling back to hard-block.`);
+        throw new HubSpotManufacturerEnumError(brand, message);
+      }
+
+      // Flag OFF (default): drop only `manufacturer` and retry so ops aren't
+      // blocked. Warning surfaces in outcome metadata for ActivityLog.
+      const withoutManufacturer = { ...withOptional };
+      delete withoutManufacturer["manufacturer"];
+      console.warn(
+        `[HubSpot] Manufacturer enum rejection for brand "${brand}" (enforcement off) — retrying without manufacturer property. ${message}`
+      );
+      const result = await upsertHubSpotProductRecord(token, existingId, withoutManufacturer);
+      return {
+        ...result,
+        warnings: [
+          `Brand "${brand}" was not accepted by HubSpot's manufacturer enum and was omitted. Add "${brand}" via HubSpot Settings → Properties → Products → Manufacturer to persist this field. Original error: ${message}`,
+        ],
+      };
+    }
+
+    // Wide fallback: drop ALL optional properties and retry (existing behavior for
+    // other 400 validation errors such as unknown custom properties).
     const droppedKeys = Object.keys(optionalProperties);
     console.warn(
       `[HubSpot] Retrying product upsert with core properties only after validation failure (dropped: ${droppedKeys.join(", ")}): ${message}`

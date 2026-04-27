@@ -1,0 +1,189 @@
+{
+  "created_at": "2026-04-25T15:26:36.321Z",
+  "anchor_product_id": "a643a00f-1b94-4a18-818d-e057985a75da",
+  "fields": [
+    {
+      "internalKey": "wattage",
+      "label": "Module Wattage (W)",
+      "apiKey": "pb_module_wattage",
+      "type": "NUMBER",
+      "options": null,
+      "categories": [
+        "MODULE"
+      ]
+    },
+    {
+      "internalKey": "efficiency",
+      "label": "Module Efficiency (%)",
+      "apiKey": "pb_module_efficiency_pct",
+      "type": "NUMBER",
+      "options": null,
+      "categories": [
+        "MODULE"
+      ]
+    },
+    {
+      "internalKey": "cellType",
+      "label": "Module Cell Type",
+      "apiKey": "pb_module_cell_type",
+      "type": "DROPDOWN",
+      "options": [
+        "Mono PERC",
+        "TOPCon",
+        "HJT",
+        "Poly",
+        "Thin Film"
+      ],
+      "categories": [
+        "MODULE"
+      ]
+    },
+    {
+      "internalKey": "voc",
+      "label": "Module Voc (V)",
+      "apiKey": "pb_module_voc_v",
+      "type": "NUMBER",
+      "options": null,
+      "categories": [
+        "MODULE"
+      ]
+    },
+    {
+      "internalKey": "isc",
+      "label": "Module Isc (A)",
+      "apiKey": "pb_module_isc_a",
+      "type": "NUMBER",
+      "options": null,
+      "categories": [
+        "MODULE"
+      ]
+    },
+    {
+      "internalKey": "acOutputKw",
+      "label": "Inverter AC Output (kW)",
+      "apiKey": "pb_inverter_ac_output_kw",
+      "type": "NUMBER",
+      "options": null,
+      "categories": [
+        "INVERTER"
+      ]
+    },
+    {
+      "internalKey": "phase",
+      "label": "Inverter Phase",
+      "apiKey": "pb_inverter_phase",
+      "type": "DROPDOWN",
+      "options": [
+        "Single",
+        "Three-phase"
+      ],
+      "categories": [
+        "INVERTER"
+      ]
+    },
+    {
+      "internalKey": "inverterType",
+      "label": "Inverter Type",
+      "apiKey": "pb_inverter_type",
+      "type": "DROPDOWN",
+      "options": [
+        "String",
+        "Micro",
+        "Hybrid",
+        "Central"
+      ],
+      "categories": [
+        "INVERTER"
+      ]
+    },
+    {
+      "internalKey": "mpptChannels",
+      "label": "Inverter MPPT Channels",
+      "apiKey": "pb_inverter_mppt_channels",
+      "type": "NUMBER",
+      "options": null,
+      "categories": [
+        "INVERTER"
+      ]
+    },
+    {
+      "internalKey": "capacityKwh",
+      "label": "Battery Capacity (kWh)",
+      "apiKey": "pb_battery_capacity_kwh",
+      "type": "NUMBER",
+      "options": null,
+      "categories": [
+        "BATTERY",
+        "BATTERY_EXPANSION"
+      ]
+    },
+    {
+      "internalKey": "chemistry",
+      "label": "Battery Chemistry",
+      "apiKey": "pb_battery_chemistry",
+      "type": "DROPDOWN",
+      "options": [
+        "LFP",
+        "NMC"
+      ],
+      "categories": [
+        "BATTERY",
+        "BATTERY_EXPANSION"
+      ]
+    },
+    {
+      "internalKey": "continuousPowerKw",
+      "label": "Battery Continuous Power (kW)",
+      "apiKey": "pb_battery_continuous_kw",
+      "type": "NUMBER",
+      "options": null,
+      "categories": [
+        "BATTERY",
+        "BATTERY_EXPANSION"
+      ]
+    },
+    {
+      "internalKey": "connectorType",
+      "label": "EV Charger Connector",
+      "apiKey": "pb_evcharger_connector",
+      "type": "DROPDOWN",
+      "options": [
+        "J1772",
+        "NACS",
+        "CCS"
+      ],
+      "categories": [
+        "EV_CHARGER"
+      ]
+    },
+    {
+      "internalKey": "level",
+      "label": "EV Charger Level",
+      "apiKey": "pb_evcharger_level",
+      "type": "DROPDOWN",
+      "options": [
+        "Level 1",
+        "Level 2",
+        "DC Fast"
+      ],
+      "categories": [
+        "EV_CHARGER"
+      ]
+    },
+    {
+      "internalKey": "roofAttachment",
+      "label": "Racking Roof Attachment",
+      "apiKey": "pb_racking_roof_type",
+      "type": "DROPDOWN",
+      "options": [
+        "Comp Shingle",
+        "Tile",
+        "Metal",
+        "S-Tile"
+      ],
+      "categories": [
+        "RACKING"
+      ]
+    }
+  ]
+}

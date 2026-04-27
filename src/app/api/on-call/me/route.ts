@@ -46,7 +46,7 @@ export async function GET() {
     take: 20,
   });
 
-  // Group weekly-shift assignments into week blocks so UI shows "week of May 4" not 7 rows.
+  // Group weekly-shift assignments into week blocks so UI shows "week of May 3" not 7 rows.
   type Shift = {
     poolId: string;
     poolName: string;
@@ -54,6 +54,8 @@ export async function GET() {
     endDate: string;
     shiftStart: string;
     shiftEnd: string;
+    weekendShiftStart: string;
+    weekendShiftEnd: string;
     timezone: string;
     rotationUnit: string;
   };
@@ -74,6 +76,8 @@ export async function GET() {
         endDate: a.date,
         shiftStart: a.pool.shiftStart,
         shiftEnd: a.pool.shiftEnd,
+        weekendShiftStart: a.pool.weekendShiftStart,
+        weekendShiftEnd: a.pool.weekendShiftEnd,
         timezone: a.pool.timezone,
         rotationUnit: a.pool.rotationUnit,
       });

@@ -21,7 +21,7 @@ export async function POST(
   const { id } = await params;
 
   try {
-    const result = await executeCatalogPushApproval(id);
+    const result = await executeCatalogPushApproval(id, { source: "approval_retry", userEmail: authResult.email });
 
     if (result.notFound) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });

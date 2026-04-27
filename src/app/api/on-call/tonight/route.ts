@@ -44,6 +44,8 @@ export async function GET() {
     timezone: string;
     shiftStart: string;
     shiftEnd: string;
+    weekendShiftStart: string;
+    weekendShiftEnd: string;
     date: string;
     crewMember: { id: string; name: string; email: string | null } | null;
     source: string | null;
@@ -60,6 +62,8 @@ export async function GET() {
         timezone: pool.timezone,
         shiftStart: pool.shiftStart,
         shiftEnd: pool.shiftEnd,
+        weekendShiftStart: pool.weekendShiftStart,
+        weekendShiftEnd: pool.weekendShiftEnd,
         date,
         crewMember: null,
         source: "pre-start",
@@ -115,6 +119,8 @@ export async function GET() {
       timezone: pool.timezone,
       shiftStart: pool.shiftStart,
       shiftEnd: pool.shiftEnd,
+      weekendShiftStart: pool.weekendShiftStart,
+      weekendShiftEnd: pool.weekendShiftEnd,
       date,
       crewMember,
       source,

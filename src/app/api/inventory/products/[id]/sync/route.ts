@@ -159,7 +159,7 @@ export async function POST(
   }
 
   try {
-    const result = await executePlan(sku, freshPlan);
+    const result = await executePlan(sku, freshPlan, { userEmail: auth.email });
     return NextResponse.json(result);
   } catch (error) {
     console.error("[Sync] Execute failed:", error);

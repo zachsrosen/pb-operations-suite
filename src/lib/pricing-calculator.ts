@@ -288,11 +288,13 @@ export const PE_LEASE = {
   noBonusPenalty: -0.0952381, // adjustment when no DC and no EC
 } as const;
 
-// TODO(pricing-phase-1): DC_QUALIFYING_MODULE_BRANDS is empty, so the PE
-// solar DC bonus never triggers. This is an open question for Phase 0
-// data seeding — confirm whether DC bonus should be handled here or
-// elsewhere. Tracked in the pricing spec as open question #5.
-/** Brands whose modules meet IRA domestic content threshold (50% for solar). Currently none qualify. */
+/**
+ * Brands whose modules meet IRA domestic content threshold (50% for solar).
+ *
+ * Photon Brothers does not currently stock any qualifying modules, so this
+ * list is intentionally empty and the PE solar DC bonus correctly never
+ * triggers. Repopulate when a qualifying module enters the catalog.
+ */
 export const DC_QUALIFYING_MODULE_BRANDS: string[] = [];
 
 /** Brands whose batteries meet IRA domestic content threshold (55% for BESS). */
