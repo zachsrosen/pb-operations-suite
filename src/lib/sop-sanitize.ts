@@ -48,6 +48,8 @@ const SOP_ALLOWED_CLASSES = [
   "region-bar", "region-cosp", "market",
   // TBD placeholders
   "tbd-placeholder",
+  // Auto-linked route anchors (autolinkRoutes())
+  "sop-route-link",
 ];
 
 // Safe inline style properties (used for info boxes, colored borders, diagrams, etc.)
@@ -126,9 +128,46 @@ const SANITIZE_OPTIONS: sanitizeHtml.IOptions = {
 };
 
 /**
+ * Auto-link <code>/path</code> patterns that look like in-app routes.
+ *
+ * Matches the canonical app prefixes only (dashboards, sop, suites, admin,
+ * estimator, triage) so we don't accidentally link arbitrary slashes like
+ * file paths or external URLs in code blocks. /api/* paths are skipped
+ * because they're documentation references, not navigable pages.
+ *
+ * The generated <a> carries `data-sop-link="auto"` so the sanitizer's
+ * link-transform leaves it on same-tab navigation rather than forcing
+ * `target="_blank"` (those are reserved for explicit external links).
+ *
+ * Idempotent: skips <code> tags already wrapped in an anchor.
+ */
+const AUTOLINK_ROUTE_RE =
+  /(<a[^>]*>\s*)?<code>(\/(?:dashboards|sop|suites|admin|estimator|triage)(?:[/?][^<\s]*)?)<\/code>/g;
+
+export function autolinkRoutes(html: string): string {
+  return html.replace(AUTOLINK_ROUTE_RE, (match, openA: string | undefined, path: string) => {
+    // Already inside an anchor — leave it alone (idempotent guard).
+    if (openA) return match;
+    // Skip documentation placeholders like /sop?tab=<tabId> — these contain
+    // HTML-entity-encoded angle brackets and aren't real routes.
+    if (path.includes("&lt;") || path.includes("&gt;") || path.includes("<")) {
+      return match;
+    }
+    // Sanitize the path defensively in case anything weird slipped in.
+    const safePath = path.replace(/["<>'`]/g, "");
+    return `<a href="${safePath}" data-sop-link="auto" class="sop-route-link"><code>${safePath}</code></a>`;
+  });
+}
+
+/**
  * Sanitize SOP HTML content.
  * Safe for both server-side (Node.js) and build-time usage.
+ *
+ * Pipeline:
+ *   1. autolinkRoutes()  — turn <code>/dashboards/...</code> into clickable <a>
+ *   2. sanitizeHtml()    — strip scripts/styles, enforce attribute allowlist,
+ *                          add target=_blank to external <a>, etc.
  */
 export function sanitizeSopContent(html: string): string {
-  return sanitizeHtml(html, SANITIZE_OPTIONS);
+  return sanitizeHtml(autolinkRoutes(html), SANITIZE_OPTIONS);
 }
