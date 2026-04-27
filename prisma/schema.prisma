@@ -3359,3 +3359,150 @@ model EagleViewOrder {
   @@index([status, orderedAt])
   @@index([dealId])
 }
+
+// ===========================================================================
+// Shit Show Meeting Hub
+// ===========================================================================
+
+model ShitShowSession {
+  id        String                @id @default(cuid())
+  date      DateTime
+  status    ShitShowSessionStatus @default(DRAFT)
+  createdBy String
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  items ShitShowSessionItem[]
+
+  @@index([date])
+}
+
+enum ShitShowSessionStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+}
+
+model ShitShowSessionItem {
+  id        String          @id @default(cuid())
+  sessionId String
+  session   ShitShowSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  dealId    String
+  region    String
+  sortOrder Int             @default(0)
+
+  // Snapshot fields (populated at session start; refreshed via stale-while-revalidate)
+  dealName              String
+  dealAmount            Float?
+  systemSizeKw          Float?
+  stage                 String?
+  dealOwner             String?
+  reasonSnapshot        String?
+  flaggedSince          DateTime?
+  address               String?
+  projectType           String?
+  equipmentSummary      String?
+  surveyStatus          String?
+  surveyDate            String?
+  designStatus          String?
+  designApprovalStatus  String?
+  plansetDate           String?
+  ahj                   String?
+  utilityCompany        String?
+  projectManager        String?
+  operationsManager     String?
+  siteSurveyor          String?
+  driveFolderUrl        String?
+  surveyFolderUrl       String?
+  designFolderUrl       String?
+  salesFolderUrl        String?
+  openSolarUrl          String?
+  snapshotUpdatedAt     DateTime @default(now())
+
+  // Filled during the meeting
+  meetingNotes      String?
+  decision          ShitShowDecision @default(PENDING)
+  decisionRationale String?
+  resolvedAt        DateTime?
+  resolvedBy        String?
+
+  // External writes — IDs stored for idempotency
+  hubspotNoteId   String?
+  noteSyncStatus  ShitShowSyncStatus @default(PENDING)
+  noteSyncError   String?
+
+  // Escalation external IDs (rationale itself lives in decisionRationale)
+  idrEscalationQueueId    String?
+  hubspotEscalationTaskId String?
+
+  addedBy     ShitShowAddedBy @default(SYSTEM)
+  addedByUser String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  assignments ShitShowAssignment[]
+
+  @@unique([sessionId, dealId])
+  @@index([sessionId, region])
+  @@index([dealId])
+}
+
+enum ShitShowDecision {
+  PENDING
+  RESOLVED
+  STILL_PROBLEM
+  ESCALATED
+  DEFERRED
+}
+
+enum ShitShowSyncStatus {
+  PENDING
+  SYNCED
+  FAILED
+}
+
+enum ShitShowAddedBy {
+  SYSTEM
+  MANUAL
+}
+
+model ShitShowAssignment {
+  id            String              @id @default(cuid())
+  sessionItemId String
+  sessionItem   ShitShowSessionItem @relation(fields: [sessionItemId], references: [id], onDelete: Cascade)
+
+  assigneeUserId String
+  dueDate        DateTime?
+  actionText     String
+
+  status ShitShowAssignmentStatus @default(OPEN)
+
+  hubspotTaskId  String?
+  taskSyncStatus ShitShowSyncStatus @default(PENDING)
+  taskSyncError  String?
+
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sessionItemId])
+  @@index([assigneeUserId, status])
+}
+
+enum ShitShowAssignmentStatus {
+  OPEN
+  COMPLETED
+  CANCELLED
+}
+
+model ShitShowBackfillRun {
+  id          String    @id @default(cuid())
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  processed   Int       @default(0)
+  errors      Int       @default(0)
+  errorLog    Json      @default("[]")
+  status      String    @default("RUNNING")
+
+  @@index([status])
+}
