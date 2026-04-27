@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-04-27-shit-show-meeting-design.md`
 
-**Convention adjustment from spec:** the spec proposes `src/lib/shit-show/*.ts` (directory). After exploring the codebase, IDR uses a flat `src/lib/idr-meeting.ts` file. To match convention, this plan uses a single flat `src/lib/shit-show-meeting.ts` file containing all the helper modules (flag, note, task, escalation, snapshot, decision). Spec stays accurate in intent; the file layout is the only deviation.
+**Library layout:** matches spec — `src/lib/shit-show/*.ts` directory with one file per module. Initial review considered following IDR's flat-file precedent, but splitting was reverted because (1) the combined file would exceed 800 lines by end of Chunk 2; (2) jest module-mocking is cleaner across module boundaries (mocking `hubspot-flag.ts` from `decision.ts` works; mocking the module under test does not); (3) spec §5 already commits to this shape. Files: `hubspot-flag.ts`, `hubspot-task.ts`, `hubspot-note.ts`, `snapshot.ts`, `decision.ts`.
 
 ---
 
@@ -20,7 +20,11 @@
 
 ```
 prisma/schema.prisma                                         (modify; add 4 tables, 5 enums)
-src/lib/shit-show-meeting.ts                                 (create; flat module of helpers)
+src/lib/shit-show/hubspot-flag.ts                            (create; deal property read/write)
+src/lib/shit-show/hubspot-task.ts                            (create; HubSpot task creation + escalation)
+src/lib/shit-show/hubspot-note.ts                            (create; end-of-session timeline note)
+src/lib/shit-show/snapshot.ts                                (create; pull flagged deals into a session)
+src/lib/shit-show/decision.ts                                (create; applyDecision orchestrator)
 scripts/backfill-shit-show-flags.ts                          (create; one-time backfill)
 
 # API
@@ -2102,3 +2106,401 @@ EOF
 ## Done
 
 End state: feature is shipped behind the role allowlist; backfill has run; IDR's 🔥 toggle writes to HubSpot; the Shit Show hub at `/dashboards/shit-show-meeting` is live for ADMIN/EXECUTIVE and the 15 non-wildcard roles. Drop migration scheduled for one week post-merge.
+
+---
+
+## Plan Addendum (post-review fixes)
+
+After running plan-document-reviewer on all chunks, the following adjustments apply. **These supersede the corresponding earlier sections.**
+
+### A1. File layout — directory, not flat file
+
+Replace every reference to `src/lib/shit-show-meeting.ts` with the appropriate module file in `src/lib/shit-show/`:
+
+| Module file | Exports |
+|---|---|
+| `src/lib/shit-show/hubspot-flag.ts` | `SHIT_SHOW_PROPS`, `readShitShowFlag`, `setShitShowFlag`, type `ShitShowFlagState` |
+| `src/lib/shit-show/hubspot-task.ts` | `createHubspotTaskForAssignment`, `scheduleHubspotEscalationTask` |
+| `src/lib/shit-show/hubspot-note.ts` | `postEndOfSessionNote`, `endSession` |
+| `src/lib/shit-show/snapshot.ts` | `snapshotFlaggedDeals`, `readShitShowFlagsBatch` |
+| `src/lib/shit-show/decision.ts` | `applyDecision`, type `ShitShowDecisionValue`, type `ApplyDecisionInput` |
+
+Imports in tests use the per-module path (e.g., `jest.mock("@/lib/shit-show/hubspot-flag")`) so the mock-the-module-under-test problem from Chunk 2 review goes away.
+
+### A2. Task 1.5 — use HubSpot batch read for the IDR preview hydration
+
+Replace the per-deal `Promise.all(... readShitShowFlag(dealId))` pattern with a single batch call:
+
+```ts
+// In src/lib/shit-show/snapshot.ts (new helper):
+import { hubspotClient } from "@/lib/hubspot";
+import { SHIT_SHOW_PROPS } from "@/lib/shit-show/hubspot-flag";
+
+export async function readShitShowFlagsBatch(
+  dealIds: string[],
+): Promise<Map<string, { flagged: boolean; reason: string | null }>> {
+  if (dealIds.length === 0) return new Map();
+  const result = new Map<string, { flagged: boolean; reason: string | null }>();
+  // batchApi.read takes up to 100 IDs per call
+  for (let i = 0; i < dealIds.length; i += 100) {
+    const slice = dealIds.slice(i, i + 100);
+    const res = await hubspotClient.crm.deals.batchApi.read({
+      properties: [SHIT_SHOW_PROPS.FLAGGED, SHIT_SHOW_PROPS.REASON],
+      propertiesWithHistory: [],
+      inputs: slice.map((id) => ({ id })),
+    });
+    for (const deal of res.results) {
+      result.set(deal.id, {
+        flagged: deal.properties?.[SHIT_SHOW_PROPS.FLAGGED] === "true",
+        reason: (deal.properties?.[SHIT_SHOW_PROPS.REASON] as string) || null,
+      });
+    }
+  }
+  return result;
+}
+```
+
+Use it in `preview/route.ts`:
+
+```ts
+import { readShitShowFlagsBatch } from "@/lib/shit-show/snapshot";
+
+// At the top of the preview build, after dealIds are known:
+const flagsByDeal = await readShitShowFlagsBatch(dealIds);
+// ...then
+shitShowFlagged: flagsByDeal.get(dealId)?.flagged ?? false,
+shitShowReason:  flagsByDeal.get(dealId)?.reason  ?? null,
+```
+
+One HTTP request per 100 deals instead of N per page.
+
+### A3. Task 1.4 — keep IDR whitelist; document why
+
+Do NOT remove `shitShowFlagged`/`shitShowReason` from the editable-fields whitelist at line 13 of `src/app/api/idr-meeting/items/[id]/route.ts`. They stay in place during the bake period because the existing IDR queue render path still reads from the local column. Add a code comment above the whitelist:
+
+```ts
+// NOTE: shitShowFlagged + shitShowReason stay in the whitelist during the
+// shit-show migration bake period (see docs/superpowers/specs/2026-04-27-shit-show-meeting-design.md).
+// They are dual-written: this PATCH writes to both the local column AND the HubSpot
+// deal property via setShitShowFlag(). After the 1-week bake, the drop migration
+// removes the columns and these whitelist entries.
+```
+
+### A4. Task 1.6 — commit to `title=` attribute
+
+The IDR codebase uses native `title=` attributes on label elements for hint text (no shared tooltip primitive). Use:
+
+```tsx
+<label
+  htmlFor={`shit-show-${item.id}`}
+  className="..."
+  title="This flags the deal globally — clear it from the Shit Show meeting's Resolved action."
+>
+  🔥 Add to Shit Show Meeting
+</label>
+```
+
+### A5. Task 1.1 Step 2 — use `npx prisma generate`
+
+Replace `npm run build` with:
+
+```bash
+npx prisma generate
+```
+
+Expected: "Generated Prisma Client" message; no `next build` noise.
+
+### A6. Task 2.6 Step 6 — User model has no `active` field
+
+The `User` model has no `active` boolean. Filter by users that have any role assigned:
+
+```ts
+const users = await prisma.user.findMany({
+  where: { roles: { isEmpty: false } },
+  select: { id: true, email: true, name: true },
+  orderBy: { name: "asc" },
+});
+```
+
+### A7. Task 2.6 Step 10 — cron uses GET, not POST
+
+`audit-digest` and other crons use `export async function GET`. Change the cron route accordingly:
+
+```ts
+export async function GET() { ... }
+```
+
+### A8. Task 2.6 — split into 4 sub-tasks
+
+Replace the 11-step Task 2.6 with four atomic tasks, each ending in its own commit:
+
+- **2.6a — Items + assignments routes** (former Steps 1-3): `items/[id]/route.ts`, `items/[id]/assignments/route.ts`, `assignments/[id]/route.ts`. Commit: `feat(shit-show): items/assignments API`.
+- **2.6b — Flag + proxies** (former Steps 4-6): `flag/route.ts`, `idr-notes/[dealId]/route.ts`, `users/route.ts`. Commit: `feat(shit-show): flag write + IDR-notes/users proxies`.
+- **2.6c — Search + presence + deal-search** (former Steps 7-9): copy-with-rename from existing IDR equivalents. Before copying, paste the actual handler content into the plan (i.e., during execution, read `src/app/api/idr-meeting/deal-search/route.ts`, the IDR `presence/route.ts`, and the IDR `search/route.ts` BEFORE writing the new files). Commit: `feat(shit-show): deal-search + presence + past-session search`.
+- **2.6d — Cron task close-back** (former Step 10): `cron/shit-show-task-sync/route.ts` with GET handler. Commit: `feat(shit-show): cron poller for HubSpot task close-back`.
+
+### A9. Task 2.5 — canonical session-start path
+
+Resolve the ambiguity: the `/sessions/[id]/snapshot` POST is the **canonical session-start endpoint**. It both flips status to ACTIVE and runs the snapshot atomically. The `/sessions/[id]` PATCH route accepts `status: "ACTIVE"` only as a no-op for backward compatibility — if the session is already ACTIVE, it's accepted; if it's DRAFT, the PATCH returns 409 with a "use snapshot endpoint to start session" message.
+
+```ts
+// In sessions/[id]/route.ts PATCH handler:
+if (body.status === "ACTIVE" && currentStatus !== "ACTIVE") {
+  return NextResponse.json(
+    { error: "use_snapshot_endpoint_to_start", endpoint: `/api/shit-show-meeting/sessions/${id}/snapshot` },
+    { status: 409 },
+  );
+}
+```
+
+### A10. Tests for Tasks 2.3 + 2.4 — concrete test bodies
+
+#### Task 2.3 test — `src/__tests__/shit-show-snapshot.test.ts`
+
+```ts
+import { snapshotFlaggedDeals } from "@/lib/shit-show/snapshot";
+
+jest.mock("@/lib/db", () => ({
+  prisma: {
+    shitShowSessionItem: { create: jest.fn() },
+  },
+}));
+jest.mock("@/lib/hubspot", () => ({
+  hubspotClient: {
+    crm: { deals: { searchApi: { doSearch: jest.fn() } } },
+  },
+}));
+
+import { prisma } from "@/lib/db";
+import { hubspotClient } from "@/lib/hubspot";
+
+const mockCreate = prisma.shitShowSessionItem.create as jest.Mock;
+const mockSearch = hubspotClient.crm.deals.searchApi.doSearch as jest.Mock;
+
+beforeEach(() => jest.clearAllMocks());
+
+it("creates one ShitShowSessionItem per flagged deal", async () => {
+  mockSearch.mockResolvedValue({
+    results: [
+      { id: "d1", properties: { dealname: "Project A", pb_location: "Westy", pb_shit_show_reason: "stuck", amount: "10000" } },
+      { id: "d2", properties: { dealname: "Project B", pb_location: "DTC", pb_shit_show_reason: "lost", amount: "20000" } },
+    ],
+  });
+  mockCreate.mockResolvedValue({});
+
+  const result = await snapshotFlaggedDeals("session-1");
+
+  expect(mockCreate).toHaveBeenCalledTimes(2);
+  expect(result).toEqual({ created: 2, skipped: 0 });
+});
+
+it("skips when (sessionId, dealId) unique constraint violated", async () => {
+  mockSearch.mockResolvedValue({
+    results: [{ id: "d1", properties: { dealname: "X", pb_location: "Westy" } }],
+  });
+  mockCreate.mockRejectedValue(new Error("Unique constraint failed (P2002)"));
+
+  const result = await snapshotFlaggedDeals("session-1");
+  expect(result).toEqual({ created: 0, skipped: 1 });
+});
+```
+
+#### Task 2.4 test — `src/__tests__/shit-show-end-session.test.ts`
+
+```ts
+import { postEndOfSessionNote } from "@/lib/shit-show/hubspot-note";
+
+jest.mock("@/lib/db", () => ({
+  prisma: {
+    shitShowSessionItem: { findUnique: jest.fn(), update: jest.fn() },
+  },
+}));
+
+const mockFetch = jest.fn();
+global.fetch = mockFetch as any;
+import { prisma } from "@/lib/db";
+
+const mockFind = prisma.shitShowSessionItem.findUnique as jest.Mock;
+const mockUpdate = prisma.shitShowSessionItem.update as jest.Mock;
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  process.env.HUBSPOT_ACCESS_TOKEN = "tok";
+});
+
+it("posts a note and stores hubspotNoteId", async () => {
+  mockFind.mockResolvedValue({
+    id: "i1", dealId: "d1", session: { date: new Date("2026-04-27") },
+    decision: "RESOLVED", decisionRationale: "fixed",
+    reasonSnapshot: "was broken", meetingNotes: "talked it through",
+    assignments: [], hubspotNoteId: null,
+  });
+  mockFetch.mockResolvedValue({ ok: true, json: async () => ({ id: "note-99" }) });
+
+  const result = await postEndOfSessionNote("i1");
+  expect(result.noteId).toBe("note-99");
+  expect(result.status).toBe("SYNCED");
+  expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+    data: expect.objectContaining({ hubspotNoteId: "note-99", noteSyncStatus: "SYNCED" }),
+  }));
+});
+
+it("is idempotent — skips when hubspotNoteId already set", async () => {
+  mockFind.mockResolvedValue({ id: "i1", hubspotNoteId: "note-99", assignments: [] });
+  const result = await postEndOfSessionNote("i1");
+  expect(result.status).toBe("SKIPPED");
+  expect(mockFetch).not.toHaveBeenCalled();
+});
+
+it("records FAILED status on HubSpot error", async () => {
+  mockFind.mockResolvedValue({
+    id: "i1", dealId: "d1", session: { date: new Date() },
+    decision: "RESOLVED", decisionRationale: null, reasonSnapshot: null,
+    meetingNotes: null, assignments: [], hubspotNoteId: null,
+  });
+  mockFetch.mockResolvedValue({ ok: false, status: 500 });
+  const result = await postEndOfSessionNote("i1");
+  expect(result.status).toBe("FAILED");
+  expect(mockUpdate).toHaveBeenCalledWith(expect.objectContaining({
+    data: expect.objectContaining({ noteSyncStatus: "FAILED" }),
+  }));
+});
+```
+
+### A11. Chunk 3 — IDR reference paths, color mapping, validation rules, retry button
+
+#### A11a. IDR reference file paths (use these when writing components)
+
+- Top-level shell: `src/app/dashboards/idr-meeting/IdrMeetingClient.tsx`
+- Session header: `src/app/dashboards/idr-meeting/SessionHeader.tsx`
+- Project queue: `src/app/dashboards/idr-meeting/ProjectQueue.tsx`
+- Project detail: `src/app/dashboards/idr-meeting/ProjectDetail.tsx`
+- Add project dialog: `src/app/dashboards/idr-meeting/AddProjectDialog.tsx`
+- Notes form: `src/app/dashboards/idr-meeting/MeetingNotesForm.tsx`
+- Status actions: `src/app/dashboards/idr-meeting/StatusActionsForm.tsx`
+
+Read each before writing the parallel Shit Show component. Match prop shape and React Query key conventions.
+
+#### A11b. Decision pill color mapping (Task 3.2 ProjectQueue)
+
+```ts
+const DECISION_PILL: Record<ShitShowDecision, { bg: string; text: string; label: string }> = {
+  PENDING:       { bg: "bg-zinc-700",   text: "text-zinc-100",   label: "Pending" },
+  RESOLVED:      { bg: "bg-emerald-700", text: "text-emerald-50", label: "Resolved" },
+  STILL_PROBLEM: { bg: "bg-amber-700",   text: "text-amber-50",   label: "Still problem" },
+  ESCALATED:     { bg: "bg-red-700",     text: "text-red-50",     label: "Escalated" },
+  DEFERRED:      { bg: "bg-zinc-600",    text: "text-zinc-100",   label: "Deferred" },
+};
+```
+
+#### A11c. DecisionActions validation rules (Task 3.3 Step 4)
+
+| Decision | Rationale required? | Submit button label |
+|---|---|---|
+| RESOLVED | optional (placeholder: "What was resolved?") | "Mark Resolved" |
+| STILL_PROBLEM | **required** | "Mark Still a Problem" |
+| ESCALATED | **required** | "Escalate" |
+| DEFERRED | **required** | "Defer" |
+
+Implement the form so clicking a button reveals the inline rationale textarea. The submit button stays disabled until the textarea has non-whitespace content (when required) or always enabled (RESOLVED).
+
+#### A11d. Retry button for FAILED note sync (Task 3.3 — add to ProjectDetail header)
+
+When `item.noteSyncStatus === "FAILED"`, show a small banner above the meeting notes:
+
+```tsx
+{item.noteSyncStatus === "FAILED" && (
+  <div className="rounded bg-red-900/40 border border-red-700 px-3 py-2 text-sm text-red-100 flex items-center justify-between">
+    <span>HubSpot note post failed: {item.noteSyncError}</span>
+    <button
+      onClick={async () => {
+        await fetch(`/api/shit-show-meeting/items/${item.id}/retry-note`, { method: "POST" });
+        // refresh
+      }}
+      className="bg-red-700 hover:bg-red-600 px-2 py-1 rounded text-xs"
+    >
+      Retry
+    </button>
+  </div>
+)}
+```
+
+Add a corresponding API route `src/app/api/shit-show-meeting/items/[id]/retry-note/route.ts` that calls `postEndOfSessionNote(itemId)` again and returns the result. (Add this to Chunk 2's deliverables.)
+
+### A12. Chunk 4 Task 4.1 — concrete role-edit instructions
+
+Before editing, run:
+
+```bash
+grep -n "/dashboards/idr-meeting" src/lib/roles.ts
+```
+
+This returns ~15 lines, one per non-wildcard role's `allowedRoutes`. For each line, edit the file to add the two new routes immediately after the existing `/api/idr-meeting` line in the same array. Verification command:
+
+```bash
+grep -c "/dashboards/shit-show-meeting" src/lib/roles.ts
+# Expected: 15
+grep -c "/api/shit-show-meeting" src/lib/roles.ts
+# Expected: 15
+```
+
+If either count != 15, find the missing role(s) and add.
+
+### A13. Chunk 4 Task 4.2 — `vercel.json` confirmed
+
+Confirmed: `vercel.json` is the cron config. Append to its `crons` array:
+
+```json
+{
+  "path": "/api/cron/shit-show-task-sync",
+  "schedule": "*/15 * * * *"
+}
+```
+
+### A14. Chunk 4 Task 4.3 — full 15-row verification table
+
+| Role | Page loads | Queue populates | Detail loads | Assignee picker shows users | Zero 403s |
+|---|---|---|---|---|---|
+| ACCOUNTING | ☐ | ☐ | ☐ | ☐ | ☐ |
+| DESIGN | ☐ | ☐ | ☐ | ☐ | ☐ |
+| INTELLIGENCE | ☐ | ☐ | ☐ | ☐ | ☐ |
+| INTERCONNECT | ☐ | ☐ | ☐ | ☐ | ☐ |
+| MARKETING | ☐ | ☐ | ☐ | ☐ | ☐ |
+| OPERATIONS | ☐ | ☐ | ☐ | ☐ | ☐ |
+| OPERATIONS_MANAGER | ☐ | ☐ | ☐ | ☐ | ☐ |
+| PERMIT | ☐ | ☐ | ☐ | ☐ | ☐ |
+| PROJECT_MANAGER | ☐ | ☐ | ☐ | ☐ | ☐ |
+| ROOFING | ☐ | ☐ | ☐ | ☐ | ☐ |
+| SALES | ☐ | ☐ | ☐ | ☐ | ☐ |
+| SALES_MANAGER | ☐ | ☐ | ☐ | ☐ | ☐ |
+| SERVICE | ☐ | ☐ | ☐ | ☐ | ☐ |
+| TECH_OPS | ☐ | ☐ | ☐ | ☐ | ☐ |
+| VIEWER | ☐ | ☐ | ☐ | ☐ | ☐ |
+
+### A15. Chunk 4 Task 4.4 — pre/post-merge action ordering + paste verification table into PR body
+
+PR body should explicitly separate pre-merge and post-merge actions:
+
+```
+## HUMAN ACTIONS REQUIRED — BEFORE MERGE
+1. Create HubSpot deal properties:
+   - `pb_shit_show_flagged` (Single checkbox)
+   - `pb_shit_show_reason` (Multi-line text)
+   - `pb_shit_show_flagged_since` (Date)
+2. Run additive Prisma migration: `npx prisma migrate deploy`
+3. Run backfill: `npx tsx scripts/backfill-shit-show-flags.ts`
+   Verify: `SELECT * FROM "ShitShowBackfillRun" ORDER BY "startedAt" DESC LIMIT 1`
+   should show status=COMPLETED, errors=0.
+
+## HUMAN ACTIONS REQUIRED — AFTER 1-WEEK BAKE
+4. Run drop migration to remove `IdrMeetingItem.shitShowFlagged` + `shitShowReason`.
+
+## NO NEW ENV VARS
+Confirmed: no new env vars required. Existing `HUBSPOT_ACCESS_TOKEN` covers the 3 new deal properties.
+```
+
+Also paste the completed verification table from Task 4.3 into the PR body as proof.
+
+---
+
+## End of plan
