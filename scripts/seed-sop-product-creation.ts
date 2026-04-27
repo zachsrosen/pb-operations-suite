@@ -1,11 +1,16 @@
 /**
- * Seed the "Submitting a New Product" SOP section into the existing `ops` tab.
+ * Seed the "Submitting a New Product" SOP section into the `zoho-inventory` tab.
  *
  * Usage:
  *   source .env && npx tsx scripts/seed-sop-product-creation.ts
  *
  * Idempotent: skips if the section already exists.
  * To rewrite content, pass --force.
+ *
+ * Migration: if a prior section exists at id `ops-product-creation` (in the
+ * `ops` tab from an earlier seed run), it is removed before the new row is
+ * created. The `ops` tab is labeled "Project Pipeline" in the UI and is not
+ * the right home for catalog content.
  */
 
 import { PrismaClient } from "../src/generated/prisma/client";
@@ -22,8 +27,9 @@ const prisma = new PrismaClient({
 
 const FORCE = process.argv.includes("--force");
 
-const TAB_ID = "ops";
-const SECTION_ID = "ops-product-creation";
+const TAB_ID = "zoho-inventory";
+const SECTION_ID = "zi-product-creation";
+const LEGACY_SECTION_ID = "ops-product-creation";
 const SECTION_TITLE = "Submitting a New Product";
 const SIDEBAR_GROUP = "Catalog";
 const DOT_COLOR = "cyan";
@@ -218,6 +224,16 @@ async function main() {
   if (!tab) {
     console.error(`ERROR: Tab "${TAB_ID}" does not exist. Run scripts/seed-sop.ts first.`);
     process.exit(1);
+  }
+
+  // Migrate from legacy id (`ops-product-creation` in the `ops` tab).
+  // First seed run placed the section in the wrong tab — clean up before recreating.
+  const legacy = await prisma.sopSection.findUnique({ where: { id: LEGACY_SECTION_ID } });
+  if (legacy) {
+    await prisma.sopRevision.deleteMany({ where: { sectionId: LEGACY_SECTION_ID } });
+    await prisma.sopSuggestion.deleteMany({ where: { sectionId: LEGACY_SECTION_ID } });
+    await prisma.sopSection.delete({ where: { id: LEGACY_SECTION_ID } });
+    console.log(`Removed legacy section "${LEGACY_SECTION_ID}" from tab "${legacy.tabId}".`);
   }
 
   // Resolve sortOrder collisions by bumping to next free slot.
