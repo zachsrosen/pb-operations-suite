@@ -92,6 +92,6 @@ If Zuper allows custom keys, use the `pb_*` form. If it generates them from labe
 
 Per spec § 2 open Q 2.2: yes, backfill existing Zuper Products from existing InternalProduct specs after the fields exist. Build a small `scripts/_backfill-zuper-product-customfields.ts` that walks every InternalProduct with a populated spec, maps to the Zuper customFields shape (using the same `buildZuperCustomFieldsFromMetadata` helper), and POSTs an update. ~30 min runtime estimated.
 
-## Update path (out of scope today)
+## Update path
 
-The M3.4 update branch in `src/lib/catalog-sync.ts:executeZuperSync` has a `TODO(M3.4)` — when a Sync Modal user changes a spec field on an existing product, the change currently routes through the generic `mapping ?? change.field` write which lands top-level instead of nested under `custom_fields`. Fix when the fields are populated.
+**Resolved 2026-04-26.** The update branch in `src/lib/catalog-sync.ts:executeZuperSync` now detects spec-label changes (via `getCategoryFields(sku.category)`), fetches the current product's `meta_data` array via `getZuperPartById`, merges new entries by label using `mergeZuperMetaData`, and PUTs the full merged array — preserving cross-link IDs and other unrelated meta_data entries. Helpers `buildZuperMetaDataEntry` and `mergeZuperMetaData` live in `src/lib/zuper-catalog.ts`. Coverage in `src/__tests__/lib/catalog-sync.test.ts` (`M3.4:` test cases).

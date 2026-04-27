@@ -1,4 +1,4 @@
-import { getCategoryFields } from "@/lib/catalog-fields";
+import { getCategoryFields, type FieldDef } from "@/lib/catalog-fields";
 
 const DEFAULT_ZUPER_API_URL = "https://us-west-1c.zuperpro.com/api";
 
@@ -157,8 +157,11 @@ export interface UpsertZuperPartInput {
    * DROPDOWN type, callers should also include `options: [{label, value}]`.
    *
    * The create-path forwards these to Zuper's `/product` POST as
-   * `meta_data: [...]`. For the update path, Zuper requires the FULL existing
-   * meta_data array (writes are not deltas) — that flow is not yet wired here.
+   * `meta_data: [...]`. The update path (executeZuperSync in catalog-sync.ts)
+   * fetches the existing meta_data array, merges spec entries by label, and
+   * PUTs the full merged array — Zuper writes are not deltas, so unrelated
+   * entries (e.g. cross-link IDs registered as meta_data labels) must be
+   * preserved.
    */
   customMetaData?: ZuperMetaDataEntry[];
 }
@@ -276,39 +279,100 @@ export function buildZuperSpecMetaData(
     if (!f.zuperCustomField) continue;
     const v = metadata[f.key];
     if (v === null || v === undefined || v === "") continue;
-
-    let type: string;
-    switch (f.type) {
-      case "number":
-        type = "NUMBER";
-        break;
-      case "dropdown":
-        type = "DROPDOWN";
-        break;
-      case "toggle":
-        type = "BOOLEAN";
-        break;
-      case "text":
-      default:
-        type = "SINGLE_LINE";
-    }
-
-    const entry: ZuperMetaDataEntry = {
-      label: f.zuperCustomField,
-      value: v,
-      type,
-      hide_field: false,
-      hide_to_fe: false,
-      module_name: "PRODUCT",
-    };
-
-    if (f.type === "dropdown" && Array.isArray(f.options)) {
-      entry.options = f.options.map((opt) => ({ label: opt, value: opt }));
-    }
-
-    out.push(entry);
+    out.push(buildZuperMetaDataEntry(f, v));
   }
   return out.length > 0 ? out : undefined;
+}
+
+/**
+ * Build a single Zuper meta_data entry from a FieldDef and a value. Used by
+ * both the create path (via `buildZuperSpecMetaData`) and the update path
+ * (catalog-sync.ts → `executeZuperSync`) so the entry shape stays consistent.
+ *
+ * Caller is responsible for skipping null/undefined/empty values; this helper
+ * always emits an entry with whatever value it's given.
+ */
+export function buildZuperMetaDataEntry(
+  field: FieldDef,
+  value: unknown,
+): ZuperMetaDataEntry {
+  let type: string;
+  switch (field.type) {
+    case "number":
+      type = "NUMBER";
+      break;
+    case "dropdown":
+      type = "DROPDOWN";
+      break;
+    case "toggle":
+      type = "BOOLEAN";
+      break;
+    case "text":
+    default:
+      type = "SINGLE_LINE";
+  }
+
+  if (!field.zuperCustomField) {
+    throw new Error(
+      `buildZuperMetaDataEntry called with a FieldDef that has no zuperCustomField (key=${field.key})`,
+    );
+  }
+
+  const entry: ZuperMetaDataEntry = {
+    label: field.zuperCustomField,
+    value,
+    type,
+    hide_field: false,
+    hide_to_fe: false,
+    module_name: "PRODUCT",
+  };
+
+  if (field.type === "dropdown" && Array.isArray(field.options)) {
+    entry.options = field.options.map((opt) => ({ label: opt, value: opt }));
+  }
+
+  return entry;
+}
+
+/**
+ * Merge spec-field updates into an existing Zuper meta_data array.
+ *
+ * Zuper requires the FULL meta_data array on every PUT — partial writes
+ * silently drop omitted entries, so cross-link IDs and other unrelated spec
+ * values must be preserved. This helper:
+ *   - replaces existing entries that share a label with an update
+ *   - appends updates whose label isn't present
+ *   - leaves all other existing entries (and their order) untouched
+ */
+export function mergeZuperMetaData(
+  existing: unknown,
+  updates: ZuperMetaDataEntry[],
+): ZuperMetaDataEntry[] {
+  const safeExisting: ZuperMetaDataEntry[] = Array.isArray(existing)
+    ? (existing.filter((e) => e && typeof e === "object") as ZuperMetaDataEntry[])
+    : [];
+
+  const updateByLabel = new Map<string, ZuperMetaDataEntry>();
+  for (const u of updates) updateByLabel.set(u.label, u);
+
+  const merged: ZuperMetaDataEntry[] = [];
+  const consumed = new Set<string>();
+
+  for (const entry of safeExisting) {
+    const label = typeof entry?.label === "string" ? entry.label : null;
+    if (label && updateByLabel.has(label)) {
+      merged.push(updateByLabel.get(label)!);
+      consumed.add(label);
+    } else {
+      merged.push(entry);
+    }
+  }
+
+  for (const u of updates) {
+    if (!consumed.has(u.label)) merged.push(u);
+  }
+
+  return merged;
 }
 
 /**
