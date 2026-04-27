@@ -4,15 +4,23 @@ import { zohoInventory } from "@/lib/zoho-inventory";
 import type { UpdateZohoItemResult } from "@/lib/zoho-inventory";
 import { getHubSpotProductById, updateHubSpotProduct, HubSpotManufacturerEnumError } from "@/lib/hubspot";
 import type { UpdateHubSpotProductResult } from "@/lib/hubspot";
-import { getZuperPartById, updateZuperPart, resolveZuperCategoryUid } from "@/lib/zuper-catalog";
-import type { UpdateZuperPartResult } from "@/lib/zuper-catalog";
+import {
+  getZuperPartById,
+  updateZuperPart,
+  resolveZuperCategoryUid,
+  buildZuperMetaDataEntry,
+  mergeZuperMetaData,
+} from "@/lib/zuper-catalog";
+import type { UpdateZuperPartResult, ZuperMetaDataEntry } from "@/lib/zuper-catalog";
 import {
   getHubspotCategoryValue,
   getHubspotPropertiesFromMetadata,
   getZuperCategoryValue,
   generateZuperSpecification,
+  getCategoryFields,
   CATEGORY_CONFIGS,
 } from "@/lib/catalog-fields";
+import type { FieldDef } from "@/lib/catalog-fields";
 import type { SyncSystem } from "@/lib/catalog-sync-confirmation";
 
 // ---------------------------------------------------------------------------
@@ -236,6 +244,25 @@ function buildZuperProposedFields(sku: SkuRecord): Record<string, string | null>
     category: str(categoryValue),
     specification: str(specification),
   };
+}
+
+/**
+ * Coerce a sync-plan string value to the native type Zuper expects for the
+ * given FieldDef. Sync plan changes always carry strings; Zuper meta_data
+ * stores typed values (NUMBER → number, BOOLEAN → boolean). DROPDOWN/text
+ * stay as strings.
+ */
+function coerceSpecChangeValue(field: FieldDef, value: string): unknown {
+  switch (field.type) {
+    case "number": {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : value;
+    }
+    case "toggle":
+      return value === "true" || value === "1";
+    default:
+      return value;
+  }
 }
 
 export function parseZuperCurrentFields(item: Record<string, unknown>): Record<string, string | null> {
@@ -785,20 +812,15 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
   }
 
   // Update existing — map sync-plan field names to Zuper /product API field
-  // names, resolve category to UID, and nest dotted keys.
-  // Must stay in sync with parseZuperCurrentFields read-back and the create
-  // path in createOrUpdateZuperPart.
+  // names, resolve category to UID, nest dotted keys, and route spec-field
+  // changes (whose `change.field` is a FieldDef.zuperCustomField label) into
+  // a merged `meta_data` array.
   //
-  // TODO(M3.4): Once `zuperCustomField` keys are populated on FieldDef in
-  // catalog-fields.ts, the M3.3 mapping registry will start emitting
-  // category-conditional change edges (system "zuper", externalField =
-  // pb_*) for spec changes. Today those would fall through the
-  // `mapping ?? change.field` branch below and be written as top-level
-  // fields — wrong, since Zuper expects them nested under `custom_fields`.
-  // When activating the schema, route any change.field that matches a
-  // FieldDef.zuperCustomField for sku.category through `fields.custom_fields`
-  // instead. Niche path (most updates change identity/pricing, not specs);
-  // create path is the high-leverage win and is already wired.
+  // Must stay in sync with parseZuperCurrentFields read-back and the create
+  // path in createOrUpdateZuperPart. Spec changes flow in via the M3.3
+  // mapping registry (catalog-sync-mappings.ts → catalog-sync-plan.ts), which
+  // emits change edges keyed on `FieldDef.zuperCustomField` for the SKU's
+  // category.
   const ZUPER_FIELD_MAP: Record<string, string | string[]> = {
     name: "product_name",
     description: "product_description",
@@ -812,32 +834,60 @@ export async function executeZuperSync(sku: SkuRecord, preview: SyncPreview): Pr
     // specification stays as-is
   };
 
+  // Build a label → FieldDef map for the SKU's category so we can detect
+  // which incoming change.field values are spec labels (e.g. "Module Wattage (W)").
+  const labelToFieldDef = new Map<string, FieldDef>();
+  for (const f of getCategoryFields(sku.category)) {
+    if (f.zuperCustomField) labelToFieldDef.set(f.zuperCustomField, f);
+  }
+
   const fields: Record<string, unknown> = {};
+  const specEntries: ZuperMetaDataEntry[] = [];
+
   for (const change of preview.changes) {
-    if (change.proposedValue !== null) {
-      const parts = change.field.split(".");
-      if (parts.length === 2) {
-        const parent = fields[parts[0]] as Record<string, unknown> | undefined;
-        fields[parts[0]] = { ...parent, [parts[1]]: change.proposedValue };
-      } else if (change.field === "category") {
-        fields.product_category = await resolveZuperCategoryUid(
-          change.proposedValue,
-        );
-      } else if (change.field === "sku") {
-        // product_no is auto-assigned by Zuper — skip SKU updates
-        continue;
-      } else {
-        const mapping = ZUPER_FIELD_MAP[change.field];
-        if (Array.isArray(mapping)) {
-          for (const apiField of mapping) {
-            fields[apiField] = change.proposedValue;
-          }
-        } else {
-          const apiField = mapping ?? change.field;
+    if (change.proposedValue === null) continue;
+
+    // Spec field — route through meta_data. Coerce to native type so Zuper
+    // stores numbers/booleans, not stringified versions.
+    const specField = labelToFieldDef.get(change.field);
+    if (specField) {
+      const coerced = coerceSpecChangeValue(specField, change.proposedValue);
+      specEntries.push(buildZuperMetaDataEntry(specField, coerced));
+      continue;
+    }
+
+    const parts = change.field.split(".");
+    if (parts.length === 2) {
+      const parent = fields[parts[0]] as Record<string, unknown> | undefined;
+      fields[parts[0]] = { ...parent, [parts[1]]: change.proposedValue };
+    } else if (change.field === "category") {
+      fields.product_category = await resolveZuperCategoryUid(
+        change.proposedValue,
+      );
+    } else if (change.field === "sku") {
+      // product_no is auto-assigned by Zuper — skip SKU updates
+      continue;
+    } else {
+      const mapping = ZUPER_FIELD_MAP[change.field];
+      if (Array.isArray(mapping)) {
+        for (const apiField of mapping) {
           fields[apiField] = change.proposedValue;
         }
+      } else {
+        const apiField = mapping ?? change.field;
+        fields[apiField] = change.proposedValue;
       }
     }
+  }
+
+  // If any spec changes are present, fetch the current product so we can
+  // merge into its existing meta_data array. Zuper PUTs are not deltas —
+  // sending a partial array would silently drop unrelated entries
+  // (e.g. cross-link IDs registered as meta_data labels).
+  if (specEntries.length > 0) {
+    const current = await getZuperPartById(sku.zuperItemId!);
+    const currentMeta = (current as Record<string, unknown> | null | undefined)?.meta_data;
+    fields.meta_data = mergeZuperMetaData(currentMeta, specEntries);
   }
 
   const result: UpdateZuperPartResult = await updateZuperPart(sku.zuperItemId!, fields);
