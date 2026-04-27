@@ -103,9 +103,55 @@ describe("canAccessSection", () => {
 });
 
 describe("ADMIN_ONLY_SECTIONS", () => {
-  it("contains the expected section IDs", () => {
+  it("contains the legacy admin-only section IDs", () => {
     expect(ADMIN_ONLY_SECTIONS).toContain("ref-user-roles");
     expect(ADMIN_ONLY_SECTIONS).toContain("ref-system");
-    expect(ADMIN_ONLY_SECTIONS).toHaveLength(2);
+  });
+
+  it("includes admin-only sections derived from SECTION_ROLE_GATES with empty allowlists", () => {
+    expect(ADMIN_ONLY_SECTIONS).toContain("tools-workflow-builder");
+    expect(ADMIN_ONLY_SECTIONS).toContain("suites-executive");
+    expect(ADMIN_ONLY_SECTIONS).toContain("suites-admin");
+  });
+});
+
+describe("multi-role access", () => {
+  it("grants tab access when ANY role in the array matches", () => {
+    expect(canAccessTab("service", ["SALES", "SERVICE"], "anyone")).toBe(true);
+    expect(canAccessTab("service", ["SALES"], "anyone")).toBe(false);
+    expect(canAccessTab("forecast", ["INTELLIGENCE", "VIEWER"], "anyone")).toBe(true);
+  });
+
+  it("denies role-gated tabs to users without any matching role", () => {
+    expect(canAccessTab("service", ["SALES"], "anyone")).toBe(false);
+    expect(canAccessTab("forecast", ["SALES"], "anyone")).toBe(false);
+    expect(canAccessTab("queues", ["SERVICE"], "anyone")).toBe(false);
+  });
+
+  it("admin role in any position grants access", () => {
+    expect(canAccessTab("service", ["VIEWER", "ADMIN"], "anyone")).toBe(true);
+    expect(canAccessTab("forecast", ["OWNER"], "anyone")).toBe(true);
+  });
+});
+
+describe("section-level role gates", () => {
+  it("blocks tools-workflow-builder for non-admins even with tools tab access", () => {
+    expect(canAccessSection("tools-workflow-builder", "tools", ["TECH_OPS"], "anyone")).toBe(false);
+    expect(canAccessSection("tools-workflow-builder", "tools", ["ADMIN"], "anyone")).toBe(true);
+  });
+
+  it("gates pricing calculator to sales/accounting/PM", () => {
+    expect(canAccessSection("tools-pricing-calculator", "tools", ["SALES"], "anyone")).toBe(true);
+    expect(canAccessSection("tools-pricing-calculator", "tools", ["TECH_OPS"], "anyone")).toBe(false);
+  });
+
+  it("gates customer history to service/ops/PM (PII access)", () => {
+    expect(canAccessSection("service-customer-history", "service", ["SERVICE"], "anyone")).toBe(true);
+    expect(canAccessSection("service-customer-history", "service", ["SALES"], "anyone")).toBe(false);
+  });
+
+  it("gates D&E queues to design/techops/PM only", () => {
+    expect(canAccessSection("queues-plan-review", "queues", ["DESIGN"], "anyone")).toBe(true);
+    expect(canAccessSection("queues-plan-review", "queues", ["PERMIT"], "anyone")).toBe(false);
   });
 });
