@@ -43,7 +43,7 @@ Three new custom properties on the Deal object:
 |---|---|---|---|
 | `pb_shit_show_flagged` | Shit Show Flagged | Single checkbox (boolean) | True = currently a shit show |
 | `pb_shit_show_reason` | Shit Show Reason | Multi-line text | Free text; cleared when `pb_shit_show_flagged` flips to false |
-| `pb_shit_show_flagged_since` | Shit Show Flagged Since | Date | Set to `now()` whenever the flag transitions false→true; null when flag is false. Drives "oldest first" queue sort. |
+| `pb_shit_show_flagged_since` | Shit Show Flagged Since | Date | Set to `now()` whenever the flag transitions false→true; null when flag is false. Drives "oldest first" queue sort. The transition is computed server-side in `lib/shit-show/hubspot-flag.ts` — read current `pb_shit_show_flagged`, write all three properties together if and only if the flag is changing to true. |
 
 **Why deal-level, not session-level:** A deal flagged in IDR session A on April 1 is currently NOT flagged in IDR session B on April 8 because `IdrMeetingItem.shitShowFlagged` is per-session. Moving the flag to the deal makes "is this a shit show?" a single answer that all consumers (IDR, Shit Show hub, HubSpot views, workflows, future automation) see consistently.
 
@@ -116,8 +116,8 @@ model ShitShowSessionItem {
   idrEscalationQueueId String?  // FK-by-id to IdrEscalationQueue.id (not enforced; escalation is best-effort)
   hubspotEscalationTaskId String?  // HubSpot task created when escalating to owner
 
-  addedBy       ShitShowAddedBy @default(SYSTEM) // SYSTEM = auto from snapshot; MANUAL = AddProjectDialog
-  addedByUser   String?         // user email when addedBy = MANUAL; null when SYSTEM
+  addedBy       ShitShowAddedBy @default(SYSTEM) // ShitShowAddedBy.SYSTEM = auto from snapshot; ShitShowAddedBy.MANUAL = AddProjectDialog
+  addedByUser   String?         // user email when addedBy = ShitShowAddedBy.MANUAL; null when SYSTEM
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -284,7 +284,7 @@ The 15 explicit non-wildcard roles requiring the addition: ACCOUNTING, DESIGN, I
 
 (Legacy roles MANAGER, DESIGNER, PERMITTING, OWNER all normalize to other entries above and inherit transitively — no separate handling needed. ADMIN and EXECUTIVE are wildcard.)
 
-For each of those 13 roles, add the following entries to `allowedRoutes` (prefix matching is in effect, so the API prefix covers all sub-routes):
+For each of those 15 roles, add the following entries to `allowedRoutes` (prefix matching is in effect, so the API prefix covers all sub-routes):
 
 ```ts
 "/dashboards/shit-show-meeting",
