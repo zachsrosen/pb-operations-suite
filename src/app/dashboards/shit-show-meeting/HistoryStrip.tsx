@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ShitShowItem, ShitShowDecision } from "./types";
 import { DECISION_PILL } from "./types";
 
@@ -13,14 +13,14 @@ interface HistoryEntry {
 }
 
 export function HistoryStrip({ item }: { item: ShitShowItem }) {
+  // Reset on dealId change by keying state to dealId
+  return <HistoryStripInner key={item.dealId} item={item} />;
+}
+
+function HistoryStripInner({ item }: { item: ShitShowItem }) {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
-
-  useEffect(() => {
-    setHistory([]);
-    setLoaded(false);
-  }, [item.dealId]);
 
   async function load() {
     if (loaded) return;

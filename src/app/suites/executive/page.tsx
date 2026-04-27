@@ -54,6 +54,14 @@ const LINKS: SuitePageCard[] = [
     section: "Command & Planning",
   },
   {
+    href: "/dashboards/shit-show-meeting",
+    title: "Shit Show Meeting",
+    description: "Owner-led review of problem projects with decisions and follow-ups.",
+    tag: "OPS",
+    icon: "🔥",
+    section: "Command & Planning",
+  },
+  {
     href: "/dashboards/capacity",
     title: "Capacity Planning",
     description: "Crew capacity vs. forecasted installs by location and month.",

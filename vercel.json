@@ -55,6 +55,10 @@
   },
   "crons": [
     {
+      "path": "/api/cron/shit-show-task-sync",
+      "schedule": "*/15 * * * *"
+    },
+    {
       "path": "/api/updates/notify",
       "schedule": "5 * * * *"
     },

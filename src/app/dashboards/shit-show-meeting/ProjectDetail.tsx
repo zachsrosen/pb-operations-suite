@@ -50,7 +50,7 @@ export function ProjectDetail({
 
       {/* Reason */}
       <div className="bg-surface-2 rounded-lg p-3">
-        <div className="text-xs uppercase tracking-wider text-muted mb-1">Why it's here</div>
+        <div className="text-xs uppercase tracking-wider text-muted mb-1">Why it&apos;s here</div>
         <div className="text-sm text-foreground whitespace-pre-wrap">
           {item.reasonSnapshot ?? "(no reason given)"}
         </div>
