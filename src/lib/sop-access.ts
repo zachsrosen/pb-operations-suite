@@ -86,6 +86,13 @@ const TAB_ROLE_GATES: Record<string, ReadonlyArray<string>> = {
     "PERMIT",
     "INTERCONNECT",
   ],
+  // Accounting SOP — matches the runtime role gate on
+  // /dashboards/payment-action-queue and similar pages.
+  "accounting-sop": ["ACCOUNTING"],
+  // Sales & Marketing SOP — sales reps, sales managers, marketing.
+  "sales-marketing-sop": ["SALES", "SALES_MANAGER", "MARKETING"],
+  // Executive SOP — intentionally NOT listed here. Admin/owner/executive
+  // bypass all gates already, and unknown tabs are admin-only by default.
 };
 
 /** PM Guide — gated by first name (legacy) */
