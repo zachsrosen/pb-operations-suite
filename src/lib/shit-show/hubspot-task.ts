@@ -87,6 +87,7 @@ export async function createHubspotTaskForAssignment(
 export async function scheduleHubspotEscalationTask(params: {
   sessionItemId: string;
   dealId: string;
+  dealName?: string;
   reason: string;
 }): Promise<void> {
   const { getDealOwnerContact } = await import("@/lib/hubspot");
@@ -101,7 +102,7 @@ export async function scheduleHubspotEscalationTask(params: {
   const taskId = await createHubspotTaskForAssignment({
     dealId: params.dealId,
     assigneeHubspotOwnerId: ownerHubspotId,
-    subject: `🔥 Shit Show Escalation: ${params.dealId}`,
+    subject: `🔥 Shit Show Escalation: ${params.dealName ?? params.dealId}`,
     body: params.reason,
     dueDate: null,
   });

@@ -69,6 +69,7 @@ describe("applyDecision", () => {
     expect(mockEscalate).toHaveBeenCalledWith({
       sessionItemId: "item-1",
       dealId: "deal-1",
+      dealName: "Test Deal",
       reason: "owner pls help",
     });
   });

@@ -43,18 +43,10 @@ export async function applyDecision(input: ApplyDecisionInput): Promise<void> {
   const now = new Date();
 
   if (input.decision === "ESCALATED") {
-    // Atomic: update item + create IdrEscalationQueue row in one transaction.
-    let escalationRowId: string | null = null;
+    // Atomic: create IdrEscalationQueue row + update item (including its FK)
+    // in a single transaction. If the server crashes between writes, both
+    // commit or neither does.
     await prisma.$transaction(async (tx) => {
-      await tx.shitShowSessionItem.update({
-        where: { id: input.itemId },
-        data: {
-          decision: "ESCALATED",
-          decisionRationale: input.decisionRationale,
-          resolvedAt: now,
-          resolvedBy: input.userEmail,
-        },
-      });
       const row = await tx.idrEscalationQueue.create({
         data: {
           dealId: input.dealId,
@@ -65,21 +57,24 @@ export async function applyDecision(input: ApplyDecisionInput): Promise<void> {
           requestedBy: input.userEmail,
         },
       });
-      escalationRowId = row.id;
-    });
-
-    if (escalationRowId) {
-      await prisma.shitShowSessionItem.update({
+      await tx.shitShowSessionItem.update({
         where: { id: input.itemId },
-        data: { idrEscalationQueueId: escalationRowId },
+        data: {
+          decision: "ESCALATED",
+          decisionRationale: input.decisionRationale,
+          resolvedAt: now,
+          resolvedBy: input.userEmail,
+          idrEscalationQueueId: row.id,
+        },
       });
-    }
+    });
 
     // Best-effort HubSpot task (separate from transaction).
     try {
       await scheduleHubspotEscalationTask({
         sessionItemId: input.itemId,
         dealId: input.dealId,
+        dealName: input.dealName,
         reason: input.decisionRationale!,
       });
     } catch (e) {

@@ -601,6 +601,8 @@ const SERVICE: RoleDefinition = {
     "/triage",
     "/dashboards/adders",
     "/dashboards/tsrf-calculator",
+    "/dashboards/shit-show-meeting",
+    "/api/shit-show-meeting",
   ],
   landingCards: [
     { href: "/dashboards/service-overview", title: "Service Overview", description: "Priority queue command center — see what needs attention now.", tag: "OVERVIEW", tagColor: "orange" },
@@ -1366,6 +1368,8 @@ const ACCOUNTING: RoleDefinition = {
     "/api/triage",
     "/triage",
     "/dashboards/adders",
+    "/dashboards/shit-show-meeting",
+    "/api/shit-show-meeting",
   ],
   landingCards: [],
   scope: "global",
