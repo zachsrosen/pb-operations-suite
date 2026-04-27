@@ -20,11 +20,17 @@ import type {
   DealAddressFields,
 } from "@/lib/eagleview-pipeline";
 
+// HubSpot deal properties for address. PB uses `address_line_1` / `postal_code`
+// (deal-style fields), NOT `address` / `zip` (contact-style). The fallback
+// pair lets either set work on this code path.
 const DEAL_PROPERTIES = [
+  "address_line_1",
+  "address_line_2",
   "address",
   "address2",
   "city",
   "state",
+  "postal_code",
   "zip",
   "latitude",
   "longitude",
@@ -41,12 +47,14 @@ async function fetchDealAddress(dealId: string): Promise<DealAddressFields | nul
     const n = Number(s);
     return Number.isFinite(n) ? n : null;
   };
+  // Prefer deal-style fields (address_line_1, postal_code), fall back to
+  // contact-style (address, zip) for compatibility.
   return {
-    address: props.address ?? "",
-    address2: props.address2 ?? null,
+    address: props.address_line_1 ?? props.address ?? "",
+    address2: props.address_line_2 ?? props.address2 ?? null,
     city: props.city ?? "",
     state: props.state ?? "",
-    zip: props.zip ?? "",
+    zip: props.postal_code ?? props.zip ?? "",
     latitude: num(props.latitude),
     longitude: num(props.longitude),
     driveDesignDocumentsFolderId:
