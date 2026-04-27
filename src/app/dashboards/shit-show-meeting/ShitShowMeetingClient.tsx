@@ -120,7 +120,12 @@ export function ShitShowMeetingClient({ userEmail }: { userEmail: string }) {
     const res = await fetch("/api/shit-show-meeting/sessions", { method: "POST" });
     if (res.ok) {
       const json = (await res.json()) as { session: ShitShowSession };
-      setActiveSession(json.session);
+      // Immediately snapshot so the queue populates with currently-flagged
+      // deals (no separate "Start meeting" click required).
+      await fetch(`/api/shit-show-meeting/sessions/${json.session.id}/snapshot`, {
+        method: "POST",
+      });
+      await loadSession(json.session.id);
       await loadSessions();
     } else {
       const err = await res.json().catch(() => ({}));
@@ -180,13 +185,27 @@ export function ShitShowMeetingClient({ userEmail }: { userEmail: string }) {
       />
       <div className="flex-1 grid grid-cols-[320px_1fr] overflow-hidden">
         <div className="border-r border-t-border flex flex-col">
-          {activeSession?.status === "ACTIVE" && (
-            <div className="p-2 border-b border-t-border">
+          {activeSession && activeSession.status !== "COMPLETED" && (
+            <div className="p-2 border-b border-t-border space-y-2">
               <button
                 onClick={() => setShowAddDialog(true)}
                 className="w-full bg-red-600 hover:bg-red-500 text-white text-sm px-3 py-1.5 rounded"
               >
                 + Add a deal
+              </button>
+              <button
+                onClick={async () => {
+                  if (!activeSession) return;
+                  await fetch(
+                    `/api/shit-show-meeting/sessions/${activeSession.id}/snapshot`,
+                    { method: "POST" },
+                  );
+                  await loadSession(activeSession.id);
+                }}
+                className="w-full bg-surface-2 hover:bg-surface-elevated border border-t-border text-foreground text-xs px-3 py-1 rounded"
+                title="Re-pull all currently-flagged deals from HubSpot"
+              >
+                ↻ Refresh from HubSpot
               </button>
             </div>
           )}
