@@ -3,7 +3,13 @@ import { requireApiAuth } from "@/lib/api-auth";
 import { prisma } from "@/lib/db";
 import { isIdrAllowedRole } from "@/lib/idr-meeting";
 import { appCache } from "@/lib/cache";
+import { setShitShowFlag } from "@/lib/shit-show/hubspot-flag";
 
+// NOTE: shitShowFlagged + shitShowReason stay in this whitelist during the
+// shit-show migration bake period (see docs/superpowers/specs/2026-04-27-shit-show-meeting-design.md).
+// They are dual-written: this PATCH writes to both the local column AND the HubSpot
+// deal property via setShitShowFlag(). After the 1-week bake, the drop migration
+// removes the columns and these whitelist entries.
 const EDITABLE_FIELDS = [
   "difficulty", "installerCount", "installerDays", "electricianCount",
   "electricianDays", "discoReco", "interiorAccess", "needsSurveyInfo",
@@ -78,6 +84,23 @@ export async function PATCH(
     where: { id },
     data,
   });
+
+  // Mirror shit-show flag changes to the HubSpot deal property (single source
+  // of truth for the new Shit Show Meeting hub). Best-effort: a HubSpot failure
+  // does not fail the user-facing PATCH because the local column also updates.
+  if ("shitShowFlagged" in data || "shitShowReason" in data) {
+    try {
+      await setShitShowFlag(
+        updated.dealId,
+        Boolean(data.shitShowFlagged ?? updated.shitShowFlagged),
+        (data.shitShowFlagged ?? updated.shitShowFlagged)
+          ? ((data.shitShowReason ?? updated.shitShowReason ?? "") as string)
+          : undefined,
+      );
+    } catch (err) {
+      console.error("[idr-items] failed to mirror shit-show flag to HubSpot", err);
+    }
+  }
 
   // Broadcast change so other clients refetch in real time
   appCache.invalidate(`idr-meeting:session:${updated.sessionId}`);

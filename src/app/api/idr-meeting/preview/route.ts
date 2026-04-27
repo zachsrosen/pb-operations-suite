@@ -10,6 +10,7 @@ import {
   SNAPSHOT_PROPERTIES,
 } from "@/lib/idr-meeting";
 import { hubspotClient } from "@/lib/hubspot";
+import { readShitShowFlagsBatch } from "@/lib/shit-show/snapshot";
 
 /**
  * GET /api/idr-meeting/preview
@@ -73,6 +74,14 @@ export async function GET() {
   const existingDealIds = new Set(deals.map((d) => d.dealId));
   let sortOrder = 0;
 
+  // Hydrate shit-show flag from HubSpot for all deals shown in the preview.
+  // One batched call per 100 deals — far cheaper than per-deal getDealProperties.
+  const allDealIds = [
+    ...deals.map((d) => d.dealId),
+    ...escalations.map((e) => e.dealId),
+  ];
+  const shitShowByDeal = await readShitShowFlagsBatch([...new Set(allDealIds)]);
+
   const items = deals.map((deal) => {
     const snapshot = snapshotDealProperties(deal.properties, ownerMap);
     const badge = computeReadinessBadge(snapshot.surveyCompleted, snapshot.plansetDate);
@@ -118,8 +127,8 @@ export async function GET() {
       escalationReason: null as string | null,
       tags: snapshot.tags,
       reviewed: false,
-      shitShowFlagged: false,
-      shitShowReason: null as string | null,
+      shitShowFlagged: shitShowByDeal.get(deal.dealId)?.flagged ?? false,
+      shitShowReason: shitShowByDeal.get(deal.dealId)?.reason ?? null,
       hubspotSyncStatus: "DRAFT" as const,
       hubspotSyncedAt: null,
       addedBy: "preview",
@@ -198,8 +207,8 @@ export async function GET() {
           escalationReason: esc.reason,
           tags: snapshot.tags,
           reviewed: false,
-          shitShowFlagged: false,
-          shitShowReason: null as string | null,
+          shitShowFlagged: shitShowByDeal.get(esc.dealId)?.flagged ?? false,
+          shitShowReason: shitShowByDeal.get(esc.dealId)?.reason ?? null,
           hubspotSyncStatus: "DRAFT" as const,
           hubspotSyncedAt: null,
           addedBy: esc.requestedBy,

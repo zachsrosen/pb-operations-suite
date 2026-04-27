@@ -93,7 +93,7 @@ export function StatusActionsForm({ item, onChange, readOnly }: Props) {
         <div className="border-t border-t-border my-1" />
 
         {/* Shit Show — flag for the Shit Show meeting */}
-        <div>
+        <div title="This flags the deal globally — clear it from the Shit Show meeting's Resolved action.">
           <div className="flex items-center gap-2">
             <ToggleSwitch
               checked={!!item.shitShowFlagged}
