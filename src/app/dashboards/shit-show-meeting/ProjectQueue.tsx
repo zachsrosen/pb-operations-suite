@@ -23,7 +23,11 @@ export function ProjectQueue({
     <div className="overflow-y-auto h-full">
       {regions.length === 0 && (
         <div className="text-sm text-muted px-4 py-6 text-center">
-          Queue empty — no flagged deals.
+          Queue empty.
+          <div className="text-xs mt-1">
+            No deals are currently flagged 🔥 in HubSpot. Use &ldquo;+ Add a deal&rdquo; to flag one,
+            or toggle the 🔥 flag on a deal in the IDR Meeting hub.
+          </div>
         </div>
       )}
       {regions.map((region) => (
