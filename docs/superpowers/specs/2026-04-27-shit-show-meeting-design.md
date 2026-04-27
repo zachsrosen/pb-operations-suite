@@ -37,22 +37,23 @@ This spec defines `/dashboards/shit-show-meeting`, a session-based meeting hub m
 
 ## 3. Source of Truth: HubSpot Deal Properties
 
-Two new custom properties on the Deal object:
+Three new custom properties on the Deal object:
 
 | Property name (internal) | Label | Type | Notes |
 |---|---|---|---|
 | `pb_shit_show_flagged` | Shit Show Flagged | Single checkbox (boolean) | True = currently a shit show |
 | `pb_shit_show_reason` | Shit Show Reason | Multi-line text | Free text; cleared when `pb_shit_show_flagged` flips to false |
+| `pb_shit_show_flagged_since` | Shit Show Flagged Since | Date | Set to `now()` whenever the flag transitions false→true; null when flag is false. Drives "oldest first" queue sort. |
 
 **Why deal-level, not session-level:** A deal flagged in IDR session A on April 1 is currently NOT flagged in IDR session B on April 8 because `IdrMeetingItem.shitShowFlagged` is per-session. Moving the flag to the deal makes "is this a shit show?" a single answer that all consumers (IDR, Shit Show hub, HubSpot views, workflows, future automation) see consistently.
 
 **Backfill:** before the new code reads from HubSpot, every existing `IdrMeetingItem` row where `shitShowFlagged = true` is reduced to a unique set of dealIds, and each deal gets its `pb_shit_show_flagged` and `pb_shit_show_reason` set in HubSpot. Backfill is idempotent (re-runnable; PATCHes the same value on re-run).
 
-**Drop-after-backfill:** once the migration ships and is verified in prod, a follow-up migration drops `IdrMeetingItem.shitShowFlagged` and `IdrMeetingItem.shitShowReason`. Per the user's migration-ordering rule, the additive HubSpot property work + backfill ships first; the column drop is a separate, later migration.
+**Drop-after-backfill:** after a one-week bake period in prod (see §9 step 5), a follow-up migration drops `IdrMeetingItem.shitShowFlagged` and `IdrMeetingItem.shitShowReason`. Per the user's migration-ordering rule, the additive HubSpot property work + backfill ships first; the column drop is a separate, later migration.
 
 ### HUMAN ACTION REQUIRED — before code merge
 
-1. In HubSpot: create `pb_shit_show_flagged` (single checkbox) and `pb_shit_show_reason` (multi-line text) on the Deal object.
+1. In HubSpot: create `pb_shit_show_flagged` (single checkbox), `pb_shit_show_reason` (multi-line text), and `pb_shit_show_flagged_since` (date) on the Deal object.
 2. Add the new env-vars-or-constants if any (none currently anticipated; property names are hard-coded).
 3. After merge: run the backfill script once.
 4. After verification: ship the column-drop migration.
@@ -96,7 +97,7 @@ model ShitShowSessionItem {
   stage           String?    // dealstage label
   dealOwner       String?
   reasonSnapshot  String?    // copy of pb_shit_show_reason at snapshot time
-  flaggedSince    DateTime?  // when pb_shit_show_flagged first went true (best-effort, may be null on backfilled deals)
+  flaggedSince    DateTime?  // copied from pb_shit_show_flagged_since at snapshot time; backfilled rows get the migration's run timestamp
   snapshotUpdatedAt DateTime @default(now())
 
   // Filled during the meeting
@@ -115,7 +116,8 @@ model ShitShowSessionItem {
   idrEscalationQueueId String?  // FK-by-id to IdrEscalationQueue.id (not enforced; escalation is best-effort)
   hubspotEscalationTaskId String?  // HubSpot task created when escalating to owner
 
-  addedBy   String   // "system" (auto from snapshot) or user email (manual add)
+  addedBy       ShitShowAddedBy @default(SYSTEM) // SYSTEM = auto from snapshot; MANUAL = AddProjectDialog
+  addedByUser   String?         // user email when addedBy = MANUAL; null when SYSTEM
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -168,6 +170,23 @@ enum ShitShowAssignmentStatus {
   OPEN
   COMPLETED
   CANCELLED
+}
+
+enum ShitShowAddedBy {
+  SYSTEM    // auto from snapshot
+  MANUAL    // user added via AddProjectDialog
+}
+
+model ShitShowBackfillRun {
+  id          String    @id @default(cuid())
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  processed   Int       @default(0)
+  errors      Int       @default(0)
+  errorLog    Json      @default("[]") // array of { dealId, error } for skipped/failed rows
+  status      String    @default("RUNNING") // RUNNING | COMPLETED | FAILED
+
+  @@index([status])
 }
 ```
 
@@ -226,6 +245,17 @@ src/app/api/shit-show-meeting/
   deal-search/route.ts                    — wraps HubSpot deal search for AddProjectDialog
   flag/route.ts                           — POST { dealId, flagged, reason }; the canonical write to
                                             pb_shit_show_flagged + pb_shit_show_reason
+  idr-notes/[dealId]/route.ts             — proxy: GET recent IdrMeetingNote rows for the deal (read-only)
+  users/route.ts                          — proxy: GET active users for the assignee picker
+```
+
+Plus one cron route (public-by-middleware, not subject to role allowlist):
+
+```
+src/app/api/cron/shit-show-task-sync/route.ts
+                                          — every 15 min: poll HubSpot for status changes on tasks
+                                            referenced by ShitShowAssignment.hubspotTaskId; updates
+                                            ShitShowAssignment.status when the HubSpot task closes
 ```
 
 ### Library modules
@@ -250,7 +280,9 @@ In `src/lib/suite-nav.ts`, the Executive suite's card list gets one new entry fo
 
 Per `feedback_api_route_role_allowlist.md` and the user's prior pain ("last time we did this, some users could see the page but nothing populated"), the spec is explicit about EVERY route — page AND API — that needs to be in each role's `allowedRoutes`. ADMIN and EXECUTIVE already have wildcard `["*"]` and don't need any addition.
 
-The 13 explicit roles requiring the addition: DESIGN, INTELLIGENCE, INTERCONNECT, MARKETING, OPERATIONS, OPERATIONS_MANAGER, PERMIT, PROJECT_MANAGER, ROOFING, SALES, SALES_MANAGER, TECH_OPS, VIEWER.
+The 15 explicit non-wildcard roles requiring the addition: ACCOUNTING, DESIGN, INTELLIGENCE, INTERCONNECT, MARKETING, OPERATIONS, OPERATIONS_MANAGER, PERMIT, PROJECT_MANAGER, ROOFING, SALES, SALES_MANAGER, SERVICE, TECH_OPS, VIEWER.
+
+(Legacy roles MANAGER, DESIGNER, PERMITTING, OWNER all normalize to other entries above and inherit transitively — no separate handling needed. ADMIN and EXECUTIVE are wildcard.)
 
 For each of those 13 roles, add the following entries to `allowedRoutes` (prefix matching is in effect, so the API prefix covers all sub-routes):
 
@@ -261,26 +293,20 @@ For each of those 13 roles, add the following entries to `allowedRoutes` (prefix
 
 The single `/api/shit-show-meeting` prefix entry covers every API route enumerated in §5 (sessions, items, assignments, presence, search, deal-search, flag, snapshot, end). No per-route additions needed.
 
-**Cross-namespace dependencies** — the Shit Show hub also calls these existing endpoints. Each role that gets the page MUST already have these in its allowlist. We will verify and add as needed:
+**Cross-namespace dependencies — resolved by namespacing everything under `/api/shit-show-meeting`.** To eliminate silent 403s, NO Shit-Show UI calls cross-namespace APIs. Every dependency gets a thin proxy under `/api/shit-show-meeting/*`:
 
-| Endpoint | Used by | Why |
+| Original endpoint | Replaced by Shit-Show proxy | Why |
 |---|---|---|
-| `/api/idr-meeting/deal-search` (or wherever the canonical HubSpot deal search lives) | `AddProjectDialog` | search deals to flag |
-| `/api/idr-meeting` (read-only IDR notes) | `IdrNotesContext` | read recent IDR notes for context |
-| `/api/users` or equivalent user-list endpoint | `AssignmentsPanel` assignee picker | populate user dropdown |
-| `/api/stream` | `useSSE` for presence + queue refresh | realtime |
+| HubSpot deal search (used by IDR's `deal-search`) | `/api/shit-show-meeting/deal-search` | already in §5 |
+| `IdrMeetingNote` reads | `/api/shit-show-meeting/idr-notes/[dealId]` | new proxy |
+| User list for assignee picker | `/api/shit-show-meeting/users` | new proxy that reads from DB |
+| `/api/stream` (SSE) | `/api/stream` (shared, all roles already have it) | no change |
 
-If any of the 13 roles does NOT already have `/api/idr-meeting` in its allowlist (e.g., a role that we're adding to Shit Show but not IDR), the implementation must add `/api/idr-meeting` (read-only sub-paths only) to that role's allowlist too — OR move the IDR notes context fetch behind a Shit-Show-namespace endpoint. Decision: **add a thin proxy `/api/shit-show-meeting/idr-notes/[dealId]` that internally queries IdrMeetingNote**, so Shit Show roles never need IDR allowlist entries. This is cleaner and avoids accidental coupling.
-
-Update the §5 API listing to include:
-
-```
-src/app/api/shit-show-meeting/idr-notes/[dealId]/route.ts   — proxy: read-only IDR notes for context
-```
+Update the §5 API listing to include these proxies (added there).
 
 ### Verification step (explicit, NOT a "nice to have")
 
-Before merging, the implementation MUST include a manual QA pass that does the following for **every** role in {DESIGN, INTELLIGENCE, INTERCONNECT, MARKETING, OPERATIONS, OPERATIONS_MANAGER, PERMIT, PROJECT_MANAGER, ROOFING, SALES, SALES_MANAGER, TECH_OPS, VIEWER}:
+Before merging, the implementation MUST include a manual QA pass that does the following for **every** role in {ACCOUNTING, DESIGN, INTELLIGENCE, INTERCONNECT, MARKETING, OPERATIONS, OPERATIONS_MANAGER, PERMIT, PROJECT_MANAGER, ROOFING, SALES, SALES_MANAGER, SERVICE, TECH_OPS, VIEWER}:
 
 1. Use the admin role-impersonation cookie (`pb_effective_roles`) to assume that role.
 2. Navigate to `/dashboards/shit-show-meeting`.
@@ -412,11 +438,20 @@ All HubSpot calls go through the existing `searchWithRetry`-style rate-limit-awa
 
 ### Escalation atomicity
 
-The "Escalate" decision performs two external writes (HubSpot task + IdrEscalationQueue row). Both happen inside `hubspot-escalation.ts`:
-- IdrEscalationQueue row is a local DB insert (atomic with the decision update in the same transaction).
-- HubSpot task is async and best-effort with retry as above.
+The "Escalate" decision performs two external writes (HubSpot task + IdrEscalationQueue row). The route handler `PATCH /api/shit-show-meeting/items/[id]` (when the body sets `decision: "ESCALATED"`) wraps the local writes in a single Prisma transaction:
 
-If the HubSpot task fails permanently, the IDR queue row still surfaces the deal — so the escalation isn't "lost," just under-noisy.
+```ts
+await prisma.$transaction(async (tx) => {
+  await tx.shitShowSessionItem.update({ where: { id }, data: { decision: "ESCALATED", escalationReason, resolvedAt, resolvedBy } });
+  await tx.idrEscalationQueue.create({ data: { dealId, dealName, region, queueType: "ESCALATION", reason: escalationReason, requestedBy: userEmail } });
+});
+// AFTER the transaction commits, fire-and-retry the HubSpot task write:
+await scheduleHubspotEscalationTask({ sessionItemId: id, dealId, ownerId, reason: escalationReason });
+```
+
+- The `IdrEscalationQueue` row and the decision update commit together or not at all.
+- The HubSpot task is async and best-effort with retry per the §7 failure-handling rules.
+- If the HubSpot task fails permanently, the IDR queue row still surfaces the deal — so the escalation isn't "lost," just under-noisy.
 
 ---
 
@@ -443,7 +478,9 @@ Same pattern as IDR: the snapshot stores display fields. When the right pane ope
 
 ### Presence
 
-Reuse the IDR presence pattern verbatim — same in-memory store keyed by `(sessionId, userEmail, lastSeenAt)`, same SSE stream, same chip UI. Move the implementation to a shared `lib/meeting-presence.ts` if not already shared, then both IDR and Shit Show import from there. (Investigate at implementation time; if IDR's presence is tightly coupled to its session table, mirror rather than share.)
+Reuse the IDR presence pattern verbatim — same in-memory store keyed by `(sessionId, userEmail, lastSeenAt)`, same SSE stream, same chip UI.
+
+**Default: mirror, not share.** Copy IDR's presence implementation into `src/app/api/shit-show-meeting/presence/` and a new `ShitShowMeetingClient` presence hook. Only extract to `lib/meeting-presence.ts` if the IDR implementation is already factored such that the extraction is a 30-minute refactor with no behavior changes. The implementation plan owns this decision — if extraction takes longer than 30 minutes, keep them duplicated and revisit in a separate refactor PR.
 
 ---
 
@@ -451,13 +488,19 @@ Reuse the IDR presence pattern verbatim — same in-memory store keyed by `(sess
 
 In strict order:
 
-1. **Additive HubSpot property creation (HUMAN)** — add `pb_shit_show_flagged` and `pb_shit_show_reason` in HubSpot UI.
-2. **Additive Prisma migration** — add the four new tables and three enums. No drops.
-3. **Backfill script** (`scripts/backfill-shit-show-flags.ts`) — read all `IdrMeetingItem` rows where `shitShowFlagged = true`, dedupe by `dealId`, PATCH HubSpot deals with `pb_shit_show_flagged = true` and `pb_shit_show_reason = <latest non-null shitShowReason>`. Idempotent. Tracks progress in a `ShitShowBackfillRun` row (cuid, startedAt, completedAt, processed, errors) so it's resumable.
-4. **Code merge** — IDR toggle now writes to HubSpot property; IDR queue reads `pb_shit_show_flagged` from HubSpot when hydrating items; Shit Show hub goes live.
-5. **Vercel env sync** (HUMAN) — none anticipated; if HubSpot property names become env vars, push to Vercel prod before merge.
-6. **Bake period** — one week minimum. Verify IDR 🔥 toggle still works end-to-end and reflects in HubSpot. Verify Shit Show snapshot pulls the right deals.
-7. **Drop migration** — separate later migration removing `IdrMeetingItem.shitShowFlagged` and `IdrMeetingItem.shitShowReason`. Run manually per the project's `feedback_subagents_no_migrations.md` rule.
+1. **Additive HubSpot property creation (HUMAN)** — create `pb_shit_show_flagged` (boolean), `pb_shit_show_reason` (multi-line text), `pb_shit_show_flagged_since` (date) on the Deal object in HubSpot UI.
+2. **Additive Prisma migration** — add the four new tables (`ShitShowSession`, `ShitShowSessionItem`, `ShitShowAssignment`, `ShitShowBackfillRun`) and five enums (`ShitShowSessionStatus`, `ShitShowDecision`, `ShitShowSyncStatus`, `ShitShowAssignmentStatus`, `ShitShowAddedBy`). No drops. Run manually by the user (subagents cannot run migrations).
+3. **Backfill script** (`scripts/backfill-shit-show-flags.ts`) — read all `IdrMeetingItem` rows where `shitShowFlagged = true`, dedupe by `dealId`, PATCH HubSpot deals with `pb_shit_show_flagged = true`, `pb_shit_show_reason = <latest non-null shitShowReason>`, `pb_shit_show_flagged_since = <run timestamp>`. Idempotent. Tracks progress in a `ShitShowBackfillRun` row (resumable on restart by querying for `status = 'RUNNING'`).
+4. **Code merge** — Shit Show hub goes live AND IDR's existing toggle is rewired to write to HubSpot. Specifically:
+   - **IDR files modified:**
+     - `src/app/api/idr-meeting/items/[id]/route.ts` — remove `"shitShowFlagged"` and `"shitShowReason"` from the editable-fields whitelist. Replace with a write to `lib/shit-show/hubspot-flag.ts` when those fields are in the PATCH body.
+     - `src/app/api/idr-meeting/preview/route.ts` — `shitShowFlagged: false` defaults become `await readShitShowFlag(dealId)` calls (batched for the preview list, with a per-page `Promise.all` against the HubSpot search API rather than per-deal fetches).
+     - `src/app/dashboards/idr-meeting/StatusActionsForm.tsx` — `handleToggle("shitShowFlagged")` continues to call the same items PATCH endpoint; no UI change. Tooltip added: "This flags the deal globally — clear it from the Shit Show meeting's Resolved action."
+     - `src/app/dashboards/idr-meeting/IdrMeetingClient.tsx` — `shitShowFlagged: boolean` and `shitShowReason: string | null` types stay (the values come from the snapshot path, just sourced from HubSpot now).
+     - `src/app/dashboards/idr-meeting/ProjectQueue.tsx` — no change; consumes existing `item.shitShowFlagged` field.
+   - **Rollback plan:** revert this code merge. The legacy `IdrMeetingItem.shitShowFlagged`/`shitShowReason` columns still exist during the bake period, so a revert restores the prior behavior immediately. After the drop migration in step 6, rollback requires also reverting the migration.
+5. **Bake period** — minimum one week from prod merge. Verify daily that (a) the IDR 🔥 toggle still works end-to-end and reflects in HubSpot, (b) the Shit Show snapshot pulls the right deals, (c) `ShitShowBackfillRun` shows `status = COMPLETED` with `errors = 0`.
+6. **Drop migration** — separate later migration removing `IdrMeetingItem.shitShowFlagged` and `IdrMeetingItem.shitShowReason`. Run manually by the user (subagents cannot run migrations).
 
 ---
 
