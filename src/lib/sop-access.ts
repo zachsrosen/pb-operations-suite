@@ -49,8 +49,10 @@ export function canAccessTab(
   // PM Guide — name-gated
   if (tabId === "pm") return PM_NAMES.has(firstName);
 
-  // Tech Ops tab
-  if (tabId === "role-de") return role === "TECH_OPS";
+  // Role-specific tabs (TECH_OPS retains access to all three for legacy users)
+  if (tabId === "role-de") return role === "DESIGN" || role === "TECH_OPS";
+  if (tabId === "role-permit") return role === "PERMIT" || role === "TECH_OPS";
+  if (tabId === "role-ic") return role === "INTERCONNECT" || role === "TECH_OPS";
 
   // Unknown / shelved tabs (other, role-ops, etc.) — denied
   return false;

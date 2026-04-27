@@ -37,15 +37,38 @@ describe("canAccessTab", () => {
     expect(canAccessTab("pm", "OPERATIONS", "alexis")).toBe(true); // name match regardless of role
   });
 
-  // Tech Ops tab
-  it("allows TECH_OPS role to access role-de tab", () => {
+  // Role-specific tabs (modern split: DESIGN / PERMIT / INTERCONNECT,
+  // with TECH_OPS retained as a legacy umbrella).
+  it("allows DESIGN and TECH_OPS to access role-de tab", () => {
+    expect(canAccessTab("role-de", "DESIGN", "anyone")).toBe(true);
     expect(canAccessTab("role-de", "TECH_OPS", "anyone")).toBe(true);
   });
 
-  it("blocks non-TECH_OPS from role-de tab", () => {
-    expect(canAccessTab("role-de", "OPERATIONS", "anyone")).toBe(false);
-    expect(canAccessTab("role-de", "PROJECT_MANAGER", "anyone")).toBe(false);
-    expect(canAccessTab("role-de", "VIEWER", "anyone")).toBe(false);
+  it("allows PERMIT and TECH_OPS to access role-permit tab", () => {
+    expect(canAccessTab("role-permit", "PERMIT", "anyone")).toBe(true);
+    expect(canAccessTab("role-permit", "TECH_OPS", "anyone")).toBe(true);
+  });
+
+  it("allows INTERCONNECT and TECH_OPS to access role-ic tab", () => {
+    expect(canAccessTab("role-ic", "INTERCONNECT", "anyone")).toBe(true);
+    expect(canAccessTab("role-ic", "TECH_OPS", "anyone")).toBe(true);
+  });
+
+  it("blocks cross-role access between role-de / role-permit / role-ic", () => {
+    expect(canAccessTab("role-de", "PERMIT", "anyone")).toBe(false);
+    expect(canAccessTab("role-de", "INTERCONNECT", "anyone")).toBe(false);
+    expect(canAccessTab("role-permit", "DESIGN", "anyone")).toBe(false);
+    expect(canAccessTab("role-permit", "INTERCONNECT", "anyone")).toBe(false);
+    expect(canAccessTab("role-ic", "DESIGN", "anyone")).toBe(false);
+    expect(canAccessTab("role-ic", "PERMIT", "anyone")).toBe(false);
+  });
+
+  it("blocks unrelated roles from role-de / role-permit / role-ic", () => {
+    for (const tab of ["role-de", "role-permit", "role-ic"]) {
+      expect(canAccessTab(tab, "OPERATIONS", "anyone")).toBe(false);
+      expect(canAccessTab(tab, "PROJECT_MANAGER", "anyone")).toBe(false);
+      expect(canAccessTab(tab, "VIEWER", "anyone")).toBe(false);
+    }
   });
 
   // Unknown / shelved tabs
