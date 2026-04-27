@@ -16,6 +16,7 @@ const PUBLIC_TABS = new Set([
   "scheduling",
   "forecast",
   "trackers",
+  "suites",
 ]);
 
 /** PM Guide — gated by first name */
