@@ -101,19 +101,19 @@ model ShitShowSessionItem {
   snapshotUpdatedAt DateTime @default(now())
 
   // Filled during the meeting
-  meetingNotes String?
-  decision     ShitShowDecision @default(PENDING)
-  resolvedAt   DateTime?
-  resolvedBy   String?
+  meetingNotes        String?
+  decision            ShitShowDecision @default(PENDING)
+  decisionRationale   String?  // Short "why we made this call." Required when decision is STILL_PROBLEM, ESCALATED, or DEFERRED. Optional for RESOLVED.
+  resolvedAt          DateTime?
+  resolvedBy          String?
 
   // External writes — IDs stored for idempotency
   hubspotNoteId        String?  // posted at session-end
   noteSyncStatus       ShitShowSyncStatus @default(PENDING)
   noteSyncError        String?
 
-  // Escalation (when decision = ESCALATED)
-  escalationReason     String?
-  idrEscalationQueueId String?  // FK-by-id to IdrEscalationQueue.id (not enforced; escalation is best-effort)
+  // Escalation (when decision = ESCALATED) — uses decisionRationale as the reason text; these fields capture the external write IDs only
+  idrEscalationQueueId    String?  // FK-by-id to IdrEscalationQueue.id (not enforced; escalation is best-effort)
   hubspotEscalationTaskId String?  // HubSpot task created when escalating to owner
 
   addedBy       ShitShowAddedBy @default(SYSTEM) // ShitShowAddedBy.SYSTEM = auto from snapshot; ShitShowAddedBy.MANUAL = AddProjectDialog
@@ -218,7 +218,8 @@ src/app/dashboards/shit-show-meeting/
   AddProjectDialog.tsx           — search HubSpot, set pb_shit_show_flagged, add to current session
   ProjectDetail.tsx              — right pane container
   ReasonPanel.tsx                — read-only reason + flagged-since
-  HistoryStrip.tsx               — prior shit-show sessions for this deal
+  ProjectInfoPanel.tsx           — read-only project context (address, system, owners, AHJ/utility, links)
+  HistoryStrip.tsx               — prior shit-show sessions for this deal (date, decision, decisionRationale one-liner)
   IdrNotesContext.tsx            — read-only recent IDR notes for context
   MeetingNotesForm.tsx           — autosaving textarea for ShitShowSessionItem.meetingNotes
   AssignmentsPanel.tsx           — list + add follow-ups
@@ -336,14 +337,34 @@ Two-pane layout, identical chrome to IDR Meeting hub:
 │ SessionHeader  │ (right pane = ProjectDetail for selected item)  │
 ├────────────────┤                                                 │
 │ AddProjectBtn  │ ReasonPanel                                     │
-├────────────────┤ HistoryStrip                                    │
-│ ProjectQueue   │ IdrNotesContext (collapsed)                     │
+├────────────────┤ ProjectInfoPanel                                │
+│ ProjectQueue   │ HistoryStrip                                    │
+│                │ IdrNotesContext (collapsed)                     │
 │  - DTC        ▾│ MeetingNotesForm                                │
 │  - Westy      ▾│ AssignmentsPanel                                │
 │  - COSP       ▾│ DecisionActions                                 │
 │  - California ▾│                                                 │
 └────────────────┴─────────────────────────────────────────────────┘
 ```
+
+### ProjectInfoPanel (read-only context)
+
+A compact grid above the meeting notes giving the owner enough context to evaluate "is this still broken?" without leaving the page. **All fields are read-only** — the meeting captures decisions and follow-ups, not field-level project edits (those still happen in IDR / HubSpot).
+
+Fields shown (curated subset of what the snapshot already pulls):
+
+| Section | Fields |
+|---|---|
+| Site | `address`, `pb_location` |
+| System | `systemSizeKw`, `equipmentSummary`, `projectType` |
+| Stage & status | current `stage` (deal stage label), `surveyStatus`, `surveyDate`, `designStatus`, `designApprovalStatus`, `plansetDate` |
+| Compliance | `ahj`, `utilityCompany` |
+| People | `dealOwner`, `projectManager`, `operationsManager`, `siteSurveyor` |
+| Quick links (button row) | HubSpot deal page, OpenSolar URL, Sales folder, Survey folder, Design folder |
+
+If a field is null on the snapshot, show "—" rather than a blank cell. Quick-link buttons whose URL is null are hidden, not greyed.
+
+The data comes from `ShitShowSessionItem` snapshot fields; these mirror IDR's snapshot field set (see §8 — snapshot pulls the same shape as `IdrMeetingItem`'s snapshot fields). The `ShitShowSessionItem` schema in §4 is extended below to carry these fields.
 
 ### Queue grouping & sort
 
@@ -363,14 +384,16 @@ Two-pane layout, identical chrome to IDR Meeting hub:
 
 Four buttons in `DecisionActions`:
 
-| Button | Effect on `decision` | Effect on HubSpot flag | Other side effects |
-|---|---|---|---|
-| Resolved | RESOLVED | Clears `pb_shit_show_flagged` and `pb_shit_show_reason` | none |
-| Still a problem | STILL_PROBLEM | unchanged | none |
-| Escalate | ESCALATED | unchanged | (1) creates HubSpot task assigned to deal owner with `escalationReason`; (2) creates row in `IdrEscalationQueue` so it surfaces in the next IDR session |
-| Defer | DEFERRED | unchanged | none |
+| Button | Effect on `decision` | `decisionRationale` | Effect on HubSpot flag | Other side effects |
+|---|---|---|---|---|
+| Resolved | RESOLVED | optional | Clears `pb_shit_show_flagged`, `pb_shit_show_reason`, `pb_shit_show_flagged_since` | none |
+| Still a problem | STILL_PROBLEM | **required** | unchanged | none |
+| Escalate | ESCALATED | **required** (used as escalation reason text) | unchanged | (1) creates HubSpot task assigned to deal owner with the rationale as task body; (2) creates row in `IdrEscalationQueue` with the rationale as `reason`, so it surfaces in the next IDR session |
+| Defer | DEFERRED | **required** | unchanged | none |
 
 All four also set `resolvedAt = now()` and `resolvedBy = current user`.
+
+The `DecisionActions` UI: clicking any button opens a small inline form for `decisionRationale` (textarea, required for the three "required" rows above; optional placeholder "What was resolved?" for RESOLVED). Submit commits the decision; the buttons are disabled until the form passes validation.
 
 ### Assignments panel
 
@@ -389,6 +412,7 @@ When the owner clicks "End Session":
   🔥 Shit Show Meeting — <date>
 
   Decision: <Resolved | Still a problem | Escalated | Deferred>
+  Decision rationale: <decisionRationale>
   Reason at time of meeting: <reasonSnapshot>
 
   Notes from discussion:
@@ -442,11 +466,11 @@ The "Escalate" decision performs two external writes (HubSpot task + IdrEscalati
 
 ```ts
 await prisma.$transaction(async (tx) => {
-  await tx.shitShowSessionItem.update({ where: { id }, data: { decision: "ESCALATED", escalationReason, resolvedAt, resolvedBy } });
-  await tx.idrEscalationQueue.create({ data: { dealId, dealName, region, queueType: "ESCALATION", reason: escalationReason, requestedBy: userEmail } });
+  await tx.shitShowSessionItem.update({ where: { id }, data: { decision: "ESCALATED", decisionRationale, resolvedAt, resolvedBy } });
+  await tx.idrEscalationQueue.create({ data: { dealId, dealName, region, queueType: "ESCALATION", reason: decisionRationale, requestedBy: userEmail } });
 });
 // AFTER the transaction commits, fire-and-retry the HubSpot task write:
-await scheduleHubspotEscalationTask({ sessionItemId: id, dealId, ownerId, reason: escalationReason });
+await scheduleHubspotEscalationTask({ sessionItemId: id, dealId, ownerId, reason: decisionRationale });
 ```
 
 - The `IdrEscalationQueue` row and the decision update commit together or not at all.
