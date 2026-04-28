@@ -15,6 +15,12 @@ const SopEditor = dynamic(() => import("@/components/sop/SopEditor"), {
   loading: () => <div className="sop-loading">Loading editor...</div>,
 });
 
+// Dynamic import — TipTap is browser-only
+const SopProposalForm = dynamic(() => import("@/components/sop/SopProposalForm"), {
+  ssr: false,
+  loading: () => <div className="sop-loading">Loading…</div>,
+});
+
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
 /* ------------------------------------------------------------------ */
@@ -143,7 +149,10 @@ function SOPPageInner() {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [effectiveUserName, setEffectiveUserName] = useState<string>("");
   const [editing, setEditing] = useState(false);
+  const [proposing, setProposing] = useState(false);
+  const [proposalSuccess, setProposalSuccess] = useState<string | null>(null);
   const [pendingSuggestionCount, setPendingSuggestionCount] = useState(0);
+  const [pendingProposalCount, setPendingProposalCount] = useState(0);
 
   const canEdit = userRole === "ADMIN" || userRole === "EXECUTIVE" || userRole === "OWNER";
   const canSuggest = !!userRole && userRole !== "VIEWER" && !canEdit;
@@ -204,6 +213,23 @@ function SOPPageInner() {
         if (res.ok) {
           const data = await res.json();
           setPendingSuggestionCount(data.count || 0);
+        }
+      } catch {
+        // Non-critical
+      }
+    }
+    fetchCount();
+  }, [canEdit]);
+
+  // Fetch pending proposal count for admins
+  useEffect(() => {
+    if (!canEdit) return;
+    async function fetchCount() {
+      try {
+        const res = await fetch("/api/admin/sop/proposals?count=true");
+        if (res.ok) {
+          const data = await res.json();
+          setPendingProposalCount(data.count || 0);
         }
       } catch {
         // Non-critical
@@ -491,6 +517,26 @@ function SOPPageInner() {
               {pendingSuggestionCount} pending
             </span>
           )}
+          {canEdit && pendingProposalCount > 0 && (
+            <Link
+              href="/dashboards/admin/sop-proposals"
+              className="sop-suggestion-badge"
+              style={{ background: "#3b82f6", textDecoration: "none" }}
+              title={`${pendingProposalCount} new SOP proposal${pendingProposalCount !== 1 ? "s" : ""} awaiting review`}
+            >
+              {pendingProposalCount} new SOP{pendingProposalCount !== 1 ? "s" : ""}
+            </Link>
+          )}
+          {(canEdit || canSuggest) && (
+            <button
+              type="button"
+              onClick={() => setProposing(true)}
+              className="sop-submit-button"
+              title="Propose a brand-new SOP for inclusion in this guide"
+            >
+              + Submit a New SOP
+            </button>
+          )}
           {userName && <span className="sop-user-name">{userName}</span>}
           <span className="sop-version">v4.0 — Updated Mar 2026</span>
           <button
@@ -696,6 +742,27 @@ function SOPPageInner() {
             onSave={handleEditorSave}
             onCancel={() => setEditing(false)}
           />
+        )}
+        {proposing && (
+          <SopProposalForm
+            tabs={visibleTabs.map((t) => ({ id: t.id, label: t.label }))}
+            defaultTabId={activeTabId}
+            onSubmitted={(proposalId) => {
+              setProposing(false);
+              setProposalSuccess(proposalId);
+              // Auto-clear toast after 6s
+              setTimeout(() => setProposalSuccess(null), 6000);
+            }}
+            onCancel={() => setProposing(false)}
+          />
+        )}
+        {proposalSuccess && (
+          <div
+            role="status"
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-lg bg-green-500/15 border border-green-500/30 text-green-400 text-sm shadow-lg"
+          >
+            ✓ Proposal submitted ({proposalSuccess.slice(0, 8)}). Admins will review and either approve or reject with feedback. Thanks!
+          </div>
         )}
       </div>
     </div>
