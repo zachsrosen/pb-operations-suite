@@ -63,6 +63,28 @@ export async function POST(req: Request) {
     }
   }
 
+  // Two-week lead-time guard per Tracey's go-live policy. Both swap dates
+  // must be at least 14 calendar days from today. Admins (asAdmin=true) can
+  // bypass for emergency last-minute swaps.
+  if (!body.asAdmin) {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const minDateMs = today.getTime() + 14 * 24 * 60 * 60 * 1000;
+    const dateAsUtc = (s: string) => {
+      const [y, m, d] = s.split("-").map(Number);
+      return Date.UTC(y, m - 1, d);
+    };
+    if (dateAsUtc(body.requesterDate) < minDateMs || dateAsUtc(body.counterpartyDate) < minDateMs) {
+      return NextResponse.json(
+        {
+          error:
+            "Shift changes must be requested at least 2 weeks in advance. If this is urgent, ask your manager to enter the swap.",
+        },
+        { status: 400 },
+      );
+    }
+  }
+
   // Validate that existing assignments match declared parties.
   const [rAssign, cAssign] = await Promise.all([
     prisma.onCallAssignment.findUnique({ where: { poolId_date: { poolId: body.poolId, date: body.requesterDate } } }),

@@ -4,14 +4,14 @@ import { canApproveOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { resolveElectricianByEmail } from "@/lib/on-call-db";
 import { prisma, logActivity } from "@/lib/db";
-import { appCache } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Counterparty-accept endpoint. With self-service swaps (April 2026), this
- * also auto-applies the swap to the underlying assignments — no admin step.
- * Admins can still deny via the old /deny route if they need to reverse.
+ * Counterparty-accept endpoint. Per Tracey's go-live policy (Apr 28 2026),
+ * shift changes must be approved by a manager. Counterparty acceptance moves
+ * the swap to `awaiting-admin` so it surfaces on the Activity page for an
+ * approver to apply via /approve. We no longer auto-apply assignments here.
  */
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const gate = assertOnCallEnabled();
@@ -35,46 +35,17 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     }
   }
 
-  // Self-service apply: swap assignments + mark approved in one tx.
-  const now = new Date();
-  await prisma.$transaction([
-    prisma.onCallAssignment.update({
-      where: { poolId_date: { poolId: swap.poolId, date: swap.requesterDate } },
-      data: {
-        crewMemberId: swap.counterpartyCrewMemberId,
-        source: "swap",
-        originalCrewMemberId: swap.requesterCrewMemberId,
-        sourceRequestId: swap.id,
-      },
-    }),
-    prisma.onCallAssignment.update({
-      where: { poolId_date: { poolId: swap.poolId, date: swap.counterpartyDate } },
-      data: {
-        crewMemberId: swap.requesterCrewMemberId,
-        source: "swap",
-        originalCrewMemberId: swap.counterpartyCrewMemberId,
-        sourceRequestId: swap.id,
-      },
-    }),
-    prisma.onCallSwapRequest.update({
-      where: { id },
-      data: {
-        status: "approved",
-        counterpartyAcceptedAt: now,
-        reviewedByUserId: user.id ?? null,
-        reviewedAt: now,
-      },
-    }),
-  ]);
-
-  appCache.invalidateByPrefix("on-call:tonight");
+  const updated = await prisma.onCallSwapRequest.update({
+    where: { id },
+    data: { status: "awaiting-admin", counterpartyAcceptedAt: new Date() },
+  });
   await logActivity({
     type: "ON_CALL_SWAP_ACCEPTED",
-    description: `Self-service swap accepted and applied (${swap.requesterDate} ↔ ${swap.counterpartyDate})`,
+    description: `Counterparty accepted swap — awaiting manager approval`,
     userId: user.id,
     userEmail: user.email,
     entityType: "OnCallSwapRequest",
     entityId: id,
   });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ swap: updated });
 }

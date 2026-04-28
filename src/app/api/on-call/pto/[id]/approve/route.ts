@@ -4,6 +4,7 @@ import { canApproveOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { prisma, logActivity } from "@/lib/db";
 import { appCache } from "@/lib/cache";
+import { upsertAssignmentEvent } from "@/lib/on-call-google-calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -60,5 +61,37 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     entityId: id,
   });
   console.warn("[on-call] pto-approved notification stub", { ptoId: id });
+
+  // Re-sync the reassigned dates to Google Calendar so each replacement
+  // electrician gets the invite on their primary cal.
+  try {
+    const pool = await prisma.onCallPool.findUnique({ where: { id: pto.poolId } });
+    if (pool) {
+      const dates = body.reassignments.map((r) => r.date);
+      const updated = await prisma.onCallAssignment.findMany({
+        where: { poolId: pto.poolId, date: { in: dates } },
+        include: { crewMember: { select: { name: true, email: true } } },
+      });
+      for (const a of updated) {
+        await upsertAssignmentEvent(
+          {
+            id: pool.id,
+            name: pool.name,
+            region: pool.region,
+            timezone: pool.timezone,
+            shiftStart: pool.shiftStart,
+            shiftEnd: pool.shiftEnd,
+            weekendShiftStart: pool.weekendShiftStart,
+            weekendShiftEnd: pool.weekendShiftEnd,
+            googleCalendarId: pool.googleCalendarId,
+          },
+          { id: a.id, date: a.date, poolId: a.poolId, crewMember: a.crewMember },
+        );
+      }
+    }
+  } catch (err) {
+    console.warn("[on-call/pto-approve] gcal sync failed", err);
+  }
+
   return NextResponse.json({ ok: true });
 }

@@ -6,6 +6,7 @@ import { getPool, getActiveMembersForRotation } from "@/lib/on-call-db";
 import { generateAssignments, addDays } from "@/lib/on-call-rotation";
 import { prisma, logActivity } from "@/lib/db";
 import { appCache } from "@/lib/cache";
+import { syncRangeForPool } from "@/lib/on-call-google-calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -110,7 +111,41 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       metadata: { rowsCreated, rowsUpdated, from, to },
     });
 
-    return NextResponse.json({ rowsCreated, rowsUpdated, from, to });
+    // Push the synced range to the pool's Google Calendar (creates the calendar
+    // on first publish, then upserts events idempotently). Failures here are
+    // logged inside syncRangeForPool and don't fail the publish — the events
+    // can be reconciled by re-running publish or the manual sync script.
+    let gcal: { synced: number; failed: number; calendarId: string | null } = {
+      synced: 0,
+      failed: 0,
+      calendarId: pool.googleCalendarId,
+    };
+    try {
+      const result = await syncRangeForPool(
+        {
+          id: pool.id,
+          name: pool.name,
+          region: pool.region,
+          timezone: pool.timezone,
+          shiftStart: pool.shiftStart,
+          shiftEnd: pool.shiftEnd,
+          weekendShiftStart: pool.weekendShiftStart,
+          weekendShiftEnd: pool.weekendShiftEnd,
+          googleCalendarId: pool.googleCalendarId,
+        },
+        from,
+        to,
+      );
+      const refreshed = await prisma.onCallPool.findUnique({
+        where: { id: pool.id },
+        select: { googleCalendarId: true },
+      });
+      gcal = { ...result, calendarId: refreshed?.googleCalendarId ?? null };
+    } catch (err) {
+      console.warn("[on-call/publish] Google Calendar sync failed", err);
+    }
+
+    return NextResponse.json({ rowsCreated, rowsUpdated, from, to, gcal });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Publish failed";
     console.error("[on-call/publish] error", err);

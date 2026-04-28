@@ -191,7 +191,8 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
         </div>
 
         <p className="text-xs text-muted mt-3">
-          {myName} ↔ {selected?.crewMemberName ?? "…"}. Once they accept, the swap applies immediately — no admin approval needed.
+          {myName} ↔ {selected?.crewMemberName ?? "…"}. Once they accept, your manager will get the request to approve.
+          Per company policy, swaps must be requested at least 2 weeks in advance.
         </p>
       </div>
     </div>

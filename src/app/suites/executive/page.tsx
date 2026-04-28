@@ -186,7 +186,7 @@ export default async function ExecutiveSuitePage() {
     cards.push({
       href: "/dashboards/on-call",
       title: "On-Call Electricians",
-      description: "Daily rotation calendar for after-hours service coverage across California, Denver, and Southern CO.",
+      description: "Weekly rotation for after-hours service coverage across California and Colorado. Mon-Fri 6-10pm + Sat-Sun 8am-12pm.",
       tag: "ON-CALL",
       icon: "📞",
       section: "Executive Views",

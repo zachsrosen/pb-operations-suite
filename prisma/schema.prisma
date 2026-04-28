@@ -2948,6 +2948,11 @@ model OnCallPool {
 
   icalToken String? @unique
 
+  /// Google Calendar ID this pool's events are written to. Created lazily on
+  /// first publish via the service account (DWD impersonation). Per-pool so
+  /// California and Colorado live on separate shared calendars.
+  googleCalendarId String?
+
   members      OnCallPoolMember[]
   assignments  OnCallAssignment[]
   swapRequests OnCallSwapRequest[]
