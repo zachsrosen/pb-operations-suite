@@ -2174,6 +2174,48 @@ model SopSuggestion {
 }
 
 // ===========================================
+// SOP PROPOSALS — submit a whole-new SOP for inclusion in the guide
+// ===========================================
+//
+// Distinct from SopSuggestion (which proposes EDITS to existing sections).
+// A SopProposal is a request to ADD a brand-new section: any authenticated
+// user can submit; admins review, optionally edit, then approve (which
+// promotes the proposal to a real SopSection) or reject (with notes).
+
+enum SopProposalStatus {
+  PENDING // Submitted, awaiting admin review
+  APPROVED // Promoted to a real SopSection (see promotedSectionId)
+  REJECTED // Rejected with reviewer notes
+}
+
+model SopProposal {
+  id                  String            @id @default(cuid())
+  // Submitter
+  submittedBy         String // Email of submitter
+  submittedByName     String? // Display name at submit time (denormalized snapshot)
+  // Proposed content
+  title               String // Proposed section title
+  suggestedTabId      String // Tab id the submitter thinks it belongs in
+  suggestedGroup      String? // Optional sidebar group hint
+  content             String // Proposed HTML content (sanitized on submit)
+  reason              String // "Why this matters" — why the SOP should exist
+  // Review state
+  status              SopProposalStatus @default(PENDING)
+  reviewedBy          String? // Email of reviewer
+  reviewedAt          DateTime?
+  reviewerNotes       String? // Notes from approver/rejecter
+  // If approved & promoted, the resulting section id
+  promotedSectionId   String?
+  promotedSectionTab  String? // Tab the new section actually landed in (may differ from suggestedTabId)
+  // Audit
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+
+  @@index([status, createdAt])
+  @@index([submittedBy])
+}
+
+// ===========================================
 // SERVICE PRIORITY QUEUE
 // ===========================================
 
