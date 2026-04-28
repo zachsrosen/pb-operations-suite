@@ -14,7 +14,7 @@ import { DASHBOARD_LOCATION_GROUPS } from "@/lib/dashboard-location-groups";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { getGoalsPipelineData } from "@/lib/goals-pipeline";
 import type { GoalsPipelineData } from "@/lib/goals-pipeline-types";
-import { PIPELINE_STAGES } from "@/lib/goals-pipeline-types";
+import { sumGoalRows, sumPipeline } from "@/lib/goals-pipeline-aggregate";
 
 export interface AllGoalsPipelineResponse {
   month: number;
@@ -31,64 +31,7 @@ export interface AllGoalsPipelineResponse {
   lastUpdated: string;
 }
 
-function sumGoalRows(
-  rows: Array<GoalsPipelineData["goals"]>,
-  dayOfMonth: number,
-  daysInMonth: number
-): GoalsPipelineData["goals"] {
-  const sum = (key: keyof GoalsPipelineData["goals"]) => {
-    let totalCurrent = 0;
-    let totalTarget = 0;
-    for (const r of rows) {
-      totalCurrent += r[key].current;
-      totalTarget += r[key].target;
-    }
-    const percent = totalTarget > 0
-      ? Math.min(Math.round((totalCurrent / totalTarget) * 100), 999)
-      : 0;
-    // Compute pace color
-    const elapsedPercent = dayOfMonth / daysInMonth;
-    const progressPercent = totalTarget > 0 ? totalCurrent / totalTarget : 1;
-    const paceRatio = elapsedPercent > 0 ? progressPercent / elapsedPercent : 1;
-    const color = paceRatio >= 1.0 ? "green" as const : paceRatio >= 0.75 ? "yellow" as const : "red" as const;
-    return { current: totalCurrent, target: totalTarget, percent, color };
-  };
-
-  return {
-    sales: sum("sales"),
-    da: sum("da"),
-    cc: sum("cc"),
-    inspections: sum("inspections"),
-    reviews: sum("reviews"),
-  };
-}
-
-function sumPipeline(
-  pipelines: Array<GoalsPipelineData["pipeline"]>
-): GoalsPipelineData["pipeline"] {
-  const stages = PIPELINE_STAGES.map((def, i) => {
-    let count = 0;
-    let currency = 0;
-    for (const p of pipelines) {
-      if (p.stages[i]) {
-        count += p.stages[i].count;
-        currency += p.stages[i].currency;
-      }
-    }
-    return { label: def.label, count, currency, color: def.color };
-  });
-
-  let activePipelineTotal = 0;
-  let monthlySales = 0;
-  let monthlySalesCount = 0;
-  for (const p of pipelines) {
-    activePipelineTotal += p.activePipelineTotal;
-    monthlySales += p.monthlySales;
-    monthlySalesCount += p.monthlySalesCount;
-  }
-
-  return { stages, activePipelineTotal, monthlySales, monthlySalesCount };
-}
+// sumGoalRows + sumPipeline are imported from @/lib/goals-pipeline-aggregate.
 
 export async function GET(request: NextRequest) {
   try {
