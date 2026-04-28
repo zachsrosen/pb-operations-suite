@@ -52,6 +52,13 @@ export interface CreateFlagInput {
   metadata?: Record<string, unknown> | null;
   raisedByUserId?: string | null;
   raisedByEmail?: string | null;
+  /**
+   * Explicit assignee — when provided, skips round-robin and assigns
+   * directly. Used by the rules cron to assign each flag to the deal's
+   * actual PM (Deal.projectManager → User.name). Pass null/undefined
+   * to fall back to round-robin across the PROJECT_MANAGER pool.
+   */
+  assignedToUserId?: string | null;
 }
 
 export interface CreateFlagResult {
@@ -168,7 +175,12 @@ export async function createFlag(input: CreateFlagInput): Promise<CreateFlagResu
     if (existing) return { flag: existing, alreadyExisted: true };
   }
 
-  const assigneeId = await assignNextPm();
+  // Caller-provided assignee takes precedence; fall back to round-robin only
+  // when the caller couldn't resolve a PM (e.g. deal has no PM assigned).
+  const assigneeId =
+    input.assignedToUserId !== undefined && input.assignedToUserId !== null
+      ? input.assignedToUserId
+      : await assignNextPm();
   const now = new Date();
 
   const flag = await prisma.$transaction(async tx => {

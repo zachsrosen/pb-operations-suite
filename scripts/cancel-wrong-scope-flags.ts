@@ -1,16 +1,20 @@
 /**
- * One-off cleanup: cancel PM flags created by the rule cron that are
- * not on PROJECT-pipeline deals. The original cron run (2026-04-28
- * ~23:25 UTC) raised 211 flags across multiple pipelines because the
- * pipeline filter was missing. This script cancels the wrongly-scoped
- * ones and leaves valid PROJECT-pipeline flags in place.
+ * One-off cleanup: cancel PM flags from the 2026-04-28 misfire run.
+ *
+ * Default behavior: cancel ALL ADMIN_WORKFLOW flags raised in the misfire
+ * window (clean slate — emails were sent to wrong people, assignment
+ * was round-robin instead of by-deal-PM, scope included non-PROJECT
+ * pipelines). The next live cron run (after env vars are set) will
+ * re-raise correctly-assigned flags for any deal still matching a rule.
+ *
+ * Pass --project-only to keep PROJECT-pipeline flags and only cancel
+ * non-PROJECT ones (preserves valid signals if PMs already started
+ * triaging).
  *
  * Run with:
- *   npx tsx scripts/cancel-wrong-scope-flags.ts
- *
- * Or use --all to cancel ALL ADMIN_WORKFLOW flags from the bad run
- * (e.g. if PMs already triaged the valid ones and you want a clean
- * slate before the next cron firing).
+ *   npx tsx scripts/cancel-wrong-scope-flags.ts            # cancel all
+ *   npx tsx scripts/cancel-wrong-scope-flags.ts --project-only
+ *   npx tsx scripts/cancel-wrong-scope-flags.ts --dry-run
  */
 
 import { PrismaClient } from "../src/generated/prisma/client";
@@ -22,7 +26,9 @@ const prisma = new PrismaClient({ adapter });
 const CANCEL_REASON = "First-run misfire — cron lacked pipeline=PROJECT filter and emailed by default. Re-raises cleanly next run if still applicable.";
 
 async function main() {
-  const cancelAll = process.argv.includes("--all");
+  // Default = cancel all; --project-only flips to "preserve PROJECT-pipeline".
+  const projectOnly = process.argv.includes("--project-only");
+  const cancelAll = !projectOnly;
 
   // The bad run was 2026-04-28 ~23:25 UTC. Use an hour window for safety.
   const since = new Date("2026-04-28T23:00:00Z");
@@ -55,8 +61,8 @@ async function main() {
   const toKeep = candidates.length - toCancel.length;
 
   console.log(`Will cancel: ${toCancel.length}`);
-  console.log(`Will keep:   ${toKeep} (PROJECT-pipeline flags)`);
-  if (cancelAll) console.log("(--all flag set — cancelling ALL misfire flags regardless of pipeline)");
+  console.log(`Will keep:   ${toKeep} ${projectOnly ? "(PROJECT-pipeline flags preserved)" : ""}`);
+  if (cancelAll) console.log("(default mode — cancelling ALL misfire flags; pass --project-only to keep PROJECT-pipeline ones)");
 
   if (process.argv.includes("--dry-run")) {
     console.log("\nDRY RUN — no changes made. Run without --dry-run to apply.");
