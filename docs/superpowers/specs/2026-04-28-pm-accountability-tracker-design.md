@@ -59,6 +59,8 @@ Access enforced at three layers:
 2. Page-level email check against `PM_TRACKER_AUDIENCE`
 3. API route email check against `PM_TRACKER_AUDIENCE`
 
+**Impersonation behavior:** the audience check uses the user's *real* email from `session.user.email`, ignoring `pb_effective_roles` and `pb_is_impersonating` cookies. This data is sensitive (HR-adjacent), so impersonation must not grant access — only the actual logged-in human is checked. An admin impersonating ownership/HR will be denied unless their own email is in the allowlist.
+
 ## Phased rollout
 
 | Phase | Scope | Build time |
@@ -176,8 +178,8 @@ Cache cascade: `pm:*` keys invalidate when `deals:*`, `service-tickets:*`, or `f
 
 ### Cron schedule
 
-- **`/api/cron/pm-snapshot`** — runs nightly at 02:00 MT. Recomputes 30d / 90d / 365d windows for each PM. Writes `PMSnapshot` rows with `(pmName, periodEnd-day-truncated)` upsert
-- **`/api/cron/pm-weekly-digest`** — runs Mondays at 08:00 MT. Reads latest snapshot, emails `PM_TRACKER_AUDIENCE`
+- **`/api/cron/pm-snapshot`** — runs nightly at 02:00 MT. Recomputes 30d / 90d / 365d windows for each PM. Writes `PMSnapshot` rows with `(pmName, periodEnd-day-truncated)` upsert. **Phase 2:** the saves detector pipeline (trigger / intervention / resolution / score) is invoked **inline** within this same cron run, before the snapshot computation, so save counts in the snapshot reflect the night's processing. No separate cron route.
+- **`/api/cron/pm-weekly-digest`** — runs Mondays at 08:00 MT. Reads latest snapshot, emails `PM_TRACKER_AUDIENCE`. Idempotency-checked via `IdempotencyKey` model on key `pm-weekly-digest:<iso-week>` — if already sent within the past 24h, skip (handles Vercel cron retry).
 
 ### Dashboard surface
 
@@ -186,7 +188,7 @@ Suite: Executive (with link from Admin)
 Shell: `<DashboardShell title="PM Accountability" accentColor="purple" />`
 
 **Layout:**
-1. **Top: team comparison table.** PMs as columns, metrics as rows. Color-coded green/yellow/red against thresholds in `thresholds.ts`. Sortable.
+1. **Top: team comparison table.** PMs as columns, metrics as rows. Color-coded green/yellow/red against thresholds in `thresholds.ts`. Sortable. **Default sort:** `ghostRate` ascending — surfaces lowest-engagement PMs first, since customer-engagement gaps are the most visible failure mode for ownership.
 2. **Tabs per PM** — drill-in scorecard:
    - Top KPI strip (the 5 responsibility headlines)
    - Ghosted deals list (clickable to HubSpot)
@@ -259,7 +261,9 @@ All metrics are computed per PM, scoped to deals where `projectManager` matches 
 
 ## Phase 2 saves detector
 
-### Pipeline (runs nightly inside `/api/cron/pm-snapshot`)
+### Pipeline (runs nightly inline at the top of `/api/cron/pm-snapshot`, before snapshot computation)
+
+**Late-arriving data note:** Open `PMSave` rows (any of `interventionAt`, `resolvedAt`, `confidence` not yet set) are re-evaluated each nightly run until both intervention and resolution are populated. This means a PM call logged late in HubSpot or an ActivityLog row that arrives after a cron run is **backfilled on the next pass**. Confidence is computed only when both `interventionAt` and `resolvedAt` are set, so late data does not lock in a wrong score.
 
 For each active PM-owned deal:
 
@@ -285,7 +289,9 @@ For each active PM-owned deal:
 | MEDIUM | atRisk → intervention <7d → resolution <30d AND no workflow attribution | × 0.4 |
 | LOW | resolution happened, intervention ambiguous OR workflow attribution detected | × 0.2 |
 
-5. **Workflow attribution check** — if a HubSpot workflow likely caused resolution, set `workflowAttribution = true` and force confidence to LOW. Detection heuristic: stage change occurred without a corresponding ActivityLog row for any user, OR engagement was sent by a service-account user.
+The 0.7 / 0.4 / 0.2 multipliers reflect decreasing confidence that the PM action *caused* the resolution. HIGH (0.7) assumes most of the time-to-resolve was avoided by the PM acting; MEDIUM (0.4) credits ~half the gap; LOW (0.2) is conservative when the resolution path is ambiguous. These multipliers are first-pass guesses and live in `THRESHOLDS` for tuning, like every other policy value.
+
+5. **Workflow attribution check** — if a HubSpot workflow likely caused resolution, set `workflowAttribution = true` and force confidence to LOW. **Detection heuristic (revised):** the stage change's `hs_updated_by_user_id` is one of a known set of HubSpot workflow / integration / service-account user IDs (configured in `pm-tracker/workflow-users.ts`, populated empirically). Engagement-driven resolutions check the engagement author against the same list. The previous "no ActivityLog row" heuristic was rejected because legitimate UI-driven stage changes by humans don't always produce an ActivityLog row, which would have systematically over-attributed to workflows. The known-workflow-user list is small and bounded — a closed set we curate, not an open inference.
 
 ### At-risk trigger definitions
 
@@ -387,9 +393,16 @@ Unit tests live in `src/__tests__/lib/pm-tracker/`:
 
 Integration: a single end-to-end test that seeds 4 PMs × 5 deals with known stuck/ghosted/healthy mix, runs the snapshot job, asserts the resulting `PMSnapshot` row matches expected metrics.
 
+**Multi-day saves test:** a separate fixture simulates three nightly cron runs across three calendar days:
+- **Night 1:** seed at-risk states; assert `PMSave` rows created with `interventionAt = null`
+- **Night 2:** seed PM interventions on some deals; assert open `PMSave` rows pick up `interventionAt`; assert one is now resolved (sets `resolvedAt`, computes `confidence`); assert one stays open
+- **Night 3:** seed late-arriving engagement on the still-open save; assert backfill semantics (open row gets `interventionAt` populated retroactively)
+
+This validates the cross-night state-transition logic and the late-data backfill guarantee.
+
 ## Risks & open questions
 
-1. **Kaitlyn/Katlyyn ambiguity** — design assumes one person, may be two. Need to confirm.
+1. **Kaitlyn/Katlyyn ambiguity — HARD PRE-IMPLEMENTATION GATE.** Design assumes one person, may be two. The answer changes whether `PMSnapshot.pmName` is 4 distinct values or 3 and how `ALIAS_MAP` is structured. **Must be resolved with leadership before plan-skill input or the spec changes shape.**
 2. **Permit SLA per AHJ** — design uses 30-day default. Real SLAs vary 14-90 days by AHJ. May need an `AhjPermitSla` cache table — out of scope for v1; flagged as Phase 2 polish.
 3. **Workflow attribution detection** — heuristic-based. Will produce false positives (PM intervention misclassified as workflow) and false negatives (workflow misclassified as PM intervention). Plan: log all intervention sources in `PMSave.interventionType` raw, manual review of edge cases during Phase 2 tuning.
 4. **HubSpot engagement direction filter** — outbound vs inbound is reliable for emails, partial for calls (depends on logger). Need to verify field availability before relying on `direction === "OUTGOING"`. May need to fall back to "any engagement" for calls and document the looser semantic.
@@ -404,6 +417,28 @@ Integration: a single end-to-end test that seeds 4 PMs × 5 deals with known stu
 - Industry benchmarks
 - Sales / Permit / Design / Operations performance tracking — this is PM-only
 - Modifying the existing `/dashboards/project-management` page (different surface, different audience)
+
+## Appendix A — Metric → data source field mapping
+
+The plan-skill must verify each field below exists on `HubSpotProjectCache` (or the named source) and resolve any name mismatches before metric implementation. Some property names below are inferred from typical HubSpot conventions and must be confirmed.
+
+| Metric | Field references | Source | Verification status |
+|---|---|---|---|
+| B — outbound engagement | engagement type/direction/timestamp | HubSpot engagements API | API exists; need to confirm `direction === "OUTGOING"` is reliable for calls |
+| D — permit obtained | `permit_status` (or equivalent) | `HubSpotProjectCache` | **Verify column exists; if not, derive from a `permit_*` column or fall back to "permit_approval_date is set"** |
+| D — equipment delivered | Zoho SO line-items received OR `equipment_delivered` | Zoho Inventory + cache | **Verify field names; if missing, fall back to BOM-pushed status only** |
+| D — BOM pushed | `BomHubSpotPushLog.status === "SUCCESS"` for deal in last 30d | DB | Confirmed — model exists |
+| D — customer install-confirmation | outbound engagement (call/meeting) in last 7d OR `install_confirmation_sent` | Engagements API + cache | **Verify `install_confirmation_sent` column; if absent, rely on engagement-only** |
+| D — install date | `install_date` | `HubSpotProjectCache` | Likely exists per CLAUDE.md mention of install scheduling; confirm column name |
+| E — required fields | `closedate`, `install_date`, `system_size_kw`, `project_type`, `address_line_1`, `project_manager` | `HubSpotProjectCache` | All standard; confirm exact column names — some may be camelCase mirrors |
+| F — stuck calc | `hs_date_entered_<stage>` | HubSpot deal API | Standard HubSpot system property; confirm cache mirrors it (may need on-demand fetch) |
+| F — terminal stages | `closedwon`, `closedlost` exclusion | n/a | Confirmed — used elsewhere in codebase |
+| G — reviews | review row by `dealId` | `FIVE_STAR_REVIEWS` cache | Confirmed per CLAUDE.md |
+| G — complaints | service ticket `dealId` association | `SERVICE_TICKETS` cache | Confirmed |
+| Saves PERMIT_OVERDUE | `permit_submission_date`, `permit_status` | `HubSpotProjectCache` | **Verify both columns; if missing, this trigger may need to drop to Phase 3** |
+| Saves attribution | `hs_updated_by_user_id` per deal property change | HubSpot deal API | Standard system property; confirm cache exposes it |
+
+If any field marked **Verify** turns out not to exist, the plan must either (a) map to an actual property name, (b) document that the metric ships with a degraded definition, or (c) defer the metric to a later phase.
 
 ## Implementation order *(plan-skill input)*
 
