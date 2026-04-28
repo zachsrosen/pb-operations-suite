@@ -179,7 +179,7 @@ Cache cascade: `pm:*` keys invalidate when `deals:*`, `service-tickets:*`, or `f
 ### Cron schedule
 
 - **`/api/cron/pm-snapshot`** — runs nightly at 02:00 MT. Recomputes 30d / 90d / 365d windows for each PM. Writes `PMSnapshot` rows with `(pmName, periodEnd-day-truncated)` upsert. **Phase 2:** the saves detector pipeline (trigger / intervention / resolution / score) is invoked **inline** within this same cron run, before the snapshot computation, so save counts in the snapshot reflect the night's processing. No separate cron route.
-- **`/api/cron/pm-weekly-digest`** — runs Mondays at 08:00 MT. Reads latest snapshot, emails `PM_TRACKER_AUDIENCE`. Idempotency-checked via `IdempotencyKey` model on key `pm-weekly-digest:<iso-week>` — if already sent within the past 24h, skip (handles Vercel cron retry).
+- **`/api/cron/pm-weekly-digest`** — runs Mondays at 08:00 MT. Reads latest snapshot, emails `PM_TRACKER_AUDIENCE`. Idempotency-checked via `IdempotencyKey` model on key `pm-weekly-digest:<iso-week>` — if already sent within the past 24h, skip (handles Vercel cron retry). The existing `IdempotencyKey` model is assumed to support `(key, createdAt)` lookup; if the schema differs, plan-skill should flag a tiny migration.
 
 ### Dashboard surface
 
@@ -291,7 +291,7 @@ For each active PM-owned deal:
 
 The 0.7 / 0.4 / 0.2 multipliers reflect decreasing confidence that the PM action *caused* the resolution. HIGH (0.7) assumes most of the time-to-resolve was avoided by the PM acting; MEDIUM (0.4) credits ~half the gap; LOW (0.2) is conservative when the resolution path is ambiguous. These multipliers are first-pass guesses and live in `THRESHOLDS` for tuning, like every other policy value.
 
-5. **Workflow attribution check** — if a HubSpot workflow likely caused resolution, set `workflowAttribution = true` and force confidence to LOW. **Detection heuristic (revised):** the stage change's `hs_updated_by_user_id` is one of a known set of HubSpot workflow / integration / service-account user IDs (configured in `pm-tracker/workflow-users.ts`, populated empirically). Engagement-driven resolutions check the engagement author against the same list. The previous "no ActivityLog row" heuristic was rejected because legitimate UI-driven stage changes by humans don't always produce an ActivityLog row, which would have systematically over-attributed to workflows. The known-workflow-user list is small and bounded — a closed set we curate, not an open inference.
+5. **Workflow attribution check** — if a HubSpot workflow likely caused resolution, set `workflowAttribution = true` and force confidence to LOW. **Detection heuristic (revised):** the stage change's `hs_updated_by_user_id` is one of a known set of HubSpot workflow / integration / service-account user IDs (configured in `pm-tracker/workflow-users.ts`, populated empirically). Engagement-driven resolutions check the engagement author against the same list. The previous "no ActivityLog row" heuristic was rejected because legitimate UI-driven stage changes by humans don't always produce an ActivityLog row, which would have systematically over-attributed to workflows. The known-workflow-user list is small and bounded — a closed set we curate, not an open inference. **Bootstrap:** the list is seeded during Phase 2 development by querying the last 30 days of HubSpot stage-change events, listing distinct `hs_updated_by_user_id` values, and manually flagging which IDs are workflows / integrations / service accounts vs. real PB employees. The list is then maintained by hand as new integrations come online.
 
 ### At-risk trigger definitions
 
@@ -317,7 +317,7 @@ If the intervention was done by a different user (designer, sales, OpsManager, a
 - **Workflow attribution:** if a HubSpot workflow likely caused the stage change → confidence drops to LOW
 - **Cross-attribution:** if a non-PM user did the intervention → no PM credit, save logged as system-level
 - **No double-counting:** unique constraint on `(dealId, atRiskTriggeredAt, atRiskReason)` prevents the same trigger event creating multiple saves
-- **Idle re-trigger debounce:** if a deal exits at-risk and re-enters within `THRESHOLDS.saveDebounceDays` (default 30), it does not create a new save
+- **Idle re-trigger debounce:** if a deal exits at-risk and re-enters the *same* `atRiskReason` within `THRESHOLDS.saveDebounceDays` (default 30), the existing resolved `PMSave` row is reopened (`resolvedAt` cleared) and re-attributed on next resolution, rather than creating a duplicate row. This works with the `(dealId, atRiskTriggeredAt, atRiskReason)` unique constraint because re-entry within the window matches the existing row's keys
 
 ## Name normalization
 
@@ -444,6 +444,7 @@ If any field marked **Verify** turns out not to exist, the plan must either (a) 
 
 Suggested commit / PR sequence:
 
+0. **Verify Appendix A property names against the live `HubSpotProjectCache` schema and HubSpot deal properties.** Resolve every "Verify" status before any other implementation work — some metric definitions may need to change shape if a referenced field doesn't exist or is named differently. Output: an updated Appendix A with all rows green and any name remappings recorded.
 1. Schema migration + `PMSnapshot` model (no app code yet)
 2. `pm-tracker` lib skeleton — `owners.ts`, `thresholds.ts`, `audience.ts`
 3. Each metric module + unit tests (5 small PRs or one combined)
