@@ -13,7 +13,12 @@ import { prisma } from "./db";
 
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const CAL_API = "https://www.googleapis.com/calendar/v3";
-const SCOPES = ["https://www.googleapis.com/auth/calendar"];
+// Use the events-only scope to match the rest of the codebase (Workspace DWD
+// config grants .events to the service account, not full .calendar). This
+// means we can read/write/delete events on existing calendars but cannot
+// auto-create new calendars; admins create the per-pool calendars manually
+// in Google Calendar and paste the ID into OnCallPool.googleCalendarId.
+const SCOPES = ["https://www.googleapis.com/auth/calendar.events"];
 
 function isEnabled(): boolean {
   return Boolean(
@@ -27,8 +32,15 @@ function impersonateEmail(): string {
   return (process.env.GOOGLE_ADMIN_EMAIL ?? process.env.GMAIL_SENDER_EMAIL) as string;
 }
 
+// Mirrors parseServiceAccountPrivateKey in src/lib/google-calendar.ts.
+// Handles both raw PEM (with literal \n) and base64-encoded JSON-style keys.
 function parsePrivateKey(raw: string): string {
-  return raw.replace(/\\n/g, "\n");
+  const normalizedRaw = raw.replace(/\\n/g, "\n").trim();
+  if (normalizedRaw.includes("-----BEGIN")) return normalizedRaw;
+  const decoded = Buffer.from(raw, "base64").toString("utf-8");
+  const normalizedDecoded = decoded.replace(/\\n/g, "\n").trim();
+  if (normalizedDecoded.includes("-----BEGIN")) return normalizedDecoded;
+  throw new Error("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY does not contain a valid PEM key");
 }
 
 function base64UrlEncode(s: string): string {
@@ -112,47 +124,23 @@ type PoolForCalendar = {
 };
 
 /**
- * Returns the calendarId for the pool, creating it if needed and persisting
- * the id back onto the pool row. Idempotent: subsequent calls just return the
- * stored id. Optionally shares the calendar with @photonbrothers.com domain
- * (read access) the first time it's created.
+ * Returns the calendarId for the pool. Requires that an admin has manually
+ * created the calendar in Google Calendar, shared it with the @photonbrothers.com
+ * domain (or with the service account directly with "Make changes to events"
+ * permission), and pasted the calendar ID into OnCallPool.googleCalendarId.
+ *
+ * We can't auto-create calendars because the Workspace DWD config grants only
+ * the calendar.events scope — calendars.insert requires the broader calendar
+ * scope which isn't authorized for this service account.
  */
 export async function ensureCalendarForPool(pool: PoolForCalendar): Promise<string> {
   if (pool.googleCalendarId) return pool.googleCalendarId;
-  const token = await getToken();
-  // Create
-  const createRes = await fetch(`${CAL_API}/calendars`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      summary: `Photon Brothers — On-Call (${pool.name})`,
-      description: `On-call electrician rotation for ${pool.region}. Source of truth lives in PB Tech Ops Suite.`,
-      timeZone: pool.timezone,
-    }),
-  });
-  if (!createRes.ok) {
-    throw new Error(`Calendar create failed: ${createRes.status} ${await createRes.text()}`);
-  }
-  const created = (await createRes.json()) as { id: string };
-
-  // Share with the @photonbrothers.com domain — read access. Anyone in the
-  // org can subscribe and see; only PB Ops writes.
-  await fetch(`${CAL_API}/calendars/${encodeURIComponent(created.id)}/acl`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      role: "reader",
-      scope: { type: "domain", value: "photonbrothers.com" },
-    }),
-  }).catch(() => {
-    // Non-fatal — admin can fix sharing manually if this fails.
-  });
-
-  await prisma.onCallPool.update({
-    where: { id: pool.id },
-    data: { googleCalendarId: created.id },
-  });
-  return created.id;
+  throw new Error(
+    `Pool "${pool.name}" has no googleCalendarId set. ` +
+      `Manually create a calendar in Google Calendar, share it with the service account ` +
+      `(${process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? "<sa-email>"}) with "Make changes to events" permission, ` +
+      `and update OnCallPool.googleCalendarId on this row.`,
+  );
 }
 
 type AssignmentForCalendar = {
