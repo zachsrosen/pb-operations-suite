@@ -168,7 +168,8 @@ interface OverlayEvent {
   eventType: "service" | "dnr" | "roofing" | "other";
   eventSubtype: string;
   isOverlay: true;
-  isOverdue: false;
+  isOverdue: boolean;
+  isCompleted: boolean;
   isForecast: false;
   isTentative: false;
   status: string;
@@ -510,10 +511,32 @@ function normalizeLocation(location?: string | null): string {
   return value;
 }
 
+// Terminal Zuper statuses: job is done (no Ops follow-up needed). Mirrors the
+// completed set in compliance-helpers.ts; "cancelled"/"closed" added since they
+// are also terminal for scheduler-visibility purposes.
+const ZUPER_TERMINAL_STATUSES = new Set([
+  "completed",
+  "construction complete",
+  "passed",
+  "partial pass",
+  "failed",
+  "cancelled",
+  "canceled",
+  "closed",
+]);
+
+function isZuperStatusTerminal(statusName: string | null | undefined): boolean {
+  if (!statusName) return false;
+  return ZUPER_TERMINAL_STATUSES.has(statusName.trim().toLowerCase());
+}
+
 function mapZuperJobsToOverlays(
   jobs: ZuperCategoryJob[],
   eventType: "service" | "dnr" | "roofing" | "other"
 ): OverlayEvent[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
   return jobs
     .map((j): OverlayEvent | null => {
       const dateStr = j.scheduledStart
@@ -540,6 +563,23 @@ function mapZuperJobsToOverlays(
             ? [j.assignedUser]
             : [];
 
+      const isCompleted = isZuperStatusTerminal(j.statusName);
+      // Overdue = scheduled in the past (or due-date in the past) AND not in a
+      // terminal status. Use the latest known boundary so multi-day jobs don't
+      // flag as overdue until after their end date.
+      const overdueRefYmd = j.scheduledEnd
+        ? j.scheduledEnd.slice(0, 10)
+        : j.scheduledStart
+          ? j.scheduledStart.slice(0, 10)
+          : j.dueDate
+            ? j.dueDate.slice(0, 10)
+            : null;
+      let isOverdue = false;
+      if (!isCompleted && overdueRefYmd) {
+        const refDate = new Date(`${overdueRefYmd}T00:00:00`);
+        isOverdue = refDate < today;
+      }
+
       return {
         id: j.jobUid,
         name: j.title || j.customerName || "Untitled",
@@ -552,7 +592,8 @@ function mapZuperJobsToOverlays(
         eventType,
         eventSubtype: j.categoryName,
         isOverlay: true,
-        isOverdue: false,
+        isOverdue,
+        isCompleted,
         isForecast: false,
         isTentative: false,
         status: j.statusName || "",
@@ -571,16 +612,28 @@ function mapZuperJobsToOverlays(
 
 function getOverlayColorClass(e: DisplayEvent): string | null {
   if (!isOverlayEvent(e)) return null;
+  let base: string;
   switch (e.eventType) {
     case "service":
-      return "bg-purple-500/20 text-purple-300 border border-dashed border-purple-400";
+      base = "bg-purple-500/20 text-purple-300 border border-dashed border-purple-400";
+      break;
     case "dnr":
-      return "bg-amber-500/20 text-amber-300 border border-dashed border-amber-400";
+      base = "bg-amber-500/20 text-amber-300 border border-dashed border-amber-400";
+      break;
     case "roofing":
-      return "bg-rose-500/20 text-rose-300 border border-dashed border-rose-400";
+      base = "bg-rose-500/20 text-rose-300 border border-dashed border-rose-400";
+      break;
     case "other":
-      return "bg-slate-500/20 text-slate-300 border border-dashed border-slate-400";
+      base = "bg-slate-500/20 text-slate-300 border border-dashed border-slate-400";
+      break;
   }
+  // Completed terminal-status overlays render dimmed so they fade into the
+  // background; overdue (past-scheduled, non-terminal) overlays get the same
+  // red ring + saturation bump used for project-linked overdue events so Ops
+  // can spot incomplete "Other" / Additional Visit work that needs follow-up.
+  if (e.isCompleted) return `${base} opacity-50`;
+  if (e.isOverdue) return `${base} ring-2 ring-red-500 saturate-150`;
+  return base;
 }
 
 function getOverlayBadge(e: DisplayEvent): string | null {
@@ -4175,6 +4228,14 @@ export default function SchedulerPage() {
                   {overlayEvents.filter(e => e.eventType === "other").length} other job{overlayEvents.filter(e => e.eventType === "other").length !== 1 ? "s" : ""}
                 </span>
               )}
+              {showOther && overlayEvents.filter(e => e.eventType === "other" && e.isOverdue).length > 0 && (
+                <span
+                  className="text-[0.55rem] font-semibold text-red-400 ml-0.5 px-1.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/40"
+                  title="Past-scheduled Other / Additional Visit jobs that are not yet completed — needs Ops follow-up"
+                >
+                  {overlayEvents.filter(e => e.eventType === "other" && e.isOverdue).length} need{overlayEvents.filter(e => e.eventType === "other" && e.isOverdue).length === 1 ? "s" : ""} follow-up
+                </span>
+              )}
             </div>
           </div>
 
@@ -4343,7 +4404,7 @@ export default function SchedulerPage() {
                                   setDetailModal(proj);
                                   setDetailModalEvent(ev as ScheduledEvent);
                                 }}
-                                title={isOverlayEvent(ev) ? `${ev.name} — ${ev.eventSubtype}${overlayAssigneeTitle}` : ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : " (drag to reschedule)"}`}
+                                title={isOverlayEvent(ev) ? `${ev.name} — ${ev.eventSubtype}${overlayAssigneeTitle}${ev.status ? ` — ${ev.status}` : ""}${ev.isCompleted ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete — needs follow-up" : ""}` : ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name} - ${ev.crew || "No crew"}${showRevenue ? ` - $${formatRevenueCompact(ev.amount)}` : ""}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : " (drag to reschedule)"}`}
                                 className={`text-[0.55rem] px-1 py-0.5 rounded mb-0.5 transition-transform hover:scale-[1.02] hover:shadow-lg hover:z-10 relative overflow-hidden ${
                                   isDraggable ? "cursor-grab active:cursor-grabbing" : "cursor-default"
                                 } ${eventColorClass} ${draggedProjectId === ev.id ? "opacity-60" : ""}`}
@@ -4354,10 +4415,11 @@ export default function SchedulerPage() {
                                     {ev.isTentative && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">TENT {ev.days > 0 ? `${ev.days}d` : ""}</span>}
                                     {isFailedType && <span className="mr-0.5">✗</span>}
                                     {isCompletedType && <span className="mr-0.5">✓</span>}
+                                    {isOverlayEvent(ev) && ev.isCompleted && <span className="mr-0.5">✓</span>}
                                     {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
                                     {isOverlayEvent(ev) && <span className="mr-0.5 text-[0.45rem] font-bold opacity-80">{getOverlayBadge(ev)}</span>}
                                     {dayLabel}
-                                    <span className={isCompletedType ? "line-through" : ""}>{shortName}</span>
+                                    <span className={isCompletedType || (isOverlayEvent(ev) && ev.isCompleted) ? "line-through" : ""}>{shortName}</span>
                                     {ev.isOverdue && isActiveType && (
                                       <span className="ml-0.5 text-[0.45rem] opacity-70">
                                         {ev.eventType === "construction" ? "🔨" : ev.eventType === "survey" ? "📋" : ev.eventType === "inspection" ? "🔍" : ""}
@@ -4467,10 +4529,12 @@ export default function SchedulerPage() {
                                 setDetailModalEvent(e as ScheduledEvent);
                               }}
                               className={`px-2 py-1 rounded text-[0.6rem] cursor-pointer ${eventColor}`}
-                              title={e.name}
+                              title={isOverlayEvent(e) ? `${e.name} — ${e.eventSubtype}${e.status ? ` — ${e.status}` : ""}${e.isCompleted ? " ✓ Completed" : e.isOverdue ? " ⚠ Incomplete — needs follow-up" : ""}` : e.name}
                             >
+                              {isOverlayEvent(e) && e.isCompleted && <span className="mr-0.5">✓</span>}
+                              {isOverlayEvent(e) && e.isOverdue && <span className="mr-0.5 text-red-200">!</span>}
                               {isOverlayEvent(e) && <span className="mr-0.5 font-bold opacity-80">{getOverlayBadge(e)}</span>}
-                              <span className="truncate">{getCustomerName(e.name)}</span>
+                              <span className={`truncate ${isOverlayEvent(e) && e.isCompleted ? "line-through" : ""}`}>{getCustomerName(e.name)}</span>
                               {isOverlayEvent(e) && (
                                 <span className="ml-1 text-[0.5rem] opacity-70">
                                   {formatOverlayAssigneeLabel(e.assignedUsers)}
@@ -4546,9 +4610,12 @@ export default function SchedulerPage() {
                               left: `calc(${leftPct}% + 4px)`,
                               width: `calc(${widthPct}% - 6px)`,
                             }}
+                            title={isOverlayEvent(entry.event) ? `${entry.event.name} — ${entry.event.eventSubtype}${entry.event.status ? ` — ${entry.event.status}` : ""}${entry.event.isCompleted ? " ✓ Completed" : entry.event.isOverdue ? " ⚠ Incomplete — needs follow-up" : ""}` : entry.event.name}
                           >
+                            {isOverlayEvent(entry.event) && entry.event.isCompleted && <span className="mr-0.5">✓</span>}
+                            {isOverlayEvent(entry.event) && entry.event.isOverdue && <span className="mr-0.5 text-red-200">!</span>}
                             {isOverlayEvent(entry.event) && <span className="mr-0.5 font-bold opacity-80">{getOverlayBadge(entry.event)}</span>}
-                            <div className="truncate">{getCustomerName(entry.event.name)}</div>
+                            <div className={`truncate ${isOverlayEvent(entry.event) && entry.event.isCompleted ? "line-through" : ""}`}>{getCustomerName(entry.event.name)}</div>
                             {isOverlayEvent(entry.event) && (
                               <div className="text-[0.5rem] opacity-70 truncate">
                                 {formatOverlayAssigneeLabel(entry.event.assignedUsers)}
@@ -4734,7 +4801,7 @@ export default function SchedulerPage() {
                                       setDetailModal(proj);
                                       setDetailModalEvent(ev as ScheduledEvent);
                                     }}
-                                    title={ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : ""}`}
+                                    title={isOverlayEvent(ev) ? `${ev.name} — ${ev.eventSubtype}${ev.status ? ` — ${ev.status}` : ""}${ev.isCompleted ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete — needs follow-up" : ""}` : ev.isForecast ? "Forecasted install — not yet scheduled" : `${ev.name}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : ev.isOverdue ? " ⚠ Incomplete" : ""}`}
                                     className={`text-[0.6rem] px-1.5 py-1 rounded mb-1 cursor-pointer transition-transform hover:scale-[1.02] hover:shadow-lg ${eventColorClass}`}
                                   >
                                     <div className="flex flex-col leading-tight">
@@ -4743,10 +4810,11 @@ export default function SchedulerPage() {
                                         {ev.isTentative && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">TENT {ev.days > 0 ? `${ev.days}d` : ""}</span>}
                                         {isFailedType && <span className="mr-0.5">✗</span>}
                                         {isCompletedType && <span className="mr-0.5">✓</span>}
+                                        {isOverlayEvent(ev) && ev.isCompleted && <span className="mr-0.5">✓</span>}
                                         {ev.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
                                         {isOverlayEvent(ev) && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">{getOverlayBadge(ev)}</span>}
                                         {ev.days > 1 ? `D${dayNum} ` : ""}
-                                        <span className={isCompletedType ? "line-through" : ""}>{shortName}</span>
+                                        <span className={isCompletedType || (isOverlayEvent(ev) && ev.isCompleted) ? "line-through" : ""}>{shortName}</span>
                                       </div>
                                       {isOverlayEvent(ev) && (
                                         <div className="text-[0.45rem] opacity-60 truncate">
@@ -4924,7 +4992,7 @@ export default function SchedulerPage() {
                                       setDetailModal(proj);
                                       setDetailModalEvent(e as ScheduledEvent);
                                     }}
-                                    title={e.isForecast ? "Forecasted install — not yet scheduled" : `${e.name} - ${daysLabel} - ${amount}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : e.isOverdue ? " ⚠ Incomplete" : ""}`}
+                                    title={isOverlayEvent(e) ? `${e.name} — ${e.eventSubtype}${e.status ? ` — ${e.status}` : ""}${e.isCompleted ? " ✓ Completed" : e.isOverdue ? " ⚠ Incomplete — needs follow-up" : ""}` : e.isForecast ? "Forecasted install — not yet scheduled" : `${e.name} - ${daysLabel} - ${amount}${isFailedType ? " ✗ Inspection Failed" : isCompletedType ? " ✓ Completed" : e.isOverdue ? " ⚠ Incomplete" : ""}`}
                                     className={`absolute top-2 bottom-2 rounded flex items-center px-1.5 text-[0.55rem] font-medium cursor-pointer transition-transform hover:scale-y-110 hover:shadow-lg hover:z-10 overflow-hidden ${eventColorClass}`}
                                     style={{
                                       left: 0,
@@ -4938,9 +5006,10 @@ export default function SchedulerPage() {
                                         {e.isTentative && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">TENT</span>}
                                         {isFailedType && <span className="mr-0.5">✗</span>}
                                         {isCompletedType && <span className="mr-0.5">✓</span>}
+                                        {isOverlayEvent(e) && e.isCompleted && <span className="mr-0.5">✓</span>}
                                         {e.isOverdue && isActiveType && <span className="mr-0.5 text-red-200">!</span>}
                                         {isOverlayEvent(e) && <span className="mr-0.5 text-[0.5rem] font-bold opacity-80">{getOverlayBadge(e)}</span>}
-                                        <span className={isCompletedType ? "line-through" : ""}>{shortName}</span> ({daysLabel})
+                                        <span className={isCompletedType || (isOverlayEvent(e) && e.isCompleted) ? "line-through" : ""}>{shortName}</span> ({daysLabel})
                                       </div>
                                       {isOverlayEvent(e) && (
                                         <div className="text-[0.45rem] opacity-60 truncate">
@@ -6273,7 +6342,7 @@ export default function SchedulerPage() {
                 {overlayDetail.eventType === "service" ? "Service Job"
                   : overlayDetail.eventType === "dnr" ? "D&R Job"
                   : overlayDetail.eventType === "roofing" ? "Roofing Job"
-                  : "Zuper Job"}
+                  : "Other / Additional Visit"}
               </h3>
               <span className={`text-[0.65rem] px-2 py-0.5 rounded-full font-medium ${
                 overlayDetail.eventType === "service"
@@ -6287,6 +6356,22 @@ export default function SchedulerPage() {
                 {overlayDetail.eventSubtype}
               </span>
             </div>
+            {overlayDetail.isOverdue && (
+              <div className="mb-3 px-3 py-2 rounded-md bg-red-500/10 border border-red-500/40 text-[0.7rem] text-red-300 flex items-start gap-2">
+                <span className="font-bold leading-tight">!</span>
+                <span>
+                  Scheduled in the past and not yet completed. Status: <span className="font-semibold">{overlayDetail.status || "—"}</span>. Needs Ops follow-up.
+                </span>
+              </div>
+            )}
+            {overlayDetail.isCompleted && (
+              <div className="mb-3 px-3 py-2 rounded-md bg-emerald-500/10 border border-emerald-500/40 text-[0.7rem] text-emerald-300 flex items-start gap-2">
+                <span className="font-bold leading-tight">✓</span>
+                <span>
+                  Completed. Status: <span className="font-semibold">{overlayDetail.status || "—"}</span>.
+                </span>
+              </div>
+            )}
             <div className="space-y-2 text-[0.75rem]">
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Job</span><span className="text-foreground">{overlayDetail.name}</span></div>
               <div className="flex gap-2"><span className="text-muted w-20 shrink-0">Address</span><span className="text-foreground">{overlayDetail.address || "—"}</span></div>
