@@ -143,8 +143,15 @@ export async function POST(req: NextRequest) {
     raisedByEmail: isMachineToken ? null : auth.email,
   });
 
-  // Fire-and-forget assignment email (don't block the response on SMTP).
-  if (!result.alreadyExisted && result.flag.assignedToUser) {
+  // Email only on MANUAL flags — a teammate deliberately raised a concern,
+  // PM should know in real-time. System-generated flags (HUBSPOT_WORKFLOW
+  // callouts, ADMIN_WORKFLOW rule cron) go silently to the queue;
+  // PMs check /dashboards/pm-action-queue on their own cadence.
+  if (
+    !result.alreadyExisted
+    && result.flag.assignedToUser
+    && source === PmFlagSource.MANUAL
+  ) {
     void import("@/lib/pm-flag-email").then(m =>
       m.sendFlagAssignedEmail(result.flag).catch(err => {
         console.error("PM flag email send failed", err);
