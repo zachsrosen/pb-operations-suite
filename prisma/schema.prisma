@@ -3506,3 +3506,54 @@ model ShitShowBackfillRun {
 
   @@index([status])
 }
+
+// ===========================================
+// PM ACCOUNTABILITY TRACKER
+// ===========================================
+// Per-PM metric snapshots written by the nightly cron at /api/cron/pm-snapshot.
+// Audience is gated to PM_TRACKER_AUDIENCE in src/lib/pm-tracker/audience.ts.
+// Spec: docs/superpowers/specs/2026-04-28-pm-accountability-tracker-design.md
+
+model PMSnapshot {
+  id          String   @id @default(cuid())
+  pmName      String
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // B - Customer engagement
+  ghostRate                Float
+  medianDaysSinceLastTouch Float
+  touchFrequency30d        Float
+
+  // D - Pre-install readiness
+  readinessScore   Float
+  dayOfFailures90d Int
+
+  // E - Stage hygiene
+  fieldPopulationScore Float
+  staleDataCount       Int
+
+  // F - Stalled-deal rescue (Phase 1: only stuckCountNow is computed;
+  // medianTimeToUnstick90d and recoveryRate90d default 0 until Phase 2)
+  stuckCountNow          Int
+  medianTimeToUnstick90d Float @default(0)
+  recoveryRate90d        Float @default(0)
+
+  // G - Customer satisfaction
+  reviewRate          Float
+  avgReviewScore      Float
+  complaintRatePer100 Float
+
+  // Metadata
+  portfolioCount Int
+  computedAt     DateTime @default(now())
+
+  // Phase 2 (saves) — nullable until that pipeline lands
+  savesHigh         Int?
+  savesMedium       Int?
+  savesLow          Int?
+  daysSavedEstimate Float?
+
+  @@unique([pmName, periodStart, periodEnd])
+  @@index([pmName, periodEnd])
+}
