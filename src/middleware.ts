@@ -55,6 +55,8 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/eagleview-poll-orders", // EagleView TDP order poller — CRON_SECRET validated in route
   "/api/webhooks/hubspot/eagleview-tdp-order", // HubSpot workflow → TDP order webhook — HubSpot signature validated in route
   "/api/webhooks/eagleview/file-delivery", // EagleView FileDelivery push — Bearer secret validated in route
+  "/api/cron/pm-snapshot", // PM Accountability snapshot — CRON_SECRET validated in route
+  "/api/cron/pm-weekly-digest", // PM Accountability digest — CRON_SECRET validated + IdempotencyKey check in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed", "/api/install-review", "/api/zuper/sync-cache"] as const;
 

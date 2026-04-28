@@ -3548,3 +3548,57 @@ model ShitShowBackfillRun {
 
   @@index([status])
 }
+
+// ===========================================
+// PM ACCOUNTABILITY TRACKER
+// ===========================================
+// Per-PM metric snapshots written by the nightly cron at /api/cron/pm-snapshot.
+// Audience is gated to PM_TRACKER_AUDIENCE in src/lib/pm-tracker/audience.ts.
+// Spec: docs/superpowers/specs/2026-04-28-pm-accountability-tracker-design.md
+
+model PMSnapshot {
+  id          String   @id @default(cuid())
+  pmName      String
+  periodStart DateTime
+  periodEnd   DateTime
+
+  // B - Customer engagement
+  ghostRate                Float
+  medianDaysSinceLastTouch Float
+  touchFrequency30d        Float
+
+  // D - Pre-install readiness
+  readinessScore   Float
+  dayOfFailures90d Int
+
+  // E - Stage hygiene
+  fieldPopulationScore Float
+  staleDataCount       Int
+
+  // F - Stalled-deal rescue. Only stuckCountNow is computed in Phase 1;
+  // medianTimeToUnstick90d and recoveryRate90d are NULL until Phase 2 lands
+  // the saves detector (which adds the deal-stage history table they need).
+  // Storing NULL preserves the "not yet computed" semantic — storing 0 would
+  // be misread as "0% recovery rate" which means every stuck deal abandoned.
+  stuckCountNow          Int
+  medianTimeToUnstick90d Float?
+  recoveryRate90d        Float?
+
+  // G - Customer satisfaction
+  reviewRate          Float
+  avgReviewScore      Float
+  complaintRatePer100 Float
+
+  // Metadata
+  portfolioCount Int
+  computedAt     DateTime @default(now())
+
+  // Phase 2 (saves) — nullable until that pipeline lands
+  savesHigh         Int?
+  savesMedium       Int?
+  savesLow          Int?
+  daysSavedEstimate Float?
+
+  @@unique([pmName, periodStart, periodEnd])
+  @@index([pmName, periodEnd])
+}

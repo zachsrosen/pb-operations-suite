@@ -137,6 +137,14 @@
     {
       "path": "/api/cron/eagleview-poll-orders",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/cron/pm-snapshot",
+      "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/pm-weekly-digest",
+      "schedule": "0 14 * * 1"
     }
   ],
   "redirects": [
