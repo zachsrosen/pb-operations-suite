@@ -46,6 +46,7 @@ export async function GET() {
     shiftEnd: string;
     weekendShiftStart: string;
     weekendShiftEnd: string;
+    startDate: string;
     date: string;
     crewMember: { id: string; name: string; email: string | null } | null;
     source: string | null;
@@ -64,6 +65,7 @@ export async function GET() {
         shiftEnd: pool.shiftEnd,
         weekendShiftStart: pool.weekendShiftStart,
         weekendShiftEnd: pool.weekendShiftEnd,
+        startDate: pool.startDate,
         date,
         crewMember: null,
         source: "pre-start",
@@ -121,6 +123,7 @@ export async function GET() {
       shiftEnd: pool.shiftEnd,
       weekendShiftStart: pool.weekendShiftStart,
       weekendShiftEnd: pool.weekendShiftEnd,
+      startDate: pool.startDate,
       date,
       crewMember,
       source,
