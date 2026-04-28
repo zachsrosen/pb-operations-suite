@@ -3533,11 +3533,14 @@ model PMSnapshot {
   fieldPopulationScore Float
   staleDataCount       Int
 
-  // F - Stalled-deal rescue (Phase 1: only stuckCountNow is computed;
-  // medianTimeToUnstick90d and recoveryRate90d default 0 until Phase 2)
+  // F - Stalled-deal rescue. Only stuckCountNow is computed in Phase 1;
+  // medianTimeToUnstick90d and recoveryRate90d are NULL until Phase 2 lands
+  // the saves detector (which adds the deal-stage history table they need).
+  // Storing NULL preserves the "not yet computed" semantic — storing 0 would
+  // be misread as "0% recovery rate" which means every stuck deal abandoned.
   stuckCountNow          Int
-  medianTimeToUnstick90d Float @default(0)
-  recoveryRate90d        Float @default(0)
+  medianTimeToUnstick90d Float?
+  recoveryRate90d        Float?
 
   // G - Customer satisfaction
   reviewRate          Float

@@ -18,15 +18,25 @@ export async function GET() {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    // Single query: pull every PM's snapshots ordered desc, then keep the
+    // first (latest) row per pmName. With 4 PMs and ~daily snapshots this is
+    // hundreds of rows max — far cheaper than N round-trips to Neon.
+    const allSnapshots = await prisma.pMSnapshot.findMany({
+      where: { pmName: { in: [...PM_NAMES] } },
+      orderBy: [{ pmName: "asc" }, { periodEnd: "desc" }],
+    });
+
+    const latestByPm = new Map<string, (typeof allSnapshots)[number]>();
+    for (const s of allSnapshots) {
+      if (!latestByPm.has(s.pmName)) latestByPm.set(s.pmName, s);
+    }
+
     const scorecards: PmScorecard[] = [];
     let latestPeriodEnd: Date | null = null;
     let latestPeriodStart: Date | null = null;
 
     for (const pmName of PM_NAMES) {
-      const snapshot = await prisma.pMSnapshot.findFirst({
-        where: { pmName },
-        orderBy: { periodEnd: "desc" },
-      });
+      const snapshot = latestByPm.get(pmName);
       if (!snapshot) continue;
 
       if (!latestPeriodEnd || snapshot.periodEnd > latestPeriodEnd) {
@@ -49,8 +59,8 @@ export async function GET() {
           fieldPopulationScore: snapshot.fieldPopulationScore,
           staleDataCount: snapshot.staleDataCount,
           stuckCountNow: snapshot.stuckCountNow,
-          medianTimeToUnstick90d: null,
-          recoveryRate90d: null,
+          medianTimeToUnstick90d: snapshot.medianTimeToUnstick90d,
+          recoveryRate90d: snapshot.recoveryRate90d,
           reviewRate: snapshot.reviewRate,
           avgReviewScore: snapshot.avgReviewScore,
           complaintRatePer100: snapshot.complaintRatePer100,

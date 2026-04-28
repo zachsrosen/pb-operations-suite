@@ -87,9 +87,16 @@ export async function computeReadinessForPM(
     }
   }
 
-  // Day-of failures: deals that had an install scheduled in the past 90d AND
-  // are NOT yet completed (installScheduleDate in past, constructionCompleteDate null
-  // OR more recently scheduled). Conservative — counts any past-due unfilled install.
+  // Phase 1 simplification: true "day-of failure" detection (install rescheduled
+  // within 48h of original date due to a readiness gap) requires deal-history
+  // tracking that lands in Phase 2 alongside the saves detector. For Phase 1 we
+  // report the conservative proxy: deals whose installScheduleDate is in the
+  // last 90d AND construction never completed AND deal isn't closed.
+  //
+  // This over-counts in-flight installs (install date passed but construction
+  // genuinely still in progress and just not marked complete yet). The dashboard
+  // labels this metric "Past-due installs (90d, proxy)" rather than the spec's
+  // "day-of failures" framing.
   const ninetyDaysAgo = new Date(now.getTime() - 90 * DAY_MS);
   const dayOfFailures90d = await prisma.deal.count({
     where: {

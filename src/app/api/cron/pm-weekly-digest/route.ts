@@ -54,28 +54,41 @@ export async function GET(request: NextRequest) {
   const now = new Date();
   const weekKey = isoWeekKey(now);
 
-  // Idempotency: bail if we've already sent this week's digest
-  const existing = await prisma.idempotencyKey.findUnique({
-    where: { key_scope: { key: weekKey, scope: SCOPE } },
-  });
-  if (existing && existing.status === "completed") {
-    return NextResponse.json({ skipped: true, reason: "already sent for week", weekKey });
-  }
-
-  // Reserve the slot (best-effort — race-tolerant via unique constraint)
+  // Atomic idempotency: try to CREATE the row with status="processing". Only the
+  // single winner of the unique-constraint race proceeds; concurrent invocations
+  // get a P2002 and bail out. This avoids the read-then-write race that would
+  // let two cron retries both call sendEmailMessage().
   try {
-    await prisma.idempotencyKey.upsert({
-      where: { key_scope: { key: weekKey, scope: SCOPE } },
-      create: {
+    await prisma.idempotencyKey.create({
+      data: {
         key: weekKey,
         scope: SCOPE,
         status: "processing",
         expiresAt: new Date(now.getTime() + 7 * DAY_MS),
       },
-      update: { status: "processing" },
     });
   } catch (err) {
+    // P2002 = unique constraint violation. Means another invocation already
+    // claimed this week — either still processing or completed. Either way,
+    // bail out. This is the desired behavior under Vercel cron retries.
+    const code = (err as { code?: string }).code;
+    if (code === "P2002") {
+      // Surface whether the prior attempt completed or is still in flight.
+      const existing = await prisma.idempotencyKey.findUnique({
+        where: { key_scope: { key: weekKey, scope: SCOPE } },
+      });
+      return NextResponse.json({
+        skipped: true,
+        reason:
+          existing?.status === "completed"
+            ? "already sent for week"
+            : "another invocation in flight",
+        weekKey,
+      });
+    }
+    // Non-race failure (e.g. DB down) — propagate as a real error
     console.error("[pm-weekly-digest] idempotency reserve failed:", err);
+    throw err;
   }
 
   try {

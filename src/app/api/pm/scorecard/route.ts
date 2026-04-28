@@ -53,8 +53,8 @@ export async function GET(request: NextRequest) {
         fieldPopulationScore: snapshot.fieldPopulationScore,
         staleDataCount: snapshot.staleDataCount,
         stuckCountNow: snapshot.stuckCountNow,
-        medianTimeToUnstick90d: null, // Phase 2
-        recoveryRate90d: null, // Phase 2
+        medianTimeToUnstick90d: snapshot.medianTimeToUnstick90d, // null until Phase 2
+        recoveryRate90d: snapshot.recoveryRate90d, // null until Phase 2
         reviewRate: snapshot.reviewRate,
         avgReviewScore: snapshot.avgReviewScore,
         complaintRatePer100: snapshot.complaintRatePer100,

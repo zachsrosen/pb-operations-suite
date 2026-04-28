@@ -55,8 +55,10 @@ export async function buildSnapshot(pmName: PmName, periodEnd: Date): Promise<vo
     fieldPopulationScore: hyg.fieldPopulationScore,
     staleDataCount: hyg.staleDataCount,
     stuckCountNow: res.stuckCountNow,
-    medianTimeToUnstick90d: res.medianTimeToUnstick90d ?? 0,
-    recoveryRate90d: res.recoveryRate90d ?? 0,
+    // Pass through null (rather than coerce to 0) — the columns are nullable
+    // so the UI can distinguish "not computed" from "0% / 0 days."
+    medianTimeToUnstick90d: res.medianTimeToUnstick90d,
+    recoveryRate90d: res.recoveryRate90d,
     reviewRate: csat.reviewRate,
     avgReviewScore: csat.avgReviewScore,
     complaintRatePer100: csat.complaintRatePer100,

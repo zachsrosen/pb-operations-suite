@@ -47,7 +47,7 @@ const METRICS: MetricDef[] = [
   },
   {
     key: "dayOfFails",
-    label: "Day-of failures · 90d",
+    label: "Past-due installs · 90d (proxy)",
     format: (s) => fmtInt(s.metrics.dayOfFailures90d),
   },
   {

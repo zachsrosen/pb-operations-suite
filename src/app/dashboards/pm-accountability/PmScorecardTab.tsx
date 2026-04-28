@@ -61,7 +61,7 @@ export function PmScorecardTab({ pmName, scorecard }: Props) {
         <Kpi
           label="Readiness"
           value={`${(m.readinessScore * 100).toFixed(1)}%`}
-          sub={`${m.dayOfFailures90d} day-of failures · 90d`}
+          sub={`${m.dayOfFailures90d} past-due installs · 90d (proxy)`}
         />
         <Kpi
           label="Stuck deals"
