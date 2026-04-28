@@ -15,11 +15,24 @@
 import { prisma } from "@/lib/db";
 import { createFlag } from "@/lib/pm-flags";
 import {
+  DealPipeline,
   PmFlagSeverity,
   PmFlagSource,
   PmFlagType,
 } from "@/generated/prisma/enums";
 import type { Deal } from "@/generated/prisma/client";
+
+/**
+ * Scope: PM flag rules only apply to **active PROJECT pipeline deals**.
+ *
+ * - `pipeline = PROJECT` excludes Sales, D&R, Service, Roofing — those have
+ *   their own ops teams and surfaces. PMs don't own those.
+ * - Terminal stages (closed/cancelled/on-hold/complete) are excluded via
+ *   `isTerminal()` checks. Stale signals on a closed deal aren't actionable.
+ *
+ * Every rule query MUST include this filter.
+ */
+const ACTIVE_PROJECT_FILTER = { pipeline: DealPipeline.PROJECT } as const;
 
 // =============================================================================
 // Types
@@ -147,7 +160,8 @@ export async function ruleConstructionStageStuck(): Promise<RuleResult> {
   if (!prisma) return { rule: "construction-stage-stuck", matches: [], durationMs: 0 };
 
   const deals = await prisma.deal.findMany({
-    where: { stage: { not: "" } },
+    where: {
+      ...ACTIVE_PROJECT_FILTER, stage: { not: "" } },
     select: { hubspotDealId: true, dealName: true, stage: true },
   });
 
@@ -177,7 +191,8 @@ export async function rulePreConstructionStageStuck(): Promise<RuleResult> {
   if (!prisma) return { rule: "pre-construction-stage-stuck", matches: [], durationMs: 0 };
 
   const deals = await prisma.deal.findMany({
-    where: { stage: { not: "" } },
+    where: {
+      ...ACTIVE_PROJECT_FILTER, stage: { not: "" } },
     select: { hubspotDealId: true, dealName: true, stage: true },
   });
 
@@ -208,6 +223,7 @@ export async function rulePermitRejection(): Promise<RuleResult> {
 
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       permittingStatus: { contains: "reject", mode: "insensitive" },
     },
     select: { hubspotDealId: true, dealName: true, stage: true, permittingStatus: true, updatedAt: true },
@@ -239,6 +255,7 @@ export async function ruleIcRejection(): Promise<RuleResult> {
 
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       icStatus: { contains: "reject", mode: "insensitive" },
     },
     select: { hubspotDealId: true, dealName: true, stage: true, icStatus: true, updatedAt: true },
@@ -269,7 +286,8 @@ export async function ruleDesignRevisions(): Promise<RuleResult> {
   if (!prisma) return { rule: "design-revisions", matches: [], durationMs: 0 };
 
   const deals = await prisma.deal.findMany({
-    where: { daRevisionCount: { gt: 3 } },
+    where: {
+      ...ACTIVE_PROJECT_FILTER, daRevisionCount: { gt: 3 } },
     select: { hubspotDealId: true, dealName: true, stage: true, daRevisionCount: true },
   });
 
@@ -295,6 +313,7 @@ export async function ruleInstallOverdue(): Promise<RuleResult> {
   const today = new Date();
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       installScheduleDate: { not: null, lt: today },
       constructionCompleteDate: null,
     },
@@ -338,6 +357,7 @@ export async function ruleMissingAhj(): Promise<RuleResult> {
 
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       OR: [{ ahj: null }, { ahj: "" }],
       isPermitSubmitted: false,
     },
@@ -369,6 +389,7 @@ export async function ruleMissingUtility(): Promise<RuleResult> {
 
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       OR: [{ utility: null }, { utility: "" }],
       isIcSubmitted: false,
     },
@@ -405,6 +426,7 @@ export async function ruleSurveyOutstanding(): Promise<RuleResult> {
   const cutoff = new Date(Date.now() - 7 * 86_400_000);
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       closeDate: { not: null, lt: cutoff },
       siteSurveyCompletionDate: null,
     },
@@ -437,6 +459,7 @@ export async function ruleDaSendOutstanding(): Promise<RuleResult> {
   const cutoff = new Date(Date.now() - 5 * 86_400_000);
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       siteSurveyCompletionDate: { not: null, lt: cutoff },
       designApprovalSentDate: null,
     },
@@ -469,6 +492,7 @@ export async function ruleDaApprovalOutstanding(): Promise<RuleResult> {
   const cutoff = new Date(Date.now() - 7 * 86_400_000);
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       designApprovalSentDate: { not: null, lt: cutoff },
       isLayoutApproved: false,
     },
@@ -501,7 +525,8 @@ export async function ruleChangeOrderPending(): Promise<RuleResult> {
   if (!prisma) return { rule: "change-order-pending", matches: [], durationMs: 0 };
 
   const deals = await prisma.deal.findMany({
-    where: { layoutStatus: "Pending Sales Changes" },
+    where: {
+      ...ACTIVE_PROJECT_FILTER, layoutStatus: "Pending Sales Changes" },
     select: { hubspotDealId: true, dealName: true, stage: true, updatedAt: true },
   });
 
@@ -533,6 +558,7 @@ export async function ruleInspectionOutstanding(): Promise<RuleResult> {
   const cutoff = new Date(Date.now() - 14 * 86_400_000);
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       constructionCompleteDate: { not: null, lt: cutoff },
       inspectionScheduleDate: null,
       inspectionPassDate: null,
@@ -633,14 +659,10 @@ export async function runAllRules(options: { dryRun?: boolean } = {}): Promise<R
           summary.totalAlreadyExisted++;
         } else {
           summary.totalCreated++;
-          // Fire email outside the loop with void to not block.
-          if (r.flag.assignedToUser) {
-            void import("@/lib/pm-flag-email").then(em =>
-              em.sendFlagAssignedEmail(r.flag).catch(emailErr => {
-                console.error(`[pm-flag-rules] email send failed for ${r.flag.id}`, emailErr);
-              })
-            );
-          }
+          // NO email send — auto-detected flags from the rules cron go
+          // silently to the queue. PMs check /dashboards/pm-action-queue
+          // on their own cadence. Emails are reserved for deliberate
+          // human actions (manual flag raise, manual reassignment).
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
