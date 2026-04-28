@@ -19,6 +19,14 @@ const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL! });
 const prisma = new PrismaClient({ adapter });
 
 async function main() {
+  // Default: stage the schedule WITHOUT inviting electricians. They see nothing
+  // on their primary calendars yet; events live only on the shared on-call
+  // calendars. Pass --with-invites to attach attendees (run scripts/send-on-call-invites.ts
+  // for the dedicated invite-blast variant).
+  const withInvites = process.argv.includes("--with-invites");
+  const inviteAttendee = withInvites;
+  console.warn(`Mode: ${withInvites ? "WITH invites" : "STAGING (no invites)"}`);
+
   const pools = await prisma.onCallPool.findMany({
     where: { isActive: true },
     orderBy: { name: "asc" },
@@ -81,6 +89,7 @@ async function main() {
         },
         earliest.date,
         latest.date,
+        { inviteAttendee },
       );
       console.warn(`  Synced ${result.synced} events (${result.failed} failed)`);
     } catch (e) {
@@ -89,6 +98,12 @@ async function main() {
   }
 
   console.warn("\nDone. Calendars are shared with photonbrothers.com domain (read access).");
+  if (!withInvites) {
+    console.warn(
+      "Events created WITHOUT attendees. To invite each electrician later, run:",
+    );
+    console.warn("  npx tsx scripts/send-on-call-invites.ts");
+  }
 }
 
 main()

@@ -176,15 +176,29 @@ function toIsoLocal(date: string, time: string): string {
   return `${date}T${h.padStart(2, "0")}:${m.padStart(2, "0")}:00`;
 }
 
+export type UpsertOptions = {
+  /**
+   * Add the assigned electrician as an event attendee so the shift appears
+   * on their primary calendar. Defaults true. Pass false during pre-go-live
+   * staging to create events on the shared calendar without inviting anyone;
+   * the same events can be flipped to invited later via a second pass with
+   * inviteAttendee=true (event ids are stable so the second pass updates the
+   * existing events in place).
+   */
+  inviteAttendee?: boolean;
+};
+
 /**
  * Upsert one event for a single assignment (one day). Events use weekday
  * shift hours Mon-Fri and weekend hours Sat/Sun. The crew member is added
- * as an attendee so the event appears on their primary calendar with
- * notifications. Idempotent via stable event ID derived from assignment id.
+ * as an attendee (unless options.inviteAttendee=false) so the event appears
+ * on their primary calendar with notifications. Idempotent via stable event
+ * ID derived from assignment id.
  */
 export async function upsertAssignmentEvent(
   pool: PoolForCalendar,
   assignment: AssignmentForCalendar,
+  options: UpsertOptions = {},
 ): Promise<void> {
   if (!isEnabled()) return;
   const calendarId = await ensureCalendarForPool(pool);
@@ -194,13 +208,15 @@ export async function upsertAssignmentEvent(
   const crossesMidnight = window.end < window.start;
   const endDate = crossesMidnight ? dateAddDays(assignment.date, 1) : assignment.date;
 
+  const inviteAttendee = options.inviteAttendee ?? true;
+
   const body = {
     id: eventId,
     summary: `On-Call: ${assignment.crewMember.name}`,
     description: `${pool.name} on-call rotation. Source: PB Tech Ops Suite.`,
     start: { dateTime: toIsoLocal(assignment.date, window.start), timeZone: pool.timezone },
     end: { dateTime: toIsoLocal(endDate, window.end), timeZone: pool.timezone },
-    attendees: assignment.crewMember.email
+    attendees: inviteAttendee && assignment.crewMember.email
       ? [{ email: assignment.crewMember.email, responseStatus: "accepted" as const }]
       : [],
     transparency: "opaque",
@@ -272,11 +288,16 @@ export async function deleteAssignmentEvent(pool: PoolForCalendar, assignmentId:
  * Bulk-sync all assignments in a date range for a pool. Used after Publish
  * to push every newly-generated/updated assignment to Google Calendar.
  * Errors per-assignment are logged but don't abort the batch.
+ *
+ * Pass options.inviteAttendee=false to create events on the shared calendar
+ * without adding the electrician as attendee — useful for staging the
+ * schedule before announcing it.
  */
 export async function syncRangeForPool(
   pool: PoolForCalendar,
   fromDate: string,
   toDate: string,
+  options: UpsertOptions = {},
 ): Promise<{ synced: number; failed: number }> {
   if (!isEnabled()) return { synced: 0, failed: 0 };
 
@@ -290,12 +311,16 @@ export async function syncRangeForPool(
   let failed = 0;
   for (const a of assignments) {
     try {
-      await upsertAssignmentEvent(pool, {
-        id: a.id,
-        date: a.date,
-        poolId: a.poolId,
-        crewMember: a.crewMember,
-      });
+      await upsertAssignmentEvent(
+        pool,
+        {
+          id: a.id,
+          date: a.date,
+          poolId: a.poolId,
+          crewMember: a.crewMember,
+        },
+        options,
+      );
       synced++;
     } catch (err) {
       failed++;
