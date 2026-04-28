@@ -157,24 +157,23 @@ function SOPPageInner() {
   const canEdit = userRole === "ADMIN" || userRole === "EXECUTIVE" || userRole === "OWNER";
   const canSuggest = !!userRole && userRole !== "VIEWER" && !canEdit;
 
-  /* ── Tab & Section Visibility ──────────────────────────────────────
+  /* ── Tab & Section Visibility (post-2026-04-28 hub flip) ─────────────
    *
-   * EVERYONE sees:
-   *   hubspot  — HubSpot Guide
-   *   ops      — Project Pipeline
-   *   ref      — Reference (includes Workflows, minus admin-only sections below)
+   * The SOP guide is the company-wide knowledge hub. Default = open.
    *
-   * ROLE-SPECIFIC:
-   *   pm       — PM Guide        → only named PMs (Alexis, Kaitlyn, Kat, Natasha)
-   *   role-de  — Tech Ops        → TECH_OPS role
+   * EVERYONE sees almost every tab — the framing is "the company's
+   * playbook, all of it" rather than "your role's playbook." Tab-level
+   * gating in `src/lib/sop-access.ts` only restricts:
+   *   drafts — admin work-in-progress staging area
    *
-   * ADMIN ONLY (shelved until content is finalized):
-   *   other    — Other Pipelines (includes Sales Guide)
-   *   role-ops — Operations (includes Zuper)
+   * SECTION-LEVEL gates (in otherwise-public tabs) still restrict:
+   *   ref-user-roles, ref-system     — admin internals (system docs)
+   *   tools-workflow-builder         — admin tooling internals
+   *   tools-pricing-calculator       — sales/accounting/PM (financial COGS)
+   *   service-customer-history       — service/ops/PM (PII access workflow)
+   *   suites-executive, suites-admin — admin/exec only
    *
-   * ADMIN-ONLY SECTIONS (within visible tabs):
-   *   ref-user-roles — User Roles & Permissions (in Reference tab)
-   *   ref-system     — System Architecture (in Reference tab)
+   * Everything else is open to all authenticated users.
    * ────────────────────────────────────────────────────────────────── */
   // Use effective user name (from auth/sync, impersonation-aware) for tab access,
   // falling back to session name before the sync response arrives
@@ -553,13 +552,11 @@ function SOPPageInner() {
       {/* ── Tab Bar ── */}
       <nav className="sop-tab-bar">
         {visibleTabs.map((tab) => {
-          // Admin UI hints: show lock/role icons so admins know what others see
-          const ROLE_SPECIFIC_TABS: Record<string, string> = {
-            pm: "Visible to select PMs",
-            "role-de": "Visible to Tech Ops team",
-          };
+          // Admin UI hint: show a lock on tabs that are admin-only.
+          // Post-hub-flip, almost every tab is public. Only "drafts"
+          // (and other unknown tabs) are admin-only.
           const isAdminOnly = canEdit && !canAccessTab(tab.id, "VIEWER", "");
-          const roleLabel = canEdit ? ROLE_SPECIFIC_TABS[tab.id] : undefined;
+          const roleLabel = undefined;
           return (
             <button
               key={tab.id}

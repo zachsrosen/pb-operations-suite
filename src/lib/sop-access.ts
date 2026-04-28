@@ -4,118 +4,89 @@
  * Edge-compatible (no Prisma/Node deps). Shared by API routes and the
  * client-side SOP page so visibility rules are enforced in both places.
  *
- * Access model:
+ * Access model (post-2026-04-28 hub flip):
  *   1. ADMIN / OWNER / EXECUTIVE see everything (admin bypass).
- *   2. PUBLIC_TABS are visible to all authenticated users.
- *   3. TAB_ROLE_GATES restrict tabs to specific roles. A user with ANY
- *      listed role gets access (multi-role union).
- *   4. SECTION_ROLE_GATES restrict specific sections within otherwise-
- *      visible tabs. ADMIN_ONLY_SECTIONS is a back-compat shortcut.
- *   5. Special legacy gate: PM Guide tab is name-gated.
+ *   2. PUBLIC_TABS are visible to all authenticated users — this is the
+ *      DEFAULT for almost every tab. The SOP guide is positioned as the
+ *      company-wide knowledge hub: anyone can read about how any team
+ *      operates, even teams they're not on.
+ *   3. SECTION_ROLE_GATES restrict specific sections within otherwise-
+ *      visible tabs. This is the targeted lockdown for sensitive content
+ *      (admin internals, financial COGS data, PII workflows).
+ *   4. Tabs not in PUBLIC_TABS are admin/owner/executive only — used
+ *      for true work-in-progress areas like "drafts".
  *
  * Multi-role users: pass `roles` as an array; access is granted if ANY
  * role passes the check. Single-string `role` argument is supported for
  * back-compat.
+ *
+ * Historical context: the previous model was opt-in by role — most tabs
+ * were gated to specific roles via TAB_ROLE_GATES, with the assumption
+ * that "your team's playbook" was the framing. The 2026-04-28 hub flip
+ * inverts this: the framing is "the company's playbook, all of it" and
+ * the default is open. Only specifically-sensitive sections lock down.
  */
 
 type RoleInput = string | string[] | null | undefined;
 
-/** Tabs visible to all authenticated users */
+/**
+ * Tabs visible to all authenticated users.
+ *
+ * Almost every tab lives here. Only true admin work-in-progress areas
+ * (the "drafts" staging tab) are excluded — those fall through to the
+ * default-deny path below.
+ */
 const PUBLIC_TABS = new Set([
+  // Foundation knowledge
   "hubspot",
   "ops",
   "ref",
+
+  // Inventory + product
   "zoho-inventory",
   "catalog",
+  "inventory",
+
+  // Suites + tools
   "suites",
+  "tools",
+
+  // Process / pipelines
+  "service",
+  "scheduling",
+  "forecast",
+  "trackers",
+  "queues",
+
+  // Department-specific guides — open to everyone for cross-team transparency
+  "accounting-sop",
+  "sales-marketing-sop",
+  "pm", // PM Guide — was name-gated, now open per hub framing
+  "role-de", // Design & Engineering
+  "role-permit", // Permitting
+  "role-ic", // Interconnection
 ]);
-
-/**
- * Tabs gated to specific roles. A user with any of these roles (or admin
- * bypass) sees the tab. Tabs not in PUBLIC_TABS or TAB_ROLE_GATES are
- * implicitly admin-only.
- */
-const TAB_ROLE_GATES: Record<string, ReadonlyArray<string>> = {
-  service: [
-    "PROJECT_MANAGER",
-    "OPERATIONS_MANAGER",
-    "OPERATIONS",
-    "SERVICE",
-  ],
-  scheduling: [
-    "PROJECT_MANAGER",
-    "OPERATIONS_MANAGER",
-    "OPERATIONS",
-    "TECH_OPS",
-    "SALES_MANAGER",
-    "SALES",
-    "SERVICE",
-    "ROOFING",
-  ],
-  forecast: [
-    "PROJECT_MANAGER",
-    "OPERATIONS_MANAGER",
-    "INTELLIGENCE",
-  ],
-  trackers: [
-    "PROJECT_MANAGER",
-    "OPERATIONS_MANAGER",
-    "TECH_OPS",
-    "PERMIT",
-    "INTERCONNECT",
-  ],
-  tools: [
-    "PROJECT_MANAGER",
-    "OPERATIONS_MANAGER",
-    "OPERATIONS",
-    "TECH_OPS",
-    "DESIGN",
-    "PERMIT",
-    "INTERCONNECT",
-    "SERVICE",
-    "SALES_MANAGER",
-    "SALES",
-    "ACCOUNTING",
-  ],
-  queues: [
-    "PROJECT_MANAGER",
-    "OPERATIONS_MANAGER",
-    "TECH_OPS",
-    "DESIGN",
-    "PERMIT",
-    "INTERCONNECT",
-  ],
-  // Accounting SOP — matches the runtime role gate on
-  // /dashboards/payment-action-queue and similar pages.
-  "accounting-sop": ["ACCOUNTING"],
-  // Sales & Marketing SOP — sales reps, sales managers, marketing.
-  "sales-marketing-sop": ["SALES", "SALES_MANAGER", "MARKETING"],
-  // Executive SOP — intentionally NOT listed here. Admin/owner/executive
-  // bypass all gates already, and unknown tabs are admin-only by default.
-
-  // Role-specific SOP tabs — legacy TECH_OPS keeps access to all three so
-  // existing tech-ops users don't lose anything during the role split.
-  "role-de": ["DESIGN", "TECH_OPS"],
-  "role-permit": ["PERMIT", "TECH_OPS"],
-  "role-ic": ["INTERCONNECT", "TECH_OPS"],
-};
-
-/** PM Guide — gated by first name (legacy) */
-const PM_NAMES = new Set(["alexis", "kaitlyn", "kat", "natasha"]);
 
 /**
  * Sections that require additional role checks beyond their parent tab.
  * Empty array = admin-only. Non-empty = "any of these roles" grants access.
+ *
+ * The hub flip dramatically narrowed this list — most sections are now
+ * open. What remains here is intentional:
+ *   - System / role internals (admin only)
+ *   - Financial COGS data (sales/accounting/PM only)
+ *   - PII access workflows (operations roles only)
+ *   - Suite descriptions for sensitive suites (admin/exec)
  */
 const SECTION_ROLE_GATES: Record<string, ReadonlyArray<string>> = {
-  // Admin-only sections (legacy)
+  // Admin internals — how role gating + system architecture work
   "ref-user-roles": [],
   "ref-system": [],
 
-  // Workflow Builder — admin internals
+  // Workflow Builder — admin tooling internals
   "tools-workflow-builder": [],
 
-  // Pricing/COGS — sales+accounting+leadership only
+  // Pricing/COGS — has EPC margins, lease factors, etc. Sensitive labor data.
   "tools-pricing-calculator": [
     "SALES_MANAGER",
     "SALES",
@@ -123,11 +94,7 @@ const SECTION_ROLE_GATES: Record<string, ReadonlyArray<string>> = {
     "PROJECT_MANAGER",
   ],
 
-  // P&I hubs — only the relevant team gets the deep how-to
-  "tools-permit-hub": ["PROJECT_MANAGER", "TECH_OPS", "PERMIT"],
-  "tools-ic-hub": ["PROJECT_MANAGER", "TECH_OPS", "INTERCONNECT"],
-
-  // Customer 360 — contains PII access workflow
+  // Customer 360 — contains PII access workflow (legal/compliance)
   "service-customer-history": [
     "PROJECT_MANAGER",
     "OPERATIONS_MANAGER",
@@ -135,25 +102,9 @@ const SECTION_ROLE_GATES: Record<string, ReadonlyArray<string>> = {
     "SERVICE",
   ],
 
-  // D&E action queues
-  "queues-plan-review": ["PROJECT_MANAGER", "TECH_OPS", "DESIGN"],
-  "queues-design-approval": ["PROJECT_MANAGER", "TECH_OPS", "DESIGN"],
-  "queues-design-revisions": ["PROJECT_MANAGER", "TECH_OPS", "DESIGN"],
-
-  // Permit-team queues
-  "queues-permit-action": ["PROJECT_MANAGER", "TECH_OPS", "PERMIT"],
-  "queues-permit-revisions": ["PROJECT_MANAGER", "TECH_OPS", "PERMIT"],
-
-  // IC-team queues
-  "queues-ic-action": ["PROJECT_MANAGER", "TECH_OPS", "INTERCONNECT"],
-  "queues-ic-revisions": ["PROJECT_MANAGER", "TECH_OPS", "INTERCONNECT"],
-
-  // Per-suite descriptions — gated to the suite's own audience.
-  // (Overview section stays open — it's the directory.)
-  "suites-executive": [],
-  "suites-accounting": ["ACCOUNTING"],
-  "suites-admin": [],
-  "suites-sales-marketing": ["SALES_MANAGER", "SALES", "MARKETING"],
+  // Suite descriptions for sensitive suites
+  "suites-executive": [], // exec strategy / financials
+  "suites-admin": [], // admin tooling internals
 };
 
 /**
@@ -189,27 +140,24 @@ function anyRoleMatches(
  *
  * @param tabId   - The SOP tab identifier (e.g. "hubspot", "service")
  * @param roles   - User role(s) — string or array (or null for unauthenticated)
- * @param firstName - Lowercase first name of the user
+ * @param firstName - Lowercase first name of the user (kept for back-compat
+ *   with older callers; unused in current logic since the PM name-gate was
+ *   removed during the hub flip).
  */
 export function canAccessTab(
   tabId: string,
   roles: RoleInput,
-  firstName: string,
+  // Unused since PM Guide was opened up — kept in the signature so older
+  // callers (and tests) don't break.
+  _firstName: string,
 ): boolean {
   // Admins, owners, and executives see everything.
   if (isAdmin(roles)) return true;
 
-  // Public tabs.
+  // Public tabs — the default for almost everything.
   if (PUBLIC_TABS.has(tabId)) return true;
 
-  // Role-gated tabs — any matching role grants access.
-  const tabGate = TAB_ROLE_GATES[tabId];
-  if (tabGate && anyRoleMatches(roles, tabGate)) return true;
-
-  // PM Guide — name-gated.
-  if (tabId === "pm") return PM_NAMES.has(firstName);
-
-  // Unknown / shelved tabs (other, role-ops, etc.) — denied.
+  // Unknown / shelved / drafts tabs — admin-only by default.
   return false;
 }
 
