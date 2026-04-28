@@ -4,6 +4,7 @@ import { canApproveOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { prisma, logActivity } from "@/lib/db";
 import { appCache } from "@/lib/cache";
+import { upsertAssignmentEvent } from "@/lib/on-call-google-calendar";
 
 export const dynamic = "force-dynamic";
 
@@ -61,6 +62,43 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   });
   // Notification stub — real React Email template ships in V1.1.
   console.warn("[on-call] swap-approved notification stub", { swapId: id });
+
+  // Re-sync both swapped assignments to Google Calendar so the new attendees
+  // see the events on their primary cal and the old attendees stop seeing
+  // them. Failures here are best-effort.
+  try {
+    const pool = await prisma.onCallPool.findUnique({ where: { id: swap.poolId } });
+    if (pool) {
+      const dates = [swap.requesterDate, swap.counterpartyDate];
+      const updatedAssignments = await prisma.onCallAssignment.findMany({
+        where: { poolId: swap.poolId, date: { in: dates } },
+        include: { crewMember: { select: { name: true, email: true } } },
+      });
+      for (const a of updatedAssignments) {
+        await upsertAssignmentEvent(
+          {
+            id: pool.id,
+            name: pool.name,
+            region: pool.region,
+            timezone: pool.timezone,
+            shiftStart: pool.shiftStart,
+            shiftEnd: pool.shiftEnd,
+            weekendShiftStart: pool.weekendShiftStart,
+            weekendShiftEnd: pool.weekendShiftEnd,
+            googleCalendarId: pool.googleCalendarId,
+          },
+          {
+            id: a.id,
+            date: a.date,
+            poolId: a.poolId,
+            crewMember: a.crewMember,
+          },
+        );
+      }
+    }
+  } catch (err) {
+    console.warn("[on-call/swap-approve] gcal sync failed", err);
+  }
 
   return NextResponse.json({ ok: true });
 }

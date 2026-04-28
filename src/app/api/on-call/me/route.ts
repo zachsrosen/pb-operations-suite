@@ -111,11 +111,28 @@ export async function GET() {
     take: 10,
   });
 
+  // Per-pool subscribe URLs for the iCal feed and the shared Google Calendar.
+  // Electricians can subscribe in their own calendar app; the GCal copy is
+  // also auto-invited per shift, so this is just for those who want the full
+  // pool view (including everyone's shifts, not just their own).
+  const pools = await prisma.onCallPool.findMany({
+    where: { isActive: true },
+    select: { id: true, name: true, icalToken: true, googleCalendarId: true },
+    orderBy: { name: "asc" },
+  });
+  const subscribeUrls = pools.map((p) => ({
+    poolId: p.id,
+    poolName: p.name,
+    icalUrl: p.icalToken ? `/api/on-call/calendar/${p.id}?token=${p.icalToken}` : null,
+    googleCalendarId: p.googleCalendarId,
+  }));
+
   return NextResponse.json({
     crewMember: { id: crew.id, name: crew.name, email: crew.email },
     shifts,
     pendingSwaps,
     myRequests,
+    subscribeUrls,
   });
 }
 

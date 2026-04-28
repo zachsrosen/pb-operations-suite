@@ -37,11 +37,19 @@ type MyRequest = {
   pool: { name: string };
 };
 
+type SubscribeUrl = {
+  poolId: string;
+  poolName: string;
+  icalUrl: string | null;
+  googleCalendarId: string | null;
+};
+
 type MeResp = {
   crewMember: { id: string; name: string; email: string | null } | null;
   shifts: Shift[];
   pendingSwaps: PendingSwap[];
   myRequests: MyRequest[];
+  subscribeUrls?: SubscribeUrl[];
 };
 
 function formatShift(s: Shift): string {
@@ -180,7 +188,7 @@ export function OnCallMeClient() {
                     onClick={() => acceptSwap.mutate(s.id)}
                     className="flex-1 px-3 py-2 rounded bg-emerald-500 text-white text-sm font-medium disabled:opacity-50"
                   >
-                    {acceptSwap.isPending ? "Accepting…" : "Accept & Apply"}
+                    {acceptSwap.isPending ? "Accepting…" : "Accept (manager will approve)"}
                   </button>
                   <button
                     type="button"
@@ -215,6 +223,41 @@ export function OnCallMeClient() {
                 <span className="text-xs text-muted">
                   {r.status === "awaiting-counterparty" ? "Waiting on them" : "Waiting for admin"}
                 </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Calendar subscribe — both shared GCal IDs and per-pool iCal URL */}
+      {data.subscribeUrls && data.subscribeUrls.some((s) => s.icalUrl || s.googleCalendarId) && (
+        <section className="bg-surface border border-t-border rounded-lg p-5">
+          <h2 className="text-sm font-semibold mb-1">Add to your calendar</h2>
+          <p className="text-xs text-muted mb-3">
+            Your shifts also auto-invite you on Google Calendar. These let you see <em>everyone&apos;s</em> shifts.
+          </p>
+          <div className="space-y-3">
+            {data.subscribeUrls.map((s) => (
+              <div key={s.poolId} className="text-xs">
+                <div className="font-semibold text-foreground mb-1">{s.poolName}</div>
+                {s.googleCalendarId && (
+                  <div className="text-muted mb-1">
+                    Google Calendar ID:{" "}
+                    <code className="bg-surface-2 px-2 py-0.5 rounded">{s.googleCalendarId}</code>
+                    <span className="ml-2 opacity-70">
+                      (Google Calendar → Other calendars → + → Subscribe to calendar → paste this ID)
+                    </span>
+                  </div>
+                )}
+                {s.icalUrl && (
+                  <div className="text-muted">
+                    iCal feed:{" "}
+                    <code className="bg-surface-2 px-2 py-0.5 rounded break-all">
+                      {typeof window !== "undefined" ? window.location.origin : ""}
+                      {s.icalUrl}
+                    </code>
+                  </div>
+                )}
               </div>
             ))}
           </div>
