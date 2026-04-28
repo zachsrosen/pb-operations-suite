@@ -105,6 +105,12 @@ model User {
   // Permit Hub
   permitHubDrafts PermitHubDraft[]
 
+  // PM Flag system
+  pmFlagsRaised      PmFlag[]      @relation("PmFlagRaiser")
+  pmFlagsAssigned    PmFlag[]      @relation("PmFlagAssignee")
+  pmFlagsResolved    PmFlag[]      @relation("PmFlagResolver")
+  pmFlagEventsActed  PmFlagEvent[] @relation("PmFlagEventActor")
+
   @@index([email])
   @@index([impersonatingUserId])
 }
@@ -280,6 +286,16 @@ enum ActivityType {
   SALES_PRODUCT_REQUEST_SUBMITTED
   SALES_PRODUCT_REQUEST_APPROVED
   SALES_PRODUCT_REQUEST_DECLINED
+
+  // PM Flag system — exception-based PM assignment
+  PM_FLAG_RAISED
+  PM_FLAG_ASSIGNED
+  PM_FLAG_ACKNOWLEDGED
+  PM_FLAG_REASSIGNED
+  PM_FLAG_RESOLVED
+  PM_FLAG_REOPENED
+  PM_FLAG_CANCELLED
+  PM_FLAG_NOTE_ADDED
 }
 
 enum ClientType {
@@ -2231,6 +2247,105 @@ model ServicePriorityOverride {
   updatedAt        DateTime  @updatedAt
 
   @@unique([itemId, itemType])
+}
+
+// ===========================================
+// PM FLAG SYSTEM — exception-based PM assignment
+// ===========================================
+
+enum PmFlagType {
+  STAGE_STUCK
+  MILESTONE_OVERDUE
+  CUSTOMER_COMPLAINT
+  MISSING_DATA
+  CHANGE_ORDER
+  INSTALL_BLOCKED
+  PERMIT_ISSUE
+  INTERCONNECT_ISSUE
+  DESIGN_ISSUE
+  PAYMENT_ISSUE
+  OTHER
+}
+
+enum PmFlagSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum PmFlagStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+  CANCELLED
+}
+
+enum PmFlagSource {
+  HUBSPOT_WORKFLOW
+  MANUAL
+  ADMIN_WORKFLOW
+}
+
+enum PmFlagEventType {
+  RAISED
+  ASSIGNED
+  ACKNOWLEDGED
+  NOTE_ADDED
+  REASSIGNED
+  RESOLVED
+  REOPENED
+  CANCELLED
+}
+
+model PmFlag {
+  id            String         @id @default(cuid())
+  hubspotDealId String
+  dealName      String?
+  type          PmFlagType
+  severity      PmFlagSeverity
+  status        PmFlagStatus   @default(OPEN)
+  reason        String
+  source        PmFlagSource
+  externalRef   String?
+  metadata      Json?
+
+  raisedByUserId String?
+  raisedByUser   User?    @relation("PmFlagRaiser", fields: [raisedByUserId], references: [id])
+  raisedAt       DateTime @default(now())
+
+  assignedToUserId String?
+  assignedToUser   User?     @relation("PmFlagAssignee", fields: [assignedToUserId], references: [id])
+  assignedAt       DateTime?
+
+  acknowledgedAt   DateTime?
+  resolvedAt       DateTime?
+  resolvedByUserId String?
+  resolvedByUser   User?     @relation("PmFlagResolver", fields: [resolvedByUserId], references: [id])
+  resolvedNotes    String?
+
+  events    PmFlagEvent[]
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@unique([source, externalRef])
+  @@index([hubspotDealId])
+  @@index([assignedToUserId, status])
+  @@index([status, severity])
+}
+
+model PmFlagEvent {
+  id          String          @id @default(cuid())
+  flagId      String
+  flag        PmFlag          @relation(fields: [flagId], references: [id], onDelete: Cascade)
+  eventType   PmFlagEventType
+  actorUserId String?
+  actorUser   User?           @relation("PmFlagEventActor", fields: [actorUserId], references: [id])
+  notes       String?
+  metadata    Json?
+  createdAt   DateTime        @default(now())
+
+  @@index([flagId, createdAt])
 }
 
 enum ServiceSoStatus {

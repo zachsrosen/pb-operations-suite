@@ -56,7 +56,14 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/hubspot/eagleview-tdp-order", // HubSpot workflow → TDP order webhook — HubSpot signature validated in route
   "/api/webhooks/eagleview/file-delivery", // EagleView FileDelivery push — Bearer secret validated in route
 ];
-const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed", "/api/install-review", "/api/zuper/sync-cache"] as const;
+const MACHINE_TOKEN_ALLOWED_ROUTES = [
+  "/api/bom",
+  "/api/products/seed",
+  "/api/install-review",
+  "/api/zuper/sync-cache",
+  // PM Flag system — HubSpot workflows POST here to raise auto-flags.
+  "/api/pm-flags",
+] as const;
 
 function isMachineTokenAllowedRoute(pathname: string): boolean {
   return MACHINE_TOKEN_ALLOWED_ROUTES.some((allowed) =>

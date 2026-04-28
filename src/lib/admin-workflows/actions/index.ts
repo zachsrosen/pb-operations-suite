@@ -21,6 +21,7 @@ import { fetchZuperJobAction } from "./fetch-zuper-job";
 import { findHubspotContactAction } from "./find-hubspot-contact";
 import { httpRequestAction } from "./http-request";
 import { logActivityAction } from "./log-activity";
+import { raisePmFlagAction } from "./raise-pm-flag";
 import { runBomPipelineAction } from "./run-bom-pipeline";
 import { sendEmailAction } from "./send-email";
 import { updateHubSpotPropertyAction } from "./update-hubspot-property";
@@ -49,6 +50,7 @@ export const ACTIONS: AdminWorkflowAction[] = [
   // PB Ops
   runBomPipelineAction,
   logActivityAction,
+  raisePmFlagAction,
   // Integration
   httpRequestAction,
 ] as AdminWorkflowAction[];
