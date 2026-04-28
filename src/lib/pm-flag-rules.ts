@@ -15,11 +15,37 @@
 import { prisma } from "@/lib/db";
 import { createFlag } from "@/lib/pm-flags";
 import {
+  DealPipeline,
   PmFlagSeverity,
   PmFlagSource,
   PmFlagType,
 } from "@/generated/prisma/enums";
 import type { Deal } from "@/generated/prisma/client";
+
+/**
+ * Scope: PM flag rules only apply to **active PROJECT pipeline deals**.
+ *
+ * - `pipeline = PROJECT` excludes Sales, D&R, Service, Roofing — those have
+ *   their own ops teams and surfaces. PMs don't own those.
+ * - Terminal stages (closed/cancelled/on-hold/complete) excluded at the
+ *   query level so we don't fetch them in the first place.
+ *
+ * Every rule query MUST spread this filter.
+ */
+const TERMINAL_STAGE_LIST = [
+  "Closed Won",
+  "Closed Lost",
+  "Cancelled",
+  "Cancelled Project",
+  "On Hold",
+  "PTO Complete",
+  "Project Complete",
+] as const;
+
+const ACTIVE_PROJECT_FILTER = {
+  pipeline: DealPipeline.PROJECT,
+  stage: { notIn: TERMINAL_STAGE_LIST as unknown as string[] },
+} as const;
 
 // =============================================================================
 // Types
@@ -33,6 +59,11 @@ export interface RuleMatch {
   reason: string;
   externalRef: string;
   metadata?: Record<string, unknown>;
+  /**
+   * Resolved PM user id (from Deal.projectManager → User.name match).
+   * Null = couldn't resolve; createFlag falls back to round-robin.
+   */
+  assignedToUserId: string | null;
 }
 
 export interface RuleResult {
@@ -78,19 +109,50 @@ function normalizeStage(raw: string): string {
 const PRE_CONSTRUCTION_STAGES = new Set(["Design", "Permit"]);
 const CONSTRUCTION_STAGES = new Set(["RTB", "Install", "Inspect"]);
 
-const TERMINAL_STAGES = new Set([
-  "Closed Won",
-  "Closed Lost",
-  "Cancelled",
-  "Cancelled Project",
-  "On Hold",
-  "PTO Complete",
-  "Project Complete",
-]);
+const TERMINAL_STAGES = new Set<string>(TERMINAL_STAGE_LIST);
 
 function isTerminal(stage: string): boolean {
   return TERMINAL_STAGES.has(stage);
 }
+
+/**
+ * Cache of normalized PM-name → User.id mapping, built once per cron run.
+ * Names compared case-insensitively after collapsing whitespace.
+ */
+let _pmCache: Map<string, string> | null = null;
+async function getPmUserCache(): Promise<Map<string, string>> {
+  if (_pmCache) return _pmCache;
+  if (!prisma) return new Map();
+  const users = await prisma.user.findMany({
+    where: { name: { not: null } },
+    select: { id: true, name: true },
+  });
+  const m = new Map<string, string>();
+  for (const u of users) {
+    if (u.name) m.set(normalizePmName(u.name), u.id);
+  }
+  _pmCache = m;
+  return m;
+}
+
+function normalizePmName(name: string): string {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/**
+ * Map a deal's PM (free-text from HubSpot) to a User.id.
+ *
+ * Returns null if no match — caller's createFlag will fall back to
+ * round-robin (or leave unassigned if nobody has the PROJECT_MANAGER role).
+ */
+async function resolvePmUserId(projectManager: string | null | undefined): Promise<string | null> {
+  if (!projectManager) return null;
+  const cache = await getPmUserCache();
+  return cache.get(normalizePmName(projectManager)) ?? null;
+}
+
+/** Reset PM cache between runs (test-only). */
+export function _resetPmCache() { _pmCache = null; }
 
 function isoWeekKey(d: Date = new Date()): string {
   // YYYY-Wxx — re-fires once per ISO week, surfacing flags that PMs ignored.
@@ -147,8 +209,9 @@ export async function ruleConstructionStageStuck(): Promise<RuleResult> {
   if (!prisma) return { rule: "construction-stage-stuck", matches: [], durationMs: 0 };
 
   const deals = await prisma.deal.findMany({
-    where: { stage: { not: "" } },
-    select: { hubspotDealId: true, dealName: true, stage: true },
+    where: {
+      ...ACTIVE_PROJECT_FILTER, stage: { not: "" } },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true },
   });
 
   const matches: RuleMatch[] = [];
@@ -164,6 +227,7 @@ export async function ruleConstructionStageStuck(): Promise<RuleResult> {
         severity: PmFlagSeverity.HIGH,
         reason: `Stuck in "${d.stage}" for ${days} days`,
         externalRef: `stage-stuck:${d.hubspotDealId}:${d.stage}:${isoWeekKey()}`,
+        assignedToUserId: await resolvePmUserId(d.projectManager),
         metadata: { rule: "construction-stage-stuck", stage: d.stage, daysInStage: days },
       });
     }
@@ -177,8 +241,9 @@ export async function rulePreConstructionStageStuck(): Promise<RuleResult> {
   if (!prisma) return { rule: "pre-construction-stage-stuck", matches: [], durationMs: 0 };
 
   const deals = await prisma.deal.findMany({
-    where: { stage: { not: "" } },
-    select: { hubspotDealId: true, dealName: true, stage: true },
+    where: {
+      ...ACTIVE_PROJECT_FILTER, stage: { not: "" } },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true },
   });
 
   const matches: RuleMatch[] = [];
@@ -194,6 +259,7 @@ export async function rulePreConstructionStageStuck(): Promise<RuleResult> {
         severity: PmFlagSeverity.MEDIUM,
         reason: `Pre-construction stuck in "${d.stage}" for ${days} days`,
         externalRef: `stage-stuck-pc:${d.hubspotDealId}:${d.stage}:${isoWeekKey()}`,
+        assignedToUserId: await resolvePmUserId(d.projectManager),
         metadata: { rule: "pre-construction-stage-stuck", stage: d.stage, daysInStage: days },
       });
     }
@@ -208,9 +274,10 @@ export async function rulePermitRejection(): Promise<RuleResult> {
 
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       permittingStatus: { contains: "reject", mode: "insensitive" },
     },
-    select: { hubspotDealId: true, dealName: true, stage: true, permittingStatus: true, updatedAt: true },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, permittingStatus: true, updatedAt: true },
   });
 
   const matches: RuleMatch[] = [];
@@ -225,6 +292,7 @@ export async function rulePermitRejection(): Promise<RuleResult> {
         severity: PmFlagSeverity.HIGH,
         reason: `Permit status "${d.permittingStatus}"; ${daysSinceUpdate} days without resolution`,
         externalRef: `permit-reject:${d.hubspotDealId}:${isoWeekKey()}`,
+        assignedToUserId: await resolvePmUserId(d.projectManager),
         metadata: { rule: "permit-rejection", permittingStatus: d.permittingStatus, daysSinceUpdate },
       });
     }
@@ -239,9 +307,10 @@ export async function ruleIcRejection(): Promise<RuleResult> {
 
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       icStatus: { contains: "reject", mode: "insensitive" },
     },
-    select: { hubspotDealId: true, dealName: true, stage: true, icStatus: true, updatedAt: true },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, icStatus: true, updatedAt: true },
   });
 
   const matches: RuleMatch[] = [];
@@ -256,6 +325,7 @@ export async function ruleIcRejection(): Promise<RuleResult> {
         severity: PmFlagSeverity.HIGH,
         reason: `IC status "${d.icStatus}"; ${daysSinceUpdate} days without resolution`,
         externalRef: `ic-reject:${d.hubspotDealId}:${isoWeekKey()}`,
+        assignedToUserId: await resolvePmUserId(d.projectManager),
         metadata: { rule: "ic-rejection", icStatus: d.icStatus, daysSinceUpdate },
       });
     }
@@ -269,21 +339,25 @@ export async function ruleDesignRevisions(): Promise<RuleResult> {
   if (!prisma) return { rule: "design-revisions", matches: [], durationMs: 0 };
 
   const deals = await prisma.deal.findMany({
-    where: { daRevisionCount: { gt: 3 } },
-    select: { hubspotDealId: true, dealName: true, stage: true, daRevisionCount: true },
+    where: {
+      ...ACTIVE_PROJECT_FILTER, daRevisionCount: { gt: 3 } },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, daRevisionCount: true },
   });
 
-  const matches: RuleMatch[] = deals
-    .filter(d => !isTerminal(d.stage))
-    .map(d => ({
-      hubspotDealId: d.hubspotDealId,
-      dealName: d.dealName,
-      type: PmFlagType.DESIGN_ISSUE,
-      severity: PmFlagSeverity.MEDIUM,
-      reason: `${d.daRevisionCount} design revisions — design quality risk`,
-      externalRef: `design-revisions:${d.hubspotDealId}`, // one-shot per deal
-      metadata: { rule: "design-revisions", daRevisionCount: d.daRevisionCount },
-    }));
+  const matches: RuleMatch[] = await Promise.all(
+    deals
+      .filter(d => !isTerminal(d.stage))
+      .map(async d => ({
+        hubspotDealId: d.hubspotDealId,
+        dealName: d.dealName,
+        type: PmFlagType.DESIGN_ISSUE,
+        severity: PmFlagSeverity.MEDIUM,
+        reason: `${d.daRevisionCount} design revisions — design quality risk`,
+        externalRef: `design-revisions:${d.hubspotDealId}`, // one-shot per deal
+        assignedToUserId: await resolvePmUserId(d.projectManager),
+        metadata: { rule: "design-revisions", daRevisionCount: d.daRevisionCount },
+      }))
+  );
   return { rule: "design-revisions", matches, durationMs: Date.now() - start };
 }
 
@@ -295,11 +369,12 @@ export async function ruleInstallOverdue(): Promise<RuleResult> {
   const today = new Date();
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       installScheduleDate: { not: null, lt: today },
       constructionCompleteDate: null,
     },
     select: {
-      hubspotDealId: true, dealName: true, stage: true,
+      hubspotDealId: true, dealName: true, projectManager: true, stage: true,
       installScheduleDate: true,
     },
   });
@@ -316,7 +391,8 @@ export async function ruleInstallOverdue(): Promise<RuleResult> {
       severity: PmFlagSeverity.CRITICAL,
       reason: `Install was scheduled ${days} days ago (${d.installScheduleDate?.toISOString().slice(0, 10)}) but not marked complete`,
       externalRef: `install-overdue:${d.hubspotDealId}:${d.installScheduleDate?.toISOString().slice(0, 10)}`,
-      metadata: { rule: "install-overdue", installScheduleDate: d.installScheduleDate, daysOverdue: days },
+      assignedToUserId: await resolvePmUserId(d.projectManager),
+        metadata: { rule: "install-overdue", installScheduleDate: d.installScheduleDate, daysOverdue: days },
     });
   }
   return { rule: "install-overdue", matches, durationMs: Date.now() - start };
@@ -338,10 +414,11 @@ export async function ruleMissingAhj(): Promise<RuleResult> {
 
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       OR: [{ ahj: null }, { ahj: "" }],
       isPermitSubmitted: false,
     },
-    select: { hubspotDealId: true, dealName: true, stage: true },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true },
   });
 
   const matches: RuleMatch[] = [];
@@ -356,7 +433,8 @@ export async function ruleMissingAhj(): Promise<RuleResult> {
       severity: PmFlagSeverity.MEDIUM,
       reason: `Deal in "${d.stage}" stage with no AHJ assigned`,
       externalRef: `missing-ahj:${d.hubspotDealId}`, // one-shot per deal
-      metadata: { rule: "missing-ahj", stage: d.stage },
+      assignedToUserId: await resolvePmUserId(d.projectManager),
+        metadata: { rule: "missing-ahj", stage: d.stage },
     });
   }
   return { rule: "missing-ahj", matches, durationMs: Date.now() - start };
@@ -369,10 +447,11 @@ export async function ruleMissingUtility(): Promise<RuleResult> {
 
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       OR: [{ utility: null }, { utility: "" }],
       isIcSubmitted: false,
     },
-    select: { hubspotDealId: true, dealName: true, stage: true },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true },
   });
 
   const matches: RuleMatch[] = [];
@@ -387,7 +466,8 @@ export async function ruleMissingUtility(): Promise<RuleResult> {
       severity: PmFlagSeverity.MEDIUM,
       reason: `Deal in "${d.stage}" stage with no Utility assigned`,
       externalRef: `missing-utility:${d.hubspotDealId}`, // one-shot per deal
-      metadata: { rule: "missing-utility", stage: d.stage },
+      assignedToUserId: await resolvePmUserId(d.projectManager),
+        metadata: { rule: "missing-utility", stage: d.stage },
     });
   }
   return { rule: "missing-utility", matches, durationMs: Date.now() - start };
@@ -405,10 +485,11 @@ export async function ruleSurveyOutstanding(): Promise<RuleResult> {
   const cutoff = new Date(Date.now() - 7 * 86_400_000);
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       closeDate: { not: null, lt: cutoff },
       siteSurveyCompletionDate: null,
     },
-    select: { hubspotDealId: true, dealName: true, stage: true, closeDate: true },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, closeDate: true },
   });
 
   const matches: RuleMatch[] = [];
@@ -423,7 +504,8 @@ export async function ruleSurveyOutstanding(): Promise<RuleResult> {
       severity: PmFlagSeverity.HIGH,
       reason: `Site survey outstanding ${days} days after deal close`,
       externalRef: `survey-overdue:${d.hubspotDealId}:${isoWeekKey()}`,
-      metadata: { rule: "survey-outstanding", daysSinceClose: days },
+      assignedToUserId: await resolvePmUserId(d.projectManager),
+        metadata: { rule: "survey-outstanding", daysSinceClose: days },
     });
   }
   return { rule: "survey-outstanding", matches, durationMs: Date.now() - start };
@@ -437,10 +519,11 @@ export async function ruleDaSendOutstanding(): Promise<RuleResult> {
   const cutoff = new Date(Date.now() - 5 * 86_400_000);
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       siteSurveyCompletionDate: { not: null, lt: cutoff },
       designApprovalSentDate: null,
     },
-    select: { hubspotDealId: true, dealName: true, stage: true, siteSurveyCompletionDate: true },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, siteSurveyCompletionDate: true },
   });
 
   const matches: RuleMatch[] = [];
@@ -455,7 +538,8 @@ export async function ruleDaSendOutstanding(): Promise<RuleResult> {
       severity: PmFlagSeverity.MEDIUM,
       reason: `DA not sent ${days} days after site survey`,
       externalRef: `da-send-overdue:${d.hubspotDealId}:${isoWeekKey()}`,
-      metadata: { rule: "da-send-outstanding", daysSinceSurvey: days },
+      assignedToUserId: await resolvePmUserId(d.projectManager),
+        metadata: { rule: "da-send-outstanding", daysSinceSurvey: days },
     });
   }
   return { rule: "da-send-outstanding", matches, durationMs: Date.now() - start };
@@ -469,10 +553,11 @@ export async function ruleDaApprovalOutstanding(): Promise<RuleResult> {
   const cutoff = new Date(Date.now() - 7 * 86_400_000);
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       designApprovalSentDate: { not: null, lt: cutoff },
       isLayoutApproved: false,
     },
-    select: { hubspotDealId: true, dealName: true, stage: true, designApprovalSentDate: true, layoutStatus: true },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, designApprovalSentDate: true, layoutStatus: true },
   });
 
   const matches: RuleMatch[] = [];
@@ -489,7 +574,8 @@ export async function ruleDaApprovalOutstanding(): Promise<RuleResult> {
       severity: PmFlagSeverity.MEDIUM,
       reason: `DA sent ${days} days ago, customer has not approved`,
       externalRef: `da-approval-overdue:${d.hubspotDealId}:${isoWeekKey()}`,
-      metadata: { rule: "da-approval-outstanding", daysSinceDaSent: days },
+      assignedToUserId: await resolvePmUserId(d.projectManager),
+        metadata: { rule: "da-approval-outstanding", daysSinceDaSent: days },
     });
   }
   return { rule: "da-approval-outstanding", matches, durationMs: Date.now() - start };
@@ -501,8 +587,9 @@ export async function ruleChangeOrderPending(): Promise<RuleResult> {
   if (!prisma) return { rule: "change-order-pending", matches: [], durationMs: 0 };
 
   const deals = await prisma.deal.findMany({
-    where: { layoutStatus: "Pending Sales Changes" },
-    select: { hubspotDealId: true, dealName: true, stage: true, updatedAt: true },
+    where: {
+      ...ACTIVE_PROJECT_FILTER, layoutStatus: "Pending Sales Changes" },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, updatedAt: true },
   });
 
   const matches: RuleMatch[] = [];
@@ -519,7 +606,8 @@ export async function ruleChangeOrderPending(): Promise<RuleResult> {
       severity: PmFlagSeverity.MEDIUM,
       reason: `DA blocked on sales change for ${daysSinceUpdate}+ days`,
       externalRef: `pending-sales-change:${d.hubspotDealId}:${isoWeekKey()}`,
-      metadata: { rule: "change-order-pending", daysSinceUpdate },
+      assignedToUserId: await resolvePmUserId(d.projectManager),
+        metadata: { rule: "change-order-pending", daysSinceUpdate },
     });
   }
   return { rule: "change-order-pending", matches, durationMs: Date.now() - start };
@@ -533,11 +621,12 @@ export async function ruleInspectionOutstanding(): Promise<RuleResult> {
   const cutoff = new Date(Date.now() - 14 * 86_400_000);
   const deals = await prisma.deal.findMany({
     where: {
+      ...ACTIVE_PROJECT_FILTER,
       constructionCompleteDate: { not: null, lt: cutoff },
       inspectionScheduleDate: null,
       inspectionPassDate: null,
     },
-    select: { hubspotDealId: true, dealName: true, stage: true, constructionCompleteDate: true },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, constructionCompleteDate: true },
   });
 
   const matches: RuleMatch[] = [];
@@ -552,7 +641,8 @@ export async function ruleInspectionOutstanding(): Promise<RuleResult> {
       severity: PmFlagSeverity.HIGH,
       reason: `Inspection outstanding ${days} days after install completion`,
       externalRef: `inspection-overdue:${d.hubspotDealId}:${isoWeekKey()}`,
-      metadata: { rule: "inspection-outstanding", daysSinceInstall: days },
+      assignedToUserId: await resolvePmUserId(d.projectManager),
+        metadata: { rule: "inspection-outstanding", daysSinceInstall: days },
     });
   }
   return { rule: "inspection-outstanding", matches, durationMs: Date.now() - start };
@@ -582,8 +672,13 @@ const ALL_RULES = [
 /**
  * Run every rule, persist matches via createFlag.
  * Returns a summary suitable for cron logging.
+ *
+ * @param options.dryRun - When true, evaluate rules and report matches but
+ *   do NOT create flags or send emails. Useful for calibration before
+ *   flipping PM_FLAG_RULES_ENABLED=true.
  */
-export async function runAllRules(): Promise<RunSummary> {
+export async function runAllRules(options: { dryRun?: boolean } = {}): Promise<RunSummary> {
+  const { dryRun = false } = options;
   const summary: RunSummary = {
     totalMatches: 0,
     totalCreated: 0,
@@ -610,6 +705,8 @@ export async function runAllRules(): Promise<RunSummary> {
     });
     summary.totalMatches += result.matches.length;
 
+    if (dryRun) continue; // Don't persist or send emails on dry run.
+
     for (const m of result.matches) {
       try {
         const r = await createFlag({
@@ -621,19 +718,16 @@ export async function runAllRules(): Promise<RunSummary> {
           source: PmFlagSource.ADMIN_WORKFLOW,
           externalRef: m.externalRef,
           metadata: m.metadata,
+          assignedToUserId: m.assignedToUserId,
         });
         if (r.alreadyExisted) {
           summary.totalAlreadyExisted++;
         } else {
           summary.totalCreated++;
-          // Fire email outside the loop with void to not block.
-          if (r.flag.assignedToUser) {
-            void import("@/lib/pm-flag-email").then(em =>
-              em.sendFlagAssignedEmail(r.flag).catch(emailErr => {
-                console.error(`[pm-flag-rules] email send failed for ${r.flag.id}`, emailErr);
-              })
-            );
-          }
+          // NO email send — auto-detected flags from the rules cron go
+          // silently to the queue. PMs check /dashboards/pm-action-queue
+          // on their own cadence. Emails are reserved for deliberate
+          // human actions (manual flag raise, manual reassignment).
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);

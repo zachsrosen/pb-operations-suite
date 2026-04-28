@@ -11,7 +11,11 @@ const prisma = new PrismaClient({ adapter });
 
 async function main() {
   const total = await prisma.pmFlag.count();
+  const last30 = await prisma.pmFlag.count({
+    where: { raisedAt: { gte: new Date(Date.now() - 30 * 60_000) } },
+  });
   console.log(`TOTAL FLAGS: ${total}`);
+  console.log(`CREATED IN LAST 30 MIN: ${last30}`);
 
   if (total === 0) {
     console.log("(no flags raised yet)");
