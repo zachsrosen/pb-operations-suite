@@ -57,6 +57,7 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/eagleview/file-delivery", // EagleView FileDelivery push — Bearer secret validated in route
   "/api/cron/pm-snapshot", // PM Accountability snapshot — CRON_SECRET validated in route
   "/api/cron/pm-weekly-digest", // PM Accountability digest — CRON_SECRET validated + IdempotencyKey check in route
+  "/api/cron/pm-flag-rules", // PM Flag rule evaluator — CRON_SECRET validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/bom",
