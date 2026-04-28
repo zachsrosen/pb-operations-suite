@@ -9,6 +9,8 @@ type Pool = {
   shiftEnd: string;
   weekendShiftStart: string;
   weekendShiftEnd: string;
+  /** Pool startDate (YYYY-MM-DD). Optional for back-compat with stale clients. */
+  startDate?: string;
   date: string;
   crewMember: { id: string; name: string; email: string | null } | null;
   source: string | null;
@@ -75,7 +77,7 @@ export function HeroStrip({ pools }: { pools: Pool[] }) {
             </div>
             <div className="text-2xl font-bold mb-1 text-foreground">
               {preStart ? (
-                <span className="text-muted italic">Schedule starts {fmtStartDate("2026-05-03")}</span>
+                <span className="text-muted italic">Schedule starts {fmtStartDate(p.startDate ?? "2026-05-04")}</span>
               ) : (
                 p.crewMember?.name ?? <span className="text-muted italic">Unassigned</span>
               )}
