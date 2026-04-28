@@ -4,6 +4,85 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-04-28
+
+### SOP Guide (Major)
+- WYSIWYG TipTap editor replaces raw HTML CodeMirror across all sections (#425)
+- Auto-link `<code>/route</code>` mentions to actual app pages (#426)
+- Tech Ops tab split into Design / Permitting / Interconnection (#424)
+- Role-gated tabs and sections — stops info leaking to wrong teams (#421)
+- Drafts tab with PM Guide rewrite + Pipeline Overview aligned to actual 8 deal stages (#434, #436)
+- Submit-a-new-SOP feature with admin review queue (#435)
+- Hub-mode visibility flip — sections open by default (#437)
+- New SOP content: Suites tab (#415), Tools tab expansion covering BOM, AI Design Review, Pricing, P&I Hubs, Surveyor, Schedule, Optimizer, Map (#416, #417, #418), Action Queues tab, Workflow Builder, Property Drawer, Deal Detail, Equipment Backlog (#418)
+- Batch SOPs for Catalog, Service, Scheduling, Forecast, AHJ & Utility (#414)
+- Submitting a New Product SOP added to ops tab (#412)
+- Executive + Accounting + Sales & Marketing tabs added (role-gated) (#422)
+- Meta-SOP — "How to Use the SOP Guide" (#423)
+
+### Shit Show Meeting Hub (Major)
+- New meeting hub for tracking blocked deals across IDR snapshot helpers (#429)
+- Auto-snapshot on session create, always-on add button, refresh button (#431)
+- IDR snapshot helpers used for owners, statuses, equipment (#432)
+- Decoupled queue from active session — queue persists across sessions (#433)
+
+### Permitting & Interconnection Hubs (Major)
+- Interconnection Hub v1 (#392)
+- Permit Hub queue redesign: sticky action panel, grouped queue, multiselect location (#387)
+- Inline action panel, permit-lead filter, stacked filter row (#388)
+- Aligned queue with daily-focus email + fixed action-panel overlap (#386)
+- Resolved names + header quick-links + AHJ fallback (#389)
+- Shared inbox thread fetch on correspondence tab (#390)
+- Per-inbox OAuth workaround for blocked DWD scope (#400)
+- Broader Gmail search with OR context clauses (#391)
+
+### EagleView / TrueDesign (Major)
+- TrueDesign auto-pull pipeline (Tasks 1–9) (#404)
+- EagleViewPanel renders in solar-surveyor when `?dealId=` URL param is set (#406)
+- Read deal-style HubSpot address fields (#427)
+- Rollout runbook documented (#405)
+
+### Catalog Hardening (Major)
+- Phase B operational: HubSpot manufacturer enum + Zoho category mapping
+- Switched Zoho writes from `group_name` to `category_id` (M3.1)
+- Phased HubSpot manufacturer enum enforcement (Task 2.4)
+- Auto-add unknown brands to HubSpot manufacturer enum + notify TechOps
+- Zuper product create: spec-derived custom fields via `meta_data` (M3.4), dimensions passthrough
+- Race-safe external-record create + link-back; cross-link writer extracted to shared helper
+- Sync Modal now writes cross-link IDs back
+- Sync Modal executions logged to ActivityLog (Task 1.4); `logCatalogSync` wired into `executeCatalogPushApproval` (Task 1.3)
+- Sync observability enums and watermark columns added
+- Phase B data hygiene: test products purged, casing normalized, Generic rebrand
+- Integrity audit + auto-fixable repairs
+- Zoho orphan reconciliation: 302 new InternalProducts created, 311-row CSV exported for review
+- Backfill script for Zoho item images from historical pushes (#398)
+- Zoho propagates description + part_number on item update (#401)
+- Product photo pushed to Zoho Inventory on approval (#396)
+- Routed spec changes via `meta_data` on Zuper update path (#413)
+- Hardening plan, mappings spec, and audit scripts documented
+
+### Map & Quick Actions
+- Call + add-note quick actions on the map view (#394)
+- Office pins moved to real street addresses (#385)
+- Resolved Zuper crew names; excluded RTB-Blocked from schedulable (#382)
+
+### Activity Logging & IT
+- Read-only activity-log export API for IT team (#298)
+- Audit-sessions, anomaly-events, and user-roster endpoints for IT (#402)
+- `getActivityTypes` includes all enum values (#404 follow-up)
+- Catalog activity-log helpers added; `notImplementedCount` split, userName/source added to update helper
+
+### Schedule & Operations
+- ScheduleEventLog captures Zuper reschedules and crew changes (#399)
+- On-call: Sun–Sat weeks + 6pm–10pm weekday / 8am–12pm weekend shifts (#409)
+- DC_QUALIFYING_MODULE_BRANDS clarified as empty by design (#420)
+
+### Bug Fixes
+- `request-product`: removed env-flag page redirect + deduped cache rules (#384)
+- Zuper: write spec custom fields via `meta_data` instead of `custom_fields`
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
