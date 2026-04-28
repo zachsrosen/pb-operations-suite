@@ -81,117 +81,107 @@ This tab is <strong>admin/owner/executive only</strong>. It holds new SOP conten
 
 const PIPELINE_OVERVIEW = `
 <h1>Project Pipeline — Plain English Walkthrough</h1>
-<p class="subtitle">How a deal moves from sale to PTO at PB. One pass, no jargon, ~10 minute read.</p>
+<p class="subtitle">How a deal moves through the HubSpot Project pipeline at PB. ~10 minute read.</p>
 
 <div class="summary">
-<strong>Who this is for:</strong> Anyone at PB — sales, operations, design, permitting, accounting, leadership — who wants to understand how a project actually flows from contract signature through final utility approval. Each stage tells you <em>what happens, who owns it, and what triggers the handoff to the next stage</em>. Deeper procedure docs are linked where relevant.
+<strong>Who this is for:</strong> Anyone at PB — sales, operations, design, permitting, accounting, leadership — who wants to understand how a project actually flows once the contract is signed. The structure mirrors the <strong>8 deal stages</strong> in the HubSpot Project pipeline (Survey → Design → Permit/IC → RTB → Construction → Inspection → PTO → Complete). Each stage tells you <em>what happens, who owns it, the sub-steps inside it, and what triggers the move to the next stage</em>.
 </div>
 
-<h2>The 13 Stages at a Glance</h2>
+<h2>The 8 Project Pipeline Stages</h2>
 
 <div class="card">
 <table>
-<thead><tr><th>#</th><th>Stage</th><th>Owner</th><th>Triggers next stage</th></tr></thead>
+<thead><tr><th>#</th><th>Deal Stage</th><th>Owner</th><th>What advances the deal out of this stage</th></tr></thead>
 <tbody>
-<tr><td>1</td><td>Sale &amp; Signatures</td><td>Sales Rep (Deal Owner)</td><td>Contract signed → deal moves to Closed Won → flips into Project pipeline</td></tr>
-<tr><td>2</td><td>Site Survey Scheduling</td><td>Sales (Deal Owner / Sales coordinator)</td><td>Survey time slot booked in <code>/dashboards/site-survey-scheduler</code></td></tr>
-<tr><td>3</td><td>Site Survey</td><td>Survey Tech (assigned by scheduler, by office)</td><td>Survey marked complete in Zuper → deal advances to Design &amp; Engineering</td></tr>
-<tr><td>4</td><td>Design Review</td><td>Ops + Design (joint meeting)</td><td>Notes captured, change orders triggered if needed, design proceeds</td></tr>
-<tr><td>5</td><td>Design &amp; Engineering</td><td>Design Lead + Designer</td><td>Construction planset drafted, reviewed, ready for DA</td></tr>
-<tr><td>6</td><td>Design Approval (DA)</td><td>Design Lead → Sales Rep → Customer</td><td>Customer signs PandaDoc → deal advances to Permitting &amp; Interconnection</td></tr>
-<tr><td>7</td><td>Permitting</td><td>Permit Lead — <strong>Peter</strong> (CO) / <strong>Kristofer</strong> (CA)</td><td>Permit Issued → contributes to RTB gate</td></tr>
-<tr><td>8</td><td>Interconnection</td><td>IC Lead — <strong>Peter</strong> (CO) / varies (CA)</td><td>Application Approved → contributes to RTB gate</td></tr>
-<tr><td>9</td><td>Ready to Build (RTB)</td><td>System (automation gate)</td><td>Permit Issued + IC Approved + DA Invoice Paid → deal advances to Construction</td></tr>
-<tr><td>10</td><td>Construction</td><td>PM (scheduler) → Install Crew</td><td>Zuper construction-complete checklist submitted → deal advances to Inspection</td></tr>
-<tr><td>11</td><td>Plan Revisions (Site)</td><td>Ops Director (Drew, Joe, or Ro)</td><td>If install changes are needed, ops marks via Zuper checklist → revision routes back through design/permit</td></tr>
-<tr><td>12</td><td>Inspection</td><td>Inspections Tech + QC (Dan or Chad)</td><td>Final inspection pass → deal advances to PTO</td></tr>
-<tr><td>13</td><td>PTO + Closeout</td><td>PM</td><td>Utility grants Permission to Operate → PM closes deal + sends customer closeout packet</td></tr>
+<tr><td>1</td><td><strong>Site Survey</strong></td><td>Sales schedules · Survey Tech performs</td><td>Site Survey Complete checklist submitted in Zuper</td></tr>
+<tr><td>2</td><td><strong>Design &amp; Engineering</strong></td><td>Design Lead + Designer (Vishtik)</td><td>Stamped planset uploaded → Design Status = Design Complete</td></tr>
+<tr><td>3</td><td><strong>Permitting &amp; Interconnection</strong></td><td>Permit Lead + IC Lead (run in parallel)</td><td>Both Permitting Status = Permit Issued AND Interconnection Status = Application Approved</td></tr>
+<tr><td>4</td><td><strong>Ready to Build (RTB)</strong></td><td>System (automated gate)</td><td>Permit + IC + DA invoice paid → automatically advances to Construction (or RTB-Blocked)</td></tr>
+<tr><td>5</td><td><strong>Construction</strong></td><td>PM schedules · Install Crew executes</td><td>Construction Complete checklist submitted in Zuper</td></tr>
+<tr><td>6</td><td><strong>Inspection</strong></td><td>Inspections Tech + QC (Dan / Chad)</td><td>Final inspection pass</td></tr>
+<tr><td>7</td><td><strong>PTO</strong></td><td>PM confirms · Utility grants</td><td>Utility approves Permission to Operate</td></tr>
+<tr><td>8</td><td><strong>Complete</strong></td><td>PM</td><td>Closeout packet sent + HubSpot deal closed</td></tr>
 </tbody>
 </table>
 </div>
 
-<h2>1. Sale &amp; Signatures</h2>
+<div class="info"><strong>Before the project pipeline:</strong> The Sales Rep closes the deal in the Sales pipeline (proposal signed → contract signed → Closed Won). When that flips, the deal moves into the Project pipeline at Stage 1 — Site Survey. The Deal Owner (Sales Rep) completes a presale checklist that mostly auto-fills from OpenSolar and a correctly-created HubSpot deal. The Sales Rep stays involved as the customer-facing contact through Design Approval and Construction.</div>
 
-<p>The Sales Rep (called the <strong>Deal Owner</strong> in HubSpot) closes the deal. When the proposal is signed in PandaDoc and the contract follows, both documents auto-upload to the Sales folder in Google Drive and the deal moves to <strong>Closed Won</strong>.</p>
+<h2>1. Site Survey</h2>
 
-<p>The Deal Owner completes the <strong>presale checklist</strong> — most fields auto-fill from OpenSolar and a correctly-created HubSpot deal, so this is usually a fast verify-and-confirm step rather than data entry.</p>
+<p>The deal arrives in this stage automatically when it's Closed Won. The work splits into two activities:</p>
 
-<div class="info"><strong>Handoff to ops:</strong> Once the deal is Closed Won, it flips from the Sales pipeline into the Project pipeline at the Site Survey stage. From this point, the Deal Owner stays involved as the customer-facing point of contact through Construction, but operational ownership shifts.</div>
-
-<h2>2. Site Survey Scheduling</h2>
-
-<p>Sales schedules the survey using <code>/dashboards/site-survey-scheduler</code>. Slots are <strong>per PB office</strong>, not per surveyor — the scheduler tool assigns whichever tech is available from that office's pool. Each office is capped at <strong>3 surveys per day</strong> to keep utilization realistic.</p>
-
-<p>The deal stays in the <strong>Site Survey</strong> stage until the survey is actually performed. If the survey gets pushed (customer reschedules, weather, etc.), the slot is released and a new one is booked.</p>
+<h3>1a. Survey Scheduling — Sales</h3>
+<p>Sales schedules the survey using <code>/dashboards/site-survey-scheduler</code>. Slots are <strong>per PB office</strong>, not per surveyor — the scheduler tool assigns whichever Survey Tech is available from that office's pool. Each office is capped at <strong>3 surveys per day</strong> to keep utilization realistic.</p>
 
 <div class="tip">PMs <em>do not</em> schedule surveys. If you're a PM and the survey isn't on the calendar, ping the Deal Owner — that's their lane.</div>
 
-<h2>3. Site Survey</h2>
-
-<p>There are no fixed surveyors-per-region. The scheduler assigns whichever Survey Tech is available out of the pool serving that office. The assigned tech goes on-site, captures the system specs (roof, electrical, shade, etc.), and submits the <strong>Site Survey Complete</strong> checklist in Zuper.</p>
-
-<p>The Zuper checklist completion automatically:</p>
+<h3>1b. Survey Performed — Survey Tech</h3>
+<p>The assigned Tech goes on-site, captures system specs (roof, electrical, shade, etc.), and submits the <strong>Site Survey Complete</strong> checklist in Zuper. That checklist completion is what advances the deal — it automatically:</p>
 <ul>
 <li>Syncs Site Survey Status to "Completed" in HubSpot</li>
 <li>Calculates "Time from Sale to Survey Completion"</li>
 <li>Advances the deal stage to <strong>Design &amp; Engineering</strong></li>
 </ul>
 
-<p>If the surveyor flags a sales change (e.g. system size needs to drop, the customer wants a different module, panel placement no longer fits) they tag <em>"sales change needed"</em> in Zuper. That kicks the work back to the Deal Owner before design can proceed.</p>
+<p>If the surveyor flags a sales change (system size needs to drop, customer wants a different module, panel placement no longer fits), they tag <em>"sales change needed"</em> in Zuper. That kicks the work back to the Deal Owner before design can proceed.</p>
 
-<h2>4. Design Review (Ops + Design Meeting)</h2>
+<h2>2. Design &amp; Engineering</h2>
 
-<p>Before designers start drawing, Ops and Design meet to review the deal: what was sold, what the survey found, and what the planset should reflect. This is where most change orders surface — discrepancies between what Sales sold and what Survey found get caught here.</p>
+<p>The biggest stage by elapsed time. Three things happen inside it:</p>
 
-<p>The notes from this meeting are what the PM team uses for <strong>downstream scheduling</strong>: difficulty rating, crew count, special equipment needs, etc.</p>
+<h3>2a. Design Review meeting — Ops + Design</h3>
+<p>Before designers start drawing, Ops and Design meet to review the deal: what was sold, what the survey found, and what the planset should reflect. This is where most change orders surface — discrepancies between what Sales sold and what Survey found get caught here. Notes from this meeting feed PM downstream scheduling: difficulty rating, crew count, special equipment, etc.</p>
 
-<h2>5. Design &amp; Engineering</h2>
-
-<p>The drafting partner (Vishtik) generates the construction planset. Internally:</p>
+<h3>2b. Planset drafting — Design Lead + Designer (Vishtik)</h3>
+<p>The drafting partner (Vishtik) generates the construction planset:</p>
 <ul>
 <li>Vishtik tasks 1–2 retrieve project details and upload the initial design</li>
 <li>The Design Lead reviews and either passes it through or kicks it back</li>
-<li>When it's clean, Design Status flips to <strong>"Draft Complete — Waiting on Approvals"</strong></li>
+<li>When clean, Design Status flips to <strong>"Draft Complete — Waiting on Approvals"</strong></li>
 </ul>
 
-<p>If the design needs <strong>engineering stamps</strong>, Vishtik tasks 5–6 handle that and produce the stamped planset. If not, the deal proceeds straight to Permitting once the DA is approved.</p>
+<h3>2c. Design Approval (DA) — Design Lead → Sales Rep → Customer</h3>
+<p>The Design Lead sends the customer-facing DA via PandaDoc. The customer either signs (deal continues) or rejects (kicks back to Design with revisions). The <strong>Sales Rep</strong> is responsible for chasing the DA signature — they're the customer-facing person up through Construction. PMs and Designers don't touch the customer at this point.</p>
 
-<h2>6. Design Approval (DA)</h2>
+<div class="info"><strong>DA revisions:</strong> if the customer rejects, the Designer makes the revision and the Sales Rep re-sends. Sales Reps get a HubSpot task whenever a DA needs their attention.</div>
 
-<p>The Design Lead sends the customer-facing DA via PandaDoc. The customer either signs (deal advances) or rejects (deal kicks back to Design with revisions noted).</p>
+<h3>2d. Engineering stamps (if required)</h3>
+<p>If the design needs engineering stamps, Vishtik tasks 5–6 produce the stamped planset. If not, the deal proceeds straight to Permitting once the DA is approved.</p>
 
-<p>The Sales Rep is responsible for chasing the DA signature — they're the customer-facing person up through Construction. PMs and Designers don't touch the customer at this stage.</p>
+<p><strong>Stage advances when:</strong> Task 6 (Upload Stamped Plans) completes → Design Status = Design Complete → deal moves to Permitting &amp; Interconnection.</p>
 
-<div class="info"><strong>What about DA revisions?</strong> If the customer rejects, the Designer makes the revision and the Sales Rep re-sends. Sales Reps get a HubSpot task whenever a DA needs their attention.</div>
+<h2>3. Permitting &amp; Interconnection</h2>
 
-<h2>7. Permitting</h2>
+<p>Permitting and interconnection run <strong>in parallel</strong> — they're tracked as separate statuses on the deal but share a single pipeline stage. The deal can't leave this stage until both are clear.</p>
 
-<p>Once the planset is stamped (or DA-only-approved for stamp-not-required AHJs), the <strong>Permit Lead</strong> submits to the AHJ:</p>
-
+<h3>3a. Permitting — Permit Lead</h3>
+<p>The <strong>Permit Lead</strong> submits the planset to the AHJ:</p>
 <ul>
 <li>Colorado: <strong>Peter</strong></li>
 <li>California: <strong>Kristofer</strong></li>
 </ul>
-
-<p>The Permit Lead handles the entire AHJ submission and follow-up. PMs and the Sales Rep <em>do not</em> submit permits. When the permit is issued, the Permit Lead manually marks <code>Permitting Status = Permit Issued</code> in HubSpot — that flips the automation:</p>
-
+<p>The Permit Lead handles AHJ submission, RFIs, and follow-up. PMs and Sales Reps <em>do not</em> submit permits. When the permit is issued, the Permit Lead manually marks <code>Permitting Status = Permit Issued</code> in HubSpot, which flips:</p>
 <ul>
 <li>Permit Issue Date is set</li>
 <li>Time-to-Permit is calculated</li>
 <li>Customer gets a Permit Status Update SMS + email automatically</li>
 </ul>
 
-<h2>8. Interconnection</h2>
+<h3>3b. Interconnection — IC Lead</h3>
+<p>The <strong>IC Lead</strong> handles the utility interconnection application:</p>
+<ul>
+<li>Colorado: <strong>Peter</strong> (same person as permits)</li>
+<li>California: varies by utility</li>
+</ul>
+<p>For Xcel Energy in Colorado, the IC application is submitted at the start of the project, so by the time we hit this stage it's usually already approved. For other utilities, the IC application is submitted now.</p>
+<p>When the utility approves, the IC Lead manually marks <code>Interconnection Status = Application Approved</code>.</p>
 
-<p>The <strong>IC Lead</strong> handles the utility interconnection application — same person handles permits in CO (Peter), but the IC owner can vary in California depending on the utility.</p>
+<p><strong>Stage advances when:</strong> both Permitting Status = Permit Issued AND Interconnection Status = Application Approved → deal moves to Ready to Build (subject to the RTB gate below).</p>
 
-<p>For Xcel Energy in Colorado, the IC application is submitted at the start of the project, so by the time we get to this stage it's usually already approved. For other utilities, the IC application is submitted now.</p>
+<h2>4. Ready to Build (RTB)</h2>
 
-<p>When the utility approves the application, the IC Lead manually marks <code>Interconnection Status = Application Approved</code>.</p>
-
-<h2>9. Ready to Build (RTB)</h2>
-
-<p>RTB is an automated gate, not a stage anyone has to "do." When all three of these are true, the deal moves to <strong>Ready to Build</strong>:</p>
+<p>RTB is an automated gate, not a stage anyone has to "do." When all three of these are true, the deal advances:</p>
 
 <ol>
 <li>Permitting Status = Permit Issued</li>
@@ -199,47 +189,72 @@ const PIPELINE_OVERVIEW = `
 <li>DA Invoice = Paid</li>
 </ol>
 
-<p>If any one is missing, the deal goes to <strong>RTB — Blocked</strong> and shows up on the action queues. Whoever owns the missing piece is responsible for unblocking.</p>
-
-<h2>10. Construction</h2>
-
-<p>The PM schedules construction in <code>/dashboards/scheduler</code> (or the construction-specific view at <code>/dashboards/construction-scheduler</code>). Once scheduled:</p>
+<p>If any one is missing, the deal sits at <strong>RTB — Blocked</strong> and shows up on action queues. Whoever owns the missing piece is responsible for unblocking:</p>
 
 <ul>
-<li>The Zuper job is created automatically with the right crew</li>
+<li>Permit blocker → <strong>Permit Lead</strong></li>
+<li>IC blocker → <strong>IC Lead</strong></li>
+<li>Unpaid DA invoice → <strong>Accounting</strong> (surface at standup)</li>
+</ul>
+
+<p><strong>Stage advances when:</strong> all three conditions are true → deal automatically moves to Construction.</p>
+
+<h2>5. Construction</h2>
+
+<p>Two activities happen here:</p>
+
+<h3>5a. Schedule the install — PM</h3>
+<p>The PM schedules construction in <code>/dashboards/scheduler</code> (or the construction-specific view at <code>/dashboards/construction-scheduler</code>). Once scheduled:</p>
+<ul>
+<li>The Zuper job is created automatically with the right crew assignment</li>
 <li>A Google Calendar event is created on the install calendar for that office</li>
 <li>The crew lead and Operations Manager get email notifications</li>
 </ul>
 
-<p>The crew installs the system. When complete, the lead submits the <strong>Construction Complete checklist</strong> in Zuper. That advances the deal to Inspection automatically.</p>
+<h3>5b. Install + handle plan revisions — Crew + Ops Director</h3>
+<p>The crew installs the system. If the field finds something the design didn't anticipate (different roof condition, panel that won't fit, electrical issue), the <strong>Ops Director</strong> (<strong>Drew, Joe, or Ro</strong> depending on the install) marks the change in the Zuper construction-complete checklist. That triggers a revision workflow: Design updates the planset, Permit Lead files an as-built revision with the AHJ if needed, and the deal continues to inspection once everything's reconciled.</p>
 
-<h2>11. Plan Revisions (Site Changes during Install)</h2>
+<p><strong>Stage advances when:</strong> the crew lead submits the <strong>Construction Complete checklist</strong> in Zuper → deal moves to Inspection.</p>
 
-<p>Sometimes the field finds something the design didn't anticipate — a different roof condition, a panel that won't fit, an electrical issue. The Ops Director (<strong>Drew, Joe, or Ro</strong> depending on the install) marks the change in the Zuper construction-complete checklist.</p>
-
-<p>That triggers a revision workflow: Design updates the planset, Permit Lead files an as-built revision with the AHJ if needed, and the deal continues to inspection once everything's reconciled.</p>
-
-<h2>12. Inspection</h2>
+<h2>6. Inspection</h2>
 
 <p>The Inspections Tech runs the final inspection. <strong>Dan or Chad</strong> creates the QC tasks ahead of the inspection date.</p>
 
 <ul>
 <li><strong>If it passes:</strong> deal automatically advances to PTO</li>
-<li><strong>If it fails:</strong> the inspections lead marks the failure reason in the Zuper inspection-fail checklist, which triggers the corrective workflow</li>
+<li><strong>If it fails:</strong> the Inspections Lead marks the failure reason in the Zuper inspection-fail checklist, which triggers the corrective workflow (rework task, planset revision, or AHJ correspondence depending on the cause)</li>
 </ul>
 
 <div class="warn">Failed inspections are a project-aging risk — they often involve a rework site visit, a re-inspection fee, and a customer who's already waited weeks. Watch the inspection action queues for stalls.</div>
 
-<h2>13. PTO + Closeout</h2>
+<p><strong>Stage advances when:</strong> the final inspection passes → deal moves to PTO.</p>
 
-<p>The PM owns this final stretch:</p>
+<h2>7. PTO</h2>
+
+<p>The utility grants <strong>Permission to Operate</strong>. PTO arrival varies by utility — Xcel typically 1–3 business days, CSU 2–5, smaller co-ops can be 5–10. The PM:</p>
 
 <ol>
-<li><strong>Permission to Operate (PTO)</strong> — the utility grants the system permission to actually generate. The PM confirms PTO and updates HubSpot.</li>
-<li><strong>Close the deal</strong> in HubSpot — final stage, all milestones done.</li>
-<li><strong>Send the closeout packet</strong> to the customer — system manuals, warranty info, monitoring login, "what to do if your panels stop generating," etc.</li>
-<li><strong>Hand to Service</strong> — if the system is under any active service plan or has known follow-up items, the PM hands those to the Service team.</li>
+<li>Verifies the PTO email/letter/portal notice and saves it to the deal's Drive folder</li>
+<li>Updates HubSpot: PTO Status = Granted, sets the PTO Date</li>
+<li>Verifies the PTO invoice was triggered (Accounting picks it up automatically)</li>
+<li>Confirms the customer PTO email + SMS sent</li>
 </ol>
+
+<p>If PTO is &gt; 5 business days past inspection pass with no utility response, the PM escalates to the IC Lead — they have the utility relationships and the application records.</p>
+
+<p><strong>Stage advances when:</strong> PM marks PTO Status = Granted → deal moves to Complete.</p>
+
+<h2>8. Complete (Closeout)</h2>
+
+<p>Final stage. The PM owns three things:</p>
+
+<ol>
+<li><strong>Close the deal in HubSpot</strong> — verify all date fields populated, all milestones invoiced, system generation start date set</li>
+<li><strong>Send the customer closeout packet</strong> — system manuals (module / inverter / battery / EV charger), warranty info (equipment + workmanship), monitoring login, what-to-do-if-it-stops-generating, and tax/incentive paperwork (final ITC docs, state/utility rebate paperwork)</li>
+<li><strong>Hand to Service</strong> — if the system has any active service plan or known follow-up items, create a Service ticket; otherwise the deal is fully done</li>
+</ol>
+
+<p>Once closeout is sent, the deal stops appearing on PM action queues. Future customer issues become Service pipeline tickets, not reopens of this deal.</p>
 
 <h2>Cross-Pipeline Notes</h2>
 
@@ -256,7 +271,7 @@ const PIPELINE_OVERVIEW = `
 <p>Projects that need a roof replacement before solar install run through the <strong>D&amp;R pipeline</strong> in parallel. Standalone roofing-only jobs run through the Roofing pipeline. Both are out of scope for this overview — see the dedicated D&amp;R + Roofing suite for those flows.</p>
 
 <h3>Service tickets</h3>
-<p>After PTO + Closeout, any future customer issue (warranty claim, monitoring problem, equipment failure) becomes a <strong>service ticket</strong> in the Service pipeline. That's a different lifecycle entirely.</p>
+<p>After Complete, any future customer issue (warranty claim, monitoring problem, equipment failure) becomes a <strong>service ticket</strong> in the Service pipeline. That's a different lifecycle entirely.</p>
 `;
 
 // =============================================================================
