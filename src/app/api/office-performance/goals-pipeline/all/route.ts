@@ -10,6 +10,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { CANONICAL_LOCATIONS, CANONICAL_TO_LOCATION_SLUG } from "@/lib/locations";
+import { DASHBOARD_LOCATION_GROUPS } from "@/lib/dashboard-location-groups";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { getGoalsPipelineData } from "@/lib/goals-pipeline";
 import type { GoalsPipelineData } from "@/lib/goals-pipeline-types";
@@ -134,6 +135,21 @@ export async function GET(request: NextRequest) {
           const allGoals = perLocationData.map((d) => d.goals);
           const allPipelines = perLocationData.map((d) => d.pipeline);
 
+          // Build perLocation rows by collapsing per-canonical data into dashboard groups.
+          // Single-canonical groups (Westminster, Centennial, Colorado Springs) pass through.
+          // Multi-canonical groups (California = SLO + Camarillo) are summed into one row.
+          const perLocation: AllGoalsPipelineResponse["perLocation"] = [];
+          for (const group of DASHBOARD_LOCATION_GROUPS) {
+            const matching = perLocationData.filter((d) =>
+              (group.canonicals as readonly string[]).includes(d.location)
+            );
+            if (matching.length === 0) continue;
+            const goals = matching.length === 1
+              ? matching[0].goals
+              : sumGoalRows(matching.map((m) => m.goals), dayOfMonth, daysInMonth);
+            perLocation.push({ location: group.label, goals });
+          }
+
           return {
             month,
             year,
@@ -141,10 +157,7 @@ export async function GET(request: NextRequest) {
             dayOfMonth,
             goals: sumGoalRows(allGoals, dayOfMonth, daysInMonth),
             pipeline: sumPipeline(allPipelines),
-            perLocation: perLocationData.map((d) => ({
-              location: d.location,
-              goals: d.goals,
-            })),
+            perLocation,
             lastUpdated: new Date().toISOString(),
           };
         },

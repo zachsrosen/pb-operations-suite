@@ -37,11 +37,14 @@ interface AllLocationsCategorySectionProps {
   buildLocationRow: (loc: LocationOverview) => LocationRow;
 }
 
-// Short location labels
+// Short location labels — keys match the dashboard group label (DASHBOARD_LOCATION_GROUPS)
+// or canonical-location names for any pre-grouped data. SLO + Camarillo roll up to California.
 const LOC_SHORT: Record<string, string> = {
   Westminster: "WM",
   Centennial: "DTC",
   "Colorado Springs": "COS",
+  California: "CA",
+  // Pre-grouping fallbacks (kept for any callers passing canonical labels):
   "San Luis Obispo": "SLO",
   Camarillo: "CAM",
 };
