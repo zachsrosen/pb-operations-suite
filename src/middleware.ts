@@ -58,7 +58,14 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/pm-snapshot", // PM Accountability snapshot — CRON_SECRET validated in route
   "/api/cron/pm-weekly-digest", // PM Accountability digest — CRON_SECRET validated + IdempotencyKey check in route
 ];
-const MACHINE_TOKEN_ALLOWED_ROUTES = ["/api/bom", "/api/products/seed", "/api/install-review", "/api/zuper/sync-cache"] as const;
+const MACHINE_TOKEN_ALLOWED_ROUTES = [
+  "/api/bom",
+  "/api/products/seed",
+  "/api/install-review",
+  "/api/zuper/sync-cache",
+  // PM Flag system — HubSpot workflows POST here to raise auto-flags.
+  "/api/pm-flags",
+] as const;
 
 function isMachineTokenAllowedRoute(pathname: string): boolean {
   return MACHINE_TOKEN_ALLOWED_ROUTES.some((allowed) =>

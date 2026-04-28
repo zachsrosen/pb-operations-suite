@@ -239,6 +239,9 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/triage",
     "/dashboards/adders",
     "/dashboards/tsrf-calculator",
+    // PM Flag system — exception-based PM assignment (admin scope: see all flags)
+    "/dashboards/pm-action-queue",
+    "/api/pm-flags",
   ],
   landingCards: [
     { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
@@ -246,6 +249,7 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     { href: "/dashboards/equipment-backlog", title: "Equipment Backlog", description: "Equipment forecasting by brand, model, and stage.", tag: "EQUIPMENT", tagColor: "blue" },
     { href: "/dashboards/timeline", title: "Timeline View", description: "Gantt-style project progression and milestones.", tag: "PLANNING", tagColor: "blue" },
     { href: "/dashboards/at-risk", title: "At-Risk Projects", description: "Overdue milestones, stalled stages, severity scoring.", tag: "AT-RISK", tagColor: "orange" },
+    { href: "/dashboards/pm-action-queue", title: "PM Action Queue", description: "Flagged deals across the team — full visibility for managers.", tag: "PM FLAGS", tagColor: "orange" },
     { href: "/dashboards/qc", title: "QC Metrics", description: "Time-between-stages analytics.", tag: "QC", tagColor: "cyan" },
   ],
   scope: "global",
@@ -414,8 +418,12 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/triage",
     "/dashboards/adders",
     "/dashboards/tsrf-calculator",
+    // PM Flag system — exception-based PM assignment
+    "/dashboards/pm-action-queue",
+    "/api/pm-flags",
   ],
   landingCards: [
+    { href: "/dashboards/pm-action-queue", title: "PM Action Queue", description: "Flags assigned to you — open, acknowledged, and resolved.", tag: "PM FLAGS", tagColor: "orange" },
     { href: "/dashboards/pipeline", title: "Pipeline Overview", description: "Full pipeline with filters and milestone tracking.", tag: "PIPELINE", tagColor: "green" },
     { href: "/dashboards/at-risk", title: "At-Risk Projects", description: "Overdue milestones, stalled stages, severity scoring.", tag: "AT-RISK", tagColor: "orange" },
     { href: "/dashboards/project-management", title: "Project Management", description: "PM workload, DA backlog, stuck deals.", tag: "PM", tagColor: "green" },
