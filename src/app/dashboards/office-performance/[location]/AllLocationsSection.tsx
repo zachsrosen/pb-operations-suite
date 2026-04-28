@@ -98,8 +98,8 @@ export default function AllLocationsSection({ locations }: AllLocationsSectionPr
         </div>
       </div>
 
-      {/* Five-column location grid */}
-      <div className="grid grid-cols-5 gap-4 flex-1 min-h-0">
+      {/* Per-group location grid (4 groups: Westminster, Centennial, COS, California) */}
+      <div className="grid grid-cols-4 gap-4 flex-1 min-h-0">
         {locations.map((loc) => (
           <div key={loc.location} className="flex flex-col gap-2 overflow-hidden">
             {/* Location header */}

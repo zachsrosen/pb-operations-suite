@@ -45,11 +45,13 @@ const DEPARTMENTS: DepartmentConfig[] = [
   { key: "reviews",     label: "5-STAR REVIEWS",           labelColor: "#a855f7", format: "count"    },
 ];
 
-/** Short display names for location breakdown */
+/** Short display names for location breakdown — matches DASHBOARD_LOCATION_GROUPS labels. */
 const LOC_SHORT: Record<string, string> = {
   Westminster: "WM",
   Centennial: "DTC",
   "Colorado Springs": "COS",
+  California: "CA",
+  // Pre-grouping fallbacks (kept for any callers passing canonical labels):
   "San Luis Obispo": "SLO",
   Camarillo: "CAM",
 };

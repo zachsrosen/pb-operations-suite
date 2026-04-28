@@ -2,6 +2,7 @@ import { prisma } from "@/lib/db";
 import { fetchAllProjects, searchWithRetry } from "@/lib/hubspot";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import { normalizeLocation } from "@/lib/locations";
+import type { DashboardLocationGroup } from "@/lib/dashboard-location-groups";
 import { handleLookup } from "@/app/api/zuper/jobs/lookup/route";
 import type {
   OfficePerformanceData,
@@ -118,6 +119,73 @@ export async function getGoalsForLocation(
   }
 
   return goals;
+}
+
+/**
+ * Sum OfficeGoal targets across multiple canonical locations.
+ * Used by groups that combine shops (e.g. California = SLO + Camarillo).
+ *
+ * Default-fallback rule: if NO canonical has a row for a metric this month,
+ * leave that metric at the default (taken once, not multiplied per canonical).
+ * If at least one canonical has a row, sum the rows that exist; missing
+ * canonicals contribute 0 (NOT default), since a missing row in a combined
+ * shop most likely means "not tracked there", not "track it at the default".
+ */
+export async function getGoalsForGroup(
+  canonicals: string[],
+  month: number,
+  year: number
+): Promise<Record<OfficeMetricName, number>> {
+  if (canonicals.length === 1) {
+    return getGoalsForLocation(canonicals[0], month, year);
+  }
+
+  const officeGoal = getOfficeGoalDelegate();
+  if (!officeGoal) return { ...DEFAULT_GOALS };
+
+  const tryFetch = async (m: number, y: number) => {
+    try {
+      const allRows = await Promise.all(
+        canonicals.map((loc) =>
+          officeGoal.findMany({ where: { location: loc, month: m, year: y } })
+        )
+      );
+      return allRows;
+    } catch (error) {
+      console.warn(
+        `[office-performance] Failed to load OfficeGoal rows for [${canonicals.join(", ")}]; using defaults.`,
+        error
+      );
+      return null;
+    }
+  };
+
+  let allRows = await tryFetch(month, year);
+  // Prior-month fallback: only when the current month has zero rows across all canonicals.
+  if (allRows && allRows.every((rows) => rows.length === 0)) {
+    const prevMonth = month === 1 ? 12 : month - 1;
+    const prevYear = month === 1 ? year - 1 : year;
+    allRows = await tryFetch(prevMonth, prevYear);
+  }
+
+  const summed: Partial<Record<OfficeMetricName, number>> = {};
+  if (allRows) {
+    for (const rows of allRows) {
+      for (const row of rows) {
+        if (row.metric in DEFAULT_GOALS) {
+          const metric = row.metric as OfficeMetricName;
+          summed[metric] = (summed[metric] ?? 0) + row.target;
+        }
+      }
+    }
+  }
+
+  const result = { ...DEFAULT_GOALS };
+  for (const metric of Object.keys(DEFAULT_GOALS) as OfficeMetricName[]) {
+    if (summed[metric] !== undefined) result[metric] = summed[metric]!;
+    // else: keep default (single, not multiplied)
+  }
+  return result;
 }
 
 // ---------- Stage Normalization ----------
@@ -408,7 +476,7 @@ async function fetchCompletedProjects(year: number): Promise<ProjectForMetrics[]
 // ---------- Team Results Section ----------
 
 async function buildTeamResultsData(
-  location: string,
+  _group: DashboardLocationGroup,
   now: Date,
   locationProjects: ProjectForMetrics[],
   locationDealIds: Set<string>
@@ -1025,7 +1093,7 @@ function countScheduledThisWeek(
 // ---------- Survey Section ----------
 
 export async function buildSurveyData(
-  location: string,
+  group: DashboardLocationGroup,
   goals: Record<OfficeMetricName, number>,
   now: Date,
   locationProjects?: ProjectForMetrics[],
@@ -1034,6 +1102,12 @@ export async function buildSurveyData(
   dealNameMap?: Map<string, string>
 ): Promise<SurveyData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  // Primary canonical is used as the location key for Zuper queries.
+  // When locationDealIds is provided, the location string is unused for
+  // filtering — the dealId set dominates. For combined groups, canonicals[0]
+  // is sufficient because LOCATION_TEAM_FILTERS already maps both shops to
+  // the same Zuper team.
+  const primaryCanonical = group.canonicals[0];
 
   // MTD completed surveys — count from HubSpot property (source of truth)
   const completedMtd = (locationProjects || []).filter((p) => {
@@ -1042,7 +1116,7 @@ export async function buildSurveyData(
   }).length;
 
   // Zuper jobs for leaderboard user counts
-  const mtdJobs = await getZuperJobsByLocation(location, "Site Survey", mtdStart, now, locationDealIds);
+  const mtdJobs = await getZuperJobsByLocation(primaryCanonical, "Site Survey", mtdStart, now, locationDealIds);
 
   // User counts for leaderboard
   const userCounts = new Map<string, UserJobCount>();
@@ -1074,7 +1148,7 @@ export async function buildSurveyData(
   // Scheduled this week — from HubSpot schedule date (source of truth)
   const scheduledThisWeek = countScheduledThisWeek(locationProjects || [], "Site Survey", now);
 
-  const surveyHistory = await getMonthlyJobHistory(location, "Site Survey", now, 3, locationDealIds);
+  const surveyHistory = await getMonthlyJobHistory(primaryCanonical, "Site Survey", now, 3, locationDealIds);
 
   // Deal rows filtered to survey stages
   const surveyProjects = (locationProjects || []).filter(
@@ -1104,7 +1178,7 @@ export async function buildSurveyData(
 // ---------- Install Section ----------
 
 export async function buildInstallData(
-  location: string,
+  group: DashboardLocationGroup,
   goals: Record<OfficeMetricName, number>,
   now: Date,
   locationProjects?: ProjectForMetrics[],
@@ -1113,6 +1187,8 @@ export async function buildInstallData(
   dealNameMap?: Map<string, string>
 ): Promise<InstallData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const primaryCanonical = group.canonicals[0];
+  const canonicalSet = new Set<string>(group.canonicals);
 
   // MTD completed installs — count from HubSpot property (source of truth)
   const installsCompletedMtd = (locationProjects || []).filter((p) => {
@@ -1127,7 +1203,7 @@ export async function buildInstallData(
   ) / 10;
 
   // Zuper jobs for leaderboard and capacity calculations
-  const mtdJobs = await getZuperJobsByLocation(location, "Construction", mtdStart, now, locationDealIds);
+  const mtdJobs = await getZuperJobsByLocation(primaryCanonical, "Construction", mtdStart, now, locationDealIds);
 
   // Split by role (installer vs electrician) using CrewMember lookup
   const installerCounts = new Map<string, UserJobCount>();
@@ -1141,7 +1217,7 @@ export async function buildInstallData(
     where: {
       isActive: true,
       OR: [
-        { locations: { hasSome: [location] } },
+        { locations: { hasSome: group.canonicals } },
         { locations: { isEmpty: true } },
       ],
     },
@@ -1174,9 +1250,10 @@ export async function buildInstallData(
     where: { jobType: "construction", isActive: true },
     select: { crewMemberId: true, dayOfWeek: true, location: true },
   }) ?? []);
-  const availability = allConstructionAvail.filter(
-    (slot) => normalizeLocation(slot.location) === location
-  );
+  const availability = allConstructionAvail.filter((slot) => {
+    const normalized = normalizeLocation(slot.location);
+    return normalized !== null && canonicalSet.has(normalized);
+  });
 
   if (availability.length > 0) {
     // Count distinct crew members and their available days per week
@@ -1204,7 +1281,7 @@ export async function buildInstallData(
   // Scheduled this week — from HubSpot construction_schedule_date (source of truth)
   const scheduledThisWeek = countScheduledThisWeek(locationProjects || [], "Construction", now);
 
-  const constructionHistory = await getMonthlyJobHistory(location, "Construction", now, 3, locationDealIds);
+  const constructionHistory = await getMonthlyJobHistory(primaryCanonical, "Construction", now, 3, locationDealIds);
 
   // Split monthly history by role so streaks are evaluated within each
   // population (installers vs electricians) rather than the combined pool.
@@ -1263,7 +1340,7 @@ export async function buildInstallData(
 // ---------- Inspection Section ----------
 
 export async function buildInspectionData(
-  location: string,
+  group: DashboardLocationGroup,
   goals: Record<OfficeMetricName, number>,
   now: Date,
   locationProjects?: ProjectForMetrics[],
@@ -1272,6 +1349,7 @@ export async function buildInspectionData(
   dealNameMap?: Map<string, string>
 ): Promise<InspectionData> {
   const mtdStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const primaryCanonical = group.canonicals[0];
 
   // MTD completed inspections — count from HubSpot property (source of truth)
   const completedMtd = (locationProjects || []).filter((p) => {
@@ -1280,7 +1358,7 @@ export async function buildInspectionData(
   }).length;
 
   // Zuper jobs for leaderboard user counts
-  const mtdJobs = await getZuperJobsByLocation(location, "Inspection", mtdStart, now, locationDealIds);
+  const mtdJobs = await getZuperJobsByLocation(primaryCanonical, "Inspection", mtdStart, now, locationDealIds);
 
   const userCounts = new Map<string, UserJobCount>();
   for (const job of mtdJobs) {
@@ -1295,7 +1373,7 @@ export async function buildInspectionData(
     }
   }
 
-  const inspectionHistory = await getMonthlyJobHistory(location, "Inspection", now, 3, locationDealIds);
+  const inspectionHistory = await getMonthlyJobHistory(primaryCanonical, "Inspection", now, 3, locationDealIds);
   const baseLeaderboard = buildLeaderboard([...userCounts.values()], inspectionHistory);
   const leaderboard: InspectionPersonStat[] = baseLeaderboard.map((entry) => ({
     ...entry,
@@ -1339,7 +1417,7 @@ export async function buildInspectionData(
  * and patches the section data objects with rolling averages and trend comparisons.
  */
 async function enrichWithQcMetrics(
-  location: string,
+  group: DashboardLocationGroup,
   pipeline: PipelineData | null,
   surveys: SurveyData,
   installs: InstallData,
@@ -1356,9 +1434,11 @@ async function enrichWithQcMetrics(
       () => fetchAllProjects({ activeOnly: false })
     );
 
-    const locProjects = (allProjects || []).filter(
-      (p: ProjectForMetrics) => normalizeLocation(p.pbLocation) === location
-    );
+    const canonicalSet = new Set<string>(group.canonicals);
+    const locProjects = (allProjects || []).filter((p: ProjectForMetrics) => {
+      const normalized = normalizeLocation(p.pbLocation);
+      return normalized !== null && canonicalSet.has(normalized);
+    });
 
     // Compute rolling 60-day averages using category-specific cohorts so each
     // metric reflects projects recently completed in that discipline, not all
@@ -1601,14 +1681,16 @@ async function enrichWithQcMetrics(
 // ---------- Main Orchestrator ----------
 
 export async function getOfficePerformanceData(
-  location: string
+  group: DashboardLocationGroup
 ): Promise<OfficePerformanceData> {
   const now = new Date();
   const month = now.getMonth() + 1;
   const year = now.getFullYear();
 
-  // Fetch goals
-  const goals = await getGoalsForLocation(location, month, year);
+  // Fetch goals (sum across canonicals for combined groups)
+  const goals = await getGoalsForGroup(group.canonicals, month, year);
+  const canonicalSet = new Set<string>(group.canonicals);
+  const primaryCanonical = group.canonicals[0];
 
   // Fetch active projects + completed projects for this location.
   // Active-only fetch avoids HubSpot rate limits / Vercel timeouts (~700 vs ~6,500 deals).
@@ -1655,9 +1737,10 @@ export async function getOfficePerformanceData(
     }
   }
 
-  const locationProjects = allProjects.filter(
-    (p: ProjectForMetrics) => normalizeLocation(p.pbLocation) === location
-  );
+  const locationProjects = allProjects.filter((p: ProjectForMetrics) => {
+    const normalized = normalizeLocation(p.pbLocation);
+    return normalized !== null && canonicalSet.has(normalized);
+  });
 
   // Build dealId sets and maps from all location projects.
   // This avoids joining against HubSpotProjectCache (which may be empty).
@@ -1674,24 +1757,29 @@ export async function getOfficePerformanceData(
 
   // Build all section data in parallel (team results replaces pipeline)
   const [teamResults, surveys, installs, inspections] = await Promise.all([
-    buildTeamResultsData(location, now, locationProjects, locationDealIds),
-    buildSurveyData(location, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
-    buildInstallData(location, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
-    buildInspectionData(location, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
+    buildTeamResultsData(group, now, locationProjects, locationDealIds),
+    buildSurveyData(group, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
+    buildInstallData(group, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
+    buildInspectionData(group, goals, now, locationProjects, assignedUserMap, locationDealIds, dealNameMap),
   ]);
 
-  // Enrich with QC metrics and live Zuper compliance in parallel
+  // Enrich with QC metrics and live Zuper compliance in parallel.
+  // For combined groups (e.g. California = SLO + Camarillo) we issue a SINGLE
+  // compliance call with primaryCanonical and the union of dealIds. The Zuper
+  // team filter (LOCATION_TEAM_FILTERS in compliance-compute.ts) maps both
+  // canonicals to the same team, so one call returns the right team-level data
+  // and dealIds attribute jobs across the combined deal set.
   const [, surveyCompliance, installCompliance, inspectionCompliance] = await Promise.all([
-    enrichWithQcMetrics(location, null, surveys, installs, inspections),
-    computeLocationCompliance("Site Survey", location, 30, locationDealIds).catch((err) => {
+    enrichWithQcMetrics(group, null, surveys, installs, inspections),
+    computeLocationCompliance("Site Survey", primaryCanonical, 30, locationDealIds).catch((err) => {
       console.warn("[office-performance] Survey compliance fetch failed:", err);
       return null;
     }),
-    computeLocationCompliance("Construction", location, 30, locationDealIds).catch((err) => {
+    computeLocationCompliance("Construction", primaryCanonical, 30, locationDealIds).catch((err) => {
       console.warn("[office-performance] Install compliance fetch failed:", err);
       return null;
     }),
-    computeLocationCompliance("Inspection", location, 30, locationDealIds).catch((err) => {
+    computeLocationCompliance("Inspection", primaryCanonical, 30, locationDealIds).catch((err) => {
       console.warn("[office-performance] Inspection compliance fetch failed:", err);
       return null;
     }),
@@ -1748,7 +1836,7 @@ export async function getOfficePerformanceData(
   }
 
   return {
-    location,
+    location: group.label,
     lastUpdated: now.toISOString(),
     teamResults,
     surveys,

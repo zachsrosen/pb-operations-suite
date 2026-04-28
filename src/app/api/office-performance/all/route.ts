@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { CANONICAL_LOCATIONS, CANONICAL_TO_LOCATION_SLUG } from "@/lib/locations";
+import {
+  DASHBOARD_LOCATION_GROUPS,
+  type DashboardLocationGroup,
+} from "@/lib/dashboard-location-groups";
 import { getOfficePerformanceData } from "@/lib/office-performance";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import type {
@@ -46,14 +49,12 @@ function stripToOverview(data: OfficePerformanceData): LocationOverview {
 }
 
 /**
- * Try to read per-location data from the existing appCache.
+ * Try to read per-group data from the existing appCache.
  * Each per-location TV page populates this cache via /api/office-performance/[location].
  * Returns null if the cache is empty (location page hasn't been loaded yet).
  */
-function getFromPerLocationCache(canonicalLocation: string): OfficePerformanceData | null {
-  const slug = CANONICAL_TO_LOCATION_SLUG[canonicalLocation as keyof typeof CANONICAL_TO_LOCATION_SLUG];
-  if (!slug) return null;
-  const cacheKey = `${CACHE_KEYS.OFFICE_PERFORMANCE(slug)}:${complianceVersionTag()}`;
+function getFromPerGroupCache(group: DashboardLocationGroup): OfficePerformanceData | null {
+  const cacheKey = `${CACHE_KEYS.OFFICE_PERFORMANCE(group.slug)}:${complianceVersionTag()}`;
   const cached = appCache.get<OfficePerformanceData>(cacheKey);
   // Skip stale entries so the aggregate route honours the 2-minute TV polling cadence
   return (cached.hit && !cached.stale) ? cached.data : null;
@@ -70,32 +71,32 @@ export async function GET(request: NextRequest) {
         async () => {
           const locations: LocationOverview[] = [];
 
-          // Try per-location caches first (instant — no API calls)
-          const uncachedLocations: string[] = [];
-          for (const loc of CANONICAL_LOCATIONS) {
-            const cachedData = getFromPerLocationCache(loc);
+          // Try per-group caches first (instant — no API calls)
+          const uncachedGroups: DashboardLocationGroup[] = [];
+          for (const group of DASHBOARD_LOCATION_GROUPS) {
+            const cachedData = getFromPerGroupCache(group);
             if (cachedData) {
               locations.push(stripToOverview(cachedData));
             } else {
-              uncachedLocations.push(loc);
+              uncachedGroups.push(group);
             }
           }
 
-          // Fetch uncached locations sequentially to avoid rate-limit storms.
-          // Parallel fetches for 5 locations = 5x HubSpot + 15x Zuper concurrent
-          // API calls, which triggers 429s and causes multi-minute hangs.
-          for (const loc of uncachedLocations) {
+          // Fetch uncached groups sequentially to avoid rate-limit storms.
+          // Parallel fetches for multiple groups = many concurrent
+          // HubSpot + Zuper API calls, which triggers 429s and causes multi-minute hangs.
+          for (const group of uncachedGroups) {
             try {
-              const data = await getOfficePerformanceData(loc);
+              const data = await getOfficePerformanceData(group);
               locations.push(stripToOverview(data));
             } catch (err) {
-              console.error(`[office-perf/all] Failed to fetch ${loc}:`, err);
+              console.error(`[office-perf/all] Failed to fetch ${group.label}:`, err);
             }
           }
 
-          // Sort to match CANONICAL_LOCATIONS order
+          // Sort to match DASHBOARD_LOCATION_GROUPS order
           const orderMap = new Map(
-            (CANONICAL_LOCATIONS as readonly string[]).map((loc, i) => [loc, i])
+            DASHBOARD_LOCATION_GROUPS.map((g, i) => [g.label, i])
           );
           locations.sort((a, b) => (orderMap.get(a.location) ?? 99) - (orderMap.get(b.location) ?? 99));
 

@@ -1,10 +1,15 @@
 "use client";
 
 import { use, useCallback, useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useSSE } from "@/hooks/useSSE";
 import { queryKeys } from "@/lib/query-keys";
-import { LOCATION_SLUG_TO_CANONICAL } from "@/lib/locations";
+import {
+  resolveDashboardGroup,
+  isLegacySlug,
+  LEGACY_SLUG_REDIRECTS,
+} from "@/lib/dashboard-location-groups";
 import type { OfficePerformanceData, AllLocationsResponse } from "@/lib/office-performance-types";
 import OfficeCarousel from "./OfficeCarousel";
 import AllLocationsSection from "./AllLocationsSection";
@@ -330,9 +335,22 @@ function AllLocationsOverviewPage() {
 }
 
 export default function OfficePerformancePage({ params }: PageProps) {
-  const { location: slug } = use(params);
-  const isAll = slug === "all";
-  const canonicalLocation = isAll ? null : LOCATION_SLUG_TO_CANONICAL[slug];
+  const { location: rawSlug } = use(params);
+  const router = useRouter();
+  const isAll = rawSlug === "all";
+  const group = isAll ? null : resolveDashboardGroup(rawSlug);
+  // Use the canonical group slug for both the query key and the fetch URL so
+  // legacy slugs (san-luis-obispo, camarillo) share cache state with /california.
+  const querySlug = group?.slug ?? rawSlug;
+  const canonicalLocation = group?.label ?? null;
+
+  // If the user landed on a legacy slug, replace the URL with the canonical one
+  // so saved bookmarks update on next visit.
+  useEffect(() => {
+    if (!isAll && isLegacySlug(rawSlug)) {
+      router.replace(`/dashboards/office-performance/${LEGACY_SLUG_REDIRECTS[rawSlug]}`);
+    }
+  }, [rawSlug, isAll, router]);
 
   // Track whether we're showing fallback data from a previous successful fetch
   const [hadSuccessfulFetch, setHadSuccessfulFetch] = useState(false);
@@ -344,9 +362,9 @@ export default function OfficePerformancePage({ params }: PageProps) {
     refetch,
     isPlaceholderData,
   } = useQuery({
-    queryKey: queryKeys.officePerformance.location(slug),
+    queryKey: queryKeys.officePerformance.location(querySlug),
     queryFn: async (): Promise<OfficePerformanceApiResponse> => {
-      const res = await fetch(`/api/office-performance/${slug}?refresh=true`);
+      const res = await fetch(`/api/office-performance/${querySlug}?refresh=true`);
       if (!res.ok) throw new Error("Failed to fetch office performance data");
       const result = await res.json();
       setHadSuccessfulFetch(true);
@@ -382,7 +400,7 @@ export default function OfficePerformancePage({ params }: PageProps) {
       }}>
         <div className="text-center">
           <div className="text-2xl font-bold mb-2">Unknown Location</div>
-          <div className="text-slate-400">&quot;{slug}&quot; is not a valid office location.</div>
+          <div className="text-slate-400">&quot;{rawSlug}&quot; is not a valid office location.</div>
         </div>
       </div>
     );
