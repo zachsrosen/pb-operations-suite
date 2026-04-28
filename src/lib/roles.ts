@@ -1415,6 +1415,13 @@ const VIEWER: RoleDefinition = {
     "/dashboards/my-tickets",
     "/api/freshservice/my-tickets",
     "/api/comms",
+    // On-Call rotation (visible to every signed-in PB Workspace user so
+    // electricians can view their schedule + propose swaps the moment they
+    // sign in, without needing an admin to assign a richer role first).
+    // The /me page only resolves shifts for users whose email matches a
+    // CrewMember row, so non-electricians see an empty state.
+    "/dashboards/on-call",
+    "/api/on-call",
   ],
   landingCards: [],
   scope: "location",
