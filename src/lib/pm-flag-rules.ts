@@ -582,8 +582,13 @@ const ALL_RULES = [
 /**
  * Run every rule, persist matches via createFlag.
  * Returns a summary suitable for cron logging.
+ *
+ * @param options.dryRun - When true, evaluate rules and report matches but
+ *   do NOT create flags or send emails. Useful for calibration before
+ *   flipping PM_FLAG_RULES_ENABLED=true.
  */
-export async function runAllRules(): Promise<RunSummary> {
+export async function runAllRules(options: { dryRun?: boolean } = {}): Promise<RunSummary> {
+  const { dryRun = false } = options;
   const summary: RunSummary = {
     totalMatches: 0,
     totalCreated: 0,
@@ -609,6 +614,8 @@ export async function runAllRules(): Promise<RunSummary> {
       durationMs: result.durationMs,
     });
     summary.totalMatches += result.matches.length;
+
+    if (dryRun) continue; // Don't persist or send emails on dry run.
 
     for (const m of result.matches) {
       try {
