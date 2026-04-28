@@ -95,7 +95,7 @@ const PIPELINE_OVERVIEW = `
 <tbody>
 <tr><td>1</td><td>Sale &amp; Signatures</td><td>Sales Rep (Deal Owner)</td><td>Contract signed → deal moves to Closed Won → flips into Project pipeline</td></tr>
 <tr><td>2</td><td>Site Survey Scheduling</td><td>Sales (Deal Owner / Sales coordinator)</td><td>Survey time slot booked in <code>/dashboards/site-survey-scheduler</code></td></tr>
-<tr><td>3</td><td>Site Survey</td><td>Survey Tech (regional)</td><td>Survey marked complete in Zuper → deal advances to Design &amp; Engineering</td></tr>
+<tr><td>3</td><td>Site Survey</td><td>Survey Tech (assigned by scheduler, by office)</td><td>Survey marked complete in Zuper → deal advances to Design &amp; Engineering</td></tr>
 <tr><td>4</td><td>Design Review</td><td>Ops + Design (joint meeting)</td><td>Notes captured, change orders triggered if needed, design proceeds</td></tr>
 <tr><td>5</td><td>Design &amp; Engineering</td><td>Design Lead + Designer</td><td>Construction planset drafted, reviewed, ready for DA</td></tr>
 <tr><td>6</td><td>Design Approval (DA)</td><td>Design Lead → Sales Rep → Customer</td><td>Customer signs PandaDoc → deal advances to Permitting &amp; Interconnection</td></tr>
@@ -120,7 +120,7 @@ const PIPELINE_OVERVIEW = `
 
 <h2>2. Site Survey Scheduling</h2>
 
-<p>Sales schedules the survey using time slots issued by Operations. Each office gets a <strong>maximum of 3 surveys per day</strong> to keep tech utilization realistic. Slots live in <code>/dashboards/site-survey-scheduler</code>.</p>
+<p>Sales schedules the survey using <code>/dashboards/site-survey-scheduler</code>. Slots are <strong>per PB office</strong>, not per surveyor — the scheduler tool assigns whichever tech is available from that office's pool. Each office is capped at <strong>3 surveys per day</strong> to keep utilization realistic.</p>
 
 <p>The deal stays in the <strong>Site Survey</strong> stage until the survey is actually performed. If the survey gets pushed (customer reschedules, weather, etc.), the slot is released and a new one is booked.</p>
 
@@ -128,7 +128,7 @@ const PIPELINE_OVERVIEW = `
 
 <h2>3. Site Survey</h2>
 
-<p>The regional Survey Tech goes on-site, captures the system specs (roof, electrical, shade, etc.), and submits the <strong>Site Survey Complete</strong> checklist in Zuper.</p>
+<p>There are no fixed surveyors-per-region. The scheduler assigns whichever Survey Tech is available out of the pool serving that office. The assigned tech goes on-site, captures the system specs (roof, electrical, shade, etc.), and submits the <strong>Site Survey Complete</strong> checklist in Zuper.</p>
 
 <p>The Zuper checklist completion automatically:</p>
 <ul>
@@ -407,7 +407,7 @@ const DRAFT_PM_MONITOR_SALES_DESIGN = `
 <thead><tr><th>If stalled at…</th><th>Escalate to</th></tr></thead>
 <tbody>
 <tr><td>Survey not scheduled</td><td><strong>Deal Owner</strong> (Sales)</td></tr>
-<tr><td>Survey scheduled but not performed</td><td><strong>Survey Tech</strong> + the Operations Manager for that office</td></tr>
+<tr><td>Survey scheduled but not performed</td><td><strong>Operations Manager for that office</strong> (techs are assigned out of a pool, not by name — go to the manager who runs the pool)</td></tr>
 <tr><td>Design Meeting didn't happen</td><td><strong>Design Lead</strong> + Ops Director</td></tr>
 <tr><td>Designer stuck</td><td><strong>Design Lead</strong></td></tr>
 <tr><td>DA not signed by customer</td><td><strong>Sales Rep / Deal Owner</strong> — they own the customer relationship</td></tr>
