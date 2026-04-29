@@ -132,12 +132,23 @@ function isTerminal(stage: string): boolean {
 }
 
 /**
- * Cache of normalized PM-name → User.id mapping, built once per cron run.
- * Names compared case-insensitively after collapsing whitespace.
+ * Cache of normalized PM-name → User.id mapping with a short TTL.
+ *
+ * Live-mode evaluation runs on every page load — refreshing the user list
+ * every time would be wasteful, but caching forever on a warm lambda would
+ * leave PM assignments stale after a roster change. 5-minute TTL is the
+ * compromise: cheap to build, fresh enough that PM moves propagate within
+ * one cache window.
  */
+const PM_CACHE_TTL_MS = 5 * 60 * 1000;
 let _pmCache: Map<string, string> | null = null;
+let _pmCacheBuiltAt: number | null = null;
+
 async function getPmUserCache(): Promise<Map<string, string>> {
-  if (_pmCache) return _pmCache;
+  const now = Date.now();
+  if (_pmCache && _pmCacheBuiltAt && now - _pmCacheBuiltAt < PM_CACHE_TTL_MS) {
+    return _pmCache;
+  }
   if (!prisma) return new Map();
   const users = await prisma.user.findMany({
     where: { name: { not: null } },
@@ -148,6 +159,7 @@ async function getPmUserCache(): Promise<Map<string, string>> {
     if (u.name) m.set(normalizePmName(u.name), u.id);
   }
   _pmCache = m;
+  _pmCacheBuiltAt = now;
   return m;
 }
 
@@ -168,16 +180,7 @@ async function resolvePmUserId(projectManager: string | null | undefined): Promi
 }
 
 /** Reset PM cache between runs (test-only). */
-export function _resetPmCache() { _pmCache = null; }
-
-function isoWeekKey(d: Date = new Date()): string {
-  // YYYY-Wxx — re-fires once per ISO week, surfacing flags that PMs ignored.
-  const year = d.getUTCFullYear();
-  const start = Date.UTC(year, 0, 1);
-  const days = Math.floor((d.getTime() - start) / 86_400_000);
-  const week = Math.ceil((days + 1) / 7);
-  return `${year}-W${String(week).padStart(2, "0")}`;
-}
+export function _resetPmCache() { _pmCache = null; _pmCacheBuiltAt = null; }
 
 function daysBetween(from: Date | null | undefined, to: Date = new Date()): number | null {
   if (!from) return null;
@@ -247,7 +250,7 @@ export async function ruleConstructionStageStuck(): Promise<RuleResult> {
         type: PmFlagType.STAGE_STUCK,
         severity: PmFlagSeverity.HIGH,
         reason: `Stuck in "${d.stage}" for ${days} days`,
-        externalRef: `stage-stuck:${d.hubspotDealId}:${d.stage}:${isoWeekKey()}`,
+        externalRef: `stage-stuck:${d.hubspotDealId}`,
         assignedToUserId: await resolvePmUserId(d.projectManager),
         metadata: { rule: "construction-stage-stuck", stage: d.stage, daysInStage: days },
       });
@@ -279,7 +282,7 @@ export async function rulePreConstructionStageStuck(): Promise<RuleResult> {
         type: PmFlagType.STAGE_STUCK,
         severity: PmFlagSeverity.MEDIUM,
         reason: `Pre-construction stuck in "${d.stage}" for ${days} days`,
-        externalRef: `stage-stuck-pc:${d.hubspotDealId}:${d.stage}:${isoWeekKey()}`,
+        externalRef: `stage-stuck-pc:${d.hubspotDealId}`,
         assignedToUserId: await resolvePmUserId(d.projectManager),
         metadata: { rule: "pre-construction-stage-stuck", stage: d.stage, daysInStage: days },
       });
@@ -312,7 +315,7 @@ export async function rulePermitRejection(): Promise<RuleResult> {
         type: PmFlagType.PERMIT_ISSUE,
         severity: PmFlagSeverity.HIGH,
         reason: `Permit status "${d.permittingStatus}"; ${daysSinceUpdate} days without resolution`,
-        externalRef: `permit-reject:${d.hubspotDealId}:${isoWeekKey()}`,
+        externalRef: `permit-reject:${d.hubspotDealId}`,
         assignedToUserId: await resolvePmUserId(d.projectManager),
         metadata: { rule: "permit-rejection", permittingStatus: d.permittingStatus, daysSinceUpdate },
       });
@@ -345,7 +348,7 @@ export async function ruleIcRejection(): Promise<RuleResult> {
         type: PmFlagType.INTERCONNECT_ISSUE,
         severity: PmFlagSeverity.HIGH,
         reason: `IC status "${d.icStatus}"; ${daysSinceUpdate} days without resolution`,
-        externalRef: `ic-reject:${d.hubspotDealId}:${isoWeekKey()}`,
+        externalRef: `ic-reject:${d.hubspotDealId}`,
         assignedToUserId: await resolvePmUserId(d.projectManager),
         metadata: { rule: "ic-rejection", icStatus: d.icStatus, daysSinceUpdate },
       });
@@ -526,7 +529,7 @@ export async function ruleSurveyOutstanding(): Promise<RuleResult> {
       type: PmFlagType.MILESTONE_OVERDUE,
       severity: PmFlagSeverity.HIGH,
       reason: `Site survey outstanding ${days} days after deal close`,
-      externalRef: `survey-overdue:${d.hubspotDealId}:${isoWeekKey()}`,
+      externalRef: `survey-overdue:${d.hubspotDealId}`,
       assignedToUserId: await resolvePmUserId(d.projectManager),
         metadata: { rule: "survey-outstanding", daysSinceClose: days },
     });
@@ -560,7 +563,7 @@ export async function ruleDaSendOutstanding(): Promise<RuleResult> {
       type: PmFlagType.MILESTONE_OVERDUE,
       severity: PmFlagSeverity.MEDIUM,
       reason: `DA not sent ${days} days after site survey`,
-      externalRef: `da-send-overdue:${d.hubspotDealId}:${isoWeekKey()}`,
+      externalRef: `da-send-overdue:${d.hubspotDealId}`,
       assignedToUserId: await resolvePmUserId(d.projectManager),
         metadata: { rule: "da-send-outstanding", daysSinceSurvey: days },
     });
@@ -597,7 +600,7 @@ export async function ruleDaApprovalOutstanding(): Promise<RuleResult> {
       type: PmFlagType.MILESTONE_OVERDUE,
       severity: PmFlagSeverity.MEDIUM,
       reason: `DA sent ${days} days ago, customer has not approved`,
-      externalRef: `da-approval-overdue:${d.hubspotDealId}:${isoWeekKey()}`,
+      externalRef: `da-approval-overdue:${d.hubspotDealId}`,
       assignedToUserId: await resolvePmUserId(d.projectManager),
         metadata: { rule: "da-approval-outstanding", daysSinceDaSent: days },
     });
@@ -629,7 +632,7 @@ export async function ruleChangeOrderPending(): Promise<RuleResult> {
       type: PmFlagType.CHANGE_ORDER,
       severity: PmFlagSeverity.MEDIUM,
       reason: `DA blocked on sales change for ${daysSinceUpdate}+ days`,
-      externalRef: `pending-sales-change:${d.hubspotDealId}:${isoWeekKey()}`,
+      externalRef: `pending-sales-change:${d.hubspotDealId}`,
       assignedToUserId: await resolvePmUserId(d.projectManager),
         metadata: { rule: "change-order-pending", daysSinceUpdate },
     });
@@ -664,7 +667,7 @@ export async function ruleInspectionOutstanding(): Promise<RuleResult> {
       type: PmFlagType.MILESTONE_OVERDUE,
       severity: PmFlagSeverity.HIGH,
       reason: `Inspection outstanding ${days} days after install completion`,
-      externalRef: `inspection-overdue:${d.hubspotDealId}:${isoWeekKey()}`,
+      externalRef: `inspection-overdue:${d.hubspotDealId}`,
       assignedToUserId: await resolvePmUserId(d.projectManager),
         metadata: { rule: "inspection-outstanding", daysSinceInstall: days },
     });
@@ -773,7 +776,7 @@ export async function ruleCompoundRisk(): Promise<RuleResult> {
       reason:
         `Compound risk — ${g._count._all} active flags on this deal. ` +
         `Types: ${[...new Set(flags.map(f => f.type))].join(", ")}.`,
-      externalRef: `compound-risk:${d.hubspotDealId}:${isoWeekKey()}`,
+      externalRef: `compound-risk:${d.hubspotDealId}`,
       assignedToUserId: await resolvePmUserId(d.projectManager),
       metadata: {
         rule: "compound-risk",
@@ -886,3 +889,243 @@ export async function runAllRules(options: { dryRun?: boolean } = {}): Promise<R
 // Re-exports for testing/debugging.
 export const _rulesForTest = ALL_RULES;
 export type { Deal };
+
+// =============================================================================
+// Live-mode evaluation (page-load triggered)
+// =============================================================================
+
+import { autoResolveFlag, reopenFlag } from "@/lib/pm-flags";
+import { PmFlagStatus as _PmFlagStatusEnum } from "@/generated/prisma/enums";
+
+const PHASE_1_RULES = [
+  ruleConstructionStageStuck,
+  rulePreConstructionStageStuck,
+  rulePermitRejection,
+  ruleIcRejection,
+  ruleDesignRevisions,
+  ruleInstallOverdue,
+  ruleMissingAhj,
+  ruleMissingUtility,
+  ruleSurveyOutstanding,
+  ruleDaSendOutstanding,
+  ruleDaApprovalOutstanding,
+  ruleChangeOrderPending,
+  ruleInspectionOutstanding,
+  ruleShitShowFlagged,
+] as const;
+
+const PHASE_2_RULES = [
+  ruleCompoundRisk, // depends on Phase 1 reconciled state
+] as const;
+
+export interface LiveEvalSummary {
+  durationMs: number;
+  phase1: PhaseSummary;
+  phase2: PhaseSummary;
+}
+
+export interface PhaseSummary {
+  matches: number;
+  created: number;
+  reopened: number;
+  autoResolved: number;
+  noOp: number;
+  errors: Array<{ rule: string; dealId?: string; error: string }>;
+  byRule: Array<{ rule: string; matches: number; durationMs: number }>;
+}
+
+/**
+ * Evaluate flag rules against current data and reconcile DB state.
+ *
+ * - Phase 1: run R1–R15, capture matches, then reconcile against existing
+ *   `source=ADMIN_WORKFLOW` flags raised before this eval started:
+ *     - new match, no DB row → create
+ *     - existing OPEN/ACK row matches → no-op
+ *     - existing RESOLVED row matches → reopen + refresh PM
+ *     - existing OPEN/ACK row no longer matches → auto-resolve
+ *
+ * - Phase 2: run R16 (compound-risk) AFTER Phase 1 so it sees reconciled
+ *   state, not stale flags. Reconcile R16 the same way.
+ *
+ * Idempotent: concurrent calls produce no duplicates and no double-flips
+ * thanks to the `(source, externalRef)` unique constraint and atomic
+ * `updateMany` guards in `pm-flags.ts`.
+ *
+ * Caller (page server component) should await this before reading the
+ * queue. Wrapping in 30s timeout + try/catch is the caller's responsibility
+ * for graceful degradation.
+ */
+export async function evaluateLiveFlags(): Promise<LiveEvalSummary> {
+  const overallStart = Date.now();
+  const evalStartedAt = new Date();
+
+  const phase1 = await reconcilePhase("phase1", PHASE_1_RULES, evalStartedAt);
+  const phase2 = await reconcilePhase("phase2", PHASE_2_RULES, evalStartedAt);
+
+  return {
+    durationMs: Date.now() - overallStart,
+    phase1,
+    phase2,
+  };
+}
+
+async function reconcilePhase(
+  phaseName: string,
+  rules: ReadonlyArray<() => Promise<RuleResult>>,
+  evalStartedAt: Date
+): Promise<PhaseSummary> {
+  const summary: PhaseSummary = {
+    matches: 0,
+    created: 0,
+    reopened: 0,
+    autoResolved: 0,
+    noOp: 0,
+    errors: [],
+    byRule: [],
+  };
+
+  if (!prisma) return summary;
+
+  // 1. Run rules — collect all matches.
+  const allSpecs: RuleMatch[] = [];
+  for (const rule of rules) {
+    let result: RuleResult;
+    try {
+      result = await rule();
+    } catch (err) {
+      summary.errors.push({
+        rule: rule.name,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      continue;
+    }
+    summary.byRule.push({
+      rule: result.rule,
+      matches: result.matches.length,
+      durationMs: result.durationMs,
+    });
+    summary.matches += result.matches.length;
+    allSpecs.push(...result.matches);
+  }
+
+  // 2. Load existing flags scoped to ADMIN_WORKFLOW source, raised before
+  //    this eval started (the `raisedAt` guard prevents racing with manual
+  //    POSTs that happen mid-eval).
+  const matchedExternalRefs = new Set(allSpecs.map(s => s.externalRef));
+  const existing = await prisma.pmFlag.findMany({
+    where: {
+      source: PmFlagSource.ADMIN_WORKFLOW,
+      raisedAt: { lt: evalStartedAt },
+      // Limit to flags whose externalRef belongs to the rules in *this*
+      // phase (others come from a different phase or have stale ref keys).
+      OR: [
+        { externalRef: { in: [...matchedExternalRefs] } },
+        // For auto-resolve we also need to find existing flags whose ref
+        // is NOT in matchedExternalRefs but IS one of these rules' patterns.
+        // Easiest: scope by externalRef prefix per phase.
+        ...rulePrefixesForPhase(phaseName).map(prefix => ({
+          externalRef: { startsWith: prefix },
+        })),
+      ],
+    },
+    select: { id: true, externalRef: true, status: true, hubspotDealId: true },
+  });
+
+  const existingByRef = new Map<string, typeof existing[0]>();
+  for (const f of existing) {
+    if (f.externalRef) existingByRef.set(f.externalRef, f);
+  }
+
+  // 3. Reconcile each match against existing.
+  for (const spec of allSpecs) {
+    const existingRow = existingByRef.get(spec.externalRef);
+
+    if (!existingRow) {
+      // New match — create the flag.
+      try {
+        const r = await createFlag({
+          hubspotDealId: spec.hubspotDealId,
+          dealName: spec.dealName,
+          type: spec.type,
+          severity: spec.severity,
+          reason: spec.reason,
+          source: PmFlagSource.ADMIN_WORKFLOW,
+          externalRef: spec.externalRef,
+          metadata: spec.metadata,
+          assignedToUserId: spec.assignedToUserId,
+        });
+        if (r.alreadyExisted) summary.noOp++;
+        else summary.created++;
+      } catch (err) {
+        summary.errors.push({
+          rule: spec.metadata?.rule as string | undefined ?? "unknown",
+          dealId: spec.hubspotDealId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      continue;
+    }
+
+    if (existingRow.status === _PmFlagStatusEnum.RESOLVED) {
+      // Condition recurred — re-open + refresh assignee.
+      const result = await reopenFlag(
+        existingRow.id,
+        "Condition recurred — auto-reopened by live-mode evaluation",
+        spec.assignedToUserId
+      );
+      if (result.reopened) summary.reopened++;
+      else summary.noOp++;
+      continue;
+    }
+
+    // OPEN, ACKNOWLEDGED, or CANCELLED — no-op.
+    summary.noOp++;
+  }
+
+  // 4. Auto-resolve flags whose externalRef belongs to this phase's rules
+  //    but didn't match any current spec.
+  for (const f of existing) {
+    if (!f.externalRef) continue;
+    if (matchedExternalRefs.has(f.externalRef)) continue;
+    if (f.status !== _PmFlagStatusEnum.OPEN && f.status !== _PmFlagStatusEnum.ACKNOWLEDGED) continue;
+
+    const note =
+      f.status === _PmFlagStatusEnum.ACKNOWLEDGED
+        ? "Auto-resolved after acknowledgment: condition no longer matches"
+        : "Auto-resolved: condition no longer matches";
+    const ok = await autoResolveFlag(f.id, note);
+    if (ok) summary.autoResolved++;
+  }
+
+  return summary;
+}
+
+/**
+ * Maps phase name → externalRef prefixes for rules in that phase.
+ * Used to scope the reconciler's "existing flags" lookup so it only
+ * considers flags owned by the rules running in this phase.
+ */
+function rulePrefixesForPhase(phaseName: string): string[] {
+  if (phaseName === "phase1") {
+    return [
+      "stage-stuck:",
+      "stage-stuck-pc:",
+      "permit-reject:",
+      "ic-reject:",
+      "design-revisions:",
+      "install-overdue:",
+      "missing-ahj:",
+      "missing-utility:",
+      "survey-overdue:",
+      "da-send-overdue:",
+      "da-approval-overdue:",
+      "pending-sales-change:",
+      "inspection-overdue:",
+      "shit-show:",
+    ];
+  }
+  if (phaseName === "phase2") {
+    return ["compound-risk:"];
+  }
+  return [];
+}

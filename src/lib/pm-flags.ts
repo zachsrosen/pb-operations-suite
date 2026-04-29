@@ -520,6 +520,141 @@ export async function cancelFlag(id: string, reason: string, actor: ActorContext
 }
 
 // =============================================================================
+// Live-mode reconciliation primitives
+//
+// These functions are used by `evaluateLiveFlags()` in pm-flag-rules.ts.
+// They use atomic `updateMany` so concurrent reconcilers don't clobber
+// each other or revive flags a human just acted on.
+// =============================================================================
+
+/**
+ * Auto-resolve a flag — system-driven (no user actor).
+ *
+ * Atomic guard: only flips OPEN/ACKNOWLEDGED → RESOLVED. If the flag is
+ * already RESOLVED or CANCELLED, returns false (idempotent no-op).
+ *
+ * Used by the reconciler when a rule no longer matches a deal that
+ * previously had an open flag.
+ */
+export async function autoResolveFlag(id: string, notes: string): Promise<boolean> {
+  if (!prisma) return false;
+  const result = await prisma.pmFlag.updateMany({
+    where: {
+      id,
+      status: { in: [PmFlagStatusEnum.OPEN, PmFlagStatusEnum.ACKNOWLEDGED] },
+    },
+    data: {
+      status: PmFlagStatusEnum.RESOLVED,
+      resolvedAt: new Date(),
+      resolvedByUserId: null, // null = auto-resolved (drives PM resolution metrics)
+      resolvedNotes: notes,
+    },
+  });
+  if (result.count === 0) return false;
+
+  // Append RESOLVED event with null actor (system).
+  await prisma.pmFlagEvent.create({
+    data: {
+      flagId: id,
+      eventType: PmFlagEventType.RESOLVED,
+      actorUserId: null,
+      notes,
+    },
+  });
+
+  await logActivity({
+    type: ActivityType.PM_FLAG_RESOLVED,
+    description: `Flag ${id} auto-resolved by system`,
+    entityType: "PmFlag",
+    entityId: id,
+    metadata: { autoResolved: true, notes: notes.slice(0, 500) },
+  });
+
+  return true;
+}
+
+/**
+ * Re-open a previously-RESOLVED flag — system-driven.
+ *
+ * Used by the reconciler when a rule now matches a deal that previously
+ * had a flag of this kind that was resolved (manually or auto). Optionally
+ * refreshes the assignee from the deal's current PM.
+ *
+ * Atomic guard: only flips RESOLVED → OPEN. If status is OPEN, ACKNOWLEDGED,
+ * or CANCELLED, returns false (idempotent no-op).
+ *
+ * If `newAssigneeId` differs from the flag's prior assignee, also writes
+ * a `REASSIGNED` event so the audit trail shows the PM change.
+ */
+export async function reopenFlag(
+  id: string,
+  notes: string,
+  newAssigneeId: string | null
+): Promise<{ reopened: boolean; reassigned: boolean }> {
+  if (!prisma) return { reopened: false, reassigned: false };
+
+  const existing = await prisma.pmFlag.findUnique({
+    where: { id },
+    select: { id: true, status: true, assignedToUserId: true },
+  });
+  if (!existing || existing.status !== PmFlagStatusEnum.RESOLVED) {
+    return { reopened: false, reassigned: false };
+  }
+
+  const reassigning =
+    newAssigneeId !== null && newAssigneeId !== existing.assignedToUserId;
+
+  const result = await prisma.pmFlag.updateMany({
+    where: { id, status: PmFlagStatusEnum.RESOLVED },
+    data: {
+      status: PmFlagStatusEnum.OPEN,
+      acknowledgedAt: null,
+      resolvedAt: null,
+      resolvedByUserId: null,
+      resolvedNotes: null,
+      // Refresh assignment if a new PM is provided.
+      ...(newAssigneeId ? { assignedToUserId: newAssigneeId, assignedAt: new Date() } : {}),
+    },
+  });
+  if (result.count === 0) return { reopened: false, reassigned: false };
+
+  await prisma.pmFlagEvent.create({
+    data: {
+      flagId: id,
+      eventType: PmFlagEventType.REOPENED,
+      actorUserId: null,
+      notes,
+    },
+  });
+
+  if (reassigning) {
+    await prisma.pmFlagEvent.create({
+      data: {
+        flagId: id,
+        eventType: PmFlagEventType.REASSIGNED,
+        actorUserId: null,
+        notes: `Reassigned on reopen from ${existing.assignedToUserId ?? "(unassigned)"} to ${newAssigneeId}`,
+        metadata: {
+          previousAssigneeId: existing.assignedToUserId,
+          newAssigneeId,
+          autoReopen: true,
+        },
+      },
+    });
+  }
+
+  await logActivity({
+    type: ActivityType.PM_FLAG_REOPENED,
+    description: `Flag ${id} auto-reopened by system`,
+    entityType: "PmFlag",
+    entityId: id,
+    metadata: { autoReopen: true, reassigned: reassigning, newAssigneeId },
+  });
+
+  return { reopened: true, reassigned: reassigning };
+}
+
+// =============================================================================
 // Queries
 // =============================================================================
 
