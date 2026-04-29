@@ -211,7 +211,9 @@ export async function createFlag(input: CreateFlagInput): Promise<CreateFlagResu
                   {
                     eventType: PmFlagEventType.ASSIGNED,
                     actorUserId: null, // system
-                    notes: "Round-robin auto-assignment",
+                    notes: input.assignedToUserId
+                      ? "Assigned to the deal's project manager"
+                      : "No PM resolved from deal — fell back to round-robin assignment",
                   },
                 ]
               : []),
