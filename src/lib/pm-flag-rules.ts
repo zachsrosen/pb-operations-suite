@@ -132,35 +132,49 @@ function isTerminal(stage: string): boolean {
 }
 
 /**
- * Cache of normalized PM-name → User.id mapping with a short TTL.
+ * Cache of (normalized PM-name → User.id) AND (hubspotOwnerId → User.id)
+ * with a short TTL.
  *
  * Live-mode evaluation runs on every page load — refreshing the user list
  * every time would be wasteful, but caching forever on a warm lambda would
  * leave PM assignments stale after a roster change. 5-minute TTL is the
  * compromise: cheap to build, fresh enough that PM moves propagate within
  * one cache window.
+ *
+ * The byOwnerId map exists because some `Deal.projectManager` values are
+ * HubSpot owner IDs (numeric strings) instead of names — data corruption
+ * upstream. Falling back to owner-id lookup keeps those flags assigned.
  */
 const PM_CACHE_TTL_MS = 5 * 60 * 1000;
-let _pmCache: Map<string, string> | null = null;
+let _pmCacheByName: Map<string, string> | null = null;
+let _pmCacheByOwnerId: Map<string, string> | null = null;
 let _pmCacheBuiltAt: number | null = null;
 
-async function getPmUserCache(): Promise<Map<string, string>> {
-  const now = Date.now();
-  if (_pmCache && _pmCacheBuiltAt && now - _pmCacheBuiltAt < PM_CACHE_TTL_MS) {
-    return _pmCache;
-  }
-  if (!prisma) return new Map();
+async function buildPmUserCache(): Promise<{ byName: Map<string, string>; byOwnerId: Map<string, string> }> {
+  if (!prisma) return { byName: new Map(), byOwnerId: new Map() };
   const users = await prisma.user.findMany({
-    where: { name: { not: null } },
-    select: { id: true, name: true },
+    where: { OR: [{ name: { not: null } }, { hubspotOwnerId: { not: null } }] },
+    select: { id: true, name: true, hubspotOwnerId: true },
   });
-  const m = new Map<string, string>();
+  const byName = new Map<string, string>();
+  const byOwnerId = new Map<string, string>();
   for (const u of users) {
-    if (u.name) m.set(normalizePmName(u.name), u.id);
+    if (u.name) byName.set(normalizePmName(u.name), u.id);
+    if (u.hubspotOwnerId) byOwnerId.set(u.hubspotOwnerId, u.id);
   }
-  _pmCache = m;
+  return { byName, byOwnerId };
+}
+
+async function getPmUserCaches(): Promise<{ byName: Map<string, string>; byOwnerId: Map<string, string> }> {
+  const now = Date.now();
+  if (_pmCacheByName && _pmCacheByOwnerId && _pmCacheBuiltAt && now - _pmCacheBuiltAt < PM_CACHE_TTL_MS) {
+    return { byName: _pmCacheByName, byOwnerId: _pmCacheByOwnerId };
+  }
+  const built = await buildPmUserCache();
+  _pmCacheByName = built.byName;
+  _pmCacheByOwnerId = built.byOwnerId;
   _pmCacheBuiltAt = now;
-  return m;
+  return built;
 }
 
 function normalizePmName(name: string): string {
@@ -170,17 +184,39 @@ function normalizePmName(name: string): string {
 /**
  * Map a deal's PM (free-text from HubSpot) to a User.id.
  *
- * Returns null if no match — caller's createFlag will fall back to
- * round-robin (or leave unassigned if nobody has the PROJECT_MANAGER role).
+ * Two lookup paths in order:
+ *   1. Name match against `User.name` (case-insensitive, whitespace-collapsed)
+ *   2. If the value looks like a HubSpot owner ID (all-digit string),
+ *      match against `User.hubspotOwnerId`.
+ *
+ * Returns null if neither path resolves — caller's createFlag falls back
+ * to round-robin (or leaves unassigned if nobody has PROJECT_MANAGER role).
  */
 async function resolvePmUserId(projectManager: string | null | undefined): Promise<string | null> {
   if (!projectManager) return null;
-  const cache = await getPmUserCache();
-  return cache.get(normalizePmName(projectManager)) ?? null;
+  const trimmed = projectManager.trim();
+  if (!trimmed) return null;
+
+  const { byName, byOwnerId } = await getPmUserCaches();
+
+  // Path 1: name match.
+  const byNameHit = byName.get(normalizePmName(trimmed));
+  if (byNameHit) return byNameHit;
+
+  // Path 2: owner-id fallback for data-corrupted projectManager values.
+  if (/^\d+$/.test(trimmed)) {
+    return byOwnerId.get(trimmed) ?? null;
+  }
+
+  return null;
 }
 
 /** Reset PM cache between runs (test-only). */
-export function _resetPmCache() { _pmCache = null; _pmCacheBuiltAt = null; }
+export function _resetPmCache() {
+  _pmCacheByName = null;
+  _pmCacheByOwnerId = null;
+  _pmCacheBuiltAt = null;
+}
 
 function daysBetween(from: Date | null | undefined, to: Date = new Date()): number | null {
   if (!from) return null;
