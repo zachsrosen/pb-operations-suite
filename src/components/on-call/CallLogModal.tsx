@@ -129,6 +129,15 @@ function CallLogForm({
     return escalatedToChoice;
   })();
 
+  function chooseResolvedRemotely(value: "yes" | "no") {
+    setResolvedRemotely(value);
+    if (value === "no") {
+      const now = nowLocalDatetimeStr();
+      setArrivalAt((prev) => prev || callReceivedAt || now);
+      setCompletedAt((prev) => prev || now);
+    }
+  }
+
   const submit = useMutation({
     mutationFn: async () => {
       const body = {
@@ -324,13 +333,13 @@ function CallLogForm({
         <div className="flex gap-2">
           <ChipChoice
             active={resolvedRemotely === "yes"}
-            onClick={() => setResolvedRemotely("yes")}
+            onClick={() => chooseResolvedRemotely("yes")}
           >
             Yes
           </ChipChoice>
           <ChipChoice
             active={resolvedRemotely === "no"}
-            onClick={() => setResolvedRemotely("no")}
+            onClick={() => chooseResolvedRemotely("no")}
           >
             No — dispatched
           </ChipChoice>
