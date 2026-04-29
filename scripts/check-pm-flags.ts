@@ -49,8 +49,15 @@ async function main() {
   console.log("RECENT 5 (no PII):", recent);
 
   // PM pool size
-  const pmCount = await prisma.user.count({ where: { roles: { has: "PROJECT_MANAGER" } } });
-  console.log(`ELIGIBLE PMs (roles contains PROJECT_MANAGER): ${pmCount}`);
+  const pmCount = await prisma.user.count({
+    where: {
+      OR: [
+        { roles: { has: "PROJECT_MANAGER" } },
+        { roles: { has: "MANAGER" } },
+      ],
+    },
+  });
+  console.log(`ELIGIBLE PMs (PROJECT_MANAGER or legacy MANAGER): ${pmCount}`);
 }
 
 main()
