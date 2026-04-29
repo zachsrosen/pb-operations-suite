@@ -4,6 +4,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useState } from "react";
 import { SwapProposeModal } from "./SwapProposeModal";
+import { CallLogModal } from "./CallLogModal";
+import { CallLogList } from "./CallLogList";
 
 type Shift = {
   poolId: string;
@@ -92,6 +94,7 @@ export function OnCallMeClient() {
   });
 
   const [proposeForShift, setProposeForShift] = useState<Shift | null>(null);
+  const [callLogOpen, setCallLogOpen] = useState(false);
   const [actionErr, setActionErr] = useState<string | null>(null);
 
   const acceptSwap = useMutation({
@@ -150,6 +153,31 @@ export function OnCallMeClient() {
       <p className="text-sm text-muted">
         Hey <strong className="text-foreground">{firstName}</strong> — here&apos;s what&apos;s on your plate.
       </p>
+
+      {/* Quick-log: prominent CTA when on-call. Big button — for use right after a customer call. */}
+      <section className="bg-gradient-to-br from-orange-500/10 to-orange-500/5 border border-orange-500/30 rounded-lg p-4 flex items-center justify-between gap-4">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold">Got a call?</div>
+          <div className="text-xs text-muted mt-0.5">
+            Log every emergency call right after you hang up — even nuisance / wrong-number calls.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => setCallLogOpen(true)}
+          className="shrink-0 px-4 py-2 rounded bg-orange-500 text-white text-sm font-medium"
+        >
+          Log a call
+        </button>
+      </section>
+
+      {/* Recent calls — visible to whole pool so the next on-call shift sees what already happened. */}
+      <section className="bg-surface border border-t-border rounded-lg p-5">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold">Recent Calls (last 7 days)</h2>
+        </div>
+        <CallLogList />
+      </section>
 
       {actionErr && (
         <div className="text-sm rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 px-3 py-2">
