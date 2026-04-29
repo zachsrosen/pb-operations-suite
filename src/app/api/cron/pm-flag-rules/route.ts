@@ -1,16 +1,12 @@
 /**
  * GET /api/cron/pm-flag-rules
  *
- * **Live mode** — evaluation now runs on `/dashboards/pm-action-queue` page
- * load (server component calls `evaluateLiveFlags()` from
- * `src/lib/pm-flag-rules.ts`). This route is no longer scheduled by Vercel
- * Cron; it survives only as a forensic / manual-trigger endpoint.
+ * Background reconciliation for the PM queue.
  *
  * Behavior:
- * - Default: returns `{status: "live-mode-active"}` describing the new model.
- * - If `?force=1` query param AND auth is valid: runs `evaluateLiveFlags()`
- *   and returns the reconciliation summary. Useful for debugging without
- *   needing a logged-in PM session.
+ * - Default authenticated request: runs `evaluateLiveFlags()` and returns the
+ *   reconciliation summary. This is what Vercel Cron calls.
+ * - `?status=1`: cheap no-op status response for forensic checks.
  *
  * Auth: bearer-token compare against `process.env.CRON_SECRET`.
  */
@@ -26,14 +22,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const force = request.nextUrl.searchParams.get("force") === "1";
+  const statusOnly = request.nextUrl.searchParams.get("status") === "1";
 
-  if (!force) {
+  if (statusOnly) {
     return NextResponse.json({
-      status: "live-mode-active",
-      message:
-        "PM flag evaluation runs on /dashboards/pm-action-queue page load. " +
-        "This route is forensic-only — append ?force=1 to trigger a manual eval.",
+      status: "ok",
+      mode: "background-reconciliation",
+      message: "PM flag evaluation runs in the cron route, not during page render.",
       timestamp: new Date().toISOString(),
     });
   }
