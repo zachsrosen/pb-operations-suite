@@ -10,6 +10,7 @@ type CallLog = {
   callReceivedAt: string;
   customerName: string;
   issueType: string;
+  issueTypeOther: string | null;
   safetyRisk: boolean;
   homeHasPower: boolean | null;
   troubleshootingAttempted: string | null;
@@ -73,6 +74,7 @@ export function CallLogList({ poolId }: { poolId?: string }) {
                 <strong className="text-foreground">{log.customerName}</strong>
                 <span className="text-xs text-muted">
                   {ISSUE_LABEL.get(log.issueType) ?? log.issueType}
+                  {log.issueTypeOther && ` — ${log.issueTypeOther}`}
                 </span>
                 {log.safetyRisk && (
                   <span className="text-xs rounded bg-rose-500/20 text-rose-300 px-1.5 py-0.5">

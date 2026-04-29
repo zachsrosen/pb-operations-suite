@@ -21,11 +21,13 @@ export function CallLogModal({
   open,
   onClose,
   crewMember,
+  activeCrewMembers,
   defaultPoolId,
 }: {
   open: boolean;
   onClose: () => void;
-  crewMember: CrewMemberRef;
+  crewMember: CrewMemberRef | null;
+  activeCrewMembers?: CrewMemberRef[];
   defaultPoolId?: string;
 }) {
   if (!open) return null;
@@ -50,6 +52,7 @@ export function CallLogModal({
         </div>
         <CallLogForm
           crewMember={crewMember}
+          activeCrewMembers={activeCrewMembers}
           defaultPoolId={defaultPoolId}
           onClose={onClose}
         />
@@ -60,10 +63,12 @@ export function CallLogModal({
 
 function CallLogForm({
   crewMember,
+  activeCrewMembers,
   defaultPoolId,
   onClose,
 }: {
-  crewMember: CrewMemberRef;
+  crewMember: CrewMemberRef | null;
+  activeCrewMembers?: CrewMemberRef[];
   defaultPoolId?: string;
   onClose: () => void;
 }) {
@@ -107,7 +112,11 @@ function CallLogForm({
   const [escalatedToChoice, setEscalatedToChoice] = useState<string>("");
   const [escalatedToOther, setEscalatedToOther] = useState("");
   const [notes, setNotes] = useState("");
+  const [pickedCrewMemberId, setPickedCrewMemberId] = useState("");
+  const [issueTypeOther, setIssueTypeOther] = useState("");
   const [submitErr, setSubmitErr] = useState<string | null>(null);
+
+  const reporterId = crewMember?.id ?? pickedCrewMemberId;
 
   const dispatched = resolvedRemotely === "no";
   const hoursPreview = dispatched
@@ -124,10 +133,11 @@ function CallLogForm({
     mutationFn: async () => {
       const body = {
         poolId,
-        reporterCrewMemberId: crewMember.id,
+        reporterCrewMemberId: reporterId,
         callReceivedAt: localToIso(callReceivedAt),
         customerName,
         issueType,
+        issueTypeOther: issueType === "other" ? issueTypeOther.trim() : null,
         safetyRisk,
         homeHasPower:
           homeHasPower === "yes" ? true : homeHasPower === "no" ? false : null,
@@ -157,10 +167,12 @@ function CallLogForm({
   });
 
   const canSubmit =
+    Boolean(reporterId) &&
     Boolean(poolId) &&
     callReceivedAt.length > 0 &&
     customerName.trim().length > 0 &&
     issueType.length > 0 &&
+    (issueType !== "other" || issueTypeOther.trim().length > 0) &&
     resolvedRemotely !== null &&
     !submit.isPending;
 
@@ -175,6 +187,30 @@ function CallLogForm({
       {submitErr && (
         <div className="text-sm rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 px-3 py-2">
           {submitErr}
+        </div>
+      )}
+
+      {!crewMember && activeCrewMembers && activeCrewMembers.length > 0 && (
+        <Field label="Who took the call?">
+          <select
+            value={pickedCrewMemberId}
+            onChange={(e) => setPickedCrewMemberId(e.target.value)}
+            className="w-full bg-surface-2 border border-t-border rounded px-3 py-2 text-sm"
+            required
+          >
+            <option value="">— Select electrician —</option>
+            {activeCrewMembers.map((cm) => (
+              <option key={cm.id} value={cm.id}>
+                {cm.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+
+      {!crewMember && (!activeCrewMembers || activeCrewMembers.length === 0) && (
+        <div className="text-sm rounded bg-amber-500/10 border border-amber-500/30 text-amber-200 px-3 py-2">
+          No active crew members are available to assign this call.
         </div>
       )}
 
@@ -231,6 +267,19 @@ function CallLogForm({
           ))}
         </select>
       </Field>
+
+      {issueType === "other" && (
+        <Field label="Describe the issue">
+          <input
+            type="text"
+            value={issueTypeOther}
+            onChange={(e) => setIssueTypeOther(e.target.value)}
+            placeholder="e.g. Panel access issue, tree fell on array"
+            className="w-full bg-surface-2 border border-t-border rounded px-3 py-2 text-sm"
+            required
+          />
+        </Field>
+      )}
 
       <ToggleField
         label="Safety risk?"
