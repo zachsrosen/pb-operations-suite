@@ -197,17 +197,6 @@ const BASE_LINKS: SuitePageCard[] = [
     icon: "📋",
     section: "Communications",
   },
-
-  // ── PM Flags ──
-  {
-    href: "/dashboards/pm-action-queue",
-    title: "PM Action Queue",
-    description:
-      "Exception-based PM workflow — only flagged deals show up. Flags route to the deal's project manager and update live as conditions change.",
-    tag: "PM FLAGS",
-    icon: "🚩",
-    section: "Project Management",
-  },
 ];
 
 const LINKS: SuitePageCard[] = BASE_LINKS.filter(
