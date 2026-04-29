@@ -21,22 +21,39 @@ This spec replaces cron-driven evaluation with **page-load evaluation**. When a 
 
 ## Architecture
 
+Live evaluation runs in **two phases** because R16 (compound-risk) depends on the reconciled state of every other rule's flags.
+
 ```
 PM opens /dashboards/pm-action-queue
   ↓
 Server component: evaluateLiveFlags()
-  ├─ runAllRules({dryRun:true}) — collect current matches
-  ├─ Load existing OPEN+ACK+RESOLVED flags with source=ADMIN_WORKFLOW
-  └─ Reconcile (per externalRef):
-       ├─ match exists, no DB row → create (createFlag)
-       ├─ match exists, DB row OPEN/ACK → no-op
-       ├─ match exists, DB row RESOLVED → reopen (REOPENED event)
-       └─ match absent, DB row OPEN/ACK → auto-resolve (RESOLVED, actorUserId=null)
+  │
+  ├─ Phase 1 — Reconcile R1–R15
+  │    ├─ Run R1–R15 (dry-run) → collect current matches (specs)
+  │    ├─ Capture evalStartedAt = now()
+  │    ├─ Load existing OPEN+ACK+RESOLVED flags WHERE
+  │    │    source=ADMIN_WORKFLOW AND raisedAt < evalStartedAt
+  │    │    (the `raisedAt` guard prevents reconciliation from clobbering
+  │    │    flags raised by another writer mid-eval)
+  │    └─ Reconcile (per externalRef):
+  │         ├─ match exists, no DB row → create (createFlag)
+  │         ├─ match exists, DB row OPEN/ACK → no-op
+  │         ├─ match exists, DB row RESOLVED → reopen + refresh assignee
+  │         └─ match absent, DB row OPEN/ACK → auto-resolve
+  │
+  ├─ Phase 2 — Run R16 against fresh state
+  │    └─ ruleCompoundRisk reads PmFlag table NOW — it sees the reconciled
+  │       Phase 1 results, not stale flags.
+  │       Reconcile R16 same as Phase 1.
+  │
+  └─ Return reconciled list
   ↓
-Page renders queue from reconciled DB state
+Page renders queue from DB state
 ```
 
 `evaluateLiveFlags()` is the **only new function**. The rules themselves don't change. The page server component awaits it before reading flags.
+
+**Why two phases:** R16's match function counts existing flags. If we run all rules together and reconcile after, R16 sees flags that are *about to be* auto-resolved, producing false-positive compound-risk flags. Running R16 against the post-reconcile DB state gives correct counts.
 
 ## Data model changes
 
@@ -45,27 +62,54 @@ Page renders queue from reconciled DB state
 - Auto-resolve distinguishable via `resolvedByUserId IS NULL`.
 - Reconciliation scope filterable via `source = ADMIN_WORKFLOW`.
 
-Only behavioral change: drop `{isoWeek}` from rule `externalRef` strings. Pattern becomes `{ruleKind}:{dealId}` (one flag per rule per deal lifetime).
+Only behavioral change: drop `{isoWeek}` from `externalRef` strings in 8 rules. Pattern becomes `{ruleKind}:{dealId}` (one flag per rule per deal lifetime).
 
-**Migration impact**: existing OPEN flags from yesterday's cron run have isoWeek-suffixed externalRefs. They won't collide with new live-mode externalRefs (different keys). On first page load post-deploy:
-- The old isoWeek-suffixed flag sees no matching live-mode spec → auto-resolves silently with note "Auto-resolved during live-mode migration."
-- The corresponding live-mode flag is created fresh (different externalRef) and assigned to the right PM.
+### Per-rule externalRef change
 
-This preserves audit history while transitioning cleanly.
+| Rule | Previous externalRef | New externalRef |
+|---|---|---|
+| construction-stage-stuck (R1) | `stage-stuck:{dealId}:{stage}:{isoWeek}` | `stage-stuck:{dealId}` |
+| pre-construction-stage-stuck (R2) | `stage-stuck-pc:{dealId}:{stage}:{isoWeek}` | `stage-stuck-pc:{dealId}` |
+| permit-rejection (R3) | `permit-reject:{dealId}:{isoWeek}` | `permit-reject:{dealId}` |
+| ic-rejection (R4) | `ic-reject:{dealId}:{isoWeek}` | `ic-reject:{dealId}` |
+| design-revisions (R5) | `design-revisions:{dealId}` | unchanged |
+| install-overdue (R6) | `install-overdue:{dealId}:{date}` | unchanged (per-event key) |
+| missing-ahj (R8) | `missing-ahj:{dealId}` | unchanged |
+| missing-utility (R9) | `missing-utility:{dealId}` | unchanged |
+| survey-outstanding (R10) | `survey-overdue:{dealId}:{isoWeek}` | `survey-overdue:{dealId}` |
+| da-send-outstanding (R11) | `da-send-overdue:{dealId}:{isoWeek}` | `da-send-overdue:{dealId}` |
+| da-approval-outstanding (R12) | `da-approval-overdue:{dealId}:{isoWeek}` | `da-approval-overdue:{dealId}` |
+| change-order-pending (R13) | `pending-sales-change:{dealId}:{isoWeek}` | `pending-sales-change:{dealId}` |
+| inspection-outstanding (R14) | `inspection-overdue:{dealId}:{isoWeek}` | `inspection-overdue:{dealId}` |
+| shit-show-flagged (R15) | `shit-show:{itemId}` | unchanged |
+| compound-risk (R16) | `compound-risk:{dealId}:{isoWeek}` | `compound-risk:{dealId}` |
+
+### Migration impact (per rule class)
+
+- **Rules with NEW externalRef pattern (10 rules — R1–R4, R10–R14, R16)**: existing OPEN flags from yesterday's cron run have isoWeek-suffixed externalRefs. They won't collide with new live-mode externalRefs (different keys).
+  - On first page load post-deploy: the old isoWeek-suffixed flag sees no matching live-mode spec → auto-resolves silently with note "Auto-resolved during live-mode migration."
+  - The corresponding live-mode flag is created fresh and assigned to the right PM.
+- **Rules with UNCHANGED externalRef (6 rules — R5, R6, R8, R9, R15)**: existing OPEN flags pass through cleanly. `createFlag` sees the existing externalRef, returns `alreadyExisted: true`, no churn. If the rule still matches → flag stays OPEN. If the rule no longer matches → reconciliation auto-resolves.
+
+This preserves audit history across the transition.
 
 ## Reconciliation semantics
 
-| Existing PmFlag (source=ADMIN_WORKFLOW) | Rule still matches? | Action | Event written |
+| Existing PmFlag (source=ADMIN_WORKFLOW, raisedAt < evalStartedAt) | Rule still matches? | Action | Event written |
 |---|---|---|---|
 | OPEN | yes | no-op | none |
 | OPEN | no | auto-resolve | `RESOLVED` (actorUserId=null, notes="Auto-resolved: rule no longer matches") |
 | ACKNOWLEDGED | yes | no-op | none |
 | ACKNOWLEDGED | no | auto-resolve | `RESOLVED` (actorUserId=null, notes="Auto-resolved after acknowledgment") |
-| RESOLVED | yes | re-open | `REOPENED` (actorUserId=null, notes="Condition recurred") |
+| RESOLVED | yes | re-open + refresh assignee (see below) | `REOPENED` (actorUserId=null, notes="Condition recurred") + `REASSIGNED` if assignee changed |
 | RESOLVED | no | no-op | none |
 | CANCELLED | n/a | no-op | none — admin override sticky |
 
-Manual + HUBSPOT_WORKFLOW source flags are NEVER touched by reconciliation, regardless of state.
+**Re-open also refreshes the assignee.** When a flag flips RESOLVED → OPEN, we re-resolve `Deal.projectManager → User.id` because the deal's PM may have changed since the flag was last open. Atomic update sets `assignedToUserId` to the freshly resolved PM, clears `resolvedAt` / `resolvedByUserId` / `resolvedNotes`, and writes a `REASSIGNED` event if the assignee actually changed.
+
+**`raisedAt < evalStartedAt` guard**: prevents the reconciler from auto-resolving flags raised by *another* writer mid-eval (e.g., a manual `RaiseFlagButton` POST that races with our reconciliation). Auto-resolve only touches flags that existed when this eval started.
+
+**Manual + HUBSPOT_WORKFLOW source flags** are NEVER touched by reconciliation, regardless of state. They're driven by humans / external integrations and stay open until a human resolves them.
 
 ## Atomic update guards
 
@@ -84,14 +128,18 @@ Same `updateMany` pattern for re-open. Create path uses existing `createFlag` wh
 
 ## Performance
 
-Current `runAllRules({dryRun:true})` cost on real data: **~1.5s** (16 rules × ~22 active deals + per-deal stage-history queries).
+Local dry-run on real data: ~1.5s (16 rules × ~22 active deals). Production cost is higher because:
+- `daysInCurrentStage` issues 2 queries per deal for R1+R2 (~88 sequential queries against ~44 deal-iterations).
+- R3, R4, R10–R14 each do their own queries.
+- Vercel cold-starts add 200–500ms; Neon round-trips add ~50ms each.
+
+Realistic production estimate: **3–5s** on cold start, **1.5–2.5s** on warm. Re-measure with `scripts/dry-run-pm-flags.ts` against prod data before final ship.
 
 Page-load impact:
-- **Foreground await**: PM sees a 1.5s delay before queue renders. Acceptable for v1.
-- **Streaming SSR**: page header renders immediately; the flag list streams via Suspense after eval completes. PM sees the page is alive even while eval runs.
-- **Light caching**: `evaluateLiveFlags()` results cached for 15 seconds in module-level Map. Concurrent page loads within that window reuse the same result. Single-process per Vercel function, so cache is per-function-instance — fine for our scale.
+- **Foreground await**: page server component awaits `evaluateLiveFlags()` with a 30s upper-bound timeout. On timeout, render queue from existing flags + log Sentry warning (graceful degradation).
+- **Streaming SSR**: page header (title, counter row, tab bar) renders immediately. The flag list section is wrapped in `<Suspense>` so the eval cost doesn't delay first paint.
 
-Cache key: `"global-eval"` (single-tenant). On invalidation: cache cleared on every flag mutation in the API routes.
+**No module-level cache.** Vercel autoscales horizontally — module-level state would be per-lambda and stale across instances after mutations in sibling lambdas. The right TTL/cache layer would be `unstable_cache` with tag-based revalidation, but at the current scale (1.5–5s eval, low concurrent PM count) the added complexity isn't worth it. Each page load runs eval. Revisit if the active book grows past ~200 deals.
 
 ## Cron disposition
 
@@ -138,12 +186,21 @@ Total LOC delta: ~150 add, ~50 remove. Tightly scoped.
 - **Customer-reach-out signal** — still deferred until the data source is identified.
 - **Per-deal eval** — for now, every page load evals all deals. As the active book grows, optimize.
 
+## Concurrency notes
+
+- **`/api/pm-flags` GET races with reconciliation**: a PM hitting the page and a refetch from React Query might briefly see a flag in OPEN status that's about to flip to RESOLVED in the same eval cycle. This is acceptable — UI will reconcile on next refetch. No flicker is permanent. Spec calls this out explicitly so reviewers don't chase phantom bugs.
+- **Manual flag POST mid-eval**: handled by the `raisedAt < evalStartedAt` guard on the reconciler.
+- **Concurrent page loads**: each runs a full eval. `createFlag` idempotent on `(source, externalRef)` — second writer's create no-ops via `alreadyExisted: true`. Auto-resolve uses `updateMany WHERE status IN (OPEN, ACKNOWLEDGED)` — second writer affects 0 rows, also idempotent.
+
 ## Verification checklist (post-deploy)
 
-- [ ] Visit `/dashboards/pm-action-queue` while logged in as a PM; queue renders within 3s.
+- [ ] Visit `/dashboards/pm-action-queue` while logged in as a PM; queue renders within 5s.
 - [ ] Existing flags from yesterday's cron run that no longer match are auto-resolved on first hit.
 - [ ] New flags appear with correct PM assignment.
 - [ ] `npx tsx scripts/check-pm-flags.ts` shows distribution.
-- [ ] Manually trigger a condition change in HubSpot (e.g., set a `siteSurveyCompletionDate`); reload page; confirm corresponding `survey-outstanding` flag auto-resolves with `resolvedByUserId = null`.
+- [ ] Manually trigger a condition change (e.g., set `siteSurveyCompletionDate` on a deal); reload page; confirm corresponding `survey-outstanding` flag auto-resolves with `resolvedByUserId = null`.
 - [ ] Confirm `PmFlagEvent` rows show `REOPENED` events when a previously-resolved condition recurs.
+- [ ] **R16 compound-risk does NOT fire spuriously on first post-deploy reload.** Specifically: confirm a deal that had ≥3 OPEN flags yesterday but had several auto-resolved during today's reconciliation does not get a fresh compound-risk flag created in the same eval. (Phase 2 of `evaluateLiveFlags` should see the reconciled state.)
+- [ ] **Cancelled flags stay cancelled** even when the rule still matches — confirm by manually cancelling a flag, hitting page reload, verifying status remains `CANCELLED`.
+- [ ] **PM reassignment on reopen** — confirm by: resolve a flag manually, change `Deal.projectManager` in HubSpot, reload page so condition recurs, verify the reopened flag is now assigned to the new PM with a `REASSIGNED` event.
 - [ ] No errors in Sentry.
