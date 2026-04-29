@@ -7,18 +7,23 @@
  * `(source=ADMIN_WORKFLOW, externalRef)`, so re-runs in the same week
  * don't duplicate.
  *
- * No HubSpot workflows in the loop. All data is local (Deal mirror,
- * DealStatusSnapshot). The cron at /api/cron/pm-flag-rules invokes this
- * once per day.
+ * Stage-duration rules still use local Deal/DealStatusSnapshot data, but
+ * fast-moving milestone rules read HubSpot directly so the PM queue is not
+ * held hostage by mirror lag. The cron at /api/cron/pm-flag-rules invokes
+ * this once per day.
  */
 
 import { prisma } from "@/lib/db";
+import { batchSyncPipeline } from "@/lib/deal-sync";
+import { DEAL_STAGE_MAP, searchWithRetry } from "@/lib/hubspot";
 import { createFlag } from "@/lib/pm-flags";
+import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import {
   DealPipeline,
   PmFlagSeverity,
   PmFlagSource,
   PmFlagType,
+  UserRole,
 } from "@/generated/prisma/enums";
 import type { Deal } from "@/generated/prisma/client";
 
@@ -86,49 +91,192 @@ export interface RunSummary {
 // Helpers
 // =============================================================================
 
-const STAGE_NORMALIZE: Record<string, string> = {
-  // Survey
-  "site survey": "Survey",
-  "survey": "Survey",
-  // Design — the active PB Ops stage is "Design & Engineering"
-  "design": "Design",
-  "design approval": "Design",
-  "design & engineering": "Design",
-  "design and engineering": "Design",
-  "d&e": "Design",
-  // Permit — the active PB Ops stage is "Permitting & Interconnection"
-  "permitting": "Permit",
-  "permit": "Permit",
-  "interconnection": "Permit",
-  "permitting & interconnection": "Permit",
-  "permitting and interconnection": "Permit",
-  "p&i": "Permit",
-  // RTB
-  "ready to build": "RTB",
-  "rtb": "RTB",
-  // Install / Construction
-  "construction": "Install",
-  "install": "Install",
-  "installation": "Install",
-  // Inspection
-  "inspection": "Inspect",
-  // PTO + post-install
-  "pto": "PTO",
-  "close out": "PTO", // post-install closeout — same bucket as PTO
-  "closeout": "PTO",
-};
+// Exact HubSpot dealstage names from DEAL_STAGE_MAP. Keep these literal so the
+// PM queue criteria stay auditable against the HubSpot deal property values.
+const PRE_CONSTRUCTION_STAGES = new Set([
+  "Design & Engineering",
+  "Permitting & Interconnection",
+]);
 
-function normalizeStage(raw: string): string {
-  return STAGE_NORMALIZE[raw.toLowerCase().trim()] || raw;
-}
+const CONSTRUCTION_STAGES = new Set([
+  "RTB - Blocked",
+  "Ready To Build",
+  "Construction",
+  "Inspection",
+  "Permission To Operate",
+  "Close Out",
+]);
 
-const PRE_CONSTRUCTION_STAGES = new Set(["Design", "Permit"]);
-const CONSTRUCTION_STAGES = new Set(["RTB", "Install", "Inspect", "PTO"]); // PTO covers Close Out / post-install
+const PERMIT_OR_RTB_STAGES = new Set([
+  "Permitting & Interconnection",
+  "RTB - Blocked",
+  "Ready To Build",
+]);
+
+const PERMIT_RTB_OR_CONSTRUCTION_STAGES = new Set([
+  "Permitting & Interconnection",
+  "RTB - Blocked",
+  "Ready To Build",
+  "Construction",
+]);
 
 const TERMINAL_STAGES = new Set<string>(TERMINAL_STAGE_LIST);
 
 function isTerminal(stage: string): boolean {
   return TERMINAL_STAGES.has(stage);
+}
+
+const RULE_THRESHOLDS_DAYS = {
+  constructionStageStuck: 14,
+  preConstructionStageStuck: 21,
+  rejectionUnresolved: 5,
+  surveyOutstanding: 7,
+  daSendOutstanding: 5,
+  daApprovalOutstanding: 7,
+  changeOrderPending: 5,
+  inspectionOutstanding: 14,
+} as const;
+
+const RULE_THRESHOLDS_COUNTS = {
+  designRevisions: 3,
+} as const;
+
+// Exact HubSpot status values mirrored into Deal.surveyStatus / Deal.layoutStatus.
+// These intentionally do not lowercase, normalize, or regex-match status text.
+const SURVEY_COMPLETED_STATUS_NAMES = new Set(["Completed"]);
+
+const DA_SENT_STATUS_NAMES = new Set([
+  "Sent For Approval",
+  "Resent For Approval",
+  "Sent to Customer",
+  "Review In Progress",
+  "Pending Review",
+  "Ready For Review",
+]);
+
+const DA_APPROVED_STATUS_NAMES = new Set([
+  "Approved",
+  "Customer Approved",
+  "DA Approved",
+  "Design Approved",
+]);
+
+const HUBSPOT_PROJECT_PIPELINE_ID = "6900017";
+
+const HUBSPOT_PM_MILESTONE_PROPERTIES = [
+  "dealname",
+  "project_manager",
+  "dealstage",
+  "closedate",
+  "site_survey_date",
+  "is_site_survey_completed_",
+  "site_survey_status",
+  "design_approval_sent_date",
+  "is_da_sent_",
+  "layout_approval_date",
+  "layout_approved",
+  "layout_status",
+  "hs_lastmodifieddate",
+] as const;
+
+type HubSpotPmMilestoneDeal = {
+  hubspotDealId: string;
+  dealName: string | null;
+  projectManager: string | null;
+  stage: string;
+  closeDate: Date | null;
+  siteSurveyCompletionDate: Date | null;
+  isSiteSurveyCompleted: boolean;
+  surveyStatus: string | null;
+  designApprovalSentDate: Date | null;
+  isDaSent: boolean;
+  layoutApprovalDate: Date | null;
+  isLayoutApproved: boolean;
+  layoutStatus: string | null;
+  hubspotUpdatedAt: Date | null;
+};
+
+function stringToDate(value: string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function stringToBool(value: string | null | undefined): boolean {
+  if (!value) return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "true" || normalized === "yes" || normalized === "1";
+}
+
+function isSurveyCompleteStatus(status: string | null | undefined): boolean {
+  if (!status) return false;
+  return SURVEY_COMPLETED_STATUS_NAMES.has(status);
+}
+
+function isDaSentStatus(status: string | null | undefined): boolean {
+  if (!status) return false;
+  return DA_SENT_STATUS_NAMES.has(status);
+}
+
+function isDaApprovedStatus(status: string | null | undefined): boolean {
+  if (!status) return false;
+  return DA_APPROVED_STATUS_NAMES.has(status);
+}
+
+async function searchHubSpotProjectDeals(
+  extraFilters: Array<{
+    propertyName: string;
+    operator: typeof FilterOperatorEnum.Eq | typeof FilterOperatorEnum.Gte | typeof FilterOperatorEnum.Lte;
+    value: string;
+  }>
+): Promise<HubSpotPmMilestoneDeal[]> {
+  const deals: HubSpotPmMilestoneDeal[] = [];
+  let after: string | undefined;
+
+  do {
+    const response = await searchWithRetry({
+      filterGroups: [
+        {
+          filters: [
+            {
+              propertyName: "pipeline",
+              operator: FilterOperatorEnum.Eq,
+              value: HUBSPOT_PROJECT_PIPELINE_ID,
+            },
+            ...extraFilters,
+          ],
+        },
+      ],
+      properties: [...HUBSPOT_PM_MILESTONE_PROPERTIES],
+      limit: 100,
+      after,
+    });
+
+    for (const result of response.results) {
+      const properties = result.properties as Partial<Record<(typeof HUBSPOT_PM_MILESTONE_PROPERTIES)[number], string>>;
+      const stageId = properties.dealstage ?? null;
+      deals.push({
+        hubspotDealId: result.id,
+        dealName: properties.dealname ?? null,
+        projectManager: properties.project_manager ?? null,
+        stage: stageId ? DEAL_STAGE_MAP[stageId] ?? stageId : "",
+        closeDate: stringToDate(properties.closedate ?? null),
+        siteSurveyCompletionDate: stringToDate(properties.site_survey_date ?? null),
+        isSiteSurveyCompleted: stringToBool(properties.is_site_survey_completed_ ?? null),
+        surveyStatus: properties.site_survey_status ?? null,
+        designApprovalSentDate: stringToDate(properties.design_approval_sent_date ?? null),
+        isDaSent: stringToBool(properties.is_da_sent_ ?? null),
+        layoutApprovalDate: stringToDate(properties.layout_approval_date ?? null),
+        isLayoutApproved: stringToBool(properties.layout_approved ?? null),
+        layoutStatus: properties.layout_status ?? null,
+        hubspotUpdatedAt: stringToDate(properties.hs_lastmodifieddate ?? null),
+      });
+    }
+
+    after = response.paging?.next?.after;
+  } while (after);
+
+  return deals;
 }
 
 /**
@@ -144,6 +292,8 @@ function isTerminal(stage: string): boolean {
  * The byOwnerId map exists because some `Deal.projectManager` values are
  * HubSpot owner IDs (numeric strings) instead of names — data corruption
  * upstream. Falling back to owner-id lookup keeps those flags assigned.
+ * Only PM-eligible users are cached, so a matching non-PM owner record does
+ * not pull a flag into the wrong person's queue.
  */
 const PM_CACHE_TTL_MS = 5 * 60 * 1000;
 let _pmCacheByName: Map<string, string> | null = null;
@@ -153,7 +303,17 @@ let _pmCacheBuiltAt: number | null = null;
 async function buildPmUserCache(): Promise<{ byName: Map<string, string>; byOwnerId: Map<string, string> }> {
   if (!prisma) return { byName: new Map(), byOwnerId: new Map() };
   const users = await prisma.user.findMany({
-    where: { OR: [{ name: { not: null } }, { hubspotOwnerId: { not: null } }] },
+    where: {
+      AND: [
+        {
+          OR: [
+            { roles: { has: UserRole.PROJECT_MANAGER } },
+            { roles: { has: UserRole.MANAGER } },
+          ],
+        },
+        { OR: [{ name: { not: null } }, { hubspotOwnerId: { not: null } }] },
+      ],
+    },
     select: { id: true, name: true, hubspotOwnerId: true },
   });
   const byName = new Map<string, string>();
@@ -290,10 +450,10 @@ export async function ruleConstructionStageStuck(): Promise<RuleResult> {
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
-    if (!CONSTRUCTION_STAGES.has(normalizeStage(d.stage))) continue;
+    if (!CONSTRUCTION_STAGES.has(d.stage)) continue;
     if (isTerminal(d.stage)) continue;
     const days = await daysInCurrentStage(d.hubspotDealId, d.stageId);
-    if (days != null && days > 7) {
+    if (days != null && days > RULE_THRESHOLDS_DAYS.constructionStageStuck) {
       matches.push({
         hubspotDealId: d.hubspotDealId,
         dealName: d.dealName,
@@ -322,10 +482,10 @@ export async function rulePreConstructionStageStuck(): Promise<RuleResult> {
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
-    if (!PRE_CONSTRUCTION_STAGES.has(normalizeStage(d.stage))) continue;
+    if (!PRE_CONSTRUCTION_STAGES.has(d.stage)) continue;
     if (isTerminal(d.stage)) continue;
     const days = await daysInCurrentStage(d.hubspotDealId, d.stageId);
-    if (days != null && days > 14) {
+    if (days != null && days > RULE_THRESHOLDS_DAYS.preConstructionStageStuck) {
       matches.push({
         hubspotDealId: d.hubspotDealId,
         dealName: d.dealName,
@@ -358,7 +518,7 @@ export async function rulePermitRejection(): Promise<RuleResult> {
   for (const d of deals) {
     if (isTerminal(d.stage)) continue;
     const daysSinceUpdate = daysBetween(d.updatedAt);
-    if (daysSinceUpdate != null && daysSinceUpdate >= 2) {
+    if (daysSinceUpdate != null && daysSinceUpdate >= RULE_THRESHOLDS_DAYS.rejectionUnresolved) {
       matches.push({
         hubspotDealId: d.hubspotDealId,
         dealName: d.dealName,
@@ -391,7 +551,7 @@ export async function ruleIcRejection(): Promise<RuleResult> {
   for (const d of deals) {
     if (isTerminal(d.stage)) continue;
     const daysSinceUpdate = daysBetween(d.updatedAt);
-    if (daysSinceUpdate != null && daysSinceUpdate >= 2) {
+    if (daysSinceUpdate != null && daysSinceUpdate >= RULE_THRESHOLDS_DAYS.rejectionUnresolved) {
       matches.push({
         hubspotDealId: d.hubspotDealId,
         dealName: d.dealName,
@@ -414,7 +574,7 @@ export async function ruleDesignRevisions(): Promise<RuleResult> {
 
   const deals = await prisma.deal.findMany({
     where: {
-      ...ACTIVE_PROJECT_FILTER, daRevisionCount: { gt: 2 } },
+      ...ACTIVE_PROJECT_FILTER, daRevisionCount: { gt: RULE_THRESHOLDS_COUNTS.designRevisions } },
     select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, daRevisionCount: true },
   });
 
@@ -498,8 +658,7 @@ export async function ruleMissingAhj(): Promise<RuleResult> {
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
-    const norm = normalizeStage(d.stage);
-    if (norm !== "Permit" && norm !== "RTB") continue; // Permit-and-beyond pre-build
+    if (!PERMIT_OR_RTB_STAGES.has(d.stage)) continue; // Permit-and-beyond pre-build
     if (isTerminal(d.stage)) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
@@ -532,8 +691,7 @@ export async function ruleMissingUtility(): Promise<RuleResult> {
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
-    const norm = normalizeStage(d.stage);
-    if (norm !== "Permit" && norm !== "RTB" && norm !== "Install") continue;
+    if (!PERMIT_RTB_OR_CONSTRUCTION_STAGES.has(d.stage)) continue;
     if (isTerminal(d.stage)) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
@@ -558,21 +716,28 @@ export async function ruleSurveyOutstanding(): Promise<RuleResult> {
   const start = Date.now();
   if (!prisma) return { rule: "survey-outstanding", matches: [], durationMs: 0 };
 
-  const cutoff = new Date(Date.now() - 3 * 86_400_000);
-  const deals = await prisma.deal.findMany({
-    where: {
-      ...ACTIVE_PROJECT_FILTER,
-      closeDate: { not: null, lt: cutoff },
-      siteSurveyCompletionDate: null,
+  const cutoff = new Date(Date.now() - RULE_THRESHOLDS_DAYS.surveyOutstanding * 86_400_000);
+  const deals = await searchHubSpotProjectDeals([
+    {
+      propertyName: "closedate",
+      operator: FilterOperatorEnum.Lte,
+      value: cutoff.getTime().toString(),
     },
-    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, closeDate: true },
-  });
+  ]);
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
     if (isTerminal(d.stage)) continue;
+    if (d.siteSurveyCompletionDate) continue;
+    if (d.isSiteSurveyCompleted) continue;
+    if (isSurveyCompleteStatus(d.surveyStatus)) continue;
+    if (d.designApprovalSentDate) continue;
+    if (d.isDaSent) continue;
+    if (d.layoutApprovalDate) continue;
+    if (d.isLayoutApproved) continue;
+    if (isDaSentStatus(d.layoutStatus) || isDaApprovedStatus(d.layoutStatus)) continue;
     const days = daysBetween(d.closeDate);
-    if (days == null || days < 3) continue;
+    if (days == null || days < RULE_THRESHOLDS_DAYS.surveyOutstanding) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,
@@ -592,21 +757,27 @@ export async function ruleDaSendOutstanding(): Promise<RuleResult> {
   const start = Date.now();
   if (!prisma) return { rule: "da-send-outstanding", matches: [], durationMs: 0 };
 
-  const cutoff = new Date(Date.now() - 2 * 86_400_000);
-  const deals = await prisma.deal.findMany({
-    where: {
-      ...ACTIVE_PROJECT_FILTER,
-      siteSurveyCompletionDate: { not: null, lt: cutoff },
-      designApprovalSentDate: null,
+  const cutoff = new Date(Date.now() - RULE_THRESHOLDS_DAYS.daSendOutstanding * 86_400_000);
+  const deals = await searchHubSpotProjectDeals([
+    {
+      propertyName: "site_survey_date",
+      operator: FilterOperatorEnum.Lte,
+      value: cutoff.getTime().toString(),
     },
-    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, siteSurveyCompletionDate: true },
-  });
+  ]);
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
     if (isTerminal(d.stage)) continue;
+    if (!d.siteSurveyCompletionDate) continue;
+    if (d.designApprovalSentDate) continue;
+    if (d.isDaSent) continue;
+    if (d.layoutApprovalDate) continue;
+    if (d.isLayoutApproved) continue;
+    if (isDaSentStatus(d.layoutStatus) || isDaApprovedStatus(d.layoutStatus)) continue;
+    if (d.layoutStatus === "Pending Sales Changes") continue;
     const days = daysBetween(d.siteSurveyCompletionDate);
-    if (days == null || days < 2) continue;
+    if (days == null || days < RULE_THRESHOLDS_DAYS.daSendOutstanding) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,
@@ -626,24 +797,26 @@ export async function ruleDaApprovalOutstanding(): Promise<RuleResult> {
   const start = Date.now();
   if (!prisma) return { rule: "da-approval-outstanding", matches: [], durationMs: 0 };
 
-  const cutoff = new Date(Date.now() - 4 * 86_400_000);
-  const deals = await prisma.deal.findMany({
-    where: {
-      ...ACTIVE_PROJECT_FILTER,
-      designApprovalSentDate: { not: null, lt: cutoff },
-      // Treat null as "not yet approved" (deal-sync may leave booleans unset).
-      isLayoutApproved: { not: true },
+  const cutoff = new Date(Date.now() - RULE_THRESHOLDS_DAYS.daApprovalOutstanding * 86_400_000);
+  const deals = await searchHubSpotProjectDeals([
+    {
+      propertyName: "design_approval_sent_date",
+      operator: FilterOperatorEnum.Lte,
+      value: cutoff.getTime().toString(),
     },
-    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, designApprovalSentDate: true, layoutStatus: true },
-  });
+  ]);
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
     if (isTerminal(d.stage)) continue;
+    if (!d.designApprovalSentDate) continue;
+    if (d.layoutApprovalDate) continue;
+    if (d.isLayoutApproved) continue;
+    if (isDaApprovedStatus(d.layoutStatus)) continue;
     // Don't double-flag rows that the change-order rule will catch.
     if (d.layoutStatus === "Pending Sales Changes") continue;
     const days = daysBetween(d.designApprovalSentDate);
-    if (days == null || days < 4) continue;
+    if (days == null || days < RULE_THRESHOLDS_DAYS.daApprovalOutstanding) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,
@@ -663,19 +836,21 @@ export async function ruleChangeOrderPending(): Promise<RuleResult> {
   const start = Date.now();
   if (!prisma) return { rule: "change-order-pending", matches: [], durationMs: 0 };
 
-  const deals = await prisma.deal.findMany({
-    where: {
-      ...ACTIVE_PROJECT_FILTER, layoutStatus: "Pending Sales Changes" },
-    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, updatedAt: true },
-  });
+  const deals = await searchHubSpotProjectDeals([
+    {
+      propertyName: "layout_status",
+      operator: FilterOperatorEnum.Eq,
+      value: "Pending Sales Changes",
+    },
+  ]);
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
     if (isTerminal(d.stage)) continue;
     // Use updatedAt as proxy for "how long has layoutStatus been Pending Sales Changes."
     // Imperfect (any unrelated field change resets the clock), but conservative.
-    const daysSinceUpdate = daysBetween(d.updatedAt);
-    if (daysSinceUpdate == null || daysSinceUpdate < 2) continue;
+    const daysSinceUpdate = daysBetween(d.hubspotUpdatedAt);
+    if (daysSinceUpdate == null || daysSinceUpdate < RULE_THRESHOLDS_DAYS.changeOrderPending) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,
@@ -695,7 +870,7 @@ export async function ruleInspectionOutstanding(): Promise<RuleResult> {
   const start = Date.now();
   if (!prisma) return { rule: "inspection-outstanding", matches: [], durationMs: 0 };
 
-  const cutoff = new Date(Date.now() - 7 * 86_400_000);
+  const cutoff = new Date(Date.now() - RULE_THRESHOLDS_DAYS.inspectionOutstanding * 86_400_000);
   const deals = await prisma.deal.findMany({
     where: {
       ...ACTIVE_PROJECT_FILTER,
@@ -710,7 +885,7 @@ export async function ruleInspectionOutstanding(): Promise<RuleResult> {
   for (const d of deals) {
     if (isTerminal(d.stage)) continue;
     const days = daysBetween(d.constructionCompleteDate);
-    if (days == null || days < 7) continue;
+    if (days == null || days < RULE_THRESHOLDS_DAYS.inspectionOutstanding) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,
@@ -968,8 +1143,11 @@ const PHASE_2_RULES = [
   ruleCompoundRisk, // depends on Phase 1 reconciled state
 ] as const;
 
+const LIVE_EVAL_PROJECT_SYNC_TIMEOUT_MS = 8_000;
+
 export interface LiveEvalSummary {
   durationMs: number;
+  projectMirrorRefreshed: boolean;
   phase1: PhaseSummary;
   phase2: PhaseSummary;
 }
@@ -1006,15 +1184,43 @@ export interface PhaseSummary {
  * queue. Wrapping in 30s timeout + try/catch is the caller's responsibility
  * for graceful degradation.
  */
+async function refreshProjectMirrorForLiveEval(): Promise<boolean> {
+  const timeoutSentinel = Symbol("pm-live-sync-timeout");
+  const syncDeadline = new Promise<typeof timeoutSentinel>((resolve) =>
+    setTimeout(() => resolve(timeoutSentinel), LIVE_EVAL_PROJECT_SYNC_TIMEOUT_MS)
+  );
+
+  try {
+    const result = await Promise.race([
+      batchSyncPipeline("PROJECT", { incremental: true }),
+      syncDeadline,
+    ]);
+
+    if (result === timeoutSentinel) {
+      console.warn(
+        `[pm-flags] PROJECT incremental sync timed out after ${LIVE_EVAL_PROJECT_SYNC_TIMEOUT_MS}ms before live evaluation`
+      );
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error("[pm-flags] PROJECT incremental sync failed before live evaluation", err);
+    return false;
+  }
+}
+
 export async function evaluateLiveFlags(): Promise<LiveEvalSummary> {
   const overallStart = Date.now();
   const evalStartedAt = new Date();
+  const projectMirrorRefreshed = await refreshProjectMirrorForLiveEval();
 
   const phase1 = await reconcilePhase("phase1", PHASE_1_RULES, evalStartedAt);
   const phase2 = await reconcilePhase("phase2", PHASE_2_RULES, evalStartedAt);
 
   return {
     durationMs: Date.now() - overallStart,
+    projectMirrorRefreshed,
     phase1,
     phase2,
   };

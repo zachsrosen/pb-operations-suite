@@ -71,6 +71,13 @@ const OPEN_STATUSES: PmFlagStatus[] = [
   PmFlagStatusEnum.ACKNOWLEDGED,
 ];
 
+const PM_ROLE_WHERE = {
+  OR: [
+    { roles: { has: UserRole.PROJECT_MANAGER } },
+    { roles: { has: UserRole.MANAGER } },
+  ],
+};
+
 // =============================================================================
 // Round-robin PM assignment
 // =============================================================================
@@ -87,10 +94,10 @@ const OPEN_STATUSES: PmFlagStatus[] = [
 export async function assignNextPm(): Promise<string | null> {
   if (!prisma) return null;
 
-  // Eligible PMs: any user whose roles array contains PROJECT_MANAGER.
+  // Eligible PMs: canonical PROJECT_MANAGER users plus legacy MANAGER users.
   // Postgres array containment via Prisma's `has` operator.
   const pms = await prisma.user.findMany({
-    where: { roles: { has: UserRole.PROJECT_MANAGER } },
+    where: PM_ROLE_WHERE,
     select: { id: true },
   });
 
