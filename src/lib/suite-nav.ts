@@ -16,6 +16,12 @@ export const SUITE_NAV_ENTRIES: SuiteNavEntry[] = [
     description: "Scheduling, timeline, inventory, and equipment operations.",
   },
   {
+    href: "/suites/project-management",
+    title: "Project Management Suite",
+    shortLabel: "Project Management",
+    description: "Cross-stage project tracking, action queues, and PM workflow.",
+  },
+  {
     href: "/suites/design-engineering",
     title: "Design & Engineering Suite",
     shortLabel: "D&E",

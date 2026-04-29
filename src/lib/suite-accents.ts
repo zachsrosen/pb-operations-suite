@@ -5,6 +5,7 @@ export interface SuiteAccent {
 
 export const SUITE_ACCENT_COLORS: Record<string, SuiteAccent> = {
   "/suites/operations":                 { color: "#f97316", light: "#fb923c" },
+  "/suites/project-management":         { color: "#8b5cf6", light: "#a78bfa" },
   "/suites/design-engineering":         { color: "#6366f1", light: "#818cf8" },
   "/suites/permitting-interconnection": { color: "#06b6d4", light: "#22d3ee" },
   "/suites/service":                    { color: "#06b6d4", light: "#22d3ee" },

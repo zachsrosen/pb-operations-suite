@@ -77,6 +77,12 @@ const SUITE_METADATA: Record<string, SuiteMetadata> = {
     tag: "OPERATIONS",
     tagColor: "blue",
   },
+  "/suites/project-management": {
+    title: "Project Management Suite",
+    description: "Cross-stage project tracking, action queues, and PM workflow.",
+    tag: "PM",
+    tagColor: "violet",
+  },
   "/suites/design-engineering": {
     title: "Design & Engineering Suite",
     description: "Design review, clipping analytics, AHJ requirements, and engineering tools.",
@@ -848,6 +854,7 @@ const DashboardLink = memo(function DashboardLink({
   const tagColors: Record<string, string> = {
     orange: "bg-orange-500/20 text-orange-400 border-orange-500/30",
     purple: "bg-purple-500/20 text-purple-400 border-purple-500/30",
+    violet: "bg-violet-500/20 text-violet-400 border-violet-500/30",
     blue: "bg-blue-500/20 text-blue-400 border-blue-500/30",
     red: "bg-red-500/20 text-red-400 border-red-500/30",
     emerald: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30",
