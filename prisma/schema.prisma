@@ -255,6 +255,8 @@ enum ActivityType {
   ON_CALL_PTO_CANCELLED
   ON_CALL_MANUAL_OVERRIDE
   ON_CALL_ICAL_TOKEN_ROTATED
+  ON_CALL_CALL_LOGGED
+  ON_CALL_CALL_LOG_UPDATED
 
   // Permit Hub
   PERMIT_SUBMITTED
@@ -963,6 +965,7 @@ model CrewMember {
   onCallSwapsRequested      OnCallSwapRequest[] @relation("RequesterSwaps")
   onCallSwapsAsCounterparty OnCallSwapRequest[] @relation("CounterpartySwaps")
   onCallPtoRequests         OnCallPtoRequest[]
+  onCallCallLogs            OnCallCallLog[]
 
   // Approval workflow
   availabilityRequests AvailabilityChangeRequest[]
@@ -3072,6 +3075,7 @@ model OnCallPool {
   assignments  OnCallAssignment[]
   swapRequests OnCallSwapRequest[]
   ptoRequests  OnCallPtoRequest[]
+  callLogs     OnCallCallLog[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -3143,6 +3147,51 @@ model OnCallSwapRequest {
   @@index([poolId, status])
   @@index([requesterCrewMemberId])
   @@index([counterpartyCrewMemberId])
+}
+
+/// Emergency call log captured by the on-call electrician right after they receive
+/// a call from a customer during off-hours. One row per inbound call (including
+/// nuisance / wrong-number). Visible to the whole pool + admins.
+model OnCallCallLog {
+  id     String     @id @default(cuid())
+  poolId String
+  pool   OnCallPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  /// CrewMember who logged it (typically the on-call electrician for that date).
+  reporterCrewMemberId String
+  reporterCrewMember   CrewMember @relation(fields: [reporterCrewMemberId], references: [id])
+
+  /// When the call was received (electrician-editable, defaults to now on form open).
+  callReceivedAt DateTime
+
+  customerName             String
+  /// Issue category. Free string to allow new categories without migrations,
+  /// but the UI restricts to: inverter | no-production | battery | monitoring | safety | other.
+  issueType                String
+  safetyRisk               Boolean  @default(false)
+  homeHasPower             Boolean?
+  troubleshootingAttempted String?
+  resolvedRemotely         Boolean  @default(false)
+
+  /// Dispatch fields — only populated if resolvedRemotely=false and a tech rolled out.
+  dispatched  Boolean   @default(false)
+  arrivalAt   DateTime?
+  completedAt DateTime?
+  /// Auto-computed from arrivalAt/completedAt when both present, but stored
+  /// to keep history stable if those timestamps later get edited.
+  hoursWorked Decimal?  @db.Decimal(5, 2)
+
+  /// Free string of who they escalated to (manager name) — UI offers a dropdown
+  /// but allows "Other" with custom text.
+  escalatedTo String?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([poolId, callReceivedAt])
+  @@index([reporterCrewMemberId])
 }
 
 /// Electrician-requested PTO that removes them from rotation for a date range.
