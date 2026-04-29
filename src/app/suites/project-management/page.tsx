@@ -30,24 +30,6 @@ const BASE_LINKS: SuitePageCard[] = [
     section: "Action & Triage",
   },
 
-  // ── Pipeline & Workload ──
-  {
-    href: "/dashboards/project-management",
-    title: "Project Management",
-    description: "PM workload, DA backlog, stuck deals, and revenue by month across the active pipeline.",
-    tag: "PM",
-    icon: "📋",
-    section: "Pipeline & Workload",
-  },
-  {
-    href: "/dashboards/equipment-backlog",
-    title: "Equipment Backlog",
-    description: "Equipment forecasting by brand, model, and stage with location filtering.",
-    tag: "EQUIPMENT",
-    icon: "📦",
-    section: "Pipeline & Workload",
-  },
-
   // ── Scheduling ──
   {
     href: "/dashboards/scheduler",
