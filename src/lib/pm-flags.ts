@@ -656,6 +656,85 @@ export async function reopenFlag(
   return { reopened: true, reassigned: reassigning };
 }
 
+/**
+ * Re-balance a flag's assignee — used when an OPEN/ACK flag's resolved PM
+ * (via Deal.projectManager → User.name) has changed since the flag was raised
+ * (e.g., the deal was reassigned to a different PM in HubSpot).
+ *
+ * Atomic guard: only updates if status is OPEN or ACKNOWLEDGED AND the
+ * current assignedToUserId still matches what we read (optimistic concurrency).
+ *
+ * Status is NOT changed — an acknowledged flag stays acknowledged with the
+ * new assignee. Writes a REASSIGNED event so the audit trail shows the
+ * rebalance.
+ */
+export async function rebalanceAssignment(
+  id: string,
+  newAssigneeId: string | null
+): Promise<{ rebalanced: boolean; previousAssigneeId: string | null }> {
+  if (!prisma) return { rebalanced: false, previousAssigneeId: null };
+
+  const existing = await prisma.pmFlag.findUnique({
+    where: { id },
+    select: { id: true, status: true, assignedToUserId: true },
+  });
+  if (!existing) return { rebalanced: false, previousAssigneeId: null };
+  if (
+    existing.status !== PmFlagStatusEnum.OPEN
+    && existing.status !== PmFlagStatusEnum.ACKNOWLEDGED
+  ) {
+    return { rebalanced: false, previousAssigneeId: existing.assignedToUserId };
+  }
+  if (existing.assignedToUserId === newAssigneeId) {
+    return { rebalanced: false, previousAssigneeId: existing.assignedToUserId };
+  }
+
+  const result = await prisma.pmFlag.updateMany({
+    where: {
+      id,
+      status: { in: [PmFlagStatusEnum.OPEN, PmFlagStatusEnum.ACKNOWLEDGED] },
+      assignedToUserId: existing.assignedToUserId,
+    },
+    data: {
+      assignedToUserId: newAssigneeId,
+      assignedAt: new Date(),
+    },
+  });
+  if (result.count === 0) {
+    return { rebalanced: false, previousAssigneeId: existing.assignedToUserId };
+  }
+
+  await prisma.pmFlagEvent.create({
+    data: {
+      flagId: id,
+      eventType: PmFlagEventType.REASSIGNED,
+      actorUserId: null,
+      notes:
+        `Auto-rebalanced from ${existing.assignedToUserId ?? "(unassigned)"} ` +
+        `to ${newAssigneeId ?? "(unassigned)"} — deal PM changed`,
+      metadata: {
+        previousAssigneeId: existing.assignedToUserId,
+        newAssigneeId,
+        autoRebalance: true,
+      },
+    },
+  });
+
+  await logActivity({
+    type: ActivityType.PM_FLAG_REASSIGNED,
+    description: `Flag ${id} auto-rebalanced (deal PM changed)`,
+    entityType: "PmFlag",
+    entityId: id,
+    metadata: {
+      previousAssigneeId: existing.assignedToUserId,
+      newAssigneeId,
+      autoRebalance: true,
+    },
+  });
+
+  return { rebalanced: true, previousAssigneeId: existing.assignedToUserId };
+}
+
 // =============================================================================
 // Queries
 // =============================================================================

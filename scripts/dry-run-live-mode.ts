@@ -27,6 +27,7 @@ async function main() {
     console.log(`  Created:        ${p.created}`);
     console.log(`  Reopened:       ${p.reopened}`);
     console.log(`  Auto-resolved:  ${p.autoResolved}`);
+    console.log(`  Rebalanced:     ${p.rebalanced}`);
     console.log(`  No-op:          ${p.noOp}`);
     console.log(`  Errors:         ${p.errors.length}`);
     if (p.byRule.length > 0) {

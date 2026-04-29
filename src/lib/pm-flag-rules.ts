@@ -944,7 +944,7 @@ export type { Deal };
 // Live-mode evaluation (page-load triggered)
 // =============================================================================
 
-import { autoResolveFlag, reopenFlag } from "@/lib/pm-flags";
+import { autoResolveFlag, rebalanceAssignment, reopenFlag } from "@/lib/pm-flags";
 import { PmFlagStatus as _PmFlagStatusEnum } from "@/generated/prisma/enums";
 
 const PHASE_1_RULES = [
@@ -979,6 +979,7 @@ export interface PhaseSummary {
   created: number;
   reopened: number;
   autoResolved: number;
+  rebalanced: number; // existing OPEN/ACK flag's assignee was updated to track deal PM change
   noOp: number;
   errors: Array<{ rule: string; dealId?: string; error: string }>;
   byRule: Array<{ rule: string; matches: number; durationMs: number }>;
@@ -1029,6 +1030,7 @@ async function reconcilePhase(
     created: 0,
     reopened: 0,
     autoResolved: 0,
+    rebalanced: 0,
     noOp: 0,
     errors: [],
     byRule: [],
@@ -1078,7 +1080,7 @@ async function reconcilePhase(
         })),
       ],
     },
-    select: { id: true, externalRef: true, status: true, hubspotDealId: true },
+    select: { id: true, externalRef: true, status: true, hubspotDealId: true, assignedToUserId: true },
   });
 
   const existingByRef = new Map<string, typeof existing[0]>();
@@ -1128,8 +1130,20 @@ async function reconcilePhase(
       continue;
     }
 
-    // OPEN, ACKNOWLEDGED, or CANCELLED — no-op.
-    summary.noOp++;
+    // OPEN or ACKNOWLEDGED with matching rule — auto-rebalance assignee
+    // if the deal's PM has changed since the flag was raised. CANCELLED
+    // stays no-op (admin override is sticky).
+    if (
+      existingRow.status === _PmFlagStatusEnum.OPEN
+      || existingRow.status === _PmFlagStatusEnum.ACKNOWLEDGED
+    ) {
+      const result = await rebalanceAssignment(existingRow.id, spec.assignedToUserId);
+      if (result.rebalanced) summary.rebalanced++;
+      else summary.noOp++;
+    } else {
+      // CANCELLED — sticky.
+      summary.noOp++;
+    }
   }
 
   // 4. Auto-resolve flags whose externalRef belongs to this phase's rules
