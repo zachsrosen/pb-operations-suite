@@ -197,6 +197,16 @@ const BASE_LINKS: SuitePageCard[] = [
     icon: "📋",
     section: "Communications",
   },
+
+  // ── On-Call ──
+  {
+    href: "/dashboards/on-call",
+    title: "On-Call Electricians",
+    description: "Weekly rotation for after-hours service coverage across California and Colorado. Mon-Fri 6-10pm + Sat-Sun 8am-12pm. Log every emergency call from here.",
+    tag: "ON-CALL",
+    icon: "📞",
+    section: "On-Call",
+  },
 ];
 
 const LINKS: SuitePageCard[] = BASE_LINKS.filter(

@@ -334,14 +334,6 @@ export function OnCallMeClient() {
         />
       )}
 
-      {data.crewMember && (
-        <CallLogModal
-          open={callLogOpen}
-          onClose={() => setCallLogOpen(false)}
-          crewMember={{ id: data.crewMember.id, name: data.crewMember.name }}
-          defaultPoolId={data.shifts[0]?.poolId}
-        />
-      )}
     </div>
   );
 }

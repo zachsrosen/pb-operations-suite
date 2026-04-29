@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import SuitePageShell, { type SuitePageCard } from "@/components/SuitePageShell";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { RevenueGoalTracker } from "@/components/RevenueGoalTracker";
-import { isOnCallRotationsEnabled } from "@/lib/feature-flags";
 
 const LINKS: SuitePageCard[] = [
   {
@@ -182,16 +181,6 @@ export default async function ExecutiveSuitePage() {
   if (!user.roles.some(r => allowed.includes(r))) redirect("/");
 
   const cards: SuitePageCard[] = [...LINKS];
-  if (isOnCallRotationsEnabled()) {
-    cards.push({
-      href: "/dashboards/on-call",
-      title: "On-Call Electricians",
-      description: "Weekly rotation for after-hours service coverage across California and Colorado. Mon-Fri 6-10pm + Sat-Sun 8am-12pm.",
-      tag: "ON-CALL",
-      icon: "📞",
-      section: "Executive Views",
-    });
-  }
 
   return (
     <SuitePageShell
