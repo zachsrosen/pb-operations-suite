@@ -1,0 +1,975 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Product Creation Walkthrough — PB Ops Suite</title>
+<style>
+  :root {
+    --bg: #0b0e13;
+    --surface: #131822;
+    --surface-2: #1b2230;
+    --surface-3: #232b3a;
+    --border: #2a3343;
+    --fg: #e6ebf3;
+    --muted: #8a93a4;
+    --muted-2: #5e6675;
+    --orange: #f97316;
+    --emerald: #10b981;
+    --red: #ef4444;
+    --purple: #a855f7;
+    --yellow: #eab308;
+    --blue: #3b82f6;
+    --cyan: #06b6d4;
+    --pink: #ec4899;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg); color: var(--fg);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+    font-size: 13.5px; line-height: 1.55;
+  }
+  body { padding: 32px 40px 96px; max-width: 1280px; margin: 0 auto; }
+
+  h1 { font-size: 28px; margin: 0 0 6px; font-weight: 600; letter-spacing: -0.01em; }
+  .lede { color: var(--muted); margin: 0 0 36px; max-width: 780px; }
+  .lede code { background: var(--surface-2); padding: 1px 6px; border-radius: 4px; color: var(--fg); font-size: 12px; }
+
+  /* TOC */
+  .toc {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 20px; margin-bottom: 40px; columns: 2; column-gap: 32px;
+  }
+  .toc h3 { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); column-span: all; }
+  .toc ol { margin: 0; padding-left: 20px; color: var(--fg); }
+  .toc li { padding: 2px 0; font-size: 12.5px; }
+  .toc li a { color: var(--fg); text-decoration: none; }
+  .toc li a:hover { color: var(--cyan); }
+  .toc small { color: var(--muted); font-size: 11px; }
+
+  /* Step */
+  .step {
+    margin-bottom: 48px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+  .step-head {
+    background: var(--surface-2);
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px;
+  }
+  .step-num {
+    flex-shrink: 0;
+    width: 38px; height: 38px;
+    background: var(--surface-3);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 14px;
+    color: var(--cyan);
+  }
+  .step-head h2 {
+    margin: 0; font-size: 17px; font-weight: 600; flex: 1;
+  }
+  .step-actor {
+    font-size: 11px; padding: 4px 10px; border-radius: 999px;
+    text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+  }
+  .step-actor.user { background: rgba(6,182,212,0.15); color: var(--cyan); border: 1px solid rgba(6,182,212,0.4); }
+  .step-actor.app { background: rgba(168,85,247,0.15); color: var(--purple); border: 1px solid rgba(168,85,247,0.4); }
+  .step-actor.api { background: rgba(234,179,8,0.15); color: var(--yellow); border: 1px solid rgba(234,179,8,0.4); }
+  .step-actor.db { background: rgba(59,130,246,0.15); color: var(--blue); border: 1px solid rgba(59,130,246,0.4); }
+  .step-actor.ext { background: rgba(16,185,129,0.15); color: var(--emerald); border: 1px solid rgba(16,185,129,0.4); }
+
+  .step-body { padding: 24px; }
+  .step-body p { margin: 0 0 14px; }
+  .step-body p:last-child { margin-bottom: 0; }
+
+  /* Code blocks */
+  pre {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    margin: 12px 0;
+  }
+  pre.json { color: #c5d1e0; }
+  pre.shell { color: #6ee7b7; }
+  pre.sql { color: #fde68a; }
+  .key { color: #93c5fd; }
+  .str { color: #6ee7b7; }
+  .num { color: #fdba74; }
+  .bool { color: #f9a8d4; }
+  .null { color: #94a3b8; }
+  .comment { color: var(--muted-2); font-style: italic; }
+
+  /* System cards (per-system records shown after a write) */
+  .systems-grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    margin: 14px 0;
+  }
+  .syscard {
+    background: var(--surface-2);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .syscard h4 {
+    margin: 0 0 10px; font-size: 13px; font-weight: 600;
+    display: flex; align-items: center; gap: 8px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .syscard.internal { border-left: 3px solid var(--blue); }
+  .syscard.hubspot { border-left: 3px solid var(--orange); }
+  .syscard.zoho { border-left: 3px solid var(--red); }
+  .syscard.zuper { border-left: 3px solid var(--purple); }
+  .syscard h4 .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .syscard.internal h4 .dot { background: var(--blue); }
+  .syscard.hubspot h4 .dot { background: var(--orange); }
+  .syscard.zoho h4 .dot { background: var(--red); }
+  .syscard.zuper h4 .dot { background: var(--purple); }
+  .syscard table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  .syscard td { padding: 4px 0; vertical-align: top; }
+  .syscard td:first-child { color: var(--muted); padding-right: 12px; white-space: nowrap; }
+  .syscard td:nth-child(2) { color: var(--fg); font-family: ui-monospace, monospace; word-break: break-all; }
+  .syscard .new { color: var(--emerald); font-weight: 600; }
+  .syscard .updated { color: var(--yellow); font-weight: 600; }
+  .syscard .skip { color: var(--muted-2); font-style: italic; }
+  .syscard .crosslink {
+    background: rgba(168,85,247,0.10);
+    border-radius: 4px; padding: 2px 5px;
+    color: #d8b4fe;
+  }
+
+  /* Callout */
+  .callout {
+    border-left: 3px solid var(--blue);
+    background: rgba(59,130,246,0.06);
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    margin: 14px 0;
+    font-size: 12.5px;
+  }
+  .callout.warn { border-left-color: var(--yellow); background: rgba(234,179,8,0.07); }
+  .callout.success { border-left-color: var(--emerald); background: rgba(16,185,129,0.06); }
+  .callout strong { color: var(--fg); }
+  .callout code { background: var(--surface-2); padding: 1px 5px; border-radius: 3px; color: var(--fg); }
+
+  /* Mini wireframe */
+  .wireframe {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px; margin: 14px 0;
+  }
+  .wireframe-title { font-size: 11px; color: var(--muted); margin-bottom: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .form-row { display: flex; gap: 10px; margin-bottom: 10px; align-items: center; }
+  .form-row label { font-size: 11px; color: var(--muted); width: 110px; flex-shrink: 0; }
+  .form-row .input {
+    background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+    padding: 6px 10px; font-size: 12px; color: var(--fg); flex: 1;
+    font-family: ui-monospace, monospace;
+  }
+  .form-row .input.required-ok { border-left: 2px solid var(--emerald); }
+  .form-row .badge { font-size: 10px; padding: 2px 6px; border-radius: 4px; }
+  .form-row .badge.req { background: rgba(239,68,68,0.15); color: #fca5a5; }
+  .btn {
+    display: inline-block; padding: 8px 18px;
+    background: var(--cyan); color: white;
+    border: none; border-radius: 6px;
+    font-size: 12px; font-weight: 600;
+    cursor: default;
+  }
+
+  /* Arrow between steps */
+  .step-arrow {
+    text-align: center; margin: -24px 0 24px; font-size: 24px; color: var(--muted-2);
+  }
+
+  /* Summary state at end */
+  .final-state {
+    background: var(--surface);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; margin: 40px 0;
+  }
+  .final-state h3 { margin: 0 0 4px; font-size: 16px; }
+  .final-state .sub { color: var(--muted); font-size: 12px; margin-bottom: 18px; }
+
+  /* Cross-link diagram */
+  .xlink-diagram {
+    background: var(--surface-2);
+    border-radius: 10px;
+    padding: 24px;
+    margin: 20px 0;
+  }
+  .xlink-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1fr;
+    gap: 18px;
+    align-items: center;
+  }
+  .xlink-node {
+    background: var(--surface);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    text-align: center;
+  }
+  .xlink-node h5 { margin: 0 0 4px; font-size: 12px; font-weight: 600; }
+  .xlink-node .xid {
+    font-family: ui-monospace, monospace; font-size: 10px;
+    color: var(--muted); word-break: break-all;
+  }
+  .xlink-node.internal { border-color: var(--blue); }
+  .xlink-node.hubspot { border-color: var(--orange); }
+  .xlink-node.zoho { border-color: var(--red); }
+  .xlink-node.zuper { border-color: var(--purple); }
+
+  .xlink-cells {
+    margin-top: 18px; display: grid; gap: 8px;
+  }
+  .xlink-cell {
+    display: grid;
+    grid-template-columns: 110px 1fr 1fr 1fr 1fr;
+    gap: 12px; align-items: center;
+    background: var(--surface);
+    border-radius: 6px; padding: 8px 12px;
+    font-size: 11.5px;
+  }
+  .xlink-cell .label { color: var(--muted); font-weight: 600; }
+  .xlink-cell code { font-family: ui-monospace, monospace; font-size: 11px; color: #d8b4fe; background: rgba(168,85,247,0.08); padding: 2px 6px; border-radius: 3px; }
+  .xlink-cell .none { color: var(--muted-2); }
+
+  /* Alternate path section */
+  .alt-paths {
+    background: var(--surface);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 24px; margin: 40px 0;
+  }
+  .alt-paths h2 { margin: 0 0 16px; font-size: 18px; }
+  .alt-paths h3 { margin: 24px 0 8px; font-size: 14px; color: var(--cyan); }
+
+  .footnote { margin-top: 40px; padding-top: 18px; border-top: 1px solid var(--border); color: var(--muted); font-size: 11px; }
+  .footnote code { background: var(--surface-2); padding: 1px 5px; border-radius: 3px; color: var(--fg); }
+</style>
+</head>
+<body>
+
+<h1>Product Creation Walkthrough</h1>
+<p class="lede">
+  End-to-end trace of what happens when a user submits a new product through the wizard at <code>/dashboards/submit-product</code>, showing the record that lands in <span style="color: var(--blue)">InternalProduct</span>, <span style="color: var(--orange)">HubSpot</span>, <span style="color: var(--red)">Zoho Inventory</span>, and <span style="color: var(--purple)">Zuper</span>, plus the cross-link IDs that connect them all. Example throughout: a Silfab 410W module being submitted by a sales rep.
+</p>
+
+<!-- TOC -->
+<div class="toc">
+  <h3>Sections</h3>
+  <ol>
+    <li><a href="#step-1">Wizard opens</a></li>
+    <li><a href="#step-2">Pick start mode</a></li>
+    <li><a href="#step-3">Fill Basics</a></li>
+    <li><a href="#step-4">Fill Details</a></li>
+    <li><a href="#step-5">Review & submit</a></li>
+    <li><a href="#step-6">POST /api/catalog/push-requests</a></li>
+    <li><a href="#step-7">PendingCatalogPush row inserted</a></li>
+    <li><a href="#step-8">Auto-approval engine starts</a></li>
+    <li><a href="#step-9">INTERNAL: upsert</a></li>
+    <li><a href="#step-10">HUBSPOT: upsert</a></li>
+    <li><a href="#step-11">ZOHO: upsert</a></li>
+    <li><a href="#step-12">ZUPER: upsert</a></li>
+    <li><a href="#step-13">Cross-link IDs written</a></li>
+    <li><a href="#step-14">Photo to Zoho</a></li>
+    <li><a href="#step-15">Status finalized to APPROVED</a></li>
+    <li><a href="#step-16">ActivityLog row written</a></li>
+    <li><a href="#step-17">Success screen</a></li>
+    <li><a href="#final">Final state across all 4 systems</a></li>
+    <li><a href="#alt">Alternate entry points</a></li>
+  </ol>
+</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-1">
+  <div class="step-head">
+    <div class="step-num">1</div>
+    <h2>User opens the wizard</h2>
+    <span class="step-actor user">User</span>
+  </div>
+  <div class="step-body">
+    <p>Sales rep, ops, or anyone authed clicks <em>"Submit New Product"</em> from the Operations suite or hits <code>/dashboards/submit-product</code> directly. The wizard loads.</p>
+    <div class="callout">
+      <strong>Auth:</strong> any authenticated user can reach the wizard (Tested: SALES, OPS, ADMIN). Per Phase B decisions, this is intentional — the wizard supports a sales-rep-driven request flow. Non-admin submissions get an audit-flagged ActivityLog row.
+    </div>
+    <p>URL params can pre-fill the wizard if you arrive from a deal context: <code>?dealId=PROJ-1234&category=MODULE&brand=Silfab&model=SIL-410-HC+</code>. This skips Start Mode and lands you directly on the Basics step.</p>
+  </div>
+</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-2">
+  <div class="step-head">
+    <div class="step-num">2</div>
+    <h2>Pick a start mode</h2>
+    <span class="step-actor user">User</span>
+  </div>
+  <div class="step-body">
+    <p>The wizard offers three starting paths:</p>
+    <ul style="margin: 0 0 14px; padding-left: 20px; color: var(--muted);">
+      <li><strong style="color: var(--fg);">Start from scratch</strong> — empty form. Best for adding a brand-new product with no reference.</li>
+      <li><strong style="color: var(--fg);">Clone existing</strong> — search the catalog by SKU/model. Selecting a result pre-fills basics + specs + vendor. Useful for variants (different wattage of same module line, etc.).</li>
+      <li><strong style="color: var(--fg);">Import from datasheet</strong> — upload a manufacturer PDF spec sheet. Claude extracts brand, model, category, and spec fields. Output goes through <code>handleDatasheetExtracted</code> → wizard pre-filled.</li>
+    </ul>
+    <p>Whichever path the user picks, they land on the <strong>Basics</strong> step.</p>
+  </div>
+</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-3">
+  <div class="step-head">
+    <div class="step-num">3</div>
+    <h2>Fill Basics</h2>
+    <span class="step-actor user">User</span>
+  </div>
+  <div class="step-body">
+    <p>The Basics step collects identity + universal fields. Required fields have an inline red badge. Validation runs as the user types, with full validation gate on the Next button.</p>
+    <div class="wireframe">
+      <div class="wireframe-title">📝 Basics step (example: Silfab 410W module)</div>
+      <div class="form-row"><label>Category</label><div class="input required-ok">MODULE</div><span class="badge req">required</span></div>
+      <div class="form-row"><label>Brand</label><div class="input required-ok">Silfab</div><span class="badge req">required</span></div>
+      <div class="form-row"><label>Model</label><div class="input required-ok">SIL-410-HC+</div><span class="badge req">required</span></div>
+      <div class="form-row"><label>Description</label><div class="input required-ok">Silfab 410W mono PERC half-cell module</div><span class="badge req">required</span></div>
+      <div class="form-row"><label>SKU</label><div class="input">SIL-410HC+</div></div>
+      <div class="form-row"><label>Vendor</label><div class="input">Greentech Renewables</div></div>
+      <div class="form-row"><label>Vendor Part #</label><div class="input">SIL410HC</div></div>
+    </div>
+    <p>Vendor selection uses a typeahead picker that pulls from <code>VendorLookup</code> (synced from Zoho). The picker enforces that <code>vendorName</code> + <code>zohoVendorId</code> stay in sync — you can't free-text a vendor that doesn't exist in Zoho.</p>
+  </div>
+</div>
+
+<div class="step-arrow">↓</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-4">
+  <div class="step-head">
+    <div class="step-num">4</div>
+    <h2>Fill Details (category-specific specs)</h2>
+    <span class="step-actor user">User</span>
+  </div>
+  <div class="step-body">
+    <p>The Details step renders fields based on the chosen category. Each <code>FieldDef</code> in <code>src/lib/catalog-fields.ts</code> declares its label, type (number/text/dropdown/toggle), unit, validation, and which external systems it maps to (<code>hubspotProperty</code>, <code>zuperCustomField</code>).</p>
+    <div class="wireframe">
+      <div class="wireframe-title">📝 Details step (MODULE category)</div>
+      <div class="form-row"><label>DC Size (Wattage)</label><div class="input required-ok">410 W</div><span class="badge req">required</span></div>
+      <div class="form-row"><label>Efficiency</label><div class="input">21.2 %</div></div>
+      <div class="form-row"><label>Cell Type</label><div class="input">Mono PERC</div></div>
+      <div class="form-row"><label>Voc</label><div class="input">37.4 V</div></div>
+      <div class="form-row"><label>Isc</label><div class="input">13.95 A</div></div>
+      <div class="form-row"><label>Vmp</label><div class="input">31.2 V</div></div>
+      <div class="form-row"><label>Imp</label><div class="input">13.14 A</div></div>
+      <div class="form-row"><label>Temp Coefficient</label><div class="input">-0.34 %/°C</div></div>
+      <div style="border-top: 1px solid var(--border); margin: 16px 0 12px;"></div>
+      <div class="form-row"><label>Unit Cost</label><div class="input">$118.00</div></div>
+      <div class="form-row"><label>Sell Price</label><div class="input">$155.00</div></div>
+      <div class="form-row"><label>Length</label><div class="input">74.4 in</div></div>
+      <div class="form-row"><label>Width</label><div class="input">41.1 in</div></div>
+      <div class="form-row"><label>Weight</label><div class="input">48.5 lbs</div></div>
+      <div class="form-row"><label>Photo</label><div class="input">silfab-410.png ✓ uploaded</div></div>
+    </div>
+    <div class="callout">
+      <strong>Per-category fields:</strong> MODULE has 8 spec fields. INVERTER has 7. BATTERY has 8. EV_CHARGER has 6. RACKING has 6. ELECTRICAL_BOS has 4. MONITORING has 3. The remaining categories (RAPID_SHUTDOWN, OPTIMIZER, GATEWAY, D_AND_R, SERVICE, ADDER_SERVICES, TESLA_SYSTEM_COMPONENTS, PROJECT_MILESTONES) have no spec fields — universal fields only.
+    </div>
+  </div>
+</div>
+
+<div class="step-arrow">↓</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-5">
+  <div class="step-head">
+    <div class="step-num">5</div>
+    <h2>Review and submit</h2>
+    <span class="step-actor user">User</span>
+  </div>
+  <div class="step-body">
+    <p>Review step shows a summary of every field, the photo preview, and a "Push to Systems" panel:</p>
+    <div class="wireframe">
+      <div class="wireframe-title">📋 Push to Systems</div>
+      <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted);"><input type="checkbox" checked disabled style="accent-color: var(--cyan);"> Internal (always)</label>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px;"><input type="checkbox" checked style="accent-color: var(--orange);"> HubSpot</label>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px;"><input type="checkbox" checked style="accent-color: var(--red);"> Zoho</label>
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 12px;"><input type="checkbox" checked style="accent-color: var(--purple);"> Zuper</label>
+      </div>
+      <p style="margin: 16px 0 8px; font-size: 11px; color: var(--muted);">System Sync Preview shows readiness per system before submit.</p>
+      <button class="btn" style="margin-top: 12px;">Add to Catalog →</button>
+    </div>
+    <p>User clicks <strong>Add to Catalog</strong>.</p>
+  </div>
+</div>
+
+<div class="step-arrow">↓</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-6">
+  <div class="step-head">
+    <div class="step-num">6</div>
+    <h2><code>POST /api/catalog/push-requests</code></h2>
+    <span class="step-actor api">API</span>
+  </div>
+  <div class="step-body">
+    <p>The wizard submits a JSON payload to the push-requests endpoint:</p>
+<pre class="json">{
+  <span class="key">"category"</span>: <span class="str">"MODULE"</span>,
+  <span class="key">"brand"</span>: <span class="str">"Silfab"</span>,
+  <span class="key">"model"</span>: <span class="str">"SIL-410-HC+"</span>,
+  <span class="key">"description"</span>: <span class="str">"Silfab 410W mono PERC half-cell module"</span>,
+  <span class="key">"sku"</span>: <span class="str">"SIL-410HC+"</span>,
+  <span class="key">"vendorName"</span>: <span class="str">"Greentech Renewables"</span>,
+  <span class="key">"zohoVendorId"</span>: <span class="str">"5385454000000098765"</span>,
+  <span class="key">"vendorPartNumber"</span>: <span class="str">"SIL410HC"</span>,
+  <span class="key">"unitCost"</span>: <span class="num">118.00</span>,
+  <span class="key">"sellPrice"</span>: <span class="num">155.00</span>,
+  <span class="key">"unitSpec"</span>: <span class="num">410</span>, <span class="key">"unitLabel"</span>: <span class="str">"W"</span>,
+  <span class="key">"length"</span>: <span class="num">74.4</span>, <span class="key">"width"</span>: <span class="num">41.1</span>, <span class="key">"weight"</span>: <span class="num">48.5</span>,
+  <span class="key">"hardToProcure"</span>: <span class="bool">false</span>,
+  <span class="key">"metadata"</span>: {
+    <span class="key">"wattage"</span>: <span class="num">410</span>, <span class="key">"efficiency"</span>: <span class="num">21.2</span>,
+    <span class="key">"cellType"</span>: <span class="str">"Mono PERC"</span>, <span class="key">"voc"</span>: <span class="num">37.4</span>,
+    <span class="key">"isc"</span>: <span class="num">13.95</span>, <span class="key">"vmp"</span>: <span class="num">31.2</span>,
+    <span class="key">"imp"</span>: <span class="num">13.14</span>, <span class="key">"tempCoefficient"</span>: <span class="num">-0.34</span>,
+    <span class="key">"_photoUrl"</span>: <span class="str">"/api/catalog/photo?path=catalog-photos%2Fsilfab-410.png"</span>
+  },
+  <span class="key">"systems"</span>: [<span class="str">"INTERNAL"</span>, <span class="str">"HUBSPOT"</span>, <span class="str">"ZOHO"</span>, <span class="str">"ZUPER"</span>],
+  <span class="key">"dealId"</span>: <span class="null">null</span>
+}</pre>
+    <p>Server validates: required fields present, category enum valid, vendor pair (vendorName + zohoVendorId) consistent, spec fields satisfy per-category required validation. On any failure: 400 with error details.</p>
+  </div>
+</div>
+
+<div class="step-arrow">↓</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-7">
+  <div class="step-head">
+    <div class="step-num">7</div>
+    <h2>PendingCatalogPush row inserted</h2>
+    <span class="step-actor db">Postgres</span>
+  </div>
+  <div class="step-body">
+    <p>Server creates a <code>PendingCatalogPush</code> row to track the submission. Status starts at <code>PENDING</code>.</p>
+<pre class="sql"><span class="comment">-- INSERT INTO PendingCatalogPush ...</span>
+{
+  <span class="key">id</span>: <span class="str">"cmqe4z9k0000abc"</span>,
+  <span class="key">status</span>: <span class="str">"PENDING"</span>,
+  <span class="key">brand</span>: <span class="str">"Silfab"</span>,
+  <span class="key">model</span>: <span class="str">"SIL-410-HC+"</span>,
+  <span class="key">category</span>: <span class="str">"MODULE"</span>,
+  <span class="key">systems</span>: [<span class="str">"INTERNAL"</span>, <span class="str">"HUBSPOT"</span>, <span class="str">"ZOHO"</span>, <span class="str">"ZUPER"</span>],
+  <span class="key">requestedBy</span>: <span class="str">"sales-rep@photonbrothers.com"</span>,
+  <span class="key">internalSkuId</span>: <span class="null">null</span>,        <span class="comment">// to be populated</span>
+  <span class="key">hubspotProductId</span>: <span class="null">null</span>,    <span class="comment">// to be populated</span>
+  <span class="key">zohoItemId</span>: <span class="null">null</span>,           <span class="comment">// to be populated</span>
+  <span class="key">zuperItemId</span>: <span class="null">null</span>,          <span class="comment">// to be populated</span>
+  <span class="key">metadata</span>: { <span class="comment">/* spec fields above */</span> },
+  <span class="key">createdAt</span>: <span class="str">"2026-04-26T05:42:00Z"</span>
+}</pre>
+  </div>
+</div>
+
+<div class="step-arrow">↓</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-8">
+  <div class="step-head">
+    <div class="step-num">8</div>
+    <h2>Auto-approval engine starts</h2>
+    <span class="step-actor app">Server</span>
+  </div>
+  <div class="step-body">
+    <p>The route handler immediately calls <code>executeCatalogPushApproval(push.id, { source: "wizard", userEmail: authResult.email })</code> from <code>src/lib/catalog-push-approve.ts</code>. The function:</p>
+    <ol style="margin: 6px 0 0 18px; color: var(--muted); font-size: 12.5px;">
+      <li>Captures <code>startedAt = Date.now()</code></li>
+      <li>Locks the PendingCatalogPush row (must be PENDING)</li>
+      <li>Initializes per-system <code>outcomes</code> map with <code>{ status: "skipped", message: "Pending processing." }</code></li>
+      <li>Walks each selected system in sequence (Steps 9–12 below)</li>
+      <li>Writes cross-link IDs (Step 13)</li>
+      <li>Uploads photo to Zoho (Step 14)</li>
+      <li>Finalizes status (Step 15)</li>
+      <li>Writes ActivityLog row (Step 16)</li>
+    </ol>
+  </div>
+</div>
+
+<div class="step-arrow">↓</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-9">
+  <div class="step-head">
+    <div class="step-num">9</div>
+    <h2>INTERNAL block — upsert InternalProduct + spec table</h2>
+    <span class="step-actor db">Postgres</span>
+  </div>
+  <div class="step-body">
+    <p>Inside a transaction:</p>
+    <ol style="margin: 4px 0 12px 18px; color: var(--muted); font-size: 12.5px;">
+      <li><code>findUnique</code> by <code>(category, brand, model)</code> to detect create-vs-update</li>
+      <li><code>upsert</code> InternalProduct with all universal fields + canonical keys</li>
+      <li><code>upsert</code> the matching spec table (<code>moduleSpec</code> here) keyed on <code>internalProductId</code></li>
+      <li>Set <code>outcomes.INTERNAL = { status: "success", externalId: sku.id }</code></li>
+    </ol>
+    <div class="systems-grid">
+      <div class="syscard internal">
+        <h4><span class="dot"></span>InternalProduct row <span class="new" style="margin-left:auto;">CREATED</span></h4>
+        <table>
+          <tr><td>id</td><td><span class="new">cmqe4za10001def</span></td></tr>
+          <tr><td>category</td><td>MODULE</td></tr>
+          <tr><td>brand</td><td>Silfab</td></tr>
+          <tr><td>model</td><td>SIL-410-HC+</td></tr>
+          <tr><td>sku</td><td>SIL-410HC+</td></tr>
+          <tr><td>vendorName</td><td>Greentech Renewables</td></tr>
+          <tr><td>zohoVendorId</td><td>5385454000000098765</td></tr>
+          <tr><td>vendorPartNumber</td><td>SIL410HC</td></tr>
+          <tr><td>description</td><td>Silfab 410W mono...</td></tr>
+          <tr><td>unitSpec</td><td>410</td></tr>
+          <tr><td>unitLabel</td><td>W</td></tr>
+          <tr><td>unitCost</td><td>118.00</td></tr>
+          <tr><td>sellPrice</td><td>155.00</td></tr>
+          <tr><td>length / width</td><td>74.4 / 41.1</td></tr>
+          <tr><td>weight</td><td>48.5</td></tr>
+          <tr><td>canonicalKey</td><td>module:silfab:sil410hc</td></tr>
+          <tr><td>hubspotProductId</td><td class="skip">(null — set in Step 13)</td></tr>
+          <tr><td>zohoItemId</td><td class="skip">(null — set in Step 13)</td></tr>
+          <tr><td>zuperItemId</td><td class="skip">(null — set in Step 13)</td></tr>
+          <tr><td>isActive</td><td>true</td></tr>
+        </table>
+      </div>
+      <div class="syscard internal">
+        <h4><span class="dot"></span>ModuleSpec row <span class="new" style="margin-left:auto;">CREATED</span></h4>
+        <table>
+          <tr><td>id</td><td><span class="new">cmqe4za20002ghi</span></td></tr>
+          <tr><td>internalProductId</td><td>cmqe4za10001def</td></tr>
+          <tr><td>wattage</td><td>410</td></tr>
+          <tr><td>efficiency</td><td>21.2</td></tr>
+          <tr><td>cellType</td><td>Mono PERC</td></tr>
+          <tr><td>voc</td><td>37.4</td></tr>
+          <tr><td>isc</td><td>13.95</td></tr>
+          <tr><td>vmp</td><td>31.2</td></tr>
+          <tr><td>imp</td><td>13.14</td></tr>
+          <tr><td>tempCoefficient</td><td>-0.34</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="callout success">
+      <strong>Outcome:</strong> <code>INTERNAL: { status: "success", externalId: "cmqe4za10001def", message: "Created internal catalog entry." }</code>
+    </div>
+  </div>
+</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-10">
+  <div class="step-head">
+    <div class="step-num">10</div>
+    <h2>HUBSPOT block — create or update Product</h2>
+    <span class="step-actor ext">HubSpot API</span>
+  </div>
+  <div class="step-body">
+    <p><code>createOrUpdateHubSpotProduct(...)</code> is called. It:</p>
+    <ol style="margin: 4px 0 12px 18px; color: var(--muted); font-size: 12.5px;">
+      <li>Searches HubSpot Products by <code>hs_sku</code> for an existing match</li>
+      <li>If none, searches by <code>(name, manufacturer, product_category)</code></li>
+      <li>If still none, POSTs a new Product to <code>/crm/v3/objects/products</code></li>
+      <li>If <code>manufacturer</code> isn't in HubSpot's enum AND <code>HUBSPOT_MANUFACTURER_ENFORCEMENT=true</code>: PATCHes the enum to add the brand, retries the create, notifies TechOps via email</li>
+      <li>Returns <code>{ hubspotProductId, created }</code></li>
+    </ol>
+    <div class="systems-grid">
+      <div class="syscard hubspot">
+        <h4><span class="dot"></span>HubSpot Product <span class="new" style="margin-left:auto;">CREATED</span></h4>
+        <table>
+          <tr><td>id</td><td><span class="new">44115780123</span></td></tr>
+          <tr><td>name</td><td>Silfab SIL-410-HC+</td></tr>
+          <tr><td>hs_sku</td><td>SIL-410HC+</td></tr>
+          <tr><td>manufacturer</td><td>Silfab</td></tr>
+          <tr><td>product_category</td><td>Module</td></tr>
+          <tr><td>description</td><td>Silfab 410W mono...</td></tr>
+          <tr><td>price</td><td>155.00</td></tr>
+          <tr><td>hs_cost_of_goods_sold</td><td>118.00</td></tr>
+          <tr><td>vendor_name</td><td>Greentech Renewables</td></tr>
+          <tr><td>vendor_part_number</td><td>SIL410HC</td></tr>
+          <tr><td>unit_label</td><td>W</td></tr>
+          <tr><td>length / width</td><td>74.4 / 41.1</td></tr>
+          <tr><td>weight</td><td>48.5</td></tr>
+          <tr><td>product_dimensions</td><td>L: 74.4" x W: 41.1" x 48.5 lbs <span class="comment">(auto)</span></td></tr>
+          <tr><td>hard_to_procure</td><td>false</td></tr>
+          <tr><td>dc_size</td><td>410</td></tr>
+          <tr><td>internal_product_id</td><td class="skip">(set in Step 13)</td></tr>
+          <tr><td>zoho_item_id</td><td class="skip">(set in Step 13)</td></tr>
+          <tr><td>zuper_item_id</td><td class="skip">(set in Step 13)</td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="callout success">
+      <strong>Outcome:</strong> <code>HUBSPOT: { status: "success", externalId: "44115780123", message: "Created HubSpot product." }</code>
+    </div>
+    <div class="callout warn">
+      <strong>Phase D auto-add path:</strong> if Silfab weren't in HubSpot's manufacturer enum, the PATCH /properties/products/manufacturer call adds it, the create retries with manufacturer intact, and an email lands in TechOps' inbox. You'd see <code>warnings: ["Brand 'Silfab' was auto-added to HubSpot's manufacturer enum. TechOps notified for review."]</code>.
+    </div>
+  </div>
+</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-11">
+  <div class="step-head">
+    <div class="step-num">11</div>
+    <h2>ZOHO block — create or update Inventory item</h2>
+    <span class="step-actor ext">Zoho API</span>
+  </div>
+  <div class="step-body">
+    <p><code>createOrUpdateZohoItem(...)</code> is called. It:</p>
+    <ol style="margin: 4px 0 12px 18px; color: var(--muted); font-size: 12.5px;">
+      <li>Lists active Zoho items (cached) and matches by SKU → part_number → name</li>
+      <li>If existing: PATCHes vendor + description + part_number + group/category</li>
+      <li>If new: POSTs to <code>/items</code> with full payload (uses category_id from the new <code>getZohoCategory</code> registry — for MODULE = <code>5385454000001229316</code>)</li>
+      <li>Writes <code>cf_internal_product_id</code> on the item</li>
+      <li>Returns <code>{ zohoItemId, created }</code></li>
+    </ol>
+    <div class="systems-grid">
+      <div class="syscard zoho">
+        <h4><span class="dot"></span>Zoho Inventory item <span class="new" style="margin-left:auto;">CREATED</span></h4>
+        <table>
+          <tr><td>item_id</td><td><span class="new">5385454000020025111</span></td></tr>
+          <tr><td>name</td><td>Silfab SIL-410-HC+</td></tr>
+          <tr><td>sku</td><td>SIL-410HC+</td></tr>
+          <tr><td>part_number</td><td>SIL410HC</td></tr>
+          <tr><td>description</td><td>Silfab 410W mono...</td></tr>
+          <tr><td>category_id</td><td>5385454000001229316</td></tr>
+          <tr><td>category_name</td><td>Module</td></tr>
+          <tr><td>rate (sell price)</td><td>155.00</td></tr>
+          <tr><td>purchase_rate (cost)</td><td>118.00</td></tr>
+          <tr><td>vendor_name</td><td>Greentech Renewables</td></tr>
+          <tr><td>vendor_id</td><td>5385454000000098765</td></tr>
+          <tr><td>unit</td><td>W</td></tr>
+          <tr><td>length / width / weight</td><td>74.4 / 41.1 / 48.5</td></tr>
+          <tr><td>item_type</td><td>inventory</td></tr>
+          <tr><td>tax_preference</td><td>taxable</td></tr>
+          <tr><td>custom_fields</td><td>
+            <span class="crosslink">cf_internal_product_id = cmqe4za10001def</span>
+            <span class="comment">// other cf_* set in Step 13</span>
+          </td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="callout success">
+      <strong>Outcome:</strong> <code>ZOHO: { status: "success", externalId: "5385454000020025111", message: "Created Zoho item." }</code>
+    </div>
+  </div>
+</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-12">
+  <div class="step-head">
+    <div class="step-num">12</div>
+    <h2>ZUPER block — create or update Product</h2>
+    <span class="step-actor ext">Zuper API</span>
+  </div>
+  <div class="step-body">
+    <p><code>createOrUpdateZuperPart(...)</code> is called. It:</p>
+    <ol style="margin: 4px 0 12px 18px; color: var(--muted); font-size: 12.5px;">
+      <li>Searches existing Zuper Products by SKU/model/name</li>
+      <li>If new: POSTs to <code>/product</code> with brand, model, sku, description, unit, prices, category UID (resolved via <code>resolveZuperCategoryUid</code>), <code>specification</code> string ("410W Mono PERC"), and <code>customMetaData</code> spec entries via <code>buildZuperSpecMetaData</code></li>
+      <li>Returns <code>{ zuperItemId, created }</code></li>
+    </ol>
+    <div class="systems-grid">
+      <div class="syscard zuper">
+        <h4><span class="dot"></span>Zuper Product <span class="new" style="margin-left:auto;">CREATED</span></h4>
+        <table>
+          <tr><td>product_uid</td><td><span class="new">a4f8c12e-3b21-4d78-9a55-ec3398a01f44</span></td></tr>
+          <tr><td>product_name</td><td>Silfab SIL-410-HC+</td></tr>
+          <tr><td>product_id (sku)</td><td>SIL-410HC+ <span class="comment">(auto-renumbered by Zuper)</span></td></tr>
+          <tr><td>part_number</td><td>SIL410HC</td></tr>
+          <tr><td>brand</td><td>Silfab</td></tr>
+          <tr><td>vendor_name</td><td>Greentech Renewables</td></tr>
+          <tr><td>product_category</td><td>Module (UID acc03811-9ffa-43c6-a621-ea814e0d29be)</td></tr>
+          <tr><td>specification</td><td>410W Mono PERC</td></tr>
+          <tr><td>price (sell)</td><td>155.00</td></tr>
+          <tr><td>cost_price</td><td>118.00</td></tr>
+          <tr><td>unit (uom)</td><td>W</td></tr>
+          <tr><td>length / width / weight</td><td>74.4 / 41.1 / 48.5</td></tr>
+          <tr><td colspan="2" style="padding-top:10px; color: var(--muted); font-size: 11px;">meta_data:</td></tr>
+          <tr><td>"Module Wattage (W)"</td><td>410 <span class="comment">(NUMBER)</span></td></tr>
+          <tr><td>"Module Efficiency (%)"</td><td>21.2</td></tr>
+          <tr><td>"Module Cell Type"</td><td>Mono PERC</td></tr>
+          <tr><td>"Module Voc (V)"</td><td>37.4</td></tr>
+          <tr><td>"Module Isc (A)"</td><td>13.95</td></tr>
+          <tr><td>(cross-link IDs added in Step 13)</td><td></td></tr>
+        </table>
+      </div>
+    </div>
+    <div class="callout success">
+      <strong>Outcome:</strong> <code>ZUPER: { status: "success", externalId: "a4f8c12e-...", message: "Created new Zuper item." }</code>
+    </div>
+  </div>
+</div>
+
+<div class="step-arrow">↓</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-13">
+  <div class="step-head">
+    <div class="step-num">13</div>
+    <h2>Cross-link IDs written to all 3 external systems</h2>
+    <span class="step-actor app">writeCrossLinkIds()</span>
+  </div>
+  <div class="step-body">
+    <p>Now that all 4 records exist, <code>writeCrossLinkIds(...)</code> from <code>src/lib/catalog-cross-link.ts</code> writes each system's ID into the others' custom fields/properties so any record can navigate to its siblings. Same helper is used by the Sync Modal path (so no orphans).</p>
+
+    <div class="xlink-diagram">
+      <div class="xlink-grid">
+        <div class="xlink-node internal">
+          <h5 style="color: var(--blue);">InternalProduct</h5>
+          <div class="xid">cmqe4za10001def</div>
+        </div>
+        <div class="xlink-node hubspot">
+          <h5 style="color: var(--orange);">HubSpot Product</h5>
+          <div class="xid">44115780123</div>
+        </div>
+        <div class="xlink-node zoho">
+          <h5 style="color: var(--red);">Zoho Item</h5>
+          <div class="xid">5385454000020025111</div>
+        </div>
+        <div class="xlink-node zuper">
+          <h5 style="color: var(--purple);">Zuper Product</h5>
+          <div class="xid">a4f8c12e-...</div>
+        </div>
+      </div>
+
+      <div class="xlink-cells">
+        <div class="xlink-cell">
+          <span class="label">InternalProduct</span>
+          <span class="none">(self)</span>
+          <code>hubspotProductId = 44115780123</code>
+          <code>zohoItemId = 5385454000020025111</code>
+          <code>zuperItemId = a4f8c12e-...</code>
+        </div>
+        <div class="xlink-cell">
+          <span class="label">HubSpot props</span>
+          <code>internal_product_id = cmqe4za10001def</code>
+          <span class="none">(self)</span>
+          <code>zoho_item_id = 5385454000020025111</code>
+          <code>zuper_item_id = a4f8c12e-...</code>
+        </div>
+        <div class="xlink-cell">
+          <span class="label">Zoho cf_*</span>
+          <code>cf_internal_product_id = cmqe4za10001def</code>
+          <code>cf_hubspot_product_id = 44115780123</code>
+          <span class="none">(self)</span>
+          <code>cf_zuper_product_id = a4f8c12e-...</code>
+        </div>
+        <div class="xlink-cell">
+          <span class="label">Zuper meta_data</span>
+          <code>"Internal Product ID" = cmqe4za10001def</code>
+          <code>"HubSpot Product ID" = 44115780123</code>
+          <code>"Zoho Item ID" = 5385454000020025111</code>
+          <span class="none">(self)</span>
+        </div>
+      </div>
+    </div>
+    <div class="callout">
+      <strong>Best-effort:</strong> per-system failures append a warning to that system's outcome message ("(Warning: Zuper cross-link returned ...)") but don't fail the overall approval. After this step, you can pivot from any of the 4 records to find any of the others.
+    </div>
+  </div>
+</div>
+
+<div class="step-arrow">↓</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-14">
+  <div class="step-head">
+    <div class="step-num">14</div>
+    <h2>Photo upload to Zoho</h2>
+    <span class="step-actor ext">Zoho API</span>
+  </div>
+  <div class="step-body">
+    <p>If <code>metadata._photoUrl</code> was set (the user uploaded an image), <code>uploadZohoItemImage(zohoId, bytes, fileName, contentType)</code> POSTs the bytes to <code>/items/{item_id}/image</code>.</p>
+    <p>The photo URL stored on metadata is an internal viewer URL like <code>/api/catalog/photo?path=catalog-photos%2Fsilfab-410.png</code> — the engine extracts the blob path and fetches the bytes from Vercel Blob server-side, then forwards to Zoho.</p>
+    <div class="callout warn">
+      <strong>Best-effort, Zoho-only:</strong> failure to upload doesn't fail the overall approval — appends a warning to the Zoho outcome message. HubSpot and Zuper photos are not pushed (out of scope; tracked in followups).
+    </div>
+  </div>
+</div>
+
+<div class="step-arrow">↓</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-15">
+  <div class="step-head">
+    <div class="step-num">15</div>
+    <h2>Status finalized to APPROVED</h2>
+    <span class="step-actor db">Postgres</span>
+  </div>
+  <div class="step-body">
+    <p>The <code>shouldMarkApproved(summary)</code> check verifies every selected system reported <code>success</code> (no <code>failed</code>, <code>skipped</code>, or <code>not_implemented</code>). If clean, the PendingCatalogPush row updates:</p>
+<pre class="sql"><span class="comment">-- UPDATE PendingCatalogPush SET ...</span>
+{
+  <span class="key">id</span>: <span class="str">"cmqe4z9k0000abc"</span>,
+  <span class="key">status</span>: <span class="str">"APPROVED"</span>,        <span class="comment">// was "PENDING"</span>
+  <span class="key">resolvedAt</span>: <span class="str">"2026-04-26T05:42:08Z"</span>,
+  <span class="key">internalSkuId</span>: <span class="str">"cmqe4za10001def"</span>,
+  <span class="key">hubspotProductId</span>: <span class="str">"44115780123"</span>,
+  <span class="key">zohoItemId</span>: <span class="str">"5385454000020025111"</span>,
+  <span class="key">zuperItemId</span>: <span class="str">"a4f8c12e-3b21-4d78-9a55-ec3398a01f44"</span>,
+  <span class="key">note</span>: <span class="null">null</span>
+}</pre>
+    <div class="callout">
+      <strong>If any system failed:</strong> status stays <code>PENDING</code> with <code>note: "Approval attempt incomplete. Resolve failed/skipped systems and retry."</code> — admin can retry from <code>/dashboards/catalog?tab=pending</code>.
+    </div>
+  </div>
+</div>
+
+<div class="step-arrow">↓</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-16">
+  <div class="step-head">
+    <div class="step-num">16</div>
+    <h2>ActivityLog row written</h2>
+    <span class="step-actor db">Postgres</span>
+  </div>
+  <div class="step-body">
+    <p>From M1 (observability foundation), <code>logCatalogSync(...)</code> writes one row capturing the full execution:</p>
+<pre class="json">{
+  <span class="key">"type"</span>: <span class="str">"CATALOG_SYNC_EXECUTED"</span>,           <span class="comment">// or CATALOG_SYNC_FAILED if any system failed</span>
+  <span class="key">"description"</span>: <span class="str">"Catalog sync executed for Silfab SIL-410-HC+"</span>,
+  <span class="key">"userEmail"</span>: <span class="str">"sales-rep@photonbrothers.com"</span>,
+  <span class="key">"entityType"</span>: <span class="str">"internal_product"</span>,
+  <span class="key">"entityId"</span>: <span class="str">"cmqe4za10001def"</span>,
+  <span class="key">"entityName"</span>: <span class="str">"Silfab SIL-410-HC+"</span>,
+  <span class="key">"durationMs"</span>: <span class="num">8421</span>,
+  <span class="key">"riskLevel"</span>: <span class="str">"LOW"</span>,
+  <span class="key">"metadata"</span>: {
+    <span class="key">"source"</span>: <span class="str">"wizard"</span>,
+    <span class="key">"systemsAttempted"</span>: [<span class="str">"INTERNAL"</span>, <span class="str">"HUBSPOT"</span>, <span class="str">"ZOHO"</span>, <span class="str">"ZUPER"</span>],
+    <span class="key">"successCount"</span>: <span class="num">4</span>, <span class="key">"failedCount"</span>: <span class="num">0</span>, <span class="key">"skippedCount"</span>: <span class="num">0</span>, <span class="key">"notImplementedCount"</span>: <span class="num">0</span>,
+    <span class="key">"outcomes"</span>: {
+      <span class="key">"INTERNAL"</span>: { <span class="key">"status"</span>: <span class="str">"success"</span>, <span class="key">"externalId"</span>: <span class="str">"cmqe4za10001def"</span>, ... },
+      <span class="key">"HUBSPOT"</span>:  { <span class="key">"status"</span>: <span class="str">"success"</span>, <span class="key">"externalId"</span>: <span class="str">"44115780123"</span>, ... },
+      <span class="key">"ZOHO"</span>:     { <span class="key">"status"</span>: <span class="str">"success"</span>, <span class="key">"externalId"</span>: <span class="str">"5385454000020025111"</span>, ... },
+      <span class="key">"ZUPER"</span>:    { <span class="key">"status"</span>: <span class="str">"success"</span>, <span class="key">"externalId"</span>: <span class="str">"a4f8c12e-..."</span>, ... }
+    }
+  }
+}</pre>
+    <p>A second row is written if this was a fresh internal create: <code>type: "CATALOG_PRODUCT_CREATED"</code> with the brand, model, category in metadata.</p>
+    <p>The watermark on the InternalProduct row also updates:</p>
+<pre class="sql">UPDATE "EquipmentSku" SET <span class="key">"lastSyncedAt"</span>=<span class="str">'2026-04-26T05:42:08Z'</span>,
+                          <span class="key">"lastSyncedBy"</span>=<span class="str">'sales-rep@photonbrothers.com'</span>
+WHERE id=<span class="str">'cmqe4za10001def'</span>;</pre>
+  </div>
+</div>
+
+<div class="step-arrow">↓</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="step" id="step-17">
+  <div class="step-head">
+    <div class="step-num">17</div>
+    <h2>User sees success screen</h2>
+    <span class="step-actor user">User</span>
+  </div>
+  <div class="step-body">
+    <p>The wizard receives <code>{ autoApproved: true, push: { status: "APPROVED", ... }, outcomes, summary }</code>. The success screen renders:</p>
+    <div class="wireframe" style="text-align: center; padding: 32px;">
+      <div style="width: 56px; height: 56px; margin: 0 auto 12px; background: rgba(6,182,212,0.20); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--cyan); font-size: 28px;">✓</div>
+      <h3 style="margin: 0 0 8px; color: var(--fg);">Product Added to Catalog</h3>
+      <p style="color: var(--muted); margin: 0 0 16px; font-size: 12.5px;">Your product is available now — no approval needed.</p>
+      <button class="btn" style="background: var(--cyan);">Back to Operations</button>
+    </div>
+    <p>End-to-end latency for a clean run: typically <strong>3–8 seconds</strong>, dominated by the 3 external API round-trips.</p>
+  </div>
+</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="final-state" id="final">
+  <h3>Final state — one product, four records, full cross-linkage</h3>
+  <p class="sub">After all 17 steps complete (clean path), here's where everything lives:</p>
+  <div class="systems-grid">
+    <div class="syscard internal">
+      <h4><span class="dot"></span>InternalProduct (Postgres)</h4>
+      <table>
+        <tr><td>id</td><td>cmqe4za10001def</td></tr>
+        <tr><td>category</td><td>MODULE</td></tr>
+        <tr><td>brand</td><td>Silfab</td></tr>
+        <tr><td>model</td><td>SIL-410-HC+</td></tr>
+        <tr><td>moduleSpec</td><td>1:1 row with all 8 spec fields</td></tr>
+        <tr><td>hubspotProductId</td><td><span class="crosslink">44115780123</span></td></tr>
+        <tr><td>zohoItemId</td><td><span class="crosslink">5385454000020025111</span></td></tr>
+        <tr><td>zuperItemId</td><td><span class="crosslink">a4f8c12e-...</span></td></tr>
+        <tr><td>lastSyncedAt</td><td>2026-04-26T05:42:08Z</td></tr>
+      </table>
+    </div>
+    <div class="syscard hubspot">
+      <h4><span class="dot"></span>HubSpot Product</h4>
+      <table>
+        <tr><td>id</td><td>44115780123</td></tr>
+        <tr><td>name</td><td>Silfab SIL-410-HC+</td></tr>
+        <tr><td>manufacturer</td><td>Silfab</td></tr>
+        <tr><td>product_category</td><td>Module</td></tr>
+        <tr><td>price / COGS</td><td>$155 / $118</td></tr>
+        <tr><td>dc_size</td><td>410</td></tr>
+        <tr><td>internal_product_id</td><td><span class="crosslink">cmqe4za10001def</span></td></tr>
+        <tr><td>zoho_item_id</td><td><span class="crosslink">5385454000020025111</span></td></tr>
+        <tr><td>zuper_item_id</td><td><span class="crosslink">a4f8c12e-...</span></td></tr>
+      </table>
+    </div>
+    <div class="syscard zoho">
+      <h4><span class="dot"></span>Zoho Inventory item</h4>
+      <table>
+        <tr><td>item_id</td><td>5385454000020025111</td></tr>
+        <tr><td>name</td><td>Silfab SIL-410-HC+</td></tr>
+        <tr><td>category_name</td><td>Module</td></tr>
+        <tr><td>vendor</td><td>Greentech Renewables</td></tr>
+        <tr><td>image</td><td>silfab-410.png attached</td></tr>
+        <tr><td>cf_internal_product_id</td><td><span class="crosslink">cmqe4za10001def</span></td></tr>
+        <tr><td>cf_hubspot_product_id</td><td><span class="crosslink">44115780123</span></td></tr>
+        <tr><td>cf_zuper_product_id</td><td><span class="crosslink">a4f8c12e-...</span></td></tr>
+      </table>
+    </div>
+    <div class="syscard zuper">
+      <h4><span class="dot"></span>Zuper Product</h4>
+      <table>
+        <tr><td>product_uid</td><td>a4f8c12e-...</td></tr>
+        <tr><td>product_name</td><td>Silfab SIL-410-HC+</td></tr>
+        <tr><td>product_category</td><td>Module</td></tr>
+        <tr><td>specification</td><td>410W Mono PERC</td></tr>
+        <tr><td>meta_data: Module Wattage</td><td>410</td></tr>
+        <tr><td>meta_data: Cell Type</td><td>Mono PERC</td></tr>
+        <tr><td>"Internal Product ID"</td><td><span class="crosslink">cmqe4za10001def</span></td></tr>
+        <tr><td>"HubSpot Product ID"</td><td><span class="crosslink">44115780123</span></td></tr>
+        <tr><td>"Zoho Item ID"</td><td><span class="crosslink">5385454000020025111</span></td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ────────────────────────────────────────────────────────── -->
+<div class="alt-paths" id="alt">
+  <h2>Alternate entry points</h2>
+  <p style="color: var(--muted); margin: 0;">The wizard isn't the only way products enter the catalog. Three other paths exist, all eventually run through the same <code>executeCatalogPushApproval</code> engine (or its building blocks):</p>
+
+  <h3>BOM pipeline (deal-driven)</h3>
+  <p style="color: var(--muted); font-size: 12.5px;">When a planset PDF is parsed and an extracted item doesn't match an existing InternalProduct via <code>bom-catalog-match.ts</code>, a <code>PendingCatalogPush</code> is created automatically with <code>source: "bom_pipeline"</code>, <code>reviewReason: "no_match"</code>, and a 90-day TTL. Sits in PENDING until an admin approves via <code>/dashboards/catalog?tab=pending</code>. Approval calls the same <code>executeCatalogPushApproval(id, { source: "approval_retry" })</code>.</p>
+
+  <h3>Sync Modal (per-product, ad-hoc)</h3>
+  <p style="color: var(--muted); font-size: 12.5px;">From the catalog table (<code>/dashboards/catalog</code>), opening Sync Modal on a row lets ADMIN/EXEC users link an existing external record OR create a new one for any single system. Goes through <code>executePlan</code> in <code>catalog-sync-plan.ts</code> with <code>source: "modal"</code>. After the create, <code>writeCrossLinkIds</code> fires so the new external record isn't an orphan — same helper as the wizard path uses.</p>
+
+  <h3>Direct API upsert (admin/scripts)</h3>
+  <p style="color: var(--muted); font-size: 12.5px;">For data-cleanup work, <code>POST /api/inventory/products</code> can upsert an InternalProduct row directly without touching external systems. ADMIN/OWNER/PROJECT_MANAGER only. Used by ops scripts (e.g., the Zoho orphan reconciliation backfill). External cross-links can be passed in via <code>hubspotProductId</code> / <code>zohoItemId</code> / <code>zuperItemId</code>; if any are passed, an ActivityLog row records the manual link.</p>
+</div>
+
+<div class="footnote">
+  Source files referenced: <code>src/app/api/catalog/push-requests/route.ts</code>, <code>src/lib/catalog-push-approve.ts</code>, <code>src/lib/catalog-cross-link.ts</code>, <code>src/lib/catalog-activity-log.ts</code>, <code>src/lib/zoho-inventory.ts</code>, <code>src/lib/zuper-catalog.ts</code>, <code>src/lib/hubspot.ts</code>, <code>src/lib/catalog-fields.ts</code>, <code>src/lib/zoho-taxonomy.ts</code>. Behavior reflects state after PR #407 + #410 + Phase B operational data work + flag flip on 2026-04-26.
+</div>
+
+</body>
+</html>
