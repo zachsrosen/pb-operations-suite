@@ -4,6 +4,8 @@ import { canAdminOnCall } from "@/lib/on-call-auth";
 import { getCurrentUser } from "@/lib/auth-utils";
 import { resolveElectricianByEmail } from "@/lib/on-call-db";
 import { prisma, logActivity } from "@/lib/db";
+import { safeWaitUntil } from "@/lib/safe-wait-until";
+import { appendCallLogToSheet } from "@/lib/on-call-sheet";
 import {
   ISSUE_TYPE_VALUES,
   computeHoursWorked,
@@ -56,7 +58,7 @@ export async function GET(req: Request) {
       reporterCrewMember: {
         select: { id: true, name: true, email: true },
       },
-      pool: { select: { id: true, name: true, region: true } },
+      pool: { select: { id: true, name: true, region: true, timezone: true } },
     },
     orderBy: { callReceivedAt: "desc" },
     take: 200,
@@ -86,6 +88,13 @@ export async function POST(req: Request) {
   if (!ISSUE_TYPE_VALUES.has(body.issueType)) {
     return NextResponse.json({ error: `Invalid issueType: ${body.issueType}` }, { status: 400 });
   }
+  const issueTypeOther = typeof body.issueTypeOther === "string" ? body.issueTypeOther.trim() : "";
+  if (body.issueType === "other" && !issueTypeOther) {
+    return NextResponse.json(
+      { error: "issueTypeOther is required when issueType is 'other'" },
+      { status: 400 },
+    );
+  }
 
   // Reporter check: caller must be the reporter themselves OR an admin.
   const isAdmin = canAdminOnCall(user);
@@ -112,6 +121,7 @@ export async function POST(req: Request) {
       callReceivedAt: new Date(body.callReceivedAt),
       customerName: body.customerName.trim(),
       issueType: body.issueType,
+      issueTypeOther: body.issueType === "other" ? issueTypeOther : null,
       safetyRisk: Boolean(body.safetyRisk),
       homeHasPower: body.homeHasPower ?? null,
       troubleshootingAttempted: body.troubleshootingAttempted?.trim() || null,
@@ -125,7 +135,7 @@ export async function POST(req: Request) {
     },
     include: {
       reporterCrewMember: { select: { id: true, name: true, email: true } },
-      pool: { select: { id: true, name: true, region: true } },
+      pool: { select: { id: true, name: true, region: true, timezone: true } },
     },
   });
 
@@ -137,6 +147,14 @@ export async function POST(req: Request) {
     entityType: "OnCallCallLog",
     entityId: log.id,
   });
+
+  if (process.env.ONCALL_HR_SHEET_ID) {
+    safeWaitUntil(
+      appendCallLogToSheet(log).catch((e) => {
+        console.error("[on-call-sheet] append failed:", e);
+      }),
+    );
+  }
 
   return NextResponse.json({ log });
 }

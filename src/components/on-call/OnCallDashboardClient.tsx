@@ -26,6 +26,8 @@ type TonightResp = {
 
 type MeResp = {
   crewMember: { id: string; name: string; email: string | null } | null;
+  isAdmin?: boolean;
+  activeCrewMembers?: { id: string; name: string }[];
 };
 
 export function OnCallDashboardClient() {
@@ -39,9 +41,7 @@ export function OnCallDashboardClient() {
     refetchInterval: 60_000,
   });
 
-  // Fetch the caller's CrewMember identity so the "Log a call" button knows
-  // who the reporter is. Returns crewMember=null for non-electricians (admins
-  // get gated separately at the API layer; the button just won't show here).
+  // Fetch the caller's CrewMember identity; admins can log on behalf of a crew member.
   const me = useQuery<MeResp>({
     queryKey: queryKeys.onCall.me(),
     queryFn: async () => {
@@ -74,12 +74,13 @@ export function OnCallDashboardClient() {
   const defaultPoolId = myCrew
     ? tonight.data.pools.find((p) => p.crewMember?.id === myCrew.id)?.poolId
     : undefined;
+  const isAdmin = me.data?.isAdmin ?? false;
+  const showCallLog = Boolean(myCrew) || isAdmin;
 
   return (
     <div className="space-y-8">
-      {/* Quick-log: prominent CTA for the on-call electrician. Only renders
-          for users we can match to a CrewMember (i.e., actual electricians). */}
-      {myCrew && (
+      {/* Quick-log: prominent CTA for electricians and admins. */}
+      {showCallLog && (
         <section className="bg-gradient-to-br from-orange-500/10 to-orange-500/5 border border-orange-500/30 rounded-lg p-4 flex items-center justify-between gap-4">
           <div className="min-w-0">
             <div className="text-sm font-semibold">Got a call?</div>
@@ -117,11 +118,12 @@ export function OnCallDashboardClient() {
         <LookaheadGrid pools={tonight.data.pools} days={14} />
       </section>
 
-      {myCrew && (
+      {showCallLog && (
         <CallLogModal
           open={callLogOpen}
           onClose={() => setCallLogOpen(false)}
-          crewMember={{ id: myCrew.id, name: myCrew.name }}
+          crewMember={myCrew ? { id: myCrew.id, name: myCrew.name } : null}
+          activeCrewMembers={me.data?.activeCrewMembers}
           defaultPoolId={defaultPoolId}
         />
       )}

@@ -3168,6 +3168,7 @@ model OnCallCallLog {
   /// Issue category. Free string to allow new categories without migrations,
   /// but the UI restricts to: inverter | no-production | battery | monitoring | safety | other.
   issueType                String
+  issueTypeOther           String?
   safetyRisk               Boolean  @default(false)
   homeHasPower             Boolean?
   troubleshootingAttempted String?

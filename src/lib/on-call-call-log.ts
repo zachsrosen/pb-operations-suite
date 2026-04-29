@@ -37,6 +37,7 @@ export type CallLogPayload = {
   callReceivedAt: string; // ISO
   customerName: string;
   issueType: string;
+  issueTypeOther?: string | null;
   safetyRisk?: boolean;
   homeHasPower?: boolean | null;
   troubleshootingAttempted?: string | null;
