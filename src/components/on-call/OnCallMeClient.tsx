@@ -4,8 +4,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useState } from "react";
 import { SwapProposeModal } from "./SwapProposeModal";
-import { CallLogModal } from "./CallLogModal";
-import { CallLogList } from "./CallLogList";
 
 type Shift = {
   poolId: string;
