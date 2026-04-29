@@ -37,7 +37,8 @@ const TERMINAL_STAGE_LIST = [
   "Closed Lost",
   "Cancelled",
   "Cancelled Project",
-  "On Hold",
+  "On Hold",   // space variant
+  "On-Hold",   // hyphen variant — actually used in PB Ops data
   "PTO Complete",
   "Project Complete",
 ] as const;
@@ -86,20 +87,35 @@ export interface RunSummary {
 // =============================================================================
 
 const STAGE_NORMALIZE: Record<string, string> = {
+  // Survey
   "site survey": "Survey",
   "survey": "Survey",
+  // Design — the active PB Ops stage is "Design & Engineering"
   "design": "Design",
   "design approval": "Design",
+  "design & engineering": "Design",
+  "design and engineering": "Design",
+  "d&e": "Design",
+  // Permit — the active PB Ops stage is "Permitting & Interconnection"
   "permitting": "Permit",
   "permit": "Permit",
-  "interconnection": "Permit", // Treated alongside Permit for stuck-stage purposes
+  "interconnection": "Permit",
+  "permitting & interconnection": "Permit",
+  "permitting and interconnection": "Permit",
+  "p&i": "Permit",
+  // RTB
   "ready to build": "RTB",
   "rtb": "RTB",
+  // Install / Construction
   "construction": "Install",
   "install": "Install",
   "installation": "Install",
+  // Inspection
   "inspection": "Inspect",
+  // PTO + post-install
   "pto": "PTO",
+  "close out": "PTO", // post-install closeout — same bucket as PTO
+  "closeout": "PTO",
 };
 
 function normalizeStage(raw: string): string {
@@ -107,7 +123,7 @@ function normalizeStage(raw: string): string {
 }
 
 const PRE_CONSTRUCTION_STAGES = new Set(["Design", "Permit"]);
-const CONSTRUCTION_STAGES = new Set(["RTB", "Install", "Inspect"]);
+const CONSTRUCTION_STAGES = new Set(["RTB", "Install", "Inspect", "PTO"]); // PTO covers Close Out / post-install
 
 const TERMINAL_STAGES = new Set<string>(TERMINAL_STAGE_LIST);
 
@@ -172,18 +188,23 @@ function daysBetween(from: Date | null | undefined, to: Date = new Date()): numb
  * Resolve "days in current stage" from DealStatusSnapshot.
  *
  * Returns the number of days since the deal first appeared in its current
- * stage in the snapshot timeline. If the deal has only been in the current
- * stage for the snapshot history, falls back to days since the earliest
- * snapshot. Returns null if no snapshots exist for the deal.
+ * stage in the snapshot timeline. If the deal has been in the current stage
+ * the whole snapshot history, falls back to days since the earliest snapshot.
+ * Returns null if no snapshots exist for the deal.
+ *
+ * IMPORTANT: `currentStageId` is the **HubSpot stage ID** (e.g. "20461937"),
+ * NOT the human-readable name. `DealStatusSnapshot.dealStage` stores the ID,
+ * while `Deal.stage` stores the name — confusing but it's how PB Ops tracks
+ * it. Pass `Deal.stageId` here, not `Deal.stage`.
  */
 export async function daysInCurrentStage(
   dealId: string,
-  currentStage: string
+  currentStageId: string
 ): Promise<number | null> {
   if (!prisma) return null;
   // Most recent snapshot where stage was different from current.
   const lastDifferent = await prisma.dealStatusSnapshot.findFirst({
-    where: { dealId, dealStage: { not: currentStage } },
+    where: { dealId, dealStage: { not: currentStageId } },
     orderBy: { snapshotDate: "desc" },
     select: { snapshotDate: true },
   });
@@ -211,15 +232,15 @@ export async function ruleConstructionStageStuck(): Promise<RuleResult> {
   const deals = await prisma.deal.findMany({
     where: {
       ...ACTIVE_PROJECT_FILTER, stage: { not: "" } },
-    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, stageId: true },
   });
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
     if (!CONSTRUCTION_STAGES.has(normalizeStage(d.stage))) continue;
     if (isTerminal(d.stage)) continue;
-    const days = await daysInCurrentStage(d.hubspotDealId, d.stage);
-    if (days != null && days > 14) {
+    const days = await daysInCurrentStage(d.hubspotDealId, d.stageId);
+    if (days != null && days > 7) {
       matches.push({
         hubspotDealId: d.hubspotDealId,
         dealName: d.dealName,
@@ -243,15 +264,15 @@ export async function rulePreConstructionStageStuck(): Promise<RuleResult> {
   const deals = await prisma.deal.findMany({
     where: {
       ...ACTIVE_PROJECT_FILTER, stage: { not: "" } },
-    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true },
+    select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, stageId: true },
   });
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
     if (!PRE_CONSTRUCTION_STAGES.has(normalizeStage(d.stage))) continue;
     if (isTerminal(d.stage)) continue;
-    const days = await daysInCurrentStage(d.hubspotDealId, d.stage);
-    if (days != null && days > 21) {
+    const days = await daysInCurrentStage(d.hubspotDealId, d.stageId);
+    if (days != null && days > 14) {
       matches.push({
         hubspotDealId: d.hubspotDealId,
         dealName: d.dealName,
@@ -284,7 +305,7 @@ export async function rulePermitRejection(): Promise<RuleResult> {
   for (const d of deals) {
     if (isTerminal(d.stage)) continue;
     const daysSinceUpdate = daysBetween(d.updatedAt);
-    if (daysSinceUpdate != null && daysSinceUpdate >= 5) {
+    if (daysSinceUpdate != null && daysSinceUpdate >= 2) {
       matches.push({
         hubspotDealId: d.hubspotDealId,
         dealName: d.dealName,
@@ -317,7 +338,7 @@ export async function ruleIcRejection(): Promise<RuleResult> {
   for (const d of deals) {
     if (isTerminal(d.stage)) continue;
     const daysSinceUpdate = daysBetween(d.updatedAt);
-    if (daysSinceUpdate != null && daysSinceUpdate >= 5) {
+    if (daysSinceUpdate != null && daysSinceUpdate >= 2) {
       matches.push({
         hubspotDealId: d.hubspotDealId,
         dealName: d.dealName,
@@ -340,7 +361,7 @@ export async function ruleDesignRevisions(): Promise<RuleResult> {
 
   const deals = await prisma.deal.findMany({
     where: {
-      ...ACTIVE_PROJECT_FILTER, daRevisionCount: { gt: 3 } },
+      ...ACTIVE_PROJECT_FILTER, daRevisionCount: { gt: 2 } },
     select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, daRevisionCount: true },
   });
 
@@ -416,7 +437,8 @@ export async function ruleMissingAhj(): Promise<RuleResult> {
     where: {
       ...ACTIVE_PROJECT_FILTER,
       OR: [{ ahj: null }, { ahj: "" }],
-      isPermitSubmitted: false,
+      // Treat null as "not yet submitted" (deal-sync may leave booleans unset).
+      isPermitSubmitted: { not: true },
     },
     select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true },
   });
@@ -449,7 +471,8 @@ export async function ruleMissingUtility(): Promise<RuleResult> {
     where: {
       ...ACTIVE_PROJECT_FILTER,
       OR: [{ utility: null }, { utility: "" }],
-      isIcSubmitted: false,
+      // Treat null as "not yet submitted" (deal-sync may leave booleans unset).
+      isIcSubmitted: { not: true },
     },
     select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true },
   });
@@ -482,7 +505,7 @@ export async function ruleSurveyOutstanding(): Promise<RuleResult> {
   const start = Date.now();
   if (!prisma) return { rule: "survey-outstanding", matches: [], durationMs: 0 };
 
-  const cutoff = new Date(Date.now() - 7 * 86_400_000);
+  const cutoff = new Date(Date.now() - 3 * 86_400_000);
   const deals = await prisma.deal.findMany({
     where: {
       ...ACTIVE_PROJECT_FILTER,
@@ -496,7 +519,7 @@ export async function ruleSurveyOutstanding(): Promise<RuleResult> {
   for (const d of deals) {
     if (isTerminal(d.stage)) continue;
     const days = daysBetween(d.closeDate);
-    if (days == null || days < 7) continue;
+    if (days == null || days < 3) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,
@@ -516,7 +539,7 @@ export async function ruleDaSendOutstanding(): Promise<RuleResult> {
   const start = Date.now();
   if (!prisma) return { rule: "da-send-outstanding", matches: [], durationMs: 0 };
 
-  const cutoff = new Date(Date.now() - 5 * 86_400_000);
+  const cutoff = new Date(Date.now() - 2 * 86_400_000);
   const deals = await prisma.deal.findMany({
     where: {
       ...ACTIVE_PROJECT_FILTER,
@@ -530,7 +553,7 @@ export async function ruleDaSendOutstanding(): Promise<RuleResult> {
   for (const d of deals) {
     if (isTerminal(d.stage)) continue;
     const days = daysBetween(d.siteSurveyCompletionDate);
-    if (days == null || days < 5) continue;
+    if (days == null || days < 2) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,
@@ -550,12 +573,13 @@ export async function ruleDaApprovalOutstanding(): Promise<RuleResult> {
   const start = Date.now();
   if (!prisma) return { rule: "da-approval-outstanding", matches: [], durationMs: 0 };
 
-  const cutoff = new Date(Date.now() - 7 * 86_400_000);
+  const cutoff = new Date(Date.now() - 4 * 86_400_000);
   const deals = await prisma.deal.findMany({
     where: {
       ...ACTIVE_PROJECT_FILTER,
       designApprovalSentDate: { not: null, lt: cutoff },
-      isLayoutApproved: false,
+      // Treat null as "not yet approved" (deal-sync may leave booleans unset).
+      isLayoutApproved: { not: true },
     },
     select: { hubspotDealId: true, dealName: true, projectManager: true, stage: true, designApprovalSentDate: true, layoutStatus: true },
   });
@@ -566,7 +590,7 @@ export async function ruleDaApprovalOutstanding(): Promise<RuleResult> {
     // Don't double-flag rows that the change-order rule will catch.
     if (d.layoutStatus === "Pending Sales Changes") continue;
     const days = daysBetween(d.designApprovalSentDate);
-    if (days == null || days < 7) continue;
+    if (days == null || days < 4) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,
@@ -598,7 +622,7 @@ export async function ruleChangeOrderPending(): Promise<RuleResult> {
     // Use updatedAt as proxy for "how long has layoutStatus been Pending Sales Changes."
     // Imperfect (any unrelated field change resets the clock), but conservative.
     const daysSinceUpdate = daysBetween(d.updatedAt);
-    if (daysSinceUpdate == null || daysSinceUpdate < 5) continue;
+    if (daysSinceUpdate == null || daysSinceUpdate < 2) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,
@@ -618,7 +642,7 @@ export async function ruleInspectionOutstanding(): Promise<RuleResult> {
   const start = Date.now();
   if (!prisma) return { rule: "inspection-outstanding", matches: [], durationMs: 0 };
 
-  const cutoff = new Date(Date.now() - 14 * 86_400_000);
+  const cutoff = new Date(Date.now() - 7 * 86_400_000);
   const deals = await prisma.deal.findMany({
     where: {
       ...ACTIVE_PROJECT_FILTER,
@@ -633,7 +657,7 @@ export async function ruleInspectionOutstanding(): Promise<RuleResult> {
   for (const d of deals) {
     if (isTerminal(d.stage)) continue;
     const days = daysBetween(d.constructionCompleteDate);
-    if (days == null || days < 14) continue;
+    if (days == null || days < 7) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,
@@ -648,6 +672,119 @@ export async function ruleInspectionOutstanding(): Promise<RuleResult> {
   return { rule: "inspection-outstanding", matches, durationMs: Date.now() - start };
 }
 
+/**
+ * R15: OTHER / CRITICAL — deal flagged for shit-show meeting.
+ *
+ * Triggers when an `IdrMeetingItem.shitShowFlagged = true` exists for the
+ * deal AND not yet reviewed. The shit-show meeting is reserved for the
+ * worst projects — anything flagged there is a drop-everything signal.
+ */
+export async function ruleShitShowFlagged(): Promise<RuleResult> {
+  const start = Date.now();
+  if (!prisma) return { rule: "shit-show-flagged", matches: [], durationMs: 0 };
+
+  const items = await prisma.idrMeetingItem.findMany({
+    where: { shitShowFlagged: true, reviewed: false },
+    select: { id: true, dealId: true, shitShowReason: true },
+  });
+
+  if (items.length === 0) {
+    return { rule: "shit-show-flagged", matches: [], durationMs: Date.now() - start };
+  }
+
+  const dealIds = [...new Set(items.map(i => i.dealId))];
+  const deals = await prisma.deal.findMany({
+    where: { ...ACTIVE_PROJECT_FILTER, hubspotDealId: { in: dealIds } },
+    select: { hubspotDealId: true, dealName: true, projectManager: true },
+  });
+  const dealsById = new Map(deals.map(d => [d.hubspotDealId, d]));
+
+  const matches: RuleMatch[] = [];
+  for (const i of items) {
+    const d = dealsById.get(i.dealId);
+    if (!d) continue;
+    matches.push({
+      hubspotDealId: d.hubspotDealId,
+      dealName: d.dealName,
+      type: PmFlagType.OTHER,
+      severity: PmFlagSeverity.CRITICAL,
+      reason: `Flagged for shit-show meeting: ${i.shitShowReason || "(no reason given)"}`,
+      externalRef: `shit-show:${i.id}`, // one-shot per meeting item
+      assignedToUserId: await resolvePmUserId(d.projectManager),
+      metadata: { rule: "shit-show-flagged", meetingItemId: i.id },
+    });
+  }
+  return { rule: "shit-show-flagged", matches, durationMs: Date.now() - start };
+}
+
+/**
+ * R16: OTHER / CRITICAL — compound risk — deal already has 3+ open flags.
+ *
+ * Runs LAST so it can see all flags created earlier in this run plus any
+ * that were already in the queue. Adds a single CRITICAL meta-flag per
+ * deal to surface compound risk. Severity-sorts the existing flag types
+ * into the metadata so the PM can see why.
+ *
+ * Counts OPEN + ACKNOWLEDGED flags. Re-fires weekly via isoWeek if the
+ * deal is still piled up next week.
+ */
+export async function ruleCompoundRisk(): Promise<RuleResult> {
+  const start = Date.now();
+  if (!prisma) return { rule: "compound-risk", matches: [], durationMs: 0 };
+
+  // Count active flags per deal (OPEN + ACKNOWLEDGED).
+  const grouped = await prisma.pmFlag.groupBy({
+    by: ["hubspotDealId"],
+    where: { status: { in: ["OPEN", "ACKNOWLEDGED"] } },
+    _count: { _all: true },
+    having: { hubspotDealId: { _count: { gte: 3 } } },
+  });
+
+  if (grouped.length === 0) {
+    return { rule: "compound-risk", matches: [], durationMs: Date.now() - start };
+  }
+
+  const dealIds = grouped.map(g => g.hubspotDealId);
+  const deals = await prisma.deal.findMany({
+    where: { ...ACTIVE_PROJECT_FILTER, hubspotDealId: { in: dealIds } },
+    select: { hubspotDealId: true, dealName: true, projectManager: true },
+  });
+  const dealsById = new Map(deals.map(d => [d.hubspotDealId, d]));
+
+  // For each compound deal, gather the existing flag types/severities for the reason text.
+  const matches: RuleMatch[] = [];
+  for (const g of grouped) {
+    const d = dealsById.get(g.hubspotDealId);
+    if (!d) continue;
+
+    const flags = await prisma.pmFlag.findMany({
+      where: {
+        hubspotDealId: g.hubspotDealId,
+        status: { in: ["OPEN", "ACKNOWLEDGED"] },
+      },
+      select: { type: true, severity: true },
+    });
+
+    matches.push({
+      hubspotDealId: d.hubspotDealId,
+      dealName: d.dealName,
+      type: PmFlagType.OTHER,
+      severity: PmFlagSeverity.CRITICAL,
+      reason:
+        `Compound risk — ${g._count._all} active flags on this deal. ` +
+        `Types: ${[...new Set(flags.map(f => f.type))].join(", ")}.`,
+      externalRef: `compound-risk:${d.hubspotDealId}:${isoWeekKey()}`,
+      assignedToUserId: await resolvePmUserId(d.projectManager),
+      metadata: {
+        rule: "compound-risk",
+        flagCount: g._count._all,
+        flagTypes: [...new Set(flags.map(f => f.type))],
+      },
+    });
+  }
+  return { rule: "compound-risk", matches, durationMs: Date.now() - start };
+}
+
 // =============================================================================
 // Runner
 // =============================================================================
@@ -659,7 +796,7 @@ const ALL_RULES = [
   ruleIcRejection,               // R4
   ruleDesignRevisions,           // R5
   ruleInstallOverdue,            // R6
-  // R7 (customer complaint) — manual-only for v1
+  // R7 (manual customer complaint via RaiseFlagButton)
   ruleMissingAhj,                // R8
   ruleMissingUtility,            // R9
   ruleSurveyOutstanding,         // R10
@@ -667,6 +804,8 @@ const ALL_RULES = [
   ruleDaApprovalOutstanding,     // R12
   ruleChangeOrderPending,        // R13
   ruleInspectionOutstanding,     // R14
+  ruleShitShowFlagged,           // R15
+  ruleCompoundRisk,              // R16 — must run last, sees all other flags
 ] as const;
 
 /**
