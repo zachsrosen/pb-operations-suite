@@ -95,6 +95,12 @@ const SECTION_COLORS: Record<string, string> = {
   "Prototypes": "#ec4899",
   "API Shortcuts": "#06b6d4",
   "Legacy Dashboards": "#64748b",
+  "Action & Triage": "#ef4444",
+  "Pipeline & Workload": "#8b5cf6",
+  "Scheduling": "#3b82f6",
+  "Reviews": "#eab308",
+  "Metrics": "#06b6d4",
+  "Meetings": "#ec4899",
 };
 
 const DEFAULT_SECTION_COLOR = "#64748b";

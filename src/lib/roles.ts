@@ -59,6 +59,7 @@ const ADMIN: RoleDefinition = {
   visibleInPicker: true,
   suites: [
     "/suites/operations",
+    "/suites/project-management",
     "/suites/design-engineering",
     "/suites/permitting-interconnection",
     "/suites/intelligence",
@@ -93,6 +94,7 @@ const EXECUTIVE: RoleDefinition = {
   visibleInPicker: true,
   suites: [
     "/suites/operations",
+    "/suites/project-management",
     "/suites/design-engineering",
     "/suites/permitting-interconnection",
     "/suites/intelligence",
@@ -274,6 +276,7 @@ const PROJECT_MANAGER: RoleDefinition = {
   normalizesTo: "PROJECT_MANAGER",
   visibleInPicker: true,
   suites: [
+    "/suites/project-management",
     "/suites/operations",
     "/suites/design-engineering",
     "/suites/permitting-interconnection",
@@ -283,6 +286,7 @@ const PROJECT_MANAGER: RoleDefinition = {
   ],
   allowedRoutes: [
     "/",
+    "/suites/project-management",
     "/suites/operations",
     "/suites/design-engineering",
     "/suites/permitting-interconnection",
