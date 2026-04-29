@@ -91,6 +91,8 @@ export const queryKeys = {
     swaps: (status?: string) => ["on-call", "swaps", status] as const,
     pto: () => ["on-call", "pto"] as const,
     me: () => ["on-call", "me"] as const,
+    callLogs: (poolId?: string, from?: string, to?: string) =>
+      ["on-call", "call-logs", poolId, from, to] as const,
   },
   peDeals: {
     root: ["peDeals"] as const,
