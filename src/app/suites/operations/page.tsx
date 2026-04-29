@@ -197,17 +197,6 @@ const BASE_LINKS: SuitePageCard[] = [
     icon: "📋",
     section: "Communications",
   },
-
-  // ── PM Flags ──
-  {
-    href: "/dashboards/pm-action-queue",
-    title: "PM Action Queue",
-    description:
-      "Exception-based PM workflow — only flagged deals show up. Round-robin assignment from HubSpot workflows or manual escalations.",
-    tag: "PM FLAGS",
-    icon: "🚩",
-    section: "Project Management",
-  },
 ];
 
 const LINKS: SuitePageCard[] = BASE_LINKS.filter(

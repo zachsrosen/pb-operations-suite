@@ -81,7 +81,7 @@ export function PmFlagAssigned({
       </Section>
 
       <Text style={footer}>
-        You were auto-assigned via round-robin. Acknowledge or resolve the flag in PB Operations to detach.
+        You were assigned because you're the project manager on this deal. Acknowledge or resolve the flag in PB Operations to detach.
       </Text>
       <Text style={hidden}>{hubspotDealId}</Text>
     </EmailShell>
