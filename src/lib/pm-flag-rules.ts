@@ -178,7 +178,21 @@ async function getPmUserCaches(): Promise<{ byName: Map<string, string>; byOwner
 }
 
 function normalizePmName(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, " ");
+  // Aggressive normalization to survive small spelling differences between
+  // Deal.projectManager (HubSpot) and User.name (PB Ops):
+  //  - lowercase
+  //  - unicode hyphens → ASCII hyphen
+  //  - hyphens/underscores → space (so "Wooten-Sanford" matches "Wooten Sanford")
+  //  - strip remaining punctuation (periods, apostrophes, commas)
+  //  - collapse whitespace
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[‐-―]/g, "-")
+    .replace(/[-_]+/g, " ")
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
