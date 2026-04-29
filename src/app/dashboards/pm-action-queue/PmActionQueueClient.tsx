@@ -89,6 +89,11 @@ function statusBadge(status: string): string {
   }
 }
 
+function hubspotDealUrl(dealId: string): string {
+  const portal = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "21710069";
+  return `https://app.hubspot.com/contacts/${portal}/record/0-3/${dealId}`;
+}
+
 function timeAgo(iso: string): string {
   const ms = Date.now() - new Date(iso).getTime();
   const m = Math.floor(ms / 60000);
@@ -288,10 +293,21 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
 
 function FlagCard({ flag, onClick }: { flag: Flag; onClick: () => void }) {
   const dealLabel = flag.dealName ?? `Deal ${flag.hubspotDealId}`;
+  // Outer container is a div (not button) so we can nest a link without
+  // violating HTML interactive-element rules. Click anywhere except the
+  // HubSpot link opens the drawer.
   return (
-    <button
+    <div
       onClick={onClick}
-      className="w-full text-left bg-surface hover:bg-surface-2 transition-colors rounded-lg border border-t-border p-4 flex items-start gap-4"
+      role="button"
+      tabIndex={0}
+      onKeyDown={e => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className="w-full text-left bg-surface hover:bg-surface-2 transition-colors rounded-lg border border-t-border p-4 flex items-start gap-4 cursor-pointer"
     >
       <span className={`px-2 py-0.5 text-xs font-semibold rounded border ${severityBadge(flag.severity)} shrink-0 mt-0.5`}>
         {flag.severity}
@@ -299,6 +315,16 @@ function FlagCard({ flag, onClick }: { flag: Flag; onClick: () => void }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 flex-wrap">
           <span className="font-medium text-foreground truncate">{dealLabel}</span>
+          <a
+            href={hubspotDealUrl(flag.hubspotDealId)}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={e => e.stopPropagation()}
+            className="text-xs text-orange-400 hover:text-orange-300 underline-offset-2 hover:underline"
+            title="Open in HubSpot"
+          >
+            ↗ HubSpot
+          </a>
           <span className="text-xs text-muted">{humanize(flag.type)}</span>
         </div>
         <p className="text-sm text-muted mt-1 line-clamp-2">{flag.reason}</p>
@@ -309,7 +335,7 @@ function FlagCard({ flag, onClick }: { flag: Flag; onClick: () => void }) {
           {flag.raisedByUser && <span>by {flag.raisedByUser.name ?? flag.raisedByUser.email}</span>}
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -368,7 +394,18 @@ function FlagDrawer({
             <h2 className="text-lg font-semibold text-foreground truncate">
               {flag.dealName ?? `Deal ${flag.hubspotDealId}`}
             </h2>
-            <p className="text-sm text-muted mt-0.5">{humanize(flag.type)}</p>
+            <div className="flex items-center gap-3 mt-0.5">
+              <p className="text-sm text-muted">{humanize(flag.type)}</p>
+              <a
+                href={hubspotDealUrl(flag.hubspotDealId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-orange-400 hover:text-orange-300 underline-offset-2 hover:underline inline-flex items-center gap-1"
+                title="Open deal in HubSpot"
+              >
+                Open in HubSpot ↗
+              </a>
+            </div>
           </div>
           <button onClick={onClose} className="text-muted hover:text-foreground text-2xl leading-none">×</button>
         </div>
@@ -383,7 +420,12 @@ function FlagDrawer({
 
           <section className="grid grid-cols-2 gap-3 text-sm">
             <Field label="Deal" value={flag.dealName ?? `Deal ${flag.hubspotDealId}`} />
-            <Field label="HubSpot ID" value={flag.hubspotDealId} />
+            <Field
+              label="HubSpot ID"
+              value={flag.hubspotDealId}
+              href={hubspotDealUrl(flag.hubspotDealId)}
+            />
+            <Field label="Type" value={humanize(flag.type)} />
             <Field label="Assigned to" value={flag.assignedToUser?.name ?? flag.assignedToUser?.email ?? "Unassigned"} />
             <Field label="Raised by" value={flag.raisedByUser?.name ?? flag.raisedByUser?.email ?? "(system)"} />
             <Field label="Raised" value={new Date(flag.raisedAt).toLocaleString()} />
@@ -494,11 +536,22 @@ function FlagDrawer({
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({ label, value, href }: { label: string; value: string; href?: string }) {
   return (
     <div>
       <div className="text-xs text-muted uppercase tracking-wide">{label}</div>
-      <div className="text-foreground mt-0.5 break-words">{value}</div>
+      {href ? (
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-orange-400 hover:text-orange-300 hover:underline underline-offset-2 mt-0.5 break-words inline-block"
+        >
+          {value} ↗
+        </a>
+      ) : (
+        <div className="text-foreground mt-0.5 break-words">{value}</div>
+      )}
     </div>
   );
 }

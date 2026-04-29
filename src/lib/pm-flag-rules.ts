@@ -132,55 +132,105 @@ function isTerminal(stage: string): boolean {
 }
 
 /**
- * Cache of normalized PM-name → User.id mapping with a short TTL.
+ * Cache of (normalized PM-name → User.id) AND (hubspotOwnerId → User.id)
+ * with a short TTL.
  *
  * Live-mode evaluation runs on every page load — refreshing the user list
  * every time would be wasteful, but caching forever on a warm lambda would
  * leave PM assignments stale after a roster change. 5-minute TTL is the
  * compromise: cheap to build, fresh enough that PM moves propagate within
  * one cache window.
+ *
+ * The byOwnerId map exists because some `Deal.projectManager` values are
+ * HubSpot owner IDs (numeric strings) instead of names — data corruption
+ * upstream. Falling back to owner-id lookup keeps those flags assigned.
  */
 const PM_CACHE_TTL_MS = 5 * 60 * 1000;
-let _pmCache: Map<string, string> | null = null;
+let _pmCacheByName: Map<string, string> | null = null;
+let _pmCacheByOwnerId: Map<string, string> | null = null;
 let _pmCacheBuiltAt: number | null = null;
 
-async function getPmUserCache(): Promise<Map<string, string>> {
-  const now = Date.now();
-  if (_pmCache && _pmCacheBuiltAt && now - _pmCacheBuiltAt < PM_CACHE_TTL_MS) {
-    return _pmCache;
-  }
-  if (!prisma) return new Map();
+async function buildPmUserCache(): Promise<{ byName: Map<string, string>; byOwnerId: Map<string, string> }> {
+  if (!prisma) return { byName: new Map(), byOwnerId: new Map() };
   const users = await prisma.user.findMany({
-    where: { name: { not: null } },
-    select: { id: true, name: true },
+    where: { OR: [{ name: { not: null } }, { hubspotOwnerId: { not: null } }] },
+    select: { id: true, name: true, hubspotOwnerId: true },
   });
-  const m = new Map<string, string>();
+  const byName = new Map<string, string>();
+  const byOwnerId = new Map<string, string>();
   for (const u of users) {
-    if (u.name) m.set(normalizePmName(u.name), u.id);
+    if (u.name) byName.set(normalizePmName(u.name), u.id);
+    if (u.hubspotOwnerId) byOwnerId.set(u.hubspotOwnerId, u.id);
   }
-  _pmCache = m;
+  return { byName, byOwnerId };
+}
+
+async function getPmUserCaches(): Promise<{ byName: Map<string, string>; byOwnerId: Map<string, string> }> {
+  const now = Date.now();
+  if (_pmCacheByName && _pmCacheByOwnerId && _pmCacheBuiltAt && now - _pmCacheBuiltAt < PM_CACHE_TTL_MS) {
+    return { byName: _pmCacheByName, byOwnerId: _pmCacheByOwnerId };
+  }
+  const built = await buildPmUserCache();
+  _pmCacheByName = built.byName;
+  _pmCacheByOwnerId = built.byOwnerId;
   _pmCacheBuiltAt = now;
-  return m;
+  return built;
 }
 
 function normalizePmName(name: string): string {
-  return name.trim().toLowerCase().replace(/\s+/g, " ");
+  // Aggressive normalization to survive small spelling differences between
+  // Deal.projectManager (HubSpot) and User.name (PB Ops):
+  //  - lowercase
+  //  - unicode hyphens → ASCII hyphen
+  //  - hyphens/underscores → space (so "Wooten-Sanford" matches "Wooten Sanford")
+  //  - strip remaining punctuation (periods, apostrophes, commas)
+  //  - collapse whitespace
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[‐-―]/g, "-")
+    .replace(/[-_]+/g, " ")
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
  * Map a deal's PM (free-text from HubSpot) to a User.id.
  *
- * Returns null if no match — caller's createFlag will fall back to
- * round-robin (or leave unassigned if nobody has the PROJECT_MANAGER role).
+ * Two lookup paths in order:
+ *   1. Name match against `User.name` (case-insensitive, whitespace-collapsed)
+ *   2. If the value looks like a HubSpot owner ID (all-digit string),
+ *      match against `User.hubspotOwnerId`.
+ *
+ * Returns null if neither path resolves — caller's createFlag falls back
+ * to round-robin (or leaves unassigned if nobody has PROJECT_MANAGER role).
  */
 async function resolvePmUserId(projectManager: string | null | undefined): Promise<string | null> {
   if (!projectManager) return null;
-  const cache = await getPmUserCache();
-  return cache.get(normalizePmName(projectManager)) ?? null;
+  const trimmed = projectManager.trim();
+  if (!trimmed) return null;
+
+  const { byName, byOwnerId } = await getPmUserCaches();
+
+  // Path 1: name match.
+  const byNameHit = byName.get(normalizePmName(trimmed));
+  if (byNameHit) return byNameHit;
+
+  // Path 2: owner-id fallback for data-corrupted projectManager values.
+  if (/^\d+$/.test(trimmed)) {
+    return byOwnerId.get(trimmed) ?? null;
+  }
+
+  return null;
 }
 
 /** Reset PM cache between runs (test-only). */
-export function _resetPmCache() { _pmCache = null; _pmCacheBuiltAt = null; }
+export function _resetPmCache() {
+  _pmCacheByName = null;
+  _pmCacheByOwnerId = null;
+  _pmCacheBuiltAt = null;
+}
 
 function daysBetween(from: Date | null | undefined, to: Date = new Date()): number | null {
   if (!from) return null;
@@ -894,7 +944,7 @@ export type { Deal };
 // Live-mode evaluation (page-load triggered)
 // =============================================================================
 
-import { autoResolveFlag, reopenFlag } from "@/lib/pm-flags";
+import { autoResolveFlag, rebalanceAssignment, reopenFlag } from "@/lib/pm-flags";
 import { PmFlagStatus as _PmFlagStatusEnum } from "@/generated/prisma/enums";
 
 const PHASE_1_RULES = [
@@ -929,6 +979,7 @@ export interface PhaseSummary {
   created: number;
   reopened: number;
   autoResolved: number;
+  rebalanced: number; // existing OPEN/ACK flag's assignee was updated to track deal PM change
   noOp: number;
   errors: Array<{ rule: string; dealId?: string; error: string }>;
   byRule: Array<{ rule: string; matches: number; durationMs: number }>;
@@ -979,6 +1030,7 @@ async function reconcilePhase(
     created: 0,
     reopened: 0,
     autoResolved: 0,
+    rebalanced: 0,
     noOp: 0,
     errors: [],
     byRule: [],
@@ -1028,7 +1080,7 @@ async function reconcilePhase(
         })),
       ],
     },
-    select: { id: true, externalRef: true, status: true, hubspotDealId: true },
+    select: { id: true, externalRef: true, status: true, hubspotDealId: true, assignedToUserId: true },
   });
 
   const existingByRef = new Map<string, typeof existing[0]>();
@@ -1078,8 +1130,20 @@ async function reconcilePhase(
       continue;
     }
 
-    // OPEN, ACKNOWLEDGED, or CANCELLED — no-op.
-    summary.noOp++;
+    // OPEN or ACKNOWLEDGED with matching rule — auto-rebalance assignee
+    // if the deal's PM has changed since the flag was raised. CANCELLED
+    // stays no-op (admin override is sticky).
+    if (
+      existingRow.status === _PmFlagStatusEnum.OPEN
+      || existingRow.status === _PmFlagStatusEnum.ACKNOWLEDGED
+    ) {
+      const result = await rebalanceAssignment(existingRow.id, spec.assignedToUserId);
+      if (result.rebalanced) summary.rebalanced++;
+      else summary.noOp++;
+    } else {
+      // CANCELLED — sticky.
+      summary.noOp++;
+    }
   }
 
   // 4. Auto-resolve flags whose externalRef belongs to this phase's rules
