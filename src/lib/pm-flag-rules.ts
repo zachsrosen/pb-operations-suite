@@ -14,7 +14,6 @@
  */
 
 import { prisma } from "@/lib/db";
-import { batchSyncPipeline } from "@/lib/deal-sync";
 import { DEAL_STAGE_MAP, searchWithRetry } from "@/lib/hubspot";
 import { createFlag } from "@/lib/pm-flags";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
@@ -1143,11 +1142,8 @@ const PHASE_2_RULES = [
   ruleCompoundRisk, // depends on Phase 1 reconciled state
 ] as const;
 
-const LIVE_EVAL_PROJECT_SYNC_TIMEOUT_MS = 8_000;
-
 export interface LiveEvalSummary {
   durationMs: number;
-  projectMirrorRefreshed: boolean;
   phase1: PhaseSummary;
   phase2: PhaseSummary;
 }
@@ -1184,43 +1180,15 @@ export interface PhaseSummary {
  * queue. Wrapping in 30s timeout + try/catch is the caller's responsibility
  * for graceful degradation.
  */
-async function refreshProjectMirrorForLiveEval(): Promise<boolean> {
-  const timeoutSentinel = Symbol("pm-live-sync-timeout");
-  const syncDeadline = new Promise<typeof timeoutSentinel>((resolve) =>
-    setTimeout(() => resolve(timeoutSentinel), LIVE_EVAL_PROJECT_SYNC_TIMEOUT_MS)
-  );
-
-  try {
-    const result = await Promise.race([
-      batchSyncPipeline("PROJECT", { incremental: true }),
-      syncDeadline,
-    ]);
-
-    if (result === timeoutSentinel) {
-      console.warn(
-        `[pm-flags] PROJECT incremental sync timed out after ${LIVE_EVAL_PROJECT_SYNC_TIMEOUT_MS}ms before live evaluation`
-      );
-      return false;
-    }
-
-    return true;
-  } catch (err) {
-    console.error("[pm-flags] PROJECT incremental sync failed before live evaluation", err);
-    return false;
-  }
-}
-
 export async function evaluateLiveFlags(): Promise<LiveEvalSummary> {
   const overallStart = Date.now();
   const evalStartedAt = new Date();
-  const projectMirrorRefreshed = await refreshProjectMirrorForLiveEval();
 
   const phase1 = await reconcilePhase("phase1", PHASE_1_RULES, evalStartedAt);
   const phase2 = await reconcilePhase("phase2", PHASE_2_RULES, evalStartedAt);
 
   return {
     durationMs: Date.now() - overallStart,
-    projectMirrorRefreshed,
     phase1,
     phase2,
   };
