@@ -3,9 +3,15 @@ import { getActualCommsUser } from "@/lib/comms-auth";
 import { prisma } from "@/lib/db";
 import { checkGmailChanges, fetchGmailPage } from "@/lib/comms-gmail";
 import { fetchChatMessages, CommsChatMessage } from "@/lib/comms-chat";
-import { categorizeMessages, CategorizedMessage } from "@/lib/comms-categorize";
+import { categorizeMessages, CategorizedMessage, HUBSPOT_DOMAINS } from "@/lib/comms-categorize";
 
 type UnifiedMessage = CategorizedMessage | (CommsChatMessage & { category: "general" });
+
+function buildGmailQuery(userQuery?: string): string {
+  const fromClauses = HUBSPOT_DOMAINS.map((d) => `from:${d}`).join(" ");
+  const base = `{in:inbox ${fromClauses}}`;
+  return userQuery ? `${base} ${userQuery}` : base;
+}
 
 export async function GET(req: NextRequest) {
   const { user, blocked } = await getActualCommsUser();
@@ -56,7 +62,7 @@ export async function GET(req: NextRequest) {
     if (!gmailUnchanged) {
       const gmailResult = await fetchGmailPage(user.id, {
         pageToken: page,
-        query: query ? `in:inbox ${query}` : "in:inbox",
+        query: buildGmailQuery(query),
       });
 
       if ("disconnected" in gmailResult) {
