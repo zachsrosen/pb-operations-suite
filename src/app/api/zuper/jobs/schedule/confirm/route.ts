@@ -279,6 +279,7 @@ export async function POST(request: NextRequest) {
     const additionalNotes = typeof body?.additionalNotes === "string"
       ? body.additionalNotes.trim().slice(0, MAX_INSTALLER_NOTE_LENGTH)
       : "";
+    const schedulerEmail = session.user.email;
 
     if (!scheduleRecordId) {
       return NextResponse.json(
@@ -433,7 +434,7 @@ export async function POST(request: NextRequest) {
           `Error: ${errorMessage}`,
         ].filter(Boolean).join("\n"),
         pageUrl: getSchedulerPageUrl(scheduleType),
-        reporterEmail: session.user.email,
+        reporterEmail: schedulerEmail,
         reporterName: session.user.name || undefined,
         entityId: record.projectId,
         entityName: record.projectName,
