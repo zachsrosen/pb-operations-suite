@@ -518,6 +518,10 @@ export async function POST(request: NextRequest) {
     let boundaryStartDateForHubSpot: string | undefined;
     let boundaryEndDateForHubSpot: string | undefined;
     let previousSurveyorFromJob: SurveyorInfo | null = null;
+    let confirmedAssignedUserName = record.assignedUser || undefined;
+    let confirmedAssignedUserUid = resolvedUserUids[0] || record.assignedUserUid || undefined;
+    let confirmedAssignedTeamUid = resolvedTeamUid || record.assignedTeamUid || undefined;
+    let confirmedZuperAssigned = resolvedUserUids.length > 0 || !!record.assignedUserUid;
 
     try {
       // Category config for matching
@@ -710,6 +714,27 @@ export async function POST(request: NextRequest) {
 
         if (rescheduleResult.type === "success") {
           zuperJobUid = existingJob.job_uid;
+          const confirmedJobResult = await zuper.getJob(existingJob.job_uid);
+          if (confirmedJobResult.type === "success" && confirmedJobResult.data) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const assignedEntries = ((confirmedJobResult.data as any)?.assigned_to || []) as Array<any>;
+            const preferredAssignment =
+              assignedEntries.find((entry) => entry?.is_primary) ||
+              assignedEntries[0];
+            const confirmedUser = preferredAssignment?.user;
+            const confirmedTeam = preferredAssignment?.team;
+            const liveAssignedUserUid = String(confirmedUser?.user_uid || "").trim();
+            const liveAssignedTeamUid = String(confirmedTeam?.team_uid || "").trim();
+            const liveAssignedUserName = [confirmedUser?.first_name, confirmedUser?.last_name]
+              .filter(Boolean)
+              .join(" ")
+              .trim();
+
+            if (liveAssignedUserName) confirmedAssignedUserName = liveAssignedUserName;
+            if (liveAssignedUserUid) confirmedAssignedUserUid = liveAssignedUserUid;
+            if (liveAssignedTeamUid) confirmedAssignedTeamUid = liveAssignedTeamUid;
+            confirmedZuperAssigned = assignedEntries.length > 0;
+          }
           if (scheduleType === "installation") {
             const installerNote = extractInstallerNote(effectiveNotes);
             if (installerNote) {
@@ -766,6 +791,10 @@ export async function POST(request: NextRequest) {
         status: "scheduled",
         zuperSynced: true,
         zuperJobUid: zuperJobUid || undefined,
+        assignedUser: confirmedAssignedUserName,
+        assignedUserUid: confirmedAssignedUserUid || null,
+        assignedTeamUid: confirmedAssignedTeamUid || null,
+        zuperAssigned: confirmedZuperAssigned,
         zuperError: null,
         notes: effectiveNotes
           ? effectiveNotes.replace("[TENTATIVE]", "[CONFIRMED]").replace("[PENDING_ZUPER]", "[CONFIRMED]")
