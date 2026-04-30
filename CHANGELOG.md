@@ -4,6 +4,68 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-04-30
+
+### PM Accountability & Flags (Major)
+- Exception-based PM assignment system: only the deals that need a PM get flagged, replacing blanket assignment
+- Live mode — page-load evaluation replaces daily cron so flags reflect current HubSpot state
+- HubSpot deal links + owner-id assignment fallback + missing-PM seed for new deals
+- Null-safe booleans, aggressive thresholds, stage-id fix, compound-risk + shit-show rules
+- Kill switch + scope guards + assign-by-PM (urgent) override path
+- PM Accountability dashboard + weekly digest (Phase 1)
+- PM queue: milestone evaluation fix, reconciliation moved off page load, accurate at read time
+- Assignment copy updated to reflect deal-PM as primary
+
+### Project Management Suite
+- New Project Management Suite landing page
+- Dropped Project Management + Equipment Backlog cards from PM suite (consolidation)
+
+### On-Call Electrician System (Major)
+- Aligned with Tracey's Apr 28 go-live policy + per-state Google Calendar
+- Staged Google Calendar without invites; flipped on later via `calendar.events` scope (manual calendar creation required)
+- Emergency call log captured by on-call electricians, moved to main page and relocated to Ops suite (open to all roles)
+- Admin call logging dashboard + HR sheet export
+- Prefill dispatch timestamps and data-driven "Schedule starts" message from `pool.startDate`
+- Granted VIEWER role access to `/dashboards/on-call`
+- Removed stale `CallLogModal` + `CallLogList` imports from `OnCallMeClient`
+
+### Shit Show Meeting Hub (Major)
+- New meeting hub for triaging at-risk projects in real time
+- Auto-snapshot on session create, always-on add button, refresh button (UX polish)
+- IDR snapshot helpers reused for owners + statuses + equipment
+- Queue decoupled from active session so issues persist across meetings
+
+### SOP System Overhaul (Major)
+- TipTap WYSIWYG editor replaces raw HTML CodeMirror for non-technical authors
+- Auto-link `<code>/route</code>` mentions to actual app pages
+- Tech Ops tab split into Design / Permitting / Interconnection
+- Role-gated SOP tabs and sections — stop info leaking to wrong teams
+- Submit-a-new-SOP feature with admin review queue
+- Drafts tab with PM Guide rewrite + Pipeline Overview
+- Hub-mode visibility flipped — SOP open by default
+- New Executive + Accounting + Sales & Marketing tabs (role-gated)
+- Meta-SOP — "How to Use the SOP Guide"
+- Action Queues tab + Tools extensions (Workflow Builder, Property Drawer, Deal Detail, Equipment Backlog)
+- Expanded Tools tab — Pricing, P&I Hubs, Surveyor, Schedule, Optimizer, Map
+- Aligned Pipeline Overview draft to the actual 8 deal stages
+
+### Office Performance
+- Combined SLO + Camarillo into a single California dashboard
+- Fixed California goals-pipeline route 404
+
+### Scheduler
+- Grouped scheduler overlay filters
+- Flag overdue/completed Zuper overlay jobs in scheduler view
+- Handle pending Zuper survey holds locally (no API round-trip)
+- Pending Zuper slot fallback + downstream follow-up handling
+
+### Bug Fixes
+- EagleView reads deal-style HubSpot address fields (was missing addresses on deal-only records)
+- Catalog sync routes spec changes via `meta_data` on Zuper update path
+- Clarified `DC_QUALIFYING_MODULE_BRANDS` empty by design (pricing docs)
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
