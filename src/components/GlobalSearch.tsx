@@ -64,6 +64,9 @@ const DASHBOARD_LINKS = [
   // Admin
   { name: "Zuper Compliance", path: "/dashboards/zuper-compliance", description: "Per-user compliance scorecards" },
   { name: "Zuper Status Comparison", path: "/dashboards/zuper-status-comparison", description: "Compare Zuper job statuses with HubSpot" },
+  { name: "Testing Suite", path: "/suites/testing", description: "Admin-only dashboards and prototypes under review" },
+  { name: "AI Skills", path: "/dashboards/ai", description: "AI-powered tools under operational review" },
+  { name: "Product Catalog Comparison", path: "/dashboards/product-comparison", description: "Cross-system product matching and linking" },
   { name: "Page Directory", path: "/admin/directory", description: "Complete URL directory with role access mapping" },
   // Help & Info
   { name: "Dashboard Guide", path: "/guide", description: "How to use each dashboard" },
@@ -93,14 +96,18 @@ export function GlobalSearch() {
   const modKey = isMac ? "\u2318" : "Ctrl";
   const { data: session, status: sessionStatus } = useSession();
   const sessionUser = session?.user as { roles?: string[]; role?: string } | undefined;
-  const userRoles = (sessionUser?.roles?.length ? sessionUser.roles : sessionUser?.role ? [sessionUser.role] : []) as UserRole[];
 
   // Filter links to only those any of the user's roles can access
   const accessibleLinks = useMemo(() => {
+    const userRoles = (sessionUser?.roles?.length
+      ? sessionUser.roles
+      : sessionUser?.role
+        ? [sessionUser.role]
+        : []) as UserRole[];
     // Fail closed while session/role is loading to avoid briefly showing restricted pages
     if (sessionStatus !== "authenticated" || userRoles.length === 0) return [];
     return DASHBOARD_LINKS.filter((d) => userRoles.some((r) => canAccessRoute(r, d.path)));
-  }, [sessionStatus, userRoles]);
+  }, [sessionStatus, sessionUser?.role, sessionUser?.roles]);
 
   // Filter dashboards by query
   const filteredDashboards = query.length > 0

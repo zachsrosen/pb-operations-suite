@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ReactNode, useCallback } from "react";
+import { ReactNode, useCallback, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { ThemeToggle } from "./ThemeToggle";
 import PhotonBrothersBadge from "./PhotonBrothersBadge";
@@ -20,7 +20,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/inspection-scheduler": { href: "/suites/operations", label: "Operations" },
   "/dashboards/timeline": { href: "/suites/operations", label: "Operations" },
   "/dashboards/equipment-backlog": { href: "/suites/operations", label: "Operations" },
-  "/dashboards/inventory": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/inventory": { href: "/suites/testing", label: "Testing" },
   "/dashboards/bom": { href: "/suites/operations", label: "Operations" },
   "/dashboards/bom/history": { href: "/suites/operations", label: "Operations" },
   "/dashboards/catalog/review": { href: "/suites/operations", label: "Operations" },
@@ -63,26 +63,26 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/ahj-tracker": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/utility-tracker": { href: "/suites/permitting-interconnection", label: "P&I" },
   "/dashboards/pi-timeline": { href: "/suites/permitting-interconnection", label: "P&I" },
-  // Intelligence Suite
-  "/dashboards/at-risk": { href: "/suites/intelligence", label: "Intelligence" },
-  "/dashboards/qc": { href: "/suites/intelligence", label: "Intelligence" },
-  "/dashboards/alerts": { href: "/suites/intelligence", label: "Intelligence" },
-  "/dashboards/pipeline": { href: "/suites/intelligence", label: "Intelligence" },
-  "/dashboards/optimizer": { href: "/suites/intelligence", label: "Intelligence" },
-  "/dashboards/pe": { href: "/suites/intelligence", label: "Intelligence" },
+  // Intelligence dashboards no longer have a public suite landing.
+  "/dashboards/at-risk": { href: "/", label: "Home" },
+  "/dashboards/qc": { href: "/", label: "Home" },
+  "/dashboards/alerts": { href: "/", label: "Home" },
+  "/dashboards/pipeline": { href: "/", label: "Home" },
+  "/dashboards/optimizer": { href: "/", label: "Home" },
+  "/dashboards/pe": { href: "/suites/accounting", label: "Accounting" },
   // Accounting Suite
   "/dashboards/pe-deals": { href: "/suites/accounting", label: "Accounting" },
   "/dashboards/pricing-calculator": { href: "/suites/accounting", label: "Accounting" },
-  "/dashboards/sales": { href: "/suites/intelligence", label: "Intelligence" },
-  "/dashboards/project-management": { href: "/suites/intelligence", label: "Intelligence" },
+  "/dashboards/sales": { href: "/suites/sales-marketing", label: "Sales & Marketing" },
+  "/dashboards/project-management": { href: "/suites/project-management", label: "Project Management" },
   "/dashboards/design-engineering": { href: "/suites/design-engineering", label: "D&E" },
   "/dashboards/permitting-interconnection": { href: "/suites/permitting-interconnection", label: "P&I" },
   // Executive Suite
-  "/dashboards/capacity": { href: "/suites/executive", label: "Executive" },
-  "/dashboards/command-center": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/capacity": { href: "/suites/testing", label: "Testing" },
+  "/dashboards/command-center": { href: "/suites/testing", label: "Testing" },
   "/dashboards/revenue": { href: "/suites/executive", label: "Executive" },
   "/dashboards/executive": { href: "/suites/executive", label: "Executive" },
-  "/dashboards/locations": { href: "/suites/executive", label: "Executive" },
+  "/dashboards/locations": { href: "/suites/testing", label: "Testing" },
   "/dashboards/executive-calendar": { href: "/suites/executive", label: "Executive" },
   "/dashboards/forecast-accuracy": { href: "/suites/executive", label: "Executive" },
   "/dashboards/forecast-timeline": { href: "/suites/executive", label: "Executive" },
@@ -105,14 +105,14 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/roofing": { href: "/suites/dnr-roofing", label: "D&R + Roofing" },
   "/dashboards/roofing-scheduler": { href: "/suites/dnr-roofing", label: "D&R + Roofing" },
   // Admin Suite
-  "/dashboards/zuper-status-comparison": { href: "/admin", label: "Admin" },
+  "/dashboards/zuper-status-comparison": { href: "/suites/testing", label: "Testing" },
   // Design Reviews (dynamic: /dashboards/reviews/:dealId)
   "/dashboards/reviews": { href: "/suites/design-engineering", label: "D&E" },
-  "/dashboards/zuper-compliance": { href: "/suites/executive", label: "Executive" },
-  "/dashboards/product-comparison": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/zuper-compliance": { href: "/suites/testing", label: "Testing" },
+  "/dashboards/product-comparison": { href: "/suites/testing", label: "Testing" },
   "/dashboards/comms": { href: "/", label: "Home" },
-  "/dashboards/mobile": { href: "/admin", label: "Admin" },
-  "/dashboards/ai": { href: "/", label: "Home" },
+  "/dashboards/mobile": { href: "/suites/testing", label: "Testing" },
+  "/dashboards/ai": { href: "/suites/testing", label: "Testing" },
   // Ops metrics + catalog comparison
   "/dashboards/survey-metrics": { href: "/suites/operations", label: "Operations" },
   "/dashboards/construction-metrics": { href: "/suites/operations", label: "Operations" },
@@ -169,8 +169,15 @@ interface DashboardShellProps {
 }
 
 function StalenessIndicator({ syncMeta }: { syncMeta: SyncMeta }) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const id = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(id);
+  }, []);
+
   const minutesAgo = Math.floor(
-    (Date.now() - new Date(syncMeta.lastSyncedAt).getTime()) / 60000
+    (now - new Date(syncMeta.lastSyncedAt).getTime()) / 60000
   );
 
   let dotColor: string;
@@ -198,7 +205,6 @@ export default function DashboardShell({
   title,
   subtitle,
   accentColor = "orange",
-  dealId,
   headerRight,
   children,
   breadcrumbs,

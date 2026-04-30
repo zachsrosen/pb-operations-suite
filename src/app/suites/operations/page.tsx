@@ -148,14 +148,6 @@ const BASE_LINKS: SuitePageCard[] = [
 
   // ── Catalog & Inventory ──
   {
-    href: "/dashboards/inventory",
-    title: "Inventory Hub",
-    description: "Warehouse stock levels, receiving, and demand vs. supply gap analysis.",
-    tag: "INVENTORY",
-    icon: "🏭",
-    section: "Catalog & Inventory",
-  },
-  {
     href: "/dashboards/catalog",
     title: "Catalog Management",
     description: "Manage products, sync health, pending approvals, and deduplication.",
@@ -171,15 +163,6 @@ const BASE_LINKS: SuitePageCard[] = [
     icon: "📥",
     section: "Catalog & Inventory",
   },
-  {
-    href: "/dashboards/product-comparison",
-    title: "Product Catalog Comparison",
-    description: "Match and link Internal, HubSpot, Zuper, and Zoho products.",
-    tag: "CATALOG",
-    icon: "🔗",
-    section: "Catalog & Inventory",
-  },
-
   // ── Communications ──
   {
     href: "/dashboards/comms",

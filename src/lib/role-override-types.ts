@@ -44,18 +44,20 @@ export type BadgeColor = (typeof BADGE_COLOR_OPTIONS)[number];
 
 /**
  * The full set of suite hrefs the editor offers as checkbox options. Mirrors
- * the 8 suite directories under src/app/suites/. New suites must be added
+ * the suite directories under src/app/suites/. New suites must be added
  * here AND to src/lib/suite-nav.ts's canonical list.
  */
 export const SUITE_OPTIONS = [
   "/suites/operations",
+  "/suites/project-management",
   "/suites/design-engineering",
   "/suites/permitting-interconnection",
+  "/suites/testing",
   "/suites/service",
   "/suites/dnr-roofing",
-  "/suites/intelligence",
   "/suites/executive",
   "/suites/accounting",
+  "/suites/sales-marketing",
 ] as const;
 
 export const SCOPE_VALUES = ["global", "location", "owner"] as const;

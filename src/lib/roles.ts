@@ -47,7 +47,8 @@ export interface RoleDefinition {
 // ADMIN_ONLY routes are stripped from every canonical role below — they're
 // dead entries per ROLE_PERMISSIONS (short-circuited by canAccessRoute).
 // Kept here as documentation of the sentinel list:
-// ["/admin", "/api/admin", "/dashboards/zuper-status-comparison",
+// ["/admin", "/api/admin", "/suites/testing", "/suites/intelligence",
+//  "/dashboards/zuper-status-comparison", "/dashboards/zuper-compliance",
 //  "/dashboards/product-comparison", "/dashboards/mobile", "/dashboards/inventory",
 //  "/dashboards/catalog", "/dashboards/command-center", "/dashboards/capacity",
 //  "/dashboards/locations", "/api/chat"]
@@ -62,7 +63,7 @@ const ADMIN: RoleDefinition = {
     "/suites/project-management",
     "/suites/design-engineering",
     "/suites/permitting-interconnection",
-    "/suites/intelligence",
+    "/suites/testing",
     "/suites/service",
     "/suites/dnr-roofing",
     "/suites/executive",
@@ -97,7 +98,6 @@ const EXECUTIVE: RoleDefinition = {
     "/suites/project-management",
     "/suites/design-engineering",
     "/suites/permitting-interconnection",
-    "/suites/intelligence",
     "/suites/service",
     "/suites/dnr-roofing",
     "/suites/executive",
@@ -129,7 +129,6 @@ const OPERATIONS_MANAGER: RoleDefinition = {
   visibleInPicker: true,
   suites: [
     "/suites/operations",
-    "/suites/intelligence",
     "/suites/service",
     "/suites/dnr-roofing",
   ],
@@ -138,7 +137,6 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/suites/operations",
     "/suites/service",
     "/suites/dnr-roofing",
-    "/suites/intelligence",
     "/dashboards/scheduler",
     "/dashboards/forecast-schedule",
     "/dashboards/site-survey-scheduler",
@@ -161,7 +159,6 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/dashboards/bom",
     "/dashboards/bom/history",
     "/dashboards/pricing-calculator",
-    "/dashboards/ai",
     "/dashboards/dnr",
     "/dashboards/roofing",
     "/dashboards/roofing-scheduler",
@@ -186,7 +183,6 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     "/dashboards/forecast-accuracy",
     "/dashboards/forecast-timeline",
     "/dashboards/preconstruction-metrics",
-    "/dashboards/zuper-compliance",
     "/dashboards/design-pipeline-funnel",
     "/dashboards/territory-map",
     "/api/territory-map",
@@ -272,7 +268,7 @@ const OPERATIONS_MANAGER: RoleDefinition = {
 
 const PROJECT_MANAGER: RoleDefinition = {
   label: "Project Manager",
-  description: "Can access Operations, D&E, P&I, and Intelligence Suites",
+  description: "Can access Operations, D&E, P&I, and service suites",
   normalizesTo: "PROJECT_MANAGER",
   visibleInPicker: true,
   suites: [
@@ -280,7 +276,6 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/suites/operations",
     "/suites/design-engineering",
     "/suites/permitting-interconnection",
-    "/suites/intelligence",
     "/suites/service",
     "/suites/dnr-roofing",
   ],
@@ -292,7 +287,6 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/suites/permitting-interconnection",
     "/suites/service",
     "/suites/dnr-roofing",
-    "/suites/intelligence",
     "/suites/executive",
     "/dashboards/scheduler",
     "/dashboards/forecast-schedule",
@@ -314,7 +308,6 @@ const PROJECT_MANAGER: RoleDefinition = {
     "/dashboards/bom",
     "/dashboards/bom/history",
     "/dashboards/pricing-calculator",
-    "/dashboards/ai",
     "/dashboards/dnr",
     "/dashboards/roofing",
     "/dashboards/roofing-scheduler",
@@ -740,7 +733,6 @@ const TECH_OPS: RoleDefinition = {
     "/dashboards/inspections",
     "/api/install-review",
     "/api/solar",
-    "/dashboards/ai",
     "/sop",
     "/api/sop",
     "/api/forecasting",
@@ -1011,13 +1003,12 @@ const INTERCONNECT: RoleDefinition = {
 
 const INTELLIGENCE: RoleDefinition = {
   label: "Intelligence",
-  description: "Only access to Intelligence Suite (analytics, QC, forecasting)",
+  description: "Dashboard-only intelligence access (analytics, QC, forecasting)",
   normalizesTo: "INTELLIGENCE",
   visibleInPicker: true,
-  suites: ["/suites/intelligence"],
+  suites: [],
   allowedRoutes: [
     "/",
-    "/suites/intelligence",
     "/dashboards/qc",
     "/dashboards/at-risk",
     "/dashboards/alerts",
@@ -1218,7 +1209,6 @@ const SALES_MANAGER: RoleDefinition = {
   allowedRoutes: [
     "/",
     "/suites/operations",
-    "/suites/intelligence",
     "/suites/executive",
     "/suites/sales-marketing",
     "/dashboards/sales",
@@ -1550,7 +1540,10 @@ export const ROLES: Record<UserRole, RoleDefinition> = {
 export const ADMIN_ONLY_ROUTES: string[] = [
   "/admin",
   "/api/admin",
+  "/suites/testing",
+  "/suites/intelligence",
   "/dashboards/zuper-status-comparison",
+  "/dashboards/zuper-compliance",
   "/dashboards/product-comparison",
   "/dashboards/mobile",
   "/dashboards/inventory",
@@ -1558,6 +1551,7 @@ export const ADMIN_ONLY_ROUTES: string[] = [
   "/dashboards/command-center",
   "/dashboards/capacity",
   "/dashboards/locations",
+  "/dashboards/ai",
   "/api/chat",
 ];
 

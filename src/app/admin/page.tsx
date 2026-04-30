@@ -11,6 +11,12 @@ import type { ActivityType } from "@/generated/prisma/enums";
  */
 const ADMIN_DASHBOARDS: Array<{ href: string; title: string; description: string; icon: string }> = [
   {
+    href: "/suites/testing",
+    title: "Testing Suite",
+    description: "Admin-only hub for intelligence dashboards, prototypes, and pages under review.",
+    icon: "🧪",
+  },
+  {
     href: "/dashboards/admin/workflows",
     title: "Admin Workflows",
     description: "Build workflows that run on HubSpot / Zuper property changes or on demand.",
