@@ -10,6 +10,8 @@ import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest, resolveEf
  * Creates a tentative schedule record WITHOUT syncing to Zuper.
  * Same validation as the main schedule endpoint, but skips Zuper API calls.
  * The record can later be confirmed via POST /api/zuper/jobs/schedule/confirm.
+ * Also supports pendingZuper=true for schedules held locally after a failed
+ * live Zuper sync, usually because the expected Zuper job does not exist yet.
  */
 export async function PUT(request: NextRequest) {
   try {
@@ -27,6 +29,9 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json();
     const { project, schedule } = body;
+    const pendingZuper = schedule?.pendingZuper === true;
+    const recordStatus = pendingZuper ? "pending_zuper" : "tentative";
+    const recordPrefix = pendingZuper ? "[PENDING_ZUPER]" : "[TENTATIVE]";
 
     const scheduleType = schedule?.type as "survey" | "pre-sale-survey" | "installation" | "inspection";
     if (!scheduleType || !["survey", "pre-sale-survey", "installation", "inspection"].includes(scheduleType)) {
@@ -79,22 +84,28 @@ export async function PUT(request: NextRequest) {
       (rawCrew && looksLikeUid(rawCrew) ? rawCrew : undefined);
     const timezoneTag = rawTimezone ? ` [TZ:${rawTimezone}]` : "";
 
-    // Ensure only one active tentative record per project + schedule type.
-    // Without this, old tentative rows can reappear in scheduler rehydration.
+    // Ensure only one active local-hold record per project + schedule type.
+    // Without this, old tentative/pending rows can reappear in scheduler rehydration.
     if (prisma) {
       await prisma.scheduleRecord.updateMany({
         where: {
           projectId: String(project.id),
           scheduleType,
-          status: "tentative",
+          status: { in: ["tentative", "pending_zuper"] },
         },
         data: {
           status: "cancelled",
         },
       });
+      await prisma.bookedSlot.deleteMany({
+        where: {
+          projectId: String(project.id),
+          source: { in: ["tentative", "pending_zuper"] },
+        },
+      });
     }
 
-    // Create schedule record with tentative status (NO Zuper sync)
+    // Create schedule record with local-hold status (NO Zuper sync)
     const record = await createScheduleRecord({
       scheduleType,
       projectId: String(project.id),
@@ -112,14 +123,17 @@ export async function PUT(request: NextRequest) {
       zuperJobUid: rawZuperJobUid || undefined,
       zuperSynced: false,
       zuperAssigned: false,
-      notes: schedule.notes ? `[TENTATIVE] ${schedule.notes}${timezoneTag}` : `[TENTATIVE]${timezoneTag}`,
+      zuperError: pendingZuper && typeof schedule.zuperError === "string"
+        ? schedule.zuperError.slice(0, 1000)
+        : undefined,
+      notes: schedule.notes ? `${recordPrefix} ${schedule.notes}${timezoneTag}` : `${recordPrefix}${timezoneTag}`,
     });
 
-    // Update status to "tentative" (createScheduleRecord defaults to "scheduled")
+    // Update status (createScheduleRecord defaults to "scheduled")
     if (record && prisma) {
       await prisma.scheduleRecord.update({
         where: { id: record.id },
-        data: { status: "tentative" },
+        data: { status: recordStatus },
       });
     }
 
@@ -136,14 +150,17 @@ export async function PUT(request: NextRequest) {
 
     await logActivity({
       type: activityType,
-      description: `Tentatively scheduled ${scheduleType} for ${project.name || project.id}`,
+      description: pendingZuper
+        ? `Saved pending Zuper ${scheduleType} for ${project.name || project.id}`
+        : `Tentatively scheduled ${scheduleType} for ${project.name || project.id}`,
       userEmail: session.user.email,
       userName: session.user.name || undefined,
       entityType: "schedule_record",
       entityId: record?.id,
       entityName: project.name,
       metadata: {
-        tentative: true,
+        tentative: !pendingZuper,
+        pendingZuper,
         scheduleType,
         scheduledDate: schedule.date,
         projectId: project.id,
@@ -155,15 +172,18 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      tentative: true,
+      tentative: !pendingZuper,
+      pendingZuper,
       record: record ? {
         id: record.id,
         projectId: record.projectId,
         scheduledDate: record.scheduledDate,
         assignedUser: record.assignedUser,
-        status: "tentative",
+        status: recordStatus,
       } : null,
-      message: `${scheduleType} tentatively scheduled for ${schedule.date} (not synced to Zuper)`,
+      message: pendingZuper
+        ? `${scheduleType} saved locally for ${schedule.date} (pending Zuper job)`
+        : `${scheduleType} tentatively scheduled for ${schedule.date} (not synced to Zuper)`,
     });
   } catch (error) {
     console.error("Error creating tentative schedule:", error);

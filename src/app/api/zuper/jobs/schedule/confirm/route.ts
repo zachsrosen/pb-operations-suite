@@ -243,8 +243,8 @@ async function writeConstructionScheduleBoundaryProperties(
 /**
  * POST /api/zuper/jobs/schedule/confirm
  *
- * Confirms a tentative schedule by syncing it to Zuper.
- * Takes a scheduleRecordId, fetches the tentative record,
+ * Confirms a local-held schedule by syncing it to Zuper.
+ * Takes a scheduleRecordId, fetches the tentative/pending-Zuper record,
  * then runs the full Zuper scheduling flow (search/create/reschedule).
  */
 export async function POST(request: NextRequest) {
@@ -280,7 +280,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Fetch the tentative record
+    // Fetch the local-held record
     const record = await prisma.scheduleRecord.findUnique({
       where: { id: scheduleRecordId },
     });
@@ -289,12 +289,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Schedule record not found" }, { status: 404 });
     }
 
-    if (record.status !== "tentative") {
+    if (!["tentative", "pending_zuper"].includes(record.status)) {
       return NextResponse.json(
-        { error: `Record is not tentative (current status: ${record.status})` },
+        { error: `Record is not tentative or pending Zuper (current status: ${record.status})` },
         { status: 400 }
       );
     }
+    const originalStatus = record.status;
     if (isWeekendDate(record.scheduledDate)) {
       return NextResponse.json(
         { error: "Cannot confirm a weekend schedule. Please move it to a weekday first." },
@@ -689,13 +690,13 @@ export async function POST(request: NextRequest) {
       zuperError = String(zuperErr);
     }
 
-    // If Zuper sync failed, keep this as tentative and return a failure so the
+    // If Zuper sync failed, keep this in its original local-held state so the
     // UI does not treat it as confirmed.
     if (zuperError) {
       await prisma.scheduleRecord.update({
         where: { id: scheduleRecordId },
         data: {
-          status: "tentative",
+          status: originalStatus,
           zuperSynced: false,
           zuperError,
         },
@@ -721,21 +722,29 @@ export async function POST(request: NextRequest) {
         zuperSynced: true,
         zuperJobUid: zuperJobUid || undefined,
         zuperError: null,
-        notes: effectiveNotes?.replace("[TENTATIVE]", "[CONFIRMED]") || "[CONFIRMED]",
+        notes: effectiveNotes
+          ? effectiveNotes.replace("[TENTATIVE]", "[CONFIRMED]").replace("[PENDING_ZUPER]", "[CONFIRMED]")
+          : "[CONFIRMED]",
       },
     });
 
-    // Cancel any older tentative records for the same project/type so stale
-    // tentative dates cannot rehydrate after a successful confirmation.
+    // Cancel any older local-held records for the same project/type so stale
+    // tentative/pending dates cannot rehydrate after a successful confirmation.
     await prisma.scheduleRecord.updateMany({
       where: {
         projectId: record.projectId,
         scheduleType,
-        status: "tentative",
+        status: { in: ["tentative", "pending_zuper"] },
         id: { not: scheduleRecordId },
       },
       data: {
         status: "cancelled",
+      },
+    });
+    await prisma.bookedSlot.deleteMany({
+      where: {
+        projectId: record.projectId,
+        source: { in: ["tentative", "pending_zuper"] },
       },
     });
 
@@ -1216,7 +1225,7 @@ export async function POST(request: NextRequest) {
 
     await logActivity({
       type: activityType,
-      description: `Confirmed tentative ${scheduleType} for ${record.projectName}`,
+      description: `Confirmed ${originalStatus === "pending_zuper" ? "pending Zuper" : "tentative"} ${scheduleType} for ${record.projectName}`,
       userEmail: session.user.email,
       userName: session.user.name || undefined,
       entityType: "schedule_record",

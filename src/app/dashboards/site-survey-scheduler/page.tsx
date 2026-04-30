@@ -255,7 +255,12 @@ function isTentativeProject(project: Pick<SurveyProject, "surveyStatus" | "tenta
   if ("zuperHasSchedule" in project && project.zuperHasSchedule) return false;
   if (project.tentativeRecordId) return true;
   const s = String(project.surveyStatus || "").toLowerCase();
-  return s.includes("tentative");
+  return s.includes("tentative") || s.includes("pending zuper");
+}
+
+function isPendingZuperProject(project: Pick<SurveyProject, "surveyStatus"> | null | undefined): boolean {
+  const s = String(project?.surveyStatus || "").toLowerCase();
+  return s.includes("pending zuper");
 }
 
 function getEffectiveScheduleDate(
@@ -603,7 +608,7 @@ export default function SiteSurveySchedulerPage() {
             }
           }
 
-          const tentativeResponse = await fetch(`/api/zuper/schedule-records?projectIds=${projectIds}&type=survey&status=tentative`);
+          const tentativeResponse = await fetch(`/api/zuper/schedule-records?projectIds=${projectIds}&type=survey&status=tentative,pending_zuper`);
           if (tentativeResponse.ok) {
             const tentativeData = await tentativeResponse.json();
             const records = tentativeData?.records || {};
@@ -617,11 +622,11 @@ export default function SiteSurveySchedulerPage() {
               const resolvedAssignedName = !isLikelyUid(recordAssigned)
                 ? recordAssigned
                 : (project.assignedSurveyor || "");
-              // Tentative entries are a local planning state and should always render
-              // as tentative while the record remains active.
+              const isPendingZuper = String(rec.status || "").toLowerCase() === "pending_zuper";
+              // Local-held entries should render while the record remains active.
               nextTentativeScheduleDates[project.id] = rec.scheduledDate;
               project.scheduleDate = rec.scheduledDate;
-              project.surveyStatus = "Tentative";
+              project.surveyStatus = isPendingZuper ? "Pending Zuper" : "Tentative";
               project.tentativeRecordId = rec.id || project.tentativeRecordId;
               project.scheduledBy = rec.scheduledBy || project.scheduledBy;
               project.scheduledByEmail = rec.scheduledByEmail || project.scheduledByEmail;
@@ -631,7 +636,7 @@ export default function SiteSurveySchedulerPage() {
               if (rec.scheduledStart) {
                 project.zuperScheduledTime = formatTime12h(rec.scheduledStart);
                 project.assignedSlot = {
-                  userName: resolvedAssignedName || project.assignedSurveyor || "Tentative",
+                  userName: resolvedAssignedName || project.assignedSurveyor || (isPendingZuper ? "Pending Zuper" : "Tentative"),
                   startTime: rec.scheduledStart,
                   endTime: rec.scheduledEnd || rec.scheduledStart,
                   displayTime: formatTimeRange12h(rec.scheduledStart, rec.scheduledEnd || null),
@@ -1101,6 +1106,99 @@ export default function SiteSurveySchedulerPage() {
     }
   }, [selectedProject, selectedPreSaleDeal, findCurrentSlotForProject, showToast, userRole, trackFeature, openScheduleModal]);
 
+  const saveLocalScheduleHold = useCallback(async ({
+    project,
+    date,
+    slot,
+    effectiveAssignee,
+    effectiveCrewUid,
+    effectiveTeamUid,
+    scheduleType,
+    pendingZuper = false,
+    zuperError,
+    notes,
+  }: {
+    project: SurveyProject;
+    date: string;
+    slot?: PendingSchedule["slot"];
+    effectiveAssignee: string;
+    effectiveCrewUid?: string;
+    effectiveTeamUid?: string;
+    scheduleType: "survey" | "pre-sale-survey";
+    pendingZuper?: boolean;
+    zuperError?: string;
+    notes: string;
+  }) => {
+    const response = await fetch("/api/zuper/jobs/schedule/tentative", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        project: {
+          id: project.id,
+          name: project.name,
+          address: project.address,
+          dealOwner: project.dealOwner,
+          city: project.city,
+          state: project.state,
+          zuperJobUid: project.zuperJobUid,
+        },
+        schedule: {
+          type: scheduleType,
+          date,
+          startTime: slot?.startTime,
+          endTime: slot?.endTime,
+          crew: effectiveCrewUid || effectiveAssignee,
+          assignedUser: effectiveAssignee,
+          userUid: effectiveCrewUid,
+          teamUid: effectiveTeamUid,
+          timezone: slot?.timezone,
+          pendingZuper,
+          zuperError,
+          notes,
+        },
+      }),
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(data?.error || "Local schedule save failed");
+    }
+
+    const statusLabel = pendingZuper ? "Pending Zuper" : "Tentative";
+    const recordId = data?.record?.id as string | undefined;
+    setTentativeScheduleDates((prev) => ({
+      ...prev,
+      [project.id]: date,
+    }));
+    setProjects((prev) =>
+      prev.map((p) =>
+        p.id === project.id
+          ? {
+              ...p,
+              surveyStatus: statusLabel,
+              scheduleDate: date,
+              tentativeRecordId: recordId || p.tentativeRecordId,
+              scheduledBy: currentUserName || p.scheduledBy,
+              scheduledByEmail: currentUserEmail || p.scheduledByEmail,
+              assignedSurveyor: effectiveAssignee || p.assignedSurveyor,
+              assignedSlot: slot
+                ? {
+                    userName: effectiveAssignee || slot.userName || statusLabel,
+                    startTime: slot.startTime,
+                    endTime: slot.endTime,
+                    displayTime: formatTimeRange12h(slot.startTime, slot.endTime),
+                  }
+                : p.assignedSlot,
+              zuperScheduledTime: slot?.startTime ? formatTime12h(slot.startTime) : p.zuperScheduledTime,
+              zuperHasSchedule: false,
+            }
+          : p
+      )
+    );
+
+    return recordId;
+  }, [currentUserEmail, currentUserName]);
+
   const confirmSchedule = useCallback(async () => {
     if (!scheduleModal) return;
     const { project, date, slot } = scheduleModal;
@@ -1165,12 +1263,41 @@ export default function SiteSurveySchedulerPage() {
     // Track the Zuper job UID from scheduling response
     let scheduledZuperJobUid: string | undefined = project.zuperJobUid;
     const scheduleType = project.isPreSale ? "pre-sale-survey" : "survey";
+    let zuperSyncSucceeded = false;
+    let pendingZuperRecordId: string | undefined;
+    let pendingZuperSaved = false;
+    const scheduleNotes = useTestSlot
+      ? `${project.isPreSale ? "[PRE_SALE] " : ""}TEST SLOT - ${effectiveAssignee} at ${slot?.startTime || "N/A"}`
+      : (project.isPreSale
+        ? `[PRE_SALE] ${slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Scheduler"}`
+        : (slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Scheduler"));
+    const savePendingZuperSchedule = async (zuperError: string) => {
+      pendingZuperRecordId = await saveLocalScheduleHold({
+        project,
+        date,
+        slot,
+        effectiveAssignee,
+        effectiveCrewUid,
+        effectiveTeamUid,
+        scheduleType,
+        pendingZuper: true,
+        zuperError,
+        notes: scheduleNotes,
+      });
+      pendingZuperSaved = true;
+      return pendingZuperRecordId;
+    };
 
     // Sync to Zuper FIRST if enabled (so we get the job UID for local booking)
     if (syncToZuper) {
       if (!zuperConfigured) {
+        try {
+          await savePendingZuperSchedule("Zuper integration not configured");
+        } catch (localErr) {
+          console.error("Failed to save pending Zuper schedule:", localErr);
+        }
         showToast(
-          `${getCustomerName(project.name)} scheduled locally (Zuper not configured)`,
+          `${getCustomerName(project.name)} saved locally — pending Zuper (not configured)`,
           "warning"
         );
       } else {
@@ -1202,11 +1329,7 @@ export default function SiteSurveySchedulerPage() {
               teamUid: effectiveTeamUid, // Zuper team UID (required for assignment API)
               assignedUser: effectiveAssignee,
               timezone: slot?.timezone, // Slot's local timezone (e.g. "America/Los_Angeles" for CA)
-              notes: useTestSlot
-                ? `${project.isPreSale ? "[PRE_SALE] " : ""}TEST SLOT - ${effectiveAssignee} at ${slot?.startTime || "N/A"}`
-                : (project.isPreSale
-                  ? `[PRE_SALE] ${slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Scheduler"}`
-                  : (slot ? `Surveyor: ${slot.userName} at ${slot.startTime}` : "Scheduled via Site Survey Scheduler")),
+              notes: scheduleNotes,
               testMode: useTestSlot,
               isReschedule: !!scheduleModal.isRescheduling,
             },
@@ -1220,13 +1343,15 @@ export default function SiteSurveySchedulerPage() {
           // No existing Zuper job found — warn user
           if (data.action === "no_job_found") {
             console.warn(`[Survey Schedule] No Zuper job found for "${project.name}"`);
+            await savePendingZuperSchedule(data.message || "No matching Zuper job found");
             showToast(
-              `${getCustomerName(project.name)} scheduled locally — no matching Zuper job found. Create the job in Zuper first.`,
+              `${getCustomerName(project.name)} saved locally — pending Zuper job`,
               "warning"
             );
           } else {
             // Capture the Zuper job UID from the response
             scheduledZuperJobUid = data.job?.job_uid || data.existingJobId || project.zuperJobUid;
+            zuperSyncSucceeded = true;
             const slotInfo = slot ? ` (${effectiveAssignee} ${slot.startTime})` : "";
 
             // Check if assignment failed
@@ -1245,14 +1370,25 @@ export default function SiteSurveySchedulerPage() {
           const errorData = await response.json().catch(() => null);
           const errorMsg = errorData?.error || "Zuper sync failed";
           console.error(`[Survey Schedule] Zuper sync error for "${project.name}":`, errorMsg);
+          await savePendingZuperSchedule(errorMsg);
           showToast(
-            `${getCustomerName(project.name)} scheduled locally (${errorMsg})`,
+            `${getCustomerName(project.name)} saved locally — pending Zuper (${errorMsg})`,
             "warning"
           );
         }
-      } catch {
+      } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : "Zuper error";
+        try {
+          if (!pendingZuperSaved) {
+            await savePendingZuperSchedule(errorMsg);
+          }
+        } catch (localErr) {
+          console.error("Failed to save pending Zuper schedule:", localErr);
+        }
         showToast(
-          `${getCustomerName(project.name)} scheduled locally (Zuper error)`,
+          pendingZuperSaved
+            ? `${getCustomerName(project.name)} saved locally — pending Zuper (${errorMsg})`
+            : `${getCustomerName(project.name)} could not sync to Zuper or save locally (${errorMsg})`,
           "warning"
         );
       } finally {
@@ -1261,85 +1397,41 @@ export default function SiteSurveySchedulerPage() {
       }
     } else {
       try {
-        const response = await fetch("/api/zuper/jobs/schedule/tentative", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            project: {
-              id: project.id,
-              name: project.name,
-              address: project.address,
-              dealOwner: project.dealOwner,
-              city: project.city,
-              state: project.state,
-            },
-            schedule: {
-              type: scheduleType,
-              date,
-              startTime: slot?.startTime,
-              endTime: slot?.endTime,
-              crew: effectiveAssignee,
-              assignedUser: effectiveAssignee,
-              userUid: effectiveCrewUid,
-              teamUid: effectiveTeamUid,
-              timezone: slot?.timezone,
-              notes: slot
-                ? (useTestSlot
-                  ? `${project.isPreSale ? "[PRE_SALE] " : ""}TEST SLOT - Tentative ${effectiveAssignee} at ${slot.startTime}`
-                  : `${project.isPreSale ? "[PRE_SALE] " : ""}Tentative surveyor: ${slot.userName} at ${slot.startTime}`)
-                : `${project.isPreSale ? "[PRE_SALE] " : ""}Tentatively scheduled via Site Survey Scheduler`,
-            },
-          }),
-        });
-
         const slotInfo = slot ? ` (${effectiveAssignee} ${slot.startTime.replace(/^0/, "")})` : "";
-        if (response.ok) {
-          const data = await response.json().catch(() => null);
-          setTentativeScheduleDates((prev) => ({
-            ...prev,
-            [project.id]: date,
-          }));
-          setProjects((prev) =>
-            prev.map((p) =>
-              p.id === project.id
-                ? {
-                    ...p,
-                    surveyStatus: "Tentative",
-                    scheduleDate: date,
-                    tentativeRecordId: data?.record?.id || p.tentativeRecordId,
-                    scheduledBy: currentUserName || p.scheduledBy,
-                    scheduledByEmail: currentUserEmail || p.scheduledByEmail,
-                    assignedSurveyor: effectiveAssignee || p.assignedSurveyor,
-                    assignedSlot: slot
-                      ? {
-                          userName: effectiveAssignee || slot.userName || "Tentative",
-                          startTime: slot.startTime,
-                          endTime: slot.endTime,
-                          displayTime: formatTimeRange12h(slot.startTime, slot.endTime),
-                        }
-                      : p.assignedSlot,
-                    zuperScheduledTime: slot?.startTime ? formatTime12h(slot.startTime) : p.zuperScheduledTime,
-                  }
-                : p
-            )
-          );
-          showToast(`${getCustomerName(project.name)} tentatively scheduled${slotInfo}`);
-        } else {
-          showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "warning");
-        }
-      } catch {
+        await saveLocalScheduleHold({
+          project,
+          date,
+          slot,
+          effectiveAssignee,
+          effectiveCrewUid,
+          effectiveTeamUid,
+          scheduleType,
+          notes: slot
+            ? (useTestSlot
+              ? `${project.isPreSale ? "[PRE_SALE] " : ""}TEST SLOT - Tentative ${effectiveAssignee} at ${slot.startTime}`
+              : `${project.isPreSale ? "[PRE_SALE] " : ""}Tentative surveyor: ${slot.userName} at ${slot.startTime}`)
+            : `${project.isPreSale ? "[PRE_SALE] " : ""}Tentatively scheduled via Site Survey Scheduler`,
+        });
+        showToast(`${getCustomerName(project.name)} tentatively scheduled${slotInfo}`);
+      } catch (err) {
+        console.error("Failed to save tentative schedule:", err);
         showToast(`${getCustomerName(project.name)} scheduled locally (tentative save failed)`, "warning");
       }
     }
 
-    if (syncToZuper) {
+    if (syncToZuper && (zuperSyncSucceeded || pendingZuperSaved)) {
+      const statusLabel = zuperSyncSucceeded ? "Scheduled" : "Pending Zuper";
       setManualSchedules((prev) => ({
         ...prev,
         [project.id]: date,
       }));
       setTentativeScheduleDates((prev) => {
         const next = { ...prev };
-        delete next[project.id];
+        if (zuperSyncSucceeded) {
+          delete next[project.id];
+        } else {
+          next[project.id] = date;
+        }
         return next;
       });
       setProjects((prev) =>
@@ -1347,32 +1439,33 @@ export default function SiteSurveySchedulerPage() {
           p.id === project.id
             ? {
                 ...p,
-                surveyStatus: "Scheduled",
+                surveyStatus: statusLabel,
                 scheduleDate: date,
-                tentativeRecordId: undefined,
+                tentativeRecordId: zuperSyncSucceeded ? undefined : (pendingZuperRecordId || p.tentativeRecordId),
                 scheduledBy: currentUserName || p.scheduledBy,
                 scheduledByEmail: currentUserEmail || p.scheduledByEmail,
                 assignedSurveyor: effectiveAssignee || p.assignedSurveyor,
                 assignedSlot: slot
                   ? {
-                      userName: effectiveAssignee || slot.userName || "Scheduled",
+                      userName: effectiveAssignee || slot.userName || statusLabel,
                       startTime: slot.startTime,
                       endTime: slot.endTime,
                       displayTime: formatTimeRange12h(slot.startTime, slot.endTime),
                     }
                   : p.assignedSlot,
                 zuperScheduledTime: slot?.startTime ? formatTime12h(slot.startTime) : p.zuperScheduledTime,
-                zuperJobUid: scheduledZuperJobUid || p.zuperJobUid,
-                zuperHasSchedule: !!(scheduledZuperJobUid || p.zuperJobUid),
+                zuperJobUid: zuperSyncSucceeded ? (scheduledZuperJobUid || p.zuperJobUid) : p.zuperJobUid,
+                zuperHasSchedule: zuperSyncSucceeded ? !!(scheduledZuperJobUid || p.zuperJobUid) : false,
               }
             : p
         )
       );
     }
 
-    // Book the time slot locally AFTER Zuper sync (so we have the job UID)
+    // Book the time slot locally AFTER Zuper sync/local hold (so we have the job UID/status)
     // This tracks the assignment since Zuper API doesn't support updating assignments
-    if (slot) {
+    const shouldBookLocalSlot = !syncToZuper || zuperSyncSucceeded || pendingZuperSaved;
+    if (slot && shouldBookLocalSlot) {
       try {
         const bookResponse = await fetch("/api/zuper/availability", {
           method: "POST",
@@ -1387,6 +1480,7 @@ export default function SiteSurveySchedulerPage() {
             projectId: project.id,
             projectName: project.name,
             zuperJobUid: scheduledZuperJobUid, // Link to the Zuper job
+            source: !syncToZuper ? "tentative" : (zuperSyncSucceeded ? "manual" : "pending_zuper"),
           }),
         });
         if (!bookResponse.ok) {
@@ -1457,6 +1551,7 @@ export default function SiteSurveySchedulerPage() {
     showToast,
     fetchAvailability,
     saveSurveyorAssignment,
+    saveLocalScheduleHold,
     userRole,
     trackFeature,
     selectedProject,
@@ -1578,8 +1673,9 @@ export default function SiteSurveySchedulerPage() {
 
   const handleConfirmTentative = useCallback(async (project: SurveyProject) => {
     const recordId = project.tentativeRecordId;
+    const isPendingZuper = isPendingZuperProject(project);
     if (!recordId) {
-      showToast("No tentative record found to confirm", "warning");
+      showToast(isPendingZuper ? "No pending Zuper record found to retry" : "No tentative record found to confirm", "warning");
       return;
     }
 
@@ -1595,14 +1691,20 @@ export default function SiteSurveySchedulerPage() {
       });
       const data = await res.json().catch(() => null);
       if (!res.ok || !data?.success) {
-        showToast(data?.error || "Failed to confirm tentative schedule", "warning");
+        showToast(data?.error || (isPendingZuper ? "Zuper job still not found" : "Failed to confirm tentative schedule"), "warning");
         return;
       }
 
       setProjects((prev) =>
         prev.map((p) =>
           p.id === project.id
-            ? { ...p, surveyStatus: "Scheduled", tentativeRecordId: undefined }
+            ? {
+                ...p,
+                surveyStatus: "Scheduled",
+                tentativeRecordId: undefined,
+                zuperJobUid: data?.zuperJobUid || p.zuperJobUid,
+                zuperHasSchedule: true,
+              }
             : p
         )
       );
@@ -1611,11 +1713,11 @@ export default function SiteSurveySchedulerPage() {
         delete next[project.id];
         return next;
       });
-      showToast(data?.zuperSynced ? "Confirmed & synced to Zuper" : `Confirmed (Zuper sync issue: ${data?.zuperError || "Unknown"})`, data?.zuperSynced ? "success" : "warning");
+      showToast(data?.zuperSynced ? "Synced to Zuper" : `Confirmed (Zuper sync issue: ${data?.zuperError || "Unknown"})`, data?.zuperSynced ? "success" : "warning");
       setScheduleModal(null);
       setTimeout(() => fetchProjects(), 700);
     } catch {
-      showToast("Failed to confirm tentative schedule", "warning");
+      showToast(isPendingZuper ? "Failed to retry Zuper sync" : "Failed to confirm tentative schedule", "warning");
     } finally {
       setConfirmingTentative(false);
     }
@@ -1623,6 +1725,7 @@ export default function SiteSurveySchedulerPage() {
 
   const handleCancelTentative = useCallback(async (project: SurveyProject) => {
     const recordId = project.tentativeRecordId;
+    const isPendingZuper = isPendingZuperProject(project);
     setCancellingTentative(true);
     try {
       if (recordId) {
@@ -1633,7 +1736,7 @@ export default function SiteSurveySchedulerPage() {
         });
         if (!res.ok) {
           const data = await res.json().catch(() => null);
-          showToast(data?.error || "Failed to cancel tentative schedule", "warning");
+          showToast(data?.error || (isPendingZuper ? "Failed to cancel pending Zuper schedule" : "Failed to cancel tentative schedule"), "warning");
           return;
         }
       }
@@ -1664,10 +1767,10 @@ export default function SiteSurveySchedulerPage() {
             : p
         )
       );
-      showToast("Tentative schedule cancelled");
+      showToast(isPendingZuper ? "Pending Zuper schedule cancelled" : "Tentative schedule cancelled");
       setScheduleModal(null);
     } catch {
-      showToast("Failed to cancel tentative schedule", "warning");
+      showToast(isPendingZuper ? "Failed to cancel pending Zuper schedule" : "Failed to cancel tentative schedule", "warning");
     } finally {
       setCancellingTentative(false);
     }
@@ -2257,6 +2360,7 @@ export default function SiteSurveySchedulerPage() {
                             const displaySlot = evSlot || ev.assignedSlot;
                             const overdue = isSurveyOverdue(ev, manualSchedules[ev.id]);
                             const isTentative = isTentativeProject(ev);
+                            const isPendingZuper = isPendingZuperProject(ev);
                             return (
                               <div
                                 key={ev.id}
@@ -2279,12 +2383,12 @@ export default function SiteSurveySchedulerPage() {
                                 title={overdue
                                   ? `⚠ OVERDUE - Survey not completed\n${displaySlot ? `${displaySlot.userName} @ ${displaySlot.displayTime}\n` : ev.assignedSurveyor ? `${ev.assignedSurveyor}${ev.zuperScheduledTime ? ` @ ${ev.zuperScheduledTime}` : ""}\n` : ""}${ev.address || "No address"} - Click to reschedule`
                                   : isTentative
-                                    ? `TENTATIVE\n${displaySlot ? `${displaySlot.userName} @ ${displaySlot.displayTime}\n` : ev.assignedSurveyor ? `${ev.assignedSurveyor}${ev.zuperScheduledTime ? ` @ ${ev.zuperScheduledTime}` : ""}\n` : ""}${ev.address || "No address"} - Click to review`
+                                    ? `${isPendingZuper ? "PENDING ZUPER" : "TENTATIVE"}\n${displaySlot ? `${displaySlot.userName} @ ${displaySlot.displayTime}\n` : ev.assignedSurveyor ? `${ev.assignedSurveyor}${ev.zuperScheduledTime ? ` @ ${ev.zuperScheduledTime}` : ""}\n` : ""}${ev.address || "No address"} - Click to review`
                                     : displaySlot ? `${displaySlot.userName} @ ${displaySlot.displayTime}\n${ev.address || "No address"} - Click to view` : `${ev.assignedSurveyor ? `Surveyor: ${ev.assignedSurveyor}${ev.zuperScheduledTime ? ` @ ${ev.zuperScheduledTime}` : ""}\n` : ""}${ev.address || "No address"} - Drag to reschedule`}
                               >
                                 <div className="truncate">
                                   {overdue && <span className="text-red-400 mr-0.5">⚠</span>}
-                                  {!overdue && isTentative && <span className="text-amber-300 mr-1">TENT</span>}
+                                  {!overdue && isTentative && <span className="text-amber-300 mr-1">{isPendingZuper ? "PEND" : "TENT"}</span>}
                                   {getCustomerName(ev.name)}
                                 </div>
                                 {ev.address && <div className={`text-[0.6rem] truncate ${overdue ? "text-red-400/50" : isTentative ? "text-amber-200/70" : "text-cyan-400/50"}`}>{ev.address}</div>}
@@ -2639,8 +2743,14 @@ export default function SiteSurveySchedulerPage() {
             {isTentativeProject(scheduleModal.project) && (
               <div className="mb-4 p-3 rounded-lg bg-amber-500/10 border border-dashed border-amber-400/50">
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="text-amber-400 text-[0.7rem] font-bold uppercase tracking-wide">Tentative</span>
-                  <span className="text-[0.65rem] text-muted">Not yet synced to Zuper</span>
+                  <span className="text-amber-400 text-[0.7rem] font-bold uppercase tracking-wide">
+                    {isPendingZuperProject(scheduleModal.project) ? "Pending Zuper" : "Tentative"}
+                  </span>
+                  <span className="text-[0.65rem] text-muted">
+                    {isPendingZuperProject(scheduleModal.project)
+                      ? "Saved locally; retry after the Zuper job exists"
+                      : "Not yet synced to Zuper"}
+                  </span>
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -2648,14 +2758,14 @@ export default function SiteSurveySchedulerPage() {
                     disabled={confirmingTentative}
                     className="px-3 py-1.5 rounded-md bg-emerald-600 text-white text-[0.72rem] font-semibold hover:bg-emerald-700 transition-colors disabled:opacity-50"
                   >
-                    {confirmingTentative ? "Confirming..." : "Confirm & Sync"}
+                    {confirmingTentative ? "Syncing..." : (isPendingZuperProject(scheduleModal.project) ? "Retry Zuper Sync" : "Confirm & Sync")}
                   </button>
                   <button
                     onClick={() => handleCancelTentative(scheduleModal.project)}
                     disabled={cancellingTentative}
                     className="px-3 py-1.5 rounded-md bg-red-600/80 text-white text-[0.72rem] font-semibold hover:bg-red-700 transition-colors disabled:opacity-50"
                   >
-                    {cancellingTentative ? "Cancelling..." : "Cancel Tentative"}
+                    {cancellingTentative ? "Cancelling..." : (isPendingZuperProject(scheduleModal.project) ? "Cancel Pending" : "Cancel Tentative")}
                   </button>
                 </div>
               </div>

@@ -14,6 +14,7 @@ import type { UserRole } from "@/lib/db";
  * - projectIds: comma-separated list of project IDs
  * - type: optional schedule type filter (e.g., "survey", "installation", "inspection")
  * - status: optional status filter (e.g., "scheduled", "tentative", "cancelled")
+ *           comma-separated values are supported (e.g., "tentative,pending_zuper")
  */
 export async function GET(request: NextRequest) {
   const authResult = await requireApiAuth();
@@ -36,6 +37,9 @@ export async function GET(request: NextRequest) {
   }
 
   const projectIds = projectIdsParam.split(",").map(id => id.trim()).filter(Boolean);
+  const statusFilters = status
+    ? status.split(",").map(value => value.trim()).filter(Boolean)
+    : [];
 
   if (projectIds.length === 0) {
     return NextResponse.json({ records: {} });
@@ -46,7 +50,8 @@ export async function GET(request: NextRequest) {
       where: {
         projectId: { in: projectIds },
         ...(scheduleType && { scheduleType }),
-        ...(status && { status }),
+        ...(statusFilters.length === 1 && { status: statusFilters[0] }),
+        ...(statusFilters.length > 1 && { status: { in: statusFilters } }),
       },
       orderBy: { createdAt: "desc" },
       select: {
@@ -92,7 +97,7 @@ export async function GET(request: NextRequest) {
  * DELETE /api/zuper/schedule-records
  *
  * Cancel a tentative schedule record.
- * Only records with status "tentative" can be cancelled this way.
+ * Only records with status "tentative" or "pending_zuper" can be cancelled this way.
  *
  * Body: { recordId: string }
  */
@@ -120,9 +125,9 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: "Record not found" }, { status: 404 });
     }
 
-    if (record.status !== "tentative") {
+    if (!["tentative", "pending_zuper"].includes(record.status)) {
       return NextResponse.json(
-        { error: "Only tentative records can be cancelled this way" },
+        { error: "Only tentative or pending Zuper records can be cancelled this way" },
         { status: 400 }
       );
     }
@@ -131,10 +136,16 @@ export async function DELETE(request: NextRequest) {
       where: { id: recordId },
       data: { status: "cancelled" },
     });
+    await prisma.bookedSlot.deleteMany({
+      where: {
+        projectId: record.projectId,
+        source: { in: ["tentative", "pending_zuper"] },
+      },
+    });
 
     return NextResponse.json({
       success: true,
-      message: `Tentative schedule for ${record.projectName} cancelled`,
+      message: `${record.status === "pending_zuper" ? "Pending Zuper" : "Tentative"} schedule for ${record.projectName} cancelled`,
     });
   } catch (error) {
     console.error("Error cancelling schedule record:", error);

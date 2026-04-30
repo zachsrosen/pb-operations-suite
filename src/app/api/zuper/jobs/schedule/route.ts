@@ -82,7 +82,7 @@ async function checkScheduleOwnership(
     where: {
       projectId,
       scheduleType,
-      status: { in: ["scheduled", "tentative"] },
+      status: { in: ["scheduled", "tentative", "pending_zuper"] },
     },
     orderBy: { createdAt: "desc" },
     select: {
@@ -810,7 +810,7 @@ export async function PUT(request: NextRequest) {
             where: {
               projectId: String(project.id),
               scheduleType: schedule.type,
-              status: { in: ["scheduled", "tentative"] },
+              status: { in: ["scheduled", "tentative", "pending_zuper"] },
             },
             orderBy: { createdAt: "desc" },
             select: { assignedUser: true, assignedUserUid: true },
@@ -910,6 +910,22 @@ export async function PUT(request: NextRequest) {
         zuperError: assignmentError,
         notes: schedule.notes,
       });
+      if (prisma) {
+        await prisma.scheduleRecord.updateMany({
+          where: {
+            projectId: String(project.id),
+            scheduleType: schedule.type,
+            status: { in: ["tentative", "pending_zuper"] },
+          },
+          data: { status: "cancelled" },
+        });
+        await prisma.bookedSlot.deleteMany({
+          where: {
+            projectId: String(project.id),
+            source: { in: ["tentative", "pending_zuper"] },
+          },
+        });
+      }
 
       // Cache the Zuper job with scheduled times so lookup returns them on next page load
       if (rescheduleResult.data) {
@@ -1047,6 +1063,22 @@ export async function PUT(request: NextRequest) {
         zuperAssigned: !!(resolvedCrew || schedule.crew), // Assume assigned if crew was provided at creation
         notes: schedule.notes,
       });
+      if (prisma) {
+        await prisma.scheduleRecord.updateMany({
+          where: {
+            projectId: String(project.id),
+            scheduleType: schedule.type,
+            status: { in: ["tentative", "pending_zuper"] },
+          },
+          data: { status: "cancelled" },
+        });
+        await prisma.bookedSlot.deleteMany({
+          where: {
+            projectId: String(project.id),
+            source: { in: ["tentative", "pending_zuper"] },
+          },
+        });
+      }
 
       // Cache the Zuper job with scheduled times
       if (createResult.data && newJobUid) {
