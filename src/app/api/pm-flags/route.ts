@@ -16,7 +16,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 
 import { requireApiAuth } from "@/lib/api-auth";
-import { createFlag, listFlags } from "@/lib/pm-flags";
+import { autoResolveFlag, createFlag, listFlags } from "@/lib/pm-flags";
+import {
+  fetchHubSpotPmMilestoneDealsByIds,
+  flagStillMatchesHubSpotMilestone,
+} from "@/lib/pm-flag-rules";
 import {
   PmFlagType,
   PmFlagSeverity,
@@ -44,6 +48,8 @@ export async function GET(req: NextRequest) {
   const statusParam = url.searchParams.getAll("status") as PmFlagStatus[];
   const severityParam = url.searchParams.getAll("severity") as PmFlagSeverity[];
   const typeParam = url.searchParams.getAll("type") as PmFlagType[];
+  const stageParam = url.searchParams.getAll("stage");
+  const pbLocationParam = url.searchParams.getAll("pbLocation");
   const dealIdParam = url.searchParams.get("hubspotDealId") ?? undefined;
 
   const status =
@@ -59,20 +65,70 @@ export async function GET(req: NextRequest) {
     status,
     severity: severityParam.length > 0 ? severityParam : undefined,
     type: typeParam.length > 0 ? typeParam : undefined,
+    dealStage: stageParam.length > 0 ? stageParam : undefined,
+    pbLocation: pbLocationParam.length > 0 ? pbLocationParam : undefined,
     hubspotDealId: dealIdParam,
+  };
+
+  const withAccurateMilestones = async (flagsPromise: Promise<Awaited<ReturnType<typeof listFlags>>>) => {
+    const flags = await flagsPromise;
+    const milestoneCandidates = flags.filter(flag =>
+      (flag.status === "OPEN" || flag.status === "ACKNOWLEDGED")
+      && flag.source === PmFlagSource.ADMIN_WORKFLOW
+      && (
+        flag.externalRef?.startsWith("survey-overdue:")
+        || flag.externalRef?.startsWith("da-send-overdue:")
+        || flag.externalRef?.startsWith("da-approval-overdue:")
+        || flag.externalRef?.startsWith("pending-sales-change:")
+      )
+    );
+
+    if (milestoneCandidates.length === 0) return flags;
+
+    const hubspotDeals = await fetchHubSpotPmMilestoneDealsByIds(
+      milestoneCandidates.map(flag => flag.hubspotDealId)
+    );
+
+    const staleFlagIds: string[] = [];
+    const visibleFlags = flags.filter(flag => {
+      const stillMatches = flagStillMatchesHubSpotMilestone(
+        flag.externalRef,
+        hubspotDeals.get(flag.hubspotDealId)
+      );
+      if (stillMatches === false) {
+        staleFlagIds.push(flag.id);
+        return false;
+      }
+      return true;
+    });
+
+    if (staleFlagIds.length > 0) {
+      await Promise.allSettled(
+        staleFlagIds.map(flagId =>
+          autoResolveFlag(
+            flagId,
+            "Auto-resolved during queue read: HubSpot milestone condition no longer matches"
+          )
+        )
+      );
+    }
+
+    return visibleFlags;
   };
 
   if (scope === "all") {
     if (!isAdminLike(auth.roles)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    return NextResponse.json({ flags: await listFlags(filter) });
+    return NextResponse.json({ flags: await withAccurateMilestones(listFlags(filter)) });
   }
   if (scope === "unassigned") {
     if (!isAdminLike(auth.roles)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
-    return NextResponse.json({ flags: await listFlags({ ...filter, assignedToUserId: null }) });
+    return NextResponse.json({
+      flags: await withAccurateMilestones(listFlags({ ...filter, assignedToUserId: null })),
+    });
   }
 
   // Default: mine
@@ -80,7 +136,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ flags: [] });
   }
   return NextResponse.json({
-    flags: await listFlags({ ...filter, assignedToUserId: me.id }),
+    flags: await withAccurateMilestones(listFlags({ ...filter, assignedToUserId: me.id })),
   });
 }
 

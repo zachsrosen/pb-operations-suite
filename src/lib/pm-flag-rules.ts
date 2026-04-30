@@ -14,7 +14,7 @@
  */
 
 import { prisma } from "@/lib/db";
-import { DEAL_STAGE_MAP, searchWithRetry } from "@/lib/hubspot";
+import { DEAL_STAGE_MAP, hubspotClient, searchWithRetry } from "@/lib/hubspot";
 import { createFlag } from "@/lib/pm-flags";
 import { FilterOperatorEnum } from "@hubspot/api-client/lib/codegen/crm/deals";
 import {
@@ -178,7 +178,7 @@ const HUBSPOT_PM_MILESTONE_PROPERTIES = [
   "hs_lastmodifieddate",
 ] as const;
 
-type HubSpotPmMilestoneDeal = {
+export type HubSpotPmMilestoneDeal = {
   hubspotDealId: string;
   dealName: string | null;
   projectManager: string | null;
@@ -222,6 +222,29 @@ function isDaApprovedStatus(status: string | null | undefined): boolean {
   return DA_APPROVED_STATUS_NAMES.has(status);
 }
 
+function toHubSpotPmMilestoneDeal(
+  id: string,
+  properties: Partial<Record<(typeof HUBSPOT_PM_MILESTONE_PROPERTIES)[number], string>>
+): HubSpotPmMilestoneDeal {
+  const stageId = properties.dealstage ?? null;
+  return {
+    hubspotDealId: id,
+    dealName: properties.dealname ?? null,
+    projectManager: properties.project_manager ?? null,
+    stage: stageId ? DEAL_STAGE_MAP[stageId] ?? stageId : "",
+    closeDate: stringToDate(properties.closedate ?? null),
+    siteSurveyCompletionDate: stringToDate(properties.site_survey_date ?? null),
+    isSiteSurveyCompleted: stringToBool(properties.is_site_survey_completed_ ?? null),
+    surveyStatus: properties.site_survey_status ?? null,
+    designApprovalSentDate: stringToDate(properties.design_approval_sent_date ?? null),
+    isDaSent: stringToBool(properties.is_da_sent_ ?? null),
+    layoutApprovalDate: stringToDate(properties.layout_approval_date ?? null),
+    isLayoutApproved: stringToBool(properties.layout_approved ?? null),
+    layoutStatus: properties.layout_status ?? null,
+    hubspotUpdatedAt: stringToDate(properties.hs_lastmodifieddate ?? null),
+  };
+}
+
 async function searchHubSpotProjectDeals(
   extraFilters: Array<{
     propertyName: string;
@@ -253,29 +276,97 @@ async function searchHubSpotProjectDeals(
 
     for (const result of response.results) {
       const properties = result.properties as Partial<Record<(typeof HUBSPOT_PM_MILESTONE_PROPERTIES)[number], string>>;
-      const stageId = properties.dealstage ?? null;
-      deals.push({
-        hubspotDealId: result.id,
-        dealName: properties.dealname ?? null,
-        projectManager: properties.project_manager ?? null,
-        stage: stageId ? DEAL_STAGE_MAP[stageId] ?? stageId : "",
-        closeDate: stringToDate(properties.closedate ?? null),
-        siteSurveyCompletionDate: stringToDate(properties.site_survey_date ?? null),
-        isSiteSurveyCompleted: stringToBool(properties.is_site_survey_completed_ ?? null),
-        surveyStatus: properties.site_survey_status ?? null,
-        designApprovalSentDate: stringToDate(properties.design_approval_sent_date ?? null),
-        isDaSent: stringToBool(properties.is_da_sent_ ?? null),
-        layoutApprovalDate: stringToDate(properties.layout_approval_date ?? null),
-        isLayoutApproved: stringToBool(properties.layout_approved ?? null),
-        layoutStatus: properties.layout_status ?? null,
-        hubspotUpdatedAt: stringToDate(properties.hs_lastmodifieddate ?? null),
-      });
+      deals.push(toHubSpotPmMilestoneDeal(result.id, properties));
     }
 
     after = response.paging?.next?.after;
   } while (after);
 
   return deals;
+}
+
+export async function fetchHubSpotPmMilestoneDealsByIds(
+  hubspotDealIds: string[]
+): Promise<Map<string, HubSpotPmMilestoneDeal>> {
+  const uniqueIds = [...new Set(hubspotDealIds.filter(Boolean))];
+  const dealsById = new Map<string, HubSpotPmMilestoneDeal>();
+
+  for (let i = 0; i < uniqueIds.length; i += 100) {
+    const batch = uniqueIds.slice(i, i + 100);
+    try {
+      const response = await hubspotClient.crm.deals.batchApi.read({
+        inputs: batch.map(id => ({ id })),
+        properties: [...HUBSPOT_PM_MILESTONE_PROPERTIES],
+        propertiesWithHistory: [],
+      });
+
+      for (const result of response.results) {
+        const properties = result.properties as Partial<Record<(typeof HUBSPOT_PM_MILESTONE_PROPERTIES)[number], string>>;
+        dealsById.set(result.id, toHubSpotPmMilestoneDeal(result.id, properties));
+      }
+    } catch (error) {
+      console.error("[pm-flags] Failed HubSpot milestone batch read", error);
+    }
+  }
+
+  return dealsById;
+}
+
+function matchesSurveyOutstanding(d: HubSpotPmMilestoneDeal): boolean {
+  if (isTerminal(d.stage)) return false;
+  if (d.siteSurveyCompletionDate) return false;
+  if (d.isSiteSurveyCompleted) return false;
+  if (isSurveyCompleteStatus(d.surveyStatus)) return false;
+  if (d.designApprovalSentDate) return false;
+  if (d.isDaSent) return false;
+  if (d.layoutApprovalDate) return false;
+  if (d.isLayoutApproved) return false;
+  if (isDaSentStatus(d.layoutStatus) || isDaApprovedStatus(d.layoutStatus)) return false;
+  const days = daysBetween(d.closeDate);
+  return days != null && days >= RULE_THRESHOLDS_DAYS.surveyOutstanding;
+}
+
+function matchesDaSendOutstanding(d: HubSpotPmMilestoneDeal): boolean {
+  if (isTerminal(d.stage)) return false;
+  if (!d.siteSurveyCompletionDate) return false;
+  if (d.designApprovalSentDate) return false;
+  if (d.isDaSent) return false;
+  if (d.layoutApprovalDate) return false;
+  if (d.isLayoutApproved) return false;
+  if (isDaSentStatus(d.layoutStatus) || isDaApprovedStatus(d.layoutStatus)) return false;
+  if (d.layoutStatus === "Pending Sales Changes") return false;
+  const days = daysBetween(d.siteSurveyCompletionDate);
+  return days != null && days >= RULE_THRESHOLDS_DAYS.daSendOutstanding;
+}
+
+function matchesDaApprovalOutstanding(d: HubSpotPmMilestoneDeal): boolean {
+  if (isTerminal(d.stage)) return false;
+  if (!d.designApprovalSentDate) return false;
+  if (d.layoutApprovalDate) return false;
+  if (d.isLayoutApproved) return false;
+  if (isDaApprovedStatus(d.layoutStatus)) return false;
+  if (d.layoutStatus === "Pending Sales Changes") return false;
+  const days = daysBetween(d.designApprovalSentDate);
+  return days != null && days >= RULE_THRESHOLDS_DAYS.daApprovalOutstanding;
+}
+
+function matchesChangeOrderPending(d: HubSpotPmMilestoneDeal): boolean {
+  if (isTerminal(d.stage)) return false;
+  if (d.layoutStatus !== "Pending Sales Changes") return false;
+  const daysSinceUpdate = daysBetween(d.hubspotUpdatedAt);
+  return daysSinceUpdate != null && daysSinceUpdate >= RULE_THRESHOLDS_DAYS.changeOrderPending;
+}
+
+export function flagStillMatchesHubSpotMilestone(
+  externalRef: string | null | undefined,
+  deal: HubSpotPmMilestoneDeal | null | undefined
+): boolean | null {
+  if (!externalRef || !deal) return null;
+  if (externalRef.startsWith("survey-overdue:")) return matchesSurveyOutstanding(deal);
+  if (externalRef.startsWith("da-send-overdue:")) return matchesDaSendOutstanding(deal);
+  if (externalRef.startsWith("da-approval-overdue:")) return matchesDaApprovalOutstanding(deal);
+  if (externalRef.startsWith("pending-sales-change:")) return matchesChangeOrderPending(deal);
+  return null;
 }
 
 /**
@@ -726,17 +817,8 @@ export async function ruleSurveyOutstanding(): Promise<RuleResult> {
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
-    if (isTerminal(d.stage)) continue;
-    if (d.siteSurveyCompletionDate) continue;
-    if (d.isSiteSurveyCompleted) continue;
-    if (isSurveyCompleteStatus(d.surveyStatus)) continue;
-    if (d.designApprovalSentDate) continue;
-    if (d.isDaSent) continue;
-    if (d.layoutApprovalDate) continue;
-    if (d.isLayoutApproved) continue;
-    if (isDaSentStatus(d.layoutStatus) || isDaApprovedStatus(d.layoutStatus)) continue;
+    if (!matchesSurveyOutstanding(d)) continue;
     const days = daysBetween(d.closeDate);
-    if (days == null || days < RULE_THRESHOLDS_DAYS.surveyOutstanding) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,
@@ -767,16 +849,8 @@ export async function ruleDaSendOutstanding(): Promise<RuleResult> {
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
-    if (isTerminal(d.stage)) continue;
-    if (!d.siteSurveyCompletionDate) continue;
-    if (d.designApprovalSentDate) continue;
-    if (d.isDaSent) continue;
-    if (d.layoutApprovalDate) continue;
-    if (d.isLayoutApproved) continue;
-    if (isDaSentStatus(d.layoutStatus) || isDaApprovedStatus(d.layoutStatus)) continue;
-    if (d.layoutStatus === "Pending Sales Changes") continue;
+    if (!matchesDaSendOutstanding(d)) continue;
     const days = daysBetween(d.siteSurveyCompletionDate);
-    if (days == null || days < RULE_THRESHOLDS_DAYS.daSendOutstanding) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,
@@ -807,15 +881,8 @@ export async function ruleDaApprovalOutstanding(): Promise<RuleResult> {
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
-    if (isTerminal(d.stage)) continue;
-    if (!d.designApprovalSentDate) continue;
-    if (d.layoutApprovalDate) continue;
-    if (d.isLayoutApproved) continue;
-    if (isDaApprovedStatus(d.layoutStatus)) continue;
-    // Don't double-flag rows that the change-order rule will catch.
-    if (d.layoutStatus === "Pending Sales Changes") continue;
+    if (!matchesDaApprovalOutstanding(d)) continue;
     const days = daysBetween(d.designApprovalSentDate);
-    if (days == null || days < RULE_THRESHOLDS_DAYS.daApprovalOutstanding) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,
@@ -845,11 +912,8 @@ export async function ruleChangeOrderPending(): Promise<RuleResult> {
 
   const matches: RuleMatch[] = [];
   for (const d of deals) {
-    if (isTerminal(d.stage)) continue;
-    // Use updatedAt as proxy for "how long has layoutStatus been Pending Sales Changes."
-    // Imperfect (any unrelated field change resets the clock), but conservative.
+    if (!matchesChangeOrderPending(d)) continue;
     const daysSinceUpdate = daysBetween(d.hubspotUpdatedAt);
-    if (daysSinceUpdate == null || daysSinceUpdate < RULE_THRESHOLDS_DAYS.changeOrderPending) continue;
     matches.push({
       hubspotDealId: d.hubspotDealId,
       dealName: d.dealName,

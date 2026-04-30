@@ -23,6 +23,8 @@ interface Flag {
   id: string;
   hubspotDealId: string;
   dealName: string | null;
+  dealStage?: string | null;
+  pbLocation?: string | null;
   type: string;
   severity: string;
   status: string;
@@ -64,6 +66,19 @@ const TYPE_OPTIONS = [
   "PAYMENT_ISSUE",
   "OTHER",
 ].map(v => ({ value: v, label: humanize(v) }));
+
+const FLAG_MEANINGS: Array<{ title: string; description: string }> = [
+  { title: "Stage Stuck", description: "Deal has sat in the same active project stage longer than expected." },
+  { title: "Milestone Overdue", description: "A key survey, design approval, inspection, or similar milestone is late." },
+  { title: "Missing Data", description: "The deal is missing required setup data like AHJ or utility details." },
+  { title: "Change Order", description: "The design is blocked on sales-driven changes that still need attention." },
+  { title: "Install Blocked", description: "Install timing has slipped past the scheduled date without completion." },
+  { title: "Permit Issue", description: "Permitting has been rejected or stalled and needs intervention." },
+  { title: "Interconnect Issue", description: "Interconnection has been rejected or is stuck without resolution." },
+  { title: "Design Issue", description: "Design churn or revisions suggest the project needs a closer look." },
+  { title: "Customer Complaint", description: "A customer-facing issue has been raised and needs PM follow-through." },
+  { title: "Other", description: "Catch-all operational risk, including compound-risk and shit-show escalations." },
+];
 
 function humanize(v: string): string {
   return v.toLowerCase().replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
@@ -113,7 +128,11 @@ export default function PmActionQueueClient({ isAdminLike }: { isAdminLike: bool
   const [statusFilter, setStatusFilter] = useState<string[]>(["OPEN", "ACKNOWLEDGED"]);
   const [severityFilter, setSeverityFilter] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState<string[]>([]);
+  const [stageFilter, setStageFilter] = useState<string[]>([]);
+  const [pbLocationFilter, setPbLocationFilter] = useState<string[]>([]);
   const [flags, setFlags] = useState<Flag[]>([]);
+  const [knownStages, setKnownStages] = useState<string[]>([]);
+  const [knownPbLocations, setKnownPbLocations] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(initialFlagId);
@@ -128,17 +147,21 @@ export default function PmActionQueueClient({ isAdminLike }: { isAdminLike: bool
       for (const s of statusFilter) params.append("status", s);
       for (const s of severityFilter) params.append("severity", s);
       for (const t of typeFilter) params.append("type", t);
+      for (const stage of stageFilter) params.append("stage", stage);
+      for (const location of pbLocationFilter) params.append("pbLocation", location);
       const res = await fetch(`/api/pm-flags?${params.toString()}`);
       if (!res.ok) throw new Error(await res.text());
       const data = (await res.json()) as { flags: Flag[] };
       setFlags(data.flags);
+      setKnownStages(prev => [...new Set([...prev, ...data.flags.map(flag => flag.dealStage).filter(Boolean) as string[]])].sort());
+      setKnownPbLocations(prev => [...new Set([...prev, ...data.flags.map(flag => flag.pbLocation).filter(Boolean) as string[]])].sort());
       setLastUpdated(new Date().toISOString());
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load flags");
     } finally {
       setLoading(false);
     }
-  }, [tab, statusFilter, severityFilter, typeFilter]);
+  }, [tab, statusFilter, severityFilter, typeFilter, stageFilter, pbLocationFilter]);
 
   useEffect(() => {
     void fetchFlags();
@@ -167,12 +190,39 @@ export default function PmActionQueueClient({ isAdminLike }: { isAdminLike: bool
     return c;
   }, [flags]);
 
+  const stageOptions = useMemo(
+    () => knownStages.map(value => ({ value, label: value })),
+    [knownStages]
+  );
+
+  const pbLocationOptions = useMemo(
+    () => knownPbLocations.map(value => ({ value, label: value })),
+    [knownPbLocations]
+  );
+
   return (
     <DashboardShell
       title="PM Action Queue"
       accentColor="orange"
       lastUpdated={lastUpdated}
     >
+      <section className="mb-6 rounded-lg border border-t-border bg-surface p-4">
+        <div className="mb-3">
+          <h2 className="text-sm font-semibold text-foreground">Flag Meanings</h2>
+          <p className="text-xs text-muted mt-1">
+            Quick guide to what each queue flag is calling out.
+          </p>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {FLAG_MEANINGS.map(item => (
+            <div key={item.title} className="rounded-md border border-t-border bg-surface-2 p-3">
+              <div className="text-sm font-medium text-foreground">{item.title}</div>
+              <p className="mt-1 text-xs leading-5 text-muted">{item.description}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* Counters row */}
       <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6">
         <Counter label="Critical"     value={counts.CRITICAL}     accent="red" />
@@ -211,6 +261,22 @@ export default function PmActionQueueClient({ isAdminLike }: { isAdminLike: bool
           selected={typeFilter}
           onChange={setTypeFilter}
           placeholder="All types"
+        />
+        <MultiSelectFilter
+          label="Stage"
+          options={stageOptions}
+          selected={stageFilter}
+          onChange={setStageFilter}
+          placeholder="All stages"
+          accentColor="blue"
+        />
+        <MultiSelectFilter
+          label="PB Location"
+          options={pbLocationOptions}
+          selected={pbLocationFilter}
+          onChange={setPbLocationFilter}
+          placeholder="All locations"
+          accentColor="green"
         />
 
         <button
@@ -331,6 +397,8 @@ function FlagCard({ flag, onClick }: { flag: Flag; onClick: () => void }) {
         <div className="flex items-center gap-3 mt-2 text-xs text-muted">
           <span className={`px-2 py-0.5 rounded border ${statusBadge(flag.status)}`}>{flag.status}</span>
           <span>{timeAgo(flag.raisedAt)}</span>
+          {flag.dealStage && <span>{flag.dealStage}</span>}
+          {flag.pbLocation && <span>{flag.pbLocation}</span>}
           {flag.assignedToUser && <span>→ {flag.assignedToUser.name ?? flag.assignedToUser.email}</span>}
           {flag.raisedByUser && <span>by {flag.raisedByUser.name ?? flag.raisedByUser.email}</span>}
         </div>
@@ -426,6 +494,8 @@ function FlagDrawer({
               href={hubspotDealUrl(flag.hubspotDealId)}
             />
             <Field label="Type" value={humanize(flag.type)} />
+            <Field label="Stage" value={flag.dealStage ?? "Unknown"} />
+            <Field label="PB Location" value={flag.pbLocation ?? "Unknown"} />
             <Field label="Assigned to" value={flag.assignedToUser?.name ?? flag.assignedToUser?.email ?? "Unassigned"} />
             <Field label="Raised by" value={flag.raisedByUser?.name ?? flag.raisedByUser?.email ?? "(system)"} />
             <Field label="Raised" value={new Date(flag.raisedAt).toLocaleString()} />

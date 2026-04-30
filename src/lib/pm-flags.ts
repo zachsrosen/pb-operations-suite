@@ -39,6 +39,8 @@ export type PmFlagWithEvents = PmFlag & {
   assignedToUser?: { id: string; email: string; name: string | null } | null;
   raisedByUser?: { id: string; email: string; name: string | null } | null;
   resolvedByUser?: { id: string; email: string; name: string | null } | null;
+  dealStage?: string | null;
+  pbLocation?: string | null;
 };
 
 export interface CreateFlagInput {
@@ -752,6 +754,8 @@ export interface ListFlagsFilter {
   type?: PmFlagType[];
   assignedToUserId?: string | null; // null = unassigned
   hubspotDealId?: string;
+  dealStage?: string[];
+  pbLocation?: string[];
   limit?: number;
 }
 
@@ -763,11 +767,29 @@ export async function listFlags(filter: ListFlagsFilter = {}): Promise<PmFlagWit
   if (filter.status?.length) where.status = { in: filter.status };
   if (filter.severity?.length) where.severity = { in: filter.severity };
   if (filter.type?.length) where.type = { in: filter.type };
-  if (filter.hubspotDealId) where.hubspotDealId = filter.hubspotDealId;
   if (filter.assignedToUserId === null) where.assignedToUserId = null;
   else if (filter.assignedToUserId) where.assignedToUserId = filter.assignedToUserId;
 
-  return prisma.pmFlag.findMany({
+  let filteredDealsById: Map<string, { stage: string; pbLocation: string | null }> | null = null;
+  if (filter.dealStage?.length || filter.pbLocation?.length || filter.hubspotDealId) {
+    const deals = await prisma.deal.findMany({
+      where: {
+        ...(filter.hubspotDealId ? { hubspotDealId: filter.hubspotDealId } : {}),
+        ...(filter.dealStage?.length ? { stage: { in: filter.dealStage } } : {}),
+        ...(filter.pbLocation?.length ? { pbLocation: { in: filter.pbLocation } } : {}),
+      },
+      select: { hubspotDealId: true, stage: true, pbLocation: true },
+    });
+    if (deals.length === 0) return [];
+    filteredDealsById = new Map(
+      deals.map(deal => [deal.hubspotDealId, { stage: deal.stage, pbLocation: deal.pbLocation }])
+    );
+    where.hubspotDealId = { in: deals.map(deal => deal.hubspotDealId) };
+  } else if (filter.hubspotDealId) {
+    where.hubspotDealId = filter.hubspotDealId;
+  }
+
+  const flags = await prisma.pmFlag.findMany({
     where,
     include: {
       events: { orderBy: { createdAt: "asc" } },
@@ -781,7 +803,25 @@ export async function listFlags(filter: ListFlagsFilter = {}): Promise<PmFlagWit
       { severity: "desc" },
       { raisedAt: "desc" },
     ],
-    take: filter.limit ?? 200,
+    ...(typeof filter.limit === "number" ? { take: filter.limit } : {}),
+  });
+
+  if (flags.length === 0) return [];
+
+  const dealContextById = filteredDealsById ?? new Map(
+    (await prisma.deal.findMany({
+      where: { hubspotDealId: { in: [...new Set(flags.map(flag => flag.hubspotDealId))] } },
+      select: { hubspotDealId: true, stage: true, pbLocation: true },
+    })).map(deal => [deal.hubspotDealId, { stage: deal.stage, pbLocation: deal.pbLocation }])
+  );
+
+  return flags.map(flag => {
+    const dealContext = dealContextById.get(flag.hubspotDealId);
+    return {
+      ...flag,
+      dealStage: dealContext?.stage ?? null,
+      pbLocation: dealContext?.pbLocation ?? null,
+    };
   });
 }
 
