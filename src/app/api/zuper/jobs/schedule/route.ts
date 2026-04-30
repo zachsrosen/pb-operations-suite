@@ -405,6 +405,7 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json();
     const { project, schedule, rescheduleOnly } = body;
+    const schedulerEmail = session.user.email;
     const isUiReschedule = schedule?.isReschedule === true;
     // Default to reschedule-only to avoid accidental job creation.
     const effectiveRescheduleOnly = rescheduleOnly !== false;
@@ -500,7 +501,7 @@ export async function PUT(request: NextRequest) {
           `Error: ${errorMessage}`,
         ].filter(Boolean).join("\n"),
         pageUrl: getSchedulerPageUrl(scheduleType),
-        reporterEmail: session.user.email,
+        reporterEmail: schedulerEmail,
         reporterName: session.user.name || undefined,
         entityId: String(project.id),
         entityName: project.name || String(project.id),
