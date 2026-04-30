@@ -72,6 +72,10 @@ interface SurveyProject {
     displayTime: string;
   };
   tentativeRecordId?: string;
+  fallbackBookedSlot?: {
+    bookedSlotId: string;
+    source: "tentative" | "pending_zuper";
+  };
   scheduledBy?: string;
   scheduledByEmail?: string;
   isPreSale?: boolean; // true for Sales Pipeline deals (pre-sale surveys)
@@ -627,7 +631,13 @@ export default function SiteSurveySchedulerPage() {
               nextTentativeScheduleDates[project.id] = rec.scheduledDate;
               project.scheduleDate = rec.scheduledDate;
               project.surveyStatus = isPendingZuper ? "Pending Zuper" : "Tentative";
-              project.tentativeRecordId = rec.id || project.tentativeRecordId;
+              project.tentativeRecordId = rec.fromBookedSlot ? undefined : (rec.id || project.tentativeRecordId);
+              project.fallbackBookedSlot = rec.fromBookedSlot && rec.bookedSlotId
+                ? {
+                    bookedSlotId: String(rec.bookedSlotId),
+                    source: isPendingZuper ? "pending_zuper" : "tentative",
+                  }
+                : undefined;
               project.scheduledBy = rec.scheduledBy || project.scheduledBy;
               project.scheduledByEmail = rec.scheduledByEmail || project.scheduledByEmail;
               if (!project.assignedSurveyor && resolvedAssignedName) {
@@ -1191,6 +1201,7 @@ export default function SiteSurveySchedulerPage() {
                 : p.assignedSlot,
               zuperScheduledTime: slot?.startTime ? formatTime12h(slot.startTime) : p.zuperScheduledTime,
               zuperHasSchedule: false,
+              fallbackBookedSlot: undefined,
             }
           : p
       )
@@ -1456,6 +1467,7 @@ export default function SiteSurveySchedulerPage() {
                 zuperScheduledTime: slot?.startTime ? formatTime12h(slot.startTime) : p.zuperScheduledTime,
                 zuperJobUid: zuperSyncSucceeded ? (scheduledZuperJobUid || p.zuperJobUid) : p.zuperJobUid,
                 zuperHasSchedule: zuperSyncSucceeded ? !!(scheduledZuperJobUid || p.zuperJobUid) : false,
+                fallbackBookedSlot: undefined,
               }
             : p
         )
@@ -1602,6 +1614,7 @@ export default function SiteSurveySchedulerPage() {
               scheduleDate: null,
               surveyStatus: "Ready to Schedule",
               tentativeRecordId: undefined,
+              fallbackBookedSlot: undefined,
               scheduledBy: undefined,
               scheduledByEmail: undefined,
               assignedSurveyor: undefined,
@@ -1672,8 +1685,35 @@ export default function SiteSurveySchedulerPage() {
   ]);
 
   const handleConfirmTentative = useCallback(async (project: SurveyProject) => {
-    const recordId = project.tentativeRecordId;
+    let recordId = project.tentativeRecordId;
     const isPendingZuper = isPendingZuperProject(project);
+    if (!recordId && project.fallbackBookedSlot && project.scheduleDate && project.assignedSlot) {
+      try {
+        const createdRecordId = await saveLocalScheduleHold({
+          project,
+          date: project.scheduleDate,
+          effectiveAssignee: project.assignedSlot.userName,
+          effectiveCrewUid: undefined,
+          effectiveTeamUid: undefined,
+          scheduleType: project.isPreSale ? "pre-sale-survey" : "survey",
+          pendingZuper: project.fallbackBookedSlot.source === "pending_zuper",
+          zuperError: project.fallbackBookedSlot.source === "pending_zuper"
+            ? "Recovered pending Zuper hold from booked slot"
+            : undefined,
+          slot: {
+            userName: project.assignedSlot.userName,
+            startTime: project.assignedSlot.startTime,
+            endTime: project.assignedSlot.endTime,
+            location: project.location,
+          },
+          notes: `${project.fallbackBookedSlot.source === "pending_zuper" ? "Recovered pending Zuper hold" : "Recovered tentative hold"} from booked slot`,
+        });
+        recordId = createdRecordId;
+      } catch {
+        showToast(isPendingZuper ? "Failed to rebuild pending Zuper record" : "Failed to rebuild tentative record", "warning");
+        return;
+      }
+    }
     if (!recordId) {
       showToast(isPendingZuper ? "No pending Zuper record found to retry" : "No tentative record found to confirm", "warning");
       return;
@@ -1704,6 +1744,7 @@ export default function SiteSurveySchedulerPage() {
                 tentativeRecordId: undefined,
                 zuperJobUid: data?.zuperJobUid || p.zuperJobUid,
                 zuperHasSchedule: true,
+                fallbackBookedSlot: undefined,
               }
             : p
         )
@@ -1721,7 +1762,7 @@ export default function SiteSurveySchedulerPage() {
     } finally {
       setConfirmingTentative(false);
     }
-  }, [fetchProjects, showToast]);
+  }, [fetchProjects, saveLocalScheduleHold, showToast]);
 
   const handleCancelTentative = useCallback(async (project: SurveyProject) => {
     const recordId = project.tentativeRecordId;
@@ -1737,6 +1778,21 @@ export default function SiteSurveySchedulerPage() {
         if (!res.ok) {
           const data = await res.json().catch(() => null);
           showToast(data?.error || (isPendingZuper ? "Failed to cancel pending Zuper schedule" : "Failed to cancel tentative schedule"), "warning");
+          return;
+        }
+      } else if (project.fallbackBookedSlot && project.scheduleDate && project.assignedSlot) {
+        const res = await fetch("/api/zuper/availability", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            date: project.scheduleDate,
+            startTime: project.assignedSlot.startTime,
+            userName: project.assignedSlot.userName,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => null);
+          showToast(data?.error || (isPendingZuper ? "Failed to clear pending Zuper slot" : "Failed to clear tentative slot"), "warning");
           return;
         }
       }
@@ -1763,6 +1819,7 @@ export default function SiteSurveySchedulerPage() {
                 assignedSlot: undefined,
                 zuperScheduledTime: undefined,
                 tentativeRecordId: undefined,
+                fallbackBookedSlot: undefined,
               }
             : p
         )
