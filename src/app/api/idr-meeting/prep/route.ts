@@ -17,11 +17,12 @@ const PREP_FIELDS = [
   "electricianDays", "discoReco", "interiorAccess",
   "needsSurveyInfo", "needsResurvey", "salesChangeRequested",
   "salesChangeNotes", "opsChangeNotes",
-  "customerNotes", "customerNotesCreateTask", "operationsNotes", "designNotes", "conclusion",
+  "customerNotes", "customerNotesCreateTask", "operationsNotes", "opsRevisionNotes",
+  "designNotes", "conclusion",
   // Adders
   "adderTileRoof", "adderMetalRoof", "adderFlatFoamRoof", "adderShakeRoof",
   "adderSteepPitch", "adderTwoStorey", "adderTrenching", "adderGroundMount",
-  "adderMpuUpgrade", "adderEvCharger", "customAdders",
+  "adderMpuUpgrade", "adderEvCharger", "adderTier1", "adderTier2", "customAdders",
 ] as const;
 
 export async function POST(req: NextRequest) {

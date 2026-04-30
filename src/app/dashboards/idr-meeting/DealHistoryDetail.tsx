@@ -21,11 +21,38 @@ interface SessionItem {
   dealOwner: string | null;
   designStatus: string | null;
   equipmentSummary: string | null;
+  difficulty: number | null;
+  installerCount: number | null;
+  installerDays: number | null;
+  electricianCount: number | null;
+  electricianDays: number | null;
+  discoReco: boolean | null;
+  interiorAccess: boolean | null;
+  needsSurveyInfo: boolean | null;
+  salesChangeRequested: boolean | null;
+  salesChangeNotes: string | null;
+  opsChangeNotes: string | null;
   customerNotes: string | null;
   operationsNotes: string | null;
+  opsRevisionNotes: string | null;
   designNotes: string | null;
   conclusion: string | null;
   escalationReason: string | null;
+  shitShowFlagged: boolean;
+  shitShowReason: string | null;
+  adderTileRoof: boolean;
+  adderMetalRoof: boolean;
+  adderFlatFoamRoof: boolean;
+  adderShakeRoof: boolean;
+  adderSteepPitch: boolean;
+  adderTwoStorey: boolean;
+  adderTrenching: boolean;
+  adderGroundMount: boolean;
+  adderMpuUpgrade: boolean;
+  adderEvCharger: boolean;
+  adderTier1: boolean;
+  adderTier2: boolean;
+  customAdders: unknown;
   session: { date: string; status: string };
   createdAt: string;
 }
@@ -156,12 +183,68 @@ function SessionCard({ item }: { item: SessionItem }) {
         <SnapCell label="Deal Owner" value={item.dealOwner} />
         <SnapCell label="System Size" value={item.systemSizeKw ? `${item.systemSizeKw} kW` : null} />
         <SnapCell label="Equipment" value={item.equipmentSummary} />
+        <SnapCell label="Difficulty" value={item.difficulty != null ? `${item.difficulty}/5` : null} />
+        <SnapCell label="Deal Amount" value={item.dealAmount ? `$${item.dealAmount.toLocaleString()}` : null} />
       </div>
+
+      {/* Install planning row */}
+      {(item.installerCount != null || item.electricianCount != null) && (
+        <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-muted">
+          {(item.installerCount != null || item.installerDays != null) && (
+            <span>Roofers: {item.installerCount ?? "?"} × {item.installerDays ?? "?"} day{(item.installerDays ?? 0) !== 1 ? "s" : ""}</span>
+          )}
+          {(item.electricianCount != null || item.electricianDays != null) && (
+            <span>Electricians: {item.electricianCount ?? "?"} × {item.electricianDays ?? "?"} day{(item.electricianDays ?? 0) !== 1 ? "s" : ""}</span>
+          )}
+        </div>
+      )}
+
+      {/* Status flags */}
+      <div className="flex flex-wrap gap-1.5">
+        <FlagChip label="Disco/Reco" active={item.discoReco} />
+        <FlagChip label="Interior Access" active={item.interiorAccess} />
+        {item.needsSurveyInfo && <FlagChip label="Needs Survey Info" active={true} color="yellow" />}
+        {item.salesChangeRequested && <FlagChip label="Sales Change" active={true} color="yellow" />}
+        {item.shitShowFlagged && <FlagChip label="🔥 Shit Show" active={true} color="red" />}
+      </div>
+
+      {/* Adders */}
+      {(() => {
+        const adders: string[] = [];
+        if (item.adderTileRoof) adders.push("Tile roof");
+        if (item.adderMetalRoof) adders.push("Metal roof");
+        if (item.adderFlatFoamRoof) adders.push("Flat/foam");
+        if (item.adderShakeRoof) adders.push("Shake");
+        if (item.adderSteepPitch) adders.push("Steep pitch");
+        if (item.adderTwoStorey) adders.push("2+ storey");
+        if (item.adderTrenching) adders.push("Trenching");
+        if (item.adderGroundMount) adders.push("Ground mount");
+        if (item.adderMpuUpgrade) adders.push("MPU upgrade");
+        if (item.adderEvCharger) adders.push("EV charger");
+        if (item.adderTier1) adders.push(`Tier 1 (15%)${item.dealAmount ? ` $${Math.round(item.dealAmount * 0.15).toLocaleString()}` : ""}`);
+        if (item.adderTier2) adders.push(`Tier 2 (20%)${item.dealAmount ? ` $${Math.round(item.dealAmount * 0.20).toLocaleString()}` : ""}`);
+        const customs = Array.isArray(item.customAdders) ? item.customAdders as Array<{ name: string; amount: number }> : [];
+        for (const c of customs) {
+          if (c && typeof c === "object" && "name" in c) {
+            adders.push(`${c.name} ($${Math.abs(c.amount).toLocaleString()})`);
+          }
+        }
+        if (adders.length === 0) return null;
+        return (
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-wider text-muted">Adders</p>
+            <p className="text-xs text-foreground">{adders.join(", ")}</p>
+          </div>
+        );
+      })()}
 
       {/* Notes */}
       <div className="border-t border-t-border pt-2 space-y-1.5">
         {item.escalationReason && (
           <NoteField label="Escalation Reason" value={item.escalationReason} color="text-orange-500" />
+        )}
+        {item.shitShowReason && (
+          <NoteField label="Shit Show Reason" value={item.shitShowReason} color="text-red-400" />
         )}
         {item.conclusion && (
           <NoteField label="Conclusion" value={item.conclusion} color="text-emerald-500" />
@@ -172,10 +255,19 @@ function SessionCard({ item }: { item: SessionItem }) {
         {item.operationsNotes && (
           <NoteField label="Ops Notes" value={item.operationsNotes} />
         )}
+        {item.opsRevisionNotes && (
+          <NoteField label="Ops Revision Notes" value={item.opsRevisionNotes} />
+        )}
         {item.designNotes && (
           <NoteField label="Design Notes" value={item.designNotes} />
         )}
-        {!item.conclusion && !item.customerNotes && !item.operationsNotes && !item.designNotes && !item.escalationReason && (
+        {item.salesChangeNotes && (
+          <NoteField label="Sales Change Reason" value={item.salesChangeNotes} />
+        )}
+        {item.opsChangeNotes && (
+          <NoteField label="Ops Change Reason" value={item.opsChangeNotes} />
+        )}
+        {!item.conclusion && !item.customerNotes && !item.operationsNotes && !item.opsRevisionNotes && !item.designNotes && !item.escalationReason && (
           <p className="text-xs text-muted italic">No notes recorded</p>
         )}
       </div>
@@ -190,6 +282,22 @@ function SnapCell({ label, value }: { label: string; value: string | null | unde
       <p className="text-[9px] text-muted uppercase tracking-wider">{label}</p>
       <p className="text-xs text-foreground truncate">{value}</p>
     </div>
+  );
+}
+
+function FlagChip({ label, active, color }: { label: string; active: boolean | null | undefined; color?: "yellow" | "red" }) {
+  if (active == null) return null;
+  const bg = color === "red"
+    ? "bg-red-500/15 text-red-400"
+    : color === "yellow"
+      ? "bg-yellow-500/15 text-yellow-400"
+      : active
+        ? "bg-emerald-500/15 text-emerald-400"
+        : "bg-surface text-muted";
+  return (
+    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${bg}`}>
+      {label}: {active ? "Yes" : "No"}
+    </span>
   );
 }
 

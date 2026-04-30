@@ -29,6 +29,13 @@ const SITE_ADDERS = [
   { key: "adderEvCharger" as const, label: "EV charger install" },
 ];
 
+const TIER_ADDER_KEYS = ["adderTier1", "adderTier2"] as const;
+
+const TIER_LABELS: Record<(typeof TIER_ADDER_KEYS)[number], { label: string; pct: number }> = {
+  adderTier1: { label: "Tier 1", pct: 15 },
+  adderTier2: { label: "Tier 2", pct: 20 },
+};
+
 interface Props {
   item: IdrItem;
   onChange: (updates: Partial<IdrItem>) => void;
@@ -42,6 +49,14 @@ export function AddersChecklist({ item, onChange, readOnly }: Props) {
   const handleRoofChange = (key: (typeof ROOF_ADDER_KEYS)[number], checked: boolean) => {
     const updates: Partial<IdrItem> = {};
     for (const k of ROOF_ADDER_KEYS) {
+      (updates as Record<string, boolean>)[k] = k === key ? checked : false;
+    }
+    onChange(updates);
+  };
+
+  const handleTierChange = (key: (typeof TIER_ADDER_KEYS)[number], checked: boolean) => {
+    const updates: Partial<IdrItem> = {};
+    for (const k of TIER_ADDER_KEYS) {
       (updates as Record<string, boolean>)[k] = k === key ? checked : false;
     }
     onChange(updates);
@@ -116,6 +131,39 @@ export function AddersChecklist({ item, onChange, readOnly }: Props) {
             </label>
           ))}
         </div>
+      </div>
+
+      {/* Tier */}
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5">Tier Adders</p>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+          {TIER_ADDER_KEYS.map((key) => {
+            const { label, pct } = TIER_LABELS[key];
+            const amt = item.dealAmount ? Math.round(item.dealAmount * (pct / 100)) : null;
+            return (
+              <label key={key} className="flex items-center gap-1.5 text-xs text-foreground">
+                <input
+                  type="checkbox"
+                  checked={item[key]}
+                  onChange={(e) => handleTierChange(key, e.target.checked)}
+                  disabled={readOnly}
+                  className="accent-orange-500"
+                />
+                <span>
+                  {label} ({pct}%)
+                  {amt != null && (
+                    <span className="text-muted ml-1">
+                      — ${amt.toLocaleString()}
+                    </span>
+                  )}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+        {!item.dealAmount && (item.adderTier1 || item.adderTier2) && (
+          <p className="text-[10px] text-yellow-400 mt-1">Deal amount unknown — tier amount will not be calculated</p>
+        )}
       </div>
 
       {/* Custom */}

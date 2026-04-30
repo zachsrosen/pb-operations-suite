@@ -265,6 +265,9 @@ interface NoteFields {
   opsChangeNotes?: string | null;
   needsResurvey?: boolean | null;
   adderSummary?: string | null;
+  shitShowFlagged?: boolean | null;
+  shitShowReason?: string | null;
+  opsRevisionNotes?: string | null;
 }
 
 /** Build the formatted note body for the HubSpot timeline. */
@@ -302,6 +305,8 @@ export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string): strin
   if (fields.needsSurveyInfo) lines.push(`<strong>Needs Survey Info:</strong> Yes`);
   if (fields.opsChangeNotes) lines.push(`<strong>Ops Communication Reason:</strong> ${esc(fields.opsChangeNotes)}`);
   if (fields.adderSummary) lines.push(`<strong>Adders:</strong> ${esc(fields.adderSummary)}`);
+  if (fields.shitShowFlagged) lines.push(`<strong>🔥 Shit Show:</strong> ${fields.shitShowReason ? esc(fields.shitShowReason) : "Flagged"}`);
+  if (fields.opsRevisionNotes) lines.push(`<strong>Ops Revision Notes:</strong> ${esc(fields.opsRevisionNotes)}`);
   if (fields.designNotes) lines.push(`<strong>Design Notes:</strong> ${esc(fields.designNotes)}`);
   if (fields.conclusion) lines.push(`<strong>Conclusion:</strong> ${esc(fields.conclusion)}`);
 
@@ -377,6 +382,9 @@ export function serializeAdderSummary(item: {
   adderGroundMount: boolean;
   adderMpuUpgrade: boolean;
   adderEvCharger: boolean;
+  adderTier1?: boolean;
+  adderTier2?: boolean;
+  dealAmount?: number | null;
   customAdders: unknown;
 }): string | null {
   const parts: string[] = [];
@@ -390,6 +398,18 @@ export function serializeAdderSummary(item: {
   if (item.adderGroundMount) parts.push("Ground mount");
   if (item.adderMpuUpgrade) parts.push("MPU/svc upgrade");
   if (item.adderEvCharger) parts.push("EV charger install");
+  if (item.adderTier1 && item.dealAmount) {
+    const amt = Math.round(item.dealAmount * 0.15);
+    parts.push(`Tier 1 15% ($${amt.toLocaleString()})`);
+  } else if (item.adderTier1) {
+    parts.push("Tier 1 15%");
+  }
+  if (item.adderTier2 && item.dealAmount) {
+    const amt = Math.round(item.dealAmount * 0.20);
+    parts.push(`Tier 2 20% ($${amt.toLocaleString()})`);
+  } else if (item.adderTier2) {
+    parts.push("Tier 2 20%");
+  }
   const customs = Array.isArray(item.customAdders) ? item.customAdders : [];
   for (const c of customs) {
     if (c && typeof c === "object" && "name" in c) {
@@ -607,6 +627,9 @@ export async function syncItemToHubSpot(
     customerNotesCreateTask: boolean;
     designNotes: string | null;
     conclusion: string | null;
+    shitShowFlagged: boolean;
+    shitShowReason: string | null;
+    opsRevisionNotes: string | null;
     adderTileRoof: boolean;
     adderMetalRoof: boolean;
     adderFlatFoamRoof: boolean;
@@ -617,6 +640,9 @@ export async function syncItemToHubSpot(
     adderGroundMount: boolean;
     adderMpuUpgrade: boolean;
     adderEvCharger: boolean;
+    adderTier1: boolean;
+    adderTier2: boolean;
+    dealAmount: number | null;
     customAdders: unknown;
   },
   sessionDate: Date,
@@ -664,6 +690,9 @@ export async function syncItemToHubSpot(
           opsChangeNotes: item.opsChangeNotes,
           needsResurvey: item.needsResurvey,
           adderSummary: serializeAdderSummary(item),
+          shitShowFlagged: item.shitShowFlagged,
+          shitShowReason: item.shitShowReason,
+          opsRevisionNotes: item.opsRevisionNotes,
         },
         sessionDate.toISOString(),
       );
@@ -762,6 +791,7 @@ export async function searchMeetingItems(params: {
           { region: { contains: query, mode: "insensitive" as const } },
           { customerNotes: { contains: query, mode: "insensitive" as const } },
           { operationsNotes: { contains: query, mode: "insensitive" as const } },
+          { opsRevisionNotes: { contains: query, mode: "insensitive" as const } },
           { designNotes: { contains: query, mode: "insensitive" as const } },
           { conclusion: { contains: query, mode: "insensitive" as const } },
           { escalationReason: { contains: query, mode: "insensitive" as const } },

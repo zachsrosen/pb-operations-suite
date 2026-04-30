@@ -12,6 +12,7 @@ interface Props {
 const NOTE_FIELDS: { key: keyof IdrItem; label: string }[] = [
   { key: "customerNotes", label: "Customer Notes" },
   { key: "operationsNotes", label: "Operations Notes" },
+  { key: "opsRevisionNotes", label: "Ops Revision Notes" },
   { key: "designNotes", label: "Design Notes" },
   { key: "conclusion", label: "Conclusion" },
 ];

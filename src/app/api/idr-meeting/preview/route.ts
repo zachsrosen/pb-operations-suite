@@ -113,6 +113,7 @@ export async function GET() {
       operationsNotes: prep?.operationsNotes ?? null,
       designNotes: prep?.designNotes ?? null,
       conclusion: prep?.conclusion ?? null,
+      opsRevisionNotes: prep?.opsRevisionNotes ?? null,
       adderTileRoof: prep?.adderTileRoof ?? false,
       adderMetalRoof: prep?.adderMetalRoof ?? false,
       adderFlatFoamRoof: prep?.adderFlatFoamRoof ?? false,
@@ -123,6 +124,8 @@ export async function GET() {
       adderGroundMount: prep?.adderGroundMount ?? false,
       adderMpuUpgrade: prep?.adderMpuUpgrade ?? false,
       adderEvCharger: prep?.adderEvCharger ?? false,
+      adderTier1: prep?.adderTier1 ?? false,
+      adderTier2: prep?.adderTier2 ?? false,
       customAdders: (prep?.customAdders as Array<{ name: string; amount: number }>) ?? [],
       escalationReason: null as string | null,
       tags: snapshot.tags,
@@ -191,6 +194,7 @@ export async function GET() {
           customerNotes: esc.customerNotes ?? null,
           customerNotesCreateTask: esc.customerNotesCreateTask ?? false,
           operationsNotes: esc.operationsNotes ?? null,
+          opsRevisionNotes: null as string | null,
           designNotes: esc.designNotes ?? null,
           conclusion: esc.conclusion ?? null,
           adderTileRoof: esc.adderTileRoof ?? false,
@@ -203,6 +207,8 @@ export async function GET() {
           adderGroundMount: esc.adderGroundMount ?? false,
           adderMpuUpgrade: esc.adderMpuUpgrade ?? false,
           adderEvCharger: esc.adderEvCharger ?? false,
+          adderTier1: esc.adderTier1 ?? false,
+          adderTier2: esc.adderTier2 ?? false,
           customAdders: (esc.customAdders as Array<{ name: string; amount: number }>) ?? [],
           escalationReason: esc.reason,
           tags: snapshot.tags,
@@ -242,6 +248,8 @@ export async function GET() {
       existing.adderGroundMount = esc.adderGroundMount || existing.adderGroundMount;
       existing.adderMpuUpgrade = esc.adderMpuUpgrade || existing.adderMpuUpgrade;
       existing.adderEvCharger = esc.adderEvCharger || existing.adderEvCharger;
+      existing.adderTier1 = esc.adderTier1 || existing.adderTier1;
+      existing.adderTier2 = esc.adderTier2 || existing.adderTier2;
       const queueCustom = esc.customAdders as Array<{ name: string; amount: number }> | null;
       if (queueCustom && Array.isArray(queueCustom) && queueCustom.length > 0) {
         existing.customAdders = queueCustom;
