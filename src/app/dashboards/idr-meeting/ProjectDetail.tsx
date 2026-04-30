@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useMemo } from "react";
+import { useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
 import { useToast } from "@/contexts/ToastContext";
@@ -15,14 +15,6 @@ import { AhjUtilityInfo } from "./AhjUtilityInfo";
 import PhotoGalleryCard from "@/components/deal-detail/PhotoGalleryCard";
 import { AddersChecklist } from "./AddersChecklist";
 import { PricingBreakdown } from "./PricingBreakdown";
-import {
-  calcPrice,
-  matchLineItemToEquipment,
-  EQUIPMENT_CATALOG,
-  LOCATION_SCHEME,
-  type EquipmentSelection,
-} from "@/lib/pricing-calculator";
-import { normalizeLocation } from "@/lib/locations";
 
 const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "7086286";
 
@@ -117,48 +109,6 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
     },
     [item, onChange],
   );
-
-  const pricingDeltaPct = useMemo(() => {
-    if (!item?.dealAmount || !lineItemsQuery.data?.lineItems?.length) return null;
-    const modules: EquipmentSelection[] = [];
-    const inverters: EquipmentSelection[] = [];
-    const batteries: EquipmentSelection[] = [];
-    const otherEquip: EquipmentSelection[] = [];
-    for (const li of lineItemsQuery.data.lineItems) {
-      const code = matchLineItemToEquipment(li.name, li.sku, li.productCategory, li.manufacturer);
-      if (!code) continue;
-      const eq = EQUIPMENT_CATALOG.find((e) => e.code === code);
-      if (!eq) continue;
-      const sel = { code, qty: li.quantity };
-      switch (eq.category) {
-        case "module": modules.push(sel); break;
-        case "inverter": inverters.push(sel); break;
-        case "battery": batteries.push(sel); break;
-        default: otherEquip.push(sel); break;
-      }
-    }
-    const normalized = normalizeLocation(item.region);
-    const schemeId = normalized ? (LOCATION_SCHEME[normalized] ?? "base") : "base";
-    const customs = Array.isArray(item.customAdders) ? item.customAdders : [];
-    const customTotal = customs.reduce(
-      (sum: number, c: { amount?: number }) => sum + (typeof c.amount === "number" ? c.amount : 0),
-      0,
-    );
-    let tierTotal = 0;
-    if (item.adderTier1) tierTotal += Math.round(item.dealAmount * 0.15);
-    if (item.adderTier2) tierTotal += Math.round(item.dealAmount * 0.20);
-    const roofTypeId = item.adderTileRoof ? "tile" : item.adderMetalRoof ? "metal" : item.adderFlatFoamRoof ? "flat" : item.adderShakeRoof ? "shake" : "comp";
-    const breakdown = calcPrice({
-      modules, inverters, batteries, otherEquip,
-      pricingSchemeId: schemeId,
-      roofTypeId,
-      storeyId: item.adderTwoStorey ? "2" : "1",
-      pitchId: item.adderSteepPitch ? "steep1" : "none",
-      activeAdderIds: [],
-      customFixedAdder: customTotal + tierTotal,
-    });
-    return Math.abs(item.dealAmount - breakdown.finalPrice) / item.dealAmount * 100;
-  }, [item, lineItemsQuery.data]);
 
   if (!item) {
     return (
@@ -390,17 +340,6 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
             <Section title="DA Status Actions">
               <StatusActionsForm item={item} onChange={handleFieldChange} readOnly={readOnly} />
             </Section>
-
-            {item.salesChangeRequested && pricingDeltaPct !== null && pricingDeltaPct < 10 && (
-              <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 px-3 py-2">
-                <p className="text-xs font-semibold text-yellow-400">
-                  ⚠ Sales change delta is {pricingDeltaPct.toFixed(1)}% of project cost — under 10% threshold
-                </p>
-                <p className="text-[10px] text-yellow-400/80 mt-0.5">
-                  Changes under 10% of project cost may be disqualified.
-                </p>
-              </div>
-            )}
 
             <Section title="Meeting Notes">
               <MeetingNotesForm item={item} onChange={handleFieldChange} readOnly={readOnly} />

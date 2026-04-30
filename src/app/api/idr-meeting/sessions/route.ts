@@ -165,6 +165,7 @@ export async function POST(req: NextRequest) {
       ...(q.needsResurvey != null ? { needsResurvey: q.needsResurvey } : {}),
       ...(q.salesChangeRequested != null ? { salesChangeRequested: q.salesChangeRequested } : {}),
       ...(q.salesChangeNotes ? { salesChangeNotes: q.salesChangeNotes } : {}),
+      ...(q.salesChangeAmount != null ? { salesChangeAmount: q.salesChangeAmount } : {}),
       ...(q.opsChangeNotes ? { opsChangeNotes: q.opsChangeNotes } : {}),
       ...(q.customerNotes ? { customerNotes: q.customerNotes } : {}),
       ...(q.customerNotesCreateTask ? { customerNotesCreateTask: true } : {}),

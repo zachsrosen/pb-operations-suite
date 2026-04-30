@@ -13,7 +13,7 @@ import { setShitShowFlag } from "@/lib/shit-show/hubspot-flag";
 const EDITABLE_FIELDS = [
   "difficulty", "installerCount", "installerDays", "electricianCount",
   "electricianDays", "discoReco", "interiorAccess", "needsSurveyInfo",
-  "needsResurvey", "salesChangeRequested", "salesChangeNotes", "opsChangeNotes",
+  "needsResurvey", "salesChangeRequested", "salesChangeNotes", "salesChangeAmount", "opsChangeNotes",
   "customerNotes", "customerNotesCreateTask",
   "operationsNotes", "opsRevisionNotes", "designNotes", "conclusion", "sortOrder",
   "escalationReason", "type", "reviewed", "shitShowFlagged", "shitShowReason",
@@ -159,6 +159,7 @@ export async function DELETE(
           needsResurvey: item.needsResurvey,
           salesChangeRequested: item.salesChangeRequested,
           salesChangeNotes: item.salesChangeNotes,
+          salesChangeAmount: item.salesChangeAmount,
           opsChangeNotes: item.opsChangeNotes,
           customerNotes: item.customerNotes,
           customerNotesCreateTask: item.customerNotesCreateTask,

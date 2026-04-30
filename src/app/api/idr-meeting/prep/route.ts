@@ -16,7 +16,7 @@ const PREP_FIELDS = [
   "difficulty", "installerCount", "installerDays", "electricianCount",
   "electricianDays", "discoReco", "interiorAccess",
   "needsSurveyInfo", "needsResurvey", "salesChangeRequested",
-  "salesChangeNotes", "opsChangeNotes",
+  "salesChangeNotes", "salesChangeAmount", "opsChangeNotes",
   "customerNotes", "customerNotesCreateTask", "operationsNotes", "opsRevisionNotes",
   "designNotes", "conclusion",
   // Adders

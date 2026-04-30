@@ -261,6 +261,8 @@ interface NoteFields {
   conclusion: string | null;
   salesChangeRequested?: boolean | null;
   salesChangeNotes?: string | null;
+  salesChangeAmount?: number | null;
+  dealAmount?: number | null;
   needsSurveyInfo?: boolean | null;
   opsChangeNotes?: string | null;
   needsResurvey?: boolean | null;
@@ -300,7 +302,18 @@ export function buildHubSpotNoteBody(fields: NoteFields, dateStr: string): strin
   }
   lines.push(`<strong>Disco/Reco:</strong> ${fields.discoReco ? "Yes" : "No"}`);
   lines.push(`<strong>Interior Access:</strong> ${fields.interiorAccess ? "Yes" : "No"}`);
-  if (fields.salesChangeRequested) lines.push(`<strong>Sales Change Requested:</strong> Yes`);
+  if (fields.salesChangeRequested) {
+    let scLine = `<strong>Sales Change Requested:</strong> Yes`;
+    if (fields.salesChangeAmount != null) {
+      scLine += ` — $${Math.abs(fields.salesChangeAmount).toLocaleString()}`;
+      if (fields.dealAmount && fields.dealAmount > 0) {
+        const pct = (Math.abs(fields.salesChangeAmount) / fields.dealAmount) * 100;
+        scLine += ` (${pct.toFixed(1)}% of project)`;
+        if (pct < 10) scLine += ` ⚠ UNDER 10% THRESHOLD`;
+      }
+    }
+    lines.push(scLine);
+  }
   if (fields.salesChangeNotes) lines.push(`<strong>Sales Communication Reason:</strong> ${esc(fields.salesChangeNotes)}`);
   if (fields.needsSurveyInfo) lines.push(`<strong>Needs Survey Info:</strong> Yes`);
   if (fields.opsChangeNotes) lines.push(`<strong>Ops Communication Reason:</strong> ${esc(fields.opsChangeNotes)}`);
@@ -622,6 +635,7 @@ export async function syncItemToHubSpot(
     needsResurvey: boolean | null;
     salesChangeRequested: boolean | null;
     salesChangeNotes: string | null;
+    salesChangeAmount: number | null;
     opsChangeNotes: string | null;
     customerNotes: string | null;
     customerNotesCreateTask: boolean;
@@ -686,6 +700,8 @@ export async function syncItemToHubSpot(
           conclusion: item.conclusion,
           salesChangeRequested: item.salesChangeRequested,
           salesChangeNotes: item.salesChangeNotes,
+          salesChangeAmount: item.salesChangeAmount,
+          dealAmount: item.dealAmount,
           needsSurveyInfo: item.needsSurveyInfo,
           opsChangeNotes: item.opsChangeNotes,
           needsResurvey: item.needsResurvey,
