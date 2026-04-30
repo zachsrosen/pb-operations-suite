@@ -405,6 +405,7 @@ export async function PUT(request: NextRequest) {
 
     const body = await request.json();
     const { project, schedule, rescheduleOnly } = body;
+    const schedulerEmail = session.user.email;
     const isUiReschedule = schedule?.isReschedule === true;
     // Default to reschedule-only to avoid accidental job creation.
     const effectiveRescheduleOnly = rescheduleOnly !== false;
@@ -479,9 +480,10 @@ export async function PUT(request: NextRequest) {
     }
 
     const reportZuperSyncFailure = async (
-      errorMessage: string,
+      errorMessage: string | undefined,
       failureMode: "no_job_found" | "reschedule_failed" | "create_failed"
     ) => {
+      const normalizedError = errorMessage || "Unknown Zuper sync error";
       await createAutomatedBugReport({
         title: `Zuper schedule sync failed: ${scheduleType} ${project.id}`,
         description: [
@@ -497,10 +499,10 @@ export async function PUT(request: NextRequest) {
           schedule.assignedUser ? `Assignee: ${schedule.assignedUser}` : null,
           existingJobUid ? `Known Zuper job UID: ${existingJobUid}` : null,
           `Reschedule only: ${effectiveRescheduleOnly ? "yes" : "no"}`,
-          `Error: ${errorMessage}`,
+          `Error: ${normalizedError}`,
         ].filter(Boolean).join("\n"),
         pageUrl: getSchedulerPageUrl(scheduleType),
-        reporterEmail: session.user.email,
+        reporterEmail: schedulerEmail,
         reporterName: session.user.name || undefined,
         entityId: String(project.id),
         entityName: project.name || String(project.id),
