@@ -2509,6 +2509,7 @@ model IdrMeetingItem {
   customerNotes           String?
   customerNotesCreateTask Boolean  @default(false) // When synced, create a HubSpot task on the deal with customerNotes assigned to the PM
   operationsNotes         String?
+  opsRevisionNotes        String?
   designNotes             String?
   conclusion              String?
 
@@ -2533,6 +2534,8 @@ model IdrMeetingItem {
   adderGroundMount  Boolean @default(false)
   adderMpuUpgrade   Boolean @default(false)
   adderEvCharger    Boolean @default(false)
+  adderTier1        Boolean @default(false)
+  adderTier2        Boolean @default(false)
   customAdders      Json    @default("[]")
 
   // Sync status
@@ -2595,6 +2598,7 @@ model IdrEscalationQueue {
   customerNotes           String?
   customerNotesCreateTask Boolean  @default(false)
   operationsNotes         String?
+  opsRevisionNotes        String?
   designNotes             String?
   conclusion              String?
 
@@ -2609,6 +2613,8 @@ model IdrEscalationQueue {
   adderGroundMount  Boolean @default(false)
   adderMpuUpgrade   Boolean @default(false)
   adderEvCharger    Boolean @default(false)
+  adderTier1        Boolean @default(false)
+  adderTier2        Boolean @default(false)
   customAdders      Json    @default("[]")
 
   createdAt DateTime @default(now())

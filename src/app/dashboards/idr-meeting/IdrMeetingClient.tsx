@@ -79,6 +79,7 @@ export interface IdrItem {
   customerNotes: string | null;
   customerNotesCreateTask: boolean;
   operationsNotes: string | null;
+  opsRevisionNotes: string | null;
   designNotes: string | null;
   conclusion: string | null;
   escalationReason: string | null;
@@ -96,6 +97,8 @@ export interface IdrItem {
   adderGroundMount: boolean;
   adderMpuUpgrade: boolean;
   adderEvCharger: boolean;
+  adderTier1: boolean;
+  adderTier2: boolean;
   customAdders: Array<{ name: string; amount: number }>;
   hubspotSyncStatus: "DRAFT" | "SYNCED" | "FAILED";
   hubspotSyncedAt: string | null;

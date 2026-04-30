@@ -76,6 +76,12 @@ export function PricingBreakdown({ item, lineItems }: Props) {
       0,
     );
 
+    let tierTotal = 0;
+    if (item.dealAmount) {
+      if (item.adderTier1) tierTotal += Math.round(item.dealAmount * 0.15);
+      if (item.adderTier2) tierTotal += Math.round(item.dealAmount * 0.20);
+    }
+
     const input: CalcInput = {
       modules,
       inverters,
@@ -86,7 +92,7 @@ export function PricingBreakdown({ item, lineItems }: Props) {
       storeyId: item.adderTwoStorey ? "2" : "1",
       pitchId: item.adderSteepPitch ? "steep1" : "none",
       activeAdderIds: [],
-      customFixedAdder: customTotal,
+      customFixedAdder: customTotal + tierTotal,
     };
 
     const breakdown = calcPrice(input);

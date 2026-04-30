@@ -169,6 +169,7 @@ export async function POST(req: NextRequest) {
       ...(q.customerNotes ? { customerNotes: q.customerNotes } : {}),
       ...(q.customerNotesCreateTask ? { customerNotesCreateTask: true } : {}),
       ...(q.operationsNotes ? { operationsNotes: q.operationsNotes } : {}),
+      ...(q.opsRevisionNotes ? { opsRevisionNotes: q.opsRevisionNotes } : {}),
       ...(q.designNotes ? { designNotes: q.designNotes } : {}),
       ...(q.conclusion ? { conclusion: q.conclusion } : {}),
       ...(q.adderTileRoof ? { adderTileRoof: q.adderTileRoof } : {}),
@@ -181,6 +182,8 @@ export async function POST(req: NextRequest) {
       ...(q.adderGroundMount ? { adderGroundMount: q.adderGroundMount } : {}),
       ...(q.adderMpuUpgrade ? { adderMpuUpgrade: q.adderMpuUpgrade } : {}),
       ...(q.adderEvCharger ? { adderEvCharger: q.adderEvCharger } : {}),
+      ...(q.adderTier1 ? { adderTier1: q.adderTier1 } : {}),
+      ...(q.adderTier2 ? { adderTier2: q.adderTier2 } : {}),
       ...(Array.isArray(q.customAdders) && q.customAdders.length > 0 ? { customAdders: q.customAdders } : {}),
     });
 

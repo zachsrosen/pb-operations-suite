@@ -15,12 +15,12 @@ const EDITABLE_FIELDS = [
   "electricianDays", "discoReco", "interiorAccess", "needsSurveyInfo",
   "needsResurvey", "salesChangeRequested", "salesChangeNotes", "opsChangeNotes",
   "customerNotes", "customerNotesCreateTask",
-  "operationsNotes", "designNotes", "conclusion", "sortOrder",
+  "operationsNotes", "opsRevisionNotes", "designNotes", "conclusion", "sortOrder",
   "escalationReason", "type", "reviewed", "shitShowFlagged", "shitShowReason",
   // Adders
   "adderTileRoof", "adderMetalRoof", "adderFlatFoamRoof", "adderShakeRoof",
   "adderSteepPitch", "adderTwoStorey", "adderTrenching", "adderGroundMount",
-  "adderMpuUpgrade", "adderEvCharger", "customAdders",
+  "adderMpuUpgrade", "adderEvCharger", "adderTier1", "adderTier2", "customAdders",
 ];
 
 export async function PATCH(
@@ -163,6 +163,7 @@ export async function DELETE(
           customerNotes: item.customerNotes,
           customerNotesCreateTask: item.customerNotesCreateTask,
           operationsNotes: item.operationsNotes,
+          opsRevisionNotes: item.opsRevisionNotes,
           designNotes: item.designNotes,
           conclusion: item.conclusion,
           adderTileRoof: item.adderTileRoof,
@@ -175,6 +176,8 @@ export async function DELETE(
           adderGroundMount: item.adderGroundMount,
           adderMpuUpgrade: item.adderMpuUpgrade,
           adderEvCharger: item.adderEvCharger,
+          adderTier1: item.adderTier1,
+          adderTier2: item.adderTier2,
           ...(item.customAdders != null ? { customAdders: item.customAdders } : {}),
         },
       });
