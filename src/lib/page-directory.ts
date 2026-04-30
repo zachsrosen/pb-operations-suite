@@ -159,6 +159,7 @@ export const APP_PAGE_ROUTES = [
   "/suites/permitting-interconnection",
   "/suites/sales-marketing",
   "/suites/service",
+  "/suites/testing",
   "/triage",
   "/unassigned",
   "/updates",

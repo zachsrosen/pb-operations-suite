@@ -45,10 +45,10 @@ export const HOME_SUITES: HomeSuiteLink[] = [
     tag: "Service",
   },
   {
-    href: "/suites/intelligence",
-    title: "Intelligence Suite",
-    description: "Risk analysis, QC, capacity planning, and pipeline analytics.",
-    tag: "Intelligence",
+    href: "/suites/testing",
+    title: "Testing Suite",
+    description: "Admin-only intelligence dashboards and pages under review.",
+    tag: "Testing",
   },
   {
     href: "/admin",

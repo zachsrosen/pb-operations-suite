@@ -101,6 +101,10 @@ const SECTION_COLORS: Record<string, string> = {
   "Reviews": "#eab308",
   "Metrics": "#06b6d4",
   "Meetings": "#ec4899",
+  "Intelligence": "#3b82f6",
+  "Tools Under Test": "#14b8a6",
+  "Executive Tests": "#f59e0b",
+  "Data Quality": "#06b6d4",
 };
 
 const DEFAULT_SECTION_COLOR = "#64748b";

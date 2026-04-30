@@ -67,9 +67,6 @@ interface SuiteMetadata {
 
 // Display metadata keyed by suite href. Which suites a user sees is driven by
 // `access.suites` from /api/auth/sync — no client-side role branching.
-// `/dashboards/ai` is intentionally included even though it's a dashboard path,
-// not a suite: it's appended to the suite grid when allowedRoutes includes it
-// (see visibleSuites below), preserving the pre-refactor "AI Skills" card.
 const SUITE_METADATA: Record<string, SuiteMetadata> = {
   "/suites/operations": {
     title: "Operations Suite",
@@ -95,10 +92,10 @@ const SUITE_METADATA: Record<string, SuiteMetadata> = {
     tag: "P&I",
     tagColor: "cyan",
   },
-  "/suites/intelligence": {
-    title: "Intelligence Suite",
-    description: "Risk analysis, QC metrics, and pipeline forecasting.",
-    tag: "INTELLIGENCE",
+  "/suites/testing": {
+    title: "Testing Suite",
+    description: "Admin-only workspace for intelligence, prototypes, and pages under review.",
+    tag: "TESTING",
     tagColor: "cyan",
   },
   "/suites/executive": {
@@ -117,12 +114,6 @@ const SUITE_METADATA: Record<string, SuiteMetadata> = {
     title: "D&R + Roofing Suite",
     description: "Detach & reset and roofing scheduling, pipelines, and tracking.",
     tag: "D&R + ROOFING",
-    tagColor: "purple",
-  },
-  "/dashboards/ai": {
-    title: "AI Skills",
-    description: "All AI-powered tools in one place.",
-    tag: "AI",
     tagColor: "purple",
   },
   "/suites/accounting": {
@@ -448,15 +439,6 @@ export default function Home() {
         return meta ? { href, ...meta } : null;
       })
       .filter((entry): entry is { href: string } & SuiteMetadata => entry !== null);
-    // Append AI Skills card when user can access /dashboards/ai. It's not a
-    // suite, so it's not in access.suites — we surface it from allowedRoutes
-    // to preserve the pre-refactor home-page behavior.
-    if (userAccess.allowedRoutes.includes("/dashboards/ai")) {
-      const aiMeta = SUITE_METADATA["/dashboards/ai"];
-      if (aiMeta && !entries.some((e) => e.href === "/dashboards/ai")) {
-        entries.push({ href: "/dashboards/ai", ...aiMeta });
-      }
-    }
     return entries;
   }, [userAccess]);
 

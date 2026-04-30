@@ -25,7 +25,7 @@ export const INTERNAL_GROUP_LABELS: Record<InternalPrototypeGroup, string> = {
   service: "Service Suite",
   additional_pipeline: "Additional Pipeline Suite",
   admin_tools: "Admin Suite: Tools",
-  admin_testing: "Admin Suite: Testing Dashboards",
+  admin_testing: "Testing Suite",
   documentation: "Admin Suite: Documentation",
   legacy: "Admin Suite: Legacy Prototypes",
 };

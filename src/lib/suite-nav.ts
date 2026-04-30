@@ -1,5 +1,5 @@
 import type { UserRole } from "@/generated/prisma/enums";
-import { resolveEffectiveRole } from "@/lib/user-access";
+import { canAccessRoute, resolveEffectiveRole } from "@/lib/user-access";
 
 export interface SuiteNavEntry {
   href: string;
@@ -34,10 +34,10 @@ export const SUITE_NAV_ENTRIES: SuiteNavEntry[] = [
     description: "Permit tracking, utility management, action queues, and SLA monitoring.",
   },
   {
-    href: "/suites/intelligence",
-    title: "Intelligence Suite",
-    shortLabel: "Intelligence",
-    description: "Risk analysis, QC, capacity planning, and pipeline analytics.",
+    href: "/suites/testing",
+    title: "Testing Suite",
+    shortLabel: "Testing",
+    description: "Admin-only workspace for intelligence dashboards, prototypes, and pages under review.",
   },
   {
     href: "/suites/service",
@@ -86,7 +86,9 @@ export function getSuiteSwitcherEntriesForRoles(roles: UserRole[]): SuiteNavEntr
   const { suites } = resolveEffectiveRole(roles);
   if (suites.length === 0) return [];
   const allowed = new Set(suites);
-  return SUITE_NAV_ENTRIES.filter((suite) => allowed.has(suite.href));
+  return SUITE_NAV_ENTRIES.filter((suite) =>
+    allowed.has(suite.href) && roles.some((role) => canAccessRoute(role, suite.href))
+  );
 }
 
 /** Back-compat single-role wrapper. Prefer `getSuiteSwitcherEntriesForRoles`. */

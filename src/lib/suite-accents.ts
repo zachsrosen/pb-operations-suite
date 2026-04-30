@@ -10,7 +10,7 @@ export const SUITE_ACCENT_COLORS: Record<string, SuiteAccent> = {
   "/suites/permitting-interconnection": { color: "#06b6d4", light: "#22d3ee" },
   "/suites/service":                    { color: "#06b6d4", light: "#22d3ee" },
   "/suites/dnr-roofing":                { color: "#a855f7", light: "#c084fc" },
-  "/suites/intelligence":               { color: "#3b82f6", light: "#60a5fa" },
+  "/suites/testing":                    { color: "#3b82f6", light: "#60a5fa" },
   "/suites/executive":                  { color: "#f59e0b", light: "#fbbf24" },
   "/suites/accounting":               { color: "#10b981", light: "#34d399" },
   "/suites/sales-marketing":            { color: "#ec4899", light: "#f472b6" },
