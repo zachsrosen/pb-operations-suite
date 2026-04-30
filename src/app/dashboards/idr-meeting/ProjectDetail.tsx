@@ -118,27 +118,8 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
     [item, onChange],
   );
 
-  if (!item) {
-    return (
-      <div className="flex-1 rounded-xl border border-t-border bg-surface flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-sm text-muted">Select a project to begin.</p>
-          {isPreview && (
-            <p className="text-xs text-muted mt-1">
-              Edits here are saved as prep and carry into the next meeting.
-            </p>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  const amountStr = item.dealAmount
-    ? `$${item.dealAmount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
-    : null;
-
   const pricingDeltaPct = useMemo(() => {
-    if (!item.dealAmount || !lineItemsQuery.data?.lineItems?.length) return null;
+    if (!item?.dealAmount || !lineItemsQuery.data?.lineItems?.length) return null;
     const modules: EquipmentSelection[] = [];
     const inverters: EquipmentSelection[] = [];
     const batteries: EquipmentSelection[] = [];
@@ -178,6 +159,25 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
     });
     return Math.abs(item.dealAmount - breakdown.finalPrice) / item.dealAmount * 100;
   }, [item, lineItemsQuery.data]);
+
+  if (!item) {
+    return (
+      <div className="flex-1 rounded-xl border border-t-border bg-surface flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-sm text-muted">Select a project to begin.</p>
+          {isPreview && (
+            <p className="text-xs text-muted mt-1">
+              Edits here are saved as prep and carry into the next meeting.
+            </p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const amountStr = item.dealAmount
+    ? `$${item.dealAmount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
+    : null;
 
   const canSync = !isPreview && !readOnly;
 
