@@ -24,6 +24,7 @@ import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest, resolveEf
 import { getGoogleCalendarEventUrl } from "@/lib/external-links";
 import { normalizeEmail } from "@/lib/email-utils";
 import { extractInstallerNote as extractInstallerNoteFromBlob } from "@/lib/schedule-notes";
+import { createAutomatedBugReport } from "@/lib/automated-bug-reports";
 import {
   type SurveyorInfo,
   mergeSurveyorInfo,
@@ -111,6 +112,12 @@ function getConstructionScheduleBoundaryProperties(): { start: string | null; en
   const start = process.env.HUBSPOT_CONSTRUCTION_START_DATE_PROPERTY?.trim() || null;
   const end = process.env.HUBSPOT_CONSTRUCTION_END_DATE_PROPERTY?.trim() || null;
   return { start, end };
+}
+
+function getSchedulerPageUrl(scheduleType: ScheduleType): string {
+  if (scheduleType === "installation") return "/dashboards/scheduler";
+  if (scheduleType === "inspection") return "/dashboards/inspection-scheduler";
+  return "/dashboards/site-survey-scheduler";
 }
 
 function hubSpotDateTimeCandidatesFromUtc(
@@ -470,6 +477,43 @@ export async function PUT(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    const reportZuperSyncFailure = async (
+      errorMessage: string,
+      failureMode: "no_job_found" | "reschedule_failed" | "create_failed"
+    ) => {
+      await createAutomatedBugReport({
+        title: `Zuper schedule sync failed: ${scheduleType} ${project.id}`,
+        description: [
+          "Automated bug report from Zuper schedule sync.",
+          "",
+          `Failure mode: ${failureMode}`,
+          `Deal ID: ${project.id}`,
+          `Deal name: ${project.name || project.id}`,
+          `Schedule type: ${scheduleType}`,
+          `Requested date: ${schedule.date}`,
+          schedule.startTime ? `Requested start: ${schedule.startTime}` : null,
+          schedule.endTime ? `Requested end: ${schedule.endTime}` : null,
+          schedule.assignedUser ? `Assignee: ${schedule.assignedUser}` : null,
+          existingJobUid ? `Known Zuper job UID: ${existingJobUid}` : null,
+          `Reschedule only: ${effectiveRescheduleOnly ? "yes" : "no"}`,
+          `Error: ${errorMessage}`,
+        ].filter(Boolean).join("\n"),
+        pageUrl: getSchedulerPageUrl(scheduleType),
+        reporterEmail: session.user.email,
+        reporterName: session.user.name || undefined,
+        entityId: String(project.id),
+        entityName: project.name || String(project.id),
+        metadata: {
+          source: "zuper_schedule_sync",
+          failureMode,
+          scheduleType,
+          projectId: String(project.id),
+        },
+        ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined,
+        userAgent: request.headers.get("user-agent") || undefined,
+      });
+    };
 
     const hubspotTag = `hubspot-${project.id}`;
 
@@ -845,6 +889,7 @@ export async function PUT(request: NextRequest) {
 
       if (rescheduleResult.type === "error") {
         console.log(`[Zuper Schedule] RESCHEDULE FAILED: ${rescheduleResult.error}`);
+        await reportZuperSyncFailure(rescheduleResult.error, "reschedule_failed");
         return NextResponse.json(
           { error: rescheduleResult.error, action: "reschedule_failed" },
           { status: 500 }
@@ -1008,6 +1053,10 @@ export async function PUT(request: NextRequest) {
     } else if (effectiveRescheduleOnly) {
       // Reschedule-only mode: don't create new jobs, just report that none was found
       console.log(`[Zuper Schedule] RESCHEDULE ONLY: No existing job found for "${project.name}" with category "${schedule.type}" — skipping creation`);
+      await reportZuperSyncFailure(
+        `No existing ${schedule.type} job found in Zuper for "${project.name}". Create the job in Zuper first, then reschedule from here.`,
+        "no_job_found"
+      );
       return NextResponse.json({
         success: true,
         action: "no_job_found",
@@ -1029,6 +1078,7 @@ export async function PUT(request: NextRequest) {
       });
 
       if (createResult.type === "error") {
+        await reportZuperSyncFailure(createResult.error, "create_failed");
         return NextResponse.json(
           { error: createResult.error, action: "create_failed" },
           { status: 500 }

@@ -1,8 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getUserByEmail, logActivity, createScheduleRecord, canScheduleType, prisma, UserRole } from "@/lib/db";
+import { getUserByEmail, logActivity, createScheduleRecord, canScheduleType, prisma, UserRole, getCrewMemberByName } from "@/lib/db";
 import { headers } from "next/headers";
 import { getSalesSurveyLeadTimeError, resolveEffectiveRoleFromRequest, resolveEffectiveRolesFromRequest } from "@/lib/scheduling-policy";
+import { sendSchedulingNotification } from "@/lib/email";
+import { getDealOwnerContact, updateDealProperty, updateSiteSurveyorProperty } from "@/lib/hubspot";
+import {
+  upsertSiteSurveyCalendarEvent,
+  getSiteSurveySharedCalendarIdForSurveyor,
+  getSiteSurveySharedCalendarImpersonationEmail,
+} from "@/lib/google-calendar";
+import { getGoogleCalendarEventUrl } from "@/lib/external-links";
+
+function deriveCustomerDetails(project: { name?: string; address?: string }): { customerName: string; customerAddress: string } {
+  const nameParts = project.name?.split(" | ") || [];
+  const customerName = nameParts.length >= 2
+    ? nameParts[1]?.trim()
+    : nameParts[0]?.trim() || "Customer";
+  const customerAddress = nameParts.length >= 3
+    ? nameParts[2]?.trim()
+    : nameParts.length >= 2 && !nameParts[0].includes("PROJ-")
+      ? nameParts[1]?.trim()
+      : project.address || "See Zuper for address";
+
+  return { customerName, customerAddress };
+}
+
+function getSurveyCalendarEventId(projectId: string): string {
+  return `survey-${projectId}`;
+}
 
 /**
  * PUT /api/zuper/jobs/schedule/tentative
@@ -83,6 +109,14 @@ export async function PUT(request: NextRequest) {
       (rawUserUid && (looksLikeUid(rawUserUid) || looksLikeUidList(rawUserUid)) ? rawUserUid : undefined) ||
       (rawCrew && looksLikeUid(rawCrew) ? rawCrew : undefined);
     const timezoneTag = rawTimezone ? ` [TZ:${rawTimezone}]` : "";
+    const pendingCustomerConfirmedNote =
+      pendingZuper && (scheduleType === "survey" || scheduleType === "pre-sale-survey")
+        ? "Customer confirmed. Scheduled locally while the Zuper job sync is still pending."
+        : "";
+    const downstreamNotes = [pendingCustomerConfirmedNote, schedule.notes || ""]
+      .map((value) => String(value || "").trim())
+      .filter(Boolean)
+      .join(" ");
 
     // Ensure only one active local-hold record per project + schedule type.
     // Without this, old tentative/pending rows can reappear in scheduler rehydration.
@@ -169,6 +203,107 @@ export async function PUT(request: NextRequest) {
       ipAddress: ip,
       userAgent,
     });
+
+    if (pendingZuper && (scheduleType === "survey" || scheduleType === "pre-sale-survey")) {
+      const { customerName, customerAddress } = deriveCustomerDetails(project);
+      const assigneeName = rawAssignedUser || (rawCrew && !looksLikeUid(rawCrew) ? rawCrew : undefined) || "Team Member";
+      const crewMember = assigneeName ? await getCrewMemberByName(assigneeName) : null;
+      const surveyorEmail = crewMember?.email || session.user.email;
+      const surveyorName = crewMember?.name || assigneeName;
+      const googleCalendarEventUrl =
+        getGoogleCalendarEventUrl(getSurveyCalendarEventId(String(project.id)), surveyorEmail) || undefined;
+
+      const hubspotWarnings: string[] = [];
+      const hubspotDateUpdated = await updateDealProperty(String(project.id), {
+        site_survey_schedule_date: schedule.date,
+      });
+      if (!hubspotDateUpdated) {
+        hubspotWarnings.push("HubSpot schedule date write failed");
+      }
+      if (scheduleType === "survey" && assigneeName) {
+        const surveyorUpdated = await updateSiteSurveyorProperty(String(project.id), assigneeName);
+        if (!surveyorUpdated) {
+          hubspotWarnings.push(`HubSpot site_surveyor write failed (${assigneeName})`);
+        }
+      }
+      if (hubspotWarnings.length > 0) {
+        console.warn(`[Tentative Schedule] HubSpot pending-Zuper warnings for ${project.id}: ${hubspotWarnings.join("; ")}`);
+      }
+
+      const personalCalendarSync = await upsertSiteSurveyCalendarEvent({
+        surveyorEmail,
+        surveyorName,
+        projectId: String(project.id),
+        projectName: project.name || String(project.id),
+        customerName,
+        customerAddress,
+        date: schedule.date,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime,
+        timezone: rawTimezone || undefined,
+        notes: downstreamNotes,
+        zuperJobUid: rawZuperJobUid || undefined,
+        calendarId: "primary",
+        impersonateEmail: surveyorEmail,
+      });
+      if (!personalCalendarSync.success) {
+        console.warn(`[Tentative Schedule] Google Calendar personal pending-Zuper sync warning: ${personalCalendarSync.error}`);
+      }
+
+      const sharedSurveyCalendarId = getSiteSurveySharedCalendarIdForSurveyor(surveyorEmail);
+      if (sharedSurveyCalendarId) {
+        const sharedCalendarSync = await upsertSiteSurveyCalendarEvent({
+          surveyorEmail,
+          surveyorName,
+          projectId: String(project.id),
+          projectName: project.name || String(project.id),
+          customerName,
+          customerAddress,
+          date: schedule.date,
+          startTime: schedule.startTime,
+          endTime: schedule.endTime,
+          timezone: rawTimezone || undefined,
+          notes: downstreamNotes,
+          zuperJobUid: rawZuperJobUid || undefined,
+          calendarId: sharedSurveyCalendarId,
+          impersonateEmail:
+            getSiteSurveySharedCalendarImpersonationEmail(surveyorEmail) ||
+            surveyorEmail,
+        });
+        if (!sharedCalendarSync.success) {
+          console.warn(`[Tentative Schedule] Google Calendar shared pending-Zuper sync warning: ${sharedCalendarSync.error}`);
+        }
+      }
+
+      let dealOwnerName: string | undefined;
+      try {
+        const owner = await getDealOwnerContact(String(project.id));
+        dealOwnerName = owner.ownerName || undefined;
+      } catch (ownerErr) {
+        console.warn(
+          `[Tentative Schedule] Unable to resolve deal owner for ${project.id}:`,
+          ownerErr instanceof Error ? ownerErr.message : ownerErr
+        );
+      }
+
+      await sendSchedulingNotification({
+        to: surveyorEmail,
+        crewMemberName: surveyorName,
+        scheduledByName: session.user.name || session.user.email,
+        scheduledByEmail: session.user.email,
+        dealOwnerName,
+        appointmentType: scheduleType,
+        customerName,
+        customerAddress,
+        scheduledDate: schedule.date,
+        scheduledStart: schedule.startTime,
+        scheduledEnd: schedule.endTime,
+        projectId: String(project.id),
+        zuperJobUid: rawZuperJobUid || undefined,
+        googleCalendarEventUrl,
+        notes: downstreamNotes,
+      });
+    }
 
     return NextResponse.json({
       success: true,

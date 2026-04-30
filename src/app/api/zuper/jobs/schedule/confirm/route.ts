@@ -26,6 +26,7 @@ import { runDesignCompletePipeline } from "@/lib/bom-pipeline";
 import { acquirePipelineLock, DuplicateRunError } from "@/lib/bom-pipeline-lock";
 import { checkBomSnapshotExists, getBomEmailEnrichment, type BomEmailEnrichment } from "@/lib/bom-email-enrichment";
 import { extractInstallerNote, upsertInstallerNoteInBlob, MAX_INSTALLER_NOTE_LENGTH } from "@/lib/schedule-notes";
+import { createAutomatedBugReport } from "@/lib/automated-bug-reports";
 import {
   type SurveyorInfo,
   mergeSurveyorInfo,
@@ -103,6 +104,12 @@ function hubSpotDateTimeCandidatesFromUtc(
 
 function allowDateFallbackForConstructionBoundary(): boolean {
   return String(process.env.HUBSPOT_CONSTRUCTION_BOUNDARY_ALLOW_DATE_FALLBACK || "").toLowerCase() === "true";
+}
+
+function getSchedulerPageUrl(scheduleType: ScheduleType): string {
+  if (scheduleType === "installation") return "/dashboards/scheduler";
+  if (scheduleType === "inspection") return "/dashboards/inspection-scheduler";
+  return "/dashboards/site-survey-scheduler";
 }
 
 function parseHubSpotValueToMs(raw: string): number | null {
@@ -407,6 +414,41 @@ export async function POST(request: NextRequest) {
       : "America/Denver";
     const slotTimezone = timezoneFromNotes2 || inferredTimezone;
 
+    const reportZuperConfirmFailure = async (errorMessage: string) => {
+      await createAutomatedBugReport({
+        title: `Zuper retry sync failed: ${scheduleType} ${record.projectId}`,
+        description: [
+          "Automated bug report from Retry Zuper Sync.",
+          "",
+          `Original status: ${originalStatus}`,
+          `Deal ID: ${record.projectId}`,
+          `Deal name: ${record.projectName}`,
+          `Schedule type: ${scheduleType}`,
+          `Requested date: ${record.scheduledDate}`,
+          record.scheduledStart ? `Requested start: ${record.scheduledStart}` : null,
+          record.scheduledEnd ? `Requested end: ${record.scheduledEnd}` : null,
+          record.assignedUser ? `Assignee: ${record.assignedUser}` : null,
+          hintedZuperJobUid ? `Hinted Zuper job UID: ${hintedZuperJobUid}` : null,
+          record.zuperJobUid ? `Record Zuper job UID: ${record.zuperJobUid}` : null,
+          `Error: ${errorMessage}`,
+        ].filter(Boolean).join("\n"),
+        pageUrl: getSchedulerPageUrl(scheduleType),
+        reporterEmail: session.user.email,
+        reporterName: session.user.name || undefined,
+        entityId: record.projectId,
+        entityName: record.projectName,
+        metadata: {
+          source: "zuper_retry_sync",
+          scheduleType,
+          originalStatus,
+          projectId: record.projectId,
+          scheduleRecordId,
+        },
+        ipAddress: request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || undefined,
+        userAgent: request.headers.get("user-agent") || undefined,
+      });
+    };
+
     const localToUtc = (dateStr: string, timeStr: string): string => {
       const [year, month, day] = dateStr.split("-").map(Number);
       const [hours, minutes] = (timeStr + ":00").split(":").map(Number);
@@ -701,6 +743,8 @@ export async function POST(request: NextRequest) {
           zuperError,
         },
       });
+
+      await reportZuperConfirmFailure(zuperError);
 
       return NextResponse.json(
         {

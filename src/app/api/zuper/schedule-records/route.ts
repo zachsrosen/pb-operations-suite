@@ -94,13 +94,25 @@ export async function GET(request: NextRequest) {
       const slotSources = statusFilters.filter((value) =>
         value === "tentative" || value === "pending_zuper"
       );
+      const wantsPendingZuper = statusFilters.includes("pending_zuper");
       const missingProjectIds = projectIds.filter((projectId) => !recordMap[projectId]);
 
       if (missingProjectIds.length > 0 && slotSources.length > 0) {
         const fallbackSlots = await prisma.bookedSlot.findMany({
           where: {
             projectId: { in: missingProjectIds },
-            source: { in: slotSources },
+            OR: [
+              { source: { in: slotSources } },
+              ...(wantsPendingZuper
+                ? [{
+                    // Recover orphaned local holds created during the brief
+                    // window where the slot persisted without the matching
+                    // pending_zuper ScheduleRecord/source tag.
+                    source: "manual",
+                    zuperJobUid: null,
+                  }]
+                : []),
+            ],
           },
           orderBy: { createdAt: "desc" },
           select: {
@@ -111,12 +123,18 @@ export async function GET(request: NextRequest) {
             endTime: true,
             userName: true,
             source: true,
+            zuperJobUid: true,
             createdAt: true,
           },
         });
 
         for (const slot of fallbackSlots) {
           if (recordMap[slot.projectId]) continue;
+          const recoveredPendingZuper =
+            wantsPendingZuper &&
+            slot.source === "manual" &&
+            !slot.zuperJobUid;
+          const fallbackStatus = recoveredPendingZuper ? "pending_zuper" : slot.source;
           recordMap[slot.projectId] = {
             id: null,
             projectId: slot.projectId,
@@ -132,7 +150,7 @@ export async function GET(request: NextRequest) {
             zuperJobUid: null,
             zuperAssigned: false,
             zuperError: null,
-            status: slot.source,
+            status: fallbackStatus,
             notes: null,
             createdAt: slot.createdAt,
             fromBookedSlot: true,
