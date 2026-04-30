@@ -60,12 +60,43 @@ export function StatusActionsForm({ item, onChange, readOnly }: Props) {
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted">Sales Change</span>
           </div>
           {item.salesChangeRequested && (
-            <CompactTextarea
-              value={item.salesChangeNotes ?? ""}
-              onChange={(val) => handleText("salesChangeNotes", val)}
-              readOnly={readOnly}
-              placeholder="Sales communication reason (required)..."
-            />
+            <>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs text-muted">$</span>
+                <input
+                  type="number"
+                  value={item.salesChangeAmount ?? ""}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    onChange({ salesChangeAmount: v === "" ? null : parseFloat(v) } as Partial<IdrItem>);
+                  }}
+                  disabled={readOnly}
+                  className="w-32 rounded border border-t-border bg-surface-2 px-2 py-1 text-xs text-foreground disabled:opacity-50 placeholder:text-muted [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                  placeholder="Change amount"
+                />
+                {item.salesChangeAmount != null && item.dealAmount != null && item.dealAmount > 0 && (
+                  <span className={`text-[10px] font-medium ${
+                    (Math.abs(item.salesChangeAmount) / item.dealAmount) * 100 < 10
+                      ? "text-yellow-400"
+                      : "text-muted"
+                  }`}>
+                    {((Math.abs(item.salesChangeAmount) / item.dealAmount) * 100).toFixed(1)}% of project
+                  </span>
+                )}
+              </div>
+              {item.salesChangeAmount != null && item.dealAmount != null && item.dealAmount > 0 &&
+                (Math.abs(item.salesChangeAmount) / item.dealAmount) * 100 < 10 && (
+                <p className="text-[10px] text-yellow-400 mt-0.5">
+                  ⚠ Under 10% of project cost — may be disqualified
+                </p>
+              )}
+              <CompactTextarea
+                value={item.salesChangeNotes ?? ""}
+                onChange={(val) => handleText("salesChangeNotes", val)}
+                readOnly={readOnly}
+                placeholder="Sales communication reason (required)..."
+              />
+            </>
           )}
         </div>
 

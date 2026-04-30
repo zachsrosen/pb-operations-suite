@@ -31,6 +31,7 @@ interface SessionItem {
   needsSurveyInfo: boolean | null;
   salesChangeRequested: boolean | null;
   salesChangeNotes: string | null;
+  salesChangeAmount: number | null;
   opsChangeNotes: string | null;
   customerNotes: string | null;
   operationsNotes: string | null;
@@ -261,8 +262,28 @@ function SessionCard({ item }: { item: SessionItem }) {
         {item.designNotes && (
           <NoteField label="Design Notes" value={item.designNotes} />
         )}
-        {item.salesChangeNotes && (
-          <NoteField label="Sales Change Reason" value={item.salesChangeNotes} />
+        {(item.salesChangeRequested || item.salesChangeNotes) && (
+          <div>
+            <p className="text-[9px] font-semibold uppercase tracking-wider text-muted">Sales Change</p>
+            {item.salesChangeAmount != null && (
+              <p className="text-xs text-foreground">
+                ${Math.abs(item.salesChangeAmount).toLocaleString()}
+                {item.dealAmount != null && item.dealAmount > 0 && (
+                  <span className={`ml-1 text-[10px] ${
+                    (Math.abs(item.salesChangeAmount) / item.dealAmount) * 100 < 10
+                      ? "text-yellow-400"
+                      : "text-muted"
+                  }`}>
+                    ({((Math.abs(item.salesChangeAmount) / item.dealAmount) * 100).toFixed(1)}% of project)
+                    {(Math.abs(item.salesChangeAmount) / item.dealAmount) * 100 < 10 && " ⚠ Under 10%"}
+                  </span>
+                )}
+              </p>
+            )}
+            {item.salesChangeNotes && (
+              <p className="text-xs text-foreground whitespace-pre-wrap">{item.salesChangeNotes}</p>
+            )}
+          </div>
         )}
         {item.opsChangeNotes && (
           <NoteField label="Ops Change Reason" value={item.opsChangeNotes} />

@@ -2505,6 +2505,7 @@ model IdrMeetingItem {
   needsResurvey           Boolean? // Deprecated — retained for historical session data; no UI surface
   salesChangeRequested    Boolean? // Flag: trigger sales change → DA status "Pending Sales Changes"
   salesChangeNotes        String? // Reason for sales change → HubSpot sales_communication_reason
+  salesChangeAmount       Float? // Dollar amount of requested sales change (for 10% threshold)
   opsChangeNotes          String? // Reason for ops/survey change → HubSpot ops_communication_reason
   customerNotes           String?
   customerNotesCreateTask Boolean  @default(false) // When synced, create a HubSpot task on the deal with customerNotes assigned to the PM
@@ -2594,6 +2595,7 @@ model IdrEscalationQueue {
   needsResurvey           Boolean? // Deprecated — retained for historical queue rows
   salesChangeRequested    Boolean?
   salesChangeNotes        String?
+  salesChangeAmount       Float?
   opsChangeNotes          String?
   customerNotes           String?
   customerNotesCreateTask Boolean  @default(false)

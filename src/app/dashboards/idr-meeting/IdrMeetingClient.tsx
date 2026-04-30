@@ -75,6 +75,7 @@ export interface IdrItem {
   needsResurvey: boolean | null;
   salesChangeRequested: boolean | null;
   salesChangeNotes: string | null;
+  salesChangeAmount: number | null;
   opsChangeNotes: string | null;
   customerNotes: string | null;
   customerNotesCreateTask: boolean;
