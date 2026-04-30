@@ -530,6 +530,18 @@ function isZuperStatusTerminal(statusName: string | null | undefined): boolean {
   return ZUPER_TERMINAL_STATUSES.has(statusName.trim().toLowerCase());
 }
 
+function passesCalendarStatusFilters(
+  event: { isCompleted?: boolean; isOverdue?: boolean },
+  showScheduled: boolean,
+  showCompleted: boolean,
+  showIncomplete: boolean
+): boolean {
+  if (!showCompleted && event.isCompleted) return false;
+  if (!showIncomplete && event.isOverdue && !event.isCompleted) return false;
+  if (!showScheduled && !event.isCompleted && !event.isOverdue) return false;
+  return true;
+}
+
 function mapZuperJobsToOverlays(
   jobs: ZuperCategoryJob[],
   eventType: "service" | "dnr" | "roofing" | "other"
@@ -1301,6 +1313,20 @@ export default function SchedulerPage() {
     return combined;
   }, [showService, showDnr, showRoofing, showOther, serviceJobsQuery.data, dnrJobsQuery.data, roofingJobsQuery.data, otherJobsQuery.data, calendarLocations]);
 
+  const filteredOverlayEvents = useMemo((): OverlayEvent[] => {
+    return overlayEvents.filter((e) =>
+      passesCalendarStatusFilters(e, showScheduled, showCompleted, showIncomplete)
+    );
+  }, [overlayEvents, showScheduled, showCompleted, showIncomplete]);
+
+  const overlayCounts = useMemo(() => ({
+    service: filteredOverlayEvents.filter((e) => e.eventType === "service").length,
+    dnr: filteredOverlayEvents.filter((e) => e.eventType === "dnr").length,
+    roofing: filteredOverlayEvents.filter((e) => e.eventType === "roofing").length,
+    other: filteredOverlayEvents.filter((e) => e.eventType === "other").length,
+    otherFollowUp: filteredOverlayEvents.filter((e) => e.eventType === "other" && e.isOverdue && !e.isCompleted).length,
+  }), [filteredOverlayEvents]);
+
   const fetchProjects = useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ["scheduler", "main-projects"] });
     queryClient.invalidateQueries({ queryKey: ["scheduler", "forecasts"] });
@@ -1779,9 +1805,7 @@ export default function SchedulerPage() {
     return scheduledEvents.filter((e) => {
       if (calendarLocations.length > 0 && !calendarLocations.includes(e.location)) return false;
       if (expandedTypes.length > 0 && !expandedTypes.includes(e.eventType)) return false;
-      if (!showCompleted && e.isCompleted) return false;
-      if (!showIncomplete && e.isOverdue && !e.isCompleted) return false;
-      if (!showScheduled && !e.isCompleted && !e.isOverdue) return false;
+      if (!passesCalendarStatusFilters(e, showScheduled, showCompleted, showIncomplete)) return false;
       return true;
     });
   }, [scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled, showCompleted, showIncomplete]);
@@ -1904,7 +1928,7 @@ export default function SchedulerPage() {
         const expandedTypes = calendarScheduleTypes.flatMap((t) => typeVariants[t] || [t]);
         if (!expandedTypes.includes(ghost.eventType)) continue;
       }
-      if (!showScheduled) continue;
+      if (!passesCalendarStatusFilters(ghost, showScheduled, showCompleted, showIncomplete)) continue;
 
       ghosts.push(ghost);
     }
@@ -1913,6 +1937,7 @@ export default function SchedulerPage() {
   }, [
     showForecasts, forecastQuery.data, projects, manualSchedules,
     scheduledEvents, calendarLocations, calendarScheduleTypes, showScheduled,
+    showCompleted, showIncomplete,
   ]);
 
   // ---- Merged display events: real filtered events + ghost forecast events + overlays ----
@@ -1920,9 +1945,9 @@ export default function SchedulerPage() {
     const base: DisplayEvent[] = forecastGhostEvents.length === 0
       ? filteredScheduledEvents
       : [...filteredScheduledEvents, ...forecastGhostEvents];
-    if (overlayEvents.length === 0) return base;
-    return [...base, ...overlayEvents];
-  }, [filteredScheduledEvents, forecastGhostEvents, overlayEvents]);
+    if (filteredOverlayEvents.length === 0) return base;
+    return [...base, ...filteredOverlayEvents];
+  }, [filteredScheduledEvents, forecastGhostEvents, filteredOverlayEvents]);
 
   const queueRevenue = useMemo(
     () => formatRevenueCompact(filteredProjects.reduce((s, p) => s + p.amount, 0)),
@@ -2043,7 +2068,7 @@ export default function SchedulerPage() {
       months.push({ monthLabel: label, isPast, isCurrent, ...buckets });
     }
     return months;
-  }, [displayEvents, forecastGhostEvents, computeRevenueBuckets]);
+  }, [displayEvents, computeRevenueBuckets]);
 
   /* ================================================================ */
   /*  Calendar logic                                                   */
@@ -3180,7 +3205,7 @@ export default function SchedulerPage() {
     a.click();
     URL.revokeObjectURL(url);
     showToast("CSV exported");
-  }, [scheduledEvents, displayEvents, showForecasts, showToast]);
+  }, [scheduledEvents, forecastGhostEvents, showForecasts, showToast]);
 
   const exportICal = useCallback(() => {
     let ical =
@@ -4050,87 +4075,63 @@ export default function SchedulerPage() {
           </div>
 
           {/* Calendar Filters — Inline Toggle Boxes */}
-          <div className="flex flex-wrap items-center gap-1.5 p-2 bg-background border-b border-t-border">
-            <span className="text-[0.6rem] text-muted uppercase tracking-wide mr-0.5">Loc</span>
-            {[
-              { value: "Westminster", label: "Westy" },
-              { value: "Centennial", label: "DTC" },
-              { value: "Colorado Springs", label: "CO Spgs" },
-              { value: "San Luis Obispo", label: "SLO" },
-              { value: "Camarillo", label: "Cam" },
-            ].map((loc) => (
-              <button
-                key={loc.value}
-                onClick={() => {
-                  if (calendarLocations.includes(loc.value)) {
-                    setCalendarLocations(calendarLocations.filter(l => l !== loc.value));
-                  } else {
-                    setCalendarLocations([...calendarLocations, loc.value]);
-                  }
-                }}
-                className={`px-1.5 py-0.5 text-[0.6rem] rounded border transition-colors ${
-                  calendarLocations.includes(loc.value)
-                    ? "bg-orange-500 border-orange-400 text-black font-semibold"
-                    : "bg-surface border-t-border text-muted hover:border-muted"
-                }`}
-              >
-                {loc.label}
-              </button>
-            ))}
-            <span className="text-[0.6rem] text-muted uppercase tracking-wide ml-2 mr-0.5">Stage</span>
-            {([
-              { value: "survey", label: "Survey", active: "bg-cyan-500 border-cyan-400 text-black font-semibold" },
-              { value: "construction", label: "Construction", active: "bg-blue-500 border-blue-400 text-white font-semibold" },
-              { value: "inspection", label: "Inspection", active: "bg-violet-500 border-violet-400 text-white font-semibold" },
-            ] as const).map((st) => (
-              <button
-                key={st.value}
-                onClick={() => {
-                  if (calendarScheduleTypes.includes(st.value)) {
-                    setCalendarScheduleTypes(calendarScheduleTypes.filter(s => s !== st.value));
-                  } else {
-                    setCalendarScheduleTypes([...calendarScheduleTypes, st.value]);
-                  }
-                }}
-                className={`px-1.5 py-0.5 text-[0.6rem] rounded border transition-colors ${
-                  calendarScheduleTypes.includes(st.value)
-                    ? st.active
-                    : "bg-surface border-t-border text-muted hover:border-muted"
-                }`}
-              >
-                {st.label}
-              </button>
-            ))}
-            {(calendarLocations.length > 0 || calendarScheduleTypes.length > 0) && (
-              <button
-                onClick={() => { setCalendarLocations([]); setCalendarScheduleTypes([]); }}
-                className="px-1.5 py-0.5 text-[0.6rem] text-muted hover:text-foreground transition-colors"
-              >
-                ✕ Clear
-              </button>
-            )}
-            <div className="ml-auto flex items-center gap-1">
-              {([
-                { key: "scheduled", label: "Scheduled", color: "bg-blue-500 border-blue-500", active: showScheduled, toggle: () => setShowScheduled(!showScheduled) },
-                { key: "incomplete", label: "Incomplete", color: "bg-red-500 border-red-500", active: showIncomplete, toggle: () => setShowIncomplete(!showIncomplete) },
-                { key: "completed", label: "Completed", color: "bg-emerald-500 border-emerald-500", active: showCompleted, toggle: () => setShowCompleted(!showCompleted) },
-              ] as const).map((t) => (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2 p-2 bg-background border-b border-t-border">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[0.6rem] text-muted uppercase tracking-wide mr-0.5">Loc</span>
+              {[
+                { value: "Westminster", label: "Westy" },
+                { value: "Centennial", label: "DTC" },
+                { value: "Colorado Springs", label: "CO Spgs" },
+                { value: "San Luis Obispo", label: "SLO" },
+                { value: "Camarillo", label: "Cam" },
+              ].map((loc) => (
                 <button
-                  key={t.key}
-                  onClick={t.toggle}
-                  className={`flex items-center gap-0.5 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ${
-                    t.active ? "border-t-border text-foreground/80 bg-surface-2" : "border-t-border text-muted opacity-60"
+                  key={loc.value}
+                  onClick={() => {
+                    if (calendarLocations.includes(loc.value)) {
+                      setCalendarLocations(calendarLocations.filter(l => l !== loc.value));
+                    } else {
+                      setCalendarLocations([...calendarLocations, loc.value]);
+                    }
+                  }}
+                  className={`px-1.5 py-0.5 text-[0.6rem] rounded border transition-colors ${
+                    calendarLocations.includes(loc.value)
+                      ? "bg-orange-500 border-orange-400 text-black font-semibold"
+                      : "bg-surface border-t-border text-muted hover:border-muted"
                   }`}
                 >
-                  <span className={`w-2.5 h-2.5 rounded-sm border flex items-center justify-center shrink-0 ${t.active ? t.color : "border-t-border"}`}>
-                    {t.active && <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
-                  </span>
-                  {t.label}
+                  {loc.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[0.6rem] text-muted uppercase tracking-wide mr-0.5">Stage</span>
+              {([
+                { value: "survey", label: "Survey", active: "bg-cyan-500 border-cyan-400 text-black font-semibold" },
+                { value: "construction", label: "Construction", active: "bg-blue-500 border-blue-400 text-white font-semibold" },
+                { value: "inspection", label: "Inspection", active: "bg-violet-500 border-violet-400 text-white font-semibold" },
+              ] as const).map((st) => (
+                <button
+                  key={st.value}
+                  onClick={() => {
+                    if (calendarScheduleTypes.includes(st.value)) {
+                      setCalendarScheduleTypes(calendarScheduleTypes.filter(s => s !== st.value));
+                    } else {
+                      setCalendarScheduleTypes([...calendarScheduleTypes, st.value]);
+                    }
+                  }}
+                  className={`px-1.5 py-0.5 text-[0.6rem] rounded border transition-colors ${
+                    calendarScheduleTypes.includes(st.value)
+                      ? st.active
+                      : "bg-surface border-t-border text-muted hover:border-muted"
+                  }`}
+                >
+                  {st.label}
                 </button>
               ))}
               <button
                 onClick={toggleForecasts}
-                className={`flex items-center gap-1 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ml-1 ${
+                className={`flex items-center gap-1 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ${
                   showForecasts
                     ? "border-blue-400 text-blue-400 bg-blue-500/10"
                     : "border-t-border text-muted opacity-60 hover:border-muted"
@@ -4163,9 +4164,9 @@ export default function SchedulerPage() {
                 </span>
                 Service
               </button>
-              {showService && overlayEvents.filter(e => e.eventType === "service").length > 0 && (
+              {showService && overlayCounts.service > 0 && (
                 <span className="text-[0.55rem] text-purple-400/70 ml-0.5">
-                  {overlayEvents.filter(e => e.eventType === "service").length} service job{overlayEvents.filter(e => e.eventType === "service").length !== 1 ? "s" : ""}
+                  {overlayCounts.service} service job{overlayCounts.service !== 1 ? "s" : ""}
                 </span>
               )}
               <button
@@ -4183,9 +4184,9 @@ export default function SchedulerPage() {
                 </span>
                 D&R
               </button>
-              {showDnr && overlayEvents.filter(e => e.eventType === "dnr").length > 0 && (
+              {showDnr && overlayCounts.dnr > 0 && (
                 <span className="text-[0.55rem] text-amber-400/70 ml-0.5">
-                  {overlayEvents.filter(e => e.eventType === "dnr").length} D&R job{overlayEvents.filter(e => e.eventType === "dnr").length !== 1 ? "s" : ""}
+                  {overlayCounts.dnr} D&R job{overlayCounts.dnr !== 1 ? "s" : ""}
                 </span>
               )}
               <button
@@ -4203,9 +4204,9 @@ export default function SchedulerPage() {
                 </span>
                 Roofing
               </button>
-              {showRoofing && overlayEvents.filter(e => e.eventType === "roofing").length > 0 && (
+              {showRoofing && overlayCounts.roofing > 0 && (
                 <span className="text-[0.55rem] text-rose-400/70 ml-0.5">
-                  {overlayEvents.filter(e => e.eventType === "roofing").length} roofing job{overlayEvents.filter(e => e.eventType === "roofing").length !== 1 ? "s" : ""}
+                  {overlayCounts.roofing} roofing job{overlayCounts.roofing !== 1 ? "s" : ""}
                 </span>
               )}
               <button
@@ -4223,19 +4224,47 @@ export default function SchedulerPage() {
                 </span>
                 Other
               </button>
-              {showOther && overlayEvents.filter(e => e.eventType === "other").length > 0 && (
+              {showOther && overlayCounts.other > 0 && (
                 <span className="text-[0.55rem] text-slate-400/70 ml-0.5">
-                  {overlayEvents.filter(e => e.eventType === "other").length} other job{overlayEvents.filter(e => e.eventType === "other").length !== 1 ? "s" : ""}
+                  {overlayCounts.other} other job{overlayCounts.other !== 1 ? "s" : ""}
                 </span>
               )}
-              {showOther && overlayEvents.filter(e => e.eventType === "other" && e.isOverdue).length > 0 && (
+              {showOther && overlayCounts.otherFollowUp > 0 && (
                 <span
                   className="text-[0.55rem] font-semibold text-red-400 ml-0.5 px-1.5 py-0.5 rounded-full bg-red-500/10 border border-red-500/40"
                   title="Past-scheduled Other / Additional Visit jobs that are not yet completed — needs Ops follow-up"
                 >
-                  {overlayEvents.filter(e => e.eventType === "other" && e.isOverdue).length} need{overlayEvents.filter(e => e.eventType === "other" && e.isOverdue).length === 1 ? "s" : ""} follow-up
+                  {overlayCounts.otherFollowUp} need{overlayCounts.otherFollowUp === 1 ? "s" : ""} follow-up
                 </span>
               )}
+            </div>
+            {(calendarLocations.length > 0 || calendarScheduleTypes.length > 0) && (
+              <button
+                onClick={() => { setCalendarLocations([]); setCalendarScheduleTypes([]); }}
+                className="px-1.5 py-0.5 text-[0.6rem] text-muted hover:text-foreground transition-colors"
+              >
+                ✕ Clear
+              </button>
+            )}
+            <div className="ml-auto flex flex-wrap items-center gap-1">
+              {([
+                { key: "scheduled", label: "Scheduled", color: "bg-blue-500 border-blue-500", active: showScheduled, toggle: () => setShowScheduled(!showScheduled) },
+                { key: "incomplete", label: "Incomplete", color: "bg-red-500 border-red-500", active: showIncomplete, toggle: () => setShowIncomplete(!showIncomplete) },
+                { key: "completed", label: "Completed", color: "bg-emerald-500 border-emerald-500", active: showCompleted, toggle: () => setShowCompleted(!showCompleted) },
+              ] as const).map((t) => (
+                <button
+                  key={t.key}
+                  onClick={t.toggle}
+                  className={`flex items-center gap-0.5 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ${
+                    t.active ? "border-t-border text-foreground/80 bg-surface-2" : "border-t-border text-muted opacity-60"
+                  }`}
+                >
+                  <span className={`w-2.5 h-2.5 rounded-sm border flex items-center justify-center shrink-0 ${t.active ? t.color : "border-t-border"}`}>
+                    {t.active && <svg className="w-2 h-2 text-white" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" /></svg>}
+                  </span>
+                  {t.label}
+                </button>
+              ))}
             </div>
           </div>
 
