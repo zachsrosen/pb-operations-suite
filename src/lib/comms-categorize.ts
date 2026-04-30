@@ -18,7 +18,7 @@ export interface CategorizedMessage extends CommsMessage {
   category: CommsCategory;
 }
 
-const HUBSPOT_DOMAINS = [
+export const HUBSPOT_DOMAINS = [
   "hubspot.com",
   "hs-inbox.com",
   "hubspot.net",
