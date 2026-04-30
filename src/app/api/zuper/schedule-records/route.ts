@@ -76,10 +76,69 @@ export async function GET(request: NextRequest) {
     });
 
     // Group by project ID, keep only the latest record per project
-    const recordMap: Record<string, typeof records[0]> = {};
+    const recordMap: Record<string, Record<string, unknown>> = {};
     for (const record of records) {
       if (!recordMap[record.projectId]) {
         recordMap[record.projectId] = record;
+      }
+    }
+
+    // If a pending/tentative local hold lost its ScheduleRecord but still has a
+    // BookedSlot, surface that slot as a fallback so the UI can show the state
+    // and offer retry/cancel actions instead of silently losing it.
+    const wantsLocalHoldStatuses = statusFilters.some((value) =>
+      value === "tentative" || value === "pending_zuper"
+    );
+
+    if (wantsLocalHoldStatuses) {
+      const slotSources = statusFilters.filter((value) =>
+        value === "tentative" || value === "pending_zuper"
+      );
+      const missingProjectIds = projectIds.filter((projectId) => !recordMap[projectId]);
+
+      if (missingProjectIds.length > 0 && slotSources.length > 0) {
+        const fallbackSlots = await prisma.bookedSlot.findMany({
+          where: {
+            projectId: { in: missingProjectIds },
+            source: { in: slotSources },
+          },
+          orderBy: { createdAt: "desc" },
+          select: {
+            id: true,
+            projectId: true,
+            date: true,
+            startTime: true,
+            endTime: true,
+            userName: true,
+            source: true,
+            createdAt: true,
+          },
+        });
+
+        for (const slot of fallbackSlots) {
+          if (recordMap[slot.projectId]) continue;
+          recordMap[slot.projectId] = {
+            id: null,
+            projectId: slot.projectId,
+            assignedUser: slot.userName,
+            assignedUserUid: null,
+            scheduledBy: null,
+            scheduledByEmail: null,
+            scheduledDate: slot.date,
+            scheduledDays: null,
+            scheduledStart: slot.startTime,
+            scheduledEnd: slot.endTime,
+            scheduleType: scheduleType || "survey",
+            zuperJobUid: null,
+            zuperAssigned: false,
+            zuperError: null,
+            status: slot.source,
+            notes: null,
+            createdAt: slot.createdAt,
+            fromBookedSlot: true,
+            bookedSlotId: slot.id,
+          };
+        }
       }
     }
 
