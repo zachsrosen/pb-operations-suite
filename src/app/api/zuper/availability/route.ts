@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
-import { getCrewSchedulesFromDB, getAvailabilityOverrides } from "@/lib/db";
+import { getCrewSchedulesFromDB, getAvailabilityOverrides, prisma } from "@/lib/db";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { evaluateSlotsBatch, getConfig as getTravelConfig } from "@/lib/travel-time";
 import { applyOfficeDailyCap, OFFICE_DAILY_SURVEY_CAPS } from "@/lib/scheduling-policy";
@@ -37,6 +37,7 @@ import { applyOfficeDailyCap, OFFICE_DAILY_SURVEY_CAPS } from "@/lib/scheduling-
 // In production, this should be stored in a database
 // Format: { "2025-02-05|Drew Perry|12:00": { projectId, projectName, ... } }
 interface BookedSlot {
+  id?: string;
   date: string;
   startTime: string;
   endTime: string;
@@ -48,6 +49,7 @@ interface BookedSlot {
   bookedAt: string;
   // Track the Zuper job UID if we created/scheduled this
   zuperJobUid?: string;
+  source?: string;
   // Travel-time context: address + coordinates from Zuper customer_address
   address?: string;
   geoCoordinates?: { latitude: number; longitude: number };
@@ -904,31 +906,75 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Load persistent app-held slots from the database. These are used for
+  // tentative schedules and pending-Zuper holds that need to survive reloads.
+  try {
+    if (prisma) {
+      const persistentSlots = await prisma.bookedSlot.findMany({
+        where: {
+          date: {
+            gte: fromDate,
+            lte: toDate,
+          },
+        },
+      });
+
+      for (const slot of persistentSlots) {
+        const key = getSlotKey(slot.date, slot.userName, slot.startTime);
+        if (zuperBookings.has(key)) continue;
+        bookedSlots.set(key, {
+          id: slot.id,
+          date: slot.date,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          userName: slot.userName,
+          location: slot.location,
+          projectId: slot.projectId,
+          projectName: slot.projectName,
+          bookedAt: slot.createdAt.toISOString(),
+          zuperJobUid: slot.zuperJobUid || undefined,
+          source: slot.source,
+        });
+      }
+    }
+  } catch (persistedSlotErr) {
+    console.warn("[Zuper Availability] Failed to load persistent booked slots:", persistedSlotErr);
+  }
+
   // Clean up stale app-booked entries from the persistent Map.
   // If Zuper now has a live job for the same slot key, or if the app-booked
   // entry is older than 5 minutes and has a zuperJobUid (meaning Zuper owns it),
   // remove it so the fresh Zuper data takes precedence.
   const STALE_THRESHOLD_MS = 5 * 60 * 1000;
   const now = Date.now();
+  const staleDbSlotIds: string[] = [];
   for (const [key, slot] of bookedSlots.entries()) {
     if (slot.date >= fromDate && slot.date <= toDate) {
       // If Zuper now has a booking for this exact slot key, remove the app-booked one
       if (zuperBookings.has(key)) {
         bookedSlots.delete(key);
+        if (slot.id) staleDbSlotIds.push(slot.id);
         continue;
       }
       // If this app-booked entry references a Zuper job that's still active,
       // remove it so the fresh Zuper data (which may have different time/user) takes over
       if (slot.zuperJobUid && zuperJobUids.has(slot.zuperJobUid)) {
         bookedSlots.delete(key);
+        if (slot.id) staleDbSlotIds.push(slot.id);
         continue;
       }
       // If this app-booked entry has a zuperJobUid and is stale, clean it up
       const age = now - new Date(slot.bookedAt).getTime();
       if (slot.zuperJobUid && age > STALE_THRESHOLD_MS) {
         bookedSlots.delete(key);
+        if (slot.id) staleDbSlotIds.push(slot.id);
       }
     }
+  }
+  if (staleDbSlotIds.length > 0 && prisma) {
+    await prisma.bookedSlot.deleteMany({
+      where: { id: { in: staleDbSlotIds } },
+    });
   }
 
   // Merge: Zuper bookings take priority, then app-booked entries fill in the rest
@@ -1170,7 +1216,7 @@ export async function POST(request: NextRequest) {
     if (authResult instanceof NextResponse) return authResult;
 
     const body = await request.json();
-    const { date, startTime, endTime, userName, userUid, location, projectId, projectName, zuperJobUid } = body;
+    const { date, startTime, endTime, userName, userUid, location, projectId, projectName, zuperJobUid, source } = body;
 
     if (!date || !startTime || !userName || !projectId) {
       return NextResponse.json(
@@ -1181,8 +1227,20 @@ export async function POST(request: NextRequest) {
 
     const key = getSlotKey(date, userName, startTime);
 
+    const existingDbBooking = prisma
+      ? await prisma.bookedSlot.findUnique({
+          where: {
+            date_userName_startTime: {
+              date,
+              userName,
+              startTime,
+            },
+          },
+        })
+      : null;
+
     // Check if slot is already booked
-    if (bookedSlots.has(key)) {
+    if (bookedSlots.has(key) || existingDbBooking) {
       return NextResponse.json(
         { error: "This time slot is already booked" },
         { status: 409 }
@@ -1202,7 +1260,24 @@ export async function POST(request: NextRequest) {
       projectName: projectName || "",
       bookedAt: new Date().toISOString(),
       zuperJobUid, // Track which Zuper job this booking is for
+      source: typeof source === "string" && source.trim() ? source.trim() : "manual",
     };
+
+    if (prisma) {
+      await prisma.bookedSlot.create({
+        data: {
+          date: booking.date,
+          startTime: booking.startTime,
+          endTime: booking.endTime,
+          userName: booking.userName,
+          location: booking.location,
+          projectId: booking.projectId,
+          projectName: booking.projectName,
+          zuperJobUid: booking.zuperJobUid,
+          source: booking.source || "manual",
+        },
+      });
+    }
 
     bookedSlots.set(key, booking);
 
@@ -1243,7 +1318,17 @@ export async function DELETE(request: NextRequest) {
 
     const key = getSlotKey(date, userName, startTime);
 
-    if (!bookedSlots.has(key)) {
+    const deletedDb = prisma
+      ? await prisma.bookedSlot.deleteMany({
+          where: {
+            date,
+            startTime,
+            userName,
+          },
+        })
+      : { count: 0 };
+
+    if (!bookedSlots.has(key) && deletedDb.count === 0) {
       return NextResponse.json(
         { error: "Slot not found" },
         { status: 404 }
