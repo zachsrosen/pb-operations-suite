@@ -84,6 +84,14 @@ const LINKS: SuitePageCard[] = [
     section: "Tools Under Test",
   },
   {
+    href: "/dashboards/inventory/cost-audit",
+    title: "Cost Audit",
+    description: "Cross-reference Zoho item costs against vendor bill line items to surface stale or wrong purchase rates.",
+    tag: "COST",
+    icon: "$",
+    section: "Tools Under Test",
+  },
+  {
     href: "/dashboards/mobile",
     title: "Mobile Dashboard",
     description: "Touch-optimized view for field teams and fast project lookup.",
