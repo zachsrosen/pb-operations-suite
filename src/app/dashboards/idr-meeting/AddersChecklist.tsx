@@ -46,6 +46,13 @@ function fmt(n: number): string {
   return "$" + n.toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
+function fmtRate(perSystem: number, perWatt: number): string {
+  const parts: string[] = [];
+  if (perSystem > 0) parts.push(fmt(perSystem));
+  if (perWatt > 0) parts.push(`$${perWatt}/W`);
+  return parts.join(" + ");
+}
+
 export function AddersChecklist({ item, onChange, readOnly }: Props) {
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
@@ -95,7 +102,8 @@ export function AddersChecklist({ item, onChange, readOnly }: Props) {
         <div className="grid grid-cols-2 gap-x-4 gap-y-1">
           {ROOF_ADDER_KEYS.map((key) => {
             const { label, perSystem, perWatt } = ROOF_COSTS[key];
-            const cost = perSystem + watts * perWatt;
+            const hasCost = perSystem > 0 || perWatt > 0;
+            const cost = watts > 0 ? perSystem + watts * perWatt : null;
             return (
               <label key={key} className="flex items-center gap-1.5 text-xs text-foreground">
                 <input
@@ -107,15 +115,17 @@ export function AddersChecklist({ item, onChange, readOnly }: Props) {
                 />
                 <span>
                   {label}
-                  {watts > 0 && (perSystem > 0 || perWatt > 0) && (
-                    <span className="text-muted ml-1">{fmt(cost)}</span>
+                  {hasCost && (
+                    <span className="text-muted ml-1">
+                      {cost != null ? fmt(cost) : fmtRate(perSystem, perWatt)}
+                    </span>
                   )}
                 </span>
               </label>
             );
           })}
           {ROOF_OTHER.map(({ key, label, perWatt }) => {
-            const cost = watts * perWatt;
+            const cost = watts > 0 ? watts * perWatt : null;
             return (
               <label key={key} className="flex items-center gap-1.5 text-xs text-foreground">
                 <input
@@ -127,8 +137,10 @@ export function AddersChecklist({ item, onChange, readOnly }: Props) {
                 />
                 <span>
                   {label}
-                  {watts > 0 && perWatt > 0 && (
-                    <span className="text-muted ml-1">{fmt(cost)}</span>
+                  {perWatt > 0 && (
+                    <span className="text-muted ml-1">
+                      {cost != null ? fmt(cost) : `$${perWatt}/W`}
+                    </span>
                   )}
                 </span>
               </label>
