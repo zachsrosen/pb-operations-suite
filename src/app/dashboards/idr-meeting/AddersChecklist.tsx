@@ -1,7 +1,7 @@
 "use client";
 
 import type { IdrItem } from "./IdrMeetingClient";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { computeAdderTotal } from "@/lib/idr-meeting";
 
 const ROOF_ADDER_KEYS = [
