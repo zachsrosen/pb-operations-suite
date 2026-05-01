@@ -9,6 +9,7 @@ import { appCache } from "@/lib/cache";
 import { syncRangeForPool } from "@/lib/on-call-google-calendar";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 function todayInTz(tz: string): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -97,7 +98,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
           },
         });
       },
-      { timeout: 30_000, maxWait: 10_000 },
+      { timeout: 60_000, maxWait: 15_000 },
     );
 
     appCache.invalidateByPrefix("on-call:tonight");
