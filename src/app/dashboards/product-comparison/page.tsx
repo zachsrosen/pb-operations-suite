@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
@@ -609,7 +609,17 @@ function deriveQueueStates(
   return states;
 }
 
+// Wrapped in Suspense below — useSearchParams() requires a boundary at
+// static prerender time per Next.js 16 / App Router rules.
 export default function ProductComparisonPage() {
+  return (
+    <Suspense fallback={null}>
+      <ProductComparisonPageInner />
+    </Suspense>
+  );
+}
+
+function ProductComparisonPageInner() {
   const { trackDashboardView } = useActivityTracking();
   const hasTrackedView = useRef(false);
 
