@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { tagSentryRequest } from "@/lib/sentry-request";
+import { prisma } from "@/lib/db";
 import {
   zohoInventory,
   type ZohoBillRecord,
@@ -45,6 +46,8 @@ interface ItemRow {
   category: string | null;
   storedCost: number | null;
   storedPrice: number | null;
+  /** (storedPrice - storedCost) / storedCost * 100 — null if either side missing or cost is 0 */
+  marginPct: number | null;
   latestBillDate: string | null;
   latestBillPrice: number | null;
   latestBillVendor: string | null;
@@ -56,6 +59,13 @@ interface ItemRow {
   variancePct: number | null; // (latest - stored) / stored * 100
   varianceAbs: number | null; // |latest - stored|
   status: "match" | "mismatch" | "no_stored_cost" | "large_swing";
+  /** Cross-system linkage — true when InternalProduct row exists for this zoho item */
+  linkedInternal: boolean;
+  /** True when the linked InternalProduct has a HubSpot Product ID set */
+  linkedHubSpot: boolean;
+  /** True when the linked InternalProduct has a Zuper item ID set */
+  linkedZuper: boolean;
+  internalProductId: string | null;
 }
 
 interface UnmatchedRow {
@@ -273,9 +283,37 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // ── 4. Join with item catalog → rows ─────────────────────────────
+    // ── 4. Batch-lookup InternalProduct rows for cross-system linkage ─
+    // InternalProduct.zohoItemId points to the Zoho item; the row also carries
+    // hubspotProductId + zuperItemId, so a single query gives us all linkage.
     const itemById = new Map<string, ZohoInventoryItem>();
     for (const i of items) itemById.set(i.item_id, i);
+
+    const linkageByZohoId = new Map<
+      string,
+      { internalProductId: string; hubspotProductId: string | null; zuperItemId: string | null }
+    >();
+    if (prisma && itemAgg.size > 0) {
+      const zohoIds = Array.from(itemAgg.keys());
+      try {
+        const internalProducts = await prisma.internalProduct.findMany({
+          where: { zohoItemId: { in: zohoIds } },
+          select: { id: true, zohoItemId: true, hubspotProductId: true, zuperItemId: true },
+        });
+        for (const ip of internalProducts) {
+          if (ip.zohoItemId) {
+            linkageByZohoId.set(ip.zohoItemId, {
+              internalProductId: ip.id,
+              hubspotProductId: ip.hubspotProductId,
+              zuperItemId: ip.zuperItemId,
+            });
+          }
+        }
+      } catch (err) {
+        // Non-fatal — continue without linkage data rather than failing the whole audit
+        Sentry.captureException(err, { tags: { route: "cost-audit", phase: "linkage" } });
+      }
+    }
 
     const rows: ItemRow[] = [];
     for (const [itemId, agg] of itemAgg) {
@@ -283,6 +321,10 @@ export async function GET(request: NextRequest) {
       if (!item) continue; // Item deleted from catalog — skip silently
       const storedCost = typeof item.purchase_rate === "number" ? item.purchase_rate : null;
       const storedPrice = typeof item.rate === "number" ? item.rate : null;
+      const marginPct =
+        storedCost != null && storedCost > 0 && storedPrice != null
+          ? ((storedPrice - storedCost) / storedCost) * 100
+          : null;
       const latestBillPrice = agg.latestRate;
       const avgBillPrice = agg.totalQty > 0 ? agg.weightedRateSum / agg.totalQty : 0;
       const variancePct =
@@ -290,6 +332,7 @@ export async function GET(request: NextRequest) {
           ? ((latestBillPrice - storedCost) / storedCost) * 100
           : null;
       const varianceAbs = storedCost != null ? latestBillPrice - storedCost : null;
+      const link = linkageByZohoId.get(itemId);
       rows.push({
         itemId,
         name: item.name,
@@ -298,6 +341,7 @@ export async function GET(request: NextRequest) {
         category: item.category_name || item.group_name || null,
         storedCost,
         storedPrice,
+        marginPct,
         latestBillDate: agg.latestDate || null,
         latestBillPrice,
         latestBillVendor: agg.latestVendor,
@@ -309,6 +353,10 @@ export async function GET(request: NextRequest) {
         variancePct,
         varianceAbs,
         status: classify(storedCost, latestBillPrice),
+        linkedInternal: !!link,
+        linkedHubSpot: !!link?.hubspotProductId,
+        linkedZuper: !!link?.zuperItemId,
+        internalProductId: link?.internalProductId || null,
       });
     }
 
