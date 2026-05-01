@@ -298,6 +298,12 @@ enum ActivityType {
   PM_FLAG_REOPENED
   PM_FLAG_CANCELLED
   PM_FLAG_NOTE_ADDED
+
+  // Aircall (Phase 1 of Call Analytics)
+  WEBHOOK_AIRCALL_CALL_ENDED
+  WEBHOOK_AIRCALL_SIGNATURE_FAILED
+  AIRCALL_BACKFILL_RUN
+  AIRCALL_SYNC_RUN
 }
 
 enum ClientType {
@@ -3779,4 +3785,54 @@ model PMSnapshot {
 
   @@unique([pmName, periodStart, periodEnd])
   @@index([pmName, periodEnd])
+}
+
+// ===========================================
+// AIRCALL CALL ANALYTICS (Phase 1)
+// ===========================================
+
+model AircallCallCache {
+  id              String    @id // Aircall call ID (string for forward-compat with future providers)
+  provider        String    @default("aircall") // discriminator for future Zuper Connect rows
+  direction       String // "inbound" | "outbound"
+  status          String // "answered" | "missed" | "voicemail"
+
+  startedAt       DateTime
+  answeredAt      DateTime?
+  endedAt         DateTime?
+
+  durationSec     Int       @default(0) // total elapsed wall time
+  talkTimeSec     Int       @default(0) // active conversation time
+  timeToAnswerSec Int? // null for missed/voicemail
+
+  // User (Aircall agent who handled the call)
+  userAircallId String?
+  userName      String?
+  userEmail     String?
+
+  // Counterparty
+  customerNumber String? // E.164
+
+  // Forward-compat: full payload from webhook or REST response
+  rawPayload Json
+
+  syncedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([startedAt])
+  @@index([userAircallId, startedAt])
+  @@index([direction, status, startedAt])
+  @@index([provider, startedAt])
+}
+
+model AircallUserCache {
+  aircallUserId String   @id
+  name          String
+  email         String?
+  available     Boolean  @default(false)
+  doNotDisturb  Boolean  @default(false)
+  archived      Boolean  @default(false)
+  syncedAt      DateTime @default(now())
+
+  @@index([archived, name])
 }

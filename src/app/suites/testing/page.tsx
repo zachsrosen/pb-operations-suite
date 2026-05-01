@@ -148,6 +148,14 @@ const LINKS: SuitePageCard[] = [
     section: "Data Quality",
   },
   {
+    href: "/dashboards/admin/calls",
+    title: "Call Analytics",
+    description: "Aircall call volume, missed-call rate, time-to-answer, and per-user breakdown.",
+    tag: "CALLS",
+    icon: "PH",
+    section: "Communications",
+  },
+  {
     href: "/prototypes/solar-checkout",
     title: "Solar Checkout Prototype",
     description: "Customer-facing checkout flow prototype.",
