@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import DashboardShell from "@/components/DashboardShell";
 import { MiniStat } from "@/components/ui/MetricCard";
+import { useToast } from "@/contexts/ToastContext";
 
 interface ItemRow {
   itemId: string;
@@ -13,6 +14,7 @@ interface ItemRow {
   category: string | null;
   storedCost: number | null;
   storedPrice: number | null;
+  suggestedSellPrice: number | null;
   marginPct: number | null;
   latestBillDate: string | null;
   latestBillPrice: number | null;
@@ -95,11 +97,31 @@ type SortField =
   | "name"
   | "storedCost"
   | "storedPrice"
+  | "suggestedSellPrice"
   | "marginPct"
   | "latestBillPrice"
   | "billCount"
   | "totalQty"
   | "latestBillDate";
+
+interface SyncCostResult {
+  itemId: string;
+  status: "updated" | "no_change" | "no_bill_data" | "not_found" | "failed";
+  oldCost: number | null;
+  newCost: number | null;
+  internalProductSynced: boolean;
+  message?: string;
+}
+
+interface SyncCostResponse {
+  requested: number;
+  updated: number;
+  noChange: number;
+  noBillData: number;
+  notFound: number;
+  failed: number;
+  results: SyncCostResult[];
+}
 
 const LINK_BADGE_BASE =
   "text-[10px] font-semibold leading-none px-1.5 py-0.5 rounded border w-7 text-center";
@@ -188,6 +210,12 @@ export default function CostAuditPage() {
   const [sortField, setSortField] = useState<SortField>("variancePct");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [activeTab, setActiveTab] = useState<"items" | "unmatched">("items");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSyncResult, setLastSyncResult] = useState<SyncCostResponse | null>(null);
+  const toast = useToast();
+  const queryClient = useQueryClient();
 
   const { data, isLoading, isFetching, error, refetch } = useQuery<AuditResponse>({
     queryKey: ["inventory-cost-audit", days],
@@ -250,6 +278,9 @@ export default function CostAuditPage() {
         case "storedPrice":
           cmp = (a.storedPrice ?? -Infinity) - (b.storedPrice ?? -Infinity);
           break;
+        case "suggestedSellPrice":
+          cmp = (a.suggestedSellPrice ?? -Infinity) - (b.suggestedSellPrice ?? -Infinity);
+          break;
         case "marginPct":
           cmp = (a.marginPct ?? -Infinity) - (b.marginPct ?? -Infinity);
           break;
@@ -279,6 +310,7 @@ export default function CostAuditPage() {
       Vendor: r.vendor || "",
       "Stored Cost": r.storedCost ?? "",
       "Sales Price": r.storedPrice ?? "",
+      "Suggested Sale (1.5×)": r.suggestedSellPrice ?? "",
       "Margin %": r.marginPct == null ? "" : r.marginPct.toFixed(2),
       "Latest Bill Price": r.latestBillPrice ?? "",
       "Latest Bill Date": r.latestBillDate || "",
@@ -314,6 +346,85 @@ export default function CostAuditPage() {
   }
 
   const sortProps = { activeField: sortField, dir: sortDir, onSort: handleSort };
+
+  function toggleRow(itemId: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(itemId)) next.delete(itemId);
+      else next.add(itemId);
+      return next;
+    });
+  }
+
+  // Visible rows that have actionable bill data (something to sync to)
+  const syncableVisibleRows = useMemo(
+    () => filteredRows.filter((r) => r.latestBillPrice != null && r.latestBillPrice > 0),
+    [filteredRows],
+  );
+  const visibleSelectedCount = useMemo(
+    () => syncableVisibleRows.filter((r) => selected.has(r.itemId)).length,
+    [syncableVisibleRows, selected],
+  );
+  const allVisibleSelected =
+    syncableVisibleRows.length > 0 && visibleSelectedCount === syncableVisibleRows.length;
+
+  function toggleSelectAllVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) {
+        for (const r of syncableVisibleRows) next.delete(r.itemId);
+      } else {
+        for (const r of syncableVisibleRows) next.add(r.itemId);
+      }
+      return next;
+    });
+  }
+
+  const selectedRows = useMemo(
+    () => (data ? data.rows.filter((r) => selected.has(r.itemId)) : []),
+    [data, selected],
+  );
+
+  const handleSyncSelected = useCallback(async () => {
+    if (selected.size === 0) return;
+    setSyncing(true);
+    setLastSyncResult(null);
+    try {
+      const res = await fetch("/api/inventory/cost-audit/sync-costs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemIds: Array.from(selected), days }),
+      });
+      const json = (await res.json()) as SyncCostResponse | { error?: string };
+      if (!res.ok || "error" in json) {
+        const msg = ("error" in json && json.error) || `HTTP ${res.status}`;
+        toast.addToast({ type: "error", title: "Cost sync failed", message: msg });
+        return;
+      }
+      const result = json as SyncCostResponse;
+      setLastSyncResult(result);
+      setSelected(new Set());
+      setConfirmOpen(false);
+      toast.addToast({
+        type: result.failed > 0 ? "warning" : "success",
+        title: `Synced ${result.updated} of ${result.requested} costs`,
+        message:
+          result.failed > 0
+            ? `${result.failed} failed · ${result.noBillData} no bill data · ${result.noChange} already matched`
+            : `${result.noChange} already matched · ${result.noBillData} no bill data`,
+      });
+      // Refetch the audit so the table reflects new stored costs
+      await queryClient.invalidateQueries({ queryKey: ["inventory-cost-audit"] });
+    } catch (err) {
+      toast.addToast({
+        type: "error",
+        title: "Cost sync failed",
+        message: err instanceof Error ? err.message : "Unknown error",
+      });
+    } finally {
+      setSyncing(false);
+    }
+  }, [selected, days, toast, queryClient]);
 
   return (
     <DashboardShell
@@ -446,6 +557,16 @@ export default function CostAuditPage() {
               <table className="w-full text-left">
                 <thead className="bg-surface-2/50">
                   <tr>
+                    <th className="px-3 py-2 w-8">
+                      <input
+                        type="checkbox"
+                        checked={allVisibleSelected}
+                        onChange={toggleSelectAllVisible}
+                        disabled={syncableVisibleRows.length === 0}
+                        title="Select all rows with bill data"
+                        className="rounded border-t-border bg-surface-2 text-cyan-500 focus:ring-cyan-500/30 h-3.5 w-3.5"
+                      />
+                    </th>
                     <SortHeader field="name" label="Item" {...sortProps} />
                     <th className="px-3 py-2 text-xs font-medium text-muted uppercase tracking-wider">
                       Linked
@@ -455,6 +576,12 @@ export default function CostAuditPage() {
                     </th>
                     <SortHeader field="storedCost" label="Stored Cost" align="right" {...sortProps} />
                     <SortHeader field="storedPrice" label="Sales Price" align="right" {...sortProps} />
+                    <SortHeader
+                      field="suggestedSellPrice"
+                      label="Suggested Sale"
+                      align="right"
+                      {...sortProps}
+                    />
                     <SortHeader field="marginPct" label="Margin" align="right" {...sortProps} />
                     <SortHeader field="latestBillPrice" label="Latest Bill" align="right" {...sortProps} />
                     <SortHeader field="variancePct" label="Variance" align="right" {...sortProps} />
@@ -485,8 +612,29 @@ export default function CostAuditPage() {
                           : r.marginPct < 15
                             ? "text-amber-400"
                             : "text-green-400";
+                    const isSyncable = r.latestBillPrice != null && r.latestBillPrice > 0;
+                    const isSelected = selected.has(r.itemId);
                     return (
-                      <tr key={r.itemId} className="border-t border-t-border hover:bg-surface-2/30">
+                      <tr
+                        key={r.itemId}
+                        className={`border-t border-t-border hover:bg-surface-2/30 ${
+                          isSelected ? "bg-cyan-500/5" : ""
+                        }`}
+                      >
+                        <td className="px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            disabled={!isSyncable}
+                            onChange={() => toggleRow(r.itemId)}
+                            title={
+                              isSyncable
+                                ? "Select for cost sync"
+                                : "No bill data — cannot sync"
+                            }
+                            className="rounded border-t-border bg-surface-2 text-cyan-500 focus:ring-cyan-500/30 h-3.5 w-3.5 disabled:opacity-30"
+                          />
+                        </td>
                         <td className="px-3 py-2">
                           <div className="text-sm text-foreground">{r.name}</div>
                           <div className="text-[11px] text-muted">
@@ -507,6 +655,12 @@ export default function CostAuditPage() {
                         </td>
                         <td className="px-3 py-2 text-sm text-foreground text-right tabular-nums">
                           {fmtMoney(r.storedPrice)}
+                        </td>
+                        <td
+                          className="px-3 py-2 text-sm text-cyan-400 text-right tabular-nums"
+                          title="Latest bill price × 1.5 (operations standard markup)"
+                        >
+                          {fmtMoney(r.suggestedSellPrice)}
                         </td>
                         <td className={`px-3 py-2 text-sm text-right tabular-nums ${marginColor}`}>
                           {fmtPct(r.marginPct)}
@@ -610,6 +764,151 @@ export default function CostAuditPage() {
             <div className="text-muted text-sm text-center py-12">
               No free-text bill lines in this window.
             </div>
+          )}
+        </div>
+      )}
+
+      {/* Floating bulk-action bar — shown when ≥1 item selected */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-surface-elevated border border-cyan-500/40 shadow-card rounded-full px-5 py-2.5 flex items-center gap-4">
+          <span className="text-sm text-foreground tabular-nums">
+            <strong>{selected.size}</strong> item{selected.size === 1 ? "" : "s"} selected
+          </span>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="text-xs text-muted hover:text-foreground"
+          >
+            Clear
+          </button>
+          <div className="h-5 w-px bg-t-border" />
+          <button
+            onClick={() => setConfirmOpen(true)}
+            disabled={syncing}
+            className="text-sm bg-cyan-500 text-white rounded-full px-4 py-1.5 hover:bg-cyan-400 disabled:opacity-50 font-medium"
+          >
+            Update {selected.size} cost{selected.size === 1 ? "" : "s"} to latest bill
+          </button>
+        </div>
+      )}
+
+      {/* Confirmation modal */}
+      {confirmOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+          <div className="bg-surface-elevated border border-t-border rounded-xl shadow-card max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col">
+            <div className="px-5 py-4 border-b border-t-border">
+              <div className="text-base font-semibold text-foreground">
+                Update {selected.size} item cost{selected.size === 1 ? "" : "s"}?
+              </div>
+              <div className="text-xs text-muted mt-1">
+                Each item&apos;s Zoho purchase rate will be set to the latest bill price.
+                Linked InternalProducts will sync. Sales prices stay as-is. This cannot be
+                undone in bulk.
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto px-5 py-3">
+              <table className="w-full text-left text-sm">
+                <thead className="text-[11px] text-muted uppercase">
+                  <tr>
+                    <th className="py-1">Item</th>
+                    <th className="py-1 text-right">Current</th>
+                    <th className="py-1 text-right">→ New</th>
+                    <th className="py-1 text-right">Δ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedRows.map((r) => {
+                    const delta =
+                      r.storedCost != null && r.latestBillPrice != null
+                        ? r.latestBillPrice - r.storedCost
+                        : null;
+                    return (
+                      <tr key={r.itemId} className="border-t border-t-border">
+                        <td className="py-1 pr-3">
+                          <div className="text-foreground">{r.name}</div>
+                          <div className="text-[11px] text-muted">{r.sku || "—"}</div>
+                        </td>
+                        <td className="py-1 text-right tabular-nums text-muted">
+                          {fmtMoney(r.storedCost)}
+                        </td>
+                        <td className="py-1 text-right tabular-nums text-foreground">
+                          {fmtMoney(r.latestBillPrice)}
+                        </td>
+                        <td
+                          className={`py-1 text-right tabular-nums ${
+                            delta == null
+                              ? "text-muted"
+                              : delta > 0
+                                ? "text-red-400"
+                                : "text-green-400"
+                          }`}
+                        >
+                          {delta == null
+                            ? "—"
+                            : `${delta > 0 ? "+" : ""}${fmtMoney(delta)}`}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="px-5 py-3 border-t border-t-border flex justify-end gap-2">
+              <button
+                onClick={() => setConfirmOpen(false)}
+                disabled={syncing}
+                className="text-sm px-4 py-1.5 rounded border border-t-border text-muted hover:text-foreground disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSyncSelected}
+                disabled={syncing}
+                className="text-sm px-4 py-1.5 rounded bg-cyan-500 text-white hover:bg-cyan-400 disabled:opacity-50 font-medium"
+              >
+                {syncing ? "Syncing…" : "Confirm update"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Last-sync result banner — sticky until next sync or page reload */}
+      {lastSyncResult && (
+        <div className="mt-4 bg-surface/50 border border-t-border rounded-lg p-3 text-xs">
+          <div className="flex items-center gap-3 mb-2">
+            <span className="text-foreground font-medium">Last sync</span>
+            <span className="text-green-400">{lastSyncResult.updated} updated</span>
+            {lastSyncResult.noChange > 0 && (
+              <span className="text-muted">{lastSyncResult.noChange} unchanged</span>
+            )}
+            {lastSyncResult.noBillData > 0 && (
+              <span className="text-amber-400">{lastSyncResult.noBillData} no data</span>
+            )}
+            {lastSyncResult.failed > 0 && (
+              <span className="text-red-400">{lastSyncResult.failed} failed</span>
+            )}
+            <button
+              onClick={() => setLastSyncResult(null)}
+              className="text-muted hover:text-foreground ml-auto"
+            >
+              Dismiss
+            </button>
+          </div>
+          {lastSyncResult.failed > 0 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer text-muted hover:text-foreground">
+                Show failures
+              </summary>
+              <ul className="mt-2 space-y-1">
+                {lastSyncResult.results
+                  .filter((r) => r.status === "failed" || r.status === "not_found")
+                  .map((r) => (
+                    <li key={r.itemId} className="text-red-400">
+                      {r.itemId}: {r.message || r.status}
+                    </li>
+                  ))}
+              </ul>
+            </details>
           )}
         </div>
       )}

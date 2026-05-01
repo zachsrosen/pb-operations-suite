@@ -38,7 +38,21 @@ interface AuditCacheEntry {
 const AUDIT_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
 const _auditCache = new Map<string, AuditCacheEntry>();
 
-interface ItemRow {
+/** Bust the audit result cache. Called by sync-costs after writes so the next
+ *  GET reflects the freshly-updated purchase_rate without waiting for TTL. */
+export function clearAuditCache() {
+  _auditCache.clear();
+}
+
+export interface AuditOptions {
+  dateStart: string;
+  dateEnd: string;
+  maxBills: number;
+  /** When true, bypass module cache. */
+  refresh?: boolean;
+}
+
+export interface ItemRow {
   itemId: string;
   name: string;
   sku: string | null;
@@ -46,6 +60,8 @@ interface ItemRow {
   category: string | null;
   storedCost: number | null;
   storedPrice: number | null;
+  /** Latest bill price × SUGGESTED_MARKUP_MULTIPLIER. null when no bill data. */
+  suggestedSellPrice: number | null;
   /** (storedPrice - storedCost) / storedCost * 100 — null if either side missing or cost is 0 */
   marginPct: number | null;
   latestBillDate: string | null;
@@ -77,7 +93,7 @@ interface UnmatchedRow {
   avgRate: number;
 }
 
-interface AuditPayload {
+export interface AuditPayload {
   dateStart: string;
   dateEnd: string;
   billsScanned: number;
@@ -91,6 +107,8 @@ interface AuditPayload {
 
 const MATCH_TOLERANCE_PCT = 2; // <2% diff = match
 const LARGE_SWING_PCT = 25; // >25% diff = large_swing
+/** Standard markup applied to cost to suggest a sales price. Operations adjusts manually after. */
+export const SUGGESTED_MARKUP_MULTIPLIER = 1.5;
 
 function fmtDate(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -137,55 +155,52 @@ async function fetchBillDetailsConcurrent(
   return { bills: out, errors };
 }
 
-export async function GET(request: NextRequest) {
-  tagSentryRequest(request);
-  try {
-    if (!zohoInventory.isConfigured()) {
-      return NextResponse.json(
-        {
-          error: "Zoho Inventory is not configured",
-          missing: zohoInventory.getMissingConfig(),
-        },
-        { status: 503 },
-      );
-    }
+/**
+ * Resolve date range + maxBills from query params with the same defaults
+ * used by the GET handler. Exported so other routes (sync-costs) get
+ * identical windowing semantics.
+ */
+export function parseAuditOptions(searchParams: URLSearchParams): AuditOptions {
+  const refresh = !!searchParams.get("refresh");
+  let dateStart: string;
+  let dateEnd: string;
+  const dateStartParam = searchParams.get("dateStart");
+  const dateEndParam = searchParams.get("dateEnd");
+  if (dateStartParam || dateEndParam) {
+    const today = fmtDate(new Date());
+    dateEnd = dateEndParam || today;
+    dateStart = dateStartParam || dateEnd;
+  } else {
+    const daysParam = Number(searchParams.get("days") || "90");
+    const days = Number.isFinite(daysParam) ? Math.min(Math.max(daysParam, 1), 365) : 90;
+    const end = new Date();
+    const start = new Date();
+    start.setDate(end.getDate() - days);
+    dateStart = fmtDate(start);
+    dateEnd = fmtDate(end);
+  }
+  const maxBillsParam = Number(searchParams.get("maxBills") || "1500");
+  const maxBills = Number.isFinite(maxBillsParam)
+    ? Math.min(Math.max(maxBillsParam, 1), 5000)
+    : 1500;
+  return { dateStart, dateEnd, maxBills, refresh };
+}
 
-    const { searchParams } = request.nextUrl;
-    const refresh = !!searchParams.get("refresh");
+/**
+ * Run the full cost audit and return the aggregated payload.
+ * Honours the module cache (30 min TTL) unless `refresh` is set.
+ * Exported so the bulk-update endpoint can resolve latest bill prices
+ * server-side without re-issuing an HTTP request to itself.
+ */
+export async function runCostAudit(options: AuditOptions): Promise<AuditPayload> {
+  const { dateStart, dateEnd, maxBills, refresh } = options;
+  const cacheKey = `${dateStart}:${dateEnd}:${maxBills}`;
+  if (!refresh) {
+    const hit = _auditCache.get(cacheKey);
+    if (hit && Date.now() < hit.expiresAt) return hit.payload;
+  }
 
-    // Parse window
-    let dateStart: string;
-    let dateEnd: string;
-    const dateStartParam = searchParams.get("dateStart");
-    const dateEndParam = searchParams.get("dateEnd");
-    if (dateStartParam || dateEndParam) {
-      const today = fmtDate(new Date());
-      dateEnd = dateEndParam || today;
-      dateStart = dateStartParam || dateEnd;
-    } else {
-      const daysParam = Number(searchParams.get("days") || "90");
-      const days = Number.isFinite(daysParam) ? Math.min(Math.max(daysParam, 1), 365) : 90;
-      const end = new Date();
-      const start = new Date();
-      start.setDate(end.getDate() - days);
-      dateStart = fmtDate(start);
-      dateEnd = fmtDate(end);
-    }
-
-    const maxBillsParam = Number(searchParams.get("maxBills") || "1500");
-    const maxBills = Number.isFinite(maxBillsParam)
-      ? Math.min(Math.max(maxBillsParam, 1), 5000)
-      : 1500;
-
-    const cacheKey = `${dateStart}:${dateEnd}:${maxBills}`;
-    if (!refresh) {
-      const hit = _auditCache.get(cacheKey);
-      if (hit && Date.now() < hit.expiresAt) {
-        return NextResponse.json({ ...hit.payload, cached: true });
-      }
-    }
-
-    // ── 1. Fetch bills + items in parallel ───────────────────────────
+  // ── 1. Fetch bills + items in parallel ───────────────────────────
     const [billSummaries, items] = await Promise.all([
       zohoInventory.listBills({ dateStart, dateEnd, maxResults: maxBills }),
       zohoInventory.listItems(),
@@ -326,6 +341,10 @@ export async function GET(request: NextRequest) {
           ? ((storedPrice - storedCost) / storedCost) * 100
           : null;
       const latestBillPrice = agg.latestRate;
+      const suggestedSellPrice =
+        Number.isFinite(latestBillPrice) && latestBillPrice > 0
+          ? latestBillPrice * SUGGESTED_MARKUP_MULTIPLIER
+          : null;
       const avgBillPrice = agg.totalQty > 0 ? agg.weightedRateSum / agg.totalQty : 0;
       const variancePct =
         storedCost != null && storedCost !== 0
@@ -341,6 +360,7 @@ export async function GET(request: NextRequest) {
         category: item.category_name || item.group_name || null,
         storedCost,
         storedPrice,
+        suggestedSellPrice,
         marginPct,
         latestBillDate: agg.latestDate || null,
         latestBillPrice,
@@ -392,9 +412,28 @@ export async function GET(request: NextRequest) {
       lastUpdated: new Date().toISOString(),
     };
 
-    _auditCache.set(cacheKey, { payload, expiresAt: Date.now() + AUDIT_CACHE_TTL_MS });
+  _auditCache.set(cacheKey, { payload, expiresAt: Date.now() + AUDIT_CACHE_TTL_MS });
+  return payload;
+}
 
-    return NextResponse.json({ ...payload, cached: false });
+export async function GET(request: NextRequest) {
+  tagSentryRequest(request);
+  try {
+    if (!zohoInventory.isConfigured()) {
+      return NextResponse.json(
+        {
+          error: "Zoho Inventory is not configured",
+          missing: zohoInventory.getMissingConfig(),
+        },
+        { status: 503 },
+      );
+    }
+
+    const options = parseAuditOptions(request.nextUrl.searchParams);
+    const cacheKey = `${options.dateStart}:${options.dateEnd}:${options.maxBills}`;
+    const cachedHit = !options.refresh && _auditCache.has(cacheKey);
+    const payload = await runCostAudit(options);
+    return NextResponse.json({ ...payload, cached: cachedHit });
   } catch (error) {
     Sentry.captureException(error, { tags: { route: "/api/inventory/cost-audit" } });
     const message = error instanceof Error ? error.message : "Cost audit failed";
