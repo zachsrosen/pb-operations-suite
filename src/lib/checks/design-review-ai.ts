@@ -21,6 +21,11 @@ import {
   listPlansetPdfs,
   pickBestPlanset,
   downloadDrivePdf,
+  findDAFolder,
+  listDrivePdfs,
+  listDriveImages,
+  pickBestDAFile,
+  downloadDriveImage,
 } from "@/lib/drive-plansets";
 import { fetchAHJsForDeal, fetchUtilitiesForDeal } from "@/lib/hubspot-custom-objects";
 import type { ReviewResult, Finding, Severity } from "./types";
@@ -139,7 +144,7 @@ const SUBMIT_FINDINGS_TOOL = {
             check: {
               type: "string" as const,
               description:
-                "Category: ahj_compliance | utility_compliance | equipment_match | completeness",
+                "Category: ahj_compliance | utility_compliance | equipment_match | design_match | completeness",
             },
             severity: {
               type: "string" as const,
@@ -187,7 +192,7 @@ Your job is to review a planset PDF and cross-reference it against:
 - Code references: verify the planset references the correct building, electrical, and fire codes
 
 **utility_compliance** — Check against utility requirements:
-- AC disconnect: verify shown on line diagram if required by utility
+- AC disconnect: verify shown on line diagram if required by utility. Note: a fused AC disconnect between the line-side tap and the production meter is only required for line-side tap connections. Breaker tie-in (load-side) connections do NOT require a fused disconnect — a non-fused disconnect is sufficient. Inspect the line diagram to determine the connection type before flagging this.
 - Production meter: verify shown if required by utility
 - System size: verify system size is within utility maximum (AC and/or DC)
 - Backup switch: verify shown if battery system includes backup
@@ -196,6 +201,14 @@ Your job is to review a planset PDF and cross-reference it against:
 - Module count and type: does the planset match what's in the CRM?
 - Inverter type: does the planset match?
 - Battery type and count: does the planset match?
+
+**design_match** — Compare planset layout against the Design Approval (DA) layout:
+- Only run this check if a second DA attachment was provided. If no DA was attached, skip this category.
+- Total panel count: must match exactly between DA and planset.
+- Roof faces / array groups: every roof face shown in the DA should appear in the planset, and vice versa.
+- Per-roof-face panel count: counts on each roof face should match. Flag any face where the count differs.
+- General layout pattern: identify obvious shifts (e.g., DA shows panels along the south edge, planset shows them along the north edge of the same roof). Minor portrait↔landscape orientation flips on the same face are acceptable; major position changes are not.
+- Be specific in findings: say "DA shows 12 panels on south roof, planset shows 10" rather than "layout differs".
 
 **completeness** — General planset quality:
 - Single-line diagram present and legible
@@ -280,6 +293,47 @@ export async function runDesignReview(
 
     await heartbeat(); // milestone: PDF downloaded
 
+    // ── Step 2b: Find + download DA layout from "da" subfolder (best-effort) ──
+    let daAttachment: { fileId: string; filename: string; kind: "pdf" | "image" } | null = null;
+    try {
+      const daFolderId = await findDAFolder(folderId);
+      if (daFolderId) {
+        const [daPdfs, daImages] = await Promise.all([
+          listDrivePdfs(daFolderId).catch(() => []),
+          listDriveImages(daFolderId).catch(() => []),
+        ]);
+        const daPick = pickBestDAFile(daPdfs, daImages);
+        if (daPick) {
+          if (daPick.kind === "pdf") {
+            const dl = await downloadDrivePdf(daPick.file.id);
+            const uploaded = await client.beta.files.upload({
+              file: new File([new Uint8Array(dl.buffer)], dl.filename, { type: "application/pdf" }),
+            });
+            daAttachment = { fileId: uploaded.id, filename: dl.filename, kind: "pdf" };
+          } else {
+            const dl = await downloadDriveImage(daPick.file.id);
+            const uploaded = await client.beta.files.upload({
+              file: new File([new Uint8Array(dl.buffer)], dl.filename, { type: dl.mimeType }),
+            });
+            daAttachment = { fileId: uploaded.id, filename: dl.filename, kind: "image" };
+          }
+          console.log(
+            `[design-review-ai] Deal ${dealId}: attached DA ${daAttachment.kind} "${daAttachment.filename}" for layout comparison`,
+          );
+        } else {
+          console.log(`[design-review-ai] Deal ${dealId}: no DA file found in "da" subfolder`);
+        }
+      } else {
+        console.log(`[design-review-ai] Deal ${dealId}: no "da" subfolder in design folder`);
+      }
+    } catch (e) {
+      // DA fetch is best-effort — don't fail the review if it errors
+      console.warn(
+        `[design-review-ai] Deal ${dealId}: DA fetch failed (continuing without DA comparison):`,
+        e instanceof Error ? e.message : e,
+      );
+    }
+
     // ── Step 3: Upload PDF to Anthropic Files API ──
     let anthropicFileId: string | undefined;
     try {
@@ -290,12 +344,20 @@ export async function runDesignReview(
     } catch (e) {
       const msg = e instanceof Error ? e.message : "File upload failed";
       console.error("[design-review-ai] Files API upload error:", msg);
+      // Clean up DA file if planset upload failed
+      if (daAttachment) {
+        await client.beta.files.delete(daAttachment.fileId).catch(() => {});
+        daAttachment = null;
+      }
       return makeErrorResult(dealId, start, "completeness", "error",
         `Failed to upload planset PDF for AI review: ${msg}`);
     }
 
     // ── Step 4: Call Claude with structured output (Files API reference) ──
-    const userMessage = buildUserMessage(dealContext, ahjContext, utilityContext, filename);
+    const userMessage = buildUserMessage(
+      dealContext, ahjContext, utilityContext, filename,
+      daAttachment ? { filename: daAttachment.filename, kind: daAttachment.kind } : null,
+    );
 
     const claudeParams = {
       model: CLAUDE_MODELS.sonnet,
@@ -307,21 +369,32 @@ export async function runDesignReview(
 
     let response;
     try {
+      const contentBlocks: Array<Record<string, unknown>> = [
+        {
+          type: "document",
+          source: { type: "file", file_id: anthropicFileId },
+        },
+      ];
+      if (daAttachment) {
+        contentBlocks.push(
+          daAttachment.kind === "pdf"
+            ? {
+                type: "document",
+                source: { type: "file", file_id: daAttachment.fileId },
+              }
+            : {
+                type: "image",
+                source: { type: "file", file_id: daAttachment.fileId },
+              },
+        );
+      }
+      contentBlocks.push({ type: "text", text: userMessage });
       response = await client.beta.messages.create({
         ...claudeParams,
         messages: [
           {
             role: "user",
-            content: [
-              {
-                type: "document",
-                source: { type: "file", file_id: anthropicFileId },
-              },
-              {
-                type: "text",
-                text: userMessage,
-              },
-            ],
+            content: contentBlocks as never,
           },
         ],
         betas: ["files-api-2025-04-14"],
@@ -330,10 +403,14 @@ export async function runDesignReview(
       const msg = e instanceof Error ? e.message : "Claude API call failed";
       console.error("[design-review-ai] Claude API error:", msg);
 
-      // Clean up uploaded file before fallback/error
+      // Clean up uploaded files before fallback/error
       if (anthropicFileId) {
         await client.beta.files.delete(anthropicFileId).catch(() => {});
         anthropicFileId = undefined;
+      }
+      if (daAttachment) {
+        await client.beta.files.delete(daAttachment.fileId).catch(() => {});
+        daAttachment = null;
       }
 
       // Fallback: retry with base64 inline if it's a PDF processing error and file is small enough
@@ -378,10 +455,15 @@ export async function runDesignReview(
       }
     }
 
-    // Clean up uploaded file (best-effort)
+    // Clean up uploaded files (best-effort)
     if (anthropicFileId) {
       await client.beta.files.delete(anthropicFileId).catch((e) => {
         console.warn("[design-review-ai] Failed to delete uploaded file:", anthropicFileId, e);
+      });
+    }
+    if (daAttachment) {
+      await client.beta.files.delete(daAttachment.fileId).catch((e) => {
+        console.warn("[design-review-ai] Failed to delete DA file:", daAttachment?.fileId, e);
       });
     }
 
@@ -443,15 +525,28 @@ function buildUserMessage(
   ahjContext: Record<string, string>[],
   utilityContext: Record<string, string>[],
   plansetFilename: string,
+  daAttachment: { filename: string; kind: "pdf" | "image" } | null,
 ): string {
   const parts: string[] = [
     `Review the attached planset PDF (${plansetFilename}) for this solar project.`,
+  ];
+
+  if (daAttachment) {
+    parts.push(
+      "",
+      `A second attachment is included: the Design Approval (DA) ${daAttachment.kind} (${daAttachment.filename}). ` +
+      `This is the customer-approved layout from before final design. Use it as the reference for the ` +
+      `**design_match** check — compare panel layout, count, and roof-face assignment between the DA and the planset.`,
+    );
+  }
+
+  parts.push(
     "",
     "## Deal Properties",
     "```json",
     JSON.stringify(dealContext, null, 2),
     "```",
-  ];
+  );
 
   if (ahjContext.length > 0) {
     parts.push("", "## AHJ Requirements");
