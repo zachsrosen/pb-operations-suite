@@ -91,6 +91,11 @@ export function CallLogList({ poolId }: { poolId?: string }) {
                     Remote fix
                   </span>
                 )}
+                {!log.resolvedRemotely && !log.dispatched && (
+                  <span className="text-xs rounded bg-blue-500/20 text-blue-300 px-1.5 py-0.5">
+                    Follow-up
+                  </span>
+                )}
                 {log.escalatedTo && (
                   <span className="text-xs rounded bg-purple-500/20 text-purple-300 px-1.5 py-0.5">
                     → {log.escalatedTo}

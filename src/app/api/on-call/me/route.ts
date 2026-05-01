@@ -54,7 +54,10 @@ export async function GET() {
 
   const activeCrewMembers = isAdmin
     ? await prisma.crewMember.findMany({
-        where: { isActive: true },
+        where: {
+          isActive: true,
+          onCallMemberships: { some: { pool: { isActive: true } } },
+        },
         select: { id: true, name: true },
         orderBy: { name: "asc" },
       })

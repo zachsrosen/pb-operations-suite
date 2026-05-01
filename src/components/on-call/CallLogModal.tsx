@@ -106,7 +106,7 @@ function CallLogForm({
   const [safetyRisk, setSafetyRisk] = useState(false);
   const [homeHasPower, setHomeHasPower] = useState<"yes" | "no" | "unknown">("unknown");
   const [troubleshootingAttempted, setTroubleshootingAttempted] = useState("");
-  const [resolvedRemotely, setResolvedRemotely] = useState<"yes" | "no" | null>(null);
+  const [outcome, setOutcome] = useState<"resolved" | "dispatched" | "follow-up" | null>(null);
   const [arrivalAt, setArrivalAt] = useState("");
   const [completedAt, setCompletedAt] = useState("");
   const [escalatedToChoice, setEscalatedToChoice] = useState<string>("");
@@ -118,7 +118,8 @@ function CallLogForm({
 
   const reporterId = crewMember?.id ?? pickedCrewMemberId;
 
-  const dispatched = resolvedRemotely === "no";
+  const resolvedRemotely = outcome === "resolved";
+  const dispatched = outcome === "dispatched";
   const hoursPreview = dispatched
     ? computeHoursWorked(localToIso(arrivalAt), localToIso(completedAt))
     : null;
@@ -129,9 +130,9 @@ function CallLogForm({
     return escalatedToChoice;
   })();
 
-  function chooseResolvedRemotely(value: "yes" | "no") {
-    setResolvedRemotely(value);
-    if (value === "no") {
+  function chooseOutcome(value: "resolved" | "dispatched" | "follow-up") {
+    setOutcome(value);
+    if (value === "dispatched") {
       const now = nowLocalDatetimeStr();
       setArrivalAt((prev) => prev || callReceivedAt || now);
       setCompletedAt((prev) => prev || now);
@@ -151,7 +152,7 @@ function CallLogForm({
         homeHasPower:
           homeHasPower === "yes" ? true : homeHasPower === "no" ? false : null,
         troubleshootingAttempted: troubleshootingAttempted || null,
-        resolvedRemotely: resolvedRemotely === "yes",
+        resolvedRemotely,
         dispatched,
         arrivalAt: dispatched ? localToIso(arrivalAt) : null,
         completedAt: dispatched ? localToIso(completedAt) : null,
@@ -182,7 +183,7 @@ function CallLogForm({
     customerName.trim().length > 0 &&
     issueType.length > 0 &&
     (issueType !== "other" || issueTypeOther.trim().length > 0) &&
-    resolvedRemotely !== null &&
+    outcome !== null &&
     !submit.isPending;
 
   return (
@@ -329,19 +330,25 @@ function CallLogForm({
         />
       </Field>
 
-      <Field label="Resolved remotely?">
-        <div className="flex gap-2">
+      <Field label="Outcome">
+        <div className="flex gap-2 flex-wrap">
           <ChipChoice
-            active={resolvedRemotely === "yes"}
-            onClick={() => chooseResolvedRemotely("yes")}
+            active={outcome === "resolved"}
+            onClick={() => chooseOutcome("resolved")}
           >
-            Yes
+            Resolved remotely
           </ChipChoice>
           <ChipChoice
-            active={resolvedRemotely === "no"}
-            onClick={() => chooseResolvedRemotely("no")}
+            active={outcome === "dispatched"}
+            onClick={() => chooseOutcome("dispatched")}
           >
-            No — dispatched
+            Dispatched
+          </ChipChoice>
+          <ChipChoice
+            active={outcome === "follow-up"}
+            onClick={() => chooseOutcome("follow-up")}
+          >
+            Follow-up needed
           </ChipChoice>
         </div>
       </Field>

@@ -23,6 +23,7 @@ const HEADERS = [
   "Hours Worked",
   "Escalated To",
   "Notes",
+  "Outcome",
 ];
 
 type CallLogRecord = {
@@ -147,6 +148,7 @@ function buildRow(log: CallLogRecord): string[] {
     hoursToCell(log.hoursWorked),
     log.escalatedTo ?? "",
     log.notes ?? "",
+    log.resolvedRemotely ? "Resolved remotely" : log.dispatched ? "Dispatched" : "Follow-up needed",
   ];
 }
 
@@ -158,7 +160,7 @@ export async function appendCallLogToSheet(log: CallLogRecord): Promise<void> {
   const baseUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}`;
   const sheetTitle = await getFirstSheetTitle(baseUrl, token);
 
-  const headerRes = await fetch(`${baseUrl}/values/${rangeFor(sheetTitle, "A1:R1")}`, {
+  const headerRes = await fetch(`${baseUrl}/values/${rangeFor(sheetTitle, "A1:S1")}`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });
@@ -171,7 +173,7 @@ export async function appendCallLogToSheet(log: CallLogRecord): Promise<void> {
 
   if (!hasHeaders) {
     const writeHeaderRes = await fetch(
-      `${baseUrl}/values/${rangeFor(sheetTitle, "A1:R1")}?valueInputOption=RAW`,
+      `${baseUrl}/values/${rangeFor(sheetTitle, "A1:S1")}?valueInputOption=RAW`,
       {
         method: "PUT",
         headers: {
@@ -187,7 +189,7 @@ export async function appendCallLogToSheet(log: CallLogRecord): Promise<void> {
   }
 
   const appendRes = await fetch(
-    `${baseUrl}/values/${rangeFor(sheetTitle, "A1:R1")}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `${baseUrl}/values/${rangeFor(sheetTitle, "A1:S1")}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {
       method: "POST",
       headers: {

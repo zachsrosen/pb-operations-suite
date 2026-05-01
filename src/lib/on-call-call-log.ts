@@ -9,6 +9,7 @@ export const ISSUE_TYPES = [
   { value: "no-production", label: "No production" },
   { value: "battery", label: "Battery" },
   { value: "monitoring", label: "Monitoring offline" },
+  { value: "roofing", label: "Roofing" },
   { value: "safety", label: "Safety / urgent" },
   { value: "other", label: "Other" },
 ] as const;
