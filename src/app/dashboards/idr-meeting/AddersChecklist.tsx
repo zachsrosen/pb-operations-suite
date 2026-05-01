@@ -10,16 +10,16 @@ const ROOF_ADDER_KEYS = [
   "adderShakeRoof",
 ] as const;
 
-const ROOF_LABELS: Record<(typeof ROOF_ADDER_KEYS)[number], string> = {
-  adderTileRoof: "Tile roof",
-  adderMetalRoof: "Metal roof",
-  adderFlatFoamRoof: "Flat/foam",
-  adderShakeRoof: "Shake",
+const ROOF_COSTS: Record<(typeof ROOF_ADDER_KEYS)[number], { label: string; perSystem: number; perWatt: number }> = {
+  adderTileRoof:     { label: "Tile roof",  perSystem: 3500, perWatt: 0.80 },
+  adderMetalRoof:    { label: "Metal roof", perSystem: 0,    perWatt: 0.35 },
+  adderFlatFoamRoof: { label: "Flat/foam",  perSystem: 0,    perWatt: 0.35 },
+  adderShakeRoof:    { label: "Shake",      perSystem: 0,    perWatt: 0.35 },
 };
 
 const ROOF_OTHER = [
-  { key: "adderSteepPitch" as const, label: "Steep pitch" },
-  { key: "adderTwoStorey" as const, label: "2+ storey" },
+  { key: "adderSteepPitch" as const, label: "Steep pitch", perWatt: 0.35 },
+  { key: "adderTwoStorey" as const, label: "2+ storey", perWatt: 0.05 },
 ];
 
 const SITE_ADDERS = [
@@ -42,9 +42,15 @@ interface Props {
   readOnly: boolean;
 }
 
+function fmt(n: number): string {
+  return "$" + n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
 export function AddersChecklist({ item, onChange, readOnly }: Props) {
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
+
+  const watts = (item.systemSizeKw ?? 0) * 1000;
 
   const handleRoofChange = (key: (typeof ROOF_ADDER_KEYS)[number], checked: boolean) => {
     const updates: Partial<IdrItem> = {};
@@ -87,30 +93,47 @@ export function AddersChecklist({ item, onChange, readOnly }: Props) {
       <div>
         <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5">Roof</p>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-          {ROOF_ADDER_KEYS.map((key) => (
-            <label key={key} className="flex items-center gap-1.5 text-xs text-foreground">
-              <input
-                type="checkbox"
-                checked={item[key]}
-                onChange={(e) => handleRoofChange(key, e.target.checked)}
-                disabled={readOnly}
-                className="accent-orange-500"
-              />
-              {ROOF_LABELS[key]}
-            </label>
-          ))}
-          {ROOF_OTHER.map(({ key, label }) => (
-            <label key={key} className="flex items-center gap-1.5 text-xs text-foreground">
-              <input
-                type="checkbox"
-                checked={item[key]}
-                onChange={(e) => handleBoolChange(key, e.target.checked)}
-                disabled={readOnly}
-                className="accent-orange-500"
-              />
-              {label}
-            </label>
-          ))}
+          {ROOF_ADDER_KEYS.map((key) => {
+            const { label, perSystem, perWatt } = ROOF_COSTS[key];
+            const cost = perSystem + watts * perWatt;
+            return (
+              <label key={key} className="flex items-center gap-1.5 text-xs text-foreground">
+                <input
+                  type="checkbox"
+                  checked={item[key]}
+                  onChange={(e) => handleRoofChange(key, e.target.checked)}
+                  disabled={readOnly}
+                  className="accent-orange-500"
+                />
+                <span>
+                  {label}
+                  {watts > 0 && (perSystem > 0 || perWatt > 0) && (
+                    <span className="text-muted ml-1">{fmt(cost)}</span>
+                  )}
+                </span>
+              </label>
+            );
+          })}
+          {ROOF_OTHER.map(({ key, label, perWatt }) => {
+            const cost = watts * perWatt;
+            return (
+              <label key={key} className="flex items-center gap-1.5 text-xs text-foreground">
+                <input
+                  type="checkbox"
+                  checked={item[key]}
+                  onChange={(e) => handleBoolChange(key, e.target.checked)}
+                  disabled={readOnly}
+                  className="accent-orange-500"
+                />
+                <span>
+                  {label}
+                  {watts > 0 && perWatt > 0 && (
+                    <span className="text-muted ml-1">{fmt(cost)}</span>
+                  )}
+                </span>
+              </label>
+            );
+          })}
         </div>
       </div>
 

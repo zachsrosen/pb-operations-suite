@@ -14,7 +14,6 @@ import { MeetingNotesForm } from "./MeetingNotesForm";
 import { AhjUtilityInfo } from "./AhjUtilityInfo";
 import PhotoGalleryCard from "@/components/deal-detail/PhotoGalleryCard";
 import { AddersChecklist } from "./AddersChecklist";
-import { PricingBreakdown } from "./PricingBreakdown";
 
 const HUBSPOT_PORTAL_ID = process.env.NEXT_PUBLIC_HUBSPOT_PORTAL_ID || "7086286";
 
@@ -128,48 +127,6 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
   const amountStr = item.dealAmount
     ? `$${item.dealAmount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`
     : null;
-
-  const pricingDeltaPct = useMemo(() => {
-    if (!item.dealAmount || !lineItemsQuery.data?.lineItems?.length) return null;
-    const modules: EquipmentSelection[] = [];
-    const inverters: EquipmentSelection[] = [];
-    const batteries: EquipmentSelection[] = [];
-    const otherEquip: EquipmentSelection[] = [];
-    for (const li of lineItemsQuery.data.lineItems) {
-      const code = matchLineItemToEquipment(li.name, li.sku, li.productCategory, li.manufacturer);
-      if (!code) continue;
-      const eq = EQUIPMENT_CATALOG.find((e) => e.code === code);
-      if (!eq) continue;
-      const sel = { code, qty: li.quantity };
-      switch (eq.category) {
-        case "module": modules.push(sel); break;
-        case "inverter": inverters.push(sel); break;
-        case "battery": batteries.push(sel); break;
-        default: otherEquip.push(sel); break;
-      }
-    }
-    const normalized = normalizeLocation(item.region);
-    const schemeId = normalized ? (LOCATION_SCHEME[normalized] ?? "base") : "base";
-    const customs = Array.isArray(item.customAdders) ? item.customAdders : [];
-    const customTotal = customs.reduce(
-      (sum: number, c: { amount?: number }) => sum + (typeof c.amount === "number" ? c.amount : 0),
-      0,
-    );
-    let tierTotal = 0;
-    if (item.adderTier1) tierTotal += Math.round(item.dealAmount * 0.15);
-    if (item.adderTier2) tierTotal += Math.round(item.dealAmount * 0.20);
-    const roofTypeId = item.adderTileRoof ? "tile" : item.adderMetalRoof ? "metal" : item.adderFlatFoamRoof ? "flat" : item.adderShakeRoof ? "shake" : "comp";
-    const breakdown = calcPrice({
-      modules, inverters, batteries, otherEquip,
-      pricingSchemeId: schemeId,
-      roofTypeId,
-      storeyId: item.adderTwoStorey ? "2" : "1",
-      pitchId: item.adderSteepPitch ? "steep1" : "none",
-      activeAdderIds: [],
-      customFixedAdder: customTotal + tierTotal,
-    });
-    return Math.abs(item.dealAmount - breakdown.finalPrice) / item.dealAmount * 100;
-  }, [item, lineItemsQuery.data]);
 
   const canSync = !isPreview && !readOnly;
 
@@ -389,10 +346,6 @@ export function ProjectDetail({ item, onChange, readOnly, isPreview, sessionId, 
 
             <Section title="Adders Checklist">
               <AddersChecklist item={item} onChange={handleFieldChange} readOnly={readOnly} />
-            </Section>
-
-            <Section title="Pricing Breakdown">
-              <PricingBreakdown item={item} lineItems={lineItemsQuery.data?.lineItems} />
             </Section>
           </div>
         </div>
