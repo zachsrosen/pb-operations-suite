@@ -1,7 +1,8 @@
 "use client";
 
 import type { IdrItem } from "./IdrMeetingClient";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { computeAdderTotal } from "@/lib/idr-meeting";
 
 const ROOF_ADDER_KEYS = [
   "adderTileRoof",
@@ -51,6 +52,12 @@ function fmtRate(perSystem: number, perWatt: number): string {
   if (perSystem > 0) parts.push(fmt(perSystem));
   if (perWatt > 0) parts.push(`$${perWatt}/W`);
   return parts.join(" + ");
+}
+
+function pctOfDeal(cost: number, dealAmount: number | null | undefined): { label: string; underThreshold: boolean } | null {
+  if (!dealAmount || dealAmount <= 0) return null;
+  const pct = (cost / dealAmount) * 100;
+  return { label: `${pct.toFixed(1)}%`, underThreshold: pct < 10 };
 }
 
 export function AddersChecklist({ item, onChange, readOnly }: Props) {
@@ -104,6 +111,7 @@ export function AddersChecklist({ item, onChange, readOnly }: Props) {
             const { label, perSystem, perWatt } = ROOF_COSTS[key];
             const hasCost = perSystem > 0 || perWatt > 0;
             const cost = watts > 0 ? perSystem + watts * perWatt : null;
+            const pct = cost != null ? pctOfDeal(cost, item.dealAmount) : null;
             return (
               <label key={key} className="flex items-center gap-1.5 text-xs text-foreground">
                 <input
@@ -118,6 +126,7 @@ export function AddersChecklist({ item, onChange, readOnly }: Props) {
                   {hasCost && (
                     <span className="text-muted ml-1">
                       {cost != null ? fmt(cost) : fmtRate(perSystem, perWatt)}
+                      {pct && <span className={`ml-0.5 ${pct.underThreshold ? "text-yellow-400" : ""}`}>({pct.label}){pct.underThreshold && " ⚠ may be waived"}</span>}
                     </span>
                   )}
                 </span>
@@ -126,6 +135,7 @@ export function AddersChecklist({ item, onChange, readOnly }: Props) {
           })}
           {ROOF_OTHER.map(({ key, label, perWatt }) => {
             const cost = watts > 0 ? watts * perWatt : null;
+            const pct = cost != null ? pctOfDeal(cost, item.dealAmount) : null;
             return (
               <label key={key} className="flex items-center gap-1.5 text-xs text-foreground">
                 <input
@@ -140,6 +150,7 @@ export function AddersChecklist({ item, onChange, readOnly }: Props) {
                   {perWatt > 0 && (
                     <span className="text-muted ml-1">
                       {cost != null ? fmt(cost) : `$${perWatt}/W`}
+                      {pct && <span className={`ml-0.5 ${pct.underThreshold ? "text-yellow-400" : ""}`}>({pct.label}){pct.underThreshold && " ⚠ may be waived"}</span>}
                     </span>
                   )}
                 </span>
@@ -206,10 +217,15 @@ export function AddersChecklist({ item, onChange, readOnly }: Props) {
         <p className="text-[10px] font-semibold uppercase tracking-wider text-muted mb-1.5">Custom</p>
         {customs.length > 0 && (
           <div className="space-y-1 mb-2">
-            {customs.map((c, i) => (
+            {customs.map((c, i) => {
+              const cPct = pctOfDeal(Math.abs(c.amount), item.dealAmount);
+              return (
               <div key={i} className="flex items-center gap-2 text-xs">
                 <span className="text-foreground">{c.name}</span>
-                <span className="text-muted ml-auto">${c.amount.toLocaleString()}</span>
+                <span className="text-muted ml-auto">
+                  ${c.amount.toLocaleString()}
+                  {cPct && <span className={`ml-0.5 ${cPct.underThreshold ? "text-yellow-400" : ""}`}>({cPct.label}){cPct.underThreshold && " ⚠ may be waived"}</span>}
+                </span>
                 {!readOnly && (
                   <button
                     onClick={() => handleRemoveCustom(i)}
@@ -219,7 +235,8 @@ export function AddersChecklist({ item, onChange, readOnly }: Props) {
                   </button>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
         {!readOnly && (
@@ -249,6 +266,22 @@ export function AddersChecklist({ item, onChange, readOnly }: Props) {
           </div>
         )}
       </div>
+
+      {/* Total */}
+      {(() => {
+        const total = computeAdderTotal(item);
+        if (total == null) return null;
+        const totalPct = pctOfDeal(Math.abs(total), item.dealAmount);
+        return (
+          <div className="border-t border-t-border pt-2 flex items-center justify-between text-xs">
+            <span className="font-semibold text-foreground">Total Adders</span>
+            <span className={`font-semibold ${totalPct?.underThreshold ? "text-yellow-400" : "text-foreground"}`}>
+              {fmt(total)}
+              {totalPct && <span className="ml-1">({totalPct.label}){totalPct.underThreshold && " ⚠ may be waived"}</span>}
+            </span>
+          </div>
+        );
+      })()}
     </div>
   );
 }
