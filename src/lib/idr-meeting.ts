@@ -67,6 +67,7 @@ export const SNAPSHOT_PROPERTIES = [
   "disco__reco", "interior_access", "notes_for_install",
   "link_to_opensolar", "os_project_link",
   "tags",
+  "roof_type",
   // Read-only notes from sales/design
   "os_notes", "sales_change_order_notes", "sales_change_order_needed",
   "notes_for_design_", "specific_notes_for_design",
@@ -140,6 +141,11 @@ export type SnapshotFields = {
   openSolarUrl: string | null;
   surveyCompleted: boolean;
   tags: string[];
+  // Roof adder auto-populated from HubSpot roof_type
+  adderTileRoof: boolean;
+  adderMetalRoof: boolean;
+  adderFlatFoamRoof: boolean;
+  adderShakeRoof: boolean;
   // Read-only HubSpot notes
   salesNotes: string | null;
   salesChangeOrderNotes: string | null;
@@ -147,6 +153,21 @@ export type SnapshotFields = {
   notesForDesign: string | null;
   specificNotesForDesign: string | null;
 };
+
+function roofTypeToAdders(roofType: string | null | undefined): Pick<SnapshotFields, "adderTileRoof" | "adderMetalRoof" | "adderFlatFoamRoof" | "adderShakeRoof"> {
+  const out = { adderTileRoof: false, adderMetalRoof: false, adderFlatFoamRoof: false, adderShakeRoof: false };
+  if (!roofType) return out;
+  const v = roofType.toLowerCase().trim();
+  // HubSpot enum values: S-Tile, Tile - Clay, Tile - Concrete, Tile - Slate, Flat Tile, Flat Concrete
+  if (/tile|slate/i.test(v) && !/flat/i.test(v)) { out.adderTileRoof = true; return out; }
+  // Metal Standing Seam, Metal Roof, Metal Shingle, Metal Tin, Metal Stone Coated, Metal Decramastic, Kliplock/Kliplok
+  if (/metal|klip/i.test(v)) { out.adderMetalRoof = true; return out; }
+  // Flat Roof, Flat Foam, Flat Concrete, Flat Tile, Membrane EPDM/PVC/TPO, Tar and Gravel / Bitumen
+  if (/flat|foam|membrane|epdm|tpo|pvc|tar|bitumen/i.test(v)) { out.adderFlatFoamRoof = true; return out; }
+  // Wood/Shake Shingle, Thatched
+  if (/shake|wood|thatch/i.test(v)) { out.adderShakeRoof = true; return out; }
+  return out;
+}
 
 /** Map raw HubSpot deal properties to the IdrMeetingItem snapshot fields. */
 export function snapshotDealProperties(
@@ -196,6 +217,7 @@ export function snapshotDealProperties(
     openSolarUrl: p.os_project_link ?? null,
     surveyCompleted,
     tags: parseDealTags(p.tags),
+    ...roofTypeToAdders(p.roof_type),
     // Read-only HubSpot notes
     salesNotes: p.os_notes ?? null,
     salesChangeOrderNotes: p.sales_change_order_notes ?? null,
@@ -350,6 +372,7 @@ interface PropertyFields {
   salesChangeNotes: string | null;
   opsChangeNotes: string | null;
   adderSummary?: string | null;
+  adderAmount?: number | null;
 }
 
 /** Map item fields to HubSpot deal property key-value pairs. Only includes non-null fields. */
@@ -379,6 +402,7 @@ export function buildHubSpotPropertyUpdates(
   if (fields.opsChangeNotes) updates.ops_communication_reason = fields.opsChangeNotes;
 
   updates.idr_adders = fields.adderSummary ?? "";
+  if (fields.adderAmount != null) updates.idr_adder_amount = String(fields.adderAmount);
 
   return updates;
 }
@@ -433,6 +457,49 @@ export function serializeAdderSummary(item: {
     }
   }
   return parts.length > 0 ? parts.join(", ") : null;
+}
+
+/** Compute the total adder dollar amount for a given item. Returns null when system size is unknown and no tier/custom adders apply. */
+export function computeAdderTotal(item: {
+  adderTileRoof: boolean;
+  adderMetalRoof: boolean;
+  adderFlatFoamRoof: boolean;
+  adderShakeRoof: boolean;
+  adderSteepPitch: boolean;
+  adderTwoStorey: boolean;
+  adderTier1?: boolean;
+  adderTier2?: boolean;
+  systemSizeKw?: number | null;
+  dealAmount?: number | null;
+  customAdders: unknown;
+}): number | null {
+  const watts = (item.systemSizeKw ?? 0) * 1000;
+  let total = 0;
+  let hasAny = false;
+
+  // Roof type adders (costs match pricing-calculator.ts)
+  if (item.adderTileRoof) { total += 3500 + watts * 0.80; hasAny = true; }
+  if (item.adderMetalRoof) { total += watts * 0.35; hasAny = true; }
+  if (item.adderFlatFoamRoof) { total += watts * 0.35; hasAny = true; }
+  if (item.adderShakeRoof) { total += watts * 0.35; hasAny = true; }
+  if (item.adderSteepPitch) { total += watts * 0.35; hasAny = true; }
+  // 2+ storey uses $0.05/W
+  if (item.adderTwoStorey) { total += watts * 0.05; hasAny = true; }
+
+  // Tier adders (% of deal amount)
+  if (item.adderTier1 && item.dealAmount) { total += Math.round(item.dealAmount * 0.15); hasAny = true; }
+  if (item.adderTier2 && item.dealAmount) { total += Math.round(item.dealAmount * 0.20); hasAny = true; }
+
+  // Custom adders
+  const customs = Array.isArray(item.customAdders) ? item.customAdders : [];
+  for (const c of customs) {
+    if (c && typeof c === "object" && "amount" in c && typeof c.amount === "number") {
+      total += c.amount;
+      hasAny = true;
+    }
+  }
+
+  return hasAny ? Math.round(total) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -656,6 +723,7 @@ export async function syncItemToHubSpot(
     adderEvCharger: boolean;
     adderTier1: boolean;
     adderTier2: boolean;
+    systemSizeKw: number | null;
     dealAmount: number | null;
     customAdders: unknown;
   },
@@ -677,6 +745,7 @@ export async function syncItemToHubSpot(
       salesChangeNotes: item.salesChangeNotes,
       opsChangeNotes: item.opsChangeNotes,
       adderSummary: serializeAdderSummary(item),
+      adderAmount: computeAdderTotal(item),
     });
 
     if (Object.keys(properties).length > 0) {
