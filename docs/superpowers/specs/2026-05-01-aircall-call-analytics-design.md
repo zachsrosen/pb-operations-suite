@@ -25,9 +25,10 @@ A call analytics layer that ingests Aircall call data, stores it in Postgres, an
 Behind feature flag `AIRCALL_DASHBOARD_ENABLED`. When the flag is off, the page returns a simple "Disabled" notice; the link is hidden from the Admin suite landing page.
 
 ADMIN role only. Add `/dashboards/admin/calls` to:
-- `ADMIN_ONLY_ROUTES` prefix in `src/middleware.ts` is already covered by the `/dashboards/admin` prefix — no change needed.
-- `allowedRoutes` for `ADMIN` in `src/lib/roles.ts`.
+- `allowedRoutes` for `ADMIN` in `src/lib/roles.ts` — middleware enforces this list.
 - Suite card on `/suites/admin` (gated on the feature flag).
+
+The middleware already covers the `/dashboards/admin` prefix as part of its admin-only handling — no middleware code change needed for the page route. The new `/api/aircall/*` paths must be added to ADMIN's `allowedRoutes` explicitly (per the project rule that new API routes must be added to every role's allowlist or middleware silently 403s).
 
 ## Data Source: Aircall Public API
 
@@ -117,10 +118,10 @@ model AircallUserCache {
 
 ### 3. Drift cron — `GET /api/cron/aircall-sync`
 
-- Runs daily at 04:00 UTC via Vercel Cron (existing pattern in `vercel.json`).
+- Runs daily at 04:00 UTC via Vercel Cron (added to existing `crons` array in `vercel.json`).
 - Pulls last 24 hours of calls, upserts to cache. Catches anything the webhook missed.
 - Also refreshes `AircallUserCache` (full roster fetch — small, ~50-100 users).
-- Auth: existing cron secret pattern (`CRON_SECRET` header).
+- Auth: `Authorization: Bearer ${CRON_SECRET}` header check (matches `src/app/api/cron/audit-digest/route.ts`).
 - Returns `{ calls: N, users: M, durationMs: ... }` for monitoring.
 
 ### 4. Aircall client — `src/lib/aircall.ts`
@@ -209,7 +210,16 @@ Webhook receiver — see Ingestion §1.
 
 ### Auth on the data routes
 
-All three GET routes are gated by the standard `requireRole('ADMIN')` pattern (or whatever the existing helper is — verify against `src/lib/auth.ts`). The flag check (`AIRCALL_DASHBOARD_ENABLED`) is enforced server-side too, so a curl with admin cookies still 404s when disabled.
+All three GET routes use the existing pattern (matches `src/app/api/admin/users/route.ts`):
+
+```ts
+const session = await auth();
+if (!session?.user?.email) return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+const user = await getUserByEmail(session.user.email);
+if (!user?.roles?.includes("ADMIN")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+```
+
+The flag check (`AIRCALL_DASHBOARD_ENABLED`) is enforced server-side too, so a curl with admin cookies still 404s when disabled.
 
 ## UI
 
@@ -245,7 +255,7 @@ Single page at `app/dashboards/admin/calls/page.tsx`. Server component for shell
 
 - React Query keys: `aircall:stats:{filterHash}`, `aircall:calls:{filterHash}:{page}`, `aircall:users`.
 - Stale time: 60s (calls move slowly enough; SSE invalidates on webhook).
-- SSE: extend `useSSE` cache key filter to invalidate `aircall:*` on webhook receipt. The webhook handler emits an event via the existing `/api/stream` mechanism after upsert.
+- SSE: webhook handler calls `appCache.invalidateByPrefix("aircall:")` after upsert. The existing `/api/stream` route subscribes to `appCache` and pushes `cache-invalidate` events; the client's `useSSE` hook with `cacheKeyFilter: "aircall"` triggers React Query refetch. No new SSE infrastructure is needed.
 
 ### Empty / loading / error states
 
@@ -264,7 +274,7 @@ Single page at `app/dashboards/admin/calls/page.tsx`. Server component for shell
 ## Observability
 
 - Each Aircall API call wrapped with the standard `searchWithRetry`-style logger (`provider=aircall`, `endpoint`, `durationMs`, `status`).
-- Webhook handler emits `audit_log` rows on signature failure (risk: HIGH) and on successful upsert (`ActivityType.WEBHOOK_RECEIVED` — verify enum existence; add if missing).
+- Webhook handler emits `ActivityLog` rows on signature failure (risk: HIGH) and on successful upsert. New `ActivityType` enum value `WEBHOOK_AIRCALL_CALL_ENDED` added in the same migration as the cache tables (additive, non-destructive).
 - Cron run row in `BomPipelineRun`-style table? — No. Use a new `IntegrationSyncRun` table OR a simpler approach: log `SyncRunResult` to `SystemConfig` keyed by `aircall.lastSync.{timestamp,calls,users,error}`. Pick the lighter path (SystemConfig) for MVP; revisit if we need historical sync metrics.
 - Sentry breadcrumbs on every Aircall API request and on webhook receipt.
 
@@ -285,12 +295,12 @@ Tests live in `src/__tests__/aircall/`.
 
 ## Rollout Plan
 
-1. **Branch** `feat/aircall-call-analytics`, single PR (existing style for this repo).
-2. **Migration first** — `prisma migrate dev` locally → commit migration → merge migration-only commit if reviewer prefers, else included in main PR.
-3. **Code merge** to main → Vercel preview deploys.
-4. **Env var sync** — populate `AIRCALL_API_ID`, `AIRCALL_API_TOKEN`, `AIRCALL_WEBHOOK_TOKEN` in Vercel **production** before flipping the flag. Verify with `vercel env ls production`.
-5. **Webhook registration** — create webhook in Aircall pointing at `https://pbtechops.com/api/webhooks/aircall`, copy signing token to Vercel.
-6. **Backfill** — run `npm run aircall:backfill` from local against prod DB (or trigger via a one-off Vercel deploy hook). 90 days is roughly 5-10k calls at PB scale.
+1. **Branch** `feat/aircall-call-analytics`, single PR.
+2. **Migration first, mandatory.** `prisma migrate dev --name aircall_cache` locally → commit migration → run `scripts/migrate-prod.sh` (or equivalent `prisma migrate deploy`) against prod **before** the code PR is merged. The new tables and `ActivityType` enum value must exist in prod before any code references them. (Per the project rule that Prisma migrations land before code when adding fields.)
+3. **Code merge** to main → Vercel deploys via GitHub.
+4. **Env var sync** — populate `AIRCALL_API_ID`, `AIRCALL_API_TOKEN`, `AIRCALL_WEBHOOK_TOKEN` in Vercel **production** before flipping the flag. Verify with `vercel env ls production`. (The flag itself, `AIRCALL_DASHBOARD_ENABLED`, stays `false` initially.)
+5. **Webhook registration** — create webhook in Aircall pointing at `https://pbtechops.com/api/webhooks/aircall`, copy signing token into `AIRCALL_WEBHOOK_TOKEN` in Vercel prod.
+6. **Backfill** — admin-only API route `POST /api/admin/aircall/backfill` (body: `{ days: number }`) triggers the backfill in a background job. Avoids sharing prod `DATABASE_URL` to a laptop. The same logic also lives in `scripts/aircall-backfill.ts` for local dev-DB use.
 7. **Flag flip** — set `AIRCALL_DASHBOARD_ENABLED=true` in Vercel prod.
 8. **Validate** — admin opens `/dashboards/admin/calls`, confirms KPIs match Aircall dashboard within ~2% tolerance.
 9. **Monitor for 1 week** — watch Sentry for webhook signature failures, cron failures, and stats-query latency.
@@ -328,7 +338,8 @@ Tests live in `src/__tests__/aircall/`.
 - `src/middleware.ts` — add `/api/webhooks/aircall` to public routes.
 - `src/app/suites/admin/page.tsx` — add Call Analytics card (gated on flag).
 - `vercel.json` — add cron entry.
-- `scripts/aircall-backfill.ts` — backfill runner.
+- `scripts/aircall-backfill.ts` — backfill runner (local/dev DB use).
+- `src/app/api/admin/aircall/backfill/route.ts` — admin-gated backfill trigger for prod.
 - `package.json` — add `aircall:backfill` script.
 - `.env.example` — four new vars.
 - `docs/superpowers/runbooks/aircall-backfill.md` — backfill + token rotation runbook.
