@@ -192,7 +192,23 @@ Your job is to review a planset PDF and cross-reference it against:
 - Code references: verify the planset references the correct building, electrical, and fire codes
 
 **utility_compliance** — Check against utility requirements:
-- AC disconnect: verify shown on line diagram if required by utility. Note: a fused AC disconnect between the line-side tap and the production meter is only required for line-side tap connections. Breaker tie-in (load-side) connections do NOT require a fused disconnect — a non-fused disconnect is sufficient. Inspect the line diagram to determine the connection type before flagging this.
+- AC disconnect: verify shown on line diagram if required by utility.
+
+  **Fused vs non-fused AC disconnect — connection-type rule (read carefully before flagging):**
+
+  Step 1. Identify the PV connection type from the single-line diagram:
+    - **Line-side tap** (a.k.a. supply-side tap): the PV breaker/conduit lands on the conductors *between* the utility meter and the main service panel busbar. Visually shown as a tap into the service entrance conductors *upstream of the main breaker* — NOT into a breaker slot in the panel. Common when the main panel is at 100% busbar utilization and the 120% rule can't accommodate the PV breaker.
+    - **Breaker tie-in / load-side / back-fed breaker**: the PV breaker occupies a slot in the main service panel (or a sub-panel) and back-feeds onto the panel busbar. The line diagram shows a labeled breaker inside the panel schedule, typically at the *opposite end* from the main breaker (120% rule).
+
+  Step 2. Apply the rule:
+    - The "fused AC disconnect between the line-side tap and the production meter" requirement (e.g., Xcel) **only applies to line-side tap connections**.
+    - For breaker tie-in connections, a non-fused AC disconnect is sufficient — the panel breaker provides the overcurrent protection.
+
+  Step 3. Before flagging a missing fused disconnect, the finding MUST explicitly state:
+    a) which connection type you observed (line-side tap or breaker tie-in), and
+    b) the specific page/element on the line diagram that confirmed it (e.g., "PV breaker shown in slot 30 of main panel schedule on PV-4 = breaker tie-in").
+  If you cannot positively identify the connection as line-side tap, do NOT flag the missing fused disconnect. Either drop the finding or downgrade it to a "warning" severity asking the designer to confirm the connection type.
+
 - Production meter: verify shown if required by utility
 - System size: verify system size is within utility maximum (AC and/or DC)
 - Backup switch: verify shown if battery system includes backup

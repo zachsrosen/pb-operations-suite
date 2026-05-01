@@ -5,6 +5,7 @@ import DashboardShell from "@/components/DashboardShell";
 import { MultiSelectFilter } from "@/components/ui/MultiSelectFilter";
 import { formatMoney } from "@/lib/format";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
+import { LOB_COLORS, AGGREGATE_COLORS } from "@/lib/lob-colors";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -102,31 +103,31 @@ const CATEGORY_CONFIG: Record<
 > = {
   construction: {
     label: "Construction",
-    dotColor: "bg-blue-500",
-    badgeBg: "bg-blue-500/20",
-    badgeText: "text-blue-400",
-    statColor: "text-blue-400",
+    dotColor: LOB_COLORS.construction.dot,
+    badgeBg: LOB_COLORS.construction.badgeBg,
+    badgeText: LOB_COLORS.construction.badgeText,
+    statColor: LOB_COLORS.construction.text,
   },
   detach: {
     label: "Detach",
-    dotColor: "bg-purple-500",
-    badgeBg: "bg-purple-500/20",
-    badgeText: "text-purple-400",
-    statColor: "text-purple-400",
+    dotColor: LOB_COLORS.detach.dot,
+    badgeBg: LOB_COLORS.detach.badgeBg,
+    badgeText: LOB_COLORS.detach.badgeText,
+    statColor: LOB_COLORS.detach.text,
   },
   reset: {
     label: "Reset",
-    dotColor: "bg-orange-500",
-    badgeBg: "bg-orange-500/20",
-    badgeText: "text-orange-400",
-    statColor: "text-orange-400",
+    dotColor: LOB_COLORS.reset.dot,
+    badgeBg: LOB_COLORS.reset.badgeBg,
+    badgeText: LOB_COLORS.reset.badgeText,
+    statColor: LOB_COLORS.reset.text,
   },
   service: {
     label: "Service",
-    dotColor: "bg-emerald-500",
-    badgeBg: "bg-emerald-500/20",
-    badgeText: "text-emerald-400",
-    statColor: "text-emerald-400",
+    dotColor: LOB_COLORS.service.dot,
+    badgeBg: LOB_COLORS.service.badgeBg,
+    badgeText: LOB_COLORS.service.badgeText,
+    statColor: LOB_COLORS.service.text,
   },
 };
 
@@ -814,31 +815,31 @@ export default function ExecutiveCalendarPage() {
       {/* Stat Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
         <div className="bg-surface/50 border border-t-border rounded-lg p-3 text-center">
-          <div className="text-xl font-bold text-green-400" key={String(filteredMonthTotals.totalValue)}>
+          <div className={`text-xl font-bold ${AGGREGATE_COLORS.totalRevenue}`} key={String(filteredMonthTotals.totalValue)}>
             {formatMoney(filteredMonthTotals.totalValue)}
           </div>
           <div className="text-xs text-muted mt-0.5">Total Revenue</div>
         </div>
         <div className="bg-surface/50 border border-t-border rounded-lg p-3 text-center">
-          <div className="text-xl font-bold text-blue-400" key={String(filteredCategoryTotals.construction)}>
+          <div className={`text-xl font-bold ${LOB_COLORS.construction.text}`} key={String(filteredCategoryTotals.construction)}>
             {formatMoney(filteredCategoryTotals.construction)}
           </div>
           <div className="text-xs text-muted mt-0.5">Construction</div>
         </div>
         <div className="bg-surface/50 border border-t-border rounded-lg p-3 text-center">
-          <div className="text-xl font-bold text-purple-400" key={String(filteredCategoryTotals.dnr)}>
+          <div className={`text-xl font-bold ${LOB_COLORS.dnr.text}`} key={String(filteredCategoryTotals.dnr)}>
             {formatMoney(filteredCategoryTotals.dnr)}
           </div>
           <div className="text-xs text-muted mt-0.5">D&R</div>
         </div>
         <div className="bg-surface/50 border border-t-border rounded-lg p-3 text-center">
-          <div className="text-xl font-bold text-emerald-400" key={String(filteredCategoryTotals.service)}>
+          <div className={`text-xl font-bold ${LOB_COLORS.service.text}`} key={String(filteredCategoryTotals.service)}>
             {formatMoney(filteredCategoryTotals.service)}
           </div>
           <div className="text-xs text-muted mt-0.5">Service</div>
         </div>
         <div className="bg-surface/50 border border-t-border rounded-lg p-3 text-center">
-          <div className="text-xl font-bold text-muted" key={String(filteredMonthTotals.totalJobs)}>
+          <div className={`text-xl font-bold ${AGGREGATE_COLORS.totalJobs}`} key={String(filteredMonthTotals.totalJobs)}>
             {filteredMonthTotals.totalJobs}
           </div>
           <div className="text-xs text-muted mt-0.5">Total Jobs</div>

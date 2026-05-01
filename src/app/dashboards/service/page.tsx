@@ -8,6 +8,7 @@ import { LoadingSpinner } from "@/components/ui/LoadingSpinner";
 import { ErrorState } from "@/components/ui/ErrorState";
 import { formatCurrency } from "@/lib/format";
 import { useProgressiveDeals } from "@/hooks/useProgressiveDeals";
+import NearbyJobsPanel from "@/components/service/NearbyJobsPanel";
 
 // --- Types ---
 
@@ -385,6 +386,10 @@ export default function ServicePipelinePage() {
           <div className="text-sm text-muted">Total Jobs</div>
         </div>
       </div>
+
+      {/* Nearby Unscheduled Work — surfaces inspections / service visits / unscheduled
+          jobs within radius of today's scheduled jobs so dispatchers can add stops. */}
+      <NearbyJobsPanel />
 
       {/* Pipeline Stages Visualization */}
       <div className="bg-surface rounded-xl border border-t-border p-4 mb-6">
