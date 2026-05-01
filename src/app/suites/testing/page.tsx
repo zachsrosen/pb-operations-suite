@@ -92,6 +92,14 @@ const LINKS: SuitePageCard[] = [
     section: "Tools Under Test",
   },
   {
+    href: "/dashboards/inventory/sync-health",
+    title: "Sync Health",
+    description: "Rollup of catalog drift across InternalProduct, HubSpot, Zuper, and Zoho. Tiles drill into Product Comparison.",
+    tag: "DRIFT",
+    icon: "✓",
+    section: "Tools Under Test",
+  },
+  {
     href: "/dashboards/mobile",
     title: "Mobile Dashboard",
     description: "Touch-optimized view for field teams and fast project lookup.",
