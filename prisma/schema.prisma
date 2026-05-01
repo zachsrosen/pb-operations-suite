@@ -3196,6 +3196,9 @@ model OnCallCallLog {
 
   notes String?
 
+  /// HubSpot service ticket auto-created when outcome is "follow-up needed".
+  hubspotTicketId String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

@@ -6,7 +6,9 @@ import { resolveElectricianByEmail } from "@/lib/on-call-db";
 import { prisma, logActivity } from "@/lib/db";
 import { safeWaitUntil } from "@/lib/safe-wait-until";
 import { appendCallLogToSheet } from "@/lib/on-call-sheet";
+import { createServiceTicket } from "@/lib/hubspot-tickets";
 import {
+  ISSUE_TYPES,
   ISSUE_TYPE_VALUES,
   computeHoursWorked,
   type CallLogPayload,
@@ -153,6 +155,34 @@ export async function POST(req: Request) {
       appendCallLogToSheet(log).catch((e) => {
         console.error("[on-call-sheet] append failed:", e);
       }),
+    );
+  }
+
+  const isFollowUp = !log.resolvedRemotely && !log.dispatched;
+  if (isFollowUp) {
+    const issueLabel = ISSUE_TYPES.find((t) => t.value === log.issueType)?.label ?? log.issueType;
+    safeWaitUntil(
+      createServiceTicket({
+        subject: `On-Call Follow-Up: ${log.customerName} — ${issueLabel}`,
+        content: [
+          `Auto-created from on-call call log (${log.pool.name}).`,
+          `Electrician: ${log.reporterCrewMember.name}`,
+          `Date: ${log.callReceivedAt.toLocaleString("en-US", { timeZone: log.pool.timezone || "America/Denver" })}`,
+          log.troubleshootingAttempted ? `Troubleshooting: ${log.troubleshootingAttempted}` : null,
+          log.escalatedTo ? `Escalated to: ${log.escalatedTo}` : null,
+          log.notes ? `Notes: ${log.notes}` : null,
+        ].filter(Boolean).join("\n"),
+        priority: log.safetyRisk ? "HIGH" : "MEDIUM",
+      })
+        .then(async (ticketId) => {
+          await prisma.onCallCallLog.update({
+            where: { id: log.id },
+            data: { hubspotTicketId: ticketId },
+          });
+        })
+        .catch((e) => {
+          console.error("[on-call/call-logs] HubSpot ticket creation failed:", e);
+        }),
     );
   }
 
