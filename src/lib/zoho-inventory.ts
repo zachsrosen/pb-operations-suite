@@ -243,6 +243,61 @@ interface ZohoSalesOrderListResponse {
   };
 }
 
+export interface ZohoBillSummary {
+  bill_id: string;
+  bill_number?: string;
+  vendor_id?: string;
+  vendor_name?: string;
+  status?: string;
+  date?: string;
+  due_date?: string;
+  total?: number;
+  reference_number?: string;
+}
+
+export interface ZohoBillLineItem {
+  line_item_id?: string;
+  item_id?: string;
+  name?: string;
+  sku?: string;
+  description?: string;
+  quantity?: number;
+  rate?: number;
+  item_total?: number;
+  account_id?: string;
+  account_name?: string;
+}
+
+export interface ZohoBillRecord extends ZohoBillSummary {
+  line_items: ZohoBillLineItem[];
+}
+
+interface ZohoBillListResponse {
+  code?: number;
+  message?: string;
+  bills?: ZohoBillSummary[];
+  page_context?: {
+    page?: number;
+    per_page?: number;
+    has_more_page?: boolean;
+  };
+}
+
+interface ZohoBillGetResponse {
+  code?: number;
+  message?: string;
+  bill?: ZohoBillRecord;
+}
+
+export interface ListBillsOptions {
+  /** YYYY-MM-DD lower bound on bill date */
+  dateStart?: string;
+  /** YYYY-MM-DD upper bound on bill date */
+  dateEnd?: string;
+  /** Limit total results (across pages); fetches all when omitted */
+  maxResults?: number;
+}
+
 export interface ListSalesOrdersOptions {
   page?: number;
   perPage?: number;
@@ -1346,6 +1401,64 @@ export class ZohoInventoryClient {
       purchaseorder_id: po.purchaseorder_id,
       purchaseorder_number: po.purchaseorder_number,
     };
+  }
+
+  /**
+   * List bills (vendor invoices) from Zoho Inventory.
+   * The list endpoint returns summary records WITHOUT line items —
+   * call getBill(billId) to retrieve line item detail.
+   */
+  async listBills(options: ListBillsOptions = {}): Promise<ZohoBillSummary[]> {
+    const bills: ZohoBillSummary[] = [];
+    let page = 1;
+    const perPage = 200;
+    const max = options.maxResults && options.maxResults > 0 ? options.maxResults : Infinity;
+
+    while (true) {
+      const response = await this.request<ZohoBillListResponse>("/bills", {
+        page,
+        per_page: perPage,
+        sort_column: "date",
+        sort_order: "D",
+        ...(options.dateStart ? { date_start: options.dateStart } : {}),
+        ...(options.dateEnd ? { date_end: options.dateEnd } : {}),
+      });
+
+      const batch = Array.isArray(response.bills) ? response.bills : [];
+      for (const b of batch) {
+        bills.push(b);
+        if (bills.length >= max) return bills;
+      }
+
+      const hasMore = !!response.page_context?.has_more_page;
+      if (!hasMore || batch.length === 0) break;
+      page += 1;
+
+      if (page > 500) {
+        throw new Error("Zoho bill pagination exceeded safety limit (500 pages)");
+      }
+    }
+
+    return bills;
+  }
+
+  /** Fetch a single bill including line items. */
+  async getBill(billId: string): Promise<ZohoBillRecord | null> {
+    const normalizedId = trimOrUndefined(billId);
+    if (!normalizedId) return null;
+    try {
+      const response = await this.request<ZohoBillGetResponse>(
+        `/bills/${encodeURIComponent(normalizedId)}`
+      );
+      const bill = response.bill;
+      if (!bill?.bill_id) return null;
+      return {
+        ...bill,
+        line_items: Array.isArray(bill.line_items) ? bill.line_items : [],
+      };
+    } catch {
+      return null;
+    }
   }
 
   /**
