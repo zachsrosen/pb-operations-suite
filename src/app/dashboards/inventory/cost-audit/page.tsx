@@ -13,6 +13,7 @@ interface ItemRow {
   category: string | null;
   storedCost: number | null;
   storedPrice: number | null;
+  marginPct: number | null;
   latestBillDate: string | null;
   latestBillPrice: number | null;
   latestBillVendor: string | null;
@@ -24,6 +25,10 @@ interface ItemRow {
   variancePct: number | null;
   varianceAbs: number | null;
   status: "match" | "mismatch" | "no_stored_cost" | "large_swing";
+  linkedInternal: boolean;
+  linkedHubSpot: boolean;
+  linkedZuper: boolean;
+  internalProductId: string | null;
 }
 
 interface UnmatchedRow {
@@ -89,10 +94,60 @@ type SortField =
   | "variancePct"
   | "name"
   | "storedCost"
+  | "storedPrice"
+  | "marginPct"
   | "latestBillPrice"
   | "billCount"
   | "totalQty"
   | "latestBillDate";
+
+const LINK_BADGE_BASE =
+  "text-[10px] font-semibold leading-none px-1.5 py-0.5 rounded border w-7 text-center";
+
+function LinkBadges({
+  internal,
+  hubspot,
+  zuper,
+}: {
+  internal: boolean;
+  hubspot: boolean;
+  zuper: boolean;
+}) {
+  return (
+    <div className="flex gap-1 items-center">
+      <span
+        title={internal ? "Linked to InternalProduct" : "Not in InternalProduct catalog"}
+        className={`${LINK_BADGE_BASE} ${
+          internal
+            ? "bg-cyan-500/15 text-cyan-400 border-cyan-500/30"
+            : "bg-transparent text-muted/40 border-t-border"
+        }`}
+      >
+        IP
+      </span>
+      <span
+        title={hubspot ? "Synced to HubSpot Products" : "Not synced to HubSpot"}
+        className={`${LINK_BADGE_BASE} ${
+          hubspot
+            ? "bg-orange-500/15 text-orange-400 border-orange-500/30"
+            : "bg-transparent text-muted/40 border-t-border"
+        }`}
+      >
+        HS
+      </span>
+      <span
+        title={zuper ? "Synced to Zuper" : "Not synced to Zuper"}
+        className={`${LINK_BADGE_BASE} ${
+          zuper
+            ? "bg-purple-500/15 text-purple-400 border-purple-500/30"
+            : "bg-transparent text-muted/40 border-t-border"
+        }`}
+      >
+        ZP
+      </span>
+    </div>
+  );
+}
 
 function SortHeader({
   field,
@@ -192,6 +247,12 @@ export default function CostAuditPage() {
         case "storedCost":
           cmp = (a.storedCost ?? -Infinity) - (b.storedCost ?? -Infinity);
           break;
+        case "storedPrice":
+          cmp = (a.storedPrice ?? -Infinity) - (b.storedPrice ?? -Infinity);
+          break;
+        case "marginPct":
+          cmp = (a.marginPct ?? -Infinity) - (b.marginPct ?? -Infinity);
+          break;
         case "latestBillPrice":
           cmp = (a.latestBillPrice ?? 0) - (b.latestBillPrice ?? 0);
           break;
@@ -217,6 +278,8 @@ export default function CostAuditPage() {
       Category: r.category || "",
       Vendor: r.vendor || "",
       "Stored Cost": r.storedCost ?? "",
+      "Sales Price": r.storedPrice ?? "",
+      "Margin %": r.marginPct == null ? "" : r.marginPct.toFixed(2),
       "Latest Bill Price": r.latestBillPrice ?? "",
       "Latest Bill Date": r.latestBillDate || "",
       "Avg Bill Price": Number.isFinite(r.avgBillPrice) ? r.avgBillPrice.toFixed(2) : "",
@@ -226,6 +289,9 @@ export default function CostAuditPage() {
       "Total Qty": r.totalQty,
       "Variance %": r.variancePct == null ? "" : r.variancePct.toFixed(2),
       Status: STATUS_BADGE[r.status].label,
+      "Linked InternalProduct": r.linkedInternal ? "yes" : "",
+      "Linked HubSpot": r.linkedHubSpot ? "yes" : "",
+      "Linked Zuper": r.linkedZuper ? "yes" : "",
     }));
   }, [filteredRows]);
 
@@ -382,13 +448,15 @@ export default function CostAuditPage() {
                   <tr>
                     <SortHeader field="name" label="Item" {...sortProps} />
                     <th className="px-3 py-2 text-xs font-medium text-muted uppercase tracking-wider">
+                      Linked
+                    </th>
+                    <th className="px-3 py-2 text-xs font-medium text-muted uppercase tracking-wider">
                       Vendor
                     </th>
                     <SortHeader field="storedCost" label="Stored Cost" align="right" {...sortProps} />
+                    <SortHeader field="storedPrice" label="Sales Price" align="right" {...sortProps} />
+                    <SortHeader field="marginPct" label="Margin" align="right" {...sortProps} />
                     <SortHeader field="latestBillPrice" label="Latest Bill" align="right" {...sortProps} />
-                    <th className="px-3 py-2 text-xs font-medium text-muted uppercase tracking-wider text-right">
-                      Avg Bill
-                    </th>
                     <SortHeader field="variancePct" label="Variance" align="right" {...sortProps} />
                     <SortHeader field="billCount" label="Bills" align="right" {...sortProps} />
                     <SortHeader field="totalQty" label="Qty" align="right" {...sortProps} />
@@ -409,6 +477,14 @@ export default function CostAuditPage() {
                           : Math.abs(r.variancePct) >= 2
                             ? "text-amber-400"
                             : "text-green-400";
+                    const marginColor =
+                      r.marginPct == null
+                        ? "text-muted"
+                        : r.marginPct < 5
+                          ? "text-red-400"
+                          : r.marginPct < 15
+                            ? "text-amber-400"
+                            : "text-green-400";
                     return (
                       <tr key={r.itemId} className="border-t border-t-border hover:bg-surface-2/30">
                         <td className="px-3 py-2">
@@ -418,15 +494,30 @@ export default function CostAuditPage() {
                             {r.category ? ` · ${r.category}` : ""}
                           </div>
                         </td>
+                        <td className="px-3 py-2">
+                          <LinkBadges
+                            internal={r.linkedInternal}
+                            hubspot={r.linkedHubSpot}
+                            zuper={r.linkedZuper}
+                          />
+                        </td>
                         <td className="px-3 py-2 text-sm text-muted">{r.vendor || "—"}</td>
                         <td className="px-3 py-2 text-sm text-foreground text-right tabular-nums">
                           {fmtMoney(r.storedCost)}
                         </td>
                         <td className="px-3 py-2 text-sm text-foreground text-right tabular-nums">
-                          {fmtMoney(r.latestBillPrice)}
+                          {fmtMoney(r.storedPrice)}
                         </td>
-                        <td className="px-3 py-2 text-sm text-muted text-right tabular-nums">
-                          {fmtMoney(r.avgBillPrice)}
+                        <td className={`px-3 py-2 text-sm text-right tabular-nums ${marginColor}`}>
+                          {fmtPct(r.marginPct)}
+                        </td>
+                        <td
+                          className="px-3 py-2 text-sm text-foreground text-right tabular-nums"
+                          title={`avg ${fmtMoney(r.avgBillPrice)} · range ${fmtMoney(
+                            r.minBillPrice,
+                          )}–${fmtMoney(r.maxBillPrice)}`}
+                        >
+                          {fmtMoney(r.latestBillPrice)}
                         </td>
                         <td className={`px-3 py-2 text-sm text-right tabular-nums ${varianceColor}`}>
                           {fmtPct(r.variancePct)}
