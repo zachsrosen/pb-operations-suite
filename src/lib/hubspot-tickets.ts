@@ -684,6 +684,33 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
 }
 
 /**
+ * Create a service ticket in HubSpot. Returns the new ticket ID.
+ * Used by the on-call call-log flow when outcome is "follow-up needed".
+ */
+export async function createServiceTicket(opts: {
+  subject: string;
+  content: string;
+  priority?: "HIGH" | "MEDIUM" | "LOW";
+}): Promise<string> {
+  const { map: _unused, orderedStageIds } = await getTicketStageMap();
+  const firstStageId = orderedStageIds[0];
+  if (!firstStageId) throw new Error("No ticket stages found in service pipeline");
+
+  const ticket = await hubspotClient.crm.tickets.basicApi.create({
+    properties: {
+      subject: opts.subject,
+      content: opts.content,
+      hs_pipeline: SERVICE_TICKET_PIPELINE_ID,
+      hs_pipeline_stage: firstStageId,
+      hs_ticket_priority: opts.priority ?? "MEDIUM",
+    },
+    associations: [],
+  });
+
+  return ticket.id;
+}
+
+/**
  * Update a ticket in HubSpot (assign, change status, add note).
  * Requires tickets.write scope on the HubSpot private app.
  */
