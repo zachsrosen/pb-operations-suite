@@ -4,6 +4,72 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-04-30
+
+### On-Call Electricians (Major)
+- New on-call dashboard at `/dashboards/on-call` with per-state Google Calendar integration (CO + CA pools)
+- Emergency call log captured by on-call electricians: dispatch timestamp prefill, admin call logging, HR sheet export
+- Aligned with Tracey's Apr 28 go-live policy; staged Google Calendar without invites for delayed flip-on
+- Switched to `calendar.events` scope with manual calendar creation flow (no auto-provisioning)
+- VIEWER role access granted; relocated to Ops suite with open access to all roles
+- "Schedule starts" message now data-driven from `pool.startDate`
+
+### PM Accountability + Exception-Based PM Flags (Major)
+- PM Accountability dashboard with weekly digest (Phase 1)
+- Exception-based PM assignment system with HubSpot deal links, owner-id assignment fallback, and missing-PM seed
+- Live mode: page-load evaluation replaces daily cron for real-time queue accuracy
+- Compound-risk + shit-show rules, aggressive thresholds, null-safe booleans, stage-id fix
+- Kill switch + scope controls + assign-by-PM (urgent) workflow
+- Criteria spec documented for HubSpot workflow build (`docs/superpowers/specs/`)
+
+### PM Suite + PM Queue
+- New Project Management Suite landing page at `/suites/pm`
+- Dropped Project Management and Equipment Backlog cards from default view
+- PM queue milestone evaluation rewrite: reconciliation moved off page load, accurate at read time
+
+### Pending Zuper Job Handling (Major)
+- Survey holds and slot fallbacks now handled locally when Zuper is pending/unavailable
+- Downstream follow-up flow for pending Zuper jobs (no blocking on upstream sync)
+- Persist Zuper assignment metadata on confirm so reschedules retain crew context
+- Multiple deploy-type-error hotfixes (#474, #475, #476)
+
+### IDR Meeting Hub
+- Site Survey note line, ops revision notes, tier adders, and 10% threshold warning added to detail view
+- Fixed React hooks ordering in IDR ProjectDetail (#480)
+
+### Pricing Calculator
+- Replaced computed pricing delta with user-entered `salesChangeAmount` field
+- Removed `PricingBreakdown` component; adder costs now inline in checklist
+- Adder rates displayed even when system size is unknown
+- Cleanup: removed duplicate `pricingDeltaPct` definition from squash merge
+
+### Scheduler
+- Group scheduler overlay filters
+- Flag overdue/completed Zuper overlay jobs in scheduler UI
+
+### Comms
+- Include HubSpot emails outside the inbox in deal communications view
+
+### SOP System
+- Drafts tab added with PM Guide rewrite and Pipeline Overview
+- Submit-a-new-SOP feature with admin review queue
+- Pipeline Overview aligned to the actual 8 deal stages
+- Hub-mode visibility flipped to open-by-default
+
+### Office Performance
+- Combined SLO + Camarillo into a single California dashboard
+- Fixed California goals-pipeline route 404 (#447)
+
+### Shit-Show Queue
+- Auto-snapshot on session create, always-on add button, refresh button
+- Use IDR snapshot helpers for owners + statuses + equipment
+- Decoupled queue from active session
+
+### Admin
+- New admin testing suite scaffolding
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
