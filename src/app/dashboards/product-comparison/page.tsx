@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import DashboardShell from "@/components/DashboardShell";
 import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { MultiSelectFilter, type FilterOption } from "@/components/ui/MultiSelectFilter";
@@ -618,12 +619,28 @@ export default function ProductComparisonPage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ProductComparisonResponse | null>(null);
 
+  // Deep-link params from /dashboards/inventory/sync-health drill-downs.
+  // Read once on mount; users editing filters afterwards is the normal flow.
+  const initialSearchParams = useSearchParams();
+  const initialReasons = useMemo(() => {
+    const raw = initialSearchParams?.get("reasons") || "";
+    return raw ? raw.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  }, [initialSearchParams]);
+  const initialMissing = useMemo(() => {
+    const raw = initialSearchParams?.get("missing") || "";
+    if (!raw) return [] as SourceName[];
+    const parts = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    return parts.filter((p): p is SourceName =>
+      (ALL_SOURCES as readonly string[]).includes(p),
+    );
+  }, [initialSearchParams]);
+
   const [search, setSearch] = useState("");
   const [rowViewModes, setRowViewModes] = useState<RowViewMode[]>(["mismatches"]);
   const [visibleSources, setVisibleSources] = useState<SourceName[]>([...ACTIVE_SOURCES]);
   const [queueFilters, setQueueFilters] = useState<QueueFilter[]>([...DEFAULT_QUEUE_FILTERS]);
-  const [missingFilters, setMissingFilters] = useState<SourceName[]>([]);
-  const [reasonFilters, setReasonFilters] = useState<string[]>([]);
+  const [missingFilters, setMissingFilters] = useState<SourceName[]>(initialMissing);
+  const [reasonFilters, setReasonFilters] = useState<string[]>(initialReasons);
   const [confidenceFilters, setConfidenceFilters] = useState<MatchConfidence[]>([]);
   const [linkingKeys, setLinkingKeys] = useState<Record<string, boolean>>({});
   const [creatingKeys, setCreatingKeys] = useState<Record<string, boolean>>({});
