@@ -298,6 +298,12 @@ enum ActivityType {
   PM_FLAG_REOPENED
   PM_FLAG_CANCELLED
   PM_FLAG_NOTE_ADDED
+
+  // Aircall (Phase 1 of Call Analytics)
+  WEBHOOK_AIRCALL_CALL_ENDED
+  WEBHOOK_AIRCALL_SIGNATURE_FAILED
+  AIRCALL_BACKFILL_RUN
+  AIRCALL_SYNC_RUN
 }
 
 enum ClientType {
@@ -3786,4 +3792,105 @@ model PMSnapshot {
 
   @@unique([pmName, periodStart, periodEnd])
   @@index([pmName, periodEnd])
+}
+
+// ===========================================
+// AIRCALL CALL ANALYTICS (Phase 1)
+// ===========================================
+
+model AircallCallCache {
+  id              String    @id // Aircall call ID (string for forward-compat with future providers)
+  provider        String    @default("aircall") // discriminator for future Zuper Connect rows
+  direction       String // "inbound" | "outbound"
+  status          String // "answered" | "missed" | "voicemail"
+
+  startedAt       DateTime
+  answeredAt      DateTime?
+  endedAt         DateTime?
+
+  durationSec     Int       @default(0) // total elapsed wall time
+  talkTimeSec     Int       @default(0) // active conversation time
+  timeToAnswerSec Int? // null for missed/voicemail
+
+  // User (Aircall agent who handled the call)
+  userAircallId String?
+  userName      String?
+  userEmail     String?
+
+  // Counterparty
+  customerNumber String? // E.164
+
+  // Forward-compat: full payload from webhook or REST response
+  rawPayload Json
+
+  syncedAt  DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([startedAt])
+  @@index([userAircallId, startedAt])
+  @@index([direction, status, startedAt])
+  @@index([provider, startedAt])
+}
+
+model AircallUserCache {
+  aircallUserId String   @id
+  name          String
+  email         String?
+  available     Boolean  @default(false)
+  doNotDisturb  Boolean  @default(false)
+  archived      Boolean  @default(false)
+  syncedAt      DateTime @default(now())
+
+  @@index([archived, name])
+}
+
+// One row per (call, agent) ringing event. Lets us compute true per-user
+// answer rate including ring-group misses, which the bare call record can't
+// represent (a missed ring-group inbound has user=null on the call itself).
+//
+// Populated by `call.ringing_on_agent` + `call.answered` webhooks. Cannot be
+// backfilled from REST — these events are webhook-only.
+model AircallCallRing {
+  id            String    @id @default(cuid())
+  callId        String // Aircall call id (matches AircallCallCache.id)
+  provider      String    @default("aircall")
+  userAircallId String
+  userName      String?
+  userEmail     String?
+  direction     String? // copied from the call for cheap filtering
+  ringedAt      DateTime // when call.ringing_on_agent fired for this user
+  answeredAt    DateTime? // null if this user did not answer (someone else did, or nobody)
+  rawPayload    Json
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([callId, userAircallId])
+  @@index([userAircallId, ringedAt])
+  @@index([ringedAt])
+  @@index([provider, ringedAt])
+}
+
+// Per-user aggregate stats imported from an external analytics source
+// (Aircall Analytics+ CSV exports). One row per (user, period, source).
+// Used to fill in historical periods that pre-date the call.ringing_on_agent
+// webhook subscription. Manual-import only.
+model AircallAnalyticsSummary {
+  id              String   @id @default(cuid())
+  provider        String   @default("aircall")
+  source          String   @default("analytics_plus_csv") // "analytics_plus_csv" | future sources
+  userAircallId   String
+  userName        String?
+  periodStart     DateTime // inclusive
+  periodEnd       DateTime // exclusive
+  ringTotal       Int      @default(0)
+  ringPickedUp    Int      @default(0)
+  ringNotPickedUp Int      @default(0)
+  importedAt      DateTime @default(now())
+  importedBy      String? // user email of admin who triggered import
+  metadata        Json? // raw row, source filename, etc.
+
+  @@unique([source, userAircallId, periodStart, periodEnd])
+  @@index([periodStart, periodEnd])
+  @@index([userAircallId, periodEnd])
+  @@index([provider, periodEnd])
 }
