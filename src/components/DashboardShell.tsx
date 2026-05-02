@@ -125,6 +125,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   // Admin
   "/dashboards/availability-approvals": { href: "/admin", label: "Admin" },
   "/dashboards/revenue-goals": { href: "/admin", label: "Admin" },
+  "/dashboards/admin/calls": { href: "/suites/testing", label: "Testing" },
 };
 
 function getParentSuiteForPath(pathname: string): { href: string; label: string } | null {
