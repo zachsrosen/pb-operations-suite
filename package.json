@@ -13,6 +13,7 @@
     "db:migrate": "prisma migrate deploy",
     "crew:deactivate": "tsx scripts/deactivate-crew-member.ts",
     "aircall:backfill": "tsx scripts/aircall-backfill.ts",
+    "aircall:analytics-import": "tsx scripts/aircall-analytics-import.ts",
     "start": "next start",
     "lint": "eslint",
     "test": "jest",
