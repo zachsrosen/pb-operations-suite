@@ -684,17 +684,85 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
 }
 
 /**
+ * Search for a HubSpot contact by phone number, or create one if not found.
+ * Used by the on-call call-log flow to attach a contact to the follow-up ticket.
+ */
+export async function findOrCreateContact(opts: {
+  phone: string;
+  name?: string;
+  address?: string;
+}): Promise<string> {
+  const digits = opts.phone.replace(/\D/g, "");
+  if (digits.length < 7) throw new Error("Phone number too short to search");
+
+  const searchResult = await hubspotClient.crm.contacts.searchApi.doSearch({
+    filterGroups: [
+      {
+        filters: [
+          { propertyName: "phone", operator: "EQ" as never, value: opts.phone },
+        ],
+      },
+      {
+        filters: [
+          { propertyName: "phone", operator: "EQ" as never, value: digits },
+        ],
+      },
+    ],
+    properties: ["firstname", "lastname", "phone"],
+    limit: 1,
+    sorts: [],
+    after: 0 as never,
+  });
+
+  if (searchResult.total > 0 && searchResult.results[0]) {
+    return searchResult.results[0].id;
+  }
+
+  const nameParts = (opts.name ?? "").trim().split(/\s+/);
+  const firstname = nameParts[0] ?? "";
+  const lastname = nameParts.slice(1).join(" ") || "";
+
+  const properties: Record<string, string> = {
+    phone: opts.phone,
+    firstname,
+    lastname,
+  };
+  if (opts.address) properties.address = opts.address;
+
+  const contact = await hubspotClient.crm.contacts.basicApi.create({
+    properties,
+    associations: [],
+  });
+
+  return contact.id;
+}
+
+/**
  * Create a service ticket in HubSpot. Returns the new ticket ID.
  * Used by the on-call call-log flow when outcome is "follow-up needed".
+ * Optionally associates a contact to the ticket.
  */
 export async function createServiceTicket(opts: {
   subject: string;
   content: string;
   priority?: "HIGH" | "MEDIUM" | "LOW";
+  contactId?: string;
 }): Promise<string> {
   const { map: _unused, orderedStageIds } = await getTicketStageMap();
   const firstStageId = orderedStageIds[0];
   if (!firstStageId) throw new Error("No ticket stages found in service pipeline");
+
+  const associations: Array<{
+    to: { id: string };
+    types: Array<{ associationCategory: string; associationTypeId: number }>;
+  }> = [];
+
+  if (opts.contactId) {
+    associations.push({
+      to: { id: opts.contactId },
+      types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 16 }],
+    });
+  }
 
   const ticket = await hubspotClient.crm.tickets.basicApi.create({
     properties: {
@@ -704,7 +772,7 @@ export async function createServiceTicket(opts: {
       hs_pipeline_stage: firstStageId,
       hs_ticket_priority: opts.priority ?? "MEDIUM",
     },
-    associations: [],
+    associations: associations as never,
   });
 
   return ticket.id;
