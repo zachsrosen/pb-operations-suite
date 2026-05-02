@@ -2,9 +2,14 @@
  * POST /api/webhooks/aircall
  *
  * Aircall webhook receiver. Verifies HMAC-SHA256 signature, deduplicates
- * via IdempotencyKey, upserts AircallCallCache rows on `call.ended`.
+ * via IdempotencyKey, and persists per event:
+ *   - call.ended            → upsert AircallCallCache (final call state)
+ *   - call.ringing_on_agent → upsert AircallCallRing (one row per rung agent)
+ *   - call.answered         → stamp answeredAt on the matching AircallCallRing
  *
- * Other events return 200 with `{ ignored: true }` so Aircall does not retry.
+ * All other events return 200 with `{ ignored: true }` so Aircall does not
+ * retry. The combination of ringing_on_agent + answered lets us compute true
+ * per-user answer rate even when a missed inbound goes to a ring group.
  */
 
 import { NextRequest, NextResponse } from "next/server";
@@ -13,7 +18,9 @@ import { appCache } from "@/lib/cache";
 import { prisma } from "@/lib/db";
 import {
   idempotencyKeyFor,
+  mapAnsweredEvent,
   mapCallToCacheRow,
+  mapRingEventToRow,
   verifyAircallSignature,
   type AircallWebhookPayload,
 } from "@/lib/aircall-webhook";
@@ -51,18 +58,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  if (payload.event !== "call.ended") {
+  const ALLOWED = new Set(["call.ended", "call.ringing_on_agent", "call.answered"]);
+  if (!ALLOWED.has(payload.event)) {
     return NextResponse.json({ ignored: true, event: payload.event });
   }
 
-  const data = payload.data as AircallCall | undefined;
-  if (!data || typeof data.id === "undefined") {
-    return NextResponse.json({ ignored: true, reason: "missing call data" });
-  }
-
-  // Idempotency: claim the key atomically via unique-index conflict. If two
-  // identical webhooks arrive simultaneously, only one create() succeeds; the
-  // other gets P2002 and short-circuits.
+  // Idempotency claim — same scheme for every event. Aircall retries on non-2xx
+  // and we want each (event_id, event) pair processed once.
   const key = idempotencyKeyFor(payload);
   try {
     await prisma.idempotencyKey.create({
@@ -74,32 +76,74 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (err) {
-    // P2002 = unique constraint violation → already processed.
     if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "P2002") {
       return NextResponse.json({ ok: true, dedup: true });
     }
     throw err;
   }
 
-  const row = mapCallToCacheRow(data);
-  await prisma.aircallCallCache.upsert({
-    where: { id: row.id },
-    create: row,
-    update: row,
-  });
+  if (payload.event === "call.ended") {
+    const data = payload.data as AircallCall | undefined;
+    if (!data || typeof data.id === "undefined") {
+      return NextResponse.json({ ignored: true, reason: "missing call data" });
+    }
+    const row = mapCallToCacheRow(data);
+    await prisma.aircallCallCache.upsert({
+      where: { id: row.id },
+      create: row,
+      update: row,
+    });
+    void prisma.activityLog
+      .create({
+        data: {
+          type: "WEBHOOK_AIRCALL_CALL_ENDED",
+          description: `Aircall call ${row.id} (${row.direction}/${row.status})`,
+          metadata: { callId: row.id, direction: row.direction, status: row.status, userAircallId: row.userAircallId ?? null },
+        },
+      })
+      .catch(() => {});
+    appCache.invalidateByPrefix("aircall:");
+    return NextResponse.json({ ok: true, event: "call.ended", callId: row.id });
+  }
 
-  void prisma.activityLog
-    .create({
-      data: {
-        type: "WEBHOOK_AIRCALL_CALL_ENDED",
-        description: `Aircall call ${row.id} (${row.direction}/${row.status})`,
-        metadata: { callId: row.id, direction: row.direction, status: row.status, userAircallId: row.userAircallId ?? null },
+  if (payload.event === "call.ringing_on_agent") {
+    const ring = mapRingEventToRow(payload);
+    if (!ring) return NextResponse.json({ ignored: true, reason: "ring event missing user/timestamp" });
+    await prisma.aircallCallRing.upsert({
+      where: { callId_userAircallId: { callId: ring.callId, userAircallId: ring.userAircallId } },
+      create: ring,
+      update: {
+        // Don't overwrite ringedAt if a later event arrives out-of-order; preserve
+        // the earliest. The unique-index ensures one row per (call, user).
+        userName: ring.userName,
+        userEmail: ring.userEmail,
+        direction: ring.direction,
+        rawPayload: ring.rawPayload,
       },
-    })
-    .catch(() => {});
+    });
+    appCache.invalidateByPrefix("aircall:");
+    return NextResponse.json({ ok: true, event: "call.ringing_on_agent", callId: ring.callId, userAircallId: ring.userAircallId });
+  }
 
-  // Trigger SSE invalidation so live dashboards refetch.
+  // call.answered — stamp answeredAt on the matching ring row (creating one
+  // if the ringing event was missed/out-of-order).
+  const ans = mapAnsweredEvent(payload);
+  if (!ans) return NextResponse.json({ ignored: true, reason: "answered event missing user" });
+  const data = payload.data as AircallCall | undefined;
+  await prisma.aircallCallRing.upsert({
+    where: { callId_userAircallId: { callId: ans.callId, userAircallId: ans.userAircallId } },
+    create: {
+      callId: ans.callId,
+      userAircallId: ans.userAircallId,
+      userName: data?.user?.name ?? null,
+      userEmail: data?.user?.email ?? null,
+      direction: data?.direction ?? null,
+      ringedAt: ans.answeredAt, // best-effort if no prior ring event
+      answeredAt: ans.answeredAt,
+      rawPayload: payload as unknown as object,
+    },
+    update: { answeredAt: ans.answeredAt },
+  });
   appCache.invalidateByPrefix("aircall:");
-
-  return NextResponse.json({ ok: true, callId: row.id });
+  return NextResponse.json({ ok: true, event: "call.answered", callId: ans.callId, userAircallId: ans.userAircallId });
 }

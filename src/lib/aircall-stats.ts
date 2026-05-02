@@ -40,7 +40,22 @@ export interface PerUserRow {
   outbound: number;
   talkTimeSec: number;
   missed: number;
-  answerRate: number;
+  /**
+   * Inbound calls this user was rung for during the period (from
+   * `call.ringing_on_agent` events). Null if no ring data exists for the
+   * user in this window — typically pre-webhook-subscription history.
+   */
+  rangCount: number | null;
+  /**
+   * Of the rings, how many this user actually answered. Null when rangCount
+   * is null. Intentionally inbound-only — outbound calls don't ring agents.
+   */
+  rangAnswered: number | null;
+  /**
+   * Per-user inbound answer rate computed as rangAnswered / rangCount.
+   * Null when no ring data exists in the period.
+   */
+  answerRate: number | null;
   avgTimeToAnswerSec: number | null;
   avgDurationSec: number;
   lastActivityAt: string | null;
@@ -221,8 +236,42 @@ export async function getPerUser(filter: StatsFilter): Promise<PerUserRow[]> {
     byUser.set(key, cur);
   }
 
+  // Pull ring counts per-user for the same window. This is the source of
+  // truth for inbound answer rate — covers ring-group misses that have no
+  // userAircallId on the call row itself.
+  const ringRows = await prisma.aircallCallRing.groupBy({
+    by: ["userAircallId"],
+    where: {
+      provider: filter.provider ?? "aircall",
+      ringedAt: { gte: filter.from, lt: filter.to },
+      ...(filter.userIds && filter.userIds.length > 0 ? { userAircallId: { in: filter.userIds } } : {}),
+    },
+    _count: { _all: true },
+  });
+  const ringAnsweredRows = await prisma.aircallCallRing.groupBy({
+    by: ["userAircallId"],
+    where: {
+      provider: filter.provider ?? "aircall",
+      ringedAt: { gte: filter.from, lt: filter.to },
+      answeredAt: { not: null },
+      ...(filter.userIds && filter.userIds.length > 0 ? { userAircallId: { in: filter.userIds } } : {}),
+    },
+    _count: { _all: true },
+  });
+  const rangByUser = new Map<string, number>();
+  for (const r of ringRows) rangByUser.set(r.userAircallId, r._count._all);
+  const ansByUser = new Map<string, number>();
+  for (const r of ringAnsweredRows) ansByUser.set(r.userAircallId, r._count._all);
+
+  // Direction filter — outbound rings don't exist (you're the caller), so
+  // when the user filters to outbound only, ring-based answer rate is N/A.
+  const outboundOnly = filter.direction === "outbound";
+
   const rows: PerUserRow[] = [];
   for (const [aircallUserId, v] of byUser) {
+    const rang = aircallUserId !== "__unassigned" ? rangByUser.get(aircallUserId) ?? 0 : 0;
+    const rangAns = aircallUserId !== "__unassigned" ? ansByUser.get(aircallUserId) ?? 0 : 0;
+    const hasRingData = !outboundOnly && rang > 0 && aircallUserId !== "__unassigned";
     rows.push({
       aircallUserId: aircallUserId === "__unassigned" ? "" : aircallUserId,
       name: v.name,
@@ -232,7 +281,9 @@ export async function getPerUser(filter: StatsFilter): Promise<PerUserRow[]> {
       outbound: v.outbound,
       talkTimeSec: v.talkTimeSec,
       missed: v.missed,
-      answerRate: v.total > 0 ? v.answered / v.total : 0,
+      rangCount: hasRingData ? rang : null,
+      rangAnswered: hasRingData ? rangAns : null,
+      answerRate: hasRingData ? rangAns / rang : null,
       avgTimeToAnswerSec: v.timeToAnswerN > 0 ? Math.round(v.timeToAnswerSum / v.timeToAnswerN) : null,
       avgDurationSec: v.durationN > 0 ? Math.round(v.durationSum / v.durationN) : 0,
       lastActivityAt: v.lastActivityAt ? v.lastActivityAt.toISOString() : null,

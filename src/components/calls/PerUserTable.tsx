@@ -13,7 +13,9 @@ interface Row {
   outbound: number;
   talkTimeSec: number;
   missed: number;
-  answerRate: number;
+  rangCount: number | null;
+  rangAnswered: number | null;
+  answerRate: number | null;
   avgTimeToAnswerSec: number | null;
   avgDurationSec: number;
   lastActivityAt: string | null;
@@ -111,7 +113,9 @@ export function PerUserTable({ rows, loading }: { rows: Row[]; loading?: boolean
               <td className="py-2 px-2 text-right tabular-nums">{r.outbound.toLocaleString()}</td>
               <td className="py-2 px-2 text-right tabular-nums">{formatSeconds(r.talkTimeSec)}</td>
               <td className="py-2 px-2 text-right tabular-nums">{r.missed.toLocaleString()}</td>
-              <td className="py-2 px-2 text-right tabular-nums">{formatPercent(r.answerRate)}</td>
+              <td className="py-2 px-2 text-right tabular-nums" title={r.rangCount != null ? `${r.rangAnswered ?? 0} / ${r.rangCount} rings` : "No ring data in this period"}>
+                {r.answerRate != null ? formatPercent(r.answerRate) : "—"}
+              </td>
               <td className="py-2 px-2 text-right tabular-nums">{formatSeconds(r.avgTimeToAnswerSec)}</td>
               <td className="py-2 px-2 text-right tabular-nums">{formatSeconds(r.avgDurationSec)}</td>
               <td className="py-2 px-2 text-right tabular-nums whitespace-nowrap">

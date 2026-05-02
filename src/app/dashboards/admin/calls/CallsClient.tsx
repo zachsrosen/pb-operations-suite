@@ -41,7 +41,9 @@ interface StatsResponse {
     outbound: number;
     talkTimeSec: number;
     missed: number;
-    answerRate: number;
+    rangCount: number | null;
+    rangAnswered: number | null;
+    answerRate: number | null;
     avgTimeToAnswerSec: number | null;
     avgDurationSec: number;
     lastActivityAt: string | null;
@@ -310,7 +312,12 @@ export default function CallsClient() {
 
       {/* Per-user table */}
       <div className="bg-surface border border-t-border rounded-lg p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-3">Per-User</h3>
+        <div className="flex items-baseline justify-between mb-3">
+          <h3 className="text-sm font-semibold text-foreground">Per-User</h3>
+          <p className="text-xs text-muted">
+            Answer rate = answered / rang. Hover the cell to see ring counts. <span className="text-muted/80">Calls before ring tracking was enabled show "—".</span>
+          </p>
+        </div>
         <PerUserTable rows={perUser} loading={statsQuery.isLoading} />
       </div>
 
