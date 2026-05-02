@@ -113,3 +113,55 @@ export function mapCallToCacheRow(call: AircallCall) {
     rawPayload: call as unknown as object,
   };
 }
+
+/**
+ * Extract a ring-event row from a `call.ringing_on_agent` webhook payload.
+ * Returns null if the payload doesn't contain the required user/timestamp.
+ */
+export function mapRingEventToRow(payload: AircallWebhookPayload): {
+  callId: string;
+  userAircallId: string;
+  userName: string | null;
+  userEmail: string | null;
+  direction: string | null;
+  ringedAt: Date;
+  rawPayload: object;
+} | null {
+  const data = payload.data as AircallCall | undefined;
+  if (!data || data.id == null) return null;
+  if (!data.user?.id) return null;
+  // Aircall's call.ringing_on_agent fires per-agent, but the payload's `user`
+  // field carries the agent who is currently being rung.
+  const ringedTs = payload.timestamp ?? data.started_at;
+  if (!ringedTs) return null;
+  return {
+    callId: String(data.id),
+    userAircallId: String(data.user.id),
+    userName: data.user.name ?? null,
+    userEmail: data.user.email ?? null,
+    direction: data.direction ?? null,
+    ringedAt: new Date(ringedTs * 1000),
+    rawPayload: payload as unknown as object,
+  };
+}
+
+/**
+ * Extract the user-attribution from a `call.answered` event so we can stamp
+ * the matching ring row's answeredAt. Returns null if no user is set.
+ */
+export function mapAnsweredEvent(payload: AircallWebhookPayload): {
+  callId: string;
+  userAircallId: string;
+  answeredAt: Date;
+} | null {
+  const data = payload.data as AircallCall | undefined;
+  if (!data || data.id == null) return null;
+  if (!data.user?.id) return null;
+  const ts = data.answered_at ?? payload.timestamp;
+  if (!ts) return null;
+  return {
+    callId: String(data.id),
+    userAircallId: String(data.user.id),
+    answeredAt: new Date(ts * 1000),
+  };
+}

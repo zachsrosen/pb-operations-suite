@@ -3839,3 +3839,29 @@ model AircallUserCache {
 
   @@index([archived, name])
 }
+
+// One row per (call, agent) ringing event. Lets us compute true per-user
+// answer rate including ring-group misses, which the bare call record can't
+// represent (a missed ring-group inbound has user=null on the call itself).
+//
+// Populated by `call.ringing_on_agent` + `call.answered` webhooks. Cannot be
+// backfilled from REST — these events are webhook-only.
+model AircallCallRing {
+  id            String    @id @default(cuid())
+  callId        String // Aircall call id (matches AircallCallCache.id)
+  provider      String    @default("aircall")
+  userAircallId String
+  userName      String?
+  userEmail     String?
+  direction     String? // copied from the call for cheap filtering
+  ringedAt      DateTime // when call.ringing_on_agent fired for this user
+  answeredAt    DateTime? // null if this user did not answer (someone else did, or nobody)
+  rawPayload    Json
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([callId, userAircallId])
+  @@index([userAircallId, ringedAt])
+  @@index([ringedAt])
+  @@index([provider, ringedAt])
+}
