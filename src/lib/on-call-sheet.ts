@@ -11,6 +11,8 @@ const HEADERS = [
   "Region",
   "Electrician",
   "Customer",
+  "Phone",
+  "Address",
   "Issue Type",
   "Issue Detail",
   "Safety Risk",
@@ -29,6 +31,8 @@ const HEADERS = [
 type CallLogRecord = {
   callReceivedAt: Date;
   customerName: string;
+  customerPhone: string | null;
+  customerAddress: string | null;
   issueType: string;
   issueTypeOther: string | null;
   safetyRisk: boolean;
@@ -136,6 +140,8 @@ function buildRow(log: CallLogRecord): string[] {
     log.pool.region,
     log.reporterCrewMember.name,
     log.customerName,
+    log.customerPhone ?? "",
+    log.customerAddress ?? "",
     ISSUE_LABEL.get(log.issueType) ?? log.issueType,
     log.issueTypeOther ?? "",
     yesNo(log.safetyRisk),
@@ -160,7 +166,7 @@ export async function appendCallLogToSheet(log: CallLogRecord): Promise<void> {
   const baseUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}`;
   const sheetTitle = await getFirstSheetTitle(baseUrl, token);
 
-  const headerRes = await fetch(`${baseUrl}/values/${rangeFor(sheetTitle, "A1:S1")}`, {
+  const headerRes = await fetch(`${baseUrl}/values/${rangeFor(sheetTitle, "A1:U1")}`, {
     headers: { Authorization: `Bearer ${token}` },
     cache: "no-store",
   });
@@ -173,7 +179,7 @@ export async function appendCallLogToSheet(log: CallLogRecord): Promise<void> {
 
   if (!hasHeaders) {
     const writeHeaderRes = await fetch(
-      `${baseUrl}/values/${rangeFor(sheetTitle, "A1:S1")}?valueInputOption=RAW`,
+      `${baseUrl}/values/${rangeFor(sheetTitle, "A1:U1")}?valueInputOption=RAW`,
       {
         method: "PUT",
         headers: {
@@ -189,7 +195,7 @@ export async function appendCallLogToSheet(log: CallLogRecord): Promise<void> {
   }
 
   const appendRes = await fetch(
-    `${baseUrl}/values/${rangeFor(sheetTitle, "A1:S1")}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
+    `${baseUrl}/values/${rangeFor(sheetTitle, "A1:U1")}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
     {
       method: "POST",
       headers: {

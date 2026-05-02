@@ -102,6 +102,8 @@ function CallLogForm({
   const [callReceivedAt, setCallReceivedAt] = useState<string>(() => nowLocalDatetimeStr());
 
   const [customerName, setCustomerName] = useState("");
+  const [customerPhone, setCustomerPhone] = useState("");
+  const [customerAddress, setCustomerAddress] = useState("");
   const [issueType, setIssueType] = useState<string>(ISSUE_TYPES[0].value);
   const [safetyRisk, setSafetyRisk] = useState(false);
   const [homeHasPower, setHomeHasPower] = useState<"yes" | "no" | "unknown">("unknown");
@@ -146,6 +148,8 @@ function CallLogForm({
         reporterCrewMemberId: reporterId,
         callReceivedAt: localToIso(callReceivedAt),
         customerName,
+        customerPhone: customerPhone.trim() || null,
+        customerAddress: customerAddress.trim() || null,
         issueType,
         issueTypeOther: issueType === "other" ? issueTypeOther.trim() : null,
         safetyRisk,
@@ -260,6 +264,26 @@ function CallLogForm({
           placeholder="e.g. John Smith"
           className="w-full bg-surface-2 border border-t-border rounded px-3 py-2 text-sm"
           required
+        />
+      </Field>
+
+      <Field label="Customer phone">
+        <input
+          type="tel"
+          value={customerPhone}
+          onChange={(e) => setCustomerPhone(e.target.value)}
+          placeholder="e.g. (303) 555-1234"
+          className="w-full bg-surface-2 border border-t-border rounded px-3 py-2 text-sm"
+        />
+      </Field>
+
+      <Field label="Customer address (optional)">
+        <input
+          type="text"
+          value={customerAddress}
+          onChange={(e) => setCustomerAddress(e.target.value)}
+          placeholder="e.g. 1234 Main St, Denver, CO 80202"
+          className="w-full bg-surface-2 border border-t-border rounded px-3 py-2 text-sm"
         />
       </Field>
 

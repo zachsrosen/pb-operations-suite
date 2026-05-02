@@ -37,6 +37,8 @@ export type CallLogPayload = {
   reporterCrewMemberId: string;
   callReceivedAt: string; // ISO
   customerName: string;
+  customerPhone?: string | null;
+  customerAddress?: string | null;
   issueType: string;
   issueTypeOther?: string | null;
   safetyRisk?: boolean;

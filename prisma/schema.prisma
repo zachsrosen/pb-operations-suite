@@ -3179,6 +3179,8 @@ model OnCallCallLog {
   callReceivedAt DateTime
 
   customerName             String
+  customerPhone            String?
+  customerAddress          String?
   /// Issue category. Free string to allow new categories without migrations,
   /// but the UI restricts to: inverter | no-production | battery | monitoring | safety | other.
   issueType                String
@@ -3203,7 +3205,9 @@ model OnCallCallLog {
   notes String?
 
   /// HubSpot service ticket auto-created when outcome is "follow-up needed".
-  hubspotTicketId String?
+  hubspotTicketId  String?
+  /// HubSpot contact found or created from customerPhone + customerName.
+  hubspotContactId String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
