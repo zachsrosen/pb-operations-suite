@@ -6,6 +6,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { StatCard } from "@/components/ui/MetricCard";
 import { useSSE } from "@/hooks/useSSE";
 import { CallsPerDayChart } from "@/components/calls/CallsPerDayChart";
+import { HistoricalSnapshot } from "@/components/calls/HistoricalSnapshot";
 import { HourHeatmap } from "@/components/calls/HourHeatmap";
 import { PerUserTable } from "@/components/calls/PerUserTable";
 import { RecentCallsTable } from "@/components/calls/RecentCallsTable";
@@ -319,6 +320,17 @@ export default function CallsClient() {
           </p>
         </div>
         <PerUserTable rows={perUser} loading={statsQuery.isLoading} />
+      </div>
+
+      {/* Historical Snapshot — Aircall Analytics+ import */}
+      <div className="bg-surface border border-t-border rounded-lg p-4">
+        <div className="flex items-baseline justify-between mb-3">
+          <h3 className="text-sm font-semibold text-foreground">Historical Snapshot — Aircall Analytics+</h3>
+          <p className="text-xs text-muted">
+            Per-user ring counts including ring-group misses. Static — refreshes on import.
+          </p>
+        </div>
+        <HistoricalSnapshot />
       </div>
 
       {/* Recent calls */}

@@ -3865,3 +3865,28 @@ model AircallCallRing {
   @@index([ringedAt])
   @@index([provider, ringedAt])
 }
+
+// Per-user aggregate stats imported from an external analytics source
+// (Aircall Analytics+ CSV exports). One row per (user, period, source).
+// Used to fill in historical periods that pre-date the call.ringing_on_agent
+// webhook subscription. Manual-import only.
+model AircallAnalyticsSummary {
+  id              String   @id @default(cuid())
+  provider        String   @default("aircall")
+  source          String   @default("analytics_plus_csv") // "analytics_plus_csv" | future sources
+  userAircallId   String
+  userName        String?
+  periodStart     DateTime // inclusive
+  periodEnd       DateTime // exclusive
+  ringTotal       Int      @default(0)
+  ringPickedUp    Int      @default(0)
+  ringNotPickedUp Int      @default(0)
+  importedAt      DateTime @default(now())
+  importedBy      String? // user email of admin who triggered import
+  metadata        Json? // raw row, source filename, etc.
+
+  @@unique([source, userAircallId, periodStart, periodEnd])
+  @@index([periodStart, periodEnd])
+  @@index([userAircallId, periodEnd])
+  @@index([provider, periodEnd])
+}
