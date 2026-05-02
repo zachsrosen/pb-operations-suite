@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Aircall dashboard is disabled" }, { status: 404 });
   }
   try {
-    await requireRole("ADMIN");
+    await requireRole("ADMIN", "OWNER", "EXECUTIVE");
   } catch {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }

@@ -37,6 +37,14 @@ const LINKS: SuitePageCard[] = [
     section: "Executive Views",
   },
   {
+    href: "/dashboards/executive-calls",
+    title: "Call Analytics",
+    description: "Inbound/outbound volume, missed-call rate, time-to-answer, and per-rep ring accountability.",
+    tag: "CALLS",
+    icon: "PH",
+    section: "Executive Views",
+  },
+  {
     href: "/dashboards/territory-map",
     title: "Territory Map",
     description: "Colorado office territory boundaries, deal distribution, and proposed rebalancing on an interactive map.",
