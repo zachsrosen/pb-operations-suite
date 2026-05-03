@@ -8,6 +8,7 @@ import { useSSE } from "@/hooks/useSSE";
 import { CallsPerDayChart } from "@/components/calls/CallsPerDayChart";
 import { HistoricalSnapshot } from "@/components/calls/HistoricalSnapshot";
 import { HourHeatmap } from "@/components/calls/HourHeatmap";
+import { OnCallSummary } from "@/components/calls/OnCallSummary";
 import { PerUserTable } from "@/components/calls/PerUserTable";
 import { RecentCallsTable } from "@/components/calls/RecentCallsTable";
 import {
@@ -320,6 +321,15 @@ export default function CallsClient() {
           </p>
         </div>
         <PerUserTable rows={perUser} loading={statsQuery.isLoading} />
+      </div>
+
+      {/* On-Call Calls — from PB Tech Ops on-call call log */}
+      <div className="bg-surface border border-t-border rounded-lg p-4">
+        <div className="flex items-baseline justify-between mb-3">
+          <h3 className="text-sm font-semibold text-foreground">On-Call Calls</h3>
+          <p className="text-xs text-muted">Logged by the on-call electrician — covers Connect calls and any other after-hours calls.</p>
+        </div>
+        <OnCallSummary from={range.from} to={range.to} />
       </div>
 
       {/* Historical Snapshot — Aircall Analytics+ import */}
