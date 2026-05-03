@@ -498,7 +498,8 @@ function sourcesFromRows(rows: ComparisonRow[]): string[] {
 /** Build a map of BOM item id → CatalogStatus from the comparison rows */
 function buildCatalogStatus(
   items: BomItem[],
-  rows: ComparisonRow[]
+  rows: ComparisonRow[],
+  effectiveSkuByItem?: Map<string, InternalCatalogSku>,
 ): Map<string, CatalogStatus> {
   const result = new Map<string, CatalogStatus>();
   const sources = sourcesFromRows(rows);
@@ -507,6 +508,24 @@ function buildCatalogStatus(
     const status: CatalogStatus = {};
     for (const src of sources) status[src] = false;
 
+    // Primary signal: if the BOM item is matched to an InternalProduct
+    // (auto or manual override), trust the link fields on that product.
+    // Avoids false negatives when external item display names differ
+    // from the BOM model string (e.g. Zuper/Zoho store "Tesla Powerwall 3"
+    // while the planset has "POWERWALL-3 (1707000-XX-Y)").
+    const sku = effectiveSkuByItem?.get(item.id);
+    if (sku) {
+      if (sku.hubspotProductId) status.hubspot = true;
+      if (sku.zuperItemId) status.zuper = true;
+      if (sku.zohoItemId) status.zoho = true;
+      // Internal is "present" by definition when a sku is matched
+      if ("internal" in status) status.internal = true;
+    }
+
+    // Fallback: scan comparison rows by name similarity for any source
+    // not already covered by the matched sku. Handles cases where the
+    // BOM item isn't yet matched to an internal product but an external
+    // catalog has a fuzzy hit.
     for (const row of rows) {
       for (const src of sources) {
         if (!status[src]) {
@@ -1307,14 +1326,7 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
       .finally(() => setCatalogLoading(false));
   }, [bom]);
 
-  /* ---- Rebuild catalog status whenever items or rows change ---- */
-  useEffect(() => {
-    if (!comparisonRows.length || !items.length) {
-      setCatalogStatus(new Map());
-      return;
-    }
-    setCatalogStatus(buildCatalogStatus(items, comparisonRows));
-  }, [items, comparisonRows]);
+  /* ---- Rebuild catalog status — moved below effectiveSkuByItem definition ---- */
 
   /* ---- Load deal/ticket from ?deal= or ?ticket= URL param on mount ---- */
   useEffect(() => {
@@ -2124,6 +2136,17 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
     }
     return map;
   }, [bestSkuByItem, skuOverrides]);
+
+  /* ---- Rebuild catalog status whenever items, rows, or sku matches change.
+         Now passes effectiveSkuByItem so the dots reflect the actual link
+         record on the matched InternalProduct, not a name-similarity guess. ---- */
+  useEffect(() => {
+    if (!comparisonRows.length || !items.length) {
+      setCatalogStatus(new Map());
+      return;
+    }
+    setCatalogStatus(buildCatalogStatus(items, comparisonRows, effectiveSkuByItem));
+  }, [items, comparisonRows, effectiveSkuByItem]);
 
   /* ---- Internal SKU pricing map ---- */
   const pricingByItem = useMemo(() => {
