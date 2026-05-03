@@ -702,6 +702,12 @@ export async function GET(request: NextRequest) {
         firstJobsError = r.error;
       }
     }
+    if (firstJobsError && anyJobsSucceeded) {
+      console.warn(
+        "[Zuper Availability] Partial category fetch failure — some categories succeeded but at least one failed. Booking count may be under-reported.",
+        firstJobsError
+      );
+    }
     const jobsResult: { type: "success" | "error"; data: ZuperJob[]; error?: string } = anyJobsSucceeded
       ? { type: "success", data: Array.from(mergedJobsByUid.values()) }
       : { type: "error", data: [], error: firstJobsError };
