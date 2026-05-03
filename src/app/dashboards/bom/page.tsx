@@ -203,14 +203,6 @@ const SOURCE_DISPLAY_LABELS: Record<string, string> = {
   zoho: "Zoho",
 };
 
-// Short column headers for the BOM table
-const SOURCE_SHORT_LABELS: Record<string, string> = {
-  internal: "INT",
-  hubspot: "HubSpot",
-  zuper: "Zuper",
-  zoho: "Zoho",
-};
-
 const CATEGORY_ORDER: BomCategory[] = [
   "MODULE",
   "BATTERY",
@@ -498,7 +490,8 @@ function sourcesFromRows(rows: ComparisonRow[]): string[] {
 /** Build a map of BOM item id → CatalogStatus from the comparison rows */
 function buildCatalogStatus(
   items: BomItem[],
-  rows: ComparisonRow[]
+  rows: ComparisonRow[],
+  effectiveSkuByItem?: Map<string, InternalCatalogSku>,
 ): Map<string, CatalogStatus> {
   const result = new Map<string, CatalogStatus>();
   const sources = sourcesFromRows(rows);
@@ -507,6 +500,24 @@ function buildCatalogStatus(
     const status: CatalogStatus = {};
     for (const src of sources) status[src] = false;
 
+    // Primary signal: if the BOM item is matched to an InternalProduct
+    // (auto or manual override), trust the link fields on that product.
+    // Avoids false negatives when external item display names differ
+    // from the BOM model string (e.g. Zuper/Zoho store "Tesla Powerwall 3"
+    // while the planset has "POWERWALL-3 (1707000-XX-Y)").
+    const sku = effectiveSkuByItem?.get(item.id);
+    if (sku) {
+      if (sku.hubspotProductId) status.hubspot = true;
+      if (sku.zuperItemId) status.zuper = true;
+      if (sku.zohoItemId) status.zoho = true;
+      // Internal is "present" by definition when a sku is matched
+      if ("internal" in status) status.internal = true;
+    }
+
+    // Fallback: scan comparison rows by name similarity for any source
+    // not already covered by the matched sku. Handles cases where the
+    // BOM item isn't yet matched to an internal product but an external
+    // catalog has a fuzzy hit.
     for (const row of rows) {
       for (const src of sources) {
         if (!status[src]) {
@@ -1307,14 +1318,7 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
       .finally(() => setCatalogLoading(false));
   }, [bom]);
 
-  /* ---- Rebuild catalog status whenever items or rows change ---- */
-  useEffect(() => {
-    if (!comparisonRows.length || !items.length) {
-      setCatalogStatus(new Map());
-      return;
-    }
-    setCatalogStatus(buildCatalogStatus(items, comparisonRows));
-  }, [items, comparisonRows]);
+  /* ---- Rebuild catalog status — moved below effectiveSkuByItem definition ---- */
 
   /* ---- Load deal/ticket from ?deal= or ?ticket= URL param on mount ---- */
   useEffect(() => {
@@ -2124,6 +2128,17 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
     }
     return map;
   }, [bestSkuByItem, skuOverrides]);
+
+  /* ---- Rebuild catalog status whenever items, rows, or sku matches change.
+         Now passes effectiveSkuByItem so the dots reflect the actual link
+         record on the matched InternalProduct, not a name-similarity guess. ---- */
+  useEffect(() => {
+    if (!comparisonRows.length || !items.length) {
+      setCatalogStatus(new Map());
+      return;
+    }
+    setCatalogStatus(buildCatalogStatus(items, comparisonRows, effectiveSkuByItem));
+  }, [items, comparisonRows, effectiveSkuByItem]);
 
   /* ---- Internal SKU pricing map ---- */
   const pricingByItem = useMemo(() => {
@@ -3574,41 +3589,23 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
                   </button>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[980px] text-sm">
+                  <table className="w-full min-w-[820px] text-sm">
                     <thead>
                       <tr className="text-xs text-muted border-b border-t-border">
-                        <th className="text-left px-4 py-2 font-medium w-44">Item</th>
+                        <th className="text-left px-4 py-2 font-medium w-48">Item</th>
                         <th className="text-left px-4 py-2 font-medium w-[22rem]">Details</th>
                         <th className="text-left px-4 py-2 font-medium w-48">Qty / Spec</th>
                         <th className="text-left px-4 py-2 font-medium w-48">Item Meta</th>
                         <th className="text-left px-3 py-2 font-medium w-32">Deal / Job</th>
-                        {catalogSources.length > 0 && (
-                          <th className="text-left px-2 py-2 font-medium" colSpan={catalogSources.length}>
-                            Catalogs
-                          </th>
-                        )}
                         <th className="px-3 py-2 w-10"></th>
                       </tr>
-                      {catalogSources.length > 0 && (
-                        <tr className="text-xs text-muted border-b border-t-border bg-surface-2/50">
-                          <th colSpan={5} />
-                          {catalogSources.map((src) => (
-                            <th key={src} className="px-1 py-1 font-normal text-center w-7" title={SOURCE_DISPLAY_LABELS[src] ?? src}>
-                              {SOURCE_SHORT_LABELS[src] ?? src.slice(0, 2).toUpperCase()}
-                            </th>
-                          ))}
-                          <th />
-                        </tr>
-                      )}
                     </thead>
                     <tbody className="divide-y divide-[color:var(--border)]">
                       {grouped[cat]!.map((item) => {
-                        const status = catalogStatus.get(item.id);
-                        const missing = status && catalogSources.some((s) => !status[s]);
                         return (
                           <tr
                             key={item.id}
-                            className={`hover:bg-surface-2 transition-colors group ${missing ? "bg-yellow-50/30 dark:bg-yellow-900/10" : ""}`}
+                            className="hover:bg-surface-2 transition-colors group"
                           >
                             <td className="px-4 py-1.5">
                               <div className="space-y-1.5">
@@ -3636,7 +3633,7 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
                                   onChange={(v) => updateItem(item.id, "model", v)}
                                   placeholder="Model"
                                 />
-                                {/* SKU match badge + override picker */}
+                                {/* SKU match badge + catalog status */}
                                 {(() => {
                                   const sku = effectiveSkuByItem.get(item.id);
                                   const hasOverride = skuOverrides.has(item.id);
@@ -3644,32 +3641,63 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
                                   return (
                                     <div className="relative mt-1.5 pt-1.5 border-t border-t-border">
                                       {sku ? (
-                                        <div className="flex items-center gap-1.5 min-w-0">
-                                          <span className={`text-[10px] truncate ${hasOverride ? "text-cyan-600 dark:text-cyan-400 font-medium" : "text-muted"}`}>
-                                            {hasOverride ? "Manual" : "Matched"}: {sku.brand} {sku.model}
-                                          </span>
-                                          <span className="flex items-center gap-0.5 shrink-0">
-                                            <span className={`w-1.5 h-1.5 rounded-full ${sku.hubspotProductId ? "bg-green-500" : "bg-orange-400"}`} title={sku.hubspotProductId ? "HubSpot linked" : "No HubSpot product"} />
-                                            <span className={`w-1.5 h-1.5 rounded-full ${sku.zuperItemId ? "bg-green-500" : "bg-orange-400"}`} title={sku.zuperItemId ? "Zuper linked" : "No Zuper product"} />
-                                            <span className={`w-1.5 h-1.5 rounded-full ${sku.zohoItemId ? "bg-green-500" : "bg-orange-400"}`} title={sku.zohoItemId ? "Zoho linked" : "No Zoho item"} />
-                                          </span>
+                                        <div className="space-y-1">
+                                          <div className="flex items-center gap-1.5 min-w-0">
+                                            <span className={`text-[10px] truncate ${hasOverride ? "text-cyan-600 dark:text-cyan-400 font-medium" : "text-green-600 dark:text-green-400"}`}>
+                                              {hasOverride ? "✎ " : "✓ "}{sku.brand} {sku.model}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => setOpenSkuPickerItemId(isPickerOpen ? null : item.id)}
+                                              className="text-[10px] text-muted hover:text-foreground shrink-0"
+                                              title="Change product match"
+                                            >
+                                              ✎
+                                            </button>
+                                          </div>
+                                          <div className="flex items-center gap-2 text-[10px] text-muted">
+                                            <span className="flex items-center gap-0.5" title={sku.hubspotProductId ? "HubSpot linked" : "No HubSpot product"}>
+                                              <span className={`w-1.5 h-1.5 rounded-full ${sku.hubspotProductId ? "bg-green-500" : "bg-orange-400"}`} />
+                                              <span className={sku.hubspotProductId ? "text-green-600 dark:text-green-400" : "text-orange-500 dark:text-orange-400"}>HS</span>
+                                            </span>
+                                            <span className="flex items-center gap-0.5" title={sku.zuperItemId ? "Zuper linked" : "No Zuper product"}>
+                                              <span className={`w-1.5 h-1.5 rounded-full ${sku.zuperItemId ? "bg-green-500" : "bg-orange-400"}`} />
+                                              <span className={sku.zuperItemId ? "text-green-600 dark:text-green-400" : "text-orange-500 dark:text-orange-400"}>Zuper</span>
+                                            </span>
+                                            <span className="flex items-center gap-0.5" title={sku.zohoItemId ? "Zoho linked" : "No Zoho item"}>
+                                              <span className={`w-1.5 h-1.5 rounded-full ${sku.zohoItemId ? "bg-green-500" : "bg-orange-400"}`} />
+                                              <span className={sku.zohoItemId ? "text-green-600 dark:text-green-400" : "text-orange-500 dark:text-orange-400"}>Zoho</span>
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center gap-2">
                                           <button
                                             type="button"
                                             onClick={() => setOpenSkuPickerItemId(isPickerOpen ? null : item.id)}
-                                            className="text-[10px] text-muted hover:text-foreground shrink-0"
-                                            title="Change product match"
+                                            className="text-[10px] text-yellow-600 dark:text-yellow-400 hover:underline"
                                           >
-                                            ✎
+                                            No match — select
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const params = new URLSearchParams();
+                                              if (item.brand) params.set("brand", item.brand);
+                                              if (item.model) params.set("model", item.model);
+                                              if (item.description) params.set("description", item.description);
+                                              if (item.category) params.set("category", item.category);
+                                              if (item.unitSpec != null) params.set("unitSpec", String(item.unitSpec));
+                                              if (item.unitLabel) params.set("unitLabel", item.unitLabel);
+                                              if (linkedProject?.hs_object_id) params.set("dealId", linkedProject.hs_object_id);
+                                              router.push(`/dashboards/submit-product?${params.toString()}`);
+                                            }}
+                                            className="text-[10px] text-cyan-600 dark:text-cyan-400 hover:underline"
+                                            title="Create new catalog product"
+                                          >
+                                            + new
                                           </button>
                                         </div>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => setOpenSkuPickerItemId(isPickerOpen ? null : item.id)}
-                                          className="text-[10px] text-yellow-600 dark:text-yellow-400 hover:underline"
-                                        >
-                                          No catalog match — select product
-                                        </button>
                                       )}
                                       {isPickerOpen && (
                                         <SkuPickerDropdown
@@ -3791,32 +3819,6 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
                                 )}
                               </div>
                             </td>
-                            {catalogSources.map((src) => (
-                              <td key={src} className="px-1 py-1.5 text-center w-7">
-                                <span className="relative inline-flex items-center justify-center w-5 h-5">
-                                  <CatalogDot present={status?.[src]} loading={catalogLoading} />
-                                  {!status?.[src] && !catalogLoading && (
-                                    <button
-                                      onClick={() => {
-                                        const params = new URLSearchParams();
-                                        if (item.brand) params.set("brand", item.brand);
-                                        if (item.model) params.set("model", item.model);
-                                        if (item.description) params.set("description", item.description);
-                                        if (item.category) params.set("category", item.category);
-                                        if (item.unitSpec != null) params.set("unitSpec", String(item.unitSpec));
-                                        if (item.unitLabel) params.set("unitLabel", item.unitLabel);
-                                        if (linkedProject?.hs_object_id) params.set("dealId", linkedProject.hs_object_id);
-                                        router.push(`/dashboards/submit-product?${params.toString()}`);
-                                      }}
-                                      className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] leading-none font-semibold text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 bg-surface border border-t-border rounded px-0.5"
-                                      title="Add to missing catalog"
-                                    >
-                                      +
-                                    </button>
-                                  )}
-                                </span>
-                              </td>
-                            ))}
                             <td className="px-3 py-1.5">
                               <button
                                 onClick={() => deleteItem(item.id)}
@@ -4024,19 +4026,6 @@ function QuickLinks({ project }: { project: ProjectResult }) {
   );
 }
 
-function CatalogDot({ present, loading }: { present?: boolean; loading?: boolean }) {
-  if (loading) {
-    return <span className="inline-block w-1.5 h-1.5 rounded-full bg-surface-2 animate-pulse" />;
-  }
-  if (present === undefined) {
-    return <span className="text-muted text-xs">—</span>;
-  }
-  return present ? (
-    <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" title="In catalog" />
-  ) : (
-    <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" title="Not in catalog" />
-  );
-}
 
 /** Read SSE progress events from /api/bom/extract and return the final BOM. */
 async function fetchExtractStream(
