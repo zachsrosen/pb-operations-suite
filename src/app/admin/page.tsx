@@ -23,18 +23,6 @@ const ADMIN_DASHBOARDS: Array<{ href: string; title: string; description: string
     icon: "⚙️",
   },
   {
-    href: "/dashboards/zuper-status-comparison",
-    title: "Zuper Status Comparison",
-    description: "Compare Zuper job statuses against HubSpot.",
-    icon: "🔄",
-  },
-  {
-    href: "/dashboards/mobile",
-    title: "Mobile Dashboard",
-    description: "Touch-optimized view for field teams.",
-    icon: "📱",
-  },
-  {
     href: "/dashboards/availability-approvals",
     title: "Availability Approvals",
     description: "Approve or reject crew availability change requests.",

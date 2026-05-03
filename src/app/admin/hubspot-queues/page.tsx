@@ -73,6 +73,7 @@ export default function HubspotQueuesAdminPage() {
       <AdminPageHeader
         title="HubSpot Queue Names"
         subtitle="HubSpot doesn't expose task queues via their public API. Map each queue ID (copy the number from the queue's URL in HubSpot) to a display name. These names show up everywhere the My Tasks page surfaces queues."
+        breadcrumb={["Admin", "Integrations", "HubSpot queues"]}
       />
 
       {err && (

@@ -1102,7 +1102,6 @@ export default function PEDashboardPage() {
       title="Participate Energy"
       subtitle="Project Milestone Tracker"
       accentColor="green"
-      breadcrumbs={[{ label: "Dashboards", href: "/" }, { label: "PE Dashboard" }]}
       lastUpdated={today.toLocaleDateString()}
       headerRight={
         <div className="flex items-center gap-3">

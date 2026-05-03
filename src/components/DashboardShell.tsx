@@ -127,6 +127,36 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/revenue-goals": { href: "/admin", label: "Admin" },
   "/dashboards/admin/calls": { href: "/suites/testing", label: "Testing" },
   "/dashboards/executive-calls": { href: "/suites/executive", label: "Executive" },
+  // Accounting Suite
+  "/dashboards/accounts-receivable": { href: "/suites/accounting", label: "Accounting" },
+  "/dashboards/payment-action-queue": { href: "/suites/accounting", label: "Accounting" },
+  "/dashboards/payment-tracking": { href: "/suites/accounting", label: "Accounting" },
+  "/dashboards/payment-data-mismatch": { href: "/admin", label: "Admin" },
+  "/dashboards/ready-to-invoice": { href: "/suites/accounting", label: "Accounting" },
+  // Sales & Marketing Suite
+  "/dashboards/adders": { href: "/suites/sales-marketing", label: "Sales & Marketing" },
+  "/dashboards/request-product": { href: "/suites/sales-marketing", label: "Sales & Marketing" },
+  // Project Management Suite
+  "/dashboards/my-tasks": { href: "/suites/project-management", label: "Project Management" },
+  "/dashboards/my-tickets": { href: "/suites/project-management", label: "Project Management" },
+  "/dashboards/pm-accountability": { href: "/suites/project-management", label: "Project Management" },
+  "/dashboards/pm-action-queue": { href: "/suites/project-management", label: "Project Management" },
+  "/dashboards/shit-show-meeting": { href: "/suites/executive", label: "Executive" },
+  // Permitting & Interconnection Suite
+  "/dashboards/permit-hub": { href: "/suites/permitting-interconnection", label: "P&I" },
+  "/dashboards/ic-hub": { href: "/suites/permitting-interconnection", label: "P&I" },
+  // Service Suite
+  "/dashboards/service-bom": { href: "/suites/service", label: "Service" },
+  "/dashboards/service-unscheduled": { href: "/suites/service", label: "Service" },
+  // Operations Suite (additional)
+  "/dashboards/map": { href: "/suites/operations", label: "Operations" },
+  "/dashboards/product-requests-review": { href: "/suites/operations", label: "Operations" },
+  // Design & Engineering Suite (additional)
+  "/dashboards/tsrf-calculator": { href: "/suites/design-engineering", label: "D&E" },
+  // Admin dashboards
+  "/dashboards/admin/shared-inboxes": { href: "/admin", label: "Admin" },
+  "/dashboards/admin/sop-proposals": { href: "/admin", label: "Admin" },
+  "/dashboards/admin/workflows": { href: "/admin", label: "Admin" },
 };
 
 function getParentSuiteForPath(pathname: string): { href: string; label: string } | null {

@@ -201,7 +201,6 @@ export default function RoofingPipelinePage() {
       title="Roofing Pipeline"
       subtitle={`Roofing Projects${loadingMore && progress ? ` \u2022 Loading ${progress.loaded}${progress.total ? `/${progress.total}` : ""} deals...` : lastUpdated ? ` \u2022 Last updated: ${lastUpdated}` : ""}`}
       accentColor="purple"
-      breadcrumbs={[{ label: "Dashboards", href: "/" }, { label: "Roofing Pipeline" }]}
       headerRight={
         <div className="flex items-center gap-3">
           {/* Location filter */}

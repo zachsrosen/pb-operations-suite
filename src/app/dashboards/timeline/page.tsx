@@ -194,7 +194,6 @@ export default function TimelineViewPage() {
       subtitle="Gantt-style project timeline"
       accentColor="purple"
       lastUpdated={lastUpdated}
-      breadcrumbs={[{ label: "Dashboards", href: "/" }, { label: "Timeline" }]}
       exportData={{ data: exportData, filename: "timeline-view" }}
       headerRight={
         <div className="flex items-center gap-3">
