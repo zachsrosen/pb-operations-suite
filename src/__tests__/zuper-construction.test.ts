@@ -205,3 +205,17 @@ describe("allocateDealValueAcrossJobs", () => {
     expect(allocateDealValueAcrossJobs(100, 3)).toBeCloseTo(33.333, 2);
   });
 });
+
+describe("revenue split scenarios (mirrors revenue-calendar logic)", () => {
+  it("3-system deal at $90k splits to $30k per sub-job", () => {
+    expect(allocateDealValueAcrossJobs(90000, 3)).toBe(30000);
+  });
+
+  it("2-system deal at $80k splits to $40k per sub-job", () => {
+    expect(allocateDealValueAcrossJobs(80000, 2)).toBe(40000);
+  });
+
+  it("1-system deal preserves full value", () => {
+    expect(allocateDealValueAcrossJobs(50000, 1)).toBe(50000);
+  });
+});
