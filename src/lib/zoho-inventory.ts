@@ -1685,8 +1685,57 @@ export class ZohoInventoryClient {
     }
   }
 
-  /** Performs the actual OAuth token refresh against Zoho's endpoint. */
+  /**
+   * Performs the actual OAuth token refresh against Zoho's endpoint.
+   *
+   * Zoho's OAuth refresh endpoint applies a global per-token rate limit
+   * (returns body `error: "Access Denied"`). In-process dedupe via
+   * `inflightRefresh` prevents thundering herd within a single Lambda
+   * instance, but two Vercel Lambda instances cold-starting concurrently
+   * each have their own in-memory cache and can race on a shared token,
+   * causing one of them to see Access Denied.
+   *
+   * Retry once with a short jittered backoff so the second attempt lands
+   * after either (a) the rate window passes or (b) the other instance's
+   * refresh propagates and we read the updated token from cache. Three
+   * total attempts caps total wait at ~3.5s.
+   */
   private async executeTokenRefresh(): Promise<string> {
+    const MAX_ATTEMPTS = 3;
+    let lastError: string = "";
+
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      // On retry, peek at the cache — another instance may have refreshed
+      // for us in the meantime.
+      if (attempt > 0 && this.dynamicAccessToken && Date.now() < this.dynamicTokenExpiresAtMs) {
+        return this.dynamicAccessToken;
+      }
+
+      const result = await this.attemptTokenRefresh();
+      if (result.kind === "success") return result.token;
+
+      lastError = result.error;
+
+      // Only retry on the specific Access Denied case — any other failure
+      // (network, bad credentials, malformed response) is unlikely to fix
+      // itself with a wait.
+      const isRateLimit = /access[\s_]?denied/i.test(result.error);
+      if (!isRateLimit || attempt === MAX_ATTEMPTS - 1) break;
+
+      // Jittered backoff: 800ms, 1600ms (+ up to 400ms jitter)
+      const baseDelay = 800 * Math.pow(2, attempt);
+      const delay = baseDelay + Math.floor(Math.random() * 400);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+
+    throw new Error(`Failed to refresh Zoho Inventory token (${lastError})`);
+  }
+
+  /**
+   * One attempt against Zoho's refresh endpoint. Returns a discriminated
+   * union so the retry loop can distinguish rate-limit vs other errors.
+   */
+  private async attemptTokenRefresh(): Promise<{ kind: "success"; token: string } | { kind: "error"; error: string }> {
     const tokenUrl = buildUrl(this.accountsBaseUrl, "/oauth/v2/token");
     const body = new URLSearchParams({
       refresh_token: this.refreshToken!,
@@ -1713,7 +1762,7 @@ export class ZohoInventoryClient {
       const errorText = typeof payload.error === "string"
         ? payload.error
         : `status ${response.status}`;
-      throw new Error(`Failed to refresh Zoho Inventory token (${errorText})`);
+      return { kind: "error", error: errorText };
     }
 
     const expiresInSec = Number(payload.expires_in_sec || payload.expires_in || 3600);
@@ -1733,7 +1782,7 @@ export class ZohoInventoryClient {
       });
     }
 
-    return this.dynamicAccessToken;
+    return { kind: "success", token: this.dynamicAccessToken };
   }
 }
 
