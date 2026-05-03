@@ -31,6 +31,7 @@ export async function GET(req: Request) {
   const filled: Array<{
     poolId: string;
     poolName: string;
+    region: string;
     date: string;
     crewMemberId: string;
     crewMemberName: string;
@@ -43,6 +44,7 @@ export async function GET(req: Request) {
   for (const pool of pools) {
     // Fetch pool meta for name, members for on-the-fly generation.
     const poolName = pool.name;
+    const poolRegion = pool.region;
     const members = await getActiveMembersForRotation(pool.id);
 
     // Clamp fromDate up to pool.startDate — no scheduling before the pool's
@@ -71,6 +73,7 @@ export async function GET(req: Request) {
         filled.push({
           poolId: pool.id,
           poolName,
+          region: poolRegion,
           date: p.date,
           crewMemberId: p.crewMemberId,
           crewMemberName: p.crewMember?.name ?? "",
@@ -84,6 +87,7 @@ export async function GET(req: Request) {
         filled.push({
           poolId: pool.id,
           poolName,
+          region: poolRegion,
           date: g.date,
           crewMemberId: g.crewMemberId,
           crewMemberName: "",
