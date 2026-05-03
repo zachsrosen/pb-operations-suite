@@ -595,30 +595,59 @@ export async function createTicketSalesOrder(params: {
     console.warn(`[BOM-SO-Ticket] Unknown pb_location "${pbLocation}" — no warehouse mapped for ticket ${ticketId}`);
   }
 
-  let soResult: { salesorder_id: string; salesorder_number: string };
+  // Helper to build the Zoho SO payload — used by initial attempt and the
+  // custom-field-fallback retry below.
+  const buildSoPayload = (includeCustomField: boolean) => ({
+    customer_id: customerId,
+    salesorder_number: soNumber,
+    reference_number: referenceNumber,
+    notes: `Generated from PB Service BOM v${version}${address ? ` — ${address}` : ""}`,
+    status: "draft" as const,
+    line_items: lineItems.map(({ item_id, name, quantity, description }) => ({
+      ...(item_id ? { item_id } : {}),
+      name,
+      quantity,
+      ...(description ? { description } : {}),
+      ...(warehouseId ? { warehouse_id: warehouseId } : {}),
+    })),
+    ...(includeCustomField
+      ? { custom_fields: [{ label: "HubSpot Ticket Record ID", value: ticketId }] }
+      : {}),
+  });
+
+  let soResult: { salesorder_id: string; salesorder_number: string } | undefined;
   try {
-    soResult = await zohoInventory.createSalesOrder({
-      customer_id: customerId,
-      salesorder_number: soNumber,
-      reference_number: referenceNumber,
-      notes: `Generated from PB Service BOM v${version}${address ? ` — ${address}` : ""}`,
-      status: "draft",
-      line_items: lineItems.map(({ item_id, name, quantity, description }) => ({
-        ...(item_id ? { item_id } : {}),
-        name,
-        quantity,
-        ...(description ? { description } : {}),
-        ...(warehouseId ? { warehouse_id: warehouseId } : {}),
-      })),
-      custom_fields: [
-        { label: "HubSpot Ticket Record ID", value: ticketId },
-      ],
-    });
+    soResult = await zohoInventory.createSalesOrder(buildSoPayload(true));
   } catch (e) {
     const message = e instanceof Error ? e.message : "Zoho API error";
 
-    // Recovery: SO already exists in Zoho (previous run crashed before saving ID)
-    if (message.includes("already exists")) {
+    // Recovery 1: custom field doesn't exist on Zoho's SO template. The
+    // "HubSpot Ticket Record ID" label needs to be added in Zoho's SO
+    // template (Setup → Customization → Sales Order). Until that's done,
+    // we'd rather create the SO without the tag than fail outright — the
+    // SO still gets the ticket id baked into the SO number (`SO-T-<id>`)
+    // and reference number, so the link isn't lost, just not surfaced as
+    // a custom field column.
+    if (/custom field with the label.*does[\s']?n[o]?[\s']?t exist/i.test(message)) {
+      console.warn(
+        `[bom-so-create] Zoho is missing the "HubSpot Ticket Record ID" custom field — ` +
+          `creating SO without the tag. Add the field in Zoho Setup → Customization → ` +
+          `Sales Order to enable ticket-id tagging.`,
+      );
+      try {
+        soResult = await zohoInventory.createSalesOrder(buildSoPayload(false));
+        // Fall through to the success path below.
+      } catch (retryErr) {
+        const retryMsg = retryErr instanceof Error ? retryErr.message : "Zoho API error";
+        await logSo("failed", {
+          reason: "zoho_api_error_retry_no_custom_field",
+          ticketSubject: snapshot.ticketSubject,
+          error: retryMsg,
+        });
+        throw new Error(`Zoho API error: ${retryMsg}`);
+      }
+    } else if (message.includes("already exists")) {
+      // Recovery 2: SO already exists in Zoho (previous run crashed before saving ID)
       console.warn(`[bom-so-create] Ticket SO ${soNumber} already exists in Zoho — recovering`);
       try {
         const existing = await zohoInventory.getSalesOrder(soNumber);
@@ -666,13 +695,18 @@ export async function createTicketSalesOrder(params: {
       }
     }
 
-    console.error("[bom-so-create] Ticket Zoho error:", message);
-    await logSo("failed", {
-      reason: "zoho_api_error",
-      ticketSubject: snapshot.ticketSubject,
-      error: message,
-    });
-    throw new Error(`Zoho API error: ${message}`);
+    // If a recovery branch (custom-field-missing retry, already-exists
+    // recovery) populated soResult or already returned, skip the failure
+    // throw. Otherwise propagate the original Zoho error.
+    if (!soResult) {
+      console.error("[bom-so-create] Ticket Zoho error:", message);
+      await logSo("failed", {
+        reason: "zoho_api_error",
+        ticketSubject: snapshot.ticketSubject,
+        error: message,
+      });
+      throw new Error(`Zoho API error: ${message}`);
+    }
   }
 
   // 5. Store zohoSoId on snapshot
