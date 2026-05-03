@@ -97,8 +97,9 @@ export async function GET(request: NextRequest) {
           mergedSlots.set(key, slot);
         }
       }
-    } else if (!firstSlotsError) {
-      firstSlotsError = r.error;
+    } else if (r.type === "error") {
+      console.warn("[assisted-scheduling] slot fetch failed", { error: r.error });
+      if (!firstSlotsError) firstSlotsError = r.error;
     }
   }
 
