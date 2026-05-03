@@ -433,7 +433,7 @@ export async function GET(request: NextRequest) {
         allRelevantIds.add(String(p.id));
       }
     }
-    const zuperJobs = await getCachedZuperJobsByDealIds([...allRelevantIds], "Construction");
+    const zuperJobs = await getCachedZuperJobsByDealIds([...allRelevantIds], [...CONSTRUCTION_CATEGORY_NAMES]);
     const zuperByDeal = new Map<string, string>();
     for (const job of zuperJobs) {
       if (job.hubspotDealId) zuperByDeal.set(job.hubspotDealId, job.jobUid);
