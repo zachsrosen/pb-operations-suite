@@ -1651,14 +1651,23 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
     if (!linkedProject || !savedVersion || !selectedCustomerId) return;
     setCreatingSo(true);
     try {
-      const res = await fetch("/api/bom/create-so", {
+      const isTicket = (linkedProject.kind ?? "deal") === "ticket";
+      const url = isTicket ? "/api/bom/ticket-create-so" : "/api/bom/create-so";
+      const reqBody = isTicket
+        ? {
+            ticketId: linkedProject.hs_object_id,
+            version: savedVersion,
+            customerId: selectedCustomerId,
+          }
+        : {
+            dealId: linkedProject.hs_object_id,
+            version: savedVersion,
+            customerId: selectedCustomerId,
+          };
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dealId: linkedProject.hs_object_id,
-          version: savedVersion,
-          customerId: selectedCustomerId,
-        }),
+        body: JSON.stringify(reqBody),
       });
       const data = await res.json() as {
         salesorder_id?: string;
@@ -2929,9 +2938,11 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
                       Save current BOM
                     </button>
                   )}
-                  {!savedVersion && !saving && !isTicketContext && (
+                  {!savedVersion && !saving && (
                     <span className="text-xs text-amber-600 dark:text-amber-400">
-                      Save current BOM to enable Zoho PO/SO actions.
+                      {isTicketContext
+                        ? "Save current BOM to enable Zoho SO creation."
+                        : "Save current BOM to enable Zoho PO/SO actions."}
                     </span>
                   )}
                   {savedVersion && !isTicketContext && (
@@ -3028,8 +3039,10 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
                         : "Zoho vendors unavailable (or none found)."}
                     </span>
                   )}
-                  {/* Zoho SO — deal-only; tickets don't drive sales orders. */}
-                  {savedVersion && !isTicketContext && (
+                  {/* Zoho SO — supported for both deals and tickets. The
+                      backend dispatches /api/bom/create-so vs
+                      /api/bom/ticket-create-so based on linkedProject.kind. */}
+                  {savedVersion && (
                     zohoSoId ? (
                       <a
                         href={getZohoSalesOrderUrl(zohoSoId)}
