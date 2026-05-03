@@ -34,6 +34,7 @@ Multiple subsystems assume one construction Zuper job per deal. Without changes,
 | Capacity model | **One deal = one capacity slot**, regardless of sub-job count |
 | Sub-job scheduling | Co-scheduled — all sub-jobs of a deal share the same date window |
 | `construction_complete_date` stamping | **Out of scope** — handled by existing HubSpot workflows |
+| Per-system status mirroring (HubSpot) | **In scope** — sync each sub-job's status to a dedicated HubSpot property (`construction_solar_status`, `construction_battery_status`, `construction_ev_status`) |
 | Job creation | HubSpot workflow already handles it — out of scope |
 
 ## Architecture
@@ -248,7 +249,18 @@ The grep pass identified the following construction-aware call sites. Each is in
 
 The grep pass found ~15 places where the literal string `"Construction"` appears as a UI label, suite section heading, or stage display name (e.g., `src/app/dashboards/scheduler/page.tsx:432`, `src/app/dashboards/qc/page.tsx:17`). These reflect the HubSpot deal **stage**, not the Zuper job category, and remain accurate — a deal is still in the "Construction" stage regardless of how many Zuper sub-jobs exist for it. **No change** to these strings.
 
-### 8. Compliance scoring impact (`lib/compliance-v2/scoring.ts`, `lib/compliance-compute.ts`)
+### 8. Per-system HubSpot status properties — informational
+
+Three HubSpot deal properties already exist (created by ops):
+- `construction_solar_status`
+- `construction_battery_status`
+- `construction_ev_status`
+
+These mirror the current Zuper job status of each sub-job, populated by the same existing infrastructure that already syncs `site_survey_status`, `final_inspection_status`, etc. (see `src/lib/deal-property-map.ts`, `src/lib/hubspot.ts`). **No new sync code is required for this spec** — the user confirmed these properties update through existing channels just like every other category.
+
+For our purposes, these properties are *readable inputs* that any consumer (deal detail pages, HubSpot workflows, downstream automations) can use to know which sub-systems are complete, scheduled, in progress, etc. We don't write to them.
+
+### 9. Compliance scoring impact (`lib/compliance-v2/scoring.ts`, `lib/compliance-compute.ts`)
 
 Both files maintain a `CATEGORY_NAME_TO_UID` map used by status comparison and Zuper compliance scoring. Each map needs three new entries:
 
@@ -260,7 +272,7 @@ Both files maintain a `CATEGORY_NAME_TO_UID` map used by status comparison and Z
 
 Compliance scoring is per-job today. Decision: it stays per-job — a battery install with a stuck status is its own compliance signal independent of the solar install at the same property. If ops later wants deal-level compliance rollup, that's a follow-up spec.
 
-### 9. Feature flag
+### 10. Feature flag
 
 `CONSTRUCTION_JOB_SPLIT_ENABLED` env var, default `true`. Off-switch behavior:
 
