@@ -1006,12 +1006,14 @@ export const SERVICE_PIPELINE_CONFIG: BomPipelineConfig = {
           })),
       ),
       // Tickets — search via /api/service/tickets which supports a `search` query param.
+      // Keep dealname clean (no emoji prefix) so customer auto-match's name
+      // parser works correctly. The ticket emoji is added at render time.
       fetch(`/api/service/tickets?search=${encodeURIComponent(query)}`)
         .then((r) => (r.ok ? r.json() : { tickets: [] }))
         .then((data: { tickets?: Array<{ id: string; title: string; location?: string | null }> }) =>
           (data.tickets ?? []).slice(0, 6).map((t) => ({
             hs_object_id: t.id,
-            dealname: `🎫 ${t.title}`,
+            dealname: t.title,
             address: t.location ?? undefined,
             designFolderUrl: null,
             driveUrl: null,
@@ -1185,7 +1187,10 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
     projectHydrateAbortRef.current = controller;
 
     if (kind === "ticket") {
-      // Service ticket hydration — pull subject + folderUrl from ticket detail.
+      // Service ticket hydration — pull subject + folderUrl + first
+      // associated contact id from ticket detail. We use the contact id
+      // for Zoho customer auto-match; without it, resolve-customer falls
+      // back to dealname parsing which is far less reliable.
       const response = await fetch(`/api/service/tickets/${encodeURIComponent(normalizedId)}`, {
         signal: controller.signal,
       });
@@ -1197,22 +1202,29 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
           subject: string;
           location: string | null;
           folderUrl: string | null;
+          associations?: {
+            contacts?: Array<{ id: string; name: string; email: string }>;
+          };
         };
       };
 
       if (controller.signal.aborted) return;
 
       const t = data.ticket;
+      const firstContact = t.associations?.contacts?.[0];
       setLinkedProject((prev) => ({
         ...(prev ?? {}),
         hs_object_id: t.id,
-        dealname: `🎫 ${t.subject}`,
+        // Keep dealname clean (subject only) so resolve-customer's name
+        // parser works. The ticket emoji is rendered separately in UI
+        // labels via the `kind === "ticket"` check.
+        dealname: t.subject,
         address: t.location ?? undefined,
         designFolderUrl: t.folderUrl,
         driveUrl: null,
         openSolarUrl: null,
         zuperUid: null,
-        hubspotContactId: null,
+        hubspotContactId: firstContact?.id ?? null,
         kind: "ticket",
       }));
       return;
@@ -2504,13 +2516,16 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
               {linkedProject ? (
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-foreground">
-                    🔗 <span className="font-medium">{linkedProject.dealname}</span>
+                    {linkedProject.kind === "ticket" ? "🎫" : "🔗"}{" "}
+                    <span className="font-medium">{linkedProject.dealname}</span>
                   </span>
                   {linkedProject.address && (
                     <span className="text-xs text-muted truncate hidden sm:inline">{linkedProject.address}</span>
                   )}
                   {linkedProject.designFolderUrl && (
-                    <span className="text-xs text-cyan-500">📁 Design Folder available</span>
+                    <span className="text-xs text-cyan-500">
+                      📁 {linkedProject.kind === "ticket" ? "Ticket Folder" : "Design Folder"} available
+                    </span>
                   )}
                   <button
                     onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); }}
@@ -2550,12 +2565,13 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
                           }}
                           className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-surface-2 transition-colors border-b border-t-border last:border-b-0"
                         >
+                          {p.kind === "ticket" && <span className="mr-1.5">🎫</span>}
                           <span className="font-medium">{p.dealname}</span>
                           {p.address && (
                             <span className="text-muted ml-2 text-xs">{p.address}</span>
                           )}
                           {p.designFolderUrl && (
-                            <span className="ml-1.5 text-xs text-cyan-500" title="Has design folder">📁</span>
+                            <span className="ml-1.5 text-xs text-cyan-500" title="Has folder link">📁</span>
                           )}
                         </button>
                       ))}
@@ -2918,7 +2934,8 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
                 <>
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-sm text-foreground">
-                    ✅ <span className="font-medium">{linkedProject.dealname}</span>
+                    {linkedProject.kind === "ticket" ? "🎫" : "✅"}{" "}
+                    <span className="font-medium">{linkedProject.dealname}</span>
                   </span>
                   {saving && (
                     <span className="text-xs text-muted animate-pulse">Saving…</span>
@@ -3175,6 +3192,7 @@ export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: 
                           }}
                           className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-surface-2 transition-colors"
                         >
+                          {p.kind === "ticket" && <span className="mr-1.5">🎫</span>}
                           <span className="font-medium">{p.dealname}</span>
                           {p.address && (
                             <span className="text-muted ml-2 text-xs">{p.address}</span>
@@ -3938,11 +3956,20 @@ function ValidationBadge({ value, label }: { value: boolean | null; label: strin
 }
 
 function QuickLinks({ project }: { project: ProjectResult }) {
-  const internalDealHref = getInternalDealUrl(project.hs_object_id, "project");
+  const isTicket = (project.kind ?? "deal") === "ticket";
+  // For tickets there is no internal deal page; we surface the ticket
+  // detail (Service Suite) instead so the "open in app" affordance still works.
+  const internalHref = isTicket
+    ? `/dashboards/service-tickets?ticket=${encodeURIComponent(project.hs_object_id)}`
+    : getInternalDealUrl(project.hs_object_id, "project");
+  const internalLabel = isTicket ? "Ticket" : "Deal";
+
   const links: Array<{ label: string; href: string; color: string }> = [
     {
       label: "HubSpot",
-      href: `https://app.hubspot.com/contacts/21710069/deal/${project.hs_object_id}`,
+      href: isTicket
+        ? `https://app.hubspot.com/contacts/21710069/ticket/${project.hs_object_id}`
+        : `https://app.hubspot.com/contacts/21710069/deal/${project.hs_object_id}`,
       color: "text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800",
     },
   ];
@@ -3962,7 +3989,7 @@ function QuickLinks({ project }: { project: ProjectResult }) {
       designHref = `https://${raw}`;
     }
     links.push({
-      label: "Design Folder",
+      label: isTicket ? "Ticket Folder" : "Design Folder",
       href: designHref,
       color: "text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-800",
     });
@@ -3977,10 +4004,10 @@ function QuickLinks({ project }: { project: ProjectResult }) {
   return (
     <div className="flex flex-wrap gap-2">
       <Link
-        href={internalDealHref}
+        href={internalHref}
         className="inline-flex items-center gap-1 px-3 py-1 rounded-lg border text-xs font-medium bg-surface hover:bg-surface-2 transition-colors text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800 no-underline"
       >
-        Deal →
+        {internalLabel} →
       </Link>
       {links.map(({ label, href, color }) => (
         <a
