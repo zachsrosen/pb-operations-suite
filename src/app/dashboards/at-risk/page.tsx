@@ -303,7 +303,6 @@ export default function AtRiskPage() {
       subtitle="Projects requiring immediate attention"
       accentColor="red"
       lastUpdated={lastUpdated}
-      breadcrumbs={[{ label: "Dashboards", href: "/" }, { label: "At-Risk" }]}
       exportData={{ data: exportData, filename: "at-risk-projects" }}
       headerRight={
         <div className="flex items-center gap-3">

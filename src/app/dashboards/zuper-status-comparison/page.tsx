@@ -552,7 +552,6 @@ export default function ZuperStatusComparisonPage() {
         title="Zuper Status Comparison"
         subtitle="Loading status data..."
         accentColor="cyan"
-        breadcrumbs={[{ label: "Dashboards", href: "/" }, { label: "Zuper Status Comparison" }]}
       >
         <div className="flex items-center justify-center py-20">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-cyan-600" />
@@ -570,7 +569,6 @@ export default function ZuperStatusComparisonPage() {
         title="Zuper Status Comparison"
         subtitle="Error loading data"
         accentColor="cyan"
-        breadcrumbs={[{ label: "Dashboards", href: "/" }, { label: "Zuper Status Comparison" }]}
       >
         <div className="text-center py-20">
           <p className="text-red-600 dark:text-red-400 mb-4">{error}</p>

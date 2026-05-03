@@ -335,7 +335,6 @@ export default function ExecutiveSummaryPage() {
       subtitle={`Photon Brothers \u2022 ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}`}
       accentColor="orange"
       lastUpdated={lastUpdated}
-      breadcrumbs={[{ label: "Dashboards", href: "/" }, { label: "Executive Summary" }]}
       exportData={{ data: exportData, filename: "executive-summary" }}
       headerRight={
         <div className="flex items-center gap-3">
