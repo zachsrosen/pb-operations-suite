@@ -964,10 +964,13 @@ Pattern:
 // Before
 fetchAllZuperJobs(JOB_CATEGORY_UIDS.CONSTRUCTION, fromDate, toDate),
 
-// After — fetch each construction UID, then concat
-...await Promise.all(
+// After — fetch each construction UID, then concat. Assign to a variable
+// first; `...await Promise.all(...).then(...)` inside a spread is invalid syntax.
+const constructionJobArrays = await Promise.all(
   CONSTRUCTION_CATEGORY_UIDS.map((uid) => fetchAllZuperJobs(uid, fromDate, toDate))
-).then((arrays) => arrays.flat()),
+);
+const allConstructionJobs = constructionJobArrays.flat();
+// then use allConstructionJobs in place of the original single-call result
 ```
 
 The exact transformation depends on how the result is consumed downstream. **Do not** blindly apply; read the surrounding function signature first.
