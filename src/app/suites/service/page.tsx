@@ -70,6 +70,14 @@ const BASE_LINKS: SuitePageCard[] = [
     section: "Customer & Equipment",
   },
   {
+    href: "/dashboards/service-bom",
+    title: "Service BOM",
+    description: "Extract equipment from planset PDFs for service deals — match to catalog and push to HubSpot.",
+    tag: "TOOL",
+    icon: "📋",
+    section: "Customer & Equipment",
+  },
+  {
     href: "/dashboards/service-catalog",
     title: "Service Catalog",
     description: "Browse service products, pricing, and availability.",

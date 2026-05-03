@@ -854,3 +854,136 @@ export async function saveBomSnapshot(params: {
     throw new Error(`Failed to save BOM snapshot: ${message}`);
   }
 }
+
+/**
+ * Save a BOM snapshot for a service TICKET (Service Suite BOM tool).
+ * Mirrors saveBomSnapshot but persists to TicketBomSnapshot — tickets have
+ * their own folder/docs in HubSpot (ticket_documents) and their BOMs are
+ * independent from any associated deal's BOM.
+ */
+export async function saveTicketBomSnapshot(params: {
+  ticketId: string;
+  ticketSubject: string;
+  bomData: BomData;
+  sourceFile?: string;
+  blobUrl?: string;
+  actor: ActorContext;
+}): Promise<SnapshotResult> {
+  const { ticketId, ticketSubject, bomData, sourceFile, blobUrl, actor } = params;
+  const startedAt = Date.now();
+
+  if (!prisma) {
+    throw new Error("Database not configured");
+  }
+
+  if (!ticketId || !ticketSubject || !bomData?.items) {
+    throw new Error("ticketId, ticketSubject, and bomData are required");
+  }
+
+  const logSnapshot = async (
+    outcome: "succeeded" | "failed",
+    details: Record<string, unknown>,
+  ) => {
+    await logActivity({
+      type: outcome === "failed" ? "API_ERROR" : "INVENTORY_SKU_SYNCED",
+      description:
+        outcome === "succeeded"
+          ? "Saved Ticket BOM snapshot"
+          : "Ticket BOM snapshot save failed",
+      userEmail: actor.email,
+      userName: actor.name,
+      entityType: "ticket",
+      entityName: "ticket_bom_history",
+      metadata: {
+        event: "ticket_bom_snapshot_save",
+        outcome,
+        ...details,
+      },
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+      requestPath: actor.requestPath ?? "/api/bom/ticket-history",
+      requestMethod: actor.requestMethod ?? "POST",
+      responseStatus: outcome === "failed" ? 500 : 200,
+      durationMs: Date.now() - startedAt,
+    });
+  };
+
+  // ── BOM Post-Processor (feature-gated) — same as deal flow ──────────
+  const enableBomPostProcess = process.env.ENABLE_BOM_POST_PROCESS === "true";
+  let processedBomData: BomData & { suggestedAdditions?: BomItem[]; postProcess?: object } = bomData;
+
+  if (enableBomPostProcess && Array.isArray(bomData?.items)) {
+    try {
+      const { postProcessBomItems } = await import("@/lib/bom-post-process");
+      const result = postProcessBomItems(bomData.project, bomData.items);
+      processedBomData = {
+        ...bomData,
+        items: result.items as unknown as BomItem[],
+        suggestedAdditions: result.suggestedAdditions as unknown as BomItem[],
+        postProcess: {
+          rulesVersion: result.rulesVersion,
+          jobContext: result.jobContext,
+          corrections: result.corrections,
+          appliedAt: new Date().toISOString(),
+        },
+      };
+    } catch (e) {
+      console.error("[bom-snapshot] Ticket BOM post-process error:", e);
+    }
+  }
+
+  try {
+    const latest = await prisma.ticketBomSnapshot.findFirst({
+      where: { ticketId },
+      orderBy: { version: "desc" },
+      select: { version: true },
+    });
+    const nextVersion = (latest?.version ?? 0) + 1;
+
+    const snapshot = await prisma.ticketBomSnapshot.create({
+      data: {
+        ticketId,
+        ticketSubject,
+        version: nextVersion,
+        bomData: processedBomData as object,
+        sourceFile: sourceFile ?? null,
+        blobUrl: blobUrl ?? null,
+        savedBy: actor.email,
+      },
+    });
+
+    const allItemsToSync: BomItem[] = [
+      ...processedBomData.items,
+      ...(processedBomData.suggestedAdditions ?? []),
+    ];
+    const skuSync = await syncInternalProducts(allItemsToSync);
+
+    await logSnapshot("succeeded", {
+      ticketId,
+      ticketSubject,
+      version: nextVersion,
+      sourceFile,
+      skuCreated: skuSync.created,
+      skuUpdated: skuSync.updated,
+      skuSkipped: skuSync.skipped,
+      skuPending: skuSync.pending,
+      skuZohoMatched: skuSync.zohoMatched,
+    });
+
+    return {
+      id: snapshot.id,
+      version: snapshot.version,
+      createdAt: snapshot.createdAt,
+      skuSync,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await logSnapshot("failed", {
+      reason: "ticket_snapshot_save_failed",
+      ticketId,
+      ticketSubject,
+      error: message,
+    });
+    throw new Error(`Failed to save Ticket BOM snapshot: ${message}`);
+  }
+}

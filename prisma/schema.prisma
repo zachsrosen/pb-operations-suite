@@ -1563,6 +1563,29 @@ model ProjectBomSnapshot {
   @@index([createdAt])
 }
 
+/// Service Suite BOM extraction snapshots — keyed to a HubSpot service ticket.
+/// Mirrors ProjectBomSnapshot but for tickets (which have their own folder/docs
+/// on HubSpot via ticket_documents / ticket_document_folder_id). A ticket's BOM
+/// is independent from any associated deal's BOM.
+model TicketBomSnapshot {
+  id                 String  @id @default(cuid())
+  ticketId           String // HubSpot ticket ID
+  ticketSubject      String
+  version            Int // 1, 2, 3… increments per ticketId
+  bomData            Json // full BomData object (project + items + validation)
+  sourceFile         String? // original PDF filename
+  blobUrl            String? // Vercel Blob URL of the source PDF
+  savedBy            String // user email
+  zohoPurchaseOrders Json? // Array of created Zoho Purchase Orders
+  zohoSoId           String? // Zoho Sales Order ID once created
+
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([ticketId, version])
+  @@index([createdAt])
+}
+
 enum PushStatus {
   PENDING
   APPROVED

@@ -701,6 +701,8 @@ const DEAL_PROPERTIES = [
   "design_documents",           // Drive folder URL for design docs (preferred)
   "design_document_folder_id",  // bare folder ID fallback
   "all_document_parent_folder_id",
+  "service_documents",          // Service deals — Drive folder URL
+  "service_documents_folder_id",// Service deals — bare folder ID fallback
   "g_drive",
   "link_to_opensolar",
   "os_project_link",
@@ -1067,8 +1069,17 @@ function transformDealToProject(deal: Record<string, unknown>, portalId: string,
     // External links
     // design_documents is the full Drive folder URL (preferred) — the drive-files route
     // handles both full URLs and bare IDs via regex extraction.
-    // Falls back to design_document_folder_id (bare ID), then all_document_parent_folder_id.
-    designFolderUrl: String(deal.design_documents || deal.design_document_folder_id || deal.all_document_parent_folder_id || "").trim() || null,
+    // Falls back to design_document_folder_id (bare ID), then service_documents (service deals),
+    // then service_documents_folder_id, then all_document_parent_folder_id.
+    designFolderUrl:
+      String(
+        deal.design_documents ||
+        deal.design_document_folder_id ||
+        deal.service_documents ||
+        deal.service_documents_folder_id ||
+        deal.all_document_parent_folder_id ||
+        ""
+      ).trim() || null,
     driveUrl: String(deal.g_drive || "").trim() || null,
     openSolarUrl: String(deal.os_project_link || deal.link_to_opensolar || "").trim() || null,
     openSolarId: String(deal.os_project_id || "").trim() || null,
