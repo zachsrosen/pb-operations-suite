@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import { ZuperClient, JOB_CATEGORY_UIDS, CONSTRUCTION_CATEGORY_UIDS } from "@/lib/zuper";
+import type { AssistedSchedulingSlot } from "@/lib/zuper";
 import { requireApiAuth } from "@/lib/api-auth";
 
 /**
@@ -34,11 +35,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Map type to category UID
-  const categoryMap: Record<string, string> = {
-    survey: JOB_CATEGORY_UIDS.SITE_SURVEY,
-    installation: JOB_CATEGORY_UIDS.CONSTRUCTION,
-    inspection: JOB_CATEGORY_UIDS.INSPECTION,
+  // Map type to category UIDs. installation/construction expands to all
+  // four construction sub-category UIDs so the assistant sees jobs in
+  // Construction + Solar/Battery/EV Install.
+  const categoryMap: Record<string, string[]> = {
+    survey: [JOB_CATEGORY_UIDS.SITE_SURVEY],
+    installation: [...CONSTRUCTION_CATEGORY_UIDS],
+    construction: [...CONSTRUCTION_CATEGORY_UIDS],
+    inspection: [JOB_CATEGORY_UIDS.INSPECTION],
   };
 
   // Map location to team UID (you may need to fetch these from Zuper or configure them)
@@ -50,23 +54,63 @@ export async function GET(request: NextRequest) {
     "Camarillo": "", // Add actual team UID
   };
 
-  const result = await zuper.getAssistedSchedulingSlots({
-    fromDate,
-    toDate,
-    jobCategory: type ? categoryMap[type] : undefined,
-    teamUid: teamUid || (location ? teamMap[location] : undefined),
-    duration: type === "survey" ? 120 : 480, // 2 hours for surveys, 8 hours for installs
-  });
+  const resolvedTeamUid = teamUid || (location ? teamMap[location] : undefined);
+  const duration = type === "survey" ? 120 : 480; // 2 hours for surveys, 8 hours for installs
+  const categoryUids = type ? categoryMap[type] : undefined;
 
-  if (result.type === "error") {
+  // Fan out a slot fetch per category UID (or a single unfiltered fetch when
+  // no type is supplied), then merge + dedupe slots so a slot that surfaces
+  // under multiple construction categories is only returned once.
+  const slotFetches = categoryUids && categoryUids.length > 0
+    ? categoryUids.map((uid) =>
+        zuper.getAssistedSchedulingSlots({
+          fromDate,
+          toDate,
+          jobCategory: uid,
+          teamUid: resolvedTeamUid,
+          duration,
+        })
+      )
+    : [
+        zuper.getAssistedSchedulingSlots({
+          fromDate,
+          toDate,
+          teamUid: resolvedTeamUid,
+          duration,
+        }),
+      ];
+
+  const slotResults = await Promise.all(slotFetches);
+
+  const mergedSlots = new Map<string, AssistedSchedulingSlot>();
+  let anySlotsSucceeded = false;
+  let firstSlotsError: string | undefined;
+  for (const r of slotResults) {
+    if (r.type === "success" && r.data) {
+      anySlotsSucceeded = true;
+      for (const slot of r.data) {
+        // Dedupe by a stable key derived from the slot. Slots have no UID,
+        // so use a JSON key over the whole shape — duplicates across category
+        // fetches will be byte-identical.
+        const key = JSON.stringify(slot);
+        if (!mergedSlots.has(key)) {
+          mergedSlots.set(key, slot);
+        }
+      }
+    } else if (!firstSlotsError) {
+      firstSlotsError = r.error;
+    }
+  }
+
+  if (!anySlotsSucceeded) {
     return NextResponse.json(
-      { error: result.error, slots: [] },
+      { error: firstSlotsError ?? "Failed to fetch slots", slots: [] },
       { status: 500 }
     );
   }
 
   return NextResponse.json({
-    slots: result.data || [],
+    slots: Array.from(mergedSlots.values()),
     fromDate,
     toDate,
     type,
