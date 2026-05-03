@@ -72,6 +72,13 @@ interface ProjectResult {
   openSolarUrl?: string | null;
   zuperUid?: string | null;
   hubspotContactId?: string | null;
+  /**
+   * Distinguishes deal-context vs ticket-context selections in the Service BOM
+   * tool. Defaults to "deal" for backward compatibility — only the Service
+   * Suite BOM page surfaces tickets, and ticket-context disables features that
+   * only apply to deals (push to HubSpot line items, create SO/PO).
+   */
+  kind?: "deal" | "ticket";
 }
 
 interface DriveFile {
@@ -912,7 +919,119 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch, onManu
 
 type ImportTab = "upload" | "drive" | "paste" | "project-files";
 
-function BomDashboardInner() {
+export interface BomPipelineConfig {
+  pipeline: "project" | "service";
+  title: string;
+  accentColor: string;
+  searchPlaceholder: string;
+  dashboardPath: string;
+  trackingName: string;
+  /** Whether the search dropdown also queries service tickets in addition to deals */
+  supportsTickets?: boolean;
+  /**
+   * Returns the URL to fetch search results from. The result is then run
+   * through `runSearch` (which may call multiple endpoints in parallel for
+   * pipelines that support tickets).
+   */
+  runSearch: (query: string) => Promise<ProjectResult[]>;
+  /** History GET endpoint, kind-aware so ticket BOMs use a parallel route. */
+  historyEndpoint: (id: string, kind: "deal" | "ticket") => string;
+  /** History/all GET endpoint for the inline "all snapshots" section. */
+  historyAllEndpoint: string;
+}
+
+async function runDealSearch(
+  query: string,
+  endpoint: (q: string) => string,
+  mapResults: (data: Record<string, unknown>) => ProjectResult[],
+): Promise<ProjectResult[]> {
+  const res = await fetch(endpoint(query));
+  if (!res.ok) return [];
+  const data = (await res.json()) as Record<string, unknown>;
+  return mapResults(data);
+}
+
+const PROJECT_PIPELINE_CONFIG: BomPipelineConfig = {
+  pipeline: "project",
+  title: "Planset BOM",
+  accentColor: "cyan",
+  searchPlaceholder: "🔍 Search for a HubSpot project…",
+  dashboardPath: "/dashboards/bom",
+  trackingName: "bom-tool",
+  supportsTickets: false,
+  runSearch: (query) =>
+    runDealSearch(
+      query,
+      (q) => `/api/projects?search=${encodeURIComponent(q)}&limit=8`,
+      (data) =>
+        ((data as { projects?: Array<{ id: number; name: string; address: string; designFolderUrl: string | null; driveUrl: string | null; openSolarUrl: string | null; zuperUid: string | null }> }).projects ?? []).map((p) => ({
+          hs_object_id: String(p.id),
+          dealname: p.name,
+          address: p.address,
+          designFolderUrl: p.designFolderUrl,
+          driveUrl: p.driveUrl,
+          openSolarUrl: p.openSolarUrl,
+          zuperUid: p.zuperUid,
+          kind: "deal" as const,
+        })),
+    ),
+  historyEndpoint: (id) => `/api/bom/history?dealId=${encodeURIComponent(id)}`,
+  historyAllEndpoint: "/api/bom/history/all",
+};
+
+export const SERVICE_PIPELINE_CONFIG: BomPipelineConfig = {
+  pipeline: "service",
+  title: "Service BOM",
+  accentColor: "red",
+  searchPlaceholder: "🔍 Search a service deal or ticket…",
+  dashboardPath: "/dashboards/service-bom",
+  trackingName: "service-bom-tool",
+  supportsTickets: true,
+  runSearch: async (query) => {
+    // Search service deals AND service tickets in parallel, merge results.
+    const [deals, tickets] = await Promise.all([
+      runDealSearch(
+        query,
+        (q) => `/api/deals?pipeline=service&search=${encodeURIComponent(q)}&limit=6`,
+        (data) =>
+          ((data as { deals?: Array<{ id: number; name: string; address: string }> }).deals ?? []).map((d) => ({
+            hs_object_id: String(d.id),
+            dealname: d.name,
+            address: d.address,
+            designFolderUrl: null, // populated on hydrate
+            driveUrl: null,
+            openSolarUrl: null,
+            zuperUid: null,
+            kind: "deal" as const,
+          })),
+      ),
+      // Tickets — search via /api/service/tickets which supports a `search` query param.
+      fetch(`/api/service/tickets?search=${encodeURIComponent(query)}`)
+        .then((r) => (r.ok ? r.json() : { tickets: [] }))
+        .then((data: { tickets?: Array<{ id: string; title: string; location?: string | null }> }) =>
+          (data.tickets ?? []).slice(0, 6).map((t) => ({
+            hs_object_id: t.id,
+            dealname: `🎫 ${t.title}`,
+            address: t.location ?? undefined,
+            designFolderUrl: null,
+            driveUrl: null,
+            openSolarUrl: null,
+            zuperUid: null,
+            kind: "ticket" as const,
+          }))
+        )
+        .catch(() => [] as ProjectResult[]),
+    ]);
+    return [...deals, ...tickets];
+  },
+  historyEndpoint: (id, kind) =>
+    kind === "ticket"
+      ? `/api/bom/ticket-history?ticketId=${encodeURIComponent(id)}`
+      : `/api/bom/history?dealId=${encodeURIComponent(id)}`,
+  historyAllEndpoint: "/api/bom/ticket-history/all",
+};
+
+export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: { pipelineConfig?: BomPipelineConfig } = {}) {
   const { addToast } = useToast();
   const { data: session } = useSession();
   const router = useRouter();
@@ -921,7 +1040,7 @@ function BomDashboardInner() {
 
   // Track page view on mount
   useEffect(() => {
-    trackDashboardView("bom-tool");
+    trackDashboardView(pipelineConfig.trackingName);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -993,6 +1112,11 @@ function BomDashboardInner() {
   const [allHistorySearch, setAllHistorySearch] = useState("");
   const diffRows = compareA && compareB ? diffBoms(compareA.bomData.items, compareB.bomData.items) : [];
 
+  // Ticket-context BOMs (Service Suite) don't yet support push-to-HubSpot,
+  // Zoho SO/PO creation, or design-folder/Drive-file scans the way deal BOMs
+  // do — extract + save snapshot is the supported flow for tickets.
+  const isTicketContext = (linkedProject?.kind ?? "deal") === "ticket";
+
   // Product catalog comparison data
   const [comparisonRows, setComparisonRows] = useState<ComparisonRow[]>([]);
   const [catalogHealth, setCatalogHealth] = useState<ProductComparisonResponse["health"] | null>(null);
@@ -1049,15 +1173,52 @@ function BomDashboardInner() {
       });
   }, [linkedProject?.dealname, linkedProject?.hubspotContactId, linkedProject?.address]);
 
-  const hydrateProjectDetails = useCallback(async (dealId: string): Promise<void> => {
-    const normalizedDealId = dealId.trim();
-    if (!normalizedDealId) return;
+  const hydrateProjectDetails = useCallback(async (
+    id: string,
+    kind: "deal" | "ticket" = "deal",
+  ): Promise<void> => {
+    const normalizedId = id.trim();
+    if (!normalizedId) return;
 
     projectHydrateAbortRef.current?.abort();
     const controller = new AbortController();
     projectHydrateAbortRef.current = controller;
 
-    const response = await fetch(`/api/projects/${encodeURIComponent(normalizedDealId)}`, {
+    if (kind === "ticket") {
+      // Service ticket hydration — pull subject + folderUrl from ticket detail.
+      const response = await fetch(`/api/service/tickets/${encodeURIComponent(normalizedId)}`, {
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`Failed to load ticket (${response.status})`);
+
+      const data = await response.json() as {
+        ticket: {
+          id: string;
+          subject: string;
+          location: string | null;
+          folderUrl: string | null;
+        };
+      };
+
+      if (controller.signal.aborted) return;
+
+      const t = data.ticket;
+      setLinkedProject((prev) => ({
+        ...(prev ?? {}),
+        hs_object_id: t.id,
+        dealname: `🎫 ${t.subject}`,
+        address: t.location ?? undefined,
+        designFolderUrl: t.folderUrl,
+        driveUrl: null,
+        openSolarUrl: null,
+        zuperUid: null,
+        hubspotContactId: null,
+        kind: "ticket",
+      }));
+      return;
+    }
+
+    const response = await fetch(`/api/projects/${encodeURIComponent(normalizedId)}`, {
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`Failed to load project (${response.status})`);
@@ -1089,13 +1250,14 @@ function BomDashboardInner() {
         openSolarUrl: p.openSolarUrl,
         zuperUid: p.zuperUid,
         hubspotContactId: p.hubspotContactId ?? null,
+        kind: "deal",
       };
     });
   }, []);
 
   /* ---- Fetch all BOM history for inline section ---- */
   useEffect(() => {
-    fetch("/api/bom/history/all")
+    fetch(pipelineConfig.historyAllEndpoint)
       .then((r) => r.json())
       .then((data: { snapshots?: typeof allSnapshots }) => {
         setAllSnapshots(data.snapshots ?? []);
@@ -1142,12 +1304,15 @@ function BomDashboardInner() {
     setCatalogStatus(buildCatalogStatus(items, comparisonRows));
   }, [items, comparisonRows]);
 
-  /* ---- Load deal from ?deal= URL param on mount ---- */
+  /* ---- Load deal/ticket from ?deal= or ?ticket= URL param on mount ---- */
   useEffect(() => {
+    const ticketId = searchParams.get("ticket");
     const dealId = searchParams.get("deal");
-    if (!dealId) return;
+    const id = ticketId ?? dealId;
+    if (!id) return;
+    const kind: "deal" | "ticket" = ticketId ? "ticket" : "deal";
     setDealLoading(true);
-    hydrateProjectDetails(dealId)
+    hydrateProjectDetails(id, kind)
       .catch(() => {/* silent — bad param, just ignore */})
       .finally(() => setDealLoading(false));
   }, [searchParams, hydrateProjectDetails]);
@@ -1196,7 +1361,7 @@ function BomDashboardInner() {
     }
     setHistoryLoading(true);
     const autoLoad = searchParams.get("load") === "latest";
-    fetch(`/api/bom/history?dealId=${encodeURIComponent(linkedProject.hs_object_id)}`)
+    fetch(pipelineConfig.historyEndpoint(linkedProject.hs_object_id, linkedProject.kind ?? "deal"))
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: { snapshots: BomSnapshot[] }) => {
         setSnapshots(data.snapshots);
@@ -1283,11 +1448,9 @@ function BomDashboardInner() {
     if (!query) return;
 
     let cancelled = false;
-    fetch(`/api/projects?search=${encodeURIComponent(query)}&limit=5`)
-      .then((r) => r.json())
-      .then((data: { projects?: ProjectResult[] }) => {
+    pipelineConfig.runSearch(query)
+      .then((results) => {
         if (cancelled) return;
-        const results: ProjectResult[] = data.projects ?? [];
         // Normalize BOM address to street-only, e.g. "1617 rancho way"
         const bomStreet = rawAddress.split(",")[0].trim().toLowerCase();
         // Last name from BOM customer, e.g. "SILFVEN, ERIK" → "silfven"
@@ -1331,16 +1494,27 @@ function BomDashboardInner() {
     if (!targetProject) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/bom/history", {
+      const isTicket = (targetProject.kind ?? "deal") === "ticket";
+      const saveUrl = isTicket ? "/api/bom/ticket-history" : "/api/bom/history";
+      const saveBody = isTicket
+        ? {
+            ticketId: targetProject.hs_object_id,
+            ticketSubject: targetProject.dealname,
+            bomData,
+            sourceFile,
+            blobUrl,
+          }
+        : {
+            dealId: targetProject.hs_object_id,
+            dealName: targetProject.dealname,
+            bomData,
+            sourceFile,
+            blobUrl,
+          };
+      const res = await fetch(saveUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dealId: targetProject.hs_object_id,
-          dealName: targetProject.dealname,
-          bomData,
-          sourceFile,
-          blobUrl,
-        }),
+        body: JSON.stringify(saveBody),
       });
       if (!res.ok) throw new Error(`Save failed (${res.status})`);
       const saved = await res.json() as { id: string; version: number; createdAt: string };
@@ -1358,8 +1532,10 @@ function BomDashboardInner() {
       setCustomerMatchMethod(null);
       customerManuallySet.current = false;
       runCustomerAutoMatch();
-      // Reload history list
-      const histRes = await fetch(`/api/bom/history?dealId=${encodeURIComponent(targetProject.hs_object_id)}`);
+      // Reload history list — kind-aware so ticket BOMs use the ticket history endpoint.
+      const histRes = await fetch(
+        pipelineConfig.historyEndpoint(targetProject.hs_object_id, targetProject.kind ?? "deal"),
+      );
       if (histRes.ok) {
         const histData = await histRes.json() as { snapshots: BomSnapshot[] };
         setSnapshots(histData.snapshots);
@@ -1881,25 +2057,16 @@ function BomDashboardInner() {
     searchTimeout.current = setTimeout(async () => {
       setSearchLoading(true);
       try {
-        const res = await fetch(`/api/projects?search=${encodeURIComponent(query)}&limit=8`);
-        if (res.ok) {
-          const data = await res.json() as { projects: Array<{ id: number; name: string; address: string; designFolderUrl: string | null; driveUrl: string | null; openSolarUrl: string | null; zuperUid: string | null }> };
-          setProjectResults((data.projects || []).map((p) => ({
-            hs_object_id: String(p.id),
-            dealname: p.name,
-            address: p.address,
-            designFolderUrl: p.designFolderUrl,
-            driveUrl: p.driveUrl,
-            openSolarUrl: p.openSolarUrl,
-            zuperUid: p.zuperUid,
-          })));
-        }
+        const results = await pipelineConfig.runSearch(query);
+        setProjectResults(results);
       } catch {
         // silently ignore
       } finally {
         setSearchLoading(false);
       }
     }, 300);
+  // pipelineConfig is stable (module-level constant) — safe to omit
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ---- Internal SKU best match per BOM item (token-based) ---- */
@@ -2306,7 +2473,7 @@ function BomDashboardInner() {
           th, td { border: 1px solid #e5e7eb; padding: 4px 8px; font-size: 11px; }
         }
       `}</style>
-      <DashboardShell title="Planset BOM" accentColor="cyan">
+      <DashboardShell title={pipelineConfig.title} accentColor={pipelineConfig.accentColor}>
       <div className="space-y-6 px-4 pb-10">
 
         {/* ---- Import Panel ---- */}
@@ -2347,7 +2514,7 @@ function BomDashboardInner() {
                 <div className="relative flex-1">
                   <input
                     type="text"
-                    placeholder="🔍 Search for a HubSpot project…"
+                    placeholder={pipelineConfig.searchPlaceholder}
                     value={projectSearch}
                     onChange={(e) => handleProjectSearch(e.target.value)}
                     className="w-full rounded-lg bg-surface border border-t-border text-sm text-foreground px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 placeholder:text-muted"
@@ -2363,10 +2530,12 @@ function BomDashboardInner() {
                           onClick={() => {
                             setLinkedProject(p);
                             setDealLoading(true);
-                            hydrateProjectDetails(p.hs_object_id)
+                            const kind = p.kind ?? "deal";
+                            hydrateProjectDetails(p.hs_object_id, kind)
                               .catch(() => { /* silent */ })
                               .finally(() => setDealLoading(false));
-                            router.replace(`/dashboards/bom?deal=${encodeURIComponent(p.hs_object_id)}`);
+                            const param = kind === "ticket" ? "ticket" : "deal";
+                            router.replace(`${pipelineConfig.dashboardPath}?${param}=${encodeURIComponent(p.hs_object_id)}`);
                             setProjectSearch("");
                             setProjectResults([]);
                           }}
@@ -2711,7 +2880,9 @@ function BomDashboardInner() {
                   <button
                     onClick={() => {
                       // Navigate via URL so the effect fetches fresh HubSpot data
-                      router.replace(`/dashboards/bom?deal=${encodeURIComponent(autoLinkSuggestion.hs_object_id)}`);
+                      const kind = autoLinkSuggestion.kind ?? "deal";
+                      const param = kind === "ticket" ? "ticket" : "deal";
+                      router.replace(`${pipelineConfig.dashboardPath}?${param}=${encodeURIComponent(autoLinkSuggestion.hs_object_id)}`);
                       setAutoLinkSuggestion(null);
                     }}
                     className="text-xs bg-cyan-600 text-white px-3 py-1 rounded-lg hover:bg-cyan-700 transition-colors"
@@ -2729,9 +2900,11 @@ function BomDashboardInner() {
             )}
 
 
-            {/* Project Link */}
+            {/* Project / Ticket Link */}
             <div className="rounded-xl bg-surface border border-t-border p-5 shadow-card">
-              <h3 className="text-sm font-semibold text-foreground mb-3">Link to HubSpot Project</h3>
+              <h3 className="text-sm font-semibold text-foreground mb-3">
+                {pipelineConfig.supportsTickets ? "Link to HubSpot Deal or Ticket" : "Link to HubSpot Project"}
+              </h3>
               {linkedProject ? (
                 <>
                 <div className="flex items-center gap-3 flex-wrap">
@@ -2756,12 +2929,12 @@ function BomDashboardInner() {
                       Save current BOM
                     </button>
                   )}
-                  {!savedVersion && !saving && (
+                  {!savedVersion && !saving && !isTicketContext && (
                     <span className="text-xs text-amber-600 dark:text-amber-400">
                       Save current BOM to enable Zoho PO/SO actions.
                     </span>
                   )}
-                  {savedVersion && (
+                  {savedVersion && !isTicketContext && (
                     <div className="flex flex-col gap-2">
                       {zohoPurchaseOrders && zohoPurchaseOrders.length > 0 ? (
                         <div className="flex flex-col gap-1">
@@ -2855,8 +3028,8 @@ function BomDashboardInner() {
                         : "Zoho vendors unavailable (or none found)."}
                     </span>
                   )}
-                  {/* Zoho SO — show when saved */}
-                  {savedVersion && (
+                  {/* Zoho SO — deal-only; tickets don't drive sales orders. */}
+                  {savedVersion && !isTicketContext && (
                     zohoSoId ? (
                       <a
                         href={getZohoSalesOrderUrl(zohoSoId)}
@@ -2902,8 +3075,10 @@ function BomDashboardInner() {
                       Retry Zoho vendors
                     </button>
                   )}
-                  {/* HubSpot Push */}
-                  {savedSnapshotId && (
+                  {/* HubSpot Push \u2014 deal-only; tickets save snapshots without
+                      pushing line items, since tickets don't have line-item
+                      pushes the same way deals do. */}
+                  {savedSnapshotId && !isTicketContext && (
                     <button
                       onClick={pushToHubspot}
                       disabled={pushingToHubspot}
@@ -2914,7 +3089,7 @@ function BomDashboardInner() {
                     </button>
                   )}
                   <button
-                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setSavedSnapshotId(null); setHubspotPushResult(null); setZohoPurchaseOrders(null); setPoPreview(null); setPoFailures([]); setZohoVendors(null); setZohoSoId(null); setUnassignedVendorId(""); setSelectedCustomerId(""); setSelectedCustomerName(""); setCustomerMatchMethod(null); router.replace("/dashboards/bom"); }}
+                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setSavedSnapshotId(null); setHubspotPushResult(null); setZohoPurchaseOrders(null); setPoPreview(null); setPoFailures([]); setZohoVendors(null); setZohoSoId(null); setUnassignedVendorId(""); setSelectedCustomerId(""); setSelectedCustomerName(""); setCustomerMatchMethod(null); router.replace(pipelineConfig.dashboardPath); }}
                     className="text-xs text-muted hover:text-foreground"
                   >
                     Unlink
@@ -2967,9 +3142,11 @@ function BomDashboardInner() {
                         <button
                           key={p.hs_object_id}
                           onClick={() => {
-                            // Navigate via URL — the ?deal= effect fetches fresh HubSpot
-                            // data so designFolderUrl is always up-to-date.
-                            router.replace(`/dashboards/bom?deal=${encodeURIComponent(p.hs_object_id)}`);
+                            // Navigate via URL — the ?deal=/?ticket= effect fetches
+                            // fresh data so the folder link is always up-to-date.
+                            const kind = p.kind ?? "deal";
+                            const param = kind === "ticket" ? "ticket" : "deal";
+                            router.replace(`${pipelineConfig.dashboardPath}?${param}=${encodeURIComponent(p.hs_object_id)}`);
                             setProjectSearch("");
                             setProjectResults([]);
                             setSavedVersion(null);
@@ -3644,7 +3821,7 @@ function BomDashboardInner() {
         onSelect={(snap) => {
           if (linkedProject?.hs_object_id === snap.dealId) {
             setHistoryLoading(true);
-            fetch(`/api/bom/history?dealId=${encodeURIComponent(snap.dealId)}`)
+            fetch(pipelineConfig.historyEndpoint(snap.dealId, linkedProject.kind ?? "deal"))
               .then((r) => r.ok ? r.json() : Promise.reject(r.status))
               .then((data: { snapshots: BomSnapshot[] }) => {
                 setSnapshots(data.snapshots);
@@ -3662,7 +3839,10 @@ function BomDashboardInner() {
               .catch(() => {/* silent */})
               .finally(() => setHistoryLoading(false));
           } else {
-            router.push(`/dashboards/bom?deal=${snap.dealId}&load=latest`);
+            // For the service-bom page the inline history is ticket-keyed; for
+            // the project-bom page it's deal-keyed.
+            const param = pipelineConfig.supportsTickets ? "ticket" : "deal";
+            router.push(`${pipelineConfig.dashboardPath}?${param}=${snap.dealId}&load=latest`);
           }
         }}
       />

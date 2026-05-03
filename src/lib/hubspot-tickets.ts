@@ -64,6 +64,8 @@ export interface TicketDetail {
   ownerId: string | null;
   location: string | null;
   url: string;
+  /** Google Drive folder URL or bare ID — from ticket_documents / ticket_document_folder_id */
+  folderUrl: string | null;
   associations: {
     contacts: Array<{ id: string; name: string; email: string }>;
     deals: Array<{
@@ -101,6 +103,8 @@ const TICKET_PROPERTIES = [
   "notes_last_contacted",
   "hubspot_owner_id",
   "service_type",
+  "ticket_documents",          // Drive folder URL for ticket docs (preferred)
+  "ticket_document_folder_id", // bare folder ID fallback
 ];
 
 // ---------------------------------------------------------------------------
@@ -674,6 +678,8 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
       ownerId: props.hubspot_owner_id || null,
       location: derivedLocation,
       url: `https://app.hubspot.com/contacts/${PORTAL_ID}/ticket/${ticket.id}`,
+      folderUrl:
+        String(props.ticket_documents || props.ticket_document_folder_id || "").trim() || null,
       associations: { contacts, deals, companies },
       timeline,
     };
