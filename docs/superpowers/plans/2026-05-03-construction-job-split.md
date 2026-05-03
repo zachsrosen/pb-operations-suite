@@ -779,13 +779,587 @@ EOF
 
 ---
 
-## Chunk Boundary
+## Chunk 2: Cache helper + status comparison + metrics
 
-This is the end of the first chunk. Pause here for plan-document review before proceeding to Chunk 2.
+The remaining bug-fix call sites (besides Revenue Calendar): `getCachedZuperJobsByDealIds(..., "Construction")` callers, and the Zuper Status Comparison route which fetches by single category UID.
 
-The remaining chunks will cover:
-- **Chunk 2:** Google Calendar consolidation, photos endpoint, status comparison (the real bug fixes)
-- **Chunk 3:** Mechanical category-mapping updates (lookup, availability, scheduling, compliance)
-- **Chunk 4:** Env var setup, deployment, rollout monitoring
+Note: `src/app/api/deals/[dealId]/photos/route.ts` was reviewed and found to already use `findMany` without a category filter, so photos from all sub-jobs are naturally aggregated. **No change needed for photos.**
 
 ---
+
+### Task 4: Update `getCachedZuperJobByDealId` and `getCachedZuperJobsByDealIds` to accept category arrays
+
+**Files:**
+- Modify: `src/lib/db.ts` (lines ~649–673)
+- Modify: `src/app/api/hubspot/qc-metrics/route.ts:140`
+- Modify: `src/app/api/hubspot/inspection-metrics/route.ts:347`
+- Modify: `src/app/api/zuper/jobs/lookup/route.ts:339` (passes `categoryForDb` — verify upstream)
+
+**Why:** these helpers currently take a single `category?: string`. Callers passing `"Construction"` silently miss the new sub-jobs. The cleanest fix is to accept either a string OR an array of strings, with backwards-compatible behavior.
+
+- [ ] **Step 4.1: Read the current helpers**
+
+```bash
+sed -n '645,675p' src/lib/db.ts
+```
+
+- [ ] **Step 4.2: Widen the signature to accept `string | string[]`**
+
+In `src/lib/db.ts`, replace the two helper functions:
+
+```ts
+/**
+ * Get cached Zuper job by HubSpot deal ID.
+ *
+ * @param category - either a single category name (legacy) or an array of
+ *   category names (e.g. all four construction categories). When passing a
+ *   string, behavior is unchanged from before. When passing an array, returns
+ *   the most recent matching job across any category in the array.
+ */
+export async function getCachedZuperJobByDealId(dealId: string, category?: string | string[]) {
+  if (!prisma) return null;
+
+  const categoryFilter = Array.isArray(category)
+    ? { jobCategory: { in: category } }
+    : category
+      ? { jobCategory: category }
+      : {};
+
+  return prisma.zuperJobCache.findFirst({
+    where: {
+      hubspotDealId: dealId,
+      ...categoryFilter,
+    },
+    orderBy: { lastSyncedAt: "desc" },
+  });
+}
+
+/**
+ * Get cached Zuper jobs by HubSpot deal IDs (bulk lookup).
+ *
+ * @param category - same semantics as getCachedZuperJobByDealId.
+ */
+export async function getCachedZuperJobsByDealIds(dealIds: string[], category?: string | string[]) {
+  if (!prisma) return [];
+
+  const categoryFilter = Array.isArray(category)
+    ? { jobCategory: { in: category } }
+    : category
+      ? { jobCategory: category }
+      : {};
+
+  return prisma.zuperJobCache.findMany({
+    where: {
+      hubspotDealId: { in: dealIds },
+      ...categoryFilter,
+    },
+  });
+}
+```
+
+- [ ] **Step 4.3: Update QC metrics caller to pass the union**
+
+In `src/app/api/hubspot/qc-metrics/route.ts` line 140:
+
+```ts
+// Before
+const zuperJobs = await getCachedZuperJobsByDealIds(dealIds, "Construction");
+
+// After — import CONSTRUCTION_CATEGORY_NAMES from lib/zuper, then:
+const zuperJobs = await getCachedZuperJobsByDealIds(dealIds, [...CONSTRUCTION_CATEGORY_NAMES]);
+```
+
+Add the import at the top of the file:
+
+```ts
+import { CONSTRUCTION_CATEGORY_NAMES } from "@/lib/zuper";
+```
+
+- [ ] **Step 4.4: Update inspection metrics caller**
+
+`src/app/api/hubspot/inspection-metrics/route.ts:347` is more nuanced — review the surrounding code first:
+
+```bash
+sed -n '340,360p' src/app/api/hubspot/inspection-metrics/route.ts
+```
+
+If it uses the result to compute "did construction happen for this deal?", the union pass is correct (any construction sub-job counts). Apply the same edit as Step 4.3.
+
+- [ ] **Step 4.5: Update lookup endpoint**
+
+`src/app/api/zuper/jobs/lookup/route.ts:339` passes a `categoryForDb` variable derived from a `type` query param. Read the upstream logic:
+
+```bash
+sed -n '40,75p' src/app/api/zuper/jobs/lookup/route.ts
+```
+
+Where `type === "installation"` maps to `JOB_CATEGORIES.CONSTRUCTION`, change it to map to the full `[...CONSTRUCTION_CATEGORY_NAMES]` array, and pass that array down to `getCachedZuperJobsByDealIds`. Adjust types as needed; `categoryForDb` becomes `string | string[]`.
+
+- [ ] **Step 4.6: Run lint + typecheck**
+
+```bash
+npx eslint src/lib/db.ts src/app/api/hubspot/qc-metrics/route.ts src/app/api/hubspot/inspection-metrics/route.ts src/app/api/zuper/jobs/lookup/route.ts
+npx tsc --noEmit -p tsconfig.json 2>&1 | grep -E "db.ts|qc-metrics|inspection-metrics|lookup/route" | head -20
+```
+
+Expected: clean.
+
+- [ ] **Step 4.7: Commit**
+
+```bash
+git add src/lib/db.ts src/app/api/hubspot/qc-metrics/route.ts src/app/api/hubspot/inspection-metrics/route.ts src/app/api/zuper/jobs/lookup/route.ts
+git commit -m "$(cat <<'EOF'
+fix(cache): widen ZuperJobCache helpers to accept category arrays
+
+getCachedZuperJobByDealId / getCachedZuperJobsByDealIds now
+accept string | string[] for the category filter. Callers can
+pass CONSTRUCTION_CATEGORY_NAMES to include legacy + Solar +
+Battery + EV sub-jobs.
+
+Updates QC metrics, inspection metrics, and the jobs/lookup
+endpoint to use the union — these would have silently dropped
+new sub-jobs otherwise.
+
+Spec: docs/superpowers/specs/2026-05-03-construction-job-split-design.md
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+### Task 5: Status Comparison route — fetch all four categories
+
+**Files:**
+- Modify: `src/app/api/zuper/status-comparison/route.ts:599, 734, 1020`
+
+**Why:** the status comparison fetches Zuper jobs by single category UID. With three references to `JOB_CATEGORY_UIDS.CONSTRUCTION`, only legacy jobs are pulled. New sub-jobs are silently dropped from the dashboard.
+
+- [ ] **Step 5.1: Inspect each call site**
+
+```bash
+sed -n '590,610p' src/app/api/zuper/status-comparison/route.ts
+sed -n '725,745p' src/app/api/zuper/status-comparison/route.ts
+sed -n '1010,1030p' src/app/api/zuper/status-comparison/route.ts
+```
+
+Determine for each:
+- Is it filtering input or doing a simple UID equality?
+- Is it fetching jobs from Zuper API (UID-keyed) or from cache (name-keyed)?
+
+- [ ] **Step 5.2: Replace single-UID checks with array-includes**
+
+Pattern:
+
+```ts
+// Before
+} else if (categoryForMapping === JOB_CATEGORY_UIDS.CONSTRUCTION) {
+
+// After
+} else if (CONSTRUCTION_CATEGORY_UIDS.includes(categoryForMapping)) {
+```
+
+```ts
+// Before
+fetchAllZuperJobs(JOB_CATEGORY_UIDS.CONSTRUCTION, fromDate, toDate),
+
+// After — fetch each construction UID, then concat
+...await Promise.all(
+  CONSTRUCTION_CATEGORY_UIDS.map((uid) => fetchAllZuperJobs(uid, fromDate, toDate))
+).then((arrays) => arrays.flat()),
+```
+
+The exact transformation depends on how the result is consumed downstream. **Do not** blindly apply; read the surrounding function signature first.
+
+- [ ] **Step 5.3: Add the import**
+
+```ts
+import { CONSTRUCTION_CATEGORY_UIDS } from "@/lib/zuper";
+```
+
+- [ ] **Step 5.4: Run lint, typecheck, and any existing tests**
+
+```bash
+npx eslint src/app/api/zuper/status-comparison/route.ts
+npx tsc --noEmit -p tsconfig.json 2>&1 | grep status-comparison | head -10
+npm run test -- --testPathPattern="status-comparison" 2>&1 | tail -10
+```
+
+Expected: clean. (No matching test file is fine.)
+
+- [ ] **Step 5.5: Manual smoke test**
+
+Hit `/dashboards/zuper-status-comparison` in dev and verify the construction column counts match expectations for a known multi-job deal.
+
+- [ ] **Step 5.6: Commit**
+
+```bash
+git add src/app/api/zuper/status-comparison/route.ts
+git commit -m "$(cat <<'EOF'
+fix(status-comparison): include all four construction categories
+
+Replaces three single-UID equality checks against
+JOB_CATEGORY_UIDS.CONSTRUCTION with CONSTRUCTION_CATEGORY_UIDS
+union membership. Without this, jobs in the new sub-categories
+(Construction - Solar/Battery/EV) were silently dropped from
+the status comparison dashboard.
+
+Spec: docs/superpowers/specs/2026-05-03-construction-job-split-design.md
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+### Task 6: Google Calendar event title and description
+
+**Files:**
+- Modify: `src/lib/google-calendar.ts` (the `upsertInstallationCalendarEvent` function and its event-body builder)
+
+**Why:** currently the event ID is keyed on `dealId` (good — already deal-level), but the title and description don't reflect the new system breakdown. After the split, an installer reading the calendar should see "this property is getting Solar + Battery on May 12-13" not "Install: Smith Residence".
+
+- [ ] **Step 6.1: Read the current function**
+
+```bash
+grep -n "upsertInstallationCalendarEvent\|install.*event" src/lib/google-calendar.ts | head -10
+sed -n '730,800p' src/lib/google-calendar.ts
+```
+
+Note the current title/description format and the function signature.
+
+- [ ] **Step 6.2: Find all call sites**
+
+```bash
+grep -rn "upsertInstallationCalendarEvent" src/ --include="*.ts" --include="*.tsx" | grep -v node_modules | head -10
+```
+
+You'll be updating these in the same PR (no transitional shim per spec).
+
+- [ ] **Step 6.3: Decide on the integration approach**
+
+Two viable options — pick whichever requires fewer call site changes:
+
+**Option A:** Keep the current signature, but add an optional `systemTypes?: string[]` parameter. When provided, the title becomes `"Install — ${name} (${systemTypes.join(", ")})"`. Callers that have access to a `DealConstructionAggregate` pass the system types; callers that don't pass nothing (legacy behavior).
+
+**Option B:** Take a `DealConstructionAggregate` directly. Cleaner semantics but requires every caller to construct or have access to one.
+
+Given that not every calendar caller will have an aggregate handy (some come from raw HubSpot deal data), **Option A is preferred.**
+
+- [ ] **Step 6.4: Implement Option A**
+
+In `src/lib/google-calendar.ts`, add `systemTypes?: string[]` (or a similar named parameter) to the function. In the event title builder:
+
+```ts
+const baseTitle = `Install — ${dealName}`;
+const titleWithSystems =
+  systemTypes && systemTypes.length > 0
+    ? `${baseTitle} (${systemTypes.join(", ")})`
+    : baseTitle;
+const title = titleWithSystems.length > 80 ? baseTitle : titleWithSystems;
+```
+
+In the description builder, append a "Systems:" line listing each system type with its assigned crew (if available).
+
+- [ ] **Step 6.5: Update construction-scheduler caller(s)**
+
+For each caller of `upsertInstallationCalendarEvent`, if construction sub-job context is available (e.g. via `groupConstructionJobsByDeal()` of the cache rows for the deal), pass `systemTypes`. Otherwise leave the new param undefined.
+
+- [ ] **Step 6.6: Lint + typecheck**
+
+```bash
+npx eslint src/lib/google-calendar.ts
+npx tsc --noEmit -p tsconfig.json 2>&1 | grep google-calendar | head -10
+```
+
+- [ ] **Step 6.7: Manual test (skip if Google Calendar isn't reachable in dev)**
+
+Trigger one calendar upsert path that you've changed and confirm the resulting event title in the calendar UI.
+
+- [ ] **Step 6.8: Commit**
+
+```bash
+git add src/lib/google-calendar.ts $(git diff --name-only -- 'src/app/**/*calendar*')
+git commit -m "$(cat <<'EOF'
+feat(calendar): show system types on install events
+
+Adds optional systemTypes param to upsertInstallationCalendarEvent.
+Callers that have a DealConstructionAggregate pass the types, so
+events are labeled "Install — Smith Residence (Solar, Battery)"
+instead of just "Install — Smith Residence".
+
+Falls back to the unlabeled title if the combined string exceeds
+80 chars (per spec).
+
+Spec: docs/superpowers/specs/2026-05-03-construction-job-split-design.md
+
+Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+## Chunk 3: Mechanical category-mapping updates
+
+These call sites currently map the `installation` job-type concept to a single `JOB_CATEGORY_UIDS.CONSTRUCTION` value. Each needs to expand to the full union. Most are one- or two-line edits.
+
+---
+
+### Task 7: Availability endpoint
+
+**Files:**
+- Modify: `src/app/api/zuper/availability/route.ts:385–386`
+
+- [ ] **Step 7.1: Read the existing mapping**
+
+```bash
+sed -n '380,395p' src/app/api/zuper/availability/route.ts
+```
+
+- [ ] **Step 7.2: Determine consumer expectations**
+
+The `installation` key likely returns capacity info for one category. With four categories now, decide:
+- (a) Sum across the four categories (each capacity slot counts once)
+- (b) Return per-category capacity (changes the response shape — high risk)
+
+**Choose (a)** — preserves the existing API shape. Aggregate counts across the four UIDs.
+
+- [ ] **Step 7.3: Edit the mapping to use the union**
+
+Replace:
+```ts
+installation: JOB_CATEGORY_UIDS.CONSTRUCTION,
+construction: JOB_CATEGORY_UIDS.CONSTRUCTION,
+```
+with logic that fetches/sums across `CONSTRUCTION_CATEGORY_UIDS`. Exact edit depends on the calling code structure — read before changing.
+
+- [ ] **Step 7.4: Lint, typecheck, commit**
+
+```bash
+npx eslint src/app/api/zuper/availability/route.ts
+npx tsc --noEmit -p tsconfig.json 2>&1 | grep availability | head -5
+
+git add src/app/api/zuper/availability/route.ts
+git commit -m "fix(availability): aggregate capacity across all construction categories"
+```
+
+---
+
+### Task 8: Assisted scheduling endpoint
+
+**Files:**
+- Modify: `src/app/api/zuper/assisted-scheduling/route.ts:40`
+
+Same shape as Task 7 — mapping `installation: JOB_CATEGORY_UIDS.CONSTRUCTION` needs to expand. Apply the same pattern.
+
+- [ ] **Step 8.1: Read, edit, lint, commit (one cycle, mirrors Task 7)**
+
+```bash
+sed -n '35,55p' src/app/api/zuper/assisted-scheduling/route.ts
+# edit, then:
+npx eslint src/app/api/zuper/assisted-scheduling/route.ts
+git add src/app/api/zuper/assisted-scheduling/route.ts
+git commit -m "fix(assisted-scheduling): map installation to all construction categories"
+```
+
+---
+
+### Task 9: Job schedule + confirm routes — pick the default sub-category
+
+**Files:**
+- Modify: `src/app/api/zuper/jobs/schedule/route.ts:267, 274, 535, 1267`
+- Modify: `src/app/api/zuper/jobs/schedule/confirm/route.ts:46, 53`
+
+**Why this is different:** these routes CREATE jobs (or interact with creation flows). The HubSpot workflow now creates split jobs, so app-side creation paths may be dead code OR may still serve a purpose (manual scheduling fallback). Decision required.
+
+- [ ] **Step 9.1: Determine if these creation paths are dead**
+
+```bash
+grep -rn "/api/zuper/jobs/schedule\b" src/app --include="*.ts" --include="*.tsx" | grep -v "schedule/" | head -10
+```
+
+Look for callers — UI buttons, programmatic invocations. If only triggered by a UI flow that also creates HubSpot deals (which would then trigger the workflow), consider these dead. If they support manual scheduling outside the workflow, they're alive.
+
+- [ ] **Step 9.2: If dead → mark for removal in a follow-up PR**
+
+Add a TODO comment at the top of each file:
+
+```ts
+// TODO(2026-05-XX): construction-job-split — verify these routes are dead
+// post-cutover. The HubSpot workflow now owns Zuper construction job creation.
+// If still needed, decide which sub-category default to create.
+```
+
+Skip Steps 9.3–9.5; proceed to Task 10.
+
+- [ ] **Step 9.3: If alive → default to `Construction - Solar`**
+
+Most installations include solar (per the user's earlier brainstorming answer that Solar is the most common system). Replace the hardcoded `JOB_CATEGORY_UIDS.CONSTRUCTION` with `JOB_CATEGORY_UIDS.SOLAR_INSTALL` and the matching display name.
+
+- [ ] **Step 9.4: Lint + typecheck**
+
+```bash
+npx eslint src/app/api/zuper/jobs/schedule/route.ts src/app/api/zuper/jobs/schedule/confirm/route.ts
+npx tsc --noEmit -p tsconfig.json 2>&1 | grep "jobs/schedule" | head -10
+```
+
+- [ ] **Step 9.5: Commit**
+
+```bash
+git add src/app/api/zuper/jobs/schedule/route.ts src/app/api/zuper/jobs/schedule/confirm/route.ts
+git commit -m "feat(scheduling): default manual-schedule installation to Construction - Solar"
+```
+
+---
+
+### Task 10: Compliance scoring maps
+
+**Files:**
+- Modify: `src/lib/compliance-v2/scoring.ts:37`
+- Modify: `src/lib/compliance-compute.ts:111`
+
+Both files contain a `CATEGORY_NAME_TO_UID` lookup map. Add three entries.
+
+- [ ] **Step 10.1: Edit `src/lib/compliance-v2/scoring.ts`**
+
+Locate `CATEGORY_NAME_TO_UID` and add:
+
+```ts
+"Construction - Solar": JOB_CATEGORY_UIDS.SOLAR_INSTALL,
+"Construction - Battery": JOB_CATEGORY_UIDS.BATTERY_INSTALL,
+"Construction - EV": JOB_CATEGORY_UIDS.EV_INSTALL,
+```
+
+- [ ] **Step 10.2: Edit `src/lib/compliance-compute.ts`**
+
+Same edit pattern — add three entries to the existing map.
+
+- [ ] **Step 10.3: Lint + typecheck**
+
+```bash
+npx eslint src/lib/compliance-v2/scoring.ts src/lib/compliance-compute.ts
+npx tsc --noEmit -p tsconfig.json 2>&1 | grep -E "compliance-v2|compliance-compute" | head -5
+```
+
+- [ ] **Step 10.4: Commit**
+
+```bash
+git add src/lib/compliance-v2/scoring.ts src/lib/compliance-compute.ts
+git commit -m "feat(compliance): include new construction sub-categories in scoring map"
+```
+
+---
+
+## Chunk 4: Env vars, deployment, monitoring
+
+### Task 11: Add env vars and `.env.example`
+
+**Files:**
+- Modify: `.env.example`
+- Vercel production env (manual via `vercel env add` or dashboard)
+
+- [ ] **Step 11.1: Add three env var stubs to `.env.example`**
+
+```bash
+cat >> .env.example <<'EOF'
+
+# Zuper construction sub-category UIDs (Solar/Battery/EV split)
+# Set these to the UIDs from the Zuper admin panel.
+ZUPER_CATEGORY_SOLAR_INSTALL=
+ZUPER_CATEGORY_BATTERY_INSTALL=
+ZUPER_CATEGORY_EV_INSTALL=
+
+# Feature flag — set to "false" to disable the multi-category split
+# (rollback path; default behavior is enabled)
+CONSTRUCTION_JOB_SPLIT_ENABLED=true
+EOF
+```
+
+- [ ] **Step 11.2: Set the production env vars**
+
+Use the values you collected in Step 0c. `printf` (NOT echo — see memory `feedback_vercel_env_no_echo.md`):
+
+```bash
+# For each of the three:
+printf '%s' '<actual-uid-from-zuper>' | vercel env add ZUPER_CATEGORY_SOLAR_INSTALL production
+printf '%s' '<actual-uid-from-zuper>' | vercel env add ZUPER_CATEGORY_BATTERY_INSTALL production
+printf '%s' '<actual-uid-from-zuper>' | vercel env add ZUPER_CATEGORY_EV_INSTALL production
+printf '%s' 'true' | vercel env add CONSTRUCTION_JOB_SPLIT_ENABLED production
+```
+
+- [ ] **Step 11.3: Verify with `vercel env pull`**
+
+```bash
+vercel env pull .env.production.local --environment=production
+grep -E "ZUPER_CATEGORY_(SOLAR|BATTERY|EV)|CONSTRUCTION_JOB_SPLIT" .env.production.local
+rm .env.production.local
+```
+
+Expected: each var shows the value you set, no trailing newline garbage.
+
+- [ ] **Step 11.4: Commit `.env.example`**
+
+```bash
+git add .env.example
+git commit -m "docs(env): add construction sub-category UIDs and split feature flag"
+```
+
+---
+
+### Task 12: PR, merge, monitor
+
+- [ ] **Step 12.1: Push branch and open PR**
+
+```bash
+git push -u origin HEAD
+gh pr create --title "Construction job split: Solar / Battery / EV" --body "$(cat <<'EOF'
+## Summary
+- Adds three new Zuper categories (Construction - Solar / Battery / EV) and treats them as construction work alongside the legacy Construction category.
+- Fixes revenue calendar 2x/3x double-counting via N-way equal split (mirrors existing D&R 50/50 pattern).
+- Fixes Zuper status comparison and cache helper queries that silently dropped sub-jobs.
+- Updates Google Calendar install events to label system types in the title.
+- Adds `CONSTRUCTION_JOB_SPLIT_ENABLED` feature flag for one-step rollback.
+
+## Test plan
+- [ ] `npm run test` — verify zuper-construction.test.ts passes (24 cases)
+- [ ] Hit `/api/zuper/revenue-calendar?year=2026&month=5` and spot-check totals
+- [ ] Visit `/dashboards/zuper-status-comparison` and confirm split-job deals appear
+- [ ] Verify Google Calendar install event title includes "(Solar, Battery)" or similar
+- [ ] Smoke test: a deal with no construction sub-jobs (legacy or unscoped) still works
+
+## Rollback
+Set `CONSTRUCTION_JOB_SPLIT_ENABLED=false` in Vercel env without redeploying.
+
+Spec: docs/superpowers/specs/2026-05-03-construction-job-split-design.md
+EOF
+)"
+```
+
+- [ ] **Step 12.2: After merge, monitor for 7 days**
+
+- Check Sentry for new "Dropped N construction job(s) without hubspotDealId" breadcrumbs.
+- Compare Revenue Calendar monthly total against HubSpot deal-stage-filter sum.
+- Spot-check the install Google Calendar weekly.
+
+- [ ] **Step 12.3: After ~60–90 days, retire legacy Construction category**
+
+When all in-flight legacy `Construction` Zuper jobs have completed:
+- Remove `JOB_CATEGORY_UIDS.CONSTRUCTION` from `CONSTRUCTION_CATEGORY_UIDS`.
+- Remove `JOB_CATEGORIES.CONSTRUCTION` from `CONSTRUCTION_CATEGORY_NAMES`.
+- Remove `CONSTRUCTION_JOB_SPLIT_ENABLED` flag (no longer needed).
+
+This is its own follow-up PR, not part of the initial rollout.
+
+---
+
+## Final Verification
+
+- [ ] **All chunks complete**
+- [ ] **All tests passing**
+- [ ] **Production env vars confirmed**
+- [ ] **PR merged**
+- [ ] **7-day monitoring window started**
+
