@@ -234,6 +234,9 @@ export const JOB_CATEGORY_UIDS = {
   SITE_SURVEY: "002bac33-84d3-4083-a35d-50626fc49288",
   PRE_SALE_SITE_VISIT: "c53070e5-63fd-41bc-8803-f66ad842dbb5",
   CONSTRUCTION: "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf",
+  SOLAR_INSTALL: process.env.ZUPER_CATEGORY_SOLAR_INSTALL ?? "",
+  BATTERY_INSTALL: process.env.ZUPER_CATEGORY_BATTERY_INSTALL ?? "",
+  EV_INSTALL: process.env.ZUPER_CATEGORY_EV_INSTALL ?? "",
   INSPECTION: "b7dc03d2-25d0-40df-a2fc-b1a477b16b65",
   SERVICE_VISIT: "cff6f839-c043-46ee-a09f-8d0e9f363437",
   SERVICE_REVISIT: "8a29a1c0-9141-4db6-b8bb-9d9a65e2a1de",
@@ -251,6 +254,9 @@ export const JOB_CATEGORIES = {
   SITE_SURVEY: "Site Survey",
   PRE_SALE_SITE_VISIT: "Pre-Sale Site Visit",
   CONSTRUCTION: "Construction",
+  SOLAR_INSTALL: "Construction - Solar",
+  BATTERY_INSTALL: "Construction - Battery",
+  EV_INSTALL: "Construction - EV",
   INSPECTION: "Inspection",
   SERVICE_VISIT: "Service Visit",
   SERVICE_REVISIT: "Service Revisit",
@@ -262,6 +268,36 @@ export const JOB_CATEGORIES = {
   MID_ROOF_INSTALL: "Mid Roof Install",
   ROOF_FINAL: "Roof Final",
 } as const;
+
+/**
+ * Feature flag: when true, the codebase treats all four construction-category
+ * UIDs/names as construction work. When false, only the legacy CONSTRUCTION
+ * category counts (rollback path).
+ *
+ * Default true. Flip to "false" in Vercel env to roll back without redeploying.
+ */
+export const CONSTRUCTION_JOB_SPLIT_ENABLED =
+  process.env.CONSTRUCTION_JOB_SPLIT_ENABLED !== "false";
+
+/** All Zuper category UIDs that count as construction work. Honors the feature flag. */
+export const CONSTRUCTION_CATEGORY_UIDS: readonly string[] = CONSTRUCTION_JOB_SPLIT_ENABLED
+  ? [
+      JOB_CATEGORY_UIDS.CONSTRUCTION,
+      JOB_CATEGORY_UIDS.SOLAR_INSTALL,
+      JOB_CATEGORY_UIDS.BATTERY_INSTALL,
+      JOB_CATEGORY_UIDS.EV_INSTALL,
+    ].filter((uid): uid is string => Boolean(uid))
+  : ([JOB_CATEGORY_UIDS.CONSTRUCTION] as string[]).filter((uid): uid is string => Boolean(uid));
+
+/** All display names that count as construction work. Honors the feature flag. */
+export const CONSTRUCTION_CATEGORY_NAMES: readonly string[] = CONSTRUCTION_JOB_SPLIT_ENABLED
+  ? [
+      JOB_CATEGORIES.CONSTRUCTION,
+      JOB_CATEGORIES.SOLAR_INSTALL,
+      JOB_CATEGORIES.BATTERY_INSTALL,
+      JOB_CATEGORIES.EV_INSTALL,
+    ]
+  : [JOB_CATEGORIES.CONSTRUCTION];
 
 // Job type mapping based on project type
 export const JOB_TYPES = {
