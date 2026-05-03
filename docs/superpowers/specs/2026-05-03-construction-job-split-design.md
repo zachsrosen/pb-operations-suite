@@ -17,7 +17,7 @@ A HubSpot workflow already creates the new Zuper jobs at the appropriate deal st
 Multiple subsystems assume one construction Zuper job per deal. Without changes, the split produces silent data corruption in production:
 
 - **Revenue Calendar** (`/api/zuper/revenue-calendar`): each sub-job is linked to the same HubSpot deal and inherits the full deal amount, so a 3-system deal triple-counts revenue.
-- **Schedule Optimizer** (`lib/schedule-optimizer.ts`): each sub-job consumes one location capacity slot, so a single property can appear to exceed Westminster's daily capacity (=2) on its own.
+- **Schedule Optimizer** (`lib/schedule-optimizer.ts`): NOT directly affected — it operates on `OptimizableProject[]` (HubSpot deal-derived, one per deal), so capacity is naturally counted per deal regardless of sub-job count. Documented here for completeness; no code change.
 - **Google Calendar** (`lib/google-calendar.ts`): event ID is `SHA1("install:${projectId}")` — three sub-jobs either overwrite each other or produce three separate events for the same property.
 - **Construction Metrics dashboard**: "X jobs in construction" inflates 1.5–3× because the count is per-job, not per-deal.
 - **`ZuperJobCache.findFirst({ where: { hubspotDealId } })` queries**: silently return an arbitrary sub-job rather than failing or returning all of them.
@@ -180,20 +180,13 @@ for (const agg of aggregates) {
 
 The legacy D&R block stays as-is (D&R isn't being split). Service Visit and other categories are untouched.
 
-### 4. Schedule Optimizer refactor (`lib/schedule-optimizer.ts`)
+### 4. Schedule Optimizer (`lib/schedule-optimizer.ts`) — no change
 
-**Scope:** grouping applies *only* to construction-category jobs (UIDs in `CONSTRUCTION_CATEGORY_UIDS`). Non-construction work — D&R Detach/Reset, Service Visit, Inspection, Site Survey — flows through the optimizer unchanged, one entry per job.
+After verifying call sites: the optimizer takes `OptimizableProject[]` as input, where each entry is one HubSpot deal. `buildExistingBookings` in the construction scheduler page also iterates over `projects` (deals), not Zuper jobs. So capacity counting is naturally deal-level — one deal = one capacity unit — regardless of how many Zuper sub-jobs exist for the deal.
 
-For construction work specifically:
-- Group input by `hubspotDealId` via `groupConstructionJobsByDeal()` before the per-project optimization loop.
-- The loop body operates on aggregates instead of individual jobs.
-- `locationDayCount` increments once per aggregate per business day, not once per sub-job.
-- Crew assignment runs once per aggregate (the rotation index advances by 1, not by N). Crew rotation tracks the deal, not individual sub-jobs.
-- `BookedSlot` records remain one-per-aggregate (not one-per-sub-job) — schema unchanged.
+`BookedSlot` writers were also reviewed: only the *survey* scheduler creates `BookedSlot` rows. The construction path uses `manualSchedules` state in the dashboard component, not BookedSlot.
 
-The aggregate's date window is `[earliestStart, latestEnd]` (inclusive). For sub-jobs co-scheduled on identical days (the expected case), this collapses to the same single window. For mismatched windows (data quality issue), the optimizer treats the full span as occupied — which is conservative but correct for capacity planning.
-
-If a deal has multiple sub-jobs but only one has `scheduled_start_time` set (edge case during rollout), the aggregate uses the available date and counts as one unit.
+**No code change required for the optimizer.** This section exists in the spec to document that the optimizer was reviewed and confirmed unaffected.
 
 ### 5. Google Calendar consolidation (`lib/google-calendar.ts`)
 
@@ -205,13 +198,13 @@ Event ID stays `SHA1("install:${projectId}")` — already keyed on dealId/projec
 
 **No transitional period.** All callers of `upsertInstallationCalendarEvent` are updated to pass aggregates in the same PR. There is no shim that accepts both old and new signatures. The audit pass in section 8 enumerates these callers.
 
-### 6. Construction Metrics dashboard (`dashboards/construction-metrics/page.tsx`)
+### 6. Construction Metrics dashboard (`dashboards/construction-metrics/page.tsx`) — no change
 
-The "X jobs in construction" headline becomes "X properties in construction." The underlying query goes through `groupConstructionJobsByDeal()` and counts aggregates.
+After verifying call sites: the "Currently In Construction" list is built in `/api/hubspot/qc-metrics` by filtering HubSpot deals where `stage === "Construction"` AND `constructionScheduleDate` is set. The dashboard reads from HubSpot deals, not Zuper jobs, so it naturally counts deals (one row per deal), not sub-jobs.
 
-Drill-down table shows one row per aggregate with sub-job badges (Solar / Battery / EV) and combined duration (earliestStart → latestEnd). Per-system filtering becomes available as a side filter for crew managers who want to see "all solar work in flight."
+The literal "X jobs in construction" copy is technically inaccurate (it counts deals, calls them "jobs") but the count itself is correct. Optional copy fix: change to "X properties in construction" — single-line change, not architecturally required.
 
-`avgConstructionDays` is computed from the aggregate's `latestEnd - earliestStart`, not from individual sub-job durations.
+**No code change required.** Section retained to document review.
 
 ### 7. Call site audit — full enumeration
 
