@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, prisma, cacheZuperJob, canScheduleType, getCrewMemberByName, getCrewMemberByZuperUserUid, getCachedZuperJobByDealId, UserRole } from "@/lib/db";
-import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import {
+  zuper,
+  JOB_CATEGORY_UIDS,
+  CONSTRUCTION_CATEGORY_NAMES,
+  CONSTRUCTION_CATEGORY_UIDS,
+} from "@/lib/zuper";
 import { headers } from "next/headers";
 import { sendSchedulingNotification } from "@/lib/email";
 import { updateDealProperty, updateSiteSurveyorProperty, getDealProperties, getDealOwnerContact, getDealProjectManagerContact } from "@/lib/hubspot";
@@ -536,19 +541,34 @@ export async function POST(request: NextRequest) {
       const targetCategoryNameLower = targetCategoryName.toLowerCase();
       const hubspotTagLower = hubspotTag.toLowerCase();
 
+      // Construction job split: when confirming an installation, accept any of
+      // the four construction sub-categories (legacy "Construction" +
+      // Solar/Battery/EV split jobs created by the HubSpot workflow).
+      const isInstallationConfirm = scheduleType === "installation";
+      const acceptedCategoryNamesLower = isInstallationConfirm
+        ? CONSTRUCTION_CATEGORY_NAMES.map((n) => n.toLowerCase())
+        : [targetCategoryNameLower];
+      const acceptedCategoryUids = isInstallationConfirm
+        ? CONSTRUCTION_CATEGORY_UIDS.filter(Boolean)
+        : [targetCategoryUid].filter(Boolean);
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const categoryMatches = (job: any): boolean => {
         if (typeof job.job_category === "string") {
           const categoryValue = job.job_category.toLowerCase();
-          return categoryValue === targetCategoryNameLower ||
-            categoryValue.includes(targetCategoryNameLower) ||
-            job.job_category === targetCategoryUid;
+          return (
+            acceptedCategoryNamesLower.includes(categoryValue) ||
+            acceptedCategoryNamesLower.some((n) => categoryValue.includes(n)) ||
+            acceptedCategoryUids.includes(job.job_category)
+          );
         }
         const categoryName = String(job.job_category?.category_name || "").toLowerCase();
         const categoryUid = String(job.job_category?.category_uid || "");
-        return categoryName === targetCategoryNameLower ||
-          categoryName.includes(targetCategoryNameLower) ||
-          categoryUid === targetCategoryUid;
+        return (
+          acceptedCategoryNamesLower.includes(categoryName) ||
+          acceptedCategoryNamesLower.some((n) => n !== "" && categoryName.includes(n)) ||
+          (categoryUid !== "" && acceptedCategoryUids.includes(categoryUid))
+        );
       };
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -580,7 +600,10 @@ export async function POST(request: NextRequest) {
 
       // Strategy 2: DB cache lookup.
       if (!existingJob) {
-        const cached = await getCachedZuperJobByDealId(record.projectId, targetCategoryName);
+        const cacheLookupCategory = isInstallationConfirm
+          ? [...CONSTRUCTION_CATEGORY_NAMES]
+          : targetCategoryName;
+        const cached = await getCachedZuperJobByDealId(record.projectId, cacheLookupCategory);
         if (cached?.jobUid) {
           existingJob = { job_uid: cached.jobUid };
         }
