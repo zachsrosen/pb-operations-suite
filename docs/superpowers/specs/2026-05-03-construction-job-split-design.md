@@ -67,15 +67,28 @@ Consumers
 
 ### 1. Zuper category configuration (`lib/zuper.ts`)
 
-Add three category UIDs sourced from environment variables:
+**Important context:** the codebase distinguishes two representations:
+
+- **`JOB_CATEGORY_UIDS`** — Zuper API UIDs (hardcoded constants today, e.g. `"f3...c0d"`). The Zuper API returns these on `job.job_category`.
+- **`JOB_CATEGORIES`** — human-readable names ("Construction", "Site Survey"). `ZuperJobCache.jobCategory` stores the **name**, not the UID — `zuper-sync.ts:216` calls `resolveCategory(job.job_category)` to convert UID → name before persisting.
+
+Both representations need new entries:
 
 ```ts
 export const JOB_CATEGORY_UIDS = {
-  SITE_SURVEY: process.env.ZUPER_CATEGORY_SITE_SURVEY ?? "",
-  CONSTRUCTION: process.env.ZUPER_CATEGORY_CONSTRUCTION ?? "", // legacy
-  SOLAR_INSTALL: process.env.ZUPER_CATEGORY_SOLAR_INSTALL ?? "",   // new
-  BATTERY_INSTALL: process.env.ZUPER_CATEGORY_BATTERY_INSTALL ?? "", // new
-  EV_INSTALL: process.env.ZUPER_CATEGORY_EV_INSTALL ?? "",         // new
+  SITE_SURVEY: "...",                                                 // existing
+  CONSTRUCTION: "...",                                                // legacy, retained
+  SOLAR_INSTALL: process.env.ZUPER_CATEGORY_SOLAR_INSTALL ?? "",       // new (env-driven)
+  BATTERY_INSTALL: process.env.ZUPER_CATEGORY_BATTERY_INSTALL ?? "",   // new (env-driven)
+  EV_INSTALL: process.env.ZUPER_CATEGORY_EV_INSTALL ?? "",             // new (env-driven)
+  // ...remaining entries unchanged
+};
+
+export const JOB_CATEGORIES = {
+  CONSTRUCTION: "Construction",         // legacy
+  SOLAR_INSTALL: "Solar Install",       // new — exact spelling matches Zuper category name
+  BATTERY_INSTALL: "Battery Install",   // new
+  EV_INSTALL: "EV Install",             // new
   // ...existing entries unchanged
 };
 
@@ -85,15 +98,31 @@ export const CONSTRUCTION_CATEGORY_UIDS = [
   JOB_CATEGORY_UIDS.BATTERY_INSTALL,
   JOB_CATEGORY_UIDS.EV_INSTALL,
 ].filter(Boolean);
+
+export const CONSTRUCTION_CATEGORY_NAMES = [
+  JOB_CATEGORIES.CONSTRUCTION,
+  JOB_CATEGORIES.SOLAR_INSTALL,
+  JOB_CATEGORIES.BATTERY_INSTALL,
+  JOB_CATEGORIES.EV_INSTALL,
+];
 ```
 
-The `.filter(Boolean)` guard means the union shrinks gracefully if env vars are unset (e.g., in tests or before Zuper categories exist in dev).
+The exact display names ("Solar Install", "Battery Install", "EV Install") must match what the Zuper categories were created with — confirm with ops before merging. `resolveCategory` in `zuper-sync.ts` already handles the UID→name lookup; adding the three entries to `JOB_CATEGORIES` plumbs them through automatically.
+
+The `.filter(Boolean)` guard means the UID union shrinks gracefully if env vars are unset (e.g., in tests or before Zuper categories exist in dev).
 
 ### 2. New helper module (`lib/zuper-construction.ts`)
 
+The helper exposes both UID-aware and name-aware predicates so callers can use whichever representation matches their data:
+
 ```ts
 import type { ZuperJobCache } from "@/generated/prisma/client";
-import { CONSTRUCTION_CATEGORY_UIDS, JOB_CATEGORY_UIDS } from "./zuper";
+import {
+  CONSTRUCTION_CATEGORY_UIDS,
+  CONSTRUCTION_CATEGORY_NAMES,
+  JOB_CATEGORIES,
+  JOB_CATEGORY_UIDS,
+} from "./zuper";
 
 export type SystemType = "solar" | "battery" | "ev" | "legacy";
 
@@ -108,10 +137,22 @@ export type DealConstructionAggregate = {
   assignedCrewsByType: Partial<Record<SystemType, string[]>>;
 };
 
-export function isConstructionCategory(categoryUid: string | null | undefined): boolean;
-export function categoryToSystemType(categoryUid: string): SystemType;
+/** True if a Zuper category UID counts as construction work. Use for raw API responses. */
+export function isConstructionCategoryUid(uid: string | null | undefined): boolean;
+
+/** True if a category display name counts as construction. Use for ZuperJobCache.jobCategory. */
+export function isConstructionCategoryName(name: string | null | undefined): boolean;
+
+/** Map a UID OR name to the system type. Accepts either representation. */
+export function categoryToSystemType(uidOrName: string): SystemType;
+
+/** Group cache rows by dealId. Skips jobs without a dealId (logs Sentry breadcrumb). */
 export function groupConstructionJobsByDeal(jobs: ZuperJobCache[]): DealConstructionAggregate[];
+
+/** Equal-split a deal value across its sub-jobs. Returns 0 for jobCount=0. */
 export function allocateDealValueAcrossJobs(dealAmount: number, jobCount: number): number;
+
+/** Per-aggregate completion status. */
 export function getDealCompletionStatus(agg: DealConstructionAggregate): "complete" | "partial" | "not-started";
 ```
 
@@ -121,6 +162,7 @@ Edge cases:
 - A job with `hubspotDealId === null` is dropped from grouping output (logged via Sentry breadcrumb, not error).
 - A deal with sub-jobs in mixed states (one complete, two scheduled) returns `isFullyComplete: false` and `completedAt: null`.
 - A deal with one job behaves identically to today's single-job pattern (backwards-compatible).
+- A deal with sub-jobs scheduled on **mismatched windows** (e.g. Solar May 12, Battery May 14) is permitted — `earliestStart`/`latestEnd` span the full range. Operationally this should not happen (the deal is the scheduling unit), but the helper does not reject it. A Sentry breadcrumb is emitted when the gap exceeds 2 business days as an early warning of a data quality issue.
 
 ### 3. Revenue Calendar refactor (`api/zuper/revenue-calendar/route.ts`)
 
@@ -148,36 +190,42 @@ The legacy D&R block stays as-is (D&R isn't being split). Service Visit and othe
 
 ### 4. Schedule Optimizer refactor (`lib/schedule-optimizer.ts`)
 
-Group by `hubspotDealId` before running the optimizer's existing per-project loop. The loop body operates on aggregates instead of individual jobs:
+**Scope:** grouping applies *only* to construction-category jobs (UIDs in `CONSTRUCTION_CATEGORY_UIDS`). Non-construction work — D&R Detach/Reset, Service Visit, Inspection, Site Survey — flows through the optimizer unchanged, one entry per job.
 
+For construction work specifically:
+- Group input by `hubspotDealId` via `groupConstructionJobsByDeal()` before the per-project optimization loop.
+- The loop body operates on aggregates instead of individual jobs.
 - `locationDayCount` increments once per aggregate per business day, not once per sub-job.
-- Crew assignment runs once per aggregate (the rotation index advances by 1, not by 3).
-- `BookedSlot` records continue to be one-per-aggregate (not one-per-sub-job) — the existing schema doesn't need changing.
+- Crew assignment runs once per aggregate (the rotation index advances by 1, not by N). Crew rotation tracks the deal, not individual sub-jobs.
+- `BookedSlot` records remain one-per-aggregate (not one-per-sub-job) — schema unchanged.
+
+The aggregate's date window is `[earliestStart, latestEnd]` (inclusive). For sub-jobs co-scheduled on identical days (the expected case), this collapses to the same single window. For mismatched windows (data quality issue), the optimizer treats the full span as occupied — which is conservative but correct for capacity planning.
 
 If a deal has multiple sub-jobs but only one has `scheduled_start_time` set (edge case during rollout), the aggregate uses the available date and counts as one unit.
 
 ### 5. Google Calendar consolidation (`lib/google-calendar.ts`)
 
-Event ID stays `SHA1("install:${dealId}")` — already keyed on dealId, not jobId. The change:
+Event ID stays `SHA1("install:${projectId}")` — already keyed on dealId/projectId at line 745, not jobId. Required changes:
 
-- Event title becomes `"Install — ${dealName} (${systemTypes.join(", ")})"` (e.g., "Install — Smith Residence (Solar, Battery)").
+- Event title becomes `"Install — ${dealName} (${systemTypes.join(", ")})"` (e.g., "Install — Smith Residence (Solar, Battery)"). Truncate at 80 chars; fall back to `"Install — ${dealName}"` if needed.
 - Event description lists each sub-job with its assigned crew.
-- The function signature changes from `(jobId, ...)` to `(aggregate: DealConstructionAggregate, ...)`.
+- The function signature changes from `(projectId, ...)` to `(aggregate: DealConstructionAggregate, ...)`.
 
-Callers that previously passed individual jobs now pass the aggregate. Migration: the calendar update path runs after grouping, so each aggregate fires exactly one `upsertInstallationCalendarEvent` call.
+**No transitional period.** All callers of `upsertInstallationCalendarEvent` are updated to pass aggregates in the same PR. There is no shim that accepts both old and new signatures. The audit pass in section 8 enumerates these callers.
 
 ### 6. New cron: `/api/cron/stamp-construction-complete`
 
-Daily cron (cadence: every 4 hours during business days) that:
+Cron expression: `0 13,17,21 * * 1-5` (9 AM, 1 PM, 5 PM Mountain on business days; Vercel cron runs in UTC). Registered in `vercel.json` and protected by the existing `CRON_SECRET` auth pattern.
 
-1. Pulls all `ZuperJobCache` rows where `category_uid ∈ CONSTRUCTION_CATEGORY_UIDS` AND `hubspotDealId IS NOT NULL` AND `lastSyncedAt > now - 7d`.
+The cron:
+
+1. Pulls all `ZuperJobCache` rows where `jobCategory ∈ CONSTRUCTION_CATEGORY_NAMES` AND `hubspotDealId IS NOT NULL` AND `lastSyncedAt > now - 7d`. (Filter uses **name**, not UID, because that's what the cache stores.)
 2. Calls `groupConstructionJobsByDeal()`.
-3. For each aggregate where `isFullyComplete === true` AND the deal's HubSpot `construction_complete_date` is unset (or older than `aggregate.completedAt`):
+3. For each aggregate where `isFullyComplete === true` AND the deal's HubSpot `construction_complete_date` is either unset OR strictly older than `aggregate.completedAt`:
    - Update the HubSpot deal property `construction_complete_date` to `aggregate.completedAt`.
-   - Log via `ActivityLog` with `ActivityType.HUBSPOT_DEAL_UPDATED`.
-4. Idempotent — re-running produces no duplicate updates because we compare against the existing HubSpot value.
-
-Cron is registered in `vercel.json` and protected by the existing cron auth pattern.
+   - Write an `IdempotencyKey` row keyed on `(dealId, completedAt-as-epoch-day)` to prevent duplicate `ActivityLog` writes from overlapping cron invocations.
+   - Log via `ActivityLog` with `ActivityType.HUBSPOT_DEAL_UPDATED` (skipped if idempotency key already exists).
+4. Idempotent at the HubSpot layer (compare-before-write) AND at the activity log layer (idempotency key). Safe to re-run without producing duplicate stamps or duplicate activity entries.
 
 ### 7. Construction Metrics dashboard (`dashboards/construction-metrics/page.tsx`)
 
@@ -187,24 +235,69 @@ Drill-down table shows one row per aggregate with sub-job badges (Solar / Batter
 
 `avgConstructionDays` is computed from the aggregate's `latestEnd - earliestStart`, not from individual sub-job durations.
 
-### 8. `ZuperJobCache` query audit
+### 8. Call site audit — full enumeration
 
-Files containing `findFirst` against `ZuperJobCache` filtered by `hubspotDealId`:
+The grep pass identified the following construction-aware call sites. Each is in scope for this change.
 
-- `src/app/api/deals/[dealId]/photos/route.ts:29` — review and convert to `findMany` if photos from multiple sub-jobs should aggregate.
-- `src/lib/customer-resolver.ts` — already uses `findMany`; no change.
-- `src/lib/service-contact-signals.ts` — review for service jobs (out of scope) but check construction filtering.
+**`JOB_CATEGORY_UIDS.CONSTRUCTION` references (UID-based filtering — must accept full union):**
 
-The audit is mechanical: any caller that semantically wanted "*the* construction job" needs to either pick deterministically (e.g., earliest start) or aggregate (sum, union, etc.). The helper module's `groupConstructionJobsByDeal` is the canonical answer.
+- `src/app/api/zuper/jobs/lookup/route.ts:43-45,72,599` — installation→Construction mapping for job lookup. Accept all four categories; map "installation" type to all of them when searching.
+- `src/app/api/zuper/jobs/schedule/route.ts:267,274,535,1267` — installation→Construction at job-creation paths. **Note:** if HubSpot workflow now creates jobs, audit whether these UI scheduling paths still create jobs. If they do, decide which sub-category is created (likely Solar Install as the default). If they don't, mark dead and remove.
+- `src/app/api/zuper/jobs/schedule/confirm/route.ts:46,53` — same as above; same decision applies.
+- `src/app/api/zuper/availability/route.ts:385-386` — `installation: JOB_CATEGORY_UIDS.CONSTRUCTION` mapping for capacity availability. Expand to accept all four UIDs.
+- `src/app/api/zuper/assisted-scheduling/route.ts:40` — same mapping; same fix.
+- `src/app/api/zuper/status-comparison/route.ts:599,734,1020` — three references for fetching + status mapping. Will undercount split deals if not expanded. Apply union and group by deal.
+- `src/app/api/zuper/revenue-calendar/route.ts:18` — `REVENUE_CATEGORIES` array entry. Add three new entries (Solar Install, Battery Install, EV Install) all mapped to the `"construction"` `key` so they aggregate together for revenue-by-category rollups, but the per-job allocation uses the helper.
 
-### 9. Feature flag
+**`JOB_CATEGORIES.CONSTRUCTION` (display-name) references:**
+
+- `src/app/api/zuper/jobs/lookup/route.ts:43,44,599` — name-based matching; accept all four display names.
+- `src/lib/compliance-v2/scoring.ts:37` — `CATEGORY_NAME_TO_UID` map. Add three entries.
+- `src/lib/compliance-compute.ts:111` — same `CATEGORY_NAME_TO_UID` pattern. Add three entries.
+
+**Schema/storage references:**
+
+- `prisma/schema.prisma:572` — `ZuperJobCache.jobCategory` stores the display name (no schema change required; new names just appear once `resolveCategory` learns them).
+
+**`ZuperJobCache.findFirst({ where: { hubspotDealId } })` semantics:**
+
+- `src/app/api/deals/[dealId]/photos/route.ts:29` — convert to `findMany` and aggregate photos across sub-jobs; otherwise photos from Battery/EV jobs are silently dropped.
+- `src/lib/customer-resolver.ts` — already uses `findMany`; verify it surfaces all sub-jobs in customer detail view.
+- `src/lib/service-contact-signals.ts` — review whether construction sub-jobs are read; if so, switch to `findMany` and use first/most-recent per system type.
+- `src/lib/schedule-event-log.ts` — review for construction jobs; should pass through unchanged if just logging.
+
+**Downstream consumers — unchanged-by-design (noted for clarity, not modified):**
+
+- `src/lib/office-performance.ts` — reads HubSpot `construction_complete_date` directly (not Zuper jobs). Stamping cron in section 6 is the only path that affects it.
+- `src/lib/payment-tracking.ts` — same; reads HubSpot deal property only.
+- `src/lib/forecast-ghosts.ts` — operates on HubSpot deals, not Zuper jobs.
+- `src/lib/property-sync.ts` — reads HubSpot `construction_complete_date` for property rollups.
+
+**UI labels / static strings (no code change needed unless we want to relabel):**
+
+The grep pass found ~15 places where the literal string `"Construction"` appears as a UI label, suite section heading, or stage display name (e.g., `src/app/dashboards/scheduler/page.tsx:432`, `src/app/dashboards/qc/page.tsx:17`). These reflect the HubSpot deal **stage**, not the Zuper job category, and remain accurate — a deal is still in the "Construction" stage regardless of how many Zuper sub-jobs exist for it. **No change** to these strings.
+
+### 9. Compliance scoring impact (`lib/compliance-v2/scoring.ts`, `lib/compliance-compute.ts`)
+
+Both files maintain a `CATEGORY_NAME_TO_UID` map used by status comparison and Zuper compliance scoring. Each map needs three new entries:
+
+```ts
+"Solar Install": JOB_CATEGORY_UIDS.SOLAR_INSTALL,
+"Battery Install": JOB_CATEGORY_UIDS.BATTERY_INSTALL,
+"EV Install": JOB_CATEGORY_UIDS.EV_INSTALL,
+```
+
+Compliance scoring is per-job today. Decision: it stays per-job — a battery install with a stuck status is its own compliance signal independent of the solar install at the same property. If ops later wants deal-level compliance rollup, that's a follow-up spec.
+
+### 10. Feature flag
 
 `CONSTRUCTION_JOB_SPLIT_ENABLED` env var, default `true`. Off-switch behavior:
 
-- `CONSTRUCTION_CATEGORY_UIDS` collapses to `[CONSTRUCTION]` only (legacy behavior).
+- `CONSTRUCTION_CATEGORY_UIDS` and `CONSTRUCTION_CATEGORY_NAMES` collapse to legacy-only (`CONSTRUCTION` UID and `"Construction"` name).
 - The completion-stamping cron skips deals with new categories.
+- The helper module's predicates return `false` for the new UIDs/names.
 
-The flag exists for **safe rollback**, not for opt-in adoption. We expect to ship enabled. If catastrophic, we flip it off without redeploying.
+The flag exists for **safe rollback**, not for opt-in adoption. We expect to ship enabled. During the legacy-only window (before ops flips the HubSpot workflow), the flag's `true` state is harmless because no split jobs exist yet — the helper sees only single-job aggregates and behaves identically to the pre-rollout code path. If a catastrophic issue surfaces post-flip, we set the flag to `false` in Vercel without redeploying.
 
 ## Data Flow Examples
 
