@@ -392,7 +392,16 @@ function CommsPageInner() {
               </div>
             )}
 
-            {!isLoading && filteredMessages.length === 0 && (
+            {!isLoading && data?.rateLimited && (
+              <div className="py-16 text-center">
+                <p className="text-sm text-amber-400">Gmail rate limit reached.</p>
+                <p className="mt-1 text-xs text-muted/40">
+                  Too many requests in the last minute. Wait ~60 seconds and refresh.
+                </p>
+              </div>
+            )}
+
+            {!isLoading && !data?.rateLimited && filteredMessages.length === 0 && (
               <div className="py-16 text-center">
                 <p className="text-sm text-muted/50">No messages to display.</p>
                 <p className="mt-1 text-xs text-muted/30">
