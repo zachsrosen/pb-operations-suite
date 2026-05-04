@@ -16,6 +16,9 @@ const HUBSPOT_PIPELINE_DNR = process.env.HUBSPOT_PIPELINE_DNR || "21997330";
 // Revenue-generating job categories
 const REVENUE_CATEGORIES = [
   { uid: JOB_CATEGORY_UIDS.CONSTRUCTION, name: "Construction", key: "construction" },
+  { uid: JOB_CATEGORY_UIDS.SOLAR_INSTALL, name: "Construction - Solar", key: "construction" },
+  { uid: JOB_CATEGORY_UIDS.BATTERY_INSTALL, name: "Construction - Battery", key: "construction" },
+  { uid: JOB_CATEGORY_UIDS.EV_INSTALL, name: "Construction - EV", key: "construction" },
   { uid: JOB_CATEGORY_UIDS.DETACH, name: "Detach", key: "detach" },
   { uid: JOB_CATEGORY_UIDS.RESET, name: "Reset", key: "reset" },
   { uid: JOB_CATEGORY_UIDS.SERVICE_VISIT, name: "Service Visit", key: "service" },
@@ -466,6 +469,28 @@ export async function GET(request: NextRequest) {
         zuperJobUrl: raw.job_uid ? getZuperJobDetailsUrl(raw.job_uid) : null,
         projectNumber: extractProjectNumber(raw.job_title || ""),
       });
+    }
+
+    // Construction-aggregate allocation: when a deal has multiple construction
+    // sub-jobs (Solar/Battery/EV), split the deal amount equally across them
+    // to avoid 2x or 3x double-counting on the revenue calendar.
+    const constructionByDeal = new Map<string, CalendarJob[]>();
+    for (const job of confirmedJobs) {
+      if (!job.dealId) continue;
+      if (job.categoryKey !== "construction") continue;
+      if (!constructionByDeal.has(job.dealId)) constructionByDeal.set(job.dealId, []);
+      constructionByDeal.get(job.dealId)!.push(job);
+    }
+
+    for (const [, jobs] of constructionByDeal.entries()) {
+      if (jobs.length <= 1) continue; // single-job deals already correct
+      const dealAmount = jobs[0]?.totalDealValue ?? 0;
+      if (dealAmount <= 0) continue;
+      const perJobValue = dealAmount / jobs.length;
+      for (const job of jobs) {
+        job.totalDealValue = perJobValue;
+        job.dealValue = perJobValue;
+      }
     }
 
     // D&R allocation: any deal in the D&R pipeline is modeled as 50% Detach

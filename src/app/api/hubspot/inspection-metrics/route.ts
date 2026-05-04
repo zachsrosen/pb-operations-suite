@@ -8,6 +8,7 @@ import {
 } from "@/lib/hubspot-custom-objects";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { getCachedZuperJobsByDealIds } from "@/lib/db";
+import { CONSTRUCTION_CATEGORY_NAMES } from "@/lib/zuper";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -344,7 +345,7 @@ export async function GET(request: NextRequest) {
           pipelineIds.push(String(p.id));
         }
       }
-      const zuperJobs = await getCachedZuperJobsByDealIds(pipelineIds, "Construction");
+      const zuperJobs = await getCachedZuperJobsByDealIds(pipelineIds, [...CONSTRUCTION_CATEGORY_NAMES]);
       const zuperByDeal = new Map<string, string>();
       for (const job of zuperJobs) {
         if (job.hubspotDealId) zuperByDeal.set(job.hubspotDealId, job.jobUid);
@@ -432,7 +433,7 @@ export async function GET(request: NextRequest) {
         allRelevantIds.add(String(p.id));
       }
     }
-    const zuperJobs = await getCachedZuperJobsByDealIds([...allRelevantIds], "Construction");
+    const zuperJobs = await getCachedZuperJobsByDealIds([...allRelevantIds], [...CONSTRUCTION_CATEGORY_NAMES]);
     const zuperByDeal = new Map<string, string>();
     for (const job of zuperJobs) {
       if (job.hubspotDealId) zuperByDeal.set(job.hubspotDealId, job.jobUid);

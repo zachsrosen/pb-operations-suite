@@ -35,6 +35,9 @@ import { computeGrade } from "@/lib/compliance-helpers";
 const CATEGORY_NAME_TO_UID: Record<string, string> = {
   "Site Survey": JOB_CATEGORY_UIDS.SITE_SURVEY,
   Construction: JOB_CATEGORY_UIDS.CONSTRUCTION,
+  "Construction - Solar": JOB_CATEGORY_UIDS.SOLAR_INSTALL,
+  "Construction - Battery": JOB_CATEGORY_UIDS.BATTERY_INSTALL,
+  "Construction - EV": JOB_CATEGORY_UIDS.EV_INSTALL,
   Inspection: JOB_CATEGORY_UIDS.INSPECTION,
 };
 

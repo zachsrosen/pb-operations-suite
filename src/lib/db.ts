@@ -644,30 +644,49 @@ export async function cacheZuperJob(job: {
 }
 
 /**
- * Get cached Zuper job by HubSpot deal ID
+ * Get cached Zuper job by HubSpot deal ID.
+ *
+ * @param category - either a single category name (legacy) or an array of
+ *   category names (e.g. all four construction categories). When passing a
+ *   string, behavior is unchanged from before. When passing an array, returns
+ *   the most recent matching job across any category in the array.
  */
-export async function getCachedZuperJobByDealId(dealId: string, category?: string) {
+export async function getCachedZuperJobByDealId(dealId: string, category?: string | string[]) {
   if (!prisma) return null;
+
+  const categoryFilter = Array.isArray(category)
+    ? { jobCategory: { in: category } }
+    : category
+      ? { jobCategory: category }
+      : {};
 
   return prisma.zuperJobCache.findFirst({
     where: {
       hubspotDealId: dealId,
-      ...(category && { jobCategory: category }),
+      ...categoryFilter,
     },
     orderBy: { lastSyncedAt: "desc" },
   });
 }
 
 /**
- * Get cached Zuper jobs by HubSpot deal IDs (bulk lookup)
+ * Get cached Zuper jobs by HubSpot deal IDs (bulk lookup).
+ *
+ * @param category - same semantics as getCachedZuperJobByDealId.
  */
-export async function getCachedZuperJobsByDealIds(dealIds: string[], category?: string) {
+export async function getCachedZuperJobsByDealIds(dealIds: string[], category?: string | string[]) {
   if (!prisma) return [];
+
+  const categoryFilter = Array.isArray(category)
+    ? { jobCategory: { in: category } }
+    : category
+      ? { jobCategory: category }
+      : {};
 
   return prisma.zuperJobCache.findMany({
     where: {
       hubspotDealId: { in: dealIds },
-      ...(category && { jobCategory: category }),
+      ...categoryFilter,
     },
   });
 }

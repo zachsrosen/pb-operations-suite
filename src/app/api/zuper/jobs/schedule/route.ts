@@ -2,7 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import * as Sentry from "@sentry/nextjs";
 import { tagSentryRequest } from "@/lib/sentry-request";
 import { headers } from "next/headers";
-import { zuper, createJobFromProject, JOB_CATEGORY_UIDS, ZuperJob } from "@/lib/zuper";
+import {
+  zuper,
+  createJobFromProject,
+  JOB_CATEGORY_UIDS,
+  CONSTRUCTION_CATEGORY_NAMES,
+  CONSTRUCTION_CATEGORY_UIDS,
+  ZuperJob,
+} from "@/lib/zuper";
 import { auth } from "@/auth";
 import { getUserByEmail, logActivity, createScheduleRecord, cacheZuperJob, canScheduleType, getCrewMemberByName, getCrewMemberByZuperUserUid, getCachedZuperJobByDealId, prisma, UserRole } from "@/lib/db";
 import { sendSchedulingNotification, sendCancellationNotification } from "@/lib/email";
@@ -538,6 +545,18 @@ export async function PUT(request: NextRequest) {
     const targetCategoryName = categoryConfig[schedule.type].name;
     const targetCategoryUid = categoryConfig[schedule.type].uid;
 
+    // Construction job split: when looking up the existing job for an
+    // installation, accept any of the four construction sub-categories
+    // (legacy "Construction" + Solar/Battery/EV). HubSpot now creates split
+    // sub-jobs, but legacy "Construction" jobs remain for in-flight deals.
+    const isInstallationLookup = schedule.type === "installation";
+    const acceptedCategoryNamesLower = isInstallationLookup
+      ? CONSTRUCTION_CATEGORY_NAMES.map((n) => n.toLowerCase())
+      : [targetCategoryName.toLowerCase()];
+    const acceptedCategoryUids = isInstallationLookup
+      ? CONSTRUCTION_CATEGORY_UIDS
+      : [targetCategoryUid];
+
     // Helper to get category info from job
     const getJobCategoryInfo = (job: ZuperJob): { name: string; uid: string } => {
       if (typeof job.job_category === "string") {
@@ -552,8 +571,11 @@ export async function PUT(request: NextRequest) {
     // Helper to check if job matches target category
     const categoryMatches = (job: ZuperJob): boolean => {
       const catInfo = getJobCategoryInfo(job);
-      return catInfo.name.toLowerCase() === targetCategoryName.toLowerCase() ||
-             catInfo.uid === targetCategoryUid;
+      const nameLower = catInfo.name.toLowerCase();
+      return (
+        acceptedCategoryNamesLower.includes(nameLower) ||
+        (catInfo.uid !== "" && acceptedCategoryUids.includes(catInfo.uid))
+      );
     };
 
     // Helper to get HubSpot Deal ID from custom fields (same logic as lookup API)
@@ -594,7 +616,10 @@ export async function PUT(request: NextRequest) {
     // --- Strategy 2: Check DB cache (set when jobs are scheduled through the app) ---
     if (!existingJob) {
       try {
-        const cached = await getCachedZuperJobByDealId(project.id, targetCategoryName);
+        const cacheLookupCategory = isInstallationLookup
+          ? [...CONSTRUCTION_CATEGORY_NAMES]
+          : targetCategoryName;
+        const cached = await getCachedZuperJobByDealId(project.id, cacheLookupCategory);
         if (cached?.jobUid) {
           console.log(`[Zuper Schedule] DB cache hit: project ${project.id} → job ${cached.jobUid}`);
           existingJob = { job_uid: cached.jobUid, job_title: cached.jobTitle || project.name } as ZuperJob;
@@ -1260,23 +1285,35 @@ export async function GET(request: NextRequest) {
 
     // Optionally filter by job type/category
     if (jobType) {
-      // Category config with both names and UIDs for flexible matching
-      const categoryConfig: Record<string, { name: string; uid: string }> = {
-        survey: { name: "Site Survey", uid: JOB_CATEGORY_UIDS.SITE_SURVEY },
-        "pre-sale-survey": { name: "Pre-Sale Site Visit", uid: JOB_CATEGORY_UIDS.PRE_SALE_SITE_VISIT },
-        installation: { name: "Construction", uid: JOB_CATEGORY_UIDS.CONSTRUCTION },
-        inspection: { name: "Inspection", uid: JOB_CATEGORY_UIDS.INSPECTION },
+      // Category config with both names and UIDs for flexible matching.
+      // For installation, we accept any of the four construction sub-categories
+      // (legacy "Construction" + Solar/Battery/EV split sub-jobs).
+      const categoryConfig: Record<string, { names: readonly string[]; uids: readonly string[] }> = {
+        survey: { names: ["Site Survey"], uids: [JOB_CATEGORY_UIDS.SITE_SURVEY] },
+        "pre-sale-survey": {
+          names: ["Pre-Sale Site Visit"],
+          uids: [JOB_CATEGORY_UIDS.PRE_SALE_SITE_VISIT],
+        },
+        installation: {
+          names: CONSTRUCTION_CATEGORY_NAMES,
+          uids: CONSTRUCTION_CATEGORY_UIDS,
+        },
+        inspection: { names: ["Inspection"], uids: [JOB_CATEGORY_UIDS.INSPECTION] },
       };
       const config = categoryConfig[jobType];
       if (config) {
+        const nameSet = new Set(config.names);
+        const uidSet = new Set(config.uids.filter(Boolean));
         matchingJobs = matchingJobs.filter((job) => {
           // Handle both string and object category formats
           if (typeof job.job_category === "string") {
-            return job.job_category === config.name || job.job_category === config.uid;
+            return nameSet.has(job.job_category) || uidSet.has(job.job_category);
           }
+          const name = job.job_category?.category_name;
+          const uid = job.job_category?.category_uid;
           return (
-            job.job_category?.category_name === config.name ||
-            job.job_category?.category_uid === config.uid
+            (name !== undefined && nameSet.has(name)) ||
+            (uid !== undefined && uid !== "" && uidSet.has(uid))
           );
         });
       }
@@ -1398,11 +1435,24 @@ export async function DELETE(request: NextRequest) {
     const targetCategoryName = getCategoryNameForScheduleType(scheduleType);
     const targetCategoryUid = getCategoryUidForScheduleType(scheduleType);
 
+    // Construction job split: when unscheduling an installation, accept any of
+    // the four construction sub-categories (legacy + Solar/Battery/EV).
+    const isInstallationUnschedule = scheduleType === "installation";
+    const unscheduleAcceptedNames = isInstallationUnschedule
+      ? new Set<string>(CONSTRUCTION_CATEGORY_NAMES)
+      : new Set<string>([targetCategoryName]);
+    const unscheduleAcceptedUids = isInstallationUnschedule
+      ? new Set<string>(CONSTRUCTION_CATEGORY_UIDS.filter(Boolean))
+      : new Set<string>([targetCategoryUid].filter(Boolean));
+
     // Resolve Zuper job UID for survey category if UI payload is missing/stale.
     let resolvedJobUid: string | undefined = zuperJobUid || undefined;
     if (zuper.isConfigured() && !resolvedJobUid) {
       try {
-        const cached = await getCachedZuperJobByDealId(projectId, targetCategoryName);
+        const cacheLookupCategory = isInstallationUnschedule
+          ? [...CONSTRUCTION_CATEGORY_NAMES]
+          : targetCategoryName;
+        const cached = await getCachedZuperJobByDealId(projectId, cacheLookupCategory);
         if (cached?.jobUid) {
           resolvedJobUid = cached.jobUid;
         }
@@ -1417,9 +1467,13 @@ export async function DELETE(request: NextRequest) {
         if (searchResult.type === "success" && searchResult.data?.jobs) {
           const match = searchResult.data.jobs.find((job) => {
             const inCategory = typeof job.job_category === "string"
-              ? job.job_category === targetCategoryName || job.job_category === targetCategoryUid
-              : job.job_category?.category_name === targetCategoryName ||
-                job.job_category?.category_uid === targetCategoryUid;
+              ? unscheduleAcceptedNames.has(job.job_category) ||
+                unscheduleAcceptedUids.has(job.job_category)
+              : (job.job_category?.category_name !== undefined &&
+                  unscheduleAcceptedNames.has(job.job_category.category_name)) ||
+                (job.job_category?.category_uid !== undefined &&
+                  job.job_category.category_uid !== "" &&
+                  unscheduleAcceptedUids.has(job.job_category.category_uid));
             return inCategory && !!job.job_tags?.includes(hubspotTag);
           });
           if (match?.job_uid) {

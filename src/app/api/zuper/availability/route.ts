@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
-import { ZuperClient, JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import { ZuperClient, JOB_CATEGORY_UIDS, CONSTRUCTION_CATEGORY_UIDS } from "@/lib/zuper";
+import type { ZuperJob } from "@/lib/zuper";
 import { getCrewSchedulesFromDB, getAvailabilityOverrides, prisma } from "@/lib/db";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { evaluateSlotsBatch, getConfig as getTravelConfig } from "@/lib/travel-time";
@@ -379,12 +380,14 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Map type to category UID for Zuper queries
-  const categoryMap: Record<string, string> = {
-    survey: JOB_CATEGORY_UIDS.SITE_SURVEY,
-    installation: JOB_CATEGORY_UIDS.CONSTRUCTION,
-    construction: JOB_CATEGORY_UIDS.CONSTRUCTION,
-    inspection: JOB_CATEGORY_UIDS.INSPECTION,
+  // Map type to category UIDs for Zuper queries.
+  // Construction/installation expands to all four sub-category UIDs so
+  // we aggregate capacity across Construction + Solar/Battery/EV Install.
+  const categoryMap: Record<string, string[]> = {
+    survey: [JOB_CATEGORY_UIDS.SITE_SURVEY],
+    installation: [...CONSTRUCTION_CATEGORY_UIDS],
+    construction: [...CONSTRUCTION_CATEGORY_UIDS],
+    inspection: [JOB_CATEGORY_UIDS.INSPECTION],
   };
 
   // Resolve team UIDs dynamically from Zuper API
@@ -640,26 +643,74 @@ export async function GET(request: NextRequest) {
 
   // Fetch time-offs and scheduled jobs from Zuper if configured
   if (zuper.isConfigured()) {
-    // Get the category UID for filtering jobs
-    const categoryUid = type ? categoryMap[type] : undefined;
+    // Get the category UIDs for filtering jobs. For construction/installation
+    // this expands to all four construction sub-categories so we aggregate
+    // capacity across Construction + Solar/Battery/EV Install.
+    const categoryUids = type ? categoryMap[type] : undefined;
 
     // For survey availability, busy-time checks must be global across teams:
     // a surveyor can appear in one location's slot list while already booked in another.
     const surveyGlobalBusyCheck = type === "survey";
     const jobsTeamUid = surveyGlobalBusyCheck ? undefined : resolvedTeamUid;
 
-    const [timeOffResult, jobsResult] = await Promise.all([
+    // Fan out a job fetch per category UID (single fetch with undefined when
+    // no type filter is set), then merge + dedupe by job_uid so a deal that
+    // has multiple sub-jobs counts as one booking.
+    const jobFetches = categoryUids && categoryUids.length > 0
+      ? categoryUids.map((uid) =>
+          zuper.getScheduledJobsForDateRange({
+            fromDate,
+            toDate,
+            teamUid: jobsTeamUid,
+            categoryUid: uid,
+          })
+        )
+      : [
+          zuper.getScheduledJobsForDateRange({
+            fromDate,
+            toDate,
+            teamUid: jobsTeamUid,
+          }),
+        ];
+
+    const [timeOffResult, ...jobResults] = await Promise.all([
       zuper.getTimeOffRequests({
         fromDate,
         toDate,
       }),
-      zuper.getScheduledJobsForDateRange({
-        fromDate,
-        toDate,
-        teamUid: jobsTeamUid,
-        categoryUid, // Filter by job category (survey, construction, inspection)
-      }),
+      ...jobFetches,
     ]);
+
+    // Merge job results from all category UIDs, deduplicating by job_uid.
+    const mergedJobsByUid = new Map<string, ZuperJob>();
+    let anyJobsSucceeded = false;
+    let firstJobsError: string | undefined;
+    for (const r of jobResults) {
+      if (r.type === "success" && r.data) {
+        anyJobsSucceeded = true;
+        for (const j of r.data) {
+          // Use job_uid as dedupe key. If a job appears under multiple
+          // category fetches (shouldn't, but defensively) we keep the first.
+          if (j.job_uid && !mergedJobsByUid.has(j.job_uid)) {
+            mergedJobsByUid.set(j.job_uid, j);
+          } else if (!j.job_uid) {
+            // Fall back to a synthetic key if job_uid is missing
+            mergedJobsByUid.set(`__no_uid_${mergedJobsByUid.size}`, j);
+          }
+        }
+      } else if (!firstJobsError) {
+        firstJobsError = r.error;
+      }
+    }
+    if (firstJobsError && anyJobsSucceeded) {
+      console.warn(
+        "[Zuper Availability] Partial category fetch failure — some categories succeeded but at least one failed. Booking count may be under-reported.",
+        firstJobsError
+      );
+    }
+    const jobsResult: { type: "success" | "error"; data: ZuperJob[]; error?: string } = anyJobsSucceeded
+      ? { type: "success", data: Array.from(mergedJobsByUid.values()) }
+      : { type: "error", data: [], error: firstJobsError };
 
     if (surveyGlobalBusyCheck && resolvedTeamUid) {
       console.log("[Zuper Availability] Survey busy-check running across all teams (location filter kept for slot generation)");

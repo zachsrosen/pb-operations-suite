@@ -746,6 +746,22 @@ export function getInstallationCalendarEventId(projectId: string): string {
   return `pb${hash}`;
 }
 
+function formatSystemTypeLabel(systemType: string): string {
+  const normalized = systemType.trim().toLowerCase();
+  switch (normalized) {
+    case "solar":
+      return "Solar";
+    case "battery":
+      return "Battery";
+    case "ev":
+      return "EV";
+    case "legacy":
+      return "Construction";
+    default:
+      return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  }
+}
+
 export async function upsertInstallationCalendarEvent(params: {
   projectId: string;
   projectName: string;
@@ -771,6 +787,7 @@ export async function upsertInstallationCalendarEvent(params: {
   };
   scheduledBy?: string;
   projectManagerName?: string;
+  systemTypes?: string[];
 }): Promise<{ success: boolean; error?: string }> {
   if (!isEnabled()) return { success: true };
 
@@ -867,13 +884,27 @@ export async function upsertInstallationCalendarEvent(params: {
     if (cleanedNotes) descriptionLines.push(`Notes: ${cleanedNotes}`);
   }
 
+  // System types
+  const systemTypeLabels = (params.systemTypes ?? [])
+    .map((t) => formatSystemTypeLabel(t))
+    .filter((label) => label.length > 0);
+  if (systemTypeLabels.length > 0) {
+    descriptionLines.push("");
+    descriptionLines.push(`Systems: ${systemTypeLabels.join(", ")}`);
+  }
+
   // Links
   descriptionLines.push("");
   descriptionLines.push(`HubSpot Deal: ${hubSpotDealUrl}`);
   if (zuperJobUrl) descriptionLines.push(`Zuper Job: ${zuperJobUrl}`);
 
+  const baseTitle = `Installation - ${params.customerName}`;
+  const titleWithSystems =
+    systemTypeLabels.length > 0 ? `${baseTitle} (${systemTypeLabels.join(", ")})` : baseTitle;
+  const summary = titleWithSystems.length > 80 ? baseTitle : titleWithSystems;
+
   const body = {
-    summary: `Installation - ${params.customerName}`,
+    summary,
     location: params.customerAddress,
     description: descriptionLines.join("\n"),
     start: {

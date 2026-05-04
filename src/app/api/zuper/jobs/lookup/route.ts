@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { JOB_CATEGORIES, JOB_CATEGORY_UIDS, ZuperClient, ZuperJob } from "@/lib/zuper";
+import { CONSTRUCTION_CATEGORY_NAMES, JOB_CATEGORIES, JOB_CATEGORY_UIDS, ZuperClient, ZuperJob } from "@/lib/zuper";
 import { getCachedZuperJobsByDealIds } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 
@@ -335,7 +335,12 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
 
     // --- Pass 0: Database cache (most reliable — set when jobs are scheduled through the app) ---
     try {
-      const categoryForDb = targetCategory || undefined;
+      // For Construction category, widen to all four sub-categories (legacy + Solar + Battery + EV)
+      // so cached sub-jobs aren't silently dropped.
+      const categoryForDb: string | string[] | undefined =
+        targetCategory === JOB_CATEGORIES.CONSTRUCTION
+          ? [...CONSTRUCTION_CATEGORY_NAMES]
+          : targetCategory || undefined;
       const cachedJobs = await getCachedZuperJobsByDealIds(projectIds, categoryForDb);
       for (const cached of cachedJobs) {
         if (cached.hubspotDealId && cached.jobUid) {

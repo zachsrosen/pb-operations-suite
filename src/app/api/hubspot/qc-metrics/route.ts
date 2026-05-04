@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { fetchAllProjects, type Project } from "@/lib/hubspot";
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { getCachedZuperJobsByDealIds } from "@/lib/db";
+import { CONSTRUCTION_CATEGORY_NAMES } from "@/lib/zuper";
 
 // Time metric keys on the Project interface
 const TIME_METRICS = [
@@ -137,7 +138,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch Zuper construction jobs for all filtered deals
     const dealIds = projects.map((p) => String(p.id));
-    const zuperJobs = await getCachedZuperJobsByDealIds(dealIds, "Construction");
+    const zuperJobs = await getCachedZuperJobsByDealIds(dealIds, [...CONSTRUCTION_CATEGORY_NAMES]);
     const zuperByDeal = new Map<string, string>();
     for (const job of zuperJobs) {
       if (job.hubspotDealId) zuperByDeal.set(job.hubspotDealId, job.jobUid);

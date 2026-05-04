@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireApiAuth } from "@/lib/api-auth";
 import { getUserByEmail } from "@/lib/db";
-import { zuper, JOB_CATEGORY_UIDS } from "@/lib/zuper";
+import { zuper, JOB_CATEGORY_UIDS, CONSTRUCTION_CATEGORY_UIDS } from "@/lib/zuper";
 import { getCompletedTimeFromHistory, COMPLETED_STATUSES } from "@/lib/compliance-helpers";
 import { Client } from "@hubspot/api-client";
 
@@ -596,7 +596,7 @@ async function fetchAllZuperJobs(categoryUid: string, fromDate?: string, toDate?
       const categoryForMapping = actualCategoryUid || categoryUid;
       if (categoryForMapping === JOB_CATEGORY_UIDS.SITE_SURVEY) {
         mappedCategory = "site_survey";
-      } else if (categoryForMapping === JOB_CATEGORY_UIDS.CONSTRUCTION) {
+      } else if (CONSTRUCTION_CATEGORY_UIDS.includes(categoryForMapping)) {
         mappedCategory = "construction";
       } else {
         mappedCategory = "inspection";
@@ -728,24 +728,37 @@ export async function GET() {
     const fromDate = threeMonthsAgo.toISOString().split("T")[0];
     const toDate = now.toISOString().split("T")[0];
 
-    // Fetch Zuper jobs for all three categories in parallel (last 3 months)
-    const [surveyResult, constructionResult, inspectionResult] = await Promise.all([
+    // Fetch Zuper jobs for all categories in parallel (last 3 months).
+    // Construction fans out across all four sub-category UIDs (general
+    // Construction + Solar/Battery/EV installs) so jobs in the new
+    // sub-categories aren't silently dropped.
+    const [surveyResult, constructionResults, inspectionResult] = await Promise.all([
       fetchAllZuperJobs(JOB_CATEGORY_UIDS.SITE_SURVEY, fromDate, toDate),
-      fetchAllZuperJobs(JOB_CATEGORY_UIDS.CONSTRUCTION, fromDate, toDate),
+      Promise.all(
+        CONSTRUCTION_CATEGORY_UIDS.map((uid) => fetchAllZuperJobs(uid, fromDate, toDate))
+      ),
       fetchAllZuperJobs(JOB_CATEGORY_UIDS.INSPECTION, fromDate, toDate),
     ]);
 
     const surveyJobs = surveyResult.jobs;
-    const constructionJobs = constructionResult.jobs;
+    const constructionJobs = constructionResults.flatMap((r) => r.jobs);
     const inspectionJobs = inspectionResult.jobs;
     const allJobs = [...surveyJobs, ...constructionJobs, ...inspectionJobs];
 
     // Mark older jobs as superseded when a newer one exists for the same deal+category
     markSupersededJobs(allJobs);
 
+    const constructionEnrichmentEnriched = constructionResults.reduce(
+      (sum, r) => sum + r.enrichment.enriched,
+      0
+    );
+    const constructionEnrichmentTotal = constructionResults.reduce(
+      (sum, r) => sum + r.enrichment.total,
+      0
+    );
     const enrichmentStats = {
-      enriched: surveyResult.enrichment.enriched + constructionResult.enrichment.enriched + inspectionResult.enrichment.enriched,
-      total: surveyResult.enrichment.total + constructionResult.enrichment.total + inspectionResult.enrichment.total,
+      enriched: surveyResult.enrichment.enriched + constructionEnrichmentEnriched + inspectionResult.enrichment.enriched,
+      total: surveyResult.enrichment.total + constructionEnrichmentTotal + inspectionResult.enrichment.total,
     };
 
     // Collect unique HubSpot deal IDs from Zuper job metadata
@@ -1017,7 +1030,7 @@ export async function GET() {
         const mismatchDealSet = new Set(mismatchDealIds);
         const coreCategoryUids = new Set<string>([
           JOB_CATEGORY_UIDS.SITE_SURVEY,
-          JOB_CATEGORY_UIDS.CONSTRUCTION,
+          ...CONSTRUCTION_CATEGORY_UIDS,
           JOB_CATEGORY_UIDS.INSPECTION,
         ]);
 
