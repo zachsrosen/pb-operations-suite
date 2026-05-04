@@ -4,6 +4,125 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-05-04
+
+### On-Call Electrician System (Major)
+- New on-call dispatch form with roofing issue type, 3-way outcome (resolved/dispatched/no-action), and pool-filtered crew dropdown
+- Sun-Sat scheduling weeks with 6pm–10pm weekday / 8am–12pm weekend shift coverage
+- Per-state Google Calendar staging (CO + CA) — calendars created without invites, flipped on at go-live
+- Auto-create HubSpot service ticket from on-call follow-ups
+- On-call call log captures customer phone/address with automatic HubSpot contact resolution
+- 6-month horizon publish window with extended publish timeout
+- "Schedule starts" message data-driven from `pool.startDate` instead of hardcoded copy
+- Tracey's Apr 28 go-live policy: per-state calendars, manual creation flow, `calendar.events` scope only
+- Prefill dispatch timestamps; VIEWER role granted access to `/dashboards/on-call`
+
+### Aircall Call Analytics (Major)
+- Phase 1 call analytics dashboard with per-user answer rates via ring tracking
+- Phase 2 executive dashboard with deeper rollups
+- Import path for Aircall Analytics+ ringing-attempts CSV (historical backfill)
+- On-Call Calls section sourced from `OnCallCallLog` (cross-references with on-call dispatch records)
+
+### SOP Operations Guide (Major)
+- WYSIWYG TipTap editor replaces raw HTML CodeMirror
+- Submit-a-new-SOP feature with admin review queue
+- Hub-mode visibility flipped — sections open by default
+- Tech Ops tab split into Design / Permitting / Interconnection
+- Role-gated tabs and sections to stop information leaking to wrong teams
+- Auto-link `<code>/route</code>` mentions to actual app pages
+- New tabs: Suites (per-suite SOPs), Action Queues, Drafts (with PM Guide rewrite + Pipeline Overview)
+- Tools tab expanded — BOM, AI Design Review, Pricing, P&I Hubs, Solar Surveyor, Schedule, Optimizer, Map, Workflow Builder, Property Drawer, Deal Detail, Equipment Backlog
+- New SOPs: Executive, Accounting, Sales & Marketing tabs; Catalog, Service, Scheduling, Forecast, AHJ & Utility batch
+- "Submitting a New Product" SOP and meta-SOP "How to Use the SOP Guide"
+- Pipeline Overview realigned to actual 8 deal stages
+
+### IDR Meeting Hub & Pricing (Major)
+- IDR Meeting Hub: SS note line, ops revision notes, tier adders, 10% pricing-threshold warning
+- HubSpot roof type auto-populate; adder amount HubSpot property; % of deal + waiver warnings
+- Show adder rates when system size is unknown
+- Pricing checklist redesign — removed `PricingBreakdown` component, adder costs shown inline
+- Replaced pricing calculator delta with user-entered `salesChangeAmount` field
+- Documented `DC_QUALIFYING_MODULE_BRANDS` is empty by design
+
+### Shit Show Meeting Hub
+- New meeting hub for high-risk projects (alongside IDR hub)
+- Auto-snapshot on session create; always-on add button; refresh control
+- Reuses IDR snapshot helpers for owners, statuses, and equipment
+- Queue decoupled from active session for independent management
+
+### Construction Scheduler Sub-Jobs
+- Solar / Battery / EV sub-job split for construction cards
+- Sub-job breakdown view (only renders for deals with 2+ sub-jobs)
+- Zuper job status surfaced in all scheduler modals
+- Day view timed grid for surveys/inspections
+- On-call electrician overlay on master schedule with overdue/completed flags
+- Grouped scheduler overlay filters
+
+### PM Accountability & Flags
+- PM Accountability dashboard with weekly digest (Phase 1)
+- Exception-based PM assignment system with kill switch and scoping
+- Live mode: page-load evaluation replaces daily cron
+- Compound-risk and shit-show rules; null-safe booleans; aggressive thresholds; stage-id fix
+- Assignment copy reflects deal-PM as primary
+- PM queue: accurate at read time, milestone evaluation fixed, reconciliation moved off page load
+- Criteria spec documented for HubSpot workflow build
+
+### Cost Audit (New Feature)
+- Cross-reference Zoho bills against InternalProduct purchase rates
+- Surface sales price, margin, and cross-system link badges
+- Bulk-sync costs to latest bill with suggested sales price
+
+### Catalog Hygiene & Sync Health
+- New Sync Health page: drift rollup across InternalProduct / HubSpot / Zoho / Zuper
+- Phase B data hygiene: test product cleanup, casing normalization, "Generic" rebrand
+- Integrity audit with auto-fixable repairs
+- Zoho orphan reconciliation: 302 new InternalProducts created + Zuper backfill, 311-row CSV export
+- HubSpot orphan list with Zoho/Zuper matcher
+- Auto-add unknown brands to HubSpot manufacturer enum + notify TechOps
+- Phase B operational: HubSpot enum + Zoho categories
+- Canonical `writeCrossLinkIds` used for all systems
+- Zuper spec custom fields written via `meta_data` (not legacy `custom_fields`); spec-derived fields plumbed on product create (M3.4)
+- BOM table: Catalogs column consolidated into product badge
+- Backfill script for Zoho item images from historical pushes
+- Zoho item update propagates description + part_number
+
+### Service BOM
+- New Service BOM page covering deals + tickets with ticket-keyed snapshots
+- Fixed ticket-context links and cleaned dealname rendering
+- `bom-so-create` falls back without ticket custom field if Zoho org lacks it
+- `zoho-inventory` retries on Access Denied during token refresh
+
+### EagleView / TrueDesign Pipeline
+- TrueDesign auto-pull pipeline (9 tasks)
+- Solar Surveyor renders `EagleViewPanel` when `?dealId=` URL param is set
+- Reads deal-style HubSpot address fields
+- Rollout runbook documented
+
+### Permit Hub
+- Per-inbox OAuth workaround for blocked DWD scope
+- Token-exchange error body surfaced in probe response for diagnosis
+
+### Office Performance
+- Combined SLO + Camarillo into a single California dashboard
+- Fixed California goals-pipeline route 404
+
+### Other Features
+- Schedule Event Log captures Zuper reschedules and crew changes
+- Persist Zuper assignment metadata on confirm
+- IT endpoints: audit-sessions, anomaly-events, user-roster
+- Breadcrumbs: 23 missing SUITE_MAP entries added; stale overrides removed
+- Pending Zuper survey holds handled locally with slot fallback and downstream follow-up
+- Admin testing suite added
+
+### Bug Fixes
+- Production build: `product-comparison` wrapped in `Suspense`
+- React hooks ordering fixed in IDR `ProjectDetail`
+- Removed duplicate `pricingDeltaPct` definition from squash merge
+- Multiple pending-Zuper deploy type errors resolved
+- Reverted "Comms: include HubSpot emails outside inbox" (#482)
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
