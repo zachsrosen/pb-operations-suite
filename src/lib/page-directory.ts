@@ -13,6 +13,7 @@ export const APP_PAGE_ROUTES = [
   "/admin/tickets",
   "/admin/users",
   "/dashboards/adders",
+  "/dashboards/admin/da-drift",
   "/dashboards/admin/workflows",
   "/dashboards/admin/workflows/[id]",
   "/dashboards/admin/workflows/runs",

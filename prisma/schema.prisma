@@ -3917,3 +3917,36 @@ model AircallAnalyticsSummary {
   @@index([userAircallId, periodEnd])
   @@index([provider, periodEnd])
 }
+
+// PandaDoc DA reconciliation drift
+//
+// Backup integration for the HubSpot↔PandaDoc native connector. Cron polls
+// PandaDoc for recently-modified DA documents, compares each doc's status
+// against the deal's `layout_status`, and writes mismatches here for
+// human review. Flag-only at launch; admin marks each row resolved.
+enum DaDriftStatus {
+  OPEN
+  RESOLVED
+  IGNORED
+}
+
+model DaStatusDrift {
+  id                String        @id @default(cuid())
+  pandaDocId        String        @unique
+  hubspotDealId     String
+  templateId        String?
+  documentName      String?
+  pandaDocStatus    String // raw "document.completed" / "document.declined"
+  expectedHubspot   String // "Design Approved" | "Design Rejected"
+  actualHubspot     String? // current layout_status when drift detected
+  pandaDocSentAt    DateTime?
+  pandaDocCompleted DateTime?
+  detectedAt        DateTime      @default(now())
+  status            DaDriftStatus @default(OPEN)
+  resolvedAt        DateTime?
+  resolvedBy        String? // user email
+  resolveNote       String?
+
+  @@index([status, detectedAt])
+  @@index([hubspotDealId])
+}

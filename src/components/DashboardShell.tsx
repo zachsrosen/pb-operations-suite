@@ -157,6 +157,7 @@ const SUITE_MAP: Record<string, { href: string; label: string }> = {
   "/dashboards/admin/shared-inboxes": { href: "/admin", label: "Admin" },
   "/dashboards/admin/sop-proposals": { href: "/admin", label: "Admin" },
   "/dashboards/admin/workflows": { href: "/admin", label: "Admin" },
+  "/dashboards/admin/da-drift": { href: "/admin", label: "Admin" },
 };
 
 function getParentSuiteForPath(pathname: string): { href: string; label: string } | null {

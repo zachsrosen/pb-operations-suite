@@ -60,6 +60,7 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/pm-flag-rules", // PM Flag rule evaluator — CRON_SECRET validated in route
   "/api/webhooks/aircall", // Aircall call.ended webhook — HMAC signature validated in route
   "/api/cron/aircall-sync", // Aircall drift correction sync — CRON_SECRET validated in route
+  "/api/cron/pandadoc-da-reconcile", // PandaDoc DA status drift detector — CRON_SECRET validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/bom",
