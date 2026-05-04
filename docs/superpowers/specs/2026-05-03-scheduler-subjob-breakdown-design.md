@@ -368,7 +368,7 @@ Neither scheduler today has a named `<CompactBadgeRow>` component; the badges ar
 - `src/app/dashboards/scheduler/page.tsx` — same pattern.
 
 **New:**
-- `src/lib/scheduler-subjobs.ts` — `SubJobInfo` type, `SYSTEM_ORDER`, `SYSTEM_LABELS`, `SYSTEM_ICONS` constants.
+- `src/lib/scheduler-subjobs.ts` — `SubJobInfo` type, `SYSTEM_ORDER`, `SYSTEM_TAGS`, `SYSTEM_TAG_CLASSES` constants.
 - `src/components/scheduler/SubJobBreakdown.tsx` — render component + small inline presentational helpers.
 - `src/components/scheduler/ViewModeToggle.tsx` — segmented control + `useViewMode` hook.
 - `src/__tests__/api/zuper/jobs/lookup-subjobs.test.ts` — endpoint test.
