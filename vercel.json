@@ -153,6 +153,10 @@
     {
       "path": "/api/cron/aircall-sync",
       "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/pandadoc-da-reconcile",
+      "schedule": "*/15 * * * *"
     }
   ],
   "redirects": [
