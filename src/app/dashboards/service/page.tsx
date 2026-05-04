@@ -355,7 +355,6 @@ export default function ServicePipelinePage() {
       subtitle={loadingMore && progress ? `Loading ${progress.loaded}${progress.total ? `/${progress.total}` : ""} deals...` : undefined}
       accentColor="blue"
       lastUpdated={lastUpdated}
-      breadcrumbs={[{ label: "Dashboards", href: "/" }, { label: "Service Pipeline" }]}
       headerRight={headerRight}
     >
       {/* Stats Cards */}

@@ -9,6 +9,7 @@ type CallLog = {
   poolId: string;
   callReceivedAt: string;
   customerName: string;
+  customerPhone: string | null;
   issueType: string;
   issueTypeOther: string | null;
   safetyRisk: boolean;
@@ -72,6 +73,11 @@ export function CallLogList({ poolId }: { poolId?: string }) {
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <strong className="text-foreground">{log.customerName}</strong>
+                {log.customerPhone && (
+                  <a href={`tel:${log.customerPhone}`} className="text-xs text-blue-400 hover:underline">
+                    {log.customerPhone}
+                  </a>
+                )}
                 <span className="text-xs text-muted">
                   {ISSUE_LABEL.get(log.issueType) ?? log.issueType}
                   {log.issueTypeOther && ` — ${log.issueTypeOther}`}

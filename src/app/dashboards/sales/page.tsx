@@ -178,7 +178,6 @@ export default function SalesPipelinePage() {
       title="Sales Pipeline"
       subtitle={`Active Deals${loadingMore && progress ? ` \u2022 Loading ${progress.loaded}${progress.total ? `/${progress.total}` : ""} deals...` : lastUpdated ? ` \u2022 Last updated: ${lastUpdated}` : ""}`}
       accentColor="green"
-      breadcrumbs={[{ label: "Dashboards", href: "/" }, { label: "Sales Pipeline" }]}
       headerRight={
         <div className="flex items-center gap-3">
           <label className="flex items-center gap-2 text-sm text-muted cursor-pointer">

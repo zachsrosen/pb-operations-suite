@@ -673,6 +673,44 @@ function formatOverlayAssigneeList(users: string[]): string {
   return users.join(", ");
 }
 
+function firstName(full: string): string {
+  return (full || "").split(/\s+/)[0] || full || "";
+}
+
+function regionAbbr(region: string): string {
+  const r = (region || "").toLowerCase();
+  if (r.includes("colorado")) return "CO";
+  if (r.includes("california")) return "CA";
+  if (r.includes("denver") || r.includes("dtc") || r.includes("westy") || r.includes("springs")) return "CO";
+  if (r.includes("camarillo") || r.includes("slo") || r.includes("luis")) return "CA";
+  return region?.slice(0, 2).toUpperCase() || "";
+}
+
+function OnCallChips({
+  assignments,
+  className = "",
+}: {
+  assignments: Array<{ name: string; region: string; poolName: string }>;
+  className?: string;
+}) {
+  if (!assignments || assignments.length === 0) return null;
+  return (
+    <div className={`flex flex-wrap gap-0.5 ${className}`}>
+      {assignments.map((a, i) => (
+        <span
+          key={`${a.poolName}-${i}`}
+          title={`${a.poolName} on-call: ${a.name}`}
+          className="inline-flex items-center gap-0.5 px-1 py-px rounded text-[0.5rem] font-semibold bg-emerald-500/15 text-emerald-300 border border-emerald-500/40"
+        >
+          <span aria-hidden>🔧</span>
+          <span className="truncate max-w-[60px]">{firstName(a.name)}</span>
+          <span className="opacity-70">{regionAbbr(a.region)}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 type TimedDayEvent = {
   event: DisplayEvent;
   startMinutes: number;
@@ -877,11 +915,13 @@ export default function SchedulerPage() {
   const [showDnr, setShowDnr] = useState(false);
   const [showRoofing, setShowRoofing] = useState(false);
   const [showOther, setShowOther] = useState(false);
+  const [showOnCall, setShowOnCall] = useState(false);
   useEffect(() => {
     if (localStorage.getItem("scheduler-show-service") === "true") setShowService(true);
     if (localStorage.getItem("scheduler-show-dnr") === "true") setShowDnr(true);
     if (localStorage.getItem("scheduler-show-roofing") === "true") setShowRoofing(true);
     if (localStorage.getItem("scheduler-show-other") === "true") setShowOther(true);
+    if (localStorage.getItem("scheduler-show-on-call") === "true") setShowOnCall(true);
   }, []);
   const toggleService = useCallback(() => {
     setShowService((prev) => {
@@ -908,6 +948,13 @@ export default function SchedulerPage() {
     setShowOther((prev) => {
       const next = !prev;
       localStorage.setItem("scheduler-show-other", String(next));
+      return next;
+    });
+  }, []);
+  const toggleOnCall = useCallback(() => {
+    setShowOnCall((prev) => {
+      const next = !prev;
+      localStorage.setItem("scheduler-show-on-call", String(next));
       return next;
     });
   }, []);
@@ -1295,6 +1342,46 @@ export default function SchedulerPage() {
     staleTime: 2 * 60 * 1000,
     refetchOnWindowFocus: true,
   });
+
+  /* ---- on-call rotation overlay (per-day per-region assignments) ---- */
+  const onCallQuery = useQuery<{
+    assignments: Array<{
+      poolId: string;
+      poolName: string;
+      region: string;
+      date: string;
+      crewMemberId: string;
+      crewMemberName: string;
+      source: string;
+      persisted: boolean;
+    }>;
+  }>({
+    queryKey: ["on-call-overlay", overlayDateRange.from_date, overlayDateRange.to_date],
+    queryFn: async () => {
+      const params = new URLSearchParams({
+        from: overlayDateRange.from_date,
+        to: overlayDateRange.to_date,
+      });
+      const res = await fetch(`/api/on-call/assignments?${params}`);
+      if (!res.ok) return { assignments: [] };
+      return res.json();
+    },
+    enabled: showOnCall,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
+  });
+
+  const onCallByDate = useMemo((): Map<string, Array<{ name: string; region: string; poolName: string }>> => {
+    const map = new Map<string, Array<{ name: string; region: string; poolName: string }>>();
+    if (!showOnCall || !onCallQuery.data?.assignments) return map;
+    for (const a of onCallQuery.data.assignments) {
+      if (!a.crewMemberName) continue;
+      const arr = map.get(a.date) ?? [];
+      arr.push({ name: a.crewMemberName, region: a.region, poolName: a.poolName });
+      map.set(a.date, arr);
+    }
+    return map;
+  }, [showOnCall, onCallQuery.data]);
 
   const overlayEvents = useMemo((): OverlayEvent[] => {
     const service = showService && serviceJobsQuery.data?.jobs
@@ -4240,6 +4327,22 @@ export default function SchedulerPage() {
                   {overlayCounts.otherFollowUp} need{overlayCounts.otherFollowUp === 1 ? "s" : ""} follow-up
                 </span>
               )}
+              <button
+                onClick={toggleOnCall}
+                className={`flex items-center gap-1 px-1.5 py-1 text-[0.6rem] font-medium rounded border transition-colors ${
+                  showOnCall
+                    ? "border-emerald-400 text-emerald-400 bg-emerald-500/10"
+                    : "border-t-border text-muted opacity-60 hover:border-muted"
+                }`}
+                title="Show on-call electrician for each day"
+              >
+                <span className={`w-2.5 h-2.5 rounded-full border border-dashed flex items-center justify-center shrink-0 ${
+                  showOnCall ? "border-emerald-400" : "border-t-border"
+                }`}>
+                  {showOnCall && <span className="w-1 h-1 rounded-full bg-emerald-400" />}
+                </span>
+                On-Call
+              </button>
             </div>
             {(calendarLocations.length > 0 || calendarScheduleTypes.length > 0) && (
               <button
@@ -4372,6 +4475,12 @@ export default function SchedulerPage() {
                           >
                             {day}
                           </button>
+                          {showOnCall && (
+                            <OnCallChips
+                              assignments={onCallByDate.get(dateStr) ?? []}
+                              className="mb-0.5"
+                            />
+                          )}
                           {dayEvents.map((ev, ei) => {
                             const shortName = getCustomerName(ev.name).substring(
                               0,
@@ -4699,6 +4808,7 @@ export default function SchedulerPage() {
                   {weekDates.map((d, i) => {
                     const isToday =
                       d.toDateString() === todayStr.current;
+                    const dStr = toDateStr(d);
                     return (
                       <div
                         key={i}
@@ -4713,13 +4823,19 @@ export default function SchedulerPage() {
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            openDayView(toDateStr(d));
+                            openDayView(dStr);
                           }}
                           className="text-base font-bold block mt-0.5 text-foreground/90"
                           title="Open day view"
                         >
                           {d.getDate()}
                         </button>
+                        {showOnCall && (
+                          <OnCallChips
+                            assignments={onCallByDate.get(dStr) ?? []}
+                            className="mt-1 justify-center"
+                          />
+                        )}
                       </div>
                     );
                   })}

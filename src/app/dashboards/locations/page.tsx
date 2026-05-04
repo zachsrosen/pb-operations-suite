@@ -147,7 +147,6 @@ export default function LocationComparisonPage() {
       subtitle="Compare performance across all Photon Brothers locations"
       accentColor="blue"
       lastUpdated={lastUpdated}
-      breadcrumbs={[{ label: "Dashboards", href: "/" }, { label: "Locations" }]}
       exportData={{ data: exportData, filename: "location-comparison" }}
       headerRight={
         <div className="flex items-center gap-3">

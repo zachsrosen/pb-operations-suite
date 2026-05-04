@@ -395,3 +395,339 @@ export async function createSalesOrder(params: {
     ...postProcessExtras,
   };
 }
+
+/**
+ * Service Suite parallel: create a draft Zoho Sales Order from a TICKET BOM
+ * snapshot. Mirrors createSalesOrder above but reads/writes TicketBomSnapshot
+ * and tags the SO with "HubSpot Ticket Record ID" instead of the deal field.
+ *
+ * Tickets don't carry a PROJ-XXXX so the SO number is derived from the ticket
+ * ID (`SO-T-<ticketId>`). Reference number uses the ticket subject directly.
+ */
+export async function createTicketSalesOrder(params: {
+  ticketId: string;
+  version: number;
+  customerId: string;
+  actor: ActorContext;
+  debug?: boolean;
+  pbLocation?: string | null;
+}): Promise<CreateSoResult> {
+  const { ticketId, version, customerId, actor, debug, pbLocation } = params;
+  const startedAt = Date.now();
+
+  if (!prisma) {
+    throw new Error("Database not configured");
+  }
+
+  if (!zohoInventory.isConfigured()) {
+    throw new Error("Zoho Inventory is not configured");
+  }
+
+  const logSo = async (
+    outcome: "succeeded" | "failed" | "reused",
+    details: Record<string, unknown>,
+  ) => {
+    await logActivity({
+      type: outcome === "failed" ? "API_ERROR" : "FEATURE_USED",
+      description:
+        outcome === "succeeded"
+          ? `Created Zoho SO for ticket ${ticketId} BOM v${version}`
+          : outcome === "reused"
+            ? `Reused existing Zoho SO for ticket ${ticketId} v${version}`
+            : `BOM ticket-create-so failed for ticket ${ticketId}`,
+      userEmail: actor.email,
+      userName: actor.name,
+      entityType: "ticket_bom",
+      entityId: String(ticketId),
+      entityName: "ticket_create_so",
+      metadata: {
+        event: "bom_ticket_create_so",
+        outcome,
+        ticketId,
+        version,
+        ...details,
+      },
+      ipAddress: actor.ipAddress,
+      userAgent: actor.userAgent,
+      requestPath: actor.requestPath ?? "/api/bom/ticket-create-so",
+      requestMethod: actor.requestMethod ?? "POST",
+      responseStatus: outcome === "failed" ? 500 : 200,
+      durationMs: Date.now() - startedAt,
+    });
+  };
+
+  // 1. Load the ticket BOM snapshot
+  const snapshot = await prisma.ticketBomSnapshot.findFirst({
+    where: { ticketId: String(ticketId), version },
+  });
+  if (!snapshot) {
+    await logSo("failed", { reason: "snapshot_not_found" });
+    throw new Error(`Ticket BOM snapshot not found for ticket ${ticketId} v${version}`);
+  }
+
+  // 2. Idempotency guard
+  if (snapshot.zohoSoId) {
+    await logSo("reused", {
+      ticketSubject: snapshot.ticketSubject,
+      salesorder_id: snapshot.zohoSoId,
+    });
+    return {
+      salesorder_id: snapshot.zohoSoId,
+      salesorder_number: null,
+      unmatchedCount: 0,
+      unmatchedItems: [],
+      matchedItems: [],
+      alreadyExisted: true,
+    };
+  }
+
+  const bomData = snapshot.bomData as {
+    project?: BomProject & { address?: string };
+    items?: BomItem[];
+    suggestedAdditions?: BomItem[];
+  };
+
+  const bomItems: BomItem[] = [
+    ...(Array.isArray(bomData?.items) ? bomData.items : []),
+    ...(Array.isArray(bomData?.suggestedAdditions) ? bomData.suggestedAdditions : []),
+  ];
+
+  const enablePostProcess = process.env.ENABLE_SO_POST_PROCESS === "true";
+  const wantDebug = enablePostProcess && (debug ?? false);
+
+  // 3. Match each BOM item to Zoho (sequential to avoid concurrent-request limits)
+  let unmatchedCount = 0;
+  const unmatchedItems: string[] = [];
+  const matchedItems: Array<{ bomName: string; zohoName: string }> = [];
+  const resolvedItems: (SoLineItem | null)[] = [];
+
+  for (const item of bomItems) {
+    const name =
+      item.model
+        ? `${item.brand ? item.brand + " " : ""}${item.model}`
+        : item.description;
+
+    const searchTerms = buildBomSearchTerms({
+      brand: item.brand,
+      model: item.model,
+      description: item.description,
+    });
+    let match: { item_id: string; zohoName: string; zohoSku?: string } | null = null;
+    for (const term of searchTerms) {
+      match = await zohoInventory.findItemIdByName(term);
+      if (match) break;
+    }
+
+    if (!match) {
+      unmatchedCount++;
+      unmatchedItems.push(name);
+      resolvedItems.push(null);
+      continue;
+    }
+
+    const parsedQty = Math.round(Number(item.qty));
+    if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
+      resolvedItems.push(null);
+      continue;
+    }
+    matchedItems.push({ bomName: name, zohoName: match.zohoName });
+    resolvedItems.push({
+      item_id: match.item_id,
+      name,
+      quantity: parsedQty,
+      description: item.description,
+      sku: match.zohoSku,
+      bomCategory: item.category,
+    });
+  }
+
+  let lineItems = resolvedItems.filter(
+    (item): item is NonNullable<typeof item> => item !== null,
+  );
+
+  // 3b. Feedback IDs — ticket-scoped is not currently captured separately, so
+  // fall back to global recent feedback for SO post-process audit context.
+  let feedbackIds: string[] = [];
+  try {
+    if (prisma) {
+      const globalEntries = await prisma.bomToolFeedback.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 5,
+        select: { id: true },
+      });
+      feedbackIds = globalEntries.map(e => e.id);
+    }
+  } catch {
+    // Best-effort — don't block SO creation
+  }
+
+  // 3c. Post-process line items
+  let postProcessExtras: Record<string, unknown> = {};
+  if (enablePostProcess) {
+    const originalLineItems = wantDebug ? lineItems.map((i) => ({ ...i })) : undefined;
+    const ppResult = await postProcessSoItems(
+      lineItems,
+      bomData,
+      (query) => zohoInventory.findItemIdByName(query),
+      { feedbackIds },
+    );
+    lineItems = ppResult.lineItems;
+    postProcessExtras = {
+      corrections: ppResult.corrections,
+      rulesVersion: ppResult.rulesVersion,
+      jobContext: ppResult.jobContext,
+      feedbackIds: ppResult.feedbackIds,
+      ...(wantDebug ? { originalLineItems, correctedLineItems: ppResult.lineItems } : {}),
+    };
+  }
+
+  // 4. Build SO metadata
+  const address = bomData?.project?.address ?? "";
+  // Tickets don't carry PROJ numbers; key the SO off the ticket ID so the
+  // sales order is unique per ticket and recovery on duplicate retries works.
+  const soNumber = `SO-T-${ticketId}`;
+  const referenceNumber = `Ticket ${ticketId} | ${snapshot.ticketSubject}`.slice(0, 50);
+
+  const warehouseId = pbLocation
+    ? ZOHO_WAREHOUSE_IDS[pbLocation] ?? ZOHO_WAREHOUSE_IDS[pbLocation.toLowerCase()]
+    : undefined;
+  if (pbLocation && !warehouseId) {
+    console.warn(`[BOM-SO-Ticket] Unknown pb_location "${pbLocation}" — no warehouse mapped for ticket ${ticketId}`);
+  }
+
+  // Helper to build the Zoho SO payload — used by initial attempt and the
+  // custom-field-fallback retry below.
+  const buildSoPayload = (includeCustomField: boolean) => ({
+    customer_id: customerId,
+    salesorder_number: soNumber,
+    reference_number: referenceNumber,
+    notes: `Generated from PB Service BOM v${version}${address ? ` — ${address}` : ""}`,
+    status: "draft" as const,
+    line_items: lineItems.map(({ item_id, name, quantity, description }) => ({
+      ...(item_id ? { item_id } : {}),
+      name,
+      quantity,
+      ...(description ? { description } : {}),
+      ...(warehouseId ? { warehouse_id: warehouseId } : {}),
+    })),
+    ...(includeCustomField
+      ? { custom_fields: [{ label: "HubSpot Ticket Record ID", value: ticketId }] }
+      : {}),
+  });
+
+  let soResult: { salesorder_id: string; salesorder_number: string } | undefined;
+  try {
+    soResult = await zohoInventory.createSalesOrder(buildSoPayload(true));
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "Zoho API error";
+
+    // Recovery 1: custom field doesn't exist on Zoho's SO template. The
+    // "HubSpot Ticket Record ID" label needs to be added in Zoho's SO
+    // template (Setup → Customization → Sales Order). Until that's done,
+    // we'd rather create the SO without the tag than fail outright — the
+    // SO still gets the ticket id baked into the SO number (`SO-T-<id>`)
+    // and reference number, so the link isn't lost, just not surfaced as
+    // a custom field column.
+    if (/custom field with the label.*does[\s']?n[o]?[\s']?t exist/i.test(message)) {
+      console.warn(
+        `[bom-so-create] Zoho is missing the "HubSpot Ticket Record ID" custom field — ` +
+          `creating SO without the tag. Add the field in Zoho Setup → Customization → ` +
+          `Sales Order to enable ticket-id tagging.`,
+      );
+      try {
+        soResult = await zohoInventory.createSalesOrder(buildSoPayload(false));
+        // Fall through to the success path below.
+      } catch (retryErr) {
+        const retryMsg = retryErr instanceof Error ? retryErr.message : "Zoho API error";
+        await logSo("failed", {
+          reason: "zoho_api_error_retry_no_custom_field",
+          ticketSubject: snapshot.ticketSubject,
+          error: retryMsg,
+        });
+        throw new Error(`Zoho API error: ${retryMsg}`);
+      }
+    } else if (message.includes("already exists")) {
+      // Recovery 2: SO already exists in Zoho (previous run crashed before saving ID)
+      console.warn(`[bom-so-create] Ticket SO ${soNumber} already exists in Zoho — recovering`);
+      try {
+        const existing = await zohoInventory.getSalesOrder(soNumber);
+        if (existing?.salesorder_id) {
+          try {
+            const existingFields: Array<{ label: string; value: string }> =
+              (existing as unknown as Record<string, unknown>).custom_fields as Array<{ label: string; value: string }> ?? [];
+            const alreadySet = existingFields.some(
+              (f) => f.label === "HubSpot Ticket Record ID" && f.value === ticketId,
+            );
+            if (!alreadySet) {
+              const merged = [
+                ...existingFields.filter((f) => f.label !== "HubSpot Ticket Record ID"),
+                { label: "HubSpot Ticket Record ID", value: ticketId },
+              ];
+              await zohoInventory.updateSalesOrder(existing.salesorder_id, {
+                custom_fields: merged,
+              });
+            }
+          } catch (patchErr) {
+            console.warn("[bom-so-create] Could not patch custom fields on recovered ticket SO:", patchErr);
+          }
+          await prisma.ticketBomSnapshot.update({
+            where: { id: snapshot.id },
+            data: { zohoSoId: existing.salesorder_id },
+          });
+          await logSo("reused", {
+            ticketSubject: snapshot.ticketSubject,
+            salesorder_id: existing.salesorder_id,
+            salesorder_number: existing.salesorder_number,
+            recovered: true,
+          });
+          return {
+            salesorder_id: existing.salesorder_id,
+            salesorder_number: existing.salesorder_number,
+            unmatchedCount,
+            unmatchedItems,
+            matchedItems,
+            alreadyExisted: true,
+            ...postProcessExtras,
+          };
+        }
+      } catch (recoveryErr) {
+        console.error("[bom-so-create] Ticket SO recovery lookup failed:", recoveryErr);
+      }
+    }
+
+    // If a recovery branch (custom-field-missing retry, already-exists
+    // recovery) populated soResult or already returned, skip the failure
+    // throw. Otherwise propagate the original Zoho error.
+    if (!soResult) {
+      console.error("[bom-so-create] Ticket Zoho error:", message);
+      await logSo("failed", {
+        reason: "zoho_api_error",
+        ticketSubject: snapshot.ticketSubject,
+        error: message,
+      });
+      throw new Error(`Zoho API error: ${message}`);
+    }
+  }
+
+  // 5. Store zohoSoId on snapshot
+  await prisma.ticketBomSnapshot.update({
+    where: { id: snapshot.id },
+    data: { zohoSoId: soResult.salesorder_id },
+  });
+
+  await logSo("succeeded", {
+    ticketSubject: snapshot.ticketSubject,
+    salesorder_id: soResult.salesorder_id,
+    salesorder_number: soResult.salesorder_number,
+    unmatchedCount,
+  });
+
+  return {
+    salesorder_id: soResult.salesorder_id,
+    salesorder_number: soResult.salesorder_number,
+    unmatchedCount,
+    unmatchedItems,
+    matchedItems,
+    ...postProcessExtras,
+  };
+}

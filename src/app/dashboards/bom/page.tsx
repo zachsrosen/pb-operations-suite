@@ -72,6 +72,13 @@ interface ProjectResult {
   openSolarUrl?: string | null;
   zuperUid?: string | null;
   hubspotContactId?: string | null;
+  /**
+   * Distinguishes deal-context vs ticket-context selections in the Service BOM
+   * tool. Defaults to "deal" for backward compatibility — only the Service
+   * Suite BOM page surfaces tickets, and ticket-context disables features that
+   * only apply to deals (push to HubSpot line items, create SO/PO).
+   */
+  kind?: "deal" | "ticket";
 }
 
 interface DriveFile {
@@ -191,14 +198,6 @@ interface DiffRow {
 // Display labels for catalog sources — extend as new sources are added to the comparison API
 const SOURCE_DISPLAY_LABELS: Record<string, string> = {
   internal: "Internal",
-  hubspot: "HubSpot",
-  zuper: "Zuper",
-  zoho: "Zoho",
-};
-
-// Short column headers for the BOM table
-const SOURCE_SHORT_LABELS: Record<string, string> = {
-  internal: "INT",
   hubspot: "HubSpot",
   zuper: "Zuper",
   zoho: "Zoho",
@@ -491,7 +490,8 @@ function sourcesFromRows(rows: ComparisonRow[]): string[] {
 /** Build a map of BOM item id → CatalogStatus from the comparison rows */
 function buildCatalogStatus(
   items: BomItem[],
-  rows: ComparisonRow[]
+  rows: ComparisonRow[],
+  effectiveSkuByItem?: Map<string, InternalCatalogSku>,
 ): Map<string, CatalogStatus> {
   const result = new Map<string, CatalogStatus>();
   const sources = sourcesFromRows(rows);
@@ -500,6 +500,24 @@ function buildCatalogStatus(
     const status: CatalogStatus = {};
     for (const src of sources) status[src] = false;
 
+    // Primary signal: if the BOM item is matched to an InternalProduct
+    // (auto or manual override), trust the link fields on that product.
+    // Avoids false negatives when external item display names differ
+    // from the BOM model string (e.g. Zuper/Zoho store "Tesla Powerwall 3"
+    // while the planset has "POWERWALL-3 (1707000-XX-Y)").
+    const sku = effectiveSkuByItem?.get(item.id);
+    if (sku) {
+      if (sku.hubspotProductId) status.hubspot = true;
+      if (sku.zuperItemId) status.zuper = true;
+      if (sku.zohoItemId) status.zoho = true;
+      // Internal is "present" by definition when a sku is matched
+      if ("internal" in status) status.internal = true;
+    }
+
+    // Fallback: scan comparison rows by name similarity for any source
+    // not already covered by the matched sku. Handles cases where the
+    // BOM item isn't yet matched to an internal product but an external
+    // catalog has a fuzzy hit.
     for (const row of rows) {
       for (const src of sources) {
         if (!status[src]) {
@@ -912,7 +930,121 @@ function CustomerSearchCombobox({ value, valueName, onChange, autoSearch, onManu
 
 type ImportTab = "upload" | "drive" | "paste" | "project-files";
 
-function BomDashboardInner() {
+export interface BomPipelineConfig {
+  pipeline: "project" | "service";
+  title: string;
+  accentColor: string;
+  searchPlaceholder: string;
+  dashboardPath: string;
+  trackingName: string;
+  /** Whether the search dropdown also queries service tickets in addition to deals */
+  supportsTickets?: boolean;
+  /**
+   * Returns the URL to fetch search results from. The result is then run
+   * through `runSearch` (which may call multiple endpoints in parallel for
+   * pipelines that support tickets).
+   */
+  runSearch: (query: string) => Promise<ProjectResult[]>;
+  /** History GET endpoint, kind-aware so ticket BOMs use a parallel route. */
+  historyEndpoint: (id: string, kind: "deal" | "ticket") => string;
+  /** History/all GET endpoint for the inline "all snapshots" section. */
+  historyAllEndpoint: string;
+}
+
+async function runDealSearch(
+  query: string,
+  endpoint: (q: string) => string,
+  mapResults: (data: Record<string, unknown>) => ProjectResult[],
+): Promise<ProjectResult[]> {
+  const res = await fetch(endpoint(query));
+  if (!res.ok) return [];
+  const data = (await res.json()) as Record<string, unknown>;
+  return mapResults(data);
+}
+
+const PROJECT_PIPELINE_CONFIG: BomPipelineConfig = {
+  pipeline: "project",
+  title: "Planset BOM",
+  accentColor: "cyan",
+  searchPlaceholder: "🔍 Search for a HubSpot project…",
+  dashboardPath: "/dashboards/bom",
+  trackingName: "bom-tool",
+  supportsTickets: false,
+  runSearch: (query) =>
+    runDealSearch(
+      query,
+      (q) => `/api/projects?search=${encodeURIComponent(q)}&limit=8`,
+      (data) =>
+        ((data as { projects?: Array<{ id: number; name: string; address: string; designFolderUrl: string | null; driveUrl: string | null; openSolarUrl: string | null; zuperUid: string | null }> }).projects ?? []).map((p) => ({
+          hs_object_id: String(p.id),
+          dealname: p.name,
+          address: p.address,
+          designFolderUrl: p.designFolderUrl,
+          driveUrl: p.driveUrl,
+          openSolarUrl: p.openSolarUrl,
+          zuperUid: p.zuperUid,
+          kind: "deal" as const,
+        })),
+    ),
+  historyEndpoint: (id) => `/api/bom/history?dealId=${encodeURIComponent(id)}`,
+  historyAllEndpoint: "/api/bom/history/all",
+};
+
+export const SERVICE_PIPELINE_CONFIG: BomPipelineConfig = {
+  pipeline: "service",
+  title: "Service BOM",
+  accentColor: "red",
+  searchPlaceholder: "🔍 Search a service deal or ticket…",
+  dashboardPath: "/dashboards/service-bom",
+  trackingName: "service-bom-tool",
+  supportsTickets: true,
+  runSearch: async (query) => {
+    // Search service deals AND service tickets in parallel, merge results.
+    const [deals, tickets] = await Promise.all([
+      runDealSearch(
+        query,
+        (q) => `/api/deals?pipeline=service&search=${encodeURIComponent(q)}&limit=6`,
+        (data) =>
+          ((data as { deals?: Array<{ id: number; name: string; address: string }> }).deals ?? []).map((d) => ({
+            hs_object_id: String(d.id),
+            dealname: d.name,
+            address: d.address,
+            designFolderUrl: null, // populated on hydrate
+            driveUrl: null,
+            openSolarUrl: null,
+            zuperUid: null,
+            kind: "deal" as const,
+          })),
+      ),
+      // Tickets — search via /api/service/tickets which supports a `search` query param.
+      // Keep dealname clean (no emoji prefix) so customer auto-match's name
+      // parser works correctly. The ticket emoji is added at render time.
+      fetch(`/api/service/tickets?search=${encodeURIComponent(query)}`)
+        .then((r) => (r.ok ? r.json() : { tickets: [] }))
+        .then((data: { tickets?: Array<{ id: string; title: string; location?: string | null }> }) =>
+          (data.tickets ?? []).slice(0, 6).map((t) => ({
+            hs_object_id: t.id,
+            dealname: t.title,
+            address: t.location ?? undefined,
+            designFolderUrl: null,
+            driveUrl: null,
+            openSolarUrl: null,
+            zuperUid: null,
+            kind: "ticket" as const,
+          }))
+        )
+        .catch(() => [] as ProjectResult[]),
+    ]);
+    return [...deals, ...tickets];
+  },
+  historyEndpoint: (id, kind) =>
+    kind === "ticket"
+      ? `/api/bom/ticket-history?ticketId=${encodeURIComponent(id)}`
+      : `/api/bom/history?dealId=${encodeURIComponent(id)}`,
+  historyAllEndpoint: "/api/bom/ticket-history/all",
+};
+
+export function BomDashboardInner({ pipelineConfig = PROJECT_PIPELINE_CONFIG }: { pipelineConfig?: BomPipelineConfig } = {}) {
   const { addToast } = useToast();
   const { data: session } = useSession();
   const router = useRouter();
@@ -921,7 +1053,7 @@ function BomDashboardInner() {
 
   // Track page view on mount
   useEffect(() => {
-    trackDashboardView("bom-tool");
+    trackDashboardView(pipelineConfig.trackingName);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -993,6 +1125,11 @@ function BomDashboardInner() {
   const [allHistorySearch, setAllHistorySearch] = useState("");
   const diffRows = compareA && compareB ? diffBoms(compareA.bomData.items, compareB.bomData.items) : [];
 
+  // Ticket-context BOMs (Service Suite) don't yet support push-to-HubSpot,
+  // Zoho SO/PO creation, or design-folder/Drive-file scans the way deal BOMs
+  // do — extract + save snapshot is the supported flow for tickets.
+  const isTicketContext = (linkedProject?.kind ?? "deal") === "ticket";
+
   // Product catalog comparison data
   const [comparisonRows, setComparisonRows] = useState<ComparisonRow[]>([]);
   const [catalogHealth, setCatalogHealth] = useState<ProductComparisonResponse["health"] | null>(null);
@@ -1049,15 +1186,62 @@ function BomDashboardInner() {
       });
   }, [linkedProject?.dealname, linkedProject?.hubspotContactId, linkedProject?.address]);
 
-  const hydrateProjectDetails = useCallback(async (dealId: string): Promise<void> => {
-    const normalizedDealId = dealId.trim();
-    if (!normalizedDealId) return;
+  const hydrateProjectDetails = useCallback(async (
+    id: string,
+    kind: "deal" | "ticket" = "deal",
+  ): Promise<void> => {
+    const normalizedId = id.trim();
+    if (!normalizedId) return;
 
     projectHydrateAbortRef.current?.abort();
     const controller = new AbortController();
     projectHydrateAbortRef.current = controller;
 
-    const response = await fetch(`/api/projects/${encodeURIComponent(normalizedDealId)}`, {
+    if (kind === "ticket") {
+      // Service ticket hydration — pull subject + folderUrl + first
+      // associated contact id from ticket detail. We use the contact id
+      // for Zoho customer auto-match; without it, resolve-customer falls
+      // back to dealname parsing which is far less reliable.
+      const response = await fetch(`/api/service/tickets/${encodeURIComponent(normalizedId)}`, {
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`Failed to load ticket (${response.status})`);
+
+      const data = await response.json() as {
+        ticket: {
+          id: string;
+          subject: string;
+          location: string | null;
+          folderUrl: string | null;
+          associations?: {
+            contacts?: Array<{ id: string; name: string; email: string }>;
+          };
+        };
+      };
+
+      if (controller.signal.aborted) return;
+
+      const t = data.ticket;
+      const firstContact = t.associations?.contacts?.[0];
+      setLinkedProject((prev) => ({
+        ...(prev ?? {}),
+        hs_object_id: t.id,
+        // Keep dealname clean (subject only) so resolve-customer's name
+        // parser works. The ticket emoji is rendered separately in UI
+        // labels via the `kind === "ticket"` check.
+        dealname: t.subject,
+        address: t.location ?? undefined,
+        designFolderUrl: t.folderUrl,
+        driveUrl: null,
+        openSolarUrl: null,
+        zuperUid: null,
+        hubspotContactId: firstContact?.id ?? null,
+        kind: "ticket",
+      }));
+      return;
+    }
+
+    const response = await fetch(`/api/projects/${encodeURIComponent(normalizedId)}`, {
       signal: controller.signal,
     });
     if (!response.ok) throw new Error(`Failed to load project (${response.status})`);
@@ -1089,13 +1273,14 @@ function BomDashboardInner() {
         openSolarUrl: p.openSolarUrl,
         zuperUid: p.zuperUid,
         hubspotContactId: p.hubspotContactId ?? null,
+        kind: "deal",
       };
     });
   }, []);
 
   /* ---- Fetch all BOM history for inline section ---- */
   useEffect(() => {
-    fetch("/api/bom/history/all")
+    fetch(pipelineConfig.historyAllEndpoint)
       .then((r) => r.json())
       .then((data: { snapshots?: typeof allSnapshots }) => {
         setAllSnapshots(data.snapshots ?? []);
@@ -1133,21 +1318,17 @@ function BomDashboardInner() {
       .finally(() => setCatalogLoading(false));
   }, [bom]);
 
-  /* ---- Rebuild catalog status whenever items or rows change ---- */
-  useEffect(() => {
-    if (!comparisonRows.length || !items.length) {
-      setCatalogStatus(new Map());
-      return;
-    }
-    setCatalogStatus(buildCatalogStatus(items, comparisonRows));
-  }, [items, comparisonRows]);
+  /* ---- Rebuild catalog status — moved below effectiveSkuByItem definition ---- */
 
-  /* ---- Load deal from ?deal= URL param on mount ---- */
+  /* ---- Load deal/ticket from ?deal= or ?ticket= URL param on mount ---- */
   useEffect(() => {
+    const ticketId = searchParams.get("ticket");
     const dealId = searchParams.get("deal");
-    if (!dealId) return;
+    const id = ticketId ?? dealId;
+    if (!id) return;
+    const kind: "deal" | "ticket" = ticketId ? "ticket" : "deal";
     setDealLoading(true);
-    hydrateProjectDetails(dealId)
+    hydrateProjectDetails(id, kind)
       .catch(() => {/* silent — bad param, just ignore */})
       .finally(() => setDealLoading(false));
   }, [searchParams, hydrateProjectDetails]);
@@ -1196,7 +1377,7 @@ function BomDashboardInner() {
     }
     setHistoryLoading(true);
     const autoLoad = searchParams.get("load") === "latest";
-    fetch(`/api/bom/history?dealId=${encodeURIComponent(linkedProject.hs_object_id)}`)
+    fetch(pipelineConfig.historyEndpoint(linkedProject.hs_object_id, linkedProject.kind ?? "deal"))
       .then((r) => r.ok ? r.json() : Promise.reject(r.status))
       .then((data: { snapshots: BomSnapshot[] }) => {
         setSnapshots(data.snapshots);
@@ -1283,11 +1464,9 @@ function BomDashboardInner() {
     if (!query) return;
 
     let cancelled = false;
-    fetch(`/api/projects?search=${encodeURIComponent(query)}&limit=5`)
-      .then((r) => r.json())
-      .then((data: { projects?: ProjectResult[] }) => {
+    pipelineConfig.runSearch(query)
+      .then((results) => {
         if (cancelled) return;
-        const results: ProjectResult[] = data.projects ?? [];
         // Normalize BOM address to street-only, e.g. "1617 rancho way"
         const bomStreet = rawAddress.split(",")[0].trim().toLowerCase();
         // Last name from BOM customer, e.g. "SILFVEN, ERIK" → "silfven"
@@ -1331,16 +1510,27 @@ function BomDashboardInner() {
     if (!targetProject) return;
     setSaving(true);
     try {
-      const res = await fetch("/api/bom/history", {
+      const isTicket = (targetProject.kind ?? "deal") === "ticket";
+      const saveUrl = isTicket ? "/api/bom/ticket-history" : "/api/bom/history";
+      const saveBody = isTicket
+        ? {
+            ticketId: targetProject.hs_object_id,
+            ticketSubject: targetProject.dealname,
+            bomData,
+            sourceFile,
+            blobUrl,
+          }
+        : {
+            dealId: targetProject.hs_object_id,
+            dealName: targetProject.dealname,
+            bomData,
+            sourceFile,
+            blobUrl,
+          };
+      const res = await fetch(saveUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dealId: targetProject.hs_object_id,
-          dealName: targetProject.dealname,
-          bomData,
-          sourceFile,
-          blobUrl,
-        }),
+        body: JSON.stringify(saveBody),
       });
       if (!res.ok) throw new Error(`Save failed (${res.status})`);
       const saved = await res.json() as { id: string; version: number; createdAt: string };
@@ -1358,8 +1548,10 @@ function BomDashboardInner() {
       setCustomerMatchMethod(null);
       customerManuallySet.current = false;
       runCustomerAutoMatch();
-      // Reload history list
-      const histRes = await fetch(`/api/bom/history?dealId=${encodeURIComponent(targetProject.hs_object_id)}`);
+      // Reload history list — kind-aware so ticket BOMs use the ticket history endpoint.
+      const histRes = await fetch(
+        pipelineConfig.historyEndpoint(targetProject.hs_object_id, targetProject.kind ?? "deal"),
+      );
       if (histRes.ok) {
         const histData = await histRes.json() as { snapshots: BomSnapshot[] };
         setSnapshots(histData.snapshots);
@@ -1475,14 +1667,23 @@ function BomDashboardInner() {
     if (!linkedProject || !savedVersion || !selectedCustomerId) return;
     setCreatingSo(true);
     try {
-      const res = await fetch("/api/bom/create-so", {
+      const isTicket = (linkedProject.kind ?? "deal") === "ticket";
+      const url = isTicket ? "/api/bom/ticket-create-so" : "/api/bom/create-so";
+      const reqBody = isTicket
+        ? {
+            ticketId: linkedProject.hs_object_id,
+            version: savedVersion,
+            customerId: selectedCustomerId,
+          }
+        : {
+            dealId: linkedProject.hs_object_id,
+            version: savedVersion,
+            customerId: selectedCustomerId,
+          };
+      const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          dealId: linkedProject.hs_object_id,
-          version: savedVersion,
-          customerId: selectedCustomerId,
-        }),
+        body: JSON.stringify(reqBody),
       });
       const data = await res.json() as {
         salesorder_id?: string;
@@ -1881,25 +2082,16 @@ function BomDashboardInner() {
     searchTimeout.current = setTimeout(async () => {
       setSearchLoading(true);
       try {
-        const res = await fetch(`/api/projects?search=${encodeURIComponent(query)}&limit=8`);
-        if (res.ok) {
-          const data = await res.json() as { projects: Array<{ id: number; name: string; address: string; designFolderUrl: string | null; driveUrl: string | null; openSolarUrl: string | null; zuperUid: string | null }> };
-          setProjectResults((data.projects || []).map((p) => ({
-            hs_object_id: String(p.id),
-            dealname: p.name,
-            address: p.address,
-            designFolderUrl: p.designFolderUrl,
-            driveUrl: p.driveUrl,
-            openSolarUrl: p.openSolarUrl,
-            zuperUid: p.zuperUid,
-          })));
-        }
+        const results = await pipelineConfig.runSearch(query);
+        setProjectResults(results);
       } catch {
         // silently ignore
       } finally {
         setSearchLoading(false);
       }
     }, 300);
+  // pipelineConfig is stable (module-level constant) — safe to omit
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /* ---- Internal SKU best match per BOM item (token-based) ---- */
@@ -1936,6 +2128,17 @@ function BomDashboardInner() {
     }
     return map;
   }, [bestSkuByItem, skuOverrides]);
+
+  /* ---- Rebuild catalog status whenever items, rows, or sku matches change.
+         Now passes effectiveSkuByItem so the dots reflect the actual link
+         record on the matched InternalProduct, not a name-similarity guess. ---- */
+  useEffect(() => {
+    if (!comparisonRows.length || !items.length) {
+      setCatalogStatus(new Map());
+      return;
+    }
+    setCatalogStatus(buildCatalogStatus(items, comparisonRows, effectiveSkuByItem));
+  }, [items, comparisonRows, effectiveSkuByItem]);
 
   /* ---- Internal SKU pricing map ---- */
   const pricingByItem = useMemo(() => {
@@ -2306,7 +2509,7 @@ function BomDashboardInner() {
           th, td { border: 1px solid #e5e7eb; padding: 4px 8px; font-size: 11px; }
         }
       `}</style>
-      <DashboardShell title="Planset BOM" accentColor="cyan">
+      <DashboardShell title={pipelineConfig.title} accentColor={pipelineConfig.accentColor}>
       <div className="space-y-6 px-4 pb-10">
 
         {/* ---- Import Panel ---- */}
@@ -2328,13 +2531,16 @@ function BomDashboardInner() {
               {linkedProject ? (
                 <div className="flex items-center gap-3">
                   <span className="text-sm text-foreground">
-                    🔗 <span className="font-medium">{linkedProject.dealname}</span>
+                    {linkedProject.kind === "ticket" ? "🎫" : "🔗"}{" "}
+                    <span className="font-medium">{linkedProject.dealname}</span>
                   </span>
                   {linkedProject.address && (
                     <span className="text-xs text-muted truncate hidden sm:inline">{linkedProject.address}</span>
                   )}
                   {linkedProject.designFolderUrl && (
-                    <span className="text-xs text-cyan-500">📁 Design Folder available</span>
+                    <span className="text-xs text-cyan-500">
+                      📁 {linkedProject.kind === "ticket" ? "Ticket Folder" : "Design Folder"} available
+                    </span>
                   )}
                   <button
                     onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); }}
@@ -2347,7 +2553,7 @@ function BomDashboardInner() {
                 <div className="relative flex-1">
                   <input
                     type="text"
-                    placeholder="🔍 Search for a HubSpot project…"
+                    placeholder={pipelineConfig.searchPlaceholder}
                     value={projectSearch}
                     onChange={(e) => handleProjectSearch(e.target.value)}
                     className="w-full rounded-lg bg-surface border border-t-border text-sm text-foreground px-3 py-2 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 placeholder:text-muted"
@@ -2363,21 +2569,24 @@ function BomDashboardInner() {
                           onClick={() => {
                             setLinkedProject(p);
                             setDealLoading(true);
-                            hydrateProjectDetails(p.hs_object_id)
+                            const kind = p.kind ?? "deal";
+                            hydrateProjectDetails(p.hs_object_id, kind)
                               .catch(() => { /* silent */ })
                               .finally(() => setDealLoading(false));
-                            router.replace(`/dashboards/bom?deal=${encodeURIComponent(p.hs_object_id)}`);
+                            const param = kind === "ticket" ? "ticket" : "deal";
+                            router.replace(`${pipelineConfig.dashboardPath}?${param}=${encodeURIComponent(p.hs_object_id)}`);
                             setProjectSearch("");
                             setProjectResults([]);
                           }}
                           className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-surface-2 transition-colors border-b border-t-border last:border-b-0"
                         >
+                          {p.kind === "ticket" && <span className="mr-1.5">🎫</span>}
                           <span className="font-medium">{p.dealname}</span>
                           {p.address && (
                             <span className="text-muted ml-2 text-xs">{p.address}</span>
                           )}
                           {p.designFolderUrl && (
-                            <span className="ml-1.5 text-xs text-cyan-500" title="Has design folder">📁</span>
+                            <span className="ml-1.5 text-xs text-cyan-500" title="Has folder link">📁</span>
                           )}
                         </button>
                       ))}
@@ -2711,7 +2920,9 @@ function BomDashboardInner() {
                   <button
                     onClick={() => {
                       // Navigate via URL so the effect fetches fresh HubSpot data
-                      router.replace(`/dashboards/bom?deal=${encodeURIComponent(autoLinkSuggestion.hs_object_id)}`);
+                      const kind = autoLinkSuggestion.kind ?? "deal";
+                      const param = kind === "ticket" ? "ticket" : "deal";
+                      router.replace(`${pipelineConfig.dashboardPath}?${param}=${encodeURIComponent(autoLinkSuggestion.hs_object_id)}`);
                       setAutoLinkSuggestion(null);
                     }}
                     className="text-xs bg-cyan-600 text-white px-3 py-1 rounded-lg hover:bg-cyan-700 transition-colors"
@@ -2729,14 +2940,17 @@ function BomDashboardInner() {
             )}
 
 
-            {/* Project Link */}
+            {/* Project / Ticket Link */}
             <div className="rounded-xl bg-surface border border-t-border p-5 shadow-card">
-              <h3 className="text-sm font-semibold text-foreground mb-3">Link to HubSpot Project</h3>
+              <h3 className="text-sm font-semibold text-foreground mb-3">
+                {pipelineConfig.supportsTickets ? "Link to HubSpot Deal or Ticket" : "Link to HubSpot Project"}
+              </h3>
               {linkedProject ? (
                 <>
                 <div className="flex items-center gap-3 flex-wrap">
                   <span className="text-sm text-foreground">
-                    ✅ <span className="font-medium">{linkedProject.dealname}</span>
+                    {linkedProject.kind === "ticket" ? "🎫" : "✅"}{" "}
+                    <span className="font-medium">{linkedProject.dealname}</span>
                   </span>
                   {saving && (
                     <span className="text-xs text-muted animate-pulse">Saving…</span>
@@ -2758,10 +2972,12 @@ function BomDashboardInner() {
                   )}
                   {!savedVersion && !saving && (
                     <span className="text-xs text-amber-600 dark:text-amber-400">
-                      Save current BOM to enable Zoho PO/SO actions.
+                      {isTicketContext
+                        ? "Save current BOM to enable Zoho SO creation."
+                        : "Save current BOM to enable Zoho PO/SO actions."}
                     </span>
                   )}
-                  {savedVersion && (
+                  {savedVersion && !isTicketContext && (
                     <div className="flex flex-col gap-2">
                       {zohoPurchaseOrders && zohoPurchaseOrders.length > 0 ? (
                         <div className="flex flex-col gap-1">
@@ -2855,7 +3071,9 @@ function BomDashboardInner() {
                         : "Zoho vendors unavailable (or none found)."}
                     </span>
                   )}
-                  {/* Zoho SO — show when saved */}
+                  {/* Zoho SO — supported for both deals and tickets. The
+                      backend dispatches /api/bom/create-so vs
+                      /api/bom/ticket-create-so based on linkedProject.kind. */}
                   {savedVersion && (
                     zohoSoId ? (
                       <a
@@ -2902,8 +3120,10 @@ function BomDashboardInner() {
                       Retry Zoho vendors
                     </button>
                   )}
-                  {/* HubSpot Push */}
-                  {savedSnapshotId && (
+                  {/* HubSpot Push \u2014 deal-only; tickets save snapshots without
+                      pushing line items, since tickets don't have line-item
+                      pushes the same way deals do. */}
+                  {savedSnapshotId && !isTicketContext && (
                     <button
                       onClick={pushToHubspot}
                       disabled={pushingToHubspot}
@@ -2914,7 +3134,7 @@ function BomDashboardInner() {
                     </button>
                   )}
                   <button
-                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setSavedSnapshotId(null); setHubspotPushResult(null); setZohoPurchaseOrders(null); setPoPreview(null); setPoFailures([]); setZohoVendors(null); setZohoSoId(null); setUnassignedVendorId(""); setSelectedCustomerId(""); setSelectedCustomerName(""); setCustomerMatchMethod(null); router.replace("/dashboards/bom"); }}
+                    onClick={() => { setLinkedProject(null); setImportTab("upload"); setDriveFiles([]); setSnapshots([]); setSavedVersion(null); setSavedSnapshotId(null); setHubspotPushResult(null); setZohoPurchaseOrders(null); setPoPreview(null); setPoFailures([]); setZohoVendors(null); setZohoSoId(null); setUnassignedVendorId(""); setSelectedCustomerId(""); setSelectedCustomerName(""); setCustomerMatchMethod(null); router.replace(pipelineConfig.dashboardPath); }}
                     className="text-xs text-muted hover:text-foreground"
                   >
                     Unlink
@@ -2967,9 +3187,11 @@ function BomDashboardInner() {
                         <button
                           key={p.hs_object_id}
                           onClick={() => {
-                            // Navigate via URL — the ?deal= effect fetches fresh HubSpot
-                            // data so designFolderUrl is always up-to-date.
-                            router.replace(`/dashboards/bom?deal=${encodeURIComponent(p.hs_object_id)}`);
+                            // Navigate via URL — the ?deal=/?ticket= effect fetches
+                            // fresh data so the folder link is always up-to-date.
+                            const kind = p.kind ?? "deal";
+                            const param = kind === "ticket" ? "ticket" : "deal";
+                            router.replace(`${pipelineConfig.dashboardPath}?${param}=${encodeURIComponent(p.hs_object_id)}`);
                             setProjectSearch("");
                             setProjectResults([]);
                             setSavedVersion(null);
@@ -2985,6 +3207,7 @@ function BomDashboardInner() {
                           }}
                           className="w-full text-left px-4 py-2.5 text-sm text-foreground hover:bg-surface-2 transition-colors"
                         >
+                          {p.kind === "ticket" && <span className="mr-1.5">🎫</span>}
                           <span className="font-medium">{p.dealname}</span>
                           {p.address && (
                             <span className="text-muted ml-2 text-xs">{p.address}</span>
@@ -3366,41 +3589,23 @@ function BomDashboardInner() {
                   </button>
                 </div>
                 <div className="overflow-x-auto">
-                  <table className="w-full min-w-[980px] text-sm">
+                  <table className="w-full min-w-[820px] text-sm">
                     <thead>
                       <tr className="text-xs text-muted border-b border-t-border">
-                        <th className="text-left px-4 py-2 font-medium w-44">Item</th>
+                        <th className="text-left px-4 py-2 font-medium w-48">Item</th>
                         <th className="text-left px-4 py-2 font-medium w-[22rem]">Details</th>
                         <th className="text-left px-4 py-2 font-medium w-48">Qty / Spec</th>
                         <th className="text-left px-4 py-2 font-medium w-48">Item Meta</th>
                         <th className="text-left px-3 py-2 font-medium w-32">Deal / Job</th>
-                        {catalogSources.length > 0 && (
-                          <th className="text-left px-2 py-2 font-medium" colSpan={catalogSources.length}>
-                            Catalogs
-                          </th>
-                        )}
                         <th className="px-3 py-2 w-10"></th>
                       </tr>
-                      {catalogSources.length > 0 && (
-                        <tr className="text-xs text-muted border-b border-t-border bg-surface-2/50">
-                          <th colSpan={5} />
-                          {catalogSources.map((src) => (
-                            <th key={src} className="px-1 py-1 font-normal text-center w-7" title={SOURCE_DISPLAY_LABELS[src] ?? src}>
-                              {SOURCE_SHORT_LABELS[src] ?? src.slice(0, 2).toUpperCase()}
-                            </th>
-                          ))}
-                          <th />
-                        </tr>
-                      )}
                     </thead>
                     <tbody className="divide-y divide-[color:var(--border)]">
                       {grouped[cat]!.map((item) => {
-                        const status = catalogStatus.get(item.id);
-                        const missing = status && catalogSources.some((s) => !status[s]);
                         return (
                           <tr
                             key={item.id}
-                            className={`hover:bg-surface-2 transition-colors group ${missing ? "bg-yellow-50/30 dark:bg-yellow-900/10" : ""}`}
+                            className="hover:bg-surface-2 transition-colors group"
                           >
                             <td className="px-4 py-1.5">
                               <div className="space-y-1.5">
@@ -3428,7 +3633,7 @@ function BomDashboardInner() {
                                   onChange={(v) => updateItem(item.id, "model", v)}
                                   placeholder="Model"
                                 />
-                                {/* SKU match badge + override picker */}
+                                {/* SKU match badge + catalog status */}
                                 {(() => {
                                   const sku = effectiveSkuByItem.get(item.id);
                                   const hasOverride = skuOverrides.has(item.id);
@@ -3436,32 +3641,63 @@ function BomDashboardInner() {
                                   return (
                                     <div className="relative mt-1.5 pt-1.5 border-t border-t-border">
                                       {sku ? (
-                                        <div className="flex items-center gap-1.5 min-w-0">
-                                          <span className={`text-[10px] truncate ${hasOverride ? "text-cyan-600 dark:text-cyan-400 font-medium" : "text-muted"}`}>
-                                            {hasOverride ? "Manual" : "Matched"}: {sku.brand} {sku.model}
-                                          </span>
-                                          <span className="flex items-center gap-0.5 shrink-0">
-                                            <span className={`w-1.5 h-1.5 rounded-full ${sku.hubspotProductId ? "bg-green-500" : "bg-orange-400"}`} title={sku.hubspotProductId ? "HubSpot linked" : "No HubSpot product"} />
-                                            <span className={`w-1.5 h-1.5 rounded-full ${sku.zuperItemId ? "bg-green-500" : "bg-orange-400"}`} title={sku.zuperItemId ? "Zuper linked" : "No Zuper product"} />
-                                            <span className={`w-1.5 h-1.5 rounded-full ${sku.zohoItemId ? "bg-green-500" : "bg-orange-400"}`} title={sku.zohoItemId ? "Zoho linked" : "No Zoho item"} />
-                                          </span>
+                                        <div className="space-y-1">
+                                          <div className="flex items-center gap-1.5 min-w-0">
+                                            <span className={`text-[10px] truncate ${hasOverride ? "text-cyan-600 dark:text-cyan-400 font-medium" : "text-green-600 dark:text-green-400"}`}>
+                                              {hasOverride ? "✎ " : "✓ "}{sku.brand} {sku.model}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => setOpenSkuPickerItemId(isPickerOpen ? null : item.id)}
+                                              className="text-[10px] text-muted hover:text-foreground shrink-0"
+                                              title="Change product match"
+                                            >
+                                              ✎
+                                            </button>
+                                          </div>
+                                          <div className="flex items-center gap-2 text-[10px] text-muted">
+                                            <span className="flex items-center gap-0.5" title={sku.hubspotProductId ? "HubSpot linked" : "No HubSpot product"}>
+                                              <span className={`w-1.5 h-1.5 rounded-full ${sku.hubspotProductId ? "bg-green-500" : "bg-orange-400"}`} />
+                                              <span className={sku.hubspotProductId ? "text-green-600 dark:text-green-400" : "text-orange-500 dark:text-orange-400"}>HS</span>
+                                            </span>
+                                            <span className="flex items-center gap-0.5" title={sku.zuperItemId ? "Zuper linked" : "No Zuper product"}>
+                                              <span className={`w-1.5 h-1.5 rounded-full ${sku.zuperItemId ? "bg-green-500" : "bg-orange-400"}`} />
+                                              <span className={sku.zuperItemId ? "text-green-600 dark:text-green-400" : "text-orange-500 dark:text-orange-400"}>Zuper</span>
+                                            </span>
+                                            <span className="flex items-center gap-0.5" title={sku.zohoItemId ? "Zoho linked" : "No Zoho item"}>
+                                              <span className={`w-1.5 h-1.5 rounded-full ${sku.zohoItemId ? "bg-green-500" : "bg-orange-400"}`} />
+                                              <span className={sku.zohoItemId ? "text-green-600 dark:text-green-400" : "text-orange-500 dark:text-orange-400"}>Zoho</span>
+                                            </span>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center gap-2">
                                           <button
                                             type="button"
                                             onClick={() => setOpenSkuPickerItemId(isPickerOpen ? null : item.id)}
-                                            className="text-[10px] text-muted hover:text-foreground shrink-0"
-                                            title="Change product match"
+                                            className="text-[10px] text-yellow-600 dark:text-yellow-400 hover:underline"
                                           >
-                                            ✎
+                                            No match — select
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const params = new URLSearchParams();
+                                              if (item.brand) params.set("brand", item.brand);
+                                              if (item.model) params.set("model", item.model);
+                                              if (item.description) params.set("description", item.description);
+                                              if (item.category) params.set("category", item.category);
+                                              if (item.unitSpec != null) params.set("unitSpec", String(item.unitSpec));
+                                              if (item.unitLabel) params.set("unitLabel", item.unitLabel);
+                                              if (linkedProject?.hs_object_id) params.set("dealId", linkedProject.hs_object_id);
+                                              router.push(`/dashboards/submit-product?${params.toString()}`);
+                                            }}
+                                            className="text-[10px] text-cyan-600 dark:text-cyan-400 hover:underline"
+                                            title="Create new catalog product"
+                                          >
+                                            + new
                                           </button>
                                         </div>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={() => setOpenSkuPickerItemId(isPickerOpen ? null : item.id)}
-                                          className="text-[10px] text-yellow-600 dark:text-yellow-400 hover:underline"
-                                        >
-                                          No catalog match — select product
-                                        </button>
                                       )}
                                       {isPickerOpen && (
                                         <SkuPickerDropdown
@@ -3583,32 +3819,6 @@ function BomDashboardInner() {
                                 )}
                               </div>
                             </td>
-                            {catalogSources.map((src) => (
-                              <td key={src} className="px-1 py-1.5 text-center w-7">
-                                <span className="relative inline-flex items-center justify-center w-5 h-5">
-                                  <CatalogDot present={status?.[src]} loading={catalogLoading} />
-                                  {!status?.[src] && !catalogLoading && (
-                                    <button
-                                      onClick={() => {
-                                        const params = new URLSearchParams();
-                                        if (item.brand) params.set("brand", item.brand);
-                                        if (item.model) params.set("model", item.model);
-                                        if (item.description) params.set("description", item.description);
-                                        if (item.category) params.set("category", item.category);
-                                        if (item.unitSpec != null) params.set("unitSpec", String(item.unitSpec));
-                                        if (item.unitLabel) params.set("unitLabel", item.unitLabel);
-                                        if (linkedProject?.hs_object_id) params.set("dealId", linkedProject.hs_object_id);
-                                        router.push(`/dashboards/submit-product?${params.toString()}`);
-                                      }}
-                                      className="absolute -top-1.5 -right-1.5 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] leading-none font-semibold text-cyan-600 dark:text-cyan-400 hover:text-cyan-500 bg-surface border border-t-border rounded px-0.5"
-                                      title="Add to missing catalog"
-                                    >
-                                      +
-                                    </button>
-                                  )}
-                                </span>
-                              </td>
-                            ))}
                             <td className="px-3 py-1.5">
                               <button
                                 onClick={() => deleteItem(item.id)}
@@ -3644,7 +3854,7 @@ function BomDashboardInner() {
         onSelect={(snap) => {
           if (linkedProject?.hs_object_id === snap.dealId) {
             setHistoryLoading(true);
-            fetch(`/api/bom/history?dealId=${encodeURIComponent(snap.dealId)}`)
+            fetch(pipelineConfig.historyEndpoint(snap.dealId, linkedProject.kind ?? "deal"))
               .then((r) => r.ok ? r.json() : Promise.reject(r.status))
               .then((data: { snapshots: BomSnapshot[] }) => {
                 setSnapshots(data.snapshots);
@@ -3662,7 +3872,10 @@ function BomDashboardInner() {
               .catch(() => {/* silent */})
               .finally(() => setHistoryLoading(false));
           } else {
-            router.push(`/dashboards/bom?deal=${snap.dealId}&load=latest`);
+            // For the service-bom page the inline history is ticket-keyed; for
+            // the project-bom page it's deal-keyed.
+            const param = pipelineConfig.supportsTickets ? "ticket" : "deal";
+            router.push(`${pipelineConfig.dashboardPath}?${param}=${snap.dealId}&load=latest`);
           }
         }}
       />
@@ -3745,11 +3958,20 @@ function ValidationBadge({ value, label }: { value: boolean | null; label: strin
 }
 
 function QuickLinks({ project }: { project: ProjectResult }) {
-  const internalDealHref = getInternalDealUrl(project.hs_object_id, "project");
+  const isTicket = (project.kind ?? "deal") === "ticket";
+  // For tickets there is no internal deal page; we surface the ticket
+  // detail (Service Suite) instead so the "open in app" affordance still works.
+  const internalHref = isTicket
+    ? `/dashboards/service-tickets?ticket=${encodeURIComponent(project.hs_object_id)}`
+    : getInternalDealUrl(project.hs_object_id, "project");
+  const internalLabel = isTicket ? "Ticket" : "Deal";
+
   const links: Array<{ label: string; href: string; color: string }> = [
     {
       label: "HubSpot",
-      href: `https://app.hubspot.com/contacts/21710069/deal/${project.hs_object_id}`,
+      href: isTicket
+        ? `https://app.hubspot.com/contacts/21710069/ticket/${project.hs_object_id}`
+        : `https://app.hubspot.com/contacts/21710069/deal/${project.hs_object_id}`,
       color: "text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-800",
     },
   ];
@@ -3769,7 +3991,7 @@ function QuickLinks({ project }: { project: ProjectResult }) {
       designHref = `https://${raw}`;
     }
     links.push({
-      label: "Design Folder",
+      label: isTicket ? "Ticket Folder" : "Design Folder",
       href: designHref,
       color: "text-sky-600 dark:text-sky-400 border-sky-200 dark:border-sky-800",
     });
@@ -3784,10 +4006,10 @@ function QuickLinks({ project }: { project: ProjectResult }) {
   return (
     <div className="flex flex-wrap gap-2">
       <Link
-        href={internalDealHref}
+        href={internalHref}
         className="inline-flex items-center gap-1 px-3 py-1 rounded-lg border text-xs font-medium bg-surface hover:bg-surface-2 transition-colors text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800 no-underline"
       >
-        Deal →
+        {internalLabel} →
       </Link>
       {links.map(({ label, href, color }) => (
         <a
@@ -3804,19 +4026,6 @@ function QuickLinks({ project }: { project: ProjectResult }) {
   );
 }
 
-function CatalogDot({ present, loading }: { present?: boolean; loading?: boolean }) {
-  if (loading) {
-    return <span className="inline-block w-1.5 h-1.5 rounded-full bg-surface-2 animate-pulse" />;
-  }
-  if (present === undefined) {
-    return <span className="text-muted text-xs">—</span>;
-  }
-  return present ? (
-    <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500" title="In catalog" />
-  ) : (
-    <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" title="Not in catalog" />
-  );
-}
 
 /** Read SSE progress events from /api/bom/extract and return the final BOM. */
 async function fetchExtractStream(

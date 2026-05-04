@@ -6,7 +6,9 @@ import { resolveElectricianByEmail } from "@/lib/on-call-db";
 import { prisma, logActivity } from "@/lib/db";
 import { safeWaitUntil } from "@/lib/safe-wait-until";
 import { appendCallLogToSheet } from "@/lib/on-call-sheet";
+import { createServiceTicket, findOrCreateContact } from "@/lib/hubspot-tickets";
 import {
+  ISSUE_TYPES,
   ISSUE_TYPE_VALUES,
   computeHoursWorked,
   type CallLogPayload,
@@ -120,6 +122,8 @@ export async function POST(req: Request) {
       reporterCrewMemberId: body.reporterCrewMemberId,
       callReceivedAt: new Date(body.callReceivedAt),
       customerName: body.customerName.trim(),
+      customerPhone: typeof body.customerPhone === "string" ? body.customerPhone.trim() || null : null,
+      customerAddress: typeof body.customerAddress === "string" ? body.customerAddress.trim() || null : null,
       issueType: body.issueType,
       issueTypeOther: body.issueType === "other" ? issueTypeOther : null,
       safetyRisk: Boolean(body.safetyRisk),
@@ -155,6 +159,56 @@ export async function POST(req: Request) {
       }),
     );
   }
+
+  // Find or create HubSpot contact from phone (runs for every call, not just follow-ups).
+  safeWaitUntil(
+    (async () => {
+      let contactId: string | null = null;
+      if (log.customerPhone) {
+        try {
+          contactId = await findOrCreateContact({
+            phone: log.customerPhone,
+            name: log.customerName,
+            address: log.customerAddress ?? undefined,
+          });
+          await prisma.onCallCallLog.update({
+            where: { id: log.id },
+            data: { hubspotContactId: contactId },
+          });
+        } catch (e) {
+          console.error("[on-call/call-logs] HubSpot contact find/create failed:", e);
+        }
+      }
+
+      const isFollowUp = !log.resolvedRemotely && !log.dispatched;
+      if (isFollowUp) {
+        const issueLabel = ISSUE_TYPES.find((t) => t.value === log.issueType)?.label ?? log.issueType;
+        try {
+          const ticketId = await createServiceTicket({
+            subject: `On-Call Follow-Up: ${log.customerName} — ${issueLabel}`,
+            content: [
+              `Auto-created from on-call call log (${log.pool.name}).`,
+              `Electrician: ${log.reporterCrewMember.name}`,
+              `Date: ${log.callReceivedAt.toLocaleString("en-US", { timeZone: log.pool.timezone || "America/Denver" })}`,
+              log.customerPhone ? `Phone: ${log.customerPhone}` : null,
+              log.customerAddress ? `Address: ${log.customerAddress}` : null,
+              log.troubleshootingAttempted ? `Troubleshooting: ${log.troubleshootingAttempted}` : null,
+              log.escalatedTo ? `Escalated to: ${log.escalatedTo}` : null,
+              log.notes ? `Notes: ${log.notes}` : null,
+            ].filter(Boolean).join("\n"),
+            priority: log.safetyRisk ? "HIGH" : "MEDIUM",
+            contactId: contactId ?? undefined,
+          });
+          await prisma.onCallCallLog.update({
+            where: { id: log.id },
+            data: { hubspotTicketId: ticketId },
+          });
+        } catch (e) {
+          console.error("[on-call/call-logs] HubSpot ticket creation failed:", e);
+        }
+      }
+    })(),
+  );
 
   return NextResponse.json({ log });
 }
