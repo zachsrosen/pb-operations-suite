@@ -54,7 +54,7 @@ export default function OfficeCarousel({
   const { data: allLocationsData } = useQuery({
     queryKey: queryKeys.officePerformance.location("all"),
     queryFn: async (): Promise<AllLocationsResponse> => {
-      const res = await fetch("/api/office-performance/all?refresh=true");
+      const res = await fetch("/api/office-performance/all");
       if (!res.ok) throw new Error("Failed to fetch all-locations data");
       return res.json();
     },
@@ -72,7 +72,7 @@ export default function OfficeCarousel({
     queryKey: queryKeys.goalsPipeline.location(locationSlug),
     queryFn: async (): Promise<GoalsPipelineData> => {
       const res = await fetch(
-        `/api/office-performance/goals-pipeline/${locationSlug}?refresh=true`
+        `/api/office-performance/goals-pipeline/${locationSlug}`
       );
       if (!res.ok) throw new Error("Failed to fetch goals/pipeline data");
       return res.json();

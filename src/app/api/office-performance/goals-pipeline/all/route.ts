@@ -44,29 +44,38 @@ export async function GET(request: NextRequest) {
         async () => {
           const perLocationData: GoalsPipelineData[] = [];
 
-          // Read from per-location caches first; skip stale entries so
-          // the aggregate route honors the 2-minute TV polling cadence.
+          // Read from per-location caches first. Accept stale entries — the
+          // per-location route uses stale-while-revalidate so subsequent visits
+          // will pick up refreshed data.
           const uncached: string[] = [];
           for (const loc of CANONICAL_LOCATIONS) {
             const slug = CANONICAL_TO_LOCATION_SLUG[loc];
             const locCacheKey = CACHE_KEYS.GOALS_PIPELINE(slug);
             const entry = appCache.get<GoalsPipelineData>(locCacheKey);
-            if (entry.hit && entry.data && !entry.stale) {
+            if (entry.hit && entry.data) {
               perLocationData.push(entry.data);
             } else {
               uncached.push(loc);
             }
           }
 
-          // Fetch uncached locations sequentially to avoid rate-limit storms
-          for (const loc of uncached) {
-            try {
-              const data = await getGoalsPipelineData(loc);
-              perLocationData.push(data);
-            } catch (err) {
-              console.error(`[goals-pipeline/all] Failed to fetch ${loc}:`, err);
+          // Fetch uncached locations with bounded concurrency (2) to avoid
+          // rate-limit storms while still halving worst-case cold-cache latency.
+          const CONCURRENCY = 2;
+          const queue = [...uncached];
+          const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+            while (queue.length > 0) {
+              const loc = queue.shift();
+              if (!loc) return;
+              try {
+                const data = await getGoalsPipelineData(loc);
+                perLocationData.push(data);
+              } catch (err) {
+                console.error(`[goals-pipeline/all] Failed to fetch ${loc}:`, err);
+              }
             }
-          }
+          });
+          await Promise.all(workers);
 
           // Use temporal values from first available location (all same month/day)
           const ref = perLocationData[0];

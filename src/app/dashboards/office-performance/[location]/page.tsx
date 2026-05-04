@@ -77,7 +77,7 @@ function AllLocationsOverviewPage() {
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.officePerformance.location("all"),
     queryFn: async (): Promise<AllLocationsResponse> => {
-      const res = await fetch("/api/office-performance/all?refresh=true");
+      const res = await fetch("/api/office-performance/all");
       if (!res.ok) throw new Error("Failed to fetch all-locations data");
       return res.json();
     },
@@ -89,7 +89,7 @@ function AllLocationsOverviewPage() {
   const { data: goalsData } = useQuery({
     queryKey: queryKeys.goalsPipeline.location("all"),
     queryFn: async (): Promise<AllGoalsPipelineResponse> => {
-      const res = await fetch("/api/office-performance/goals-pipeline/all?refresh=true");
+      const res = await fetch("/api/office-performance/goals-pipeline/all");
       if (!res.ok) throw new Error("Failed to fetch goals data");
       return res.json();
     },
@@ -364,7 +364,7 @@ export default function OfficePerformancePage({ params }: PageProps) {
   } = useQuery({
     queryKey: queryKeys.officePerformance.location(querySlug),
     queryFn: async (): Promise<OfficePerformanceApiResponse> => {
-      const res = await fetch(`/api/office-performance/${querySlug}?refresh=true`);
+      const res = await fetch(`/api/office-performance/${querySlug}`);
       if (!res.ok) throw new Error("Failed to fetch office performance data");
       const result = await res.json();
       setHadSuccessfulFetch(true);
