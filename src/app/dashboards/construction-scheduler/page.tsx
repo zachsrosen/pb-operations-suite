@@ -2006,7 +2006,7 @@ export default function ConstructionSchedulerPage() {
                           {formatCurrency(project.amount)}
                         </span>
                       </div>
-                      {viewMode === "breakdown" && project.zuperSubJobs?.length ? (
+                      {viewMode === "breakdown" && project.zuperSubJobs && project.zuperSubJobs.length > 1 ? (
                         <div className="mt-2">
                           <SubJobBreakdown subJobs={project.zuperSubJobs} />
                         </div>
@@ -2194,7 +2194,7 @@ export default function ConstructionSchedulerPage() {
                             </td>
                             <td className="px-4 py-3 text-sm text-muted">{project.location}</td>
                             <td className="px-4 py-3">
-                              {viewMode === "breakdown" && project.zuperSubJobs?.length ? (
+                              {viewMode === "breakdown" && project.zuperSubJobs && project.zuperSubJobs.length > 1 ? (
                                 <SubJobBreakdown subJobs={project.zuperSubJobs} />
                               ) : (
                                 <div className="flex items-center gap-1.5">
