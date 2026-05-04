@@ -291,7 +291,10 @@ const ROOFING_CATEGORY_UIDS = [
 const EXCLUDE_OTHER_CATEGORY_UIDS = [
   "002bac33-84d3-4083-a35d-50626fc49288", // Site Survey
   "c53070e5-63fd-41bc-8803-f66ad842dbb5", // Pre-Sale Site Visit
-  "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf", // Construction
+  "6ffbc218-6dad-4a46-b378-1fb02b3ab4bf", // Construction (legacy)
+  "f2fcb6bf-990f-408c-a66b-fba6caec6893", // Construction - Solar
+  "aa5a6e00-b1c2-4aeb-b8bc-dcad3a203bc5", // Construction - Battery
+  "2009a0c6-738b-4310-a736-9c901d800c61", // Construction - EV
   "b7dc03d2-25d0-40df-a2fc-b1a477b16b65", // Inspection
   "cff6f839-c043-46ee-a09f-8d0e9f363437", // Service Visit
   "8a29a1c0-9141-4db6-b8bb-9d9a65e2a1de", // Service Revisit
