@@ -2284,6 +2284,19 @@ export default function SchedulerPage() {
         const startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
         const endMinutes = Math.max(startMinutes + 30, endDate.getHours() * 60 + endDate.getMinutes());
         timedRaw.push({ event: e, startMinutes, endMinutes });
+      } else if (!isOverlayEvent(e) && e.zuperScheduledStart && (e.days || 1) <= 1) {
+        const startDate = new Date(e.zuperScheduledStart);
+        const hasTime = startDate.getHours() !== 0 || startDate.getMinutes() !== 0;
+        if (hasTime && toDateStr(startDate) === dayStr) {
+          const endDate = e.zuperScheduledEnd
+            ? new Date(e.zuperScheduledEnd)
+            : new Date(startDate.getTime() + 2 * 60 * 60 * 1000);
+          const startMinutes = startDate.getHours() * 60 + startDate.getMinutes();
+          const endMinutes = Math.max(startMinutes + 30, endDate.getHours() * 60 + endDate.getMinutes());
+          timedRaw.push({ event: e, startMinutes, endMinutes });
+        } else {
+          allDay.push(e);
+        }
       } else {
         allDay.push(e);
       }
