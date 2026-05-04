@@ -42,16 +42,14 @@ export function ViewModeToggle({
 }
 
 export function useViewMode(storageKey: string): [ViewMode, (m: ViewMode) => void] {
-  const [mode, setMode] = useState<ViewMode>("compact");
-
-  useEffect(() => {
+  const [mode, setMode] = useState<ViewMode>(() => {
+    if (typeof window === "undefined") return "compact";
     try {
       const stored = window.localStorage.getItem(storageKey);
-      if (stored === "breakdown" || stored === "compact") setMode(stored);
-    } catch {
-      // localStorage unavailable (private browsing) — stay in-memory
-    }
-  }, [storageKey]);
+      if (stored === "breakdown" || stored === "compact") return stored;
+    } catch { /* private browsing */ }
+    return "compact";
+  });
 
   useEffect(() => {
     const handler = (e: StorageEvent) => {
