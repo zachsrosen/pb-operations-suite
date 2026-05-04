@@ -8,14 +8,17 @@ import { categorizeMessages, CategorizedMessage } from "@/lib/comms-categorize";
 type UnifiedMessage = CategorizedMessage | (CommsChatMessage & { category: "general" });
 
 export async function GET(req: NextRequest) {
+  const t0 = Date.now();
   const { user, blocked } = await getActualCommsUser();
   if (blocked) {
+    console.log("[comms-debug] blocked (impersonating)");
     return NextResponse.json(
       { error: "Comms is not available while impersonating another user" },
       { status: 403 }
     );
   }
   if (!user) {
+    console.log("[comms-debug] no user (401)");
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
@@ -26,6 +29,7 @@ export async function GET(req: NextRequest) {
   // Client signals it already has a cached snapshot — only then is it safe to
   // return { unchanged: true } instead of a full payload.
   const clientHasCache = params.get("hasCache") === "1";
+  console.log(`[comms-debug] start user=${user.email} source=${source} hasCache=${clientHasCache} hasPage=${!!page} hasQuery=${!!query}`);
 
   // Read user state for no-change fast path
   const state = await prisma.commsUserState.findUnique({
@@ -46,11 +50,13 @@ export async function GET(req: NextRequest) {
     if (clientHasCache && state?.gmailHistoryId && !page && !query) {
       const changes = await checkGmailChanges(user.id, state.gmailHistoryId);
       if ("disconnected" in changes && changes.disconnected) {
+        console.log("[comms-debug] fast-path: disconnected");
         return NextResponse.json({ disconnected: true });
       }
       if (!changes.changed) {
         gmailUnchanged = true;
       }
+      console.log(`[comms-debug] fast-path: gmailUnchanged=${gmailUnchanged} historyId=${state.gmailHistoryId}`);
     }
 
     if (!gmailUnchanged) {
@@ -60,14 +66,17 @@ export async function GET(req: NextRequest) {
       });
 
       if ("disconnected" in gmailResult) {
+        console.log("[comms-debug] fetchGmailPage: disconnected");
         return NextResponse.json({ disconnected: true });
       }
       if ("error" in gmailResult) {
+        console.log(`[comms-debug] fetchGmailPage: error=${gmailResult.error}`);
         return NextResponse.json({ error: gmailResult.error }, { status: 502 });
       }
 
       gmailMessages = categorizeMessages(gmailResult.data.messages, portalId);
       gmailNextPage = gmailResult.data.nextPageToken;
+      console.log(`[comms-debug] fetchGmailPage ok rawCount=${gmailResult.data.messages.length} categorizedCount=${gmailMessages.length} nextPage=${!!gmailNextPage} historyId=${gmailResult.data.historyId}`);
 
       // Update historyId
       if (gmailResult.data.historyId) {
@@ -115,6 +124,7 @@ export async function GET(req: NextRequest) {
   const allUnchanged = includeGmail
     ? gmailUnchanged && (!includeChat || chatUnchanged)
     : clientHasCache && chatUnchanged;
+  console.log(`[comms-debug] preReturn gmailMsgs=${gmailMessages.length} chatMsgs=${chatMessages.length} gmailUnchanged=${gmailUnchanged} chatUnchanged=${chatUnchanged} allUnchanged=${allUnchanged} elapsed=${Date.now()-t0}ms`);
   if (allUnchanged) {
     return NextResponse.json({ unchanged: true });
   }
