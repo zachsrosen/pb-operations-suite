@@ -2847,6 +2847,20 @@ export default function SiteSurveySchedulerPage() {
                 </div>
               )}
 
+              {scheduleModal.project.zuperJobStatus && (
+                <div>
+                  <span className="text-xs text-muted">Job Status</span>
+                  <p className={`text-sm font-medium ${
+                    scheduleModal.project.zuperJobStatus.toLowerCase().includes("complete") ? "text-emerald-400"
+                      : scheduleModal.project.zuperJobStatus.toLowerCase().includes("progress") || scheduleModal.project.zuperJobStatus.toLowerCase().includes("started") ? "text-yellow-400"
+                      : scheduleModal.project.zuperJobStatus.toLowerCase().includes("scheduled") ? "text-blue-400"
+                      : "text-foreground"
+                  }`}>
+                    {scheduleModal.project.zuperJobStatus.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                  </p>
+                </div>
+              )}
+
               <div>
                 <span className="text-xs text-muted">Date</span>
                 <p className="text-sm font-medium text-cyan-400">{formatDateShort(scheduleModal.date)}</p>
