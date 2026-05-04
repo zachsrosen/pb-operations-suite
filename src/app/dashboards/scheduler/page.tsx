@@ -6086,7 +6086,7 @@ export default function SchedulerPage() {
                     }
                   />
                 )}
-                {viewMode === "breakdown" && detailModal.zuperSubJobs?.length && (
+                {viewMode === "breakdown" && detailModal.zuperSubJobs && detailModal.zuperSubJobs.length > 1 && (
                   <div className="mt-2 ml-[5.5rem]">
                     <SubJobBreakdown subJobs={detailModal.zuperSubJobs} />
                   </div>
