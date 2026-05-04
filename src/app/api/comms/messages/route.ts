@@ -7,18 +7,21 @@ import { categorizeMessages, CategorizedMessage } from "@/lib/comms-categorize";
 
 type UnifiedMessage = CategorizedMessage | (CommsChatMessage & { category: "general" });
 
+// Cap on messages fetched per request. Each message costs 1 list + 1 metadata
+// fetch against Gmail's 15,000 queries/min/user quota — so 200 is safe for
+// ~75 page loads/min/user, while still showing a useful inbox snapshot. Users
+// can paginate via gmailNextPage if they need older messages.
+const GMAIL_MAX_TOTAL = 200;
+
 export async function GET(req: NextRequest) {
-  const t0 = Date.now();
   const { user, blocked } = await getActualCommsUser();
   if (blocked) {
-    console.log("[comms-debug] blocked (impersonating)");
     return NextResponse.json(
       { error: "Comms is not available while impersonating another user" },
       { status: 403 }
     );
   }
   if (!user) {
-    console.log("[comms-debug] no user (401)");
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
 
@@ -29,7 +32,6 @@ export async function GET(req: NextRequest) {
   // Client signals it already has a cached snapshot — only then is it safe to
   // return { unchanged: true } instead of a full payload.
   const clientHasCache = params.get("hasCache") === "1";
-  console.log(`[comms-debug] start user=${user.email} source=${source} hasCache=${clientHasCache} hasPage=${!!page} hasQuery=${!!query}`);
 
   // Read user state for no-change fast path
   const state = await prisma.commsUserState.findUnique({
@@ -50,33 +52,41 @@ export async function GET(req: NextRequest) {
     if (clientHasCache && state?.gmailHistoryId && !page && !query) {
       const changes = await checkGmailChanges(user.id, state.gmailHistoryId);
       if ("disconnected" in changes && changes.disconnected) {
-        console.log("[comms-debug] fast-path: disconnected");
         return NextResponse.json({ disconnected: true });
       }
       if (!changes.changed) {
         gmailUnchanged = true;
       }
-      console.log(`[comms-debug] fast-path: gmailUnchanged=${gmailUnchanged} historyId=${state.gmailHistoryId}`);
     }
 
     if (!gmailUnchanged) {
       const gmailResult = await fetchGmailPage(user.id, {
         pageToken: page,
         query: query ? `in:inbox ${query}` : "in:inbox",
+        maxTotal: GMAIL_MAX_TOTAL,
       });
 
       if ("disconnected" in gmailResult) {
-        console.log("[comms-debug] fetchGmailPage: disconnected");
         return NextResponse.json({ disconnected: true });
       }
       if ("error" in gmailResult) {
-        console.log(`[comms-debug] fetchGmailPage: error=${gmailResult.error}`);
-        return NextResponse.json({ error: gmailResult.error }, { status: 502 });
+        // Surface Gmail rate limit specifically so the client can show a
+        // friendly "rate limited, try again in a minute" message instead of
+        // an empty inbox.
+        const errorMsg = String(gmailResult.error ?? "");
+        const isRateLimit =
+          /\b(rateLimitExceeded|RATE_LIMIT_EXCEEDED|429)\b/.test(errorMsg);
+        if (isRateLimit) {
+          return NextResponse.json(
+            { error: "Gmail rate limit exceeded. Wait a minute and refresh.", rateLimited: true },
+            { status: 429 }
+          );
+        }
+        return NextResponse.json({ error: errorMsg }, { status: 502 });
       }
 
       gmailMessages = categorizeMessages(gmailResult.data.messages, portalId);
       gmailNextPage = gmailResult.data.nextPageToken;
-      console.log(`[comms-debug] fetchGmailPage ok rawCount=${gmailResult.data.messages.length} categorizedCount=${gmailMessages.length} nextPage=${!!gmailNextPage} historyId=${gmailResult.data.historyId}`);
 
       // Update historyId
       if (gmailResult.data.historyId) {
@@ -124,7 +134,6 @@ export async function GET(req: NextRequest) {
   const allUnchanged = includeGmail
     ? gmailUnchanged && (!includeChat || chatUnchanged)
     : clientHasCache && chatUnchanged;
-  console.log(`[comms-debug] preReturn gmailMsgs=${gmailMessages.length} chatMsgs=${chatMessages.length} gmailUnchanged=${gmailUnchanged} chatUnchanged=${chatUnchanged} allUnchanged=${allUnchanged} elapsed=${Date.now()-t0}ms`);
   if (allUnchanged) {
     return NextResponse.json({ unchanged: true });
   }
