@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CONSTRUCTION_CATEGORY_NAMES, JOB_CATEGORIES, JOB_CATEGORY_UIDS, ZuperClient, ZuperJob } from "@/lib/zuper";
+import { extractSubJobsFromCandidates, type SubJobInfo } from "@/lib/scheduler-subjobs";
 import { getCachedZuperJobsByDealIds } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 
@@ -372,6 +373,31 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
       allCandidates[projectId].push(match);
     };
 
+    const extractSubJobsForCategory = (
+      cat: string | null,
+      dedupedCandidates: JobMatch[],
+      projectId: string,
+    ): SubJobInfo[] => {
+      if (!cat || cat.toLowerCase() !== JOB_CATEGORIES.CONSTRUCTION.toLowerCase()) return [];
+      return extractSubJobsFromCandidates(
+        dedupedCandidates.map(c => {
+          const schedule = computeScheduledDays(c.job, c.categoryName);
+          return {
+            jobUid: c.job.job_uid!,
+            status: getJobStatus(c.job) || "UNKNOWN",
+            statusScore: c.statusScore,
+            addressScore: c.addressScore,
+            categoryName: c.categoryName,
+            scheduledStart: schedule.scheduledStart,
+            scheduledEnd: schedule.scheduledEnd,
+            scheduledDays: schedule.scheduledDays,
+            assignedTo: getAssignedUserNames(c.job),
+          };
+        }),
+        projectId,
+      );
+    };
+
     // --- Pass 0: Database cache (most reliable — set when jobs are scheduled through the app) ---
     try {
       // For Construction category, widen to all four sub-categories (legacy + Solar + Battery + EV)
@@ -578,6 +604,7 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
       matchedBy?: string;
       assignedTo?: string[];  // All assigned user names
     }> = {};
+    const subJobsMap: Record<string, SubJobInfo[]> = {};
 
     for (const [projectId, candidates] of Object.entries(allCandidates)) {
       // Deduplicate by job UID (same job can match via multiple methods)
@@ -627,12 +654,18 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
         matchedBy: best.matchMethod,
         ...(assignedUsers.length > 0 && { assignedTo: assignedUsers }),
       };
+
+      const subJobs = extractSubJobsForCategory(targetCategory, dedupedCandidates, projectId);
+      if (subJobs.length > 0) {
+        subJobsMap[projectId] = subJobs;
+      }
     }
 
     return NextResponse.json({
       configured: true,
       jobs: jobsMap,
       count: Object.keys(jobsMap).length,
+      ...(Object.keys(subJobsMap).length > 0 && { subJobs: subJobsMap }),
     });
   } catch (error) {
     console.error("Zuper job lookup error:", error);
