@@ -19,9 +19,10 @@ import {
   type DayPill,
 } from "@/lib/calendar-events";
 import type { CanonicalLocation } from "@/lib/locations";
+import { DASHBOARD_LOCATION_GROUPS } from "@/lib/dashboard-location-groups";
 
 interface CalendarSectionProps {
-  location: string; // Canonical location name
+  location: string; // Dashboard group label (e.g. "California", "Westminster")
 }
 
 const MONTH_NAMES = [
@@ -362,12 +363,16 @@ export default function CalendarSection({ location }: CalendarSectionProps) {
     const roofingJobs = roofingQuery.data?.jobs || [];
     const otherJobs = otherQuery.data?.jobs || [];
 
-    const loc = location as CanonicalLocation;
-    const projectEvents = generateProjectEvents(projects, loc);
-    const serviceEvents = generateZuperEvents(serviceJobs, "service", loc);
-    const dnrEvents = generateZuperEvents(dnrJobs, "dnr", loc);
-    const roofingEvents = generateZuperEvents(roofingJobs, "roofing", loc);
-    const otherEvents = generateZuperEvents(otherJobs, "other", loc);
+    // Resolve canonical locations for combined groups (e.g. California = SLO + Camarillo)
+    const group = DASHBOARD_LOCATION_GROUPS.find((g) => g.label === location);
+    const canonicals: CanonicalLocation[] = group
+      ? (group.canonicals as unknown as CanonicalLocation[])
+      : [location as CanonicalLocation];
+    const projectEvents = generateProjectEvents(projects, canonicals);
+    const serviceEvents = generateZuperEvents(serviceJobs, "service", canonicals);
+    const dnrEvents = generateZuperEvents(dnrJobs, "dnr", canonicals);
+    const roofingEvents = generateZuperEvents(roofingJobs, "roofing", canonicals);
+    const otherEvents = generateZuperEvents(otherJobs, "other", canonicals);
 
     const allEvents = [...projectEvents, ...serviceEvents, ...dnrEvents, ...roofingEvents, ...otherEvents];
     return expandToDayPills(allEvents, year, month);

@@ -289,18 +289,20 @@ export function isOverdue(
 
 export function generateProjectEvents(
   projects: CalendarProject[],
-  location: CanonicalLocation
+  location: CanonicalLocation | CanonicalLocation[]
 ): CalendarEvent[] {
+  const locationSet = new Set(Array.isArray(location) ? location : [location]);
   const events: CalendarEvent[] = [];
   const seenKeys = new Set<string>();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
   for (const p of projects) {
-    // Filter by location
+    // Filter by location (supports combined groups like California = SLO + Camarillo)
     const projLocation = normalizeLocation(p.location);
-    if (projLocation !== location) continue;
+    if (!projLocation || !locationSet.has(projLocation as CanonicalLocation)) continue;
 
+    const matchedLocation = projLocation as CanonicalLocation;
     const customerName = getCustomerName(p.name);
 
     // -- Construction --
@@ -327,7 +329,7 @@ export function generateProjectEvents(
           isOverdue: isOverdue(constructionDate, days, done, true, today),
           isFailed: false,
           amount: p.amount,
-          location,
+          location: matchedLocation,
         });
       }
     }
@@ -351,7 +353,7 @@ export function generateProjectEvents(
           isOverdue: isOverdue(p.inspectionScheduleDate, 1, done, false, today),
           isFailed: failed,
           amount: p.amount,
-          location,
+          location: matchedLocation,
         });
       }
     }
@@ -374,7 +376,7 @@ export function generateProjectEvents(
           isOverdue: isOverdue(p.surveyScheduleDate, 1, done, false, today),
           isFailed: false,
           amount: p.amount,
-          location,
+          location: matchedLocation,
         });
       }
     }
@@ -405,7 +407,7 @@ export function generateProjectEvents(
         isOverdue: isOverdue(p.scheduleDate, days, done, true, today),
         isFailed: false,
         amount: p.amount,
-        location,
+        location: matchedLocation,
       });
     }
   }
@@ -416,8 +418,9 @@ export function generateProjectEvents(
 export function generateZuperEvents(
   jobs: ZuperCategoryJob[],
   eventType: "service" | "dnr" | "roofing" | "other",
-  location: CanonicalLocation
+  location: CanonicalLocation | CanonicalLocation[]
 ): CalendarEvent[] {
+  const locationSet = new Set(Array.isArray(location) ? location : [location]);
   const events: CalendarEvent[] = [];
 
   for (const job of jobs) {
@@ -430,10 +433,11 @@ export function generateZuperEvents(
     if (!dateStr) continue;
 
     // Filter by location: check teamName then city
+    // Supports combined groups (e.g. California = SLO + Camarillo)
     const jobLocation =
       normalizeLocation(job.teamName) ||
       normalizeLocation(job.city);
-    if (jobLocation !== location) continue;
+    if (!jobLocation || !locationSet.has(jobLocation as CanonicalLocation)) continue;
 
     // Resolve assignee
     const rawAssignee =
@@ -465,7 +469,7 @@ export function generateZuperEvents(
       isOverdue: false,
       isFailed: false,
       amount: job.jobTotal || 0,
-      location,
+      location: jobLocation as CanonicalLocation,
     });
   }
 
