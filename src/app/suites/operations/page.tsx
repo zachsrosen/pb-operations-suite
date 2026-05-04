@@ -181,6 +181,56 @@ const BASE_LINKS: SuitePageCard[] = [
     section: "Communications",
   },
 
+  // ── Office Performance ──
+  {
+    href: "/dashboards/office-performance/all",
+    title: "All Locations",
+    description: "Side-by-side overview — surveys, installs, inspections across all 5 locations.",
+    tag: "OFFICE",
+    icon: "🌐",
+    section: "Office Performance",
+  },
+  {
+    href: "/dashboards/office-performance/westminster",
+    title: "Westminster",
+    description: "Ambient display — pipeline, surveys, installs, inspections for Westminster.",
+    tag: "OFFICE",
+    icon: "🏢",
+    section: "Office Performance",
+  },
+  {
+    href: "/dashboards/office-performance/centennial",
+    title: "Centennial",
+    description: "Ambient display — pipeline, surveys, installs, inspections for Centennial.",
+    tag: "OFFICE",
+    icon: "🏢",
+    section: "Office Performance",
+  },
+  {
+    href: "/dashboards/office-performance/colorado-springs",
+    title: "Colorado Springs",
+    description: "Ambient display — pipeline, surveys, installs, inspections for Colorado Springs.",
+    tag: "OFFICE",
+    icon: "🏢",
+    section: "Office Performance",
+  },
+  {
+    href: "/dashboards/office-performance/san-luis-obispo",
+    title: "San Luis Obispo",
+    description: "Ambient display — pipeline, surveys, installs, inspections for San Luis Obispo.",
+    tag: "OFFICE",
+    icon: "🏢",
+    section: "Office Performance",
+  },
+  {
+    href: "/dashboards/office-performance/camarillo",
+    title: "Camarillo",
+    description: "Ambient display — pipeline, surveys, installs, inspections for Camarillo.",
+    tag: "OFFICE",
+    icon: "🏢",
+    section: "Office Performance",
+  },
+
   // ── On-Call ──
   {
     href: "/dashboards/on-call",
