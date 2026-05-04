@@ -52,12 +52,14 @@ function stripToOverview(data: OfficePerformanceData): LocationOverview {
  * Try to read per-group data from the existing appCache.
  * Each per-location TV page populates this cache via /api/office-performance/[location].
  * Returns null if the cache is empty (location page hasn't been loaded yet).
+ *
+ * Stale entries are returned to keep the aggregate fast — the per-location route
+ * uses stale-while-revalidate, so subsequent visits will get refreshed data.
  */
 function getFromPerGroupCache(group: DashboardLocationGroup): OfficePerformanceData | null {
   const cacheKey = `${CACHE_KEYS.OFFICE_PERFORMANCE(group.slug)}:${complianceVersionTag()}`;
   const cached = appCache.get<OfficePerformanceData>(cacheKey);
-  // Skip stale entries so the aggregate route honours the 2-minute TV polling cadence
-  return (cached.hit && !cached.stale) ? cached.data : null;
+  return cached.hit ? cached.data : null;
 }
 
 export async function GET(request: NextRequest) {
@@ -82,17 +84,25 @@ export async function GET(request: NextRequest) {
             }
           }
 
-          // Fetch uncached groups sequentially to avoid rate-limit storms.
-          // Parallel fetches for multiple groups = many concurrent
-          // HubSpot + Zuper API calls, which triggers 429s and causes multi-minute hangs.
-          for (const group of uncachedGroups) {
-            try {
-              const data = await getOfficePerformanceData(group);
-              locations.push(stripToOverview(data));
-            } catch (err) {
-              console.error(`[office-perf/all] Failed to fetch ${group.label}:`, err);
+          // Fetch uncached groups with bounded concurrency. Fully parallel fan-out
+          // triggers 429 storms and multi-minute hangs from HubSpot + Zuper, but
+          // strict serial execution stacks 5×~11s = ~55s on cold cache. A pool of
+          // 2 keeps API pressure tolerable while halving worst-case latency.
+          const CONCURRENCY = 2;
+          const queue = [...uncachedGroups];
+          const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
+            while (queue.length > 0) {
+              const group = queue.shift();
+              if (!group) return;
+              try {
+                const data = await getOfficePerformanceData(group);
+                locations.push(stripToOverview(data));
+              } catch (err) {
+                console.error(`[office-perf/all] Failed to fetch ${group.label}:`, err);
+              }
             }
-          }
+          });
+          await Promise.all(workers);
 
           // Sort to match DASHBOARD_LOCATION_GROUPS order
           const orderMap = new Map(
