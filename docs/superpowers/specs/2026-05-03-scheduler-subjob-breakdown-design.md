@@ -66,11 +66,11 @@ Toggle
 
 The endpoint already walks every Zuper job and builds candidate matches. Today, after deduping by `job_uid`, it picks ONE candidate per dealId via `(methodScore, statusScore, addressScore)` sort.
 
-For `category=construction` calls, we add a second pass that buckets the deduped candidates by system type and picks one per bucket:
+For calls where the top-level `category === "construction"`, we add a second pass that buckets the deduped candidates by system type and picks one per bucket:
 
 ```ts
 // After dedupedCandidates is computed, before/alongside picking the single `best`:
-if (params.category === "construction") {
+if (category === "construction") {
   const bySystem = new Map<SystemType, JobMatch[]>();
   for (const c of dedupedCandidates) {
     const sys = categoryToSystemType(c.categoryName);
@@ -121,7 +121,7 @@ type SubJobInfo = {
 };
 ```
 
-The `computeScheduledDays` helper is the existing inline scheduled-days calculation from the same route file — we extract it to a small local function to call it twice (once for `best`, once per sub-job winner).
+The `computeScheduledDays` helper extracts the existing ~25-line inline `scheduledDays` calculation block (currently around lines 580–608 of `lookup/route.ts`) into a local function so it can run once per `best` candidate AND once per sub-job winner. The block depends on `parseZuperTimestamp`, `startOfDay`, `normalizeInclusiveEndDate`, `countBusinessDaysInclusive`, and the `targetCategory === JOB_CATEGORIES.CONSTRUCTION` business-day adjustment — all of which stay imported as-is. The extracted helper takes `(job: ZuperJob, targetCategory: string)` and returns `{ scheduledStart, scheduledEnd, scheduledDays, effectivelyUnscheduled }`.
 
 **Response shape:**
 
@@ -133,6 +133,8 @@ type LookupResponse = {
 ```
 
 Both GET (query string) and POST (JSON body) variants of the route emit the same extended shape.
+
+**Master scheduler caveat:** the master scheduler issues three lookup calls in parallel (`survey`, `construction`, `inspection`). Only the `construction` call returns `subJobs`. The other two calls' responses must not be expected to populate it — the consumer code reads `subJobs` only from the construction response and stores it on the project regardless of which category produced the "best" match.
 
 ### 2. New helper: `extractSubJobsForCategory`
 
@@ -173,17 +175,30 @@ The new file exports:
 ```ts
 export type SubJobInfo = { ... };
 export const SYSTEM_ORDER: SystemType[] = ["solar", "battery", "ev", "legacy"];
-export const SYSTEM_LABELS: Record<SystemType, string> = {
-  solar: "Solar",
-  battery: "Battery",
+
+// Industry-standard short tags used by Photon Brothers ops:
+//   PV  = photovoltaic (solar)
+//   ESS = energy storage system (battery)
+//   EV  = EV charger
+//   ALL = legacy combined "Construction" job (pre-split, in-flight deals)
+export const SYSTEM_TAGS: Record<SystemType, string> = {
+  solar: "PV",
+  battery: "ESS",
   ev: "EV",
-  legacy: "Construction",
+  legacy: "ALL",
 };
-export const SYSTEM_ICONS: Record<SystemType, string> = {
-  solar: "☀",
-  battery: "🔋",
-  ev: "⚡",
-  legacy: "🔧",
+
+// Per-system tag colors using existing Tailwind palette.
+// Picks distinct hues for at-a-glance scanning:
+//   PV  → amber (sun)
+//   ESS → emerald (battery/charge)
+//   EV  → cyan (existing EV palette in inventory dashboards)
+//   ALL → zinc (neutral fallback for legacy)
+export const SYSTEM_TAG_CLASSES: Record<SystemType, string> = {
+  solar: "bg-amber-500/15 text-amber-300 border border-amber-500/30",
+  battery: "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30",
+  ev: "bg-cyan-500/15 text-cyan-300 border border-cyan-500/30",
+  legacy: "bg-zinc-500/15 text-zinc-300 border border-zinc-500/30",
 };
 ```
 
@@ -235,8 +250,14 @@ export function SubJobBreakdown({ subJobs, className }: Props) {
 function SubJobRow({ subJob }: { subJob: SubJobInfo }) {
   return (
     <div className="flex items-center gap-2 text-xs">
-      <span className="w-4 text-center" aria-hidden>{SYSTEM_ICONS[subJob.systemType]}</span>
-      <span className="w-16 text-muted">{SYSTEM_LABELS[subJob.systemType]}</span>
+      <span
+        className={cn(
+          "inline-flex items-center justify-center px-1.5 py-0.5 rounded text-[0.65rem] font-semibold tracking-wide min-w-[2.5rem]",
+          SYSTEM_TAG_CLASSES[subJob.systemType],
+        )}
+      >
+        {SYSTEM_TAGS[subJob.systemType]}
+      </span>
       <ZuperStatusBadge status={subJob.status} />
       <CrewLabel names={subJob.assignedTo} />
       <ScheduleLabel start={subJob.scheduledDate} end={subJob.scheduledEnd} />
@@ -244,6 +265,8 @@ function SubJobRow({ subJob }: { subJob: SubJobInfo }) {
   );
 }
 ```
+
+The PV/ESS/EV tag conveys the system type — no separate label column. The colored chip is enough at-a-glance signal for ops.
 
 `<ZuperStatusBadge>`, `<CrewLabel>`, `<ScheduleLabel>` are tiny presentational helpers in the same file:
 - `ZuperStatusBadge` reuses the existing status → tone mapping (find current usage; if no shared helper exists, a small switch on common statuses with theme tokens like `bg-emerald-500/15 text-emerald-300` etc.)
@@ -265,7 +288,7 @@ type Props = {
 
 export function ViewModeToggle({ value, onChange }: Props) {
   return (
-    <div className="inline-flex rounded-md border border-border bg-surface" role="tablist">
+    <div className="inline-flex rounded-md border border-t-border bg-surface" role="tablist">
       <button
         role="tab"
         aria-selected={value === "compact"}
@@ -324,14 +347,16 @@ const [viewMode, setViewMode] = useViewMode("scheduler:viewMode:construction");
 <ViewModeToggle value={viewMode} onChange={setViewMode} />
 ```
 
-In the card render block (today's `<ProjectCard>` or inline JSX), branch:
+In the card render block (today's inline status-badge JSX inside the project card), branch:
 ```tsx
 {viewMode === "breakdown" && project.zuperSubJobs?.length ? (
   <SubJobBreakdown subJobs={project.zuperSubJobs} />
 ) : (
-  <ExistingCompactBadgeRow project={project} />
+  /* existing inline badge JSX — the current single-status-badge + crew chips block */
 )}
 ```
+
+Neither scheduler today has a named `<CompactBadgeRow>` component; the badges are rendered inline within the card's JSX. The `viewMode === "compact"` branch leaves that inline JSX exactly as-is.
 
 **Master scheduler** — same pattern, separate localStorage key (`scheduler:viewMode:master`).
 
@@ -376,8 +401,8 @@ scheduler page:
   project.zuperSubJobs = [solar, battery]       // NEW
 
 card render (breakdown):
-  ☀ Solar    [STARTED]   J. Diaz   May 12–13
-  🔋 Battery [SCHEDULED] M. Chen   May 12
+  [PV]  [STARTED]   J. Diaz   May 12–13
+  [ESS] [SCHEDULED] M. Chen   May 12
 
 card render (compact):
   [STARTED] Diaz, Chen  (unchanged from today)
@@ -390,7 +415,7 @@ lookup finds 1 candidate: Construction (legacy category, status: IN_PROGRESS)
   → subJobs[dealId] = [{ systemType: "legacy", jobUid: "...", status: "IN_PROGRESS", ... }]
 
 card render (breakdown):
-  🔧 Construction [IN_PROGRESS] J. Diaz   May 12
+  [ALL] [IN_PROGRESS] J. Diaz   May 12
 
 card render (compact): unchanged
 ```
@@ -401,7 +426,7 @@ card render (compact): unchanged
 lookup finds 1 candidate: Construction - Solar (status: COMPLETED)
   → subJobs[dealId] = [{ systemType: "solar", ... }]
 
-card render (breakdown): one ☀ Solar row.
+card render (breakdown): one [PV] row.
 card render (compact): unchanged.
 ```
 
