@@ -9,6 +9,9 @@ import { useActivityTracking } from "@/hooks/useActivityTracking";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
 import { formatCurrency, formatDateShort, formatShortDate } from "@/lib/format";
 import { extractInstallerNote } from "@/lib/schedule-notes";
+import type { SubJobInfo } from "@/lib/scheduler-subjobs";
+import { ViewModeToggle, useViewMode } from "@/components/scheduler/ViewModeToggle";
+import { SubJobBreakdown } from "@/components/scheduler/SubJobBreakdown";
 import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset, type ExistingBooking, DEFAULT_LOCATION_CAPACITY } from "@/lib/schedule-optimizer";
 import {
   addBusinessDaysYmd,
@@ -116,6 +119,7 @@ interface SchedulerProject {
   zuperScheduledEnd?: string;   // ISO date from Zuper
   zuperJobCategory?: string;    // Which Zuper category matched: "survey" | "construction" | "inspection"
   zuperAssignedTo?: string[];    // Zuper assigned user names (directors/technicians)
+  zuperSubJobs?: SubJobInfo[];
   daysToInstall: number | null;
   isCompletedPastStage: boolean; // Project moved past its stage (e.g. Close Out with inspection data) — calendar only, not sidebar
 }
@@ -888,6 +892,7 @@ export default function SchedulerPage() {
   const [selectedLocations, setSelectedLocations] = useState<string[]>([]); // For project list filtering (multi-select)
   const [calendarLocations, setCalendarLocations] = useState<string[]>([]); // Multi-select for calendar
   const [calendarScheduleTypes, setCalendarScheduleTypes] = useState<string[]>([]); // Multi-select for calendar
+  const [viewMode, setViewMode] = useViewMode("scheduler:viewMode:master");
   const [showScheduled, setShowScheduled] = useState(true); // Toggle active/upcoming events on calendar
   const [showCompleted, setShowCompleted] = useState(true); // Toggle completed events on calendar
   const [showIncomplete, setShowIncomplete] = useState(true); // Toggle overdue events on calendar
@@ -1120,6 +1125,18 @@ export default function SchedulerPage() {
             if (zJob.scheduledDate) project.zuperScheduledStart = zJob.scheduledDate;
             if (zJob.scheduledEnd) project.zuperScheduledEnd = zJob.scheduledEnd;
             if (zJob.assignedTo) project.zuperAssignedTo = Array.isArray(zJob.assignedTo) ? zJob.assignedTo : [zJob.assignedTo];
+          }
+        }
+
+        // Read subJobs from construction lookup
+        const constructionIdx = categories.indexOf("construction");
+        const constructionData = constructionIdx >= 0 ? results[constructionIdx] : null;
+        if (constructionData?.subJobs) {
+          for (const project of transformed) {
+            const subJobs = constructionData.subJobs[project.id];
+            if (subJobs?.length) {
+              project.zuperSubJobs = subJobs;
+            }
           }
         }
       } catch (zuperErr) {
@@ -4365,6 +4382,7 @@ export default function SchedulerPage() {
                 ✕ Clear
               </button>
             )}
+            <ViewModeToggle value={viewMode} onChange={setViewMode} />
             <div className="ml-auto flex flex-wrap items-center gap-1">
               {([
                 { key: "scheduled", label: "Scheduled", color: "bg-blue-500 border-blue-500", active: showScheduled, toggle: () => setShowScheduled(!showScheduled) },
@@ -6044,6 +6062,11 @@ export default function SchedulerPage() {
                     />
                   );
                 })()}
+                {viewMode === "breakdown" && detailModal.zuperSubJobs?.length && (
+                  <div className="mt-2 ml-[5.5rem]">
+                    <SubJobBreakdown subJobs={detailModal.zuperSubJobs} />
+                  </div>
+                )}
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-[0.7rem] text-muted w-20">Links</span>
                   <div className="flex items-center gap-2">

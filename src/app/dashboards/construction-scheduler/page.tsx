@@ -12,6 +12,9 @@ import { ConstructionMonthView } from "@/components/scheduler/construction/Const
 import { ConstructionWeekView } from "@/components/scheduler/construction/ConstructionWeekView";
 import { ConstructionGanttView } from "@/components/scheduler/construction/ConstructionGanttView";
 import { LOCATION_TIMEZONES } from "@/lib/constants";
+import type { SubJobInfo } from "@/lib/scheduler-subjobs";
+import { ViewModeToggle, useViewMode } from "@/components/scheduler/ViewModeToggle";
+import { SubJobBreakdown } from "@/components/scheduler/SubJobBreakdown";
 import { formatCurrency, formatDateShort, formatShortDate } from "@/lib/format";
 import { getInternalDealUrl } from "@/lib/external-links";
 import {
@@ -95,6 +98,7 @@ interface ConstructionProject {
   zuperScheduledStart?: string;
   zuperScheduledEnd?: string;
   zuperAssignedTo?: string[];
+  zuperSubJobs?: SubJobInfo[];
   tentativeRecordId?: string;
 }
 
@@ -359,6 +363,7 @@ export default function ConstructionSchedulerPage() {
   const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
   const [searchText, setSearchText] = useState("");
   const [sortBy, setSortBy] = useState("amount");
+  const [viewMode, setViewMode] = useViewMode("scheduler:viewMode:construction");
   const [optimizeOpen, setOptimizeOpen] = useState(false);
   const [optimizePreset, setOptimizePreset] = useState<ScoringPreset>("balanced");
   const [optimizeLocations, setOptimizeLocations] = useState<string[]>([]);
@@ -444,6 +449,11 @@ export default function ConstructionSchedulerPage() {
                 if (Array.isArray(zuperJob.assignedTo)) {
                   project.zuperAssignedTo = zuperJob.assignedTo;
                 }
+              }
+              // Store sub-jobs for breakdown view
+              const subJobs = zuperData.subJobs?.[project.id];
+              if (subJobs?.length) {
+                project.zuperSubJobs = subJobs;
               }
             }
           }
@@ -1773,6 +1783,8 @@ export default function ConstructionSchedulerPage() {
               <option value="status">Sort: Status</option>
             </select>
 
+            <ViewModeToggle value={viewMode} onChange={setViewMode} />
+
             {/* Availability Toggle */}
             {zuperConfigured && (
               <button
@@ -1994,31 +2006,37 @@ export default function ConstructionSchedulerPage() {
                           {formatCurrency(project.amount)}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 mt-2">
-                        {isInstallOverdue(project, manualSchedules[project.id]) && (
-                          <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
-                            ⚠ Overdue
+                      {viewMode === "breakdown" && project.zuperSubJobs?.length ? (
+                        <div className="mt-2">
+                          <SubJobBreakdown subJobs={project.zuperSubJobs} />
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 mt-2">
+                          {isInstallOverdue(project, manualSchedules[project.id]) && (
+                            <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
+                              ⚠ Overdue
+                            </span>
+                          )}
+                          <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(project.installStatus)}`}>
+                            {project.installStatus}
                           </span>
-                        )}
-                        <span className={`text-xs px-1.5 py-0.5 rounded border ${getStatusColor(project.installStatus)}`}>
-                          {project.installStatus}
-                        </span>
-                        {project.systemSize > 0 && (
-                          <span className="text-xs text-muted">
-                            {project.systemSize.toFixed(1)}kW
-                          </span>
-                        )}
-                        {project.installDays > 0 && (
-                          <span className="text-xs text-blue-400">
-                            {project.installDays}d
-                          </span>
-                        )}
-                        {project.batteries > 0 && (
-                          <span className="text-xs text-purple-400">
-                            {project.batteries} batt
-                          </span>
-                        )}
-                      </div>
+                          {project.systemSize > 0 && (
+                            <span className="text-xs text-muted">
+                              {project.systemSize.toFixed(1)}kW
+                            </span>
+                          )}
+                          {project.installDays > 0 && (
+                            <span className="text-xs text-blue-400">
+                              {project.installDays}d
+                            </span>
+                          )}
+                          {project.batteries > 0 && (
+                            <span className="text-xs text-purple-400">
+                              {project.batteries} batt
+                            </span>
+                          )}
+                        </div>
+                      )}
                     </div>
                   ))
                 )}
@@ -2176,16 +2194,20 @@ export default function ConstructionSchedulerPage() {
                             </td>
                             <td className="px-4 py-3 text-sm text-muted">{project.location}</td>
                             <td className="px-4 py-3">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(project.installStatus)}`}>
-                                  {project.installStatus}
-                                </span>
-                                {overdue && (
-                                  <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
-                                    Overdue
+                              {viewMode === "breakdown" && project.zuperSubJobs?.length ? (
+                                <SubJobBreakdown subJobs={project.zuperSubJobs} />
+                              ) : (
+                                <div className="flex items-center gap-1.5">
+                                  <span className={`text-xs px-2 py-1 rounded border ${getStatusColor(project.installStatus)}`}>
+                                    {project.installStatus}
                                   </span>
-                                )}
-                              </div>
+                                  {overdue && (
+                                    <span className="text-xs px-1.5 py-0.5 rounded border bg-red-500/20 text-red-400 border-red-500/30 font-medium">
+                                      Overdue
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </td>
                             <td className={`px-4 py-3 text-sm ${overdue ? "text-red-400" : schedDate ? "text-emerald-400" : "text-muted"}`}>
                               {schedDate ? formatShortDate(schedDate) : "—"}

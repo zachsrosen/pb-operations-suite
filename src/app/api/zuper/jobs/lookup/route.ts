@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CONSTRUCTION_CATEGORY_NAMES, JOB_CATEGORIES, JOB_CATEGORY_UIDS, ZuperClient, ZuperJob } from "@/lib/zuper";
+import { extractSubJobsFromCandidates, type SubJobInfo } from "@/lib/scheduler-subjobs";
 import { getCachedZuperJobsByDealIds } from "@/lib/db";
 import { requireApiAuth } from "@/lib/api-auth";
 
@@ -223,6 +224,45 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
     return endDate;
   };
 
+  const computeScheduledDays = (job: ZuperJob, jobCategoryName: string): {
+    scheduledStart: string | undefined;
+    scheduledEnd: string | undefined;
+    scheduledDays: number | undefined;
+    effectivelyUnscheduled: boolean;
+  } => {
+    const unscheduled = isEffectivelyUnscheduled(job);
+    const start = getScheduledStart(job);
+    const end = getScheduledEnd(job);
+    let days: number | undefined;
+
+    if (!unscheduled && start && end) {
+      const startParsed = parseZuperTimestamp(start);
+      const endParsed = parseZuperTimestamp(end);
+      if (startParsed && endParsed) {
+        const diffMs = endParsed.getTime() - startParsed.getTime();
+        if (diffMs / (1000 * 60 * 60 * 24) > 0) {
+          const startDate = startOfDay(startParsed);
+          const inclusiveEndDate = normalizeInclusiveEndDate(startParsed, endParsed);
+          const calendarDaysDiff = Math.round(
+            (inclusiveEndDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
+          );
+          days = Math.max(calendarDaysDiff + 1, 1);
+          if (jobCategoryName === JOB_CATEGORIES.CONSTRUCTION ||
+              jobCategoryName.toLowerCase().includes("construction")) {
+            days = countBusinessDaysInclusive(startDate, inclusiveEndDate);
+          }
+        }
+      }
+    }
+
+    return {
+      scheduledStart: unscheduled ? undefined : start,
+      scheduledEnd: unscheduled ? undefined : end,
+      scheduledDays: days,
+      effectivelyUnscheduled: unscheduled,
+    };
+  };
+
   // Helper to extract customer name from project name
   const extractCustomerName = (name: string): string => {
     const decoded = decodeURIComponent(name);
@@ -331,6 +371,31 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
     const addCandidate = (projectId: string, match: JobMatch) => {
       if (!allCandidates[projectId]) allCandidates[projectId] = [];
       allCandidates[projectId].push(match);
+    };
+
+    const extractSubJobsForCategory = (
+      cat: string | null,
+      dedupedCandidates: JobMatch[],
+      projectId: string,
+    ): SubJobInfo[] => {
+      if (!cat || cat.toLowerCase() !== JOB_CATEGORIES.CONSTRUCTION.toLowerCase()) return [];
+      return extractSubJobsFromCandidates(
+        dedupedCandidates.map(c => {
+          const schedule = computeScheduledDays(c.job, c.categoryName);
+          return {
+            jobUid: c.job.job_uid!,
+            status: getJobStatus(c.job) || "UNKNOWN",
+            statusScore: c.statusScore,
+            addressScore: c.addressScore,
+            categoryName: c.categoryName,
+            scheduledStart: schedule.scheduledStart,
+            scheduledEnd: schedule.scheduledEnd,
+            scheduledDays: schedule.scheduledDays,
+            assignedTo: getAssignedUserNames(c.job),
+          };
+        }),
+        projectId,
+      );
     };
 
     // --- Pass 0: Database cache (most reliable — set when jobs are scheduled through the app) ---
@@ -539,6 +604,7 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
       matchedBy?: string;
       assignedTo?: string[];  // All assigned user names
     }> = {};
+    const subJobsMap: Record<string, SubJobInfo[]> = {};
 
     for (const [projectId, candidates] of Object.entries(allCandidates)) {
       // Deduplicate by job UID (same job can match via multiple methods)
@@ -575,56 +641,31 @@ export async function handleLookup(projectIds: string[], projectNames: string[],
       );
 
       const assignedUsers = getAssignedUserNames(best.job);
-
-      // Compute scheduled days from Zuper start/end times
-      const effectivelyUnscheduled = isEffectivelyUnscheduled(best.job);
-      const scheduledStart = getScheduledStart(best.job);
-      const scheduledEnd = getScheduledEnd(best.job);
-      let scheduledDays: number | undefined;
-      if (!effectivelyUnscheduled && scheduledStart && scheduledEnd) {
-        const start = parseZuperTimestamp(scheduledStart);
-        const end = parseZuperTimestamp(scheduledEnd);
-        if (start && end) {
-          const diffMs = end.getTime() - start.getTime();
-          const diffDays = diffMs / (1000 * 60 * 60 * 24);
-          // Round to nearest 0.25 (quarter day) — Zuper often stores full-day windows
-          // A 1-day job is typically 8am-5pm (same day) = ~0.375 days, round to 1
-          // A 3-day job spans 3 calendar days
-          if (diffDays > 0) {
-            // Count calendar days by default; construction spans are business days.
-            // Normalize end boundary to avoid off-by-one when Zuper returns an
-            // exclusive end timestamp for multi-day jobs.
-            const startDate = startOfDay(start);
-            const inclusiveEndDate = normalizeInclusiveEndDate(start, end);
-            const calendarDaysDiff = Math.round(
-              (inclusiveEndDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-            );
-            // +1 because the span is inclusive: Feb 19→20 = 2 days, not 1
-            scheduledDays = Math.max(calendarDaysDiff + 1, 1);
-            if (targetCategory === JOB_CATEGORIES.CONSTRUCTION) {
-              scheduledDays = countBusinessDaysInclusive(startDate, inclusiveEndDate);
-            }
-          }
-        }
-      }
+      const schedule = computeScheduledDays(best.job, best.categoryName);
 
       jobsMap[projectId] = {
         jobUid: best.job.job_uid!,
         jobTitle: best.job.job_title || "",
         status: getJobStatus(best.job) || "UNKNOWN",
-        scheduledDate: effectivelyUnscheduled ? undefined : scheduledStart,
-        scheduledEnd: effectivelyUnscheduled ? undefined : scheduledEnd,
-        scheduledDays,
+        scheduledDate: schedule.scheduledStart,
+        scheduledEnd: schedule.scheduledEnd,
+        scheduledDays: schedule.scheduledDays,
         category: best.categoryName,
         matchedBy: best.matchMethod,
         ...(assignedUsers.length > 0 && { assignedTo: assignedUsers }),
       };
+
+      const subJobs = extractSubJobsForCategory(targetCategory, dedupedCandidates, projectId);
+      if (subJobs.length > 0) {
+        subJobsMap[projectId] = subJobs;
+      }
     }
 
     return NextResponse.json({
       configured: true,
       jobs: jobsMap,
       count: Object.keys(jobsMap).length,
+      ...(Object.keys(subJobsMap).length > 0 && { subJobs: subJobsMap }),
     });
   } catch (error) {
     console.error("Zuper job lookup error:", error);
