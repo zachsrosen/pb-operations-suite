@@ -5608,7 +5608,7 @@ export default function SchedulerPage() {
                   valueClass="text-orange-400 font-semibold"
                 />
                 <ModalRow
-                  label="Status"
+                  label="Stage"
                   value={
                     scheduleModal.project.stage === "rtb"
                       ? "RTB Ready"
@@ -5620,6 +5620,18 @@ export default function SchedulerPage() {
                   }
                   valueClass={STAGE_TEXT_COLORS[scheduleModal.project.stage]}
                 />
+                {scheduleModal.project.zuperJobStatus && (
+                  <ModalRow
+                    label="Job Status"
+                    value={scheduleModal.project.zuperJobStatus.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                    valueClass={
+                      scheduleModal.project.zuperJobStatus.toLowerCase().includes("complete") ? "text-emerald-400"
+                        : scheduleModal.project.zuperJobStatus.toLowerCase().includes("progress") || scheduleModal.project.zuperJobStatus.toLowerCase().includes("started") ? "text-yellow-400"
+                        : scheduleModal.project.zuperJobStatus.toLowerCase().includes("scheduled") ? "text-blue-400"
+                        : "text-muted"
+                    }
+                  />
+                )}
                 <div className="flex items-center gap-2 mt-1">
                   <span className="text-[0.7rem] text-muted w-20">Links</span>
                   <div className="flex items-center gap-2">
@@ -6043,10 +6055,10 @@ export default function SchedulerPage() {
                     eventClass = "text-emerald-400";
                   }
                   return eventStatus ? (
-                    <ModalRow label="Status" value={eventStatus} valueClass={eventClass} />
+                    <ModalRow label="Stage" value={eventStatus} valueClass={eventClass} />
                   ) : (
                     <ModalRow
-                      label="Status"
+                      label="Stage"
                       value={
                         detailModal.stage === "rtb"
                           ? "RTB Ready"
@@ -6062,6 +6074,18 @@ export default function SchedulerPage() {
                     />
                   );
                 })()}
+                {detailModal.zuperJobStatus && (
+                  <ModalRow
+                    label="Job Status"
+                    value={detailModal.zuperJobStatus.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                    valueClass={
+                      detailModal.zuperJobStatus.toLowerCase().includes("complete") ? "text-emerald-400"
+                        : detailModal.zuperJobStatus.toLowerCase().includes("progress") || detailModal.zuperJobStatus.toLowerCase().includes("started") ? "text-yellow-400"
+                        : detailModal.zuperJobStatus.toLowerCase().includes("scheduled") ? "text-blue-400"
+                        : "text-muted"
+                    }
+                  />
+                )}
                 {viewMode === "breakdown" && detailModal.zuperSubJobs?.length && (
                   <div className="mt-2 ml-[5.5rem]">
                     <SubJobBreakdown subJobs={detailModal.zuperSubJobs} />
