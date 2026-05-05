@@ -4,6 +4,108 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-04-29
+
+### PM Exception Flag System (Major)
+- Replaces day-to-day PM ownership with exception-based round-robin assignment: when a deal is flagged (auto by HubSpot workflow callout or manually in-app), the system routes it to the least-loaded active PM and detaches when the flag resolves
+- New Prisma models: `PmFlag`, `PmFlagEvent`, 5 enums, 8 `ActivityType` entries
+- Core lib `lib/pm-flags.ts`: idempotent `createFlag` (on source+externalRef), `assignNextPm` round-robin, acknowledge / resolve / reassign / note / cancel transitions
+- API: `POST/GET /api/pm-flags` + per-flag transition endpoints, dual-auth (session for manual, `API_SECRET_TOKEN` for HubSpot workflows)
+- UI: `/dashboards/pm-action-queue` with severity tiers, Mine / Unassigned / All tabs, drawer with full event timeline; `RaiseFlagButton` drop-in for manual escalation
+- Email template `PmFlagAssigned` with severity color + deep-link
+- `raise-pm-flag` action registered in admin workflow palette
+- Live mode: page-load eval replaces daily cron (immediate flag visibility)
+- Null-safe boolean evaluation, aggressive thresholds, stage-id fix, compound-risk + shit-show rules
+- Kill switch + scope guard + assign-by-PM safety on rollout
+
+### PM Accountability Dashboard + Weekly Digest (Phase 1)
+- Defense brief for PM role under HR/ownership scrutiny — `/dashboards/pm-accountability` audience-gated to `PM_TRACKER_AUDIENCE` allowlist
+- New `PMSnapshot` model with per-PM nightly metric writes
+- Phase 1 metrics: engagement (ghost rate, median days since touch, 30d frequency), readiness (permit/BOM/customer-confirm checklist, day-of failures), hygiene (required-fields population, stale data), rescue (stuck count from `hs_date_entered_<stage>`)
+- Snapshot orchestrator runs all metrics in parallel; continues on per-PM failures
+- Cron jobs: nightly snapshot at 02:00 MT, weekly digest Monday 08:00 MT (idempotent via `IdempotencyKey` on iso-week)
+- API routes: `/api/pm/scorecard`, `/api/pm/team-summary`, `/api/pm/at-risk`
+- `TeamComparisonTable` with default sort by ghost rate ascending; per-PM `PmScorecardTab` with KPI strip + at-risk list
+- Phase 2 (saves detector, reviewRate, complaintRatePer100, GHOSTED) deferred
+
+### On-Call Schedule Go-Live (Major)
+- Aligned with Tracey's Apr 28 policy — 2-week advance notice for shift changes, per-state Google Calendar
+- Sun-Sat work weeks; weekday shifts 6pm-10pm, weekend shifts 8am-12pm
+- Two-stage Google Calendar rollout: stage events without invites for admin review, then invite-blast pass via `scripts/send-on-call-invites.ts` (stable sha1 event ids let updates add attendees in place)
+- Switched to `calendar.events` scope (matches existing DWD config); manual calendar creation required (admin shares with service account, pastes ID into `OnCallPool.googleCalendarId`)
+- HeroStrip "Schedule starts" message data-driven from `pool.startDate`
+- Granted VIEWER role access to `/dashboards/on-call` + `/api/on-call` so unboarded electricians (auto-VIEWER) don't 403
+
+### SOP System Overhaul (Major)
+- **WYSIWYG editor**: replaces raw HTML CodeMirror with TipTap rich editor across all SOP sections
+- **Role-gating**: tabs and sections gated to prevent info leaking — public tabs (hubspot, ops, ref), PM Guide gated by first-name match, Tech Ops tab restricted, admin-only sections (`ref-user-roles`, `ref-system`)
+- **Tech Ops split**: single Tech Ops tab broken into Design / Permitting / Interconnection (mirroring DESIGN, PERMIT, INTERCONNECT roles)
+- **Suites tab**: per-suite SOPs with overview index for all 9 suites
+- **Tools tab expansion**: BOM, AI Design Review, Pricing, P&I Hubs, Surveyor, Schedule, Optimizer, Map, Workflow Builder, Property Drawer, Deal Detail, Equipment Backlog
+- **Action Queues tab**: dedicated SOPs for queue management
+- **Drafts tab**: PM Guide rewrite + Pipeline Overview (aligned to 8 actual deal stages)
+- **Submit-a-new-SOP**: user submission flow with admin review queue
+- **Hub-mode flip**: SOP open by default, no longer hidden behind a toggle
+- **Auto-link `<code>/route</code>` mentions** to live app pages
+- Catalog, Service, Scheduling, Forecast, AHJ & Utility batch SOPs added
+- Executive, Accounting, Sales & Marketing tabs (role-gated)
+- Meta-SOP "How to Use the SOP Guide" + "Submitting a New Product" SOP for ops tab
+
+### Shit Show Meeting Hub (Major)
+- New meeting hub at `/dashboards/shit-show` for triaging at-risk deals during weekly meetings
+- Auto-snapshot on session create using IDR snapshot helpers (owners, statuses, equipment)
+- Always-on add button + manual refresh button
+- Queue decoupled from active session — backlog persists across meetings
+
+### Catalog Phase B — Operational Sync (Major)
+- HubSpot manufacturer enum auto-add: unknown brands now auto-create as HubSpot enum values + notify TechOps via email (no more "missing manufacturer" sync failures)
+- Zoho item categories now sync as `group_name` (proper inventory categorization)
+- Zuper custom fields written via `meta_data` instead of `custom_fields` payload (matches Zuper API contract on update path)
+- Zuper product create now plumbs spec-derived custom fields (M3.4)
+- Catalog data hygiene pass: test product cleanup, brand casing normalization, "Generic" rebrand, integrity audit + auto-fixable repairs
+- 311-row Zoho orphan reconciliation: 302 new `InternalProduct` records created with Zuper sync; CSV export of HubSpot orphans for manual review
+- Catalog-sync `meta_data` routing on Zuper update path (fixes spec changes silently dropping)
+- Script `_create-zuper-product-customfields.ts` to seed required Zuper custom fields
+- Backfill script for Zoho item images from historical pushes
+- Rollout runbook (PR #407)
+
+### EagleView / TrueDesign Auto-Pull (Major)
+- TrueDesign auto-pull pipeline (Tasks 1-9) — automated EagleView report fetching
+- `EagleViewPanel` renders in Solar Surveyor when `?dealId=` URL param is set
+- Fixed deal-style HubSpot address field reads (was missing fields when address came from deal vs contact)
+- Rollout runbook documenting pipeline + recovery flows
+
+### Schedule Event Log (Major)
+- New `ScheduleEventLog` model + capture path for Zuper reschedules and crew changes
+- Records who changed what when across all schedule mutations (foundation for SLA tracking + audit trail)
+
+### Office Performance — California Combined Dashboard
+- Office Performance TV system now treats SLO + Camarillo as one "California" group (mirrors revenue tracking + install calendar grouping)
+- New `DashboardLocationGroup` abstraction in `lib/dashboard-location-groups.ts`
+- Goals summed across SLO + Camarillo `OfficeGoal` rows; default fallback applied once if neither has a row
+- Compliance: single `computeLocationCompliance` call per stage with primary canonical + union dealIds (correct because both shops share Zuper team)
+- Legacy slugs (`san-luis-obispo`, `camarillo`) client-side redirect to `/california`
+- All-locations rollup now shows 4 rows (was 5)
+- Per-location `goals-pipeline` route uses `resolveDashboardGroup` (fixes 404 on `/california`)
+
+### Scheduler
+- Flag overdue/completed Zuper overlay jobs visually so dispatch can clear stale state
+
+### IT / Admin Endpoints
+- New `/api/it/audit-sessions`, `/api/it/anomaly-events`, `/api/it/user-roster` endpoints for IT integration / external monitoring
+
+### Permit Hub
+- Per-inbox OAuth workaround for blocked DWD scope (`gmail.send` blocked at workspace level requires individual user authorization)
+- Token-exchange error body now surfaced in probe response for diagnostics
+
+### Bug Fixes
+- Zoho item update now propagates `description` + `part_number` (was silently dropping on update)
+- EagleView reads deal-style HubSpot address fields (street/city/state/zip on deal, not just contact)
+- Pricing: clarified `DC_QUALIFYING_MODULE_BRANDS` empty by design (intentional, not a config gap)
+- SOP draft Pipeline Overview aligned to actual 8 deal stages (was showing legacy stage names)
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
