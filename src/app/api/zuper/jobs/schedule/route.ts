@@ -950,6 +950,58 @@ export async function PUT(request: NextRequest) {
         }
       }
 
+      // --- Reschedule sibling construction sub-jobs (same deal, same dates/crew) ---
+      let siblingResults: Array<{ jobUid: string; category: string; ok: boolean; error?: string }> = [];
+      if (isInstallationLookup && prisma) {
+        try {
+          const siblingJobs = await prisma.zuperJobCache.findMany({
+            where: {
+              hubspotDealId: String(project.id),
+              jobCategory: { in: [...CONSTRUCTION_CATEGORY_NAMES] },
+              jobUid: { not: existingJob.job_uid },
+            },
+          });
+
+          if (siblingJobs.length > 0) {
+            console.log(`[Zuper Schedule] Found ${siblingJobs.length} sibling construction job(s) to reschedule`);
+            for (const sibling of siblingJobs) {
+              try {
+                const sibResult = await zuper.rescheduleJob(
+                  sibling.jobUid,
+                  startDateTime,
+                  endDateTime,
+                  userUids,
+                  teamUid
+                );
+                const ok = sibResult.type === "success";
+                siblingResults.push({ jobUid: sibling.jobUid, category: sibling.jobCategory || "unknown", ok });
+                if (ok) {
+                  console.log(`[Zuper Schedule] Sibling ${sibling.jobCategory} (${sibling.jobUid}) rescheduled OK`);
+                  await cacheZuperJob({
+                    jobUid: sibling.jobUid,
+                    jobTitle: sibling.jobTitle || "",
+                    jobCategory: sibling.jobCategory || "",
+                    jobStatus: "SCHEDULED",
+                    hubspotDealId: String(project.id),
+                    projectName: project.name,
+                    scheduledStart: startDateTime ? new Date(startDateTime.replace(" ", "T") + "Z") : undefined,
+                    scheduledEnd: endDateTime ? new Date(endDateTime.replace(" ", "T") + "Z") : undefined,
+                  });
+                } else {
+                  console.warn(`[Zuper Schedule] Sibling ${sibling.jobCategory} (${sibling.jobUid}) reschedule FAILED`);
+                  siblingResults[siblingResults.length - 1].error = (sibResult as { error?: string }).error || "unknown";
+                }
+              } catch (sibErr) {
+                console.warn(`[Zuper Schedule] Sibling ${sibling.jobUid} error:`, sibErr);
+                siblingResults.push({ jobUid: sibling.jobUid, category: sibling.jobCategory || "unknown", ok: false, error: String(sibErr) });
+              }
+            }
+          }
+        } catch (sibLookupErr) {
+          console.warn("[Zuper Schedule] Failed to look up sibling construction jobs:", sibLookupErr);
+        }
+      }
+
       // Log as reschedule only when UI explicitly requested reschedule mode.
       const activityType = isUiReschedule
         ? (isSurveyLike(schedule.type) ? "SURVEY_RESCHEDULED" : schedule.type === "inspection" ? "INSPECTION_RESCHEDULED" : "INSTALL_RESCHEDULED")
@@ -1064,6 +1116,7 @@ export async function PUT(request: NextRequest) {
         console.log("[Zuper Schedule] Test slot mode enabled; skipping crew notification email");
       }
 
+      const siblingFailures = siblingResults.filter((s) => !s.ok);
       return NextResponse.json({
         success: true,
         action: "rescheduled",
@@ -1076,6 +1129,14 @@ export async function PUT(request: NextRequest) {
         assignmentError,
         zuperNoteWarning,
         hubspotWarnings: hubspotWarnings.length > 0 ? hubspotWarnings : undefined,
+        ...(siblingResults.length > 0 && {
+          siblings: {
+            total: siblingResults.length,
+            succeeded: siblingResults.filter((s) => s.ok).length,
+            failed: siblingFailures.length,
+            ...(siblingFailures.length > 0 && { failures: siblingFailures }),
+          },
+        }),
       });
     } else if (effectiveRescheduleOnly) {
       // Reschedule-only mode: don't create new jobs, just report that none was found

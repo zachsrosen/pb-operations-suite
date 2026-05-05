@@ -771,6 +771,53 @@ export async function POST(request: NextRequest) {
               }
             }
           }
+
+          // --- Reschedule sibling construction sub-jobs (same deal, same dates/crew) ---
+          if (isInstallationConfirm) {
+            try {
+              const siblingJobs = await prisma.zuperJobCache.findMany({
+                where: {
+                  hubspotDealId: record.projectId,
+                  jobCategory: { in: [...CONSTRUCTION_CATEGORY_NAMES] },
+                  jobUid: { not: existingJob.job_uid },
+                },
+              });
+
+              if (siblingJobs.length > 0) {
+                console.log(`[Zuper Confirm] Found ${siblingJobs.length} sibling construction job(s) to reschedule`);
+                for (const sibling of siblingJobs) {
+                  try {
+                    const sibResult = await zuper.rescheduleJob(
+                      sibling.jobUid,
+                      startDateTime,
+                      endDateTime,
+                      resolvedUserUids.length > 0 ? resolvedUserUids : undefined,
+                      resolvedTeamUid
+                    );
+                    if (sibResult.type === "success") {
+                      console.log(`[Zuper Confirm] Sibling ${sibling.jobCategory} (${sibling.jobUid}) rescheduled OK`);
+                      await cacheZuperJob({
+                        jobUid: sibling.jobUid,
+                        jobTitle: sibling.jobTitle || "",
+                        jobCategory: sibling.jobCategory || "",
+                        jobStatus: "SCHEDULED",
+                        hubspotDealId: record.projectId,
+                        projectName: record.projectName,
+                        scheduledStart: startDateTime ? new Date(startDateTime.replace(" ", "T") + "Z") : undefined,
+                        scheduledEnd: endDateTime ? new Date(endDateTime.replace(" ", "T") + "Z") : undefined,
+                      });
+                    } else {
+                      console.warn(`[Zuper Confirm] Sibling ${sibling.jobCategory} (${sibling.jobUid}) reschedule failed`);
+                    }
+                  } catch (sibErr) {
+                    console.warn(`[Zuper Confirm] Sibling ${sibling.jobUid} error:`, sibErr);
+                  }
+                }
+              }
+            } catch (sibLookupErr) {
+              console.warn("[Zuper Confirm] Failed to look up sibling construction jobs:", sibLookupErr);
+            }
+          }
         } else {
           zuperError = rescheduleResult.error;
         }
