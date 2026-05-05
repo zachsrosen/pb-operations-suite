@@ -53,6 +53,14 @@ export type PandaDocLinkedObject = {
   children?: { id: string; entity_type?: string; entity_id?: string }[];
 };
 
+export type PandaDocField = {
+  field_id?: string;
+  name?: string;
+  type?: string; // "dropdown" | "text" | "signature" | "date" | ...
+  value?: string | number | boolean | null;
+  merge_field?: string | null;
+};
+
 export type PandaDocDocumentDetail = {
   id: string;
   name: string;
@@ -66,7 +74,15 @@ export type PandaDocDocumentDetail = {
   metadata?: Record<string, string | number | null> | null;
   linked_objects?: PandaDocLinkedObject[];
   tokens?: { name: string; value: string }[];
+  fields?: PandaDocField[];
 };
+
+// Field IDs on the canonical Design Approval template. The dropdown is
+// the source of truth for approve vs. reject — `document.completed`
+// alone is ambiguous because customers sign whether they pick Approved
+// OR Rejected from the dropdown.
+export const DA_APPROVAL_DROPDOWN_FIELD_ID = "Design Approval Selection";
+export const DA_REJECTION_REASON_FIELD_ID = "Rejection Reason";
 
 function getApiKey(): string {
   const key = process.env.PANDADOC_API_KEY;
@@ -166,19 +182,47 @@ export function extractHubspotDealId(doc: PandaDocDocumentDetail): string | null
 }
 
 /**
- * Map a PandaDoc terminal status to the expected HubSpot `layout_status`
- * value. Returns null for non-terminal or ignored statuses.
+ * Read the customer's approval dropdown selection from the DA template.
+ * Returns the dropdown's literal value (e.g. "Design Approved", "Design
+ * Rejected") or null if the field is missing/unanswered.
  *
- * Ignored: `document.expired` (per scope decision — backup is for
- * recipient-decision drift, not lifecycle bookkeeping).
+ * Why: customers SIGN the document whether they approve OR reject —
+ * the dropdown is the actual decision. PandaDoc's `document.completed`
+ * status alone cannot distinguish approve from reject.
  */
-export function expectedLayoutStatus(status: string): string | null {
-  switch (status) {
-    case "document.completed":
-      return "Design Approved";
-    case "document.declined":
-      return "Design Rejected";
-    default:
-      return null;
-  }
+export function extractApprovalSelection(doc: PandaDocDocumentDetail): string | null {
+  const f = doc.fields?.find((x) => x.field_id === DA_APPROVAL_DROPDOWN_FIELD_ID);
+  if (!f) return null;
+  if (typeof f.value === "string" && f.value.trim() !== "") return f.value.trim();
+  return null;
+}
+
+/**
+ * Resolve the expected HubSpot `layout_status` for a DA document.
+ *
+ * Logic:
+ *  1. If the customer's approval dropdown is set, that's the source of truth.
+ *  2. Otherwise, if PandaDoc reports `document.declined` (the customer
+ *     formally declined without signing), map to "Design Rejected".
+ *  3. Otherwise return null — we can't determine intent (e.g. the
+ *     document was completed but the dropdown was left blank).
+ *
+ * Returning null causes the reconciler to skip the doc rather than
+ * write a noisy false-positive drift row.
+ */
+export function expectedLayoutStatusForDoc(doc: PandaDocDocumentDetail): string | null {
+  const dropdown = extractApprovalSelection(doc);
+  if (dropdown === "Design Approved" || dropdown === "Design Rejected") return dropdown;
+  if (doc.status === "document.declined") return "Design Rejected";
+  return null;
+}
+
+/**
+ * Cheap pre-filter: from a list response, decide whether the document is
+ * worth fetching detail for. Detail fetches are 1 call each — list returns
+ * documents with all sorts of statuses (`draft`, `viewed`, etc.) and we
+ * don't want to fan out for those.
+ */
+export function isCandidateForReconcile(status: string): boolean {
+  return status === "document.completed" || status === "document.declined";
 }
