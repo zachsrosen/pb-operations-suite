@@ -15,9 +15,10 @@ import { prisma } from "@/lib/db";
 import { hubspotClient } from "@/lib/hubspot";
 import {
   DA_TEMPLATE_ID,
-  expectedLayoutStatus,
+  expectedLayoutStatusForDoc,
   extractHubspotDealId,
   getDocumentDetail,
+  isCandidateForReconcile,
   listDocumentsByTemplate,
 } from "@/lib/pandadoc";
 
@@ -66,12 +67,16 @@ export async function GET(request: NextRequest) {
     summary.scanned = docs.length;
 
     for (const doc of docs) {
-      const expected = expectedLayoutStatus(doc.status);
-      if (!expected) continue; // skip non-terminal (sent/viewed/draft) and ignored (expired)
+      // Skip non-terminal documents without fetching detail.
+      if (!isCandidateForReconcile(doc.status)) continue;
       summary.terminal++;
 
       try {
         const detail = await getDocumentDetail(doc.id);
+        // Source of truth is the approval dropdown, not the doc status —
+        // customers sign whether they Approve or Reject.
+        const expected = expectedLayoutStatusForDoc(detail);
+        if (!expected) continue; // dropdown unanswered → can't determine intent
         const dealId = extractHubspotDealId(detail);
         if (!dealId) {
           summary.errors.push(`${doc.id}: no HubSpot deal linkage`);
