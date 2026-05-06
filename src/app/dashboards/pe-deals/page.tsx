@@ -423,13 +423,10 @@ export default function PeDealsPage() {
   const m1Deals = useMemo(() => unpaid.filter((d) => d.milestoneHighlight === "m1"), [unpaid]);
   const allDeals = unpaid;
 
-  // Summary stats (active deals only, exclude fully paid)
   // Hero-card stats use the FULL filtered PE deal set (paid + approved +
   // unpaid). NOT `allDeals` — that's the leftover bucket after subtracting
-  // deals shown in other table sections. Hero cards should reflect the
-  // whole visible PE pipeline, including paid + approved deals.
+  // deals shown in other table sections.
   const totalEPC = filtered.reduce((s, d) => s + (d.epcPrice ?? 0), 0);
-  const totalPEReceivable = filtered.reduce((s, d) => s + (d.pePaymentTotal ?? 0), 0);
   const totalRevenue = filtered.reduce((s, d) => s + (d.totalPBRevenue ?? 0), 0);
 
   // Ready-to-invoice: PE has approved our docs but we haven't been paid.
@@ -448,6 +445,17 @@ export default function PeDealsPage() {
     .filter((d) => d.peM2Status === "Paid")
     .reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
   const totalPECollected = m1PaidValue + m2PaidValue;
+
+  // PE Receivable = milestones PE has committed to (Approved or Paid only).
+  // Excludes deals where PE hasn't yet approved either milestone.
+  const APPROVED_OR_PAID = new Set(["Approved", "Paid"]);
+  const m1ReceivableValue = filtered
+    .filter((d) => d.peM1Status !== null && APPROVED_OR_PAID.has(d.peM1Status))
+    .reduce((s, d) => s + (d.pePaymentIC ?? 0), 0);
+  const m2ReceivableValue = filtered
+    .filter((d) => d.peM2Status !== null && APPROVED_OR_PAID.has(d.peM2Status))
+    .reduce((s, d) => s + (d.pePaymentPC ?? 0), 0);
+  const totalPEReceivable = m1ReceivableValue + m2ReceivableValue;
   const totalPEOutstanding = Math.max(0, totalPEReceivable - totalPECollected);
 
   // CSV export data
