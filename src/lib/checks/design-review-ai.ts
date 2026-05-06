@@ -30,31 +30,35 @@ import type { ReviewResult, Finding, Severity } from "./types";
 // ---------------------------------------------------------------------------
 
 const AHJ_FIELDS = [
-  "name",
-  "fire_setback_ridge",
-  "fire_setback_hip",
-  "fire_setback_valley",
-  "fire_setback_eave",
-  "fire_setback_rake",
-  "fire_setback_pathway",
-  "rsd_required",
-  "stamping_required",
-  "snow_load",
-  "wind_speed",
-  "building_code",
-  "electrical_code",
-  "fire_code",
-  "code_version",
-  "notes",
+  "record_name",
+  "ahj_code",
+  "city",
+  "state",
+  "fire_offsets_required",
+  "is_rsd_required_",
+  "stamping_requirements",
+  "design_snow_load",
+  "design_wind_speed",
+  "ibc_code",
+  "nec_code",
+  "ifc_code",
+  "irc_code",
+  "local_building_code",
+  "local_electrical_code",
+  "local_fire_code",
+  "building_code_notes",
+  "electrical_code_notes",
+  "fire_code_notes",
+  "general_notes",
 ] as const;
 
 const UTILITY_FIELDS = [
-  "name",
-  "ac_disconnect_required",
-  "backup_switch_allowed",
-  "production_meter_required",
-  "system_size_max_ac",
-  "system_size_max_dc",
+  "record_name",
+  "utility_company_name",
+  "ac_disconnect_required_",
+  "backup_switch_allowed_",
+  "is_production_meter_required_",
+  "system_size_rule",
   "design_notes",
   "interconnection_notes",
 ] as const;
@@ -62,6 +66,8 @@ const UTILITY_FIELDS = [
 const DEAL_CONTEXT_FIELDS = [
   "dealname",
   "system_size_kw",
+  "calculated_system_size__kwdc_",
+  "system_size_kwac",
   "module_type",
   "module_count",
   "inverter_type",
@@ -180,17 +186,17 @@ Your job is to review a planset PDF and cross-reference it against:
 ## Review Categories
 
 **ahj_compliance** — Check the planset against AHJ requirements:
-- Fire setbacks: verify the planset shows required setbacks from ridge, hip, valley, eave, rake, and pathway if the AHJ requires them
-- RSD (Rapid Shutdown): verify RSD compliance is shown if required by AHJ
-- Stamping: verify PE stamp is present if required by AHJ
-- Snow load and wind speed: verify structural details account for local requirements
-- Code references: verify the planset references the correct building, electrical, and fire codes
+- Fire offsets: if "fire_offsets_required" is set, verify the planset shows fire setbacks (ridge, hip, valley, eave, rake, pathway as applicable)
+- RSD (Rapid Shutdown): if "is_rsd_required_" is true/yes, verify RSD compliance is shown
+- Stamping: SKIP this check entirely. PE stamps are applied AFTER the design review stage, so their absence is expected and must never be flagged.
+- Snow load and wind speed: check "design_snow_load" and "design_wind_speed" — verify structural details account for these values
+- Code references: check ibc_code, nec_code, ifc_code, irc_code and local_* code fields — verify the planset references the correct code editions
 
 **utility_compliance** — Check against utility requirements:
-- AC disconnect: verify shown on line diagram if required by utility
-- Production meter: verify shown if required by utility
-- System size: verify system size is within utility maximum (AC and/or DC)
-- Backup switch: verify shown if battery system includes backup
+- AC disconnect: if "ac_disconnect_required_" is true/yes, verify shown on line diagram
+- Production meter: if "is_production_meter_required_" is true/yes, verify shown
+- System size: the utility's "system_size_rule" field describes size limits as free text (e.g., "DC ≤ 25kW" or "AC cannot exceed 10kW"). Parse it to determine whether the limit applies to DC or AC, then compare against the correct deal field: "calculated_system_size__kwdc_" for DC limits, "system_size_kwac" for AC limits. NEVER compare an AC value against a DC limit or vice versa. If the rule says "DC" (like Xcel's 10kW DC threshold), use the DC field only.
+- Backup switch: if "backup_switch_allowed_" is relevant and battery system includes backup, verify backup switch is shown
 
 **equipment_match** — Cross-reference planset against CRM deal data:
 - Module count and type: does the planset match what's in the CRM?
