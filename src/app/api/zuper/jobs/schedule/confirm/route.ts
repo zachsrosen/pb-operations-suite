@@ -775,8 +775,16 @@ export async function POST(request: NextRequest) {
           // --- Reschedule sibling construction sub-jobs (same deal, same dates/crew) ---
           // Looks up the primary job's Zuper customer, then finds all other construction
           // jobs for that customer and reschedules + status-updates each one.
+          // Skip siblings that still have a tentative ScheduleRecord — those need
+          // explicit user confirmation before touching Zuper.
           if (isInstallationConfirm) {
             try {
+              const tentativeSiblingRecords = await prisma.scheduleRecord.findMany({
+                where: { projectId: record.projectId, status: "tentative", zuperJobUid: { not: null } },
+                select: { zuperJobUid: true },
+              });
+              const tentativeJobUids = new Set(tentativeSiblingRecords.map(r => r.zuperJobUid!));
+
               // Get the primary job to find its customer_uid
               const primaryJobResult = await zuper.getJob(existingJob.job_uid);
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -793,6 +801,7 @@ export async function POST(request: NextRequest) {
                     if (!categoryMatches(job)) continue;
                     const sibDealId = getHubSpotDealId(job);
                     if (sibDealId !== record.projectId) continue;
+                    if (tentativeJobUids.has(job.job_uid)) continue;
                     const catName = typeof job.job_category === "string"
                       ? job.job_category
                       : job.job_category?.category_name || "unknown";
