@@ -4,6 +4,85 @@ All notable changes to the PB Tech Ops Suite are documented here.
 
 ---
 
+## 2026-05-06
+
+### Aircall Call Analytics (Major)
+- New admin sandbox at `/dashboards/admin/calls` and executive view at `/dashboards/executive-calls` with KPIs (missed rate, time-to-answer, voicemail rate, talk time), stacked daily volume chart, hour heatmap, sortable per-user table, and paginated recent-calls list
+- Webhook + cron ingestion into `AircallCallCache` / `AircallUserCache` with HMAC-SHA256 signature verification and idempotent unique-index conflict handling
+- Per-user answer rate via `call.ringing_on_agent` + `call.answered` webhook subscription — fixes false 100% rates by attributing rung-but-missed calls to ring-group agents
+- Analytics+ CSV import (`AircallAnalyticsSummary`) for historical ring-attempt data the REST API doesn't expose; admin import route + `aircall:analytics-import` script
+- Provider discriminator on cache table reserves room for Phase 3 Zuper Connect ingestion
+
+### IDR Meeting Hub & Pricing Calculator (Major)
+- "Shit Show" status line, Ops Revision Notes field, and auto-calculated Tier 1 (15%) / Tier 2 (20%) adders with mutual exclusivity (#473/#477)
+- Yellow warning banner when sales-change delta is under 10% of project cost; expanded deal-history cards show all meeting fields
+- Roof adder checkboxes auto-populate from HubSpot `roof_type` on session creation; total adder dollar amount pushed to new `idr_adder_amount` deal property
+- Inline `% of deal` display on each adder with "may be waived" warning under 10%
+- Replaced pricing-calculator delta with user-entered `salesChangeAmount`; removed PricingBreakdown in favor of inline checklist; show adder rates when system size is unknown
+- HubSpot roof type auto-populate, adder amount property push, percentage-of-deal warnings on waiver thresholds
+
+### Master Scheduler
+- Construction job split: deals now break into Solar / Battery / EV sub-jobs via `lib/zuper-construction.ts`, with deal-level aggregation feeding revenue calendar, schedule optimizer, calendar events, and metrics
+- Sub-job breakdown view on construction cards with PV/ESS/EV pill tags; Compact/Breakdown toggle persisted in localStorage; only activates for deals with 2+ sub-jobs
+- On-call electrician overlay on master schedule (toggleable, region-labeled emerald chips)
+- Day-view timed grid: surveys and inspections now placed at actual Zuper scheduled times instead of all-day "UNSCHEDULED"
+- Zuper job status row added to all four scheduler modals (master, construction, site survey, inspection) — color-coded green/yellow/blue alongside HubSpot stage
+- California combined-location calendar fixed (canonical-list resolution in `generateProjectEvents` / `generateZuperEvents`)
+
+### On-Call Dispatch
+- Auto-create HubSpot service ticket when call-log outcome is "follow-up needed"
+- 3-way outcome (resolved / dispatched / follow-up) replaces 2-way boolean; Roofing issue type added; crew dropdown filtered to active on-call pool
+- Customer phone + address fields with HubSpot contact find-or-create by phone (exact + digits-only); contact associated to any follow-up ticket
+- Google Sheet export gains Phone, Address, Outcome columns
+- Publish timeout raised for 6-month assignment horizon (Vercel 120s + Prisma transaction limits)
+
+### Service BOM
+- New `/dashboards/service-bom` page scoping search to service deals + service tickets in parallel; shared backend with existing BOM dashboard via `BomPipelineConfig` prop
+- New `TicketBomSnapshot` model — ticket BOMs versioned independently from any associated deal's BOM
+- New API routes: `/api/bom/ticket-history`, `/ticket-history/all`, `/ticket-create-so` mirror the deal-keyed shape
+- Zoho SO creation for ticket context: `createTicketSalesOrder` tags SO with HubSpot ticket ID, derives `SO-T-<ticketId>`, falls back without custom field if Zoho lacks it
+- BOM table consolidates Catalogs column into product badge
+
+### Cost Audit & Sync Health
+- New `/dashboards/inventory/cost-audit` cross-references Zoho bills against item purchase rates; surfaces drift, sales price, margin %, and IP/HS/ZP cross-system link badges
+- Bulk-sync write path: `POST /api/inventory/cost-audit/sync-costs` updates Zoho `purchase_rate` + mirrors to `InternalProduct.unitCost`, logs `CATALOG_PRODUCT_UPDATED`, suggests sales price = bill × 1.5
+- New `/dashboards/sync-health` drift-rollup landing page: 9 issue tiles (name, SKU, price, broken links, missing in HS/ZP/Zoho, orphaned, duplicates) with deep-links into product-comparison filters
+- Product-sync now uses canonical `writeCrossLinkIds` for all systems including the source — fixes peer-ID propagation gaps in `setCrossLinkFields`
+
+### PandaDoc DA Status Drift Detector
+- New `DaStatusDrift` table + cron polls PandaDoc every 15 min for DA-template terminal-status documents modified in last 2h, matched to deals via `metadata.hubspot.deal_id`
+- Backup for the HubSpot-PandaDoc native connector which silently drops events; flag-only at launch (no auto-correct), admin review at `/dashboards/admin/da-drift`
+- Reads the "Design Approval Selection" dropdown to distinguish customer rejection from approval — both produce `document.completed` so signature alone is ambiguous
+- Re-drift after Resolve auto-reopens the row; gated on `PANDADOC_RECONCILE_ENABLED`
+
+### Office Performance & Operations Suite
+- 6 office performance cards (All Locations + Westminster, Centennial, COSP, SLO, Camarillo) added to operations suite with role-aware visibility
+- Cache-first fetching: dropped client `?refresh=true` and accept stale per-location caches in `/all` aggregator; 2-worker pool replaces strict-serial uncached-group fetches
+- Warm load 30–60s → <2s; cold worst case 55s → ~25s
+
+### Admin Testing Suite
+- New admin testing suite landing page consolidating sync health, cost audit, Aircall sandbox, DA drift, and sub-app debug tools
+
+### Comms
+- Reverted "include HubSpot emails outside inbox" (#482) after user reports of broken inbox view
+- `fetchGmailPage` capped at 200 (was unbounded `Infinity`) to prevent 15k/min Gmail quota burn; pagination via `gmailNextPage` preserved
+- Surface `rateLimitExceeded` as 429 with `rateLimited: true` flag; UI shows "Gmail rate limit reached, wait ~60s" instead of empty-state
+
+### Zuper & Pending-Zuper Pipeline
+- Pending Zuper downstream follow-up handler with dedicated agents, skills, and settings hardening
+- Persist Zuper assignment metadata on confirm
+- Multiple deploy type-error fixes for the pending-Zuper pipeline
+
+### Bug Fixes & Misc
+- Breadcrumbs: 23 missing `SUITE_MAP` entries added, stale overrides removed
+- Service BOM ticket-context links cleaned up; `dealname` normalization fixed
+- Zoho inventory token refresh retries on Access Denied
+- Product-comparison page wrapped in Suspense (Next.js 16 static prerender requirement)
+- React hooks ordering fixed in IDR ProjectDetail
+- Removed duplicate `pricingDeltaPct` definition from squash-merge artifact
+
+---
+
 ## 2026-03-14
 
 ### Catalog Product Wizard (Major)
