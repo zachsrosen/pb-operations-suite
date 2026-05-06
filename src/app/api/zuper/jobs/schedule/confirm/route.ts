@@ -791,6 +791,8 @@ export async function POST(request: NextRequest) {
                   for (const job of custJobsResult.data.jobs) {
                     if (!job.job_uid || job.job_uid === existingJob.job_uid) continue;
                     if (!categoryMatches(job)) continue;
+                    const sibDealId = getHubSpotDealId(job);
+                    if (sibDealId !== record.projectId) continue;
                     const catName = typeof job.job_category === "string"
                       ? job.job_category
                       : job.job_category?.category_name || "unknown";
@@ -843,6 +845,21 @@ export async function POST(request: NextRequest) {
                           projectName: record.projectName,
                           scheduledStart: startDateTime ? new Date(startDateTime.replace(" ", "T") + "Z") : undefined,
                           scheduledEnd: endDateTime ? new Date(endDateTime.replace(" ", "T") + "Z") : undefined,
+                        });
+                        await logActivity({
+                          type: "INSTALL_RESCHEDULED",
+                          description: `Sibling ${sibling.category} job rescheduled (cascade) for ${record.projectName}`,
+                          userEmail: session.user.email,
+                          userName: session.user.name || undefined,
+                          entityType: "project",
+                          entityId: record.projectId,
+                          entityName: record.projectName,
+                          metadata: {
+                            zuperJobId: sibling.jobUid,
+                            siblingCascade: true,
+                            scheduleType: "installation",
+                            category: sibling.category,
+                          },
                         });
                       } else {
                         console.warn(`[Zuper Confirm] Sibling ${sibling.category} (${sibling.jobUid}) reschedule failed`);

@@ -971,6 +971,8 @@ export async function PUT(request: NextRequest) {
               for (const job of custJobsResult.data.jobs) {
                 if (!job.job_uid || job.job_uid === existingJob.job_uid) continue;
                 if (!categoryMatches(job)) continue;
+                const sibDealId = getHubSpotDealId(job as ZuperJob);
+                if (sibDealId !== String(project.id)) continue;
                 const catName = typeof job.job_category === "string"
                   ? job.job_category
                   : job.job_category?.category_name || "unknown";
@@ -1026,6 +1028,13 @@ export async function PUT(request: NextRequest) {
                       scheduledStart: startDateTime ? new Date(startDateTime.replace(" ", "T") + "Z") : undefined,
                       scheduledEnd: endDateTime ? new Date(endDateTime.replace(" ", "T") + "Z") : undefined,
                     });
+                    await logSchedulingActivity(
+                      "INSTALL_RESCHEDULED",
+                      `Sibling ${sibling.category} job rescheduled (cascade) for ${project.name || project.id}`,
+                      project,
+                      sibling.jobUid,
+                      schedule
+                    );
                   } else {
                     console.warn(`[Zuper Schedule] Sibling ${sibling.category} (${sibling.jobUid}) reschedule FAILED`);
                     siblingResults[siblingResults.length - 1].error = (sibResult as { error?: string }).error || "unknown";
