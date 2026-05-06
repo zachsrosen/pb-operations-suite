@@ -51,6 +51,9 @@
     },
     "src/app/api/cron/property-reconcile/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/cron/office-performance-warm/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
@@ -157,6 +160,10 @@
     {
       "path": "/api/cron/pandadoc-da-reconcile",
       "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/office-performance-warm",
+      "schedule": "*/4 * * * *"
     }
   ],
   "redirects": [
