@@ -133,6 +133,22 @@ const LINKS: SuitePageCard[] = [
   },
 ];
 
+const FILTERED_LINKS: SuitePageCard[] = [
+  ...LINKS,
+  ...(process.env.NEXT_PUBLIC_POWERHUB_ENABLED === "true"
+    ? [
+        {
+          href: "/dashboards/powerhub",
+          title: "PowerHub Fleet Monitor",
+          description: "Monitor installed Tesla systems — production validation and system health.",
+          tag: "MONITORING",
+          icon: "⚡",
+          section: "Tools",
+        } satisfies SuitePageCard,
+      ]
+    : []),
+];
+
 export default async function DesignEngineeringSuitePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login?callbackUrl=/suites/design-engineering");
@@ -142,7 +158,7 @@ export default async function DesignEngineeringSuitePage() {
       currentSuiteHref="/suites/design-engineering"
       title="Design & Engineering Suite"
       subtitle="Design review, system analytics, and engineering reference tools."
-      cards={LINKS}
+      cards={FILTERED_LINKS}
       roles={user.roles}
     />
   );

@@ -5,6 +5,10 @@ import { getOfficePerformanceData } from "@/lib/office-performance";
 import type { OfficePerformanceData } from "@/lib/office-performance-types";
 import { complianceVersionTag } from "@/lib/compliance-v2/feature-flag";
 
+// Cold-cache fetches take 70-90s (HubSpot search + batch read + Zuper + compliance).
+// Default 60s timeout caused a death spiral: every request 504'd, cache never populated.
+export const maxDuration = 120;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ location: string }> }

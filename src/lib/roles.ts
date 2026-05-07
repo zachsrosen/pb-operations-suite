@@ -241,6 +241,8 @@ const OPERATIONS_MANAGER: RoleDefinition = {
     // PM Flag system — exception-based PM assignment (admin scope: see all flags)
     "/dashboards/pm-action-queue",
     "/api/pm-flags",
+    "/api/powerhub",
+    "/dashboards/powerhub",
   ],
   landingCards: [
     { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
@@ -420,6 +422,8 @@ const PROJECT_MANAGER: RoleDefinition = {
     // PM Flag system — exception-based PM assignment
     "/dashboards/pm-action-queue",
     "/api/pm-flags",
+    "/api/powerhub",
+    "/dashboards/powerhub",
   ],
   landingCards: [
     { href: "/dashboards/pm-action-queue", title: "PM Action Queue", description: "Flags assigned to you — open, acknowledged, and resolved.", tag: "PM FLAGS", tagColor: "orange" },
@@ -531,6 +535,7 @@ const OPERATIONS: RoleDefinition = {
     "/triage",
     "/dashboards/adders",
     "/dashboards/tsrf-calculator",
+    "/api/powerhub",
   ],
   landingCards: [
     { href: "/dashboards/scheduler", title: "Master Schedule", description: "Drag-and-drop scheduling calendar with crew management.", tag: "SCHEDULING", tagColor: "blue" },
@@ -612,6 +617,8 @@ const SERVICE: RoleDefinition = {
     "/dashboards/tsrf-calculator",
     "/dashboards/shit-show-meeting",
     "/api/shit-show-meeting",
+    "/api/powerhub",
+    "/dashboards/powerhub",
   ],
   landingCards: [
     { href: "/dashboards/service-overview", title: "Service Overview", description: "Priority queue command center — see what needs attention now.", tag: "OVERVIEW", tagColor: "orange" },
@@ -759,6 +766,8 @@ const TECH_OPS: RoleDefinition = {
     "/triage",
     "/dashboards/adders",
     "/dashboards/tsrf-calculator",
+    "/api/powerhub",
+    "/dashboards/powerhub",
   ],
   landingCards: [
     { href: "/dashboards/site-survey", title: "Site Survey", description: "Site survey scheduling and status tracking.", tag: "SURVEY", tagColor: "green" },
@@ -846,6 +855,8 @@ const DESIGN: RoleDefinition = {
     "/triage",
     "/dashboards/adders",
     "/dashboards/tsrf-calculator",
+    "/api/powerhub",
+    "/dashboards/powerhub",
   ],
   landingCards: [
     { href: "/dashboards/design", title: "Design & Engineering", description: "Design progress, engineering approvals, and plan sets.", tag: "DESIGN", tagColor: "emerald" },

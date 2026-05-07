@@ -12,6 +12,10 @@ import type {
 } from "@/lib/office-performance-types";
 import { complianceVersionTag } from "@/lib/compliance-v2/feature-flag";
 
+// Aggregates all 5 locations. On cold cache with concurrency 2, worst case is
+// 3 rounds × 70-90s ≈ 270s. Give 300s to avoid 504 death spirals.
+export const maxDuration = 300;
+
 function stripToOverview(data: OfficePerformanceData): LocationOverview {
   const surveyCompliance = data.surveys.compliance;
   const installCompliance = data.installs.compliance;

@@ -11,6 +11,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { CANONICAL_LOCATIONS, CANONICAL_TO_LOCATION_SLUG } from "@/lib/locations";
 import { DASHBOARD_LOCATION_GROUPS } from "@/lib/dashboard-location-groups";
+
+export const maxDuration = 120;
 import { appCache, CACHE_KEYS } from "@/lib/cache";
 import { getGoalsPipelineData } from "@/lib/goals-pipeline";
 import type { GoalsPipelineData } from "@/lib/goals-pipeline-types";

@@ -61,6 +61,10 @@ const PUBLIC_API_ROUTES = [
   "/api/webhooks/aircall", // Aircall call.ended webhook — HMAC signature validated in route
   "/api/cron/aircall-sync", // Aircall drift correction sync — CRON_SECRET validated in route
   "/api/cron/pandadoc-da-reconcile", // PandaDoc DA status drift detector — CRON_SECRET validated in route
+  "/api/cron/office-performance-warm", // Office performance cache warmer — CRON_SECRET validated in route
+  "/api/cron/powerhub-assets",     // PowerHub asset sync — CRON_SECRET validated in route
+  "/api/cron/powerhub-telemetry",  // PowerHub telemetry poll — CRON_SECRET validated in route
+  "/api/cron/powerhub-alerts",     // PowerHub alert poll — CRON_SECRET validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/bom",
@@ -69,6 +73,8 @@ const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/zuper/sync-cache",
   // PM Flag system — HubSpot workflows POST here to raise auto-flags.
   "/api/pm-flags",
+  // Office performance cache warmer — cron self-fetches to warm the API lambda.
+  "/api/office-performance",
 ] as const;
 
 function isMachineTokenAllowedRoute(pathname: string): boolean {

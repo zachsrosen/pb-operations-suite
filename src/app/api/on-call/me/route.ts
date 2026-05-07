@@ -149,9 +149,6 @@ export async function GET() {
     });
 
     // Per-pool subscribe URLs for the iCal feed and the shared Google Calendar.
-    // Electricians can subscribe in their own calendar app; the GCal copy is
-    // also auto-invited per shift, so this is just for those who want the full
-    // pool view (including everyone's shifts, not just their own).
     const pools = await prisma.onCallPool.findMany({
       where: { isActive: true },
       select: { id: true, name: true, icalToken: true, googleCalendarId: true },
@@ -165,6 +162,33 @@ export async function GET() {
     }));
   }
 
+  // PTO requests for this crew member (pending + upcoming approved)
+  let ptoRequests: unknown[] = [];
+  if (crew) {
+    ptoRequests = await prisma.onCallPtoRequest.findMany({
+      where: {
+        crewMemberId: crew.id,
+        OR: [
+          { status: "awaiting-admin" },
+          { status: "approved", endDate: { gte: todayInTz("America/Denver") } },
+        ],
+      },
+      include: { pool: true },
+      orderBy: { startDate: "asc" },
+      take: 20,
+    });
+  }
+
+  // Pool IDs this crew belongs to (for PTO request form dropdown)
+  let myPools: { id: string; name: string }[] = [];
+  if (crew) {
+    const memberships = await prisma.onCallPoolMember.findMany({
+      where: { crewMemberId: crew.id, pool: { isActive: true } },
+      include: { pool: { select: { id: true, name: true } } },
+    });
+    myPools = memberships.map((m) => m.pool);
+  }
+
   return NextResponse.json({
     crewMember: crew ? { id: crew.id, name: crew.name, email: crew.email } : null,
     isAdmin,
@@ -172,6 +196,8 @@ export async function GET() {
     shifts,
     pendingSwaps,
     myRequests,
+    ptoRequests,
+    myPools,
     subscribeUrls,
   });
 }

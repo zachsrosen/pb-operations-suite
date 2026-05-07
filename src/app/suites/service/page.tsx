@@ -104,7 +104,21 @@ const BASE_LINKS: SuitePageCard[] = [
   },
 ];
 
-const LINKS: SuitePageCard[] = BASE_LINKS.filter(
+const LINKS: SuitePageCard[] = [
+  ...BASE_LINKS,
+  ...(process.env.NEXT_PUBLIC_POWERHUB_ENABLED === "true"
+    ? [
+        {
+          href: "/dashboards/powerhub",
+          title: "PowerHub Fleet Monitor",
+          description: "Tesla system health, solar production, and battery status across all sites.",
+          tag: "MONITORING",
+          icon: "⚡",
+          section: "Tools",
+        } satisfies SuitePageCard,
+      ]
+    : []),
+].filter(
   (l) => !l.href.startsWith("/dashboards/map") || process.env.NEXT_PUBLIC_UI_MAP_VIEW_ENABLED !== "false",
 );
 
