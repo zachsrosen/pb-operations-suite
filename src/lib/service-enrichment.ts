@@ -63,7 +63,8 @@ export type ReasonCategory =
   | "warranty_expiring"
   | "stuck_in_stage"
   | "high_value"
-  | "stage_urgency";
+  | "stage_urgency"
+  | "powerhub_alert";
 
 export const ALL_REASON_CATEGORIES: ReasonCategory[] = [
   "no_contact",
@@ -71,6 +72,7 @@ export const ALL_REASON_CATEGORIES: ReasonCategory[] = [
   "stuck_in_stage",
   "high_value",
   "stage_urgency",
+  "powerhub_alert",
 ];
 
 export interface EnrichmentInput {
