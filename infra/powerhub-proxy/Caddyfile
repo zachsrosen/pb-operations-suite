@@ -2,11 +2,12 @@
 	admin off
 }
 
+# Plain reverse proxy for static IP allowlisting.
+# Tesla PowerHub requires requests from an allowlisted public IP.
+# Vercel serverless uses dynamic IPs, so we proxy through Fly.io.
+# Auth is handled at the application level (OAuth2 client_credentials).
 :8443 {
 	reverse_proxy https://gridlogic-api.sn.tesla.services {
-		transport http {
-			tls_client_auth /certs/client.pem /certs/client-key.pem
-		}
 		header_up Host {upstream_hostport}
 	}
 }
