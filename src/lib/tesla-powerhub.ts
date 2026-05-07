@@ -129,7 +129,7 @@ export function createPowerHubClient(): PowerHubClient {
     throw new Error("PowerHub is disabled (POWERHUB_ENABLED != true)");
   }
 
-  const baseUrl = process.env.TESLA_POWERHUB_BASE_URL || "https://fleet-api.tesla.com";
+  const baseUrl = process.env.TESLA_POWERHUB_BASE_URL || "https://gridlogic-api.sn.tesla.services/v2";
   const instanceId = process.env.TESLA_POWERHUB_INSTANCE_ID;
   const apiKey = process.env.TESLA_POWERHUB_API_KEY;
 

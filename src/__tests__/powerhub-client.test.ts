@@ -16,7 +16,7 @@ const TEST_ENV = {
   POWERHUB_ENABLED: "true",
   TESLA_POWERHUB_INSTANCE_ID: "test-instance-id",
   TESLA_POWERHUB_API_KEY: "test-api-key-123",
-  TESLA_POWERHUB_BASE_URL: "https://fleet-api.tesla.com",
+  TESLA_POWERHUB_BASE_URL: "https://gridlogic-api.sn.tesla.services/v2",
 };
 
 beforeEach(() => {
@@ -50,7 +50,7 @@ describe("PowerHub Client — Authentication", () => {
     // First call should be token request
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(mockFetch.mock.calls[0][0]).toBe(
-      "https://fleet-api.tesla.com/asset/tokens"
+      "https://gridlogic-api.sn.tesla.services/v2/asset/tokens"
     );
     expect(mockFetch.mock.calls[0][1].method).toBe("POST");
   });
