@@ -690,39 +690,109 @@ export async function getTicketDetail(ticketId: string): Promise<TicketDetail | 
 }
 
 /**
- * Search for a HubSpot contact by phone number, or create one if not found.
- * Used by the on-call call-log flow to attach a contact to the follow-up ticket.
+ * Resolved HubSpot contact — id plus a few properties we hydrate back into
+ * call-log + ticket bodies when the form was filled in without them.
+ */
+export type ResolvedContact = {
+  id: string;
+  phone: string | null;
+  address: string | null;
+};
+
+/**
+ * Search HubSpot contacts for an existing match. Returns null if zero matches
+ * OR if the lookup is ambiguous (multiple matches by name with no phone to
+ * disambiguate — we'd rather skip than wrong-associate).
+ *
+ * Lookup strategy:
+ *   1. If phone is given, EQ-match phone using both the raw and digits-only
+ *      forms (covers "(303) 555-1234" stored as "+13035551234" etc.).
+ *   2. Otherwise (or if phone search returned nothing), if name has both a
+ *      firstname AND lastname, EQ-match firstname+lastname. Only return on
+ *      exactly-one result; multiple matches → null (ambiguous).
+ */
+export async function findContact(opts: {
+  phone?: string | null;
+  name?: string | null;
+}): Promise<ResolvedContact | null> {
+  // Phone-first search.
+  if (opts.phone && opts.phone.replace(/\D/g, "").length >= 7) {
+    const digits = opts.phone.replace(/\D/g, "");
+    const phoneResult = await hubspotClient.crm.contacts.searchApi.doSearch({
+      filterGroups: [
+        { filters: [{ propertyName: "phone", operator: "EQ" as never, value: opts.phone }] },
+        { filters: [{ propertyName: "phone", operator: "EQ" as never, value: digits }] },
+      ],
+      properties: ["firstname", "lastname", "phone", "address"],
+      limit: 1,
+      sorts: [],
+      after: 0 as never,
+    });
+    if (phoneResult.total > 0 && phoneResult.results[0]) {
+      const c = phoneResult.results[0];
+      return {
+        id: c.id,
+        phone: (c.properties.phone as string | null) ?? null,
+        address: (c.properties.address as string | null) ?? null,
+      };
+    }
+  }
+
+  // Name fallback: only when both first AND last are present.
+  if (opts.name) {
+    const parts = opts.name.trim().split(/\s+/);
+    const firstname = parts[0] ?? "";
+    const lastname = parts.slice(1).join(" ") || "";
+    if (firstname && lastname) {
+      const nameResult = await hubspotClient.crm.contacts.searchApi.doSearch({
+        filterGroups: [
+          {
+            filters: [
+              { propertyName: "firstname", operator: "EQ" as never, value: firstname },
+              { propertyName: "lastname", operator: "EQ" as never, value: lastname },
+            ],
+          },
+        ],
+        properties: ["firstname", "lastname", "phone", "address"],
+        limit: 5,
+        sorts: [],
+        after: 0 as never,
+      });
+      // Only auto-associate when name search is unambiguous.
+      if (nameResult.total === 1 && nameResult.results[0]) {
+        const c = nameResult.results[0];
+        return {
+          id: c.id,
+          phone: (c.properties.phone as string | null) ?? null,
+          address: (c.properties.address as string | null) ?? null,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Search for a HubSpot contact by phone number / name, or create one if not
+ * found AND a phone is available to seed it. Returns the resolved contact
+ * (id + properties we hydrate back into the call log).
+ *
+ * Returns null if no existing match was found AND we don't have a phone to
+ * create a new contact with — in that case the caller should skip the
+ * association rather than create a phone-less stub.
  */
 export async function findOrCreateContact(opts: {
-  phone: string;
-  name?: string;
-  address?: string;
-}): Promise<string> {
-  const digits = opts.phone.replace(/\D/g, "");
-  if (digits.length < 7) throw new Error("Phone number too short to search");
+  phone?: string | null;
+  name?: string | null;
+  address?: string | null;
+}): Promise<ResolvedContact | null> {
+  const existing = await findContact({ phone: opts.phone, name: opts.name });
+  if (existing) return existing;
 
-  const searchResult = await hubspotClient.crm.contacts.searchApi.doSearch({
-    filterGroups: [
-      {
-        filters: [
-          { propertyName: "phone", operator: "EQ" as never, value: opts.phone },
-        ],
-      },
-      {
-        filters: [
-          { propertyName: "phone", operator: "EQ" as never, value: digits },
-        ],
-      },
-    ],
-    properties: ["firstname", "lastname", "phone"],
-    limit: 1,
-    sorts: [],
-    after: 0 as never,
-  });
-
-  if (searchResult.total > 0 && searchResult.results[0]) {
-    return searchResult.results[0].id;
-  }
+  // No match. We can only create a useful contact if we have a phone.
+  if (!opts.phone) return null;
+  if (opts.phone.replace(/\D/g, "").length < 7) return null;
 
   const nameParts = (opts.name ?? "").trim().split(/\s+/);
   const firstname = nameParts[0] ?? "";
@@ -740,7 +810,11 @@ export async function findOrCreateContact(opts: {
     associations: [],
   });
 
-  return contact.id;
+  return {
+    id: contact.id,
+    phone: opts.phone,
+    address: opts.address ?? null,
+  };
 }
 
 /**

@@ -160,24 +160,40 @@ export async function POST(req: Request) {
     );
   }
 
-  // Find or create HubSpot contact from phone (runs for every call, not just follow-ups).
+  // Find existing contact (by phone OR name fallback) and create only if we
+  // have a phone to seed a new record with. Backfill the call-log row with
+  // any phone/address we discover from the contact so the ticket body and
+  // future views have the missing details.
   safeWaitUntil(
     (async () => {
       let contactId: string | null = null;
-      if (log.customerPhone) {
-        try {
-          contactId = await findOrCreateContact({
-            phone: log.customerPhone,
-            name: log.customerName,
-            address: log.customerAddress ?? undefined,
-          });
+      let resolvedPhone: string | null = log.customerPhone;
+      let resolvedAddress: string | null = log.customerAddress;
+
+      try {
+        const contact = await findOrCreateContact({
+          phone: log.customerPhone,
+          name: log.customerName,
+          address: log.customerAddress,
+        });
+        if (contact) {
+          contactId = contact.id;
+          // Only fill in fields the form left blank — never overwrite what
+          // the electrician typed.
+          if (!resolvedPhone && contact.phone) resolvedPhone = contact.phone;
+          if (!resolvedAddress && contact.address) resolvedAddress = contact.address;
+
           await prisma.onCallCallLog.update({
             where: { id: log.id },
-            data: { hubspotContactId: contactId },
+            data: {
+              hubspotContactId: contactId,
+              ...(resolvedPhone !== log.customerPhone ? { customerPhone: resolvedPhone } : {}),
+              ...(resolvedAddress !== log.customerAddress ? { customerAddress: resolvedAddress } : {}),
+            },
           });
-        } catch (e) {
-          console.error("[on-call/call-logs] HubSpot contact find/create failed:", e);
         }
+      } catch (e) {
+        console.error("[on-call/call-logs] HubSpot contact find/create failed:", e);
       }
 
       const isFollowUp = !log.resolvedRemotely && !log.dispatched;
@@ -190,8 +206,8 @@ export async function POST(req: Request) {
               `Auto-created from on-call call log (${log.pool.name}).`,
               `Electrician: ${log.reporterCrewMember.name}`,
               `Date: ${log.callReceivedAt.toLocaleString("en-US", { timeZone: log.pool.timezone || "America/Denver" })}`,
-              log.customerPhone ? `Phone: ${log.customerPhone}` : null,
-              log.customerAddress ? `Address: ${log.customerAddress}` : null,
+              resolvedPhone ? `Phone: ${resolvedPhone}` : null,
+              resolvedAddress ? `Address: ${resolvedAddress}` : null,
               log.troubleshootingAttempted ? `Troubleshooting: ${log.troubleshootingAttempted}` : null,
               log.escalatedTo ? `Escalated to: ${log.escalatedTo}` : null,
               log.notes ? `Notes: ${log.notes}` : null,
