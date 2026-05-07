@@ -993,25 +993,15 @@ export async function PUT(request: NextRequest) {
                   siblingResults.push({ jobUid: sibling.jobUid, category: sibling.category, ok });
                   if (ok) {
                     console.log(`[Zuper Schedule] Sibling ${sibling.category} (${sibling.jobUid}) rescheduled OK`);
-                    // Update Zuper job status to "Scheduled"
+                    // Update Zuper job status to "Scheduled" using name-based API
+                    // (job_status history only contains statuses the job has been through,
+                    //  so UID lookup fails for jobs that have never been scheduled before)
                     try {
-                      const sibJobResult = await zuper.getJob(sibling.jobUid);
-                      if (sibJobResult.type === "success" && sibJobResult.data) {
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        const sibJobData = sibJobResult.data as any;
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        const scheduledStatusUid = (sibJobData?.job_status || []).find((s: any) => {
-                          const name = String(s?.status_name || "").toLowerCase();
-                          return name === "scheduled" && !!s?.status_uid;
-                        })?.status_uid as string | undefined;
-                        if (scheduledStatusUid) {
-                          const statusResult = await zuper.updateJobStatusByUid(sibling.jobUid, scheduledStatusUid);
-                          if (statusResult.type === "success") {
-                            console.log(`[Zuper Schedule] Sibling ${sibling.category} (${sibling.jobUid}) status → Scheduled`);
-                          } else {
-                            console.warn(`[Zuper Schedule] Sibling ${sibling.jobUid} status update failed:`, statusResult.error);
-                          }
-                        }
+                      const statusResult = await zuper.updateJobStatus(sibling.jobUid, "Scheduled");
+                      if (statusResult.type === "success") {
+                        console.log(`[Zuper Schedule] Sibling ${sibling.category} (${sibling.jobUid}) status → Scheduled`);
+                      } else {
+                        console.warn(`[Zuper Schedule] Sibling ${sibling.jobUid} status update failed:`, statusResult.error);
                       }
                     } catch (statusErr) {
                       console.warn(`[Zuper Schedule] Sibling ${sibling.jobUid} status update error:`, statusErr);
