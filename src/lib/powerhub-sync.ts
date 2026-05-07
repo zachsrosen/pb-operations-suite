@@ -50,10 +50,10 @@ const ASSET_SYNC_BATCH_LIMIT = 50;
 
 /**
  * Max sites to poll per telemetry/alert cron invocation.
- * Each site needs 1 API call + DB writes. At 4 req/sec with 1.1s chunk delay,
- * 40 sites ≈ ~15s of API time, well within 120s function limit.
+ * Telemetry needs 2 API calls per site (available signals + last telemetry).
+ * At 4 req/sec: 25 sites × 2 calls = 50 calls ≈ ~14s. Well within 300s limit.
  */
-const TELEMETRY_BATCH_LIMIT = 40;
+const TELEMETRY_BATCH_LIMIT = 25;
 const ALERT_BATCH_LIMIT = 40;
 
 // ─── Asset Sync ──────────────────────────────────────────────────────────────
@@ -313,9 +313,27 @@ export async function pollTelemetry(): Promise<TelemetryPollResult> {
       chunk.map(async (site: { siteId: string }) => {
         try {
           result.sitesPolled++;
+
+          // First discover which signals this site supports,
+          // then request only those. Tesla returns 400 if any
+          // signal in the list is unsupported for the site.
+          const availableMap = await client.getAvailableSignals(site.siteId);
+          const availableSignals = TELEMETRY_SIGNALS.filter(
+            (s) => availableMap[s] === true
+          );
+
+          if (availableSignals.length === 0) {
+            // Site has no supported signals — skip but still mark polled
+            await prisma.powerhubSite.update({
+              where: { siteId: site.siteId },
+              data: { lastTelemetryAt: new Date() },
+            });
+            return;
+          }
+
           const signals = await client.getLastTelemetry(
             site.siteId,
-            [...TELEMETRY_SIGNALS]
+            [...availableSignals]
           );
 
           if (!signals || signals.length === 0) return;
@@ -454,7 +472,12 @@ export async function pollAlerts(): Promise<AlertPollResult> {
           const activeAlertKeys = new Set<string>();
           for (const alert of alerts) {
             const deviceId = alert.device_id || "site";
-            const key = `${site.siteId}|${deviceId}|${alert.alert_name}|${alert.reported_at}`;
+
+            // Tesla sometimes returns invalid/missing reported_at — skip those
+            const reportedAt = new Date(alert.reported_at);
+            if (isNaN(reportedAt.getTime())) continue;
+
+            const key = `${site.siteId}|${deviceId}|${alert.alert_name}|${reportedAt.toISOString()}`;
             activeAlertKeys.add(key);
 
             const existing = await prisma.powerhubAlert.findUnique({
@@ -463,7 +486,7 @@ export async function pollAlerts(): Promise<AlertPollResult> {
                   siteId: site.siteId,
                   deviceId,
                   alertName: alert.alert_name,
-                  reportedAt: new Date(alert.reported_at),
+                  reportedAt,
                 },
               },
             });
@@ -479,7 +502,7 @@ export async function pollAlerts(): Promise<AlertPollResult> {
                   severity: alert.severity.toUpperCase() as any,
                   isActive: true,
                   origin: alert.origin,
-                  reportedAt: new Date(alert.reported_at),
+                  reportedAt,
                 },
               });
               result.alertsCreated++;
