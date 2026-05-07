@@ -172,7 +172,7 @@ async function upsertSite(
   };
 
   const siteData = {
-    siteName: detail.site_name,
+    siteName: detail.site_name || detail.site_id,
     // Instance ID is derived from the client credential's scoped_instance_relationships
     // in the JWT — no separate env var needed
     instanceId: process.env.TESLA_POWERHUB_INSTANCE_ID || "",
