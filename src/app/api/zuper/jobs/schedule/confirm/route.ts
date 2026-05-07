@@ -775,8 +775,16 @@ export async function POST(request: NextRequest) {
           // --- Reschedule sibling construction sub-jobs (same deal, same dates/crew) ---
           // Looks up the primary job's Zuper customer, then finds all other construction
           // jobs for that customer and reschedules + status-updates each one.
+          // Skip siblings that still have a tentative ScheduleRecord — those need
+          // explicit user confirmation before touching Zuper.
           if (isInstallationConfirm) {
             try {
+              const tentativeSiblingRecords = await prisma.scheduleRecord.findMany({
+                where: { projectId: record.projectId, status: "tentative", zuperJobUid: { not: null } },
+                select: { zuperJobUid: true },
+              });
+              const tentativeJobUids = new Set(tentativeSiblingRecords.map(r => r.zuperJobUid!));
+
               // Get the primary job to find its customer_uid
               const primaryJobResult = await zuper.getJob(existingJob.job_uid);
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -791,6 +799,9 @@ export async function POST(request: NextRequest) {
                   for (const job of custJobsResult.data.jobs) {
                     if (!job.job_uid || job.job_uid === existingJob.job_uid) continue;
                     if (!categoryMatches(job)) continue;
+                    const sibDealId = getHubSpotDealId(job);
+                    if (sibDealId !== record.projectId) continue;
+                    if (tentativeJobUids.has(job.job_uid)) continue;
                     const catName = typeof job.job_category === "string"
                       ? job.job_category
                       : job.job_category?.category_name || "unknown";
@@ -843,6 +854,21 @@ export async function POST(request: NextRequest) {
                           projectName: record.projectName,
                           scheduledStart: startDateTime ? new Date(startDateTime.replace(" ", "T") + "Z") : undefined,
                           scheduledEnd: endDateTime ? new Date(endDateTime.replace(" ", "T") + "Z") : undefined,
+                        });
+                        await logActivity({
+                          type: "INSTALL_RESCHEDULED",
+                          description: `Sibling ${sibling.category} job rescheduled (cascade) for ${record.projectName}`,
+                          userEmail: session.user.email,
+                          userName: session.user.name || undefined,
+                          entityType: "project",
+                          entityId: record.projectId,
+                          entityName: record.projectName,
+                          metadata: {
+                            zuperJobId: sibling.jobUid,
+                            siblingCascade: true,
+                            scheduleType: "installation",
+                            category: sibling.category,
+                          },
                         });
                       } else {
                         console.warn(`[Zuper Confirm] Sibling ${sibling.category} (${sibling.jobUid}) reschedule failed`);
