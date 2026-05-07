@@ -7,7 +7,6 @@ import {
   computeAddressHash,
   matchSiteToProperty,
   matchSiteToDeals,
-  type LinkageResult,
 } from "@/lib/powerhub-linkage";
 
 describe("Address Normalization", () => {
