@@ -21,6 +21,7 @@ export interface PriorityItem {
   warrantyExpiry?: string | null;
   ownerId?: string | null;
   serviceType?: string | null;
+  powerhubAlertSeverity?: "CRITICAL" | "PERFORMANCE" | "INFORMATIONAL" | null;
 }
 
 export type PriorityTier = "critical" | "high" | "medium" | "low";
@@ -137,6 +138,17 @@ export function scorePriorityItem(item: PriorityItem, now: Date = new Date()): P
     score += 10;
     reasons.push(`"${item.stage}" overdue`);
     categories.add("stage_urgency");
+  }
+
+  // 6. PowerHub alert severity
+  if (item.powerhubAlertSeverity === "CRITICAL") {
+    score += 25;
+    reasons.push("PowerHub: Critical system alert");
+    categories.add("powerhub_alert");
+  } else if (item.powerhubAlertSeverity === "PERFORMANCE") {
+    score += 10;
+    reasons.push("PowerHub: Performance alert");
+    categories.add("powerhub_alert");
   }
 
   // Cap at 100
