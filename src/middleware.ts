@@ -75,6 +75,8 @@ const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/pm-flags",
   // Office performance cache warmer — cron self-fetches to warm the API lambda.
   "/api/office-performance",
+  // Property sync — HubSpot workflow webhook actions.
+  "/api/properties/workflow-sync",
 ] as const;
 
 function isMachineTokenAllowedRoute(pathname: string): boolean {
