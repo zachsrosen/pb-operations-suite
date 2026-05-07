@@ -62,6 +62,9 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/aircall-sync", // Aircall drift correction sync — CRON_SECRET validated in route
   "/api/cron/pandadoc-da-reconcile", // PandaDoc DA status drift detector — CRON_SECRET validated in route
   "/api/cron/office-performance-warm", // Office performance cache warmer — CRON_SECRET validated in route
+  "/api/cron/powerhub-assets", // PowerHub asset sync — CRON_SECRET validated in route
+  "/api/cron/powerhub-telemetry", // PowerHub telemetry poll — CRON_SECRET validated in route
+  "/api/cron/powerhub-alerts", // PowerHub alert poll — CRON_SECRET validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/bom",
