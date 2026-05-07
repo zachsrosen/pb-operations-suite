@@ -411,7 +411,7 @@ export async function PUT(request: NextRequest) {
     const effectiveRole = resolveEffectiveRoleFromRequest(request, userRolesForPolicy[0] as UserRole);
 
     const body = await request.json();
-    const { project, schedule, rescheduleOnly } = body;
+    const { project, schedule, rescheduleOnly, skipSiblingCascade } = body;
     const schedulerEmail = session.user.email;
     const isUiReschedule = schedule?.isReschedule === true;
     // Default to reschedule-only to avoid accidental job creation.
@@ -953,8 +953,9 @@ export async function PUT(request: NextRequest) {
       // --- Reschedule sibling construction sub-jobs (same deal, same dates/crew) ---
       // Looks up the primary job's Zuper customer, then finds all other construction
       // jobs for that customer and reschedules + status-updates each one.
+      // Skipped when the frontend schedules each sub-job individually (skipSiblingCascade).
       let siblingResults: Array<{ jobUid: string; category: string; ok: boolean; error?: string }> = [];
-      if (isInstallationLookup) {
+      if (isInstallationLookup && !skipSiblingCascade) {
         try {
           // Get the primary job to find its customer_uid
           const primaryJobResult = await zuper.getJob(existingJob.job_uid);
