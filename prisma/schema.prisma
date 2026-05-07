@@ -106,10 +106,10 @@ model User {
   permitHubDrafts PermitHubDraft[]
 
   // PM Flag system
-  pmFlagsRaised      PmFlag[]      @relation("PmFlagRaiser")
-  pmFlagsAssigned    PmFlag[]      @relation("PmFlagAssignee")
-  pmFlagsResolved    PmFlag[]      @relation("PmFlagResolver")
-  pmFlagEventsActed  PmFlagEvent[] @relation("PmFlagEventActor")
+  pmFlagsRaised     PmFlag[]      @relation("PmFlagRaiser")
+  pmFlagsAssigned   PmFlag[]      @relation("PmFlagAssignee")
+  pmFlagsResolved   PmFlag[]      @relation("PmFlagResolver")
+  pmFlagEventsActed PmFlagEvent[] @relation("PmFlagEventActor")
 
   @@index([email])
   @@index([impersonatingUserId])
@@ -824,10 +824,11 @@ model HubSpotPropertyCache {
   createdAt            DateTime  @default(now())
 
   // Relations
-  contactLinks PropertyContactLink[]
-  dealLinks    PropertyDealLink[]
-  ticketLinks  PropertyTicketLink[]
-  companyLinks PropertyCompanyLink[]
+  contactLinks  PropertyContactLink[]
+  dealLinks     PropertyDealLink[]
+  ticketLinks   PropertyTicketLink[]
+  companyLinks  PropertyCompanyLink[]
+  powerhubSites PowerhubSite[]
 
   @@index([normalizedAddress])
   @@index([city, state])
@@ -2237,27 +2238,27 @@ enum SopProposalStatus {
 }
 
 model SopProposal {
-  id                  String            @id @default(cuid())
+  id                 String            @id @default(cuid())
   // Submitter
-  submittedBy         String // Email of submitter
-  submittedByName     String? // Display name at submit time (denormalized snapshot)
+  submittedBy        String // Email of submitter
+  submittedByName    String? // Display name at submit time (denormalized snapshot)
   // Proposed content
-  title               String // Proposed section title
-  suggestedTabId      String // Tab id the submitter thinks it belongs in
-  suggestedGroup      String? // Optional sidebar group hint
-  content             String // Proposed HTML content (sanitized on submit)
-  reason              String // "Why this matters" — why the SOP should exist
+  title              String // Proposed section title
+  suggestedTabId     String // Tab id the submitter thinks it belongs in
+  suggestedGroup     String? // Optional sidebar group hint
+  content            String // Proposed HTML content (sanitized on submit)
+  reason             String // "Why this matters" — why the SOP should exist
   // Review state
-  status              SopProposalStatus @default(PENDING)
-  reviewedBy          String? // Email of reviewer
-  reviewedAt          DateTime?
-  reviewerNotes       String? // Notes from approver/rejecter
+  status             SopProposalStatus @default(PENDING)
+  reviewedBy         String? // Email of reviewer
+  reviewedAt         DateTime?
+  reviewerNotes      String? // Notes from approver/rejecter
   // If approved & promoted, the resulting section id
-  promotedSectionId   String?
-  promotedSectionTab  String? // Tab the new section actually landed in (may differ from suggestedTabId)
+  promotedSectionId  String?
+  promotedSectionTab String? // Tab the new section actually landed in (may differ from suggestedTabId)
   // Audit
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([status, createdAt])
   @@index([submittedBy])
@@ -3648,32 +3649,32 @@ model ShitShowSessionItem {
   sortOrder Int             @default(0)
 
   // Snapshot fields (populated at session start; refreshed via stale-while-revalidate)
-  dealName              String
-  dealAmount            Float?
-  systemSizeKw          Float?
-  stage                 String?
-  dealOwner             String?
-  reasonSnapshot        String?
-  flaggedSince          DateTime?
-  address               String?
-  projectType           String?
-  equipmentSummary      String?
-  surveyStatus          String?
-  surveyDate            String?
-  designStatus          String?
-  designApprovalStatus  String?
-  plansetDate           String?
-  ahj                   String?
-  utilityCompany        String?
-  projectManager        String?
-  operationsManager     String?
-  siteSurveyor          String?
-  driveFolderUrl        String?
-  surveyFolderUrl       String?
-  designFolderUrl       String?
-  salesFolderUrl        String?
-  openSolarUrl          String?
-  snapshotUpdatedAt     DateTime @default(now())
+  dealName             String
+  dealAmount           Float?
+  systemSizeKw         Float?
+  stage                String?
+  dealOwner            String?
+  reasonSnapshot       String?
+  flaggedSince         DateTime?
+  address              String?
+  projectType          String?
+  equipmentSummary     String?
+  surveyStatus         String?
+  surveyDate           String?
+  designStatus         String?
+  designApprovalStatus String?
+  plansetDate          String?
+  ahj                  String?
+  utilityCompany       String?
+  projectManager       String?
+  operationsManager    String?
+  siteSurveyor         String?
+  driveFolderUrl       String?
+  surveyFolderUrl      String?
+  designFolderUrl      String?
+  salesFolderUrl       String?
+  openSolarUrl         String?
+  snapshotUpdatedAt    DateTime  @default(now())
 
   // Filled during the meeting
   meetingNotes      String?
@@ -3683,9 +3684,9 @@ model ShitShowSessionItem {
   resolvedBy        String?
 
   // External writes — IDs stored for idempotency
-  hubspotNoteId   String?
-  noteSyncStatus  ShitShowSyncStatus @default(PENDING)
-  noteSyncError   String?
+  hubspotNoteId  String?
+  noteSyncStatus ShitShowSyncStatus @default(PENDING)
+  noteSyncError  String?
 
   // Escalation external IDs (rationale itself lives in decisionRationale)
   idrEscalationQueueId    String?
@@ -3822,17 +3823,17 @@ model PMSnapshot {
 // ===========================================
 
 model AircallCallCache {
-  id              String    @id // Aircall call ID (string for forward-compat with future providers)
-  provider        String    @default("aircall") // discriminator for future Zuper Connect rows
-  direction       String // "inbound" | "outbound"
-  status          String // "answered" | "missed" | "voicemail"
+  id        String @id // Aircall call ID (string for forward-compat with future providers)
+  provider  String @default("aircall") // discriminator for future Zuper Connect rows
+  direction String // "inbound" | "outbound"
+  status    String // "answered" | "missed" | "voicemail"
 
-  startedAt       DateTime
-  answeredAt      DateTime?
-  endedAt         DateTime?
+  startedAt  DateTime
+  answeredAt DateTime?
+  endedAt    DateTime?
 
-  durationSec     Int       @default(0) // total elapsed wall time
-  talkTimeSec     Int       @default(0) // active conversation time
+  durationSec     Int  @default(0) // total elapsed wall time
+  talkTimeSec     Int  @default(0) // active conversation time
   timeToAnswerSec Int? // null for missed/voicemail
 
   // User (Aircall agent who handled the call)
@@ -3949,4 +3950,150 @@ model DaStatusDrift {
 
   @@index([status, detectedAt])
   @@index([hubspotDealId])
+}
+
+// ===========================================
+// POWERHUB (Tesla Fleet Monitoring)
+// ===========================================
+
+enum PowerhubLinkMethod {
+  PROPERTY
+  ADDRESS_MATCH
+  MANUAL
+  UNLINKED
+}
+
+enum PowerhubLinkConfidence {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum PowerhubSiteStatus {
+  ACTIVE
+  OFFLINE
+  ERROR
+}
+
+enum PowerhubAlertSeverity {
+  INFORMATIONAL
+  PERFORMANCE
+  CRITICAL
+}
+
+enum PowerhubTelemetrySource {
+  POLL
+  BULK
+}
+
+model PowerhubSite {
+  id         String @id @default(cuid())
+  siteId     String @unique // Tesla site UUID
+  siteName   String
+  instanceId String
+
+  // Address
+  address     String
+  city        String
+  state       String
+  zip         String?
+  addressHash String? // SHA-256 of normalized address (for Property matching)
+
+  // Linkage
+  propertyId     String?
+  property       HubSpotPropertyCache?  @relation(fields: [propertyId], references: [id])
+  dealId         String? // Bare HubSpot deal ID string — no Prisma FK
+  linkMethod     PowerhubLinkMethod     @default(UNLINKED)
+  linkConfidence PowerhubLinkConfidence @default(LOW)
+
+  // Device summary
+  devices            Json @default("[]")
+  totalBatteryEnergy Int?
+  totalBatteryPower  Int?
+  totalGateways      Int  @default(0)
+  totalBatteries     Int  @default(0)
+  totalInverters     Int  @default(0)
+
+  // Status
+  status PowerhubSiteStatus @default(ACTIVE)
+
+  // Sync metadata
+  lastAssetSyncAt  DateTime
+  lastTelemetryAt  DateTime?
+  lastAlertCheckAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Back-relations
+  telemetrySnapshot PowerhubTelemetrySnapshot?
+  telemetryHistory  PowerhubTelemetryHistory[]
+  alerts            PowerhubAlert[]
+
+  @@index([addressHash])
+  @@index([propertyId])
+  @@index([dealId])
+  @@index([status])
+}
+
+model PowerhubTelemetrySnapshot {
+  id     String       @id @default(cuid())
+  siteId String       @unique
+  site   PowerhubSite @relation(fields: [siteId], references: [siteId])
+
+  timestamp DateTime
+
+  solarPowerW              Float?
+  solarEnergyTodayWh       Float?
+  batteryPowerW            Float?
+  batterySocPercent        Float?
+  batteryEnergyRemainingWh Float?
+  gridPowerW               Float?
+  gridEnergyImportedWh     Float?
+  gridEnergyExportedWh     Float?
+  loadPowerW               Float?
+  gridConnectedStatus      String?
+  batteryMode              String?
+
+  raw Json?
+
+  updatedAt DateTime @updatedAt
+}
+
+model PowerhubTelemetryHistory {
+  id     String       @id @default(cuid())
+  siteId String
+  site   PowerhubSite @relation(fields: [siteId], references: [siteId])
+
+  timestamp   DateTime
+  signalName  String
+  value       Float?
+  valueString String?
+  source      PowerhubTelemetrySource @default(POLL)
+
+  @@index([siteId, signalName, timestamp])
+  @@index([siteId, timestamp])
+}
+
+model PowerhubAlert {
+  id     String       @id @default(cuid())
+  siteId String
+  site   PowerhubSite @relation(fields: [siteId], references: [siteId])
+
+  deviceId    String
+  din         String?
+  alertName   String
+  description String                @db.Text
+  severity    PowerhubAlertSeverity
+  isActive    Boolean               @default(true)
+  origin      String
+  reportedAt  DateTime
+  resolvedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([siteId, deviceId, alertName, reportedAt])
+  @@index([siteId, isActive])
+  @@index([severity, isActive])
 }
