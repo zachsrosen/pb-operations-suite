@@ -15,8 +15,8 @@ global.fetch = mockFetch;
 const TEST_ENV = {
   POWERHUB_ENABLED: "true",
   TESLA_POWERHUB_INSTANCE_ID: "test-instance-id",
-  TESLA_POWERHUB_USER_ID: "test@photonbrothers.com",
-  TESLA_POWERHUB_PROXY_URL: "https://proxy.test.com",
+  TESLA_POWERHUB_API_KEY: "test-api-key-123",
+  TESLA_POWERHUB_BASE_URL: "https://fleet-api.tesla.com",
 };
 
 beforeEach(() => {
@@ -50,7 +50,7 @@ describe("PowerHub Client — Authentication", () => {
     // First call should be token request
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(mockFetch.mock.calls[0][0]).toBe(
-      "https://proxy.test.com/asset/tokens"
+      "https://fleet-api.tesla.com/asset/tokens"
     );
     expect(mockFetch.mock.calls[0][1].method).toBe("POST");
   });

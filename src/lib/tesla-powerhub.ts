@@ -1,13 +1,13 @@
 /**
  * Tesla PowerHub API Client
  *
- * Handles mTLS proxy communication, JWT authentication, rate limiting,
- * and typed endpoint wrappers for the PowerHub API.
+ * Handles JWT authentication, rate limiting, and typed endpoint wrappers
+ * for the PowerHub API.
  *
  * Architecture:
- * - Our Vercel functions call the mTLS proxy (plain HTTPS)
- * - The proxy adds client cert and forwards to Tesla's API
- * - JWT tokens (10-min expiry) are cached in module-level state
+ * - Our Vercel functions call Tesla's API directly (plain HTTPS)
+ * - API key + instance ID → JWT token (10-min expiry, cached in module state)
+ * - Token bucket rate limiter stays under Tesla's 5 req/sec limit
  */
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -129,13 +129,13 @@ export function createPowerHubClient(): PowerHubClient {
     throw new Error("PowerHub is disabled (POWERHUB_ENABLED != true)");
   }
 
-  const proxyUrl = process.env.TESLA_POWERHUB_PROXY_URL;
+  const baseUrl = process.env.TESLA_POWERHUB_BASE_URL || "https://fleet-api.tesla.com";
   const instanceId = process.env.TESLA_POWERHUB_INSTANCE_ID;
-  const userId = process.env.TESLA_POWERHUB_USER_ID;
+  const apiKey = process.env.TESLA_POWERHUB_API_KEY;
 
-  if (!proxyUrl || !instanceId || !userId) {
+  if (!instanceId || !apiKey) {
     throw new Error(
-      "Missing PowerHub env vars: TESLA_POWERHUB_PROXY_URL, TESLA_POWERHUB_INSTANCE_ID, TESLA_POWERHUB_USER_ID"
+      "Missing PowerHub env vars: TESLA_POWERHUB_INSTANCE_ID, TESLA_POWERHUB_API_KEY"
     );
   }
 
@@ -156,10 +156,10 @@ export function createPowerHubClient(): PowerHubClient {
 
     tokenPromise = (async () => {
       try {
-        const res = await fetch(`${proxyUrl}/asset/tokens`, {
+        const res = await fetch(`${baseUrl}/asset/tokens`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: userId, instance_id: instanceId }),
+          body: JSON.stringify({ api_key: apiKey, instance_id: instanceId }),
         });
 
         if (!res.ok) {
@@ -191,7 +191,7 @@ export function createPowerHubClient(): PowerHubClient {
       await rateLimiter.acquire();
 
       const token = await getToken();
-      const url = `${proxyUrl}${path}`;
+      const url = `${baseUrl}${path}`;
 
       const res = await fetch(url, {
         ...options,
@@ -215,7 +215,7 @@ export function createPowerHubClient(): PowerHubClient {
       // 403: immediate failure (IP/cert issue)
       if (res.status === 403) {
         throw new Error(
-          `PowerHub API 403 Forbidden: ${path} — check IP allowlist or mTLS cert`
+          `PowerHub API 403 Forbidden: ${path} — check API credentials or IP allowlist`
         );
       }
 
