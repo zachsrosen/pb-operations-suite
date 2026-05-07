@@ -159,7 +159,7 @@ export function createPowerHubClient(): PowerHubClient {
         const res = await fetch(`${baseUrl}/asset/tokens`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ api_key: apiKey, instance_id: instanceId }),
+          body: JSON.stringify({ user_id: apiKey, instance_id: instanceId }),
         });
 
         if (!res.ok) {
