@@ -1,6 +1,12 @@
 /**
  * Tesla PowerHub API client tests.
  * Tests OAuth2 client_credentials auth, rate limiting, endpoint wrappers, and error handling.
+ *
+ * Real API quirks verified in production:
+ * - Token endpoint: POST /v1/auth/token → { meta, data: { access_token, token_type }, links }
+ * - Data endpoints: GET /v2/... → { data: T } (unwrapped by apiCall)
+ * - No `expires_in` in token response — expiry derived from JWT `exp` claim
+ * - Telemetry signals return { signal_name, data_points: [{ value, timestamp }] }
  */
 import {
   createPowerHubClient,
@@ -19,12 +25,34 @@ const TEST_ENV = {
   TESLA_POWERHUB_PROXY_URL: "https://pb-powerhub-proxy.fly.dev",
 };
 
-/** OAuth2 token response */
-function tokenResponse(token: string, expiresIn = 3600) {
+/** Build a fake JWT with an exp claim for testing */
+function fakeJwt(token: string, expSeconds?: number): string {
+  const header = Buffer.from(JSON.stringify({ alg: "RS256" })).toString("base64");
+  const payload = Buffer.from(
+    JSON.stringify({
+      sub: token,
+      exp: expSeconds ?? Math.floor(Date.now() / 1000) + 600,
+    })
+  ).toString("base64");
+  return `${header}.${payload}.fake-signature`;
+}
+
+/** Token endpoint response — matches real Tesla format: { meta, data, links } */
+function tokenResponse(token: string) {
+  const jwt = fakeJwt(token);
   return new Response(
-    JSON.stringify({ access_token: token, token_type: "bearer", expires_in: expiresIn }),
+    JSON.stringify({
+      meta: { request_id: "test-req-id" },
+      data: { access_token: jwt, token_type: "Bearer" },
+      links: null,
+    }),
     { status: 200 }
   );
+}
+
+/** Data endpoint response — matches real Tesla format: { data: T } */
+function dataResponse(data: unknown) {
+  return new Response(JSON.stringify({ data }), { status: 200 });
 }
 
 beforeEach(() => {
@@ -42,9 +70,7 @@ describe("PowerHub Client — Authentication", () => {
   it("should request a token via client_credentials grant on first API call", async () => {
     mockFetch
       .mockResolvedValueOnce(tokenResponse("jwt-token-123"))
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ groups: [] }), { status: 200 })
-      );
+      .mockResolvedValueOnce(dataResponse([]));
 
     const client = createPowerHubClient();
     await client.getGroups();
@@ -71,16 +97,14 @@ describe("PowerHub Client — Authentication", () => {
   it("should reuse cached token on subsequent calls", async () => {
     mockFetch
       .mockResolvedValueOnce(tokenResponse("jwt-token-123"))
+      .mockResolvedValueOnce(dataResponse([]))
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ groups: [] }), { status: 200 })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ sites: [] }), { status: 200 })
+        dataResponse({ site_id: "abc", site_name: "Test" })
       );
 
     const client = createPowerHubClient();
     await client.getGroups();
-    await client.getSites();
+    await client.getSiteDetail("abc");
 
     // Only 1 token request, then 2 API calls = 3 total
     expect(mockFetch).toHaveBeenCalledTimes(3);
@@ -94,14 +118,12 @@ describe("PowerHub Client — Authentication", () => {
       // Re-auth token
       .mockResolvedValueOnce(tokenResponse("new-token"))
       // Retry succeeds
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ groups: [] }), { status: 200 })
-      );
+      .mockResolvedValueOnce(dataResponse([]));
 
     const client = createPowerHubClient();
     const result = await client.getGroups();
 
-    expect(result).toEqual({ groups: [] });
+    expect(result).toEqual([]);
     expect(mockFetch).toHaveBeenCalledTimes(4);
   });
 });
@@ -111,9 +133,7 @@ describe("PowerHub Client — Rate Limiting", () => {
     mockFetch.mockResolvedValueOnce(tokenResponse("jwt"));
     // Then 5 API responses
     for (let i = 0; i < 5; i++) {
-      mockFetch.mockResolvedValueOnce(
-        new Response(JSON.stringify({ data: i }), { status: 200 })
-      );
+      mockFetch.mockResolvedValueOnce(dataResponse([]));
     }
 
     const client = createPowerHubClient();
@@ -138,14 +158,12 @@ describe("PowerHub Client — Error Handling", () => {
       .mockResolvedValueOnce(tokenResponse("jwt"))
       .mockResolvedValueOnce(new Response("Rate limited", { status: 429 }))
       .mockResolvedValueOnce(new Response("Rate limited", { status: 429 }))
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ groups: [] }), { status: 200 })
-      );
+      .mockResolvedValueOnce(dataResponse([]));
 
     const client = createPowerHubClient();
     const result = await client.getGroups();
 
-    expect(result).toEqual({ groups: [] });
+    expect(result).toEqual([]);
     // token + 2 retries + success = 4
     expect(mockFetch).toHaveBeenCalledTimes(4);
   });
@@ -178,40 +196,75 @@ describe("PowerHub Client — Endpoint Wrappers", () => {
     client = createPowerHubClient();
   });
 
-  it("getSiteDetail should call /asset/sites/{siteId}", async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ site_id: "abc", site_name: "Test" }), {
-        status: 200,
-      })
-    );
+  it("getGroups should call /v2/asset/groups and unwrap data", async () => {
+    const groups = [
+      { group_id: "g1", group_name: "Test Group", sites: [{ site_id: "s1" }] },
+    ];
+    mockFetch.mockResolvedValueOnce(dataResponse(groups));
 
-    await client.getSiteDetail("abc");
+    const result = await client.getGroups();
 
     const url = mockFetch.mock.calls[1][0];
-    expect(url).toContain("/asset/sites/abc");
+    expect(url).toContain("/v2/asset/groups");
+    expect(result).toEqual(groups);
+  });
+
+  it("getSiteDetail should call /v2/asset/sites/{siteId}", async () => {
+    mockFetch.mockResolvedValueOnce(
+      dataResponse({ site_id: "abc", site_name: "Test" })
+    );
+
+    const result = await client.getSiteDetail("abc");
+
+    const url = mockFetch.mock.calls[1][0];
+    expect(url).toContain("/v2/asset/sites/abc");
+    expect(result.site_id).toBe("abc");
   });
 
   it("getLastTelemetry should include signal list in params", async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ signals: [] }), { status: 200 })
-    );
+    const signals = [
+      {
+        signal_name: "solar_instant_power",
+        rollup: null,
+        derivative: null,
+        site_id: "site-1",
+        data_points: [{ value: 5000, timestamp: "2026-05-07T22:00:00Z" }],
+      },
+    ];
+    mockFetch.mockResolvedValueOnce(dataResponse(signals));
 
-    await client.getLastTelemetry("site-1", ["solar_instant_power", "battery_state_of_energy"]);
+    const result = await client.getLastTelemetry("site-1", [
+      "solar_instant_power",
+      "battery_instant_power",
+    ]);
 
     const url = mockFetch.mock.calls[1][0];
+    expect(url).toContain("/v2/telemetry/last");
     expect(url).toContain("target_id=site-1");
     expect(url).toContain("solar_instant_power");
+    expect(result[0].data_points[0].value).toBe(5000);
   });
 
-  it("getActiveAlerts should call /alerts/last with active_only", async () => {
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ alerts: [] }), { status: 200 })
-    );
+  it("getActiveAlerts should call /v2/alerts/last with active_only", async () => {
+    mockFetch.mockResolvedValueOnce(dataResponse([]));
 
     await client.getActiveAlerts("site-1");
 
     const url = mockFetch.mock.calls[1][0];
-    expect(url).toContain("/alerts/last");
+    expect(url).toContain("/v2/alerts/last");
     expect(url).toContain("active_only=true");
+  });
+
+  it("getAvailableSignals should call /v2/telemetry/signals", async () => {
+    mockFetch.mockResolvedValueOnce(
+      dataResponse({ solar_instant_power: true, battery_instant_power: true })
+    );
+
+    const result = await client.getAvailableSignals("site-1");
+
+    const url = mockFetch.mock.calls[1][0];
+    expect(url).toContain("/v2/telemetry/signals");
+    expect(url).toContain("target_id=site-1");
+    expect(result.solar_instant_power).toBe(true);
   });
 });

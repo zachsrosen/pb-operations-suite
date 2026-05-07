@@ -8,7 +8,9 @@
  * - Our Vercel functions call a Fly.io reverse proxy (for static IP allowlisting)
  * - The proxy forwards plain HTTPS to Tesla's API (no mTLS needed)
  * - Auth uses OAuth2 client_credentials grant (HTTP Basic Auth → bearer token)
- * - Tokens are cached in module-level state with configurable expiry
+ *   - Token endpoint: POST /v1/auth/token (response wrapped in { meta, data, links })
+ * - Data endpoints live under /v2/ prefix (responses wrapped in { data: T })
+ * - Tokens are cached in module-level state; expiry derived from JWT `exp` claim
  * - Token bucket rate limiter stays under Tesla's 5 req/sec limit
  *
  * Required env vars:
@@ -19,45 +21,96 @@
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-/** Standard OAuth2 token response */
-export interface PowerHubTokenResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number; // seconds
+/** Tesla token endpoint response — wrapped in { meta, data, links } */
+interface PowerHubTokenEnvelope {
+  meta: { request_id: string };
+  data: {
+    access_token: string;
+    token_type: string;
+  };
+  links: unknown;
+}
+
+/** Tesla API response wrapper — all /v2/ endpoints return { data: T } */
+interface PowerHubEnvelope<T> {
+  data: T;
+  metadata?: { request_id: string; next_cursor?: string };
 }
 
 export interface PowerHubGroup {
   group_id: string;
   group_name: string;
-  subgroups?: PowerHubGroup[];
-  sites?: { site_id: string; site_name: string }[];
+  sites?: { site_id: string }[];
+  child_groups?: PowerHubGroup[];
+  parent_id?: string | null;
 }
 
 export interface PowerHubSiteDetail {
   site_id: string;
   site_name: string;
-  address?: string;
-  city?: string;
-  state?: string;
-  zip?: string;
-  equipment?: PowerHubDevice[];
+  created_datetime?: string;
+  updated_datetime?: string;
+  aggregator_site_identifier?: string | null;
+  battery?: {
+    total_nameplate_max_discharge_power: number;
+    total_nameplate_max_charge_power: number;
+    total_nameplate_energy: number;
+    batteries: PowerHubBattery[];
+  };
+  gateway?: {
+    total_gateways: number;
+    gateways: PowerHubGateway[];
+  };
+  inverter?: PowerHubInverter[];
+  meter?: PowerHubMeter[];
+  evse?: PowerHubEvse[];
 }
 
-export interface PowerHubDevice {
+export interface PowerHubBattery {
+  device_id?: string;
+  din?: string;
+  part_number?: string;
+  serial_number?: string;
+  nameplate_max_discharge_power_watts?: number;
+  nameplate_max_charge_power_watts?: number;
+  nameplate_energy_watt_hours?: number;
+}
+
+export interface PowerHubGateway {
   device_id: string;
   din?: string;
-  device_type: string; // "gateway", "battery", "inverter", "meter"
-  manufacturer?: string;
-  model?: string;
+  part_number?: string;
   serial_number?: string;
-  nameplate_energy_wh?: number;
-  nameplate_power_w?: number;
+  nameplate_max_discharge_power_watts?: number;
+  nameplate_max_charge_power_watts?: number;
+  nameplate_energy_watt_hours?: number;
 }
 
+export interface PowerHubInverter {
+  din?: string;
+  part_number?: string;
+  serial_number?: string;
+}
+
+export interface PowerHubMeter {
+  din?: string;
+  part_number?: string;
+  serial_number?: string;
+}
+
+export interface PowerHubEvse {
+  din?: string;
+  part_number?: string;
+  serial_number?: string;
+}
+
+/** Telemetry signal — each signal returns an array of data_points */
 export interface PowerHubTelemetrySignal {
   signal_name: string;
-  value: number | string | null;
-  timestamp: string;
+  rollup: string | null;
+  derivative: string | null;
+  site_id: string;
+  data_points: { value: number; timestamp: string }[];
 }
 
 export interface PowerHubAlert {
@@ -73,18 +126,21 @@ export interface PowerHubAlert {
   is_active: boolean;
 }
 
+/** Available telemetry signals for a site — maps signal_name → available (true/false) */
+export type PowerHubSignalMap = Record<string, boolean>;
+
 export interface PowerHubClient {
-  getGroups(): Promise<{ groups: PowerHubGroup[] }>;
-  getSites(): Promise<{ sites: { site_id: string; site_name: string }[] }>;
+  getGroups(): Promise<PowerHubGroup[]>;
   getSiteDetail(siteId: string): Promise<PowerHubSiteDetail>;
+  getAvailableSignals(siteId: string): Promise<PowerHubSignalMap>;
   getLastTelemetry(
     targetId: string,
     signals: string[]
-  ): Promise<{ signals: PowerHubTelemetrySignal[] }>;
+  ): Promise<PowerHubTelemetrySignal[]>;
   getActiveAlerts(
     siteId: string,
     sinceTime?: string
-  ): Promise<{ alerts: PowerHubAlert[] }>;
+  ): Promise<PowerHubAlert[]>;
 }
 
 // ─── Rate Limiter ────────────────────────────────────────────────────────────
@@ -167,6 +223,7 @@ export function createPowerHubClient(): PowerHubClient {
       try {
         // OAuth2 client_credentials grant per Tesla PowerHub docs:
         // POST /v1/auth/token with Basic Auth (client_id:client_secret)
+        // Response: { meta, data: { access_token, token_type }, links }
         const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
 
         const res = await fetch(`${proxyUrl}/v1/auth/token`, {
@@ -182,11 +239,22 @@ export function createPowerHubClient(): PowerHubClient {
           throw new Error(`Token request failed: ${res.status} ${res.statusText}`);
         }
 
-        const body: PowerHubTokenResponse = await res.json();
-        cachedToken = {
-          jwt: body.access_token,
-          expiresAt: Date.now() + (body.expires_in ?? 600) * 1000,
-        };
+        const envelope: PowerHubTokenEnvelope = await res.json();
+        const jwt = envelope.data.access_token;
+
+        // Derive expiry from JWT `exp` claim (base64-decode the payload)
+        let expiresAt = Date.now() + 600_000; // fallback: 10 minutes
+        try {
+          const payloadB64 = jwt.split(".")[1];
+          const payload = JSON.parse(Buffer.from(payloadB64, "base64").toString());
+          if (payload.exp) {
+            expiresAt = payload.exp * 1000;
+          }
+        } catch {
+          // If JWT parsing fails, use the fallback expiry
+        }
+
+        cachedToken = { jwt, expiresAt };
         return cachedToken.jwt;
       } finally {
         tokenPromise = null;
@@ -200,6 +268,10 @@ export function createPowerHubClient(): PowerHubClient {
     cachedToken = null;
   }
 
+  /**
+   * Make an authenticated API call to the Tesla PowerHub /v2/ data API.
+   * All responses are wrapped in { data: T } — this function unwraps automatically.
+   */
   async function apiCall<T>(path: string, options?: RequestInit): Promise<T> {
     let lastError: Error | null = null;
 
@@ -207,7 +279,7 @@ export function createPowerHubClient(): PowerHubClient {
       await rateLimiter.acquire();
 
       const token = await getToken();
-      const url = `${proxyUrl}${path}`;
+      const url = `${proxyUrl}/v2${path}`;
 
       const res = await fetch(url, {
         ...options,
@@ -219,7 +291,8 @@ export function createPowerHubClient(): PowerHubClient {
       });
 
       if (res.ok) {
-        return res.json() as Promise<T>;
+        const envelope = (await res.json()) as PowerHubEnvelope<T>;
+        return envelope.data;
       }
 
       // 401: clear token, re-auth, retry once
@@ -255,22 +328,22 @@ export function createPowerHubClient(): PowerHubClient {
 
   return {
     async getGroups() {
-      return apiCall<{ groups: PowerHubGroup[] }>("/asset/groups");
-    },
-
-    async getSites() {
-      return apiCall<{ sites: { site_id: string; site_name: string }[] }>(
-        "/asset/sites"
-      );
+      return apiCall<PowerHubGroup[]>("/asset/groups");
     },
 
     async getSiteDetail(siteId: string) {
       return apiCall<PowerHubSiteDetail>(`/asset/sites/${siteId}`);
     },
 
+    async getAvailableSignals(siteId: string) {
+      return apiCall<PowerHubSignalMap>(
+        `/telemetry/signals?target_id=${siteId}`
+      );
+    },
+
     async getLastTelemetry(targetId: string, signals: string[]) {
       const signalList = signals.join(",");
-      return apiCall<{ signals: PowerHubTelemetrySignal[] }>(
+      return apiCall<PowerHubTelemetrySignal[]>(
         `/telemetry/last?target_id=${targetId}&signals=${signalList}`
       );
     },
@@ -280,7 +353,7 @@ export function createPowerHubClient(): PowerHubClient {
       if (sinceTime) {
         path += `&since_time=${sinceTime}`;
       }
-      return apiCall<{ alerts: PowerHubAlert[] }>(path);
+      return apiCall<PowerHubAlert[]>(path);
     },
   };
 }
