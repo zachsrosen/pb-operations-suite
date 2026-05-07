@@ -290,6 +290,10 @@ export default auth((req) => {
     const apiSecretToken = process.env.API_SECRET_TOKEN;
     const authHeader = req.headers.get("authorization");
     const hubspotApiKeyHeader = req.headers.get("pb_ops_bearer_token");
+    // Temporary debug: log what HubSpot is sending so we can fix the mismatch
+    if (pathname.includes("workflow-sync") && (authHeader || hubspotApiKeyHeader)) {
+      console.log("[workflow-sync-debug] authHeader present:", !!authHeader, "hubspotApiKeyHeader present:", !!hubspotApiKeyHeader, "apiSecretToken present:", !!apiSecretToken, "authMatch:", authHeader === `Bearer ${apiSecretToken}`, "hubspotMatch:", hubspotApiKeyHeader === apiSecretToken, "hubspotHeaderLen:", hubspotApiKeyHeader?.length, "expectedLen:", apiSecretToken?.length);
+    }
     if (
       apiSecretToken &&
       (authHeader === `Bearer ${apiSecretToken}` ||
