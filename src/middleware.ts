@@ -65,6 +65,7 @@ const PUBLIC_API_ROUTES = [
   "/api/cron/powerhub-assets",     // PowerHub asset sync — CRON_SECRET validated in route
   "/api/cron/powerhub-telemetry",  // PowerHub telemetry poll — CRON_SECRET validated in route
   "/api/cron/powerhub-alerts",     // PowerHub alert poll — CRON_SECRET validated in route
+  "/api/properties/workflow-sync", // HubSpot workflow webhook → property sync — PROPERTY_SYNC_ENABLED + Zod validated in route
 ];
 const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/bom",
@@ -75,8 +76,6 @@ const MACHINE_TOKEN_ALLOWED_ROUTES = [
   "/api/pm-flags",
   // Office performance cache warmer — cron self-fetches to warm the API lambda.
   "/api/office-performance",
-  // Property sync — HubSpot workflow webhook actions.
-  "/api/properties/workflow-sync",
 ] as const;
 
 function isMachineTokenAllowedRoute(pathname: string): boolean {
@@ -285,20 +284,9 @@ export default auth((req) => {
     }
 
     // Allow machine-to-machine access via API_SECRET_TOKEN Bearer token
-    // Also accept HubSpot workflow webhook "API Key" auth which sends the
-    // token in a custom header (the stored-secret name, not Authorization).
     const apiSecretToken = process.env.API_SECRET_TOKEN;
     const authHeader = req.headers.get("authorization");
-    const hubspotApiKeyHeader = req.headers.get("pb_ops_bearer_token");
-    // Temporary debug: log what HubSpot is sending so we can fix the mismatch
-    if (pathname.includes("workflow-sync") && (authHeader || hubspotApiKeyHeader)) {
-      console.log("[workflow-sync-debug] authHeader present:", !!authHeader, "hubspotApiKeyHeader present:", !!hubspotApiKeyHeader, "apiSecretToken present:", !!apiSecretToken, "authMatch:", authHeader === `Bearer ${apiSecretToken}`, "hubspotMatch:", hubspotApiKeyHeader === apiSecretToken, "hubspotHeaderLen:", hubspotApiKeyHeader?.length, "expectedLen:", apiSecretToken?.length);
-    }
-    if (
-      apiSecretToken &&
-      (authHeader === `Bearer ${apiSecretToken}` ||
-        hubspotApiKeyHeader === apiSecretToken)
-    ) {
+    if (apiSecretToken && authHeader === `Bearer ${apiSecretToken}`) {
       if (!isMachineTokenAllowedRoute(pathname)) {
         const response = NextResponse.json(
           { error: "Forbidden - API token is not allowed for this route" },

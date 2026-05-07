@@ -5,8 +5,9 @@
  * three property-sync workflows (Contact address change, Deal created,
  * Ticket created) POSTs here with the enrolled record's ID.
  *
- * Auth: API_SECRET_TOKEN bearer (machine token) — set as the Authorization
- * header in each HubSpot workflow's webhook action.
+ * Auth: Public route (no middleware auth) — gated by PROPERTY_SYNC_ENABLED
+ * feature flag + strict Zod payload validation. Follows the same pattern as
+ * all other HubSpot webhook endpoints in PUBLIC_API_ROUTES.
  *
  * This replaces the old HubSpot subscription webhook at
  * /api/webhooks/hubspot/property for new workflow-driven sync. HubSpot
@@ -40,11 +41,6 @@ const WorkflowSyncSchema = z.discriminatedUnion("type", [
 ]);
 
 export async function POST(req: NextRequest) {
-  const tokenAuth = req.headers.get("x-api-token-authenticated");
-  if (tokenAuth !== "1") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   if (process.env.PROPERTY_SYNC_ENABLED !== "true") {
     return NextResponse.json({ status: "disabled" });
   }
