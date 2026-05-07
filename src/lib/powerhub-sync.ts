@@ -39,10 +39,21 @@ const TELEMETRY_SIGNALS = [
 const CHUNK_SIZE = 4;
 const CHUNK_DELAY_MS = 1100; // 1.1s between chunks for safety
 
+/**
+ * Max sites to process per cron invocation.
+ * With 3,100+ sites and 4 req/sec rate limit, a single Vercel function
+ * can't sync the entire fleet. Each run processes a batch and the cron
+ * schedule (every 6h) progressively covers all sites.
+ * 50 sites × ~1.3s per chunk of 4 ≈ ~17s per run (well within 300s limit).
+ */
+const ASSET_SYNC_BATCH_LIMIT = 50;
+
 // ─── Asset Sync ──────────────────────────────────────────────────────────────
 
 export interface AssetSyncResult {
   sitesDiscovered: number;
+  sitesStale: number;
+  sitesBatched: number;
   sitesCreated: number;
   sitesUpdated: number;
   sitesLinked: number;
@@ -57,6 +68,8 @@ export async function syncAssets(): Promise<AssetSyncResult> {
   const client = createPowerHubClient();
   const result: AssetSyncResult = {
     sitesDiscovered: 0,
+    sitesStale: 0,
+    sitesBatched: 0,
     sitesCreated: 0,
     sitesUpdated: 0,
     sitesLinked: 0,
@@ -65,37 +78,60 @@ export async function syncAssets(): Promise<AssetSyncResult> {
 
   // 1. Get all sites from Tesla (flatten site IDs from groups)
   const groups = await client.getGroups();
-  const siteList: { site_id: string }[] = [];
+  const allSiteIds: string[] = [];
   function collectSites(grps: typeof groups) {
     for (const g of grps) {
-      if (g.sites) siteList.push(...g.sites);
+      if (g.sites) {
+        for (const s of g.sites) allSiteIds.push(s.site_id);
+      }
       if (g.child_groups) collectSites(g.child_groups);
     }
   }
   collectSites(groups);
-  result.sitesDiscovered = siteList.length;
+  result.sitesDiscovered = allSiteIds.length;
 
-  // 2. Fetch deal addresses for linkage (batch query)
+  // 2. Find which sites were recently synced (within last 5h) — skip those
+  const recentCutoff = new Date(Date.now() - 5 * 60 * 60 * 1000);
+  const recentlySynced = await prisma.powerhubSite.findMany({
+    where: {
+      siteId: { in: allSiteIds },
+      lastAssetSyncAt: { gte: recentCutoff },
+    },
+    select: { siteId: true },
+  });
+  const recentSet = new Set(recentlySynced.map((s: { siteId: string }) => s.siteId));
+
+  // 3. Filter to stale/new sites, take a batch
+  const staleSiteIds = allSiteIds.filter((id) => !recentSet.has(id));
+  const batchSiteIds = staleSiteIds.slice(0, ASSET_SYNC_BATCH_LIMIT);
+  result.sitesStale = staleSiteIds.length;
+  result.sitesBatched = batchSiteIds.length;
+
+  if (batchSiteIds.length === 0) {
+    return result; // All sites recently synced — nothing to do
+  }
+
+  // 4. Fetch deal addresses for linkage (batch query)
   const dealAddresses = await fetchDealAddresses();
 
-  // 3. Process sites in chunks
-  for (let i = 0; i < siteList.length; i += CHUNK_SIZE) {
-    const chunk = siteList.slice(i, i + CHUNK_SIZE);
+  // 5. Process batch in chunks
+  for (let i = 0; i < batchSiteIds.length; i += CHUNK_SIZE) {
+    const chunk = batchSiteIds.slice(i, i + CHUNK_SIZE);
 
     await Promise.all(
-      chunk.map(async (siteSummary) => {
+      chunk.map(async (siteId) => {
         try {
-          const detail = await client.getSiteDetail(siteSummary.site_id);
+          const detail = await client.getSiteDetail(siteId);
           await upsertSite(detail, dealAddresses, result);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          result.errors.push(`Site ${siteSummary.site_id}: ${msg}`);
+          result.errors.push(`Site ${siteId}: ${msg}`);
         }
       })
     );
 
     // Pause between chunks
-    if (i + CHUNK_SIZE < siteList.length) {
+    if (i + CHUNK_SIZE < batchSiteIds.length) {
       await new Promise((r) => setTimeout(r, CHUNK_DELAY_MS));
     }
   }
