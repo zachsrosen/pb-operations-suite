@@ -21,12 +21,55 @@ export type PerSubJobSchedule = {
 
 type CrewOption = { name: string; uid?: string };
 
+/** Project context displayed above the scheduling controls — mirrors the regular schedule modal. */
+export type SubJobProjectContext = {
+  id: string;
+  name: string;
+  address: string;
+  location: string;
+  type: string;
+  amount: number;
+  stage: string;
+  hubspotUrl: string;
+  zuperJobUid?: string;
+  zuperJobStatus?: string;
+  zuperWebBaseUrl?: string;
+  // Equipment
+  systemSize: number;
+  moduleCount: number;
+  moduleBrand: string;
+  moduleModel: string;
+  moduleWattage: number;
+  inverterCount: number;
+  inverterBrand: string;
+  inverterModel: string;
+  inverterSizeKwac: number;
+  batteries: number;
+  batteryModel: string | null;
+  batterySizeKwh: number;
+  batteryExpansion: number;
+  evCount: number;
+  // Install requirements
+  daysInstall: number;
+  daysElec: number;
+  totalDays: number;
+  roofersCount: number;
+  electriciansCount: number;
+  difficulty: number;
+  installNotes: string;
+};
+
 type SubJobScheduleModalProps = {
   subJobs: SubJobInfo[];
   projectName: string;
+  projectContext?: SubJobProjectContext;
   availableCrew: CrewOption[];
   defaultDate?: string;
   defaultInstallDays?: number;
+  zuperConfigured?: boolean;
+  syncToZuper?: boolean;
+  onSyncToZuperChange?: (value: boolean) => void;
+  internalDealUrl?: string;
   onSubmit: (schedules: PerSubJobSchedule[]) => Promise<void>;
   onClose: () => void;
 };
@@ -117,9 +160,14 @@ function formatDisplayDate(dateStr: string): string {
 export function SubJobScheduleModal({
   subJobs,
   projectName,
+  projectContext,
   availableCrew,
   defaultDate,
   defaultInstallDays,
+  zuperConfigured,
+  syncToZuper,
+  onSyncToZuperChange,
+  internalDealUrl,
   onSubmit,
   onClose,
 }: SubJobScheduleModalProps) {
@@ -279,6 +327,147 @@ export function SubJobScheduleModal({
 
         {/* ── Body (scrollable) ───────────────────────────────────────── */}
         <div className="overflow-y-auto px-5 py-4 flex-1 min-h-0">
+          {/* ── Project context sections (matches regular schedule modal) ── */}
+          {projectContext && (
+            <div className="mb-4 space-y-3">
+              {/* Project Info */}
+              <ContextSection title="Project">
+                <ContextRow label="Customer" value={projectName} />
+                <ContextRow label="Address" value={projectContext.address} />
+                <ContextRow label="Location" value={projectContext.location} />
+                <ContextRow
+                  label="Type"
+                  value={(projectContext.type || "Service").split(";").filter(t => t.trim()).join(", ")}
+                />
+                <ContextRow
+                  label="Amount"
+                  value={`$${projectContext.amount.toLocaleString()}`}
+                  valueClass="text-orange-400 font-semibold"
+                />
+                <ContextRow
+                  label="Stage"
+                  value={
+                    projectContext.stage === "rtb" ? "RTB Ready"
+                      : projectContext.stage === "blocked" ? "Blocked"
+                      : projectContext.stage === "construction" ? "Construction"
+                      : projectContext.stage
+                  }
+                  valueClass={
+                    projectContext.stage === "rtb" ? "text-emerald-400"
+                      : projectContext.stage === "blocked" ? "text-red-400"
+                      : projectContext.stage === "construction" ? "text-blue-400"
+                      : ""
+                  }
+                />
+                {projectContext.zuperJobStatus && (
+                  <ContextRow
+                    label="Job Status"
+                    value={projectContext.zuperJobStatus.replace(/_/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase())}
+                    valueClass={
+                      projectContext.zuperJobStatus.toLowerCase().includes("complete") ? "text-emerald-400"
+                        : projectContext.zuperJobStatus.toLowerCase().includes("progress") || projectContext.zuperJobStatus.toLowerCase().includes("started") ? "text-yellow-400"
+                        : projectContext.zuperJobStatus.toLowerCase().includes("scheduled") ? "text-blue-400"
+                        : "text-muted"
+                    }
+                  />
+                )}
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="text-[0.7rem] text-muted w-20">Links</span>
+                  <div className="flex items-center gap-2">
+                    {internalDealUrl && (
+                      <>
+                        <a href={internalDealUrl} className="text-[0.7rem] text-purple-400 hover:text-purple-300">Deal</a>
+                        <span className="text-muted/70">|</span>
+                      </>
+                    )}
+                    <a
+                      href={projectContext.hubspotUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[0.7rem] text-orange-400 hover:text-orange-300"
+                    >
+                      HubSpot
+                    </a>
+                    {projectContext.zuperJobUid && projectContext.zuperWebBaseUrl && (
+                      <>
+                        <span className="text-muted/70">|</span>
+                        <a
+                          href={`${projectContext.zuperWebBaseUrl}/jobs/${projectContext.zuperJobUid}/details`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[0.7rem] text-cyan-400 hover:text-cyan-300"
+                        >
+                          Zuper
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </ContextSection>
+
+              {/* Equipment */}
+              <ContextSection title="Equipment">
+                {projectContext.systemSize > 0 && (
+                  <ContextRow label="System Size" value={`${projectContext.systemSize.toFixed(1)} kW`} />
+                )}
+                {projectContext.moduleCount > 0 && (
+                  <ContextRow
+                    label="Modules"
+                    value={
+                      projectContext.moduleBrand
+                        ? `${projectContext.moduleCount}x ${projectContext.moduleBrand} ${projectContext.moduleModel}${projectContext.moduleWattage > 0 ? ` (${projectContext.moduleWattage}W)` : ""}`
+                        : `${projectContext.moduleCount} panels`
+                    }
+                  />
+                )}
+                {projectContext.inverterCount > 0 && (
+                  <ContextRow
+                    label="Inverters"
+                    value={
+                      projectContext.inverterBrand
+                        ? `${projectContext.inverterCount}x ${projectContext.inverterBrand} ${projectContext.inverterModel}${projectContext.inverterSizeKwac > 0 ? ` (${projectContext.inverterSizeKwac} kWac)` : ""}`
+                        : `${projectContext.inverterCount}`
+                    }
+                  />
+                )}
+                {projectContext.batteries > 0 && (
+                  <ContextRow
+                    label="Batteries"
+                    value={`${projectContext.batteries}x ${projectContext.batteryModel || "Tesla"}${projectContext.batterySizeKwh > 0 ? ` ${projectContext.batterySizeKwh} kWh` : ""}${projectContext.batteryExpansion ? ` + ${projectContext.batteryExpansion} expansion` : ""}`}
+                  />
+                )}
+                {projectContext.evCount > 0 && (
+                  <ContextRow label="EV Chargers" value={`${projectContext.evCount}`} />
+                )}
+              </ContextSection>
+
+              {/* Install Requirements */}
+              <ContextSection title="Install Requirements">
+                {projectContext.daysInstall > 0 && (
+                  <ContextRow label="Installer Days" value={`${projectContext.daysInstall}d`} />
+                )}
+                {projectContext.daysElec > 0 && (
+                  <ContextRow label="Electrician Days" value={`${projectContext.daysElec}d`} />
+                )}
+                {!projectContext.daysInstall && !projectContext.daysElec && projectContext.totalDays > 0 && (
+                  <ContextRow label="Total Days" value={`${projectContext.totalDays}d`} />
+                )}
+                {projectContext.roofersCount > 0 && (
+                  <ContextRow label="Installers Needed" value={`${projectContext.roofersCount}`} />
+                )}
+                {projectContext.electriciansCount > 0 && (
+                  <ContextRow label="Electricians Needed" value={`${projectContext.electriciansCount}`} />
+                )}
+                {projectContext.difficulty > 0 && (
+                  <ContextRow label="Difficulty" value={`${"*".repeat(projectContext.difficulty)} (${projectContext.difficulty}/5)`} />
+                )}
+                {projectContext.installNotes && (
+                  <ContextRow label="Notes" value={projectContext.installNotes} />
+                )}
+              </ContextSection>
+            </div>
+          )}
+
           {/* Toggle link */}
           <button
             onClick={toggleMode}
@@ -324,6 +513,40 @@ export function SubJobScheduleModal({
                   />
                 );
               })}
+            </div>
+          )}
+
+          {/* Zuper Integration */}
+          {zuperConfigured && (
+            <div className="mt-4 pt-3 border-t border-t-border">
+              <ContextSection title="Zuper Integration">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="subjob-syncZuper"
+                    checked={syncToZuper ?? true}
+                    onChange={(e) => onSyncToZuperChange?.(e.target.checked)}
+                    disabled={submitting}
+                    className="w-4 h-4 accent-orange-500"
+                  />
+                  <label htmlFor="subjob-syncZuper" className="text-[0.7rem] text-foreground/80 cursor-pointer">
+                    Sync schedule to Zuper
+                  </label>
+                </div>
+                <div className={`text-[0.6rem] mt-1 ${syncToZuper ? "text-cyan-400" : "text-amber-400"}`}>
+                  {syncToZuper
+                    ? "Mode: live sync (writes to Zuper now)."
+                    : "Mode: tentative only (does not sync until confirmed)."}
+                </div>
+                <div className="text-[0.6rem] text-muted mt-1">
+                  Updates existing Construction sub-jobs in Zuper (or creates them if none exist)
+                </div>
+                {syncToZuper && (
+                  <div className="mt-2 p-2 bg-amber-500/10 border border-amber-500/30 rounded text-[0.6rem] text-amber-400">
+                    ⚠️ <strong>Customer will receive EMAIL + SMS notification</strong> with their scheduled appointment
+                  </div>
+                )}
+              </ContextSection>
             </div>
           )}
         </div>
@@ -658,6 +881,44 @@ function ScheduleFields({
           className="px-3 py-2 text-sm rounded-lg border border-t-border bg-surface text-foreground placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-orange-500/40 resize-none disabled:opacity-50"
         />
       </label>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Context display helpers (mirrors ModalSection / ModalRow from scheduler)
+// ---------------------------------------------------------------------------
+
+function ContextSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="text-[0.65rem] text-muted uppercase mb-1 font-semibold">
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ContextRow({
+  label,
+  value,
+  valueClass = "",
+}: {
+  label: string;
+  value: string;
+  valueClass?: string;
+}) {
+  return (
+    <div className="flex justify-between py-1 border-b border-t-border last:border-b-0 text-[0.75rem]">
+      <span className="text-muted">{label}</span>
+      <span className={valueClass || "text-foreground/90"}>{value}</span>
     </div>
   );
 }
