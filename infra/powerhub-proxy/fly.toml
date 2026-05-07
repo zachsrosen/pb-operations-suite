@@ -14,7 +14,3 @@ primary_region = "den"
 [[vm]]
   size = "shared-cpu-1x"
   memory = "256mb"
-
-[mounts]
-  source = "certs"
-  destination = "/certs"

@@ -1,6 +1,6 @@
 /**
  * Tesla PowerHub API client tests.
- * Tests JWT auth flow, rate limiting, endpoint wrappers, and error handling.
+ * Tests OAuth2 client_credentials auth, rate limiting, endpoint wrappers, and error handling.
  */
 import {
   createPowerHubClient,
@@ -14,14 +14,17 @@ global.fetch = mockFetch;
 // Env setup — mirrors real env vars
 const TEST_ENV = {
   POWERHUB_ENABLED: "true",
-  TESLA_POWERHUB_INSTANCE_ID: "test-instance-id",
-  TESLA_POWERHUB_USER_ID: "test@photonbrothers.com",
+  TESLA_POWERHUB_CLIENT_ID: "test-client-id",
+  TESLA_POWERHUB_CLIENT_SECRET: "test-client-secret",
   TESLA_POWERHUB_PROXY_URL: "https://pb-powerhub-proxy.fly.dev",
 };
 
-/** Tesla wraps token responses in { data: { token } } */
-function tokenResponse(token: string) {
-  return new Response(JSON.stringify({ data: { token } }), { status: 200 });
+/** OAuth2 token response */
+function tokenResponse(token: string, expiresIn = 3600) {
+  return new Response(
+    JSON.stringify({ access_token: token, token_type: "bearer", expires_in: expiresIn }),
+    { status: 200 }
+  );
 }
 
 beforeEach(() => {
@@ -36,7 +39,7 @@ afterEach(() => {
 });
 
 describe("PowerHub Client — Authentication", () => {
-  it("should request a JWT token on first API call", async () => {
+  it("should request a token via client_credentials grant on first API call", async () => {
     mockFetch
       .mockResolvedValueOnce(tokenResponse("jwt-token-123"))
       .mockResolvedValueOnce(
@@ -49,14 +52,20 @@ describe("PowerHub Client — Authentication", () => {
     // First call should be token request
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(mockFetch.mock.calls[0][0]).toBe(
-      "https://pb-powerhub-proxy.fly.dev/asset/tokens"
+      "https://pb-powerhub-proxy.fly.dev/v1/auth/token"
     );
     expect(mockFetch.mock.calls[0][1].method).toBe("POST");
 
-    // Body should contain user_id (email) and instance_id
-    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.user_id).toBe("test@photonbrothers.com");
-    expect(body.instance_id).toBe("test-instance-id");
+    // Should use Basic Auth with client_id:client_secret
+    const authHeader = mockFetch.mock.calls[0][1].headers.Authorization;
+    const decoded = Buffer.from(authHeader.replace("Basic ", ""), "base64").toString();
+    expect(decoded).toBe("test-client-id:test-client-secret");
+
+    // Body should be form-encoded grant_type
+    expect(mockFetch.mock.calls[0][1].body).toBe("grant_type=client_credentials");
+    expect(mockFetch.mock.calls[0][1].headers["Content-Type"]).toBe(
+      "application/x-www-form-urlencoded"
+    );
   });
 
   it("should reuse cached token on subsequent calls", async () => {
@@ -153,6 +162,11 @@ describe("PowerHub Client — Error Handling", () => {
   it("should throw when POWERHUB_ENABLED is false", () => {
     process.env.POWERHUB_ENABLED = "false";
     expect(() => createPowerHubClient()).toThrow(/PowerHub.*disabled/i);
+  });
+
+  it("should throw when client credentials are missing", () => {
+    delete process.env.TESLA_POWERHUB_CLIENT_ID;
+    expect(() => createPowerHubClient()).toThrow(/Missing PowerHub env vars/);
   });
 });
 

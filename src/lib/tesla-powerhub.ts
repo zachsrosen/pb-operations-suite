@@ -1,27 +1,29 @@
 /**
  * Tesla PowerHub API Client
  *
- * Handles mTLS proxy communication, JWT authentication, rate limiting,
+ * Handles OAuth2 client_credentials authentication, rate limiting,
  * and typed endpoint wrappers for the PowerHub API.
  *
  * Architecture:
- * - Our Vercel functions call the mTLS proxy (plain HTTPS)
- * - The proxy adds the client cert and forwards to Tesla's API
- * - JWT tokens (10-min expiry) are cached in module-level state
+ * - Our Vercel functions call a Fly.io reverse proxy (for static IP allowlisting)
+ * - The proxy forwards plain HTTPS to Tesla's API (no mTLS needed)
+ * - Auth uses OAuth2 client_credentials grant (HTTP Basic Auth → bearer token)
+ * - Tokens are cached in module-level state with configurable expiry
  * - Token bucket rate limiter stays under Tesla's 5 req/sec limit
  *
  * Required env vars:
- * - TESLA_POWERHUB_PROXY_URL  — mTLS proxy base URL (e.g. https://pb-powerhub-proxy.fly.dev)
- * - TESLA_POWERHUB_INSTANCE_ID — your PowerHub instance UUID
- * - TESLA_POWERHUB_USER_ID     — email on the PowerHub account (e.g. zach@photonbrothers.com)
+ * - TESLA_POWERHUB_PROXY_URL      — Fly.io proxy URL (e.g. https://pb-powerhub-proxy.fly.dev)
+ * - TESLA_POWERHUB_CLIENT_ID      — Client credential ID from PowerHub portal
+ * - TESLA_POWERHUB_CLIENT_SECRET  — Client credential secret (shown once at creation)
  */
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
+/** Standard OAuth2 token response */
 export interface PowerHubTokenResponse {
-  data: {
-    token: string;
-  };
+  access_token: string;
+  token_type: string;
+  expires_in: number; // seconds
 }
 
 export interface PowerHubGroup {
@@ -137,12 +139,12 @@ export function createPowerHubClient(): PowerHubClient {
   }
 
   const proxyUrl = process.env.TESLA_POWERHUB_PROXY_URL;
-  const instanceId = process.env.TESLA_POWERHUB_INSTANCE_ID;
-  const userId = process.env.TESLA_POWERHUB_USER_ID;
+  const clientId = process.env.TESLA_POWERHUB_CLIENT_ID;
+  const clientSecret = process.env.TESLA_POWERHUB_CLIENT_SECRET;
 
-  if (!proxyUrl || !instanceId || !userId) {
+  if (!proxyUrl || !clientId || !clientSecret) {
     throw new Error(
-      "Missing PowerHub env vars: TESLA_POWERHUB_PROXY_URL, TESLA_POWERHUB_INSTANCE_ID, TESLA_POWERHUB_USER_ID"
+      "Missing PowerHub env vars: TESLA_POWERHUB_PROXY_URL, TESLA_POWERHUB_CLIENT_ID, TESLA_POWERHUB_CLIENT_SECRET"
     );
   }
 
@@ -163,21 +165,27 @@ export function createPowerHubClient(): PowerHubClient {
 
     tokenPromise = (async () => {
       try {
-        const res = await fetch(`${proxyUrl}/asset/tokens`, {
+        // OAuth2 client_credentials grant per Tesla PowerHub docs:
+        // POST /v1/auth/token with Basic Auth (client_id:client_secret)
+        const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString("base64");
+
+        const res = await fetch(`${proxyUrl}/v1/auth/token`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: userId, instance_id: instanceId }),
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+            Authorization: `Basic ${basicAuth}`,
+          },
+          body: "grant_type=client_credentials",
         });
 
         if (!res.ok) {
           throw new Error(`Token request failed: ${res.status} ${res.statusText}`);
         }
 
-        // Tesla wraps the token in { data: { token: "..." } }
         const body: PowerHubTokenResponse = await res.json();
         cachedToken = {
-          jwt: body.data.token,
-          expiresAt: Date.now() + 10 * 60 * 1000, // 10-min expiry per Tesla docs
+          jwt: body.access_token,
+          expiresAt: Date.now() + (body.expires_in ?? 600) * 1000,
         };
         return cachedToken.jwt;
       } finally {
@@ -220,10 +228,10 @@ export function createPowerHubClient(): PowerHubClient {
         continue;
       }
 
-      // 403: immediate failure (IP/cert issue)
+      // 403: immediate failure (IP allowlist or credentials issue)
       if (res.status === 403) {
         throw new Error(
-          `PowerHub API 403 Forbidden: ${path} — check mTLS cert or IP allowlist`
+          `PowerHub API 403 Forbidden: ${path} — check IP allowlist or client credentials`
         );
       }
 
@@ -247,14 +255,12 @@ export function createPowerHubClient(): PowerHubClient {
 
   return {
     async getGroups() {
-      return apiCall<{ groups: PowerHubGroup[] }>(
-        `/asset/groups?instance_id=${instanceId}`
-      );
+      return apiCall<{ groups: PowerHubGroup[] }>("/asset/groups");
     },
 
     async getSites() {
       return apiCall<{ sites: { site_id: string; site_name: string }[] }>(
-        `/asset/sites?instance_id=${instanceId}`
+        "/asset/sites"
       );
     },
 
