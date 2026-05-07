@@ -114,11 +114,17 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4">
-          <h3 className="text-base font-semibold">Request Swap</h3>
-          <p className="text-xs text-muted mt-1">
-            You&apos;re giving up your shift <strong>{formatDate(shift.startDate)}</strong>
-            {shift.startDate !== shift.endDate && <> – <strong>{formatDate(shift.endDate)}</strong></>}
-            {" "}({shift.poolName}). Pick whose shift you&apos;ll cover in return.
+          <h3 className="text-base font-semibold">Swap Your Shift</h3>
+          <div className="bg-surface-2 border border-t-border rounded-lg p-3 mt-2 mb-2">
+            <div className="text-xs text-muted mb-0.5">Your shift you want to give up</div>
+            <div className="text-sm font-medium">
+              {formatDate(shift.startDate)}
+              {shift.startDate !== shift.endDate && <> – {formatDate(shift.endDate)}</>}
+            </div>
+            <div className="text-xs text-muted">{shift.poolName}</div>
+          </div>
+          <p className="text-xs text-muted">
+            Pick a teammate below. You&apos;ll cover their shift, and they&apos;ll cover yours.
           </p>
         </div>
 
@@ -129,36 +135,44 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
         )}
 
         {!candidates ? (
-          <div className="text-sm text-muted">Loading candidates…</div>
+          <div className="text-sm text-muted">Loading available shifts…</div>
         ) : candidates.length === 0 ? (
           <div className="text-sm text-muted italic">
             No upcoming shifts in this pool to swap with. Ask an admin to Publish farther out first.
           </div>
         ) : (
-          <div className="space-y-1 max-h-80 overflow-y-auto">
-            {candidates.map((c) => {
-              const active = selected?.date === c.date && selected.crewMemberId === c.crewMemberId;
-              return (
-                <button
-                  key={`${c.date}-${c.crewMemberId}`}
-                  type="button"
-                  onClick={() => setSelected(c)}
-                  className={
-                    active
-                      ? "w-full text-left px-3 py-2 rounded border border-orange-500/50 bg-orange-500/10 text-foreground"
-                      : "w-full text-left px-3 py-2 rounded border border-t-border bg-surface-2 hover:border-orange-500/30"
-                  }
-                >
-                  <div className="text-sm font-medium">{c.crewMemberName}</div>
-                  <div className="text-xs text-muted">
-                    {formatDate(c.date)}
-                    {c.source === "manual" && <span className="ml-2 text-orange-300">· manually set</span>}
-                    {!c.persisted && <span className="ml-2 text-muted/60">· forecast</span>}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+          <>
+            <div className="text-xs text-muted mb-2 font-medium uppercase tracking-wider">
+              Pick the shift you&apos;ll cover in return
+            </div>
+            <div className="space-y-1 max-h-80 overflow-y-auto">
+              {candidates.map((c) => {
+                const active = selected?.date === c.date && selected.crewMemberId === c.crewMemberId;
+                return (
+                  <button
+                    key={`${c.date}-${c.crewMemberId}`}
+                    type="button"
+                    onClick={() => setSelected(c)}
+                    className={
+                      active
+                        ? "w-full text-left px-3 py-3 rounded border border-orange-500/50 bg-orange-500/10 text-foreground"
+                        : "w-full text-left px-3 py-3 rounded border border-t-border bg-surface-2 hover:border-orange-500/30"
+                    }
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-medium">{c.crewMemberName}</div>
+                      <div className="text-xs text-muted">{formatDate(c.date)}</div>
+                    </div>
+                    {active && (
+                      <div className="text-xs text-orange-300 mt-1">
+                        You cover {formatDate(c.date)} → they cover {formatDate(shift.startDate)}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </>
         )}
 
         <div className="mt-4">
@@ -190,10 +204,15 @@ export function SwapProposeModal({ myCrewMemberId, myName, shift, onClose, onSub
           </button>
         </div>
 
-        <p className="text-xs text-muted mt-3">
-          {myName} ↔ {selected?.crewMemberName ?? "…"}. Once they accept, your manager will get the request to approve.
-          Per company policy, swaps must be requested at least 2 weeks in advance.
-        </p>
+        <div className="text-xs text-muted mt-3 space-y-1">
+          <p><strong>How it works:</strong></p>
+          <ol className="list-decimal list-inside space-y-0.5">
+            <li>You send the request to {selected?.crewMemberName ?? "your teammate"}</li>
+            <li>They accept or decline</li>
+            <li>If accepted, a manager reviews and finalizes the swap</li>
+          </ol>
+          <p className="pt-1">Per company policy, swaps must be requested at least 2 weeks in advance.</p>
+        </div>
       </div>
     </div>
   );

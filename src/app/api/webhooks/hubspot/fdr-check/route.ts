@@ -71,6 +71,8 @@ const DEAL_PROPERTIES = [
   "design_document_folder_id",
   "all_document_parent_folder_id",
   "system_size_kw",
+  "calculated_system_size__kwdc_",
+  "system_size_kwac",
   "module_type",
   "module_count",
   "inverter_type",
