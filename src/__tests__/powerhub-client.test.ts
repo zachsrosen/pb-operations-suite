@@ -11,13 +11,18 @@ import {
 const mockFetch = jest.fn();
 global.fetch = mockFetch;
 
-// Env setup
+// Env setup — mirrors real env vars
 const TEST_ENV = {
   POWERHUB_ENABLED: "true",
   TESLA_POWERHUB_INSTANCE_ID: "test-instance-id",
-  TESLA_POWERHUB_API_KEY: "test-api-key-123",
-  TESLA_POWERHUB_BASE_URL: "https://gridlogic-api.sn.tesla.services/v2",
+  TESLA_POWERHUB_USER_ID: "test@photonbrothers.com",
+  TESLA_POWERHUB_PROXY_URL: "https://pb-powerhub-proxy.fly.dev",
 };
+
+/** Tesla wraps token responses in { data: { token } } */
+function tokenResponse(token: string) {
+  return new Response(JSON.stringify({ data: { token } }), { status: 200 });
+}
 
 beforeEach(() => {
   jest.resetAllMocks();
@@ -32,14 +37,8 @@ afterEach(() => {
 
 describe("PowerHub Client — Authentication", () => {
   it("should request a JWT token on first API call", async () => {
-    // Token endpoint returns JWT
     mockFetch
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ token: "jwt-token-123", expires_in: 600 }), {
-          status: 200,
-        })
-      )
-      // Actual API call
+      .mockResolvedValueOnce(tokenResponse("jwt-token-123"))
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ groups: [] }), { status: 200 })
       );
@@ -50,18 +49,19 @@ describe("PowerHub Client — Authentication", () => {
     // First call should be token request
     expect(mockFetch).toHaveBeenCalledTimes(2);
     expect(mockFetch.mock.calls[0][0]).toBe(
-      "https://gridlogic-api.sn.tesla.services/v2/asset/tokens"
+      "https://pb-powerhub-proxy.fly.dev/asset/tokens"
     );
     expect(mockFetch.mock.calls[0][1].method).toBe("POST");
+
+    // Body should contain user_id (email) and instance_id
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.user_id).toBe("test@photonbrothers.com");
+    expect(body.instance_id).toBe("test-instance-id");
   });
 
   it("should reuse cached token on subsequent calls", async () => {
     mockFetch
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ token: "jwt-token-123", expires_in: 600 }), {
-          status: 200,
-        })
-      )
+      .mockResolvedValueOnce(tokenResponse("jwt-token-123"))
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ groups: [] }), { status: 200 })
       )
@@ -79,20 +79,11 @@ describe("PowerHub Client — Authentication", () => {
 
   it("should re-authenticate on 401 response", async () => {
     mockFetch
-      // Initial token
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ token: "old-token", expires_in: 600 }), {
-          status: 200,
-        })
-      )
+      .mockResolvedValueOnce(tokenResponse("old-token"))
       // API returns 401
       .mockResolvedValueOnce(new Response("Unauthorized", { status: 401 }))
       // Re-auth token
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ token: "new-token", expires_in: 600 }), {
-          status: 200,
-        })
-      )
+      .mockResolvedValueOnce(tokenResponse("new-token"))
       // Retry succeeds
       .mockResolvedValueOnce(
         new Response(JSON.stringify({ groups: [] }), { status: 200 })
@@ -108,12 +99,7 @@ describe("PowerHub Client — Authentication", () => {
 
 describe("PowerHub Client — Rate Limiting", () => {
   it("should respect 4 req/sec rate limit", async () => {
-    // Return token once
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ token: "jwt", expires_in: 600 }), {
-        status: 200,
-      })
-    );
+    mockFetch.mockResolvedValueOnce(tokenResponse("jwt"));
     // Then 5 API responses
     for (let i = 0; i < 5; i++) {
       mockFetch.mockResolvedValueOnce(
@@ -140,11 +126,7 @@ describe("PowerHub Client — Rate Limiting", () => {
 describe("PowerHub Client — Error Handling", () => {
   it("should retry on 429 with exponential backoff", async () => {
     mockFetch
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ token: "jwt", expires_in: 600 }), {
-          status: 200,
-        })
-      )
+      .mockResolvedValueOnce(tokenResponse("jwt"))
       .mockResolvedValueOnce(new Response("Rate limited", { status: 429 }))
       .mockResolvedValueOnce(new Response("Rate limited", { status: 429 }))
       .mockResolvedValueOnce(
@@ -161,11 +143,7 @@ describe("PowerHub Client — Error Handling", () => {
 
   it("should throw immediately on 403", async () => {
     mockFetch
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ token: "jwt", expires_in: 600 }), {
-          status: 200,
-        })
-      )
+      .mockResolvedValueOnce(tokenResponse("jwt"))
       .mockResolvedValueOnce(new Response("Forbidden", { status: 403 }));
 
     const client = createPowerHubClient();
@@ -182,11 +160,7 @@ describe("PowerHub Client — Endpoint Wrappers", () => {
   let client: PowerHubClient;
 
   beforeEach(() => {
-    mockFetch.mockResolvedValueOnce(
-      new Response(JSON.stringify({ token: "jwt", expires_in: 600 }), {
-        status: 200,
-      })
-    );
+    mockFetch.mockResolvedValueOnce(tokenResponse("jwt"));
     client = createPowerHubClient();
   });
 
