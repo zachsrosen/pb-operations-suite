@@ -161,9 +161,10 @@ export async function POST(req: Request) {
   }
 
   // Find existing contact (by phone OR name fallback) and create only if we
-  // have a phone to seed a new record with. Backfill the call-log row with
-  // any phone/address we discover from the contact so the ticket body and
-  // future views have the missing details.
+  // have a phone to seed a new record with. We hydrate the ticket body with
+  // any phone/address pulled from the contact, but we do NOT overwrite the
+  // call log row's customer fields — the log is the electrician's source-of-
+  // truth record of what they actually captured on the call.
   safeWaitUntil(
     (async () => {
       let contactId: string | null = null;
@@ -178,18 +179,14 @@ export async function POST(req: Request) {
         });
         if (contact) {
           contactId = contact.id;
-          // Only fill in fields the form left blank — never overwrite what
-          // the electrician typed.
+          // Hydrate locals only — used downstream for the ticket body. The
+          // call log row stays as the electrician entered it.
           if (!resolvedPhone && contact.phone) resolvedPhone = contact.phone;
           if (!resolvedAddress && contact.address) resolvedAddress = contact.address;
 
           await prisma.onCallCallLog.update({
             where: { id: log.id },
-            data: {
-              hubspotContactId: contactId,
-              ...(resolvedPhone !== log.customerPhone ? { customerPhone: resolvedPhone } : {}),
-              ...(resolvedAddress !== log.customerAddress ? { customerAddress: resolvedAddress } : {}),
-            },
+            data: { hubspotContactId: contactId },
           });
         }
       } catch (e) {
