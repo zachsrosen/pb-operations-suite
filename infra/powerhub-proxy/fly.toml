@@ -1,0 +1,20 @@
+app = "pb-powerhub-proxy"
+primary_region = "den"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8443
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+[mounts]
+  source = "certs"
+  destination = "/certs"

@@ -775,8 +775,16 @@ export async function POST(request: NextRequest) {
           // --- Reschedule sibling construction sub-jobs (same deal, same dates/crew) ---
           // Looks up the primary job's Zuper customer, then finds all other construction
           // jobs for that customer and reschedules + status-updates each one.
+          // Skip siblings that still have a tentative ScheduleRecord — those need
+          // explicit user confirmation before touching Zuper.
           if (isInstallationConfirm) {
             try {
+              const tentativeSiblingRecords = await prisma.scheduleRecord.findMany({
+                where: { projectId: record.projectId, status: "tentative", zuperJobUid: { not: null } },
+                select: { zuperJobUid: true },
+              });
+              const tentativeJobUids = new Set(tentativeSiblingRecords.map(r => r.zuperJobUid!));
+
               // Get the primary job to find its customer_uid
               const primaryJobResult = await zuper.getJob(existingJob.job_uid);
               // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -791,6 +799,9 @@ export async function POST(request: NextRequest) {
                   for (const job of custJobsResult.data.jobs) {
                     if (!job.job_uid || job.job_uid === existingJob.job_uid) continue;
                     if (!categoryMatches(job)) continue;
+                    const sibDealId = getHubSpotDealId(job);
+                    if (sibDealId !== record.projectId) continue;
+                    if (tentativeJobUids.has(job.job_uid)) continue;
                     const catName = typeof job.job_category === "string"
                       ? job.job_category
                       : job.job_category?.category_name || "unknown";
@@ -811,25 +822,15 @@ export async function POST(request: NextRequest) {
                       );
                       if (sibResult.type === "success") {
                         console.log(`[Zuper Confirm] Sibling ${sibling.category} (${sibling.jobUid}) rescheduled OK`);
-                        // Update Zuper job status to "Scheduled"
+                        // Update Zuper job status to "Scheduled" using name-based API
+                        // (job_status history only contains statuses the job has been through,
+                        //  so UID lookup fails for jobs that have never been scheduled before)
                         try {
-                          const sibJobResult = await zuper.getJob(sibling.jobUid);
-                          if (sibJobResult.type === "success" && sibJobResult.data) {
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            const sibJobData = sibJobResult.data as any;
-                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                            const scheduledStatusUid = (sibJobData?.job_status || []).find((s: any) => {
-                              const name = String(s?.status_name || "").toLowerCase();
-                              return name === "scheduled" && !!s?.status_uid;
-                            })?.status_uid as string | undefined;
-                            if (scheduledStatusUid) {
-                              const statusResult = await zuper.updateJobStatusByUid(sibling.jobUid, scheduledStatusUid);
-                              if (statusResult.type === "success") {
-                                console.log(`[Zuper Confirm] Sibling ${sibling.category} (${sibling.jobUid}) status → Scheduled`);
-                              } else {
-                                console.warn(`[Zuper Confirm] Sibling ${sibling.jobUid} status update failed:`, statusResult.error);
-                              }
-                            }
+                          const statusResult = await zuper.updateJobStatus(sibling.jobUid, "Scheduled");
+                          if (statusResult.type === "success") {
+                            console.log(`[Zuper Confirm] Sibling ${sibling.category} (${sibling.jobUid}) status → Scheduled`);
+                          } else {
+                            console.warn(`[Zuper Confirm] Sibling ${sibling.jobUid} status update failed:`, statusResult.error);
                           }
                         } catch (statusErr) {
                           console.warn(`[Zuper Confirm] Sibling ${sibling.jobUid} status update error:`, statusErr);
@@ -843,6 +844,21 @@ export async function POST(request: NextRequest) {
                           projectName: record.projectName,
                           scheduledStart: startDateTime ? new Date(startDateTime.replace(" ", "T") + "Z") : undefined,
                           scheduledEnd: endDateTime ? new Date(endDateTime.replace(" ", "T") + "Z") : undefined,
+                        });
+                        await logActivity({
+                          type: "INSTALL_RESCHEDULED",
+                          description: `Sibling ${sibling.category} job rescheduled (cascade) for ${record.projectName}`,
+                          userEmail: session.user.email,
+                          userName: session.user.name || undefined,
+                          entityType: "project",
+                          entityId: record.projectId,
+                          entityName: record.projectName,
+                          metadata: {
+                            zuperJobId: sibling.jobUid,
+                            siblingCascade: true,
+                            scheduleType: "installation",
+                            category: sibling.category,
+                          },
                         });
                       } else {
                         console.warn(`[Zuper Confirm] Sibling ${sibling.category} (${sibling.jobUid}) reschedule failed`);

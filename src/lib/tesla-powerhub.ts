@@ -6,15 +6,22 @@
  *
  * Architecture:
  * - Our Vercel functions call the mTLS proxy (plain HTTPS)
- * - The proxy adds client cert and forwards to Tesla's API
+ * - The proxy adds the client cert and forwards to Tesla's API
  * - JWT tokens (10-min expiry) are cached in module-level state
+ * - Token bucket rate limiter stays under Tesla's 5 req/sec limit
+ *
+ * Required env vars:
+ * - TESLA_POWERHUB_PROXY_URL  — mTLS proxy base URL (e.g. https://pb-powerhub-proxy.fly.dev)
+ * - TESLA_POWERHUB_INSTANCE_ID — your PowerHub instance UUID
+ * - TESLA_POWERHUB_USER_ID     — email on the PowerHub account (e.g. zach@photonbrothers.com)
  */
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface PowerHubTokenResponse {
-  token: string;
-  expires_in: number; // seconds
+  data: {
+    token: string;
+  };
 }
 
 export interface PowerHubGroup {
@@ -166,10 +173,11 @@ export function createPowerHubClient(): PowerHubClient {
           throw new Error(`Token request failed: ${res.status} ${res.statusText}`);
         }
 
-        const data: PowerHubTokenResponse = await res.json();
+        // Tesla wraps the token in { data: { token: "..." } }
+        const body: PowerHubTokenResponse = await res.json();
         cachedToken = {
-          jwt: data.token,
-          expiresAt: Date.now() + data.expires_in * 1000,
+          jwt: body.data.token,
+          expiresAt: Date.now() + 10 * 60 * 1000, // 10-min expiry per Tesla docs
         };
         return cachedToken.jwt;
       } finally {
@@ -215,7 +223,7 @@ export function createPowerHubClient(): PowerHubClient {
       // 403: immediate failure (IP/cert issue)
       if (res.status === 403) {
         throw new Error(
-          `PowerHub API 403 Forbidden: ${path} — check IP allowlist or mTLS cert`
+          `PowerHub API 403 Forbidden: ${path} — check mTLS cert or IP allowlist`
         );
       }
 

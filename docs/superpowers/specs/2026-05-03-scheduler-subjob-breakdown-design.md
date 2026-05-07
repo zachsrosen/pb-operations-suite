@@ -484,6 +484,198 @@ For each: toggle Compact ↔ Breakdown, verify rendering matches table above. Co
 ### Sentry watch
 24-hour watch post-deploy on `/api/zuper/jobs/lookup` and the scheduler pages for new errors, especially: type errors on `zuperSubJobs`, breadcrumb spikes from duplicate-job-bucket warnings, layout-shift performance entries.
 
+## Part 2: Multi-Row Schedule Modal
+
+### Problem
+
+When scheduling a construction deal with multiple sub-jobs (Solar/Battery/EV), the current modal treats the deal as a single job. Ops picks one date, one crew, and the backend cascade propagates to siblings. This works for the common case ("same crew, same week") but doesn't support the real workflow where different systems get different dates, crews, or install-day counts.
+
+### Decisions (made during brainstorming)
+
+| Decision | Choice |
+|---|---|
+| Trigger condition | Modal shows multi-row UI only when `subJobs.length >= 2` for the deal |
+| Single sub-job deals | No change — current modal behavior preserved |
+| Default mode | "Same for all" — one set of date/crew/days/notes controls, sub-job chips shown below |
+| Override mode | "Schedule separately" toggle expands per-sub-job rows |
+| Pre-fill behavior | Each sub-job row pre-fills with its current schedule/crew from `SubJobInfo` |
+| Install days | Per sub-job when scheduling separately |
+| Installer notes | Per sub-job when scheduling separately |
+| Confirmation | Always shown before submit — single summary line (same-for-all) or per-sub-job lines (separate) |
+| Component ownership | New shared `SubJobScheduleModal` component used by both scheduler pages |
+| API strategy | One `PUT /api/zuper/jobs/schedule` call per sub-job (no new endpoints) |
+| Backend cascade | Continues to run as safety net; explicit per-job calls mean cascade no-ops |
+
+### Component Design
+
+#### 9. New component: `<SubJobScheduleModal>`
+
+Path: `src/components/scheduler/SubJobScheduleModal.tsx`
+
+```tsx
+type PerSubJobSchedule = {
+  jobUid: string;
+  systemType: SystemType;
+  startDate: string;
+  endDate: string;
+  installDays: number;
+  assigneeNames: string[];
+  notes: string;
+};
+
+type SubJobScheduleModalProps = {
+  subJobs: SubJobInfo[];
+  projectName: string;
+  availableCrew: { name: string; uid?: string }[];
+  defaultDate?: string;          // from calendar click or manual entry
+  defaultInstallDays?: number;
+  onSubmit: (schedules: PerSubJobSchedule[]) => Promise<void>;
+  onClose: () => void;
+};
+```
+
+**Internal state:**
+
+```tsx
+const [mode, setMode] = useState<"same" | "separate">("same");
+const [showConfirm, setShowConfirm] = useState(false);
+
+// "Same for all" state
+const [sharedDate, setSharedDate] = useState(defaultDate);
+const [sharedDays, setSharedDays] = useState(defaultInstallDays ?? 1);
+const [sharedCrew, setSharedCrew] = useState<string[]>([]);
+const [sharedNotes, setSharedNotes] = useState("");
+
+// "Schedule separately" state — one entry per sub-job
+const [perJob, setPerJob] = useState<Map<string, PerSubJobSchedule>>(
+  () => initFromSubJobs(subJobs, defaultDate)
+);
+```
+
+`initFromSubJobs` pre-fills each entry from `SubJobInfo.scheduledDate`, `SubJobInfo.assignedTo`, etc. When switching from "same" to "separate", the shared values seed each row.
+
+**Layout — "Same for all" mode:**
+
+```
+┌──────────────────────────────────────────────┐
+│  Schedule Construction — Smith Residence      │
+│                                               │
+│  [Date picker]  [Install days: 2]             │
+│                                               │
+│  Crew:                                        │
+│  ☑ Jake Torres  ☑ Mike Chen  ☐ Tim Park       │
+│                                               │
+│  Notes: [________________]                    │
+│                                               │
+│  Scheduling:  [PV] [ESS] [EV]                │
+│                                               │
+│  ─── Schedule separately ───                  │
+│                                               │
+│         [Cancel]  [Schedule]                  │
+└──────────────────────────────────────────────┘
+```
+
+**Layout — "Schedule separately" mode:**
+
+```
+┌──────────────────────────────────────────────┐
+│  Schedule Construction — Smith Residence      │
+│                                               │
+│  ─── Same for all ───                         │
+│                                               │
+│  [PV] Solar                                   │
+│  [Date: May 14] [Days: 2]                     │
+│  Crew: ☑ Jake  ☑ Mike  ☐ Tim                  │
+│  Notes: [________________]                    │
+│                                               │
+│  [ESS] Battery                                │
+│  [Date: May 16] [Days: 1]                     │
+│  Crew: ☑ Jake  ☐ Mike  ☐ Tim                  │
+│  Notes: [________________]                    │
+│                                               │
+│  [EV] EV Charger                              │
+│  [Date: May 16] [Days: 1]                     │
+│  Crew: ☑ Jake  ☐ Mike  ☐ Tim                  │
+│  Notes: [________________]                    │
+│                                               │
+│         [Cancel]  [Schedule]                  │
+└──────────────────────────────────────────────┘
+```
+
+**Confirmation overlay (shown after clicking Schedule):**
+
+```
+┌──────────────────────────────────────────────┐
+│  Confirm Schedule                             │
+│                                               │
+│  PV:  May 14–15, Jake + Mike (2 days)         │
+│  ESS: May 16, Jake (1 day)                    │
+│  EV:  May 16, Jake (1 day)                    │
+│                                               │
+│         [Back]  [Confirm]                     │
+└──────────────────────────────────────────────┘
+```
+
+#### 10. Wiring into scheduler pages
+
+**Construction scheduler** (`construction-scheduler/page.tsx`):
+
+The existing `scheduleModal` state currently holds a single `PendingSchedule`. When the user clicks a calendar slot for a deal with 2+ sub-jobs, instead of opening the current inline modal, open `<SubJobScheduleModal>`.
+
+Decision logic in the click handler:
+```tsx
+const subJobs = project.zuperSubJobs;
+if (subJobs && subJobs.length >= 2) {
+  setSubJobScheduleModal({ subJobs, project, date: clickedDate });
+} else {
+  setScheduleModal(/* existing single-job modal state */);
+}
+```
+
+The `onSubmit` callback fires one `PUT /api/zuper/jobs/schedule` per sub-job with `{ jobUid, startDate, endDate, assigneeNames, installDays, installerNotes }`, awaits all, then refreshes the page data.
+
+**Master scheduler** (`scheduler/page.tsx`): Same pattern, with the editable date input as `defaultDate` instead of a calendar click.
+
+#### 11. Files changed (Part 2 additions)
+
+**New:**
+- `src/components/scheduler/SubJobScheduleModal.tsx` — modal component with same/separate modes + confirmation
+
+**Modified:**
+- `src/app/dashboards/construction-scheduler/page.tsx` — add sub-job modal state + open logic + submit handler
+- `src/app/dashboards/scheduler/page.tsx` — same pattern
+
+**Unchanged:**
+- `src/app/api/zuper/jobs/schedule/route.ts` — no changes needed; existing endpoint handles per-job scheduling
+- `src/app/api/zuper/jobs/schedule/confirm/route.ts` — no changes needed
+
+### Data Flow: Schedule Modal
+
+```
+User clicks calendar slot for multi-system deal
+  → page checks project.zuperSubJobs.length >= 2
+  → opens SubJobScheduleModal with subJobs + availableCrew + defaultDate
+  → user picks "same for all" or "schedule separately"
+  → user fills controls, clicks Schedule
+  → confirmation overlay shown
+  → user clicks Confirm
+  → onSubmit fires with PerSubJobSchedule[]
+  → page sends N parallel PUT /api/zuper/jobs/schedule calls
+  → each call schedules one sub-job + cascade no-ops for siblings
+  → page refreshes data
+```
+
+### Edge Cases (Part 2)
+
+| Case | Behavior |
+|---|---|
+| User switches from "separate" to "same" | Per-job overrides discarded; shared controls take over |
+| User switches from "same" to "separate" | Shared values copied to each row as starting point |
+| One sub-job API call fails, others succeed | Toast shows partial failure: "Solar scheduled, Battery failed: [error]" |
+| All sub-job API calls fail | Toast shows general failure, modal stays open |
+| Sub-job has no current schedule (new job) | Row shows empty date/crew — user must fill in |
+| Sub-job already has schedule (rescheduling) | Row pre-fills with current values from SubJobInfo |
+
 ## Out of Scope
 
 - HubSpot `construction_*_status` property plumbing through `deal-property-map.ts` / `hubspot.ts` (separate need; AI/chat tooling can wire it later)
@@ -491,3 +683,4 @@ For each: toggle Compact ↔ Breakdown, verify rendering matches table above. Co
 - Mobile breakdown view — mobile uses a different layout entirely; current spec keeps mobile on Compact
 - Rendering placeholder rows for missing sub-systems ("EV: not started" on a solar+battery deal)
 - Per-system sales-order / line-item rollups on the card
+- Drag-and-drop reordering of sub-job schedule priority

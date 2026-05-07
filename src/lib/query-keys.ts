@@ -55,6 +55,14 @@ export const queryKeys = {
     queue: (location?: string) =>
       [...queryKeys.servicePriority.root, "queue", location] as const,
   },
+  powerhub: {
+    root: ["powerhub"] as const,
+    sites: (params?: Record<string, unknown>) =>
+      [...queryKeys.powerhub.root, "sites", params] as const,
+    site: (siteId: string) =>
+      [...queryKeys.powerhub.root, "site", siteId] as const,
+    fleet: () => [...queryKeys.powerhub.root, "fleet"] as const,
+  },
   serviceTickets: {
     root: ["serviceTickets"] as const,
     list: (params?: Record<string, unknown>) =>
@@ -231,5 +239,10 @@ export function cacheKeyToQueryKeys(
   if (serverKey.startsWith("deals:ic") || serverKey.startsWith("deals:interconnection"))
     return [queryKeys.icHub.root];
   if (serverKey.startsWith("on-call")) return [queryKeys.onCall.root];
+  // PowerHub — alerts cascade to service priority queue for scoring boost
+  if (serverKey.startsWith("powerhub:alerts"))
+    return [queryKeys.powerhub.root, queryKeys.servicePriority.root];
+  if (serverKey.startsWith("powerhub"))
+    return [queryKeys.powerhub.root];
   return [];
 }

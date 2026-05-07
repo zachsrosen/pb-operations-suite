@@ -982,3 +982,854 @@ Open `http://localhost:3000/dashboards/scheduler` in browser. Verify:
 git add -u
 git commit -m "fix: visual polish for sub-job breakdown"
 ```
+
+---
+
+## Part 2: Multi-Row Schedule Modal
+
+**Goal:** When a deal has 2+ construction sub-jobs, the schedule modal shows per-sub-job controls instead of the single-job modal. Default "Same for all" mode with toggle to "Schedule separately" for independent dates/crew/days/notes per sub-job.
+
+**Spec:** `docs/superpowers/specs/2026-05-03-scheduler-subjob-breakdown-design.md` (Part 2 section)
+
+### Part 2 File Map
+
+| File | Action | Responsibility |
+|------|--------|---------------|
+| `src/components/scheduler/SubJobScheduleModal.tsx` | Create | Modal with same/separate modes, confirmation overlay, per-sub-job form rows |
+| `src/app/dashboards/construction-scheduler/page.tsx` | Modify | Open SubJobScheduleModal for 2+ sub-job deals, add submit handler |
+| `src/app/dashboards/scheduler/page.tsx` | Modify | Same pattern for master scheduler |
+
+## Chunk 8: SubJobScheduleModal component
+
+### Task 11: Create `SubJobScheduleModal` component
+
+**Files:**
+- Create: `src/components/scheduler/SubJobScheduleModal.tsx`
+
+- [ ] **Step 1: Create the modal component**
+
+```tsx
+// src/components/scheduler/SubJobScheduleModal.tsx
+"use client";
+
+import { useState, useCallback } from "react";
+import type { SubJobInfo } from "@/lib/scheduler-subjobs";
+import { SYSTEM_TAGS, SYSTEM_TAG_CLASSES } from "@/lib/scheduler-subjobs";
+import type { SystemType } from "@/lib/zuper-construction";
+
+// ---------- Types ----------
+
+export type PerSubJobSchedule = {
+  jobUid: string;
+  systemType: SystemType;
+  startDate: string;
+  endDate: string;
+  installDays: number;
+  assigneeNames: string[];
+  notes: string;
+};
+
+type CrewOption = {
+  name: string;
+  uid?: string;
+};
+
+type SubJobScheduleModalProps = {
+  subJobs: SubJobInfo[];
+  projectName: string;
+  availableCrew: CrewOption[];
+  defaultDate?: string;
+  defaultInstallDays?: number;
+  onSubmit: (schedules: PerSubJobSchedule[]) => Promise<void>;
+  onClose: () => void;
+};
+
+// ---------- Helpers ----------
+
+function formatDateInput(isoOrCustom?: string): string {
+  if (!isoOrCustom) return "";
+  // Handle both ISO strings and "YYYY-MM-DD" formats
+  const d = new Date(isoOrCustom);
+  if (!Number.isFinite(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+function computeEndDate(startDate: string, installDays: number): string {
+  if (!startDate || installDays <= 0) return startDate;
+  const start = new Date(startDate + "T08:00:00");
+  if (!Number.isFinite(start.getTime())) return startDate;
+  // Add (installDays - 1) calendar days for the end date
+  const end = new Date(start);
+  end.setDate(end.getDate() + Math.max(installDays - 1, 0));
+  return end.toISOString().slice(0, 10);
+}
+
+function initPerJobState(
+  subJobs: SubJobInfo[],
+  defaultDate?: string,
+  defaultInstallDays?: number,
+): Map<string, PerSubJobSchedule> {
+  const map = new Map<string, PerSubJobSchedule>();
+  for (const sj of subJobs) {
+    const startDate = formatDateInput(sj.scheduledDate) || defaultDate || "";
+    const days = sj.scheduledDays ?? defaultInstallDays ?? 1;
+    map.set(sj.jobUid, {
+      jobUid: sj.jobUid,
+      systemType: sj.systemType,
+      startDate,
+      endDate: startDate ? computeEndDate(startDate, days) : "",
+      installDays: days,
+      assigneeNames: sj.assignedTo ?? [],
+      notes: "",
+    });
+  }
+  return map;
+}
+
+// ---------- Component ----------
+
+export function SubJobScheduleModal({
+  subJobs,
+  projectName,
+  availableCrew,
+  defaultDate,
+  defaultInstallDays,
+  onSubmit,
+  onClose,
+}: SubJobScheduleModalProps) {
+  const [mode, setMode] = useState<"same" | "separate">("same");
+  const [step, setStep] = useState<"form" | "confirm">("form");
+  const [submitting, setSubmitting] = useState(false);
+
+  // "Same for all" shared state
+  const firstSj = subJobs[0];
+  const [sharedDate, setSharedDate] = useState(
+    formatDateInput(firstSj?.scheduledDate) || defaultDate || ""
+  );
+  const [sharedDays, setSharedDays] = useState(
+    firstSj?.scheduledDays ?? defaultInstallDays ?? 1
+  );
+  const [sharedCrew, setSharedCrew] = useState<string[]>(
+    firstSj?.assignedTo ?? []
+  );
+  const [sharedNotes, setSharedNotes] = useState("");
+
+  // "Schedule separately" per-job state
+  const [perJob, setPerJob] = useState(() =>
+    initPerJobState(subJobs, defaultDate, defaultInstallDays)
+  );
+
+  const toggleCrew = useCallback((name: string, checked: boolean) => {
+    setSharedCrew((prev) =>
+      checked ? [...prev, name] : prev.filter((n) => n !== name)
+    );
+  }, []);
+
+  const togglePerJobCrew = useCallback(
+    (jobUid: string, name: string, checked: boolean) => {
+      setPerJob((prev) => {
+        const next = new Map(prev);
+        const entry = { ...next.get(jobUid)! };
+        entry.assigneeNames = checked
+          ? [...entry.assigneeNames, name]
+          : entry.assigneeNames.filter((n) => n !== name);
+        next.set(jobUid, entry);
+        return next;
+      });
+    },
+    []
+  );
+
+  const updatePerJob = useCallback(
+    (jobUid: string, updates: Partial<PerSubJobSchedule>) => {
+      setPerJob((prev) => {
+        const next = new Map(prev);
+        const entry = { ...next.get(jobUid)!, ...updates };
+        // Auto-compute end date when start or days change
+        if (updates.startDate !== undefined || updates.installDays !== undefined) {
+          entry.endDate = computeEndDate(entry.startDate, entry.installDays);
+        }
+        next.set(jobUid, entry);
+        return next;
+      });
+    },
+    []
+  );
+
+  // When switching from "same" to "separate", seed per-job from shared
+  const switchToSeparate = useCallback(() => {
+    setPerJob((prev) => {
+      const next = new Map(prev);
+      for (const sj of subJobs) {
+        const existing = next.get(sj.jobUid);
+        if (existing) {
+          next.set(sj.jobUid, {
+            ...existing,
+            startDate: sharedDate,
+            endDate: computeEndDate(sharedDate, sharedDays),
+            installDays: sharedDays,
+            assigneeNames: [...sharedCrew],
+            notes: sharedNotes,
+          });
+        }
+      }
+      return next;
+    });
+    setMode("separate");
+  }, [subJobs, sharedDate, sharedDays, sharedCrew, sharedNotes]);
+
+  // Build final schedule array
+  const buildSchedules = (): PerSubJobSchedule[] => {
+    if (mode === "same") {
+      return subJobs.map((sj) => ({
+        jobUid: sj.jobUid,
+        systemType: sj.systemType,
+        startDate: sharedDate,
+        endDate: computeEndDate(sharedDate, sharedDays),
+        installDays: sharedDays,
+        assigneeNames: [...sharedCrew],
+        notes: sharedNotes,
+      }));
+    }
+    return subJobs.map((sj) => perJob.get(sj.jobUid)!);
+  };
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    try {
+      await onSubmit(buildSchedules());
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const schedules = buildSchedules();
+  const canSubmit =
+    mode === "same"
+      ? !!sharedDate && sharedCrew.length > 0
+      : subJobs.every((sj) => {
+          const entry = perJob.get(sj.jobUid);
+          return entry && !!entry.startDate && entry.assigneeNames.length > 0;
+        });
+
+  // ---------- Confirmation view ----------
+  if (step === "confirm") {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+        <div className="bg-surface-elevated rounded-xl border border-t-border shadow-card p-6 max-w-lg w-full mx-4">
+          <h3 className="text-lg font-semibold text-foreground mb-4">
+            Confirm Schedule
+          </h3>
+          <div className="space-y-2 mb-6">
+            {schedules.map((s) => (
+              <div key={s.jobUid} className="flex items-start gap-2 text-sm">
+                <span
+                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[0.65rem] font-semibold tracking-wide min-w-[2.5rem] justify-center ${
+                    SYSTEM_TAG_CLASSES[s.systemType]
+                  }`}
+                >
+                  {SYSTEM_TAGS[s.systemType]}
+                </span>
+                <span className="text-foreground">
+                  {s.startDate}
+                  {s.installDays > 1 &&
+                    ` – ${s.endDate}`}
+                  , {s.assigneeNames.join(" + ")} ({s.installDays}d)
+                </span>
+              </div>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => setStep("form")}
+              className="px-4 py-2 text-sm text-muted hover:text-foreground"
+              disabled={submitting}
+            >
+              Back
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              className="px-4 py-2 text-sm bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+            >
+              {submitting ? "Scheduling..." : "Confirm"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ---------- Form view ----------
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="bg-surface-elevated rounded-xl border border-t-border shadow-card p-6 max-w-lg w-full mx-4 max-h-[85vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-foreground">
+            Schedule Construction — {projectName}
+          </h3>
+          <button onClick={onClose} className="text-muted hover:text-foreground text-xl">
+            ×
+          </button>
+        </div>
+
+        {/* Mode toggle */}
+        <button
+          onClick={mode === "same" ? switchToSeparate : () => setMode("same")}
+          className="text-xs text-blue-400 hover:text-blue-300 mb-4 block"
+        >
+          {mode === "same" ? "Schedule separately ▸" : "◂ Same for all"}
+        </button>
+
+        {mode === "same" ? (
+          /* ===== SAME FOR ALL ===== */
+          <div className="space-y-4">
+            {/* Date */}
+            <div>
+              <label className="text-xs text-muted block mb-1">Date</label>
+              <input
+                type="date"
+                value={sharedDate}
+                onChange={(e) => setSharedDate(e.target.value)}
+                className="w-full bg-surface border border-t-border rounded px-3 py-2 text-sm text-foreground"
+              />
+            </div>
+
+            {/* Install days */}
+            <div>
+              <label className="text-xs text-muted block mb-1">Install Days</label>
+              <input
+                type="number"
+                min={1}
+                max={14}
+                value={sharedDays}
+                onChange={(e) => setSharedDays(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-24 bg-surface border border-t-border rounded px-3 py-2 text-sm text-foreground"
+              />
+            </div>
+
+            {/* Crew */}
+            <div>
+              <label className="text-xs text-muted block mb-1">Crew</label>
+              <div className="flex flex-wrap gap-2">
+                {availableCrew.map((c) => (
+                  <label key={c.name} className="flex items-center gap-1.5 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={sharedCrew.includes(c.name)}
+                      onChange={(e) => toggleCrew(c.name, e.target.checked)}
+                      className="accent-orange-500"
+                    />
+                    {c.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <label className="text-xs text-muted block mb-1">Notes</label>
+              <textarea
+                value={sharedNotes}
+                onChange={(e) => setSharedNotes(e.target.value)}
+                rows={2}
+                className="w-full bg-surface border border-t-border rounded px-3 py-2 text-sm text-foreground resize-none"
+                placeholder="Installer notes..."
+              />
+            </div>
+
+            {/* Sub-job chips */}
+            <div className="flex items-center gap-2 pt-2 border-t border-t-border">
+              <span className="text-xs text-muted">Scheduling:</span>
+              {subJobs.map((sj) => (
+                <span
+                  key={sj.jobUid}
+                  className={`inline-flex items-center px-1.5 py-0.5 rounded text-[0.65rem] font-semibold tracking-wide ${
+                    SYSTEM_TAG_CLASSES[sj.systemType]
+                  }`}
+                >
+                  {SYSTEM_TAGS[sj.systemType]}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : (
+          /* ===== SCHEDULE SEPARATELY ===== */
+          <div className="space-y-4">
+            {subJobs.map((sj) => {
+              const entry = perJob.get(sj.jobUid)!;
+              return (
+                <div
+                  key={sj.jobUid}
+                  className="border border-t-border rounded-lg p-3 space-y-3"
+                >
+                  {/* Header */}
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[0.65rem] font-semibold tracking-wide ${
+                        SYSTEM_TAG_CLASSES[sj.systemType]
+                      }`}
+                    >
+                      {SYSTEM_TAGS[sj.systemType]}
+                    </span>
+                    <span className="text-sm text-foreground font-medium">
+                      {sj.systemType === "solar"
+                        ? "Solar"
+                        : sj.systemType === "battery"
+                        ? "Battery"
+                        : sj.systemType === "ev"
+                        ? "EV Charger"
+                        : "Construction"}
+                    </span>
+                  </div>
+
+                  {/* Date + Days row */}
+                  <div className="flex gap-3">
+                    <div className="flex-1">
+                      <label className="text-xs text-muted block mb-1">Date</label>
+                      <input
+                        type="date"
+                        value={entry.startDate}
+                        onChange={(e) =>
+                          updatePerJob(sj.jobUid, { startDate: e.target.value })
+                        }
+                        className="w-full bg-surface border border-t-border rounded px-3 py-2 text-sm text-foreground"
+                      />
+                    </div>
+                    <div className="w-24">
+                      <label className="text-xs text-muted block mb-1">Days</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={14}
+                        value={entry.installDays}
+                        onChange={(e) =>
+                          updatePerJob(sj.jobUid, {
+                            installDays: Math.max(1, parseInt(e.target.value) || 1),
+                          })
+                        }
+                        className="w-full bg-surface border border-t-border rounded px-3 py-2 text-sm text-foreground"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Crew */}
+                  <div>
+                    <label className="text-xs text-muted block mb-1">Crew</label>
+                    <div className="flex flex-wrap gap-2">
+                      {availableCrew.map((c) => (
+                        <label
+                          key={c.name}
+                          className="flex items-center gap-1.5 text-sm text-foreground"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={entry.assigneeNames.includes(c.name)}
+                            onChange={(e) =>
+                              togglePerJobCrew(sj.jobUid, c.name, e.target.checked)
+                            }
+                            className="accent-orange-500"
+                          />
+                          {c.name}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Notes */}
+                  <div>
+                    <label className="text-xs text-muted block mb-1">Notes</label>
+                    <textarea
+                      value={entry.notes}
+                      onChange={(e) =>
+                        updatePerJob(sj.jobUid, { notes: e.target.value })
+                      }
+                      rows={2}
+                      className="w-full bg-surface border border-t-border rounded px-3 py-2 text-sm text-foreground resize-none"
+                      placeholder="Installer notes..."
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="flex justify-end gap-2 mt-6 pt-4 border-t border-t-border">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-sm text-muted hover:text-foreground"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => setStep("confirm")}
+            disabled={!canSubmit}
+            className="px-4 py-2 text-sm bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50"
+          >
+            Schedule
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+- [ ] **Step 2: Verify compilation**
+
+Run: `npx tsc --noEmit 2>&1 | grep -c "error TS"`
+
+Expected: 0 errors.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add src/components/scheduler/SubJobScheduleModal.tsx
+git commit -m "feat(scheduler): add SubJobScheduleModal with same/separate modes"
+```
+
+## Chunk 9: Wire modal into construction scheduler
+
+### Task 12: Open SubJobScheduleModal for multi-sub-job deals
+
+**Files:**
+- Modify: `src/app/dashboards/construction-scheduler/page.tsx`
+
+- [ ] **Step 1: Add import**
+
+Add to the existing imports:
+
+```ts
+import { SubJobScheduleModal, type PerSubJobSchedule } from "@/components/scheduler/SubJobScheduleModal";
+```
+
+- [ ] **Step 2: Add modal state**
+
+Near the other modal states (around line 365, near `scheduleModal`), add:
+
+```ts
+const [subJobScheduleModal, setSubJobScheduleModal] = useState<{
+  subJobs: SubJobInfo[];
+  project: ConstructionProject;
+  date: string;
+} | null>(null);
+```
+
+- [ ] **Step 3: Update calendar click handler**
+
+In the function that handles clicking a calendar slot to schedule (the handler that sets `scheduleModal`), add a branch: if the project has 2+ sub-jobs, open the new modal instead.
+
+Find the existing `setScheduleModal(...)` call inside the calendar click handler and wrap it:
+
+```ts
+// Check for multi-sub-job scheduling
+const subJobs = project.zuperSubJobs;
+if (subJobs && subJobs.length >= 2) {
+  setSubJobScheduleModal({ subJobs, project, date: clickedDate });
+  return;
+}
+// Existing single-job modal
+setScheduleModal(/* existing code */);
+```
+
+- [ ] **Step 4: Add submit handler**
+
+Add a handler function near the other schedule handlers:
+
+```ts
+const handleSubJobScheduleSubmit = async (schedules: PerSubJobSchedule[]) => {
+  const results = await Promise.allSettled(
+    schedules.map(async (s) => {
+      const startDateTime = `${s.startDate} 08:00:00`;
+      const endDateTime = `${s.endDate} 17:00:00`;
+      const res = await fetch("/api/zuper/jobs/schedule", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: subJobScheduleModal!.project.id,
+          projectName: subJobScheduleModal!.project.name,
+          startDateTime,
+          endDateTime,
+          assigneeNames: s.assigneeNames,
+          installDays: s.installDays,
+          installerNotes: s.notes || undefined,
+          scheduleType: "installation",
+          rescheduleOnly: true,
+          targetJobUid: s.jobUid,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      return { systemType: s.systemType, ok: true };
+    })
+  );
+
+  const succeeded = results.filter((r) => r.status === "fulfilled").length;
+  const failed = results.filter((r) => r.status === "rejected");
+
+  if (failed.length === 0) {
+    addToast(`All ${succeeded} sub-jobs scheduled`, "success");
+  } else if (succeeded > 0) {
+    addToast(`${succeeded} scheduled, ${failed.length} failed`, "warning");
+  } else {
+    addToast(`All ${failed.length} sub-jobs failed to schedule`, "error");
+  }
+
+  setSubJobScheduleModal(null);
+  refreshData();
+};
+```
+
+- [ ] **Step 5: Render the modal**
+
+Add to the JSX, near where the existing schedule modal is rendered:
+
+```tsx
+{subJobScheduleModal && (
+  <SubJobScheduleModal
+    subJobs={subJobScheduleModal.subJobs}
+    projectName={subJobScheduleModal.project.name}
+    availableCrew={availableConstructionAssignees.map((name) => ({ name }))}
+    defaultDate={subJobScheduleModal.date}
+    defaultInstallDays={subJobScheduleModal.project.installDays || undefined}
+    onSubmit={handleSubJobScheduleSubmit}
+    onClose={() => setSubJobScheduleModal(null)}
+  />
+)}
+```
+
+- [ ] **Step 6: Verify compilation**
+
+Run: `npx tsc --noEmit 2>&1 | grep -c "error TS"`
+
+Expected: 0 errors.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/app/dashboards/construction-scheduler/page.tsx
+git commit -m "feat(construction-scheduler): wire SubJobScheduleModal for multi-sub-job deals"
+```
+
+## Chunk 10: Wire modal into master scheduler
+
+### Task 13: Open SubJobScheduleModal for multi-sub-job deals (master scheduler)
+
+**Files:**
+- Modify: `src/app/dashboards/scheduler/page.tsx`
+
+- [ ] **Step 1: Add import**
+
+```ts
+import { SubJobScheduleModal, type PerSubJobSchedule } from "@/components/scheduler/SubJobScheduleModal";
+```
+
+- [ ] **Step 2: Add modal state**
+
+Near the other modal states (around line 860, near `scheduleModal`), add:
+
+```ts
+const [subJobScheduleModal, setSubJobScheduleModal] = useState<{
+  subJobs: SubJobInfo[];
+  project: SchedulerProject;
+} | null>(null);
+```
+
+- [ ] **Step 3: Update schedule modal open logic**
+
+In the construction schedule modal open handler (the function that sets `scheduleModal` when a construction event is clicked or a "Schedule" button is pressed), add the same branch:
+
+```ts
+const subJobs = project.zuperSubJobs;
+if (subJobs && subJobs.length >= 2) {
+  setSubJobScheduleModal({ subJobs, project });
+  return;
+}
+// Existing single-job modal
+setScheduleModal(/* existing code */);
+```
+
+- [ ] **Step 4: Add submit handler**
+
+Same pattern as construction scheduler, adapted for master scheduler's `project` shape:
+
+```ts
+const handleSubJobScheduleSubmit = async (schedules: PerSubJobSchedule[]) => {
+  const results = await Promise.allSettled(
+    schedules.map(async (s) => {
+      const startDateTime = `${s.startDate} 08:00:00`;
+      const endDateTime = `${s.endDate} 17:00:00`;
+      const res = await fetch("/api/zuper/jobs/schedule", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: subJobScheduleModal!.project.id,
+          projectName: subJobScheduleModal!.project.name,
+          startDateTime,
+          endDateTime,
+          assigneeNames: s.assigneeNames,
+          installDays: s.installDays,
+          installerNotes: s.notes || undefined,
+          scheduleType: "installation",
+          rescheduleOnly: true,
+          targetJobUid: s.jobUid,
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      return { systemType: s.systemType, ok: true };
+    })
+  );
+
+  const succeeded = results.filter((r) => r.status === "fulfilled").length;
+  const failed = results.filter((r) => r.status === "rejected");
+
+  if (failed.length === 0) {
+    addToast(`All ${succeeded} sub-jobs scheduled`, "success");
+  } else if (succeeded > 0) {
+    addToast(`${succeeded} scheduled, ${failed.length} failed`, "warning");
+  } else {
+    addToast(`All ${failed.length} sub-jobs failed to schedule`, "error");
+  }
+
+  setSubJobScheduleModal(null);
+  refreshData();
+};
+```
+
+- [ ] **Step 5: Render the modal**
+
+```tsx
+{subJobScheduleModal && (
+  <SubJobScheduleModal
+    subJobs={subJobScheduleModal.subJobs}
+    projectName={subJobScheduleModal.project.name}
+    availableCrew={constructionAssigneeNames.map((name) => ({ name }))}
+    defaultDate={scheduleDate || undefined}
+    defaultInstallDays={undefined}
+    onSubmit={handleSubJobScheduleSubmit}
+    onClose={() => setSubJobScheduleModal(null)}
+  />
+)}
+```
+
+- [ ] **Step 6: Verify compilation**
+
+Run: `npx tsc --noEmit 2>&1 | grep -c "error TS"`
+
+Expected: 0 errors.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add src/app/dashboards/scheduler/page.tsx
+git commit -m "feat(master-scheduler): wire SubJobScheduleModal for multi-sub-job deals"
+```
+
+## Chunk 11: Support `targetJobUid` in schedule API
+
+### Task 14: Accept `targetJobUid` in the schedule endpoint
+
+**Files:**
+- Modify: `src/app/api/zuper/jobs/schedule/route.ts`
+
+The schedule endpoint currently finds the Zuper job by searching for the deal's construction job. When the frontend sends `targetJobUid`, the endpoint should use that specific job instead of searching. This lets the modal schedule a specific sub-job (e.g., the Battery job) without the endpoint picking a different one.
+
+- [ ] **Step 1: Parse `targetJobUid` from the request body**
+
+In the PUT handler, after parsing the existing body fields, add:
+
+```ts
+const targetJobUid = body.targetJobUid as string | undefined;
+```
+
+- [ ] **Step 2: Use `targetJobUid` to skip job search when provided**
+
+In the job matching logic (where it searches for the existing Zuper job by deal ID), add an early exit:
+
+```ts
+// If a specific job UID was provided (multi-sub-job scheduling), use it directly
+if (targetJobUid) {
+  existingJob = { job_uid: targetJobUid };
+  // Skip the normal job-matching logic
+}
+```
+
+The exact insertion point depends on the route structure. Find where `existingJob` is assigned from the candidate search and add this as a priority check before the search runs.
+
+- [ ] **Step 3: When `targetJobUid` is set, skip sibling cascade**
+
+When the frontend is explicitly scheduling each sub-job, the cascade should not fire (it would duplicate work). Add a guard:
+
+```ts
+// Skip sibling cascade when the frontend is scheduling specific sub-jobs
+if (isInstallationLookup && !targetJobUid) {
+  // existing sibling cascade logic...
+}
+```
+
+- [ ] **Step 4: Verify compilation**
+
+Run: `npx tsc --noEmit 2>&1 | grep -c "error TS"`
+
+Expected: 0 errors.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add src/app/api/zuper/jobs/schedule/route.ts
+git commit -m "feat(schedule-api): accept targetJobUid for direct sub-job scheduling"
+```
+
+## Chunk 12: Final verification (Part 2)
+
+### Task 15: Full build + test + visual check
+
+- [ ] **Step 1: Run TypeScript compilation**
+
+Run: `npx tsc --noEmit 2>&1 | tail -20`
+
+Expected: 0 errors.
+
+- [ ] **Step 2: Run full test suite**
+
+Run: `npm run test 2>&1 | tail -30`
+
+Expected: All tests pass.
+
+- [ ] **Step 3: Run linter**
+
+Run: `npm run lint 2>&1 | tail -20`
+
+Expected: No new lint errors.
+
+- [ ] **Step 4: Visual verification on dev server**
+
+Start `npm run dev` and verify:
+
+1. **Construction scheduler** (`/dashboards/construction-scheduler`):
+   - Click a calendar slot for a deal with 2+ sub-jobs
+   - New SubJobScheduleModal appears (not old modal)
+   - "Same for all" mode shows single controls + sub-job chips
+   - Click "Schedule separately" — per-sub-job rows expand
+   - Fill in different dates/crew per sub-job
+   - Click Schedule → confirmation overlay shows per-line summary
+   - Click Confirm → sub-jobs schedule independently
+   - Single sub-job deals still use the old modal
+
+2. **Master scheduler** (`/dashboards/scheduler`):
+   - Same test flow as above
+   - Editable date input feeds into modal's `defaultDate`
+
+- [ ] **Step 5: Commit any fixes**
+
+```bash
+git add -u
+git commit -m "fix: visual polish for SubJobScheduleModal"
+```

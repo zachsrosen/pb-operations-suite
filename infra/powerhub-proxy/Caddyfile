@@ -1,0 +1,12 @@
+{
+	admin off
+}
+
+:8443 {
+	reverse_proxy https://gridlogic-api.sn.tesla.services {
+		transport http {
+			tls_client_auth /certs/client.pem /certs/client-key.pem
+		}
+		header_up Host {upstream_hostport}
+	}
+}

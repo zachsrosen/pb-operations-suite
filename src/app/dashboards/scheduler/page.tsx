@@ -12,6 +12,7 @@ import { extractInstallerNote } from "@/lib/schedule-notes";
 import type { SubJobInfo } from "@/lib/scheduler-subjobs";
 import { ViewModeToggle, useViewMode } from "@/components/scheduler/ViewModeToggle";
 import { SubJobBreakdown } from "@/components/scheduler/SubJobBreakdown";
+import { SubJobScheduleModal, type PerSubJobSchedule } from "@/components/scheduler/SubJobScheduleModal";
 import { generateOptimizedSchedule, type OptimizableProject, type ScoringPreset, type ExistingBooking, DEFAULT_LOCATION_CAPACITY } from "@/lib/schedule-optimizer";
 import {
   addBusinessDaysYmd,
@@ -984,6 +985,7 @@ export default function SchedulerPage() {
 
   /* ---- modals ---- */
   const [scheduleModal, setScheduleModal] = useState<PendingSchedule | null>(null);
+  const [subJobScheduleModal, setSubJobScheduleModal] = useState<PendingSchedule | null>(null);
   const [detailModal, setDetailModal] = useState<SchedulerProject | null>(null);
   const [detailModalEvent, setDetailModalEvent] = useState<ScheduledEvent | null>(null);
   const [overlayDetail, setOverlayDetail] = useState<OverlayEvent | null>(null);
@@ -1620,26 +1622,28 @@ export default function SchedulerPage() {
 
   /** Get available construction assignees for the schedule modal. */
   const availableConstructionAssignees = useMemo(() => {
-    if (!scheduleModal) return [] as ZuperAssignee[];
-    const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
+    const modal = scheduleModal || subJobScheduleModal;
+    if (!modal) return [] as ZuperAssignee[];
+    const isConstruction = modal.project.stage !== "survey" && modal.project.stage !== "inspection";
     if (!isConstruction) return [] as ZuperAssignee[];
 
-    const location = scheduleModal.project.location;
+    const location = modal.project.location;
     const hasLiveForLocation = Object.prototype.hasOwnProperty.call(
       liveConstructionAssigneesByLocation,
       location
     );
     if (hasLiveForLocation) return liveConstructionAssigneesByLocation[location] || [];
     return ZUPER_CONSTRUCTION_USERS[location] || [];
-  }, [scheduleModal, liveConstructionAssigneesByLocation]);
+  }, [scheduleModal, subJobScheduleModal, liveConstructionAssigneesByLocation]);
 
   // Pull fresh assignees from the location's Zuper team for construction scheduling.
   useEffect(() => {
-    if (!scheduleModal) return;
-    const isConstruction = scheduleModal.project.stage !== "survey" && scheduleModal.project.stage !== "inspection";
+    const modal = scheduleModal || subJobScheduleModal;
+    if (!modal) return;
+    const isConstruction = modal.project.stage !== "survey" && modal.project.stage !== "inspection";
     if (!isConstruction) return;
 
-    const location = scheduleModal.project.location;
+    const location = modal.project.location;
     const director = ZUPER_CONSTRUCTION_DIRECTORS[location];
     const teamUid = director?.teamUid;
     if (!teamUid) return;
@@ -1691,7 +1695,7 @@ export default function SchedulerPage() {
     return () => {
       cancelled = true;
     };
-  }, [scheduleModal, liveConstructionAssigneesByLocation]);
+  }, [scheduleModal, subJobScheduleModal, liveConstructionAssigneesByLocation]);
 
   // Clear assignee selection when it is no longer available for this location
   useEffect(() => {
@@ -2378,6 +2382,20 @@ export default function SchedulerPage() {
       const adjustedDate = getNextWorkday(dateStr);
       const isSurveyOrInspection =
         project.stage === "survey" || project.stage === "inspection";
+
+      // For construction projects with 2+ sub-jobs, open the multi-row modal
+      if (!isSurveyOrInspection && (project.zuperSubJobs?.length ?? 0) >= 2) {
+        trackFeature("schedule-modal-open", "Opened master sub-job schedule modal", {
+          scheduler: "master",
+          projectId: project.id,
+          projectName: project.name,
+          date: adjustedDate,
+          stage: project.stage,
+        });
+        setSubJobScheduleModal({ project, date: adjustedDate });
+        return;
+      }
+
       setInstallDaysInput(isSurveyOrInspection ? 1 : getEffectiveConstructionDays(project) || project.daysInstall || 2);
       // Pre-select defaults based on schedule type
       if (project.stage === "survey") {
@@ -2649,6 +2667,97 @@ export default function SchedulerPage() {
     setScheduleModal(null);
     setSelectedProject(null);
   }, [scheduleModal, installDaysInput, crewSelectInput, constructionAssigneeNames, installerNotesInput, availableConstructionAssignees, availableSlots, selectedSlotIdx, showToast, zuperConfigured, syncToZuper, trackFeature]);
+
+  /* ---- Sub-job schedule submit (multi-row modal) ---- */
+  const handleSubJobScheduleSubmit = useCallback(async (schedules: PerSubJobSchedule[]) => {
+    if (!subJobScheduleModal) return;
+    const { project } = subJobScheduleModal;
+    const scheduleTimezone = LOCATION_TIMEZONES[project.location] || "America/Denver";
+
+    trackFeature("install-scheduled-subjobs", "Multi sub-job scheduling via master", {
+      scheduler: "master",
+      projectId: project.id,
+      projectName: project.name,
+      subJobCount: schedules.length,
+    });
+
+    setSyncingToZuper(true);
+    const results: { jobUid: string; ok: boolean; error?: string }[] = [];
+    for (const sched of schedules) {
+      try {
+        const crewUids = availableConstructionAssignees
+          .filter((a) => sched.assigneeNames.includes(a.name))
+          .map((a) => a.userUid);
+        const teamUid = availableConstructionAssignees.find((a) => sched.assigneeNames.includes(a.name))?.teamUid;
+
+        const res = await fetch("/api/zuper/jobs/schedule", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            project: {
+              id: project.id,
+              name: project.name,
+              address: project.address,
+              city: "",
+              state: "",
+              systemSizeKw: project.systemSize,
+              batteryCount: project.batteries,
+              projectType: project.type,
+              zuperJobUid: sched.jobUid,
+            },
+            schedule: {
+              type: "installation",
+              date: sched.startDate,
+              days: sched.installDays,
+              crew: crewUids.join(","),
+              userUid: crewUids.join(","),
+              assignedUser: sched.assigneeNames.join(", "),
+              teamUid: teamUid || "",
+              timezone: scheduleTimezone,
+              notes: sched.notes || `Scheduled via Master Schedule (${sched.systemType})`,
+            },
+            rescheduleOnly: true,
+            skipSiblingCascade: true,
+          }),
+        });
+        if (res.ok) {
+          results.push({ jobUid: sched.jobUid, ok: true });
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          results.push({ jobUid: sched.jobUid, ok: false, error: errData.error || String(res.status) });
+        }
+      } catch (err) {
+        results.push({ jobUid: sched.jobUid, ok: false, error: String(err) });
+      }
+    }
+    setSyncingToZuper(false);
+
+    const successes = results.filter((r) => r.ok).length;
+    const failures = results.filter((r) => !r.ok);
+    if (failures.length === 0) {
+      showToast(`${getCustomerName(project.name)} — ${successes} sub-job${successes > 1 ? "s" : ""} scheduled`);
+    } else {
+      showToast(
+        `${getCustomerName(project.name)} — ${successes} scheduled, ${failures.length} failed`,
+        "warning"
+      );
+    }
+
+    if (schedules.length > 0) {
+      setManualSchedules((prev) => ({
+        ...prev,
+        [project.id]: {
+          startDate: schedules[0].startDate,
+          days: schedules[0].installDays,
+          crew: schedules[0].assigneeNames.join(", "),
+          isTentative: false,
+          scheduleType: "installation" as const,
+        },
+      }));
+    }
+    setSubJobScheduleModal(null);
+    setTimeout(() => fetchProjects(), 700);
+  }, [subJobScheduleModal, availableConstructionAssignees, showToast, trackFeature, fetchProjects]);
 
   const handleDragStart = useCallback(
     (e: React.DragEvent, projectId: string) => {
@@ -3410,7 +3519,8 @@ export default function SchedulerPage() {
         return;
 
       if (e.key === "Escape") {
-        if (scheduleModal) setScheduleModal(null);
+        if (subJobScheduleModal) setSubJobScheduleModal(null);
+        else if (scheduleModal) setScheduleModal(null);
         else if (detailModal) { setDetailModal(null); setDetailModalEvent(null); }
         else if (overlayDetail) { setOverlayDetail(null); }
         else if (selectedProject) setSelectedProject(null);
@@ -6710,6 +6820,57 @@ export default function SchedulerPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Sub-Job Schedule Modal (2+ construction sub-jobs) */}
+      {subJobScheduleModal && subJobScheduleModal.project.zuperSubJobs && (
+        <SubJobScheduleModal
+          subJobs={subJobScheduleModal.project.zuperSubJobs}
+          projectName={getCustomerName(subJobScheduleModal.project.name)}
+          projectContext={{
+            id: subJobScheduleModal.project.id,
+            name: subJobScheduleModal.project.name,
+            address: subJobScheduleModal.project.address,
+            location: subJobScheduleModal.project.location,
+            type: subJobScheduleModal.project.type,
+            amount: subJobScheduleModal.project.amount,
+            stage: subJobScheduleModal.project.stage,
+            hubspotUrl: subJobScheduleModal.project.hubspotUrl,
+            zuperJobUid: subJobScheduleModal.project.zuperJobUid,
+            zuperJobStatus: subJobScheduleModal.project.zuperJobStatus,
+            zuperWebBaseUrl: zuperWebBaseUrl || undefined,
+            systemSize: subJobScheduleModal.project.systemSize,
+            moduleCount: subJobScheduleModal.project.moduleCount,
+            moduleBrand: subJobScheduleModal.project.moduleBrand,
+            moduleModel: subJobScheduleModal.project.moduleModel,
+            moduleWattage: subJobScheduleModal.project.moduleWattage,
+            inverterCount: subJobScheduleModal.project.inverterCount,
+            inverterBrand: subJobScheduleModal.project.inverterBrand,
+            inverterModel: subJobScheduleModal.project.inverterModel,
+            inverterSizeKwac: subJobScheduleModal.project.inverterSizeKwac,
+            batteries: subJobScheduleModal.project.batteries,
+            batteryModel: subJobScheduleModal.project.batteryModel,
+            batterySizeKwh: subJobScheduleModal.project.batterySizeKwh,
+            batteryExpansion: subJobScheduleModal.project.batteryExpansion,
+            evCount: subJobScheduleModal.project.evCount,
+            daysInstall: subJobScheduleModal.project.daysInstall,
+            daysElec: subJobScheduleModal.project.daysElec,
+            totalDays: subJobScheduleModal.project.totalDays,
+            roofersCount: subJobScheduleModal.project.roofersCount,
+            electriciansCount: subJobScheduleModal.project.electriciansCount,
+            difficulty: subJobScheduleModal.project.difficulty,
+            installNotes: subJobScheduleModal.project.installNotes,
+          }}
+          availableCrew={availableConstructionAssignees.map((a) => ({ name: a.name, uid: a.userUid }))}
+          defaultDate={subJobScheduleModal.date}
+          defaultInstallDays={getEffectiveConstructionDays(subJobScheduleModal.project) || subJobScheduleModal.project.daysInstall || 2}
+          zuperConfigured={zuperConfigured}
+          syncToZuper={syncToZuper}
+          onSyncToZuperChange={setSyncToZuper}
+          internalDealUrl={`/dashboards/deals?deal=${subJobScheduleModal.project.id}`}
+          onSubmit={handleSubJobScheduleSubmit}
+          onClose={() => setSubJobScheduleModal(null)}
+        />
       )}
 
     </div>
