@@ -48,6 +48,14 @@ const CHUNK_DELAY_MS = 1100; // 1.1s between chunks for safety
  */
 const ASSET_SYNC_BATCH_LIMIT = 50;
 
+/**
+ * Max sites to poll per telemetry/alert cron invocation.
+ * Each site needs 1 API call + DB writes. At 4 req/sec with 1.1s chunk delay,
+ * 40 sites ≈ ~15s of API time, well within 120s function limit.
+ */
+const TELEMETRY_BATCH_LIMIT = 40;
+const ALERT_BATCH_LIMIT = 40;
+
 // ─── Asset Sync ──────────────────────────────────────────────────────────────
 
 export interface AssetSyncResult {
@@ -261,6 +269,8 @@ async function fetchDealAddresses(): Promise<DealAddress[]> {
 // ─── Telemetry Poll ─────────────────────────────────────────────────────────
 
 export interface TelemetryPollResult {
+  totalActive: number;
+  sitesBatched: number;
   sitesPolled: number;
   sitesUpdated: number;
   historyRowsInserted: number;
@@ -268,22 +278,33 @@ export interface TelemetryPollResult {
 }
 
 /**
- * Poll latest telemetry for all ACTIVE sites, upsert snapshots,
- * insert history rows.
+ * Poll latest telemetry for ACTIVE sites, upsert snapshots,
+ * insert history rows. Batched to stay within Vercel function limits.
  */
 export async function pollTelemetry(): Promise<TelemetryPollResult> {
   const client = createPowerHubClient();
   const result: TelemetryPollResult = {
+    totalActive: 0,
+    sitesBatched: 0,
     sitesPolled: 0,
     sitesUpdated: 0,
     historyRowsInserted: 0,
     errors: [],
   };
 
+  // Fetch ACTIVE sites ordered by least-recently-polled first
   const activeSites = await prisma.powerhubSite.findMany({
     where: { status: "ACTIVE" },
     select: { siteId: true },
+    orderBy: { lastTelemetryAt: { sort: "asc", nulls: "first" } },
+    take: TELEMETRY_BATCH_LIMIT,
   });
+
+  // Also count total active for reporting
+  result.totalActive = await prisma.powerhubSite.count({
+    where: { status: "ACTIVE" },
+  });
+  result.sitesBatched = activeSites.length;
 
   for (let i = 0; i < activeSites.length; i += CHUNK_SIZE) {
     const chunk = activeSites.slice(i, i + CHUNK_SIZE);
@@ -379,6 +400,8 @@ export async function pollTelemetry(): Promise<TelemetryPollResult> {
 // ─── Alert Poll ──────────────────────────────────────────────────────────────
 
 export interface AlertPollResult {
+  totalActive: number;
+  sitesBatched: number;
   sitesPolled: number;
   alertsCreated: number;
   alertsResolved: number;
@@ -386,22 +409,32 @@ export interface AlertPollResult {
 }
 
 /**
- * Poll active alerts for all ACTIVE sites, upsert new alerts,
- * resolve alerts no longer in the response.
+ * Poll active alerts for ACTIVE sites, upsert new alerts,
+ * resolve alerts no longer in the response. Batched to stay within limits.
  */
 export async function pollAlerts(): Promise<AlertPollResult> {
   const client = createPowerHubClient();
   const result: AlertPollResult = {
+    totalActive: 0,
+    sitesBatched: 0,
     sitesPolled: 0,
     alertsCreated: 0,
     alertsResolved: 0,
     errors: [],
   };
 
+  // Fetch ACTIVE sites ordered by least-recently-checked first
   const activeSites = await prisma.powerhubSite.findMany({
     where: { status: "ACTIVE" },
     select: { siteId: true, lastAlertCheckAt: true },
+    orderBy: { lastAlertCheckAt: { sort: "asc", nulls: "first" } },
+    take: ALERT_BATCH_LIMIT,
   });
+
+  result.totalActive = await prisma.powerhubSite.count({
+    where: { status: "ACTIVE" },
+  });
+  result.sitesBatched = activeSites.length;
 
   for (let i = 0; i < activeSites.length; i += CHUNK_SIZE) {
     const chunk = activeSites.slice(i, i + CHUNK_SIZE);
