@@ -9,10 +9,9 @@
  * All operations are designed to be called from Vercel Cron handlers.
  */
 
-import { createPowerHubClient, type PowerHubSiteDetail } from "./tesla-powerhub";
+import { createPowerHubClient, type PowerHubSiteDetail, type PowerHubTelemetrySignal } from "./tesla-powerhub";
 import {
   normalizeAddress,
-  computeAddressHash,
   linkSite,
   type DealAddress,
 } from "./powerhub-linkage";
@@ -64,8 +63,16 @@ export async function syncAssets(): Promise<AssetSyncResult> {
     errors: [],
   };
 
-  // 1. Get all sites from Tesla
-  const { sites: siteList } = await client.getSites();
+  // 1. Get all sites from Tesla (flatten site IDs from groups)
+  const groups = await client.getGroups();
+  const siteList: { site_id: string }[] = [];
+  function collectSites(grps: typeof groups) {
+    for (const g of grps) {
+      if (g.sites) siteList.push(...g.sites);
+      if (g.child_groups) collectSites(g.child_groups);
+    }
+  }
+  collectSites(groups);
   result.sitesDiscovered = siteList.length;
 
   // 2. Fetch deal addresses for linkage (batch query)
@@ -101,48 +108,49 @@ async function upsertSite(
   dealAddresses: DealAddress[],
   result: AssetSyncResult
 ): Promise<void> {
-  const devices = detail.equipment || [];
-  const gateways = devices.filter((d) => d.device_type === "gateway");
-  const batteries = devices.filter((d) => d.device_type === "battery");
-  const inverters = devices.filter((d) => d.device_type === "inverter");
+  // Real Tesla API returns equipment in typed sub-objects, not a flat array
+  const gatewayCount = detail.gateway?.total_gateways ?? detail.gateway?.gateways?.length ?? 0;
+  const batteryCount = detail.battery?.batteries?.length ?? 0;
+  const inverterCount = Array.isArray(detail.inverter) ? detail.inverter.length : 0;
 
-  const totalBatteryEnergy = batteries.reduce(
-    (sum, b) => sum + (b.nameplate_energy_wh || 0),
-    0
-  );
-  const totalBatteryPower = batteries.reduce(
-    (sum, b) => sum + (b.nameplate_power_w || 0),
-    0
-  );
+  const totalBatteryEnergy = detail.battery?.total_nameplate_energy ?? 0;
+  const totalBatteryPower = detail.battery?.total_nameplate_max_discharge_power ?? 0;
 
-  // Normalize address for hash
-  const street = normalizeAddress(detail.address || "");
-  const city = (detail.city || "").toLowerCase().trim();
-  const state = (detail.state || "").toLowerCase().trim();
-  const zip = detail.zip || null;
-  const addressHash = street && city && state
-    ? computeAddressHash(street, city, state, zip)
-    : null;
+  // Tesla API does NOT return address fields on site detail —
+  // address linkage relies on site_name pattern matching or manual linking.
+  // We leave address/city/state empty and rely on the linkage system
+  // to match via deal cache or manual admin override.
 
   const existing = await prisma.powerhubSite.findUnique({
     where: { siteId: detail.site_id },
-    select: { id: true, linkMethod: true },
+    select: { id: true, linkMethod: true, address: true },
   });
+
+  // Build a complete device snapshot for the JSON column
+  const deviceSnapshot = {
+    gateways: detail.gateway?.gateways ?? [],
+    batteries: detail.battery?.batteries ?? [],
+    inverters: detail.inverter ?? [],
+    meters: detail.meter ?? [],
+    evse: detail.evse ?? [],
+  };
 
   const siteData = {
     siteName: detail.site_name,
-    instanceId: process.env.TESLA_POWERHUB_INSTANCE_ID!,
-    address: detail.address || "",
-    city: detail.city || "",
-    state: detail.state || "",
-    zip,
-    addressHash,
-    devices: JSON.parse(JSON.stringify(devices)),
+    // Instance ID is derived from the client credential's scoped_instance_relationships
+    // in the JWT — no separate env var needed
+    instanceId: process.env.TESLA_POWERHUB_INSTANCE_ID || "",
+    address: existing?.address || "",
+    city: "",
+    state: "",
+    zip: null as string | null,
+    addressHash: null as string | null,
+    devices: JSON.parse(JSON.stringify(deviceSnapshot)),
     totalBatteryEnergy: totalBatteryEnergy || null,
     totalBatteryPower: totalBatteryPower || null,
-    totalGateways: gateways.length,
-    totalBatteries: batteries.length,
-    totalInverters: inverters.length,
+    totalGateways: gatewayCount,
+    totalBatteries: batteryCount,
+    totalInverters: inverterCount,
     lastAssetSyncAt: new Date(),
   };
 
@@ -153,10 +161,13 @@ async function upsertSite(
     });
     result.sitesUpdated++;
 
-    // Only run linkage if still UNLINKED
-    if (existing.linkMethod === "UNLINKED" && addressHash) {
+    // Linkage: Tesla API doesn't return addresses, so auto-linkage
+    // relies on site_name or manual admin assignment.
+    // If address was manually set (e.g. by admin), try linkage.
+    if (existing.linkMethod === "UNLINKED" && existing.address) {
+      const street = normalizeAddress(existing.address);
       const linkResult = await linkSite(
-        { street, city, state, zip },
+        { street, city: "", state: "", zip: null },
         dealAddresses,
         prisma
       );
@@ -174,30 +185,11 @@ async function upsertSite(
       }
     }
   } else {
-    // Create new site
-    let linkData = {};
-    if (addressHash) {
-      const linkResult = await linkSite(
-        { street, city, state, zip },
-        dealAddresses,
-        prisma
-      );
-      if (linkResult) {
-        linkData = {
-          propertyId: linkResult.propertyId,
-          dealId: linkResult.dealId,
-          linkMethod: linkResult.method,
-          linkConfidence: linkResult.confidence,
-        };
-        result.sitesLinked++;
-      }
-    }
-
+    // Create new site — starts UNLINKED (no address from Tesla API)
     await prisma.powerhubSite.create({
       data: {
         siteId: detail.site_id,
         ...siteData,
-        ...linkData,
       },
     });
     result.sitesCreated++;
@@ -264,7 +256,7 @@ export async function pollTelemetry(): Promise<TelemetryPollResult> {
       chunk.map(async (site: { siteId: string }) => {
         try {
           result.sitesPolled++;
-          const { signals } = await client.getLastTelemetry(
+          const signals = await client.getLastTelemetry(
             site.siteId,
             [...TELEMETRY_SIGNALS]
           );
@@ -272,26 +264,28 @@ export async function pollTelemetry(): Promise<TelemetryPollResult> {
           if (!signals || signals.length === 0) return;
 
           // Build snapshot data from signals
+          // Each signal has data_points: [{ value, timestamp }]
           const signalMap = new Map(
             signals.map((s) => [s.signal_name, s])
           );
-          const timestamp = signals[0]?.timestamp
-            ? new Date(signals[0].timestamp)
+          const firstTimestamp = signals[0]?.data_points?.[0]?.timestamp;
+          const timestamp = firstTimestamp
+            ? new Date(firstTimestamp)
             : new Date();
 
           const snapshotData = {
             timestamp,
-            solarPowerW: numericValue(signalMap.get("solar_instant_power")),
-            solarEnergyTodayWh: numericValue(signalMap.get("solar_energy_exported")),
-            batteryPowerW: numericValue(signalMap.get("battery_instant_power")),
-            batterySocPercent: numericValue(signalMap.get("battery_state_of_energy")),
-            batteryEnergyRemainingWh: numericValue(signalMap.get("battery_expected_energy_remaining")),
-            gridPowerW: numericValue(signalMap.get("site_instant_power")),
-            gridEnergyImportedWh: numericValue(signalMap.get("site_energy_imported")),
-            gridEnergyExportedWh: numericValue(signalMap.get("site_energy_exported")),
-            loadPowerW: numericValue(signalMap.get("load_instant_real_power")),
-            gridConnectedStatus: stringValue(signalMap.get("grid_connected_status")),
-            batteryMode: stringValue(signalMap.get("command_real_mode")),
+            solarPowerW: signalNumericValue(signalMap.get("solar_instant_power")),
+            solarEnergyTodayWh: signalNumericValue(signalMap.get("solar_energy_exported")),
+            batteryPowerW: signalNumericValue(signalMap.get("battery_instant_power")),
+            batterySocPercent: signalNumericValue(signalMap.get("battery_state_of_energy")),
+            batteryEnergyRemainingWh: signalNumericValue(signalMap.get("battery_expected_energy_remaining")),
+            gridPowerW: signalNumericValue(signalMap.get("site_instant_power")),
+            gridEnergyImportedWh: signalNumericValue(signalMap.get("site_energy_imported")),
+            gridEnergyExportedWh: signalNumericValue(signalMap.get("site_energy_exported")),
+            loadPowerW: signalNumericValue(signalMap.get("load_instant_real_power")),
+            gridConnectedStatus: signalStringValue(signalMap.get("grid_connected_status")),
+            batteryMode: signalStringValue(signalMap.get("command_real_mode")),
             raw: JSON.parse(JSON.stringify(signals)),
           };
 
@@ -302,15 +296,15 @@ export async function pollTelemetry(): Promise<TelemetryPollResult> {
             update: snapshotData,
           });
 
-          // Insert history rows
+          // Insert history rows — one per signal that has data_points
           const historyRows = signals
-            .filter((s) => s.value !== null)
+            .filter((s) => s.data_points?.length > 0 && s.data_points[0].value !== null)
             .map((s) => ({
               siteId: site.siteId,
-              timestamp,
+              timestamp: new Date(s.data_points[0].timestamp),
               signalName: s.signal_name,
-              value: typeof s.value === "number" ? s.value : null,
-              valueString: typeof s.value === "string" ? s.value : null,
+              value: typeof s.data_points[0].value === "number" ? s.data_points[0].value : null,
+              valueString: typeof s.data_points[0].value === "string" ? String(s.data_points[0].value) : null,
               source: "POLL" as const,
             }));
 
@@ -382,7 +376,7 @@ export async function pollAlerts(): Promise<AlertPollResult> {
           result.sitesPolled++;
 
           const sinceTime = site.lastAlertCheckAt?.toISOString();
-          const { alerts } = await client.getActiveAlerts(
+          const alerts = await client.getActiveAlerts(
             site.siteId,
             sinceTime || undefined
           );
@@ -465,13 +459,19 @@ export async function pollAlerts(): Promise<AlertPollResult> {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function numericValue(signal: { value: number | string | null } | undefined): number | null {
-  if (!signal || signal.value === null) return null;
-  const n = Number(signal.value);
+/** Extract the latest numeric value from a telemetry signal's data_points */
+function signalNumericValue(signal: PowerHubTelemetrySignal | undefined): number | null {
+  if (!signal?.data_points?.length) return null;
+  const v = signal.data_points[0].value;
+  if (v === null || v === undefined) return null;
+  const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
 
-function stringValue(signal: { value: number | string | null } | undefined): string | null {
-  if (!signal || signal.value === null) return null;
-  return String(signal.value);
+/** Extract the latest value as a string from a telemetry signal's data_points */
+function signalStringValue(signal: PowerHubTelemetrySignal | undefined): string | null {
+  if (!signal?.data_points?.length) return null;
+  const v = signal.data_points[0].value;
+  if (v === null || v === undefined) return null;
+  return String(v);
 }
