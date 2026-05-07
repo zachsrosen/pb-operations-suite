@@ -285,9 +285,16 @@ export default auth((req) => {
     }
 
     // Allow machine-to-machine access via API_SECRET_TOKEN Bearer token
+    // Also accept HubSpot workflow webhook "API Key" auth which sends the
+    // token in a custom header (the stored-secret name, not Authorization).
     const apiSecretToken = process.env.API_SECRET_TOKEN;
     const authHeader = req.headers.get("authorization");
-    if (apiSecretToken && authHeader === `Bearer ${apiSecretToken}`) {
+    const hubspotApiKeyHeader = req.headers.get("pb_ops_bearer_token");
+    if (
+      apiSecretToken &&
+      (authHeader === `Bearer ${apiSecretToken}` ||
+        hubspotApiKeyHeader === apiSecretToken)
+    ) {
       if (!isMachineTokenAllowedRoute(pathname)) {
         const response = NextResponse.json(
           { error: "Forbidden - API token is not allowed for this route" },
